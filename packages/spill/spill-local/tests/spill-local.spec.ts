@@ -2,19 +2,33 @@
  * Tests for the LOCAL spill backend: `saveText` writes a session-scoped file and
  * returns a locator + byte length + retrieval hint, filename sanitization
  * neutralizes traversal, the configured `root` is honored (and the private
- * default when omitted), and a storage failure rejects. The Cordis-free
- * `store.ts` helpers are exercised directly for the naming/encoding edge cases.
+ * default when omitted), and a storage failure rejects. The startup cleanup
+ * sweep expires old files, prunes empty dirs, skips symlinks/unknown entries,
+ * discovers prior default roots, contains filesystem failures, and is awaited on
+ * disposal without blocking activation. The Cordis-free `store.ts` helpers are
+ * exercised directly for the naming/encoding and sweep edge cases.
  */
 
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, normalize } from 'node:path'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SaveTextSpill } from '@deepseek-ai/dsh-spill'
-import LocalSpillStore, { encodeSegment, privateRoot, saveTextFile, sessionDir } from '@deepseek-ai/dsh-spill-local'
+import LocalSpillStore, {
+  DEFAULT_ROOT_PREFIX,
+  discoverDefaultRoots,
+  encodeSegment,
+  isErrno,
+  privateRoot,
+  saveTextFile,
+  sessionDir,
+  sweepSpillRoots,
+} from '@deepseek-ai/dsh-spill-local'
+
+const DAY_MS = 24 * 60 * 60 * 1000
 
 let root: string
 
@@ -24,6 +38,13 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
+
+/** Write a file with an mtime `ageDays` in the past (fractional allowed). */
+function writeAged(path: string, content: string, ageDays: number): void {
+  writeFileSync(path, content)
+  const when = (Date.now() - ageDays * DAY_MS) / 1000
+  utimesSync(path, when, when)
+}
 
 function request(overrides: Partial<SaveTextSpill> = {}): SaveTextSpill {
   return {
@@ -113,9 +134,11 @@ describe('privateRoot', () => {
 })
 
 describe('LocalSpillStore service', () => {
+  // These tests exercise save/root resolution, not cleanup; disabling the sweep
+  // (cleanupPeriodDays: 0) keeps them from scanning/sweeping the real tmpdir.
   it('registers as ctx.spillStore and saves under the configured root', async () => {
     const ctx = new Context()
-    await ctx.plugin(LocalSpillStore, { root })
+    await ctx.plugin(LocalSpillStore, { root, cleanupPeriodDays: 0 })
     const ref = await ctx.spillStore.saveText(request())
     expect(dirname(ref.locator)).toBe(sessionDir(root, 'sess-1'))
     expect(readFileSync(ref.locator, 'utf8')).toBe('the full body')
@@ -125,13 +148,13 @@ describe('LocalSpillStore service', () => {
 
   it('resolves a relative configured root to absolute', async () => {
     const ctx = new Context()
-    await ctx.plugin(LocalSpillStore, { root: '.' })
+    await ctx.plugin(LocalSpillStore, { root: '.', cleanupPeriodDays: 0 })
     expect(isAbsolute((ctx.spillStore as LocalSpillStore).root)).toBe(true)
   })
 
   it('falls back to the private root when none is configured', async () => {
     const ctx = new Context()
-    await ctx.plugin(LocalSpillStore, {})
+    await ctx.plugin(LocalSpillStore, { cleanupPeriodDays: 0 })
     expect((ctx.spillStore as LocalSpillStore).root).toBe(privateRoot())
   })
 
@@ -139,7 +162,275 @@ describe('LocalSpillStore service', () => {
     const ctx = new Context()
     // A file (not a dir) as the root makes mkdir under it fail — a real storage error.
     const filePath = (await saveTextFile({ root, sessionId: 's', suggestedName: 'f', content: 'x' })).path
-    await ctx.plugin(LocalSpillStore, { root: filePath })
+    await ctx.plugin(LocalSpillStore, { root: filePath, cleanupPeriodDays: 0 })
     await expect(ctx.spillStore.saveText(request())).rejects.toThrow()
   })
+
+  it('rejects a negative or fractional cleanupPeriodDays at load', async () => {
+    await expect(new Context().plugin(LocalSpillStore, { root, cleanupPeriodDays: -1 }))
+      .rejects.toThrow(/cleanupPeriodDays must be a non-negative integer/)
+    await expect(new Context().plugin(LocalSpillStore, { root, cleanupPeriodDays: 1.5 }))
+      .rejects.toThrow(/cleanupPeriodDays must be a non-negative integer/)
+  })
+
+  it('defaults cleanupPeriodDays to 30', async () => {
+    const ctx = new Context()
+    // Point discovery at an empty isolated base so the default sweep does not
+    // touch the real tmpdir; assert only that the default landed on config.
+    const emptyBase = mkdtempSync(join(tmpdir(), 'dsh-empty-'))
+    class Isolated extends LocalSpillStore {
+      protected override defaultRootsBase(): string { return emptyBase }
+    }
+    try {
+      const fiber = await ctx.plugin(Isolated, { root })
+      const store = ctx.spillStore as LocalSpillStore
+      await fiber.dispose()
+      expect(store.config.cleanupPeriodDays).toBe(30)
+    } finally {
+      rmSync(emptyBase, { recursive: true, force: true })
+    }
+  })
+
+  it('the default discovery base is the OS tmpdir', async () => {
+    // Every hermetic sweep test overrides defaultRootsBase(); pin its production
+    // default here (scan the OS tmpdir) without letting the sweep touch tmpdir.
+    class Exposed extends LocalSpillStore {
+      base(): string { return this.defaultRootsBase() }
+      protected override async gatherRoots(): Promise<string[]> { return [] }
+    }
+    const ctx = new Context()
+    const fiber = await ctx.plugin(Exposed, { root, cleanupPeriodDays: 30 })
+    const store = ctx.spillStore as Exposed
+    await fiber.dispose()
+    expect(store.base()).toBe(tmpdir())
+  })
+
+  it('routes a sweep filesystem failure to ctx.logger.warn (service warn wiring)', async () => {
+    // A `session-*` entry that is a FILE, not a directory, makes readdir throw
+    // ENOTDIR inside the real sweep. The service's warn closure must forward it
+    // to ctx.logger.warn, and disposal must still settle cleanly.
+    const stray = join(root, 'session-stray'); writeFileSync(stray, 'x')
+    const ctx = new Context()
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    class Discovering extends LocalSpillStore {
+      protected override async gatherRoots(): Promise<string[]> { return [this.root] }
+    }
+    const fiber = await ctx.plugin(Discovering, { root, cleanupPeriodDays: 30 })
+    await fiber.dispose()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to read'))
+  })
 })
+
+/**
+ * A store whose sweep covers exactly the roots handed in (no real-tmpdir scan) —
+ * the hermetic seam for the cleanup tests. `barrier`, when set, holds the async
+ * gather open so a test can prove disposal awaits the sweep.
+ */
+class SweptStore extends LocalSpillStore {
+  static sweepRoots: string[] = []
+  static barrier: Promise<void> | undefined
+  protected override async gatherRoots(): Promise<string[]> {
+    if (SweptStore.barrier) await SweptStore.barrier
+    return SweptStore.sweepRoots
+  }
+}
+
+async function runSweep(roots: string[], cleanupPeriodDays = 30): Promise<void> {
+  SweptStore.sweepRoots = roots
+  SweptStore.barrier = undefined
+  const ctx = new Context()
+  const fiber = await ctx.plugin(SweptStore, { root, cleanupPeriodDays })
+  // Disposal awaits the fiber-owned sweep, so after this the sweep has run.
+  await fiber.dispose()
+}
+
+describe('startup cleanup sweep', () => {
+  it('deletes files older than the cutoff and keeps fresh ones', async () => {
+    const dir = sessionDir(root, 'sess-1')
+    mkdirSync(dir, { recursive: true })
+    const old = join(dir, 'old.txt'); writeAged(old, 'x', 40)
+    const fresh = join(dir, 'fresh.txt'); writeAged(fresh, 'y', 1)
+    await runSweep([root])
+    expect(existsSync(old)).toBe(false)
+    expect(existsSync(fresh)).toBe(true)
+  })
+
+  it('keeps a file exactly at the boundary (only strictly-older expires)', async () => {
+    const dir = sessionDir(root, 'sess-1')
+    mkdirSync(dir, { recursive: true })
+    // mtime == cutoff: mtimeMs >= cutoffMs holds, so it is kept. Age it just
+    // under 30d to avoid the sub-millisecond race of "exactly now - 30d".
+    const boundary = join(dir, 'boundary.txt'); writeAged(boundary, 'x', 29.9)
+    await runSweep([root])
+    expect(existsSync(boundary)).toBe(true)
+  })
+
+  it('disabled (cleanupPeriodDays: 0) sweeps nothing', async () => {
+    const dir = sessionDir(root, 'sess-1')
+    mkdirSync(dir, { recursive: true })
+    const old = join(dir, 'old.txt'); writeAged(old, 'x', 400)
+    await runSweep([root], 0)
+    expect(existsSync(old)).toBe(true)
+  })
+
+  it('prunes a directory left empty, keeps one with a surviving file', async () => {
+    const emptied = sessionDir(root, 'emptied')
+    const kept = sessionDir(root, 'kept')
+    mkdirSync(emptied, { recursive: true })
+    mkdirSync(kept, { recursive: true })
+    writeAged(join(emptied, 'a.txt'), 'x', 40)
+    writeAged(join(kept, 'fresh.txt'), 'y', 1)
+    await runSweep([root])
+    expect(existsSync(emptied)).toBe(false)
+    expect(existsSync(kept)).toBe(true)
+  })
+
+  it('skips symlinks and non-session entries', async () => {
+    const dir = sessionDir(root, 'sess-1')
+    mkdirSync(dir, { recursive: true })
+    // A symlink pointing at an old target must NOT be followed or deleted.
+    const target = join(root, 'target.txt'); writeAged(target, 'keep', 40)
+    const link = join(dir, 'link.txt'); symlinkSync(target, link)
+    // A non-session sibling directory under a shared root is untouched.
+    const unrelated = join(root, 'not-a-session'); mkdirSync(unrelated)
+    const unrelatedOld = join(unrelated, 'old.txt'); writeAged(unrelatedOld, 'x', 40)
+    await runSweep([root])
+    // The symlink itself survives (lstat sees a link, not a file), so its dir is
+    // not empty and is not pruned; the link target survives too.
+    expect(existsSync(link)).toBe(true)
+    expect(existsSync(target)).toBe(true)
+    expect(existsSync(unrelatedOld)).toBe(true)
+  })
+
+  it('covers the configured root AND discovered default roots (real gatherRoots)', async () => {
+    // A prior default root under an isolated fake tmpdir + the configured root.
+    // This test drives the REAL gatherRoots/discoverDefaultRoots path by seaming
+    // only the tmpdir scan base, not gatherRoots itself.
+    const fakeTmp = mkdtempSync(join(tmpdir(), 'dsh-faketmp-'))
+    const priorDefault = join(fakeTmp, `${DEFAULT_ROOT_PREFIX}ABCDEF`)
+    const priorDir = sessionDir(priorDefault, 'old-sess')
+    mkdirSync(priorDir, { recursive: true })
+    const priorOld = join(priorDir, 'old.txt'); writeAged(priorOld, 'x', 40)
+    const cfgDir = sessionDir(root, 'sess-1')
+    mkdirSync(cfgDir, { recursive: true })
+    const cfgOld = join(cfgDir, 'old.txt'); writeAged(cfgOld, 'x', 40)
+    class Discovering extends LocalSpillStore {
+      protected override defaultRootsBase(): string { return fakeTmp }
+    }
+    try {
+      const ctx = new Context()
+      const fiber = await ctx.plugin(Discovering, { root, cleanupPeriodDays: 30 })
+      await fiber.dispose()
+      expect(existsSync(priorOld)).toBe(false)
+      expect(existsSync(cfgOld)).toBe(false)
+    } finally {
+      rmSync(fakeTmp, { recursive: true, force: true })
+    }
+  })
+
+  it('de-dups when the active root is itself a discovered default (real gatherRoots)', async () => {
+    // The configured root lives directly under the seamed base and matches the
+    // default prefix, so discovery finds it AND it is the active root — the sweep
+    // must run once, not choke on the duplicate.
+    const fakeTmp = mkdtempSync(join(tmpdir(), 'dsh-faketmp-'))
+    const activeDefault = join(fakeTmp, `${DEFAULT_ROOT_PREFIX}ACTIVE`)
+    const dir = sessionDir(activeDefault, 'sess-1')
+    mkdirSync(dir, { recursive: true })
+    const old = join(dir, 'old.txt'); writeAged(old, 'x', 40)
+    class Discovering extends LocalSpillStore {
+      protected override defaultRootsBase(): string { return fakeTmp }
+    }
+    try {
+      const ctx = new Context()
+      const fiber = await ctx.plugin(Discovering, { root: activeDefault, cleanupPeriodDays: 30 })
+      await fiber.dispose()
+      expect(existsSync(old)).toBe(false)
+    } finally {
+      rmSync(fakeTmp, { recursive: true, force: true })
+    }
+  })
+
+  it('does not block activation but is awaited on disposal (quiescence)', async () => {
+    const dir = sessionDir(root, 'sess-1')
+    mkdirSync(dir, { recursive: true })
+    const old = join(dir, 'old.txt'); writeAged(old, 'x', 40)
+
+    // Hold the sweep open behind a barrier we control.
+    let release!: () => void
+    SweptStore.sweepRoots = [root]
+    SweptStore.barrier = new Promise<void>((resolve) => { release = resolve })
+
+    const ctx = new Context()
+    const fiber = await ctx.plugin(SweptStore, { root, cleanupPeriodDays: 30 })
+    // Activation returned while the sweep is still parked: service is usable and
+    // the old file is untouched so far.
+    expect(existsSync(old)).toBe(true)
+    const ref = await ctx.spillStore.saveText(request())
+    expect(readFileSync(ref.locator, 'utf8')).toBe('the full body')
+
+    // Disposal must AWAIT the sweep: release the barrier, and dispose only
+    // settles after the sweep deleted the old file.
+    release()
+    await fiber.dispose()
+    expect(existsSync(old)).toBe(false)
+  })
+
+  it('a filesystem failure is contained (logged, never thrown) and does not fail a spill write', async () => {
+    const warn = vi.fn()
+    // A path that is a FILE, not a directory: readdir(root) throws ENOTDIR. The
+    // sweep must log and return, never reject.
+    const filePath = join(root, 'not-a-dir'); writeFileSync(filePath, 'x')
+    await expect(sweepSpillRoots({ roots: [filePath], cutoffMs: Date.now(), warn })).resolves.toBeUndefined()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to read root'))
+  })
+
+  it('a nonexistent root is silent (the common no-spill-yet case)', async () => {
+    const warn = vi.fn()
+    await sweepSpillRoots({ roots: [join(root, 'never-created')], cutoffMs: Date.now(), warn })
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('a session entry that is a file (not a dir) is reported, not pruned', async () => {
+    const warn = vi.fn()
+    // `session-strayfile` matches the session- prefix but is a regular file, so
+    // readdir on it throws ENOTDIR: reported, left in place (not empty → no prune).
+    const stray = join(root, 'session-strayfile'); writeFileSync(stray, 'x')
+    await sweepSpillRoots({ roots: [root], cutoffMs: Date.now(), warn })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to read'))
+    expect(existsSync(stray)).toBe(true)
+  })
+})
+
+describe('discoverDefaultRoots', () => {
+  it('returns only real dsh-spill-* directories, excluding symlinks and non-matches', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'dsh-disc-'))
+    try {
+      const realRoot = join(base, `${DEFAULT_ROOT_PREFIX}real`); mkdirSync(realRoot)
+      mkdirSync(join(base, 'unrelated-dir'))
+      writeFileSync(join(base, `${DEFAULT_ROOT_PREFIX}file`), 'x') // matches prefix but is a file
+      symlinkSync(realRoot, join(base, `${DEFAULT_ROOT_PREFIX}link`)) // matches prefix but is a symlink
+      const found = await discoverDefaultRoots(() => {}, base)
+      expect(found).toEqual([realRoot])
+    } finally {
+      rmSync(base, { recursive: true, force: true })
+    }
+  })
+
+  it('returns [] and warns when the base is unreadable', async () => {
+    const warn = vi.fn()
+    const missing = join(root, 'no-such-base')
+    expect(await discoverDefaultRoots(warn, missing)).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to scan'))
+  })
+})
+
+describe('isErrno', () => {
+  it('matches a Node system error by code and rejects non-matches', () => {
+    const err = Object.assign(new Error('boom'), { code: 'ENOENT' })
+    expect(isErrno(err, 'ENOENT')).toBe(true)
+    expect(isErrno(err, 'EPERM')).toBe(false)
+    expect(isErrno('not an error', 'ENOENT')).toBe(false)
+    expect(isErrno(new Error('no code'), 'ENOENT')).toBe(false)
+  })
+})
+
