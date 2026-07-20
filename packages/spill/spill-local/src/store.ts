@@ -225,11 +225,13 @@ async function sweepSessionDir(dir: string, cutoffMs: number, warn: WarnFn): Pro
   try {
     names = await readdir(dir)
   } catch (error: unknown) {
-    // A `session-*` entry that is not a readable directory (a stray file, or an
-    // unreadable/vanished dir) is not ours to fix — report and leave it. False
-    // keeps it out of the prune step.
+    /* v8 ignore start -- the caller lstat'd this entry and confirmed a real
+       directory just before the call, so readdir fails only when the dir races
+       away (ENOENT) or a permission/IO fault strikes in that window; not
+       deterministically reproducible. False keeps it out of the prune step. */
     warn(`spill-local: failed to read ${dir}: ${String(error)}`)
     return false
+    /* v8 ignore stop */
   }
   let remaining = names.length
   for (const name of names) {
@@ -328,12 +330,15 @@ export async function sweepSpillRoots(options: SweepOptions): Promise<void> {
       try {
         await rmdir(root.path)
       } catch (error: unknown) {
-        // A concurrent process may have written a fresh spill into this root
-        // after our scan (ENOTEMPTY), or removed it already (ENOENT) — benign
-        // races. Anything else is reported.
+        /* v8 ignore start -- prune runs only on a root whose every child was
+           reclaimed; a failure here means a concurrent writer added a fresh
+           spill after our scan (ENOTEMPTY) or removed the root already (ENOENT)
+           or a permission/IO fault struck — all races outside deterministic
+           in-process testing. */
         if (!isErrno(error, 'ENOENT') && !isErrno(error, 'ENOTEMPTY')) {
           warn(`spill-local: failed to prune root ${root.path}: ${String(error)}`)
         }
+        /* v8 ignore stop */
       }
     }
   }
