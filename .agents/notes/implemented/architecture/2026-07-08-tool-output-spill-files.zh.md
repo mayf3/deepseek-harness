@@ -160,7 +160,8 @@ ctx.tools.register(defineTool({
 - 由工具负责的 subagent 执行轨迹 spill（`await run.result`，在 `run.dispose()` 前读取进程内子会话，保存 JSONL）。
 - 如果内置的 `read` 跳过规则不足，再增加逐工具选择退出或逐工具策略声明。
 - 面向 ACP（Agent Client Protocol）或远程环境的远程／数据库存储后端，因为本地路径在这些环境中没有意义。
-- 旧 spill 文件的清理和保留策略，很可能与会话清理绑定。
+
+本地后端通过一次性启动扫描清理旧文件，而不是绑定到会话删除——参见[启动清理 Agent Note](./2026-07-17-local-spill-startup-cleanup.zh.md)。seam 仍未定义逐会话清理策略；保留策略属于后端。
 
 ## 测试
 

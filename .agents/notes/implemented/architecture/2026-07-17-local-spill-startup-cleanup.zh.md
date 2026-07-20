@@ -6,15 +6,15 @@ Status: implemented
 
 ## 问题
 
-本地 spill 后端从不删除它写下的完整工具结果。每个超限结果都会新增一个文件，因此配置的根目录会无限增长，而每进程默认的 `dsh-spill-*` 根目录也会跨多次运行不断累积。立即删除是错误的，因为已持久化、已恢复和已 fork 的会话仍可能引用某个 locator。[工具输出 spill 策略](./2026-07-08-tool-output-spill-files.md)需要一个有界的本地存储生命周期。
+本地 spill 后端从不删除它写下的完整工具结果。每个超限结果都会新增一个文件，因此配置的根目录会无限增长，而每进程默认的 `dsh-spill-*` 根目录也会跨多次运行不断累积。立即删除是错误的，因为已持久化、已恢复和已 fork 的会话仍可能引用某个 locator。[工具输出 spill 策略](./2026-07-08-tool-output-spill-files.zh.md)需要一个有界的本地存储生命周期。
 
 ## 决策
 
 `dsh-spill-local` 在激活后运行一次尽力而为的清理扫描。它不延迟服务可用性，由插件 fiber 拥有（一个 `ctx.effect`，其生成器启动该扫描并让出一个等待它的异步 disposer），并在 dispose 期间被等待，因此没有扫描 I/O 会存活到 fiber 之后。既没有周期性定时器，也没有独立进程。
 
-`cleanupPeriodDays` 配置默认为 `30`；`0` 会禁用清理。无效值（负数或小数）在加载时抛出。扫描会遍历配置的/活动的根目录，以及在 OS 临时目录下发现的任何先前默认 `dsh-spill-*` 临时根目录，删除 `mtime` 严格早于 `now − cleanupPeriodDays` 的常规文件，并修剪清空后的目录。它使用 `lstat`，因此符号链接绝不会被跟随或删除；无关条目（非 `session-` 目录、特殊文件）会被跳过。每一次文件系统失败都会被捕获并通过 `ctx.logger.warn` 记录——扫描绝不抛出，因此它无法让激活失败，也无法影响并发的 spill 写入。发现过程排除符号链接与非目录，只返回后端可能创建过的真实 `dsh-spill-*` 目录。
+`cleanupPeriodDays` 配置默认为 `30`；`0` 会禁用清理。无效值（负数或小数）在加载时抛出。扫描会遍历配置的/活动的根目录，以及在 OS 临时目录下发现的任何先前默认 `dsh-spill-*` 临时根目录，并删除 `mtime` 严格早于 `now − cleanupPeriodDays` 的常规文件。它只修剪发现的先前默认根目录中的空会话目录和空根目录；活动根目录会保留其会话目录，避免修剪操作与本地写入竞争，而当其他进程修剪了一个仍在使用的发现根目录时，写入操作会重新创建会话目录。扫描使用 `lstat`，因此符号链接绝不会被跟随或删除；无关条目（非 `session-` 目录、特殊文件）会被跳过。每一次文件系统失败都会被捕获并通过 `ctx.logger.warn` 记录，警告接收方抛出的异常也会被兜底——扫描绝不抛出，因此它无法让激活失败，也无法影响并发的 spill 写入。发现过程排除符号链接与非目录，只返回后端可能创建过的真实 `dsh-spill-*` 目录。
 
-无 ctx 依赖的机制位于 `packages/spill/spill-local/src/store.ts`（`sweepSpillRoots`、`discoverDefaultRoots`、`DEFAULT_ROOT_PREFIX`、`isErrno`），无需 `ctx` 即可做单元测试；`src/index.ts` 中的服务负责配置、截止时间以及 fiber 拥有的启动/等待。
+无 ctx 依赖的扫描机制位于 `packages/spill/spill-local/src/cleanup.ts`（`sweepSpillRoots`、`discoverDefaultRoots`），无需 `ctx` 即可做单元测试；`store.ts` 负责根目录命名、路径推导与写入，而 `src/index.ts` 中的服务负责配置、截止时间以及 fiber 拥有的启动/等待。
 
 ## 考虑过的替代方案
 
@@ -32,4 +32,4 @@ Status: implemented
 
 ## 验证
 
-`dsh-spill-local` 单元测试覆盖了年龄边界（严格更旧者过期，边界值保留）、`cleanupPeriodDays: 0` 的禁用、空目录修剪、符号链接/无关条目的跳过、通过真实 `gatherRoots`/`discoverDefaultRoots` 路径对配置根加发现根的覆盖、活动根去重、对错误 `cleanupPeriodDays` 的加载期校验、文件系统失败的兜底（记录而非抛出）——既直接测试，也经由服务的 `ctx.logger.warn` 接线测试——以及静止契约：在一个被屏障挂起的扫描停驻期间激活仍然可用，而 dispose 只有在扫描结束后才会完成。
+`dsh-spill-local` 单元测试覆盖了年龄边界（严格更旧者过期，边界值保留）、`cleanupPeriodDays: 0` 的禁用、发现根目录的修剪、活动目录的保留、符号链接/无关条目的跳过、通过真实 `gatherRoots`/`discoverDefaultRoots` 路径对配置根加发现根的覆盖、活动根去重、对错误 `cleanupPeriodDays` 的加载期校验、直接测试以及经由服务的 `ctx.logger.warn` 接线测试所覆盖的文件系统与警告接收方失败兜底，以及静止契约：在一个被屏障挂起的扫描停驻期间激活仍然可用，而 dispose 只有在扫描结束后才会完成。

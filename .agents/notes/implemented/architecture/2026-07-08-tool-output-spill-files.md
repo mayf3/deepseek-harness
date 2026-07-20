@@ -161,7 +161,7 @@ Those cases can consume `ctx.spillStore` directly in later work. They are not pa
 - Per-tool opt-out or per-tool policy declarations if the built-in `read` skip is insufficient.
 - Remote or database storage backends for ACP or remote environments where a local path is not meaningful.
 
-Cleanup shipped for the local backend as a one-shot startup sweep, not tied to session deletion — see the [startup-cleanup RFC](./2026-07-17-local-spill-startup-cleanup.md). The seam still defines no per-session cleanup policy; retention is a backend concern.
+Cleanup shipped for the local backend as a one-shot startup sweep, not tied to session deletion — see the [startup-cleanup Agent Note](./2026-07-17-local-spill-startup-cleanup.md). The seam still defines no per-session cleanup policy; retention is a backend concern.
 
 ## Testing
 

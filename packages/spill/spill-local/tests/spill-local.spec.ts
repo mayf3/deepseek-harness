@@ -3,10 +3,10 @@
  * returns a locator + byte length + retrieval hint, filename sanitization
  * neutralizes traversal, the configured `root` is honored (and the private
  * default when omitted), and a storage failure rejects. The startup cleanup
- * sweep expires old files, prunes empty dirs, skips symlinks/unknown entries,
+ * sweep expires old files, prunes stale roots, skips symlinks/unknown entries,
  * discovers prior default roots, contains filesystem failures, and is awaited on
- * disposal without blocking activation. The Cordis-free `store.ts` helpers are
- * exercised directly for the naming/encoding and sweep edge cases.
+ * disposal without blocking activation. The Cordis-free store and cleanup
+ * helpers are exercised directly for their edge cases.
  */
 
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
@@ -280,7 +280,7 @@ describe('startup cleanup sweep', () => {
     expect(existsSync(old)).toBe(true)
   })
 
-  it('prunes a session directory left empty, keeps one with a surviving file', async () => {
+  it('keeps active session directories after deleting expired files', async () => {
     const emptied = sessionDir(root, 'emptied')
     const kept = sessionDir(root, 'kept')
     mkdirSync(emptied, { recursive: true })
@@ -288,7 +288,7 @@ describe('startup cleanup sweep', () => {
     writeAged(join(emptied, 'a.txt'), 'x', 40)
     writeAged(join(kept, 'fresh.txt'), 'y', 1)
     await runSweep([active(root)])
-    expect(existsSync(emptied)).toBe(false)
+    expect(existsSync(emptied)).toBe(true)
     expect(existsSync(kept)).toBe(true)
   })
 
@@ -351,7 +351,7 @@ describe('startup cleanup sweep', () => {
       await runSweep([{ path: prior, pruneWhenEmpty: true }, active(root)])
       expect(existsSync(prior)).toBe(false)   // discovered root pruned
       expect(existsSync(root)).toBe(true)     // active root kept
-      expect(existsSync(activeDir)).toBe(false) // its emptied session dir still pruned
+      expect(existsSync(activeDir)).toBe(true) // active session dirs remain writable
     } finally {
       rmSync(prior, { recursive: true, force: true })
     }
@@ -458,6 +458,13 @@ describe('startup cleanup sweep', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to read root'))
   })
 
+  it('contains an exception from the warning sink', async () => {
+    const filePath = join(root, 'not-a-dir'); writeFileSync(filePath, 'x')
+    const warn = vi.fn(() => { throw new Error('logger failed') })
+    await expect(sweepSpillRoots({ roots: [active(filePath)], cutoffMs: Date.now(), warn })).resolves.toBeUndefined()
+    expect(warn).toHaveBeenCalledOnce()
+  })
+
   it('a nonexistent root is silent (the common no-spill-yet case)', async () => {
     const warn = vi.fn()
     await sweepSpillRoots({ roots: [active(join(root, 'never-created'))], cutoffMs: Date.now(), warn })
@@ -500,4 +507,3 @@ describe('isErrno', () => {
     expect(isErrno(new Error('no code'), 'ENOENT')).toBe(false)
   })
 })
-

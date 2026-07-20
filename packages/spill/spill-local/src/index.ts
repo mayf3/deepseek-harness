@@ -15,11 +15,14 @@ import { tmpdir } from 'node:os'
 import z from '@deepseek-ai/schemastery'
 import { SpillLocator, SpillStore } from '@deepseek-ai/dsh-spill'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
-import { discoverDefaultRoots, privateRoot, saveTextFile, sweepSpillRoots } from './store.ts'
-import type { SweepRoot, WarnFn } from './store.ts'
+import { discoverDefaultRoots, sweepSpillRoots } from './cleanup.ts'
+import type { SweepRoot, WarnFn } from './cleanup.ts'
+import { privateRoot, saveTextFile } from './store.ts'
 
-export { discoverDefaultRoots, encodeSegment, isErrno, privateRoot, saveTextFile, sessionDir, sweepSpillRoots, DEFAULT_ROOT_PREFIX } from './store.ts'
-export type { SavedText, SaveTextOptions, SweepOptions, SweepRoot, WarnFn } from './store.ts'
+export { discoverDefaultRoots, sweepSpillRoots } from './cleanup.ts'
+export type { SweepOptions, SweepRoot, WarnFn } from './cleanup.ts'
+export { DEFAULT_ROOT_PREFIX, encodeSegment, isErrno, privateRoot, saveTextFile, sessionDir } from './store.ts'
+export type { SavedText, SaveTextOptions } from './store.ts'
 
 /** Milliseconds in one day — converts the `cleanupPeriodDays` config to the sweep cutoff. */
 const MS_PER_DAY = 24 * 60 * 60 * 1000
@@ -117,9 +120,10 @@ export class LocalSpillStore extends SpillStore {
   /**
    * The roots the startup sweep covers: each discovered prior-default
    * `dsh-spill-*` temp root (see {@link discoverDefaultRoots}), pruned when
-   * emptied, plus the active/configured root, which is swept but NEVER pruned
-   * (the live process is still writing into it). The active root is de-duped out
-   * of the discovered set so it is not swept twice or marked prunable. A test
+   * emptied, plus the active/configured root, whose root and session directories
+   * are NEVER pruned (the live process is still writing into them). The active
+   * root is de-duped out of the discovered set so it is not swept twice or
+   * marked prunable. A test
    * overrides this to inject an isolated root set — and, being the sweep's one
    * async gather point, to hold the sweep open across a disposal for the
    * quiescence check; it is a test seam, not a deployment knob.

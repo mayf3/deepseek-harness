@@ -1,6 +1,6 @@
 # Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write
-2026-07-17-local-spill-startup-cleanup.md: ca4931776f89e641f127072f665e238ca2a1600d
-2026-07-17-local-spill-startup-cleanup.zh.md: b90923844ab71e1ce570e8adb66f81aed7bc3488
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-07-17-local-spill-startup-cleanup.md
+2026-07-17-local-spill-startup-cleanup.md: 96378d6ea785d90385f517c1b9a01073ade47fa2
+2026-07-17-local-spill-startup-cleanup.zh.md: a154cfb824d3a747c2c9acc2b707eb14d703ce2e
