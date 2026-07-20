@@ -20,6 +20,23 @@ import { tmpdir } from 'node:os'
  */
 export const DEFAULT_ROOT_PREFIX = 'dsh-spill-'
 
+/**
+ * A backend-generated default root name: `dsh-spill-` plus the 6-character
+ * suffix `mkdtemp` appends (see {@link privateRoot}). Discovery matches this
+ * EXACT shape, not the bare prefix, so an unrelated `dsh-spill-test-*` fixture
+ * or a foreign tool's differently-shaped `dsh-spill-…` directory is never
+ * mistaken for a backend root to sweep.
+ */
+const DEFAULT_ROOT_RE = /^dsh-spill-[A-Za-z0-9]{6}$/
+
+/**
+ * A backend-generated session directory name: `session-` plus the 12 lowercase
+ * hex characters {@link sessionDir} derives from `sha256(sessionId)`. The sweep
+ * only descends into entries of this EXACT shape, so an unrelated
+ * `session-backup` directory under a shared configured root is never swept.
+ */
+const SESSION_DIR_RE = /^session-[0-9a-f]{12}$/
+
 let defaultRoot: string | undefined
 
 /**
@@ -126,10 +143,23 @@ export async function saveTextFile(options: SaveTextOptions): Promise<SavedText>
 /** A one-argument warning sink — the sweep's only side effect on failure (never throws). */
 export type WarnFn = (message: string) => void
 
+/** One root to sweep, plus whether an emptied root directory should itself be pruned. */
+export interface SweepRoot {
+  /** Absolute spill root to sweep. */
+  path: string
+  /**
+   * When `true`, remove the root directory itself once its last `session-*`
+   * child is pruned. Set for DISCOVERED prior-default `dsh-spill-*` roots (one
+   * per past process — otherwise they accumulate empty forever), never for the
+   * active/configured root the live process is still writing into.
+   */
+  pruneWhenEmpty: boolean
+}
+
 /** Options for {@link sweepSpillRoots} — the roots to scan, the age cutoff, and a failure sink. */
 export interface SweepOptions {
-  /** Absolute spill roots to sweep (configured root and/or discovered default roots). */
-  roots: string[]
+  /** Roots to sweep (configured/active root and/or discovered prior-default roots). */
+  roots: SweepRoot[]
   /**
    * Epoch-millis cutoff: a regular file is deleted when its `mtime` is strictly
    * older than this. The caller derives it from `now - cleanupPeriodDays`, so a
@@ -178,12 +208,14 @@ export function isErrno(error: unknown, code: string): boolean {
 /**
  * Sweep one spill session directory: delete expired regular files, skip
  * everything else, and report the directory empty afterward so the caller can
- * prune it. A symlink or any non-regular entry (socket, fifo, nested dir) is
- * left untouched — `lstat` never follows a link, so a planted symlink can
- * neither be deleted nor redirect the age check. Every per-entry failure is
+ * prune it. The `dir` entry MUST be a real directory — the caller `lstat`s it
+ * first and skips a symlink, so this never follows a `session-*` symlink into a
+ * foreign tree. Inside, a symlink or any non-regular entry (socket, fifo, nested
+ * dir) is left untouched — `lstat` never follows a link, so a planted symlink
+ * can neither be deleted nor redirect the age check. Every per-entry failure is
  * contained: one unreadable file does not abort the directory.
  *
- * @param dir The absolute session directory to scan.
+ * @param dir The absolute session directory to scan (already confirmed a real dir).
  * @param cutoffMs Files with `mtime` strictly older than this are deleted.
  * @param warn Sink for contained filesystem failures.
  * @returns `true` when the directory holds no entries after the sweep (a prune candidate).
@@ -241,20 +273,39 @@ export async function sweepSpillRoots(options: SweepOptions): Promise<void> {
   for (const root of roots) {
     let entries: string[]
     try {
-      entries = await readdir(root)
+      entries = await readdir(root.path)
     } catch (error: unknown) {
       // A root that does not exist yet (no spill ever written) is the common
       // case, not an error: ENOENT is silent, anything else is reported.
-      if (!isErrno(error, 'ENOENT')) warn(`spill-local: failed to read root ${root}: ${String(error)}`)
+      if (!isErrno(error, 'ENOENT')) warn(`spill-local: failed to read root ${root.path}: ${String(error)}`)
       continue
     }
+    // Track whether the root holds ANY entry the sweep did not fully reclaim, so
+    // a discovered prior-default root can be pruned only when nothing remains.
+    let rootEmptiable = true
     for (const name of entries) {
-      // Only the backend's own `session-<hash>` directories are swept; an
-      // unrelated sibling under a shared configured root is left untouched.
-      if (!name.startsWith('session-')) continue
-      const dir = join(root, name)
+      // Only the backend's own `session-<12 hex>` directories are swept; an
+      // unrelated sibling (`session-backup`, a stray file) is left untouched and
+      // blocks pruning the root.
+      if (!SESSION_DIR_RE.test(name)) { rootEmptiable = false; continue }
+      const dir = join(root.path, name)
+      let stats
+      try {
+        // lstat the session entry itself: a `session-*` SYMLINK must never be
+        // followed (readdir/unlink through it would delete files in a foreign
+        // target). Only a real directory is swept.
+        stats = await lstat(dir)
+      } catch (error: unknown) {
+        /* v8 ignore start -- an entry readdir just returned fails to lstat only
+           by racing away (ENOENT) or a permission/IO fault; not deterministically
+           reproducible. */
+        if (!isErrno(error, 'ENOENT')) warn(`spill-local: failed to stat ${dir}: ${String(error)}`)
+        continue
+        /* v8 ignore stop */
+      }
+      if (!stats.isDirectory()) { rootEmptiable = false; continue }
       const empty = await sweepSessionDir(dir, cutoffMs, warn)
-      if (!empty) continue
+      if (!empty) { rootEmptiable = false; continue }
       try {
         await rmdir(dir)
       } catch (error: unknown) {
@@ -262,22 +313,42 @@ export async function sweepSpillRoots(options: SweepOptions): Promise<void> {
            here means a concurrent writer added a file (ENOTEMPTY) or a
            permission/IO fault struck — both are races outside deterministic
            in-process testing. */
+        rootEmptiable = false
         if (!isErrno(error, 'ENOENT') && !isErrno(error, 'ENOTEMPTY')) {
           warn(`spill-local: failed to prune ${dir}: ${String(error)}`)
         }
         /* v8 ignore stop */
       }
     }
+    // A discovered prior-default root (one per past process) is removed once its
+    // last session dir is gone — otherwise empty roots accumulate forever and
+    // every future startup rescans them. The active/configured root is never
+    // pruned (the live process is still writing into it).
+    if (root.pruneWhenEmpty && rootEmptiable) {
+      try {
+        await rmdir(root.path)
+      } catch (error: unknown) {
+        // A concurrent process may have written a fresh spill into this root
+        // after our scan (ENOTEMPTY), or removed it already (ENOENT) — benign
+        // races. Anything else is reported.
+        if (!isErrno(error, 'ENOENT') && !isErrno(error, 'ENOTEMPTY')) {
+          warn(`spill-local: failed to prune root ${root.path}: ${String(error)}`)
+        }
+      }
+    }
   }
 }
 
 /**
- * Discover prior default spill roots: the `dsh-spill-*` directories directly
- * under `base` (the OS tmpdir) that earlier runs created via {@link privateRoot}
- * when no `root` was configured. A long-lived deployment with a configured root
- * will find none; a series of default-root runs accumulates one per process, so
- * the startup sweep reclaims them all. Symlinks and non-directories are excluded
- * — only real directories the backend could have created are returned.
+ * Discover prior default spill roots: the `dsh-spill-<6 chars>` directories
+ * directly under `base` (the OS tmpdir) that earlier runs created via
+ * {@link privateRoot} when no `root` was configured. A long-lived deployment
+ * with a configured root will find none; a series of default-root runs
+ * accumulates one per process, so the startup sweep reclaims them all. Matching
+ * is the EXACT `mkdtemp` shape (see {@link DEFAULT_ROOT_RE}), not the bare
+ * prefix, so an unrelated `dsh-spill-test-*` fixture or a foreign
+ * differently-shaped directory is never swept; symlinks and non-directories are
+ * excluded too — only real directories the backend could have created.
  *
  * @param warn Sink for a failure reading `base` (returns `[]` on failure).
  * @param base The directory to scan; defaults to the OS tmpdir (a test seam).
@@ -293,7 +364,7 @@ export async function discoverDefaultRoots(warn: WarnFn, base: string = tmpdir()
   }
   const roots: string[] = []
   for (const name of entries) {
-    if (!name.startsWith(DEFAULT_ROOT_PREFIX)) continue
+    if (!DEFAULT_ROOT_RE.test(name)) continue
     const path = join(base, name)
     let stats
     try {

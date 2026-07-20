@@ -27,6 +27,7 @@ import LocalSpillStore, {
   sessionDir,
   sweepSpillRoots,
 } from '@deepseek-ai/dsh-spill-local'
+import type { SweepRoot } from '@deepseek-ai/dsh-spill-local'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -196,7 +197,7 @@ describe('LocalSpillStore service', () => {
     // default here (scan the OS tmpdir) without letting the sweep touch tmpdir.
     class Exposed extends LocalSpillStore {
       base(): string { return this.defaultRootsBase() }
-      protected override async gatherRoots(): Promise<string[]> { return [] }
+      protected override async gatherRoots(): Promise<SweepRoot[]> { return [] }
     }
     const ctx = new Context()
     const fiber = await ctx.plugin(Exposed, { root, cleanupPeriodDays: 30 })
@@ -206,18 +207,18 @@ describe('LocalSpillStore service', () => {
   })
 
   it('routes a sweep filesystem failure to ctx.logger.warn (service warn wiring)', async () => {
-    // A `session-*` entry that is a FILE, not a directory, makes readdir throw
-    // ENOTDIR inside the real sweep. The service's warn closure must forward it
-    // to ctx.logger.warn, and disposal must still settle cleanly.
-    const stray = join(root, 'session-stray'); writeFileSync(stray, 'x')
+    // A root that is a FILE, not a directory, makes readdir throw ENOTDIR inside
+    // the real sweep. The service's warn closure must forward it to
+    // ctx.logger.warn, and disposal must still settle cleanly.
+    const filePath = join(root, 'not-a-dir'); writeFileSync(filePath, 'x')
     const ctx = new Context()
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     class Discovering extends LocalSpillStore {
-      protected override async gatherRoots(): Promise<string[]> { return [this.root] }
+      protected override async gatherRoots(): Promise<SweepRoot[]> { return [{ path: this.root, pruneWhenEmpty: false }] }
     }
-    const fiber = await ctx.plugin(Discovering, { root, cleanupPeriodDays: 30 })
+    const fiber = await ctx.plugin(Discovering, { root: filePath, cleanupPeriodDays: 30 })
     await fiber.dispose()
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to read'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to read root'))
   })
 })
 
@@ -227,15 +228,16 @@ describe('LocalSpillStore service', () => {
  * gather open so a test can prove disposal awaits the sweep.
  */
 class SweptStore extends LocalSpillStore {
-  static sweepRoots: string[] = []
+  static sweepRoots: SweepRoot[] = []
   static barrier: Promise<void> | undefined
-  protected override async gatherRoots(): Promise<string[]> {
+  protected override async gatherRoots(): Promise<SweepRoot[]> {
     if (SweptStore.barrier) await SweptStore.barrier
     return SweptStore.sweepRoots
   }
 }
 
-async function runSweep(roots: string[], cleanupPeriodDays = 30): Promise<void> {
+/** Sweep the given roots via the fiber-owned startup sweep; `root` is the active (non-pruned) root. */
+async function runSweep(roots: SweepRoot[], cleanupPeriodDays = 30): Promise<void> {
   SweptStore.sweepRoots = roots
   SweptStore.barrier = undefined
   const ctx = new Context()
@@ -244,13 +246,18 @@ async function runSweep(roots: string[], cleanupPeriodDays = 30): Promise<void> 
   await fiber.dispose()
 }
 
+/** The active configured root as a non-pruned sweep target (the common single-root case). */
+function active(path: string): SweepRoot {
+  return { path, pruneWhenEmpty: false }
+}
+
 describe('startup cleanup sweep', () => {
   it('deletes files older than the cutoff and keeps fresh ones', async () => {
     const dir = sessionDir(root, 'sess-1')
     mkdirSync(dir, { recursive: true })
     const old = join(dir, 'old.txt'); writeAged(old, 'x', 40)
     const fresh = join(dir, 'fresh.txt'); writeAged(fresh, 'y', 1)
-    await runSweep([root])
+    await runSweep([active(root)])
     expect(existsSync(old)).toBe(false)
     expect(existsSync(fresh)).toBe(true)
   })
@@ -261,7 +268,7 @@ describe('startup cleanup sweep', () => {
     // mtime == cutoff: mtimeMs >= cutoffMs holds, so it is kept. Age it just
     // under 30d to avoid the sub-millisecond race of "exactly now - 30d".
     const boundary = join(dir, 'boundary.txt'); writeAged(boundary, 'x', 29.9)
-    await runSweep([root])
+    await runSweep([active(root)])
     expect(existsSync(boundary)).toBe(true)
   })
 
@@ -269,23 +276,23 @@ describe('startup cleanup sweep', () => {
     const dir = sessionDir(root, 'sess-1')
     mkdirSync(dir, { recursive: true })
     const old = join(dir, 'old.txt'); writeAged(old, 'x', 400)
-    await runSweep([root], 0)
+    await runSweep([active(root)], 0)
     expect(existsSync(old)).toBe(true)
   })
 
-  it('prunes a directory left empty, keeps one with a surviving file', async () => {
+  it('prunes a session directory left empty, keeps one with a surviving file', async () => {
     const emptied = sessionDir(root, 'emptied')
     const kept = sessionDir(root, 'kept')
     mkdirSync(emptied, { recursive: true })
     mkdirSync(kept, { recursive: true })
     writeAged(join(emptied, 'a.txt'), 'x', 40)
     writeAged(join(kept, 'fresh.txt'), 'y', 1)
-    await runSweep([root])
+    await runSweep([active(root)])
     expect(existsSync(emptied)).toBe(false)
     expect(existsSync(kept)).toBe(true)
   })
 
-  it('skips symlinks and non-session entries', async () => {
+  it('skips a symlink INSIDE a session dir and non-session siblings', async () => {
     const dir = sessionDir(root, 'sess-1')
     mkdirSync(dir, { recursive: true })
     // A symlink pointing at an old target must NOT be followed or deleted.
@@ -294,7 +301,7 @@ describe('startup cleanup sweep', () => {
     // A non-session sibling directory under a shared root is untouched.
     const unrelated = join(root, 'not-a-session'); mkdirSync(unrelated)
     const unrelatedOld = join(unrelated, 'old.txt'); writeAged(unrelatedOld, 'x', 40)
-    await runSweep([root])
+    await runSweep([active(root)])
     // The symlink itself survives (lstat sees a link, not a file), so its dir is
     // not empty and is not pruned; the link target survives too.
     expect(existsSync(link)).toBe(true)
@@ -302,12 +309,73 @@ describe('startup cleanup sweep', () => {
     expect(existsSync(unrelatedOld)).toBe(true)
   })
 
+  it('does NOT follow a symlinked session directory (no deletion in the target)', async () => {
+    // A `session-<12hex>`-NAMED symlink pointing at a directory of old files must
+    // never be descended: lstat on the entry sees a link, so the target's files
+    // are left intact and the link itself is not removed.
+    const victimDir = join(root, 'victim'); mkdirSync(victimDir, { recursive: true })
+    const victimOld = join(victimDir, 'old.txt'); writeAged(victimOld, 'x', 40)
+    const linkName = `session-${'a'.repeat(12)}`
+    const link = join(root, linkName); symlinkSync(victimDir, link)
+    await runSweep([active(root)])
+    expect(existsSync(victimOld)).toBe(true)
+    expect(existsSync(link)).toBe(true)
+  })
+
+  it('sweeps only exact session-<12hex> names, not lookalikes', async () => {
+    // `session-backup` and `session-<11hex>` match the old startsWith check but
+    // are NOT backend-generated names; their old files must survive.
+    const backup = join(root, 'session-backup'); mkdirSync(backup, { recursive: true })
+    const backupOld = join(backup, 'old.txt'); writeAged(backupOld, 'x', 40)
+    const shortHex = join(root, `session-${'a'.repeat(11)}`); mkdirSync(shortHex, { recursive: true })
+    const shortOld = join(shortHex, 'old.txt'); writeAged(shortOld, 'x', 40)
+    // A real session dir alongside them IS swept, proving the sweep still runs.
+    const real = sessionDir(root, 'sess-1'); mkdirSync(real, { recursive: true })
+    const realOld = join(real, 'old.txt'); writeAged(realOld, 'x', 40)
+    await runSweep([active(root)])
+    expect(existsSync(backupOld)).toBe(true)
+    expect(existsSync(shortOld)).toBe(true)
+    expect(existsSync(realOld)).toBe(false)
+  })
+
+  it('prunes an emptied DISCOVERED default root but never the active root', async () => {
+    // A discovered prior-default root (pruneWhenEmpty) whose only session dir is
+    // emptied should have its outer directory removed too; the active root, even
+    // when fully emptied, must survive (the live process still writes into it).
+    const prior = mkdtempSync(join(tmpdir(), 'dsh-spill-'))
+    const priorDir = sessionDir(prior, 'old-sess'); mkdirSync(priorDir, { recursive: true })
+    writeAged(join(priorDir, 'old.txt'), 'x', 40)
+    const activeDir = sessionDir(root, 'sess-1'); mkdirSync(activeDir, { recursive: true })
+    writeAged(join(activeDir, 'old.txt'), 'x', 40)
+    try {
+      await runSweep([{ path: prior, pruneWhenEmpty: true }, active(root)])
+      expect(existsSync(prior)).toBe(false)   // discovered root pruned
+      expect(existsSync(root)).toBe(true)     // active root kept
+      expect(existsSync(activeDir)).toBe(false) // its emptied session dir still pruned
+    } finally {
+      rmSync(prior, { recursive: true, force: true })
+    }
+  })
+
+  it('does NOT prune a discovered root that still holds a fresh file', async () => {
+    const prior = mkdtempSync(join(tmpdir(), 'dsh-spill-'))
+    const priorDir = sessionDir(prior, 'sess'); mkdirSync(priorDir, { recursive: true })
+    writeAged(join(priorDir, 'fresh.txt'), 'y', 1)
+    try {
+      await runSweep([{ path: prior, pruneWhenEmpty: true }])
+      expect(existsSync(prior)).toBe(true)
+      expect(existsSync(priorDir)).toBe(true)
+    } finally {
+      rmSync(prior, { recursive: true, force: true })
+    }
+  })
+
   it('covers the configured root AND discovered default roots (real gatherRoots)', async () => {
     // A prior default root under an isolated fake tmpdir + the configured root.
     // This test drives the REAL gatherRoots/discoverDefaultRoots path by seaming
     // only the tmpdir scan base, not gatherRoots itself.
     const fakeTmp = mkdtempSync(join(tmpdir(), 'dsh-faketmp-'))
-    const priorDefault = join(fakeTmp, `${DEFAULT_ROOT_PREFIX}ABCDEF`)
+    const priorDefault = mkdtempSync(join(fakeTmp, DEFAULT_ROOT_PREFIX))
     const priorDir = sessionDir(priorDefault, 'old-sess')
     mkdirSync(priorDir, { recursive: true })
     const priorOld = join(priorDir, 'old.txt'); writeAged(priorOld, 'x', 40)
@@ -323,6 +391,9 @@ describe('startup cleanup sweep', () => {
       await fiber.dispose()
       expect(existsSync(priorOld)).toBe(false)
       expect(existsSync(cfgOld)).toBe(false)
+      // The discovered prior-default root is pruned; the configured root is kept.
+      expect(existsSync(priorDefault)).toBe(false)
+      expect(existsSync(root)).toBe(true)
     } finally {
       rmSync(fakeTmp, { recursive: true, force: true })
     }
@@ -330,10 +401,11 @@ describe('startup cleanup sweep', () => {
 
   it('de-dups when the active root is itself a discovered default (real gatherRoots)', async () => {
     // The configured root lives directly under the seamed base and matches the
-    // default prefix, so discovery finds it AND it is the active root — the sweep
-    // must run once, not choke on the duplicate.
+    // default shape, so discovery finds it AND it is the active root — the sweep
+    // must run once, not choke on the duplicate, and must NOT prune the active
+    // root even though discovery would otherwise mark a default root prunable.
     const fakeTmp = mkdtempSync(join(tmpdir(), 'dsh-faketmp-'))
-    const activeDefault = join(fakeTmp, `${DEFAULT_ROOT_PREFIX}ACTIVE`)
+    const activeDefault = mkdtempSync(join(fakeTmp, DEFAULT_ROOT_PREFIX))
     const dir = sessionDir(activeDefault, 'sess-1')
     mkdirSync(dir, { recursive: true })
     const old = join(dir, 'old.txt'); writeAged(old, 'x', 40)
@@ -345,6 +417,8 @@ describe('startup cleanup sweep', () => {
       const fiber = await ctx.plugin(Discovering, { root: activeDefault, cleanupPeriodDays: 30 })
       await fiber.dispose()
       expect(existsSync(old)).toBe(false)
+      // Active root survives even though its name matches the discovered shape.
+      expect(existsSync(activeDefault)).toBe(true)
     } finally {
       rmSync(fakeTmp, { recursive: true, force: true })
     }
@@ -357,7 +431,7 @@ describe('startup cleanup sweep', () => {
 
     // Hold the sweep open behind a barrier we control.
     let release!: () => void
-    SweptStore.sweepRoots = [root]
+    SweptStore.sweepRoots = [active(root)]
     SweptStore.barrier = new Promise<void>((resolve) => { release = resolve })
 
     const ctx = new Context()
@@ -380,24 +454,14 @@ describe('startup cleanup sweep', () => {
     // A path that is a FILE, not a directory: readdir(root) throws ENOTDIR. The
     // sweep must log and return, never reject.
     const filePath = join(root, 'not-a-dir'); writeFileSync(filePath, 'x')
-    await expect(sweepSpillRoots({ roots: [filePath], cutoffMs: Date.now(), warn })).resolves.toBeUndefined()
+    await expect(sweepSpillRoots({ roots: [active(filePath)], cutoffMs: Date.now(), warn })).resolves.toBeUndefined()
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to read root'))
   })
 
   it('a nonexistent root is silent (the common no-spill-yet case)', async () => {
     const warn = vi.fn()
-    await sweepSpillRoots({ roots: [join(root, 'never-created')], cutoffMs: Date.now(), warn })
+    await sweepSpillRoots({ roots: [active(join(root, 'never-created'))], cutoffMs: Date.now(), warn })
     expect(warn).not.toHaveBeenCalled()
-  })
-
-  it('a session entry that is a file (not a dir) is reported, not pruned', async () => {
-    const warn = vi.fn()
-    // `session-strayfile` matches the session- prefix but is a regular file, so
-    // readdir on it throws ENOTDIR: reported, left in place (not empty → no prune).
-    const stray = join(root, 'session-strayfile'); writeFileSync(stray, 'x')
-    await sweepSpillRoots({ roots: [root], cutoffMs: Date.now(), warn })
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to read'))
-    expect(existsSync(stray)).toBe(true)
   })
 })
 
@@ -405,10 +469,13 @@ describe('discoverDefaultRoots', () => {
   it('returns only real dsh-spill-* directories, excluding symlinks and non-matches', async () => {
     const base = mkdtempSync(join(tmpdir(), 'dsh-disc-'))
     try {
-      const realRoot = join(base, `${DEFAULT_ROOT_PREFIX}real`); mkdirSync(realRoot)
+      // A real backend-shaped root (dsh-spill-<6>) via mkdtemp — the only match.
+      const realRoot = mkdtempSync(join(base, DEFAULT_ROOT_PREFIX))
       mkdirSync(join(base, 'unrelated-dir'))
-      writeFileSync(join(base, `${DEFAULT_ROOT_PREFIX}file`), 'x') // matches prefix but is a file
-      symlinkSync(realRoot, join(base, `${DEFAULT_ROOT_PREFIX}link`)) // matches prefix but is a symlink
+      // Names of the EXACT default shape that must still be excluded because they
+      // are not real directories the backend could have created.
+      writeFileSync(join(base, `${DEFAULT_ROOT_PREFIX}file01`), 'x') // matches shape but is a file
+      symlinkSync(realRoot, join(base, `${DEFAULT_ROOT_PREFIX}link01`)) // matches shape but is a symlink
       const found = await discoverDefaultRoots(() => {}, base)
       expect(found).toEqual([realRoot])
     } finally {
