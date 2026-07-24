@@ -1,5 +1,7 @@
 # Sessions
 
+English | [中文](session.zh.md)
+
 The in-memory, event-sourced model of [dsh-session](../../packages/core/session). A `Session` is an **append-only log** of typed `SessionEvent`s — the single source of truth for an agent's whole interaction history. The LLM message history is *derived* from the log, never stored separately; replay is re-derivation from the same events. How the log is made **durable** (the persistence seam, backends, crash recovery) is the sibling concern on [persistence.md](persistence.md).
 
 Source: [`packages/core/session/src/types.ts`](../../packages/core/session/src/types.ts)
@@ -14,7 +16,7 @@ The append-only event types. Merge-extensible: a plugin declares extra event typ
  * direct human prompt, a synthetic `agent.inject()` context, and mid-turn
  * steering all project into the model transcript as verbatim user-role content;
  * they are told apart by `source` (a non-`user` kind marks injected context),
- * not by event type. `meta` carries durable model-hidden producer state.
+ * not by event type.
  */
 interface PromptMessageData {
   /** Exact model-facing blocks, including any baked prompt-prefix contexts. */
@@ -23,15 +25,6 @@ interface PromptMessageData {
   source: MessageSource
   /** Present only when prompt-prefix contexts were baked into `content`. */
   envelope?: PromptMessageEnvelope
-  /**
-   * Opaque durable JSON state retained on the event but hidden from the model
-   * projection. It is the intended channel for a future framing directive (a
-   * producer declares the frame, a dedicated renderer applies it — see the
-   * deferred note in
-   * ../../../../.agents/notes/implemented/simplification/2026-07-20-unwrap-injected-content-envelopes.md),
-   * so the surface keeps projecting `content` verbatim rather than wrapping it.
-   */
-  meta?: JsonValue
 }
 ```
 
@@ -123,7 +116,7 @@ interface SessionEventMap {
 }
 ```
 
-`PromptMessageData.content` is always the exact model-facing content. When attached context declares `prompt-prefix` placement, AgentLoop concatenates its blocks, a `## My request:` delimiter, and the effective direct prompt into that array. The optional model-hidden `envelope` retains `displayContent` plus ordered prefix-context source/metadata descriptors, so transcript, title, and re-reference consumers can present the human prompt without changing reconstructable history. `displayPromptContent()` performs that selection and falls back to `content` for ordinary and older events.
+`PromptMessageData.content` is always the exact model-facing content. When attached context declares `prompt-prefix` placement, AgentLoop concatenates its blocks, a `## My request:` delimiter, and the effective direct prompt into that array. The optional model-hidden `envelope` retains `displayContent` plus ordered prefix-context sources, so transcript, title, and re-reference consumers can present the human prompt without changing reconstructable history. `displayPromptContent()` performs that selection and falls back to `content` for ordinary and older events.
 
 ### `OutOfBandSessionEventMap` — narrow late-append opt-in
 
@@ -471,7 +464,7 @@ declare class Session {
 - `user/message` → a user message carrying exact `content`; an optional envelope remains log-only display metadata.
 - `assistant/message` → an assistant message with the event's provider/model provenance and optional adapter-private replay state. Raw `assistant/chunk` events are replay/UI data and are **skipped** in derivation (the assembled message is authoritative). An **empty-content** `assistant/message` is also skipped — a max-tokens step cut off with no content still records an `assistant/message` to host its usage/provenance, but a content-less assistant turn must not enter the provider transcript.
 - `tool/result` → a user message carrying a `tool-result` block.
-- `user/message` (injected context, i.e. non-`user` source) → a user-role message carrying its `content` verbatim at its chronological position. Optional JSON `meta` remains in the event log and is never rendered.
+- `user/message` (injected context, i.e. non-`user` source) → a user-role message carrying its `content` verbatim at its chronological position; provenance and domain data live in its typed source.
 - `steering/message` → a user-role message carrying exact `content` at its chronological position; an optional envelope remains log-only display metadata.
 
 Everything else (`turn/*`, `step/*`, plugin-owned `llm/retry`) is structural and does not project into a message. Token accounting reads per-step `assistant/chunk { type: 'usage' }` records and treats `assistant/message.usage` as the committed-step fallback when no usage chunk exists; failed model-request attempts have no assistant message, so their usage chunk is the durable accounting record. An operational error's step number is on `turn/end.reason` for `kind: 'error'`, with normalized `LlmFailure` facts for a final model-request failure and message/code for other live errors. Because this unreleased format intentionally has no compatibility promise, seed/load validation rejects request headers without provider+model and assistant messages without provider/model provenance instead of guessing a route for historical data.
