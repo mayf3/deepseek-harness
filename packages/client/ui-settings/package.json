@@ -25,8 +25,7 @@
   "dshClient": {
     "inject": [
       "@deepseek-ai/dsh-client-runtime",
-      "@deepseek-ai/dsh-client-ui-sidebar",
-      "@deepseek-ai/dsh-client-locale"
+      "@deepseek-ai/dsh-client-ui-sidebar"
     ],
     "platform": "web"
   },
@@ -47,7 +46,6 @@
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
     "@deepseek-ai/dsh-client-runtime": "workspace:^",
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
     "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^",

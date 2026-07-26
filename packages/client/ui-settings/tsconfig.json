@@ -24,9 +24,6 @@
       "path": "../ui-sidebar"
     },
     {
-      "path": "../locale"
-    },
-    {
       "path": "../../support/invariants"
     }
   ]
