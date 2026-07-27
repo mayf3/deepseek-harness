@@ -39,6 +39,9 @@ export interface RpcErrorDetailsMap {
   'workspace-name-conflict': { name: string }
   'workspace-move-invalid': { workspaceId: string; sessionId: SessionId; beforeSessionId?: SessionId }
   'agent-busy': { reason: string }
+  'reference-unavailable': { kind: 'file' | 'session' }
+  'reference-invalid': { reason: string }
+  'reference-failed': { reason: string }
   'internal': {}
 }
 

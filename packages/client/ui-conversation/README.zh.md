@@ -14,6 +14,8 @@
 
 逐 Session UI 状态（选择、普通编辑器草稿、活跃视图）位于已声明的聊天 store（`stores.ts` `createChatStore`）中：apply 构造一个 handle，并将其传给会话、聊天视图和详情注册，因此 Session slot 每个 Session 共享一个实例（选择由聊天视图写入、详情读取），框架拥有实例生命周期与草稿持久化。前端 Session Intent 来自 Session 列表投影；发布后，任何保留的提示词都来自该 Session 的会话快照。组件保持纯粹：框架标准工具包（Session scope 下的 `useSession`／`sessionId`，以及全局 `useSessions`／`useWorkspaces`）和 store 表层（`useStore`／`actions`）会从注册声明自动到达；inject factory 为运行时 Session 操作、发送／停止、标签页、详情和分页贡献普通数据与回调。
 
+普通提交是输入状态机与默认 sink 之间的一项事务。在序列化或 `session.prompt` 等待完成期间，输入框会保留草稿和原子引用 chip；只有宿主接受后才会将它们清除，拒绝后则原样恢复可编辑阶段。回放对提示词封套使用会话包的显示投影；会话引用元数据会把已确认的标签投影为引用 chip，即使后续提示词文本与标签直接相邻也如此，并在直接用户文本下方添加精简的 `引用会话` 来源摘要，而不会暴露准备好的快照 JSON。
+
 `src/client/` 按未来的包拆分组织：`contract/` 是唯一的跨领域共享表层（`slots.ts` slot 声明 + 组合后的 slot props，包括工具行契约、`views.ts` 共享原语、`tool-call-model.ts`）；`skeleton/`、`chat/` 和 `toolviews/`（示例注册方）领域目录只导入 contract 文件，彼此绝不导入；`apply.ts` 是唯一允许导入全部三个领域的组装点。`/client` 导出表层只包含契约：`apply`／`inject`、两个服务类和 `contract/` 类型家族；实现组件（骨架、聊天行）与 store factory 保持内部状态，只能通过 apply 的 slot 注册到达页面（测试通过 `./src/*` 子路径获取它们）。
 
 ## 模型体验

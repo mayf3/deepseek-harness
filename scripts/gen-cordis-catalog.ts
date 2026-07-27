@@ -221,6 +221,7 @@ const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   DomainFacility: 'domain form facility is owned by packages/storage/storage-domain/README.md',
   DomainImpl: 'domain implementation contract is owned by packages/storage/storage-domain/README.md',
   DomainSpec: 'domain declaration contract is owned by packages/storage/storage-domain/README.md',
+  FileReferenceCandidate: 'service-local discovery result is owned by packages/context/file-reference/README.md',
   StorageBackend: 'backend contract is owned by packages/storage/storage/src/backend.ts',
   StorageForms: 'merge-extensible form map is owned by packages/storage/storage/src/index.ts',
   InvariantInstaller: 'service-local contribution contract is owned by packages/support/invariants/README.md',

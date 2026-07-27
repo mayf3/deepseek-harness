@@ -10,7 +10,13 @@ import type { Context } from 'cordis'
 import type { Agent, AgentMessage, AgentMessageId, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
 import type { JsonValue, Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-file-reference'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
+import {
+  formatSessionReferenceMention,
+  parseSessionReferenceText,
+  type SessionReferenceInput,
+} from '@deepseek-ai/dsh-session-reference'
 import { foldSessionTitle } from '@deepseek-ai/dsh-session-title'
 import type { Workspace, WorkspaceRecord } from '@deepseek-ai/dsh-workspace'
 import {
@@ -77,6 +83,21 @@ function ok<T>(request: RpcRequest<unknown>, value: T): RpcResponse<T> {
 /** Wrap an error result echoing the request's rpcId. */
 function err<T>(request: RpcRequest<unknown>, error: RpcError): RpcResponse<T> {
   return { rpcId: request.rpcId, result: { ok: false, error } }
+}
+
+/** Normalize every text block while preserving non-text blocks verbatim. */
+function parseReferencedContent(content: readonly ContentBlock[]): {
+  content: ContentBlock[]
+  references: SessionReferenceInput[]
+} {
+  const references: SessionReferenceInput[] = []
+  const normalized = content.map((block): ContentBlock => {
+    if (block.type !== 'text') return block
+    const parsed = parseSessionReferenceText(block.text)
+    references.push(...parsed.references)
+    return { ...block, text: parsed.text }
+  })
+  return { content: normalized, references }
 }
 
 /** Simple async queue: core callbacks push, the AsyncIterable pulls; abort/return cleans up. */
@@ -645,16 +666,61 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         return ok(request, { events: entries, hasMore: page.hasMore })
       },
 
-      async prompt(request) {
+      async prompt(request, signal) {
         const { sessionId, mode, content } = request.payload
         const found = await agentFor(sessionId)
         if ('error' in found) return err(request, found.error)
         const agent = found.agent
+        let parsed: ReturnType<typeof parseReferencedContent>
+        try {
+          parsed = parseReferencedContent(content)
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'reference-invalid',
+            message: 'invalid session reference',
+            details: { reason: String(error) },
+          })
+        }
+        let acceptedContent = parsed.content
+        let contexts: NonNullable<Parameters<Agent['followup']>[1]>['contexts'] = []
+        if (parsed.references.length > 0) {
+          const sessionReferences = ctx.get('sessionReferences')
+          if (sessionReferences === undefined) {
+            return err(request, {
+              code: 'reference-unavailable',
+              message: 'session reference capability unavailable',
+              details: { kind: 'session' },
+            })
+          }
+          try {
+            const prepared = await sessionReferences.prepare(
+              agent,
+              acceptedContent,
+              parsed.references,
+              signal,
+            )
+            acceptedContent = prepared.content
+            contexts = prepared.contexts
+          } catch (error: unknown) {
+            if (signal?.aborted === true) {
+              return err(request, {
+                code: 'cancelled',
+                message: 'session reference preparation was aborted',
+                details: {},
+              })
+            }
+            return err(request, {
+              code: 'reference-failed',
+              message: 'session reference preparation failed',
+              details: { reason: String(error) },
+            })
+          }
+        }
         // The rpcId rides MessageSource into user/message (merge declaration in api/sessions.ts; provisional correlation).
         const source: MessageSource = { kind: 'user', rpcId: request.rpcId }
         try {
-          if (mode === 'steer') agent.steer(content, { source })
-          else agent.followup(content, { source })
+          if (mode === 'steer') agent.steer(acceptedContent, { source, contexts })
+          else agent.followup(acceptedContent, { source, contexts })
         } catch (error: unknown) {
           // A synchronous throw from steer/followup means disposed or invalid input; surface as agent-busy with the reason attached.
           return err(request, { code: 'agent-busy', message: 'prompt rejected', details: { reason: String(error) } })
@@ -881,6 +947,85 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })
         } catch (error: unknown) {
           return err(request, { code: 'internal', message: `skill listing failed: ${String(error)}`, details: {} })
+        }
+      },
+    },
+
+    references: {
+      async files(request, signal) {
+        const { sessionId, query } = request.payload
+        const found = await agentFor(sessionId)
+        if ('error' in found) return err(request, found.error)
+        const fileReferences = ctx.get('fileReferences')
+        if (fileReferences === undefined) {
+          return err(request, {
+            code: 'reference-unavailable',
+            message: 'file reference capability unavailable',
+            details: { kind: 'file' },
+          })
+        }
+        const effectiveSignal = signal ?? new AbortController().signal
+        try {
+          return ok(request, {
+            items: await fileReferences.list(found.agent, query, effectiveSignal),
+          })
+        } catch (error: unknown) {
+          if (effectiveSignal.aborted) {
+            return err(request, {
+              code: 'cancelled',
+              message: 'file reference listing was aborted',
+              details: {},
+            })
+          }
+          return err(request, {
+            code: 'reference-failed',
+            message: 'file reference listing failed',
+            details: { reason: String(error) },
+          })
+        }
+      },
+
+      async sessions(request, signal) {
+        const { sessionId, query } = request.payload
+        const found = await agentFor(sessionId)
+        if ('error' in found) return err(request, found.error)
+        const sessionReferences = ctx.get('sessionReferences')
+        if (sessionReferences === undefined) {
+          return err(request, {
+            code: 'reference-unavailable',
+            message: 'session reference capability unavailable',
+            details: { kind: 'session' },
+          })
+        }
+        try {
+          const candidates = await sessionReferences.listCandidates(
+            found.agent,
+            query,
+            undefined,
+            signal,
+          )
+          return ok(request, {
+            items: candidates.map(candidate => ({
+              ...candidate,
+              mention: formatSessionReferenceMention({
+                sessionId: candidate.sessionId,
+                label: candidate.label,
+              }),
+            })),
+          })
+        } catch (error: unknown) {
+          if (signal?.aborted === true) {
+            return err(request, {
+              code: 'cancelled',
+              message: 'session reference listing was aborted',
+              details: {},
+            })
+          }
+          return err(request, {
+            code: 'reference-failed',
+            message: 'session reference listing failed',
+            details: { reason: String(error) },
+          })
         }
       },
     },

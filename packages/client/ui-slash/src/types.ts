@@ -1,6 +1,6 @@
 /**
  * Frozen cross-package contract for the input trigger pipeline. Types only —
- * no runtime code. Sources (ui-command / ui-skill / ui-subagent) and the
+ * no runtime code. Sources (ui-command / ui-skill / ui-reference) and the
  * conversation input layer import from here; changes require main-thread
  * arbitration.
  *
@@ -33,6 +33,10 @@ export type PickVia = 'menu' | 'space' | 'enter'
 /** One menu candidate. Pure display data — zero behavior declaration. */
 export interface SlashCandidate {
   readonly name: string
+  /** Source-owned stable value when the display name is not the identity. */
+  readonly value?: string
+  /** Presentation-only heading rendered once for each contiguous section. */
+  readonly section?: string
   readonly description?: string
   readonly icon?: string
   readonly hint?: string
@@ -89,13 +93,15 @@ export interface SubmitOutcome {
 export type PickOutcome =
   | { readonly claim: CommandClaim }
   | { readonly insert: ReferenceInsert }
-  | { readonly text: string }
+  | { readonly text: string; readonly continue?: boolean }
   | 'handled'
   | undefined
 
 /** Candidate request passed to a source. The signal is superseded on query change / menu close. */
 export interface CandidateRequest {
   readonly query: string
+  /** True only for the open `@"path with spaces` grammar. */
+  readonly quoted?: boolean
   readonly position: TriggerPosition
   readonly signal: AbortSignal
 }
@@ -204,6 +210,8 @@ export interface ConsumeTokenRequest {
 export interface InsertTextRequest {
   /** Literal replacement for the trigger token span (e.g. `/name `). */
   readonly text: string
+  /** Re-run trigger detection after insertion (directory descent). */
+  readonly continue?: boolean
   readonly span: TokenSpan
 }
 

@@ -128,7 +128,7 @@ export default defineConfig({
         'packages/client/ui-command/src/index.ts',
         'packages/client/ui-skill/src/index.ts',
         'packages/client/ui-slash/src/index.ts',
-        'packages/client/ui-subagent/src/index.ts',
+        'packages/client/ui-reference/src/index.ts',
         'packages/client/ui-command/src/client/popup.ts',
         'packages/client/ui-command/src/client/directory.ts',
         'packages/client/ui-command/src/client/service.ts',

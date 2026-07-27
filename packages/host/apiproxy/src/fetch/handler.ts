@@ -30,6 +30,10 @@ import {
 } from '../api/workspace.schema.ts'
 import { commandExecuteRequestSchema, commandListRequestSchema } from '../api/commands.schema.ts'
 import { skillListRequestSchema } from '../api/skills.schema.ts'
+import {
+  referenceFilesRequestSchema,
+  referenceSessionsRequestSchema,
+} from '../api/references.schema.ts'
 
 /**
  * Unary dispatch table, keyed by (and compiler-locked to) RpcMethodMap: a map row without a
@@ -38,7 +42,7 @@ import { skillListRequestSchema } from '../api/skills.schema.ts'
  * Schemas anchor to the Wire<> widening (the repo-wide exactOptionalPropertyTypes accommodation
  * documented on Wire); the dispatch point carries the one Wire→exact cast.
  * Every invoke receives the carrier Request's signal; methods whose contract
- * declares a signal parameter (command.execute) forward it, the rest ignore it.
+ * declares a signal parameter forwards it, the rest ignore it.
  */
 type UnaryRoutes = {
   [K in keyof RpcMethodMap]: {
@@ -51,7 +55,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'session.list': { schema: sessionListRequestSchema, invoke: (api, r) => api.sessions.list(r) },
   'session.create': { schema: sessionCreateRequestSchema, invoke: (api, r) => api.sessions.create(r) },
   'session.history': { schema: sessionHistoryRequestSchema, invoke: (api, r) => api.sessions.history(r) },
-  'session.prompt': { schema: sessionPromptRequestSchema, invoke: (api, r) => api.sessions.prompt(r) },
+  'session.prompt': { schema: sessionPromptRequestSchema, invoke: (api, r, signal) => api.sessions.prompt(r, signal) },
   'session.cancel': { schema: sessionCancelRequestSchema, invoke: (api, r) => api.sessions.cancel(r) },
   'host.describe': { schema: hostDescribeRequestSchema, invoke: (api, r) => api.host.describe(r) },
   'workspace.list': { schema: workspaceListRequestSchema, invoke: (api, r) => api.workspace.list(r) },
@@ -61,6 +65,8 @@ const UNARY_ROUTES: UnaryRoutes = {
   'command.list': { schema: commandListRequestSchema, invoke: (api, r) => api.commands.list(r) },
   'command.execute': { schema: commandExecuteRequestSchema, invoke: (api, r, signal) => api.commands.execute(r, signal) },
   'skill.list': { schema: skillListRequestSchema, invoke: (api, r) => api.skills.list(r) },
+  'reference.files': { schema: referenceFilesRequestSchema, invoke: (api, r, signal) => api.references.files(r, signal) },
+  'reference.sessions': { schema: referenceSessionsRequestSchema, invoke: (api, r, signal) => api.references.sessions(r, signal) },
 }
 
 /** Route lookup that narrows an arbitrary path segment to a map key (single cast point for the string→key refinement). */

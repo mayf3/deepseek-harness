@@ -18,6 +18,52 @@ import { StatsLine, type StatsLineProps } from '../src/client/chat/StatsLine.tsx
 afterEach(cleanup)
 
 describe('MessageItem arms', () => {
+  it('shows referenced-session labels below the direct user prompt', () => {
+    const view = render(
+      <MessageItem node={{
+        kind: 'user',
+        seq: 1,
+        source: { kind: 'user' },
+        content: [{ type: 'text', text: 'compare @Research notes' }],
+        prefixContexts: [{
+          source: { kind: 'plugin', plugin: 'session-reference' },
+          meta: {
+            kind: 'session-reference',
+            references: [
+              { sessionId: 'source', label: 'Research notes' },
+              { sessionId: 'fallback' },
+            ],
+          },
+        }],
+      } as never}
+      />,
+    )
+    expect(view.container.textContent).toContain('compare @Research notes')
+    expect(view.container.querySelector('[data-ref-chip="reference"]')?.textContent).toBe('@Research notes')
+    expect(view.getByText('引用会话 · Research notes, fallback')).toBeTruthy()
+  })
+
+  it('styles a referenced-session label when prompt text follows without whitespace', () => {
+    const view = render(
+      <MessageItem node={{
+        kind: 'user',
+        seq: 2,
+        source: { kind: 'user' },
+        content: [{ type: 'text', text: '@你好这个在讲啥' }],
+        prefixContexts: [{
+          source: { kind: 'plugin', plugin: 'session-reference' },
+          meta: {
+            kind: 'session-reference',
+            references: [{ sessionId: 'source', label: '你好' }],
+          },
+        }],
+      } as never}
+      />,
+    )
+    expect(view.container.textContent).toContain('@你好这个在讲啥')
+    expect(view.container.querySelector('[data-ref-chip="reference"]')?.textContent).toBe('@你好')
+  })
+
   it('steering bubbles carry the interjection badge and non-text rest blocks', () => {
     const view = render(
       <MessageItem node={{

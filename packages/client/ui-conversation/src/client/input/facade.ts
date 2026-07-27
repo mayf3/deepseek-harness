@@ -10,7 +10,7 @@ import type { ClientContext, ObservableSnapshot, SnapshotStore } from '@deepseek
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ArbitrateKey, ArbitrateOutcome, CommandClaim, ConsumeTokenRequest, PickOutcome,
-  ReferenceInsert, SlashController, TokenSpan,
+  ReferenceInsert, SlashController, SubmitOutcome, TokenSpan,
 } from '@deepseek-ai/dsh-client-ui-slash/client'
 import type {
   EditRange, EditSelection, InputActions, InputEffect, InputNotice, InputState,
@@ -39,7 +39,7 @@ export interface SessionInputDeps {
   /** Queue read face; overlaid onto InputState.queue (absent = empty). */
   queue?: ObservableSnapshot<readonly QueuedMessage[]> | undefined
   /** The plain-message sink (send choreography / materialize fork — the hub owns it). */
-  defaultSink(text: string, mode: 'queue' | 'steer'): void
+  defaultSink(text: string, mode: 'queue' | 'steer', signal: AbortSignal): Promise<SubmitOutcome>
 }
 
 /** Guard tier from the machine phase. */
@@ -95,15 +95,6 @@ export class SessionInputShell implements SessionInput {
    */
   setDraft(text: string, editRange?: EditRange): void {
     this.run(this.core.dispatch({ type: 'draft-changed', draft: text, ...(editRange !== undefined ? { editRange } : {}) }))
-  }
-
-  /**
-   * Clear the draft as a successful-send commit: no undo unit is recorded and
-   * the undo history is cut, so Ctrl/Cmd-Z cannot resurrect sent content
-   * (the command path gets the same discipline from submit-settled success).
-   */
-  commitSend(): void {
-    this.run(this.core.dispatch({ type: 'send-committed' }))
   }
 
   /**
@@ -336,7 +327,7 @@ export class SessionInputShell implements SessionInput {
         return
       }
       case 'default-sink': {
-        this.sinkSerialized(fx.draft, fx.mode)
+        this.sinkSerialized(fx.attempt, fx.draft, fx.mode)
         return
       }
       default:
@@ -351,10 +342,10 @@ export class SessionInputShell implements SessionInput {
    * send — notice + draft and chips retained, never a silent downgrade to
    * the clipboard text. Chip-free drafts skip the async detour.
    */
-  private sinkSerialized(draft: string, mode: 'queue' | 'steer'): void {
+  private sinkSerialized(attempt: SubmitAttempt, draft: string, mode: 'queue' | 'steer'): void {
     const occurrences = this.core.state.occurrences
     if (occurrences.length === 0) {
-      this.deps.defaultSink(draft.trim(), mode)
+      this.settleDefault(attempt, this.deps.defaultSink(draft.trim(), mode, attempt.signal))
       return
     }
     const slash = this.deps.slash?.()
@@ -374,13 +365,44 @@ export class SessionInputShell implements SessionInput {
           cursor = part.offset + 1
         }
         out += draft.slice(cursor)
-        this.deps.defaultSink(out.trim(), mode)
+        this.settleDefault(attempt, this.deps.defaultSink(out.trim(), mode, attempt.signal))
       },
       (error: unknown) => {
         controller.abort()
         if (this.disposed) return
         const message = error instanceof Error ? error.message : String(error)
-        this.notify('error', message)
+        this.run(this.core.dispatch({
+          type: 'submit-settled',
+          attempt,
+          ok: false,
+          message,
+        }))
+      },
+    )
+  }
+
+  private settleDefault(
+    attempt: SubmitAttempt,
+    pending: Promise<SubmitOutcome>,
+  ): void {
+    pending.then(
+      (outcome) => {
+        if (this.dead(attempt)) return
+        this.run(this.core.dispatch({
+          type: 'submit-settled',
+          attempt,
+          ok: outcome.kind === 'success',
+          outcome,
+        }))
+      },
+      (error: unknown) => {
+        if (this.dead(attempt)) return
+        this.run(this.core.dispatch({
+          type: 'submit-settled',
+          attempt,
+          ok: false,
+          message: error instanceof Error ? error.message : String(error),
+        }))
       },
     )
   }

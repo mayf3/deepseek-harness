@@ -167,7 +167,6 @@ export class InputMachine {
       case 'adjudicated': return this.onAdjudicated(ev.attempt, ev.outcome)
       case 'adjudication-failed': return this.onAdjudicationFailed(ev.attempt, ev.message)
       case 'submit-settled': return this.onSubmitSettled(ev)
-      case 'send-committed': return this.onSendCommitted()
       case 'release': return this.onRelease()
       default: return unreachable(ev)
     }
@@ -477,7 +476,9 @@ export class InputMachine {
       this.phase = 'adjudicating'
       return [{ type: 'adjudicate', attempt, draft: this.draft }]
     }
-    return [{ type: 'default-sink', draft: this.draft, mode }]
+    const attempt = this.beginAttempt(mode)
+    this.phase = 'submitting'
+    return [{ type: 'default-sink', attempt, draft: this.draft, mode }]
   }
 
   private onAdjudicated(attempt: SubmitAttempt, outcome: Extract<InputEvent, { type: 'adjudicated' }>['outcome']): InputEffect[] {
@@ -495,11 +496,18 @@ export class InputMachine {
     }
     // 'handled' (source dealt internally), {insert} (no enter-time span
     // semantics), or a miss: all land plain; only the miss flows to the sink.
+    if (outcome === undefined) {
+      this.phase = 'submitting'
+      return [{
+        type: 'default-sink',
+        attempt,
+        draft: attempt.draftSnapshot,
+        mode: flight.mode,
+      }]
+    }
     this.inflight = undefined
     this.phase = 'plain'
-    return outcome === undefined
-      ? [{ type: 'default-sink', draft: attempt.draftSnapshot, mode: flight.mode }]
-      : []
+    return []
   }
 
   private onAdjudicationFailed(attempt: SubmitAttempt, message: string): InputEffect[] {
@@ -529,8 +537,8 @@ export class InputMachine {
         : []
     }
     const text = ev.message ?? ev.outcome?.text ?? 'command failed'
-    // Drift guard: keep the enter-time draft (same claim) only while the
-    // live draft still equals it; user input typed during flight wins.
+    // Keep the same command claim only while the live draft still equals the
+    // enter-time draft; user input typed during flight wins.
     // Claimed re-entry additionally requires the watch to hold — an
     // enter-path snapshot may carry leading whitespace the token never had.
     if (this.draft === flight.attempt.draftSnapshot
@@ -541,19 +549,6 @@ export class InputMachine {
     this.phase = 'plain'
     this.claim = undefined
     return [{ type: 'notice', level: 'error', text }]
-  }
-
-  /** Ordinary send accepted: clear as a commit (no undo unit; sent content
-   *  must not be resurrectable — same discipline as submit-settled success). */
-  private onSendCommitted(): InputEffect[] {
-    this.claim = undefined
-    this.occurrences = []
-    this.adopt('')
-    this.log = []
-    this.redoStack = []
-    this.typingRun = undefined
-    this.paste = undefined
-    return []
   }
 
   private onRelease(): InputEffect[] {

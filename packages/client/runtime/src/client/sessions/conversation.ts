@@ -4,6 +4,7 @@
 // string here (narrow to real brands when convenient).
 
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
+import type { PromptPrefixContext } from '@deepseek-ai/dsh-session/types'
 import type {
   RpcError, SessionId, ToolCallView, ToolResultView,
 } from '@deepseek-ai/dsh-client-connection/client'
@@ -48,6 +49,8 @@ export interface UserMessageNode {
   time: number
   content: readonly ContentBlock[]
   source: unknown
+  /** Model-hidden descriptors for contexts baked ahead of this direct prompt. */
+  prefixContexts?: readonly PromptPrefixContext[]
 }
 
 /** A finalized (or interruption-frozen) assistant message. */
@@ -74,6 +77,8 @@ export interface SteeringMessageNode {
   turn: number
   content: readonly ContentBlock[]
   source: unknown
+  /** Model-hidden descriptors for contexts baked ahead of this direct prompt. */
+  prefixContexts?: readonly PromptPrefixContext[]
 }
 
 /** A context/system injection surfaced in the flow. */

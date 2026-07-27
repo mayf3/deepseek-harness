@@ -22,6 +22,7 @@ function scriptedApi(overrides: {
   host?: Partial<ApiProxy['host']>
   commands?: Partial<ApiProxy['commands']>
   skills?: Partial<ApiProxy['skills']>
+  references?: Partial<ApiProxy['references']>
   events?: Partial<ApiProxy['events']>
   respond?: ApiProxy['respond']
 } = {}): ApiProxy {
@@ -48,6 +49,11 @@ function scriptedApi(overrides: {
       ...overrides.commands,
     },
     skills: { list: r => ok(r, { skills: [] }), ...overrides.skills },
+    references: {
+      files: r => ok(r, { items: [] }),
+      sessions: r => ok(r, { items: [] }),
+      ...overrides.references,
+    },
     events: { mux: () => empty<MuxFrame>(), host: () => empty<HostFrame>(), ...overrides.events },
     respond: overrides.respond ?? (() => Promise.resolve({ accepted: false as const, reason: 'not-pending' as const })),
   }
@@ -87,6 +93,39 @@ describe('unary round trip', () => {
     expect(anchored.result.ok).toBe(true)
     const appended = await c.workspace.insertSessionBefore({ workspaceId: 'w1' as never, sessionId: sid('s1') })
     expect(appended.result.ok).toBe(true)
+  })
+
+  it('routes file and session reference candidates through their wire schemas', async () => {
+    const c = client(scriptedApi({
+      references: {
+        files: r => ok(r, { items: [{ path: 'src/index.ts', kind: 'file' as const }] }),
+        sessions: r => ok(r, {
+          items: [{
+            sessionId: sid('source'),
+            label: 'Research',
+            cwd: '/project',
+            createdAt: 42,
+            mention: '@[Research](dsh-session:InNvdXJjZSI)',
+          }],
+        }),
+      },
+    }))
+    await expect(c.references.files({ sessionId: sid('target'), query: 'src' })).resolves.toMatchObject({
+      result: { ok: true, value: { items: [{ path: 'src/index.ts', kind: 'file' }] } },
+    })
+    await expect(c.references.sessions({ sessionId: sid('target'), query: 'res' })).resolves.toMatchObject({
+      result: {
+        ok: true,
+        value: {
+          items: [{
+            sessionId: 'source',
+            label: 'Research',
+            cwd: '/project',
+            createdAt: 42,
+          }],
+        },
+      },
+    })
   })
 
   it('passes business errors through as 200 + err result, not a throw', async () => {

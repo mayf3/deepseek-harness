@@ -89,6 +89,17 @@
   config:
     root: './.sessions'
 
+- id: session-query-sqlite
+  name: '@deepseek-ai/dsh-session-query-sqlite'
+  config:
+    path: './.sessions/session-query.db'
+
+- id: session-reference
+  name: '@deepseek-ai/dsh-session-reference'
+
+- id: file-reference-local
+  name: '@deepseek-ai/dsh-file-reference-local'
+
 - id: storage
   name: '@deepseek-ai/dsh-storage'
 
@@ -287,7 +298,7 @@
   name: '@deepseek-ai/dsh-client-ui-workspace'
 
 # Input triggers: the '/' | '@' pipeline (ui-slash), the command surface over
-# it (ui-command), and the two reference sources (ui-skill / ui-subagent).
+# it (ui-command), and the two reference sources (ui-skill / ui-reference).
 - id: ui-slash
   name: '@deepseek-ai/dsh-client-ui-slash'
 
@@ -297,8 +308,8 @@
 - id: ui-skill
   name: '@deepseek-ai/dsh-client-ui-skill'
 
-- id: ui-subagent
-  name: '@deepseek-ai/dsh-client-ui-subagent'
+- id: ui-reference
+  name: '@deepseek-ai/dsh-client-ui-reference'
 
 - id: ui-question
   name: '@deepseek-ai/dsh-client-ui-question'

@@ -1,13 +1,16 @@
 /**
- * Host-workspace discovery for TUI `@file` completion. The index contains
- * paths only: selected values remain ordinary prompt text and file contents
- * stay behind the model-facing `read` tool.
+ * Host-workspace discovery for `@file` completion. The index contains paths
+ * only: selected values remain ordinary prompt text and file contents stay
+ * behind the model-facing `read` tool.
  *
- * @module @deepseek-ai/dsh-tui/file-autocomplete
+ * @module @deepseek-ai/dsh-file-reference-local/search
  */
 
 import { lstat, readdir } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference'
+
+export { activeAtToken, formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
 
 /** Default maximum file and directory candidates rendered for one query. */
 export const DEFAULT_FILE_SEARCH_MAX_RESULTS = 20
@@ -16,7 +19,7 @@ export const DEFAULT_FILE_SEARCH_MAX_ENTRIES = 10_000
 /** Directory basenames omitted from traversal unless the deployment overrides them. */
 export const DEFAULT_FILE_SEARCH_EXCLUDED_DIRECTORIES = ['.git', 'node_modules'] as const
 
-/** Resolved limits and exclusions for one TUI workspace index. */
+/** Resolved limits and exclusions for one workspace index. */
 export interface FileSearchConfig {
   /** Maximum ranked candidates returned for one query. */
   maxResults: number
@@ -26,71 +29,16 @@ export interface FileSearchConfig {
   excludedDirectories: readonly string[]
 }
 
-/** One path-only completion candidate inside the session cwd. */
-export interface FileSearchCandidate {
-  /** User-facing path accepted by the normal prompt and filesystem tools. */
-  path: string
-  /** Directories keep completion open; files finish the mention. */
-  kind: 'file' | 'directory'
-}
-
-/** Active `@` token ending at the editor cursor. */
-export interface ActiveAtToken {
-  /** Complete token replaced when the user accepts a completion. */
-  prefix: string
-  /** Path query after `@` or `@"`. */
-  query: string
-  /** Whether the user opened a quoted path. */
-  quoted: boolean
-}
-
-interface IndexedPath extends FileSearchCandidate {}
+interface IndexedPath extends FileReferenceCandidate {}
 
 interface RankedPath {
-  candidate: FileSearchCandidate
+  candidate: FileReferenceCandidate
   score: number
 }
 
 interface IndexGeneration {
   controller: AbortController
   promise: Promise<IndexedPath[]>
-}
-
-/**
- * Extract an `@path` or `@"path with spaces` token at the cursor. An `@`
- * inside another token, such as an email address, is not a completion trigger.
- * @param line - current editor line.
- * @param cursorCol - cursor column within that line.
- * @returns the active token, or `undefined` outside an `@` token.
- */
-export function activeAtToken(line: string, cursorCol: number): ActiveAtToken | undefined {
-  const beforeCursor = line.slice(0, cursorCol)
-  const quoted = /(?:^|\s)(@"([^"]*))$/u.exec(beforeCursor)
-  if (quoted?.[1] !== undefined && quoted[2] !== undefined) {
-    return { prefix: quoted[1], query: quoted[2], quoted: true }
-  }
-  const plain = /(?:^|\s)(@([^\s]*))$/u.exec(beforeCursor)
-  if (plain?.[1] === undefined || plain[2] === undefined) return undefined
-  return { prefix: plain[1], query: plain[2], quoted: false }
-}
-
-/**
- * Format a selected path as prompt text. Whitespace uses Pi's quoted
- * `@"path"` grammar; directories retain a trailing slash so completion can
- * descend another level.
- * @param candidate - selected file or directory.
- * @param preserveQuote - retain an explicitly opened quote even when unnecessary.
- * @returns the insertion value, or `undefined` for a path the editor grammar cannot represent safely.
- */
-export function formatFileMention(
-  candidate: FileSearchCandidate,
-  preserveQuote: boolean,
-): string | undefined {
-  const path = candidate.kind === 'directory' ? `${candidate.path}/` : candidate.path
-  if (/[\u0000-\u001f\u007f-\u009f"]/u.test(path)) return undefined
-  const quoted = preserveQuote || /\s/u.test(path)
-  if (!quoted) return `@${path}`
-  return `@"${path}"`
 }
 
 /**
@@ -125,7 +73,7 @@ export class WorkspaceFileSearch {
    * @param signal - cancels this caller's wait without killing an index shared by a newer query.
    * @returns at most `maxResults` deterministic candidates.
    */
-  async list(rawQuery: string, signal: AbortSignal): Promise<FileSearchCandidate[]> {
+  async list(rawQuery: string, signal: AbortSignal): Promise<FileReferenceCandidate[]> {
     signal.throwIfAborted()
     if (this.disposed) return []
     const query = rawQuery.replaceAll('\\', '/')
@@ -203,12 +151,12 @@ export class WorkspaceFileSearch {
     displayDirectory: string,
     fragment: string,
     signal: AbortSignal,
-  ): Promise<FileSearchCandidate[]> {
+  ): Promise<FileReferenceCandidate[]> {
     if (displayDirectory.split('/').some(segment => this.excludedDirectories.has(segment))) return []
     const absolute = await resolveDisplayDirectory(this.root, displayDirectory, signal)
     if (absolute === undefined) return []
     const entries = await readDirectory(absolute, signal)
-    const candidates: FileSearchCandidate[] = []
+    const candidates: FileReferenceCandidate[] = []
     for (const entry of entries) {
       if (entry.name.startsWith('.') && !fragment.startsWith('.')) continue
       if (entry.isDirectory()) {
@@ -269,10 +217,10 @@ function visibleForGlobalQuery(path: string, query: string): boolean {
 }
 
 function rankCandidates(
-  candidates: readonly FileSearchCandidate[],
+  candidates: readonly FileReferenceCandidate[],
   query: string,
   limit: number,
-): FileSearchCandidate[] {
+): FileReferenceCandidate[] {
   const ranked: RankedPath[] = []
   for (const candidate of candidates) {
     const score = scoreCandidate(candidate, query)
@@ -286,7 +234,7 @@ function rankCandidates(
   return ranked.slice(0, limit).map(entry => entry.candidate)
 }
 
-function scoreCandidate(candidate: FileSearchCandidate, query: string): number | undefined {
+function scoreCandidate(candidate: FileReferenceCandidate, query: string): number | undefined {
   if (query === '') return 0
   const path = candidate.path.toLowerCase()
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -312,7 +260,7 @@ function subsequenceScore(target: string, query: string): number | undefined {
   return Math.max(0, 100 - gap)
 }
 
-function kindRank(kind: FileSearchCandidate['kind']): number {
+function kindRank(kind: FileReferenceCandidate['kind']): number {
   return kind === 'directory' ? 0 : 1
 }
 

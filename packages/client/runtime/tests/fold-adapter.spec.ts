@@ -55,6 +55,39 @@ describe('FoldAdapter', () => {
     expect(result).toMatchObject({ callId: 'c1', call: { name: 'echo', argsRaw: '{"x":1}' }, isError: false })
   })
 
+  it('replays only the direct prompt while retaining referenced-session descriptors', () => {
+    const adapter = new FoldAdapter()
+    const prefixContexts = [{
+      source: { kind: 'plugin', plugin: 'session-reference' },
+      meta: {
+        kind: 'session-reference',
+        version: 1,
+        references: [{ sessionId: 'source', label: 'Research' }],
+      },
+    }]
+    adapter.reset([at(0, {
+      type: 'user/message',
+      surfaceOp: 'append',
+      data: {
+        content: [
+          { type: 'text', text: 'snapshot' },
+          { type: 'text', text: '\n\n## My request:\n' },
+          { type: 'text', text: 'compare @Research' },
+        ],
+        source: { kind: 'user' },
+        envelope: {
+          displayContent: [{ type: 'text', text: 'compare @Research' }],
+          prefixContexts,
+        },
+      },
+    })], 0)
+    expect(adapter.nodes().nodes[0]).toMatchObject({
+      kind: 'user',
+      content: [{ type: 'text', text: 'compare @Research' }],
+      prefixContexts,
+    })
+  })
+
   it('returns call:null for a tool-result whose call fell outside the window', () => {
     const adapter = new FoldAdapter()
     adapter.reset([ev.toolResult(50, 3, 'outside-call', '孤儿结果')], 50)

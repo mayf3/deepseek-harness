@@ -47,7 +47,7 @@ interface BenchOptions {
 
 /** Real machine behind the bar entry: sink spy, no slash pipeline (plain text goes straight to the sink). */
 function bench(over?: BenchOptions) {
-  const sink = vi.fn()
+  const sink = vi.fn(() => Promise.resolve({ kind: 'success' as const }))
   const lex = over?.lexicon
   type ShellDeps = ConstructorParameters<typeof SessionInputShell>[0]
   const shell = new SessionInputShell({
@@ -109,7 +109,7 @@ describe('Enter semantics', () => {
   it('plain Enter submits queue mode through the machine; repeat and empty are suppressed', () => {
     const { textarea, sink } = bench({ draft: 'hello' })
     fireEvent.keyDown(textarea, { key: 'Enter' })
-    expect(sink).toHaveBeenCalledWith('hello', 'queue')
+    expect(sink).toHaveBeenCalledWith('hello', 'queue', expect.any(AbortSignal))
     fireEvent.keyDown(textarea, { key: 'Enter', repeat: true })
     expect(sink).toHaveBeenCalledTimes(1)
     const empty = bench({ draft: '   ' })
@@ -177,7 +177,7 @@ describe('running and lock semantics (queue cut 1)', () => {
     expect(textarea.disabled).toBe(false) // running no longer locks
     fireEvent.change(textarea, { target: { value: '排队消息2' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
-    expect(sink).toHaveBeenCalledWith('排队消息2', 'queue')
+    expect(sink).toHaveBeenCalledWith('排队消息2', 'queue', expect.any(AbortSignal))
     expect(button.getAttribute('aria-label')).toBe('Stop generating')
     fireEvent.click(button)
     expect(stop).toHaveBeenCalledTimes(1)
@@ -193,7 +193,7 @@ describe('running and lock semantics (queue cut 1)', () => {
   it('idle primary sends and disables on empty draft', () => {
     const { button, sink } = bench({ draft: 'go' })
     fireEvent.click(button)
-    expect(sink).toHaveBeenCalledWith('go', 'queue')
+    expect(sink).toHaveBeenCalledWith('go', 'queue', expect.any(AbortSignal))
     const empty = bench()
     expect(empty.button.disabled).toBe(true)
   })

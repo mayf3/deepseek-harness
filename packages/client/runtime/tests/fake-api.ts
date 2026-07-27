@@ -126,6 +126,11 @@ export class FakeApiClient implements IApiClient {
     list: (payload: unknown) => this.record('skill.list', payload, this.onSkillList(payload)),
   }
 
+  readonly references: IApiClient['references'] = {
+    files: (payload: unknown) => this.record('reference.files', payload, Promise.resolve(ok({ items: [] }))),
+    sessions: (payload: unknown) => this.record('reference.sessions', payload, Promise.resolve(ok({ items: [] }))),
+  }
+
   /** When true, streams never fire onOpen (misbehaving-carrier material for the handshake timeout guard). */
   suppressStreamOpen = false
 

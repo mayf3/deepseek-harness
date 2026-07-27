@@ -11,9 +11,9 @@ import { isAbsolute } from 'node:path'
 import { deepFreeze } from '@deepseek-ai/dsh-llm'
 import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
+import type { Message } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionId } from './types.ts'
-import type { CreateSessionOptions, EpochHeader, OutOfBandSessionEventType, PromptMessageData, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType, TurnTrigger } from './types.ts'
+import type { CreateSessionOptions, EpochHeader, OutOfBandSessionEventType, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType, TurnTrigger } from './types.ts'
 import { snapshotJsonValue } from './json.ts'
 import { SurfaceManager } from './surface.ts'
 import type { SessionSurface } from './surface.ts'
@@ -28,15 +28,7 @@ export type { ChunkRow, StorageRecord } from './chunk-rows.ts'
 export type { SessionSurface, SurfaceFoldReplacement, SurfaceFoldResult } from './surface.ts'
 export { foldSurface, isSurfaceEvent, isSurfaceEligibleType } from './surface.ts'
 export { canonicalHeader, foldRequestHeader, headerEquals } from './request-header.ts'
-
-/**
- * Return the human-facing prompt blocks from a durable prompt message.
- * @param data - ordinary or steering prompt event data.
- * @returns the effective direct prompt, excluding baked prefix context.
- */
-export function displayPromptContent(data: PromptMessageData): ContentBlock[] {
-  return data.envelope?.displayContent ?? data.content
-}
+export { displayPromptContent } from './display.ts'
 
 /**
  * Find the latest closed message-triggered turn, excluding injection and

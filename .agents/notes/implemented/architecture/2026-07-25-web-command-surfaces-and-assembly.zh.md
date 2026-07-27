@@ -1,10 +1,10 @@
-# Agent Note: Web 命令业务面与装配（ui-command / ui-skill / ui-subagent）
+# Agent Note: Web 命令业务面与装配（ui-command / ui-skill / ui-reference）
 
 Status: implemented
 
 [English](2026-07-25-web-command-surfaces-and-assembly.md) | 中文
 
-> 范围：命令目录缓存与三型判定（ui-command）、popup 选择流、skill / subagent 两个引用源、fixture 命令路由与装配验收（slash-flow 快照）。承载 wire 见[会话作用域 note](2026-07-25-web-client-session-scope-and-provide-channel.md)；触发/菜单/输入机器见[输入状态机 note](2026-07-25-web-input-machine-and-slash-pipeline.md)。
+> 范围：命令目录缓存与三型判定（ui-command）、popup 选择流、skill（技能）与统一的文件／会话引用源，以及 fixture（测试前置数据）路由与装配验收（slash-flow 快照）。承载 wire 见[会话作用域 note](2026-07-25-web-client-session-scope-and-provide-channel.md)；触发／菜单／输入机器见[输入状态机 note](2026-07-25-web-input-machine-and-slash-pipeline.md)。结构化引用语义由 [Web 文件与会话引用](../feature/2026-07-27-web-file-and-session-references.md)说明。
 
 ## 问题
 
@@ -29,7 +29,7 @@ Status: implemented
 ### 引用源（只见投影 + 自家 apply 闭包的 root ctx）
 
 - **ui-skill**：`skill.list({sessionId})` 按会话寻址（host 从会话 header 解析项目根）；目录缓存按 sessionId 键控 single-flight，`warm` 钩子出生预热、`connection/reset` 全清。pick 产出 text outcome（`/name ` 原文，决策 21）；`lexicon` 从 CatalogFetch 的 settled 快照给名录（未热 `undefined`）。无 match 钩子（引用不进命令裁决）。skill 引用以原文随普通 prompt 走（命令平面之外；tool-skill 不变，session-prefix 目录提供协作关联）。
-- **ui-subagent**：候选零 RPC（sessions.list 快照按 parentId/running 过滤）；pick 产出 text outcome（`@name ` 原文）；`lexicon` 同快照派生（模型侧表示待业务立项）。
+- **ui-reference**：同一个 `@` source 会同时启动宿主支持的文件与会话发现，先渲染文件；带引号的 token 只显示文件；选择目录后继续补全；会话则表示为由宿主规范提及标记支撑的原子 chip。宿主侧快照准备和失败时保留内容的普通提交由对应的[引用 note](../feature/2026-07-27-web-file-and-session-references.md)定义。
 
 ### fixture 命令路由与装配
 
@@ -38,7 +38,7 @@ Status: implemented
 
 ### 装配级验收：slash-flow 快照
 
-`apps/web/tests/slash-flow.snapshot.ts` 钉住用户可见主链（assembled keyless，包 mock 不替代装配转录）：无 session 时 composer 禁用 → 创建 Workspace 并进入已实体化的 blank session → `/` 菜单选 `/echo` leadingInput → 命令执行但 blank 位不翻转、列表仍显示 `New Session` → 首条普通 prompt 成功受理后同一行转正；同一 session-bound textarea 跨 blank → active 保持。`workspace-flow.snapshot.ts` 另钉住 blank 行创建/复用、首讯拒绝回填，以及首讯前切换 Workspace 时 draft 跨 input machine 搬运且旧 blank 行隐藏。
+`apps/web/tests/slash-flow.snapshot.ts` 钉住用户可见主链（assembled keyless，包 mock 不替代装配后的 transcript（文本记录））：无 session 时 composer 禁用 → 创建 Workspace 并进入已实体化的 blank session → 通过 `@` 补全一个目录和文件 → `/` 菜单选 `/echo` leadingInput → 命令执行但 blank 位不翻转、列表仍显示 `New Session` → 首条普通 prompt 成功受理后同一行转正；同一 session-bound textarea 跨 blank → active 保持。fixture 分支会选择一个原子的 `@session` chip。`workspace-flow.snapshot.ts` 另钉住 blank 行创建／复用、首讯拒绝回填，以及首讯前切换 Workspace 时 draft 跨 input machine 搬运且旧 blank 行隐藏。
 
 ## Alternatives considered
 
@@ -47,11 +47,11 @@ Status: implemented
 | prompt 内联派发（命令文本随消息进 host 解析） | 混淆命令/消息平面；命令执行独立于消息队列是既有 host 语义 |
 | skill 物化为 command 的桥 | skill 自有目录；N 笔注册是绕路；标签形式天然避开命令平面 |
 | `skill.invoke` RPC | host 无此操作；skill 引用是随 prompt 的普通文本 |
-| 新 ContentBlock 引用类型 | 全链路成本（adapter/UI/compaction）；文本即真身 + 结构化 occurrence 记录已足够 |
+| 新 ContentBlock 引用类型 | 全链路成本（适配器／UI／压缩）；规范提及文本、原子 composer 状态与宿主准备无需该类型也能保留身份 |
 | client 各包自报命令目录 | host 是唯一真源；client 只读 descriptor，`commands-changed` 推失效 |
 | `requires: 'none' \| 'agent'` 判别轴（agentless 目录 + 双址查询） | 会话恒 agent-backed 后两栖命令无 owner；整轴回退 master 形状，待真需求重开 |
 | 专用 commandresult / commandpanel 坑位 | 结果走 notice；popup 壳是骨架内浮层；富结果卡入台账 |
-| agent-type 目录做 `@` 源 | 无类型注册表；live-session 快照已覆盖 |
+| 浏览器侧 agent 目录做 `@` 源 | 会话引用候选是宿主功能，具有稳定 id 和持久化的源表层；仅存在于浏览器中的运行中子会话 roster 无法提供这些信息 |
 | PickAction/EnterCommand 类族（类继承 pick 产物） | 跨包运行时值破坏 client bundle 纯度；纯数据接口 + 闭包方法等价 |
 
 ## 后果

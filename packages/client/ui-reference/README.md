@@ -1,0 +1,25 @@
+# `@deepseek-ai/dsh-client-ui-reference`
+
+English | [中文](README.zh.md)
+
+Unified Web `@file` and `@session` source. The browser starts `reference.files` and `reference.sessions` Host RPCs together for an unquoted token, keeps the TUI's file-before-session ordering and labels, renders the rows under the non-selectable `文件与文件夹` and `Session 对话` headings, and degrades either failed candidate domain independently. An open `@"…` token searches files only.
+
+File picks insert the natural `@path` text used by the TUI. A file closes completion and adds a trailing space; a directory keeps the menu active at its trailing slash so the user can descend another level. Paths containing whitespace use `@"path with spaces"`, and a quote the user opened explicitly remains quoted.
+
+Session picks insert an atomic composer chip whose hidden `ref` and clipboard representation are the canonical `@[label](dsh-session:…)` mention returned by the Host. The visible chip uses `@label`; serialization never reconstructs identity from that label. Ordinary send delegates the canonical mention to `session.prompt`, where Host-side session-reference preparation owns validation, snapshotting, and model context.
+
+The `/client` export is the plugin body (`apply`/`inject`) only; candidate encoding stays internal to the registration effect.
+
+## Model Experience
+
+Indirectly, through `@deepseek-ai/dsh-file-reference-local` for path guidance and `@deepseek-ai/dsh-session-reference` for prepared session snapshots.
+
+#### KV Cache effect
+
+Candidate browsing has no model effect. A selected file or session changes only the new user-message suffix and any Host-prepared session-reference prefix attached to that message; earlier target history remains unchanged.
+
+## Known Limitations and Deferred Work
+
+- **Candidate failure is intentionally quiet** — one unavailable or failed reference RPC yields no rows for that domain, while prompt submission still reports session-reference preparation failures through the ordinary send path.
+- **No browser-side file scan** — Web completion requires a mounted Host `ctx.fileReferences` provider; the browser cannot fall back to its own filesystem.
+- **Session search remains metadata-only** — discovery filters session id and cwd through `ctx.sessionReferences`; title and transcript full-text search are not available.

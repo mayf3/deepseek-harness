@@ -261,6 +261,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'fileReferences',
+    summary: 'Host capability for cancellable file-reference discovery.',
+    methods: [
+      {
+        signature: 'abstract list( agent: Agent, query: string, signal: AbortSignal, ): Promise<FileReferenceCandidate[]>',
+        jsDoc: '/**\n * List file and directory candidates for one agent\'s working directory.\n * @param agent - target agent whose session cwd bounds discovery.\n * @param query - path text following `@` or `@"`.\n * @param signal - caller cancellation.\n * @returns deterministic path-only candidates.\n */',
+      },
+    ],
+  },
+  {
     key: 'fs',
     summary: 'Abstract filesystem provider.',
     methods: [
@@ -1602,6 +1612,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FileLocation',
     declaration: 'export interface FileLocation {\n    path: string;\n    line?: number;\n}',
+  },
+  {
+    name: 'FileReferenceCandidate',
+    declaration: 'export interface FileReferenceCandidate {\n    path: string;\n    kind: \'file\' | \'directory\';\n}',
   },
   {
     name: 'FinishReason',

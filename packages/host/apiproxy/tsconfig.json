@@ -24,6 +24,9 @@
       "path": "../../core/agent"
     },
     {
+      "path": "../../context/file-reference"
+    },
+    {
       "path": "../../core/session"
     },
     {
@@ -31,6 +34,9 @@
     },
     {
       "path": "../../session-persistence/session-persistence"
+    },
+    {
+      "path": "../../context/session-reference"
     },
     {
       "path": "../../session-title/session-title"

@@ -72,9 +72,10 @@ describe('input-machine: plain × enter', () => {
   it('non-command text falls to the default sink with the given mode', () => {
     const m = new InputMachine()
     m.dispatch({ type: 'draft-changed', draft: 'hello world' })
-    expect(m.dispatch({ type: 'enter', mode: 'steer' }))
-      .toEqual([{ type: 'default-sink', draft: 'hello world', mode: 'steer' }])
-    expect(m.state.phase).toBe('plain')
+    const effect = effectAt(m.dispatch({ type: 'enter', mode: 'steer' }), 0, 'default-sink')
+    expect(effect).toMatchObject({ draft: 'hello world', mode: 'steer' })
+    expect(effect.attempt.draftSnapshot).toBe('hello world')
+    expect(m.state.phase).toBe('submitting')
   })
 
   it('leading "/" enters adjudicating with a minted attempt carrying the draft snapshot', () => {
@@ -97,8 +98,8 @@ describe('input-machine: plain × enter', () => {
   it('a non-whitespace prefix before "/" is not leading — default sink', () => {
     const m = new InputMachine()
     m.dispatch({ type: 'draft-changed', draft: '第一行\n/goal x' })
-    expect(m.dispatch({ type: 'enter', mode: 'queue' }))
-      .toEqual([{ type: 'default-sink', draft: '第一行\n/goal x', mode: 'queue' }])
+    expect(effectAt(m.dispatch({ type: 'enter', mode: 'queue' }), 0, 'default-sink'))
+      .toMatchObject({ draft: '第一行\n/goal x', mode: 'queue' })
   })
 })
 
@@ -127,9 +128,12 @@ describe('input-machine: adjudication outcomes', () => {
   it('undefined outcome falls back to the default sink preserving the enter mode', () => {
     const m = new InputMachine()
     const attempt = enterAdjudicating(m, '/unknown thing', 'steer')
-    expect(m.dispatch({ type: 'adjudicated', attempt, outcome: undefined }))
-      .toEqual([{ type: 'default-sink', draft: '/unknown thing', mode: 'steer' }])
-    expect(m.state.phase).toBe('plain')
+    expect(effectAt(
+      m.dispatch({ type: 'adjudicated', attempt, outcome: undefined }),
+      0,
+      'default-sink',
+    )).toMatchObject({ attempt, draft: '/unknown thing', mode: 'steer' })
+    expect(m.state.phase).toBe('submitting')
   })
 
   it("'handled' lands plain with zero effects (popup shell path)", () => {

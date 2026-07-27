@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // apply inject factories exercised end to end against the terminal thin
 // shape: the conversation surface (views triple, send choreography incl.
-// optimistic clear + failure restore THROUGH the declared store actions,
+// accepted-settlement clear + failure retention THROUGH the declared store actions,
 // openDetails = select action + layout orchestration, sessions.open
 // navigation), and the closeDetails details surface. Complements
 // chat-apply.spec.tsx (registration)
@@ -185,7 +185,7 @@ describe('conversation slot inject surface', () => {
     expect(b.sessionFake.loadOlder).toHaveBeenCalledTimes(1)
   })
 
-  it('the provide-channel input face submits through the machine sink: trim, optimistic clear, failure restore without clobber', async () => {
+  it('the provide-channel input face submits through the machine sink: trim, accepted clear, failure retention without clobber', async () => {
     const b = await bench()
     const { injected } = b.conversationSurface(ROOT)
     const { state, actions } = b.inputSurface(ROOT)
@@ -194,20 +194,27 @@ describe('conversation slot inject surface', () => {
     actions.submit('queue')
     expect(b.sessionFake.prompt).not.toHaveBeenCalled()
     expect(state.getSnapshot().draft).toBe('   ')
-    // Success: cleared and stays cleared.
+    // Success: retained while the host decides, then cleared on acceptance.
     actions.setDraft('hello')
     actions.submit('queue')
-    expect(state.getSnapshot().draft).toBe('')
-    await Promise.resolve()
-    expect(b.sessionFake.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'hello' }], 'queue')
-    // Failure: restored (draft still empty when the rejection lands).
+    expect(state.getSnapshot().draft).toBe('hello')
+    await vi.waitFor(() => {
+      expect(state.getSnapshot().draft).toBe('')
+    })
+    expect(b.sessionFake.prompt).toHaveBeenCalledWith(
+      [{ type: 'text', text: 'hello' }],
+      'queue',
+      expect.any(AbortSignal),
+    )
+    // Failure: the original draft remains available for retry.
     b.sessionFake.prompt.mockResolvedValueOnce({ ok: false, error: { code: 'agent-busy', message: 'b' } })
     actions.setDraft('retry me')
     actions.submit('queue')
+    expect(state.getSnapshot().draft).toBe('retry me')
     await vi.waitFor(() => {
       expect(state.getSnapshot().draft).toBe('retry me')
     })
-    // Failure landing after new typing: no clobber (restore fills empty only).
+    // Failure landing after new typing: no clobber.
     b.sessionFake.prompt.mockResolvedValueOnce({ ok: false, error: { code: 'agent-busy', message: 'b' } })
     actions.submit('queue')
     actions.setDraft('typed during flight')

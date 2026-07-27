@@ -27,17 +27,21 @@ function contentText(content: readonly unknown[]): { text: string; rest: unknown
 }
 
 /**
- * Display projection of reference forms in a user bubble (free geometry — no
- * textarea alignment constraint here); everything else stays plain text. The
- * logged model text remains the single truth; this is presentation only. Two
- * shapes decorate: legacy `<skill>name</skill>` spans (pre-decision-21
- * history) and plain-text `/name` / `@name` word-boundary tokens (decision
- * 21: the sent text IS the reference — the bubble uses the same plainest
- * token scan as the composer, minus the lexicon: sent tokens were validated
- * at compose time, so shape alone decorates).
+ * Decorate legacy skill spans, boundary-delimited plain references, and exact
+ * metadata-confirmed session labels in the user bubble. Confirmed labels may
+ * touch following prompt text because their durable metadata disambiguates
+ * the reference boundary. Logged message text remains unchanged.
  */
-function projectUserText(text: string): ReactNode {
-  const re = /<skill>([^<]+)<\/skill>|(^|\s)([/@][\w-]+)(?=\s|$)/g
+function projectUserText(text: string, sessionLabels: readonly string[]): ReactNode {
+  const exactSessions = [...new Set(sessionLabels)]
+    .filter(label => label.length > 0)
+    .sort((left, right) => right.length - left.length)
+    .map(label => label.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'))
+  const sessionPattern = exactSessions.length === 0 ? '' : `@(?:${exactSessions.join('|')})|`
+  const re = new RegExp(
+    `<skill>([^<]+)</skill>|(^|\\s)(${sessionPattern}[/@][\\w-]+(?=\\s|$))`,
+    'gu',
+  )
   const parts: ReactNode[] = []
   let cursor = 0
   let m: RegExpExecArray | null
@@ -47,7 +51,7 @@ function projectUserText(text: string): ReactNode {
     const label = legacy ? `/${m[1]}` : m[3] ?? ''
     if (tokenStart > cursor) parts.push(<MessageText key={cursor} text={text.slice(cursor, tokenStart)} />)
     parts.push(
-      <span key={tokenStart} className={css.refChip} data-ref-chip={label.startsWith('@') ? 'subagent' : 'skill'}>
+      <span key={tokenStart} className={css.refChip} data-ref-chip={label.startsWith('@') ? 'reference' : 'skill'}>
         {label}
       </span>,
     )
@@ -58,17 +62,42 @@ function projectUserText(text: string): ReactNode {
   return <>{parts}</>
 }
 
+function referencedSessionLabels(
+  node: UserMessageNode | SteeringMessageNode,
+): string[] {
+  const labels: string[] = []
+  for (const context of node.prefixContexts ?? []) {
+    const meta = context.meta
+    if (typeof meta !== 'object' || meta === null || Array.isArray(meta)
+      || meta.kind !== 'session-reference' || !Array.isArray(meta.references)) continue
+    for (const reference of meta.references) {
+      if (typeof reference !== 'object' || reference === null || Array.isArray(reference)) continue
+      const label = typeof reference.label === 'string'
+        ? reference.label
+        : typeof reference.sessionId === 'string' ? reference.sessionId : undefined
+      if (label !== undefined) labels.push(label)
+    }
+  }
+  return labels
+}
+
 export const MessageItem = memo(function MessageItem({ node }: MessageItemProps) {
   switch (node.kind) {
     case 'user':
     case 'steering': {
       const { text, rest } = contentText(node.content)
+      const referencedSessions = referencedSessionLabels(node)
       return (
         <div className={css.userRow}>
-          <div className={css.bubble}>
-            {node.kind === 'steering' && <span className={css.badge}>插话</span>}
-            {projectUserText(text)}
-            {rest.map((block, i) => <JsonBlock key={i} label="附加内容块" payload={block} />)}
+          <div className={css.userStack}>
+            <div className={css.bubble}>
+              {node.kind === 'steering' && <span className={css.badge}>插话</span>}
+              {projectUserText(text, referencedSessions)}
+              {rest.map((block, i) => <JsonBlock key={i} label="附加内容块" payload={block} />)}
+            </div>
+            {referencedSessions.length > 0
+              ? <div className={css.referenceSummary}>引用会话 · {referencedSessions.join(', ')}</div>
+              : null}
           </div>
         </div>
       )

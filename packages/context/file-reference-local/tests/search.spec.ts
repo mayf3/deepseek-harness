@@ -6,7 +6,7 @@ import {
   activeAtToken,
   formatFileMention,
   WorkspaceFileSearch,
-} from '../src/file-autocomplete.ts'
+} from '../src/search.ts'
 
 const searches: WorkspaceFileSearch[] = []
 const roots: string[] = []
@@ -48,7 +48,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
-describe('TUI file autocomplete grammar', () => {
+describe('file-reference grammar', () => {
   it('recognizes boundary and quoted mentions without treating emails as references', () => {
     expect(activeAtToken('@src/tu', 7)).toEqual({ prefix: '@src/tu', query: 'src/tu', quoted: false })
     expect(activeAtToken('read @"docs/design n', 20)).toEqual({
@@ -65,6 +65,8 @@ describe('TUI file autocomplete grammar', () => {
     expect(formatFileMention({ path: 'src', kind: 'directory' }, false)).toBe('@src/')
     expect(formatFileMention({ path: 'docs/design notes.md', kind: 'file' }, false))
       .toBe('@"docs/design notes.md"')
+    expect(formatFileMention({ path: 'docs/design notes', kind: 'directory' }, false))
+      .toBe('@"docs/design notes/')
     expect(formatFileMention({ path: 'README.md', kind: 'file' }, true)).toBe('@"README.md"')
     expect(formatFileMention({ path: 'bad\nname', kind: 'file' }, false)).toBeUndefined()
     expect(formatFileMention({ path: 'bad "name".md', kind: 'file' }, false)).toBeUndefined()

@@ -1,16 +1,16 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-client-ui-subagent`.
- * @module @deepseek-ai/dsh-client-ui-subagent/invariant
+ * Package-owned invariant companion for `@deepseek-ai/dsh-client-ui-reference`.
+ * @module @deepseek-ai/dsh-client-ui-reference/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from 'cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-client-ui-subagent'
+const PACKAGE_NAME = '@deepseek-ai/dsh-client-ui-reference'
 
 /** Cordis companion plugin name. */
-export const name = 'client-ui-subagent-invariant'
+export const name = 'client-ui-reference-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 

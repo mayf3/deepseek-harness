@@ -469,6 +469,25 @@ Types: [CompactionResult](../core-data-structures/compaction.md) · [CompactionT
 
 Source: [`packages/compact/compact/src/index.ts:54`](../../packages/compact/compact/src/index.ts)
 
+## `ctx.fileReferences` — `FileReferenceService` (abstract seam)
+
+Host capability for cancellable file-reference discovery.
+
+```ts cordis-catalog
+/**
+ * List file and directory candidates for one agent's working directory.
+ * @param agent - target agent whose session cwd bounds discovery.
+ * @param query - path text following `@` or `@"`.
+ * @param signal - caller cancellation.
+ * @returns deterministic path-only candidates.
+ */
+abstract list( agent: Agent, query: string, signal: AbortSignal, ): Promise<FileReferenceCandidate[]>
+```
+
+Types: [Agent](../core-data-structures/core.md)
+
+Source: [`packages/context/file-reference/src/index.ts:32`](../../packages/context/file-reference/src/index.ts)
+
 ## `ctx.fs` — `FileSystem` (abstract seam)
 
 Abstract filesystem provider. Targets must preserve identity across aliases; reads expose regular UTF-8 text or typed errors, listings are stable and content-free, and mutations are atomic. Optional guards add stale protection without changing the unguarded provider contract.
@@ -1342,7 +1361,7 @@ fork(source: SessionForkSource, boundary?: number, childSessionId?: SessionId): 
 
 Types: [CreateSessionOptions](../core-data-structures/persistence.md) · [OutOfBandSessionEventType](../core-data-structures/session.md) · [Session](../core-data-structures/session.md) · [SessionEvent](../core-data-structures/core.md) · [SessionEventMap](../core-data-structures/session.md) · [SessionId](../core-data-structures/core.md) · [TurnTrigger](../core-data-structures/session.md)
 
-Source: [`packages/core/session/src/index.ts:606`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:598`](../../packages/core/session/src/index.ts)
 
 ## `ctx.sessionTitle` — `SessionTitleService`
 

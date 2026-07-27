@@ -170,12 +170,21 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'The interface supplies exact reads, filters, and traces; its concrete backend adds full-text reconciliation, ranking, snippets, and cursor generations, while the model consumer owns workspace authority and cursor-free rendering.',
   },
   {
+    key: 'fileReferences',
+    pkg: 'file-reference',
+    title: 'Workspace file-reference discovery',
+    mode: 'seam',
+    implementations: ['file-reference-local'],
+    consumers: ['apiproxy'],
+    note: 'The local provider owns one invalidated path index per agent; Host RPC projects its cancellable path candidates to browser reference sources.',
+  },
+  {
     key: 'sessionReferences',
     pkg: 'session-reference',
     title: 'Cross-session snapshot preparation',
     mode: 'core',
-    consumers: ['tui'],
-    note: 'Projects bounded current-surface conversation snapshots into durable untrusted message context; host adapters own mention syntax.',
+    consumers: ['apiproxy', 'tui'],
+    note: 'Projects bounded current-surface conversation snapshots into durable untrusted message context; Host and TUI adapters own mention syntax.',
   },
   {
     key: 'sessionTitle',

@@ -24,6 +24,9 @@
       "path": "../../goal/goal"
     },
     {
+      "path": "../../context/file-reference-local"
+    },
+    {
       "path": "../../core/session"
     },
     {

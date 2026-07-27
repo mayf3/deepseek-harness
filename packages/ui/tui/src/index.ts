@@ -169,21 +169,20 @@ import {
   DEFAULT_FILE_SEARCH_EXCLUDED_DIRECTORIES,
   DEFAULT_FILE_SEARCH_MAX_ENTRIES,
   DEFAULT_FILE_SEARCH_MAX_RESULTS,
+  FILE_REFERENCE_PROMPT,
   formatFileMention,
   WorkspaceFileSearch,
-} from './file-autocomplete.ts'
+} from '@deepseek-ai/dsh-file-reference-local'
 
 export {
   DEFAULT_FILE_SEARCH_EXCLUDED_DIRECTORIES,
   DEFAULT_FILE_SEARCH_MAX_ENTRIES,
   DEFAULT_FILE_SEARCH_MAX_RESULTS,
-} from './file-autocomplete.ts'
+  FILE_REFERENCE_PROMPT,
+} from '@deepseek-ai/dsh-file-reference-local'
 
 export const name = 'ui-tui'
 export const inject = ['agents', 'sessions', 'commands', 'userInteraction', 'tools', 'llm', 'systemPrompt', 'tokenMeter']
-
-/** Model guidance for path-only file references selected through the TUI. */
-export const FILE_REFERENCE_PROMPT = 'Paths prefixed with @ are files explicitly referenced by the user. Use the read tool when their contents are needed; do not claim to have inspected a file before reading it.'
 
 /** Interaction and presentation settings for the pi-tui terminal mode. */
 export interface TuiConfig {

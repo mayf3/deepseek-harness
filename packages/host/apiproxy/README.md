@@ -14,7 +14,9 @@ The mux stream projects the latest log-backed title as a validated `session/titl
 
 Workspace and Session lists are separate reconnect baselines. `workspace.create` creates a unique name or adopts an existing directory, `session.create` accepts an optional preallocated Session id, and `host/workspace-changed` plus `host/session-added` carry committed increments in either arrival order. `SessionSummary.blank` and the `host/session-added` frame carry the derived zero-events bit: clients hide blank sessions and reuse them per workspace, flip blank on the first `host/session-status(running:true)`, and treat `session.list` as the reconnect authority; cold summaries are never blank because lazy persistence keeps never-appended sessions out of `list()`.
 
-The `command.*` and `skill.*` domains expose the host command registry and skill catalog to clients. Every method addresses one session's agent by `sessionId` (a served session always has an Agent; `command.*` resumes cold sessions through the same path as `session.*`, while `skill.list` resolves the project root from the session header without touching the Agent registry). `command.execute` runs a slash-command line host-side and returns a detached result; the carrier's request signal cancels the running handler. `host/commands-changed` is the catalog invalidation frame: clients refetch `command.list` instead of diffing.
+The `command.*`, `skill.*`, and `reference.*` domains expose host command, skill, and reference capabilities to clients. Every method addresses one session's agent by `sessionId` (a served session always has an Agent; `command.*` and `reference.*` resume cold sessions through the same path as `session.*`, while `skill.list` resolves the project root from the session header without touching the Agent registry). `command.execute` runs a slash-command line host-side and returns a detached result; the carrier's request signal cancels the running handler. `reference.files` delegates cancellable path discovery to `ctx.fileReferences`; `reference.sessions` delegates candidate ranking and canonical mention creation to `ctx.sessionReferences`. Missing capabilities fail with domain-specific unavailable codes instead of producing an authoritative empty list. `host/commands-changed` is the command-catalog invalidation frame: clients refetch `command.list` instead of diffing.
+
+`session.prompt` parses canonical session mentions from normalized text blocks and asks `ctx.sessionReferences` to prepare every referenced snapshot before enqueue. Parsing, cancellation, validation, reads, and budget enforcement are one admission transaction: failure enqueues no message, while success passes the returned display content and prompt-prefix contexts together to the agent.
 
 ## Carrier layer (`/client` + root)
 
@@ -22,11 +24,11 @@ The `command.*` and `skill.*` domains expose the host command registry and skill
 
 ## Model Experience
 
-None, as the package defines the client↔host wire contract and carriers; nothing here reaches a model request.
+Indirectly, through `@deepseek-ai/dsh-session-reference`, which prepares canonical session mentions before `session.prompt` enqueues the message.
 
 #### KV Cache effect
 
-None; this package neither assembles nor sends a provider request.
+Candidate RPCs add no tokens. A successful referenced prompt adds only the context prepared by `ctx.sessionReferences`; failure leaves target history unchanged.
 
 ## Known Limitations and Deferred Work
 

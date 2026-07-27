@@ -47,6 +47,9 @@ flowchart LR
   svc_sessionQuery["ctx.sessionQuery<br/>Session reads, traces, filters, and search"]
   pkg_session_reference["session-reference"]
   pkg_tool_session_query["tool-session-query"]
+  pkg_file_reference["file-reference"]
+  svc_fileReferences["ctx.fileReferences<br/>Workspace file-reference discovery"]
+  pkg_file_reference_local["file-reference-local"]
   svc_sessionReferences["ctx.sessionReferences<br/>Cross-session snapshot preparation"]
   pkg_tui["tui"]
   pkg_session_title["session-title"]
@@ -152,6 +155,8 @@ flowchart LR
   pkg_compact --> svc_compact
   pkg_compact_basic --> svc_compact
   pkg_compact_tool_result_prune --> svc_toolResultPrune
+  pkg_file_reference --> svc_fileReferences
+  pkg_file_reference_local --> svc_fileReferences
   pkg_fs --> svc_fs
   pkg_fs_local --> svc_fs
   pkg_fs_sandbox --> svc_fs
@@ -224,6 +229,7 @@ flowchart LR
   svc_codeRuntime --> pkg_tools
   svc_commands --> pkg_tui
   svc_compact --> pkg_compact_basic
+  svc_fileReferences --> pkg_apiproxy
   svc_fs --> pkg_tool_fs
   svc_httpServer --> pkg_connection
   svc_httpServer --> pkg_hmr
@@ -248,6 +254,7 @@ flowchart LR
   svc_sessionPersistence --> pkg_tool_bash
   svc_sessionQuery --> pkg_session_reference
   svc_sessionQuery --> pkg_tool_session_query
+  svc_sessionReferences --> pkg_apiproxy
   svc_sessionReferences --> pkg_tui
   svc_sessions --> pkg_agent
   svc_sessions --> pkg_agent_loop
@@ -305,7 +312,8 @@ flowchart LR
 | `ctx.storageDomain` | `core` | [`storage-domain`](../packages/storage/storage-domain) | - | [`workspace`](../packages/workspace/workspace) | - | Waits for every configured backend, then publishes the domain form as one lifecycle-bound service for typed durable state. |
 | `ctx.workspace` | `core` | [`workspace`](../packages/workspace/workspace) | - | `apiproxy` | - | Owns WorkspaceId-branded records over the domain facility; stable sessionIds accounts drive Host RPC and GUI projections. |
 | `ctx.sessionQuery` | `seam` | [`session-query`](../packages/session-query/session-query) | [`session-query-sqlite`](../packages/session-query/session-query-sqlite) | [`session-reference`](../packages/context/session-reference), [`tool-session-query`](../packages/session-query/tool-session-query) | - | The interface supplies exact reads, filters, and traces; its concrete backend adds full-text reconciliation, ranking, snippets, and cursor generations, while the model consumer owns workspace authority and cursor-free rendering. |
-| `ctx.sessionReferences` | `core` | [`session-reference`](../packages/context/session-reference) | - | [`tui`](../packages/ui/tui) | - | Projects bounded current-surface conversation snapshots into durable untrusted message context; host adapters own mention syntax. |
+| `ctx.fileReferences` | `seam` | [`file-reference`](../packages/context/file-reference) | [`file-reference-local`](../packages/context/file-reference-local) | `apiproxy` | - | The local provider owns one invalidated path index per agent; Host RPC projects its cancellable path candidates to browser reference sources. |
+| `ctx.sessionReferences` | `core` | [`session-reference`](../packages/context/session-reference) | - | `apiproxy`, [`tui`](../packages/ui/tui) | - | Projects bounded current-surface conversation snapshots into durable untrusted message context; Host and TUI adapters own mention syntax. |
 | `ctx.sessionTitle` | `seam` | [`session-title`](../packages/session-title/session-title) | [`session-title-first-message-llm`](../packages/session-title/session-title-first-message-llm), [`session-title-all-messages-llm`](../packages/session-title/session-title-all-messages-llm) | - | - | Owns the deterministic fallback, latest-title fold, and sole optional asynchronous provider registration. |
 | `ctx.systemPrompt` | `core` | [`system-prompt`](../packages/core/system-prompt) | - | [`agent-loop`](../packages/core/agent-loop), [`tools`](../packages/core/tools), [`tool-fs`](../packages/fs/tool-fs), [`tool-pty`](../packages/pty/tool-pty), [`tool-web`](../packages/web/tool-web) | - | Collects prompt sections and model-facing tool schemas for each step. |
 | `ctx.tools` | `core` | [`tools`](../packages/core/tools) | - | [`agent-loop`](../packages/core/agent-loop), [`tool-ask-user`](../packages/ui/tool-ask-user), [`tool-bash`](../packages/bash/tool-bash), [`tool-cordis`](../packages/cordis/tool-cordis), [`tool-fs`](../packages/fs/tool-fs), [`tool-pty`](../packages/pty/tool-pty), [`tool-skill`](../packages/skill/tool-skill), [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-todo`](../packages/todo/tool-todo), [`tool-web`](../packages/web/tool-web) | - | Registers capabilities, owns Code Mode transport, and routes calls through pre-policy, monotonic guards, around dispatch, post-policy, and final-result observation. |

@@ -7,9 +7,17 @@
   justify-content: flex-end;
 }
 
+.userStack {
+  display: flex;
+  max-width: min(525px, 82%);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
 .bubble {
   /* 525px cap inside the 736 column; percentage keeps narrow windows sane. */
-  max-width: min(525px, 82%);
+  max-width: 100%;
   background: var(--dsw-specific-bubble);
   border-radius: 22px;
   /* 44px single-line bubble: 24 line + 10 vertical padding each side. */
@@ -17,6 +25,12 @@
   font-size: 16px;
   line-height: 24px;
   color: var(--dsw-alias-label-primary);
+}
+
+.referenceSummary {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .badge {
@@ -33,8 +47,8 @@
   padding: 2px 0;
 }
 
-/* Reference chip projection inside a user bubble (`<skill>name</skill>` model
-   spans render as chips; free geometry — no textarea pairing here). */
+/* Reference-chip projection inside a user bubble; free geometry means the
+   textarea overlay's metric pairing does not apply here. */
 .refChip {
   display: inline-block;
   margin: 0 2px;

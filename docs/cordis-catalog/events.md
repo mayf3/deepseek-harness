@@ -641,7 +641,7 @@ Creation announcement during session publication. A synchronous throw vetoes and
 
 Types: [Scoped](../core-data-structures/scope.md) · [Session](../core-data-structures/session.md)
 
-Source: [`packages/core/session/src/index.ts:79`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:71`](../../packages/core/session/src/index.ts)
 
 ### `session/disposed` — emit
 
@@ -662,7 +662,7 @@ Emitted once when an announced session leaves the store, including publication r
 
 Types: [Scoped](../core-data-structures/scope.md) · [Session](../core-data-structures/session.md)
 
-Source: [`packages/core/session/src/index.ts:89`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:81`](../../packages/core/session/src/index.ts)
 
 ### `session/event` — emit
 
@@ -685,7 +685,7 @@ Post-commit, fire-and-forget append feed. The listener snapshot resolves before 
 
 Types: [Scoped](../core-data-structures/scope.md) · [Session](../core-data-structures/session.md) · [SessionEvent](../core-data-structures/core.md)
 
-Source: [`packages/core/session/src/index.ts:101`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:93`](../../packages/core/session/src/index.ts)
 
 ### `session/flush` — parallel
 
@@ -706,7 +706,7 @@ Awaited parallel durability checkpoint: every listener runs and the caller await
 
 Types: [Scoped](../core-data-structures/scope.md) · [Session](../core-data-structures/session.md)
 
-Source: [`packages/core/session/src/index.ts:111`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts:103`](../../packages/core/session/src/index.ts)
 
 ## `slash/*`
 
@@ -726,7 +726,7 @@ Applies one command claim to the scoped Input. Dispatched with the session's sco
 'slash/input-begin-command'(request: BeginCommandRequest): true | undefined
 ```
 
-Source: [`packages/client/ui-slash/src/types.ts:220`](../../packages/client/ui-slash/src/types.ts)
+Source: [`packages/client/ui-slash/src/types.ts:228`](../../packages/client/ui-slash/src/types.ts)
 
 ### `slash/input-consume-token` — bail
 
@@ -742,7 +742,7 @@ Consumes one command token after business success (popup settle / menu-pick exec
 'slash/input-consume-token'(request: ConsumeTokenRequest): true | undefined
 ```
 
-Source: [`packages/client/ui-slash/src/types.ts:234`](../../packages/client/ui-slash/src/types.ts)
+Source: [`packages/client/ui-slash/src/types.ts:242`](../../packages/client/ui-slash/src/types.ts)
 
 ### `slash/input-insert-reference` — bail
 
@@ -758,7 +758,7 @@ Inserts one reference into the scoped Input (same carrier routing and applied-tr
 'slash/input-insert-reference'(request: InsertReferenceRequest): true | undefined
 ```
 
-Source: [`packages/client/ui-slash/src/types.ts:227`](../../packages/client/ui-slash/src/types.ts)
+Source: [`packages/client/ui-slash/src/types.ts:235`](../../packages/client/ui-slash/src/types.ts)
 
 ### `slash/input-insert-text` — bail
 
@@ -775,7 +775,7 @@ Replaces the trigger token span with literal text — the plain-text reference p
 'slash/input-insert-text'(request: InsertTextRequest): true | undefined
 ```
 
-Source: [`packages/client/ui-slash/src/types.ts:242`](../../packages/client/ui-slash/src/types.ts)
+Source: [`packages/client/ui-slash/src/types.ts:250`](../../packages/client/ui-slash/src/types.ts)
 
 ## `subagent/*`
 

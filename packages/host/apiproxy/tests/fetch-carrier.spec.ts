@@ -89,6 +89,14 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         return { rpcId: request.rpcId, result: { ok: true, value: { skills: [{ name: 'commit-helper', description: 'Git commits' }] } } }
       },
     },
+    references: {
+      async files(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { items: [] } } }
+      },
+      async sessions(request) {
+        return { rpcId: request.rpcId, result: { ok: true, value: { items: [] } } }
+      },
+    },
     events: {
       mux: (_request, signal) => stream(muxFrames, signal),
       host: (_request, signal) => stream(hostFrames, signal),

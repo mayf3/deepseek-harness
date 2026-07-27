@@ -19,6 +19,10 @@
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
     },
+    "./display": {
+      "types": "./lib/types/display.d.ts",
+      "default": "./lib/types/display.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json",
     "./surface": {

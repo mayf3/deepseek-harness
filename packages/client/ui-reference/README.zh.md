@@ -1,0 +1,25 @@
+# `@deepseek-ai/dsh-client-ui-reference`
+
+[English](README.md) | 中文
+
+统一的 Web `@file` 与 `@session` source。对于未加引号的 token，浏览器会同时启动 `reference.files` 和 `reference.sessions` 宿主 RPC，沿用 TUI 中文件在会话之前的顺序和标签，把各行分别渲染在不可选择的 `文件与文件夹` 和 `Session 对话` 标题下，并让任一候选领域的失败独立降级。尚未闭合的 `@"…` token 只搜索文件。
+
+选择文件会插入 TUI 使用的自然 `@path` 文本。文件会关闭补全并追加一个尾随空格；目录则让菜单在尾部斜杠处保持活跃，用户可以继续进入下一层。包含空白的路径使用 `@"path with spaces"`，用户显式打开的引号会继续保留。
+
+选择会话会插入一个原子的输入框 chip，其隐藏 `ref` 与剪贴板表示均为宿主返回的规范 `@[label](dsh-session:…)` 提及标记。可见 chip 使用 `@label`；序列化永远不会根据该标签重建身份。普通发送会把规范提及标记交给 `session.prompt`，由宿主侧的会话引用准备负责校验、生成快照和模型上下文。
+
+`/client` 只导出插件主体（`apply`／`inject`）；候选编码保留在注册 effect 内部。
+
+## 模型体验
+
+间接影响模型体验：路径指引由 `@deepseek-ai/dsh-file-reference-local` 提供，准备后的会话快照由 `@deepseek-ai/dsh-session-reference` 提供。
+
+#### KV 缓存影响
+
+浏览候选项不会影响模型。选择文件或会话只会改变新用户消息的后缀，以及附加到该消息、由宿主准备的会话引用前缀；目标会话更早的历史保持不变。
+
+## 已知限制与暂缓事项
+
+- **候选失败有意保持静默**：引用 RPC 不可用或失败时，该领域不产生候选行；提示词提交仍会通过普通发送路径报告会话引用准备失败。
+- **浏览器侧不扫描文件**：Web 补全需要挂载宿主 `ctx.fileReferences` 提供方；浏览器无法回退到自身文件系统。
+- **会话搜索仍仅使用元数据**：发现流程通过 `ctx.sessionReferences` 筛选 session id 和 cwd；无法对标题和 transcript（文本记录）进行全文搜索。

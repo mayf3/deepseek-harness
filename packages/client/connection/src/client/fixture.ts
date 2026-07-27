@@ -798,6 +798,36 @@ export function createFixtureApi(options: FixtureOptions = {}): ApiProxy {
         })
       },
     },
+    references: {
+      files: (request) => {
+        const missing = requireSession(request)
+        if (missing !== undefined) return missing
+        const query = request.payload.query.toLocaleLowerCase()
+        const items = [
+          { path: 'notes', kind: 'directory' as const },
+          { path: 'README.md', kind: 'file' as const },
+          { path: 'notes/demo.txt', kind: 'file' as const },
+        ].filter(item => item.path.toLocaleLowerCase().includes(query))
+        return ok(request, { items })
+      },
+      sessions: (request) => {
+        const missing = requireSession(request)
+        if (missing !== undefined) return missing
+        const query = request.payload.query.toLocaleLowerCase()
+        const items = sessions
+          .filter(item => item.sessionId !== request.payload.sessionId)
+          .filter(item => String(item.sessionId).toLocaleLowerCase().includes(query)
+            || item.cwd?.toLocaleLowerCase().includes(query) === true)
+          .map(item => ({
+            sessionId: item.sessionId,
+            label: item.sessionId === sid('fx-beta') ? 'Fixture child session' : String(item.sessionId),
+            ...item.cwd === undefined ? {} : { cwd: item.cwd },
+            createdAt: item.updatedAt,
+            mention: `@[${item.sessionId === sid('fx-beta') ? 'Fixture child session' : String(item.sessionId)}](dsh-session:${btoa(JSON.stringify(item.sessionId)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')})`,
+          }))
+        return ok(request, { items })
+      },
+    },
     events: {
       async *mux(_request, signal) {
         const conn = new FxInbox<MuxFrame>()
@@ -919,6 +949,8 @@ export class FixtureApiClient extends AbstractApiClient {
       // The in-memory execute never blocks, so a never-aborting signal is faithful here.
       case 'command.execute': return this.api.commands.execute(request, new AbortController().signal)
       case 'skill.list': return this.api.skills.list(request)
+      case 'reference.files': return this.api.references.files(request)
+      case 'reference.sessions': return this.api.references.sessions(request)
     }
   }
 

@@ -219,17 +219,23 @@ describe('paging', () => {
 describe('prompt and cancel errors', () => {
   it('sends content through session.prompt; composerPhase steps blank → engaging synchronously at send entry', async () => {
     const { api, session } = makeSession()
+    const prompt = vi.spyOn(api.sessions, 'prompt')
+    const controller = new AbortController()
     // The blank → engaging edge fires before the RPC settles: the first-send
     // flow reads the phase on the session area's first frame to keep the
     // guidance hero from flashing back in.
     expect(session.getSnapshot().composerPhase).toBe('blank')
-    const inFlight = session.prompt([{ type: 'text', text: '要发的' }], 'queue')
+    const inFlight = session.prompt([{ type: 'text', text: '要发的' }], 'queue', controller.signal)
     expect(session.getSnapshot().composerPhase).toBe('engaging')
     const result = await inFlight
     expect(result.ok).toBe(true)
     // Monotone: settlement alone does not step the phase anywhere.
     expect(session.getSnapshot().composerPhase).toBe('engaging')
     expect(api.callsOf('session.prompt')).toMatchObject([{ sessionId: SID, mode: 'queue', content: [{ type: 'text', text: '要发的' }] }])
+    expect(prompt).toHaveBeenCalledWith(
+      { sessionId: SID, mode: 'queue', content: [{ type: 'text', text: '要发的' }] },
+      controller.signal,
+    )
     // First content lands (running turn): engaging → active.
     session.handleRunning(true)
     expect(session.getSnapshot().composerPhase).toBe('active')

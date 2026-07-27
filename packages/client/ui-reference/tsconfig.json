@@ -12,13 +12,16 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../connection"
+    },
+    {
       "path": "../runtime"
     },
     {
       "path": "../ui-slash"
     },
     {
-      "path": "../ui-slots"
+      "path": "../../context/file-reference"
     },
     {
       "path": "../../support/invariants"

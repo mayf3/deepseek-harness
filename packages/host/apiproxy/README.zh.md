@@ -14,7 +14,9 @@ mux 流会在每个已附加会话的订阅基线之后，以及对应的实时�
 
 Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.create` 会创建唯一名称或接纳现有目录，`session.create` 接受可选的预分配 Session id，`host/workspace-changed` 与 `host/session-added` 则以任意到达顺序携带已提交的增量。`SessionSummary.blank` 与 `host/session-added` 帧携带派生的零事件位：客户端隐藏空白会话并按 workspace 复用它们，在首个 `host/session-status(running:true)` 时翻转 blank，并以 `session.list` 作为重连权威；冷会话摘要永远不是空白——惰性持久化让从未追加过事件的会话根本不出现在 `list()` 中。
 
-`command.*` 与 `skill.*` 领域向客户端暴露宿主命令注册表和技能目录。每个方法都通过 `sessionId` 寻址一个会话的 Agent（被服务的会话必有 Agent；`command.*` 经由与 `session.*` 相同的路径恢复冷会话，而 `skill.list` 从会话头解析项目根目录，不触碰 Agent 注册表）。`command.execute` 在宿主侧运行一条斜杠命令行并返回脱耦结果；载体的请求信号可取消正在运行的处理器。`host/commands-changed` 是目录失效帧：客户端重新拉取 `command.list` 而不是做差分。
+`command.*`、`skill.*` 与 `reference.*` 领域向客户端暴露宿主的命令、skill（技能）和引用功能。每个方法都通过 `sessionId` 寻址一个会话的 Agent（被服务的会话必有 Agent；`command.*` 与 `reference.*` 经由与 `session.*` 相同的路径恢复冷会话，而 `skill.list` 从会话头解析项目根目录，不触碰 Agent 注册表）。`command.execute` 在宿主侧运行一条斜杠命令行并返回脱耦结果；载体的请求信号可取消正在运行的处理器。`reference.files` 把可取消的路径发现委托给 `ctx.fileReferences`；`reference.sessions` 把候选排序和规范提及标记的创建委托给 `ctx.sessionReferences`。缺少功能时会以对应领域的 unavailable 错误码失败，而不是产生一个看似权威的空列表。`host/commands-changed` 是命令目录失效帧：客户端重新拉取 `command.list` 而不是做差分。
+
+`session.prompt` 从规范化文本块中解析规范会话提及标记，并要求 `ctx.sessionReferences` 在消息入队前准备每个被引用的快照。解析、取消、校验、读取和预算约束共同构成一个准入事务：失败时不会有消息入队；成功时则把返回的显示内容与提示词前缀上下文一起传给 agent。
 
 ## 载体层（`/client` + 根路径）
 
@@ -22,11 +24,11 @@ Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.cr
 
 ## 模型体验
 
-无。该包定义客户端与宿主间的协议契约和载体，其中没有任何内容会进入模型请求。
+间接影响模型体验：`@deepseek-ai/dsh-session-reference` 会在 `session.prompt` 将消息入队前准备规范会话提及标记。
 
 #### KV 缓存影响
 
-无；该包既不组装也不发送提供方请求。
+候选 RPC 不会增加 token。引用提示词成功后，只会增加 `ctx.sessionReferences` 准备的上下文；失败则不会改变目标历史。
 
 ## 已知限制与延期工作
 
