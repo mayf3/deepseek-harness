@@ -55,36 +55,40 @@ describe('FoldAdapter', () => {
     expect(result).toMatchObject({ callId: 'c1', call: { name: 'echo', argsRaw: '{"x":1}' }, isError: false })
   })
 
-  it('replays only the direct prompt while retaining referenced-session descriptors', () => {
+  it('replays the direct prompt and referenced-session context as separate nodes', () => {
     const adapter = new FoldAdapter()
-    const prefixContexts = [{
-      source: { kind: 'plugin', plugin: 'session-reference' },
-      meta: {
-        kind: 'session-reference',
-        version: 1,
-        references: [{ sessionId: 'source', label: 'Research' }],
-      },
-    }]
-    adapter.reset([at(0, {
-      type: 'user/message',
-      surfaceOp: 'append',
-      data: {
-        content: [
-          { type: 'text', text: 'snapshot' },
-          { type: 'text', text: '\n\n## My request:\n' },
-          { type: 'text', text: 'compare @Research' },
-        ],
-        source: { kind: 'user' },
-        envelope: {
-          displayContent: [{ type: 'text', text: 'compare @Research' }],
-          prefixContexts,
+    adapter.reset([
+      at(0, {
+        type: 'user/message',
+        surfaceOp: 'append',
+        data: {
+          content: [{ type: 'text', text: 'compare @Research' }],
+          source: { kind: 'user' },
         },
-      },
-    })], 0)
+      }),
+      at(1, {
+        type: 'user/message',
+        surfaceOp: 'append',
+        data: {
+          content: [{ type: 'text', text: 'snapshot' }],
+          source: {
+            kind: 'session-reference',
+            version: 1,
+            references: [{ sessionId: 'source', label: 'Research' }],
+          },
+        },
+      }),
+    ], 0)
     expect(adapter.nodes().nodes[0]).toMatchObject({
       kind: 'user',
       content: [{ type: 'text', text: 'compare @Research' }],
-      prefixContexts,
+    })
+    expect(adapter.nodes().nodes[1]).toMatchObject({
+      kind: 'context',
+      source: {
+        kind: 'session-reference',
+        references: [{ sessionId: 'source', label: 'Research' }],
+      },
     })
   })
 

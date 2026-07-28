@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 // Remaining chat branch tails: MessageItem context/unknown/steering arms,
-// StatsLine no-cache join, PendingCard reason strip, AssistantMarkdown
-// single-line reasoning. (Tool-row dispatch tails live with the keyed-slot
-// machinery specs since the tool ring dissolved into renderSlot.)
+// user IconActions, StatsLine no-cache join, PendingCard reason strip,
+// AssistantMarkdown single-line reasoning. (Tool-row dispatch tails live
+// with the keyed-slot machinery specs since the tool ring dissolved into
+// renderSlot.)
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { PendingWait } from '@deepseek-ai/dsh-client-runtime/client'
@@ -25,17 +26,8 @@ describe('MessageItem arms', () => {
         seq: 1,
         source: { kind: 'user' },
         content: [{ type: 'text', text: 'compare @Research notes' }],
-        prefixContexts: [{
-          source: { kind: 'plugin', plugin: 'session-reference' },
-          meta: {
-            kind: 'session-reference',
-            references: [
-              { sessionId: 'source', label: 'Research notes' },
-              { sessionId: 'fallback' },
-            ],
-          },
-        }],
       } as never}
+      sessionLabels={['Research notes', 'fallback']}
       />,
     )
     expect(view.container.textContent).toContain('compare @Research notes')
@@ -50,21 +42,83 @@ describe('MessageItem arms', () => {
         seq: 2,
         source: { kind: 'user' },
         content: [{ type: 'text', text: '@你好这个在讲啥' }],
-        prefixContexts: [{
-          source: { kind: 'plugin', plugin: 'session-reference' },
-          meta: {
-            kind: 'session-reference',
-            references: [{ sessionId: 'source', label: '你好' }],
-          },
-        }],
       } as never}
+      sessionLabels={['你好']}
       />,
     )
     expect(view.container.textContent).toContain('@你好这个在讲啥')
     expect(view.container.querySelector('[data-ref-chip="reference"]')?.textContent).toBe('@你好')
   })
 
-  it('steering bubbles carry the interjection badge and non-text rest blocks', () => {
+  it('user bubbles expose copy / branch / edit actions; copy writes the text', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    render(
+      <MessageItem node={{
+        kind: 'user', seq: 1,
+        content: [{ type: 'text', text: 'hello bubble' }] as never,
+      } as never}
+      />,
+    )
+    expect(screen.getByRole('button', { name: '复制' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '在新对话中分支' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '编辑' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '复制' }))
+    expect(writeText).toHaveBeenCalledWith('hello bubble')
+  })
+
+  it('user copy falls back to execCommand when clipboard.writeText is unavailable', () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    })
+    const exec = vi.fn().mockReturnValue(true)
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: exec,
+    })
+    render(
+      <MessageItem node={{
+        kind: 'user', seq: 1,
+        content: [{ type: 'text', text: 'fallback body' }] as never,
+      } as never}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '复制' }))
+    expect(exec).toHaveBeenCalledWith('copy')
+  })
+
+  it('user copy stays quiet when execCommand throws or is absent', () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    })
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: () => {
+        throw new Error('denied')
+      },
+    })
+    render(
+      <MessageItem node={{
+        kind: 'user', seq: 1,
+        content: [{ type: 'text', text: 'quiet' }] as never,
+      } as never}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '复制' }))
+
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: undefined,
+    })
+    fireEvent.click(screen.getByRole('button', { name: '复制' }))
+  })
+
+  it('steering bubbles carry the interjection badge and non-text rest blocks, without user actions', () => {
     const view = render(
       <MessageItem node={{
         kind: 'steering', seq: 2, turn: 1, source: null,
@@ -75,11 +129,12 @@ describe('MessageItem arms', () => {
     expect(view.getByText('插话')).toBeTruthy()
     expect(view.getByText('steer!')).toBeTruthy()
     expect(view.getByText(/附加内容块/)).toBeTruthy()
+    expect(view.queryByRole('button', { name: '复制' })).toBeNull()
   })
 
   it('context and unknown nodes render their JSON rows', () => {
     const ctxView = render(
-      <MessageItem node={{ kind: 'context', seq: 3, content: [], source: null, meta: { k: 1 } } as never} />,
+      <MessageItem node={{ kind: 'context', seq: 3, content: [], source: null } as never} />,
     )
     expect(ctxView.getByText(/上下文注入/)).toBeTruthy()
     const unknownView = render(

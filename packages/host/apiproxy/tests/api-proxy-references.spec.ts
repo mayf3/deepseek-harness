@@ -5,7 +5,7 @@
  */
 import { Context } from 'cordis'
 import { describe, expect, it, vi } from 'vitest'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { agentEvents, AgentMessageId } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session'
@@ -51,6 +51,7 @@ function stubAgent(ctx: Context) {
   const session = ctx.sessions.create(undefined, { meta: { cwd: '/project' } })
   const followup = vi.fn<Agent['followup']>()
   const steer = vi.fn<Agent['steer']>()
+  const inject = vi.fn<Agent['inject']>()
   const agent = {
     id: session.id,
     session,
@@ -58,11 +59,18 @@ function stubAgent(ctx: Context) {
     ctx,
     followup,
     steer,
+    inject,
     cancel: vi.fn(),
   } as unknown as Agent & {
     followup: typeof followup
     steer: typeof steer
+    inject: typeof inject
   }
+  followup.mockImplementation((input) => {
+    const id = AgentMessageId('reference-prompt')
+    ctx.emit('agent/inbox/enqueue', agent, { id, ...input }, 'queued')
+    return id
+  })
   ctx.agents.register(agent)
   return agent
 }
@@ -136,23 +144,21 @@ describe('referenced prompt preparation', () => {
     const mention = formatSessionReferenceMention({ sessionId: source, label: 'Research' })
     let finish!: () => void
     const context = {
-      source: { kind: 'plugin' as const, plugin: 'session-reference' },
-      content: [{ type: 'text' as const, text: 'snapshot' }],
-      placement: 'prompt-prefix' as const,
-      meta: {
-        kind: 'session-reference',
-        version: 1,
+      source: {
+        kind: 'session-reference' as const,
+        version: 1 as const,
         references: [{ sessionId: source, label: 'Research' }],
       },
+      content: [{ type: 'text' as const, text: 'snapshot' }],
     }
     const prepare = vi.fn(() => new Promise<{
       content: { type: 'text'; text: string }[]
-      contexts: typeof context[]
+      additionalContext: typeof context
     }>((resolve) => {
       finish = () => {
         resolve({
           content: [{ type: 'text', text: 'compare @Research now' }],
-          contexts: [context],
+          additionalContext: context,
         })
       }
     }))
@@ -175,11 +181,65 @@ describe('referenced prompt preparation', () => {
     finish()
     expect(expectOk(await pending)).toEqual({ accepted: true })
     expect(agent.followup).toHaveBeenCalledTimes(1)
-    expect(agent.followup.mock.calls[0]?.[0]).toEqual([
-      { type: 'text', text: 'compare @Research now' },
-    ])
-    expect(agent.followup.mock.calls[0]?.[1]?.source?.kind).toBe('user')
-    expect(agent.followup.mock.calls[0]?.[1]?.contexts).toEqual([context])
+    const sent = agent.followup.mock.calls[0]?.[0]
+    expect(sent).toMatchObject({
+      content: [{ type: 'text', text: 'compare @Research now' }],
+      source: { kind: 'user' },
+    })
+    if (sent === undefined) throw new Error('expected queued prompt')
+    const decision = await agentEvents(ctx, agent).waterfall(
+      'agent/prompt-submit',
+      sent.content,
+      sent.source,
+      signal,
+      () => Promise.resolve({ kind: 'allow' as const }),
+    )
+    expect(decision.kind === 'allow' && decision.additionalContexts).toEqual([context])
+    const replay = await agentEvents(ctx, agent).waterfall(
+      'agent/prompt-submit',
+      sent.content,
+      sent.source,
+      signal,
+      () => Promise.resolve({ kind: 'allow' as const }),
+    )
+    expect(replay.kind === 'allow' && replay.additionalContexts).toBeUndefined()
+  })
+
+  it('injects prepared session context immediately before steering', async () => {
+    const ctx = await harness()
+    const agent = stubAgent(ctx)
+    const source = 'source-session' as SessionId
+    const context = {
+      source: {
+        kind: 'session-reference' as const,
+        version: 1 as const,
+        references: [{ sessionId: source, label: 'Research' }],
+      },
+      content: [{ type: 'text' as const, text: 'snapshot' }],
+    }
+    ctx.provide('sessionReferences', {
+      prepare: () => Promise.resolve({
+        content: [{ type: 'text' as const, text: 'continue @Research' }],
+        additionalContext: context,
+      }),
+    } as never)
+    const api = createApiProxy(ctx, DEFAULTS)
+    const response = await api.sessions.prompt(request({
+      sessionId: agent.id,
+      content: [{
+        type: 'text' as const,
+        text: `continue ${formatSessionReferenceMention({ sessionId: source, label: 'Research' })}`,
+      }],
+      mode: 'steer' as const,
+    }))
+    expect(expectOk(response)).toEqual({ accepted: true })
+    expect(agent.inject).toHaveBeenCalledWith(context)
+    const steered = agent.steer.mock.calls[0]?.[0]
+    expect(steered?.content).toEqual([{ type: 'text', text: 'continue @Research' }])
+    expect(steered?.source.kind).toBe('user')
+    expect(agent.inject.mock.invocationCallOrder[0]).toBeLessThan(
+      agent.steer.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    )
   })
 
   it('rejects malformed mentions and preparation failures without enqueueing any prompt', async () => {

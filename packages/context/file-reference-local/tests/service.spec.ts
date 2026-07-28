@@ -41,6 +41,7 @@ async function stubAgent(
     options: {},
     session,
     status: 'idle',
+    acceptsNextStep: false,
     ctx,
     followup: () => AgentMessageId('followup'),
     queue: () => AgentMessageId('queue'),

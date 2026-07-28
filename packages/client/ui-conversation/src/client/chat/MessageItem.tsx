@@ -1,18 +1,24 @@
-// MessageItem: the four simple node kinds — user bubble (right-aligned),
-// steering (badged bubble), context injection and unknown-surface JSON rows.
-// Props are frozen node slices off the snapshot cache; memo holds across
-// streaming because unchanged nodes keep their references.
+// MessageItem: the four simple node kinds — user bubble (right-aligned, with
+// copy / branch / edit IconActions), steering (badged bubble), context
+// injection and unknown-surface JSON rows. Props are frozen node slices off
+// the snapshot cache; memo holds across streaming because unchanged nodes
+// keep their references.
 
-import { memo } from 'react'
+import { memo, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import type {
   ContextMessageNode, SteeringMessageNode, UnknownSurfaceNode, UserMessageNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import { JsonBlock, MessageText } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  IconBranchOutline16, IconCopyOutline16, IconEditOutline16,
+  JsonBlock, MessageText, Tooltip,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './MessageItem.module.css'
 
 export interface MessageItemProps {
   node: UserMessageNode | SteeringMessageNode | ContextMessageNode | UnknownSurfaceNode
+  /** Durable labels from a neighboring session-reference context event. */
+  sessionLabels?: readonly string[]
 }
 
 function contentText(content: readonly unknown[]): { text: string; rest: unknown[] } {
@@ -26,13 +32,49 @@ function contentText(content: readonly unknown[]): { text: string; rest: unknown
   return { text: texts.join(''), rest }
 }
 
+/** Best-effort clipboard write; rejections stay swallowed (no success chrome). */
+async function writeClipboard(text: string): Promise<void> {
+  // lib.dom types clipboard non-optional, but insecure contexts omit it —
+  // that runtime gap is exactly what this guard detects.
+  /* eslint-disable-next-line @typescript-eslint/no-unnecessary-condition */
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      // Denied permissions / iframe policy.
+    }
+    return
+  }
+  // execCommand('copy') is the only clipboard fallback where the async API
+  // is missing (insecure contexts); deprecated but deliberately retained.
+  /* eslint-disable @typescript-eslint/no-deprecated */
+  const exec = typeof document.execCommand === 'function'
+    ? document.execCommand.bind(document)
+    : undefined
+  if (exec === undefined) return
+  const el = document.createElement('textarea')
+  el.value = text
+  el.setAttribute('readonly', '')
+  el.style.position = 'fixed'
+  el.style.left = '-9999px'
+  document.body.appendChild(el)
+  el.select()
+  try {
+    exec('copy')
+  } catch {
+    // Clipboard unavailable; the button stays idle.
+  }
+  /* eslint-enable @typescript-eslint/no-deprecated */
+  el.remove()
+}
+
 /**
  * Decorate legacy skill spans, boundary-delimited plain references, and exact
  * metadata-confirmed session labels in the user bubble. Confirmed labels may
  * touch following prompt text because their durable metadata disambiguates
  * the reference boundary. Logged message text remains unchanged.
  */
-function projectUserText(text: string, sessionLabels: readonly string[]): ReactNode {
+function projectUserText(text: string, sessionLabels: readonly string[] = []): ReactNode {
   const exactSessions = [...new Set(sessionLabels)]
     .filter(label => label.length > 0)
     .sort((left, right) => right.length - left.length)
@@ -62,41 +104,63 @@ function projectUserText(text: string, sessionLabels: readonly string[]): ReactN
   return <>{parts}</>
 }
 
-function referencedSessionLabels(
-  node: UserMessageNode | SteeringMessageNode,
-): string[] {
-  const labels: string[] = []
-  for (const context of node.prefixContexts ?? []) {
-    const meta = context.meta
-    if (typeof meta !== 'object' || meta === null || Array.isArray(meta)
-      || meta.kind !== 'session-reference' || !Array.isArray(meta.references)) continue
-    for (const reference of meta.references) {
-      if (typeof reference !== 'object' || reference === null || Array.isArray(reference)) continue
-      const label = typeof reference.label === 'string'
-        ? reference.label
-        : typeof reference.sessionId === 'string' ? reference.sessionId : undefined
-      if (label !== undefined) labels.push(label)
-    }
-  }
-  return labels
+/** User-bubble IconActions (figma 659:38820): copy is live; branch/edit are chrome stubs. */
+function UserActions({ text }: { text: string }) {
+  const onCopy = useCallback(() => {
+    void writeClipboard(text)
+  }, [text])
+  return (
+    <div className={css.actions}>
+      <Tooltip label="复制" side="bottom">
+        <button type="button" className={css.action} aria-label="复制" onClick={onCopy}>
+          <IconCopyOutline16 />
+        </button>
+      </Tooltip>
+      <Tooltip label="在新对话中分支" side="bottom">
+        <button type="button" className={css.action} aria-label="在新对话中分支">
+          <IconBranchOutline16 />
+        </button>
+      </Tooltip>
+      <Tooltip label="编辑" side="bottom">
+        <button type="button" className={css.action} aria-label="编辑">
+          <IconEditOutline16 />
+        </button>
+      </Tooltip>
+    </div>
+  )
 }
 
-export const MessageItem = memo(function MessageItem({ node }: MessageItemProps) {
+export const MessageItem = memo(function MessageItem({ node, sessionLabels = [] }: MessageItemProps) {
   switch (node.kind) {
-    case 'user':
-    case 'steering': {
+    case 'user': {
       const { text, rest } = contentText(node.content)
-      const referencedSessions = referencedSessionLabels(node)
       return (
         <div className={css.userRow}>
           <div className={css.userStack}>
             <div className={css.bubble}>
-              {node.kind === 'steering' && <span className={css.badge}>插话</span>}
-              {projectUserText(text, referencedSessions)}
+              {projectUserText(text, sessionLabels)}
               {rest.map((block, i) => <JsonBlock key={i} label="附加内容块" payload={block} />)}
             </div>
-            {referencedSessions.length > 0
-              ? <div className={css.referenceSummary}>引用会话 · {referencedSessions.join(', ')}</div>
+            {sessionLabels.length > 0
+              ? <div className={css.referenceSummary}>引用会话 · {sessionLabels.join(', ')}</div>
+              : null}
+          </div>
+          <UserActions text={text} />
+        </div>
+      )
+    }
+    case 'steering': {
+      const { text, rest } = contentText(node.content)
+      return (
+        <div className={css.userRow}>
+          <div className={css.userStack}>
+            <div className={css.bubble}>
+              <span className={css.badge}>插话</span>
+              {projectUserText(text, sessionLabels)}
+              {rest.map((block, i) => <JsonBlock key={i} label="附加内容块" payload={block} />)}
+            </div>
+            {sessionLabels.length > 0
+              ? <div className={css.referenceSummary}>引用会话 · {sessionLabels.join(', ')}</div>
               : null}
           </div>
         </div>
@@ -105,7 +169,7 @@ export const MessageItem = memo(function MessageItem({ node }: MessageItemProps)
     case 'context':
       return (
         <div className={css.contextRow}>
-          <JsonBlock label="上下文注入" payload={{ content: node.content, meta: node.meta }} />
+          <JsonBlock label="上下文注入" payload={{ content: node.content, source: node.source }} />
         </div>
       )
     default:

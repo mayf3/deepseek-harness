@@ -28,7 +28,6 @@ export type { ChunkRow, StorageRecord } from './chunk-rows.ts'
 export type { SessionSurface, SurfaceFoldReplacement, SurfaceFoldResult } from './surface.ts'
 export { foldSurface, isSurfaceEvent, isSurfaceEligibleType } from './surface.ts'
 export { canonicalHeader, foldRequestHeader, headerEquals } from './request-header.ts'
-export { displayPromptContent } from './display.ts'
 
 /**
  * Find the latest closed message-triggered turn, excluding injection and
@@ -175,6 +174,11 @@ function assertCurrentLlmShape(event: Record<string, unknown>, index: number): v
     const header = record['header']
     const config = typeof header === 'object' && header !== null ? (header as Record<string, unknown>)['config'] : undefined
     if (!hasProviderModel(config)) throw new Error(`seed request/header at index ${index} lacks provider/model`)
+    const reasoningEffort = (config as Record<string, unknown>)['reasoningEffort']
+    if (reasoningEffort !== undefined
+      && (typeof reasoningEffort !== 'string' || reasoningEffort.length === 0)) {
+      throw new Error(`seed request/header at index ${index} has an invalid reasoningEffort`)
+    }
   }
   if (event['type'] === 'assistant/message' && !hasProviderModel(record['provenance'])) {
     throw new Error(`seed assistant/message at index ${index} lacks provider/model provenance`)
@@ -292,6 +296,19 @@ export class Session {
     return this.header.id
   }
 
+  /**
+   * The first seq appended IN THIS PROCESS: the length of the constructor
+   * seed (0 without one). Events below it entered through construction —
+   * replay, fork, or resume — and were never published on the `session/event`
+   * firehose (constructor seeds do not emit), so consumers that replay the
+   * log as a publication substitute (telemetry adoption) start here. Distinct
+   * from `header.seedLength`, the DURABLE fork-lineage boundary: a resumed
+   * session's constructor seed is its full stored log, while its header keeps
+   * the original fork value — this field is the in-process construction fact
+   * and is deliberately not persisted.
+   */
+  readonly firstLiveSeq: number
+
   constructor(id: SessionId, seed?: readonly SessionEvent[], header?: SessionHeader) {
     if (seed) {
       // Validate the seed to the SAME invariants `append` enforces, so a
@@ -324,6 +341,7 @@ export class Session {
         this.log.push(deepFreeze(snapshot))
       }
     }
+    this.firstLiveSeq = this.log.length
     this.header = snapshotSessionHeader(id, header)
   }
 
@@ -528,9 +546,7 @@ export class Session {
     switch (event.type) {
       // Ordinary prompts, injected context, and mid-turn steering project
       // identically in user role: the event's model-facing content stays
-      // verbatim. A prompt envelope is model-hidden display metadata; its
-      // prefix bytes are already present in content. The message's `source`/`meta`
-      // and steering's `turn` are also log-only. Do NOT
+      // verbatim. The message's `source` and steering's `turn` are log-only. Do NOT
       // re-add per-type framing (e.g. `<context>`/`<steering>`) here: framing is
       // caller-owned — a producer bakes it into `content`, as workspace-context
       // does with `<system-reminder>` — or, if reintroduced, must be driven by

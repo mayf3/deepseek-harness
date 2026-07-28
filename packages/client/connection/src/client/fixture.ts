@@ -6,10 +6,10 @@
 // approval/question requests exercise replay and composer takeover with stable rpcIds.
 
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionEvent, SessionId, TodoItem } from '@deepseek-ai/dsh-session/types'
 import type {
   ApiProxy, ClientRequest, ClientResponse, HistoryEntry, HostFrame, MuxFrame, RpcReceipt,
-  RpcRequest, RpcResponse, RpcResult, ServerRequest, ServerResponse, SessionSummary,
+  ModelTarget, RpcRequest, RpcResponse, RpcResult, ServerRequest, ServerResponse, SessionSummary,
   ToolCallView, ToolEventView, ToolResultView, WorkspaceId, WorkspaceView,
 } from './api.ts'
 import type { RequestPayload, ResponseValue, RpcMethodMap } from '@deepseek-ai/dsh-host-apiproxy/api'
@@ -45,6 +45,25 @@ const MARKDOWN_FIXTURE = [
 ].join('\n')
 
 const USER_MARKDOWN_LITERAL = '用户字面量：# 不渲染 `code` [link](https://example.com)'
+
+const DEEPSEEK_REASONING = {
+  efforts: [
+    { id: 'off', name: 'Off' },
+    { id: 'high', name: 'High' },
+    { id: 'max', name: 'Max' },
+  ],
+  defaultEffort: 'high',
+}
+
+const OPENAI_REASONING = {
+  efforts: [
+    { id: 'off', name: 'Off' },
+    { id: 'medium', name: 'Medium' },
+    { id: 'high', name: 'High' },
+    { id: 'max', name: 'Max' },
+  ],
+  defaultEffort: 'medium',
+}
 
 function sid(id: string): SessionId {
   return id as SessionId
@@ -167,6 +186,22 @@ function buildAlphaLog(): SessionEvent[] {
     push({ type: 'step/end', data: { turn, step: 0 } })
     push({ type: 'turn/end', data: { turn, reason: { kind: 'completed' } } })
   }
+  // Turn 65: todo_write sample — the TodoRow toolview in the flow plus the
+  // todo/write snapshot event feeding the TodoPanel plan strip.
+  const fixtureTodos = [
+    { content: '梳理需求', status: 'completed' },
+    { content: '实现 fixture 样本', status: 'in_progress' },
+    { content: '浏览器验收', status: 'pending' },
+  ]
+  const todoArgs = JSON.stringify({ todos: fixtureTodos })
+  toolTurn(65, 'todo_write', todoArgs, 'Updated todo list: 1 pending, 1 in progress, 1 completed.')
+  // The real tool appends the snapshot mid-execution — between tool/call and
+  // tool/result — so the fixture reproduces that exact ordering (the last
+  // toolTurn events run ... tool/call, tool/result, step/end, turn/end).
+  const callIndex = events.length - 4
+  const callTime = events[callIndex]?.time as number
+  events.splice(callIndex + 1, 0, { type: 'todo/write', time: callTime + 400, data: { todos: fixtureTodos } })
+  events.forEach((e, i) => { e.seq = i })
   return events as unknown as SessionEvent[]
 }
 
@@ -281,6 +316,15 @@ function pageOf(
   return { events, hasMore: start > 0 }
 }
 
+/** Current todo projection over the full log (host parallel: latest todo/write, last write wins). */
+function backscanTodos(log: readonly SessionEvent[]): TodoItem[] | undefined {
+  for (let i = log.length - 1; i >= 0; i--) {
+    const event = log[i]
+    if (event !== undefined && event.type === 'todo/write') return event.data.todos
+  }
+  return undefined
+}
+
 interface StreamConn<F> {
   push(envelope: RpcRequest<F>): void
 }
@@ -354,6 +398,10 @@ export function createFixtureApi(options: FixtureOptions = {}): ApiProxy {
     { sessionId: sid('fx-gamma'), updatedAt: Date.now() - 120_000, running: false, blank: false, cwd: '/tmp/fixture' },
   ]
   const logs = new Map<SessionId, SessionEvent[]>([[sid('fx-alpha'), buildAlphaLog()]])
+  const modelTargets = new Map<SessionId, ModelTarget>(sessions.map(session => [
+    session.sessionId,
+    { provider: 'deepseek', model: 'deepseek-v4-flash' },
+  ]))
   const nextTurn = new Map<SessionId, number>([[sid('fx-alpha'), 60]])
   let nextSession = 1
   let nextRpc = 1
@@ -596,6 +644,7 @@ export function createFixtureApi(options: FixtureOptions = {}): ApiProxy {
           sessionId: requestedId ?? sid(`fx-${nextSession++}`), updatedAt: Date.now(), running: false, blank: true, cwd,
         }
         sessions.push(created)
+        modelTargets.set(created.sessionId, { provider: 'deepseek', model: 'deepseek-v4-flash' })
         attachedSessions += 1
         const emitSession = (): void => {
           // Mirrors the host: the frame fires at creation, so blank is constantly true.
@@ -619,12 +668,55 @@ export function createFixtureApi(options: FixtureOptions = {}): ApiProxy {
         const log = logs.get(request.payload.sessionId) ?? []
         // Snapshot at request time, deliver after the transit delay (mirrors a real host under latency).
         const page = pageOf(log, request.payload.beforeSeq, request.payload.maxMessages ?? 50)
+        // Tail page carries the session-level todo projection (host parallel: full-log backscan).
+        const todos = request.payload.beforeSeq === undefined ? backscanTodos(log) : undefined
         const doomed = failNextHistory
         failNextHistory = false
         const delay = historyDelayMs
         if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay))
         if (doomed) throw new Error('fixture: simulated history transport failure')
-        return ok(request, page)
+        return ok(request, { ...page, ...todos === undefined ? {} : { todos } })
+      },
+      models: request => ok(request, {
+        current: modelTargets.get(request.payload.sessionId)
+          ?? { provider: 'deepseek', model: 'deepseek-v4-flash' },
+        groups: [
+          {
+            id: 'deepseek',
+            name: 'DeepSeek',
+            models: [
+              {
+                id: 'deepseek-v4-flash',
+                name: 'DeepSeek-V4-Flash',
+                description: '快速响应',
+                reasoning: DEEPSEEK_REASONING,
+              },
+              {
+                id: 'deepseek-v4-pro',
+                name: 'DeepSeek-V4-Pro',
+                description: '复杂任务',
+                reasoning: DEEPSEEK_REASONING,
+              },
+            ],
+          },
+          {
+            id: 'openai',
+            name: 'OpenAI',
+            models: [{ id: 'gpt-5', name: 'GPT-5', reasoning: OPENAI_REASONING }],
+          },
+        ],
+        failures: [],
+      }),
+      selectModel: (request) => {
+        const selected: ModelTarget = {
+          provider: request.payload.provider,
+          model: request.payload.model,
+          ...request.payload.reasoningEffort === undefined
+            ? {}
+            : { reasoningEffort: request.payload.reasoningEffort },
+        }
+        modelTargets.set(request.payload.sessionId, selected)
+        return ok(request, { selected })
       },
       prompt: (request) => {
         const { sessionId: id, mode, content } = request.payload
@@ -660,7 +752,13 @@ export function createFixtureApi(options: FixtureOptions = {}): ApiProxy {
           turn,
           userText === 'render markdown'
             ? MARKDOWN_FIXTURE
-            : `回声：${userText}。这是 fixture 的流式回复，用于验证打字机增长与定稿切换。`,
+            : userText === 'report model'
+              ? (() => {
+                const target = modelTargets.get(id)
+                return `当前模型：${target?.provider ?? 'unknown'}/${target?.model ?? 'unknown'}`
+                  + (target?.reasoningEffort === undefined ? '' : ` · 推理等级：${target.reasoningEffort}`)
+              })()
+              : `回声：${userText}。这是 fixture 的流式回复，用于验证打字机增长与定稿切换。`,
         )
         return ok(request, { accepted: true as const })
       },
@@ -677,6 +775,7 @@ export function createFixtureApi(options: FixtureOptions = {}): ApiProxy {
     },
     host: {
       describe: request => ok(request, { version: '0.0.0-fixture', cwd: '/tmp/fixture', attachedSessions }),
+      pickDirectory: request => ok(request, { path: null }),
     },
     workspace: {
       list: request => ok(request, { items: workspaces.map(w => ({ ...w })) }),
@@ -722,6 +821,20 @@ export function createFixtureApi(options: FixtureOptions = {}): ApiProxy {
           emitHost({ type: 'host/workspace-changed', workspace: { ...workspace } })
         }
         return ok(request, { workspace: { ...workspace } })
+      },
+      delete: (request) => {
+        const { workspaceId } = request.payload
+        const index = workspaces.findIndex(workspace => workspace.workspaceId === workspaceId)
+        if (index === -1) {
+          return err(request, {
+            code: 'workspace-not-found',
+            message: `no workspace ${workspaceId}`,
+            details: { workspaceId },
+          })
+        }
+        workspaces.splice(index, 1)
+        emitHost({ type: 'host/workspace-removed', workspaceId })
+        return ok(request, { deleted: true as const })
       },
       insertSessionBefore: (request) => {
         const { workspaceId, sessionId, beforeSessionId } = request.payload
@@ -938,12 +1051,16 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'session.list': return this.api.sessions.list(request)
       case 'session.create': return this.api.sessions.create(request)
       case 'session.history': return this.api.sessions.history(request)
+      case 'session.models': return this.api.sessions.models(request)
+      case 'session.selectModel': return this.api.sessions.selectModel(request)
       case 'session.prompt': return this.api.sessions.prompt(request)
       case 'session.cancel': return this.api.sessions.cancel(request)
       case 'host.describe': return this.api.host.describe(request)
+      case 'host.pickDirectory': return this.api.host.pickDirectory(request, new AbortController().signal)
       case 'workspace.list': return this.api.workspace.list(request)
       case 'workspace.create': return this.api.workspace.create(request)
       case 'workspace.rename': return this.api.workspace.rename(request)
+      case 'workspace.delete': return this.api.workspace.delete(request)
       case 'workspace.insertSessionBefore': return this.api.workspace.insertSessionBefore(request)
       case 'command.list': return this.api.commands.list(request)
       // The in-memory execute never blocks, so a never-aborting signal is faithful here.

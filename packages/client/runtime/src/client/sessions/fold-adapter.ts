@@ -8,7 +8,6 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 // go through it — the package root points at lib/index.js (needs a build) which the vite
 // browser bundle cannot resolve; surface.ts has no Node dependencies.
 import { SurfaceManager, isSurfaceEligibleType } from '@deepseek-ai/dsh-session/surface'
-import { displayPromptContent } from '@deepseek-ai/dsh-session/display'
 import type { ToolCallView, ToolEventView, ToolResultView } from '@deepseek-ai/dsh-client-connection/client'
 import type { ConversationNode } from './conversation.ts'
 import { toAssistantBlocks } from './conversation.ts'
@@ -47,15 +46,11 @@ function materializeNode(
         return {
           kind: 'context', seq: event.seq, time: event.time,
           content: event.data.content, source: event.data.source,
-          meta: event.data.meta,
         }
       }
       return {
         kind: 'user', seq: event.seq, time: event.time,
-        content: displayPromptContent(event.data), source: event.data.source,
-        ...event.data.envelope === undefined
-          ? {}
-          : { prefixContexts: event.data.envelope.prefixContexts },
+        content: event.data.content, source: event.data.source,
       }
     case 'assistant/message':
       return {
@@ -66,10 +61,7 @@ function materializeNode(
     case 'steering/message':
       return {
         kind: 'steering', seq: event.seq, time: event.time, turn: event.data.turn,
-        content: displayPromptContent(event.data), source: event.data.source,
-        ...event.data.envelope === undefined
-          ? {}
-          : { prefixContexts: event.data.envelope.prefixContexts },
+        content: event.data.content, source: event.data.source,
       }
     case 'tool/result': {
       const call = callIndex.get(String(event.data.callId))
