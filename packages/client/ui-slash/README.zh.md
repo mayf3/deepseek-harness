@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-输入触发流水线插件：光标处的 `/` 与 `@` 检测、分组候选菜单，以及把 pick 路由到已注册 source。斜杠命令检测沿用其词边界与 guard tier 规则；`@` 使用 TUI 的共享语法，只会在输入开头或空白后打开，也能识别尚未闭合的 `@"path with spaces` token。`ctx.slash` 拥有 source roster，并按会话 scope（`sessionOf`）各解析一个 `SlashController`；会话领域的接线层在 controller 上驱动 `track`／`arbitrate`／`onSpace`／`adjudicate`。source 每次调用收到一个 `ClientSessionContext` 投影——会话恒为 agent-backed，因此投影只含会话身份，roster 在 scope 出生时预热一次。流水线对命令零知识：空格／回车裁决按注册序轮询可选的 `matchSpace`／`matchEnter` 钩子，第一个非 undefined 的应答胜出。
+输入触发流水线插件：光标处的 `/` 与 `@` 检测、分组候选菜单，以及把 pick 路由到已注册 source。斜杠命令检测沿用其词边界与 guard tier 规则；`@` 使用 TUI 的共享语法，只会在输入开头或空白后打开，也能识别尚未闭合的 `@"path with spaces` token。`ctx.slash` 拥有 source roster，并按会话 scope（`sessionOf`）各解析一个 `SlashController`；会话领域的接线层在 controller 上驱动 `track`／`arbitrate`／`onSpace`／`adjudicate`。source 每次调用收到一个 `ClientSessionContext` 投影——会话恒为 agent-backed，因此投影只含会话身份。source 在它能触达的每个会话 controller 中都会被预热：scope 出生时在场的 roster 随 controller 构造预热，晚于此注册的 source 由注册动作本身预热进每个活 controller。`lexicon` 名录在预热后仍会变化的 source 实现 `subscribeLexicon(session, listener)`；controller 每收到通知就重拉，并把聚合结果经其 `lexicon` snapshot store 发布。流水线对命令零知识：空格／回车裁决按注册序轮询可选的 `matchSpace`／`matchEnter` 钩子，第一个非 undefined 的应答胜出。
 
 分层：`src/core/`（T2）是纯内核——`detectTrigger`、`menuReduce`／`seedGroups`／`MENU_CLOSED`、`exactMatch`，零 React／DOM／cordis；`src/client/service.ts` 是壳层，把内核接到菜单快照 store、逐 hit 候选拉取（以 generation 把关、后继请求经 `AbortSignal` 取代旧请求、失败的 source 静默丢弃并留一条 console 记录）和三条 pick 路径上。`src/types.ts` 与两个 `contract.ts` 文件是冻结的跨包契约（设计 v4 §5.1）；变更需经主线程仲裁。
 

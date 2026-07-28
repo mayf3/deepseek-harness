@@ -28,7 +28,7 @@ Status: implemented
 
 ### 引用源（只见投影 + 自家 apply 闭包的 root ctx）
 
-- **ui-skill**：`skill.list({sessionId})` 按会话寻址（host 从会话 header 解析项目根）；目录缓存按 sessionId 键控 single-flight，`warm` 钩子出生预热、`connection/reset` 全清。pick 产出 text outcome（`/name ` 原文，决策 21）；`lexicon` 从 CatalogFetch 的 settled 快照给名录（未热 `undefined`）。无 match 钩子（引用不进命令裁决）。skill 引用以原文随普通 prompt 走（命令平面之外；tool-skill 不变，session-prefix 目录提供协作关联）。
+- **ui-skill**：`skill.list({sessionId})` 按会话寻址（host 从会话 header 解析项目根）；目录缓存按 sessionId 键控 single-flight，`warm` 钩子出生预热、`connection/reset` 全清。pick 产出 text outcome（`/name ` 原文，决策 21）；`lexicon` 从 CatalogFetch 的 settled 快照给名录（未热 `undefined`），`subscribeLexicon` 在 settle 与失效时按会话通知监听者。无 match 钩子（引用不进命令裁决）。skill 引用以原文随普通 prompt 走（命令平面之外；tool-skill 不变，session-prefix 目录提供协作关联）。
 - **ui-reference**：同一个 `@` source 会同时启动宿主支持的文件与会话发现，先渲染文件；带引号的 token 只显示文件；选择目录后继续补全；会话则表示为由宿主规范提及标记支撑的原子 chip。宿主侧快照准备和失败时保留内容的普通提交由对应的[引用 note](../feature/2026-07-27-web-file-and-session-references.md)定义。
 
 ### fixture 命令路由与装配
