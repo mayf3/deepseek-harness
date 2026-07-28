@@ -79,9 +79,9 @@ function projectUserText(text: string, sessionLabels: readonly string[] = []): R
     .filter(label => label.length > 0)
     .sort((left, right) => right.length - left.length)
     .map(label => label.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'))
-  const sessionPattern = exactSessions.length === 0 ? '' : `@(?:${exactSessions.join('|')})|`
+  const sessionPattern = exactSessions.length === 0 ? '(?!)' : `@(?:${exactSessions.join('|')})`
   const re = new RegExp(
-    `<skill>([^<]+)</skill>|(^|\\s)(${sessionPattern}[/@][\\w-]+(?=\\s|$))`,
+    `<skill>([^<]+)</skill>|(^|\\s)(?:((?:${sessionPattern})+)|([/@][\\w-]+(?=\\s|$)))`,
     'gu',
   )
   const parts: ReactNode[] = []
@@ -90,8 +90,23 @@ function projectUserText(text: string, sessionLabels: readonly string[] = []): R
   while ((m = re.exec(text)) !== null) {
     const legacy = m[1] !== undefined
     const tokenStart = legacy ? m.index : m.index + (m[2]?.length ?? 0)
-    const label = legacy ? `/${m[1]}` : m[3] ?? ''
     if (tokenStart > cursor) parts.push(<MessageText key={cursor} text={text.slice(cursor, tokenStart)} />)
+    const sessionRun = m[3]
+    if (sessionRun !== undefined) {
+      const sessionRe = new RegExp(sessionPattern, 'gu')
+      let session: RegExpExecArray | null
+      while ((session = sessionRe.exec(sessionRun)) !== null) {
+        const start = tokenStart + session.index
+        parts.push(
+          <span key={start} className={css.refChip} data-ref-chip="reference">
+            {session[0]}
+          </span>,
+        )
+      }
+      cursor = tokenStart + sessionRun.length
+      continue
+    }
+    const label = legacy ? `/${m[1]}` : m[4] ?? ''
     parts.push(
       <span key={tokenStart} className={css.refChip} data-ref-chip={label.startsWith('@') ? 'reference' : 'skill'}>
         {label}

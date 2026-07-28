@@ -16,7 +16,7 @@ The file capability follows the three-package seam: `@deepseek-ai/dsh-file-refer
 
 A session pick is an atomic composer reference. Its visible label is presentation, while its hidden value and clipboard form are the canonical `@[label](dsh-session:…)` mention produced by the Host. `session.prompt` parses those mentions and calls `ctx.sessionReferences.prepare()` before enqueue, then passes the prepared content and contexts in one agent operation. Invalid mentions, cancellation, missing capability, source-read failure, and budget failure enqueue nothing.
 
-The input machine keeps ordinary draft text and atomic references until the default sink reports Host acceptance. Serialization or RPC failure returns the same draft to editing. On success the logged prompt envelope remains the replay authority: the browser renders each metadata-confirmed session label as a reference chip even when following text is adjacent, plus a compact session-source summary instead of the snapshot JSON baked into model content.
+The input machine keeps ordinary draft text and atomic references until the default sink reports Host acceptance. Serialization or RPC failure returns the same draft to editing. On success the logged prompt envelope remains the replay authority: the browser renders adjacent metadata-confirmed session references as separate reference chips and preserves that projection when following text is adjacent without whitespace, plus a compact session-source summary instead of the snapshot JSON baked into model content.
 
 ## Reference transaction
 
@@ -42,7 +42,7 @@ File lookup is advisory and cancellable; selection itself performs no read. Sess
 
 ## Verification
 
-Package tests pin shared file grammar and ranking, cache invalidation and lifecycle cleanup, parallel Web lookup, quoted paths, independent candidate failure, cancellation, grouped headings that do not alter option indexes, file/directory continuation, canonical session chips, adjacent-text reference projection, codec round-trip, Host wire validation, all-or-nothing prompt preparation, and draft retention across serialization and RPC failures. The keyless assembled Web snapshot renders the available reference sections, selects a directory and file, then selects a session reference through the real client composition.
+Package tests pin shared file grammar and ranking, cache invalidation and lifecycle cleanup, parallel Web lookup, quoted paths, independent candidate failure, cancellation, grouped headings that do not alter option indexes, file/directory continuation, canonical session chips, adjacent-reference and adjacent-text reference projection, codec round-trip, Host wire validation, all-or-nothing prompt preparation, and draft retention across serialization and RPC failures. The keyless assembled Web snapshot renders the available reference sections, selects a directory and file, then selects a session reference through the real client composition.
 
 ## Consequences
 

@@ -242,6 +242,45 @@ describe('referenced prompt preparation', () => {
     )
   })
 
+  it.each(['queue', 'steer'] as const)(
+    'does not deliver a %s prompt when preparation resolves after cancellation',
+    async (mode) => {
+      const ctx = await harness()
+      const agent = stubAgent(ctx)
+      const controller = new AbortController()
+      const source = 'source-session' as SessionId
+      const mention = formatSessionReferenceMention({ sessionId: source, label: 'Research' })
+      ctx.provide('sessionReferences', {
+        prepare: async () => {
+          controller.abort()
+          return {
+            content: [{ type: 'text' as const, text: '@Research' }],
+            additionalContext: {
+              source: {
+                kind: 'session-reference' as const,
+                version: 1 as const,
+                references: [{ sessionId: source, label: 'Research' }],
+              },
+              content: [{ type: 'text' as const, text: 'snapshot' }],
+            },
+          }
+        },
+      } as never)
+      const api = createApiProxy(ctx, DEFAULTS)
+
+      const response = await api.sessions.prompt(request({
+        sessionId: agent.id,
+        content: [{ type: 'text' as const, text: mention }],
+        mode,
+      }), controller.signal)
+
+      expect(expectErr(response).code).toBe('cancelled')
+      expect(agent.followup).not.toHaveBeenCalled()
+      expect(agent.steer).not.toHaveBeenCalled()
+      expect(agent.inject).not.toHaveBeenCalled()
+    },
+  )
+
   it('rejects malformed mentions and preparation failures without enqueueing any prompt', async () => {
     const ctx = await harness()
     const agent = stubAgent(ctx)

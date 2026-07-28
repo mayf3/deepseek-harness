@@ -18,7 +18,7 @@ todo 两个面就是在该形状上的两个注册项，都是普通注册方插
 
 输入栏为 `'conversation.input.plan'` 和 `'conversation.input.model'` 声明会话作用域的单实例 seat，并为 overlay、dock、left 和 right 输入扩展声明列表 slot。InputBar 将模型 seat 渲染在 pending 指示器与发送／停止按钮之前。各功能包拥有相应控件及其状态；ui-conversation 提供放置位置、`locked` owner prop 和标准 slot share。常驻无会话壳使用 `DisabledInputBar`，因此不会分发任何会话作用域的控件 seat。
 
-普通提交是输入状态机与默认 sink 之间的一项事务。在序列化或 `session.prompt` 等待完成期间，输入框会保留草稿和原子引用 chip；只有宿主接受后才会将它们清除，拒绝后则原样恢复可编辑阶段。回放会区分带来源信息的会话引用上下文与直接用户消息，并关联相邻的消息对；即使后续提示词文本与标签直接相邻，也会把已确认的标签投影为引用 chip，并在直接用户文本下方添加精简的 `引用会话` 来源摘要，而不会暴露准备好的快照 JSON。
+普通提交是输入状态机与默认 sink 之间的一项事务。在序列化或 `session.prompt` 等待完成期间，输入框会保留草稿和原子引用 chip；只有宿主接受后才会将它们清除，拒绝后则原样恢复可编辑阶段。回放会区分带来源信息的会话引用上下文与直接用户消息，并关联相邻的消息对；相邻的已确认会话引用会分别投影为独立的引用 chip，即使后续提示词文本无空白紧邻，也会保持该投影；同时在直接用户文本下方添加精简的 `引用会话` 来源摘要，而不会暴露准备好的快照 JSON。
 
 `src/client/` 按未来的包拆分组织：`contract/` 是唯一的跨领域共享表层（`slots.ts` slot 声明 + 组合后的 slot props，包括工具行契约、`views.ts` 共享原语、`tool-call-model.ts`）；`skeleton/`、`chat/` 和 `toolviews/`（示例注册方）领域目录只导入 contract 文件，彼此绝不导入；`apply.ts` 是唯一允许导入全部三个领域的组装点。`/client` 导出表层只包含契约：`apply`／`inject`、两个服务类和 `contract/` 类型家族；实现组件（骨架、聊天行）与 store factory 保持内部状态，只能通过 apply 的 slot 注册到达页面（测试通过 `./src/*` 子路径获取它们）。
 

@@ -50,6 +50,22 @@ describe('MessageItem arms', () => {
     expect(view.container.querySelector('[data-ref-chip="reference"]')?.textContent).toBe('@你好')
   })
 
+  it('styles adjacent confirmed session labels as separate reference chips', () => {
+    const view = render(
+      <MessageItem node={{
+        kind: 'user',
+        seq: 3,
+        source: { kind: 'user' },
+        content: [{ type: 'text', text: '@Research notes@Research继续' }],
+      } as never}
+      sessionLabels={['Research', 'Research notes']}
+      />,
+    )
+    expect(view.container.textContent).toContain('@Research notes@Research继续')
+    expect([...view.container.querySelectorAll('[data-ref-chip="reference"]')]
+      .map(chip => chip.textContent)).toEqual(['@Research notes', '@Research'])
+  })
+
   it('user bubbles expose copy / branch / edit actions; copy writes the text', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {

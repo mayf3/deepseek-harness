@@ -967,6 +967,13 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             })
           }
         }
+        if (signal?.aborted === true) {
+          return err(request, {
+            code: 'cancelled',
+            message: 'prompt submission was aborted',
+            details: {},
+          })
+        }
         // The rpcId rides MessageSource into user/message (merge declaration in api/sessions.ts; provisional correlation).
         const source: MessageSource = { kind: 'user', rpcId: request.rpcId }
         try {
