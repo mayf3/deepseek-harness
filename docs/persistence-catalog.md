@@ -78,7 +78,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:269`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:282`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:311`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:343`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:261`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:268`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:297`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:329`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -167,6 +167,38 @@ Source: [`packages/core/session/src/types.ts:215`](../packages/core/session/src/
 Types: [ContentBlock](core-data-structures/core.md) · [TokenUsage](core-data-structures/llm-streaming.md)
 
 Source: [`packages/core/session/src/types.ts:222`](../packages/core/session/src/types.ts)
+
+### `command/*`
+
+#### `command/done` — log-only
+
+```ts persistence-catalog
+/**
+ * The paired command settled. `kind`/`text` carry the handler's verbatim
+ * outcome (a thrown/aborted handler settles as `kind: 'error'` with the
+ * rendered failure); presentation stays client-computed at render time.
+ */
+'command/done': { commandId: CommandId; kind: 'success' | 'error'; text?: string }
+```
+
+Source: [`packages/ui/commands/src/index.ts:138`](../packages/ui/commands/src/index.ts)
+
+#### `command/run` — log-only
+
+```ts persistence-catalog
+/**
+ * A resolved slash command entered its handler. Log-only (never model
+ * surface); paired with `command/done` by `commandId`, mirroring the
+ * `tool/call`↔`tool/result` pairing. The payload is structured — `name`
+ * and `args` are `parseCommand`'s own split (name and verbatim rawInput,
+ * separator whitespace included), so a consumer (a projection unit
+ * folding its own command records, a rich command card) never re-parses
+ * a line.
+ */
+'command/run': { commandId: CommandId; name: string; args: string; source: CommandSource }
+```
+
+Source: [`packages/ui/commands/src/index.ts:132`](../packages/ui/commands/src/index.ts)
 
 ### `compact/*`
 
@@ -373,7 +405,7 @@ Source: [`packages/sandbox/sandbox-policy/src/session-mode.ts:34`](../packages/s
 
 Types: [SessionTitleEventData](core-data-structures/session-title.md)
 
-Source: [`packages/session-title/session-title/src/index.ts:95`](../packages/session-title/session-title/src/index.ts)
+Source: [`packages/session-title/session-title/src/index.ts:96`](../packages/session-title/session-title/src/index.ts)
 
 #### `session/title-llm-request` — log-only
 
@@ -384,7 +416,7 @@ Source: [`packages/session-title/session-title/src/index.ts:95`](../packages/ses
 
 Types: [SessionTitleLlmRequestEventData](core-data-structures/session-title.md)
 
-Source: [`packages/session-title/session-title-llm/src/index.ts:44`](../packages/session-title/session-title-llm/src/index.ts)
+Source: [`packages/session-title/session-title-llm/src/index.ts:43`](../packages/session-title/session-title-llm/src/index.ts)
 
 ### `steering/*`
 
@@ -462,7 +494,7 @@ Source: [`packages/core/session/src/types.ts:228`](../packages/core/session/src/
  * Log-only: `deriveMessages()` ignores it, so sub-calls never re-enter
  * model context; persistence and UIs get every call. Appended inside the
  * parent `run_code`'s execution (the bridge drains in-flight dispatches
- * before returning), so the turn-enclosure invariant holds by
+ * before returning), so its execution-enclosure relation holds by
  * construction.
  */
 'tool/code-dispatch': { parentCallId: CallId; subCallId: CallId; name: string; arguments: unknown; isError: boolean; content: ContentBlock[] }
