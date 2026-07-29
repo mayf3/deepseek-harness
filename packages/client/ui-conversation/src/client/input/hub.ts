@@ -8,9 +8,8 @@
  * bail events) and owns the default-sink choreography: every session is a
  * real host entity, so the sink is one unconditional prompt path.
  */
-import type { ClientContext, Session, SessionBinding, SessionId, SessionsService } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SlashController, SlashServiceContract, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-slash/client'
-import type {} from '@deepseek-ai/dsh-client-ui-slash/client'
+import type { ClientContext, ISessions, SessionBinding, SessionFace, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SlashController, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-slash/client'
 import { queueReadFaceOf } from '../queue/store.ts'
 import type { ComposerKeyboard, InputService, SessionInput } from './contract.ts'
 import type { PopupDismissFace } from './facade.ts'
@@ -118,7 +117,7 @@ export class InputHub implements InputService {
    * resident until this promise succeeds.
    */
   private async sink(
-    session: Session,
+    session: SessionFace,
     text: string,
     mode: 'queue' | 'steer',
     signal: AbortSignal,
@@ -131,7 +130,7 @@ export class InputHub implements InputService {
   }
 
   private controller(actx: ClientContext): SlashController | undefined {
-    const slash = this.rootCtx.get('slash') as SlashServiceContract | undefined
+    const slash = this.rootCtx.get('slash')
     return slash?.sessionOf(actx)
   }
 
@@ -140,7 +139,7 @@ export class InputHub implements InputService {
     return command?.popupFor(actx)
   }
 
-  private sessions(): SessionsService {
+  private sessions(): ISessions {
     const sessions = this.rootCtx.get('sessions')
     if (sessions === undefined) throw new Error('conversation.input: sessions service unavailable')
     return sessions

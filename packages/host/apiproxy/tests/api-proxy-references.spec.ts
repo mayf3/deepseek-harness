@@ -5,8 +5,9 @@
  */
 import { Context } from 'cordis'
 import { describe, expect, it, vi } from 'vitest'
-import AgentRegistry, { agentEvents, AgentMessageId } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { formatSessionReferenceMention } from '@deepseek-ai/dsh-session-reference'
@@ -66,10 +67,8 @@ function stubAgent(ctx: Context) {
     steer: typeof steer
     inject: typeof inject
   }
-  followup.mockImplementation((input) => {
-    const id = AgentMessageId('reference-prompt')
-    ctx.emit('agent/inbox/enqueue', agent, { id, ...input }, 'queued')
-    return id
+  followup.mockImplementation((message) => {
+    ctx.emit('agent/inbox/enqueue', agent, message, 'queued')
   })
   ctx.agents.register(agent)
   return agent
@@ -143,14 +142,25 @@ describe('referenced prompt preparation', () => {
     const source = 'source-session' as SessionId
     const mention = formatSessionReferenceMention({ sessionId: source, label: 'Research' })
     let finish!: () => void
-    const context = {
+    const context = createUserMessage({
       source: {
         kind: 'session-reference' as const,
         version: 1 as const,
-        references: [{ sessionId: source, label: 'Research' }],
+        references: [{
+          sessionId: source,
+          label: 'Research',
+          capturedThroughSeq: null,
+          compacted: false,
+          originalMessages: 1,
+          retainedMessages: 1,
+          omittedMessages: 0,
+          omittedBytes: 0,
+          truncated: false,
+          inputIndex: 0,
+        }],
       },
       content: [{ type: 'text' as const, text: 'snapshot' }],
-    }
+    })
     const prepare = vi.fn(() => new Promise<{
       content: { type: 'text'; text: string }[]
       additionalContext: typeof context
@@ -189,16 +199,14 @@ describe('referenced prompt preparation', () => {
     if (sent === undefined) throw new Error('expected queued prompt')
     const decision = await agentEvents(ctx, agent).waterfall(
       'agent/prompt-submit',
-      sent.content,
-      sent.source,
+      sent,
       signal,
       () => Promise.resolve({ kind: 'allow' as const }),
     )
     expect(decision.kind === 'allow' && decision.additionalContexts).toEqual([context])
     const replay = await agentEvents(ctx, agent).waterfall(
       'agent/prompt-submit',
-      sent.content,
-      sent.source,
+      sent,
       signal,
       () => Promise.resolve({ kind: 'allow' as const }),
     )
@@ -209,14 +217,25 @@ describe('referenced prompt preparation', () => {
     const ctx = await harness()
     const agent = stubAgent(ctx)
     const source = 'source-session' as SessionId
-    const context = {
+    const context = createUserMessage({
       source: {
         kind: 'session-reference' as const,
         version: 1 as const,
-        references: [{ sessionId: source, label: 'Research' }],
+        references: [{
+          sessionId: source,
+          label: 'Research',
+          capturedThroughSeq: null,
+          compacted: false,
+          originalMessages: 1,
+          retainedMessages: 1,
+          omittedMessages: 0,
+          omittedBytes: 0,
+          truncated: false,
+          inputIndex: 0,
+        }],
       },
       content: [{ type: 'text' as const, text: 'snapshot' }],
-    }
+    })
     ctx.provide('sessionReferences', {
       prepare: () => Promise.resolve({
         content: [{ type: 'text' as const, text: 'continue @Research' }],

@@ -22,9 +22,7 @@ Workspace 列表与 Session 列表是相互独立的重连基线。`workspace.cr
 
 `host.openPath` 会用操作系统的默认应用打开一个文件系统路径（macOS 为 `open`，Windows 为 `Invoke-Item`，Linux 为 `xdg-open`）。打开器可在测试中注入。浏览器载体对其施加与 `host.pickDirectory` 相同的回环、同源限制。
 
-`session.history` 按消息边界分页，其尾页（不带 `beforeSeq`）额外携带两项页窗口本身无法提供的会话级数据：进行中局部消息的 chunk 事件，以及 `todos`——整份日志上最后一次 `todo/write` 的整表投影。较早的页面不带 `todos`，因为该投影是会话级而非分页级的；尾页响应缺少该字段意味着整份日志中没有任何 `todo/write`，因此客户端要把缺失字段读作空计划，而不是读作「状态未变」。
-
-`command.*`、`skill.*` 与 `reference.*` 领域向客户端暴露宿主的命令、skill（技能）和引用功能。每个方法都通过 `sessionId` 寻址一个会话的 Agent（被服务的会话必有 Agent；`command.*` 与 `reference.*` 经由与 `session.*` 相同的路径恢复冷会话，而 `skill.list` 从会话头解析项目根目录，不触碰 Agent 注册表）。`command.execute` 在宿主侧运行一条斜杠命令行，并保持纯准入语义：响应会报告该命令行是否解析到处理器；若已解析，还会返回新签发的生命周期 `commandId`。执行结果由持久写入日志并通过 mux 流广播的 `command/run`／`command/done` 生命周期事件对承载；载体的请求信号可取消正在运行的处理器。`reference.files` 把可取消的路径发现委托给 `ctx.fileReferences`；`reference.sessions` 把候选排序和规范提及标记的创建委托给 `ctx.sessionReferences`。缺少功能时会以对应领域的 unavailable 错误码失败，而不是产生一个看似权威的空列表。`host/commands-changed` 是命令目录失效帧：客户端重新拉取 `command.list` 而不是做差分。
+`command.*`、`skill.*` 与 `reference.*` 领域向客户端暴露宿主的命令、skill（技能）和引用功能。每个方法都通过 `sessionId` 寻址一个会话的 Agent（被服务的会话必有 Agent；`command.*` 与 `reference.*` 经由与 `session.*` 相同的路径恢复冷会话，而 `skill.list` 从会话头解析项目根目录，不触碰 Agent 注册表）。`command.execute` 在宿主侧运行一条斜杠命令行，并保持纯准入语义：响应会报告该命令行是否解析到处理器；若已解析，还会返回新签发的生命周期 `commandId`，将该确认与流节点关联。执行结果由持久写入日志并通过 mux 流广播的 `command/run`／`command/done` 生命周期事件对承载；载体的请求信号可取消正在运行的处理器。`reference.files` 把可取消的路径发现委托给 `ctx.fileReferences`；`reference.sessions` 把候选排序和规范提及标记的创建委托给 `ctx.sessionReferences`。缺少功能时会以对应领域的 unavailable 错误码失败，而不是产生一个看似权威的空列表。`host/commands-changed` 是命令目录失效帧：客户端重新拉取 `command.list` 而不是做差分。
 
 `session.prompt` 从规范化文本块中解析规范会话提及标记，并要求 `ctx.sessionReferences` 在消息入队前准备每个被引用的快照。解析、取消、校验、读取和预算约束共同构成一个准入事务：失败时不会有消息入队；成功时，在开放轮次之外会通过同一个准入边界交付可读提示词及其独立来源上下文，执行 steering（中途引导）时则会在 steering 前立即注入该上下文。
 

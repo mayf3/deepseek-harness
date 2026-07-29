@@ -39,6 +39,14 @@ import {
   referenceFilesRequestSchema,
   referenceSessionsRequestSchema,
 } from '../api/references.schema.ts'
+import {
+  goalCreateRequestSchema,
+  goalEditRequestSchema,
+  goalPauseRequestSchema,
+  goalResumeRequestSchema,
+  goalCompleteRequestSchema,
+  goalClearRequestSchema,
+} from '../api/goals.schema.ts'
 
 /**
  * Unary dispatch table, keyed by (and compiler-locked to) RpcMethodMap: a map row without a
@@ -77,6 +85,12 @@ const UNARY_ROUTES: UnaryRoutes = {
   'skill.list': { schema: skillListRequestSchema, invoke: (api, r) => api.skills.list(r) },
   'reference.files': { schema: referenceFilesRequestSchema, invoke: (api, r, signal) => api.references.files(r, signal) },
   'reference.sessions': { schema: referenceSessionsRequestSchema, invoke: (api, r, signal) => api.references.sessions(r, signal) },
+  'goal.create': { schema: goalCreateRequestSchema, invoke: (api, r) => api.goals.create(r) },
+  'goal.edit': { schema: goalEditRequestSchema, invoke: (api, r) => api.goals.edit(r) },
+  'goal.pause': { schema: goalPauseRequestSchema, invoke: (api, r) => api.goals.pause(r) },
+  'goal.resume': { schema: goalResumeRequestSchema, invoke: (api, r) => api.goals.resume(r) },
+  'goal.complete': { schema: goalCompleteRequestSchema, invoke: (api, r) => api.goals.complete(r) },
+  'goal.clear': { schema: goalClearRequestSchema, invoke: (api, r) => api.goals.clear(r) },
 }
 
 /** Route lookup that narrows an arbitrary path segment to a map key (single cast point for the string→key refinement). */

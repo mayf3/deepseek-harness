@@ -38,6 +38,14 @@ import {
   referenceFilesValueSchema,
   referenceSessionsValueSchema,
 } from '../api/references.schema.ts'
+import {
+  goalCreateValueSchema,
+  goalEditValueSchema,
+  goalPauseValueSchema,
+  goalResumeValueSchema,
+  goalCompleteValueSchema,
+  goalClearValueSchema,
+} from '../api/goals.schema.ts'
 
 /**
  * Client consumption face of the contract (shape a): same domain tree as ApiProxy, but unary
@@ -91,6 +99,14 @@ export interface IApiClient {
     mux(payload: Parameters<ApiProxy['events']['mux']>[0]['payload'], signal: AbortSignal, onOpen?: () => void): AsyncIterable<RpcRequest<MuxFrame>>
     host(payload: Parameters<ApiProxy['events']['host']>[0]['payload'], signal: AbortSignal, onOpen?: () => void): AsyncIterable<RpcRequest<HostFrame>>
   }
+  goals: {
+    create(payload: RequestPayload<'goal.create'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'goal.create'>>>
+    edit(payload: RequestPayload<'goal.edit'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'goal.edit'>>>
+    pause(payload: RequestPayload<'goal.pause'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'goal.pause'>>>
+    resume(payload: RequestPayload<'goal.resume'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'goal.resume'>>>
+    complete(payload: RequestPayload<'goal.complete'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'goal.complete'>>>
+    clear(payload: RequestPayload<'goal.clear'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'goal.clear'>>>
+  }
   /** client-response passthrough (rpcId is a backfill of the server-request's id — never minted here). */
   respond(message: ClientResponse, signal?: AbortSignal): Promise<RpcReceipt>
 }
@@ -120,6 +136,12 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'skill.list': skillListValueSchema,
   'reference.files': referenceFilesValueSchema,
   'reference.sessions': referenceSessionsValueSchema,
+  'goal.create': goalCreateValueSchema,
+  'goal.edit': goalEditValueSchema,
+  'goal.pause': goalPauseValueSchema,
+  'goal.resume': goalResumeValueSchema,
+  'goal.complete': goalCompleteValueSchema,
+  'goal.clear': goalClearValueSchema,
 }
 
 /** Default unary timeout (rpc-compare 2026-07-19: a hung host must not leave callers pending forever). */
@@ -342,6 +364,15 @@ export abstract class AbstractApiClient implements IApiClient {
   readonly references: IApiClient['references'] = {
     files: (payload, signal) => this.callUnary('reference.files', payload, signal),
     sessions: (payload, signal) => this.callUnary('reference.sessions', payload, signal),
+  }
+
+  readonly goals: IApiClient['goals'] = {
+    create: (payload, signal) => this.callUnary('goal.create', payload, signal),
+    edit: (payload, signal) => this.callUnary('goal.edit', payload, signal),
+    pause: (payload, signal) => this.callUnary('goal.pause', payload, signal),
+    resume: (payload, signal) => this.callUnary('goal.resume', payload, signal),
+    complete: (payload, signal) => this.callUnary('goal.complete', payload, signal),
+    clear: (payload, signal) => this.callUnary('goal.clear', payload, signal),
   }
 
   readonly events: IApiClient['events'] = {

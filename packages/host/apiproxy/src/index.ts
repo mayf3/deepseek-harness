@@ -57,6 +57,7 @@ export class ApiProxyService extends Service implements ApiProxy {
   readonly workspace: ApiProxy['workspace']
   readonly host: ApiProxy['host']
   readonly commands: ApiProxy['commands']
+  readonly goals: ApiProxy['goals']
   readonly skills: ApiProxy['skills']
   readonly references: ApiProxy['references']
   readonly events: ApiProxy['events']
@@ -75,6 +76,7 @@ export class ApiProxyService extends Service implements ApiProxy {
     this.workspace = api.workspace
     this.host = api.host
     this.commands = api.commands
+    this.goals = api.goals
     this.skills = api.skills
     this.references = api.references
     this.events = api.events

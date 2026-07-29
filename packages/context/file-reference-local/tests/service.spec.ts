@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from 'cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import AgentRegistry, { AgentMessageId } from '@deepseek-ai/dsh-agent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
@@ -43,11 +43,10 @@ async function stubAgent(
     status: 'idle',
     acceptsNextStep: false,
     ctx,
-    followup: () => AgentMessageId('followup'),
-    queue: () => AgentMessageId('queue'),
-    steer: () => AgentMessageId('steer'),
-    inject: () => AgentMessageId('inject'),
-    send: () => AgentMessageId('send'),
+    followup() {},
+    steer() {},
+    inject() {},
+    send() {},
     cancel() {},
     whenIdle: () => Promise.resolve(),
   } as Agent
