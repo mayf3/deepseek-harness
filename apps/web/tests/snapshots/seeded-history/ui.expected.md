@@ -5,7 +5,7 @@
     - tab "Chat" [selected]
     - tab "Trajectory"
     - tab "Waterfall"
-- text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop."
+- text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. {{clock}}"
 - button "复制":
   - img
 - button "在新对话中分支":
@@ -16,6 +16,11 @@
   - img
   - img
   - text: Think The user wants me to read a.txt and b.txt, then reply with "DONE". Let me do both reads in parallel.
+- button "复制":
+  - img
+- button "在新对话中分支":
+  - img
+- text: {{clock}}
 - img
 - text: Read
 - button "a.txt"
@@ -27,7 +32,11 @@
   - img
   - text: Think Both files have been read. a.txt contains "alpha" and b.txt contains "beta". I'll now reply with DONE as instructed.
 - paragraph: DONE
-- text: 339 uncached input · 135 output · 15.5k cache read · cache hit 98% · context unknown · 1 turns · 2 steps
+- button "复制":
+  - img
+- button "在新对话中分支":
+  - img
+- text: {{clock}} 339 uncached input · 135 output · 15.5k cache read · cache hit 98% · context unknown · 1 turns · 2 steps
 - textbox "Message the agent"
 - button "Add attachment":
   - img
