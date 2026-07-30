@@ -270,7 +270,6 @@ flowchart TD
   pkg_client_modules --> pkg_invariants
   pkg_client_runtime --> pkg_invariants
   pkg_client_ui_primitives --> pkg_invariants
-  pkg_client_ui_question --> pkg_invariants
   pkg_client_ui_slots --> pkg_invariants
   pkg_client_web --> pkg_invariants
   pkg_client_web_react --> pkg_invariants
@@ -306,10 +305,6 @@ flowchart TD
   pkg_client_ui_settings --> pkg_client_ui_primitives
   pkg_client_ui_settings --> pkg_client_ui_slots
   pkg_client_ui_settings --> pkg_invariants
-  pkg_client_ui_sidebar --> pkg_client_runtime
-  pkg_client_ui_sidebar --> pkg_client_ui_primitives
-  pkg_client_ui_sidebar --> pkg_client_ui_slots
-  pkg_client_ui_sidebar --> pkg_invariants
   pkg_client_ui_trajectory --> pkg_client_ui_primitives
   pkg_client_ui_trajectory --> pkg_invariants
   pkg_client_ui_workspace --> pkg_client_runtime
@@ -347,12 +342,19 @@ flowchart TD
   pkg_system_prompt --> pkg_scope
   pkg_web --> pkg_invariants
   pkg_web --> pkg_llm
+  pkg_client_ui_question --> pkg_client_locale
+  pkg_client_ui_question --> pkg_invariants
   pkg_client_ui_settings_general --> pkg_client_locale
   pkg_client_ui_settings_general --> pkg_client_runtime
   pkg_client_ui_settings_general --> pkg_client_ui_primitives
   pkg_client_ui_settings_general --> pkg_client_ui_settings
   pkg_client_ui_settings_general --> pkg_client_ui_slots
   pkg_client_ui_settings_general --> pkg_invariants
+  pkg_client_ui_sidebar --> pkg_client_locale
+  pkg_client_ui_sidebar --> pkg_client_runtime
+  pkg_client_ui_sidebar --> pkg_client_ui_primitives
+  pkg_client_ui_sidebar --> pkg_client_ui_slots
+  pkg_client_ui_sidebar --> pkg_invariants
   pkg_client_ui_theme --> pkg_client_locale
   pkg_client_ui_theme --> pkg_client_runtime
   pkg_client_ui_theme --> pkg_client_ui_primitives
@@ -934,6 +936,7 @@ flowchart TD
   pkg_jsonrpc --> pkg_session
   pkg_jsonrpc --> pkg_subagent
   pkg_client_ui_model --> pkg_client_connection
+  pkg_client_ui_model --> pkg_client_locale
   pkg_client_ui_model --> pkg_client_runtime
   pkg_client_ui_model --> pkg_client_ui_command
   pkg_client_ui_model --> pkg_client_ui_conversation
@@ -1013,7 +1016,6 @@ flowchart TD
 | [`client-modules`](../packages/client/modules) | `client` | [`invariants`](../packages/support/invariants) |
 | [`client-runtime`](../packages/client/runtime) | `client` | [`invariants`](../packages/support/invariants) |
 | [`client-ui-primitives`](../packages/client/ui-primitives) | `client` | [`invariants`](../packages/support/invariants) |
-| [`client-ui-question`](../packages/client/ui-question) | `client` | [`invariants`](../packages/support/invariants) |
 | [`client-ui-slots`](../packages/client/ui-slots) | `client` | [`invariants`](../packages/support/invariants) |
 | [`client-web`](../packages/client/web) | `client` | [`invariants`](../packages/support/invariants) |
 | [`client-web-react`](../packages/client/web-react) | `client` | [`invariants`](../packages/support/invariants) |
@@ -1033,7 +1035,6 @@ flowchart TD
 | [`client-test-runtime`](../packages/client/test-runtime) | `client` | [`client-runtime`](../packages/client/runtime), [`client-ui-slots`](../packages/client/ui-slots), [`client-web-react`](../packages/client/web-react), [`invariants`](../packages/support/invariants) |
 | [`client-ui-models`](../packages/client/ui-models) | `client` | [`client-runtime`](../packages/client/runtime), [`client-ui-slots`](../packages/client/ui-slots), [`invariants`](../packages/support/invariants) |
 | [`client-ui-settings`](../packages/client/ui-settings) | `client` | [`client-runtime`](../packages/client/runtime), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-slots`](../packages/client/ui-slots), [`invariants`](../packages/support/invariants) |
-| [`client-ui-sidebar`](../packages/client/ui-sidebar) | `client` | [`client-runtime`](../packages/client/runtime), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-slots`](../packages/client/ui-slots), [`invariants`](../packages/support/invariants) |
 | [`client-ui-trajectory`](../packages/client/ui-trajectory) | `client` | [`client-ui-primitives`](../packages/client/ui-primitives), [`invariants`](../packages/support/invariants) |
 | [`client-ui-workspace`](../packages/client/ui-workspace) | `client` | [`client-runtime`](../packages/client/runtime), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-slots`](../packages/client/ui-slots), [`invariants`](../packages/support/invariants) |
 | [`helper`](../packages/sdk/helper) | `sdk` | [`brand`](../packages/util/brand), [`invariants`](../packages/support/invariants), [`subprocess`](../packages/subprocess/subprocess) |
@@ -1048,7 +1049,9 @@ flowchart TD
 | [`session`](../packages/core/session) | `core` | [`brand`](../packages/util/brand), [`invariants`](../packages/support/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope) |
 | [`system-prompt`](../packages/core/system-prompt) | `core` | [`invariants`](../packages/support/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope) |
 | [`web`](../packages/web/web) | `web` | [`invariants`](../packages/support/invariants), [`llm`](../packages/llm/llm) |
+| [`client-ui-question`](../packages/client/ui-question) | `client` | [`client-locale`](../packages/client/locale), [`invariants`](../packages/support/invariants) |
 | [`client-ui-settings-general`](../packages/client/ui-settings-general) | `client` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-settings`](../packages/client/ui-settings), [`client-ui-slots`](../packages/client/ui-slots), [`invariants`](../packages/support/invariants) |
+| [`client-ui-sidebar`](../packages/client/ui-sidebar) | `client` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-slots`](../packages/client/ui-slots), [`invariants`](../packages/support/invariants) |
 | [`client-ui-theme`](../packages/client/ui-theme) | `client` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-slots`](../packages/client/ui-slots), [`invariants`](../packages/support/invariants) |
 | [`host-directory-picker-browse`](../packages/host/directory-picker-browse) | `host` | [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-slots`](../packages/client/ui-slots), [`client-ui-workspace`](../packages/client/ui-workspace), [`invariants`](../packages/support/invariants) |
 | [`host-directory-picker-native`](../packages/host/directory-picker-native) | `host` | [`client-runtime`](../packages/client/runtime), [`client-ui-slots`](../packages/client/ui-slots), [`client-ui-workspace`](../packages/client/ui-workspace), [`invariants`](../packages/support/invariants) |
@@ -1160,7 +1163,7 @@ flowchart TD
 | [`subagent-fork`](../packages/subagent/subagent-fork) | `subagent` | [`agent`](../packages/core/agent), [`invariants`](../packages/support/invariants), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subagent-inprocess`](../packages/subagent/subagent-inprocess) |
 | [`subagent-spawn`](../packages/subagent/subagent-spawn) | `subagent` | [`invariants`](../packages/support/invariants), [`subagent`](../packages/subagent/subagent), [`subagent-inprocess`](../packages/subagent/subagent-inprocess) |
 | [`jsonrpc`](../packages/ui/jsonrpc) | `ui` | [`agent`](../packages/core/agent), [`invariants`](../packages/support/invariants), [`llm`](../packages/llm/llm), [`llm-deepseek`](../packages/llm/llm-deepseek), [`scope`](../packages/core/scope), [`sdk-protocol`](../packages/sdk/sdk-protocol), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent) |
-| [`client-ui-model`](../packages/client/ui-model) | `client` | [`client-connection`](../packages/client/connection), [`client-runtime`](../packages/client/runtime), [`client-ui-command`](../packages/client/ui-command), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-slash`](../packages/client/ui-slash), [`client-ui-slots`](../packages/client/ui-slots), [`invariants`](../packages/support/invariants) |
+| [`client-ui-model`](../packages/client/ui-model) | `client` | [`client-connection`](../packages/client/connection), [`client-locale`](../packages/client/locale), [`client-runtime`](../packages/client/runtime), [`client-ui-command`](../packages/client/ui-command), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-slash`](../packages/client/ui-slash), [`client-ui-slots`](../packages/client/ui-slots), [`invariants`](../packages/support/invariants) |
 | [`client-ui-permission`](../packages/client/ui-permission) | `client` | [`client-runtime`](../packages/client/runtime), [`client-ui-command`](../packages/client/ui-command), [`client-ui-slash`](../packages/client/ui-slash), [`invariants`](../packages/support/invariants), [`permission`](../packages/ui/permission) |
 | [`acp-demo`](../packages/examples/acp-demo) | `examples` | [`acp`](../packages/acp/acp), [`agent-spine-demo`](../packages/examples/agent-spine-demo), [`app-boot`](../packages/ui/app-boot), [`invariants`](../packages/support/invariants), [`session-checkpoint-policy`](../packages/session-persistence/session-checkpoint-policy), [`session-persistence-jsonl`](../packages/session-persistence/session-persistence-jsonl), [`session-query`](../packages/session-query/session-query), [`session-query-sqlite`](../packages/session-query/session-query-sqlite), [`tools`](../packages/core/tools), [`workspace-context`](../packages/context/workspace-context) |
 | [`cli-demo`](../packages/examples/cli-demo) | `examples` | [`agent`](../packages/core/agent), [`agent-spine-demo`](../packages/examples/agent-spine-demo), [`app-boot`](../packages/ui/app-boot), [`invariants`](../packages/support/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-checkpoint-policy`](../packages/session-persistence/session-checkpoint-policy), [`session-persistence-jsonl`](../packages/session-persistence/session-persistence-jsonl), [`tools`](../packages/core/tools), [`workspace-context`](../packages/context/workspace-context) |
