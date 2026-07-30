@@ -209,12 +209,22 @@ export interface SessionsApi {
   Promise<RpcResponse<{ selected: ModelTarget }>>
 
   /**
+   * Renames a session: appends a `session/title` event with the `user`
+   * source, which pins the title against automatic regeneration. The
+   * normalized accepted title and the title event's seq return so the caller
+   * can settle its projection cell without waiting for the push frame. A
+   * title that normalizes to empty fails with `title-invalid`.
+   */
+  rename(request: RpcRequest<{ sessionId: SessionId; title: string }>):
+  Promise<RpcResponse<{ title: string; seq: number }>>
+
+  /**
    * Sends a message. Canonical session mentions are normalized and their
    * snapshots are prepared atomically before enqueue. mode maps 1:1 —
    * queue→send, steer→steer. Slash commands use the separate command.execute
    * contract and do not pass through this method.
    * @param request - session identity, routing mode, and content blocks.
-   * @param signal - optional cancellation for reference preparation or command execution.
+   * @param signal - optional cancellation for reference preparation.
    * @returns prompt acceptance.
    */
   prompt(
@@ -224,4 +234,5 @@ export interface SessionsApi {
 
   /** Stops: clears both FIFOs + aborts the current step (1:1 with agent.cancel). */
   cancel(request: RpcRequest<{ sessionId: SessionId }>): Promise<RpcResponse<{ accepted: true }>>
+
 }

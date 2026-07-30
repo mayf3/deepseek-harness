@@ -43,7 +43,7 @@ describe('reference submission', () => {
     })
     chip(shell)
     expect(shell.snapshot).toMatchObject({
-      draft: PLACEHOLDER,
+      draft: `${PLACEHOLDER} `,
       occurrences: [{ source: 'reference', ref: mention, label: '@Research' }],
     })
 
@@ -54,7 +54,7 @@ describe('reference submission', () => {
     })
     expect(sink).toHaveBeenNthCalledWith(1, mention, 'queue', expect.any(AbortSignal))
     expect(shell.snapshot).toMatchObject({
-      draft: PLACEHOLDER,
+      draft: `${PLACEHOLDER} `,
       occurrences: [{ source: 'reference', ref: mention, label: '@Research' }],
     })
     expect(shell.notices.getSnapshot()).toMatchObject({
@@ -88,7 +88,7 @@ describe('reference submission', () => {
       expect(shell.snapshot.phase).toBe('plain')
     })
     expect(sink).not.toHaveBeenCalled()
-    expect(shell.snapshot.draft).toBe(PLACEHOLDER)
+    expect(shell.snapshot.draft).toBe(`${PLACEHOLDER} `)
     expect(shell.snapshot.occurrences).toHaveLength(1)
     expect(shell.notices.getSnapshot()).toMatchObject({
       level: 'error',

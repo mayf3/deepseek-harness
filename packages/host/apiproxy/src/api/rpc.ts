@@ -39,6 +39,10 @@ export interface RpcErrorDetailsMap {
   'workspace-invalid-path': { path: string }
   'workspace-name-conflict': { name: string }
   'workspace-move-invalid': { workspaceId: string; sessionId: SessionId; beforeSessionId?: SessionId }
+  'directory-unreadable': { path: string }
+  'directory-exists': { path: string }
+  'directory-create-failed': { path: string }
+  'directory-picker-unavailable': { capability: string }
   'agent-busy': { reason: string }
   'reference-unavailable': { kind: 'file' | 'session' }
   'reference-invalid': { reason: string }
@@ -47,6 +51,7 @@ export interface RpcErrorDetailsMap {
   'command-error': {}
   /** A leading-/ prompt named no registered command; the message names the token. */
   'unknown-command': {}
+  'title-invalid': { sessionId: SessionId }
   'internal': {}
 }
 
