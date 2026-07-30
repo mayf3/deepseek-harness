@@ -13,7 +13,7 @@ export type {
   CommandsApi, CommandDescriptor, SkillsApi, SkillEntry,
   ReferencesApi, FileReferenceItem, SessionReferenceItem,
   ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
-  ModelReasoningEffort, ModelTarget, SessionModels,
+  InboxItemId, ModelReasoningEffort, ModelTarget, QueueAction, QueuedInboxItem, SessionModels,
   GoalsApi, GoalRef,
 } from '@deepseek-ai/dsh-host-apiproxy/api'
 export type { ToolCallView, ToolResultView } from '@deepseek-ai/dsh-tools/presentation'

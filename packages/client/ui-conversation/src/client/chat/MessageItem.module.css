@@ -34,14 +34,6 @@
   line-height: 18px;
 }
 
-/* Hover-capable pointers: reveal shared MessageIconActions on row hover/focus. */
-@media (hover: hover) {
-  .userRow:hover .actions,
-  .userRow:focus-within .actions {
-    opacity: 1;
-  }
-}
-
 .badge {
   display: inline-block;
   margin-bottom: 4px;

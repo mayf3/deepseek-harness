@@ -5,7 +5,7 @@
  */
 import { Context } from 'cordis'
 import { describe, expect, it, vi } from 'vitest'
-import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { agentEvents, InboxItemId } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
@@ -68,7 +68,11 @@ function stubAgent(ctx: Context) {
     inject: typeof inject
   }
   followup.mockImplementation((message) => {
-    ctx.emit('agent/inbox/enqueue', agent, message, 'queued')
+    ctx.emit('agent/inbox/enqueue', agent, {
+      id: InboxItemId(message.id),
+      message,
+      placement: 'queued',
+    })
   })
   ctx.agents.register(agent)
   return agent

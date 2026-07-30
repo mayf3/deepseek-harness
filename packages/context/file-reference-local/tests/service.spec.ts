@@ -47,6 +47,7 @@ async function stubAgent(
     steer() {},
     inject() {},
     send() {},
+    updateInbox() { return 'not-found' as const },
     cancel() {},
     whenIdle: () => Promise.resolve(),
   } as Agent
@@ -145,7 +146,7 @@ describe('LocalFileReferenceService', () => {
     const inject = vi.spyOn(ctx, 'inject')
       .mockReturnValueOnce({ dispose: () => Promise.reject(new Error('error cleanup')) } as never)
       // Deliberately proves cleanup tolerates JavaScript callers rejecting non-Error values.
-      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors
       .mockReturnValueOnce({ dispose: () => Promise.reject('string cleanup') } as never)
     const first = await stubAgent(ctx, 'cleanup-one')
     const second = await stubAgent(ctx, 'cleanup-two')
