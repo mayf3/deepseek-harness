@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { Context } from 'cordis'
 import { installAgentLlmTarget } from '@deepseek-ai/dsh-agent'
 import type {
-  Agent, AgentLlmTarget, AgentLlmTargetRef, AgentStatus, InboxPlacement,
+  Agent, AgentLlmTarget, AgentLlmTargetRef, AgentStatus, InboxPlacement, PromptDecision,
 } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { errorChain } from '@deepseek-ai/dsh-llm'
@@ -458,6 +458,22 @@ function changedWorkspaceView(workspaceId: string, value: unknown): WorkspaceVie
   }
 }
 
+async function appendPreparedPromptContext(
+  matchesPrompt: boolean,
+  additionalContext: UserMessage,
+  cleanup: () => void,
+  next: () => Promise<PromptDecision>,
+): Promise<PromptDecision> {
+  if (!matchesPrompt) return next()
+  cleanup()
+  const decision = await next()
+  if (decision.kind !== 'allow') return decision
+  return {
+    ...decision,
+    additionalContexts: [...decision.additionalContexts ?? [], additionalContext],
+  }
+}
+
 /**
  * Deliver a prepared browser prompt while preserving session-reference
  * admission ownership under the context-injection contract.
@@ -490,16 +506,13 @@ function deliverPrompt(
     detachSubmit()
     detachDiscard()
   }
-  detachSubmit = ctx.on('agent/prompt-submit', async (subject, submitted, _signal, next) => {
-    if (subject !== agent || submitted.id !== message.id) return next()
-    cleanup()
-    const decision = await next()
-    if (decision.kind !== 'allow') return decision
-    return {
-      ...decision,
-      additionalContexts: [...decision.additionalContexts ?? [], additionalContext],
-    }
-  }, { prepend: true })
+  detachSubmit = ctx.on('agent/prompt-submit', (subject, submitted, _signal, next) =>
+    appendPreparedPromptContext(
+      subject === agent && submitted.id === message.id,
+      additionalContext,
+      cleanup,
+      next,
+    ), { prepend: true })
   detachDiscard = ctx.on('agent/inbox/discard', (subject, messages) => {
     if (subject === agent && messages.some(discarded => discarded.id === message.id)) cleanup()
   })

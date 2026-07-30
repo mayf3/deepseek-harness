@@ -81,21 +81,38 @@ function projectUserText(text: string, sessionLabels: readonly string[] = []): R
   return <>{parts}</>
 }
 
+function UserBubble({
+  text,
+  rest,
+  sessionLabels,
+  steering,
+}: {
+  text: string
+  rest: readonly unknown[]
+  sessionLabels: readonly string[]
+  steering?: boolean
+}): ReactNode {
+  return (
+    <div className={css.userStack}>
+      <div className={css.bubble}>
+        {steering === true ? <span className={css.badge}>插话</span> : null}
+        {projectUserText(text, sessionLabels)}
+        {rest.map((block, i) => <JsonBlock key={i} label="附加内容块" payload={block} />)}
+      </div>
+      {sessionLabels.length > 0
+        ? <div className={css.referenceSummary}>引用会话 · {sessionLabels.join(', ')}</div>
+        : null}
+    </div>
+  )
+}
+
 export const MessageItem = memo(function MessageItem({ node, sessionLabels = [] }: MessageItemProps) {
   switch (node.kind) {
     case 'user': {
       const { text, rest } = contentText(node.content)
       return (
         <div className={css.userRow}>
-          <div className={css.userStack}>
-            <div className={css.bubble}>
-              {projectUserText(text, sessionLabels)}
-              {rest.map((block, i) => <JsonBlock key={i} label="附加内容块" payload={block} />)}
-            </div>
-            {sessionLabels.length > 0
-              ? <div className={css.referenceSummary}>引用会话 · {sessionLabels.join(', ')}</div>
-              : null}
-          </div>
+          <UserBubble text={text} rest={rest} sessionLabels={sessionLabels} />
           <MessageIconActions
             text={text}
             time={node.time}
@@ -110,16 +127,7 @@ export const MessageItem = memo(function MessageItem({ node, sessionLabels = [] 
       const { text, rest } = contentText(node.content)
       return (
         <div className={css.userRow}>
-          <div className={css.userStack}>
-            <div className={css.bubble}>
-              <span className={css.badge}>插话</span>
-              {projectUserText(text, sessionLabels)}
-              {rest.map((block, i) => <JsonBlock key={i} label="附加内容块" payload={block} />)}
-            </div>
-            {sessionLabels.length > 0
-              ? <div className={css.referenceSummary}>引用会话 · {sessionLabels.join(', ')}</div>
-              : null}
-          </div>
+          <UserBubble text={text} rest={rest} sessionLabels={sessionLabels} steering />
         </div>
       )
     }

@@ -348,7 +348,7 @@ export class SessionInputShell implements SessionInput {
   private sinkSerialized(attempt: SubmitAttempt, draft: string, mode: 'queue' | 'steer'): void {
     const occurrences = this.core.state.occurrences
     if (occurrences.length === 0) {
-      this.settleDefault(attempt, this.deps.defaultSink(draft.trim(), mode, attempt.signal))
+      this.settleSubmit(attempt, this.deps.defaultSink(draft.trim(), mode, attempt.signal))
       return
     }
     const slash = this.deps.slash?.()
@@ -368,7 +368,7 @@ export class SessionInputShell implements SessionInput {
           cursor = part.offset + 1
         }
         out += draft.slice(cursor)
-        this.settleDefault(attempt, this.deps.defaultSink(out.trim(), mode, attempt.signal))
+        this.settleSubmit(attempt, this.deps.defaultSink(out.trim(), mode, attempt.signal))
       },
       (error: unknown) => {
         controller.abort()
@@ -384,7 +384,7 @@ export class SessionInputShell implements SessionInput {
     )
   }
 
-  private settleDefault(
+  private settleSubmit(
     attempt: SubmitAttempt,
     pending: Promise<SubmitOutcome>,
   ): void {
@@ -433,21 +433,10 @@ export class SessionInputShell implements SessionInput {
 
   /** The submit transaction: claim.submit against the session scope; ok maps from the outcome kind. */
   private beginSubmit(attempt: SubmitAttempt, claim: CommandClaim, args: string): void {
-    Promise.resolve()
-      .then(() => claim.submit(args, this.deps.actx))
-      .then(
-        (outcome) => {
-          if (this.dead(attempt)) return
-          this.run(this.core.dispatch({
-            type: 'submit-settled', attempt, ok: outcome.kind === 'success', outcome,
-          }))
-        },
-        (error: unknown) => {
-          if (this.dead(attempt)) return
-          const message = error instanceof Error ? error.message : String(error)
-          this.run(this.core.dispatch({ type: 'submit-settled', attempt, ok: false, message }))
-        },
-      )
+    this.settleSubmit(
+      attempt,
+      Promise.resolve().then(() => claim.submit(args, this.deps.actx)),
+    )
   }
 
   /** Late-settlement guard: superseded attempts and disposed facades drop silently. */
