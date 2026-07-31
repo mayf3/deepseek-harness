@@ -124,7 +124,11 @@ export function logTruncationMarker(maxBytes: number): string {
  * (the worker backend's wire is equally stack-safe). Callers must pass a value
  * produced by `JSON.parse` (or equally JSON-plain): only `null`, finite
  * numbers, booleans, strings, dense arrays, and plain objects — this encoder
- * validates nothing. Output is byte-identical to compact `JSON.stringify`.
+ * validates nothing. Output matches compact `JSON.stringify` byte for byte
+ * EXCEPT on an integral double beyond the safe range, where {@link scalarJson}
+ * emits the exact integer's BigInt digits rather than `JSON.stringify`'s rounded
+ * spelling (`1152921504606846976`, not `...847000`) so the seam's lossless-JSON
+ * promise holds across the wire.
  * @param value - a JSON-plain value (e.g. straight from `JSON.parse`).
  * @returns the compact JSON encoding.
  */

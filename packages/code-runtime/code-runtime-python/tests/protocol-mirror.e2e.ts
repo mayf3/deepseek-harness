@@ -53,8 +53,9 @@ describe.skipIf(!python3Available)('protocol.py mirrors protocol.ts at runtime',
 })
 
 it('names the py/ directory that ships with the package', () => {
-  // The package.json `files` list ships `py/**/*.py`; the mirror test resolves
-  // the marker source relative to the built package, so the directory must exist
-  // beside the tests even when python3 is absent from the runner.
+  // Resolves py/ relative to this test file; the same directory ships in the
+  // package.json `files` whitelist (`py/**/*.py`). The tests/ directory itself
+  // is not published — this asserts the source-tree layout the mirror test
+  // depends on, so it holds even when python3 is absent from the runner.
   expect(existsSync(pyDir)).toBe(true)
 })

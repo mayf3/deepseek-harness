@@ -22,6 +22,18 @@ describe('validateChildFrame', () => {
     expect(validateChildFrame({ type: 'log' })).toBeUndefined()
   })
 
+  it('carries a log frame truncation flag only for the literal true', () => {
+    // The child's own ledger marker sets `truncated: true`; the host rebuilds
+    // it so it stops capturing at the same point.
+    expect(validateChildFrame({ type: 'log', text: 'x', truncated: true }))
+      .toEqual({ type: 'log', text: 'x', truncated: true })
+    // Any other truthy or non-boolean value is a forgery and is dropped from
+    // the rebuild — otherwise it would silence capture for the rest of the run.
+    expect(validateChildFrame({ type: 'log', text: 'x', truncated: 1 })).toEqual({ type: 'log', text: 'x' })
+    expect(validateChildFrame({ type: 'log', text: 'x', truncated: 'yes' })).toEqual({ type: 'log', text: 'x' })
+    expect(validateChildFrame({ type: 'log', text: 'x', truncated: false })).toEqual({ type: 'log', text: 'x' })
+  })
+
   it('rebuilds call frames with a numeric id, string global, and string name', () => {
     expect(validateChildFrame({ type: 'call', id: 1, global: 'tools', name: 'echo', args: { x: 1 } }))
       .toEqual({ type: 'call', id: 1, global: 'tools', name: 'echo', args: { x: 1 } })
