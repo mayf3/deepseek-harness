@@ -59,9 +59,8 @@ export const RESERVED_ERROR_MEMBERS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Dunder form (`__x__`, distinct leading and trailing `__` pairs, so at least
- * four characters; the middle may be empty): object-protocol slots in Python,
- * refused as {@link RESERVED_ERROR_MEMBERS | error members} on every backend.
+ * Dunder form (`__…__`, two `__` pairs with an optionally empty middle): object-protocol
+ * slots in Python, refused as {@link RESERVED_ERROR_MEMBERS | error members} on every backend.
  */
 export const DUNDER_MEMBER = /^__.*__$/
 
