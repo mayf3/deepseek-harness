@@ -82,8 +82,11 @@ interface LogMessage {
  * (traceback text), an `invalid-output` (completion value was not lossless
  * JSON), or an `output-limit` (serialized completion exceeded the configured
  * cap); wall/CPU budgets, aborts, and substrate death are observed host-side.
- * `value` is present only on a clean completion that produced one, and crosses
- * as exact lossless JSON — never substituted or truncated.
+ * From the honest child `value` is present only on a clean completion that
+ * produced one, and crosses as exact lossless JSON — never substituted or
+ * truncated. A forged frame CAN carry both `value` and `error`;
+ * {@link validateChildFrame} preserves both rather than guessing which to drop,
+ * so a consumer MUST check `error` first and ignore `value` when it is set.
  */
 interface DoneMessage {
   type: 'done'
@@ -387,8 +390,11 @@ export function validateChildFrame(raw: unknown): ChildToHost | undefined {
     case 'call': {
       // The id must be a finite number: it is echoed verbatim into the reply
       // frame, and a forged `1e400` id (Infinity after JSON.parse) would make
-      // the reply unencodable as strict JSON.
-      if (typeof m.id !== 'number' || !Number.isFinite(m.id) || typeof m.global !== 'string' || typeof m.name !== 'string') return undefined
+      // the reply unencodable as strict JSON. Negative zero is rejected too:
+      // it passes `Number.isFinite`, but the reply re-serializes it as `0`
+      // (`JSON.stringify({id:-0})` is `{"id":0}`), colliding with a real call
+      // whose id is `0` — the honest child never issues `-0`.
+      if (typeof m.id !== 'number' || !Number.isFinite(m.id) || Object.is(m.id, -0) || typeof m.global !== 'string' || typeof m.name !== 'string') return undefined
       // A forged frame can omit `args` entirely; rebuilding it as `undefined`
       // would invoke the binding with a non-JSON value, bypassing the
       // lossless-JSON argument boundary. Any PRESENT value is JSON-plain by

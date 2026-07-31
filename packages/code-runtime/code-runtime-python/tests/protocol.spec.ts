@@ -98,6 +98,16 @@ describe('validateChildFrame', () => {
       .toEqual({ type: 'call', id: 1, global: 'tools', name: 'x', args: [0, 1.5] })
   })
 
+  it('drops a CALL frame whose id is negative zero', () => {
+    // `-0` passes Number.isFinite, but the reply re-serializes it as `0`
+    // (JSON.stringify({id:-0}) === '{"id":0}'), so a forged `-0` id would
+    // collide with a real call whose id is `0`. The honest child never sends it.
+    expect(validateChildFrame({ type: 'call', id: -0, global: 'tools', name: 'x', args: null })).toBeUndefined()
+    // Plain positive zero is a legitimate id and passes.
+    expect(validateChildFrame({ type: 'call', id: 0, global: 'tools', name: 'x', args: null }))
+      .toEqual({ type: 'call', id: 0, global: 'tools', name: 'x', args: null })
+  })
+
   it('passes DONE values through untouched — losslessness is metered later', () => {
     // validateChildFrame no longer scans done.value: an unbounded scan would
     // push every member of a wide forged payload before any byte cap ran. The
