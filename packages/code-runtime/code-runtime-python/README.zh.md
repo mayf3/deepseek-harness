@@ -22,3 +22,8 @@ Indirectly, through Code Mode in [`dsh-tools`](../../core/tools/README.md), whic
 #### KV Cache effect
 
 No direct invalidation; the named consumer owns any request-prefix changes.
+
+## Known Limitations and Deferred Work
+
+- **跨语言 guard 只覆盖两个运行时执行的面** —— `PROTOCOL_FD` 与日志截断标记。`py/protocol.py` 中的 `TypedDict` 帧形状靠 review 而非自动化检查来镜像 `src/protocol.ts`:跨 TypeScript 与 Python 比较类型声明在此无机械等价物,故未来的形状漂移由 review 加后端真子进程套件捕获,而非本包的测试。
+- **`PythonCodeRuntime` 实现与 Python 侧 JSON codec 不在本层** —— 它们在基于本分支的 backend-core PR 中交付;在那之前 `src/index.ts` 只 re-export 协议词汇。

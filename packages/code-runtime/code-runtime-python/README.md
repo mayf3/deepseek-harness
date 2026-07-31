@@ -22,3 +22,8 @@ Indirectly, through Code Mode in [`dsh-tools`](../../core/tools/README.md), whic
 #### KV Cache effect
 
 No direct invalidation; the named consumer owns any request-prefix changes.
+
+## Known Limitations and Deferred Work
+
+- **The cross-language guard covers only the two runtime-executed surfaces** — `PROTOCOL_FD` and the log truncation marker. The `TypedDict` frame shapes in `py/protocol.py` mirror `src/protocol.ts` by review, not by an automated check: comparing type declarations across TypeScript and Python has no mechanical equivalent here, so a future shape drift is caught by review plus the backend's real-subprocess suite rather than this package's tests.
+- **The `PythonCodeRuntime` implementation and its Python-side JSON codec are not in this layer** — they ship in the backend-core PR on top of this branch; `src/index.ts` re-exports only the protocol vocabulary until then.

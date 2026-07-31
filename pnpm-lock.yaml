@@ -2339,9 +2339,6 @@ importers:
 
   packages/code-runtime/code-runtime-python:
     devDependencies:
-      '@deepseek-ai/dsh-code-runtime':
-        specifier: workspace:^
-        version: link:../code-runtime
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../support/invariants
