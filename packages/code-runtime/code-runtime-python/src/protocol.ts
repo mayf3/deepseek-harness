@@ -1,0 +1,420 @@
+/**
+ * Versionless, JSON-lines wire protocol between the Node host and the CPython subprocess. Frames
+ * travel on the child's fd 3 (one JSON object per line), leaving stdout/stderr free for the
+ * program's own output. Host treats every inbound frame as hostile because model code can post
+ * anything through the same fd; the Python bootstrap trusts host replies.
+ * @module @deepseek-ai/dsh-code-runtime-python/src/protocol
+ */
+
+// The protocol channel is fd 3 from the child's perspective — the host pins it
+// positionally via `stdio: ['pipe','pipe','pipe','pipe']` (index.ts), and the
+// Python bootstrap reads the same constant from its own protocol.py.
+
+/**
+ * What the host sends immediately after spawn, as the first line on fd 3. The
+ * Python bootstrap reads this, applies resource limits, then waits for the
+ * subsequent run frame. Separated from the run so the run message stays
+ * pure model input.
+ */
+export interface BootMessage {
+  type: 'boot'
+  /** RLIMIT_CPU seconds; the Python bootstrap sets this on itself before executing model code. */
+  cpuSeconds: number
+  /** RLIMIT_AS bytes; caps address space so a runaway allocation fails cleanly. */
+  addressSpaceBytes: number
+  /** Shared byte budget for captured log text (Python-side ledger). */
+  maxLogBytes: number
+  /** Byte cap for the rendered completion value. */
+  maxValueBytes: number
+  /**
+   * The namespaces to materialize inside the program (globals + names;
+   * functions stay host-side). `errorClass` asks the bootstrap to mint a
+   * program-visible exception class under that global: rejected calls raise
+   * its instances carrying the member name on `memberNameProperty`.
+   */
+  namespaces: { global: string; names: string[]; errorClass?: { name: string; memberNameProperty: string } }[]
+}
+
+// The run request `{ type: 'run', program }` follows BootMessage once the
+// child acknowledges with `boot-ack`; the host sends it as an inline literal
+// (it carries only the model's program body — caps and bindings crossed on boot).
+
+/** Python → host: acknowledges boot completed and resource limits are in place. */
+interface BootAckMessage {
+  type: 'boot-ack'
+}
+
+/** Python → host: one bridged binding call (`await tools.name(args)` inside the program). */
+interface CallMessage {
+  type: 'call'
+  /** Python-issued correlation id; the host answers each id at most once and ignores duplicates. */
+  id: number
+  /** The namespace global the call targets. */
+  global: string
+  /** The function name within the namespace. */
+  name: string
+  /** The JSON-safe argument the model program passed. */
+  args: unknown
+}
+
+/**
+ * Python → host: captured text, streamed eagerly so output survives a
+ * mid-run termination (RLIMIT_CPU, SIGTERM/SIGKILL, host wall-timeout).
+ */
+interface LogMessage {
+  type: 'log'
+  text: string
+  /**
+   * Set when this frame IS the child ledger's truncation marker rather than
+   * program output. The two ledgers can exhaust at different points — one
+   * child entry larger than `maxLogBytes` sends only the marker while the host
+   * ledger is still nearly empty — so the host cannot infer the child's state
+   * from its own budget, and comparing the text against the marker string
+   * would also honour a program that printed that string itself. Carrying it
+   * as a field lets the host stop capturing at the same point the child did
+   * and keeps exactly one marker in `logs`.
+   */
+  truncated?: boolean
+}
+
+/**
+ * Python → host: the program settled. `error` carries a program exception
+ * (traceback text), an `invalid-output` (completion value was not lossless
+ * JSON), or an `output-limit` (serialized completion exceeded the configured
+ * cap); wall/CPU budgets, aborts, and substrate death are observed host-side.
+ * `value` is present only on a clean completion that produced one, and crosses
+ * as exact lossless JSON — never substituted or truncated.
+ */
+interface DoneMessage {
+  type: 'done'
+  value?: unknown
+  error?: { kind: 'exception' | 'invalid-output' | 'output-limit'; message: string }
+}
+
+/**
+ * Every message the Python side sends. The member interfaces stay module-
+ * private: consumers match on the union's discriminant; the host sends the
+ * boot and run frames as inline literals.
+ */
+export type ChildToHost = BootAckMessage | CallMessage | LogMessage | DoneMessage
+
+/** Host → Python: the answer to one {@link CallMessage}. */
+export type ReplyMessage =
+  | { type: 'reply'; id: number; ok: true; value: unknown }
+  | { type: 'reply'; id: number; ok: false; message: string }
+
+/**
+ * The in-band marker text announcing that log capture stopped at the byte
+ * budget. Shared wire vocabulary: the Python-side LogBuffer emits it when ITS
+ * ledger exhausts, and the host emits identical text when its own ledger drops
+ * a frame first (forged fd-3 traffic, stray stdout bytes) — a truncated run
+ * reads the same however the cap was hit.
+ * @param maxBytes - the configured `maxLogBytes` the marker names.
+ * @returns the marker line.
+ */
+export function logTruncationMarker(maxBytes: number): string {
+  return `[dsh-code-runtime-python] log capture truncated at ${maxBytes} bytes`
+}
+
+/**
+ * Serialize one JSON-parse-produced value without recursion. `JSON.stringify`
+ * recurses per nesting level and throws `RangeError` a few thousand levels
+ * deep, but the seam's `CodeJsonValue` has no depth limit — an honest deep
+ * completion or binding resolution below the byte budget must cross intact
+ * (the worker backend's wire is equally stack-safe). Callers must pass a value
+ * produced by `JSON.parse` (or equally JSON-plain): only `null`, finite
+ * numbers, booleans, strings, dense arrays, and plain objects — this encoder
+ * validates nothing. Output is byte-identical to compact `JSON.stringify`.
+ * @param value - a JSON-plain value (e.g. straight from `JSON.parse`).
+ * @returns the compact JSON encoding.
+ */
+export function encodeJsonPlain(value: unknown): string {
+  type Task = { text: string } | { value: unknown }
+  const chunks: string[] = []
+  const tasks: Task[] = [{ value }]
+  for (let task = tasks.pop(); task !== undefined; task = tasks.pop()) {
+    if ('text' in task) {
+      chunks.push(task.text)
+      continue
+    }
+    const current = task.value
+    if (typeof current === 'string') {
+      chunks.push(JSON.stringify(current))
+    } else if (Array.isArray(current)) {
+      chunks.push('[')
+      tasks.push({ text: ']' })
+      for (let index = current.length - 1; index >= 0; index--) {
+        if (index < current.length - 1) tasks.push({ text: ',' })
+        tasks.push({ value: current[index] })
+      }
+    } else if (typeof current === 'object' && current !== null) {
+      const record = current as Record<string, unknown>
+      chunks.push('{')
+      tasks.push({ text: '}' })
+      const keys = Object.keys(record)
+      for (let index = keys.length - 1; index >= 0; index--) {
+        const key = keys[index] as string
+        if (index < keys.length - 1) tasks.push({ text: ',' })
+        tasks.push({ value: record[key] })
+        tasks.push({ text: `${JSON.stringify(key)}:` })
+      }
+    } else {
+      chunks.push(scalarJson(current))
+    }
+  }
+  return chunks.join('')
+}
+
+/**
+ * One scalar (null, boolean, finite number) as JSON text. A beyond-safe-range
+ * integral double needs BigInt digits: `String(2 ** 60)` emits the ROUNDED
+ * `...847000` form, and echoing that to the child would silently change the
+ * integer the seam promised to carry losslessly — `BigInt(2 ** 60)` prints the
+ * exact `...846976` the double actually holds.
+ * @param current - a JSON-plain scalar (JSON.parse emits nothing else).
+ * @returns its JSON encoding.
+ */
+function scalarJson(current: unknown): string {
+  if (typeof current === 'number' && Number.isInteger(current) && !Number.isSafeInteger(current)) {
+    return BigInt(current).toString()
+  }
+  return String(current)
+}
+
+/**
+ * Meter a forged done value's compact-JSON byte length AND its number
+ * losslessness in one bounded traversal, stopping the instant `maxBytes` is
+ * crossed. A forged `done.value` arrives straight off fd 3 and can sit anywhere
+ * below the 256 MiB frame ceiling while `maxValueBytes` defaults to 32 KiB. The
+ * previous split — an unbounded `hasNonLosslessNumber` scan in
+ * {@link validateChildFrame} followed by a separate byte meter — pushed every
+ * member of a wide flat payload onto a scan stack before any cap check ran, so
+ * a below-ceiling forgery could still force a hundreds-of-megabytes host
+ * allocation. Folding both jobs here rejects over-budget BEFORE enqueuing an
+ * array's or object's children, keeping the traversal O(cap). A non-lossless
+ * number (non-finite, negative zero) is caught only when the value fits the
+ * budget — an over-budget value is rejected regardless, so the distinction is
+ * moot. Same JSON-plain precondition and traversal shape as
+ * {@link encodeJsonPlain}; per-scalar encoding delegates to `JSON.stringify`.
+ * @param value - a JSON-plain value (e.g. straight from `JSON.parse`).
+ * @param maxBytes - the completion-value budget in bytes.
+ * @returns `{ ok: true, bytes }` with the exact serialized size, or
+ * `{ ok: false, reason }` — `over-budget` once the size exceeds `maxBytes`,
+ * `non-lossless` on a non-finite or negative-zero number.
+ */
+export function checkDoneValue(value: unknown, maxBytes: number): { ok: true; bytes: number } | { ok: false; reason: 'over-budget' | 'non-lossless' } {
+  let bytes = 0
+  const stack: unknown[] = [value]
+  while (stack.length > 0) {
+    const current = stack.pop()
+    if (typeof current === 'number') {
+      if (!Number.isFinite(current) || Object.is(current, -0)) return { ok: false, reason: 'non-lossless' }
+      bytes += Buffer.byteLength(scalarJson(current), 'utf8')
+    } else if (typeof current === 'string') {
+      // Lower-bound BEFORE materializing the escaped form: every UTF-16 code
+      // unit is at least one UTF-8 byte plus the two quotes, so a huge or
+      // control-heavy forged string (whose escaped copy expands severalfold)
+      // is rejected without allocating that copy.
+      if (bytes + current.length + 2 > maxBytes) return { ok: false, reason: 'over-budget' }
+      bytes += Buffer.byteLength(JSON.stringify(current), 'utf8')
+    } else if (Array.isArray(current)) {
+      // Brackets plus one comma per gap; elements add themselves. Reject
+      // BEFORE enqueuing children: every element serializes to at least one
+      // byte, so a forged flat array below the frame ceiling but far above
+      // the budget fails here without growing the host stack by millions of
+      // entries first.
+      bytes += 2 + (current.length > 1 ? current.length - 1 : 0)
+      if (bytes + current.length > maxBytes) return { ok: false, reason: 'over-budget' }
+      for (const item of current) stack.push(item)
+    } else if (typeof current === 'object' && current !== null) {
+      const record = current as Record<string, unknown>
+      // Count own keys WITHOUT Object.entries/Object.keys: either would
+      // allocate one slot (entries: one pair array) per member before the
+      // bound below could run, recreating the spike the bound exists to stop.
+      let count = 0
+      for (const key in record) if (Object.hasOwn(record, key)) count += 1
+      bytes += 2 + (count > 1 ? count - 1 : 0)
+      // Same pre-enqueue bound: each entry contributes its quoted key (>= 2
+      // bytes), the colon, and a >= 1-byte value.
+      if (bytes + count * 4 > maxBytes) return { ok: false, reason: 'over-budget' }
+      for (const key in record) {
+        if (!Object.hasOwn(record, key)) continue
+        // The same string lower bound, before escaping the key.
+        if (bytes + key.length + 3 > maxBytes) return { ok: false, reason: 'over-budget' }
+        bytes += Buffer.byteLength(JSON.stringify(key), 'utf8') + 1
+        stack.push(record[key])
+      }
+    } else {
+      bytes += Buffer.byteLength(scalarJson(current), 'utf8')
+    }
+    if (bytes > maxBytes) return { ok: false, reason: 'over-budget' }
+  }
+  return { ok: true, bytes }
+}
+
+/**
+ * Whether a raw JSON line contains an integer token that would lose precision
+ * as a JavaScript number. `JSON.parse` silently rounds such a token
+ * (`9007199254740993` becomes `...992`) BEFORE any validation can see it, so
+ * the check must read the source text; a beyond-safe-range token whose double
+ * parse round-trips exactly (`2**53`, `2**60`) is lossless and passes. The scan walks the line skipping string literals (a digit run
+ * inside a string is data, not a number token) and tests every number token
+ * in plain integer form — no fraction or exponent, which parse as doubles by
+ * intent. A reviver cannot do this job: the reviver walk recurses per nesting
+ * level and would reintroduce the depth limit `encodeJsonPlain` removes.
+ * @param line - the raw UTF-8 text of one JSON-lines frame.
+ * @returns true when an unsafe integer token is present outside strings.
+ */
+export function hasUnsafeIntegerToken(line: string): boolean {
+  for (let index = 0; index < line.length; index++) {
+    const char = line[index]
+    if (char === '"') {
+      // Skip the string literal, honoring backslash escapes.
+      for (index++; index < line.length; index++) {
+        if (line[index] === '\\') index++
+        else if (line[index] === '"') break
+      }
+      continue
+    }
+    if (char === '-' || (char !== undefined && char >= '0' && char <= '9')) {
+      let end = index + 1
+      while (end < line.length) {
+        const c = line[end] as string
+        if ((c >= '0' && c <= '9') || c === '.' || c === 'e' || c === 'E' || c === '+' || c === '-') end++
+        else break
+      }
+      const token = line.slice(index, end)
+      // Beyond the safe range an integer token is still lossless IFF the
+      // double parse round-trips exactly (2**53 does; 2**53+1 rounds) — the
+      // canonical boundary accepts every JS-double-exact value, so only a
+      // genuinely rounding token marks the frame as forged.
+      if (/^-?\d+$/.test(token)) {
+        const parsed = Number(token)
+        // A token that parses to Infinity is trivially lossy; a finite
+        // beyond-safe-range one is lossy only when the BigInt round-trip
+        // disagrees.
+        if (!Number.isFinite(parsed)) return true
+        if (!Number.isSafeInteger(parsed) && BigInt(token) !== BigInt(parsed)) return true
+      }
+      index = end - 1
+    }
+  }
+  return false
+}
+
+/**
+ * Lazily yield one plain object's own enumerable property values. A generator
+ * (not `Object.values`/`Object.entries`) because {@link hasNonLosslessNumber}
+ * traverses breadth it cannot bound: those helpers copy the whole member list
+ * up front, so a wide forged object would cost a second full-breadth
+ * allocation before a single value is examined.
+ * @param record - a JSON-parse-produced object.
+ * @yields each own enumerable property value, in key order.
+ */
+function* ownValues(record: object): Generator {
+  for (const key in record) {
+    if (Object.hasOwn(record, key)) yield (record as Record<string, unknown>)[key]
+  }
+}
+
+/**
+ * Whether a JSON.parse-produced value contains a number outside lossless
+ * JSON: non-finite (`1e400` parses to `Infinity`) or negative zero (`-0.0`
+ * parses to JS `-0`, whose sign bit a re-serialization drops). The honest
+ * child's validator rejects these before sending, so a frame carrying one is
+ * forged.
+ *
+ * Runs on `call.args`, which — unlike a completion value — has NO seam byte
+ * cap, so there is no budget to reject a wide payload against the way
+ * {@link checkDoneValue} does. The traversal therefore holds ONE cursor per
+ * NESTING LEVEL (an array or {@link ownValues} iterator) instead of one entry
+ * per member: a forged flat `args` just below the 256 MiB frame ceiling would
+ * otherwise push tens of millions of stack entries — and `Object.values` would
+ * copy each object's full breadth — allocating hundreds of megabytes beyond
+ * what `JSON.parse` already holds. Iterative either way, so a deep frame
+ * cannot overflow the host stack.
+ * @param value - a JSON-parse-produced value from an fd-3 frame.
+ * @returns true when any contained number is non-finite or negative zero.
+ */
+export function hasNonLosslessNumber(value: unknown): boolean {
+  const cursors: Iterator<unknown>[] = [[value].values()]
+  while (cursors.length > 0) {
+    // The loop condition guarantees a top cursor.
+    const cursor = cursors.at(-1) as Iterator<unknown>
+    const step = cursor.next()
+    if (step.done === true) {
+      cursors.pop()
+      continue
+    }
+    const current = step.value
+    if (typeof current === 'number') {
+      if (!Number.isFinite(current) || Object.is(current, -0)) return true
+    } else if (Array.isArray(current)) {
+      cursors.push((current as unknown[]).values())
+    } else if (typeof current === 'object' && current !== null) {
+      cursors.push(ownValues(current))
+    }
+  }
+  return false
+}
+
+/**
+ * Runtime shape gate for inbound fd-3 traffic. Model code has full access to
+ * fd 3 and can post anything — `null`, primitives, poisoned fields — so the
+ * compile-time union means nothing here: every field is validated and REBUILT
+ * before the host reads it (forged extras never ride along; a non-number id
+ * can never be echoed into a reply). Junk returns `undefined` and is dropped
+ * so a throw in the host's `message` handler cannot crash the host process.
+ * @param raw - one JSON-parsed frame from fd 3.
+ * @returns the rebuilt frame, or `undefined` to drop it silently.
+ */
+export function validateChildFrame(raw: unknown): ChildToHost | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const m = raw as Record<string, unknown>
+  switch (m.type) {
+    case 'boot-ack':
+      return { type: 'boot-ack' }
+    case 'log':
+      if (typeof m.text !== 'string') return undefined
+      // Rebuilt, not passed through: a forged `truncated` of any other type
+      // would reach the host as a truthy value and silence capture for the
+      // rest of the run. Only the literal `true` counts.
+      return { type: 'log', text: m.text, ...m.truncated === true ? { truncated: true } : {} }
+    case 'call': {
+      // The id must be a finite number: it is echoed verbatim into the reply
+      // frame, and a forged `1e400` id (Infinity after JSON.parse) would make
+      // the reply unencodable as strict JSON.
+      if (typeof m.id !== 'number' || !Number.isFinite(m.id) || typeof m.global !== 'string' || typeof m.name !== 'string') return undefined
+      // A forged frame can omit `args` entirely; rebuilding it as `undefined`
+      // would invoke the binding with a non-JSON value, bypassing the
+      // lossless-JSON argument boundary. Any PRESENT value is JSON-plain by
+      // construction (the frame came from JSON.parse), so presence is the
+      // whole check.
+      if (!Object.hasOwn(m, 'args')) return undefined
+      // JSON.parse yields Infinity for 1e400 and preserves -0; both are
+      // outside lossless JSON, and the honest child never sends them.
+      if (hasNonLosslessNumber(m.args)) return undefined
+      return { type: 'call', id: m.id, global: m.global, name: m.name, args: m.args }
+    }
+    case 'done': {
+      // The value passes through untouched here: scanning it for non-lossless
+      // numbers would push every member of a wide forged payload before any
+      // byte cap runs. The done handler's bounded `checkDoneValue` folds the
+      // losslessness check into the metered traversal, rejecting over-budget
+      // before it enqueues children.
+      const err = m.error
+      if (err === undefined) {
+        return m.value === undefined ? { type: 'done' } : { type: 'done', value: m.value }
+      }
+      if (typeof err !== 'object' || err === null) return undefined
+      const { kind, message } = err as Record<string, unknown>
+      if (typeof message !== 'string') return undefined
+      if (kind !== 'exception' && kind !== 'invalid-output' && kind !== 'output-limit') return undefined
+      return m.value === undefined
+        ? { type: 'done', error: { kind, message } }
+        : { type: 'done', value: m.value, error: { kind, message } }
+    }
+    default:
+      return undefined
+  }
+}
