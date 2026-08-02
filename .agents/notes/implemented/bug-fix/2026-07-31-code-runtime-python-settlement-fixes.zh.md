@@ -36,7 +36,7 @@ Status: implemented
 
 ### RLIMIT clamps against the inherited soft limit, not only the hard
 
-在 [`py/bootstrap.py`](../../../../packages/code-runtime/code-runtime-python/py/bootstrap.py) 中，`_clamped` 仅用继承而来的 HARD 限制来约束一个请求的 `(soft, hard)` rlimit 对。一个继承了低于请求值的软限制的部署——比如继承 `(100, 200)`、请求 `(150, 160)`——会拿回 `(150, 160)`，把有效软限制从 100 抬高到 150：对 `RLIMIT_AS` 而言这放松了内存上限，对 `RLIMIT_CPU` 而言它推迟了 SIGXCPU，两者都违反了"取配置值与继承值中最严格者"。现在 `_clamped` 用每一侧各自继承而来的对应值来约束该侧（`RLIM_INFINITY` 不施加任何上限），随后把 soft 钉在 hard 之下，因此 `setrlimit` 绝不会看到一个倒置的对。
+在 [`py/bootstrap.py`](../../../../packages/code-runtime/code-runtime-python/py/bootstrap.py) 中，`_clamped` 仅用继承而来的 HARD 限制来约束一个请求的 `(soft, hard)` rlimit 对。一个继承了低于请求值的软限制的部署——比如继承 `(100, 200)`、请求 `(150, 160)`——会拿回 `(150, 160)`，把有效软限制从 100 抬高到 150：对 `RLIMIT_AS` 而言这放松了内存上限，对 `RLIMIT_CPU` 而言它推迟了 SIGXCPU，两者都违反了"取配置值与继承值中最严格者"。现在 `_clamped` 用每一侧各自继承而来的对应值来约束该侧（`RLIM_INFINITY` 不施加任何上限），随后把 soft 钉在 hard 之下，因此 `setrlimit` 绝不会看到一个倒置的对。结算时的 CPU 复查（`die_if_cpu_exhausted`）遵循同一规则：它把已消耗的 CPU 与实际生效的、被夹紧的 `cpu_soft` 比较，而不是与配置的 `cpuSeconds` 比较，因此一个捕获 SIGXCPU、在返回前消耗超过更严格的继承软限制的程序会被报告为 timeout，而非误判为成功。
 
 ### Binding replies complete on the calling loop's thread
 
@@ -46,7 +46,7 @@ Status: implemented
 
 - `tests/boot-write-failure.spec.ts` 对 `spawn` 做 mock，使 fd-3 管道在引导写入时抛出异常（这是真实子进程无法被迫进入的唯一路径），并断言 `run()` resolve 出一个 `worker-exit` 而非 reject。它被隔离在自己的 spec 中，因此真实子进程测试套件不受影响。
 - `tests/residual-detach.spec.ts` 对 `detachResidual` 做单元测试：向前传递的副本与残余数据相等、拥有一个大小与其自身长度一致的底层存储（fixture 保持在 Node 的 Buffer 池阈值之上），并且不与源帧的 `ArrayBuffer` 共享。
-- `tests/runtime.spec.ts`：output-cap 用例断言 `ceiling - envelope` 上界（268435392）及其消息。一个 daemon 线程用例驱动四个线程穿过结算的 flush 发出未结束的写入。same-group 回收用例 spawn 一个忽略 SIGTERM 的同进程组后代，它释放管道并递增一个心跳文件；该测试断言在宽限窗口的 SIGKILL 之后心跳停止：无论被杀死的后代是被回收还是作为僵尸进程滞留，这个断言都成立，因此它在 PID 1 不 wait() 孤儿进程的环境下同样成立。cross-loop 用例在主协程通过 `await asyncio.sleep` 让出时，从一个工作线程自己的 `asyncio.run` 事件循环运行一个绑定，断言该回复完成往返而不是超时。inherited-soft-limit 用例通过一个 `ulimit -S -t` 包装脚本运行解释器，将 CPU 软限制设为低于 `cpuSeconds`，并断言实际应用的 `RLIMIT_CPU` 软限制是继承来的值，而不是配置的值（用 CPU 而非地址空间，因为 macOS 忽略 `ulimit -v`）。
+- `tests/runtime.spec.ts`：output-cap 用例断言 `ceiling - envelope` 上界（268435392）及其消息。一个 daemon 线程用例驱动四个线程穿过结算的 flush 发出未结束的写入。same-group 回收用例 spawn 一个忽略 SIGTERM 的同进程组后代，它释放管道并递增一个心跳文件；该测试断言在宽限窗口的 SIGKILL 之后心跳停止：无论被杀死的后代是被回收还是作为僵尸进程滞留，这个断言都成立，因此它在 PID 1 不 wait() 孤儿进程的环境下同样成立。cross-loop 用例在主协程通过 `await asyncio.sleep` 让出时，从一个工作线程自己的 `asyncio.run` 事件循环运行一个绑定，断言该回复完成往返而不是超时。inherited-soft-limit 用例通过一个 `ulimit -S -t` 包装脚本运行解释器，将 CPU 软限制设为低于 `cpuSeconds`，并断言实际应用的 `RLIMIT_CPU` 软限制是继承来的值，而不是配置的值（用 CPU 而非地址空间，因为 macOS 忽略 `ulimit -v`）。一个配套用例继承 1 秒的 CPU 软限制，让程序捕获 SIGXCPU 并忙循环越过它，断言结算复查报告 timeout——证明复查用的是实际生效的软限制，而不是配置的 `cpuSeconds`。
 
 ## Alternatives considered
 
