@@ -751,22 +751,31 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     // `_LogStream` (the child's sys.stdout wrapper) buffers newline-free writes
     // and early-flushes once the pending tail can no longer fit the ledger.
     // Charging that trigger by CHARACTER count undercharged a control-char flood
-    // by up to 6x: 30M NUL chars stay under a 50 MB char-count trigger yet
-    // serialize to ~180 MB, which the settlement flush then allocated at once —
-    // breaching a 64 MB RLIMIT_AS and surfacing as worker-exit instead of the
-    // truncation marker. Driving the flood through sys.stdout.write (not
-    // os.write, which bypasses the wrapper into host stray capture) exercises the
-    // in-child stream. On Linux CI the pre-fix trigger dies on RLIMIT_AS; the
-    // serialized-cost trigger flushes while running, so the run completes and
-    // ends at the marker. (RLIMIT_AS is skipped on Darwin — bootstrap.py — so the
-    // worker-exit repro is Linux-only; locally this asserts the happy path.)
-    const { runtime } = await setup({ maxLogBytes: 50_000_000, addressSpaceMb: 64, maxWallMs: 20_000 })
+    // by up to 6x: NUL chars stay under a char-count trigger yet serialize to ~6x
+    // as many bytes, which the settlement "".join + encode then allocated at once.
+    // The program writes the flood in 1 MiB chunks (so no single argument str is
+    // itself the allocation under test) with no newline; the serialized-cost
+    // trigger flushes while running, keeping the pending tail bounded, so the run
+    // completes at the truncation marker. Pre-fix, the char-count trigger stayed
+    // dormant until ~200 MiB of chars accumulated, and the settlement encode of
+    // their ~1.2 GiB serialized form breached the 512 MiB RLIMIT_AS as a
+    // worker-exit. Driven through sys.stdout.write (not os.write, which bypasses
+    // the wrapper into host stray capture) to exercise the in-child stream.
+    // RLIMIT_AS is skipped on Darwin, so the worker-exit repro is Linux-only;
+    // on macOS this asserts the happy path, matching the control-char cases.
+    const { runtime } = await setup({ maxLogBytes: 20_000_000, addressSpaceMb: 512, maxWallMs: 30_000 })
     const result = await runtime.run({
-      program: ['import sys', 'sys.stdout.write("\\x00" * 30_000_000)', 'return None'].join('\n'),
+      program: [
+        'import sys',
+        'chunk = "\\x00" * (1024 * 1024)',
+        'for _ in range(200):',
+        '    sys.stdout.write(chunk)',
+        'return None',
+      ].join('\n'),
       bindings: [],
     })
     expect(result.error).toBeUndefined()
-    expect(result.logs.at(-1)).toBe(logTruncationMarker(50_000_000))
+    expect(result.logs.at(-1)).toBe(logTruncationMarker(20_000_000))
   })
 
   it('bounds an illegal-UTF-8 native residual by its U+FFFD-decoded cost', async () => {
