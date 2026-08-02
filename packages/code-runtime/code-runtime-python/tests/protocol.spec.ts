@@ -135,8 +135,8 @@ describe('lossless-number scan', () => {
   it('walks wide arrays and objects one member at a time', () => {
     // `call.args` carries no seam byte cap, so a wide forged payload has no
     // budget to be rejected against — the walk must hold one cursor per
-    // NESTING LEVEL, not one entry per member, or a flat payload just below
-    // the 256 MiB frame ceiling would allocate tens of millions of stack
+    // NESTING LEVEL, not one entry per member, or a flat payload at the top of
+    // the host's inbound frame-size cap would allocate tens of millions of stack
     // entries (and `Object.values` a second full-breadth copy). Observable
     // through the boundary: a wide payload whose per-member cost the old shape
     // would have paid still scans, and a violation ANYWHERE in it is found

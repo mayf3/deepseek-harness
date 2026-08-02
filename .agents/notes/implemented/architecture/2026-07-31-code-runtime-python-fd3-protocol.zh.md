@@ -28,7 +28,7 @@ CPython code-runtime 后端（`@deepseek-ai/dsh-code-runtime-python`，分多个
 
 ## Mirror alignment
 
-#436 的 round-12 review 发现 `py/protocol.py` 相对 `src/protocol.ts` 有三处声明陈旧——`LogMessage` 缺 `truncated`、`DoneMessage.error` 缺 `kind`、`Namespace` 缺可选的 `errorClass`。本 PR 在搬运该文件时对齐了这三处，不把陈旧镜像带过来。由于这些声明是 `TypedDict`（在受信任的 Python 侧无运行时强制），自动化 guard 只覆盖两侧都会执行的部分：`tests/protocol-mirror.e2e.ts` 启动一个真实 `python3`，从 `py/protocol.py` 读取 `PROTOCOL_FD` 与 `log_truncation_marker`，并在若干字节预算下断言它们等于 TypeScript 常量。
+#436 的 round-12 review 发现 `py/protocol.py` 相对 `src/protocol.ts` 有三处声明陈旧——`LogMessage` 缺 `truncated`、`DoneMessage.error` 缺 `kind`、`Namespace` 缺可选的 `errorClass`。本 PR 在搬运该文件时对齐了这三处，不把陈旧镜像带过来。为持续保持对齐，`tests/protocol-mirror.e2e.ts` 启动一个真实 `python3`，对照 `src/protocol.ts` 断言：`PROTOCOL_FD` 与 `log_truncation_marker`（两侧都会执行的面），以及每个 `TypedDict` 的必填/可选 wire 字段集——于是字段被重命名或删除、或一侧把另一侧要求的字段改成可选（正是 round-12 那类漂移），测试即失败。字段的*类型*不跨语言边界比较，那部分残留留给 review。
 
 ## Alternatives considered
 
@@ -40,4 +40,4 @@ CPython code-runtime 后端（`@deepseek-ai/dsh-code-runtime-python`，分多个
 
 收获：fd-3 协议及其敌意输入 codec 作为自包含、unit 全覆盖的一层落地，round-12 review 发现的 py/ts 镜像漂移被修复，并有一个执行中的 guard 防其复发。backend-core PR 建立在已 review 的 wire contract 之上。
 
-代价：`src/index.ts` 与 `package.json` 在此以最小形态引入，并由 backend-core PR 编辑（而非创建）。`py/protocol.py` 中两个可执行面之外的 `TypedDict` 形状仍由 review 加后端真子进程套件守护，而非 mirror e2e 测试——这是跨语言比较类型声明的固有局限。
+代价：`src/index.ts` 与 `package.json` 在此以最小形态引入，并由 backend-core PR 编辑（而非创建）。mirror e2e 比较两侧的字段名与必填/可选性，但不比较字段类型——跨 TypeScript 与 Python 比较类型声明无机械等价物，那部分残留留给 review 加后端真子进程套件。

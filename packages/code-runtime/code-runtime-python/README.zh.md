@@ -25,5 +25,5 @@ host 与 CPython 子进程在子进程的 fd 3 上交换一个无版本号的 JS
 
 ## Known Limitations and Deferred Work
 
-- **跨语言 guard 只覆盖两个运行时执行的面** —— `PROTOCOL_FD` 与日志截断标记。`py/protocol.py` 中的 `TypedDict` 帧形状靠 review 而非自动化检查来镜像 `src/protocol.ts`：跨 TypeScript 与 Python 比较类型声明在此无机械等价物，故未来的形状漂移由 review 加后端真子进程套件捕获，而非本包的测试。
+- **跨语言 guard 覆盖运行时执行的面与帧字段形状** —— `tests/protocol-mirror.e2e.ts` 启动一个真实 `python3`，对照 `src/protocol.ts` 断言 `PROTOCOL_FD` / 日志截断标记文本，以及 `py/protocol.py` 中每个 `TypedDict` 的必填/可选 wire 字段集。它不比较字段的*类型*（例如 `cpuSeconds` 两侧都是 `int`）：跨 TypeScript 与 Python 比较类型声明在此无机械等价物，故类型级漂移仍由 review 加后端真子进程套件捕获，而非本包的测试。
 - **`PythonCodeRuntime` 实现与 Python 侧 JSON codec 不在本层** —— 它们在基于本分支的 backend-core PR 中交付；在那之前 `src/index.ts` 只 re-export 协议词汇。

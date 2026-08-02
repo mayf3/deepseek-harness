@@ -28,7 +28,7 @@ Frames are JSON-lines on fd 3, one object per line, leaving stdout/stderr free f
 
 ## Mirror alignment
 
-Round-12 review of #436 found `py/protocol.py` stale against `src/protocol.ts` in three declarations — `LogMessage` lacked `truncated`, `DoneMessage.error` lacked `kind`, and `Namespace` lacked the optional `errorClass`. This PR aligns all three when lifting the file, so the stale mirror is not carried forward. Because the declarations are `TypedDict`s (no runtime enforcement on the trusted Python side), an automated guard covers only what both sides execute: `tests/protocol-mirror.e2e.ts` spawns a real `python3`, reads `PROTOCOL_FD` and `log_truncation_marker` from `py/protocol.py`, and asserts they equal the TypeScript constants across several byte budgets.
+Round-12 review of #436 found `py/protocol.py` stale against `src/protocol.ts` in three declarations — `LogMessage` lacked `truncated`, `DoneMessage.error` lacked `kind`, and `Namespace` lacked the optional `errorClass`. This PR aligns all three when lifting the file, so the stale mirror is not carried forward. To keep it aligned, `tests/protocol-mirror.e2e.ts` spawns a real `python3` and asserts, against `src/protocol.ts`: `PROTOCOL_FD` and `log_truncation_marker` (the two surfaces both sides execute), and each `TypedDict`'s required/optional wire field set — so a renamed or dropped field, or one side making a field optional the other requires (exactly the round-12 drift), fails the test. Field *types* are not compared across the language boundary; that residue stays with review.
 
 ## Alternatives considered
 
@@ -40,4 +40,4 @@ Round-12 review of #436 found `py/protocol.py` stale against `src/protocol.ts` i
 
 Bought: the fd-3 protocol and its hostile-input codec land as a self-contained, fully unit-covered layer, and the py/ts mirror drift the round-12 review found is fixed with an executing guard against its recurrence. The backend-core PR builds on a reviewed wire contract.
 
-Cost: `src/index.ts` and `package.json` are introduced minimally here and edited (not created) by the backend-core PR. The `TypedDict` shapes in `py/protocol.py` beyond the two executed surfaces remain guarded by review plus the backend's real-subprocess suite, not by the mirror e2e test — an inherent limit of comparing type declarations across languages.
+Cost: `src/index.ts` and `package.json` are introduced minimally here and edited (not created) by the backend-core PR. The mirror e2e compares field NAMES and required/optional-ness across the two sides but not field TYPES — comparing type declarations across TypeScript and Python has no mechanical equivalent, so that residue stays with review plus the backend's real-subprocess suite.

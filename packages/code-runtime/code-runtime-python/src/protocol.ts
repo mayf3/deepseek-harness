@@ -7,8 +7,9 @@
  */
 
 // The protocol channel is fd 3 from the child's perspective — the host pins it
-// positionally via `stdio: ['pipe','pipe','pipe','pipe']` (index.ts), and the
-// Python bootstrap reads the same constant from its own protocol.py.
+// positionally via `stdio: ['pipe','pipe','pipe','pipe']` when it spawns the
+// child, and the Python bootstrap reads the same constant from its own
+// protocol.py.
 
 /**
  * What the host sends immediately after spawn, as the first line on fd 3. The
@@ -194,12 +195,13 @@ function scalarJson(current: unknown): string {
  * crossed. This bounds the INCREMENTAL allocation the check itself would add on
  * top of the already-parsed value — the escaped-string copy, the enqueued
  * children, the per-key `JSON.stringify` — not the parse that produced `value`.
- * That upstream width is bounded separately: the host reads fd 3 into a fixed
- * 256 MiB receive buffer (a later stack layer), so `value` cannot already be
- * larger than that when it reaches here, while `maxValueBytes` defaults to
- * 32 KiB. The traversal rejects over-budget BEFORE materializing a string's
- * escaped form or enqueuing an array's/object's children, so a below-ceiling
- * forgery cannot force those secondary allocations. Object key COUNTING is
+ * That upstream width is bounded separately, by the host-side cap on inbound
+ * fd-3 frame size before `JSON.parse` runs (owned by the runtime that reads the
+ * channel), so `value` cannot be arbitrarily large when it reaches here, while
+ * `maxValueBytes` defaults to 32 KiB. The traversal rejects over-budget BEFORE
+ * materializing a string's escaped form or enqueuing an array's/object's
+ * children, so a forgery within that frame cap cannot force those secondary
+ * allocations. Object key COUNTING is
  * unavoidably O(keys) — JS has no lazy own-key iterator, and the parse already
  * built the key set — but the check still refuses the per-entry work before the
  * enqueue loop. A non-lossless number (non-finite, negative zero) is caught only
@@ -353,7 +355,8 @@ function* ownValues(record: object): Generator {
  * cap, so there is no budget to reject a wide payload against the way
  * {@link checkDoneValue} does. The traversal therefore holds ONE cursor per
  * NESTING LEVEL (an array or {@link ownValues} iterator) instead of one entry
- * per member: a forged flat `args` just below the 256 MiB frame ceiling would
+ * per member: a forged flat `args` at the top of the host's inbound frame-size
+ * cap would
  * otherwise push tens of millions of stack entries — and `Object.values` would
  * copy each object's full breadth — allocating hundreds of megabytes beyond
  * what `JSON.parse` already holds. Iterative either way, so a deep frame
