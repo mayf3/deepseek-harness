@@ -22,7 +22,7 @@ host 与 CPython 子进程在子进程的 fd 3 上交换一个无版本号的 JS
 
 ## Configuration
 
-每个上限都是带默认值的、经校验的 `Config` 字段,可从 `cordis.yml` 修改(无硬编码可调项)。`cpuSeconds`(默认 60)是 `RLIMIT_CPU` 的整秒预算;子进程把软限设为 `cpuSeconds`、硬限设为 `cpuSeconds + 1`,因此内核在软限处发出的 `SIGXCPU` 被归类为 `timeout`,而 +1 秒的硬限是 `SIGKILL` 兜底。`maxWallMs`(默认 600000)是墙钟上限,为一个在等待无人 resolve 的 promise 的程序兜住 CPU 时间。`addressSpaceMb`(默认 512)是 `RLIMIT_AS` 上限,在 Darwin 上不施加(那里映射进每个进程的 dyld 共享缓存超过任何实际上限;`cpuSeconds` 与 `maxWallMs` 仍约束运行)。`maxLogBytes`(默认 65536)是共享的捕获日志字节预算;`maxValueBytes`(默认 32768)为完成值设上限;`graceMs`(默认 3000)是 `SIGTERM`→`SIGKILL` 的 grace 窗口;`pythonBin`(默认 `python3`)是解释器,在子进程以空环境启动前先对 `PATH` 解析。
+每个上限都是带默认值的、经校验的 `Config` 字段，可从 `cordis.yml` 修改（无硬编码可调项）。`cpuSeconds`（默认 60）是 `RLIMIT_CPU` 的整秒预算；子进程把软限设为 `cpuSeconds`、硬限设为 `cpuSeconds + 1`，因此内核在软限处发出的 `SIGXCPU` 被归类为 `timeout`，而 +1 秒的硬限是 `SIGKILL` 兜底。`maxWallMs`（默认 600000）是墙钟上限，为一个在等待无人 resolve 的 promise 的程序兜住 CPU 时间。`addressSpaceMb`（默认 512）是 `RLIMIT_AS` 上限，在 Darwin 上不施加（那里映射进每个进程的 dyld 共享缓存超过任何实际上限；`cpuSeconds` 与 `maxWallMs` 仍约束运行）。`maxLogBytes`（默认 65536）是共享的捕获日志字节预算；`maxValueBytes`（默认 32768）为完成值设上限；`graceMs`（默认 3000）是 `SIGTERM`→`SIGKILL` 的 grace 窗口；`pythonBin`（默认 `python3`）是解释器，在子进程以空环境启动前先对 `PATH` 解析。
 
 ## Model Experience
 
@@ -35,4 +35,4 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 ## Known Limitations and Deferred Work
 
 - **跨语言 guard 覆盖执行值与帧字段集，但不覆盖字段类型** —— `tests/protocol-mirror.e2e.ts` 使用真实 `python3` 比较 `PROTOCOL_FD`、日志截断标记，以及每个 `TypedDict` 的必填和可选字段。跨 TypeScript 与 Python 比较字段类型在此没有机械等价物，因此类型级漂移由 review 加后端真子进程套件负责。
-- **`RLIMIT_AS` 在 macOS 上不施加** —— 在 exec 时映射进每个进程的 dyld 共享缓存超过任何实际的地址空间上限,内核会拒绝该 `setrlimit` 调用,故 `addressSpaceMb` 在那里被跳过。`cpuSeconds` 与 `maxWallMs` 仍约束每一次运行。
+- **`RLIMIT_AS` 在 macOS 上不施加** —— 在 exec 时映射进每个进程的 dyld 共享缓存超过任何实际的地址空间上限，内核会拒绝该 `setrlimit` 调用，故 `addressSpaceMb` 在那里被跳过。`cpuSeconds` 与 `maxWallMs` 仍约束每一次运行。

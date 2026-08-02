@@ -30,9 +30,10 @@ vi.mock('node:fs', async (importOriginal) => {
 })
 
 /**
- * Integration suite over REAL python3 subprocesses (no mocks — subprocess is
- * cheap and local, per docs/testing.md's real-over-mock policy). Each test
- * builds a fresh runtime so budgets can be tuned per case.
+ * Integration suite over REAL python3 subprocesses (no subprocess mocks — it is
+ * cheap and local, per docs/testing.md's real-over-mock policy; the only mock is
+ * `node:fs.copyFileSync` for the staging-failure cases). Each test builds a fresh
+ * runtime so budgets can be tuned per case.
  */
 async function setup(config: Config = {}) {
   const ctx = new Context()
@@ -1921,6 +1922,80 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     expect(elapsed).toBeGreaterThanOrEqual(1_500)
     expect(elapsed).toBeLessThan(5_000)
   }, 8000)
+
+  it('reaps a same-group child that ignores SIGTERM and releases the pipes before close', async () => {
+    // The same-group counterpart to the setsid-orphan case above. A descendant
+    // left in the child's OWN process group (no setsid, so `kill(-pid)` reaches
+    // it) can ignore SIGTERM yet still release the inherited stdout/stderr/fd 3
+    // it does not hold — here by giving the Popen child DEVNULL streams and
+    // letting close_fds drop fd 3. The leader then writes `done` and exits, its
+    // `close` fires because the pipes drained, and settle() runs while that
+    // descendant is still alive. If settle() cancelled the grace-window SIGKILL
+    // the descendant would outlive the fiber; leaving the unref'd timer to fire
+    // SIGKILLs the whole group and reaps it.
+    //
+    // The descendant must have SIG_IGN installed BEFORE the host sends SIGTERM,
+    // or it dies from the default SIGTERM whether the fix is present or not — so
+    // it writes a readiness marker after trapping and the leader waits for that
+    // marker before returning. The descendant sleeps 30 s as a safety net so a
+    // broken fix cannot leak it forever; the assertion window is far shorter, so
+    // it genuinely tests the SIGKILL reaping rather than the self-timeout.
+    const handoff = await mkdtemp(join(tmpdir(), 'dsh-samegroup-'))
+    const readyMarker = join(handoff, 'ready')
+    const { runtime } = await setup({ maxWallMs: 10_000, graceMs: 300 })
+    let reportedPid!: (pid: number) => void
+    const childPid = new Promise<number>((resolve) => { reportedPid = resolve })
+    const result = await runtime.run({
+      program: [
+        'import subprocess, sys, os, time',
+        `marker = ${JSON.stringify(readyMarker)}`,
+        // Same group (no start_new_session); ignores SIGTERM; holds none of the
+        // leader's pipes (DEVNULL std streams, close_fds drops fd 3). It writes
+        // the marker (its argv[1]) only AFTER the trap is installed, so the
+        // leader cannot return — and the host cannot send SIGTERM — before the
+        // descendant ignores it.
+        'code = "import signal, sys, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); open(sys.argv[1], \'w\').close(); time.sleep(30)"',
+        'child = subprocess.Popen([sys.executable, "-c", code, marker],',
+        '                         stdin=subprocess.DEVNULL,',
+        '                         stdout=subprocess.DEVNULL,',
+        '                         stderr=subprocess.DEVNULL)',
+        'deadline = time.time() + 5',
+        'while not os.path.exists(marker) and time.time() < deadline:',
+        '    time.sleep(0.02)',
+        'await tools.report({"pid": child.pid})',
+        'return "spawned"',
+      ].join('\n'),
+      bindings: tools({
+        report: async (args) => {
+          reportedPid((args as { pid: number }).pid)
+          return 'ok'
+        },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('spawned')
+    const pid = await childPid
+    expect(Number.isInteger(pid) && pid > 0).toBe(true)
+    // The trap really installed before the leader returned, so this is the
+    // SIGTERM-ignoring descendant, not one that would have died to the default.
+    expect(existsSync(readyMarker)).toBe(true)
+    // run() resolved inside the grace window, so the descendant is still alive
+    // here; the pending SIGKILL reaps it shortly after graceMs. Poll until it is
+    // gone, well within the descendant's own 30 s self-timeout.
+    const deadline = Date.now() + 5_000
+    const alive = (): boolean => {
+      try {
+        process.kill(pid, 0)
+        return true
+      } catch {
+        return false
+      }
+    }
+    while (alive() && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+    expect(() => process.kill(pid, 0)).toThrow(/ESRCH/)
+  }, 15_000)
 })
 
 describe('PythonCodeRuntime — hostile peer', () => {

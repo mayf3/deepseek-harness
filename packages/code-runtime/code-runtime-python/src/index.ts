@@ -209,13 +209,6 @@ const MAX_PENDING_CHUNKS = 1024
 const FRAME_ENVELOPE_BYTES = 64
 
 /**
- * The most bytes one payload character can occupy once JSON-escaped: a control
- * character renders as `\uXXXX`. Used with {@link FRAME_ENVELOPE_BYTES} to turn
- * the frame ceiling into an admissible output cap.
- */
-const MAX_JSON_ESCAPE_EXPANSION = 6
-
-/**
  * Extra time added to `graceMs` before the post-kill close-deadline force-settles
  * a run whose `close` never fires (a setsid-escaped orphan holds our inherited
  * stdio; see the `closeDeadline` arm in {@link PythonCodeRuntime.execute}). It
@@ -496,12 +489,14 @@ export class PythonCodeRuntime extends CodeRuntime {
     // carry is unsatisfiable: a completion or log entry that the cap admits
     // arrives as an over-ceiling frame and fails the run as `worker-exit`
     // instead of the `output-limit` the cap describes — a silent inversion, so
-    // it fails at load. The bound subtracts the frame's own envelope, since the
-    // ceiling covers the whole line: worst case is every payload byte escaping
-    // to six (`\uXXXX` per control character), so the admissible cap is
-    // `(ceiling - envelope) / 6`.
+    // it fails at load. Both budgets are metered in SERIALIZED (JSON-escaped)
+    // bytes — the host log ledger charges `Buffer.byteLength(JSON.stringify(text))`
+    // and `checkDoneValue` measures the escaped form — so a payload admitted
+    // under the cap occupies at most `cap + envelope` bytes on the wire; escaping
+    // is already inside the charge and must not be multiplied in again. The
+    // admissible cap is therefore `ceiling - envelope`.
     for (const key of ['maxLogBytes', 'maxValueBytes'] as const) {
-      const limit = Math.floor((FRAME_CEILING_BYTES - FRAME_ENVELOPE_BYTES) / MAX_JSON_ESCAPE_EXPANSION)
+      const limit = FRAME_CEILING_BYTES - FRAME_ENVELOPE_BYTES
       if (this.config[key] > limit) {
         throw new Error(`dsh-code-runtime-python: config.${key} must not exceed ${limit} (a payload that large cannot cross the ${FRAME_CEILING_BYTES}-byte fd-3 frame ceiling, so the run would fail as worker-exit rather than output-limit), got ${String(this.config[key])}`)
       }
@@ -966,7 +961,6 @@ export class PythonCodeRuntime extends CodeRuntime {
       // Escalate SIGTERM → grace → SIGKILL on the entire process group. Idempotent
       // via `killing`.
       let killing = false
-      let graceTimer: NodeJS.Timeout | undefined
       // A backstop for the one case `close` cannot cover: model code that starts
       // a descendant with `os.setsid()`/`start_new_session=True` moves it into a
       // fresh process group, so the SIGTERM/SIGKILL aimed at the child's group
@@ -989,7 +983,21 @@ export class PythonCodeRuntime extends CodeRuntime {
         if (killing) return
         killing = true
         killGroup('SIGTERM')
-        graceTimer = setTimeout(() => { killGroup('SIGKILL') }, this.config.graceMs)
+        // The SIGKILL is left to fire on its own timer and is deliberately NOT
+        // cancelled at settlement. A model program can leave a descendant in the
+        // SAME process group `kill(-pid)` targets — no setsid, so it stays in the
+        // group — that ignores SIGTERM but releases the inherited stdout/stderr/
+        // fd-3 pipes: the leader then exits, its `close` fires (the pipes drained),
+        // and settle() runs while that descendant is still alive. Cancelling the
+        // timer there would strand it, breaking "no subprocess outlives the fiber".
+        // Letting the timer elapse SIGKILLs the whole group, reaching the survivor;
+        // `killGroup` swallows ESRCH, so firing against an already-dead group (the
+        // normal case, where the leader was the only member) is harmless. `unref`
+        // so a pending SIGKILL never keeps the host process alive after run()
+        // resolves. (A setsid-escaped orphan in a FRESH group is the different case
+        // `closeDeadline` in finish() covers, since `close` never fires there.)
+        const graceTimer = setTimeout(() => { killGroup('SIGKILL') }, this.config.graceMs)
+        graceTimer.unref()
       }
 
       let finishResolve!: () => void
@@ -1005,7 +1013,11 @@ export class PythonCodeRuntime extends CodeRuntime {
       const settle = (result: Omit<CodeRunResult, 'logs'>): void => {
         if (resolved) return
         resolved = true
-        if (graceTimer !== undefined) clearTimeout(graceTimer)
+        // The grace-window SIGKILL timer is intentionally NOT cleared here: a
+        // same-group descendant that ignored SIGTERM but released the pipes lets
+        // `close` fire (and settle() run) while it is still alive, so the pending
+        // SIGKILL must remain armed to reap it (see kill()). The timer is
+        // `unref`'d, so leaving it pending cannot keep the host process alive.
         if (closeDeadline !== undefined) clearTimeout(closeDeadline)
         // Drop from `live` only at settlement (close / pid-less spawn failure),
         // NOT at finish(): between finish() and the child's `close` the child
