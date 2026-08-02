@@ -774,6 +774,22 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs.at(-1)).toBe(logTruncationMarker(4096))
   })
 
+  it('drops a second stray line in the same chunk once the first truncated the ledger', async () => {
+    // One `os.write` carrying two newline-terminated lines where the first
+    // exhausts maxLogBytes: the first line's admit truncates and marks the
+    // ledger, and the second line's admit — reached in the same `data` callback
+    // — must be the post-truncation no-op. Proves that branch is exercised, so
+    // it carries no v8-ignore.
+    const { runtime } = await setup({ maxLogBytes: 64 })
+    const result = await runtime.run({
+      program: ['import os', 'os.write(1, b"A" * 5000 + b"\\nSECOND\\n")', 'return None'].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs.at(-1)).toBe(logTruncationMarker(64))
+    expect(result.logs.join('\n')).not.toContain('SECOND')
+  })
+
   it('charges the exact serialized cost of short-escape and quote/backslash characters', async () => {
     // Exercises every branch of jsonStringCostUpTo's per-character cost: a tab
     // and other C0 controls with short JSON forms (\t etc., 2 bytes), a quote
@@ -3440,7 +3456,9 @@ describe('PythonCodeRuntime — hostile peer', () => {
     // A single os.write far past the 64 KiB pipe buffer forces multiple
     // 'data' chunks; when the boundary lands inside the emoji's 4-byte
     // sequence, per-chunk decoding would corrupt it into replacement
-    // characters. The streaming decoder must reassemble it.
+    // characters. Raw bytes are buffered and only decoded once a complete line
+    // (or the whole tail at flush) is assembled, so the split sequence is whole
+    // by the time it is decoded.
     const { runtime } = await setup({ maxLogBytes: 1024 * 1024 })
     const result = await runtime.run({
       program: [
@@ -3464,9 +3482,9 @@ describe('PythonCodeRuntime — hostile peer', () => {
 
   it('flushes a stray-output byte sequence left incomplete when the pipe ends', async () => {
     // The child writes the first two bytes of a 3-byte UTF-8 character to fd 1
-    // and exits, so the pipe closes with the sequence unfinished inside the
-    // streaming decoder. The 'end' flush must render the stranded bytes as
-    // U+FFFD instead of dropping the evidence with the decoder.
+    // and exits, so the pipe closes with the sequence unfinished in the raw
+    // residual. The 'end' flush decodes the residual with `toString('utf8')`,
+    // which renders the stranded bytes as U+FFFD instead of dropping them.
     const { runtime } = await setup({ maxLogBytes: 1024 * 1024 })
     const result = await runtime.run({
       program: [

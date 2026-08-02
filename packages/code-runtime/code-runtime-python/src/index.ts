@@ -767,7 +767,10 @@ export class PythonCodeRuntime extends CodeRuntime {
       let logBudget = this.config.maxLogBytes
       let logsTruncated = false
       const admit = (text: string): void => {
-        /* v8 ignore next -- post-truncation admits no-op; needs child to keep streaming after ledger drops. */
+        // Post-truncation admits are no-ops: once the ledger has truncated, the
+        // marker is the last entry. Reachable within one `data` callback — a
+        // chunk carrying two newline-terminated lines where the first exhausts
+        // the budget hits this on the second — so it is a measured branch.
         if (logsTruncated) return
         // Each entry is charged its SERIALIZED cost — JSON.stringify's quotes
         // and escapes plus one separator byte — because the seam bounds the
@@ -872,22 +875,29 @@ export class PythonCodeRuntime extends CodeRuntime {
         }
         // Newline-free residual is bounded by the ledger, not left to grow with
         // the stream: an `os.write(1, b"A"*N)` flood carrying no newline would
-        // otherwise accumulate N bytes in host memory before `end`. When the
-        // pending residual's serialized cost would cross the budget, flush it now
-        // — admit() charges the exact serialized cost, truncates, and marks the
-        // ledger, and the truncation short-circuit above stops buffering on the
-        // next chunk. `+ 3` covers the two quotes and one separator admit adds.
-        if (stray.cost + 3 > logBudget) {
-          flushStray(stray)
+        // otherwise accumulate N bytes in host memory before `end`. The bound is
+        // on the COMBINED pending cost of both pipes, not each alone: stdout and
+        // stderr share one `logBudget`, so checking each against the full budget
+        // independently would let both retain nearly a budget's worth at once —
+        // ~2x peak, up to ~512 MiB near the ceiling — before either flushed.
+        // When the sum would cross the budget, flush both now. admit() charges
+        // the exact serialized cost, truncates, and marks the ledger, and the
+        // truncation short-circuit above stops buffering on the next chunk.
+        // `+ 3` covers the two quotes and one separator admit adds.
+        if (strayOut.cost + strayErr.cost + 3 > logBudget) {
+          flushStray(strayOut)
+          flushStray(strayErr)
         }
       }
-      // Flush a pipe's residual into `logs`. Called on the budget threshold
-      // above, on the pipe's `end` (normal drain), and — for the setsid-escapee
-      // path where destroy() forces settlement without an `end` — explicitly in
-      // the closeDeadline handler. Idempotent: it clears what it admits, so a
-      // later flush is a no-op. The `chunks`/`blocks` guard is the only emptiness
-      // check needed — `data` never emits a zero-length Buffer, so a non-empty
-      // fragment list always decodes to a non-empty tail.
+      // Flush a pipe's residual into `logs`. Called on the combined-budget
+      // threshold above, on the pipe's `end` (normal drain), and — for the
+      // setsid-escapee path where destroy() forces settlement without an `end` —
+      // explicitly in the closeDeadline handler. Idempotent: it clears what it
+      // admits, so a later flush is a no-op, and it returns early on an empty
+      // buffer so flushing the sibling that had nothing pending is a no-op. The
+      // `chunks`/`blocks` guard is the only emptiness check needed — `data` never
+      // emits a zero-length Buffer, so a non-empty fragment list always decodes
+      // to a non-empty tail.
       function flushStray(stray: StrayBuffer): void {
         if (stray.chunks.length === 0 && stray.blocks.length === 0) return
         const tail = Buffer.concat([...stray.blocks, ...stray.chunks]).toString('utf8')
