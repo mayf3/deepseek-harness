@@ -1095,6 +1095,12 @@ export class PythonCodeRuntime extends CodeRuntime {
           return
         }
         const deadline = Date.now() + this.config.graceMs + CLOSE_REAP_MARGIN_MS
+        // Once the deadline forces us to send SIGKILL ourselves, allow one more
+        // reap window for the kernel to tear the group down before giving up:
+        // SIGKILL is asynchronous, so the group is not gone the instant it is
+        // sent. `finalize` only runs on a confirmed-empty group, except at this
+        // final hard bound where nothing more can be done.
+        let hardDeadline = 0
         const pollGroup = (): void => {
           if (groupEmpty()) {
             // The group is gone; the grace SIGKILL is moot. Cancel it (it may not
@@ -1104,15 +1110,23 @@ export class PythonCodeRuntime extends CodeRuntime {
             finalize()
             return
           }
-          if (Date.now() >= deadline) {
+          if (hardDeadline === 0 && Date.now() >= deadline) {
             // Deadline reached with the group still non-empty. This is reachable
             // when the host event loop was blocked past both timers: Node runs
             // this poll before the grace SIGKILL timer, so that SIGKILL may never
-            // have fired. Send it HERE before finalizing — idempotent if the timer
-            // already ran — so a SIGTERM-ignoring same-group survivor is actually
-            // reaped rather than released by cancelling an unfired escalation.
+            // have fired. Send it HERE (idempotent if the timer already ran) and
+            // keep polling for the group to actually empty — finalizing on mere
+            // signal delivery would declare quiescence while the group is still
+            // dying. Bound the extra wait by one more reap margin.
             killGroup('SIGKILL')
             clearTimeout(graceTimer)
+            hardDeadline = Date.now() + CLOSE_REAP_MARGIN_MS
+          }
+          // Hard bound: only reached if the self-sent SIGKILL never empties the
+          // reachable group (a kernel that never reports ESRCH), which does not
+          // happen in practice — hence the ignore on the branch below.
+          /* v8 ignore next 4 -- SIGKILL empties the reachable group within the reap margin. */
+          if (hardDeadline !== 0 && Date.now() >= hardDeadline) {
             finalize()
             return
           }

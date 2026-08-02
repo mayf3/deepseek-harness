@@ -6,11 +6,11 @@ Status: implemented
 
 ## Problem
 
-用于 Code Mode 的 CPython 子进程后端建立在 [fd-3 帧协议](../architecture/2026-07-31-code-runtime-python-fd3-protocol.md)之上，把每个程序结果都 resolve 成一个 `CodeRunResult`，仅在 seam 被误用时才 reject `run()`，并且会 dispose 到完全停稳，从而没有任何留在子进程自己进程组内的子进程存活得比 fiber 更久（一个用 `setsid()` 逃出该进程组的后代是有文档记载的例外——见该包 README 的 Known Limitations）。一连串审查暴露出一些缺陷，它们以单元测试覆盖率无法捕获的方式破坏了这些契约：每一个都藏在一处 `/* v8 ignore */` 之后、一个读起来像修复但实际并非修复的捕获可调用对象之后、一处透过 seam 不可见的内存效应之后、一处重复计数的加载期上界之后、一处存活者能够熬过的进程组升级之后，或者一处静默死锁的跨事件循环完成之后。每处修复都附带一个在缺少它时会失败的测试。
+用于 Code Mode 的 CPython 子进程后端建立在 [fd-3 帧协议](../architecture/2026-07-31-code-runtime-python-fd3-protocol.md)之上，把每个程序结果都 resolve 成一个 `CodeRunResult`，仅在 seam 被误用时才 reject `run()`，并且会 dispose 到完全停稳，从而没有任何留在子进程自己进程组内的子进程存活得比 fiber 更久（一个用 `setsid()` 逃出该进程组的后代是有文档记载的例外——见该包 README 的 Known Limitations）。一连串审查暴露出一些缺陷，它们以单元测试覆盖率无法捕获的方式破坏了这些契约：每一个都藏在一处 `/* v8 ignore */` 之后、一个读起来像修复但实际并非修复的捕获可调用对象之后、一处透过 seam 不可见的内存效应之后、一处重复计数的加载期上界之后、一处存活者能够熬过的进程组升级之后，或者一处静默死锁的跨事件循环完成之后。每处行为修复都附带一个在缺少它时会失败的测试；唯一的例外是一处系统调用次数的改进（分块读取帧），它没有可跨平台确定性断言的失败可供断言。
 
 ## Decision
 
-七处相互独立的修正，各自位于拥有对应缺陷的包中。
+八处相互独立的修正，各自位于拥有对应缺陷的包中。
 
 ### Boot-write failure no longer rejects run()
 
@@ -42,6 +42,10 @@ Status: implemented
 
 同样在 `py/bootstrap.py` 中，一个绑定回复 Future 是在运行 `dispatch` 的那个事件循环上创建的。当模型通过 `asyncio.run(tools.x(...))` 从一个工作线程调用某个绑定时，该 Future 属于该线程的事件循环，而不是 `_pump_replies` 读取回复的主事件循环。`asyncio.Future` 不是线程安全的：从另一个线程完成它并不会唤醒它自己的事件循环，因此直接的 `set_result`／`set_exception` 会让那个正在等待的线程被搁置，该次运行退化为墙钟超时。现在每个待处理条目都会在记录 Future 的同时记录其 Future 所属的事件循环，`_pump_replies` 通过该事件循环的 `call_soon_threadsafe` 来完成它。共享的 `pending`／`next_id` 状态由一把 `threading.Lock` 保护，该锁跨越 id 认领、fd-3 写入和计数器推进这三步持有，因此并发调用方无法以违反宿主所要求的 id 顺序来交错帧。对一个已经关闭的事件循环（工作线程已结束、在回复到达前放弃了它的调用）调用 `call_soon_threadsafe` 会抛出 `RuntimeError`；该调度被包裹起来，使这个已无意义的回复被丢弃，而不是让异常终结 pump 任务并搁置此后的每一个回复。
 
+### The blocking frame reader reads in chunks, not byte by byte
+
+`ProtocolChannel.read_frame`（用于 `boot` 和 `run` 握手帧）过去通过在无缓冲（`buffering=0`）fd 上的 `FileIO.readline()` 读取，这会为每个字节发起一次 `os.read(1)`。`run` 帧在 `RLIMIT_CPU` 生效之后才到达，因此一个合法的数兆字节程序会在 `ast.parse` 运行之前，在数以百万计的单字节系统调用中烧掉数秒 CPU——有可能仅在读取这一步就耗尽预算。现在它以 `_READ_CHUNK_BYTES` 为单位分块读取，写入异步读取器已经使用的那同一个 `_pending` 残余缓冲区（包裹用的 `os.fdopen` 对象已被移除；两个读取器都直接调用 `os.read(self._fd, ...)`），因此读取开销微不足道，并且越过换行符的预读也为下一帧保留了下来。
+
 ## Testing
 
 - `tests/boot-write-failure.spec.ts` 对 `spawn` 做 mock，使 fd-3 管道在引导写入时抛出异常（这是真实子进程无法被迫进入的唯一路径），并断言 `run()` resolve 出一个 `worker-exit` 而非 reject。它被隔离在自己的 spec 中，因此真实子进程测试套件不受影响。
@@ -70,4 +74,4 @@ Status: implemented
 
 ## Consequences
 
-seam 的"只 resolve、不 reject"契约在引导写入路径上得以成立，且覆盖率是被度量的。日志捕获是线程安全的，代价是每次写入和 flush 都要获取一次可重入锁。fd-3 残余数据的内存受实际保留的字节数约束。输出上限放行一个帧所能承载的每一个值。dispose 面对同进程组存活者是真正完全停稳的（以既有的宽限预算为界，在进程组已为空时代价为零，并且一旦进程组清空就清除 SIGKILL 定时器，从而一次滞留的 kill 无法击中一个被回收的 pgid），RLIMIT 强制在 soft 和 hard 两者上都保持配置值与继承值中的最严格者，并且从模型创建的线程调用的绑定会完成而不是超时。每处修复都附带一个在缺少它时会失败的测试，因此这七处中任何一处未来若发生回归都会变红。
+seam 的"只 resolve、不 reject"契约在引导写入路径上得以成立，且覆盖率是被度量的。日志捕获是线程安全的，代价是每次写入和 flush 都要获取一次可重入锁。fd-3 残余数据的内存受实际保留的字节数约束。输出上限放行一个帧所能承载的每一个值。dispose 面对同进程组存活者是真正完全停稳的（以既有的宽限预算为界，在进程组已为空时代价为零，并且一旦进程组清空就清除 SIGKILL 定时器，从而一次滞留的 kill 无法击中一个被回收的 pgid），RLIMIT 强制在 soft 和 hard 两者上都保持配置值与继承值中的最严格者，并且从模型创建的线程调用的绑定会完成而不是超时，而且握手帧读取器不再在一个大程序上烧掉 CPU 预算。每处修复都附带一个在缺少它时会失败的测试（分块读取帧除外，它是一处系统调用次数的改进，没有可跨平台确定性断言的失败），因此其余各处未来若发生回归都会变红。

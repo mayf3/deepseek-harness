@@ -354,12 +354,12 @@ class ProtocolChannel:
     """
 
     def __init__(self, fd: int) -> None:
-        # Unbuffered binary I/O so we never lose frames to an idle flush.
-        self._reader = os.fdopen(fd, "rb", buffering=0, closefd=False)
         self._fd = fd
-        # Residual bytes read past a frame's newline. Held here, not in the
-        # reading coroutine: the reply pump is cancelled once `done` is posted,
-        # and read-ahead sitting in a local would be lost with it.
+        # Residual bytes read past a frame's newline, shared by the blocking and
+        # async readers. Held here, not in the reading coroutine: the reply pump
+        # is cancelled once `done` is posted, and read-ahead sitting in a local
+        # would be lost with it. Both readers use `os.read(self._fd, ...)`
+        # directly, so no buffered file object wraps the fd.
         self._pending = bytearray()
         # Serializes writers: os.write releases the GIL, and a frame larger
         # than PIPE_BUF is neither atomic nor guaranteed fully consumed by one
@@ -374,12 +374,28 @@ class ProtocolChannel:
         (``boot`` and ``run``), where blocking is what the handshake wants. Reply
         frames arriving during the program go through :meth:`read_frame_async`,
         which must not occupy a thread.
+
+        Reads in CHUNKS into the shared ``_pending`` buffer rather than through
+        ``FileIO.readline()``: the fd is unbuffered (``buffering=0``), so
+        ``readline`` issues one ``os.read(1)`` per byte, and a multi-megabyte
+        ``run`` frame — RLIMIT_CPU already in force by then — would burn the
+        budget in millions of syscalls before ``ast.parse`` even runs. The chunk
+        reads and the same residual buffer the async path uses keep read-ahead
+        past a newline for the next frame.
         """
 
-        line = self._reader.readline()
-        if not line:
-            return None
-        return _decode_json_plain(line.decode("utf-8"))
+        while True:
+            newline = self._pending.find(b"\n")
+            if newline >= 0:
+                line = bytes(self._pending[:newline])
+                del self._pending[: newline + 1]
+                return _decode_json_plain(line.decode("utf-8"))
+            chunk = os.read(self._fd, _READ_CHUNK_BYTES)
+            if not chunk:
+                # EOF before a newline: drop the partial line, as the host drops
+                # a frame that never completed.
+                return None
+            self._pending.extend(chunk)
 
     async def read_frame_async(self) -> dict[str, Any] | None:
         """Await one JSON-line frame without occupying a thread. ``None`` on EOF.
