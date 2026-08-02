@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import { logTruncationMarker, WIRE_FRAME_FIELDS } from '../src/protocol.ts'
+import { logTruncationMarker, PROTOCOL_FD, WIRE_FRAME_FIELDS } from '../src/protocol.ts'
 
 /**
  * Cross-language mirror check between `src/protocol.ts` and `py/protocol.py`,
@@ -47,9 +47,9 @@ describe.skipIf(!python3Available)('protocol.py mirrors protocol.ts at runtime',
     ].join('\n')
     const { stdout } = await execFileAsync('python3', ['-I', '-c', probe])
     const seen = JSON.parse(stdout) as { fd: number; markers: string[] }
-    // fd 3 is the wire contract, not a tunable: the host pins it positionally
-    // when it spawns the child.
-    expect(seen.fd).toBe(3)
+    // Assert against the TS-side PROTOCOL_FD export (the value the host wires),
+    // not a bare literal, so a drift on either side of the wire is caught here.
+    expect(seen.fd).toBe(PROTOCOL_FD)
     expect(seen.markers).toEqual(budgets.map(budget => logTruncationMarker(budget)))
   })
 
@@ -57,12 +57,13 @@ describe.skipIf(!python3Available)('protocol.py mirrors protocol.ts at runtime',
     // Turn the TypedDict mirror from a review-only obligation into an executable
     // check: enumerate EVERY TypedDict in py/protocol.py (public names carrying
     // __required_keys__) and assert both the frame roster and each frame's
-    // required/optional key sets against WIRE_FRAME_FIELDS — the TS-side source
-    // of truth bound to the frame interfaces by `satisfies` in protocol.ts.
-    // Together this catches drift on EITHER side of the wire: a TS rename or
-    // optionality flip breaks typecheck; a Python frame added, removed, or with
-    // a changed field set breaks this comparison. `global` is the reserved-
-    // keyword wire key the Python side carries via a functional TypedDict.
+    // required/optional key sets against WIRE_FRAME_FIELDS — projected from the
+    // WIRE_FRAME_FIELD_ROLES map that `satisfies` binds exhaustively to the
+    // frame interfaces in protocol.ts. Together this catches drift on EITHER
+    // side of the wire: a TS-side field add, remove, rename, or optionality flip
+    // fails typecheck at the roles map; a Python frame added, removed, or with a
+    // changed field set fails this comparison. `global` is the reserved-keyword
+    // wire key the Python side carries via a functional TypedDict.
     const probe = [
       'import json, sys',
       `sys.path.insert(0, ${JSON.stringify(pyDir)})`,

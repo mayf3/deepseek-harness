@@ -6,10 +6,16 @@
  * @module @deepseek-ai/dsh-code-runtime-python/src/protocol
  */
 
-// The protocol channel is fd 3 from the child's perspective — the host pins it
-// positionally via `stdio: ['pipe','pipe','pipe','pipe']` when it spawns the
-// child, and the Python bootstrap reads the same constant from its own
-// protocol.py.
+/**
+ * The framed-JSON channel's file descriptor from the child's perspective. The
+ * host pins it positionally when it spawns the child (`stdio` index 3, i.e.
+ * `['pipe','pipe','pipe','pipe']`), and the Python bootstrap reads the same
+ * number from its own `protocol.py`. Exported as the single TS-side source of
+ * truth: the host wiring uses it, and the cross-language mirror test asserts the
+ * Python constant equals it, so a drift on either side breaks the boot channel
+ * loudly rather than silently.
+ */
+export const PROTOCOL_FD = 3
 
 /**
  * One binding namespace declaration inside a {@link BootMessage}. `global` is
@@ -157,10 +163,10 @@ type OptionalKeys<T> = { [K in keyof T]-?: object extends Pick<T, K> ? K : never
  * Because it is `Record<keyof T, …>`, an entry MUST list every key — a field
  * added to the interface without a corresponding entry fails typecheck — and
  * `keyof T`-typed keys reject a name no frame declares. The `'required'` /
- * `'optional'` tag must match the field's actual optionality (checked by
- * {@link WIRE_FRAME_FIELDS}'s per-entry assertions), so an optionality flip is
- * caught too. This is the exhaustive counterpart the array form could not
- * express (a subset array satisfied it silently).
+ * `'optional'` tag must match the field's actual optionality (checked by the
+ * `satisfies FrameFieldRoles<…>` clause on {@link WIRE_FRAME_FIELD_ROLES}), so
+ * an optionality flip is caught too. This is the exhaustive counterpart the
+ * array form could not express (a subset array satisfied it silently).
  */
 type FrameFieldRoles<T> = Record<RequiredKeys<T>, 'required'> & Record<OptionalKeys<T>, 'optional'>
 
@@ -209,7 +215,7 @@ const WIRE_FRAME_FIELD_ROLES = {
  * field add, remove, rename, or optionality flip fails typecheck at the roles
  * map, and a Python-side divergence fails the mirror test at runtime.
  */
-export const WIRE_FRAME_FIELDS: Record<keyof typeof WIRE_FRAME_FIELD_ROLES, { required: string[]; optional: string[] }> =
+export const WIRE_FRAME_FIELDS =
   Object.fromEntries(
     Object.entries(WIRE_FRAME_FIELD_ROLES).map(([frame, roles]) => {
       const required = Object.keys(roles).filter(key => (roles as Record<string, string>)[key] === 'required').sort()
