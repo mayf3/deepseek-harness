@@ -434,6 +434,37 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     // The applied SOFT limit is the inherited 5 s, not the configured 30 s.
     expect(result.value).toBe(5)
   }, 15_000)
+
+  it('rechecks CPU at settlement against the effective inherited soft limit', async () => {
+    // The settlement-time CPU recheck must compare against the EFFECTIVE soft
+    // limit (`_clamped` may have lowered it to a stricter inherited value), not
+    // the configured `cpuSeconds`. A program that traps SIGXCPU, burns past the
+    // inherited soft, and returns inside the soft-to-hard gap would otherwise be
+    // compared to the configured value and falsely reported successful, bypassing
+    // the inherited limit. The wrapper sets a 1 s soft CPU limit; the program
+    // traps SIGXCPU and busy-loops past it, then returns — the recheck must
+    // re-deliver SIGXCPU so the host classifies the run as a timeout.
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-cpu-recheck-'))
+    const wrapper = join(dir, 'python3-cpu-capped')
+    await writeFile(wrapper, '#!/bin/sh\nulimit -S -t 1\nexec python3 "$@"\n', { mode: 0o755 })
+    const { runtime } = await setup({ pythonBin: wrapper, cpuSeconds: 30, maxWallMs: 12_000 })
+    const result = await runtime.run({
+      program: [
+        'import signal, time',
+        // Trap SIGXCPU so the soft limit does not terminate the program; burn
+        // CPU well past the inherited 1 s soft, then return normally.
+        'signal.signal(signal.SIGXCPU, lambda *a: None)',
+        'end = time.process_time() + 2.5',
+        'while time.process_time() < end:',
+        '    pass',
+        'return "returned"',
+      ].join('\n'),
+      bindings: [],
+    })
+    // The recheck compares spent CPU against the effective 1 s soft, not 30 s, so
+    // the run is a timeout rather than a false success.
+    expect(result.error?.kind).toBe('timeout')
+  }, 20_000)
 })
 
 describe('PythonCodeRuntime — programs and bindings', () => {

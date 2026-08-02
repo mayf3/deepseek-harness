@@ -766,7 +766,14 @@ async def _run(channel: ProtocolChannel) -> None:
     # bounds are the RLIMIT_CPU hard limit and the host wall clock
     # (see _make_cpu_enforcer).
     die_if_cpu_exhausted = _DIE_IF_CPU_EXHAUSTED
-    cpu_seconds = int(boot["cpuSeconds"])
+    # The settlement recheck compares against the EFFECTIVE soft CPU limit
+    # (`cpu_soft`, clamped to any stricter inherited limit above), NOT the
+    # configured `cpuSeconds`. When the deployment inherited a soft limit below
+    # the configured value, a program that traps SIGXCPU, burns past the
+    # inherited soft, and returns inside the soft-to-hard gap must be reported as
+    # a timeout — checking the configured value would falsely pass it and bypass
+    # the inherited limit.
+    cpu_seconds = cpu_soft
     # Same capture, same reason, for the failure path and the send that follows
     # it. The reporter was a module-global lookup inside the `except` block, so
     # ``import __main__; __main__._SAFE_MODEL_TRACEBACK = ...`` put model code
