@@ -167,9 +167,21 @@ class _LogStream(io.TextIOBase):
         # ``print("x", end="")`` must not concatenate quadratically.
         self._pending: list[str] = []
         self._pending_chars = 0
+        # Running serialized JSON cost of the pending tail, kept beside the
+        # character count because the early-flush trigger charges against
+        # ``remaining`` (a serialized-byte budget) and a control byte serializes
+        # to up to six bytes.
+        self._pending_cost = 0
 
     def writable(self) -> bool:  # noqa: D401 -- inherited contract
         return True
+
+    @staticmethod
+    def _fragment_cost(chunk: str) -> int:
+        # Serialized JSON cost of one pending fragment WITHOUT the enclosing
+        # quotes, so the running total mirrors what LogBuffer charges at
+        # settlement. Mirrors :func:`_json_string_cost` minus its two quotes.
+        return sum(_JSON_BYTE_COST[b] for b in chunk.encode("utf-8", errors="replace"))
 
     def write(self, text: str) -> int:  # noqa: D401 -- inherited contract
         # Serialize the whole read-modify-write against the settlement flush and
@@ -222,6 +234,7 @@ class _LogStream(io.TextIOBase):
                     line = "".join(self._pending)
                     self._pending = []
                     self._pending_chars = 0
+                    self._pending_cost = 0
                     self._logs.push(line)
                 pos = newline + 1
             # Scan by offset and STOP once the ledger is exhausted: a single
@@ -251,6 +264,7 @@ class _LogStream(io.TextIOBase):
                     tail = text[pos:]
                     self._pending.append(tail)
                     self._pending_chars = len(tail)
+                    self._pending_cost = self._fragment_cost(tail)
                 else:
                     # The ledger ran out with text still unscanned, so that text
                     # IS being dropped and the run must say so. One push is
@@ -270,11 +284,18 @@ class _LogStream(io.TextIOBase):
         else:
             self._pending.append(text)
             self._pending_chars += len(text)
+            self._pending_cost += self._fragment_cost(text)
         # A newline-free flood must hit the budget while running, not at
         # settlement: once the buffered tail alone can no longer fit the
-        # ledger (chars lower-bound the serialized cost), push it through — LogBuffer
-        # truncates, emits the marker once, and swallows everything after.
-        if self._pending_chars > self._logs.remaining:
+        # ledger, push it through — LogBuffer truncates, emits the marker once,
+        # and swallows everything after. Trigger on the SERIALIZED cost, not the
+        # character count: a control byte serializes to up to six bytes, so the
+        # char-count version undercharged control-char floods by up to 6x and a
+        # newline-free flood of ~30M NUL characters (each 1 char but 6 serialized
+        # bytes) stayed under a char-count trigger yet encoded to ~180 MB at
+        # settlement, breaching RLIMIT_AS. Serialized cost >= char count, so this
+        # fires no later than before and strictly earlier for control-dense text.
+        if self._pending_cost > self._logs.remaining:
             self._push_bounded_prefix()
         return len(text)
 
@@ -307,6 +328,7 @@ class _LogStream(io.TextIOBase):
                 break
         self._pending = []
         self._pending_chars = 0
+        self._pending_cost = 0
         self._logs.push("".join(parts))
 
     def flush(self) -> None:  # noqa: D401 -- inherited contract
@@ -333,6 +355,7 @@ class _LogStream(io.TextIOBase):
                 self._logs.push("".join(self._pending))
                 self._pending = []
                 self._pending_chars = 0
+                self._pending_cost = 0
 
 
 # ---------------------------------------------------------------------------

@@ -353,27 +353,80 @@ function jsonStringCostUpTo(text: string, maxBytes: number): number | undefined 
 }
 
 /**
- * Serialized-cost lower bound of raw UTF-8 `buf`, charged per byte without
- * decoding: a control byte below 0x20 costs 6 (`\uXXXX`) or 2 (the five
- * short-form escapes), `"`/`\` cost 2, and every other byte — including each
- * byte of a multibyte sequence — costs at least 1. It is exact for valid UTF-8
- * (a W-byte character serializes to W bytes) and a lower bound for invalid bytes
- * (each decodes to U+FFFD at 3 bytes but is charged 1); since each byte costs at
- * least its raw 1, the total is always ≥ the raw byte count, so a threshold on
- * this cost flushes no later than a raw-byte threshold and strictly earlier for
- * control-dense output. Used to bound the stray-capture residual by what the
- * ledger can actually admit rather than by raw length, so a NUL flood under a
- * large `maxLogBytes` flushes at roughly a sixth of the raw bytes instead of
- * accumulating the full budget's worth before `admit` truncates it.
- * @param buf - raw bytes from a stdout/stderr pipe chunk.
- * @returns the summed per-byte serialized cost.
+ * Cross-chunk UTF-8 state for {@link accrueStrayCost}: `expected` continuation
+ * bytes still needed to finish the in-progress sequence, and its total `width`.
+ * Both zero between sequences. Carried on each {@link StrayBuffer} so a multibyte
+ * character split across pipe `data` chunks is costed as one character, not as
+ * two broken fragments.
  */
-function serializedBufferCost(buf: Buffer): number {
+interface Utf8CostState { expected: number; width: number }
+
+/**
+ * Accrue the serialized JSON cost of raw pipe bytes `buf`, decoding UTF-8
+ * structurally so a byte that `toString('utf8')` would render as U+FFFD is
+ * charged the three bytes that replacement character serializes to — not the one
+ * byte a naive per-byte tally gives it. Without this a `b"\xff" * N` flood (every
+ * byte illegal, so U+FFFD each) counted `cost = raw`, letting the residual grow
+ * to a full budget's worth of RAW bytes before flushing; near a large
+ * `maxLogBytes` that retained ~256 MiB, then `flushStray`'s `Buffer.concat` +
+ * `toString` expanded it to a ~1 GiB peak before `admit`'s exact check could
+ * truncate. A control byte below 0x20 still costs 6 (`\uXXXX`) or 2 (the five
+ * short escapes); `"`/`\` cost 2; ASCII costs 1; a structurally valid multibyte
+ * sequence costs its byte width (2/3/4); any byte outside a valid structure
+ * costs 3. Exotic structurally-valid-but-invalid encodings (overlong forms,
+ * CESU-8 surrogates) are charged their structural width rather than the larger
+ * per-byte U+FFFD cost — a bounded under-count on inputs a flood cannot cheaply
+ * produce, and `admit`'s exact `jsonStringCostUpTo` on the decoded string remains
+ * the truncation backstop. `state` carries the in-progress sequence across
+ * chunks; a sequence left unfinished at the stream's end is decoded by the final
+ * `flushStray` and costed exactly there.
+ * @param buf - raw bytes from a stdout/stderr pipe chunk.
+ * @param state - the pipe's carried UTF-8 sequence state, mutated in place.
+ * @returns the serialized cost accrued by the bytes that resolved in this call.
+ */
+function accrueStrayCost(buf: Buffer, state: Utf8CostState): number {
   let cost = 0
-  for (const byte of buf) {
-    if (byte < 0x20) cost += byte === 0x08 || byte === 0x09 || byte === 0x0a || byte === 0x0c || byte === 0x0d ? 2 : 6
-    else if (byte === 0x22 || byte === 0x5c) cost += 2
-    else cost += 1
+  let index = 0
+  while (index < buf.length) {
+    const byte = buf[index] as number
+    if (state.expected > 0) {
+      if (byte >= 0x80 && byte <= 0xbf) {
+        state.expected -= 1
+        if (state.expected === 0) {
+          cost += state.width
+          state.width = 0
+        }
+        index += 1
+        continue
+      }
+      // The sequence broke before completing: every byte consumed so far
+      // (`width - expected`) is an invalid byte that decodes to U+FFFD (3). Then
+      // reprocess this byte as a fresh start (no index advance).
+      cost += (state.width - state.expected) * 3
+      state.expected = 0
+      state.width = 0
+      continue
+    }
+    if (byte < 0x20) {
+      cost += byte === 0x08 || byte === 0x09 || byte === 0x0a || byte === 0x0c || byte === 0x0d ? 2 : 6
+    } else if (byte === 0x22 || byte === 0x5c) {
+      cost += 2
+    } else if (byte < 0x80) {
+      cost += 1
+    } else if (byte >= 0xc2 && byte <= 0xdf) {
+      state.expected = 1
+      state.width = 2
+    } else if (byte >= 0xe0 && byte <= 0xef) {
+      state.expected = 2
+      state.width = 3
+    } else if (byte >= 0xf0 && byte <= 0xf4) {
+      state.expected = 3
+      state.width = 4
+    } else {
+      // 0x80–0xc1 and 0xf5–0xff never begin a valid sequence: U+FFFD (3).
+      cost += 3
+    }
+    index += 1
   }
   return cost
 }
@@ -838,9 +891,9 @@ export class PythonCodeRuntime extends CodeRuntime {
       // `os.write`s accumulates one Buffer object per write, and the object plus
       // backing-store overhead — which no byte or cost count sees — exhausts the
       // host heap far below the budget. Sealing bounds the live object count.
-      interface StrayBuffer { chunks: Buffer[]; blocks: Buffer[]; cost: number }
-      const strayOut: StrayBuffer = { chunks: [], blocks: [], cost: 0 }
-      const strayErr: StrayBuffer = { chunks: [], blocks: [], cost: 0 }
+      interface StrayBuffer { chunks: Buffer[]; blocks: Buffer[]; cost: number; utf8: Utf8CostState }
+      const strayOut: StrayBuffer = { chunks: [], blocks: [], cost: 0, utf8: { expected: 0, width: 0 } }
+      const strayErr: StrayBuffer = { chunks: [], blocks: [], cost: 0, utf8: { expected: 0, width: 0 } }
       const captureStray = (stray: StrayBuffer, chunk: Buffer): void => {
         // Once the ledger has truncated, stop buffering: admit() is a no-op past
         // that point, so continuing to accumulate would retain host memory for
@@ -848,12 +901,12 @@ export class PythonCodeRuntime extends CodeRuntime {
         if (logsTruncated) return
         stray.chunks.push(chunk)
         // Track SERIALIZED cost, not raw bytes: a control-char-dense residual
-        // (a NUL flood) serializes several-fold, so a raw-byte threshold would
-        // let it grow to the full budget's worth of RAW bytes — up to ~6x what
-        // the ledger can admit — before flushing. The per-byte cost is a lower
-        // bound on the admitted line's exact cost, so flushing when it crosses
-        // the budget bounds the residual by what `admit` can actually keep.
-        stray.cost += serializedBufferCost(chunk)
+        // (a NUL or illegal-UTF-8 flood) serializes several-fold, so a raw-byte
+        // threshold would let it grow to the full budget's worth of RAW bytes
+        // before flushing. `accrueStrayCost` decodes UTF-8 structurally across
+        // chunks (via `stray.utf8`) so a byte that renders as U+FFFD is charged
+        // its three serialized bytes, not one.
+        stray.cost += accrueStrayCost(chunk, stray.utf8)
         // Bound the live fragment count (see the seal rationale above), before
         // any concat so an over-count payload is never copied whole first.
         if (stray.chunks.length >= MAX_PENDING_CHUNKS) {
@@ -870,8 +923,12 @@ export class PythonCodeRuntime extends CodeRuntime {
           }
           // Carry the residual as a fresh right-sized copy, not the subarray view
           // (which would pin the whole concat allocation). See detachResidual.
+          // The residual begins at a character boundary (a newline is never
+          // inside a multibyte sequence), so its cost and UTF-8 state recompute
+          // cleanly from a fresh walk.
           stray.chunks = detachResidual(buffered)
-          stray.cost = serializedBufferCost(buffered)
+          stray.utf8 = { expected: 0, width: 0 }
+          stray.cost = accrueStrayCost(buffered, stray.utf8)
         }
         // Newline-free residual is bounded by the ledger, not left to grow with
         // the stream: an `os.write(1, b"A"*N)` flood carrying no newline would
@@ -904,6 +961,7 @@ export class PythonCodeRuntime extends CodeRuntime {
         stray.chunks = []
         stray.blocks = []
         stray.cost = 0
+        stray.utf8 = { expected: 0, width: 0 }
         admit(tail)
       }
       child.stdout.on('data', (chunk: Buffer) => { captureStray(strayOut, chunk) })

@@ -747,6 +747,70 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs.at(-1)).toBe(logTruncationMarker(4096))
   })
 
+  it('bounds a newline-free NUL flood through sys.stdout by serialized cost, not char count', async () => {
+    // `_LogStream` (the child's sys.stdout wrapper) buffers newline-free writes
+    // and early-flushes once the pending tail can no longer fit the ledger.
+    // Charging that trigger by CHARACTER count undercharged a control-char flood
+    // by up to 6x: 30M NUL chars stay under a 50 MB char-count trigger yet
+    // serialize to ~180 MB, which the settlement flush then allocated at once —
+    // breaching a 64 MB RLIMIT_AS and surfacing as worker-exit instead of the
+    // truncation marker. Driving the flood through sys.stdout.write (not
+    // os.write, which bypasses the wrapper into host stray capture) exercises the
+    // in-child stream. On Linux CI the pre-fix trigger dies on RLIMIT_AS; the
+    // serialized-cost trigger flushes while running, so the run completes and
+    // ends at the marker. (RLIMIT_AS is skipped on Darwin — bootstrap.py — so the
+    // worker-exit repro is Linux-only; locally this asserts the happy path.)
+    const { runtime } = await setup({ maxLogBytes: 50_000_000, addressSpaceMb: 64, maxWallMs: 20_000 })
+    const result = await runtime.run({
+      program: ['import sys', 'sys.stdout.write("\\x00" * 30_000_000)', 'return None'].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs.at(-1)).toBe(logTruncationMarker(50_000_000))
+  })
+
+  it('bounds an illegal-UTF-8 native residual by its U+FFFD-decoded cost', async () => {
+    // Every 0xFF byte is illegal in any UTF-8 sequence, so `toString('utf8')`
+    // renders each as U+FFFD (3 serialized bytes). `accrueStrayCost` must charge
+    // that 3, not the raw 1: otherwise the newline-free residual grows to a full
+    // budget's worth of RAW bytes before flushing — a ~3x undercount that near a
+    // large maxLogBytes retains hundreds of MiB then expands toward a ~1 GiB peak
+    // in flushStray's concat + toString. Paced single-byte writes (each its own
+    // `data` chunk, like the sealing case) expose the sub-chunk accrual: charged
+    // at 3 the residual crosses a 3072-byte budget after ~1024 bytes and flushes;
+    // charged at 1 it would need ~3072 bytes, so the peak residual triples. The
+    // largest merged buffer is the discriminator.
+    const realConcat = Buffer.concat.bind(Buffer)
+    let maxConcat = 0
+    Buffer.concat = (list: readonly Uint8Array[], total?: number): Buffer<ArrayBuffer> => {
+      const merged = realConcat(list, total)
+      if (merged.length > maxConcat) maxConcat = merged.length
+      return merged
+    }
+    let result: CodeRunResult
+    try {
+      const { runtime } = await setup({ maxLogBytes: 3072, maxWallMs: 30_000 })
+      result = await runtime.run({
+        program: [
+          'import os',
+          'for _ in range(6000):',
+          '    os.write(1, b"\\xff")',
+          '    os.sched_yield()',
+          'return None',
+        ].join('\n'),
+        bindings: [],
+      })
+    } finally {
+      Buffer.concat = realConcat
+    }
+    expect(result.error).toBeUndefined()
+    expect(result.logs.at(-1)).toBe(logTruncationMarker(3072))
+    // Charged at 3, the residual flushes around 1024 raw bytes; the largest
+    // merged buffer stays well under 2048. A raw-byte undercount would let it
+    // reach ~3072 before flushing, so 2048 discriminates.
+    expect(maxConcat).toBeLessThan(2048)
+  })
+
   it('charges a lone surrogate its full six escaped bytes, not three', async () => {
     // A forged `log` frame carrying `\ud800` escapes materializes lone
     // surrogates after JSON.parse. `Buffer.byteLength` of U+FFFD is 3, but
@@ -779,15 +843,42 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     // exhausts maxLogBytes: the first line's admit truncates and marks the
     // ledger, and the second line's admit — reached in the same `data` callback
     // — must be the post-truncation no-op. Proves that branch is exercised, so
-    // it carries no v8-ignore.
+    // it carries no v8-ignore. Kept to 109 bytes (< the smallest PIPE_BUF, 512 on
+    // macOS) so the whole payload lands in ONE atomic write and one `data`
+    // callback — the two newlines cannot split across callbacks and leave the
+    // branch un-exercised, which would be a hard-to-attribute per-file coverage
+    // flake. 103 payload bytes still exceed the 64-byte budget, so it truncates.
     const { runtime } = await setup({ maxLogBytes: 64 })
     const result = await runtime.run({
-      program: ['import os', 'os.write(1, b"A" * 5000 + b"\\nSECOND\\n")', 'return None'].join('\n'),
+      program: ['import os', 'os.write(1, b"A" * 100 + b"\\nSECOND\\n")', 'return None'].join('\n'),
       bindings: [],
     })
     expect(result.error).toBeUndefined()
     expect(result.logs.at(-1)).toBe(logTruncationMarker(64))
     expect(result.logs.join('\n')).not.toContain('SECOND')
+  })
+
+  it('charges a broken multibyte sequence its U+FFFD bytes, split across pipe chunks', async () => {
+    // A 3-byte lead (0xE4) whose continuation never arrives — the next byte is a
+    // fresh ASCII 'A' — must be costed as U+FFFD (3) for the orphaned lead, not
+    // folded into a phantom character. Driven byte-by-byte so the lead and the
+    // breaking byte land in separate `data` chunks, exercising accrueStrayCost's
+    // cross-chunk broken-sequence branch. The run completes and the bytes are
+    // captured (rendered U+FFFD by toString), proving the walk resynchronizes.
+    const { runtime } = await setup({ maxLogBytes: 1024 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'os.write(1, b"\\xe4")',
+        'os.sched_yield()',
+        'os.write(1, b"A\\n")',
+        'return None',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs.join('')).toContain('A')
+    expect(result.logs.join('')).toContain('�')
   })
 
   it('charges the exact serialized cost of short-escape and quote/backslash characters', async () => {
