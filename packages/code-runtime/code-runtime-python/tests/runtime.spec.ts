@@ -3157,9 +3157,16 @@ describe('PythonCodeRuntime — hostile peer', () => {
     // length depends on pipe coalescing, but it is one entry and non-empty.
     expect(result.logs.length).toBe(1)
     expect((result.logs[0] as string).length).toBeGreaterThan(0)
-    // Sealing keeps each byte copied a bounded number of times; re-merging the
-    // whole residual per threshold would push the total far past this.
-    expect(copied).toBeLessThan(2 * 1024 * 1024)
+    // Sealing appends a finished block rather than re-merging everything held, so
+    // each byte is copied a bounded number of times. Re-merging the whole
+    // residual at every seal threshold instead makes the cumulative copy volume
+    // quadratic. Measured like the fd-3 sibling above rather than reasoned about:
+    // this sealed shape copies about 120 KB for 60000 trickled bytes, the
+    // re-merging shape about 538 KB (the stray path adds one whole-residual
+    // concat at the terminating newline over the fd-3 sibling's 119/540, landing
+    // at the same order). 256 KiB sits between them with margin on both sides, so
+    // reverting the seal to a re-merge turns this assertion red.
+    expect(copied).toBeLessThan(256 * 1024)
   }, 40_000)
 
   it('caps a huge exception diagnostic child-side before it crosses the wire', async () => {
