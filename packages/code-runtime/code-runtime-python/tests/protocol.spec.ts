@@ -214,17 +214,19 @@ describe('checkDoneValue', () => {
   })
 
   it('rejects an over-budget string on its length before escaping it', () => {
-    // A control-heavy forged string escapes to ~6x its length; the walk must
-    // refuse it on the cheap `length + 2` lower bound so the escaped copy is
-    // never allocated. Observable through the boundary: a string whose LENGTH
-    // already exceeds the cap fails even though every character is 1 byte.
-    expect(checkDoneValue(' '.repeat(4096), 1024)).toEqual({ ok: false, reason: 'over-budget' })
+    // A control-heavy forged string escapes to ~6x its length (each NUL becomes
+    // the 6-character `\u0000`); the walk must refuse it on the cheap
+    // `length + 2` lower bound so the escaped copy is never allocated. Observable
+    // through the boundary: a string whose LENGTH already exceeds the cap fails
+    // even though every source character is one UTF-16 code unit.
+    expect(checkDoneValue('\0'.repeat(4096), 1024)).toEqual({ ok: false, reason: 'over-budget' })
     // The bound is a lower bound, never a false rejection: a string that fits
-    // exactly still passes with its exact escaped size.
-    expect(checkDoneValue(' ', 8)).toEqual({ ok: true, bytes: 8 })
-    expect(checkDoneValue(' ', 7)).toEqual({ ok: false, reason: 'over-budget' })
+    // exactly still passes with its exact escaped size — one NUL serializes to
+    // `"\u0000"`, i.e. two quotes plus the 6-character escape = 8 bytes.
+    expect(checkDoneValue('\0', 8)).toEqual({ ok: true, bytes: 8 })
+    expect(checkDoneValue('\0', 7)).toEqual({ ok: false, reason: 'over-budget' })
     // Same lower bound for keys, checked before the key is escaped.
-    expect(checkDoneValue({ [' '.repeat(4096)]: 1 }, 1024)).toEqual({ ok: false, reason: 'over-budget' })
+    expect(checkDoneValue({ ['\0'.repeat(4096)]: 1 }, 1024)).toEqual({ ok: false, reason: 'over-budget' })
   })
 
   it('meters only own enumerable keys', () => {
