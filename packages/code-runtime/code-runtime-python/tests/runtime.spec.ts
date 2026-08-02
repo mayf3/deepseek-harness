@@ -94,14 +94,16 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     // 256 MiB framing ceiling is fixed. A larger cap is unsatisfiable rather
     // than generous: a completion the cap admits arrives as an over-ceiling
     // frame and fails the run as `worker-exit`, inverting the `output-limit`
-    // the cap describes. The bound is `(ceiling - envelope) / 6`, since a
-    // control character escapes to six bytes.
-    const admissible = Math.floor((256 * 1024 * 1024 - 64) / 6)
+    // the cap describes. Both budgets are metered in already-escaped serialized
+    // bytes, so a payload occupies at most `cap + envelope` on the wire; the
+    // bound is `ceiling - envelope`, not `(ceiling - envelope) / 6` (that
+    // divided in escape expansion the charge already counts).
+    const admissible = 256 * 1024 * 1024 - 64
     const ctx = new Context()
     await expect(ctx.plugin(PythonCodeRuntime, { maxLogBytes: admissible + 1 }))
-      .rejects.toThrow(/maxLogBytes must not exceed 44739232 .*fd-3 frame ceiling/)
+      .rejects.toThrow(/maxLogBytes must not exceed 268435392 .*fd-3 frame ceiling/)
     await expect(ctx.plugin(PythonCodeRuntime, { maxValueBytes: admissible + 1 }))
-      .rejects.toThrow(/maxValueBytes must not exceed 44739232 .*fd-3 frame ceiling/)
+      .rejects.toThrow(/maxValueBytes must not exceed 268435392 .*fd-3 frame ceiling/)
     // The boundary value itself loads: the bound is the largest cap a frame can
     // still carry, not one below it.
     const boundary = await ctx.plugin(PythonCodeRuntime, { maxValueBytes: admissible })
