@@ -2900,6 +2900,29 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(Buffer.byteLength(result.error?.message ?? '', 'utf8')).toBeLessThan(2048)
   })
 
+  it('caps a control-heavy exception diagnostic by its serialized cost, not raw bytes', async () => {
+    // The diagnostic crosses fd 3 inside a JSON frame where a control character
+    // escapes sixfold (a NUL is one raw byte, six as ` `). Capping by raw
+    // UTF-8 length would let a NUL-heavy message near maxValueBytes serialize to
+    // ~6x that and breach the frame ceiling — the silent worker-exit inversion
+    // the load-time cap check exists to prevent. The child meters the diagnostic
+    // by its serialized cost, so a NUL flood is truncated to fit the frame and
+    // the run still reports the exception rather than a worker-exit.
+    const { runtime } = await setup({ maxValueBytes: 4096 })
+    const result = await runtime.run({
+      // 512 KiB of NUL: ~3 MiB once escaped, far past the 4 KiB cap.
+      program: 'raise ValueError("\\x00" * (512 * 1024))',
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message.endsWith('… [truncated]')).toBe(true)
+    // The SERIALIZED form (what the frame carried) fits the budget, so its raw
+    // length is well under it too — a raw-byte cap would have admitted ~4 KiB of
+    // NULs that serialize to ~24 KiB.
+    const serialized = JSON.stringify(result.error?.message ?? '')
+    expect(Buffer.byteLength(serialized, 'utf8')).toBeLessThanOrEqual(4096 + 8)
+  })
+
   it('bounds a newline-free partial-line flood while the program is still running', async () => {
     // print("x", end="") never completes a line, so nothing reaches the
     // Python LogBuffer until settlement — the buffered tail must still hit

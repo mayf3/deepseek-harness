@@ -1162,8 +1162,15 @@ export class PythonCodeRuntime extends CodeRuntime {
         // OOM killer, an operator, or itself consumed none), so every other
         // signal or code — including an unsolicited SIGKILL, even the
         // hard-limit one — reports as an opaque worker exit.
+        //
+        // The message names `cpuSeconds` as the CONFIGURED ceiling, not "the
+        // budget that fired": the child clamps RLIMIT_CPU to the stricter of
+        // `cpuSeconds` and any inherited soft limit, so under a tighter inherited
+        // cap SIGXCPU arrives before `cpuSeconds` — the host cannot see the
+        // effective value, so it states the ceiling it set rather than a second
+        // count it cannot guarantee.
         finish(signal === 'SIGXCPU'
-          ? { error: { kind: 'timeout', message: `CPU budget (${this.config.cpuSeconds}s) exhausted` } }
+          ? { error: { kind: 'timeout', message: `CPU time exhausted (limit at most the configured ${this.config.cpuSeconds}s; a stricter inherited RLIMIT_CPU can fire sooner)` } }
           : { error: { kind: 'worker-exit', message: `python exited (code=${String(code)}, signal=${String(signal)}) before completing` } })
         settle(decided)
       })

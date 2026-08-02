@@ -1143,6 +1143,15 @@ _JSON_ESCAPE_SURCHARGES = [
     for byte in [*range(0x20), ord('"'), ord("\\")]
 ]
 
+# Per-byte JSON-string serialized cost (the byte itself plus its escape
+# surcharge), indexed by byte value. Lets :func:`_cap_message` accumulate the
+# serialized cost of a growing prefix in one O(1) step per byte without building
+# the escaped form. A non-ASCII byte stays raw (cost 1); a C0 control or ``"``/
+# ``\\`` carries its surcharge from :data:`_JSON_ESCAPE_SURCHARGES`.
+_JSON_BYTE_COST = [1] * 256
+for _escaped_byte, _surcharge in _JSON_ESCAPE_SURCHARGES:
+    _JSON_BYTE_COST[_escaped_byte[0]] = 1 + _surcharge
+
 
 def _json_string_cost(raw: bytes) -> int:
     """UTF-8 byte length of one string's JSON form, WITHOUT building that form.
@@ -1558,31 +1567,51 @@ _TRUNCATION_MARKER_BYTES = len(_TRUNCATION_MARKER.encode("utf-8"))
 
 
 def _cap_message(message: str, max_bytes: int) -> str:
-    """Byte-cap a diagnostic, appending the same marker the host uses.
+    """Cap a diagnostic by its SERIALIZED cost, appending the host's marker.
+
+    Metered by the JSON-string cost the ``done`` frame will actually carry, not
+    by raw UTF-8 length: the message crosses fd 3 inside a JSON frame where
+    control characters escape up to sixfold (a NUL is one raw byte but six as
+    ``\\u0000``), so a raw-length cap of ``maxValueBytes`` could serialize to
+    roughly six times that and breach the 256 MiB frame ceiling — the silent
+    ``worker-exit`` inversion the load-time cap check exists to prevent, and a
+    several-hundred-MiB escape allocation besides. The seam's load bound admits
+    ``maxValueBytes`` up to ``ceiling - envelope`` on the premise that both the
+    completion value and the diagnostic are metered in serialized bytes, so this
+    honors that premise for the diagnostic.
 
     Encoded with ``errors="replace"`` first: a model exception message can
-    contain an unpaired surrogate (``raise Exception("\\ud800")``), and a
-    strict encode would throw while BUILDING the failure frame — the run
-    would then strand until the wall clock instead of reporting the
-    exception. Then a UTF-8 slice with a trailing partial sequence dropped
-    by ``errors="ignore"``; the marker text matches the host-side
-    ``capMessage`` so a truncated diagnostic reads identically wherever the
-    cap was applied.
-
-    The marker's bytes come OUT of ``max_bytes``, so the returned string as a
-    whole honors the cap; retaining a full cap of text and then appending the
-    marker would exceed the bound this function enforces, and the host meters
-    the same field again on arrival. A ``max_bytes`` below the marker's own
-    size leaves no room for message text and yields the marker alone, so the
-    true bound is ``max(max_bytes, 15)`` — reporting that truncation happened
-    is worth those 15 bytes.
+    contain an unpaired surrogate (``raise Exception("\\ud800")``), and a strict
+    encode would throw while BUILDING the failure frame — the run would then
+    strand until the wall clock instead of reporting the exception. The marker's
+    serialized cost comes OUT of ``max_bytes``, so the returned string's own
+    frame form honors the cap; the host meters the same field again on arrival.
+    A ``max_bytes`` below the marker's cost yields the marker alone.
     """
 
     raw = message.encode("utf-8", errors="replace")
-    if len(raw) <= max_bytes:
+    if _json_string_cost(raw) <= max_bytes:
         return raw.decode("utf-8")
-    budget = max(0, max_bytes - _TRUNCATION_MARKER_BYTES)
-    return raw[:budget].decode("utf-8", errors="ignore") + _TRUNCATION_MARKER
+    # Truncating: the result is `prefix + marker`, whose serialized cost is
+    # `2 (quotes) + sum(prefix byte costs) + marker cost`. The marker is
+    # escape-free, so its cost is its UTF-8 length. Reserve that and the quotes,
+    # then take the longest raw prefix whose accumulated per-byte cost fits.
+    # `_JSON_BYTE_COST` is per-byte and additive, so the scan is exact and walks
+    # at most a budget's worth of bytes, allocating nothing (unlike building the
+    # escaped form). `max(0, ...)` handles a `max_bytes` below the marker's own
+    # cost, yielding the marker alone.
+    content_budget = max(0, max_bytes - 2 - len(_TRUNCATION_MARKER.encode("utf-8")))
+    cost = 0
+    end = 0
+    for end in range(len(raw)):
+        cost += _JSON_BYTE_COST[raw[end]]
+        if cost > content_budget:
+            break
+    else:
+        end = len(raw)
+    # Drop a trailing partial UTF-8 sequence the slice may have cut (continuation
+    # bytes are 0b10xxxxxx); `errors="ignore"` renders the clean prefix.
+    return raw[:end].decode("utf-8", errors="ignore") + _TRUNCATION_MARKER
 
 
 # Fixed safety/liveness bound, not a tunable: a model can raise an exception
