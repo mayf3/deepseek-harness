@@ -1618,7 +1618,7 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
       bindings: [],
     })
     expect(result.error?.kind).toBe('timeout')
-    expect(result.error?.message).toContain('CPU budget')
+    expect(result.error?.message).toContain('CPU time exhausted')
   }, 8000)
 
   it('keeps an early self-inflicted SIGKILL a worker-exit, not a CPU timeout', async () => {
@@ -1822,7 +1822,7 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
       bindings: [],
     })
     expect(result.error?.kind).toBe('timeout')
-    expect(result.error?.message).toContain('CPU budget')
+    expect(result.error?.message).toContain('CPU time exhausted')
     expect(result.value).toBeUndefined()
   }, 15_000)
 
