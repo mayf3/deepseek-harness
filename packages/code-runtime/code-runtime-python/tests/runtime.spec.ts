@@ -729,6 +729,40 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs.join('').length).toBeLessThan(4096)
   })
 
+  it('bounds a control-char-dense native residual by serialized cost, not raw length', async () => {
+    // A newline-free NUL flood passes the cheap `length + 3` lower bound at a
+    // raw length well under the budget, but each NUL serializes to ` ` (6
+    // bytes), so the true JSON cost is ~6x. The ledger must charge that
+    // serialized cost — and `jsonStringCostUpTo` must measure it WITHOUT
+    // allocating the escaped copy, so a near-budget line under a large
+    // maxLogBytes cannot momentarily allocate a multi-gigabyte `JSON.stringify`
+    // result. Under a small budget the residual is truncated once the serialized
+    // cost crosses it.
+    const { runtime } = await setup({ maxLogBytes: 4096 })
+    const result = await runtime.run({
+      program: ['import os', 'os.write(1, b"\\x00" * 4000)', 'return None'].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs.at(-1)).toBe(logTruncationMarker(4096))
+  })
+
+  it('charges the exact serialized cost of short-escape and quote/backslash characters', async () => {
+    // Exercises every branch of jsonStringCostUpTo's per-character cost: a tab
+    // and other C0 controls with short JSON forms (\t etc., 2 bytes), a quote
+    // and backslash (2 bytes each), a `\uXXXX` control (6 bytes), a multibyte
+    // BMP character (raw UTF-8 width), and plain ASCII. Under a budget large
+    // enough to admit it, the line survives verbatim — proving the cost walker
+    // does not over- or under-charge and the string round-trips unescaped.
+    const { runtime } = await setup({ maxLogBytes: 4096 })
+    const result = await runtime.run({
+      program: ['import os', String.raw`os.write(1, "\ta\"b\\c\x01é\n".encode("utf-8"))`, 'return None'].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['\ta"b\\c\x01é'])
+  })
+
   it('fails a completion dict with a non-string key as invalid-output (no key coercion)', async () => {
     // json.dumps would coerce {1: "a", "1": "b"} to a single "1" key, silently
     // dropping data. The shape validator rejects it before encoding.
@@ -2041,6 +2075,28 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     // not the orphan's 5 s self-exit — proving the deadline, not a fallback, fired.
     expect(elapsed).toBeGreaterThanOrEqual(1_500)
     expect(elapsed).toBeLessThan(4_000)
+  }, 8000)
+
+  it('flushes a newline-free diagnostic when the closeDeadline forces settlement', async () => {
+    // A leader that writes an unterminated diagnostic via `os.write(1, ...)` and
+    // then exits, leaving a setsid orphan holding the pipes open, settles through
+    // the closeDeadline destroy() path — which fires no `end`. The residual must
+    // be flushed before destroy() drops it, or the diagnostic is lost from
+    // `logs`. The value is decided by the done frame; the diagnostic must survive.
+    const { runtime } = await setup({ graceMs: 100 })
+    const result = await runtime.run({
+      program: [
+        'import os, subprocess, sys',
+        'os.write(1, b"leader-diagnostic-no-newline")',
+        'subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"],',
+        '                 start_new_session=True)',
+        'return "escaped"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('escaped')
+    expect(result.logs).toContain('leader-diagnostic-no-newline')
   }, 8000)
 
   it('reaps a same-group child that ignores SIGTERM and releases the pipes before close', async () => {

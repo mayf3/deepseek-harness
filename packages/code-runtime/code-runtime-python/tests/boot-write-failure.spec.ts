@@ -74,7 +74,13 @@ describe('PythonCodeRuntime — boot-write failure', () => {
     // misuse) and stranded the staging directory materializePyScripts had just
     // written, which only settle() removes. The fix catches it, unlinks the
     // directory, and resolves the same `worker-exit` class as an async ENOENT.
-    const before = readdirSync(tmpdir()).filter(name => name.startsWith('dsh-code-runtime-python-'))
+    // Snapshot as a SET, then assert no dir NEW relative to it survives. Strict
+    // array equality would flake: vitest's forks pool runs runtime.spec.ts in a
+    // sibling worker that concurrently creates and removes
+    // `dsh-code-runtime-python-*` dirs, so a concurrent create OR delete in the
+    // window would fail `toEqual`. The set difference is immune to both — it
+    // only asserts THIS run left nothing behind.
+    const before = new Set(readdirSync(tmpdir()).filter(name => name.startsWith('dsh-code-runtime-python-')))
     spawnMock.mockImplementation(() => { throw Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' }) })
     const ctx = new Context()
     const fiber = await ctx.plugin(PythonCodeRuntime)
@@ -84,8 +90,8 @@ describe('PythonCodeRuntime — boot-write failure', () => {
 
     expect(result.error?.kind).toBe('worker-exit')
     expect(result.error?.message).toContain('python spawn error')
-    const after = readdirSync(tmpdir()).filter(name => name.startsWith('dsh-code-runtime-python-'))
-    expect(after).toEqual(before)
+    const leaked = readdirSync(tmpdir()).filter(name => name.startsWith('dsh-code-runtime-python-') && !before.has(name))
+    expect(leaked).toEqual([])
     await fiber.dispose()
   })
 })

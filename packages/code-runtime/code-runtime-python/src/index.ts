@@ -13,7 +13,6 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { StringDecoder } from 'node:string_decoder'
 import { accessSync, copyFileSync, constants as fsConstants, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
@@ -312,6 +311,37 @@ const TRUNCATION_MARKER = '… [truncated]'
  * The ellipsis is 3 bytes, so this is 15, not the string's 13 code units.
  */
 const TRUNCATION_MARKER_BYTES = Buffer.byteLength(TRUNCATION_MARKER, 'utf8')
+
+/**
+ * Serialized JSON-string cost of `text` (the two quotes plus each character's
+ * escaped byte width), measured WITHOUT materializing the escaped copy, and
+ * abandoned the instant it exceeds `maxBytes`. `JSON.stringify(text)` would
+ * allocate the whole escaped form first — up to sixfold a control-char-dense
+ * string — so a near-budget line under a large `maxLogBytes` could momentarily
+ * allocate over a gigabyte just to measure it. This walks code point by code
+ * point and stops at the cap, so the measurement allocates nothing.
+ * @param text - the candidate string.
+ * @param maxBytes - the largest serialized size the caller can admit.
+ * @returns the exact serialized byte cost, or `undefined` once it exceeds `maxBytes`.
+ */
+function jsonStringCostUpTo(text: string, maxBytes: number): number | undefined {
+  let bytes = 2 // the enclosing quotes
+  for (const character of text) {
+    const code = character.codePointAt(0) as number
+    // Control characters below 0x20 escape to `\uXXXX` (6) except the five with
+    // short forms `\b \t \n \f \r` (2); `"` and `\` escape to 2; everything else
+    // rides at its raw UTF-8 width.
+    if (code < 0x20) {
+      bytes += code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d ? 2 : 6
+    } else if (code === 0x22 || code === 0x5c) {
+      bytes += 2
+    } else {
+      bytes += Buffer.byteLength(character, 'utf8')
+    }
+    if (bytes > maxBytes) return undefined
+  }
+  return bytes
+}
 
 /**
  * Cap a done-frame `error.message` to `maxValueBytes` host-side: a forged done
@@ -729,26 +759,22 @@ export class PythonCodeRuntime extends CodeRuntime {
           logs.push(logTruncationMarker(this.config.maxLogBytes))
           return
         }
-        // Past the lower bound the escape expands the string at most sixfold,
-        // so this copy is bounded by ~6x the remaining budget.
-        const cost = Buffer.byteLength(JSON.stringify(text), 'utf8') + 1
-        if (cost > logBudget) {
+        // Past the lower bound, measure the exact serialized cost without
+        // allocating the escaped copy: `jsonStringCostUpTo` walks to the cap and
+        // stops, so even a near-budget control-char-dense line never materializes
+        // a sixfold-inflated `JSON.stringify` result. `+ 1` for the separator.
+        const measured = jsonStringCostUpTo(text, logBudget - 1)
+        if (measured === undefined) {
           logsTruncated = true
           logs.push(logTruncationMarker(this.config.maxLogBytes))
           return
         }
-        logBudget -= cost
+        logBudget -= measured + 1
         logs.push(text)
       }
 
       // Stray-byte capture: anything the child writes to its stdout/stderr
       // (native prints, C-extension writes) still counts against the ledger.
-      // One STREAMING decoder per pipe: a multibyte UTF-8 sequence can span
-      // two chunks (native writes, os.write past the pipe buffer), and
-      // decoding each chunk independently would corrupt both halves into
-      // replacement characters. StringDecoder holds the partial sequence
-      // until its continuation bytes arrive; the pipes are separate byte
-      // streams, so they cannot share one decoder.
       //
       // Output is admitted per LINE, not per transport chunk. `logs` entries
       // are joined with `\n` downstream (Code Mode), so each entry must be one
@@ -756,47 +782,67 @@ export class PythonCodeRuntime extends CodeRuntime {
       // boundary into a model-visible newline, so a single 200 KiB native write
       // split across pipe reads would read back with spurious line breaks. The
       // child's own `log` frames are already line-granular; stray capture
-      // matches them by holding a per-stream residual and admitting only on a
-      // real `\n`. A run of bytes carrying no newline accumulates in the
-      // residual; the ledger bounds it — `admit` charges each completed line, so
-      // a newline-free flood is capped when the pending residual would cross the
-      // budget, and the trailing partial is flushed once on `end`.
-      const strayOut = { decoder: new StringDecoder('utf8'), residual: '' }
-      const strayErr = { decoder: new StringDecoder('utf8'), residual: '' }
-      const captureStray = (stray: { decoder: StringDecoder; residual: string }, chunk: Buffer): void => {
+      // matches them by splitting on `\n`.
+      //
+      // Buffered as raw `Buffer` chunks with a running byte counter, exactly
+      // like the fd-3 reader below and for the same reasons: a string `+=`
+      // accumulator re-copies the whole residual on every pipe chunk (quadratic
+      // on a large newline-free write), and scanning it from index 0 each chunk
+      // is a second quadratic. Appending a chunk is O(1); the split happens only
+      // when a `\n` actually arrived. A newline never appears inside a UTF-8
+      // multibyte sequence (continuation bytes are 0x80–0xBF), so splitting on
+      // the raw 0x0a byte and decoding each complete line is safe without a
+      // streaming decoder — a line's bytes are whole by construction.
+      interface StrayBuffer { chunks: Buffer[]; bytes: number }
+      const strayOut: StrayBuffer = { chunks: [], bytes: 0 }
+      const strayErr: StrayBuffer = { chunks: [], bytes: 0 }
+      const captureStray = (stray: StrayBuffer, chunk: Buffer): void => {
         // Once the ledger has truncated, stop buffering: admit() is a no-op past
-        // that point, so continuing to grow the residual would retain host
-        // memory for output that can never be admitted.
+        // that point, so continuing to accumulate would retain host memory for
+        // output that can never be admitted.
         if (logsTruncated) return
-        stray.residual += stray.decoder.write(chunk)
-        let newline = stray.residual.indexOf('\n')
-        while (newline >= 0) {
-          admit(stray.residual.slice(0, newline))
-          stray.residual = stray.residual.slice(newline + 1)
-          newline = stray.residual.indexOf('\n')
+        stray.chunks.push(chunk)
+        stray.bytes += chunk.length
+        if (chunk.includes(0x0a)) {
+          let buffered = Buffer.concat(stray.chunks)
+          let newline: number
+          while ((newline = buffered.indexOf(0x0a)) >= 0) {
+            admit(buffered.subarray(0, newline).toString('utf8'))
+            buffered = buffered.subarray(newline + 1)
+          }
+          // Carry the residual as a fresh right-sized copy, not the subarray view
+          // (which would pin the whole concat allocation). See detachResidual.
+          stray.chunks = detachResidual(buffered)
+          stray.bytes = buffered.length
         }
         // Newline-free residual is bounded by the ledger, not left to grow with
         // the stream: an `os.write(1, b"A"*N)` flood carrying no newline would
         // otherwise accumulate N bytes in host memory before `end`. When the
-        // pending residual would cross the budget, admit it now — admit()
-        // truncates and marks the ledger, and the truncation short-circuit above
-        // stops further buffering on the next chunk.
-        if (stray.residual.length + 3 > logBudget) {
-          admit(stray.residual)
-          stray.residual = ''
+        // pending residual would cross the budget, admit it now — admit() charges
+        // its serialized cost, truncates, and marks the ledger, and the
+        // truncation short-circuit above stops buffering on the next chunk. The
+        // raw byte count is a safe lower bound on the serialized cost, so this
+        // fires no later than the budget is genuinely at risk.
+        if (stray.bytes + 3 > logBudget) {
+          flushStray(stray)
         }
+      }
+      // Flush a pipe's residual into `logs`. Called on the budget threshold
+      // above, on the pipe's `end` (normal drain), and — for the setsid-escapee
+      // path where destroy() forces settlement without an `end` — explicitly in
+      // the closeDeadline handler. Idempotent: it clears what it admits, so a
+      // later flush is a no-op. The `chunks.length` guard is the only emptiness
+      // check needed — `data` never emits a zero-length Buffer, so a non-empty
+      // chunk list always decodes to a non-empty tail.
+      function flushStray(stray: StrayBuffer): void {
+        if (stray.chunks.length === 0) return
+        const tail = Buffer.concat(stray.chunks).toString('utf8')
+        stray.chunks = []
+        stray.bytes = 0
+        admit(tail)
       }
       child.stdout.on('data', (chunk: Buffer) => { captureStray(strayOut, chunk) })
       child.stderr.on('data', (chunk: Buffer) => { captureStray(strayErr, chunk) })
-      // Flush each pipe's residual and decoder when it ends: a final line with
-      // no trailing newline, plus output that STOPS mid-sequence (native code
-      // killed between bytes) leaves a partial character in the decoder, which
-      // end() renders as U+FFFD rather than dropping the evidence. `end` fires
-      // before `close` settles the run, so the flush is admitted into `logs`.
-      const flushStray = (stray: { decoder: StringDecoder; residual: string }): void => {
-        const tail = stray.residual + stray.decoder.end()
-        if (tail.length > 0) admit(tail)
-      }
       child.stdout.on('end', () => { flushStray(strayOut) })
       child.stderr.on('end', () => { flushStray(strayErr) })
 
@@ -829,11 +875,23 @@ export class PythonCodeRuntime extends CodeRuntime {
         // ceiling this check exists to enforce. The counter is exact and free,
         // and the retained chunks are released here so the rejected payload is
         // not still held while the run settles.
-        // Reading the counter rather than the line length also charges the
-        // whole unframed buffer, which over-counts by at most the newline-
-        // bearing chunk's own length (one pipe read): the residual carried in
-        // is always a partial line, so nothing but the current line can be
-        // larger than that.
+        //
+        // The counter charges the whole unframed buffer, which over-counts by at
+        // most the newline-bearing chunk's own length (one pipe read): the
+        // residual carried in is always a partial line, so nothing but the
+        // current line can be larger than that. That over-count is deliberate and
+        // load-bounded on the OTHER side: the config cap is `ceiling - envelope`,
+        // and a legitimate near-cap frame plus a following chunk's leading bytes
+        // could in principle nudge the counter over the ceiling for one read
+        // window — but only when maxLogBytes/maxValueBytes is configured within
+        // one pipe read of the 256 MiB ceiling, orders of magnitude past the
+        // 32/64 KiB defaults. Enforcing the ceiling per-frame instead (splitting
+        // before the check) would require `Buffer.concat`-ing an over-ceiling
+        // single frame before rejecting it, reintroducing the peak-memory
+        // doubling this pre-concat check and its regression tests exist to
+        // prevent; the memory-safety bound against hostile input at any config
+        // takes precedence over a false-reject reachable only at a pathological
+        // near-ceiling config.
         if (pendingBytes > FRAME_CEILING_BYTES) {
           pendingChunks = []
           sealedBlocks = []
@@ -1233,12 +1291,17 @@ export class PythonCodeRuntime extends CodeRuntime {
         // `close` awaits every stdio stream draining, which a setsid-escaped
         // orphan holding our inherited pipes can prevent forever. Bound that
         // wait: after SIGKILL has had the grace window plus a margin to reap the
-        // child itself, force settlement on the decided result. Detaching the
-        // stream handles lets `close` land as a no-op if it ever arrives, and
-        // stops the orphan's stray output from being accounted against a run
-        // that already finished. `unref` so the deadline never keeps the host
-        // process alive on its own.
+        // child itself, force settlement on the decided result. Flush any
+        // newline-free stray residual FIRST — a leader that wrote a diagnostic
+        // with `os.write(1, ...)` and exited leaves it buffered, and destroying
+        // the stream below drops it before an `end`/`close` flush could run, so
+        // the diagnostic would be lost from `logs`. Detaching the stream handles
+        // then lets `close` land as a no-op if it ever arrives, and stops the
+        // orphan's stray output from being accounted against a run that already
+        // finished. `unref` so the deadline never keeps the host process alive.
         closeDeadline = setTimeout(() => {
+          flushStray(strayOut)
+          flushStray(strayErr)
           proto.destroy()
           child.stdout.destroy()
           child.stderr.destroy()
