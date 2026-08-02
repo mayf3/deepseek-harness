@@ -778,6 +778,32 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs.at(-1)).toBe(logTruncationMarker(20_000_000))
   })
 
+  it('bounds a NEWLINE-terminated NUL flood through sys.stdout by serialized cost', async () => {
+    // The newline path of `_LogStream.write` scans and pushes each completed
+    // LINE. Its per-line fit check charged CHARACTER count, so a control-char
+    // line (a chunk of NULs ending in a newline) passed `chars + 3 > remaining`
+    // under a large budget yet `_logs.push` then encoded the whole line at
+    // settlement — the same RLIMIT_AS breach as the newline-free path, on a
+    // different branch. The check now weighs the line by serialized cost via
+    // `_fragment_cost_upto` (scanning to the newline without slicing), so an
+    // over-budget line takes the bounded-prefix path and the run truncates. Each
+    // 1 MiB NUL chunk is newline-terminated so it exercises the line branch;
+    // driven through sys.stdout.write, Linux-only RLIMIT_AS repro, macOS happy path.
+    const { runtime } = await setup({ maxLogBytes: 20_000_000, addressSpaceMb: 512, maxWallMs: 30_000 })
+    const result = await runtime.run({
+      program: [
+        'import sys',
+        'chunk = "\\x00" * (1024 * 1024) + "\\n"',
+        'for _ in range(200):',
+        '    sys.stdout.write(chunk)',
+        'return None',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs.at(-1)).toBe(logTruncationMarker(20_000_000))
+  })
+
   it('bounds an illegal-UTF-8 native residual by its U+FFFD-decoded cost', async () => {
     // Every 0xFF byte is illegal in any UTF-8 sequence, so `toString('utf8')`
     // renders each as U+FFFD (3 serialized bytes). `accrueStrayCost` must charge
@@ -820,6 +846,51 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(maxConcat).toBeLessThan(2048)
   })
 
+  it('charges a structurally-valid but illegal UTF-8 sequence its U+FFFD-decoded cost', async () => {
+    // A CESU-8 lone surrogate `ED A0 80` is structurally well-formed (a 3-byte
+    // lead plus two 0x80–0xBF continuations) but ILLEGAL: `toString('utf8')`
+    // renders each of the three bytes as its own U+FFFD (serialized cost 9), not
+    // one width-3 character. The newline-free flush trigger weighs the residual
+    // through `accrueStrayCost`, which must validate each lead's
+    // first-continuation range (ED excludes A0–BF) and charge the true 9 — else a
+    // CESU flood undercounts 3x and the residual grows toward a full budget's raw
+    // bytes before flushing, the same peak-memory vector as the 0xFF case. The
+    // bytes are written one at a time (each its own `data` chunk, no pipe
+    // coalescing) and `Buffer.concat` is wrapped to measure the peak residual.
+    const realConcat = Buffer.concat.bind(Buffer)
+    let maxConcat = 0
+    Buffer.concat = (list: readonly Uint8Array[], total?: number): Buffer<ArrayBuffer> => {
+      const merged = realConcat(list, total)
+      if (merged.length > maxConcat) maxConcat = merged.length
+      return merged
+    }
+    let result: CodeRunResult
+    try {
+      const { runtime } = await setup({ maxLogBytes: 3072, maxWallMs: 30_000 })
+      result = await runtime.run({
+        program: [
+          'import os',
+          'seq = (0xed, 0xa0, 0x80)',
+          'for _ in range(2000):',
+          '    for b in seq:',
+          '        os.write(1, bytes((b,)))',
+          '        os.sched_yield()',
+          'return None',
+        ].join('\n'),
+        bindings: [],
+      })
+    } finally {
+      Buffer.concat = realConcat
+    }
+    expect(result.error).toBeUndefined()
+    expect(result.logs.at(-1)).toBe(logTruncationMarker(3072))
+    // Each 3-byte sequence costs 9 (three U+FFFD), so single-byte-paced the
+    // residual crosses the 3072 budget after ~342 raw bytes and flushes; the
+    // largest merged buffer stays well under 2048. Charging the structural width
+    // 3 would need ~1024 raw bytes, tripling the peak past 2048.
+    expect(maxConcat).toBeLessThan(2048)
+  })
+
   it('charges a lone surrogate its full six escaped bytes, not three', async () => {
     // A forged `log` frame carrying `\ud800` escapes materializes lone
     // surrogates after JSON.parse. `Buffer.byteLength` of U+FFFD is 3, but
@@ -852,11 +923,11 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     // exhausts maxLogBytes: the first line's admit truncates and marks the
     // ledger, and the second line's admit — reached in the same `data` callback
     // — must be the post-truncation no-op. Proves that branch is exercised, so
-    // it carries no v8-ignore. Kept to 109 bytes (< the smallest PIPE_BUF, 512 on
+    // it carries no v8-ignore. Kept to 108 bytes (< the smallest PIPE_BUF, 512 on
     // macOS) so the whole payload lands in ONE atomic write and one `data`
     // callback — the two newlines cannot split across callbacks and leave the
     // branch un-exercised, which would be a hard-to-attribute per-file coverage
-    // flake. 103 payload bytes still exceed the 64-byte budget, so it truncates.
+    // flake. The first line's 100 bytes already exceed the 64-byte budget, so it truncates.
     const { runtime } = await setup({ maxLogBytes: 64 })
     const result = await runtime.run({
       program: ['import os', 'os.write(1, b"A" * 100 + b"\\nSECOND\\n")', 'return None'].join('\n'),
@@ -3561,19 +3632,23 @@ describe('PythonCodeRuntime — hostile peer', () => {
 
   it('reassembles multibyte UTF-8 split across stray-output pipe chunks', async () => {
     // A single os.write far past the 64 KiB pipe buffer forces multiple
-    // 'data' chunks; when the boundary lands inside the emoji's 4-byte
-    // sequence, per-chunk decoding would corrupt it into replacement
-    // characters. Raw bytes are buffered and only decoded once a complete line
-    // (or the whole tail at flush) is assembled, so the split sequence is whole
-    // by the time it is decoded.
+    // 'data' chunks; when the boundary lands inside a multibyte sequence,
+    // per-chunk decoding would corrupt it into replacement characters. Raw bytes
+    // are buffered and only decoded once a complete line (or the whole tail at
+    // flush) is assembled, so the split sequence is whole by the time it is
+    // decoded. The payload spans every valid multibyte lead class so
+    // accrueStrayCost's per-lead continuation ranges are all exercised: U+0900
+    // (E0 A4 80, the range-restricted E0 lead), U+4F60 and U+597D (E4/E5, plain
+    // 3-byte), U+1F600 (F0, the range-restricted F0 lead), and U+10FFFF (F4 8F
+    // BF BF, the range-restricted F4 lead).
     const { runtime } = await setup({ maxLogBytes: 1024 * 1024 })
     const result = await runtime.run({
       program: [
         'import os',
         // os.write is one syscall and returns a partial count on a full
         // pipe, so loop until the whole payload (odd prefix -> a chunk
-        // boundary lands inside the emoji's 4-byte sequence) is out.
-        String.raw`payload = b"a" * 65535 + "\u4f60\u597d\U0001f600".encode("utf-8")`,
+        // boundary lands inside a multibyte sequence) is out.
+        String.raw`payload = b"a" * 65535 + "\u0900\u4f60\u597d\U0001f600\U0010ffff".encode("utf-8")`,
         'view = memoryview(payload)',
         'while view:',
         '    view = view[os.write(1, view):]',
@@ -3583,7 +3658,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
     })
     expect(result.error).toBeUndefined()
     const text = result.logs.join('')
-    expect(text).toContain('\u4f60\u597d\u{1f600}')
+    expect(text).toContain('\u0900\u4f60\u597d\u{1f600}\u{10ffff}')
     expect(text).not.toContain('\ufffd')
   })
 

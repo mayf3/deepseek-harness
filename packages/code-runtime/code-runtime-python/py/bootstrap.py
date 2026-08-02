@@ -178,26 +178,31 @@ class _LogStream(io.TextIOBase):
         return True
 
     @staticmethod
-    def _fragment_cost_upto(chunk: str, limit: int) -> int:
-        # Serialized JSON cost of one fragment's characters (no enclosing quotes),
-        # scanning the str directly and STOPPING once the running total passes
-        # ``limit`` so the walk is bounded by a budget's worth of characters
-        # however large the write is. A control character serializes to up to six
-        # bytes, so a plain character count undercharges a control-char flood by
-        # up to 6x: 30M NUL characters stay under a 50 MB character budget yet
-        # serialize to ~180 MB, which the settlement flush would then allocate at
-        # once and breach RLIMIT_AS. Measuring the true serialized cost fixes that,
-        # but ``.encode`` to measure it would itself be the copy the
+    def _fragment_cost_upto(chunk: str, limit: int, start: int = 0, end: "int | None" = None) -> int:
+        # Serialized JSON cost of ``chunk[start:end]``'s characters (no enclosing
+        # quotes), indexing the str directly and STOPPING once the running total
+        # passes ``limit`` so the walk is bounded by a budget's worth of
+        # characters however large the write is. A control character serializes to
+        # up to six bytes, so a plain character count undercharges a control-char
+        # flood by up to 6x: 30M NUL characters stay under a 50 MB character budget
+        # yet serialize to ~180 MB, which the settlement flush would then allocate
+        # at once and breach RLIMIT_AS. Measuring the true serialized cost fixes
+        # that, but ``.encode`` to measure it would itself be the copy the
         # ``_push_bounded_prefix`` path exists to avoid (a single 340 MiB write
         # under a tight addressSpaceMb dies on that encode), and re-scanning the
         # whole pending list per write would be quadratic under a daemon-thread
         # flood — so the caller accumulates this per-fragment result once and the
-        # ``limit`` cap keeps each scan bounded.
+        # ``limit`` cap keeps each scan bounded. ``start``/``end`` weigh a
+        # sub-range without slicing it (the slice on a 340 MiB write would be that
+        # same copy); CPython ``str`` indexing is O(1) per character.
         cost = 0
-        for char in chunk:
-            cost += _json_char_cost(ord(char))
+        stop = len(chunk) if end is None else end
+        index = start
+        while index < stop:
+            cost += _json_char_cost(ord(chunk[index]))
             if cost > limit:
                 return cost
+            index += 1
         return cost
 
     def write(self, text: str) -> int:  # noqa: D401 -- inherited contract
@@ -236,7 +241,16 @@ class _LogStream(io.TextIOBase):
             pos = 0
             if self._pending:
                 newline = text.index("\n")
-                if self._pending_chars + newline + 3 > self._logs.remaining:
+                # Weigh the reconstructed first line by SERIALIZED cost, not
+                # character count: `_pending_cost` already holds the buffered
+                # chunks' cost, and the first line's cost is scanned up to the
+                # newline without slicing `text` (the slice on a 340 MiB write
+                # would be the copy this path avoids). A character-count check
+                # undercharged a control-char line — 30M NUL characters plus a
+                # newline pass `chars + 3 > remaining` under a 50 MB budget, then
+                # `_logs.push` would encode the 30M-char join and breach RLIMIT_AS.
+                first_line_cost = self._fragment_cost_upto(text, self._logs.remaining, end=newline)
+                if self._pending_cost + first_line_cost + 2 > self._logs.remaining:
                     # The reconstructed first line cannot fit the ledger, so
                     # LogBuffer would reject it whole: copy only the prefix that
                     # fails its cheap bound and drop the chunks. The slice is
@@ -264,14 +278,17 @@ class _LogStream(io.TextIOBase):
                 newline = text.find("\n", pos)
                 if newline < 0:
                     break
-                # Bound the SLICE the same way LogBuffer bounds the encode: a
-                # first line far above the ledger would be copied whole before
-                # push could reject it, and that copy is the allocation an
-                # over-budget write cannot afford. Copy only a budget-sized
-                # prefix, which push still rejects on its own cheap bound (the
-                # prefix is longer than `remaining`), so the marker is emitted
-                # and the oversized line is never materialized.
-                if newline - pos + 3 > self._logs.remaining:
+                # Bound the SLICE by SERIALIZED cost, not character count: a line
+                # whose escaped form exceeds the ledger would be copied whole
+                # before push could reject it, and a control-char-dense line
+                # (30M NUL characters plus a newline) passes a `chars + 3 >
+                # remaining` check under a large budget yet encodes to ~6x that,
+                # so `_logs.push` would allocate the encode and breach RLIMIT_AS.
+                # `_fragment_cost_upto` scans up to the newline without slicing and
+                # stops at `remaining`, so an over-budget line takes the bounded
+                # prefix path; push still rejects that prefix on its own cheap
+                # bound, emits the marker, and never materializes the full line.
+                if self._fragment_cost_upto(text, self._logs.remaining, start=pos, end=newline) + 2 > self._logs.remaining:
                     self._logs.push(text[pos:pos + self._logs.remaining + 4])
                     break
                 self._logs.push(text[pos:newline])

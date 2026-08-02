@@ -354,32 +354,33 @@ function jsonStringCostUpTo(text: string, maxBytes: number): number | undefined 
 
 /**
  * Cross-chunk UTF-8 state for {@link accrueStrayCost}: `expected` continuation
- * bytes still needed to finish the in-progress sequence, and its total `width`.
- * Both zero between sequences. Carried on each {@link StrayBuffer} so a multibyte
- * character split across pipe `data` chunks is costed as one character, not as
- * two broken fragments.
+ * bytes still needed to finish the in-progress sequence, its total `width`, and
+ * `lowerFirst`/`upperFirst`, the valid range for the NEXT continuation byte
+ * (only the first continuation of a 3- or 4-byte lead is range-restricted; once
+ * consumed, later continuations accept the full 0x80–0xBF). All zero between
+ * sequences. Carried on each {@link StrayBuffer} so a multibyte character split
+ * across pipe `data` chunks is costed as one character.
  */
-interface Utf8CostState { expected: number; width: number }
+interface Utf8CostState { expected: number; width: number; lowerFirst: number; upperFirst: number }
 
 /**
- * Accrue the serialized JSON cost of raw pipe bytes `buf`, decoding UTF-8
- * structurally so a byte that `toString('utf8')` would render as U+FFFD is
- * charged the three bytes that replacement character serializes to — not the one
- * byte a naive per-byte tally gives it. Without this a `b"\xff" * N` flood (every
- * byte illegal, so U+FFFD each) counted `cost = raw`, letting the residual grow
- * to a full budget's worth of RAW bytes before flushing; near a large
- * `maxLogBytes` that retained ~256 MiB, then `flushStray`'s `Buffer.concat` +
- * `toString` expanded it to a ~1 GiB peak before `admit`'s exact check could
- * truncate. A control byte below 0x20 still costs 6 (`\uXXXX`) or 2 (the five
- * short escapes); `"`/`\` cost 2; ASCII costs 1; a structurally valid multibyte
- * sequence costs its byte width (2/3/4); any byte outside a valid structure
- * costs 3. Exotic structurally-valid-but-invalid encodings (overlong forms,
- * CESU-8 surrogates) are charged their structural width rather than the larger
- * per-byte U+FFFD cost — a bounded under-count on inputs a flood cannot cheaply
- * produce, and `admit`'s exact `jsonStringCostUpTo` on the decoded string remains
- * the truncation backstop. `state` carries the in-progress sequence across
- * chunks; a sequence left unfinished at the stream's end is decoded by the final
- * `flushStray` and costed exactly there.
+ * Accrue the serialized JSON cost of raw pipe bytes `buf`, decoding UTF-8 the way
+ * `toString('utf8')` (WHATWG) would so a byte that renders as U+FFFD is charged
+ * the three bytes that replacement character serializes to. A naive tally that
+ * charged every byte 1 let a `b"\xff"` flood (every byte illegal → U+FFFD each)
+ * grow the residual to a full budget's worth of raw bytes before flushing; near
+ * a large `maxLogBytes` that retained ~256 MiB, then `flushStray`'s
+ * `Buffer.concat` + `toString` expanded it to a ~1 GiB peak. Charging only the
+ * structural width would leave the same gap for structurally-well-formed but
+ * ILLEGAL sequences a flood produces just as cheaply — a CESU-8 surrogate
+ * (`ED A0 80`) or an overlong (`E0 80 80`) decodes to THREE U+FFFD (cost 9), not
+ * one width-3 character, so this validates each lead's first continuation range
+ * (WHATWG: `E0`→A0-BF, `ED`→80-9F, `F0`→90-BF, `F4`→80-8F, others 80-BF) and
+ * charges 3 per byte of any sequence that breaks. A control byte below 0x20
+ * costs 6 (`\uXXXX`) or 2 (five short escapes); `"`/`\` cost 2; ASCII costs 1; a
+ * fully valid multibyte sequence costs its byte width (2/3/4). `state` carries
+ * the in-progress sequence across chunks; an unfinished tail at stream end is
+ * decoded by the final `flushStray` and costed exactly there.
  * @param buf - raw bytes from a stdout/stderr pipe chunk.
  * @param state - the pipe's carried UTF-8 sequence state, mutated in place.
  * @returns the serialized cost accrued by the bytes that resolved in this call.
@@ -390,7 +391,12 @@ function accrueStrayCost(buf: Buffer, state: Utf8CostState): number {
   while (index < buf.length) {
     const byte = buf[index] as number
     if (state.expected > 0) {
-      if (byte >= 0x80 && byte <= 0xbf) {
+      // The valid range for THIS continuation: the lead-specific range applies
+      // to the first continuation only, then reverts to the full 0x80–0xBF.
+      const consumed = state.width - state.expected
+      const lower = consumed === 1 ? state.lowerFirst : 0x80
+      const upper = consumed === 1 ? state.upperFirst : 0xbf
+      if (byte >= lower && byte <= upper) {
         state.expected -= 1
         if (state.expected === 0) {
           cost += state.width
@@ -399,10 +405,11 @@ function accrueStrayCost(buf: Buffer, state: Utf8CostState): number {
         index += 1
         continue
       }
-      // The sequence broke before completing: every byte consumed so far
-      // (`width - expected`) is an invalid byte that decodes to U+FFFD (3). Then
-      // reprocess this byte as a fresh start (no index advance).
-      cost += (state.width - state.expected) * 3
+      // The sequence broke. WHATWG's maximal-subpart rule folds the bytes
+      // consumed so far into ONE U+FFFD (cost 3), then reprocesses this byte as
+      // a fresh start (no index advance). Charging per consumed byte would
+      // over-count, which is memory-safe but wrong; folding to one is exact.
+      cost += 3
       state.expected = 0
       state.width = 0
       continue
@@ -416,12 +423,20 @@ function accrueStrayCost(buf: Buffer, state: Utf8CostState): number {
     } else if (byte >= 0xc2 && byte <= 0xdf) {
       state.expected = 1
       state.width = 2
+      state.lowerFirst = 0x80
+      state.upperFirst = 0xbf
     } else if (byte >= 0xe0 && byte <= 0xef) {
       state.expected = 2
       state.width = 3
+      // Exclude the overlong (E0 80-9F) and CESU-8 surrogate (ED A0-BF) ranges.
+      state.lowerFirst = byte === 0xe0 ? 0xa0 : 0x80
+      state.upperFirst = byte === 0xed ? 0x9f : 0xbf
     } else if (byte >= 0xf0 && byte <= 0xf4) {
       state.expected = 3
       state.width = 4
+      // Exclude the overlong (F0 80-8F) and out-of-range (F4 90-BF) leads.
+      state.lowerFirst = byte === 0xf0 ? 0x90 : 0x80
+      state.upperFirst = byte === 0xf4 ? 0x8f : 0xbf
     } else {
       // 0x80–0xc1 and 0xf5–0xff never begin a valid sequence: U+FFFD (3).
       cost += 3
@@ -892,8 +907,8 @@ export class PythonCodeRuntime extends CodeRuntime {
       // backing-store overhead — which no byte or cost count sees — exhausts the
       // host heap far below the budget. Sealing bounds the live object count.
       interface StrayBuffer { chunks: Buffer[]; blocks: Buffer[]; cost: number; utf8: Utf8CostState }
-      const strayOut: StrayBuffer = { chunks: [], blocks: [], cost: 0, utf8: { expected: 0, width: 0 } }
-      const strayErr: StrayBuffer = { chunks: [], blocks: [], cost: 0, utf8: { expected: 0, width: 0 } }
+      const strayOut: StrayBuffer = { chunks: [], blocks: [], cost: 0, utf8: { expected: 0, width: 0, lowerFirst: 0, upperFirst: 0 } }
+      const strayErr: StrayBuffer = { chunks: [], blocks: [], cost: 0, utf8: { expected: 0, width: 0, lowerFirst: 0, upperFirst: 0 } }
       const captureStray = (stray: StrayBuffer, chunk: Buffer): void => {
         // Once the ledger has truncated, stop buffering: admit() is a no-op past
         // that point, so continuing to accumulate would retain host memory for
@@ -927,7 +942,7 @@ export class PythonCodeRuntime extends CodeRuntime {
           // inside a multibyte sequence), so its cost and UTF-8 state recompute
           // cleanly from a fresh walk.
           stray.chunks = detachResidual(buffered)
-          stray.utf8 = { expected: 0, width: 0 }
+          stray.utf8 = { expected: 0, width: 0, lowerFirst: 0, upperFirst: 0 }
           stray.cost = accrueStrayCost(buffered, stray.utf8)
         }
         // Newline-free residual is bounded by the ledger, not left to grow with
@@ -940,7 +955,11 @@ export class PythonCodeRuntime extends CodeRuntime {
         // When the sum would cross the budget, flush both now. admit() charges
         // the exact serialized cost, truncates, and marks the ledger, and the
         // truncation short-circuit above stops buffering on the next chunk.
-        // `+ 3` covers the two quotes and one separator admit adds.
+        // `+ 3` covers the two quotes and one separator admit adds. The two
+        // pipes are independent OS streams whose `data` events already interleave
+        // nondeterministically with each other and with the child's own fd-3
+        // `log` frames, so `logs` carries no cross-pipe ordering guarantee to
+        // preserve here; a fixed drain order is as valid as any.
         if (strayOut.cost + strayErr.cost + 3 > logBudget) {
           flushStray(strayOut)
           flushStray(strayErr)
@@ -961,7 +980,7 @@ export class PythonCodeRuntime extends CodeRuntime {
         stray.chunks = []
         stray.blocks = []
         stray.cost = 0
-        stray.utf8 = { expected: 0, width: 0 }
+        stray.utf8 = { expected: 0, width: 0, lowerFirst: 0, upperFirst: 0 }
         admit(tail)
       }
       child.stdout.on('data', (chunk: Buffer) => { captureStray(strayOut, chunk) })
