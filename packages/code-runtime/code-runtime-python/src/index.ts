@@ -450,8 +450,10 @@ export class PythonCodeRuntime extends CodeRuntime {
     }
     // cpuSeconds crosses to the child's setrlimit(RLIMIT_CPU) raw; a float
     // raises TypeError inside every child (a late per-run failure). Reject it
-    // at load. Other numeric caps are consumed as numbers host-side or
-    // int()-truncated in the bootstrap, so they need no integer gate.
+    // at load. maxLogBytes/maxValueBytes get their own integer gate below (the
+    // child int()-truncates them, so a float would diverge from the host);
+    // maxWallMs/graceMs/addressSpaceMb are consumed as numbers where a fraction
+    // is harmless.
     if (!Number.isInteger(this.config.cpuSeconds)) {
       throw new Error(`dsh-code-runtime-python: config.cpuSeconds must be a positive integer, got ${String(this.config.cpuSeconds)}`)
     }
@@ -507,6 +509,14 @@ export class PythonCodeRuntime extends CodeRuntime {
     // is already inside the charge and must not be multiplied in again. The
     // admissible cap is therefore `ceiling - envelope`.
     for (const key of ['maxLogBytes', 'maxValueBytes'] as const) {
+      // Require an integer: the child reads these budgets through `int(...)`,
+      // which silently floors a float, so `maxLogBytes: 3.5` would truncate at 3
+      // bytes child-side while the host meters and marks at 3.5 — the two sides
+      // enforcing different public config. Reject the float at load, as the
+      // worker backend does for its byte budgets.
+      if (!Number.isInteger(this.config[key])) {
+        throw new Error(`dsh-code-runtime-python: config.${key} must be a positive integer (the child reads it as an int, so a float diverges from the host), got ${String(this.config[key])}`)
+      }
       const limit = FRAME_CEILING_BYTES - FRAME_ENVELOPE_BYTES
       if (this.config[key] > limit) {
         throw new Error(`dsh-code-runtime-python: config.${key} must not exceed ${limit} (a payload that large cannot cross the ${FRAME_CEILING_BYTES}-byte fd-3 frame ceiling, so the run would fail as worker-exit rather than output-limit), got ${String(this.config[key])}`)

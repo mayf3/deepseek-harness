@@ -68,6 +68,18 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
       .rejects.toThrow(/cpuSeconds must be a positive integer, got 1.5/)
   })
 
+  it('rejects a non-integer byte budget at load (the child int()-truncates it)', async () => {
+    // maxLogBytes/maxValueBytes cross to the child, which reads them through
+    // int(...): a float would floor there while the host meters the fraction, so
+    // the two sides would enforce different public config. Reject at load.
+    const ctxLog = new Context()
+    await expect(ctxLog.plugin(PythonCodeRuntime, { maxLogBytes: 3.5 }))
+      .rejects.toThrow(/maxLogBytes must be a positive integer/)
+    const ctxValue = new Context()
+    await expect(ctxValue.plugin(PythonCodeRuntime, { maxValueBytes: 1024.5 }))
+      .rejects.toThrow(/maxValueBytes must be a positive integer/)
+  })
+
   it('rejects finite numeric config that cannot cross as an exact rlimit integer', async () => {
     // `Number.isFinite` and `Number.isInteger` both admit values that cannot
     // round-trip. `addressSpaceMb: 1e308` overflows to `Infinity` once multiplied
