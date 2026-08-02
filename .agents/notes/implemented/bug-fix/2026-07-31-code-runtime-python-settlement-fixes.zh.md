@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-用于 Code Mode 的 [CPython 子进程后端](2026-07-17-code-runtime-python.md)把每个程序结果都 resolve 成一个 `CodeRunResult`，仅在 seam 被误用时才 reject `run()`。三个缺陷以单元测试覆盖率无法暴露的方式破坏了这一契约，因为它们各自藏在一处 `/* v8 ignore */` 之后、藏在一条读起来像修复但实际并非修复的"捕获可调用对象"注释之后，或藏在一处透过 seam 不可见的内存效应之后。这些缺陷是通过审查当时的后端代码发现的，而非由某个失败的测试发现，因此每处修复都附带一个在缺少该修复时会失败的测试。
+用于 Code Mode 的 CPython 子进程后端建立在 [fd-3 帧协议](../architecture/2026-07-31-code-runtime-python-fd3-protocol.md)之上，把每个程序结果都 resolve 成一个 `CodeRunResult`，仅在 seam 被误用时才 reject `run()`。三个缺陷以单元测试覆盖率无法暴露的方式破坏了这一契约，因为它们各自藏在一处 `/* v8 ignore */` 之后、藏在一条读起来像修复但实际并非修复的"捕获可调用对象"注释之后，或藏在一处透过 seam 不可见的内存效应之后。这些缺陷是通过审查当时的后端代码发现的，而非由某个失败的测试发现，因此每处修复都附带一个在缺少该修复时会失败的测试。
 
 ## Decision
 
