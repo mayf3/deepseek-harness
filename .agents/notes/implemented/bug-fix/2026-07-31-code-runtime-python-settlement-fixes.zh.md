@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-六处相互独立的修正，各自位于拥有对应缺陷的包中。
+七处相互独立的修正，各自位于拥有对应缺陷的包中。
 
 ### Boot-write failure no longer rejects run()
 
@@ -32,6 +32,12 @@ Status: implemented
 
 模型程序可能在子进程自己的进程组里（没有 `setsid`，因此 `kill(-pid)` 能到达它）留下一个后代，它忽略 SIGTERM，但释放了继承而来的 stdout／stderr／fd-3 管道。随后 leader 退出，由于管道已被抽空，它的 `close` 触发，于是结算在那个后代仍存活时运行。`kill()` 在 SIGTERM 之后装设一个 `unref` 的 SIGKILL 定时器；本次修复是，当有一次升级正在进行时，`settle()` 不再立即 resolve 该次运行的 `finished` promise。取而代之的是，当 `killing` 被置位且进程组尚未为空时（`process.kill(-pid, 0)` 不抛出 ESRCH），它在一个 ref 的定时器上轮询该进程组，以 `graceMs + CLOSE_REAP_MARGIN_MS` 为界，仅当进程组已清空后才 resolve `finished`。这个 ref 的轮询是承重部分：它让宿主事件循环保持存活，直到 SIGKILL 真正回收了该进程组，因此即使是一个短命的宿主（一次性的 headless 运行、一个配置子进程）也无法退出并把存活者 reparent 给 init。在正常情况下（leader 是唯一成员），第一次探测返回 ESRCH，结算以零附加延迟完成 resolve。`teardown()` 会 await 每次运行的 `finished`，因此 dispose 是真正完全停稳的，与其 JSDoc 相符。
 
+结算还会在进程组被确认为空的那一刻取消 SIGKILL 定时器（正常路径，以及轮询看到存活者已消失时）。让它继续处于装设状态会暴露一个 PID 复用隐患：一个在 leader 被回收后仍挂起长达 `graceMs` 的 `kill(-pid)`，可能在内核复用了 leader 的 pid 之后击中一个被回收（recycled）的 pgid，从而 SIGKILL 掉一个无关的进程组（`killGroup` 吞掉 ESRCH 并无帮助——危险恰恰是那次针对被复用进程组成功执行的 kill）。在空进程组探测时清除它，把复用窗口收窄到只剩真正存在存活者的情形，此时进程组不可能为空以供复用。
+
+### RLIMIT clamps against the inherited soft limit, not only the hard
+
+在 [`py/bootstrap.py`](../../../../packages/code-runtime/code-runtime-python/py/bootstrap.py) 中，`_clamped` 仅用继承而来的 HARD 限制来约束一个请求的 `(soft, hard)` rlimit 对。一个继承了低于请求值的软限制的部署——比如继承 `(100, 200)`、请求 `(150, 160)`——会拿回 `(150, 160)`，把有效软限制从 100 抬高到 150：对 `RLIMIT_AS` 而言这放松了内存上限，对 `RLIMIT_CPU` 而言它推迟了 SIGXCPU，两者都违反了"取配置值与继承值中最严格者"。现在 `_clamped` 用每一侧各自继承而来的对应值来约束该侧（`RLIM_INFINITY` 不施加任何上限），随后把 soft 钉在 hard 之下，因此 `setrlimit` 绝不会看到一个倒置的对。
+
 ### Binding replies complete on the calling loop's thread
 
 同样在 `py/bootstrap.py` 中，一个绑定回复 Future 是在运行 `dispatch` 的那个事件循环上创建的。当模型通过 `asyncio.run(tools.x(...))` 从一个工作线程调用某个绑定时，该 Future 属于该线程的事件循环，而不是 `_pump_replies` 读取回复的主事件循环。`asyncio.Future` 不是线程安全的：从另一个线程完成它并不会唤醒它自己的事件循环，因此直接的 `set_result`／`set_exception` 会让那个正在等待的线程被搁置，该次运行退化为墙钟超时。现在每个待处理条目都会在记录 Future 的同时记录其 Future 所属的事件循环，`_pump_replies` 通过该事件循环的 `call_soon_threadsafe` 来完成它。共享的 `pending`／`next_id` 状态由一把 `threading.Lock` 保护，该锁跨越 id 认领、fd-3 写入和计数器推进这三步持有，因此并发调用方无法以违反宿主所要求的 id 顺序来交错帧。
@@ -40,7 +46,7 @@ Status: implemented
 
 - `tests/boot-write-failure.spec.ts` 对 `spawn` 做 mock，使 fd-3 管道在引导写入时抛出异常（这是真实子进程无法被迫进入的唯一路径），并断言 `run()` resolve 出一个 `worker-exit` 而非 reject。它被隔离在自己的 spec 中，因此真实子进程测试套件不受影响。
 - `tests/residual-detach.spec.ts` 对 `detachResidual` 做单元测试：向前传递的副本与残余数据相等、拥有一个大小与其自身长度一致的底层存储（fixture 保持在 Node 的 Buffer 池阈值之上），并且不与源帧的 `ArrayBuffer` 共享。
-- `tests/runtime.spec.ts`：output-cap 用例断言 `ceiling - envelope` 上界（268435392）及其消息。一个 daemon 线程用例驱动四个线程穿过结算的 flush 发出未结束的写入。same-group 回收用例 spawn 一个忽略 SIGTERM 的同进程组后代，它释放管道并递增一个心跳文件；该测试断言在宽限窗口的 SIGKILL 之后心跳停止：无论被杀死的后代是被回收还是作为僵尸进程滞留，这个断言都成立，因此它在 PID 1 不 wait() 孤儿进程的环境下同样成立。cross-loop 用例在主协程通过 `await asyncio.sleep` 让出时，从一个工作线程自己的 `asyncio.run` 事件循环运行一个绑定，断言该回复完成往返而不是超时。
+- `tests/runtime.spec.ts`：output-cap 用例断言 `ceiling - envelope` 上界（268435392）及其消息。一个 daemon 线程用例驱动四个线程穿过结算的 flush 发出未结束的写入。same-group 回收用例 spawn 一个忽略 SIGTERM 的同进程组后代，它释放管道并递增一个心跳文件；该测试断言在宽限窗口的 SIGKILL 之后心跳停止：无论被杀死的后代是被回收还是作为僵尸进程滞留，这个断言都成立，因此它在 PID 1 不 wait() 孤儿进程的环境下同样成立。cross-loop 用例在主协程通过 `await asyncio.sleep` 让出时，从一个工作线程自己的 `asyncio.run` 事件循环运行一个绑定，断言该回复完成往返而不是超时。inherited-soft-limit 用例通过一个 `ulimit -S -t` 包装脚本运行解释器，将 CPU 软限制设为低于 `cpuSeconds`，并断言实际应用的 `RLIMIT_CPU` 软限制是继承来的值，而不是配置的值（用 CPU 而非地址空间，因为 macOS 忽略 `ulimit -v`）。
 
 ## Alternatives considered
 
@@ -58,6 +64,10 @@ Status: implemented
 
 **用一个普通的 `set_result` 完成跨事件循环的 Future 并依赖 GIL。** 已否决：GIL 序列化字节码，但并不使 `asyncio.Future` 跨事件循环安全：从一个并非其事件循环所属的线程完成一个 Future，不会调度它的回调，也不会唤醒该事件循环。在拥有该 Future 的事件循环上调用 `call_soon_threadsafe` 才是有文档记载的机制。
 
+**在结算之后让 SIGKILL 定时器继续处于装设状态（早先的同进程组修复）。** 已否决：一个被留待在 leader 被回收后长达 `graceMs` 才触发的 `unref` 定时器，可能 `kill(-pid)` 一个被回收（recycled）的 pgid，击中一个无关的进程组；危险是那次成功执行的 kill，而 `killGroup` 吞掉 ESRCH 无法阻止它。在进程组被确认为空后清除该定时器，把复用窗口收窄到真正存在存活者的情形，此时进程组不为空以供复用。
+
+**只用继承而来的硬限制来约束 rlimit。** 已否决：那会静默地抬高一个比请求更严格的继承软限制，放松了该约束本应保持的那种收束。用每一侧各自继承而来的界来约束该侧（随后把 soft 钉在 hard 之下），在 soft 和 hard 两者上都保持配置值与继承值中的最严格者。
+
 ## Consequences
 
-seam 的"只 resolve、不 reject"契约在引导写入路径上得以成立，且覆盖率是被度量的。日志捕获是线程安全的，代价是每次写入和 flush 都要获取一次可重入锁。fd-3 残余数据的内存受实际保留的字节数约束。输出上限放行一个帧所能承载的每一个值。dispose 面对同进程组存活者是真正完全停稳的（以既有的宽限预算为界，在进程组已为空时代价为零），并且从模型创建的线程调用的绑定会完成而不是超时。每处修复都附带一个在缺少它时会失败的测试，因此这六处中任何一处未来若发生回归都会变红。
+seam 的"只 resolve、不 reject"契约在引导写入路径上得以成立，且覆盖率是被度量的。日志捕获是线程安全的，代价是每次写入和 flush 都要获取一次可重入锁。fd-3 残余数据的内存受实际保留的字节数约束。输出上限放行一个帧所能承载的每一个值。dispose 面对同进程组存活者是真正完全停稳的（以既有的宽限预算为界，在进程组已为空时代价为零，并且一旦进程组清空就清除 SIGKILL 定时器，从而一次滞留的 kill 无法击中一个被回收的 pgid），RLIMIT 强制在 soft 和 hard 两者上都保持配置值与继承值中的最严格者，并且从模型创建的线程调用的绑定会完成而不是超时。每处修复都附带一个在缺少它时会失败的测试，因此这七处中任何一处未来若发生回归都会变红。

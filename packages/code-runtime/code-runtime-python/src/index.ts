@@ -1064,24 +1064,27 @@ export class PythonCodeRuntime extends CodeRuntime {
         }
         resolve({ ...result, logs })
         // `finished` is what teardown awaits to honor "no subprocess outlives the
-        // fiber". When no escalation ran (normal completion, no kill) or the group
-        // is already empty, resolve it now. Otherwise a same-group descendant that
-        // ignored SIGTERM but released the pipes is still alive here (its `close`
-        // is what got us to settle); withhold `finished` until the grace-window
-        // SIGKILL has emptied the group. The poll timers are REF'd on purpose: a
-        // short-lived host (a one-shot headless run, a config subprocess) would
-        // otherwise exit before the unref'd SIGKILL timer fired, reparenting the
-        // survivor to init — the leak this await exists to prevent. The wait is
-        // bounded by the same graceMs + margin the SIGKILL escalation uses, so a
-        // truly unreapable process (it cannot be, since it is in the group
-        // `kill(-pid)` reaches) could not hang disposal.
+        // fiber". When no escalation ran (normal completion, no kill) or the
+        // group is already empty, cancel the pending SIGKILL and resolve now.
+        // Clearing it is what bounds the PID-reuse hazard: an armed `kill(-pid)`
+        // left to fire up to graceMs later could hit a RECYCLED pgid once the
+        // kernel reused the leader's pid, SIGKILLing an unrelated group. So the
+        // timer stays armed only while a real survivor exists — a same-group
+        // descendant that ignored SIGTERM but released the pipes, still alive
+        // here because its `close` is what got us to settle. In that case
+        // withhold `finished` and poll the group on REF'd timers (a short-lived
+        // host would otherwise exit before the unref'd SIGKILL fired, reparenting
+        // the survivor to init), clearing the timer the moment the group empties;
+        // the wait is bounded by the same graceMs + margin the escalation uses.
         if (!killing || groupEmpty()) {
+          if (graceTimer !== undefined) clearTimeout(graceTimer)
           finishResolve()
           return
         }
         const deadline = Date.now() + this.config.graceMs + CLOSE_REAP_MARGIN_MS
         const pollGroup = (): void => {
           if (groupEmpty() || Date.now() >= deadline) {
+            if (graceTimer !== undefined) clearTimeout(graceTimer)
             finishResolve()
             return
           }

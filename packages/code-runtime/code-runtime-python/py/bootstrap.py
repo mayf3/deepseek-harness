@@ -534,7 +534,7 @@ def _make_error_class(name: str, member_name_property: str) -> type:
 
 
 def _clamped(which: int, soft: int, hard: int) -> tuple[int, int]:
-    """Bound a requested (soft, hard) rlimit pair by the inherited hard limit.
+    """Bound a requested (soft, hard) rlimit pair by BOTH inherited limits.
 
     An unprivileged process may lower a hard limit but never raise it, so a
     harness already started under a tighter ceiling (``ulimit -v`` below
@@ -542,13 +542,24 @@ def _clamped(which: int, soft: int, hard: int) -> tuple[int, int]:
     ``setrlimit`` raise ``ValueError`` and fail every run — despite the
     inherited limit being STRONGER than the one requested. Clamping keeps the
     stricter of the two, which still satisfies the containment contract.
-    ``RLIM_INFINITY`` compares as -1, so it is special-cased rather than
-    treated as the smallest bound.
+
+    Both inherited bounds matter, not just the hard one. A deployment that
+    inherited a soft limit BELOW what is requested (e.g. inherited ``(100, 200)``,
+    requested ``(150, 160)``) must keep the stricter soft — returning the
+    requested ``150`` would RAISE the effective soft limit, loosening RLIMIT_AS
+    memory or deferring the RLIMIT_CPU SIGXCPU, the opposite of "strictest of
+    configured and inherited". So each side is clamped against its inherited
+    counterpart. ``RLIM_INFINITY`` compares as -1, so an infinite inherited bound
+    imposes no ceiling and the requested value stands.
     """
-    inherited = resource.getrlimit(which)[1]
-    if inherited == resource.RLIM_INFINITY:
-        return (soft, hard)
-    return (min(soft, inherited), min(hard, inherited))
+    inherited_soft, inherited_hard = resource.getrlimit(which)
+    clamped_soft = soft if inherited_soft == resource.RLIM_INFINITY else min(soft, inherited_soft)
+    clamped_hard = hard if inherited_hard == resource.RLIM_INFINITY else min(hard, inherited_hard)
+    # setrlimit requires soft <= hard. Clamping the two sides independently can
+    # invert them (a finite inherited soft below the clamped hard is fine, but a
+    # requested hard below the inherited soft would leave soft > hard), so pin
+    # soft under hard as the final step; the stricter hard ceiling wins.
+    return (min(clamped_soft, clamped_hard), clamped_hard)
 
 
 # ---------------------------------------------------------------------------

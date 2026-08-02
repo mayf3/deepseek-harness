@@ -411,6 +411,29 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     // the configured megabytes — exactly what the unclamped path applied.
     expect(result.value).toEqual([42, 43, 400 * 1024 * 1024])
   }, 15_000)
+
+  it('preserves an inherited soft limit stricter than the configured cap', async () => {
+    // Clamping reads BOTH inherited bounds, not just the hard one. A deployment
+    // that inherited a soft rlimit below the configured cap must keep that
+    // stricter soft: returning the configured value would RAISE the effective
+    // soft limit, loosening containment. The wrapper lowers only the SOFT CPU
+    // limit (`ulimit -S -t`) and leaves the hard limit unlimited, so the
+    // requested soft (`cpuSeconds`) sits above the inherited soft — the case that
+    // exposed the bug. RLIMIT_CPU is used because macOS ignores `ulimit -v`
+    // (RLIMIT_AS), which is exactly why the backend skips address space there.
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-soft-'))
+    const wrapper = join(dir, 'python3-soft-capped')
+    // Soft CPU 5 s, well below the configured 30 s, hard left unlimited.
+    await writeFile(wrapper, '#!/bin/sh\nulimit -S -t 5\nexec python3 "$@"\n', { mode: 0o755 })
+    const { runtime } = await setup({ pythonBin: wrapper, cpuSeconds: 30 })
+    const result = await runtime.run({
+      program: 'import resource\nreturn resource.getrlimit(resource.RLIMIT_CPU)[0]',
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    // The applied SOFT limit is the inherited 5 s, not the configured 30 s.
+    expect(result.value).toBe(5)
+  }, 15_000)
 })
 
 describe('PythonCodeRuntime — programs and bindings', () => {
