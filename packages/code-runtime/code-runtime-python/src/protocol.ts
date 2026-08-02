@@ -217,12 +217,19 @@ function scalarJson(current: unknown): string {
  */
 export function checkDoneValue(value: unknown, maxBytes: number): { ok: true; bytes: number } | { ok: false; reason: 'over-budget' | 'non-lossless' } {
   let bytes = 0
+  // A non-lossless number is recorded, not returned on sight: over-budget must
+  // win regardless of where in the value each violation sits, so the whole
+  // metering finishes first. Otherwise `["<huge>", 1e400]` and `[1e400,
+  // "<huge>"]` — the same over-budget value in two member orders — would
+  // classify differently (non-lossless vs over-budget), and the JSDoc promises
+  // an over-budget value is rejected as over-budget regardless.
+  let nonLossless = false
   const stack: unknown[] = [value]
   while (stack.length > 0) {
     const current = stack.pop()
     if (typeof current === 'number') {
-      if (!Number.isFinite(current) || Object.is(current, -0)) return { ok: false, reason: 'non-lossless' }
-      bytes += Buffer.byteLength(scalarJson(current), 'utf8')
+      if (!Number.isFinite(current) || Object.is(current, -0)) nonLossless = true
+      else bytes += Buffer.byteLength(scalarJson(current), 'utf8')
     } else if (typeof current === 'string') {
       // Lower-bound BEFORE materializing the escaped form: every UTF-16 code
       // unit is at least one UTF-8 byte plus the two quotes, so a huge or
@@ -262,6 +269,8 @@ export function checkDoneValue(value: unknown, maxBytes: number): { ok: true; by
     }
     if (bytes > maxBytes) return { ok: false, reason: 'over-budget' }
   }
+  // The whole value fit the budget; a recorded number violation is the verdict.
+  if (nonLossless) return { ok: false, reason: 'non-lossless' }
   return { ok: true, bytes }
 }
 

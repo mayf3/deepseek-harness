@@ -250,6 +250,20 @@ describe('checkDoneValue', () => {
     expect(checkDoneValue(clean, 1024)).toEqual({ ok: true, bytes: Buffer.byteLength(JSON.stringify(clean), 'utf8') })
   })
 
+  it('classifies an over-budget value as over-budget regardless of member order', () => {
+    // A value that is BOTH over-budget and non-lossless must reject as
+    // over-budget whichever member the walk reaches first — the non-lossless
+    // number is recorded and metering finishes, so the two orders below (the
+    // same value) cannot classify differently. Cap 100 with a 1000-char string.
+    const big = 'x'.repeat(1000)
+    expect(checkDoneValue([big, Infinity], 100)).toEqual({ ok: false, reason: 'over-budget' })
+    expect(checkDoneValue([Infinity, big], 100)).toEqual({ ok: false, reason: 'over-budget' })
+    // A non-lossless number that DOES fit the budget still rejects as
+    // non-lossless (the recorded violation is the verdict once the whole value
+    // is confirmed within budget).
+    expect(checkDoneValue([Infinity], 100)).toEqual({ ok: false, reason: 'non-lossless' })
+  })
+
   it('meters deep nesting iteratively without overflowing the stack', () => {
     let deep: unknown = 0
     for (let i = 0; i < 100_000; i++) deep = [deep]
