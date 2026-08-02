@@ -616,8 +616,25 @@ async def _run(channel: ProtocolChannel) -> None:
     )
 
     # 2. Wire the tools proxies and the ack.
-    pending: dict[int, asyncio.Future[Any]] = {}
+    #
+    # Each entry records the reply Future AND the loop it was created on. Model
+    # code may call a binding from a THREAD it started, spelled
+    # ``asyncio.run(tools.x(...))`` or its own new loop in that thread, so a
+    # Future here can belong to a loop other than the one ``_pump_replies`` runs
+    # on. ``asyncio.Future`` is not thread-safe: completing it from another
+    # thread does not wake its own loop, so the pump schedules the completion on
+    # the owning loop via ``call_soon_threadsafe`` (see ``_pump_replies``) rather
+    # than calling ``set_result`` directly.
+    pending: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Future[Any]]] = {}
     next_id = 0
+    # Serializes the id claim + write + counter advance in ``dispatch`` against
+    # both other binding-calling threads and the pump's ``pop``. ``dispatch`` may
+    # run concurrently on several loops/threads, and the host answers a ``call``
+    # only when its id is the exact successor of the last one — so ids must reach
+    # the wire in the order they are claimed. Holding this lock across the write
+    # (not just the counter arithmetic) is what keeps two threads' frames from
+    # interleaving on fd 3 out of id order, which the host would reject.
+    pending_lock = threading.Lock()
 
     error_classes: dict[str, type] = {}
 
@@ -646,25 +663,35 @@ async def _run(channel: ProtocolChannel) -> None:
         # state it retains to a single number. A frame that never reaches the
         # host must therefore not consume an id, so the counter advances only
         # once the write has succeeded.
-        call_id = next_id
-        fut: asyncio.Future[Any] = asyncio.get_event_loop().create_future()
-        pending[call_id] = fut
-        try:
-            channel.send_sync(
-                {
-                    "type": "call",
-                    "id": call_id,
-                    "global": global_name,
-                    "name": name,
-                    "args": args,
-                }
-            )
-        except (TypeError, ValueError) as exc:
-            pending.pop(call_id, None)
-            raise call_failure(
-                f"binding arguments must be lossless JSON: {exc}"
-            ) from exc
-        next_id += 1
+        #
+        # The whole claim-write-advance runs under ``pending_lock`` because a
+        # binding may be called from more than one thread/loop at once (the model
+        # can start a thread that runs ``asyncio.run(tools.x(...))``). Without
+        # the lock two callers could claim the same id, or write their frames to
+        # fd 3 in an order that does not match their ids — either of which the
+        # host rejects as an out-of-sequence call. The Future's own loop is
+        # captured here so ``_pump_replies`` can complete it thread-safely.
+        loop = asyncio.get_event_loop()
+        with pending_lock:
+            call_id = next_id
+            fut: asyncio.Future[Any] = loop.create_future()
+            pending[call_id] = (loop, fut)
+            try:
+                channel.send_sync(
+                    {
+                        "type": "call",
+                        "id": call_id,
+                        "global": global_name,
+                        "name": name,
+                        "args": args,
+                    }
+                )
+            except (TypeError, ValueError) as exc:
+                pending.pop(call_id, None)
+                raise call_failure(
+                    f"binding arguments must be lossless JSON: {exc}"
+                ) from exc
+            next_id += 1
         try:
             return await fut
         except _BindingRejection as exc:
@@ -689,7 +716,9 @@ async def _run(channel: ProtocolChannel) -> None:
 
     # 3. Start a reply-pump task before the run message: replies can arrive
     # interleaved with the run's own binding traffic.
-    reply_task = asyncio.get_event_loop().create_task(_pump_replies(channel, pending))
+    reply_task = asyncio.get_event_loop().create_task(
+        _pump_replies(channel, pending, pending_lock)
+    )
 
     # 4. Read the run message.
     run = channel.read_frame()
@@ -793,14 +822,35 @@ async def _run(channel: ProtocolChannel) -> None:
 
 
 async def _pump_replies(
-    channel: ProtocolChannel, pending: dict[int, asyncio.Future[Any]]
+    channel: ProtocolChannel,
+    pending: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Future[Any]]],
+    pending_lock: "threading.Lock",
 ) -> None:
     """Background task: read reply frames and settle pending futures.
 
     Cancelled after ``done`` is posted. Unknown ids and post-settlement replies
     are ignored (mirrors the worker backend's hostile-peer stance, though here
     the host is the trusted side; the guards defend against races).
+
+    A pending Future may belong to a loop other than this pump's — the model can
+    call a binding from a thread running its own loop (``asyncio.run(tools.x())``).
+    ``asyncio.Future`` is not thread-safe, so the completion is scheduled on the
+    Future's OWN loop via ``call_soon_threadsafe`` rather than mutated here; a
+    direct ``set_result`` would never wake the waiting loop and the call would
+    hang to the wall clock. The ``pop`` shares ``pending_lock`` with ``dispatch``
+    so a reply cannot race the claim that registers its id.
     """
+
+    def complete(fut: asyncio.Future[Any], ok: bool, value: Any, message: Any) -> None:
+        # Runs on the Future's own loop. `done()` re-checked here because
+        # cancellation or a duplicate reply may have settled it between the pop
+        # and this callback.
+        if fut.done():
+            return
+        if ok:
+            fut.set_result(value)
+        else:
+            fut.set_exception(_BindingRejection(str(message)))
 
     while True:
         frame = await channel.read_frame_async()
@@ -808,13 +858,15 @@ async def _pump_replies(
             return
         if frame.get("type") != "reply":
             continue
-        fut = pending.pop(frame.get("id"), None)
-        if fut is None or fut.done():
+        with pending_lock:
+            entry = pending.pop(frame.get("id"), None)
+        if entry is None:
             continue
-        if frame.get("ok"):
-            fut.set_result(frame.get("value"))
-        else:
-            fut.set_exception(_BindingRejection(str(frame.get("message"))))
+        loop, fut = entry
+        ok = bool(frame.get("ok"))
+        value = frame.get("value")
+        message = frame.get("message")
+        loop.call_soon_threadsafe(complete, fut, ok, value, message)
 
 
 _SCALAR_RE = re.compile(

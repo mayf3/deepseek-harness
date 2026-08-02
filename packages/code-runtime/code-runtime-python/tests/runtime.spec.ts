@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, realpathSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
@@ -1932,72 +1932,73 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     // it does not hold — here by giving the Popen child DEVNULL streams and
     // letting close_fds drop fd 3. The leader then writes `done` and exits, its
     // `close` fires because the pipes drained, and settle() runs while that
-    // descendant is still alive. If settle() cancelled the grace-window SIGKILL
-    // the descendant would outlive the fiber; leaving the unref'd timer to fire
-    // SIGKILLs the whole group and reaps it.
+    // descendant is still alive. settle() then keeps a REF'd poll alive until the
+    // grace-window SIGKILL has emptied the whole process group, so the host cannot
+    // exit and reparent the survivor to init: no subprocess outlives the fiber.
     //
     // The descendant must have SIG_IGN installed BEFORE the host sends SIGTERM,
     // or it dies from the default SIGTERM whether the fix is present or not — so
     // it writes a readiness marker after trapping and the leader waits for that
-    // marker before returning. The descendant sleeps 30 s as a safety net so a
-    // broken fix cannot leak it forever; the assertion window is far shorter, so
-    // it genuinely tests the SIGKILL reaping rather than the self-timeout.
+    // marker before returning. While alive it bumps a heartbeat file every 50 ms;
+    // the test asserts the heartbeat STOPS, which is what "no longer executing"
+    // means whether the killed descendant is reaped or lingers as a zombie (a
+    // SIGKILL'd process runs no more code either way). It sleeps 30 s as a safety
+    // net so a broken fix cannot leak it forever.
     const handoff = await mkdtemp(join(tmpdir(), 'dsh-samegroup-'))
     const readyMarker = join(handoff, 'ready')
+    const heartbeat = join(handoff, 'heartbeat')
     const { runtime } = await setup({ maxWallMs: 10_000, graceMs: 300 })
-    let reportedPid!: (pid: number) => void
-    const childPid = new Promise<number>((resolve) => { reportedPid = resolve })
     const result = await runtime.run({
       program: [
         'import subprocess, sys, os, time',
         `marker = ${JSON.stringify(readyMarker)}`,
+        `heartbeat = ${JSON.stringify(heartbeat)}`,
         // Same group (no start_new_session); ignores SIGTERM; holds none of the
         // leader's pipes (DEVNULL std streams, close_fds drops fd 3). It writes
-        // the marker (its argv[1]) only AFTER the trap is installed, so the
-        // leader cannot return — and the host cannot send SIGTERM — before the
-        // descendant ignores it.
-        'code = "import signal, sys, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); open(sys.argv[1], \'w\').close(); time.sleep(30)"',
-        'child = subprocess.Popen([sys.executable, "-c", code, marker],',
+        // the marker (argv[1]) only AFTER the trap is installed — so the leader
+        // cannot return, and the host cannot send SIGTERM, before it is ignored —
+        // then rewrites the heartbeat (argv[2]) every 50 ms for up to 30 s.
+        'code = ("import signal, sys, time\\n"',
+        '        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\\n"',
+        '        "open(sys.argv[1], \'w\').close()\\n"',
+        '        "end = time.time() + 30\\n"',
+        '        "while time.time() < end:\\n"',
+        '        "    open(sys.argv[2], \'w\').close()\\n"',
+        '        "    time.sleep(0.05)\\n")',
+        'child = subprocess.Popen([sys.executable, "-c", code, marker, heartbeat],',
         '                         stdin=subprocess.DEVNULL,',
         '                         stdout=subprocess.DEVNULL,',
         '                         stderr=subprocess.DEVNULL)',
         'deadline = time.time() + 5',
         'while not os.path.exists(marker) and time.time() < deadline:',
         '    time.sleep(0.02)',
-        'await tools.report({"pid": child.pid})',
         'return "spawned"',
       ].join('\n'),
-      bindings: tools({
-        report: async (args) => {
-          reportedPid((args as { pid: number }).pid)
-          return 'ok'
-        },
-      }),
+      bindings: [],
     })
     expect(result.error).toBeUndefined()
     expect(result.value).toBe('spawned')
-    const pid = await childPid
-    expect(Number.isInteger(pid) && pid > 0).toBe(true)
     // The trap really installed before the leader returned, so this is the
     // SIGTERM-ignoring descendant, not one that would have died to the default.
     expect(existsSync(readyMarker)).toBe(true)
-    // run() resolved inside the grace window, so the descendant is still alive
-    // here; the pending SIGKILL reaps it shortly after graceMs. Poll until it is
-    // gone, well within the descendant's own 30 s self-timeout.
-    const deadline = Date.now() + 5_000
-    const alive = (): boolean => {
-      try {
-        process.kill(pid, 0)
-        return true
-      } catch {
-        return false
-      }
+    // The grace-window SIGKILL (graceMs 300 + reap margin) empties the group. Once
+    // it has, the descendant stops bumping the heartbeat. Poll the heartbeat's
+    // mtime: two consecutive reads far enough apart with no change means it is no
+    // longer executing — true whether it was reaped or lingers as a zombie, so
+    // the assertion holds in a container whose init does not wait() orphans. The
+    // window (well under the 30 s self-timeout) proves the SIGKILL did the work.
+    const mtime = (): number => { try { return statSync(heartbeat).mtimeMs } catch { return 0 } }
+    const stopDeadline = Date.now() + 8_000
+    let last = mtime()
+    let still = false
+    while (Date.now() < stopDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 400))
+      const now = mtime()
+      if (now === last && now !== 0) { still = true; break }
+      last = now
     }
-    while (alive() && Date.now() < deadline) {
-      await new Promise(resolve => setTimeout(resolve, 50))
-    }
-    expect(() => process.kill(pid, 0)).toThrow(/ESRCH/)
-  }, 15_000)
+    expect(still).toBe(true)
+  }, 20_000)
 })
 
 describe('PythonCodeRuntime — hostile peer', () => {
@@ -2304,6 +2305,47 @@ describe('PythonCodeRuntime — hostile peer', () => {
       await fiber.dispose()
     }
   }, 30_000)
+
+  it('completes a binding called from a worker thread on its own event loop', async () => {
+    // A binding reply Future is created on the loop that ran `dispatch`. When the
+    // model calls a binding from a worker THREAD via `asyncio.run(tools.x(...))`,
+    // that Future belongs to the thread's loop, not the main loop where
+    // `_pump_replies` reads the reply. `asyncio.Future` is not thread-safe:
+    // completing it from another thread does not wake its own loop, so a direct
+    // `set_result` would strand the awaiting thread and the run would degrade to a
+    // wall-clock timeout. The pump must schedule completion on the Future's own
+    // loop via `call_soon_threadsafe`. The tight maxWallMs makes the pre-fix
+    // failure a fast timeout rather than a hang.
+    //
+    // The main coroutine yields with `await asyncio.sleep` while the worker runs,
+    // rather than a synchronous `t.join()`: joining would block the main thread,
+    // so the main loop could not run `_pump_replies` and the call would deadlock
+    // regardless of the fix — that blocks the pump, not the cross-loop delivery
+    // this test pins.
+    const { runtime } = await setup({ maxWallMs: 8_000 })
+    const seen: unknown[] = []
+    const result = await runtime.run({
+      program: [
+        'import asyncio, threading',
+        'result = {}',
+        'def worker():',
+        // A fresh loop in this thread; the binding Future is created here.
+        '    result["value"] = asyncio.run(tools.echo({"from": "thread"}))',
+        't = threading.Thread(target=worker)',
+        't.start()',
+        'while t.is_alive():',
+        '    await asyncio.sleep(0.02)',
+        'return result["value"]',
+      ].join('\n'),
+      bindings: tools({
+        echo: async (args) => { seen.push(args); return args as CodeJsonValue },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual({ from: 'thread' })
+    // The host binding actually ran (the reply round-tripped), not a timeout.
+    expect(seen).toEqual([{ from: 'thread' }])
+  }, 15_000)
 
   it('round-trips an exactly representable large integer through a binding echo', async () => {
     // The reply serializer must print BigInt digits for a beyond-safe

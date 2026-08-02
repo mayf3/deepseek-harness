@@ -218,6 +218,17 @@ const FRAME_ENVELOPE_BYTES = 64
 const CLOSE_REAP_MARGIN_MS = 2_000
 
 /**
+ * Interval between process-group liveness probes while settlement waits for an
+ * escalated SIGKILL to empty the group (see the `killing` branch in
+ * {@link PythonCodeRuntime.execute}'s settle). A poll rather than an event
+ * because the group members are the model's own descendants, which the host does
+ * not `wait()` for and gets no exit signal from; the probe is a signal-0
+ * `process.kill(-pid, 0)`, so the interval only bounds how promptly a now-empty
+ * group is noticed, capped by `graceMs + CLOSE_REAP_MARGIN_MS`.
+ */
+const GROUP_REAP_POLL_MS = 50
+
+/**
  * Extract a human message from an unknown thrown value.
  *
  * `String(error)` runs the value's own conversion, and a host binding may reject
@@ -961,6 +972,7 @@ export class PythonCodeRuntime extends CodeRuntime {
       // Escalate SIGTERM → grace → SIGKILL on the entire process group. Idempotent
       // via `killing`.
       let killing = false
+      let graceTimer: NodeJS.Timeout | undefined
       // A backstop for the one case `close` cannot cover: model code that starts
       // a descendant with `os.setsid()`/`start_new_session=True` moves it into a
       // fresh process group, so the SIGTERM/SIGKILL aimed at the child's group
@@ -983,21 +995,28 @@ export class PythonCodeRuntime extends CodeRuntime {
         if (killing) return
         killing = true
         killGroup('SIGTERM')
-        // The SIGKILL is left to fire on its own timer and is deliberately NOT
-        // cancelled at settlement. A model program can leave a descendant in the
-        // SAME process group `kill(-pid)` targets — no setsid, so it stays in the
-        // group — that ignores SIGTERM but releases the inherited stdout/stderr/
-        // fd-3 pipes: the leader then exits, its `close` fires (the pipes drained),
-        // and settle() runs while that descendant is still alive. Cancelling the
-        // timer there would strand it, breaking "no subprocess outlives the fiber".
-        // Letting the timer elapse SIGKILLs the whole group, reaching the survivor;
-        // `killGroup` swallows ESRCH, so firing against an already-dead group (the
-        // normal case, where the leader was the only member) is harmless. `unref`
-        // so a pending SIGKILL never keeps the host process alive after run()
-        // resolves. (A setsid-escaped orphan in a FRESH group is the different case
-        // `closeDeadline` in finish() covers, since `close` never fires there.)
-        const graceTimer = setTimeout(() => { killGroup('SIGKILL') }, this.config.graceMs)
+        // Escalate to SIGKILL after the grace window. The timer is `unref`'d so a
+        // pending SIGKILL never keeps the host process alive on its own; the
+        // guarantee that a same-group survivor is actually reaped before the fiber
+        // goes quiescent is enforced by settle() awaiting the group's death (see
+        // there), NOT by this timer firing during host lifetime. A setsid-escaped
+        // orphan in a FRESH group is the different case `closeDeadline` in finish()
+        // covers, since `close` never fires there.
+        graceTimer = setTimeout(() => { killGroup('SIGKILL') }, this.config.graceMs)
         graceTimer.unref()
+      }
+      // True once the group has no members left: a signal-0 probe to the whole
+      // group (`kill(-pid, 0)`) throws ESRCH when empty (EPERM would still mean a
+      // member exists). Only meaningful once a spawn produced a pid.
+      const groupEmpty = (): boolean => {
+        /* v8 ignore next -- pid is always defined once escalation runs; the guard narrows the type. */
+        if (child.pid === undefined) return true
+        try {
+          process.kill(-child.pid, 0)
+          return false
+        } catch (error: unknown) {
+          return (error as NodeJS.ErrnoException).code === 'ESRCH'
+        }
       }
 
       let finishResolve!: () => void
@@ -1017,7 +1036,8 @@ export class PythonCodeRuntime extends CodeRuntime {
         // same-group descendant that ignored SIGTERM but released the pipes lets
         // `close` fire (and settle() run) while it is still alive, so the pending
         // SIGKILL must remain armed to reap it (see kill()). The timer is
-        // `unref`'d, so leaving it pending cannot keep the host process alive.
+        // `unref`'d; quiescence does not depend on it firing during host lifetime
+        // — `finished` (below) is withheld until the group is confirmed empty.
         if (closeDeadline !== undefined) clearTimeout(closeDeadline)
         // Drop from `live` only at settlement (close / pid-less spawn failure),
         // NOT at finish(): between finish() and the child's `close` the child
@@ -1042,8 +1062,32 @@ export class PythonCodeRuntime extends CodeRuntime {
           // tracked; the directory holds no secret, only a copy of two
           // checked-in scripts.
         }
-        finishResolve()
         resolve({ ...result, logs })
+        // `finished` is what teardown awaits to honor "no subprocess outlives the
+        // fiber". When no escalation ran (normal completion, no kill) or the group
+        // is already empty, resolve it now. Otherwise a same-group descendant that
+        // ignored SIGTERM but released the pipes is still alive here (its `close`
+        // is what got us to settle); withhold `finished` until the grace-window
+        // SIGKILL has emptied the group. The poll timers are REF'd on purpose: a
+        // short-lived host (a one-shot headless run, a config subprocess) would
+        // otherwise exit before the unref'd SIGKILL timer fired, reparenting the
+        // survivor to init — the leak this await exists to prevent. The wait is
+        // bounded by the same graceMs + margin the SIGKILL escalation uses, so a
+        // truly unreapable process (it cannot be, since it is in the group
+        // `kill(-pid)` reaches) could not hang disposal.
+        if (!killing || groupEmpty()) {
+          finishResolve()
+          return
+        }
+        const deadline = Date.now() + this.config.graceMs + CLOSE_REAP_MARGIN_MS
+        const pollGroup = (): void => {
+          if (groupEmpty() || Date.now() >= deadline) {
+            finishResolve()
+            return
+          }
+          setTimeout(pollGroup, GROUP_REAP_POLL_MS)
+        }
+        pollGroup()
       }
 
       const finish = (result: Omit<CodeRunResult, 'logs'>): void => {
