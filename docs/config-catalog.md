@@ -395,7 +395,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/code-runtime/code-runtime-python/src/index.ts:44`](../packages/code-runtime/code-runtime-python/src/index.ts)
+Source: [`packages/code-runtime/code-runtime-python/src/index.ts:43`](../packages/code-runtime/code-runtime-python/src/index.ts)
 
 <a id="deepseek-aidsh-code-runtime-worker-thread"></a>
 
