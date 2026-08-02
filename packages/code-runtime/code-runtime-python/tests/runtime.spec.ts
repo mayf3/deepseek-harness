@@ -1,0 +1,3287 @@
+import { existsSync, readdirSync, realpathSync } from 'node:fs'
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, dirname, join } from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
+import { Context } from 'cordis'
+import { PythonCodeRuntime } from '../src/index.ts'
+import { logTruncationMarker } from '../src/protocol.ts'
+import type { Config } from '../src/index.ts'
+import type { CodeBindingFunction, CodeJsonValue, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
+
+/**
+ * Names one `py/` script whose `copyFileSync` must fail, for the partial-staging
+ * case. A real disk-full or missing-asset failure mid-copy cannot be produced
+ * from a test, and the leak only shows when `mkdtempSync` has already succeeded.
+ */
+const { failNextCopyOf } = vi.hoisted(() => ({ failNextCopyOf: { value: undefined as string | undefined } }))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    copyFileSync(source: string, destination: string): void {
+      if (failNextCopyOf.value !== undefined && basename(source) === failNextCopyOf.value) {
+        failNextCopyOf.value = undefined
+        throw Object.assign(new Error('simulated ENOSPC on copy'), { code: 'ENOSPC' })
+      }
+      actual.copyFileSync(source, destination)
+    },
+  }
+})
+
+/**
+ * Integration suite over REAL python3 subprocesses (no mocks — subprocess is
+ * cheap and local, per docs/testing.md's real-over-mock policy). Each test
+ * builds a fresh runtime so budgets can be tuned per case.
+ */
+async function setup(config: Config = {}) {
+  const ctx = new Context()
+  const fiber = await ctx.plugin(PythonCodeRuntime, config)
+  const runtime = ctx.codeRuntime as PythonCodeRuntime
+  return { ctx, fiber, runtime }
+}
+
+/** Convenience: one namespace `tools` with the given functions. */
+function tools(functions: Record<string, CodeBindingFunction>) {
+  return [{ global: 'tools', functions }]
+}
+
+describe('PythonCodeRuntime — seam descriptors and misuse', () => {
+  it('registers the seam descriptors', async () => {
+    const { runtime } = await setup()
+    expect(runtime.language).toBe('python')
+    expect(runtime.isolation).toBe('process')
+  })
+
+  it('rejects non-positive config as seam misuse', async () => {
+    const ctx = new Context()
+    await expect(ctx.plugin(PythonCodeRuntime, { cpuSeconds: 0 }))
+      .rejects.toThrow(/cpuSeconds must be a positive number/)
+    await expect(ctx.plugin(PythonCodeRuntime, { maxWallMs: -1 }))
+      .rejects.toThrow(/maxWallMs must be a positive number/)
+  })
+
+  it('rejects a non-integer cpuSeconds at load (setrlimit needs an int)', async () => {
+    const ctx = new Context()
+    await expect(ctx.plugin(PythonCodeRuntime, { cpuSeconds: 1.5 }))
+      .rejects.toThrow(/cpuSeconds must be a positive integer, got 1.5/)
+  })
+
+  it('rejects finite numeric config that cannot cross as an exact rlimit integer', async () => {
+    // `Number.isFinite` and `Number.isInteger` both admit values that cannot
+    // round-trip. `addressSpaceMb: 1e308` overflows to `Infinity` once multiplied
+    // by 1 MiB, and `encodeJsonPlain` renders that as `null`, so the child gets no
+    // limit at all; `cpuSeconds: 1e100` clears `Number.isInteger` while sitting
+    // far past the safe range, so `setrlimit` receives a different number than was
+    // configured. Both used to end every run in a bootstrap exception instead of
+    // failing at load, where a self-contained configuration error belongs.
+    const ctx = new Context()
+    await expect(ctx.plugin(PythonCodeRuntime, { addressSpaceMb: 1e308 }))
+      .rejects.toThrow(/addressSpaceMb must be at most \d+ .*exact integer/)
+    await expect(ctx.plugin(PythonCodeRuntime, { cpuSeconds: 1e100 }))
+      .rejects.toThrow(/cpuSeconds must be at most \d+ .*exact integers/)
+    // The boundary values still load: the bound rejects what cannot be encoded,
+    // not everything large.
+    const okMb = await ctx.plugin(PythonCodeRuntime, { addressSpaceMb: Math.floor(Number.MAX_SAFE_INTEGER / (1024 * 1024)) })
+    await okMb.dispose()
+    const okCpu = await ctx.plugin(PythonCodeRuntime, { cpuSeconds: Number.MAX_SAFE_INTEGER - 1 })
+    await okCpu.dispose()
+  })
+
+  it('rejects an output cap whose payload could not cross the frame ceiling', async () => {
+    // The caps budget a payload that must arrive inside ONE fd-3 frame, and the
+    // 256 MiB framing ceiling is fixed. A larger cap is unsatisfiable rather
+    // than generous: a completion the cap admits arrives as an over-ceiling
+    // frame and fails the run as `worker-exit`, inverting the `output-limit`
+    // the cap describes. The bound is `(ceiling - envelope) / 6`, since a
+    // control character escapes to six bytes.
+    const admissible = Math.floor((256 * 1024 * 1024 - 64) / 6)
+    const ctx = new Context()
+    await expect(ctx.plugin(PythonCodeRuntime, { maxLogBytes: admissible + 1 }))
+      .rejects.toThrow(/maxLogBytes must not exceed 44739232 .*fd-3 frame ceiling/)
+    await expect(ctx.plugin(PythonCodeRuntime, { maxValueBytes: admissible + 1 }))
+      .rejects.toThrow(/maxValueBytes must not exceed 44739232 .*fd-3 frame ceiling/)
+    // The boundary value itself loads: the bound is the largest cap a frame can
+    // still carry, not one below it.
+    const boundary = await ctx.plugin(PythonCodeRuntime, { maxValueBytes: admissible })
+    await boundary.dispose()
+  })
+
+  it('rejects a pythonBin that spawn() would throw on, at load', async () => {
+    // Both values pass the string schema and both make `spawn` throw
+    // SYNCHRONOUSLY from inside run() — ERR_INVALID_ARG_VALUE for the empty
+    // path, ERR_INVALID_ARG_TYPE for the NUL — so run() would REJECT instead of
+    // resolving the worker-exit the seam promises for a child that cannot
+    // start. Both are self-contained configuration errors, so they fail here.
+    const ctx = new Context()
+    await expect(ctx.plugin(PythonCodeRuntime, { pythonBin: '' }))
+      .rejects.toThrow(/pythonBin must be a non-empty path without NUL bytes/)
+    await expect(ctx.plugin(PythonCodeRuntime, { pythonBin: 'py\u0000thon3' }))
+      .rejects.toThrow(/pythonBin must be a non-empty path without NUL bytes/)
+  })
+
+  it('rejects a timer budget setTimeout would silently clamp to 1 ms', async () => {
+    // Node stores a setTimeout delay as a signed 32-bit value and substitutes
+    // 1 ms for anything larger, inverting the knob's meaning: a huge maxWallMs
+    // would time every run out at once, and a huge graceMs would SIGKILL one
+    // millisecond after SIGTERM. Both must fail at load instead.
+    const ctx = new Context()
+    await expect(ctx.plugin(PythonCodeRuntime, { maxWallMs: 2_147_483_648 }))
+      .rejects.toThrow(/maxWallMs must not exceed 2147483647/)
+    // graceMs is bounded by the close deadline's added margin, not by the raw
+    // timer maximum, because that sum is what gets armed.
+    await expect(ctx.plugin(PythonCodeRuntime, { graceMs: 2_147_481_648 }))
+      .rejects.toThrow(/graceMs must not exceed 2147481647/)
+    // The exact maxima still load.
+    await expect(ctx.plugin(PythonCodeRuntime, { maxWallMs: 2_147_483_647, graceMs: 2_147_481_647 }))
+      .resolves.toBeDefined()
+  })
+
+  it('rejects loading this Unix-only backend on Windows', async () => {
+    // The bootstrap needs the POSIX `resource` module, a positional fd 3, and
+    // negative-PID process-group signals — none on Windows. The constructor
+    // must throw at load rather than register ctx.codeRuntime and defer the
+    // failure to the first run.
+    const original = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    try {
+      const ctx = new Context()
+      await expect(ctx.plugin(PythonCodeRuntime, {})).rejects.toThrow(/requires a Unix platform/)
+    } finally {
+      Object.defineProperty(process, 'platform', { value: original, configurable: true })
+    }
+  })
+
+  it('rejects a binding global that is not a Python identifier or is reserved', async () => {
+    const { runtime } = await setup()
+    await expect(runtime.run({
+      program: 'return 1',
+      bindings: [{ global: '1bad', functions: {} }],
+    })).rejects.toThrow(/is not a usable Python identifier/)
+    await expect(runtime.run({
+      program: 'return 1',
+      bindings: [{ global: 'class', functions: {} }],
+    })).rejects.toThrow(/is not a usable Python identifier/)
+  })
+
+  it('rejects duplicate binding namespaces', async () => {
+    const { runtime } = await setup()
+    await expect(runtime.run({
+      program: 'return 1',
+      bindings: [
+        { global: 'tools', functions: {} },
+        { global: 'tools', functions: {} },
+      ],
+    })).rejects.toThrow(/duplicate binding global/)
+  })
+
+  it('rejects run() after disposal, and unregisters ctx.codeRuntime', async () => {
+    const { ctx, fiber, runtime } = await setup()
+    await fiber.dispose()
+    await expect(runtime.run({ program: 'return 1', bindings: [] }))
+      .rejects.toThrow(/after disposal/)
+    expect(ctx.get('codeRuntime')).toBeUndefined()
+  })
+
+  it('short-circuits when the request signal is already aborted', async () => {
+    const { runtime } = await setup()
+    const signal = AbortSignal.abort('already-cancelled')
+    const result = await runtime.run({ program: 'return 1', bindings: [], signal })
+    expect(result.error?.kind).toBe('abort')
+    expect(result.error?.message).toContain('already-cancelled')
+    expect(result.logs).toEqual([])
+  })
+
+  it('short-circuits on an already-aborted signal whose reason cannot be converted', async () => {
+    // The pre-flight arm converted the reason with a bare `String()`, so a
+    // hostile reason threw out of `run()` — the seam promises to reject only for
+    // misuse, and a caller's cancellation token is not misuse.
+    const { runtime } = await setup()
+    const signal = AbortSignal.abort({
+      [Symbol.toPrimitive]() { throw new Error('reason blew up') },
+    })
+    const result = await runtime.run({ program: 'return 1', bindings: [], signal })
+    expect(result.error?.kind).toBe('abort')
+    expect(result.error?.message).toBe('<unrenderable rejection value>')
+    expect(result.logs).toEqual([])
+  })
+
+  it('runs the interpreter from materialized scripts outside the package, and removes them per run', async () => {
+    // The interpreter is an EXTERNAL process, so it can only open paths the OS
+    // resolves. Inside the single-file Python-SDK executable the packaged `py/`
+    // directory lives in pkg's virtual filesystem, which Node reads through its
+    // patched `fs` but `python3` cannot see, so spawning from that path fails
+    // with ENOENT. The scripts are therefore copied to a real directory first.
+    //
+    // The path is read from the child's own `__main__` module, so it proves
+    // where the interpreter actually loaded the entry script — asserting on a
+    // host-side constant would only restate the source. The program namespace
+    // seeds `__name__` but no `__file__`, hence the module lookup.
+    // `protocol.py` must land in the SAME directory, since `bootstrap.py` puts
+    // its own directory on `sys.path` to import it; the run completing at all
+    // already exercises that import.
+    const { runtime } = await setup()
+    const entryOf = async (): Promise<string> => {
+      const result = await runtime.run({ program: 'import sys\nreturn sys.modules["__main__"].__file__', bindings: [] })
+      expect(result.error).toBeUndefined()
+      return result.value as string
+    }
+    const entry = await entryOf()
+    expect(entry.endsWith('/bootstrap.py')).toBe(true)
+    const dir = dirname(entry)
+    expect(dir.startsWith(realpathSync(tmpdir()))).toBe(true)
+    expect(dir).not.toContain('/packages/')
+    // Staging is per RUN and removed at settlement, so by the time `run()`
+    // resolved the directory is already gone — nothing survives to be rewritten
+    // by a later run. `protocol.py` had to be beside the entry script for the run
+    // to complete at all, since `bootstrap.py` imports it off `sys.path`.
+    expect(existsSync(dir)).toBe(false)
+    // A second run stages its own copy rather than reusing the first.
+    expect(dirname(await entryOf())).not.toBe(dir)
+  })
+
+  it('contains a program that rewrites its own bootstrap to the run that did it', async () => {
+    // The child runs as the same UID as the host, so `0o700` does not stop model
+    // code from rewriting the scripts it was started from —
+    // `sys.modules['__main__'].__file__` names them. While all runs shared one
+    // staged copy, a program that overwrote `bootstrap.py` broke the NEXT run
+    // (measured: it settled as `worker-exit`), and substituted code would have
+    // run before the resource limits were applied.
+    const { runtime } = await setup({ maxWallMs: 10_000 })
+    const sabotage = await runtime.run({
+      program: [
+        'import sys',
+        'path = sys.modules["__main__"].__file__',
+        'open(path, "w").write("raise SystemExit(1)\\n")',
+        'return path',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(sabotage.error).toBeUndefined()
+    // The damage stayed inside the run that caused it.
+    const after = await runtime.run({ program: 'return 1 + 1', bindings: [] })
+    expect(after.error).toBeUndefined()
+    expect(after.value).toBe(2)
+  }, 20_000)
+
+  it('leaves no subprocess or scripts behind when disposal races the first run', async () => {
+    // Staging runs SYNCHRONOUSLY so no async boundary opens between `run()` and
+    // the point where `execute` registers the run in `live` and installs the
+    // abort listener. With an `await` there, a disposal landing in that window
+    // saw an empty `live`, returned, removed the script directory, and let the
+    // continuation spawn a subprocess after the fiber was gone.
+    //
+    // `dispose()` is called in the same synchronous turn as `run()`, with no
+    // `await` between them, so it lands exactly in that window.
+    //
+    // The leak assertion compares before and after rather than requiring an
+    // empty tmpdir: other tests in this file build runtimes they never dispose,
+    // so only the directories this test adds are its own evidence.
+    const staged = (): string[] =>
+      readdirSync(realpathSync(tmpdir())).filter(name => name.startsWith('dsh-code-runtime-python-'))
+    const before = new Set(staged())
+    const { fiber, runtime } = await setup({ maxWallMs: 8_000 })
+    const pending = runtime.run({ program: 'import time\nwhile True: time.sleep(0.1)', bindings: [] })
+    const disposed = fiber.dispose()
+    const result = await pending
+    await disposed
+    // Whatever the run reports, it must be terminal and must not be a success.
+    expect(result.value).toBeUndefined()
+    expect(['abort', 'worker-exit', 'timeout']).toContain(result.error?.kind)
+    // Disposal is to quiescence, so this run's directory is gone once it
+    // resolves, and nothing recreated it afterwards.
+    expect(staged().filter(name => !before.has(name))).toEqual([])
+  }, 15_000)
+
+  it('settles as abort when the signal fires in the same turn as the first run', async () => {
+    // Same window, the other listener. `addEventListener('abort')` does not
+    // replay an event that already fired, so an abort landing before the
+    // listener was installed used to be missed entirely and the program ran to
+    // success or the wall ceiling instead of resolving as `abort`. Synchronous
+    // staging keeps the pre-flight check and the listener in one turn, leaving
+    // no gap for the signal to slip through.
+    const { runtime } = await setup({ maxWallMs: 4_000, graceMs: 200 })
+    const controller = new AbortController()
+    const pending = runtime.run({
+      program: 'import time\nwhile True: time.sleep(0.1)',
+      bindings: [],
+      signal: controller.signal,
+    })
+    controller.abort('same-turn-abort')
+    const result = await pending
+    expect(result.error?.kind).toBe('abort')
+    expect(result.error?.message).toContain('same-turn-abort')
+  }, 15_000)
+
+  it('reports a staging failure as worker-exit instead of rejecting run()', async () => {
+    // Staging touches the filesystem, so it can fail for reasons that are not
+    // the caller's doing: a full or read-only temp filesystem, or a deployment
+    // that failed to ship the packaged scripts. Those are SUBSTRATE failures,
+    // the same class as a child that cannot start, and the seam reserves
+    // rejection for misuse — so `run()` must resolve, not throw.
+    //
+    // `TMPDIR` is the honest lever: `mkdtempSync` builds its path from
+    // `os.tmpdir()`, so pointing it at a path that is not a directory makes the
+    // real call fail without stubbing the module under test.
+    const previous = process.env.TMPDIR
+    const notADirectory = join(await mkdtemp(join(tmpdir(), 'dsh-staging-')), 'file')
+    await writeFile(notADirectory, '')
+    process.env.TMPDIR = notADirectory
+    try {
+      const { runtime } = await setup()
+      const result = await runtime.run({ program: 'return 1', bindings: [] })
+      expect(result.error?.kind).toBe('worker-exit')
+      expect(result.error?.message).toContain('failed to stage the python bootstrap')
+      expect(result.logs).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env.TMPDIR
+      else process.env.TMPDIR = previous
+    }
+  })
+
+  it('leaves no staging directory behind when a script copy fails', async () => {
+    // `mkdtempSync` succeeding and a later `copyFileSync` failing is its own
+    // case: the directory exists but is only partially populated. Recording it
+    // before the copies would leak it, because `run` retries staging on the next
+    // call and overwrites the single recorded path — teardown could then remove
+    // only the newest attempt. Staging must clean up its own partial directory.
+    //
+    // Only `copyFileSync` is stubbed, and only for the second script, so
+    // `mkdtempSync` really runs and the directory under assertion is real.
+    const staged = (): string[] =>
+      readdirSync(realpathSync(tmpdir())).filter(name => name.startsWith('dsh-code-runtime-python-'))
+    const before = new Set(staged())
+    failNextCopyOf.value = 'protocol.py'
+    try {
+      const { runtime } = await setup()
+      const result = await runtime.run({ program: 'return 1', bindings: [] })
+      expect(result.error?.kind).toBe('worker-exit')
+      expect(result.error?.message).toContain('failed to stage the python bootstrap')
+      // The partial directory is gone, so nothing accumulates across retries.
+      expect(staged().filter(name => !before.has(name))).toEqual([])
+    } finally {
+      failNextCopyOf.value = undefined
+    }
+  }, 15_000)
+})
+
+describe('PythonCodeRuntime — inherited resource limits', () => {
+  it('runs under an inherited hard limit tighter than addressSpaceMb', async () => {
+    // An unprivileged process may lower a hard rlimit but never raise it. Under
+    // a harness started with `ulimit -v` below `addressSpaceBytes`, requesting
+    // the configured cap made `setrlimit` raise `ValueError` and every run
+    // returned a bootstrap exception — even though the inherited limit is
+    // STRONGER than the one asked for. The bootstrap clamps to the inherited
+    // hard limit instead, so the run proceeds under the stricter bound.
+    //
+    // `pythonBin` is the honest lever: a wrapper that lowers RLIMIT_AS and then
+    // execs the real interpreter reproduces the inherited-limit condition
+    // without touching this test process's own limits.
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-'))
+    const wrapper = join(dir, 'python3-capped')
+    // 256 MiB, half the 512 MiB addressSpaceMb default, so the requested cap is
+    // unambiguously above the inherited ceiling.
+    await writeFile(wrapper, '#!/bin/sh\nulimit -v 262144\nexec python3 "$@"\n', { mode: 0o755 })
+    const { runtime } = await setup({ pythonBin: wrapper })
+    const result = await runtime.run({
+      program: 'import resource\nreturn resource.getrlimit(resource.RLIMIT_AS)[1]',
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    // The applied hard limit is the inherited one, not the configured 512 MiB.
+    expect(result.value).toBe(256 * 1024 * 1024)
+  }, 15_000)
+
+  it('applies the configured limits when nothing tighter is inherited', async () => {
+    // The clamp must not weaken the normal path: with an infinite inherited hard
+    // limit there is nothing to clamp against, and RLIM_INFINITY compares as -1,
+    // so treating it as a numeric bound would collapse every limit to -1.
+    const { runtime } = await setup({ cpuSeconds: 42, addressSpaceMb: 400 })
+    const result = await runtime.run({
+      // `getrlimit` returns a tuple, which the lossless-JSON completion check
+      // rejects; the pair is listed explicitly rather than converted.
+      program: 'import resource\ncpu = resource.getrlimit(resource.RLIMIT_CPU)\nreturn [cpu[0], cpu[1], resource.getrlimit(resource.RLIMIT_AS)[1]]',
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    // Soft at cpuSeconds, hard at +1 (the SIGKILL backstop), address space at
+    // the configured megabytes — exactly what the unclamped path applied.
+    expect(result.value).toEqual([42, 43, 400 * 1024 * 1024])
+  }, 15_000)
+})
+
+describe('PythonCodeRuntime — programs and bindings', () => {
+  it('runs a top-level script, captures print output, and returns `result`', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'x = 40',
+        'y = 2',
+        'print("hello", x + y)',
+        'return {"answer": x + y}',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual({ answer: 42 })
+    // `print` in Python emits: text, ' ', text, '\n'. Concat the captured
+    // fragments and assert the model-visible message survives.
+    expect(result.logs.join('')).toContain('hello 42')
+    // 15s: this is usually the suite's first real subprocess — a cold python3
+    // start (interpreter + asyncio import) on a loaded CI runner can exceed
+    // the 5s default alone; later tests reuse the warm page cache.
+  }, 15_000)
+
+  it('bridges binding calls both ways and rejects the program-side call on a host rejection', async () => {
+    const { runtime } = await setup()
+    const calls: unknown[] = []
+    const result = await runtime.run({
+      program: [
+        'first = await tools.echo({"n": 1})',
+        'caught = ""',
+        'try:',
+        '    await tools.fail({})',
+        'except RuntimeError as e:',
+        '    caught = str(e)',
+        'return {"first": first, "caught": caught}',
+      ].join('\n'),
+      bindings: tools({
+        echo: async (args) => { calls.push(args); return { echoed: args as CodeJsonValue } },
+        fail: async () => { throw new Error('nope') },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual({ first: { echoed: { n: 1 } }, caught: 'nope' })
+    expect(calls).toEqual([{ n: 1 }])
+  })
+
+  it('still answers the call when the rejection value cannot be converted to a string', async () => {
+    // `messageOf` calls `String(error)`, which runs the value's own conversion,
+    // and this call site is a DETACHED async reply callback. A rejection whose
+    // `Symbol.toPrimitive` throws therefore escaped as an unhandled rejection:
+    // the reply frame was never written, the program stayed blocked on `await`,
+    // and the run degraded to a `maxWallMs` timeout (observed) — a host with no
+    // `unhandledRejection` listener would exit instead. The rejection must reach
+    // the program as an ordinary error carrying a fixed placeholder.
+    const { runtime } = await setup({ maxWallMs: 8_000 })
+    const result = await runtime.run({
+      program: [
+        'try:',
+        '    await tools.hostile({})',
+        'except RuntimeError as e:',
+        '    return "rejected: " + str(e)',
+        'return "no rejection"',
+      ].join('\n'),
+      bindings: tools({
+        hostile: async () => {
+          throw { [Symbol.toPrimitive]() { throw new Error('toPrimitive blew up') } }
+        },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('rejected: <unrenderable rejection value>')
+  }, 15_000)
+
+  it('still answers the call when an Error carries a cyclic value in place of its message', async () => {
+    // `Error.message` is typed `string` but is a plain writable property, so a
+    // rejection can carry any value there. Returning it verbatim handed a
+    // non-string to `sendReply`, breaching `encodeJsonPlain`'s JSON-plain
+    // precondition: a cyclic object grew the encoder stack until the host threw
+    // RangeError from the detached reply callback, so no reply frame was written
+    // and the run degraded to a `maxWallMs` timeout (observed). The conversion
+    // must contain it — `String()` on a cycle throws inside the guard and lands
+    // on the placeholder, so the program sees an ordinary error.
+    const { runtime } = await setup({ maxWallMs: 8_000 })
+    const result = await runtime.run({
+      program: [
+        'try:',
+        '    await tools.hostile({})',
+        'except RuntimeError as e:',
+        '    return "rejected: " + str(e)',
+        'return "no rejection"',
+      ].join('\n'),
+      bindings: tools({
+        hostile: async () => {
+          const cyclic: { self?: unknown; [Symbol.toPrimitive]: () => string } = {
+            // A cycle alone is inert for `String()`; the throwing conversion is
+            // what proves the guard runs rather than the encoder.
+            [Symbol.toPrimitive]: () => { throw new Error('cyclic message') },
+          }
+          cyclic.self = cyclic
+          const error = new Error('placeholder')
+          // Writable per spec, so no cast is needed to install a non-string.
+          ;(error as unknown as { message: unknown }).message = cyclic
+          throw error
+        },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('rejected: <unrenderable rejection value>')
+  }, 15_000)
+
+  it('renders an Error whose message is a value with no JSON form', async () => {
+    // The non-cyclic arm. A number would not discriminate: `scalarJson` renders
+    // it as digits and the child `str()`s the field back, so it survives the
+    // wire either way. `undefined` is the value that separates the two orders —
+    // `scalarJson` emits a bare `undefined` token, so the reply line is not JSON
+    // at all, the child's parse drops the frame, and the program stays blocked
+    // on `await` until the wall ceiling (observed). Converting first sends the
+    // string "undefined", which the program receives as an ordinary rejection.
+    const { runtime } = await setup({ maxWallMs: 8_000 })
+    const result = await runtime.run({
+      program: [
+        'try:',
+        '    await tools.absent({})',
+        'except RuntimeError as e:',
+        '    return "rejected: " + str(e)',
+        'return "no rejection"',
+      ].join('\n'),
+      bindings: tools({
+        absent: async () => {
+          const error = new Error('placeholder')
+          ;(error as unknown as { message: unknown }).message = undefined
+          throw error
+        },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('rejected: undefined')
+  }, 15_000)
+
+  it('runs a program with no await', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: 'return 2 + 2',
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(4)
+  })
+
+  it('returns JSON null whether the program returns None or falls off the end', async () => {
+    // Python has no `undefined`: an async body that returns None and one that
+    // never returns both yield None, so both complete as an exact JSON null.
+    // (The worker/TS backend can tell `return undefined` from `return null`;
+    // Python cannot, and reporting null for both is the honest rendering.)
+    const { runtime } = await setup()
+    const explicit = await runtime.run({ program: 'return None', bindings: [] })
+    expect(explicit.error).toBeUndefined()
+    expect(explicit.value).toBeNull()
+    const noReturn = await runtime.run({ program: 'x = 1', bindings: [] })
+    expect(noReturn.error).toBeUndefined()
+    expect(noReturn.value).toBeNull()
+  })
+
+  it('settles with no value on a forged valueless done frame', async () => {
+    // The child always sends a value now (return None → JSON null), so a done
+    // frame with no value key can only be forged; the host settles it as a
+    // value-less completion rather than crashing on the absent field.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'os.write(3, b\'{"type":"done"}\\n\')',
+        'import time',
+        'time.sleep(5)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBeUndefined()
+  })
+
+  it('coalesces print arguments into one log line, not per-write fragments', async () => {
+    // print("a","b") calls write() per arg/sep/newline; the stream must emit
+    // one logical line "a b" so Code Mode's join(newline) does not insert
+    // spurious blank lines. Two prints → exactly two entries, no empties.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: ['print("a", "b")', 'print("c")', 'return None'].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['a b', 'c'])
+  })
+
+  it('flushes a print with no trailing newline', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: ['print("partial", end="")', 'return None'].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['partial'])
+  })
+
+  it('fails a completion dict with a non-string key as invalid-output (no key coercion)', async () => {
+    // json.dumps would coerce {1: "a", "1": "b"} to a single "1" key, silently
+    // dropping data. The shape validator rejects it before encoding.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: 'return {1: "first", "1": "second"}',
+      bindings: [],
+    })
+    expect(result.value).toBeUndefined()
+    expect(result.error?.kind).toBe('invalid-output')
+    expect(result.error?.message).toContain('non-string dict key')
+  })
+
+  it('rejects a binding argument with a non-string dict key before dispatch', async () => {
+    const { runtime } = await setup()
+    let called = false
+    const result = await runtime.run({
+      program: [
+        'caught = ""',
+        'try:',
+        '    await tools.sink({1: "x"})',
+        'except RuntimeError as e:',
+        '    caught = str(e)',
+        'return caught',
+      ].join('\n'),
+      bindings: tools({ sink: async () => { called = true; return null } }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toContain('lossless JSON')
+    expect(called).toBe(false)
+  })
+
+  it('fails a non-JSON completion value as invalid-output (no repr substitution)', async () => {
+    // A set is not lossless JSON. The old draft substituted repr(); the seam
+    // now requires refusing the run instead.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: 'return {1, 2, 3}',
+      bindings: [],
+    })
+    expect(result.value).toBeUndefined()
+    expect(result.error?.kind).toBe('invalid-output')
+    expect(result.error?.message).toContain('lossless JSON')
+    expect(result.error?.message).toContain('set')
+  })
+
+  it('fails a negative-zero completion value as invalid-output (sign bit is lossy over JSON)', async () => {
+    // JSON serialization turns -0.0 into 0 (or JS -0), silently changing the
+    // sign bit; the canonical lossless-JSON boundary rejects it, so the
+    // Python side must too — as a completion and as a binding argument.
+    const { runtime } = await setup()
+    const completion = await runtime.run({
+      program: 'return -0.0',
+      bindings: [],
+    })
+    expect(completion.error?.kind).toBe('invalid-output')
+    expect(completion.error?.message).toContain('negative zero')
+    const argument = await runtime.run({
+      program: [
+        'try:',
+        '    await tools.echo(-0.0)',
+        '    return "accepted"',
+        'except RuntimeError as e:',
+        '    return str(e)',
+      ].join('\n'),
+      bindings: tools({ echo: async args => args as never }),
+    })
+    expect(argument.error).toBeUndefined()
+    expect(argument.value).toContain('negative zero')
+  })
+
+  it('fails a NaN completion value as invalid-output (allow_nan=False)', async () => {
+    // json.dumps would happily emit NaN by default, but NaN is not JSON; the
+    // bootstrap passes allow_nan=False so it fails as invalid-output.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: 'return float("nan")',
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('invalid-output')
+  })
+
+  it('fails an over-budget completion value as output-limit (child-side check)', async () => {
+    const { runtime } = await setup({ maxValueBytes: 64 })
+    const result = await runtime.run({
+      program: 'return "V" * 5000',
+      bindings: [],
+    })
+    expect(result.value).toBeUndefined()
+    expect(result.error?.kind).toBe('output-limit')
+    expect(result.error?.message).toContain('exceeded 64 bytes')
+  })
+
+  it('rejects a wide completion as output-limit before materializing its traversal state', async () => {
+    // `[0] * 2000000` sits far above maxValueBytes but well below the frame
+    // ceiling. The folded checker must reject it via the pre-enqueue bound —
+    // BEFORE pushing two million elements onto the walk — so a small
+    // addressSpaceMb does not turn the check itself into an RLIMIT_AS death.
+    const { runtime } = await setup({ maxValueBytes: 64, addressSpaceMb: 256, maxWallMs: 15_000 })
+    const result = await runtime.run({
+      program: 'return [0] * 2000000',
+      bindings: [],
+    })
+    expect(result.value).toBeUndefined()
+    expect(result.error?.kind).toBe('output-limit')
+    expect(result.error?.message).toContain('exceeded 64 bytes')
+  }, 20_000)
+
+  it('rejects a wide dict as output-limit without materializing its items list', async () => {
+    // Same pre-enqueue bound on the dict branch: `len(current)` replaces
+    // `list(current.items())`, which allocated one tuple per member before the
+    // bound could reject the value. Two million entries under a 64-byte cap
+    // fits the 256 MiB address space as a dict but not as a dict PLUS a
+    // two-million-tuple list.
+    const { runtime } = await setup({ maxValueBytes: 64, addressSpaceMb: 256, maxWallMs: 15_000 })
+    const result = await runtime.run({
+      program: 'return {str(i): 0 for i in range(2000000)}',
+      bindings: [],
+    })
+    expect(result.value).toBeUndefined()
+    expect(result.error?.kind).toBe('output-limit')
+    expect(result.error?.message).toContain('exceeded 64 bytes')
+  }, 20_000)
+
+  it('meters a float completion in the host\'s number spelling', async () => {
+    // CPython's repr disagrees with the host's String(number): `1.0` is three
+    // bytes here and one there, `1e-07` pads the exponent the host writes as
+    // `1e-7`. Both sides meter the SAME budget, so the child must count the
+    // bytes the host will receive — otherwise a boundary-sized value is
+    // falsely reported as output-limit.
+    const { runtime } = await setup({ maxValueBytes: 1 })
+    const integral = await runtime.run({ program: 'return 1.0', bindings: [] })
+    expect(integral.error).toBeUndefined()
+    expect(integral.value).toBe(1)
+
+    const exponent = await setup({ maxValueBytes: 4 })
+    const small = await exponent.runtime.run({ program: 'return 1e-7', bindings: [] })
+    expect(small.error).toBeUndefined()
+    expect(small.value).toBe(1e-7)
+
+    // The spelling is a meter input, not a licence to overshoot: `1.5` is three
+    // bytes on both sides and still fails a two-byte budget.
+    const tight = await setup({ maxValueBytes: 2 })
+    const over = await tight.runtime.run({ program: 'return 1.5', bindings: [] })
+    expect(over.error?.kind).toBe('output-limit')
+  })
+
+  it('carries floats across the wire in the host\'s number spelling', async () => {
+    // The child ENCODES with the same speller it meters with, so the frame the
+    // host parses must reproduce every double exactly — including the branches
+    // where CPython and ECMAScript disagree (integral floats, sub-1e-6
+    // exponents, >= 1e21, and beyond-safe-range integral doubles whose exact
+    // digits differ from the shortest round-trip form).
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: 'return [1.0, 100.0, 1.5, 0.1, 1e-7, 1e-6, 1e-5, 123.456, -2.5e-8, 1e21, float(2**60), 5e-324, 1.7976931348623157e308]',
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual([1, 100, 1.5, 0.1, 1e-7, 1e-6, 1e-5, 123.456, -2.5e-8, 1e21, 2 ** 60, 5e-324, 1.7976931348623157e308])
+  })
+
+  it('rejects a forged non-lossless done value host-side as invalid-output', async () => {
+    // A forged done frame bypasses the child's _check_done_value. JSON.parse
+    // turns 1e400 into Infinity; validateChildFrame no longer scans done.value,
+    // so the host's own checkDoneValue must catch the non-lossless number.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import os',
+        String.raw`os.write(3, b'{"type":"done","value":1e400}' + b'\n')`,
+        'import time',
+        'time.sleep(5)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.value).toBeUndefined()
+    expect(result.error?.kind).toBe('invalid-output')
+    expect(result.error?.message).toContain('non-lossless number')
+  })
+
+  it('reports a syntax error as an exception without settling with a value', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: '$$invalid python$$',
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message).toContain('SyntaxError')
+    expect(result.value).toBeUndefined()
+  })
+
+  it('reports a runtime raise as an exception with the traceback', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: 'raise ValueError("intentional")',
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message).toContain('ValueError')
+    expect(result.error?.message).toContain('intentional')
+  })
+
+  it('bounds a deep exception cause chain instead of burning the wall budget formatting it', async () => {
+    // A chain thousands of links deep would make the rendering walk and
+    // format() linear in its length, consuming maxWallMs. Rendering is capped
+    // at 100 links with a marker; the run reports the exception well within
+    // budget rather than timing out.
+    const { runtime } = await setup({ maxValueBytes: 1024 * 1024, maxWallMs: 20_000 })
+    const start = Date.now()
+    const result = await runtime.run({
+      program: [
+        'err = None',
+        'for i in range(3000):',
+        '    try:',
+        '        raise ValueError(i) from err',
+        '    except ValueError as e:',
+        '        err = e',
+        'raise err',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message).toContain('exception chain truncated at 100 links')
+    expect(Date.now() - start).toBeLessThan(15_000)
+  }, 25_000)
+
+  it('bounds an over-cap chain without assigning to the live exception', async () => {
+    // The cap used to be applied by severing the over-cap link ON the live
+    // exception. An exception class overriding __setattr__ to raise turned that
+    // assignment into model code running inside the bootstrap's failure
+    // handler; the throw skipped the `done` send that sits after the handler,
+    // so the host blocked on fd 3 and reported a maxWallMs timeout instead of
+    // the model's own exception. Cutting the chain on the TracebackException
+    // COPY touches no model hook, so the marker still appears and the run
+    // reports `exception`.
+    const { runtime } = await setup({ maxValueBytes: 1024 * 1024, maxWallMs: 15_000 })
+    const start = Date.now()
+    const result = await runtime.run({
+      program: [
+        'class Sealed(Exception):',
+        '    def __setattr__(self, name, value):',
+        '        raise RuntimeError("live mutation refused")',
+        'err = None',
+        'for i in range(150):',
+        '    try:',
+        '        raise Sealed(i) from err',
+        '    except Sealed as e:',
+        '        err = e',
+        'raise err',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message).toContain('Sealed')
+    expect(result.error?.message).toContain('exception chain truncated at 100 links')
+    // The sever attempt is what used to leak: its message must not appear, and
+    // the run must settle well inside the wall budget rather than timing out.
+    expect(result.error?.message).not.toContain('live mutation refused')
+    expect(Date.now() - start).toBeLessThan(10_000)
+  }, 20_000)
+
+  it('still sends done when rendering the diagnostic itself raises', async () => {
+    // format() reaches the exception's own __str__, so a model class whose
+    // __str__ raises can throw from inside the failure handler. CPython's
+    // _safe_string absorbs a raising __str__ during formatting, but the
+    // fallback must hold for any throw on that path (a raising __repr__ of an
+    // argument, a MemoryError under RLIMIT_AS), so the assertion is the
+    // invariant that matters: a `done` frame carrying `exception`, never a
+    // timeout, and never the failing renderer's own message.
+    const { runtime } = await setup({ maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'class Unprintable(Exception):',
+        '    def __str__(self):',
+        '        raise RuntimeError("str refused")',
+        '    def __repr__(self):',
+        '        raise RuntimeError("repr refused")',
+        'raise Unprintable()',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message).toContain('Unprintable')
+    expect(result.error?.message).not.toContain('str refused')
+    expect(result.error?.message).not.toContain('repr refused')
+  }, 15_000)
+
+  it('sends done with an inert diagnostic when the whole rendering path raises', async () => {
+    // Drive the fallback itself. `TracebackException.format` reads the
+    // exception class's `__module__` to decide whether to qualify the name, and
+    // a metaclass property can raise there — a throw INSIDE the formatter,
+    // reached with no rebinding of anything the bootstrap owns. Without the
+    // wrapper it escapes the handler, the `done` send never runs, and the host
+    // times out at maxWallMs.
+    const { runtime } = await setup({ maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'class Meta(type):',
+        '    @property',
+        '    def __module__(cls):',
+        '        raise RuntimeError("renderer refused")',
+        'class Hostile(ValueError, metaclass=Meta):',
+        '    pass',
+        'raise Hostile("original failure")',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    // The inert fallback names the class and a fixed literal; it must not carry
+    // the renderer's message, and must not have become a timeout. `__name__` is
+    // still a plain str here, so the class name survives.
+    expect(result.error?.message).toBe('Hostile: <diagnostic rendering failed>')
+  }, 15_000)
+
+  it('falls back to a placeholder class name when __name__ itself raises', async () => {
+    // The fallback reads type(exc).__name__, which a metaclass property can
+    // hijack. It must neither run that override's failure into the handler nor
+    // format a non-str __name__ into the message. The hostile `__module__` is
+    // what drives execution into the fallback in the first place.
+    const { runtime } = await setup({ maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'class Meta(type):',
+        '    @property',
+        '    def __module__(cls):',
+        '        raise RuntimeError("renderer refused")',
+        '    @property',
+        '    def __name__(cls):',
+        '        raise RuntimeError("name refused")',
+        'class Nameless(Exception, metaclass=Meta):',
+        '    pass',
+        'raise Nameless()',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message).toBe('<unknown>: <diagnostic rendering failed>')
+  }, 15_000)
+
+  it('reports the real exception when the program rebinds every name the failure path uses', async () => {
+    // The bootstrap IS __main__, so `import __main__; __main__._X = ...` reaches
+    // any module global a call-time lookup would read. The failure path is the
+    // worst place for that: the reporter, the byte cap, the traceback formatter,
+    // the settlement flush and the `done` send all run AFTER the `except` block,
+    // so a replacement that raises skips the send, leaves the host blocked on
+    // fd 3, and the run reports a maxWallMs timeout instead of the model's own
+    // exception. Rebind all of them at once; the run must still carry the real
+    // ValueError.
+    const { runtime } = await setup({ maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'import __main__',
+        'def boom(*a, **k):',
+        '    raise RuntimeError("hijacked")',
+        '__main__._SAFE_MODEL_TRACEBACK = boom',
+        '__main__._cap_message = boom',
+        '__main__._model_traceback = boom',
+        '__main__._UNRENDERABLE_DIAGNOSTIC = boom',
+        '__main__._LogStream.flush_line = boom',
+        '__main__.ProtocolChannel.send_sync = boom',
+        'raise ValueError("real failure")',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message).toContain('ValueError: real failure')
+    expect(result.error?.message).not.toContain('hijacked')
+  }, 15_000)
+
+  it('bounds an over-cap exception-group nesting on the copy', async () => {
+    // Exception groups link through `exceptions`, not the cause/context
+    // dunders, so the cap has to count that edge too — otherwise a deeply
+    // nested group walks past the bound the marker claims to enforce.
+    const { runtime } = await setup({ maxValueBytes: 1024 * 1024, maxWallMs: 15_000 })
+    const result = await runtime.run({
+      program: [
+        'group = ValueError("leaf")',
+        'for i in range(150):',
+        '    group = ExceptionGroup(f"g{i}", [group])',
+        'raise group',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message).toContain('exception chain truncated at 100 links')
+  }, 20_000)
+
+  it('filters every bootstrap frame from the traceback of an uncaught binding rejection', async () => {
+    // A rejection re-raised by the bootstrap's dispatch adds bootstrap frames
+    // AFTER the model's own; only <model> frames may reach model-visible,
+    // durable output — a bootstrap.py path would leak host absolutes and make
+    // transcripts machine-dependent.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: 'await tools.boom({})',
+      bindings: tools({ boom: async () => { throw new Error('exploded') } }),
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message).toContain('exploded')
+    expect(result.error?.message).toContain('<model>')
+    expect(result.error?.message).not.toContain('bootstrap.py')
+  })
+
+  it('renders a non-Error thrown value from a host binding as its String form', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'caught = ""',
+        'try:',
+        '    await tools.failRaw({})',
+        'except RuntimeError as e:',
+        '    caught = str(e)',
+        'return caught',
+      ].join('\n'),
+      bindings: tools({
+        failRaw: async () => { throw 'raw-nope' },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toContain('raw-nope')
+  })
+
+  it('reassembles a frame split across writes behind a completed one', async () => {
+    // One os.write carrying "<frame>\n<partial...>" leaves a non-empty
+    // residual after the newline loop; the tail must survive until its own
+    // newline arrives and then parse as a normal frame.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import os, json',
+        'head = json.dumps({"type":"log","text":"first"}).encode()',
+        'tail = json.dumps({"type":"log","text":"second"}).encode()',
+        'import time',
+        'os.write(3, head + b"\\n" + tail[:5])',
+        'time.sleep(0.2)',
+        'os.write(3, tail[5:] + b"\\n")',
+        'return "ok"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('ok')
+    expect(result.logs).toContain('first')
+    expect(result.logs).toContain('second')
+  })
+
+  it('raises the declared errorClass with the member name on rejection', async () => {
+    // Code Mode declares { name: ToolCallError, memberNameProperty: toolName };
+    // a host rejection must surface as that class, carrying the failed tool.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'caught = ""',
+        'try:',
+        '    await tools.fail({})',
+        'except ToolCallError as e:',
+        '    caught = f"{type(e).__name__}:{e.toolName}:{e}"',
+        'return caught',
+      ].join('\n'),
+      bindings: [{
+        global: 'tools',
+        functions: { fail: async () => { throw new Error('typed-nope') } },
+        errorClass: { name: 'ToolCallError', memberNameProperty: 'toolName' },
+      }],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('ToolCallError:fail:typed-nope')
+  })
+
+  it('rejects an errorClass name colliding with its namespace global at the seam', async () => {
+    const { runtime } = await setup()
+    await expect(runtime.run({
+      program: 'return 1',
+      bindings: [{ global: 'tools', functions: {}, errorClass: { name: 'tools', memberNameProperty: 'toolName' } }],
+    })).rejects.toThrow(/collides with another injected global/)
+  })
+
+  it('rejects a namespace global colliding with a runtime-owned name at the seam', async () => {
+    // `__dsh_main__` passes the identifier check, but exec()ing the generated
+    // wrapper would silently overwrite the binding after injection. `console`
+    // is the WORKER backend's slot — refused here too so a namespace list
+    // valid on one backend is valid on all.
+    const { runtime } = await setup()
+    // `__debug__` is refused for a different reason than a collision: CPython
+    // compiles a bare `__debug__` reference to the constant True and refuses to
+    // assign the name at compile time, so an injected global under it is
+    // unreachable from the program — accepted by the seam, unusable here.
+    for (const global of ['__dsh_main__', 'console', '__debug__']) {
+      await expect(runtime.run({
+        program: 'x = 1',
+        bindings: [{ global, functions: {} }],
+      })).rejects.toThrow(/collides with a runtime-owned global/)
+    }
+  })
+
+  it('accepts a non-identifier memberNameProperty and rejects only an empty one', async () => {
+    // The seam permits any non-empty own property except the reserved
+    // members; Python setattr/getattr carry exotic names like `tool-name`,
+    // and the worker backend accepts them, so this backend must too.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'try:',
+        '    await tools.boom({})',
+        'except ToolCallError as e:',
+        '    return getattr(e, "tool-name")',
+      ].join('\n'),
+      bindings: [{
+        global: 'tools',
+        functions: { boom: async () => { throw new Error('nope') } },
+        errorClass: { name: 'ToolCallError', memberNameProperty: 'tool-name' },
+      }],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('boom')
+    await expect(runtime.run({
+      program: 'return 1',
+      bindings: [{ global: 'tools', functions: {}, errorClass: { name: 'ToolCallError', memberNameProperty: '' } }],
+    })).rejects.toThrow(/memberNameProperty must be a non-empty attribute name/)
+  })
+
+  it('resolves a basename pythonBin to an absolute path (runs a real program)', async () => {
+    // A bare `python3` basename must resolve against PATH and actually launch
+    // under the empty-env spawn — exercises the accessSync success branch.
+    const { runtime } = await setup({ pythonBin: 'python3' })
+    const result = await runtime.run({ program: 'return 7', bindings: [] })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(7)
+  })
+
+  it('spawns via an absolute python path resolved from a basename against PATH', async () => {
+    // resolvePythonBin turns the default basename into an absolute path before
+    // the empty-env spawn; a basename with no PATH match falls through to the
+    // normal ENOENT worker-exit rather than throwing.
+    const { runtime } = await setup({ pythonBin: 'definitely-no-such-python-xyz' })
+    const result = await runtime.run({ program: 'return 1', bindings: [] })
+    expect(result.error?.kind).toBe('worker-exit')
+  })
+
+  it('rejects a memberNameProperty naming a constrained BaseException attribute', async () => {
+    // `__dict__`/`__class__` are constrained descriptors alongside
+    // `__traceback__` — setattr of a string raises TypeError while
+    // constructing the rejection — so every dunder is refused at the seam.
+    const { runtime } = await setup()
+    // name/message/stack are the seam's own exclusions (CodeBindingErrorClass
+    // forbids replacing them; the worker backend rejects them identically).
+    for (const member of ['__traceback__', '__dict__', '__class__', 'args', 'name', 'message', 'stack']) {
+      await expect(runtime.run({
+        program: 'return 1',
+        bindings: [{ global: 'tools', functions: {}, errorClass: { name: 'ToolCallError', memberNameProperty: member } }],
+      })).rejects.toThrow(/reserved error member/)
+    }
+  })
+
+  it('rejects a lossy binding resolution (NaN) instead of coercing it to null', async () => {
+    // JSON.stringify would turn NaN into null and drop undefined fields; the
+    // seam requires a descriptive rejection so data cannot silently corrupt.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'caught = ""',
+        'try:',
+        '    await tools.bad({})',
+        'except RuntimeError as e:',
+        '    caught = str(e)',
+        'return caught',
+      ].join('\n'),
+      bindings: tools({ bad: async () => Number.NaN }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toContain('lossless JSON')
+  })
+
+  it('contains a forged pathological done value without crashing the host', async () => {
+    // A ~20k-deep nested array forged onto fd 3 would overflow a recursive
+    // JSON.stringify; the host's iterative encoder measures it stack-safely
+    // and fails it deterministically on the byte budget (40 kB > 32 KiB).
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import os, json',
+        'depth = 20000',
+        'payload = "[" * depth + "]" * depth',
+        'os.write(3, b\'{"type":"done","value":\' + payload.encode() + b\'}\\n\')',
+        'import time',
+        'time.sleep(5)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.value).toBeUndefined()
+    expect(result.error?.kind).toBe('output-limit')
+  })
+
+  it('preserves a deeply nested completion value below the byte budget', async () => {
+    // CodeJsonValue has no depth limit: a 10000-deep nested list is only
+    // ~20 kB — under maxValueBytes — and must cross intact. That depth
+    // overflows BOTH recursive serializers the pipeline used to rely on
+    // (CPython's json.dumps recursion limit ~1000s, V8's JSON.stringify), so
+    // it proves the child-side _encode_json_plain and the host-side
+    // encodeJsonPlain together. The host JSON.parse of the frame is iterative
+    // in V8 for arrays, so only the two encoders were at risk.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'v = None',
+        'for _ in range(10000):',
+        '    v = [v]',
+        'return v',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    // Walk down iteratively (a recursive toEqual would itself overflow).
+    let depth = 0
+    let cursor: unknown = result.value
+    while (Array.isArray(cursor)) {
+      expect(cursor).toHaveLength(1)
+      cursor = cursor[0]
+      depth++
+    }
+    expect(depth).toBe(10000)
+    expect(cursor).toBeNull()
+  })
+
+  it('bridges a deeply nested binding resolution back into the program stack-safely', async () => {
+    // A binding resolution has no seam-level depth or byte cap; neither the
+    // host's reply serialization nor the CHILD's reply decode may die on
+    // recursion (json.loads raises RecursionError ~10k levels deep; the
+    // bootstrap decodes frames iteratively). 12000 levels sits past that
+    // limit while staying tiny in bytes.
+    const { runtime } = await setup()
+    const deep = ((): unknown => {
+      let v: unknown = null
+      for (let i = 0; i < 12000; i++) v = [v]
+      return v
+    })()
+    const result = await runtime.run({
+      program: [
+        'v = await tools.deep({})',
+        'depth = 0',
+        'while isinstance(v, list):',
+        '    v = v[0]',
+        '    depth += 1',
+        'return depth',
+      ].join('\n'),
+      bindings: tools({ deep: async () => deep as never }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(12000)
+  })
+
+  it('rejects a reserved errorClass name at the seam', async () => {
+    const { runtime } = await setup()
+    await expect(runtime.run({
+      program: 'return 1',
+      bindings: [{
+        global: 'tools',
+        functions: {},
+        errorClass: { name: 'class', memberNameProperty: 'toolName' },
+      }],
+    })).rejects.toThrow(/errorClass.name "class" is not a usable Python identifier/)
+  })
+
+  it('routes a declared inherited-attribute name through the bridge via subscript', async () => {
+    // __class__ resolves on `object` before any fallback hook; the proxy's
+    // __getattribute__ intercepts declared names first, and subscript access
+    // is the SDK-advertised route for underscore names.
+    const { runtime } = await setup()
+    const seen: string[] = []
+    const result = await runtime.run({
+      program: [
+        'a = await tools["__class__"]({"via": "subscript"})',
+        'b = await tools.__class__({"via": "dot"})',
+        'return [a, b]',
+      ].join('\n'),
+      bindings: tools({
+        '__class__': async () => { seen.push('called'); return 'bridged' },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual(['bridged', 'bridged'])
+    expect(seen).toEqual(['called', 'called'])
+  })
+
+  it('rejects NaN binding arguments immediately instead of hanging', async () => {
+    // Default json.dumps would emit a non-standard NaN token that the host
+    // JSON.parse drops silently, hanging the call until the wall clock;
+    // allow_nan=False raises in-program right away.
+    const { runtime } = await setup({ maxWallMs: 8000 })
+    const start = Date.now()
+    const result = await runtime.run({
+      program: [
+        'caught = ""',
+        'try:',
+        '    await tools.echo({"x": float("nan")})',
+        'except RuntimeError as e:',
+        '    caught = str(e)',
+        'return caught',
+      ].join('\n'),
+      bindings: tools({ echo: async args => args as CodeJsonValue }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toContain('lossless JSON')
+    expect(Date.now() - start).toBeLessThan(5000)
+  })
+
+  it('carries large binding arguments well past maxValueBytes', async () => {
+    // Binding traffic has no seam byte cap: a call frame far larger than the
+    // completion budget must reach the host intact (the fd-3 ceiling is a
+    // fixed memory-safety bound, not an output budget).
+    const maxValueBytes = 4096
+    const { runtime } = await setup({ maxValueBytes })
+    let receivedLength = 0
+    const result = await runtime.run({
+      program: [
+        `big = "B" * ${maxValueBytes * 50}`,
+        'r = await tools.measure({"payload": big})',
+        'return r',
+      ].join('\n'),
+      bindings: tools({
+        measure: async (args) => {
+          receivedLength = ((args as { payload: string }).payload).length
+          return receivedLength
+        },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(receivedLength).toBe(maxValueBytes * 50)
+    expect(result.value).toBe(maxValueBytes * 50)
+  })
+
+  it('rejects an unknown binding name inside the program with a matching error', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'caught = ""',
+        'try:',
+        '    await tools.nope({})',
+        'except (AttributeError, RuntimeError) as e:',
+        '    caught = str(e)',
+        'return caught',
+      ].join('\n'),
+      bindings: tools({ known: async () => 'ok' }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toContain('nope')
+  })
+
+  it('bounds an unknown-binding diagnostic built from a forged call frame', async () => {
+    // `call.global` and `call.name` carry no byte cap of their own, only the
+    // 256 MiB fd-3 frame ceiling, and the reply interpolated them raw: one copy
+    // into the template result, one into the `JSON.stringify` escape, one into
+    // the `encodeJsonPlain` frame, one into the pipe write. Slicing each field
+    // to `maxValueBytes` code units first makes an 8 MiB forged name a
+    // 128-byte reply. The observable effect is the reply the child then has to
+    // READ: its fd-3 reader is unbuffered, so `readline` consumes an oversized
+    // reply one `read(2)` per byte and the run's own legitimate call never gets
+    // answered — measured under a 60 s ceiling, the 8 MiB case timed out and a
+    // 64 MiB case cost the host 509.9 MiB of heap against 120.3 MiB with the
+    // slices in place. The child's address space stays generous enough to BUILD
+    // the forgery, which is not what is under test.
+    const { runtime } = await setup({ maxValueBytes: 128, addressSpaceMb: 1024, maxWallMs: 20_000 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'frame = b\'{"type":"call","id":9001,"global":"tools","name":"\' + b"n" * (8 * 1024 * 1024) + b\'","args":{}}\\n\'',
+        // One os.write returns short past the pipe buffer, and a partial frame
+        // would glue itself to the next one and be dropped as malformed, so the
+        // forgery goes out through a drain loop.
+        'view = memoryview(frame)',
+        'while view:',
+        '    view = view[os.write(3, view):]',
+        // A legitimate call after the forgery: its reply can only arrive once
+        // the child has read past whatever the forged frame was answered with.
+        'await tools.known({})',
+        'return "settled"',
+      ].join('\n'),
+      bindings: tools({ known: async () => 'ok' }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('settled')
+  }, 40_000)
+
+  it('bridges a binding call reached via subscript access (tools["name"])', async () => {
+    // The SDK tells the model `await tools["my-tool"](args)` works for exotic
+    // names; the proxy's __getitem__ must route it through the bridge.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'r = await tools["my-tool"]({"n": 7})',
+        'return r',
+      ].join('\n'),
+      bindings: tools({ 'my-tool': async args => ({ got: args as CodeJsonValue }) }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual({ got: { n: 7 } })
+  })
+
+  it('raises KeyError for an undeclared subscript name', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'caught = ""',
+        'try:',
+        '    await tools["absent"]({})',
+        'except KeyError as e:',
+        '    caught = str(e)',
+        'return caught',
+      ].join('\n'),
+      bindings: tools({ known: async () => 'ok' }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toContain('absent')
+  })
+})
+
+describe('PythonCodeRuntime — budgets, termination, disposal', () => {
+  it('kills a wall-clock runaway program via SIGTERM/SIGKILL and reports timeout', async () => {
+    const { runtime } = await setup({ maxWallMs: 500, graceMs: 200 })
+    const start = Date.now()
+    const result = await runtime.run({
+      program: 'import time\nwhile True: time.sleep(1)',
+      bindings: [],
+    })
+    const elapsed = Date.now() - start
+    // The wall timer may fire first or the exit-after-signal may resolve; both are ok.
+    expect(['timeout', 'worker-exit']).toContain(result.error?.kind)
+    // We got somewhere in the neighborhood of maxWallMs, not the underlying `sleep(1)`.
+    expect(elapsed).toBeLessThan(2000)
+  }, 5000)
+
+  it('aborts a run when the outer signal fires mid-flight', async () => {
+    const { runtime } = await setup({ maxWallMs: 10_000 })
+    const controller = new AbortController()
+    const settled: Promise<CodeRunResult> = runtime.run({
+      program: 'import time\nwhile True: time.sleep(0.1)',
+      bindings: [],
+      signal: controller.signal,
+    })
+    setTimeout(() => { controller.abort('outer-abort') }, 200)
+    const result = await settled
+    expect(['abort', 'worker-exit']).toContain(result.error?.kind)
+  }, 5000)
+
+  it('settles the run when a mid-flight abort reason cannot be converted', async () => {
+    // The listener converted the reason before calling `finish()`, so a hostile
+    // reason threw from inside an `AbortSignal` listener. Node reports that as an
+    // uncaught exception — it can terminate the host — and `finish()` never ran,
+    // so the run stayed live until the wall ceiling and misreported as `timeout`
+    // (observed) instead of the caller's cancellation. `maxWallMs` is short so
+    // that misreport is a fast assertion failure rather than a suite timeout.
+    const uncaught: unknown[] = []
+    const record = (error: unknown): void => { uncaught.push(error) }
+    process.on('uncaughtException', record)
+    try {
+      const { runtime } = await setup({ maxWallMs: 4_000, graceMs: 200 })
+      const controller = new AbortController()
+      const settled: Promise<CodeRunResult> = runtime.run({
+        program: 'import time\nwhile True: time.sleep(0.1)',
+        bindings: [],
+        signal: controller.signal,
+      })
+      setTimeout(() => {
+        controller.abort({ [Symbol.toPrimitive]() { throw new Error('reason blew up') } })
+      }, 200)
+      const result = await settled
+      expect(result.error?.kind).toBe('abort')
+      expect(result.error?.message).toBe('<unrenderable rejection value>')
+      expect(uncaught).toEqual([])
+    } finally {
+      process.off('uncaughtException', record)
+    }
+  }, 15_000)
+
+  it('disposes to quiescence: an in-flight run resolves as abort and the child exits', async () => {
+    const { fiber, runtime } = await setup({ maxWallMs: 10_000 })
+    const pending = runtime.run({
+      program: 'import time\nwhile True: time.sleep(0.1)',
+      bindings: [],
+    })
+    // Give the process time to spawn and start running.
+    await new Promise(resolve => setTimeout(resolve, 200))
+    await fiber.dispose()
+    const result = await pending
+    expect(['abort', 'worker-exit']).toContain(result.error?.kind)
+  }, 5000)
+
+  it('reports a spawn failure via a bogus python binary as worker-exit', async () => {
+    const { runtime } = await setup({ pythonBin: '/nonexistent/python-binary', maxWallMs: 3000 })
+    const result = await runtime.run({
+      program: 'return 1',
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('worker-exit')
+  }, 8000)
+
+  it('applies the strictest of the configured and inherited resource limits', async () => {
+    // This case used to drive the bootstrap's `applying resource limits failed`
+    // handler with `cpuSeconds: 2 ** 63`, asserting that a cap the child cannot
+    // apply fails the run rather than running it uncapped. That premise no longer
+    // holds, for two independent reasons, so the test now pins what is actually
+    // guaranteed instead of a path no admissible input reaches.
+    //
+    // First, `2 ** 63` is not a safe integer, so it is now rejected at LOAD as a
+    // configuration error — it can never reach the child at all. Second, even the
+    // largest admissible values are applied successfully, because `_clamped`
+    // bounds every requested pair by the inherited hard limit: an unprivileged
+    // process may lower a hard limit but never raise one, so the child keeps the
+    // stricter of the two rather than asking for something `setrlimit` refuses.
+    // The failure handler remains as a substrate guard (a platform whose kernel
+    // refuses the call for its own reasons), but it is no longer reachable from
+    // configuration, and a test that pretends otherwise documents a contract the
+    // code does not have.
+    //
+    // What is observable: a very large cap still yields a working run, and the
+    // containment it promises is met by the inherited ceiling.
+    const { runtime } = await setup({ cpuSeconds: Number.MAX_SAFE_INTEGER - 1, maxWallMs: 10_000 })
+    const result = await runtime.run({ program: 'return 1', bindings: [] })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(1)
+  }, 20_000)
+
+  it('settles as worker-exit when the child exits before sending done (no hang)', async () => {
+    // Regression: settlement must key off `close` (process reaped AND stdio
+    // drained), not `exit`. With `exit`, finish() re-armed a second exit
+    // listener that never fired — run() hung forever whenever the exit event
+    // beat the final fd-3 data (deterministic on macOS, a lost race elsewhere).
+    const { runtime } = await setup({ maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: 'import os\nos._exit(7)',
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain('code=7')
+  }, 5000)
+
+  it('classifies RLIMIT_CPU soft-limit expiry (SIGXCPU) as a timeout', async () => {
+    // A CPU hot loop burns the soft limit; the kernel delivers SIGXCPU, whose
+    // close signal the host maps to `timeout`. macOS re-delivers SIGXCPU
+    // differently, so we assert only kind/message here — CI's darwin leg
+    // validates real delivery. cpuSeconds must be an integer for setrlimit.
+    const { runtime } = await setup({ cpuSeconds: 1, maxWallMs: 20_000 })
+    const result = await runtime.run({
+      program: 'while True: pass',
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('timeout')
+    expect(result.error?.message).toContain('CPU budget')
+  }, 8000)
+
+  it('keeps an early self-inflicted SIGKILL a worker-exit, not a CPU timeout', async () => {
+    // The unsolicited-SIGKILL-as-timeout classification applies only when the
+    // CPU budget could have expired (wall time >= cpuSeconds). A SIGKILL
+    // seconds before that (cgroup OOM, an operator, os.kill) is substrate
+    // death and stays worker-exit per the orthogonal taxonomy.
+    const { runtime } = await setup({ cpuSeconds: 60, maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'import os, signal',
+        'os.kill(os.getpid(), signal.SIGKILL)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain('SIGKILL')
+  })
+
+  it('charges a forked descendant against the run CPU budget', async () => {
+    // RLIMIT_CPU is per-process and every child inherits a FRESH budget, so a
+    // program that shells out multiplies `cpuSeconds` by the number of
+    // descendants it starts. Measured before the aggregate meter existed: with
+    // cpuSeconds 1, two sequential busy children burned 2.0 CPU-seconds
+    // (RUSAGE_CHILDREN) and the run still returned a SUCCESS completion. The
+    // settle-time check meters RUSAGE_SELF + RUSAGE_CHILDREN and converts the
+    // overrun into the same SIGXCPU the untrapped soft limit sends.
+    const { runtime } = await setup({ cpuSeconds: 1, maxWallMs: 30_000 })
+    const result = await runtime.run({
+      program: [
+        'import subprocess, sys',
+        'for _ in range(2):',
+        '    subprocess.run([sys.executable, "-c", "import time\\nt=time.time()\\nwhile time.time()-t<1.2: pass"])',
+        'return "escaped the cpu budget"',
+      ].join('\n'),
+      bindings: [],
+    })
+    // Darwin's SIGXCPU re-delivery differs, so accept either terminal
+    // classification; what must NOT happen is the completion crossing.
+    expect(['timeout', 'worker-exit']).toContain(result.error?.kind)
+    expect(result.value).toBeUndefined()
+  }, 40_000)
+
+  it('does not charge wall time or a cheap descendant against the CPU budget', async () => {
+    // The meter is CPU, not wall clock, and it must not fire on a child that
+    // burns almost nothing: a sleeping program and a trivial subprocess both
+    // have to complete normally, or the check would reject every program that
+    // shells out.
+    const { runtime } = await setup({ cpuSeconds: 1, maxWallMs: 30_000 })
+    const slept = await runtime.run({
+      program: 'import time\ntime.sleep(1.5)\nreturn "slept"',
+      bindings: [],
+    })
+    expect(slept.error).toBeUndefined()
+    expect(slept.value).toBe('slept')
+    const cheap = await runtime.run({
+      program: [
+        'import subprocess, sys',
+        'subprocess.run([sys.executable, "-c", "pass"])',
+        'return "cheap child"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(cheap.error).toBeUndefined()
+    expect(cheap.value).toBe('cheap child')
+  }, 40_000)
+
+  it('spends no part of addressSpaceMb on bootstrap machinery', async () => {
+    // RLIMIT_AS counts RESERVED address space, so anything the bootstrap maps
+    // for its own accounting is subtracted from the program's `addressSpaceMb`.
+    // A sampling thread for the descendant-CPU meter cost 72 MiB here (an 8 MiB
+    // stack plus a 64 MiB glibc per-thread malloc arena reservation) and turned
+    // the 2-million-entry dict rejection below into a MemoryError under a
+    // 256 MiB cap on a slower runner. Assert the child's own mappings directly
+    // rather than inferring the budget from a near-cap allocation, so the bound
+    // is read from /proc instead of from how much headroom one machine happens
+    // to have; 48 MiB is well above the ~30 MiB a bare interpreter maps and
+    // well below the 102 MiB the thread produced. `addressSpaceMb` itself is
+    // skipped on darwin (the dyld shared cache makes any practical cap
+    // unsettable) and /proc/self/maps does not exist there, so the mapping
+    // assertion is Linux-only; the completion path is checked everywhere.
+    const { runtime } = await setup({ maxValueBytes: 4096, addressSpaceMb: 256 })
+    const mapped = await runtime.run({
+      program: [
+        'import sys',
+        'if sys.platform != "linux":',
+        '    return 0',
+        'total = 0',
+        'with open("/proc/self/maps") as handle:',
+        '    for line in handle:',
+        '        low, high = (int(part, 16) for part in line.split(" ", 1)[0].split("-"))',
+        '        total += high - low',
+        'return total // (1024 * 1024)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(mapped.error).toBeUndefined()
+    expect(mapped.value).toBeLessThan(48)
+  }, 20_000)
+
+  it('spends no part of addressSpaceMb on the reply pump, across a binding await', async () => {
+    // The test above measures BEFORE the program yields, so it could not see the
+    // reply pump's cost: `loop.run_in_executor(None, read_frame)` created the
+    // default executor's first thread on the first `await tools.*`, and that
+    // thread's 8 MiB stack plus a 64 MiB glibc per-thread malloc arena are
+    // charged to RLIMIT_AS while the limit is already in force — measured, the
+    // child went from 30.34 MiB to 102.39 MiB across one binding call. Under a
+    // small `addressSpaceMb` the thread cannot start and a legitimate call hangs
+    // to `maxWallMs`; under a larger one an allocation that should have fit dies
+    // as MemoryError. `loop.add_reader` watches the fd with no thread at all.
+    //
+    // Measuring both sides inside one run is what discriminates: a single
+    // after-the-fact number cannot separate the pump's cost from the
+    // interpreter's own footprint. Linux-only for the same reason as above.
+    const { runtime } = await setup({ addressSpaceMb: 256, maxWallMs: 20_000 })
+    const result = await runtime.run({
+      program: [
+        'import sys',
+        'def mapped():',
+        '    if sys.platform != "linux":',
+        '        return 0',
+        '    total = 0',
+        '    with open("/proc/self/maps") as handle:',
+        '        for line in handle:',
+        '            low, high = (int(part, 16) for part in line.split(" ", 1)[0].split("-"))',
+        '            total += high - low',
+        '    return total // (1024 * 1024)',
+        'before = mapped()',
+        'echoed = await tools.echo({"ping": True})',
+        'return {"before": before, "after": mapped(), "echoed": echoed}',
+      ].join('\n'),
+      bindings: tools({ echo: async args => args as CodeJsonValue }),
+    })
+    expect(result.error).toBeUndefined()
+    const value = result.value as { before: number; after: number; echoed: unknown }
+    // The binding call really happened, so the pump really ran.
+    expect(value.echoed).toEqual({ ping: true })
+    // Awaiting a binding maps nothing extra. The 8 MiB allowance absorbs ordinary
+    // heap growth while staying far below the 72 MiB a pump thread cost.
+    expect(value.after - value.before).toBeLessThan(8)
+  }, 30_000)
+
+  it('still terminates a program that ignores SIGXCPU (hard-limit backstop)', async () => {
+    // A hot loop under SIG_IGN burns through the soft limit; the kernel's
+    // hard limit (cpuSeconds + 1) SIGKILLs it. Only a kernel-authoritative
+    // SIGXCPU close classifies as the CPU timeout — a bare SIGKILL is
+    // indistinguishable from a cgroup OOM kill, so it reports worker-exit
+    // (Darwin re-delivers SIGXCPU instead, where the wall clock settles it
+    // as timeout). Either way the run TERMINATES within the budget — the
+    // backstop holds even when the classification is the opaque one.
+    const { runtime } = await setup({ cpuSeconds: 1, maxWallMs: 6_000 })
+    const result = await runtime.run({
+      program: [
+        'import signal',
+        'signal.signal(signal.SIGXCPU, signal.SIG_IGN)',
+        'while True: pass',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(['timeout', 'worker-exit']).toContain(result.error?.kind)
+  }, 12_000)
+
+  it('enforces the CPU budget even when the program monkeypatches the enforcement primitives', async () => {
+    // The check uses import-time-captured references, so replacing
+    // resource.getrusage / signal.signal / os.kill on the modules cannot
+    // defang it: a trapping program that also swaps the callables and burns
+    // past the budget still dies by the authoritative SIGXCPU.
+    const { runtime } = await setup({ cpuSeconds: 1, maxWallMs: 15_000 })
+    const result = await runtime.run({
+      program: [
+        'import signal, os, resource, time',
+        'signal.signal(signal.SIGXCPU, lambda *a: None)',
+        'resource.getrusage = lambda *a: (_ for _ in ()).throw(RuntimeError("nope"))',
+        'os.kill = lambda *a: None',
+        'signal.signal = lambda *a: None',
+        'deadline = time.process_time() + 1.05',
+        'while time.process_time() < deadline: pass',
+        'return "escaped"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('timeout')
+    expect(result.value).toBeUndefined()
+  }, 15_000)
+
+  it('re-delivers SIGXCPU when a trapping program returns inside the soft-to-hard gap', async () => {
+    // A program can trap SIGXCPU and settle during the one-second gap; the
+    // bootstrap re-checks the kernel CPU meter (getrusage) after settlement
+    // and dies by SIGXCPU with the default disposition restored, so the host
+    // still classifies the exhausted budget as a timeout instead of success.
+    const { runtime } = await setup({ cpuSeconds: 1, maxWallMs: 15_000 })
+    const result = await runtime.run({
+      program: [
+        'import signal, time',
+        'fired = []',
+        'signal.signal(signal.SIGXCPU, lambda *a: fired.append(1))',
+        'deadline = time.process_time() + 1.05',
+        'while time.process_time() < deadline: pass',
+        'return "escaped"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('timeout')
+    expect(result.error?.message).toContain('CPU budget')
+    expect(result.value).toBeUndefined()
+  }, 15_000)
+
+  it('enforces the CPU budget when the program rebinds the enforcer on __main__', async () => {
+    // The bootstrap IS `__main__`, so `import __main__` reaches its globals.
+    // The enforcement callable holds its primitives in closure cells (not
+    // module attributes) and `_run` reads the callable into a frame local
+    // before the program starts, so neither replacing the global nor swapping
+    // the module's captured names changes what runs after settlement.
+    const { runtime } = await setup({ cpuSeconds: 1, maxWallMs: 15_000 })
+    const result = await runtime.run({
+      program: [
+        'import signal, time, __main__',
+        'signal.signal(signal.SIGXCPU, lambda *a: None)',
+        '__main__._DIE_IF_CPU_EXHAUSTED = lambda *_: None',
+        'deadline = time.process_time() + 1.05',
+        'while time.process_time() < deadline: pass',
+        'return "escaped"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('timeout')
+    expect(result.value).toBeUndefined()
+  }, 15_000)
+
+  it('bounds a program that defeats the post-check by writing its closure cell', async () => {
+    // The closure-cell capture raises the cost of defeating the post-check; it
+    // does NOT make it unreachable, and nothing in-process could: a cell is
+    // writable through `fn.__closure__[i].cell_contents`, and `sys._getframe`
+    // reads _run's frame locals. This program does exactly that — walks to
+    // _run's frame, takes the enforcement callable, and replaces its captured
+    // `getrusage` with one reporting zero CPU used — then burns past cpuSeconds
+    // with SIGXCPU trapped. The run must still fail, because the bound that
+    // model code cannot forge is outside the interpreter: the RLIMIT_CPU HARD
+    // limit at cpuSeconds + 1, whose SIGKILL admits no handler. No success is
+    // reportable either way.
+    const { runtime } = await setup({ cpuSeconds: 1, maxWallMs: 20_000 })
+    const start = Date.now()
+    const result = await runtime.run({
+      program: [
+        'import signal, sys, time',
+        'signal.signal(signal.SIGXCPU, lambda *a: None)',
+        // Walk out of __dsh_main__ to _run's frame and take its local.
+        'die = None',
+        'depth = 1',
+        'while depth < 12:',
+        '    frame = sys._getframe(depth)',
+        '    if "die_if_cpu_exhausted" in frame.f_locals:',
+        '        die = frame.f_locals["die_if_cpu_exhausted"]',
+        '        break',
+        '    depth += 1',
+        'assert die is not None, "enforcer not reachable from the frame chain"',
+        'class Zero:',
+        '    ru_utime = 0.0',
+        '    ru_stime = 0.0',
+        'names = die.__code__.co_freevars',
+        'die.__closure__[names.index("getrusage")].cell_contents = lambda *a: Zero()',
+        // Burn well past the soft limit into the hard limit's SIGKILL.
+        'while True: pass',
+      ].join('\n'),
+      bindings: [],
+    })
+    // What holds on EVERY platform: the tampering bought no success. The run
+    // failed, carried no value, and the reported kind is one of the two
+    // kernel-level outcomes — never a completion.
+    expect(result.value).toBeUndefined()
+    expect(result.error?.kind === 'worker-exit' || result.error?.kind === 'timeout').toBe(true)
+    if (process.platform === 'linux') {
+      // Linux enforces the RLIMIT_CPU HARD limit at cpuSeconds + 1 promptly, so
+      // the CPU bound — not the 20 s wall ceiling — is what stops the program.
+      // Its SIGKILL is not SIGXCPU, so the orthogonal-failure taxonomy reports
+      // `worker-exit`: a bare SIGKILL is not evidence of CPU burn.
+      expect(result.error?.kind).toBe('worker-exit')
+      expect(Date.now() - start).toBeLessThan(15_000)
+    } else {
+      // Darwin does not deliver the hard limit's SIGKILL on the same schedule;
+      // observed on the macOS lane, a program that patches the post-check runs
+      // to the WALL ceiling instead. The CPU budget is therefore not the
+      // binding constraint against a tampering program there — the wall clock
+      // is. Asserted rather than skipped so the difference stays visible.
+      expect(result.error?.kind).toBe('timeout')
+    }
+  }, 30_000)
+
+  it('keeps a finished-but-not-closed run live so dispose awaits the child\'s death', async () => {
+    // finish() no longer drops the run from `live`; settle() (at close) does.
+    // A SIGTERM-trapping program with a small graceMs sits in the grace window
+    // after finish() fires — dispose() must not resolve until the SIGKILL
+    // backstop actually reaps the child. The program prints its pid (captured
+    // as a log even on abort); once dispose() resolves, that pid must be dead
+    // (process.kill(pid, 0) throws ESRCH).
+    const { fiber, runtime } = await setup({ maxWallMs: 10_000, graceMs: 400 })
+    // Deterministic readiness: the program reports its pid through a binding
+    // AFTER installing the trap, so dispose cannot race the spawn (a fixed
+    // sleep lost that race on slow CI runners — SIGTERM landed pre-trap).
+    let reportedPid!: (pid: number) => void
+    const trapReady = new Promise<number>((resolve) => { reportedPid = resolve })
+    const pending = runtime.run({
+      program: [
+        'import signal, time, os',
+        'signal.signal(signal.SIGTERM, lambda *a: None)',
+        'await tools.ready({"pid": os.getpid()})',
+        'while True: time.sleep(0.05)',
+      ].join('\n'),
+      bindings: tools({
+        ready: async (args) => {
+          reportedPid((args as { pid: number }).pid)
+          return 'ok'
+        },
+      }),
+    })
+    const pid = await trapReady
+    const start = Date.now()
+    await fiber.dispose()
+    const elapsed = Date.now() - start
+    const result = await pending
+    expect(['abort', 'worker-exit', 'timeout']).toContain(result.error?.kind)
+    // dispose() returned only after the grace window elapsed (the SIGTERM trap
+    // forces the SIGKILL backstop path), proving the run stayed live past finish().
+    expect(elapsed).toBeGreaterThanOrEqual(300)
+    expect(Number.isInteger(pid) && pid > 0).toBe(true)
+    // The child is fully reaped by the time dispose() resolved.
+    expect(() => process.kill(pid, 0)).toThrow(/ESRCH/)
+  }, 8000)
+
+  it('settles on the decided result even when a setsid-escaped orphan holds stdio open past close', async () => {
+    // `close` only fires once every inherited stdio stream drains. A descendant
+    // started with start_new_session=True escapes the child's process group, so
+    // the SIGTERM/SIGKILL aimed at that group never reaches it; if it inherited
+    // our stdout/stderr/fd 3 and outlives the run, `close` would never fire and
+    // run() would hang forever. The close-deadline backstop (graceMs + margin)
+    // must force settlement on the value the `done` frame already decided.
+    const { runtime } = await setup({ graceMs: 100 })
+    const start = Date.now()
+    const result = await runtime.run({
+      program: [
+        'import subprocess, sys',
+        // Orphan in a fresh session, inheriting our stdout/stderr/fd 3, alive
+        // well past the close-deadline so `close` cannot fire on its own.
+        'subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"],',
+        '                 start_new_session=True)',
+        'return "escaped"',
+      ].join('\n'),
+      bindings: [],
+    })
+    const elapsed = Date.now() - start
+    // The done frame decided the value; the deadline settled it despite the
+    // orphan pinning the pipes open.
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('escaped')
+    // Settlement waited for the backstop (graceMs + CLOSE_REAP_MARGIN_MS ≈ 2.1s),
+    // not the wall-clock ceiling — proving the deadline, not the ceiling, fired.
+    expect(elapsed).toBeGreaterThanOrEqual(1_500)
+    expect(elapsed).toBeLessThan(5_000)
+  }, 8000)
+})
+
+describe('PythonCodeRuntime — hostile peer', () => {
+  it('drops garbage bytes and unknown-shape frames posted directly to fd 3', async () => {
+    // The model program can reach fd 3 and write anything. We inject a
+    // non-JSON line, a valid JSON but unknown-shape frame, and a broken done
+    // frame; the host must not crash, and the real `done` still settles the run.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'os.write(3, b"not-json\\n")',
+        'os.write(3, b\'{"type":"unknown"}\\n\')',
+        'os.write(3, b\'{"type":"done","error":{"message":42}}\\n\')',
+        'return "survived"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('survived')
+  })
+
+  it('answers a forged call frame for an unknown binding and never crashes', async () => {
+    // The unknown-binding reply path, driven through the id the host expects:
+    // the program lets its own first call claim id 0 and forges id 1, which the
+    // host answers with the `unknown binding` rejection the honest call would
+    // have received. A forged id out of sequence is dropped instead — that is
+    // the id-bound test below, not this one.
+    const { runtime } = await setup({ maxWallMs: 8_000 })
+    let seenLegitCall = false
+    const result = await runtime.run({
+      program: [
+        'import os, json',
+        'x = await tools.echo({"ping": True})',
+        'os.write(3, json.dumps({"type":"call","id":1,"global":"tools","name":"forged","args":{}}).encode() + b"\\n")',
+        // The forged frame is answered, but nothing in the child awaits id 1, so
+        // the reply is ignored and the run completes on its own value.
+        'return x',
+      ].join('\n'),
+      bindings: tools({
+        echo: async (args) => { seenLegitCall = true; return args as CodeJsonValue },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual({ ping: true })
+    expect(seenLegitCall).toBe(true)
+  }, 15_000)
+
+  it('drops forged call frames whose ids are not the next in sequence, retaining no per-id state', async () => {
+    // The host used to remember every answered id in a Set, so a program could
+    // write an unbounded run of unique forged ids — each frame far below the
+    // 256 MiB ceiling, so nothing rejected them — and grow host memory for the
+    // whole run. Ids are consecutive from 0, so one counter replaces the set.
+    //
+    // The discriminator is that the forgeries must not be answered. Each names a
+    // binding that does exist, so a host answering them would run `echo` once
+    // per forgery; the count proves only the legitimate call was dispatched.
+    // Ids also run DESCENDING, so a high-water-mark test would drop the honest
+    // call that follows rather than the forgeries.
+    const { runtime } = await setup()
+    let echoCalls = 0
+    const result = await runtime.run({
+      program: [
+        'import os, json',
+        'for i in range(2000, 0, -1):',
+        '    os.write(3, json.dumps({"type":"call","id":i,"global":"tools","name":"echo","args":{"forged":i}}).encode() + b"\\n")',
+        'x = await tools.echo({"ping": True})',
+        'return x',
+      ].join('\n'),
+      bindings: tools({
+        echo: async (args) => { echoCalls += 1; return args as CodeJsonValue },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual({ ping: true })
+    expect(echoCalls).toBe(1)
+  }, 15_000)
+
+  it('keeps answering calls a program makes after one with unserializable arguments', async () => {
+    // The child claims an id only once its write succeeds, so a call rejected
+    // child-side for non-lossless arguments leaves no gap. Were a gap possible,
+    // the host's exact-successor test would drop every later call and the run
+    // would hang to the wall ceiling instead of completing.
+    const { runtime } = await setup({ maxWallMs: 8_000 })
+    const seen: unknown[] = []
+    const result = await runtime.run({
+      program: [
+        'caught = ""',
+        'try:',
+        '    await tools.echo({"bad": float("inf")})',
+        'except RuntimeError as e:',
+        '    caught = str(e)',
+        'after = await tools.echo({"ok": True})',
+        'return {"caught": caught, "after": after}',
+      ].join('\n'),
+      bindings: tools({
+        echo: async (args) => { seen.push(args); return args as CodeJsonValue },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    const value = result.value as { caught: string; after: unknown }
+    expect(value.caught).toContain('lossless JSON')
+    expect(value.after).toEqual({ ok: true })
+    // The rejected call never reached the host; the one after it did.
+    expect(seen).toEqual([{ ok: true }])
+  }, 15_000)
+
+  it('drops a forged frame carrying an integer outside JavaScript safe range', async () => {
+    // JSON.parse would silently round 9007199254740993 to ...992 BEFORE any
+    // validation, corrupting a dispatched argument or completion. The host
+    // scans the raw line and drops such frames as hostile traffic; the honest
+    // child cannot produce one (its validator rejects unsafe ints).
+    const { runtime } = await setup()
+    let dispatched: unknown
+    const result = await runtime.run({
+      program: [
+        'import os',
+        // Forged call frame with an unsafe int argument, then a forged done
+        // frame with an unsafe int value — both must be dropped whole.
+        'os.write(3, b\'{"type":"call","id":7,"global":"tools","name":"echo","args":9007199254740993}\\n\')',
+        'os.write(3, b\'{"type":"done","value":9007199254740993}\\n\')',
+        'x = await tools.echo({"ok": True})',
+        'return x',
+      ].join('\n'),
+      bindings: tools({
+        echo: async (args) => { dispatched = args; return args as CodeJsonValue },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    // The forged done did not settle the run; the legit call and completion did.
+    expect(result.value).toEqual({ ok: true })
+    expect(dispatched).toEqual({ ok: true })
+  })
+
+  it('truncates host-side logs once the budget is exhausted and emits the marker', async () => {
+    // Set a tiny host-side budget; the Python side has a much larger one, so
+    // its LogBuffer will not truncate — the host ledger fires first.
+    const { runtime } = await setup({ maxLogBytes: 32 })
+    const result = await runtime.run({
+      program: [
+        'for _ in range(50):',
+        '    print("aaaaaaaaaa")',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    const markers = result.logs.filter(line => line.includes('log capture truncated at 32 bytes'))
+    expect(markers.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('reports an exception whose message holds an unpaired surrogate instead of stranding to the wall clock', async () => {
+    // A strict UTF-8 encode of "\ud800" throws while BUILDING the failure
+    // frame; the run would then hang to maxWallMs and misreport as timeout.
+    const { runtime } = await setup({ maxWallMs: 8_000 })
+    const result = await runtime.run({
+      program: String.raw`raise Exception("bad \ud800 surrogate")`,
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message).toContain('bad')
+    expect(result.error?.message).toContain('surrogate')
+  })
+
+  it('carries a lone-surrogate completion string across the wire as its JSON escape', async () => {
+    // UTF-8 has no encoding for a lone surrogate, but JSON does: the ASCII
+    // `\ud800` escape, which JSON.parse reads back as the same UTF-16 code
+    // unit. `CodeJsonValue`, `snapshotJsonValue`, and the worker backend all
+    // accept such a string, so this backend must not narrow the shared seam.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: String.raw`return {"lone": "a\ud800b", "spelled": "😀"}`,
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    // The lone half survives as the code unit itself; a spelled-out high-low
+    // PAIR folds into the astral character the host would hold for it.
+    expect(result.value).toEqual({ lone: 'a\ud800b', spelled: '\u{1f600}' })
+  })
+
+  it('meters a lone surrogate at its six escaped bytes, matching the host', async () => {
+    // The child and the host share maxValueBytes, so the child must charge the
+    // escape's six ASCII bytes (plus two quotes): eight fits, nine does not.
+    const { runtime } = await setup({ maxValueBytes: 8 })
+    const ok = await runtime.run({ program: String.raw`return "\ud800"`, bindings: [] })
+    expect(ok.error).toBeUndefined()
+    expect(ok.value).toBe('\ud800')
+    const over = await setup({ maxValueBytes: 7 })
+    const result = await over.runtime.run({ program: String.raw`return "\ud800"`, bindings: [] })
+    expect(result.error?.kind).toBe('output-limit')
+  })
+
+  it('passes a lone-surrogate binding argument through instead of failing the call', async () => {
+    // The argument validator shared the same over-narrow rejection; a host
+    // binding must receive the code unit the program passed.
+    const seen: unknown[] = []
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: String.raw`return await tools.echo({"text": "x\udfff"})`,
+      bindings: tools({ echo: async (args: unknown) => { seen.push(args); return args as CodeJsonValue } }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(seen).toEqual([{ text: 'x\udfff' }])
+    expect(result.value).toEqual({ text: 'x\udfff' })
+  })
+
+  it('meters a non-ASCII completion in UTF-8 JSON bytes, matching the host', async () => {
+    // json.dumps' default \uXXXX escaping would count "é" as 8 bytes while
+    // the host meter counts its UTF-8 JSON form (4); the shared budget must
+    // agree, so a 4-byte-fitting value passes a maxValueBytes of 4.
+    const { runtime } = await setup({ maxValueBytes: 4 })
+    const ok = await runtime.run({ program: 'return "é"', bindings: [] })
+    expect(ok.error).toBeUndefined()
+    expect(ok.value).toBe('é')
+    const over = await runtime.run({ program: 'return "éx"', bindings: [] })
+    expect(over.error?.kind).toBe('output-limit')
+  })
+
+  it('filters bootstrap frames from exception-group members (TaskGroup)', async () => {
+    // Python 3.11+ stores member stacks under TracebackException.exceptions;
+    // the <model>-frame filter must recurse into them too.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import asyncio, sys',
+        'if sys.version_info < (3, 11):',
+        '    raise ValueError("skip-old <model>")',
+        'async def boom():',
+        '    raise ValueError("group-member")',
+        'async with asyncio.TaskGroup() as tg:',
+        '    tg.create_task(boom())',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message).toContain('<model>')
+    expect(result.error?.message).not.toContain('bootstrap.py')
+  })
+
+  it('keeps frames intact when a model thread floods logs while a large frame drains', async () => {
+    // os.write releases the GIL and a frame beyond PIPE_BUF is not atomic:
+    // without the writer lock + full-write loop, the printing thread could
+    // interleave bytes mid-frame and the host would drop the malformed JSON,
+    // hanging the run to the wall clock (or losing the completion).
+    const { runtime } = await setup({ maxValueBytes: 1024 * 1024, maxLogBytes: 4 * 1024 * 1024, maxWallMs: 15_000 })
+    const result = await runtime.run({
+      program: [
+        'import threading',
+        'stop = False',
+        'def spam():',
+        '    while not stop:',
+        '        print("spam-line-" + "y" * 100)',
+        't = threading.Thread(target=spam)',
+        't.start()',
+        // A ~300 KiB completion — several PIPE_BUF units — while spam runs.
+        'big = "x" * (300 * 1024)',
+        'stop = True',
+        't.join()',
+        'return big',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('x'.repeat(300 * 1024))
+  }, 20_000)
+
+  it('settles cleanly while a daemon thread keeps writing unterminated log text', async () => {
+    // WARNING regression: the settlement `flush_out()/flush_err()` on the main
+    // coroutine read and clear `_LogStream._pending` and the shared LogBuffer
+    // ledger with NO lock, while a model daemon thread's `print`/`write` mutate
+    // the same state. Capturing the bound method (`out_stream.flush_line`) only
+    // fixes WHICH callable runs, not what it reads mid-flight: the flush could
+    // interleave with a concurrent write and join a `_pending` list being
+    // mutated under it, corrupting the ledger and costing the `done` frame — the
+    // run would then strand to the wall clock instead of completing. The shared
+    // re-entrant lock serializes them.
+    //
+    // A pure data race has no single bad input to reject deterministically, so
+    // this maximizes overlap: daemon threads emit UNTERMINATED writes (which
+    // pile into `_pending` rather than flushing per line) right up to the moment
+    // the body returns and settlement flushes. Repeated so the interleave lands.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { runtime, fiber } = await setup({ maxLogBytes: 4 * 1024 * 1024, maxWallMs: 15_000 })
+      const result = await runtime.run({
+        program: [
+          'import sys, threading',
+          'stop = False',
+          'def spam():',
+          '    while not stop:',
+          // No newline: the text accumulates in the stream's `_pending`, which is
+          // exactly the state the settlement flush also touches.
+          '        sys.stdout.write("tail-fragment-" + "z" * 64)',
+          'workers = [threading.Thread(target=spam, daemon=True) for _ in range(4)]',
+          'for t in workers: t.start()',
+          // Let the daemons build up pending writes, then return so settlement
+          // flushes while they are still mid-write.
+          'import time; time.sleep(0.05)',
+          'return "settled"',
+        ].join('\n'),
+        bindings: [],
+      })
+      expect(result.error).toBeUndefined()
+      expect(result.value).toBe('settled')
+      await fiber.dispose()
+    }
+  }, 30_000)
+
+  it('round-trips an exactly representable large integer through a binding echo', async () => {
+    // The reply serializer must print BigInt digits for a beyond-safe
+    // integral double: String(2**60) emits a rounded form, and the child
+    // would receive a DIFFERENT integer than the binding resolved.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'v = await tools.echo(2**60)',
+        'return v == 2**60',
+      ].join('\n'),
+      bindings: tools({ echo: async args => args as never }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(true)
+  })
+
+  it('preserves an exactly representable large integer and rejects a rounding one', async () => {
+    // The canonical boundary accepts every JS-double-exact value: 2**53 and
+    // 2**60 round-trip exactly and must cross (matching the worker backend);
+    // 2**53+1 rounds and must fail as invalid-output.
+    const { runtime } = await setup()
+    const exact = await runtime.run({ program: 'return [2**53, 2**60]', bindings: [] })
+    expect(exact.error).toBeUndefined()
+    expect(exact.value).toEqual([2 ** 53, 2 ** 60])
+    const lossy = await runtime.run({ program: 'return 2**53 + 1', bindings: [] })
+    expect(lossy.error?.kind).toBe('invalid-output')
+    expect(lossy.error?.message).toContain('not exactly representable')
+  })
+
+  it('rejects a container subclass whose overridden methods hide its contents', async () => {
+    // A dict subclass returning [] from items() passes an isinstance check but
+    // serializes as {}, so the host would receive a value the program did not
+    // compute. Exact-type matching fails it as invalid-output instead. The
+    // worker backend rejects the prototype-equivalent shapes the same way.
+    const { runtime } = await setup()
+    const hidden = await runtime.run({
+      program: [
+        'class Sneaky(dict):',
+        '    def items(self): return []',
+        '    def keys(self): return []',
+        '    def __iter__(self): return iter([])',
+        '    def __len__(self): return 0',
+        'return Sneaky(secret="kept")',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(hidden.error?.kind).toBe('invalid-output')
+    expect(hidden.error?.message).toContain('unsupported type (Sneaky)')
+    // A list subclass is refused on the same rule.
+    const listish = await runtime.run({
+      program: ['class L(list):', '    def __iter__(self): return iter([])', 'return L([1, 2, 3])'].join('\n'),
+      bindings: [],
+    })
+    expect(listish.error?.kind).toBe('invalid-output')
+    expect(listish.error?.message).toContain('unsupported type (L)')
+    // The exact built-in containers still cross unchanged.
+    const plain = await runtime.run({ program: 'return {"secret": [1, 2]}', bindings: [] })
+    expect(plain.error).toBeUndefined()
+    expect(plain.value).toEqual({ secret: [1, 2] })
+  })
+
+  it('rejects a scalar subclass whose overrides disagree with what gets serialized', async () => {
+    // The validators checked scalars with isinstance, so a subclass passed
+    // every check by its real value while the ENCODER read an override — the
+    // host then received a value the walk never approved. Each case below is a
+    // distinct override reaching a distinct reader.
+    const { runtime } = await setup()
+    // _dump_float spells a float from repr(value), so an overridden __repr__
+    // decides the digits: F(2.5) serialized as 1.
+    const floated = await runtime.run({
+      program: [
+        'class F(float):',
+        '    def __repr__(self): return "1.0"',
+        'return F(2.5)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(floated.error?.kind).toBe('invalid-output')
+    expect(floated.error?.message).toContain('unsupported type (F)')
+    // The JS-safe-range bound is two comparisons, so overriding them admits an
+    // int whose true digits (json.dumps reads the C-level value) the host's
+    // JSON.parse rounds: 9007199254740993 arrives as ...992.
+    const inted = await runtime.run({
+      program: [
+        'class I(int):',
+        '    def __gt__(self, other): return False',
+        '    def __lt__(self, other): return False',
+        'return I(2 ** 53 + 1)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(inted.error?.kind).toBe('invalid-output')
+    expect(inted.error?.message).toContain('unsupported type (I)')
+    // The pre-encode size bound reads len(), so overriding it to 0 admits a
+    // string of any length past maxValueBytes.
+    const stringed = await runtime.run({
+      program: [
+        'class S(str):',
+        '    def __len__(self): return 0',
+        'return S("Q" * 100000)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(stringed.error?.kind).toBe('invalid-output')
+    expect(stringed.error?.message).toContain('unsupported type (S)')
+    // A str-subclass dict KEY reaches the same len() bound.
+    const keyed = await runtime.run({
+      program: [
+        'class S(str):',
+        '    def __len__(self): return 0',
+        'return {S("Q" * 100000): 1}',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(keyed.error?.kind).toBe('invalid-output')
+    expect(keyed.error?.message).toContain('non-string dict key (S)')
+    // bool is an int subclass that IS lossless JSON, and the exact scalars all
+    // still cross unchanged.
+    const plain = await runtime.run({
+      program: 'return {"t": True, "f": False, "n": None, "i": 7, "d": 2.5, "s": "ok"}',
+      bindings: [],
+    })
+    expect(plain.error).toBeUndefined()
+    expect(plain.value).toEqual({ t: true, f: false, n: null, i: 7, d: 2.5, s: 'ok' })
+  })
+
+  it('rejects a scalar subclass passed as a binding argument', async () => {
+    // The uncapped binding-argument validator shares the exact-type rule, so
+    // the call fails through its rejection contract instead of dispatching a
+    // float whose digits come from an override.
+    const { runtime } = await setup()
+    const seen: CodeJsonValue[] = []
+    const result = await runtime.run({
+      program: [
+        'class F(float):',
+        '    def __repr__(self): return "1.0"',
+        'try:',
+        '    await tools.echo({"v": F(2.5)})',
+        'except Exception as exc:',
+        '    return str(exc)',
+      ].join('\n'),
+      bindings: tools({ echo: async (args) => {
+        seen.push(args as CodeJsonValue)
+        return null
+      } }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toContain('unsupported type (F)')
+    expect(seen).toEqual([])
+  })
+
+  it('rejects a container subclass passed as a binding argument', async () => {
+    // Binding arguments run the uncapped validator, which must apply the same
+    // exact-type rule: the call fails descriptively instead of dispatching a
+    // value whose serialization disagrees with what was validated.
+    const { runtime } = await setup()
+    const seen: CodeJsonValue[] = []
+    const result = await runtime.run({
+      program: [
+        'class Sneaky(dict):',
+        '    def items(self): return []',
+        'try:',
+        '    await tools.echo(Sneaky(secret="kept"))',
+        'except Exception as exc:',
+        '    return str(exc)',
+      ].join('\n'),
+      bindings: tools({ echo: async (args) => {
+        seen.push(args as CodeJsonValue)
+        return null
+      } }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toContain('unsupported type (Sneaky)')
+    expect(seen).toEqual([])
+  })
+
+  it('fails an oversized completion as output-limit without materializing its encoding', async () => {
+    // A 100 MiB string under maxValueBytes: 1024 must fail as output-limit.
+    // The address-space cap leaves room for the program to BUILD the string
+    // (one copy + interpreter) but not for the old full pre-check encode,
+    // which materialized chunk fragments plus the joined copy (~2 more
+    // copies) and died on RLIMIT_AS as MemoryError/worker-exit.
+    const { runtime } = await setup({ maxValueBytes: 1024, addressSpaceMb: 384, maxWallMs: 15_000 })
+    const result = await runtime.run({
+      program: 'return "x" * (100 * 1024 * 1024)',
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('output-limit')
+    expect(result.error?.message).toContain('exceeded 1024 bytes')
+  }, 20_000)
+
+  it('rejects a control-heavy oversized completion on its length, not its escaped copy', async () => {
+    // Every "\x00" escapes to the six bytes " ", so the escaped form of a
+    // 40 MB string is ~240 MB. The walk must refuse on the cheap
+    // `len(current) + 2` lower bound; the 384 MiB address space holds the raw
+    // string but not its escaped expansion, so a pre-escape check dies on
+    // RLIMIT_AS instead of returning output-limit.
+    const { runtime } = await setup({ maxValueBytes: 1024, addressSpaceMb: 384, maxWallMs: 15_000 })
+    const result = await runtime.run({
+      program: 'return "\\x00" * (40 * 1024 * 1024)',
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('output-limit')
+    expect(result.error?.message).toContain('exceeded 1024 bytes')
+  }, 20_000)
+
+  it('truncates a single print far above maxLogBytes instead of dying on the encode', async () => {
+    // LogBuffer must reject via the cheap char-count lower bound BEFORE
+    // UTF-8-encoding the whole string: the full encode of a ~100 MB line
+    // would double the allocation and can breach RLIMIT_AS. 256 MiB
+    // address space comfortably holds one copy of the 100 MB string but
+    // not the pre-fix double allocation plus interpreter overhead spikes.
+    const { runtime } = await setup({ maxLogBytes: 1024, addressSpaceMb: 256, maxWallMs: 15_000 })
+    const result = await runtime.run({
+      program: [
+        'print("x" * (100 * 1024 * 1024))',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs.some(line => line.includes('log capture truncated'))).toBe(true)
+  }, 20_000)
+
+  it('stops host capture at the child ledger truncation, keeping exactly one marker', async () => {
+    // The two ledgers exhaust independently. One child entry larger than
+    // `maxLogBytes` sends ONLY the marker, so the host budget is still nearly
+    // untouched — and the marker used to arrive as an ordinary `log` frame the
+    // host could not tell from program output. Text written afterwards was
+    // therefore retained AFTER the marker, contradicting the stop-after-
+    // truncation contract, and a later host-side exhaustion could append a
+    // second marker. The frame now carries `truncated: true`.
+    //
+    // `os.write(1, ...)` bypasses the child's own stream, so those bytes reach
+    // the host as stray stdout and take the host ledger path rather than the
+    // child's — which is exactly the route that leaked past the marker.
+    const { runtime } = await setup({ maxLogBytes: 64, maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'print("y" * 70000)',
+        'os.write(1, b"AFTER")',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    const markers = result.logs.filter(line => line.includes('log capture truncated'))
+    expect(markers).toHaveLength(1)
+    // The marker is the LAST entry: nothing was retained after truncation.
+    expect(result.logs.at(-1)).toBe(markers[0])
+    expect(result.logs.join('\n')).not.toContain('AFTER')
+  }, 20_000)
+
+  it('keeps one marker when a program forges repeated truncation frames', async () => {
+    // `truncated` is attacker-reachable: the program owns fd 3 and can write the
+    // flag itself, so the field is a hostile input rather than a trusted signal.
+    // Repeats must collapse to the single marker the contract promises, and only
+    // the literal `true` counts — a forged `"yes"` is rebuilt away by
+    // validateChildFrame, so that frame stays ordinary text.
+    const { runtime } = await setup({ maxLogBytes: 4096, maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'import os, json',
+        'os.write(3, json.dumps({"type":"log","text":"first","truncated":"yes"}).encode() + b"\\n")',
+        'os.write(3, json.dumps({"type":"log","text":"MARK-A","truncated":True}).encode() + b"\\n")',
+        'os.write(3, json.dumps({"type":"log","text":"MARK-B","truncated":True}).encode() + b"\\n")',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    // The non-boolean flag did not truncate, so its text was captured normally.
+    expect(result.logs).toContain('first')
+    // The first genuine flag stopped capture and emitted the HOST's own marker;
+    // the frame's own text is discarded, so neither payload appears.
+    expect(result.logs).not.toContain('MARK-A')
+    expect(result.logs).not.toContain('MARK-B')
+    expect(result.logs.at(-1)).toBe(logTruncationMarker(4096))
+    expect(result.logs.filter(line => line.includes('log capture truncated'))).toHaveLength(1)
+  }, 20_000)
+
+  it('discards the text of a forged truncation frame instead of retaining it', async () => {
+    // The marker branch bypasses `admit`, so retaining the frame's own text put
+    // attacker-controlled bytes into `logs` with no cap at all: measured, a 1 MiB
+    // forged text was retained whole under `maxLogBytes: 64`, and the only bound
+    // left was the 256 MiB frame ceiling. The host emits its own marker instead,
+    // so the retained size is fixed regardless of what the program sent.
+    const forgedBytes = 1024 * 1024
+    const { runtime } = await setup({ maxLogBytes: 64, maxWallMs: 20_000 })
+    const result = await runtime.run({
+      program: [
+        'import os, json',
+        `big = "A" * ${forgedBytes}`,
+        'os.write(3, json.dumps({"type":"log","truncated":True,"text":big}).encode() + b"\\n")',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    // Only the host marker is kept, so the total stays orders of magnitude below
+    // what the forgery carried — and below the cap it was trying to escape.
+    expect(result.logs).toEqual([logTruncationMarker(64)])
+    expect(result.logs.join('').length).toBeLessThan(forgedBytes / 1000)
+  }, 30_000)
+
+  it('coalesces unframed fd-3 fragments without recopying the sealed prefix', async () => {
+    // The frame ceiling meters payload BYTES, but each retained chunk is its own
+    // Buffer with object and backing-store overhead the byte count cannot see:
+    // 5000 single-byte newline-free writes produced 5000 chunks holding 5031
+    // bytes, so a program pacing such writes could accumulate millions of objects
+    // inside the wall budget and exhaust the host heap far below 256 MiB.
+    //
+    // The observable behavior is that the run still completes normally: the
+    // fragments are coalesced rather than rejected, since a slow trickle of bytes
+    // is not itself a protocol violation.
+    //
+    // `Buffer.concat` is wrapped for the duration so the cumulative copy volume
+    // is measured rather than inferred: that total is what separates sealing into
+    // blocks from re-merging the whole buffer, and both shapes pass every
+    // behavioral assertion below.
+    //
+    // The trickle is terminated with its own newline before the real frame is
+    // written. Without that, those 5000 bytes prefix the frame on the SAME line,
+    // which then parses as junk and is dropped — correct framing behavior, but it
+    // would leave this test asserting the wrong thing.
+    // Bound at capture: `Buffer.concat` is a static method, and taking a bare
+    // reference to one trips no-unbound-method.
+    const realConcat = Buffer.concat.bind(Buffer)
+    let copied = 0
+    Buffer.concat = (list: readonly Uint8Array[], total?: number): Buffer<ArrayBuffer> => {
+      for (const part of list) copied += part.length
+      return realConcat(list, total)
+    }
+    const program = [
+      'import os',
+      // Newline-free single-byte writes, spaced so each lands as its own read.
+      // 60000 rather than 5000: the trickle has to cross the seal threshold
+      // enough times for the two shapes to separate. At 5000 writes there are
+      // only four seals, so even the quadratic form copies well under a
+      // megabyte and the budget below could not tell them apart.
+      'for _ in range(60000):',
+      '    os.write(3, b"x")',
+      '    os.sched_yield()',
+      'os.write(3, b"\\n")',
+      // A real frame after the trickle proves framing still works on the
+      // coalesced residual.
+      'print("after-trickle")',
+      'return "done"',
+    ].join('\n')
+    let result: CodeRunResult
+    try {
+      const { runtime } = await setup({ maxWallMs: 30_000 })
+      result = await runtime.run({ program, bindings: [] })
+    } finally {
+      Buffer.concat = realConcat
+    }
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs).toContain('after-trickle')
+    // Sealing appends a finished block rather than re-merging everything held, so
+    // each byte is copied once. Re-concatenating the whole buffer at every
+    // threshold made the cumulative copy volume quadratic — 10 MiB trickled a
+    // byte at a time copies 53.7 GB that way. A per-byte-copied budget is the
+    // discriminator, and it is measured rather than reasoned about: this shape
+    // copies about 119 KB for 60000 trickled bytes, the re-merging shape about
+    // 540 KB. 256 KiB sits between them with margin on both sides — most writes
+    // are coalesced by the pipe before they reach us, so the observed ratio is
+    // smaller than the asymptotic one, and the threshold has to sit where a real
+    // measurement lands rather than where the asymptote suggests.
+    expect(copied).toBeLessThan(256 * 1024)
+  }, 40_000)
+
+  it('caps a huge exception diagnostic child-side before it crosses the wire', async () => {
+    // A program can raise with a multi-megabyte message; the child must cap
+    // it at maxValueBytes before formatting/sending, not ship the whole
+    // payload for the host to truncate after parsing.
+    const { runtime } = await setup({ maxValueBytes: 1024 })
+    const result = await runtime.run({
+      program: 'raise ValueError("boom-" + "x" * (8 * 1024 * 1024))',
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message).toContain('boom-')
+    expect(result.error?.message.endsWith('… [truncated]')).toBe(true)
+    expect(Buffer.byteLength(result.error?.message ?? '', 'utf8')).toBeLessThan(2048)
+  })
+
+  it('bounds a newline-free partial-line flood while the program is still running', async () => {
+    // print("x", end="") never completes a line, so nothing reaches the
+    // Python LogBuffer until settlement — the buffered tail must still hit
+    // the budget mid-run instead of growing without bound to RLIMIT/timeout.
+    const { runtime } = await setup({ maxLogBytes: 1024, maxWallMs: 15_000 })
+    const result = await runtime.run({
+      program: [
+        'for _ in range(100000):',
+        '    print("xxxxxxxxxx", end="")',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs.some(line => line.includes('log capture truncated'))).toBe(true)
+    // The retained text is bounded by the budget, not the 1 MB the program wrote.
+    expect(result.logs.join('\n').length).toBeLessThan(4096)
+  }, 20_000)
+
+  it('discards empty writes instead of buffering one list slot each', async () => {
+    // An empty chunk adds no character, so the mid-run budget check (which
+    // compares buffered CHARS against the remaining ledger) can never fire on
+    // it. Buffering empty strings therefore grew `_pending` without bound —
+    // millions of slots per CPU second — until RLIMIT_AS turned an append into
+    // a MemoryError, long after the log ledger was exhausted. Two million
+    // empty writes must instead settle normally and contribute NO log entry,
+    // proving the chunk was dropped rather than joined at flush_line.
+    const { runtime } = await setup({ maxLogBytes: 256, addressSpaceMb: 256, maxWallMs: 20_000 })
+    const result = await runtime.run({
+      program: [
+        'import sys',
+        'for _ in range(2000000):',
+        '    sys.stdout.write("")',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs).toEqual([])
+  }, 30_000)
+
+  it('stops scanning a single-write newline flood once the log ledger truncates', async () => {
+    // One write carrying half a million newlines: the offset scan must exit the
+    // instant LogBuffer truncates rather than re-slicing and pushing every
+    // remaining line. If it kept scanning it would exhaust the CPU/wall budget;
+    // the run instead settles quickly with exactly one truncation marker.
+    const { runtime } = await setup({ maxLogBytes: 256, maxWallMs: 10_000 })
+    const start = Date.now()
+    const result = await runtime.run({
+      program: ['print("x\\n" * 500000, end="")', 'return "done"'].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs.filter(line => line.includes('log capture truncated'))).toHaveLength(1)
+    expect(Date.now() - start).toBeLessThan(8_000)
+  }, 15_000)
+
+  it('bounds an oversized newline-terminated write before joining and slicing it', async () => {
+    // The newline branch slices the first line out of the write before
+    // `LogBuffer.push` can apply its cheap budget rejection, so a single
+    // over-budget write cost a full extra copy of itself in peak address space —
+    // the amplification that bound exists to avoid, applied one layer too late.
+    // Measured under a 400 MiB addressSpaceMb with the slice unbounded: writes
+    // of 200 MiB and up died on MemoryError inside `sys.stdout.write`, reported
+    // as the PROGRAM's own exception rather than the promised truncation marker.
+    // `"\\n".rjust(n, "A")` is a single allocation ending in the newline, so the
+    // payload itself fits and the only remaining allocation is the stream's own
+    // slice; 340 MiB of a 400 MiB cap cannot survive one more copy of it.
+    const { runtime } = await setup({ maxLogBytes: 256, addressSpaceMb: 400, maxWallMs: 30_000 })
+    const result = await runtime.run({
+      program: [
+        'import sys',
+        'payload = "\\n".rjust(340 * 1024 * 1024, "A")',
+        'sys.stdout.write(payload)',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs).toEqual([logTruncationMarker(256)])
+  }, 40_000)
+
+  it('bounds a newline-free write against the already-buffered chunks before joining them', async () => {
+    // The newline-free arm buffers the write and then compared the buffered
+    // CHARACTER COUNT against the ledger — correct — but paid for the comparison
+    // with `"".join(self._pending)`, a second full copy of everything held. One
+    // buffered character is enough to make that join a copy of the whole
+    // following write. Measured under a 400 MiB addressSpaceMb with a 340 MiB
+    // second write: the join raised MemoryError inside `sys.stdout.write`, and
+    // because the oversized chunks stayed in `_pending` the settlement
+    // `flush_line` raised it again — that throw sits after the `except
+    // BaseException` block, so it costs the `done` frame and the run came back
+    // `timeout: wall-clock ceiling reached (30000ms)` with no logs at all. The
+    // bound must be applied BEFORE the join and the chunks dropped on that path,
+    // so the run settles with the truncation marker it promises.
+    const { runtime } = await setup({ maxLogBytes: 256, addressSpaceMb: 400, maxWallMs: 30_000 })
+    const result = await runtime.run({
+      program: [
+        'import sys',
+        // One unterminated character first, so `_pending` is non-empty and the
+        // large write cannot take the "buffered text IS the write" shortcut.
+        'sys.stdout.write("x")',
+        'payload = "A" * (340 * 1024 * 1024)',
+        'sys.stdout.write(payload)',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs).toEqual([logTruncationMarker(256)])
+  }, 40_000)
+
+  it('bounds a newline-terminated write against the already-buffered chunks before joining them', async () => {
+    // Same allocation, reached through the newline arm: with chunks pending, the
+    // whole write used to be appended and joined so the offset scan could run
+    // over one string. Only the FIRST line needs those chunks, so a pending
+    // chunk plus a 340 MiB newline-terminated write under a 400 MiB
+    // addressSpaceMb died on MemoryError in the join before the per-line bound
+    // could reject anything, and the retained chunks made the settlement flush
+    // die the same way: measured, `timeout: wall-clock ceiling reached
+    // (30000ms)`. The reconstructed first line is now checked against the ledger
+    // and only a budget-sized prefix of it is copied; the rest of the write is
+    // scanned in place.
+    const { runtime } = await setup({ maxLogBytes: 256, addressSpaceMb: 400, maxWallMs: 30_000 })
+    const result = await runtime.run({
+      program: [
+        'import sys',
+        'sys.stdout.write("x")',
+        'payload = "\\n".rjust(340 * 1024 * 1024, "A")',
+        'sys.stdout.write(payload)',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs).toEqual([logTruncationMarker(256)])
+  }, 40_000)
+
+  it('emits pending text on an explicit flush, before the run can be killed', async () => {
+    // `_LogStream` inherits TextIOBase's no-op `flush()`, so an explicit
+    // `print(..., flush=True)` or `sys.stdout.flush()` left the text in
+    // `_pending` with nothing to drain it but `flush_line` after settlement — a
+    // call a hanging or killed run never reaches. Measured: printing
+    // "before hang" with flush=True ahead of an infinite loop returned
+    // `logs: []`, losing the one diagnostic the program deliberately committed.
+    const { runtime } = await setup({ maxWallMs: 4_000 })
+    const result = await runtime.run({
+      program: [
+        'import sys',
+        'print("before hang", end="", flush=True)',
+        'while True: pass',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('timeout')
+    expect(result.logs).toContain('before hang')
+  }, 15_000)
+
+  it('marks a dropped tail when the ledger lands on exactly zero remaining', async () => {
+    // One 100-character line costs 103 serialized bytes (quotes + separator),
+    // consuming a 103-byte budget EXACTLY. Landing on zero never trips
+    // LogBuffer's "cost > remaining" branch, so `_truncated` stays unset and the
+    // stream's own `remaining > 0` guard silently discarded the unscanned tail —
+    // the run reported a complete log while dropping text. The tail must be
+    // pushed so the marker is emitted. (This surfaced only after empty writes
+    // stopped being buffered: `print` issues a trailing `write("")` whose
+    // buffered-empty path used to force the marker out incidentally.) A single
+    // wide line is used rather than many narrow ones so the CHILD ledger is the
+    // one that lands on zero: the host's identical ledger truncates first when
+    // many small entries precede the long marker text.
+    const { runtime } = await setup({ maxLogBytes: 103, maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: ['print("y" * 100 + "\\n" + "z" * 10, end="")', 'return "done"'].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs).toContain('y'.repeat(100))
+    expect(result.logs.filter(line => line.includes('log capture truncated'))).toHaveLength(1)
+    // The dropped tail is not retained, but its loss is now reported.
+    expect(result.logs.some(line => line.includes('z'))).toBe(false)
+  }, 15_000)
+
+  it('charges the JSON-escaped cost of control characters against the log ledger', async () => {
+    // A NUL renders as \u0000 (6 bytes) in the serialized outer logs; the
+    // ledger must charge that expansion, or a control-character flood admits
+    // 6x the configured cap.
+    const { runtime } = await setup({ maxLogBytes: 256 })
+    const result = await runtime.run({
+      program: [
+        'for _ in range(500):',
+        '    print("\\x00" * 10)',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs.some(line => line.includes('log capture truncated'))).toBe(true)
+    // Serialized (escaped) size of retained entries stays in the budget's
+    // neighborhood: well under the ~30 kB an uncharged flood would retain.
+    const serialized = Buffer.byteLength(JSON.stringify(result.logs), 'utf8')
+    expect(serialized).toBeLessThan(1024)
+  })
+
+  it('charges the serialized cost child-side, so a control-heavy line truncates instead of breaching the address space', async () => {
+    // The child's ledger must charge what the entry costs on the wire, not its
+    // raw UTF-8 length: a NUL is one raw byte but six as its escape. A 24 MiB NUL
+    // line clears the cheap char-count lower bound (24 MiB < 32 MiB budget), so
+    // charging raw bytes would ADMIT it and then encode a ~144 MiB escaped
+    // payload plus its UTF-8 copy — past the 384 MiB address space, killing the
+    // child (surfaced host-side as `worker-exit`) instead of truncating.
+    // Charging the serialized cost rejects it before any encode.
+    const { runtime } = await setup({ maxLogBytes: 32 * 1024 * 1024, addressSpaceMb: 384, maxWallMs: 20_000 })
+    const result = await runtime.run({
+      program: [
+        'print("\\x00" * (24 * 1024 * 1024))',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs.filter(line => line.includes('log capture truncated'))).toHaveLength(1)
+    // Nothing of the line itself was retained: the ledger refused the whole entry.
+    expect(result.logs.every(line => !line.includes(String.fromCharCode(0)))).toBe(true)
+  }, 30_000)
+
+  it('bounds a flood of zero-byte log lines through the per-entry separator charge', async () => {
+    // Blank print() lines carry zero content bytes; without the +1 separator
+    // charge they would bypass maxLogBytes entirely and grow the retained
+    // array without bound. Each empty entry costs one byte, so a 64-byte
+    // budget retains at most 64 entries before the marker.
+    const { runtime } = await setup({ maxLogBytes: 64, maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'for _ in range(10000):',
+        '    print()',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs.length).toBeLessThanOrEqual(65)
+    expect(result.logs.some(line => line.includes('log capture truncated'))).toBe(true)
+  })
+
+  it('reassembles multibyte UTF-8 split across stray-output pipe chunks', async () => {
+    // A single os.write far past the 64 KiB pipe buffer forces multiple
+    // 'data' chunks; when the boundary lands inside the emoji's 4-byte
+    // sequence, per-chunk decoding would corrupt it into replacement
+    // characters. The streaming decoder must reassemble it.
+    const { runtime } = await setup({ maxLogBytes: 1024 * 1024 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        // os.write is one syscall and returns a partial count on a full
+        // pipe, so loop until the whole payload (odd prefix -> a chunk
+        // boundary lands inside the emoji's 4-byte sequence) is out.
+        String.raw`payload = b"a" * 65535 + "\u4f60\u597d\U0001f600".encode("utf-8")`,
+        'view = memoryview(payload)',
+        'while view:',
+        '    view = view[os.write(1, view):]',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    const text = result.logs.join('')
+    expect(text).toContain('\u4f60\u597d\u{1f600}')
+    expect(text).not.toContain('\ufffd')
+  })
+
+  it('flushes a stray-output byte sequence left incomplete when the pipe ends', async () => {
+    // The child writes the first two bytes of a 3-byte UTF-8 character to fd 1
+    // and exits, so the pipe closes with the sequence unfinished inside the
+    // streaming decoder. The 'end' flush must render the stranded bytes as
+    // U+FFFD instead of dropping the evidence with the decoder.
+    const { runtime } = await setup({ maxLogBytes: 1024 * 1024 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        // b"\xe4\xbd" is the leading two bytes of U+4F60; no continuation byte
+        // follows before exit.
+        String.raw`os.write(1, b"\xe4\xbd")`,
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs.join('')).toContain('�')
+  })
+
+  it('rejects reserved words of EITHER backend language as binding globals', async () => {
+    // The seam's portable contract: `lambda` (Python keyword, legal JS name)
+    // and `typeof` (JS keyword, legal Python name) are both refused, so a
+    // namespace list valid on one backend is valid on every backend.
+    const { runtime } = await setup()
+    for (const global of ['lambda', 'typeof']) {
+      await expect(runtime.run({
+        program: 'return 1',
+        bindings: [{ global, functions: {} }],
+      })).rejects.toThrow(/is not a usable Python identifier/)
+    }
+  })
+
+  it('captures stray stdout bytes the child writes bypassing sys.stdout', async () => {
+    // Model code that writes to fd 1 via os.write() bypasses the Python-side
+    // LogBuffer, so the host's stray-byte capture on child.stdout is what
+    // records it.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'os.write(1, b"stray stdout\\n")',
+        'os.write(2, b"stray stderr\\n")',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs.join('')).toContain('stray stdout')
+    expect(result.logs.join('')).toContain('stray stderr')
+  })
+
+  it('escalates to SIGKILL when the program traps SIGTERM and ignores the grace period', async () => {
+    // A program that traps SIGTERM should still die: the kill() escalation
+    // fires SIGKILL after graceMs. The full run reports either timeout (wall)
+    // or worker-exit depending on which finish reason wins the race.
+    const { runtime } = await setup({ maxWallMs: 400, graceMs: 200 })
+    const result = await runtime.run({
+      program: [
+        'import signal, time',
+        'signal.signal(signal.SIGTERM, lambda *a: None)',
+        'while True: time.sleep(1)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(['timeout', 'worker-exit']).toContain(result.error?.kind)
+  }, 6000)
+
+  it('bounds the fd-3 receive buffer against a newline-free flood', async () => {
+    // A program looping os.write(3, ...) with no newline would grow the host
+    // accumulator unbounded (the child's RLIMIT_AS does not cover the host
+    // string). The ceiling is a fixed 256 MiB memory-safety invariant —
+    // deliberately NOT derived from maxValueBytes, because legitimate binding
+    // call frames may be large. We flood slightly past it in 8 MiB writes so
+    // the test terminates promptly once the guard trips.
+    const ceiling = 256 * 1024 * 1024
+    const { runtime } = await setup({ maxWallMs: 60_000, addressSpaceMb: 2048 })
+    const start = Date.now()
+    const result = await runtime.run({
+      program: [
+        'import os',
+        `for _ in range(${Math.ceil((ceiling * 1.1) / (8 * 1024 * 1024))}):`,
+        '    os.write(3, b"A" * (8 * 1024 * 1024))',
+        'return "never"',
+      ].join('\n'),
+      bindings: [],
+    })
+    const elapsed = Date.now() - start
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain(`protocol frame exceeded ${ceiling} bytes`)
+    // The breach ends the run before the wall ceiling (the run did not idle
+    // out); absolute pipe throughput varies too much under parallel suites
+    // for a tight bound.
+    expect(elapsed).toBeLessThan(30_000)
+  }, 45_000)
+
+  it('fails a forged oversized done value host-side as output-limit', async () => {
+    // The Python-side _done_with_value check is bypassable by writing a done
+    // frame straight to fd 3. The host re-enforces maxValueBytes; the seam
+    // forbids substituting a truncated value, so the run FAILS as output-limit
+    // instead of returning a lie.
+    const maxValueBytes = 64
+    const { runtime } = await setup({ maxValueBytes })
+    const result = await runtime.run({
+      program: [
+        'import os, json',
+        'big = "B" * 5000',
+        'os.write(3, json.dumps({"type":"done","value":big}).encode() + b"\\n")',
+        // The real done never sends; the forged one settles the run.
+        'import time',
+        'time.sleep(5)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.value).toBeUndefined()
+    expect(result.error?.kind).toBe('output-limit')
+    expect(result.error?.message).toContain('exceeded 64 bytes')
+  }, 8000)
+
+  it('drops a forged oversized log frame on its code-unit lower bound, before escaping it', async () => {
+    // A forged `log` frame carrying a control-heavy string sits below the
+    // 256 MiB fd-3 frame ceiling but escapes several-fold: 24 MiB of NULs
+    // becomes ~144 MiB of ` `. Charging it required building that escaped
+    // copy first, so a 32-byte maxLogBytes could still force a
+    // hundreds-of-megabytes host allocation. The cheap `length + 3` lower bound
+    // truncates it instead. The host's own heap is what is under test, so keep
+    // the child's address space generous enough to BUILD the frame.
+    const { runtime } = await setup({ maxLogBytes: 32, addressSpaceMb: 1024, maxWallMs: 60_000 })
+    const before = process.memoryUsage().heapUsed
+    const result = await runtime.run({
+      program: [
+        'import os',
+        // Written as a raw frame so the child's own ledger never sees it.
+        'os.write(3, b\'{"type":"log","text":"\' + b"\\\\u0000" * (24 * 1024 * 1024) + b\'"}\\n\')',
+        'return "settled"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('settled')
+    // The frame was dropped as one truncation marker, not retained.
+    expect(result.logs).toEqual([logTruncationMarker(32)])
+    // The escaped copy (~144 MiB) was never materialized.
+    expect(process.memoryUsage().heapUsed - before).toBeLessThan(256 * 1024 * 1024)
+  }, 90_000)
+
+  it('charges a forged log frame its escaped cost once past the code-unit lower bound', async () => {
+    // The cheap lower bound only rejects what cannot possibly fit; a SHORT
+    // control-heavy frame clears it and must still be charged what it costs on
+    // the wire. Ten NULs are 13 against the 32-byte lower bound but 63 escaped
+    // (six bytes each, two quotes, one separator), so the full charge truncates.
+    const { runtime } = await setup({ maxLogBytes: 32 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'os.write(3, b\'{"type":"log","text":"\' + b"\\\\u0000" * 10 + b\'"}\\n\')',
+        'return "settled"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('settled')
+    expect(result.logs).toEqual([logTruncationMarker(32)])
+  }, 8000)
+
+  it('caps a forged done error.message from its code-unit prefix, never encoding the whole message', async () => {
+    // `Buffer.from(message)` on a message near the frame ceiling allocates a
+    // full UTF-8 copy before maxValueBytes applies. Only the first
+    // maxValueBytes code units can fit the cap, so only that prefix is encoded
+    // — at most 3x the cap in bytes. The message here is 48 MiB of ASCII: its
+    // full encode would be another 48 MiB in the host.
+    const maxValueBytes = 64
+    const { runtime } = await setup({ maxValueBytes, addressSpaceMb: 1024, maxWallMs: 60_000 })
+    const before = process.memoryUsage().heapUsed
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'os.write(3, b\'{"type":"done","error":{"kind":"exception","message":"\' + b"E" * (48 * 1024 * 1024) + b\'"}}\\n\')',
+        'import time',
+        'time.sleep(30)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    const message = result.error?.message ?? ''
+    // The marker's 15 bytes come OUT of the 64-byte cap, so 49 E's precede it
+    // and the whole string is exactly 64 bytes — not 64 plus the marker.
+    expect(message).toBe(`${'E'.repeat(maxValueBytes - 15)}… [truncated]`)
+    expect(Buffer.byteLength(message, 'utf8')).toBe(maxValueBytes)
+    // JSON.parse already holds the 48 MiB string; the cap must not add a
+    // second full-length copy on top of it.
+    expect(process.memoryUsage().heapUsed - before).toBeLessThan(256 * 1024 * 1024)
+  }, 90_000)
+
+  it('keeps a capped diagnostic within maxValueBytes, marker included', async () => {
+    // The marker is part of the emitted diagnostic, so its bytes are reserved
+    // from the cap rather than appended past it — the host meters this same
+    // field downstream. Checked on BOTH producers: the child's own _cap_message
+    // (a raised exception) and the host's capMessage (a forged done frame).
+    const maxValueBytes = 40
+    const { runtime } = await setup({ maxValueBytes })
+    const raised = await runtime.run({
+      program: 'raise ValueError("R" * 100000)',
+      bindings: [],
+    })
+    expect(raised.error?.kind).toBe('exception')
+    const raisedMessage = raised.error?.message ?? ''
+    expect(raisedMessage.endsWith('… [truncated]')).toBe(true)
+    expect(Buffer.byteLength(raisedMessage, 'utf8')).toBeLessThanOrEqual(maxValueBytes)
+    const forged = await runtime.run({
+      program: [
+        'import os, json',
+        'msg = "F" * 100000',
+        'os.write(3, json.dumps({"type":"done","error":{"kind":"exception","message":msg}}).encode() + b"\\n")',
+        'import time',
+        'time.sleep(5)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(forged.error?.kind).toBe('exception')
+    const forgedMessage = forged.error?.message ?? ''
+    expect(forgedMessage.endsWith('… [truncated]')).toBe(true)
+    expect(Buffer.byteLength(forgedMessage, 'utf8')).toBe(maxValueBytes)
+  }, 15_000)
+
+  it('emits the marker alone when the cap is smaller than the marker itself', async () => {
+    // With maxValueBytes below the marker's own 15 bytes there is no room for
+    // message text; the marker still goes out, so the truncation stays reported
+    // instead of the diagnostic silently becoming empty. Both producers agree.
+    const { runtime } = await setup({ maxValueBytes: 4 })
+    const raised = await runtime.run({ program: 'raise ValueError("R" * 500)', bindings: [] })
+    expect(raised.error?.kind).toBe('exception')
+    expect(raised.error?.message).toBe('… [truncated]')
+    const forged = await runtime.run({
+      program: [
+        'import os, json',
+        'os.write(3, json.dumps({"type":"done","error":{"kind":"exception","message":"F" * 500}}).encode() + b"\\n")',
+        'import time',
+        'time.sleep(5)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(forged.error?.kind).toBe('exception')
+    expect(forged.error?.message).toBe('… [truncated]')
+  }, 15_000)
+
+  it('caps a forged done error.message without splitting a surrogate pair', async () => {
+    // At exactly maxValueBytes code units the prefix can end on a high
+    // surrogate whose low half sits just outside it. `Buffer.from` encodes that
+    // orphan as U+FFFD — the same corruption a mid-sequence byte cut causes —
+    // and those three replacement bytes sit past the marker-reserved budget, so
+    // the byte trim-back drops them.
+    const maxValueBytes = 32
+    const { runtime } = await setup({ maxValueBytes })
+    const result = await runtime.run({
+      program: [
+        'import os, json',
+        // 32 ASCII chars then astral characters: code unit 32 is the first
+        // character's high surrogate (Python spells it as one code point, so
+        // json.dumps emits the raw 4 bytes the host reads back as a pair).
+        'msg = "A" * 32 + "\\U0001f600" * 4',
+        'os.write(3, json.dumps({"type":"done","error":{"kind":"exception","message":msg}}).encode() + b"\\n")',
+        'import time',
+        'time.sleep(5)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    // 17 A's fill the marker-reserved budget; no orphaned half, no U+FFFD.
+    expect(result.error?.message).toBe(`${'A'.repeat(17)}… [truncated]`)
+    expect(Buffer.byteLength(result.error?.message ?? '', 'utf8')).toBe(maxValueBytes)
+  }, 8000)
+
+  it('returns a diagnostic under a third of the cap untouched, skipping the encode', async () => {
+    // Under maxValueBytes/3 code units a message cannot overflow the cap
+    // whatever it holds (3 bytes is the per-code-unit maximum), so the fast
+    // path returns it without encoding anything. Non-ASCII proves the bound is
+    // the code-unit count, not a byte assumption: 6 characters at 3 bytes each
+    // is 18 bytes, inside the 64-byte cap.
+    const { runtime } = await setup({ maxValueBytes: 64 })
+    const result = await runtime.run({
+      program: [
+        'import os, json',
+        'os.write(3, json.dumps({"type":"done","error":{"kind":"exception","message":"中文中文中文"}}).encode() + b"\\n")',
+        'import time',
+        'time.sleep(5)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.message).toBe('中文中文中文')
+  }, 8000)
+
+  it('re-caps a forged done error.message host-side on a UTF-8 boundary', async () => {
+    // A forged done frame can carry an arbitrarily long error message; the
+    // host caps it to maxValueBytes and appends the shared marker. The
+    // message is emoji-dense and the cap is chosen so the marker-reserved
+    // 51-byte cut lands INSIDE a 4-byte sequence (one ASCII byte then 4-byte
+    // runs, so only a cut at 1 + 4k is aligned) — the cap must trim back to a
+    // code-point boundary rather than decode a replacement character, which
+    // would also exceed the cap.
+    const maxValueBytes = 66
+    const { runtime } = await setup({ maxValueBytes })
+    const result = await runtime.run({
+      program: [
+        'import os, json',
+        'msg = "E" + "\\U0001f600" * 2000',
+        'os.write(3, json.dumps({"type":"done","error":{"kind":"exception","message":msg}}).encode() + b"\\n")',
+        'import time',
+        'time.sleep(5)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    const message = result.error?.message ?? ''
+    expect(message.endsWith('… [truncated]')).toBe(true)
+    const marker = '… [truncated]'
+    const body = message.slice(0, message.length - marker.length)
+    // The WHOLE message, marker included, honors the cap.
+    expect(Buffer.byteLength(message, 'utf8')).toBeLessThanOrEqual(maxValueBytes)
+    // 'E' plus 12 emoji is 49 bytes: the trim-back walked the 51-byte budget
+    // down past two continuation bytes rather than splitting the 13th.
+    expect(body).toBe(`E${'\u{1f600}'.repeat(12)}`)
+    // The cut landed on a code-point boundary — no replacement character.
+    expect(body).not.toContain('\ufffd')
+  }, 8000)
+
+  it('bounds a single oversized newline-terminated line on fd 3', async () => {
+    // The same ceiling applies to one giant framed line. Write EXACTLY the
+    // ceiling with no newline — at the limit, not past it, so nothing trips —
+    // then a small newline tail, which is the chunk that crosses.
+    const ceiling = 256 * 1024 * 1024
+    const { runtime } = await setup({ maxWallMs: 60_000, addressSpaceMb: 2048 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'chunk = b"A" * (8 * 1024 * 1024)',
+        `for _ in range(${ceiling / (8 * 1024 * 1024)}):`,
+        '    os.write(3, chunk)',
+        'os.write(3, b"AAAA\\n")',
+        'return "never"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain(`protocol frame exceeded ${ceiling} bytes`)
+  }, 90_000)
+
+  it('rejects an over-ceiling fd-3 buffer without first joining it into one line', async () => {
+    // The ceiling has to be enforced on the byte COUNTER before Buffer.concat,
+    // not on the joined line afterwards: the join is a second copy of
+    // everything held, so a program could force roughly twice the advertised
+    // 256 MiB of host memory before anything rejected it.
+    //
+    // This program makes the two orders observably different rather than merely
+    // differently sized. It writes exactly the ceiling with no newline (at the
+    // limit, so nothing trips), then a newline followed by 8 MiB more. Checking
+    // the counter first sees more than the ceiling on the newline-bearing pipe
+    // chunk and rejects. Checking the joined line instead produced a FIRST LINE
+    // of exactly the ceiling — inside the per-line bound, so it passed as a junk
+    // frame — and left an 8 MiB residual well under the bound, so the breach was
+    // never reported: measured, the run settled as
+    // `python exited (code=0, signal=null) before completing` after the host had
+    // held the ceiling AND copied it, which is the doubling this check prevents.
+    const ceiling = 256 * 1024 * 1024
+    const { runtime } = await setup({ maxWallMs: 60_000, addressSpaceMb: 2048 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'chunk = b"A" * (8 * 1024 * 1024)',
+        `for _ in range(${ceiling / (8 * 1024 * 1024)}):`,
+        '    os.write(3, chunk)',
+        // One drain loop: a single os.write past the pipe buffer returns short,
+        // and a truncated tail would change which bytes cross the ceiling.
+        'view = memoryview(b"\\n" + b"B" * (8 * 1024 * 1024))',
+        'while view:',
+        '    view = view[os.write(3, view):]',
+        'return "never"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.value).toBeUndefined()
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain(`protocol frame exceeded ${ceiling} bytes`)
+  }, 120_000)
+
+})

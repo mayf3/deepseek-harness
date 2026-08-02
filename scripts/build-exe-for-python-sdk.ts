@@ -38,7 +38,10 @@ const DEPLOY_ONLY_DOCS = ['README.md', 'README.zh.md', 'README.i18n.yaml']
 /**
  * Whole-tree assets cover Cordis's runtime bare-package imports, which pkg's
  * static analysis cannot see. Package manifests are explicit because bare-name
- * resolution depends on them.
+ * resolution depends on them. `*.py` carries the CPython code-runtime backend's
+ * bootstrap and protocol scripts into the executable; the backend copies them
+ * out to a real filesystem path before spawning, since the interpreter is an
+ * external process that cannot read pkg's virtual filesystem.
  */
 const ASSET_GLOBS = [
   'package.json',
@@ -55,6 +58,7 @@ const ASSET_GLOBS = [
   'node_modules/**/*.so',
   'node_modules/**/*.so.*',
   'node_modules/**/*.wasm',
+  'node_modules/**/*.py',
   'node_modules/**/*.yaml',
   'node_modules/**/*.yml',
   // web-app builds this path dynamically, so pkg cannot discover the static frontend.
