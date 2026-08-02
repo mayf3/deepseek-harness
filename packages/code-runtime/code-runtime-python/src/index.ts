@@ -527,7 +527,11 @@ export class PythonCodeRuntime extends CodeRuntime {
 
   /**
    * Dispose to quiescence: fail every in-flight run as aborted and AWAIT each
-   * child's exit so no subprocess outlives the fiber.
+   * child's exit so no subprocess that stays in the child's process group
+   * outlives the fiber. A descendant that escaped the group with `setsid()` /
+   * `start_new_session=True` is unreachable by `kill(-pid)` and is the documented
+   * exception (see the package README's Known Limitations); the process-group
+   * teardown reaps everything that stays in the group.
    */
   private async teardown(): Promise<void> {
     this.disposed = true

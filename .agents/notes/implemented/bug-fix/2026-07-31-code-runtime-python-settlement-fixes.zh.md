@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-用于 Code Mode 的 CPython 子进程后端建立在 [fd-3 帧协议](../architecture/2026-07-31-code-runtime-python-fd3-protocol.md)之上，把每个程序结果都 resolve 成一个 `CodeRunResult`，仅在 seam 被误用时才 reject `run()`，并且会 dispose 到完全停稳，从而没有任何子进程存活得比 fiber 更久。一连串审查暴露出一些缺陷，它们以单元测试覆盖率无法捕获的方式破坏了这些契约：每一个都藏在一处 `/* v8 ignore */` 之后、一个读起来像修复但实际并非修复的捕获可调用对象之后、一处透过 seam 不可见的内存效应之后、一处重复计数的加载期上界之后、一处存活者能够熬过的进程组升级之后，或者一处静默死锁的跨事件循环完成之后。每处修复都附带一个在缺少它时会失败的测试。
+用于 Code Mode 的 CPython 子进程后端建立在 [fd-3 帧协议](../architecture/2026-07-31-code-runtime-python-fd3-protocol.md)之上，把每个程序结果都 resolve 成一个 `CodeRunResult`，仅在 seam 被误用时才 reject `run()`，并且会 dispose 到完全停稳，从而没有任何留在子进程自己进程组内的子进程存活得比 fiber 更久（一个用 `setsid()` 逃出该进程组的后代是有文档记载的例外——见该包 README 的 Known Limitations）。一连串审查暴露出一些缺陷，它们以单元测试覆盖率无法捕获的方式破坏了这些契约：每一个都藏在一处 `/* v8 ignore */` 之后、一个读起来像修复但实际并非修复的捕获可调用对象之后、一处透过 seam 不可见的内存效应之后、一处重复计数的加载期上界之后、一处存活者能够熬过的进程组升级之后，或者一处静默死锁的跨事件循环完成之后。每处修复都附带一个在缺少它时会失败的测试。
 
 ## Decision
 
@@ -46,7 +46,7 @@ Status: implemented
 
 - `tests/boot-write-failure.spec.ts` 对 `spawn` 做 mock，使 fd-3 管道在引导写入时抛出异常（这是真实子进程无法被迫进入的唯一路径），并断言 `run()` resolve 出一个 `worker-exit` 而非 reject。它被隔离在自己的 spec 中，因此真实子进程测试套件不受影响。
 - `tests/residual-detach.spec.ts` 对 `detachResidual` 做单元测试：向前传递的副本与残余数据相等、拥有一个大小与其自身长度一致的底层存储（fixture 保持在 Node 的 Buffer 池阈值之上），并且不与源帧的 `ArrayBuffer` 共享。
-- `tests/runtime.spec.ts`：output-cap 用例断言 `ceiling - envelope` 上界（268435392）及其消息。一个 daemon 线程用例驱动四个线程穿过结算的 flush 发出未结束的写入。same-group 回收用例 spawn 一个忽略 SIGTERM 的同进程组后代，它释放管道并递增一个心跳文件；该测试断言在宽限窗口的 SIGKILL 之后心跳停止：无论被杀死的后代是被回收还是作为僵尸进程滞留，这个断言都成立，因此它在 PID 1 不 wait() 孤儿进程的环境下同样成立。cross-loop 用例在主协程通过 `await asyncio.sleep` 让出时，从一个工作线程自己的 `asyncio.run` 事件循环运行一个绑定，断言该回复完成往返而不是超时。inherited-soft-limit 用例通过一个 `ulimit -S -t` 包装脚本运行解释器，将 CPU 软限制设为低于 `cpuSeconds`，并断言实际应用的 `RLIMIT_CPU` 软限制是继承来的值，而不是配置的值（用 CPU 而非地址空间，因为 macOS 忽略 `ulimit -v`）。一个配套用例继承 1 秒的 CPU 软限制，让程序捕获 SIGXCPU 并忙循环越过它，断言结算复查报告 timeout——证明复查用的是实际生效的软限制，而不是配置的 `cpuSeconds`。
+- `tests/runtime.spec.ts`：output-cap 用例断言 `ceiling - envelope` 上界（268435392）及其消息。一个 daemon 线程用例驱动四个线程穿过结算的 flush 发出未结束的写入。same-group 回收用例 spawn 一个忽略 SIGTERM 的同进程组后代，它释放管道并递增一个心跳文件；该测试断言在宽限窗口的 SIGKILL 之后心跳停止：无论被杀死的后代是被回收还是作为僵尸进程滞留，这个断言都成立，因此它在 PID 1 不 wait() 孤儿进程的环境下同样成立。一个 dispose-after-resolve 用例断言，对一个已完成、且存在同进程组存活者的运行调用 `dispose()`，只有在该存活者停止执行之后才返回（证明该运行会一直留在 `live` 中，直到它的进程组被回收）。一个 deadline 用例忙阻塞事件循环越过两个定时器，断言该存活者的心跳冻结（证明轮询的截止时间分支自身发送 SIGKILL，而不是取消尚未触发的升级）。cross-loop 用例在主协程通过 `await asyncio.sleep` 让出时，从一个工作线程自己的 `asyncio.run` 事件循环运行一个绑定，断言该回复完成往返而不是超时；一个配套用例放弃某个线程的调用，使其事件循环关闭，随后在一个后续绑定之前回答它——断言 pump 在关闭事件循环上的 `call_soon_threadsafe` 之后仍然存活（由宿主门控的顺序使其具有确定性，未修复时会把后续绑定拖到墙钟上挂起）。inherited-soft-limit 用例通过一个 `ulimit -S -t` 包装脚本运行解释器，将 CPU 软限制设为低于 `cpuSeconds`，并断言实际应用的 `RLIMIT_CPU` 软限制是继承来的值，而不是配置的值（用 CPU 而非地址空间，因为 macOS 忽略 `ulimit -v`）。一个配套用例继承 1 秒的 CPU 软限制，让程序捕获 SIGXCPU 并忙循环越过它，断言结算复查报告 timeout——证明复查用的是实际生效的软限制，而不是配置的 `cpuSeconds`。一个 control-heavy-diagnostic 用例在一个较小的 `maxValueBytes` 之下抛出一个 NUL 洪泛异常，断言序列化后的帧能放得下（证明该诊断是按序列化开销计量的）。一个 non-integer-budget 用例断言一个小数的 `maxLogBytes`／`maxValueBytes` 在加载期被拒绝。
 
 ## Alternatives considered
 

@@ -1973,8 +1973,13 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
       program: [
         'import subprocess, sys',
         // Orphan in a fresh session, inheriting our stdout/stderr/fd 3, alive
-        // well past the close-deadline so `close` cannot fire on its own.
-        'subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"],',
+        // past the close-deadline so `close` cannot fire on its own. Its own
+        // 5 s self-exit is the leak ceiling AND the discriminator: it must stay
+        // ABOVE the < 4000 ms upper-bound assertion below, so if the deadline
+        // backstop failed to settle, settlement could only come from this
+        // self-exit at ~5 s and blow the bound — a sharper signal than the wall
+        // ceiling would give.
+        'subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"],',
         '                 start_new_session=True)',
         'return "escaped"',
       ].join('\n'),
@@ -1986,9 +1991,9 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     expect(result.error).toBeUndefined()
     expect(result.value).toBe('escaped')
     // Settlement waited for the backstop (graceMs + CLOSE_REAP_MARGIN_MS ≈ 2.1s),
-    // not the wall-clock ceiling — proving the deadline, not the ceiling, fired.
+    // not the orphan's 5 s self-exit — proving the deadline, not a fallback, fired.
     expect(elapsed).toBeGreaterThanOrEqual(1_500)
-    expect(elapsed).toBeLessThan(5_000)
+    expect(elapsed).toBeLessThan(4_000)
   }, 8000)
 
   it('reaps a same-group child that ignores SIGTERM and releases the pipes before close', async () => {
@@ -2518,6 +2523,71 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.value).toEqual({ from: 'thread' })
     // The host binding actually ran (the reply round-tripped), not a timeout.
     expect(seen).toEqual([{ from: 'thread' }])
+  }, 15_000)
+
+  it('keeps the reply pump alive when a late reply targets a closed thread loop', async () => {
+    // A binding called from a worker thread that ABANDONS the call (its
+    // `asyncio.run` is cancelled) leaves the pending entry holding that thread's
+    // loop, which `asyncio.run` closes on return. When the host later answers
+    // that call, `_pump_replies` schedules the completion onto the closed loop —
+    // `call_soon_threadsafe` raises `RuntimeError('Event loop is closed')`.
+    // Unguarded, that RuntimeError ends the pump task and strands every later
+    // reply; the guard drops the moot reply and keeps the pump serving.
+    //
+    // The ordering is a STRUCTURAL guarantee, not a timing window: the worker
+    // closes its loop before the main coroutine signals `closed`; the host
+    // answers the abandoned `slow` call (hitting the closed loop) before it
+    // answers `release`, because `release`'s handler only resolves `slow` first
+    // and then yields a microtask. So the pump provably meets the closed loop on
+    // `slow`'s reply before it must deliver `release`'s. Fail-before: the pump
+    // dies on `slow`, `release`'s reply is never read, and `await tools.release`
+    // hangs to the (small) maxWallMs as a timeout.
+    let releaseSlow!: () => void
+    const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve })
+    const { runtime } = await setup({ maxWallMs: 6_000 })
+    const result = await runtime.run({
+      program: [
+        'import asyncio, threading',
+        'closed = threading.Event()',
+        'def worker():',
+        '    async def body():',
+        // Abandon the call: wait_for cancels it, but the pending host-side entry
+        // survives (dispatch does not pop on cancellation), holding this loop.
+        '        try:',
+        '            await asyncio.wait_for(tools.slow({}), timeout=0.1)',
+        '        except asyncio.TimeoutError:',
+        '            pass',
+        '    asyncio.run(body())',  // closes the thread's loop on return
+        '    closed.set()',
+        't = threading.Thread(target=worker)',
+        't.start()',
+        'while not closed.is_set():',
+        '    await asyncio.sleep(0.02)',
+        // The loop is closed. Now the host answers slow (dead-loop reply) then
+        // release; the pump must survive the first to deliver the second.
+        'after = await tools.release({})',
+        'return after',
+      ].join('\n'),
+      bindings: tools({
+        slow: async () => {
+          // Answer only once the worker has closed its loop AND the main
+          // coroutine is awaiting release, so this reply reaches the pump against
+          // the closed loop.
+          await slowGate
+          return 'late'
+        },
+        release: async () => {
+          // Let slow's reply be written first, then yield a microtask so the
+          // pump processes the dead-loop reply before release's own reply lands.
+          releaseSlow()
+          await new Promise(resolve => setImmediate(resolve))
+          return 'released'
+        },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    // The pump survived the closed-loop reply and delivered the later binding.
+    expect(result.value).toBe('released')
   }, 15_000)
 
   it('round-trips an exactly representable large integer through a binding echo', async () => {
