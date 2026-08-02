@@ -6,11 +6,11 @@ Status: implemented
 
 ## Problem
 
-用于 Code Mode 的 CPython 子进程后端建立在 [fd-3 帧协议](../architecture/2026-07-31-code-runtime-python-fd3-protocol.md)之上，把每个程序结果都 resolve 成一个 `CodeRunResult`，仅在 seam 被误用时才 reject `run()`，并且会 dispose 到完全停稳，从而没有任何留在子进程自己进程组内的子进程存活得比 fiber 更久（一个用 `setsid()` 逃出该进程组的后代是有文档记载的例外——见该包 README 的 Known Limitations）。一连串审查暴露出一些缺陷，它们以单元测试覆盖率无法捕获的方式破坏了这些契约：每一个都藏在一处 `/* v8 ignore */` 之后、一个读起来像修复但实际并非修复的捕获可调用对象之后、一处透过 seam 不可见的内存效应之后、一处重复计数的加载期上界之后、一处存活者能够熬过的进程组升级之后，或者一处静默死锁的跨事件循环完成之后。每处行为修复都附带一个在缺少它时会失败的测试；唯一的例外是一处系统调用次数的改进（分块读取帧），它没有可跨平台确定性断言的失败可供断言。
+用于 Code Mode 的 CPython 子进程后端建立在 [fd-3 帧协议](../architecture/2026-07-31-code-runtime-python-fd3-protocol.md)之上，把每个程序结果都 resolve 成一个 `CodeRunResult`，仅在 seam 被误用时才 reject `run()`，并且会 dispose 到完全停稳，从而没有任何留在子进程自己进程组内的子进程存活得比 fiber 更久（一个用 `setsid()` 逃出该进程组的后代是有文档记载的例外——见该包 README 的 Known Limitations）。一连串审查暴露出一些缺陷，它们以单元测试覆盖率无法捕获的方式破坏了这些契约：每一个都藏在一处 `/* v8 ignore */` 之后、一个读起来像修复但实际并非修复的捕获可调用对象之后、一处透过 seam 不可见的内存效应之后、一处重复计数的加载期上界之后、一处存活者能够熬过的进程组升级之后、一处静默死锁的跨事件循环完成之后、一处位于结算路径之外的同步抛出之后，或者一处被当作日志边界处理的传输边界之后。大多数行为修复都附带一个在缺少它时会失败的测试；有两处没有，并被如此标注——分块读取帧（一处系统调用次数的改进，没有可跨平台确定性断言的失败），以及确认为空后的收尾（它唯一透过 seam 可观测的效应，即一个冻结的心跳，会在 SIGKILL 被投递的瞬间冻结，而修复前"投递即收尾"的代码也会产生同样的结果，用于区分的探测手段是 Alternatives 以跨环境不可靠为由否决的 signal-0 检查）。
 
 ## Decision
 
-八处相互独立的修正，各自位于拥有对应缺陷的包中。
+若干处相互独立的修正，各自位于拥有对应缺陷的包中。
 
 ### Boot-write failure no longer rejects run()
 
@@ -26,7 +26,7 @@ Status: implemented
 
 ### Output-cap load bound is ceiling minus envelope, not divided by six
 
-那处在加载期拒绝比单个 fd-3 帧所能承载更大的 `maxLogBytes`／`maxValueBytes` 的检查，会把帧上限除以六以应对最坏情况下的转义膨胀。但这两项预算都是以已转义的序列化字节来计量的：宿主日志账本按 `Buffer.byteLength(JSON.stringify(text))` 计费，而 `checkDoneValue` 度量的是转义后的形式，因此一个在上限之内被放行的载荷在传输时最多占用 `cap + envelope`；转义已经包含在计费之内，不能再被乘一次。现在该上界为 `FRAME_CEILING_BYTES - FRAME_ENVELOPE_BYTES`，未使用的 `MAX_JSON_ESCAPE_EXPANSION` 常量已被删除。旧的上界并非不安全（它是放行不足），但它静默地禁止了合法的大上限。
+那处在加载期拒绝比单个 fd-3 帧所能承载更大的 `maxLogBytes`／`maxValueBytes` 的检查，会把帧上限除以六以应对最坏情况下的转义膨胀。但这两项预算都是以已转义的序列化字节来计量的：宿主日志账本按 `Buffer.byteLength(JSON.stringify(text))` 计费，`checkDoneValue` 度量的是转义后的形式，而生产侧的 `_cap_message` 同样按序列化开销设上限，因此一个在上限之内被放行的载荷在传输时最多占用 `cap + envelope`；转义已经包含在计费之内，不能再被乘一次。现在该上界为 `FRAME_CEILING_BYTES - FRAME_ENVELOPE_BYTES`，未使用的 `MAX_JSON_ESCAPE_EXPANSION` 常量已被删除。旧的上界并非不安全（它是放行不足），但它静默地禁止了合法的大上限。这同一处加载检查还会拒绝一个非整数的 `maxLogBytes`／`maxValueBytes`：子进程通过 `int(...)` 读取每一项预算，而 `int(...)` 会对浮点数向下取整，因此 `maxLogBytes: 3.5` 会在子进程侧截断在 3 字节，而宿主却把小数部分也计入——两侧因此强制着不同的公开配置。在加载期拒绝该浮点数使两侧保持一致，与 worker 后端相符。
 
 ### Same-group survivors are reaped before the fiber goes quiescent
 
@@ -34,9 +34,11 @@ Status: implemented
 
 结算还会在进程组被确认为空的那一刻取消 SIGKILL 定时器（正常路径，以及轮询看到存活者已消失时）。让它继续处于装设状态会暴露一个 PID 复用隐患：一个在 leader 被回收后仍挂起长达 `graceMs` 的 `kill(-pid)`，可能在内核复用了 leader 的 pid 之后击中一个被回收（recycled）的 pgid，从而 SIGKILL 掉一个无关的进程组（`killGroup` 吞掉 ESRCH 并无帮助——危险恰恰是那次针对被复用进程组成功执行的 kill）。在空进程组探测时清除它，把复用窗口收窄到只剩真正存在存活者的情形，此时进程组不可能为空以供复用。
 
+回收轮询还会处理宿主事件循环被阻塞、越过两个定时器的情形。如果一次同步计算从轮询被调度之前一直占住事件循环、直到越过它的截止时间，那么当事件循环恢复时，轮询定时器和宽限窗口的 SIGKILL 定时器都已逾期，而 Node 会先运行更早调度的轮询——因此宽限窗口的 SIGKILL 可能从未触发。为此截止时间分支会自己发送 SIGKILL（若定时器已运行则该操作幂等），而不是取消尚未触发的升级，随后再额外给予一个 `CLOSE_REAP_MARGIN_MS`，并持续轮询直到进程组被确认为空，因为仅凭信号投递就收尾会在进程组仍在消亡时宣告完全停稳。因此等待的外层上界为 `graceMs + 2 * CLOSE_REAP_MARGIN_MS`。若这段额外余量耗尽而进程组仍非空，一个最终的硬性上界会收尾；该分支带有一处 `/* v8 ignore */`，因为它仅在一个被 SIGKILL 的存活者作为僵尸进程滞留且从未被 `wait()`——一个 PID 1 不回收孤儿进程的容器——时才可达，而这无法在各 CI 平台上确定性地构造出来。该 ignore 的理由陈述的是这种环境依赖性，而不是声称该分支不可能运行，并交叉引用 Alternatives 中以同样理由否决 signal-0 回收断言的那一条。
+
 ### RLIMIT clamps against the inherited soft limit, not only the hard
 
-在 [`py/bootstrap.py`](../../../../packages/code-runtime/code-runtime-python/py/bootstrap.py) 中，`_clamped` 仅用继承而来的 HARD 限制来约束一个请求的 `(soft, hard)` rlimit 对。一个继承了低于请求值的软限制的部署——比如继承 `(100, 200)`、请求 `(150, 160)`——会拿回 `(150, 160)`，把有效软限制从 100 抬高到 150：对 `RLIMIT_AS` 而言这放松了内存上限，对 `RLIMIT_CPU` 而言它推迟了 SIGXCPU，两者都违反了"取配置值与继承值中最严格者"。现在 `_clamped` 用每一侧各自继承而来的对应值来约束该侧（`RLIM_INFINITY` 不施加任何上限），随后把 soft 钉在 hard 之下，因此 `setrlimit` 绝不会看到一个倒置的对。结算时的 CPU 复查（`die_if_cpu_exhausted`）遵循同一规则：它把已消耗的 CPU 与实际生效的、被夹紧的 `cpu_soft` 比较，而不是与配置的 `cpuSeconds` 比较，因此一个捕获 SIGXCPU、在返回前消耗超过更严格的继承软限制的程序会被报告为 timeout，而非误判为成功。
+在 [`py/bootstrap.py`](../../../../packages/code-runtime/code-runtime-python/py/bootstrap.py) 中，`_clamped` 仅用继承而来的 HARD 限制来约束一个请求的 `(soft, hard)` rlimit 对。一个继承了低于请求值的软限制的部署——比如继承 `(100, 200)`、请求 `(150, 160)`——会拿回 `(150, 160)`，把有效软限制从 100 抬高到 150：对 `RLIMIT_AS` 而言这放松了内存上限，对 `RLIMIT_CPU` 而言它推迟了 SIGXCPU，两者都违反了"取配置值与继承值中最严格者"。现在 `_clamped` 用每一侧各自继承而来的对应值来约束该侧（`RLIM_INFINITY` 不施加任何上限），随后把 soft 钉在 hard 之下，因此 `setrlimit` 绝不会看到一个倒置的对。结算时的 CPU 复查（`die_if_cpu_exhausted`）遵循同一规则：它把已消耗的 CPU 与实际生效的、被夹紧的 `cpu_soft` 比较，而不是与配置的 `cpuSeconds` 比较，因此一个捕获 SIGXCPU、在返回前消耗超过更严格的继承软限制的程序会被报告为 timeout，而非误判为成功。SIGXCPU 诊断不再把配置的 `cpuSeconds` 说成实际生效的预算——在一个更严格的继承软限制之下那个数字是错的——而是报告 CPU 时间是在"至多配置的 N 秒"处被耗尽，这一表述无论哪个限制先触发都成立。
 
 ### Binding replies complete on the calling loop's thread
 
@@ -44,13 +46,21 @@ Status: implemented
 
 ### The blocking frame reader reads in chunks, not byte by byte
 
-`ProtocolChannel.read_frame`（用于 `boot` 和 `run` 握手帧）过去通过在无缓冲（`buffering=0`）fd 上的 `FileIO.readline()` 读取，这会为每个字节发起一次 `os.read(1)`。`run` 帧在 `RLIMIT_CPU` 生效之后才到达，因此一个合法的数兆字节程序会在 `ast.parse` 运行之前，在数以百万计的单字节系统调用中烧掉数秒 CPU——有可能仅在读取这一步就耗尽预算。现在它以 `_READ_CHUNK_BYTES` 为单位分块读取，写入异步读取器已经使用的那同一个 `_pending` 残余缓冲区（包裹用的 `os.fdopen` 对象已被移除；两个读取器都直接调用 `os.read(self._fd, ...)`），因此读取开销微不足道，并且越过换行符的预读也为下一帧保留了下来。
+`ProtocolChannel.read_frame`（用于 `boot` 和 `run` 握手帧）过去通过在无缓冲（`buffering=0`）fd 上的 `FileIO.readline()` 读取，这会为每个字节发起一次 `os.read(1)`。`run` 帧在 `RLIMIT_CPU` 生效之后才到达，因此一个合法的数兆字节程序会在 `ast.parse` 运行之前，在数以百万计的单字节系统调用中烧掉数秒 CPU——有可能仅在读取这一步就耗尽预算。现在它以 `_READ_CHUNK_BYTES` 为单位分块读取，写入异步读取器已经使用的那同一个 `_pending` 残余缓冲区（包裹用的 `os.fdopen` 对象已被移除；两个读取器都直接调用 `os.read(self._fd, ...)`），因此读取开销微不足道，并且越过换行符的预读也为下一帧保留了下来。两个读取器都跟踪一个持续推进的扫描偏移（`find(b"\n", scanned)`），使一个跨多个分块累积起来的大帧只被扫描一次，而不是每来一个分块就从索引 0 重新扫描——分块式重扫会把逐字节的开销换成同一大帧路径上 O(N²) 的 memchr 开销。
+
+### Synchronous spawn failure resolves worker-exit, not reject
+
+同样在 `src/index.ts` 中，`spawn` 是在结算 Promise 的 executor 存在之前被调用的。Node 只把一组固定的 spawn errno（EACCES、EAGAIN、EMFILE、ENFILE、ENOENT）推迟为一个异步的 `error` 事件，而结算路径已经把它转成一个 `worker-exit`；其余每一个 errno 都会从 `spawn` 同步抛出。一个长度超过平台 PATH_MAX 的 `pythonBin` 能通过加载期校验（非空、无 NUL），却会让 `spawn` 在此处抛出 `ENAMETOOLONG`——在 executor 之外——因此 `run()` 会 reject 而不是 resolve，违反了"只 resolve、不 reject"，并且由于只有 `settle()` 才会移除本次运行刚物化出来的暂存目录，它会把该目录留在磁盘上。现在 `spawn` 调用和 fd-3 收窄被包裹起来：一次同步抛出会移除暂存目录，并 resolve 与异步 `error` 事件所产生的同一类 `worker-exit`（`python spawn error: …`）。
+
+### Stray pipe output is aggregated by line, not by transport chunk
+
+同样在 `src/index.ts` 中，原生 stdout／stderr 字节（C 扩展写入、越过管道缓冲区的 `os.write`）过去每来一个 Node `data` 分片就被推入 `logs` 一条条目。`logs` 条目在下游（Code Mode）会用 `\n` 拼接，因此一次大于单次管道读取、且不含换行符的写入——它以若干个 `data` 分片到达——回读时会在任意传输边界处被插入模型可见的换行符。现在捕获会为每个流持有一份残余数据，仅在遇到真正的 `\n` 时才准入一条条目，并在管道 `end` 时一次性冲刷尾部的不完整部分，与子进程自己的按行粒度的 `log` 帧相符。该残余数据仍受账本约束：当它在看不到换行符的情况下将要越过预算时，会被立即准入（并截断）；而一旦账本已经截断，缓冲便停止，从而一场不含换行符的洪泛无法为永远无法被准入的输出保留宿主内存。
 
 ## Testing
 
-- `tests/boot-write-failure.spec.ts` 对 `spawn` 做 mock，使 fd-3 管道在引导写入时抛出异常（这是真实子进程无法被迫进入的唯一路径），并断言 `run()` resolve 出一个 `worker-exit` 而非 reject。它被隔离在自己的 spec 中，因此真实子进程测试套件不受影响。
+- `tests/boot-write-failure.spec.ts` 对 `spawn` 做 mock，使 fd-3 管道在引导写入时抛出异常（这是真实子进程无法被迫进入的唯一路径），并断言 `run()` resolve 出一个 `worker-exit` 而非 reject。一个同级用例让被 mock 的 `spawn` 同步抛出，并断言 `run()` 仍然 resolve 出一个 `worker-exit`，且不会在 `tmpdir` 中留下任何 `dsh-code-runtime-python-*` 目录（前后差分）。两者都被隔离在这个 spec 中，因此真实子进程测试套件不受影响。
 - `tests/residual-detach.spec.ts` 对 `detachResidual` 做单元测试：向前传递的副本与残余数据相等、拥有一个大小与其自身长度一致的底层存储（fixture 保持在 Node 的 Buffer 池阈值之上），并且不与源帧的 `ArrayBuffer` 共享。
-- `tests/runtime.spec.ts`：output-cap 用例断言 `ceiling - envelope` 上界（268435392）及其消息。一个 daemon 线程用例驱动四个线程穿过结算的 flush 发出未结束的写入。same-group 回收用例 spawn 一个忽略 SIGTERM 的同进程组后代，它释放管道并递增一个心跳文件；该测试断言在宽限窗口的 SIGKILL 之后心跳停止：无论被杀死的后代是被回收还是作为僵尸进程滞留，这个断言都成立，因此它在 PID 1 不 wait() 孤儿进程的环境下同样成立。一个 dispose-after-resolve 用例断言，对一个已完成、且存在同进程组存活者的运行调用 `dispose()`，只有在该存活者停止执行之后才返回（证明该运行会一直留在 `live` 中，直到它的进程组被回收）。一个 deadline 用例忙阻塞事件循环越过两个定时器，断言该存活者的心跳冻结（证明轮询的截止时间分支自身发送 SIGKILL，而不是取消尚未触发的升级）。cross-loop 用例在主协程通过 `await asyncio.sleep` 让出时，从一个工作线程自己的 `asyncio.run` 事件循环运行一个绑定，断言该回复完成往返而不是超时；一个配套用例放弃某个线程的调用，使其事件循环关闭，随后在一个后续绑定之前回答它——断言 pump 在关闭事件循环上的 `call_soon_threadsafe` 之后仍然存活（由宿主门控的顺序使其具有确定性，未修复时会把后续绑定拖到墙钟上挂起）。inherited-soft-limit 用例通过一个 `ulimit -S -t` 包装脚本运行解释器，将 CPU 软限制设为低于 `cpuSeconds`，并断言实际应用的 `RLIMIT_CPU` 软限制是继承来的值，而不是配置的值（用 CPU 而非地址空间，因为 macOS 忽略 `ulimit -v`）。一个配套用例继承 1 秒的 CPU 软限制，让程序捕获 SIGXCPU 并忙循环越过它，断言结算复查报告 timeout——证明复查用的是实际生效的软限制，而不是配置的 `cpuSeconds`。一个 control-heavy-diagnostic 用例在一个较小的 `maxValueBytes` 之下抛出一个 NUL 洪泛异常，断言序列化后的帧能放得下（证明该诊断是按序列化开销计量的）。一个 non-integer-budget 用例断言一个小数的 `maxLogBytes`／`maxValueBytes` 在加载期被拒绝。
+- `tests/runtime.spec.ts`：output-cap 用例断言 `ceiling - envelope` 上界（268435392）及其消息。一个 daemon 线程用例驱动四个线程穿过结算的 flush 发出未结束的写入。一个 native-write 用例在抬高后的 `maxLogBytes` 之下，通过 `os.write` 写入 200 KiB 且不含换行符，断言它回读时恰好是一条日志条目（证明散逸输出是按行聚合的，而不是在管道分片边界处被切开）；一个配套用例写入 `b"one\ntwo\nthree"`，断言得到三条条目（证明真正的换行符仍然起分隔作用）。same-group 回收用例 spawn 一个忽略 SIGTERM 的同进程组后代，它释放管道并递增一个心跳文件；该测试断言在宽限窗口的 SIGKILL 之后心跳停止：无论被杀死的后代是被回收还是作为僵尸进程滞留，这个断言都成立，因此它在 PID 1 不 wait() 孤儿进程的环境下同样成立。一个 dispose-after-resolve 用例断言，对一个已完成、且存在同进程组存活者的运行调用 `dispose()`，只有在该存活者停止执行之后才返回（证明该运行会一直留在 `live` 中，直到它的进程组被回收），并带有一个 `expect(afterDispose).toBeGreaterThan(0)` 守卫，使得当心跳文件从未被写入时，冻结心跳的断言不会被空洞地通过。一个 deadline 用例忙阻塞事件循环越过两个定时器，断言该存活者的心跳冻结（证明轮询的截止时间分支自身发送 SIGKILL，而不是取消尚未触发的升级）。cross-loop 用例在主协程通过 `await asyncio.sleep` 让出时，从一个工作线程自己的 `asyncio.run` 事件循环运行一个绑定，断言该回复完成往返而不是超时；一个配套用例放弃某个线程的调用，使其事件循环关闭，随后在一个后续绑定之前回答它——断言 pump 在关闭事件循环上的 `call_soon_threadsafe` 之后仍然存活（由宿主门控的顺序使其具有确定性，未修复时会把后续绑定拖到墙钟上挂起）。inherited-soft-limit 用例通过一个 `ulimit -S -t` 包装脚本运行解释器，将 CPU 软限制设为低于 `cpuSeconds`，并断言实际应用的 `RLIMIT_CPU` 软限制是继承来的值，而不是配置的值（用 CPU 而非地址空间，因为 macOS 忽略 `ulimit -v`）。一个配套用例继承 1 秒的 CPU 软限制，让程序捕获 SIGXCPU 并忙循环越过它，断言结算复查报告 timeout——证明复查用的是实际生效的软限制，而不是配置的 `cpuSeconds`。一个 control-heavy-diagnostic 用例在一个较小的 `maxValueBytes` 之下抛出一个 NUL 洪泛异常，断言序列化后的帧能放得下（证明该诊断是按序列化开销计量的）。一个 non-integer-budget 用例断言一个小数的 `maxLogBytes`／`maxValueBytes` 在加载期被拒绝。
 
 ## Alternatives considered
 
@@ -72,6 +82,10 @@ Status: implemented
 
 **只用继承而来的硬限制来约束 rlimit。** 已否决：那会静默地抬高一个比请求更严格的继承软限制，放松了该约束本应保持的那种收束。用每一侧各自继承而来的界来约束该侧（随后把 soft 钉在 hard 之下），在 soft 和 hard 两者上都保持配置值与继承值中的最严格者。
 
+**按序列化开销对宿主侧的 `capMessage` 兜底做计费，与子进程的 `_cap_message` 相符。** 已否决：这两处上限守护的是不同的东西。`_cap_message` 的输出会作为一个 JSON 字符串再次穿过 fd 3，因此帧上限约束的是它转义后的宽度——那里必须按序列化计费。`capMessage` 的输出直接进入 `CodeRunResult.error.message`，绝不会再次穿过一个受帧上限约束的通道，因此对它所保留内容的诚实度量是模型可见字符串的原始字节长度。一个诚实的子进程已经按序列化开销设过上限，而原始长度 ≤ 序列化开销，因此一条格式良好的消息会原样通过；一条伪造的、控制字符密集的消息可能序列化到其原始长度约 6 倍，但由于它不经过任何受上限约束的通道，按那个被抬高的传输宽度对它计费只会截断一条尺寸合法的诊断，而换不来任何收束上的收益。每一侧的 JSDoc 都记录了这一区分，并指向另一侧。
+
+**每来一个 `data` 分片就把散逸的管道输出推入一条条目。** 已否决：`logs` 条目在下游会用 `\n` 拼接，因此一个传输分片边界会变成一个模型可见的换行符——一次被拆散在多次管道读取中的原生写入会带着无端的换行回读。按真正的换行符聚合（残余数据 + 在 `end` 时冲刷）与子进程的按行粒度的 `log` 帧相符；账本仍然通过在残余数据将要越过预算时把它准入并截断，来约束一场不含换行符的洪泛。
+
 ## Consequences
 
-seam 的"只 resolve、不 reject"契约在引导写入路径上得以成立，且覆盖率是被度量的。日志捕获是线程安全的，代价是每次写入和 flush 都要获取一次可重入锁。fd-3 残余数据的内存受实际保留的字节数约束。输出上限放行一个帧所能承载的每一个值。dispose 面对同进程组存活者是真正完全停稳的（以既有的宽限预算为界，在进程组已为空时代价为零，并且一旦进程组清空就清除 SIGKILL 定时器，从而一次滞留的 kill 无法击中一个被回收的 pgid），RLIMIT 强制在 soft 和 hard 两者上都保持配置值与继承值中的最严格者，并且从模型创建的线程调用的绑定会完成而不是超时，而且握手帧读取器不再在一个大程序上烧掉 CPU 预算。每处修复都附带一个在缺少它时会失败的测试（分块读取帧除外，它是一处系统调用次数的改进，没有可跨平台确定性断言的失败），因此其余各处未来若发生回归都会变红。
+seam 的"只 resolve、不 reject"契约在引导写入路径和同步 spawn 失败路径上都得以成立，两者的覆盖率都是被度量的，且两者都不会遗留一个暂存目录。日志捕获是线程安全的，代价是每次写入和 flush 都要获取一次可重入锁，并且散逸的原生输出由它自己的换行符来分隔，而不是由传输分片来分隔。fd-3 残余数据的内存受实际保留的字节数约束，并且两个帧读取器都以一次而非平方级的方式扫描一个不断累积的帧。输出上限放行一个帧所能承载的每一个值，并在加载期拒绝一个非整数的预算。dispose 面对同进程组存活者是真正完全停稳的（以 `graceMs + 2 * CLOSE_REAP_MARGIN_MS` 为界，在进程组已为空时代价为零，并且一旦进程组清空就清除 SIGKILL 定时器，从而一次滞留的 kill 无法击中一个被回收的 pgid），RLIMIT 强制在 soft 和 hard 两者上都保持配置值与继承值中的最严格者（并且 SIGXCPU 诊断不再把一个宿主无法保证的预算说出来），并且从模型创建的线程调用的绑定会完成而不是超时，而且握手帧读取器不再在一个大程序上烧掉 CPU 预算。每处行为修复都附带一个在缺少它时会失败的测试，除了 Problem 一节点出的那两处——分块读取帧（一处系统调用次数的改进），以及确认为空后的收尾（它唯一透过 seam 可观测的效应会在信号投递时冻结，而修复前的代码也会产生同样的结果）——因此其余各处未来若发生回归都会变红。

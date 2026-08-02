@@ -384,12 +384,17 @@ class ProtocolChannel:
         past a newline for the next frame.
         """
 
+        # Scan only the bytes not yet examined: `find` from a running offset so a
+        # frame arriving in N chunks costs one linear pass total, not one rescan
+        # of the whole buffer per chunk (which is quadratic in the frame size).
+        scanned = 0
         while True:
-            newline = self._pending.find(b"\n")
+            newline = self._pending.find(b"\n", scanned)
             if newline >= 0:
                 line = bytes(self._pending[:newline])
                 del self._pending[: newline + 1]
                 return _decode_json_plain(line.decode("utf-8"))
+            scanned = len(self._pending)
             chunk = os.read(self._fd, _READ_CHUNK_BYTES)
             if not chunk:
                 # EOF before a newline: drop the partial line, as the host drops
@@ -421,12 +426,17 @@ class ProtocolChannel:
         """
 
         loop = asyncio.get_event_loop()
+        # Scan only the not-yet-examined bytes (running offset), so a frame
+        # arriving across many reads costs one linear pass, not a quadratic
+        # rescan of the whole buffer per read.
+        scanned = 0
         while True:
-            newline = self._pending.find(b"\n")
+            newline = self._pending.find(b"\n", scanned)
             if newline >= 0:
                 line = bytes(self._pending[:newline])
                 del self._pending[: newline + 1]
                 return _decode_json_plain(line.decode("utf-8"))
+            scanned = len(self._pending)
             ready = loop.create_future()
             # `add_reader` only reports readability; the read itself happens here,
             # and `os.read` returns whatever is buffered without waiting for more.
@@ -912,7 +922,10 @@ async def _pump_replies(
             # Future and the reply is moot. Drop it; scheduling onto a closed
             # loop raises RuntimeError, and letting that escape would kill the
             # pump and strand every later reply — the exact failure class this
-            # cross-loop delivery exists to prevent.
+            # cross-loop delivery exists to prevent. An abandoned call's pending
+            # entry is not leaked: it is popped here when its reply arrives
+            # (dispatch's cancellation does not remove it), so stranded entries
+            # are bounded by the number of calls THIS run itself issued.
             continue
 
 
@@ -1603,6 +1616,11 @@ def _cap_message(message: str, max_bytes: int) -> str:
     serialized cost comes OUT of ``max_bytes``, so the returned string's own
     frame form honors the cap; the host meters the same field again on arrival.
     A ``max_bytes`` below the marker's cost yields the marker alone.
+
+    This is the PRODUCING-side cap. The host's receive-side ``capMessage``
+    (``src/index.ts``) bills the same field by RAW bytes instead, because its
+    output goes into ``CodeRunResult.error.message`` and never re-crosses a
+    frame-bounded channel — see that function's JSDoc for the split.
     """
 
     raw = message.encode("utf-8", errors="replace")
@@ -1616,7 +1634,7 @@ def _cap_message(message: str, max_bytes: int) -> str:
     # at most a budget's worth of bytes, allocating nothing (unlike building the
     # escaped form). `max(0, ...)` handles a `max_bytes` below the marker's own
     # cost, yielding the marker alone.
-    content_budget = max(0, max_bytes - 2 - len(_TRUNCATION_MARKER.encode("utf-8")))
+    content_budget = max(0, max_bytes - 2 - _TRUNCATION_MARKER_BYTES)
     cost = 0
     end = 0
     for end in range(len(raw)):

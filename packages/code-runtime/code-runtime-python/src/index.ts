@@ -12,7 +12,7 @@
  * @module @deepseek-ai/dsh-code-runtime-python
  */
 
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { StringDecoder } from 'node:string_decoder'
 import { accessSync, copyFileSync, constants as fsConstants, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -315,10 +315,24 @@ const TRUNCATION_MARKER_BYTES = Buffer.byteLength(TRUNCATION_MARKER, 'utf8')
 
 /**
  * Cap a done-frame `error.message` to `maxValueBytes` host-side: a forged done
- * frame can carry an arbitrarily long message, so truncate by byte length and
- * append the shared marker on overflow. Completion VALUES are never truncated
- * — the seam forbids substitution, so an oversized value fails the run as
- * `output-limit` instead (see the done case in `execute`).
+ * frame can carry an arbitrarily long message, so truncate by RAW UTF-8 byte
+ * length and append the shared marker on overflow. Completion VALUES are never
+ * truncated — the seam forbids substitution, so an oversized value fails the run
+ * as `output-limit` instead (see the done case in `execute`).
+ *
+ * This is the RECEIVE-side backstop, and it bills by raw bytes on purpose,
+ * unlike the producing-side `_cap_message` in `py/bootstrap.py`, which bills by
+ * SERIALIZED (JSON-escaped) cost. The split is deliberate: `_cap_message`'s
+ * output has to cross fd 3 as a JSON string, so its escaped width is what the
+ * frame ceiling bounds; this function's output goes straight into
+ * `CodeRunResult.error.message` and never re-crosses a frame-bounded channel, so
+ * the honest measure of what it retains is the raw length. An honest child has
+ * already capped the diagnostic by serialized cost, and raw length ≤ serialized
+ * cost, so a well-formed message passes through unchanged. A forged message with
+ * control characters could serialize to roughly six times its raw length, but it
+ * is not travelling any capped channel, so the raw-byte bound is the right one:
+ * the value it protects is the model-visible size of `error.message`, not a wire
+ * width.
  *
  * The marker's bytes are RESERVED from the budget, not added on top: the whole
  * returned string, marker included, is at most `maxValueBytes` bytes. Appending
@@ -503,10 +517,16 @@ export class PythonCodeRuntime extends CodeRuntime {
     // arrives as an over-ceiling frame and fails the run as `worker-exit`
     // instead of the `output-limit` the cap describes — a silent inversion, so
     // it fails at load. Both budgets are metered in SERIALIZED (JSON-escaped)
-    // bytes — the host log ledger charges `Buffer.byteLength(JSON.stringify(text))`
-    // and `checkDoneValue` measures the escaped form — so a payload admitted
-    // under the cap occupies at most `cap + envelope` bytes on the wire; escaping
-    // is already inside the charge and must not be multiplied in again. The
+    // bytes — the host log ledger charges `Buffer.byteLength(JSON.stringify(text))`,
+    // `checkDoneValue` measures the escaped form, and the producing-side
+    // `_cap_message` in the child also caps by serialized cost (which is why a
+    // capped diagnostic still fits its frame) — so a payload admitted under the
+    // cap occupies at most `cap + envelope` bytes on the wire; escaping is
+    // already inside the charge and must not be multiplied in again. The
+    // receive-side `capMessage` backstop is the one exception to this argument:
+    // it bills a forged `done.error.message` by RAW bytes, but that output goes
+    // into `CodeRunResult.error.message` and never re-crosses a frame-bounded
+    // channel, so it is not part of the wire-width bound (see its JSDoc). The
     // admissible cap is therefore `ceiling - envelope`.
     for (const key of ['maxLogBytes', 'maxValueBytes'] as const) {
       // Require an integer: the child reads these budgets through `int(...)`,
@@ -639,20 +659,38 @@ export class PythonCodeRuntime extends CodeRuntime {
     // Explicit pipe count of 4 puts the framed-JSON channel at fd 3 in the child.
     // Resolve the interpreter against the current PATH first: the child's empty
     // env would otherwise strip PATH and miss a basename python3 (see resolvePythonBin).
-    const child = spawn(resolvePythonBin(this.config.pythonBin), ['-I', bootstrapPath], {
-      env: {},
-      detached: true, // Own process group — kill(-pid, sig) reaches subprocesses the model program spawns.
-      stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
-    })
-
-    // Fd 3 is a duplex pipe carrying protocol frames. Node types extra stdio
-    // entries as `Stream | null`; the runtime shape with `'pipe'` is a duplex,
-    // so we narrow at the boundary rather than smearing casts below. Stdout
-    // and stderr are guaranteed non-null under `'pipe'` and typed as such.
-    const proto = child.stdio[3] as Duplex | null
-    /* v8 ignore next 3 -- `'pipe'` stdio always populates fd 3; guarding Node's `Stream | null` typing widening. */
-    if (proto === null) {
-      throw new Error('dsh-code-runtime-python: python subprocess spawned without a fd-3 pipe')
+    // `spawn` can throw SYNCHRONOUSLY — a descriptor-exhausted host (EMFILE) or a
+    // libuv-level failure surfaces here, before the Promise executor and its
+    // settlement path exist. Left uncaught it would REJECT run() (the seam
+    // permits rejection only for misuse) and strand this run's staging directory,
+    // which only settle() removes. Catch it, unlink the directory, and resolve a
+    // `worker-exit` — the same class as the async ENOENT `error` event below.
+    let child: ChildProcessWithoutNullStreams
+    let proto: Duplex | null
+    try {
+      child = spawn(resolvePythonBin(this.config.pythonBin), ['-I', bootstrapPath], {
+        env: {},
+        detached: true, // Own process group — kill(-pid, sig) reaches subprocesses the model program spawns.
+        stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
+      })
+      // Fd 3 is a duplex pipe carrying protocol frames. Node types extra stdio
+      // entries as `Stream | null`; the runtime shape with `'pipe'` is a duplex,
+      // so we narrow at the boundary rather than smearing casts below. Stdout
+      // and stderr are guaranteed non-null under `'pipe'` and typed as such.
+      proto = child.stdio[3] as Duplex | null
+      /* v8 ignore next 3 -- `'pipe'` stdio always populates fd 3; guarding Node's `Stream | null` typing widening. */
+      if (proto === null) {
+        throw new Error('dsh-code-runtime-python: python subprocess spawned without a fd-3 pipe')
+      }
+    } catch (error: unknown) {
+      try {
+        rmSync(bootstrapDir, { recursive: true, force: true })
+      } catch {
+        // Same swallow as settle()'s removal: `force` already absorbs a missing
+        // directory, so only a filesystem-level refusal reaches here, and the
+        // staging copy holds nothing but two checked-in scripts.
+      }
+      return Promise.resolve({ logs: [], error: { kind: 'worker-exit' as const, message: `python spawn error: ${messageOf(error)}` } })
     }
 
     return new Promise<CodeRunResult>((resolve) => {
@@ -711,25 +749,52 @@ export class PythonCodeRuntime extends CodeRuntime {
       // replacement characters. StringDecoder holds the partial sequence
       // until its continuation bytes arrive; the pipes are separate byte
       // streams, so they cannot share one decoder.
-      const strayOut = new StringDecoder('utf8')
-      const strayErr = new StringDecoder('utf8')
-      const captureStray = (decoder: StringDecoder, chunk: Buffer): void => {
-        const text = decoder.write(chunk)
-        // Empty only when the chunk is nothing but a partial multibyte
-        // sequence — needs a pipe boundary INSIDE one character, which cannot
-        // be forced deterministically from the child side.
-        /* v8 ignore next */
-        if (text.length > 0) admit(text)
+      //
+      // Output is admitted per LINE, not per transport chunk. `logs` entries
+      // are joined with `\n` downstream (Code Mode), so each entry must be one
+      // line: pushing a raw `data` chunk would turn every arbitrary pipe-read
+      // boundary into a model-visible newline, so a single 200 KiB native write
+      // split across pipe reads would read back with spurious line breaks. The
+      // child's own `log` frames are already line-granular; stray capture
+      // matches them by holding a per-stream residual and admitting only on a
+      // real `\n`. A run of bytes carrying no newline accumulates in the
+      // residual; the ledger bounds it — `admit` charges each completed line, so
+      // a newline-free flood is capped when the pending residual would cross the
+      // budget, and the trailing partial is flushed once on `end`.
+      const strayOut = { decoder: new StringDecoder('utf8'), residual: '' }
+      const strayErr = { decoder: new StringDecoder('utf8'), residual: '' }
+      const captureStray = (stray: { decoder: StringDecoder; residual: string }, chunk: Buffer): void => {
+        // Once the ledger has truncated, stop buffering: admit() is a no-op past
+        // that point, so continuing to grow the residual would retain host
+        // memory for output that can never be admitted.
+        if (logsTruncated) return
+        stray.residual += stray.decoder.write(chunk)
+        let newline = stray.residual.indexOf('\n')
+        while (newline >= 0) {
+          admit(stray.residual.slice(0, newline))
+          stray.residual = stray.residual.slice(newline + 1)
+          newline = stray.residual.indexOf('\n')
+        }
+        // Newline-free residual is bounded by the ledger, not left to grow with
+        // the stream: an `os.write(1, b"A"*N)` flood carrying no newline would
+        // otherwise accumulate N bytes in host memory before `end`. When the
+        // pending residual would cross the budget, admit it now — admit()
+        // truncates and marks the ledger, and the truncation short-circuit above
+        // stops further buffering on the next chunk.
+        if (stray.residual.length + 3 > logBudget) {
+          admit(stray.residual)
+          stray.residual = ''
+        }
       }
       child.stdout.on('data', (chunk: Buffer) => { captureStray(strayOut, chunk) })
       child.stderr.on('data', (chunk: Buffer) => { captureStray(strayErr, chunk) })
-      // Flush each decoder when its pipe ends: output that STOPS mid-sequence
-      // (native code killed between bytes) leaves the partial character in
-      // the decoder, and end() renders it as U+FFFD rather than dropping the
-      // evidence. `end` fires before `close` settles the run, so the flush is
-      // admitted into `logs`.
-      const flushStray = (decoder: StringDecoder): void => {
-        const tail = decoder.end()
+      // Flush each pipe's residual and decoder when it ends: a final line with
+      // no trailing newline, plus output that STOPS mid-sequence (native code
+      // killed between bytes) leaves a partial character in the decoder, which
+      // end() renders as U+FFFD rather than dropping the evidence. `end` fires
+      // before `close` settles the run, so the flush is admitted into `logs`.
+      const flushStray = (stray: { decoder: StringDecoder; residual: string }): void => {
+        const tail = stray.residual + stray.decoder.end()
         if (tail.length > 0) admit(tail)
       }
       child.stdout.on('end', () => { flushStray(strayOut) })
@@ -1069,26 +1134,30 @@ export class PythonCodeRuntime extends CodeRuntime {
         // actually empty — dropping from `live` before then would let a
         // `dispose()` that races a just-resolved run() snapshot an empty `live`
         // and return while a same-group survivor is still alive, making teardown's
-        // "no subprocess outlives the fiber" false for that window. Keeping the
-        // run in `live` until the group is reaped is exactly what makes a
-        // concurrent teardown await it.
+        // "no SAME-GROUP subprocess outlives the fiber" guarantee false for that
+        // window (a setsid escapee is the documented exception — see teardown's
+        // JSDoc). Keeping the run in `live` until the group is reaped is exactly
+        // what makes a concurrent teardown await it.
         const finalize = (): void => {
           this.live.delete(live)
           finishResolve()
         }
-        // `finished` is what teardown awaits to honor "no subprocess outlives the
-        // fiber". When no escalation ran (normal completion, no kill) or the
-        // group is already empty, cancel the pending SIGKILL and finalize now.
-        // Clearing it is what bounds the PID-reuse hazard: an armed `kill(-pid)`
-        // left to fire up to graceMs later could hit a RECYCLED pgid once the
-        // kernel reused the leader's pid, SIGKILLing an unrelated group. So the
-        // timer stays armed only while a real survivor exists — a same-group
-        // descendant that ignored SIGTERM but released the pipes, still alive
-        // here because its `close` is what got us to settle. In that case
-        // withhold finalize and poll the group on REF'd timers (a short-lived
-        // host would otherwise exit before the unref'd SIGKILL fired, reparenting
-        // the survivor to init), clearing the timer the moment the group empties;
-        // the wait is bounded by the same graceMs + margin the escalation uses.
+        // `finished` is what teardown awaits to honor "no same-group subprocess
+        // outlives the fiber". When no escalation ran (normal completion, no
+        // kill) or the group is already empty, cancel the pending SIGKILL and
+        // finalize now. Clearing it is what bounds the PID-reuse hazard: an armed
+        // `kill(-pid)` left to fire up to graceMs later could hit a RECYCLED pgid
+        // once the kernel reused the leader's pid, SIGKILLing an unrelated group.
+        // So the timer stays armed only while a real survivor exists — a
+        // same-group descendant that ignored SIGTERM but released the pipes,
+        // still alive here because its `close` is what got us to settle. In that
+        // case withhold finalize and poll the group on REF'd timers (a
+        // short-lived host would otherwise exit before the unref'd SIGKILL fired,
+        // reparenting the survivor to init), clearing the timer the moment the
+        // group empties. The wait is bounded by `graceMs + CLOSE_REAP_MARGIN_MS`
+        // in the normal case; if the host event loop was blocked past both timers
+        // the deadline branch below sends SIGKILL itself and grants ONE more reap
+        // margin, so the outer bound is `graceMs + 2 * CLOSE_REAP_MARGIN_MS`.
         if (!killing || groupEmpty()) {
           if (graceTimer !== undefined) clearTimeout(graceTimer)
           finalize()
@@ -1122,10 +1191,19 @@ export class PythonCodeRuntime extends CodeRuntime {
             clearTimeout(graceTimer)
             hardDeadline = Date.now() + CLOSE_REAP_MARGIN_MS
           }
-          // Hard bound: only reached if the self-sent SIGKILL never empties the
-          // reachable group (a kernel that never reports ESRCH), which does not
-          // happen in practice — hence the ignore on the branch below.
-          /* v8 ignore next 4 -- SIGKILL empties the reachable group within the reap margin. */
+          // Hard bound: the self-sent SIGKILL delivered but `groupEmpty()` still
+          // reports the group non-empty for a full extra reap margin. This is
+          // reachable, not a kernel quirk: a SIGKILL'd same-group survivor
+          // lingers as a ZOMBIE until its parent `wait()`s it, and in a
+          // container whose PID 1 does not reap orphans the survivor is
+          // reparented to init and never waited, so the signal-0 probe keeps
+          // succeeding — the same environment dependence the Agent Note's
+          // rejected "assert the reap with process.kill(pid, 0)" alternative
+          // documents. The ignore stays because that container cannot be built
+          // deterministically across CI platforms, not because the branch is
+          // unreachable; finalizing here bounds the wait so such a deployment
+          // still goes quiescent within `graceMs + 2 * CLOSE_REAP_MARGIN_MS`.
+          /* v8 ignore next 4 -- reachable only in a PID-1-doesn't-reap container (zombie survivor); not deterministically buildable. */
           if (hardDeadline !== 0 && Date.now() >= hardDeadline) {
             finalize()
             return

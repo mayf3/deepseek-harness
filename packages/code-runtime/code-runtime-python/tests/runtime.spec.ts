@@ -682,6 +682,35 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs).toEqual(['partial'])
   })
 
+  it('aggregates a large newline-free native write into one log entry, not one per pipe chunk', async () => {
+    // A single `os.write` larger than one pipe read arrives as several Node
+    // `data` chunks. `logs` entries are joined with `\n` downstream, so pushing
+    // one entry per transport chunk would insert model-visible newlines at
+    // arbitrary pipe boundaries inside one native write. Stray capture holds a
+    // per-stream residual and admits only on a real `\n`, so a 200 KiB blast
+    // with no newline reads back as exactly one entry with no interior breaks.
+    const { runtime } = await setup({ maxLogBytes: 300_000 })
+    const size = 200_000
+    const result = await runtime.run({
+      program: ['import os', `os.write(1, b"A" * ${size})`, 'return None'].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['A'.repeat(size)])
+  })
+
+  it('splits native output on its own newlines, one entry per line', async () => {
+    // The complement of the aggregation case: real newlines in a native write
+    // still delimit entries, matching the child's line-granular `log` frames.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: ['import os', 'os.write(1, b"one\\ntwo\\nthree")', 'return None'].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['one', 'two', 'three'])
+  })
+
   it('fails a completion dict with a non-string key as invalid-output (no key coercion)', async () => {
     // json.dumps would coerce {1: "a", "1": "b"} to a single "1" key, silently
     // dropping data. The shape validator rejects it before encoding.
@@ -2116,6 +2145,10 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     await fiber.dispose()
     const mtime = (): number => { try { return statSync(heartbeat).mtimeMs } catch { return 0 } }
     const afterDispose = mtime()
+    // Pin the assertion to a heartbeat that actually ran: mtime() returns 0 when
+    // the file never existed, so without this the `toBe` below would pass
+    // vacuously (0 === 0) if the survivor never wrote a heartbeat at all.
+    expect(afterDispose).toBeGreaterThan(0)
     await new Promise(resolve => setTimeout(resolve, 500))
     expect(mtime()).toBe(afterDispose)
   }, 20_000)

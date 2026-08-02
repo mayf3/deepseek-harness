@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events'
+import { readdirSync } from 'node:fs'
 import { PassThrough } from 'node:stream'
+import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from 'cordis'
 
@@ -62,6 +64,28 @@ describe('PythonCodeRuntime — boot-write failure', () => {
 
     expect(result.error?.kind).toBe('worker-exit')
     expect(result.error?.message).toContain('failed to boot python subprocess')
+    await fiber.dispose()
+  })
+
+  it('resolves a worker-exit and removes the staging dir when spawn throws synchronously', async () => {
+    // `spawn` can throw same-tick — EMFILE on a descriptor-exhausted host, or a
+    // libuv-level failure — before the Promise executor and its settlement path
+    // exist. Left uncaught it rejected run() (the seam permits rejection only for
+    // misuse) and stranded the staging directory materializePyScripts had just
+    // written, which only settle() removes. The fix catches it, unlinks the
+    // directory, and resolves the same `worker-exit` class as an async ENOENT.
+    const before = readdirSync(tmpdir()).filter(name => name.startsWith('dsh-code-runtime-python-'))
+    spawnMock.mockImplementation(() => { throw Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' }) })
+    const ctx = new Context()
+    const fiber = await ctx.plugin(PythonCodeRuntime)
+    const runtime = ctx.codeRuntime as InstanceType<typeof PythonCodeRuntime>
+
+    const result = await runtime.run({ program: 'return 1', bindings: [] })
+
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain('python spawn error')
+    const after = readdirSync(tmpdir()).filter(name => name.startsWith('dsh-code-runtime-python-'))
+    expect(after).toEqual(before)
     await fiber.dispose()
   })
 })
