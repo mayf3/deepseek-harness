@@ -55,22 +55,24 @@ describe.skipIf(!python3Available)('protocol.py mirrors protocol.ts at runtime',
 
   it('agrees on every frame type\'s wire field set between the TS and Python declarations', async () => {
     // Turn the TypedDict mirror from a review-only obligation into an executable
-    // check: read each Python TypedDict's required/optional key sets and assert
-    // them against WIRE_FRAME_FIELDS — the TS-side source of truth bound to the
-    // frame interfaces by `satisfies` in protocol.ts, so a rename or a removed
-    // field on the TS side breaks typecheck and an added field breaks this
-    // comparison (the Python side would carry it). Covers the reply frames too.
-    // `global` is the reserved-keyword wire key the Python side carries via a
-    // functional TypedDict. This catches the round-12 kind of drift on EITHER
-    // side of the wire.
-    const pyNames = Object.keys(WIRE_FRAME_FIELDS)
+    // check: enumerate EVERY TypedDict in py/protocol.py (public names carrying
+    // __required_keys__) and assert both the frame roster and each frame's
+    // required/optional key sets against WIRE_FRAME_FIELDS — the TS-side source
+    // of truth bound to the frame interfaces by `satisfies` in protocol.ts.
+    // Together this catches drift on EITHER side of the wire: a TS rename or
+    // optionality flip breaks typecheck; a Python frame added, removed, or with
+    // a changed field set breaks this comparison. `global` is the reserved-
+    // keyword wire key the Python side carries via a functional TypedDict.
     const probe = [
       'import json, sys',
       `sys.path.insert(0, ${JSON.stringify(pyDir)})`,
       'import protocol as p',
       'def keys(td): return {"required": sorted(td.__required_keys__), "optional": sorted(td.__optional_keys__)}',
-      `names = ${JSON.stringify(pyNames)}`,
-      'print(json.dumps({n: keys(getattr(p, n)) for n in names}))',
+      // Every public TypedDict in the module — not a name list from the TS side,
+      // so a Python-only extra frame is visible here.
+      'frames = {n: keys(v) for n, v in vars(p).items()'
+      + ' if not n.startswith("_") and hasattr(v, "__required_keys__")}',
+      'print(json.dumps(frames))',
     ].join('\n')
     const { stdout } = await execFileAsync('python3', ['-I', '-c', probe])
     const seen = JSON.parse(stdout) as Record<string, { required: string[]; optional: string[] }>
@@ -81,6 +83,9 @@ describe.skipIf(!python3Available)('protocol.py mirrors protocol.ts at runtime',
         { required: [...sets.required].sort(), optional: [...sets.optional].sort() },
       ]),
     )
+    // Same frame roster on both sides (catches a frame present on only one),
+    // then identical field sets per frame.
+    expect(Object.keys(seen).sort()).toEqual(Object.keys(expected).sort())
     expect(seen).toEqual(expected)
   })
 })

@@ -12,6 +12,26 @@
 // protocol.py.
 
 /**
+ * One binding namespace declaration inside a {@link BootMessage}. `global` is
+ * the program-visible name the namespace is materialized under; `errorClass`,
+ * when present, asks the bootstrap to mint a program-visible exception class.
+ */
+export interface Namespace {
+  global: string
+  names: string[]
+  errorClass?: ErrorClass
+}
+
+/**
+ * A namespace's program-visible exception class: rejected calls raise its
+ * instances carrying the failed member name on `memberNameProperty`.
+ */
+export interface ErrorClass {
+  name: string
+  memberNameProperty: string
+}
+
+/**
  * What the host sends immediately after spawn, as the first line on fd 3. The
  * Python bootstrap reads this, applies resource limits, then waits for the
  * subsequent run frame. Separated from the run so the run message stays
@@ -29,16 +49,16 @@ export interface BootMessage {
   maxValueBytes: number
   /**
    * The namespaces to materialize inside the program (globals + names;
-   * functions stay host-side). `errorClass` asks the bootstrap to mint a
-   * program-visible exception class under that global: rejected calls raise
-   * its instances carrying the member name on `memberNameProperty`.
+   * functions stay host-side). See {@link Namespace}.
    */
-  namespaces: { global: string; names: string[]; errorClass?: { name: string; memberNameProperty: string } }[]
+  namespaces: Namespace[]
 }
 
-// The run request `{ type: 'run', program }` follows BootMessage once the
-// child acknowledges with `boot-ack`; the host sends it as an inline literal
-// (it carries only the model's program body — caps and bindings crossed on boot).
+/** Host → Python: sent after `boot-ack`; carries only the model's program body. */
+export interface RunMessage {
+  type: 'run'
+  program: string
+}
 
 /** Python → host: acknowledges boot completed and resource limits are in place. */
 interface BootAckMessage {
@@ -78,6 +98,12 @@ interface LogMessage {
   truncated?: boolean
 }
 
+/** The failure carried on a {@link DoneMessage}: one of three kinds plus text. */
+export interface DoneErrorField {
+  kind: 'exception' | 'invalid-output' | 'output-limit'
+  message: string
+}
+
 /**
  * Python → host: the program settled. `error` carries a program exception
  * (traceback text), an `invalid-output` (completion value was not lossless
@@ -92,7 +118,7 @@ interface LogMessage {
 interface DoneMessage {
   type: 'done'
   value?: unknown
-  error?: { kind: 'exception' | 'invalid-output' | 'output-limit'; message: string }
+  error?: DoneErrorField
 }
 
 /**
@@ -102,36 +128,57 @@ interface DoneMessage {
  */
 export type ChildToHost = BootAckMessage | CallMessage | LogMessage | DoneMessage
 
+/** Host → Python: successful answer to one {@link CallMessage}. */
+export interface ReplyOk {
+  type: 'reply'
+  id: number
+  ok: true
+  value: unknown
+}
+
+/** Host → Python: failed answer to one {@link CallMessage}. */
+export interface ReplyErr {
+  type: 'reply'
+  id: number
+  ok: false
+  message: string
+}
+
 /** Host → Python: the answer to one {@link CallMessage}. */
-export type ReplyMessage =
-  | { type: 'reply'; id: number; ok: true; value: unknown }
-  | { type: 'reply'; id: number; ok: false; message: string }
+export type ReplyMessage = ReplyOk | ReplyErr
+
+/** The required (non-optional) keys of `T`, as string literals. */
+type RequiredKeys<T> = { [K in keyof T]-?: object extends Pick<T, K> ? never : K }[keyof T] & string
+/** The optional keys of `T`, as string literals. */
+type OptionalKeys<T> = { [K in keyof T]-?: object extends Pick<T, K> ? K : never }[keyof T] & string
 
 /**
- * Shape of one {@link WIRE_FRAME_FIELDS} entry, parameterised by that frame's
- * key union `K`. `required` and `optional` are arrays of `K`, so listing a name
- * no frame declares — a typo or a renamed field — fails typecheck. (A field
- * ADDED to an interface but omitted here is caught at runtime instead: the
- * mirror test asserts the Python `TypedDict` keys equal these exact sets, and
- * the Python side would carry the new field.) `K` is `PropertyKey` so a bare
- * `keyof Interface` binds without narrowing.
+ * Shape of one {@link WIRE_FRAME_FIELDS} entry, derived from frame interface
+ * `T`. Every element of `required` must be one of `T`'s required keys and every
+ * element of `optional` one of `T`'s optional keys — so a renamed field, or an
+ * optionality flip (`truncated?` → `truncated`, which moves the name between the
+ * two arrays' element types), fails typecheck. Completeness in the other
+ * direction (every declared key actually appears, and no frame exists on only
+ * one side of the wire) is enforced at runtime by the mirror test, which
+ * compares these arrays to the Python `TypedDict`'s
+ * `__required_keys__`/`__optional_keys__` by exact set equality over the full
+ * frame roster.
  */
-type FrameFields<K extends PropertyKey> = {
-  required: readonly K[]
-  optional: readonly K[]
+type FrameFields<T> = {
+  required: readonly RequiredKeys<T>[]
+  optional: readonly OptionalKeys<T>[]
 }
 
 /**
  * The wire field names of each frame, split into required and optional keys, as
  * a RUNTIME value the cross-language mirror test asserts `py/protocol.py`'s
  * `TypedDict`s against. The `satisfies` clause binds each entry to its frame
- * interface's own key set, so listing a name no frame declares fails
- * typecheck — the mirror test therefore depends on the TS declarations above,
- * not a hand-copied list. `global` is the JSON key {@link CallMessage} and the
- * namespace declaration send (a reserved word the Python side carries via a
- * functional `TypedDict`); inline sub-shapes (the namespace entry in
- * {@link BootMessage}, the error field in {@link DoneMessage}, the reply
- * variants) list their keys literally.
+ * interface via {@link FrameFields}, which derives the required/optional key
+ * sets FROM the interface — so a renamed, removed, or optionality-flipped field
+ * on the TS side fails typecheck, and the mirror test catches a Python-side
+ * divergence at runtime. `global` is the JSON key {@link CallMessage} and
+ * {@link Namespace} send (a reserved word the Python side carries via a
+ * functional `TypedDict`).
  */
 export const WIRE_FRAME_FIELDS = {
   BootMessage: { required: ['addressSpaceBytes', 'cpuSeconds', 'maxLogBytes', 'maxValueBytes', 'namespaces', 'type'], optional: [] },
@@ -142,26 +189,21 @@ export const WIRE_FRAME_FIELDS = {
   LogMessage: { required: ['text', 'type'], optional: ['truncated'] },
   DoneErrorField: { required: ['kind', 'message'], optional: [] },
   DoneMessage: { required: ['type'], optional: ['error', 'value'] },
-  ErrorClass: { required: ['name', 'memberNameProperty'], optional: [] },
+  ErrorClass: { required: ['memberNameProperty', 'name'], optional: [] },
   ReplyOk: { required: ['id', 'ok', 'type', 'value'], optional: [] },
   ReplyErr: { required: ['id', 'message', 'ok', 'type'], optional: [] },
 } satisfies {
-  // Frames with a top-level interface bind to its keys; `global` is already the
-  // member name on the TS side of `CallMessage`. Frames sent as inline literals
-  // or nested shapes (the run frame, the namespace entry, the done error field,
-  // ErrorClass, and the two reply variants) have no standalone interface, so
-  // their keys are listed literally.
-  BootMessage: FrameFields<keyof BootMessage>
-  Namespace: FrameFields<'global' | 'names' | 'errorClass'>
-  RunMessage: FrameFields<'type' | 'program'>
-  BootAckMessage: FrameFields<keyof BootAckMessage>
-  CallMessage: FrameFields<keyof CallMessage>
-  LogMessage: FrameFields<keyof LogMessage>
-  DoneErrorField: FrameFields<'kind' | 'message'>
-  DoneMessage: FrameFields<keyof DoneMessage>
-  ErrorClass: FrameFields<'name' | 'memberNameProperty'>
-  ReplyOk: FrameFields<'type' | 'id' | 'ok' | 'value'>
-  ReplyErr: FrameFields<'type' | 'id' | 'ok' | 'message'>
+  BootMessage: FrameFields<BootMessage>
+  Namespace: FrameFields<Namespace>
+  RunMessage: FrameFields<RunMessage>
+  BootAckMessage: FrameFields<BootAckMessage>
+  CallMessage: FrameFields<CallMessage>
+  LogMessage: FrameFields<LogMessage>
+  DoneErrorField: FrameFields<DoneErrorField>
+  DoneMessage: FrameFields<DoneMessage>
+  ErrorClass: FrameFields<ErrorClass>
+  ReplyOk: FrameFields<ReplyOk>
+  ReplyErr: FrameFields<ReplyErr>
 }
 
 
