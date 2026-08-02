@@ -189,20 +189,23 @@ function scalarJson(current: unknown): string {
 }
 
 /**
- * Meter a forged done value's compact-JSON byte length AND its number
- * losslessness in one bounded traversal, stopping the instant `maxBytes` is
- * crossed. A forged `done.value` arrives straight off fd 3 and can sit anywhere
- * below the 256 MiB frame ceiling while `maxValueBytes` defaults to 32 KiB. The
- * previous split — an unbounded `hasNonLosslessNumber` scan in
- * {@link validateChildFrame} followed by a separate byte meter — pushed every
- * member of a wide flat payload onto a scan stack before any cap check ran, so
- * a below-ceiling forgery could still force a hundreds-of-megabytes host
- * allocation. Folding both jobs here rejects over-budget BEFORE enqueuing an
- * array's or object's children, keeping the traversal O(cap). A non-lossless
- * number (non-finite, negative zero) is caught only when the value fits the
- * budget — an over-budget value is rejected regardless, so the distinction is
- * moot. Same JSON-plain precondition and traversal shape as
- * {@link encodeJsonPlain}; per-scalar byte length is measured through
+ * Meter a `JSON.parse`-produced done value's compact-JSON byte length AND its
+ * number losslessness in one traversal, stopping the instant `maxBytes` is
+ * crossed. This bounds the INCREMENTAL allocation the check itself would add on
+ * top of the already-parsed value — the escaped-string copy, the enqueued
+ * children, the per-key `JSON.stringify` — not the parse that produced `value`.
+ * That upstream width is bounded separately: the host reads fd 3 into a fixed
+ * 256 MiB receive buffer (a later stack layer), so `value` cannot already be
+ * larger than that when it reaches here, while `maxValueBytes` defaults to
+ * 32 KiB. The traversal rejects over-budget BEFORE materializing a string's
+ * escaped form or enqueuing an array's/object's children, so a below-ceiling
+ * forgery cannot force those secondary allocations. Object key COUNTING is
+ * unavoidably O(keys) — JS has no lazy own-key iterator, and the parse already
+ * built the key set — but the check still refuses the per-entry work before the
+ * enqueue loop. A non-lossless number (non-finite, negative zero) is caught only
+ * when the value fits the budget — an over-budget value is rejected regardless,
+ * so the distinction is moot. Same JSON-plain precondition and traversal shape
+ * as {@link encodeJsonPlain}; per-scalar byte length is measured through
  * {@link scalarJson} (matching the encoder, so a beyond-safe-range integer
  * meters its exact BigInt digits, not `JSON.stringify`'s rounded spelling) and
  * `JSON.stringify` for strings.
@@ -230,30 +233,23 @@ export function checkDoneValue(value: unknown, maxBytes: number): { ok: true; by
     } else if (Array.isArray(current)) {
       // Brackets plus one comma per gap; elements add themselves. Reject
       // BEFORE enqueuing children: every element serializes to at least one
-      // byte, so a forged flat array below the frame ceiling but far above
-      // the budget fails here without growing the host stack by millions of
-      // entries first.
+      // byte, so a forged flat array far above the budget fails here without
+      // pushing its elements onto the host stack. (The array itself is already
+      // materialized by the upstream parse; this only bounds the extra stack.)
       bytes += 2 + (current.length > 1 ? current.length - 1 : 0)
       if (bytes + current.length > maxBytes) return { ok: false, reason: 'over-budget' }
       for (const item of current) stack.push(item)
     } else if (typeof current === 'object' && current !== null) {
       const record = current as Record<string, unknown>
-      // Count own keys WITHOUT Object.entries/Object.keys (either allocates one
-      // slot per member up front), AND bail mid-count the instant the minimum
-      // encoding exceeds the budget: braces (+2), each entry a quoted key
-      // (>= 2 bytes) + colon + >= 1-byte value (>= 4 bytes), and a comma per
-      // gap. A forged wide object with millions of keys and a small cap must
-      // fail in O(cap), not walk its whole breadth first. `bytes` still holds
-      // the pre-object total throughout this loop.
+      // Count own keys with for...in + hasOwn. This IS O(keys) — JS has no lazy
+      // own-key iterator and the parse already built the key set — so the count
+      // cannot be sublinear; what the bound below buys is refusing the per-entry
+      // work (key escaping, value enqueue) before it runs. Each entry costs at
+      // least a quoted key (>= 2 bytes) + colon + >= 1-byte value.
       let count = 0
-      for (const key in record) {
-        if (!Object.hasOwn(record, key)) continue
-        count += 1
-        if (bytes + 2 + count * 4 + (count - 1) > maxBytes) return { ok: false, reason: 'over-budget' }
-      }
-      // The loop's final iteration already proved the whole object's lower
-      // bound fits, so no separate post-count check is needed here.
+      for (const key in record) if (Object.hasOwn(record, key)) count += 1
       bytes += 2 + (count > 1 ? count - 1 : 0)
+      if (bytes + count * 4 > maxBytes) return { ok: false, reason: 'over-budget' }
       for (const key in record) {
         if (!Object.hasOwn(record, key)) continue
         // The same string lower bound, before escaping the key.
