@@ -2053,6 +2053,55 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     }
     expect(still).toBe(true)
   }, 20_000)
+
+  it('dispose awaits reaping of a same-group survivor from a completed run', async () => {
+    // The quiescence contract also holds for a run that ALREADY resolved: the run
+    // stays tracked in `live` until its process group is reaped, so a `dispose()`
+    // that races a just-returned run() still awaits the survivor rather than
+    // snapshotting an empty `live` and returning while it lives. Here the run
+    // completes (leaving a SIGTERM-ignoring same-group descendant), then dispose()
+    // is called; the heartbeat must be stale BY THE TIME dispose() resolves —
+    // proving teardown waited for the reap, not merely that the reap eventually
+    // happened.
+    const handoff = await mkdtemp(join(tmpdir(), 'dsh-dispose-quiesce-'))
+    const readyMarker = join(handoff, 'ready')
+    const heartbeat = join(handoff, 'heartbeat')
+    const { runtime, fiber } = await setup({ maxWallMs: 10_000, graceMs: 300 })
+    const result = await runtime.run({
+      program: [
+        'import subprocess, sys, os, time',
+        `marker = ${JSON.stringify(readyMarker)}`,
+        `heartbeat = ${JSON.stringify(heartbeat)}`,
+        'code = ("import signal, sys, time\\n"',
+        '        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\\n"',
+        '        "open(sys.argv[1], \'w\').close()\\n"',
+        '        "end = time.time() + 30\\n"',
+        '        "while time.time() < end:\\n"',
+        '        "    open(sys.argv[2], \'w\').close()\\n"',
+        '        "    time.sleep(0.05)\\n")',
+        'child = subprocess.Popen([sys.executable, "-c", code, marker, heartbeat],',
+        '                         stdin=subprocess.DEVNULL,',
+        '                         stdout=subprocess.DEVNULL,',
+        '                         stderr=subprocess.DEVNULL)',
+        'deadline = time.time() + 5',
+        'while not os.path.exists(marker) and time.time() < deadline:',
+        '    time.sleep(0.02)',
+        'return "spawned"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(existsSync(readyMarker)).toBe(true)
+    // dispose() must not return until the group is reaped. After it resolves, the
+    // heartbeat must already be stale: read its mtime, wait past the heartbeat
+    // interval, and confirm it did not advance — the descendant is no longer
+    // executing (reaped or zombie), so teardown was genuinely quiescent.
+    await fiber.dispose()
+    const mtime = (): number => { try { return statSync(heartbeat).mtimeMs } catch { return 0 } }
+    const afterDispose = mtime()
+    await new Promise(resolve => setTimeout(resolve, 500))
+    expect(mtime()).toBe(afterDispose)
+  }, 20_000)
 })
 
 describe('PythonCodeRuntime — hostile peer', () => {

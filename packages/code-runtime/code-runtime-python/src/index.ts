@@ -1032,20 +1032,7 @@ export class PythonCodeRuntime extends CodeRuntime {
       const settle = (result: Omit<CodeRunResult, 'logs'>): void => {
         if (resolved) return
         resolved = true
-        // The grace-window SIGKILL timer is intentionally NOT cleared here: a
-        // same-group descendant that ignored SIGTERM but released the pipes lets
-        // `close` fire (and settle() run) while it is still alive, so the pending
-        // SIGKILL must remain armed to reap it (see kill()). The timer is
-        // `unref`'d; quiescence does not depend on it firing during host lifetime
-        // — `finished` (below) is withheld until the group is confirmed empty.
         if (closeDeadline !== undefined) clearTimeout(closeDeadline)
-        // Drop from `live` only at settlement (close / pid-less spawn failure),
-        // NOT at finish(): between finish() and the child's `close` the child
-        // may sit in the SIGTERM grace window, and a concurrent teardown()
-        // snapshot of `this.live` must still see it so disposal awaits its exit
-        // ("no subprocess outlives the fiber"). teardown's own settle() on an
-        // already-finished run hits the resolved guard as a no-op.
-        this.live.delete(live)
         // The child has exited by now (settle runs on `close`, or on a spawn
         // that produced no pid), so its staging directory is no longer read and
         // this run's copy goes away with it. Removed SYNCHRONOUSLY, before
@@ -1063,29 +1050,41 @@ export class PythonCodeRuntime extends CodeRuntime {
           // checked-in scripts.
         }
         resolve({ ...result, logs })
+        // Mark the fiber quiescent for THIS run: drop it from `live` and resolve
+        // `finished` (what teardown awaits). Deferred until the process group is
+        // actually empty — dropping from `live` before then would let a
+        // `dispose()` that races a just-resolved run() snapshot an empty `live`
+        // and return while a same-group survivor is still alive, making teardown's
+        // "no subprocess outlives the fiber" false for that window. Keeping the
+        // run in `live` until the group is reaped is exactly what makes a
+        // concurrent teardown await it.
+        const finalize = (): void => {
+          this.live.delete(live)
+          finishResolve()
+        }
         // `finished` is what teardown awaits to honor "no subprocess outlives the
         // fiber". When no escalation ran (normal completion, no kill) or the
-        // group is already empty, cancel the pending SIGKILL and resolve now.
+        // group is already empty, cancel the pending SIGKILL and finalize now.
         // Clearing it is what bounds the PID-reuse hazard: an armed `kill(-pid)`
         // left to fire up to graceMs later could hit a RECYCLED pgid once the
         // kernel reused the leader's pid, SIGKILLing an unrelated group. So the
         // timer stays armed only while a real survivor exists — a same-group
         // descendant that ignored SIGTERM but released the pipes, still alive
         // here because its `close` is what got us to settle. In that case
-        // withhold `finished` and poll the group on REF'd timers (a short-lived
+        // withhold finalize and poll the group on REF'd timers (a short-lived
         // host would otherwise exit before the unref'd SIGKILL fired, reparenting
         // the survivor to init), clearing the timer the moment the group empties;
         // the wait is bounded by the same graceMs + margin the escalation uses.
         if (!killing || groupEmpty()) {
           if (graceTimer !== undefined) clearTimeout(graceTimer)
-          finishResolve()
+          finalize()
           return
         }
         const deadline = Date.now() + this.config.graceMs + CLOSE_REAP_MARGIN_MS
         const pollGroup = (): void => {
           if (groupEmpty() || Date.now() >= deadline) {
             if (graceTimer !== undefined) clearTimeout(graceTimer)
-            finishResolve()
+            finalize()
             return
           }
           setTimeout(pollGroup, GROUP_REAP_POLL_MS)
