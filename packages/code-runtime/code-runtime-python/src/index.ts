@@ -1082,14 +1082,22 @@ export class PythonCodeRuntime extends CodeRuntime {
         }
         const deadline = Date.now() + this.config.graceMs + CLOSE_REAP_MARGIN_MS
         const pollGroup = (): void => {
-          // The deadline is a backstop: the group is reachable by `kill(-pid)`
-          // and SIGKILL is uncatchable, so it always empties within graceMs — the
-          // `Date.now() >= deadline` arm exists only so a probe that never sees
-          // ESRCH (a kernel quirk) cannot hang disposal forever.
-          /* v8 ignore next -- SIGKILL always empties the reachable group before the deadline. */
-          if (groupEmpty() || Date.now() >= deadline) {
-            // graceTimer is always defined here: pollGroup runs only when
-            // `killing` is set, and kill() arms graceTimer before any settle.
+          if (groupEmpty()) {
+            // The group is gone; the grace SIGKILL is moot. Cancel it (it may not
+            // have fired yet) and finalize. graceTimer is always defined here:
+            // pollGroup runs only when `killing` is set, and kill() armed it.
+            clearTimeout(graceTimer)
+            finalize()
+            return
+          }
+          if (Date.now() >= deadline) {
+            // Deadline reached with the group still non-empty. This is reachable
+            // when the host event loop was blocked past both timers: Node runs
+            // this poll before the grace SIGKILL timer, so that SIGKILL may never
+            // have fired. Send it HERE before finalizing — idempotent if the timer
+            // already ran — so a SIGTERM-ignoring same-group survivor is actually
+            // reaped rather than released by cancelling an unfired escalation.
+            killGroup('SIGKILL')
             clearTimeout(graceTimer)
             finalize()
             return

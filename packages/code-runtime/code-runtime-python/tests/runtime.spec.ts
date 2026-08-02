@@ -2102,6 +2102,64 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     await new Promise(resolve => setTimeout(resolve, 500))
     expect(mtime()).toBe(afterDispose)
   }, 20_000)
+
+  it('sends SIGKILL at the poll deadline when the event loop was blocked past both timers', async () => {
+    // If the host event loop is blocked (a big synchronous computation) from
+    // before the group-reap poll was scheduled until after the deadline, both the
+    // poll timer and the grace-window SIGKILL timer are overdue when the loop
+    // resumes. Node runs the earlier-scheduled poll first, so the SIGKILL timer
+    // may not have fired yet. The deadline arm must then send SIGKILL ITSELF
+    // rather than cancel the unfired escalation — otherwise a SIGTERM-ignoring
+    // same-group survivor is released for good. A synchronous busy-loop after
+    // run() resolves reproduces the block deterministically.
+    const handoff = await mkdtemp(join(tmpdir(), 'dsh-deadline-'))
+    const readyMarker = join(handoff, 'ready')
+    const heartbeat = join(handoff, 'heartbeat')
+    const graceMs = 300
+    const { runtime } = await setup({ maxWallMs: 10_000, graceMs })
+    const result = await runtime.run({
+      program: [
+        'import subprocess, sys, os, time',
+        `marker = ${JSON.stringify(readyMarker)}`,
+        `heartbeat = ${JSON.stringify(heartbeat)}`,
+        'code = ("import signal, sys, time\\n"',
+        '        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\\n"',
+        '        "open(sys.argv[1], \'w\').close()\\n"',
+        '        "end = time.time() + 30\\n"',
+        '        "while time.time() < end:\\n"',
+        '        "    open(sys.argv[2], \'w\').close()\\n"',
+        '        "    time.sleep(0.05)\\n")',
+        'child = subprocess.Popen([sys.executable, "-c", code, marker, heartbeat],',
+        '                         stdin=subprocess.DEVNULL,',
+        '                         stdout=subprocess.DEVNULL,',
+        '                         stderr=subprocess.DEVNULL)',
+        'deadline = time.time() + 5',
+        'while not os.path.exists(marker) and time.time() < deadline:',
+        '    time.sleep(0.02)',
+        'return "spawned"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(existsSync(readyMarker)).toBe(true)
+    // Block the event loop synchronously past graceMs + CLOSE_REAP_MARGIN_MS
+    // (2000) with margin, so both timers are overdue when the loop resumes.
+    const blockUntil = Date.now() + graceMs + 2_000 + 800
+    while (Date.now() < blockUntil) { /* busy-wait, no yield */ }
+    // Yield: the overdue poll runs (group still non-empty, deadline passed) and
+    // must send SIGKILL itself. The survivor then stops bumping the heartbeat.
+    const mtime = (): number => { try { return statSync(heartbeat).mtimeMs } catch { return 0 } }
+    const stopDeadline = Date.now() + 5_000
+    let last = mtime()
+    let stopped = false
+    while (Date.now() < stopDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 400))
+      const now = mtime()
+      if (now === last && now !== 0) { stopped = true; break }
+      last = now
+    }
+    expect(stopped).toBe(true)
+  }, 20_000)
 })
 
 describe('PythonCodeRuntime — hostile peer', () => {
