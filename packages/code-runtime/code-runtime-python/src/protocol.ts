@@ -108,6 +108,64 @@ export type ReplyMessage =
   | { type: 'reply'; id: number; ok: false; message: string }
 
 /**
+ * Shape of one {@link WIRE_FRAME_FIELDS} entry, parameterised by that frame's
+ * key union `K`. `required` and `optional` are arrays of `K`, so listing a name
+ * no frame declares — a typo or a renamed field — fails typecheck. (A field
+ * ADDED to an interface but omitted here is caught at runtime instead: the
+ * mirror test asserts the Python `TypedDict` keys equal these exact sets, and
+ * the Python side would carry the new field.) `K` is `PropertyKey` so a bare
+ * `keyof Interface` binds without narrowing.
+ */
+type FrameFields<K extends PropertyKey> = {
+  required: readonly K[]
+  optional: readonly K[]
+}
+
+/**
+ * The wire field names of each frame, split into required and optional keys, as
+ * a RUNTIME value the cross-language mirror test asserts `py/protocol.py`'s
+ * `TypedDict`s against. The `satisfies` clause binds each entry to its frame
+ * interface's own key set, so listing a name no frame declares fails
+ * typecheck — the mirror test therefore depends on the TS declarations above,
+ * not a hand-copied list. `global` is the JSON key {@link CallMessage} and the
+ * namespace declaration send (a reserved word the Python side carries via a
+ * functional `TypedDict`); inline sub-shapes (the namespace entry in
+ * {@link BootMessage}, the error field in {@link DoneMessage}, the reply
+ * variants) list their keys literally.
+ */
+export const WIRE_FRAME_FIELDS = {
+  BootMessage: { required: ['addressSpaceBytes', 'cpuSeconds', 'maxLogBytes', 'maxValueBytes', 'namespaces', 'type'], optional: [] },
+  Namespace: { required: ['global', 'names'], optional: ['errorClass'] },
+  RunMessage: { required: ['program', 'type'], optional: [] },
+  BootAckMessage: { required: ['type'], optional: [] },
+  CallMessage: { required: ['args', 'global', 'id', 'name', 'type'], optional: [] },
+  LogMessage: { required: ['text', 'type'], optional: ['truncated'] },
+  DoneErrorField: { required: ['kind', 'message'], optional: [] },
+  DoneMessage: { required: ['type'], optional: ['error', 'value'] },
+  ErrorClass: { required: ['name', 'memberNameProperty'], optional: [] },
+  ReplyOk: { required: ['id', 'ok', 'type', 'value'], optional: [] },
+  ReplyErr: { required: ['id', 'message', 'ok', 'type'], optional: [] },
+} satisfies {
+  // Frames with a top-level interface bind to its keys; `global` is already the
+  // member name on the TS side of `CallMessage`. Frames sent as inline literals
+  // or nested shapes (the run frame, the namespace entry, the done error field,
+  // ErrorClass, and the two reply variants) have no standalone interface, so
+  // their keys are listed literally.
+  BootMessage: FrameFields<keyof BootMessage>
+  Namespace: FrameFields<'global' | 'names' | 'errorClass'>
+  RunMessage: FrameFields<'type' | 'program'>
+  BootAckMessage: FrameFields<keyof BootAckMessage>
+  CallMessage: FrameFields<keyof CallMessage>
+  LogMessage: FrameFields<keyof LogMessage>
+  DoneErrorField: FrameFields<'kind' | 'message'>
+  DoneMessage: FrameFields<keyof DoneMessage>
+  ErrorClass: FrameFields<'name' | 'memberNameProperty'>
+  ReplyOk: FrameFields<'type' | 'id' | 'ok' | 'value'>
+  ReplyErr: FrameFields<'type' | 'id' | 'ok' | 'message'>
+}
+
+
+/**
  * The in-band marker text announcing that log capture stopped at the byte
  * budget. Shared wire vocabulary: the Python-side LogBuffer emits it when ITS
  * ledger exhausts, and the host emits identical text when its own ledger drops
@@ -230,8 +288,13 @@ export function checkDoneValue(value: unknown, maxBytes: number): { ok: true; by
   while (stack.length > 0) {
     const current = stack.pop()
     if (typeof current === 'number') {
+      // Flag a non-lossless number but keep counting its encoded bytes: a value
+      // that is BOTH non-lossless and over-budget must classify as over-budget
+      // (the loop's byte check below wins), so the byte count cannot skip the
+      // offending number. `scalarJson` gives the same spelling a legit scalar
+      // would meter.
       if (!Number.isFinite(current) || Object.is(current, -0)) nonLossless = true
-      else bytes += Buffer.byteLength(scalarJson(current), 'utf8')
+      bytes += Buffer.byteLength(scalarJson(current), 'utf8')
     } else if (typeof current === 'string') {
       // Lower-bound BEFORE materializing the escaped form: every UTF-16 code
       // unit is at least one UTF-8 byte plus the two quotes, so a huge or

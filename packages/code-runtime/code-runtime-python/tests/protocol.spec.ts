@@ -262,6 +262,12 @@ describe('checkDoneValue', () => {
     // non-lossless (the recorded violation is the verdict once the whole value
     // is confirmed within budget).
     expect(checkDoneValue([Infinity], 100)).toEqual({ ok: false, reason: 'non-lossless' })
+    // The non-lossless number's OWN encoded bytes still count toward the budget,
+    // so a value whose only over-budget contribution is the non-lossless number
+    // itself is classified over-budget, not non-lossless. `[Infinity]` encodes
+    // as the 10-byte `[Infinity]`; at cap 3 the byte check wins.
+    expect(checkDoneValue([Infinity], 3)).toEqual({ ok: false, reason: 'over-budget' })
+    expect(checkDoneValue(Infinity, 3)).toEqual({ ok: false, reason: 'over-budget' })
   })
 
   it('meters deep nesting iteratively without overflowing the stack', () => {

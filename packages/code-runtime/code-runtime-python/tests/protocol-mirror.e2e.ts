@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import { logTruncationMarker } from '../src/protocol.ts'
+import { logTruncationMarker, WIRE_FRAME_FIELDS } from '../src/protocol.ts'
 
 /**
  * Cross-language mirror check between `src/protocol.ts` and `py/protocol.py`,
@@ -56,43 +56,32 @@ describe.skipIf(!python3Available)('protocol.py mirrors protocol.ts at runtime',
   it('agrees on every frame type\'s wire field set between the TS and Python declarations', async () => {
     // Turn the TypedDict mirror from a review-only obligation into an executable
     // check: read each Python TypedDict's required/optional key sets and assert
-    // them against the wire field names the TS side declares. `global` is the
-    // reserved-keyword key the Python side carries via functional TypedDict —
-    // catching exactly the round-12 kind of drift (a renamed/dropped field, an
-    // optional field the other side made required).
+    // them against WIRE_FRAME_FIELDS — the TS-side source of truth bound to the
+    // frame interfaces by `satisfies` in protocol.ts, so a rename or a removed
+    // field on the TS side breaks typecheck and an added field breaks this
+    // comparison (the Python side would carry it). Covers the reply frames too.
+    // `global` is the reserved-keyword wire key the Python side carries via a
+    // functional TypedDict. This catches the round-12 kind of drift on EITHER
+    // side of the wire.
+    const pyNames = Object.keys(WIRE_FRAME_FIELDS)
     const probe = [
       'import json, sys',
       `sys.path.insert(0, ${JSON.stringify(pyDir)})`,
       'import protocol as p',
       'def keys(td): return {"required": sorted(td.__required_keys__), "optional": sorted(td.__optional_keys__)}',
-      'print(json.dumps({',
-      '  "BootMessage": keys(p.BootMessage),',
-      '  "Namespace": keys(p.Namespace),',
-      '  "RunMessage": keys(p.RunMessage),',
-      '  "BootAckMessage": keys(p.BootAckMessage),',
-      '  "CallMessage": keys(p.CallMessage),',
-      '  "LogMessage": keys(p.LogMessage),',
-      '  "DoneErrorField": keys(p.DoneErrorField),',
-      '  "DoneMessage": keys(p.DoneMessage),',
-      '  "ErrorClass": keys(p.ErrorClass),',
-      '}))',
+      `names = ${JSON.stringify(pyNames)}`,
+      'print(json.dumps({n: keys(getattr(p, n)) for n in names}))',
     ].join('\n')
     const { stdout } = await execFileAsync('python3', ['-I', '-c', probe])
     const seen = JSON.parse(stdout) as Record<string, { required: string[]; optional: string[] }>
-    // The wire field sets each frame carries, mirroring src/protocol.ts. `global`
-    // is the JSON key `CallMessage`/`Namespace` send (a Python keyword, declared
-    // functionally on the Python side).
-    expect(seen).toEqual({
-      BootMessage: { required: ['addressSpaceBytes', 'cpuSeconds', 'maxLogBytes', 'maxValueBytes', 'namespaces', 'type'], optional: [] },
-      Namespace: { required: ['global', 'names'], optional: ['errorClass'] },
-      RunMessage: { required: ['program', 'type'], optional: [] },
-      BootAckMessage: { required: ['type'], optional: [] },
-      CallMessage: { required: ['args', 'global', 'id', 'name', 'type'], optional: [] },
-      LogMessage: { required: ['text', 'type'], optional: ['truncated'] },
-      DoneErrorField: { required: ['kind', 'message'], optional: [] },
-      DoneMessage: { required: ['type'], optional: ['error', 'value'] },
-      ErrorClass: { required: ['memberNameProperty', 'name'], optional: [] },
-    })
+    // Normalize the TS source of truth to the same sorted shape Python reports.
+    const expected = Object.fromEntries(
+      Object.entries(WIRE_FRAME_FIELDS).map(([name, sets]) => [
+        name,
+        { required: [...sets.required].sort(), optional: [...sets.optional].sort() },
+      ]),
+    )
+    expect(seen).toEqual(expected)
   })
 })
 
