@@ -877,7 +877,17 @@ async def _pump_replies(
         ok = bool(frame.get("ok"))
         value = frame.get("value")
         message = frame.get("message")
-        loop.call_soon_threadsafe(complete, fut, ok, value, message)
+        try:
+            loop.call_soon_threadsafe(complete, fut, ok, value, message)
+        except RuntimeError:
+            # The Future's loop has already closed — the thread that ran
+            # `asyncio.run(tools.x(...))` finished (its coroutine was cancelled
+            # or it exited) before this reply arrived, so nothing awaits the
+            # Future and the reply is moot. Drop it; scheduling onto a closed
+            # loop raises RuntimeError, and letting that escape would kill the
+            # pump and strand every later reply — the exact failure class this
+            # cross-loop delivery exists to prevent.
+            continue
 
 
 _SCALAR_RE = re.compile(
