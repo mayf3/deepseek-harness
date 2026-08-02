@@ -207,6 +207,21 @@ describe('checkDoneValue', () => {
     const wide: Record<string, number> = {}
     for (let i = 0; i < 10; i++) wide[`k${i}`] = i
     expect(checkDoneValue(wide, 12)).toEqual({ ok: false, reason: 'over-budget' })
+    // A forged object with millions of keys and a small cap must reject in
+    // O(cap): the key COUNT loop itself bails once the running minimum encoding
+    // (braces + 4 bytes/entry + commas) crosses the budget, rather than walking
+    // the whole breadth before checking. Observable as a bounded key subset:
+    // build a Proxy whose ownKeys would yield far more than the cap admits and
+    // assert the metered walk never enumerates past it.
+    let enumerated = 0
+    const millionKeys = new Proxy({}, {
+      ownKeys() { return Array.from({ length: 2_000_000 }, (_unused, i) => `k${i}`) },
+      getOwnPropertyDescriptor() { enumerated += 1; return { enumerable: true, configurable: true, value: 0 } },
+    })
+    expect(checkDoneValue(millionKeys, 64)).toEqual({ ok: false, reason: 'over-budget' })
+    // With cap 64, at most ~16 entries (4 bytes each) can fit before the bound
+    // trips, so the walk enumerates far fewer than the 2,000,000 declared keys.
+    expect(enumerated).toBeLessThan(1000)
   })
 
   it('rejects an over-budget string on its length before escaping it', () => {

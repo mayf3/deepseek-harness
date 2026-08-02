@@ -202,7 +202,10 @@ function scalarJson(current: unknown): string {
  * number (non-finite, negative zero) is caught only when the value fits the
  * budget — an over-budget value is rejected regardless, so the distinction is
  * moot. Same JSON-plain precondition and traversal shape as
- * {@link encodeJsonPlain}; per-scalar encoding delegates to `JSON.stringify`.
+ * {@link encodeJsonPlain}; per-scalar byte length is measured through
+ * {@link scalarJson} (matching the encoder, so a beyond-safe-range integer
+ * meters its exact BigInt digits, not `JSON.stringify`'s rounded spelling) and
+ * `JSON.stringify` for strings.
  * @param value - a JSON-plain value (e.g. straight from `JSON.parse`).
  * @param maxBytes - the completion-value budget in bytes.
  * @returns `{ ok: true, bytes }` with the exact serialized size, or
@@ -235,15 +238,22 @@ export function checkDoneValue(value: unknown, maxBytes: number): { ok: true; by
       for (const item of current) stack.push(item)
     } else if (typeof current === 'object' && current !== null) {
       const record = current as Record<string, unknown>
-      // Count own keys WITHOUT Object.entries/Object.keys: either would
-      // allocate one slot (entries: one pair array) per member before the
-      // bound below could run, recreating the spike the bound exists to stop.
+      // Count own keys WITHOUT Object.entries/Object.keys (either allocates one
+      // slot per member up front), AND bail mid-count the instant the minimum
+      // encoding exceeds the budget: braces (+2), each entry a quoted key
+      // (>= 2 bytes) + colon + >= 1-byte value (>= 4 bytes), and a comma per
+      // gap. A forged wide object with millions of keys and a small cap must
+      // fail in O(cap), not walk its whole breadth first. `bytes` still holds
+      // the pre-object total throughout this loop.
       let count = 0
-      for (const key in record) if (Object.hasOwn(record, key)) count += 1
+      for (const key in record) {
+        if (!Object.hasOwn(record, key)) continue
+        count += 1
+        if (bytes + 2 + count * 4 + (count - 1) > maxBytes) return { ok: false, reason: 'over-budget' }
+      }
+      // The loop's final iteration already proved the whole object's lower
+      // bound fits, so no separate post-count check is needed here.
       bytes += 2 + (count > 1 ? count - 1 : 0)
-      // Same pre-enqueue bound: each entry contributes its quoted key (>= 2
-      // bytes), the colon, and a >= 1-byte value.
-      if (bytes + count * 4 > maxBytes) return { ok: false, reason: 'over-budget' }
       for (const key in record) {
         if (!Object.hasOwn(record, key)) continue
         // The same string lower bound, before escaping the key.
