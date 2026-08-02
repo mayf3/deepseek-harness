@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
-import { readdirSync } from 'node:fs'
+import { existsSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { PassThrough } from 'node:stream'
-import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from 'cordis'
 
@@ -74,14 +74,18 @@ describe('PythonCodeRuntime — boot-write failure', () => {
     // misuse) and stranded the staging directory materializePyScripts had just
     // written, which only settle() removes. The fix catches it, unlinks the
     // directory, and resolves the same `worker-exit` class as an async ENOENT.
-    // Snapshot as a SET, then assert no dir NEW relative to it survives. Strict
-    // array equality would flake: vitest's forks pool runs runtime.spec.ts in a
-    // sibling worker that concurrently creates and removes
-    // `dsh-code-runtime-python-*` dirs, so a concurrent create OR delete in the
-    // window would fail `toEqual`. The set difference is immune to both — it
-    // only asserts THIS run left nothing behind.
-    const before = new Set(readdirSync(tmpdir()).filter(name => name.startsWith('dsh-code-runtime-python-')))
-    spawnMock.mockImplementation(() => { throw Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' }) })
+    //
+    // Capture THIS run's exact staging dir from the argv the mocked spawn
+    // received (`['-I', <dir>/bootstrap.py]`) and assert only that path is gone.
+    // A tmpdir scan — even a set difference against a pre-run snapshot — would
+    // flake under vitest's forks pool: a sibling worker creating its own
+    // `dsh-code-runtime-python-*` dir in the window reads as a leak here. Keying
+    // off our own argv is fully isolated from concurrent staging.
+    let stagedBootstrap: string | undefined
+    spawnMock.mockImplementation((_bin: string, args: string[]) => {
+      stagedBootstrap = args[args.length - 1]
+      throw Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' })
+    })
     const ctx = new Context()
     const fiber = await ctx.plugin(PythonCodeRuntime)
     const runtime = ctx.codeRuntime as InstanceType<typeof PythonCodeRuntime>
@@ -90,8 +94,8 @@ describe('PythonCodeRuntime — boot-write failure', () => {
 
     expect(result.error?.kind).toBe('worker-exit')
     expect(result.error?.message).toContain('python spawn error')
-    const leaked = readdirSync(tmpdir()).filter(name => name.startsWith('dsh-code-runtime-python-') && !before.has(name))
-    expect(leaked).toEqual([])
+    expect(stagedBootstrap).toBeDefined()
+    expect(existsSync(dirname(stagedBootstrap as string))).toBe(false)
     await fiber.dispose()
   })
 })

@@ -313,13 +313,32 @@ const TRUNCATION_MARKER = '… [truncated]'
 const TRUNCATION_MARKER_BYTES = Buffer.byteLength(TRUNCATION_MARKER, 'utf8')
 
 /**
+ * Serialized JSON byte width of one character, given its code point and the
+ * one-character string. Control characters below 0x20 escape to `\uXXXX` (6)
+ * except the five with short forms `\b \t \n \f \r` (2); `"` and `\` escape to
+ * 2; a LONE surrogate escapes to `\uXXXX` (6) under ES2019 well-formed
+ * `JSON.stringify`; everything else rides at its raw UTF-8 width.
+ * @param code - the character's code point.
+ * @param character - the one-character (or one-code-point) string.
+ * @returns the character's serialized JSON byte width.
+ */
+function serializedCharCost(code: number, character: string): number {
+  if (code < 0x20) return code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d ? 2 : 6
+  if (code === 0x22 || code === 0x5c) return 2
+  if (code >= 0xd800 && code <= 0xdfff) return 6
+  return Buffer.byteLength(character, 'utf8')
+}
+
+/**
  * Serialized JSON-string cost of `text` (the two quotes plus each character's
  * escaped byte width), measured WITHOUT materializing the escaped copy, and
  * abandoned the instant it exceeds `maxBytes`. `JSON.stringify(text)` would
  * allocate the whole escaped form first — up to sixfold a control-char-dense
  * string — so a near-budget line under a large `maxLogBytes` could momentarily
  * allocate over a gigabyte just to measure it. This walks code point by code
- * point and stops at the cap, so the measurement allocates nothing.
+ * point (a matched surrogate pair yields its combined code point ≥ 0x10000; a
+ * lone surrogate yields a value in 0xD800–0xDFFF that {@link serializedCharCost}
+ * charges the full six escaped bytes) and stops at the cap, allocating nothing.
  * @param text - the candidate string.
  * @param maxBytes - the largest serialized size the caller can admit.
  * @returns the exact serialized byte cost, or `undefined` once it exceeds `maxBytes`.
@@ -327,20 +346,36 @@ const TRUNCATION_MARKER_BYTES = Buffer.byteLength(TRUNCATION_MARKER, 'utf8')
 function jsonStringCostUpTo(text: string, maxBytes: number): number | undefined {
   let bytes = 2 // the enclosing quotes
   for (const character of text) {
-    const code = character.codePointAt(0) as number
-    // Control characters below 0x20 escape to `\uXXXX` (6) except the five with
-    // short forms `\b \t \n \f \r` (2); `"` and `\` escape to 2; everything else
-    // rides at its raw UTF-8 width.
-    if (code < 0x20) {
-      bytes += code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d ? 2 : 6
-    } else if (code === 0x22 || code === 0x5c) {
-      bytes += 2
-    } else {
-      bytes += Buffer.byteLength(character, 'utf8')
-    }
+    bytes += serializedCharCost(character.codePointAt(0) as number, character)
     if (bytes > maxBytes) return undefined
   }
   return bytes
+}
+
+/**
+ * Serialized-cost lower bound of raw UTF-8 `buf`, charged per byte without
+ * decoding: a control byte below 0x20 costs 6 (`\uXXXX`) or 2 (the five
+ * short-form escapes), `"`/`\` cost 2, and every other byte — including each
+ * byte of a multibyte sequence — costs at least 1. It is exact for valid UTF-8
+ * (a W-byte character serializes to W bytes) and a lower bound for invalid bytes
+ * (each decodes to U+FFFD at 3 bytes but is charged 1); since each byte costs at
+ * least its raw 1, the total is always ≥ the raw byte count, so a threshold on
+ * this cost flushes no later than a raw-byte threshold and strictly earlier for
+ * control-dense output. Used to bound the stray-capture residual by what the
+ * ledger can actually admit rather than by raw length, so a NUL flood under a
+ * large `maxLogBytes` flushes at roughly a sixth of the raw bytes instead of
+ * accumulating the full budget's worth before `admit` truncates it.
+ * @param buf - raw bytes from a stdout/stderr pipe chunk.
+ * @returns the summed per-byte serialized cost.
+ */
+function serializedBufferCost(buf: Buffer): number {
+  let cost = 0
+  for (const byte of buf) {
+    if (byte < 0x20) cost += byte === 0x08 || byte === 0x09 || byte === 0x0a || byte === 0x0c || byte === 0x0d ? 2 : 6
+    else if (byte === 0x22 || byte === 0x5c) cost += 2
+    else cost += 1
+  }
+  return cost
 }
 
 /**
@@ -547,8 +582,9 @@ export class PythonCodeRuntime extends CodeRuntime {
     // arrives as an over-ceiling frame and fails the run as `worker-exit`
     // instead of the `output-limit` the cap describes — a silent inversion, so
     // it fails at load. Both budgets are metered in SERIALIZED (JSON-escaped)
-    // bytes — the host log ledger charges `Buffer.byteLength(JSON.stringify(text))`,
-    // `checkDoneValue` measures the escaped form, and the producing-side
+    // bytes — the host log ledger charges the serialized cost via
+    // `jsonStringCostUpTo`, which walks to the cap without allocating the escaped
+    // copy, `checkDoneValue` measures the escaped form, and the producing-side
     // `_cap_message` in the child also caps by serialized cost (which is why a
     // capped diagnostic still fits its frame) — so a payload admitted under the
     // cap occupies at most `cap + envelope` bytes on the wire; escaping is
@@ -784,27 +820,46 @@ export class PythonCodeRuntime extends CodeRuntime {
       // child's own `log` frames are already line-granular; stray capture
       // matches them by splitting on `\n`.
       //
-      // Buffered as raw `Buffer` chunks with a running byte counter, exactly
-      // like the fd-3 reader below and for the same reasons: a string `+=`
-      // accumulator re-copies the whole residual on every pipe chunk (quadratic
-      // on a large newline-free write), and scanning it from index 0 each chunk
-      // is a second quadratic. Appending a chunk is O(1); the split happens only
-      // when a `\n` actually arrived. A newline never appears inside a UTF-8
-      // multibyte sequence (continuation bytes are 0x80–0xBF), so splitting on
-      // the raw 0x0a byte and decoding each complete line is safe without a
-      // streaming decoder — a line's bytes are whole by construction.
-      interface StrayBuffer { chunks: Buffer[]; bytes: number }
-      const strayOut: StrayBuffer = { chunks: [], bytes: 0 }
-      const strayErr: StrayBuffer = { chunks: [], bytes: 0 }
+      // Buffered as raw `Buffer` chunks with a running SERIALIZED-cost counter,
+      // exactly like the fd-3 reader below and for the same reasons: a string
+      // `+=` accumulator re-copies the whole residual on every pipe chunk
+      // (quadratic on a large newline-free write), and scanning it from index 0
+      // each chunk is a second quadratic. Appending a chunk is O(1); the split
+      // happens only when a `\n` actually arrived. A newline never appears inside
+      // a UTF-8 multibyte sequence (continuation bytes are 0x80–0xBF), so
+      // splitting on the raw 0x0a byte and decoding each complete line is safe
+      // without a streaming decoder — a line's bytes are whole by construction.
+      //
+      // `chunks` also seals into `blocks` past MAX_PENDING_CHUNKS, mirroring the
+      // fd-3 reader: without it a program pacing one-byte newline-free
+      // `os.write`s accumulates one Buffer object per write, and the object plus
+      // backing-store overhead — which no byte or cost count sees — exhausts the
+      // host heap far below the budget. Sealing bounds the live object count.
+      interface StrayBuffer { chunks: Buffer[]; blocks: Buffer[]; cost: number }
+      const strayOut: StrayBuffer = { chunks: [], blocks: [], cost: 0 }
+      const strayErr: StrayBuffer = { chunks: [], blocks: [], cost: 0 }
       const captureStray = (stray: StrayBuffer, chunk: Buffer): void => {
         // Once the ledger has truncated, stop buffering: admit() is a no-op past
         // that point, so continuing to accumulate would retain host memory for
         // output that can never be admitted.
         if (logsTruncated) return
         stray.chunks.push(chunk)
-        stray.bytes += chunk.length
+        // Track SERIALIZED cost, not raw bytes: a control-char-dense residual
+        // (a NUL flood) serializes several-fold, so a raw-byte threshold would
+        // let it grow to the full budget's worth of RAW bytes — up to ~6x what
+        // the ledger can admit — before flushing. The per-byte cost is a lower
+        // bound on the admitted line's exact cost, so flushing when it crosses
+        // the budget bounds the residual by what `admit` can actually keep.
+        stray.cost += serializedBufferCost(chunk)
+        // Bound the live fragment count (see the seal rationale above), before
+        // any concat so an over-count payload is never copied whole first.
+        if (stray.chunks.length >= MAX_PENDING_CHUNKS) {
+          stray.blocks.push(Buffer.concat(stray.chunks))
+          stray.chunks = []
+        }
         if (chunk.includes(0x0a)) {
-          let buffered = Buffer.concat(stray.chunks)
+          let buffered = Buffer.concat(stray.blocks.length > 0 ? [...stray.blocks, ...stray.chunks] : stray.chunks)
+          stray.blocks = []
           let newline: number
           while ((newline = buffered.indexOf(0x0a)) >= 0) {
             admit(buffered.subarray(0, newline).toString('utf8'))
@@ -813,17 +868,16 @@ export class PythonCodeRuntime extends CodeRuntime {
           // Carry the residual as a fresh right-sized copy, not the subarray view
           // (which would pin the whole concat allocation). See detachResidual.
           stray.chunks = detachResidual(buffered)
-          stray.bytes = buffered.length
+          stray.cost = serializedBufferCost(buffered)
         }
         // Newline-free residual is bounded by the ledger, not left to grow with
         // the stream: an `os.write(1, b"A"*N)` flood carrying no newline would
         // otherwise accumulate N bytes in host memory before `end`. When the
-        // pending residual would cross the budget, admit it now — admit() charges
-        // its serialized cost, truncates, and marks the ledger, and the
-        // truncation short-circuit above stops buffering on the next chunk. The
-        // raw byte count is a safe lower bound on the serialized cost, so this
-        // fires no later than the budget is genuinely at risk.
-        if (stray.bytes + 3 > logBudget) {
+        // pending residual's serialized cost would cross the budget, flush it now
+        // — admit() charges the exact serialized cost, truncates, and marks the
+        // ledger, and the truncation short-circuit above stops buffering on the
+        // next chunk. `+ 3` covers the two quotes and one separator admit adds.
+        if (stray.cost + 3 > logBudget) {
           flushStray(stray)
         }
       }
@@ -831,14 +885,15 @@ export class PythonCodeRuntime extends CodeRuntime {
       // above, on the pipe's `end` (normal drain), and — for the setsid-escapee
       // path where destroy() forces settlement without an `end` — explicitly in
       // the closeDeadline handler. Idempotent: it clears what it admits, so a
-      // later flush is a no-op. The `chunks.length` guard is the only emptiness
+      // later flush is a no-op. The `chunks`/`blocks` guard is the only emptiness
       // check needed — `data` never emits a zero-length Buffer, so a non-empty
-      // chunk list always decodes to a non-empty tail.
+      // fragment list always decodes to a non-empty tail.
       function flushStray(stray: StrayBuffer): void {
-        if (stray.chunks.length === 0) return
-        const tail = Buffer.concat(stray.chunks).toString('utf8')
+        if (stray.chunks.length === 0 && stray.blocks.length === 0) return
+        const tail = Buffer.concat([...stray.blocks, ...stray.chunks]).toString('utf8')
         stray.chunks = []
-        stray.bytes = 0
+        stray.blocks = []
+        stray.cost = 0
         admit(tail)
       }
       child.stdout.on('data', (chunk: Buffer) => { captureStray(strayOut, chunk) })

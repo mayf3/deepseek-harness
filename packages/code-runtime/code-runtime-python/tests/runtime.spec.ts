@@ -747,6 +747,33 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs.at(-1)).toBe(logTruncationMarker(4096))
   })
 
+  it('charges a lone surrogate its full six escaped bytes, not three', async () => {
+    // A forged `log` frame carrying `\ud800` escapes materializes lone
+    // surrogates after JSON.parse. `Buffer.byteLength` of U+FFFD is 3, but
+    // ES2019 well-formed `JSON.stringify` emits `\ud800` at 6 bytes, so charging
+    // the raw width would admit ~2x the configured budget of serialized bytes
+    // (the same family as the NUL-flood undercount, at 2x rather than 6x). The
+    // cost walker charges surrogates the full 6, so a flood truncates at budget.
+    // Forged on fd 3 because Python stdout will not emit lone surrogates.
+    const { runtime } = await setup({ maxLogBytes: 4096 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        // 1000 \ud800 escapes: charged at the buggy raw width 1000 * 3 = 3000
+        // bytes fits under 4096 (wrongly admitted), but the correct serialized
+        // width 1000 * 6 = 6000 bytes is over budget — so the ledger must
+        // truncate. The count sits in the 683..1365 window where the two
+        // chargings disagree, making the test discriminate.
+        String.raw`frame = b'{"type":"log","text":"' + b'\\ud800' * 1000 + b'"}\n'`,
+        'os.write(3, frame)',
+        'return None',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs.at(-1)).toBe(logTruncationMarker(4096))
+  })
+
   it('charges the exact serialized cost of short-escape and quote/backslash characters', async () => {
     // Exercises every branch of jsonStringCostUpTo's per-character cost: a tab
     // and other C0 controls with short JSON forms (\t etc., 2 bytes), a quote
@@ -3072,6 +3099,51 @@ describe('PythonCodeRuntime — hostile peer', () => {
     // smaller than the asymptotic one, and the threshold has to sit where a real
     // measurement lands rather than where the asymptote suggests.
     expect(copied).toBeLessThan(256 * 1024)
+  }, 40_000)
+
+  it('seals trickled stray fragments into blocks without recopying the sealed prefix', async () => {
+    // The stray-capture buffer has the same object-overhead exposure as the fd-3
+    // reader above: each newline-free `data` chunk is its own Buffer, so a
+    // program pacing single-byte `os.write(1, ...)` accumulates one object per
+    // write, which the serialized-cost counter cannot see. Past MAX_PENDING_CHUNKS
+    // the fragments seal into a finished block; re-merging the whole residual at
+    // each threshold instead would copy the sealed prefix again and again, making
+    // the cumulative copy volume quadratic. `Buffer.concat` is wrapped to measure
+    // that volume — both shapes admit the same final log entry, so the copy total
+    // is the discriminator. maxLogBytes is raised so the trickle is retained,
+    // not truncated, which is what forces the fragments to accumulate and seal.
+    const realConcat = Buffer.concat.bind(Buffer)
+    let copied = 0
+    Buffer.concat = (list: readonly Uint8Array[], total?: number): Buffer<ArrayBuffer> => {
+      for (const part of list) copied += part.length
+      return realConcat(list, total)
+    }
+    let result: CodeRunResult
+    try {
+      const { runtime } = await setup({ maxLogBytes: 200_000, maxWallMs: 30_000 })
+      result = await runtime.run({
+        program: [
+          'import os',
+          'for _ in range(60000):',
+          '    os.write(1, b"x")',
+          '    os.sched_yield()',
+          'os.write(1, b"\\n")',
+          'return "done"',
+        ].join('\n'),
+        bindings: [],
+      })
+    } finally {
+      Buffer.concat = realConcat
+    }
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    // The trickle coalesces into one log line (no interior newlines). Its exact
+    // length depends on pipe coalescing, but it is one entry and non-empty.
+    expect(result.logs.length).toBe(1)
+    expect((result.logs[0] as string).length).toBeGreaterThan(0)
+    // Sealing keeps each byte copied a bounded number of times; re-merging the
+    // whole residual per threshold would push the total far past this.
+    expect(copied).toBeLessThan(2 * 1024 * 1024)
   }, 40_000)
 
   it('caps a huge exception diagnostic child-side before it crosses the wire', async () => {
