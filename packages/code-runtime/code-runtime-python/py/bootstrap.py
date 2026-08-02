@@ -345,9 +345,12 @@ class ProtocolChannel:
 
     Writes are unbuffered and go straight to the fd, so ``send_sync`` is safe
     from inside model code (which may run outside an asyncio task) and from
-    background tasks alike. The single writer is serialized by CPython's GIL
-    plus one os.write per frame (POSIX guarantees atomicity for writes below
-    ``PIPE_BUF``, and our frames are short JSON lines).
+    background tasks alike. Concurrent writers are serialized by ``_write_lock``
+    around a full-write loop (see ``send_sync``): ``os.write`` releases the GIL,
+    a frame may exceed ``PIPE_BUF`` (logs up to ``maxLogBytes``, completions up
+    to ``maxValueBytes``, uncapped ``call`` args), and one ``os.write`` may
+    consume only part of a frame — so neither the GIL nor per-frame atomicity is
+    relied on for framing.
     """
 
     def __init__(self, fd: int) -> None:
