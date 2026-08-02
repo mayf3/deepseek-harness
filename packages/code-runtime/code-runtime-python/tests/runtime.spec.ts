@@ -711,6 +711,24 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs).toEqual(['one', 'two', 'three'])
   })
 
+  it('bounds a newline-free native flood by the ledger instead of buffering it whole', async () => {
+    // A newline-free write far larger than maxLogBytes must not accumulate in
+    // the host-side residual: when the pending residual would cross the budget
+    // it is admitted (and truncated) immediately, and once the ledger has
+    // truncated, later chunks stop buffering entirely. The run still completes
+    // and the captured output ends at the truncation marker rather than
+    // retaining the whole flood.
+    const { runtime } = await setup({ maxLogBytes: 4096 })
+    const result = await runtime.run({
+      program: ['import os', 'os.write(1, b"A" * 2_000_000)', 'return None'].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs.at(-1)).toBe(logTruncationMarker(4096))
+    // The retained output is bounded by the budget, not the 2 MB flood.
+    expect(result.logs.join('').length).toBeLessThan(4096)
+  })
+
   it('fails a completion dict with a non-string key as invalid-output (no key coercion)', async () => {
     // json.dumps would coerce {1: "a", "1": "b"} to a single "1" key, silently
     // dropping data. The shape validator rejects it before encoding.
