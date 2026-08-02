@@ -167,21 +167,38 @@ class _LogStream(io.TextIOBase):
         # ``print("x", end="")`` must not concatenate quadratically.
         self._pending: list[str] = []
         self._pending_chars = 0
-        # Running serialized JSON cost of the pending tail, kept beside the
-        # character count because the early-flush trigger charges against
-        # ``remaining`` (a serialized-byte budget) and a control byte serializes
-        # to up to six bytes.
+        # Running serialized JSON cost of the pending tail, maintained beside the
+        # character count so the early-flush trigger charges against ``remaining``
+        # (a serialized-byte budget) rather than undercharging control-char text.
+        # Accumulated per fragment through ``_fragment_cost_upto`` so no write
+        # re-scans the whole buffer.
         self._pending_cost = 0
 
     def writable(self) -> bool:  # noqa: D401 -- inherited contract
         return True
 
     @staticmethod
-    def _fragment_cost(chunk: str) -> int:
-        # Serialized JSON cost of one pending fragment WITHOUT the enclosing
-        # quotes, so the running total mirrors what LogBuffer charges at
-        # settlement. Mirrors :func:`_json_string_cost` minus its two quotes.
-        return sum(_JSON_BYTE_COST[b] for b in chunk.encode("utf-8", errors="replace"))
+    def _fragment_cost_upto(chunk: str, limit: int) -> int:
+        # Serialized JSON cost of one fragment's characters (no enclosing quotes),
+        # scanning the str directly and STOPPING once the running total passes
+        # ``limit`` so the walk is bounded by a budget's worth of characters
+        # however large the write is. A control character serializes to up to six
+        # bytes, so a plain character count undercharges a control-char flood by
+        # up to 6x: 30M NUL characters stay under a 50 MB character budget yet
+        # serialize to ~180 MB, which the settlement flush would then allocate at
+        # once and breach RLIMIT_AS. Measuring the true serialized cost fixes that,
+        # but ``.encode`` to measure it would itself be the copy the
+        # ``_push_bounded_prefix`` path exists to avoid (a single 340 MiB write
+        # under a tight addressSpaceMb dies on that encode), and re-scanning the
+        # whole pending list per write would be quadratic under a daemon-thread
+        # flood — so the caller accumulates this per-fragment result once and the
+        # ``limit`` cap keeps each scan bounded.
+        cost = 0
+        for char in chunk:
+            cost += _json_char_cost(ord(char))
+            if cost > limit:
+                return cost
+        return cost
 
     def write(self, text: str) -> int:  # noqa: D401 -- inherited contract
         # Serialize the whole read-modify-write against the settlement flush and
@@ -264,7 +281,7 @@ class _LogStream(io.TextIOBase):
                     tail = text[pos:]
                     self._pending.append(tail)
                     self._pending_chars = len(tail)
-                    self._pending_cost = self._fragment_cost(tail)
+                    self._pending_cost = self._fragment_cost_upto(tail, self._logs.remaining)
                 else:
                     # The ledger ran out with text still unscanned, so that text
                     # IS being dropped and the run must say so. One push is
@@ -284,17 +301,20 @@ class _LogStream(io.TextIOBase):
         else:
             self._pending.append(text)
             self._pending_chars += len(text)
-            self._pending_cost += self._fragment_cost(text)
+            # Add this fragment's serialized cost, capped so a single oversized
+            # write's scan stops at the budget rather than walking all of it.
+            self._pending_cost += self._fragment_cost_upto(text, self._logs.remaining)
         # A newline-free flood must hit the budget while running, not at
-        # settlement: once the buffered tail alone can no longer fit the
-        # ledger, push it through — LogBuffer truncates, emits the marker once,
-        # and swallows everything after. Trigger on the SERIALIZED cost, not the
-        # character count: a control byte serializes to up to six bytes, so the
-        # char-count version undercharged control-char floods by up to 6x and a
-        # newline-free flood of ~30M NUL characters (each 1 char but 6 serialized
-        # bytes) stayed under a char-count trigger yet encoded to ~180 MB at
-        # settlement, breaching RLIMIT_AS. Serialized cost >= char count, so this
-        # fires no later than before and strictly earlier for control-dense text.
+        # settlement. `_pending_cost` weighs the buffered tail by its SERIALIZED
+        # cost: a control byte serializes to up to six bytes, so a character count
+        # undercharged control-char floods by up to 6x and a newline-free flood of
+        # ~30M NUL characters (each 1 char but 6 serialized bytes) stayed under a
+        # character-count trigger yet encoded to ~180 MB at settlement, breaching
+        # RLIMIT_AS. The per-fragment scan never encodes the whole buffer (a single
+        # oversized write must not be copied here, per the `_push_bounded_prefix`
+        # contract) nor re-scans the pending list per write (which would be
+        # quadratic under a daemon-thread flood), yet fires no later than a
+        # character count and strictly earlier for control-dense text.
         if self._pending_cost > self._logs.remaining:
             self._push_bounded_prefix()
         return len(text)
@@ -1203,6 +1223,34 @@ _JSON_ESCAPE_SURCHARGES = [
 _JSON_BYTE_COST = [1] * 256
 for _escaped_byte, _surcharge in _JSON_ESCAPE_SURCHARGES:
     _JSON_BYTE_COST[_escaped_byte[0]] = 1 + _surcharge
+
+
+def _json_char_cost(code: int) -> int:
+    """Serialized JSON cost of one character, from its code point, without encoding.
+
+    Used by X a buffered write's true
+    serialized cost while scanning the str directly, so the early-flush trigger
+    charges a control character its full escaped width (a NUL is six bytes as
+    ``\\u0000``) rather than the single character a length count sees. A C0
+    control escapes to two bytes for the five shorthand forms or six for the
+    rest; ``"`` and ``\\`` escape to two; every other character stays at its raw
+    UTF-8 width (1/2/3 for the basic plane, 4 for an astral code point), which is
+    what the encoded form would hold. A lone surrogate is unreachable here — a
+    Python ``str`` character iterates as one code point and the caller's text has
+    already replaced any un-encodable surrogate.
+    """
+
+    if code < 0x20:
+        return 2 if code in (0x08, 0x09, 0x0a, 0x0c, 0x0d) else 6
+    if code == 0x22 or code == 0x5c:
+        return 2
+    if code < 0x80:
+        return 1
+    if code < 0x800:
+        return 2
+    if code < 0x10000:
+        return 3
+    return 4
 
 
 def _json_string_cost(raw: bytes) -> int:
