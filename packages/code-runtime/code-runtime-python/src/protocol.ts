@@ -16,7 +16,7 @@
  * the program-visible name the namespace is materialized under; `errorClass`,
  * when present, asks the bootstrap to mint a program-visible exception class.
  */
-export interface Namespace {
+interface Namespace {
   global: string
   names: string[]
   errorClass?: ErrorClass
@@ -26,7 +26,7 @@ export interface Namespace {
  * A namespace's program-visible exception class: rejected calls raise its
  * instances carrying the failed member name on `memberNameProperty`.
  */
-export interface ErrorClass {
+interface ErrorClass {
   name: string
   memberNameProperty: string
 }
@@ -55,7 +55,7 @@ export interface BootMessage {
 }
 
 /** Host → Python: sent after `boot-ack`; carries only the model's program body. */
-export interface RunMessage {
+interface RunMessage {
   type: 'run'
   program: string
 }
@@ -99,7 +99,7 @@ interface LogMessage {
 }
 
 /** The failure carried on a {@link DoneMessage}: one of three kinds plus text. */
-export interface DoneErrorField {
+interface DoneErrorField {
   kind: 'exception' | 'invalid-output' | 'output-limit'
   message: string
 }
@@ -129,7 +129,7 @@ interface DoneMessage {
 export type ChildToHost = BootAckMessage | CallMessage | LogMessage | DoneMessage
 
 /** Host → Python: successful answer to one {@link CallMessage}. */
-export interface ReplyOk {
+interface ReplyOk {
   type: 'reply'
   id: number
   ok: true
@@ -137,7 +137,7 @@ export interface ReplyOk {
 }
 
 /** Host → Python: failed answer to one {@link CallMessage}. */
-export interface ReplyErr {
+interface ReplyErr {
   type: 'reply'
   id: number
   ok: false
@@ -153,58 +153,70 @@ type RequiredKeys<T> = { [K in keyof T]-?: object extends Pick<T, K> ? never : K
 type OptionalKeys<T> = { [K in keyof T]-?: object extends Pick<T, K> ? K : never }[keyof T] & string
 
 /**
- * Shape of one {@link WIRE_FRAME_FIELDS} entry, derived from frame interface
- * `T`. Every element of `required` must be one of `T`'s required keys and every
- * element of `optional` one of `T`'s optional keys — so a renamed field, or an
- * optionality flip (`truncated?` → `truncated`, which moves the name between the
- * two arrays' element types), fails typecheck. Completeness in the other
- * direction (every declared key actually appears, and no frame exists on only
- * one side of the wire) is enforced at runtime by the mirror test, which
- * compares these arrays to the Python `TypedDict`'s
- * `__required_keys__`/`__optional_keys__` by exact set equality over the full
- * frame roster.
+ * Whether each key of frame `T` is a `'required'` or `'optional'` wire field.
+ * Because it is `Record<keyof T, …>`, an entry MUST list every key — a field
+ * added to the interface without a corresponding entry fails typecheck — and
+ * `keyof T`-typed keys reject a name no frame declares. The `'required'` /
+ * `'optional'` tag must match the field's actual optionality (checked by
+ * {@link WIRE_FRAME_FIELDS}'s per-entry assertions), so an optionality flip is
+ * caught too. This is the exhaustive counterpart the array form could not
+ * express (a subset array satisfied it silently).
  */
-type FrameFields<T> = {
-  required: readonly RequiredKeys<T>[]
-  optional: readonly OptionalKeys<T>[]
+type FrameFieldRoles<T> = Record<RequiredKeys<T>, 'required'> & Record<OptionalKeys<T>, 'optional'>
+
+/**
+ * Each frame's wire fields tagged by required/optional, keyed by field name so
+ * the mapping is exhaustive over the frame interface (see
+ * {@link FrameFieldRoles}). Bound to the interfaces by `satisfies` below, this
+ * is the single source of truth the cross-language mirror test derives its
+ * expectations from; {@link WIRE_FRAME_FIELDS} projects it to sorted
+ * required/optional arrays for the comparison. `global` is the JSON key
+ * {@link CallMessage} and {@link Namespace} send (a reserved word the Python
+ * side carries via a functional `TypedDict`).
+ */
+const WIRE_FRAME_FIELD_ROLES = {
+  BootMessage: { type: 'required', cpuSeconds: 'required', addressSpaceBytes: 'required', maxLogBytes: 'required', maxValueBytes: 'required', namespaces: 'required' },
+  Namespace: { global: 'required', names: 'required', errorClass: 'optional' },
+  RunMessage: { type: 'required', program: 'required' },
+  BootAckMessage: { type: 'required' },
+  CallMessage: { type: 'required', id: 'required', global: 'required', name: 'required', args: 'required' },
+  LogMessage: { type: 'required', text: 'required', truncated: 'optional' },
+  DoneErrorField: { kind: 'required', message: 'required' },
+  DoneMessage: { type: 'required', value: 'optional', error: 'optional' },
+  ErrorClass: { name: 'required', memberNameProperty: 'required' },
+  ReplyOk: { type: 'required', id: 'required', ok: 'required', value: 'required' },
+  ReplyErr: { type: 'required', id: 'required', ok: 'required', message: 'required' },
+} as const satisfies {
+  BootMessage: FrameFieldRoles<BootMessage>
+  Namespace: FrameFieldRoles<Namespace>
+  RunMessage: FrameFieldRoles<RunMessage>
+  BootAckMessage: FrameFieldRoles<BootAckMessage>
+  CallMessage: FrameFieldRoles<CallMessage>
+  LogMessage: FrameFieldRoles<LogMessage>
+  DoneErrorField: FrameFieldRoles<DoneErrorField>
+  DoneMessage: FrameFieldRoles<DoneMessage>
+  ErrorClass: FrameFieldRoles<ErrorClass>
+  ReplyOk: FrameFieldRoles<ReplyOk>
+  ReplyErr: FrameFieldRoles<ReplyErr>
 }
 
 /**
- * The wire field names of each frame, split into required and optional keys, as
- * a RUNTIME value the cross-language mirror test asserts `py/protocol.py`'s
- * `TypedDict`s against. The `satisfies` clause binds each entry to its frame
- * interface via {@link FrameFields}, which derives the required/optional key
- * sets FROM the interface — so a renamed, removed, or optionality-flipped field
- * on the TS side fails typecheck, and the mirror test catches a Python-side
- * divergence at runtime. `global` is the JSON key {@link CallMessage} and
- * {@link Namespace} send (a reserved word the Python side carries via a
- * functional `TypedDict`).
+ * The wire field names of each frame, split into sorted required and optional
+ * key arrays — the shape the cross-language mirror test compares against
+ * `py/protocol.py`'s `TypedDict` `__required_keys__`/`__optional_keys__`.
+ * Projected from {@link WIRE_FRAME_FIELD_ROLES}, so it inherits that mapping's
+ * exhaustive, optionality-checked binding to the frame interfaces: a TS-side
+ * field add, remove, rename, or optionality flip fails typecheck at the roles
+ * map, and a Python-side divergence fails the mirror test at runtime.
  */
-export const WIRE_FRAME_FIELDS = {
-  BootMessage: { required: ['addressSpaceBytes', 'cpuSeconds', 'maxLogBytes', 'maxValueBytes', 'namespaces', 'type'], optional: [] },
-  Namespace: { required: ['global', 'names'], optional: ['errorClass'] },
-  RunMessage: { required: ['program', 'type'], optional: [] },
-  BootAckMessage: { required: ['type'], optional: [] },
-  CallMessage: { required: ['args', 'global', 'id', 'name', 'type'], optional: [] },
-  LogMessage: { required: ['text', 'type'], optional: ['truncated'] },
-  DoneErrorField: { required: ['kind', 'message'], optional: [] },
-  DoneMessage: { required: ['type'], optional: ['error', 'value'] },
-  ErrorClass: { required: ['memberNameProperty', 'name'], optional: [] },
-  ReplyOk: { required: ['id', 'ok', 'type', 'value'], optional: [] },
-  ReplyErr: { required: ['id', 'message', 'ok', 'type'], optional: [] },
-} satisfies {
-  BootMessage: FrameFields<BootMessage>
-  Namespace: FrameFields<Namespace>
-  RunMessage: FrameFields<RunMessage>
-  BootAckMessage: FrameFields<BootAckMessage>
-  CallMessage: FrameFields<CallMessage>
-  LogMessage: FrameFields<LogMessage>
-  DoneErrorField: FrameFields<DoneErrorField>
-  DoneMessage: FrameFields<DoneMessage>
-  ErrorClass: FrameFields<ErrorClass>
-  ReplyOk: FrameFields<ReplyOk>
-  ReplyErr: FrameFields<ReplyErr>
-}
+export const WIRE_FRAME_FIELDS: Record<keyof typeof WIRE_FRAME_FIELD_ROLES, { required: string[]; optional: string[] }> =
+  Object.fromEntries(
+    Object.entries(WIRE_FRAME_FIELD_ROLES).map(([frame, roles]) => {
+      const required = Object.keys(roles).filter(key => (roles as Record<string, string>)[key] === 'required').sort()
+      const optional = Object.keys(roles).filter(key => (roles as Record<string, string>)[key] === 'optional').sort()
+      return [frame, { required, optional }]
+    }),
+  ) as Record<keyof typeof WIRE_FRAME_FIELD_ROLES, { required: string[]; optional: string[] }>
 
 
 /**
