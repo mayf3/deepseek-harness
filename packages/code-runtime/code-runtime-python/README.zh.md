@@ -17,13 +17,13 @@ host 与 CPython 子进程在子进程的 fd 3 上交换一个无版本号的 JS
 
 ## Model Experience
 
-Indirectly, through Code Mode in [`dsh-tools`](../../core/tools/README.md), which renders this backend's exact completion value when it fits (or an explicit `invalid-output` / `output-limit` failure), plus the exact `[dsh-code-runtime-python] log capture truncated at <maxLogBytes> bytes` log marker, into a retained `run_code` result.
+经由 [`dsh-tools`](../../core/tools/README.md) 里的 Code Mode 间接生效：Code Mode 把本后端的精确完成值（放得下时）或一个明确的 `invalid-output` / `output-limit` 失败，连同精确的 `[dsh-code-runtime-python] log capture truncated at <maxLogBytes> bytes` 日志标记，渲染进一个保留的 `run_code` 结果。
 
 #### KV Cache effect
 
-No direct invalidation; the named consumer owns any request-prefix changes.
+无直接失效；具名消费者拥有任何请求前缀的变更。
 
 ## Known Limitations and Deferred Work
 
-- **跨语言 guard 只覆盖两个运行时执行的面** —— `PROTOCOL_FD` 与日志截断标记。`py/protocol.py` 中的 `TypedDict` 帧形状靠 review 而非自动化检查来镜像 `src/protocol.ts`:跨 TypeScript 与 Python 比较类型声明在此无机械等价物,故未来的形状漂移由 review 加后端真子进程套件捕获,而非本包的测试。
-- **`PythonCodeRuntime` 实现与 Python 侧 JSON codec 不在本层** —— 它们在基于本分支的 backend-core PR 中交付;在那之前 `src/index.ts` 只 re-export 协议词汇。
+- **跨语言 guard 只覆盖两个运行时执行的面** —— `PROTOCOL_FD` 与日志截断标记。`py/protocol.py` 中的 `TypedDict` 帧形状靠 review 而非自动化检查来镜像 `src/protocol.ts`：跨 TypeScript 与 Python 比较类型声明在此无机械等价物，故未来的形状漂移由 review 加后端真子进程套件捕获，而非本包的测试。
+- **`PythonCodeRuntime` 实现与 Python 侧 JSON codec 不在本层** —— 它们在基于本分支的 backend-core PR 中交付；在那之前 `src/index.ts` 只 re-export 协议词汇。
