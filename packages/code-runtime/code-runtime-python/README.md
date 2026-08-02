@@ -1,100 +1,32 @@
 ---
-description: "fd-3 wire protocol between a Node host and a CPython subprocess for users and maintainers building or debugging the Python code-execution backend."
-kind: "package-library"
+description: "CPython subprocess implementation of the DeepSeek Harness code-execution seam, with fd-3 bindings, resource limits, log capture, and process-group teardown."
+kind: "package-reference"
 ---
 
 # @deepseek-ai/dsh-code-runtime-python
 
 English | [中文](README.zh.md)
 
-## Summary
+CPython-subprocess implementation of the [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam. Companion to [`@deepseek-ai/dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.md); trades the Node worker thread for a fresh `python3` subprocess so model code is Python instead of TypeScript.
 
-`dsh-code-runtime-python` owns the versionless wire protocol between a Node host and a CPython subprocess for the [`dsh-code-runtime`](../code-runtime/README.md) seam: one JSON object per line on the child's fd 3, leaving stdout/stderr free for the program's own output. The package ships the host-side frame codec and hostile-frame validators (`src/protocol.ts`) plus the Python-side mirror of the same message vocabulary (`py/protocol.py`), so every consumer of the wire shares one vocabulary. It is the protocol layer for the Python backend — the package carries no subprocess execution path, so nothing here spawns `python3` outside the cross-language mirror test. The host treats every inbound frame as hostile, because model code has full access to fd 3 and can post anything through it.
+The package ships `PythonCodeRuntime` as its default export. The plugin registers as `codeRuntime` with `language: 'python'` and `isolation: 'process'`. Each `run()` spawns a fresh `python3 -I` process, sends a boot frame and the program over fd 3, and resolves a `CodeRunResult` for every program outcome — rejecting only for seam misuse (a malformed binding namespace or non-positive config). The child runs the program as the body of an async function, so top-level `await` and `return` both work; binding calls travel back over fd 3 as JSON-lines. Containment (not a security boundary — model code has bash-equivalent trust) comes from an empty environment, `RLIMIT_CPU`/`RLIMIT_AS`, a wall-clock ceiling, and a `SIGTERM`→grace→`SIGKILL` teardown on the child's process group.
 
-## Table of Contents
+## Wire protocol
 
-- [Use this package](#use-this-package)
-- [Understand the implementation](#understand-the-implementation)
-- [Further Exploration](#further-exploration)
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
+The host and the CPython subprocess exchange a versionless, JSON-lines protocol on the child's fd 3 — one JSON object per line, leaving stdout/stderr free for the program's own output. `src/protocol.ts` is the host side; `py/protocol.py` mirrors its message shapes and the shared truncation-marker text on the Python side.
 
------
+- **fd 3, not stdout** — Node pins the channel positionally with `stdio: ['pipe','pipe','pipe','pipe']`; the Python bootstrap reads the same `PROTOCOL_FD` constant. JSON-lines framing.
+- **Host treats every inbound frame as hostile** — model code has full access to fd 3 and can post anything through it, so `validateChildFrame` shape-validates and REBUILDS each frame before the host reads it: forged extra fields never ride along, a non-number call id can never be echoed into a reply, and junk drops to `undefined` rather than throwing in the host's message handler. The Python side trusts host replies (the host is not model-controlled).
+- **Lossless-JSON crossing** — completion values and binding arguments cross as exact JSON. `encodeJsonPlain` serializes a `JSON.parse`-produced value without recursion, so a deep value below the byte budget crosses intact instead of dying on `JSON.stringify`'s stack limit; `checkDoneValue` meters a forged completion value's byte length AND number losslessness in one bounded traversal that rejects an over-budget payload before enqueuing its children; `hasUnsafeIntegerToken` reads the raw frame text to catch an integer token that `JSON.parse` would silently round; `hasNonLosslessNumber` rejects a non-finite or negative-zero number in unbounded `call.args`. Beyond-safe-range integral doubles serialize through `BigInt` digits so the exact integer crosses, not the rounded `String()` form.
+- **Shared truncation marker** — `logTruncationMarker(maxBytes)` produces byte-identical text on both sides, so a truncated log run reads the same however the cap was hit. The `log` frame's `truncated` flag distinguishes the child ledger's own marker from program output.
 
-<a id="use-this-package"></a>
-## Use this package
+## Configuration
 
-Choose this package when you build or consume the CPython code-runtime wire: implement the Python backend or the host that drives it, or debug a Python code run's framing. The package is the wire protocol intended for a CPython code-runtime provider — such a provider runs each model program in a fresh `python3 -I` subprocess — and this package supplies the protocol both sides speak, so its exports are the single TS-side source of truth for the wire.
+Every cap is a validated `Config` field with a default, changeable from `cordis.yml` (no hardcoded tunables). `cpuSeconds` (default 60) is the `RLIMIT_CPU` whole-second budget; the child sets the soft limit to `cpuSeconds` and the hard limit to `cpuSeconds + 1`, so the kernel's `SIGXCPU` at the soft limit classifies as a `timeout` while the +1s hard limit is a `SIGKILL` backstop. `maxWallMs` (default 600000) is the wall-clock ceiling that backstops CPU time for a program awaiting a promise nobody resolves. `addressSpaceMb` (default 512) is the `RLIMIT_AS` cap, not applied on Darwin (the dyld shared cache mapped into every process exceeds any practical cap there; `cpuSeconds` and `maxWallMs` still bound the run). `maxLogBytes` (default 65536) is the shared captured-log byte budget; `maxValueBytes` (default 32768) caps the completion value; `graceMs` (default 3000) is the `SIGTERM`→`SIGKILL` grace window; `pythonBin` (default `python3`) is the interpreter, resolved against `PATH` before the child spawns with an empty environment.
 
-### What you get
-
-The package re-exports the host-side protocol vocabulary from `src/index.ts`: `validateChildFrame` (rebuilds every inbound frame before the host reads it), the lossless-JSON codec and meters (`encodeJsonPlain`, `checkDoneValue`, `hasUnsafeIntegerToken`, `hasNonLosslessNumber`), and `logTruncationMarker` (the shared truncation-marker text). The Python side mirrors the message shapes as `TypedDict`s in `py/protocol.py` and re-declares the two surfaces both sides execute against — `PROTOCOL_FD = 3` and the marker text.
-
-### The wire
-
-Frames travel on the child's fd 3 as JSON-lines — one object per line — so stdout/stderr stay clear for the program's own output. Child → host: `boot-ack`, `call`, `log`, `done`. Host → child: `boot` (first frame, carrying every cap and the namespace declarations), `run` (after `boot-ack`, carrying only the program body), and one `reply` per `call`. A forged frame can carry both `value` and `error` on `done`, so a consumer must check `error` first and ignore `value` when it is set.
-
-### What can go wrong
-
-Host-side validation drops junk without throwing, so a malformed or forged frame never crashes the host process: `validateChildFrame` returns `undefined` for anything that does not rebuild cleanly, a non-number call id can never be echoed into a reply, and forged extra fields never ride along. A completion value that is not lossless JSON, or that exceeds the configured byte budget, is rejected explicitly (`non-lossless` / `over-budget`) rather than silently rounded or truncated.
-
------
-
-<a id="understand-the-implementation"></a>
-## Understand the implementation
-
-<details>
-<summary>Implementation internals — click to expand</summary>
-
-This section explains the design behind the wire protocol; observable behavior is fully covered in [Use this package](#use-this-package).
-
-### Design concept
-
-The protocol assumes one direction of trust: the host treats every inbound frame as hostile (model code can forge anything on fd 3) and REBUILDS it field by field before reading; the Python side trusts host replies, because the host is not model-controlled. The package is deliberately the protocol layer only — the Python-side JSON codec lives in the backend's bootstrap, not in `py/protocol.py`, so the mirror stays the pure wire-vocabulary counterpart of `src/protocol.ts`.
-
-### Wire contract
-
-The frames are `boot` / `run` (host → child) and `boot-ack` / `call` / `log` / `done` plus one `reply` per call (child → host). The `log` frame's `truncated` flag marks the frame that IS the child ledger's truncation marker, so the host stops capturing at the same point the child did instead of inferring it from its own budget. `done.error.kind` is one of `exception`, `invalid-output`, `output-limit`; wall/CPU budgets, aborts, and substrate death are observed host-side, not carried as frames.
-
-### Lossless JSON crossing
-
-Completion values and binding arguments cross as exact JSON: values serialize without recursion, so a deep payload below the byte budget survives instead of dying on `JSON.stringify`'s stack limit, and integral doubles beyond the safe range cross as exact digits rather than silently rounded tokens; the meters in [`src/protocol.ts`](src/protocol.ts) enforce byte budgets and number losslessness before anything else reads the payload.
-
-### Mirror alignment
-
-`tests/protocol-mirror.e2e.ts` spawns a real `python3` and asserts, against `src/protocol.ts`, both `PROTOCOL_FD` / the truncation-marker text and each `TypedDict`'s required/optional wire field set in `py/protocol.py`, so a renamed or dropped field — or one side making a field optional the other requires — fails the test. Field *types* are not compared across the language boundary; that residue stays with review plus the backend's real-subprocess suite.
-
-### Source map
-
-| File | Role |
-|---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: re-exports the protocol vocabulary for every consumer of the wire |
-| [`src/protocol.ts`](src/protocol.ts) | Host side: frame codec, hostile-frame validators, lossless-JSON meters, shared marker text |
-| [`py/protocol.py`](py/protocol.py) | Python side: `PROTOCOL_FD`, `TypedDict` frame mirrors, `log_truncation_marker` |
-| [`tests/protocol-mirror.e2e.ts`](tests/protocol-mirror.e2e.ts) | Cross-language mirror test against a real `python3` |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; the package registers no mutable data relation) |
-
-</details>
-
------
-
-<a id="further-exploration"></a>
-## Further Exploration
-
-Read these when the protocol contract is not enough. They move from the seam definition to the protocol's design record and the companion backend.
-
-- [Code runtime seam](../code-runtime/README.md) — the abstract contract the Python backend implements.
-- [fd-3 protocol Agent Note](../../../.agents/notes/implemented/architecture/2026-07-31-code-runtime-python-fd3-protocol.md) — design rationale, wire contract, and the mirror-alignment decision.
-- [Worker-thread backend](../code-runtime-worker-thread/README.md) — the shipped TypeScript sibling, the model for the Python backend's behavior.
-- [Code runtime subsystem reference](../../../docs/subsystems/code-runtime.md) — request/result vocabulary, bindings, and failure taxonomy.
-
------
-
-<a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through PTC mode in `dsh-tools`, which renders the program's completion value or failure into a retained `run_code` result.
+Indirectly, through Code Mode in [`dsh-tools`](../../core/tools/README.md), which renders this backend's exact completion value when it fits (or an explicit `invalid-output` / `output-limit` failure), plus the exact `[dsh-code-runtime-python] log capture truncated at <maxLogBytes> bytes` log marker, into a retained `run_code` result.
 
 #### KV Cache effect
 
@@ -102,20 +34,5 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 
 ## Known Limitations and Deferred Work
 
-<a id="known-limitations-and-deferred-work"></a>
-
-
-These limits define what the package does and does not cover; they are current package constraints, not a task backlog.
-
-- **The cross-language guard covers the executed surfaces and the frame field shapes, not the field types** — the mirror e2e compares required/optional field sets, not that `cpuSeconds` is an `int` on both sides; comparing type declarations across TypeScript and Python has no mechanical equivalent here, so a type-level drift is caught by review plus the backend's real-subprocess suite.
-- **`src/index.ts` exports the protocol vocabulary only** — the package carries no subprocess execution path and no Python-side JSON codec, so nothing here spawns `python3` outside the mirror test.
-
-<a id="dev-note"></a>
-### Dev Note
-
-<details>
-<summary>Working context for maintainers — click to expand</summary>
-
-None.
-
-</details>
+- **The cross-language guard covers executed values and frame field sets, not field types** — `tests/protocol-mirror.e2e.ts` compares `PROTOCOL_FD`, the log truncation marker, and each `TypedDict`'s required and optional fields against a real `python3`. Comparing field types across TypeScript and Python has no mechanical equivalent here, so review plus the backend's real-subprocess suite owns type-level drift.
+- **`RLIMIT_AS` is not enforced on macOS** — the dyld shared cache mapped into every process at exec exceeds any practical address-space cap, and the kernel rejects the `setrlimit` call, so `addressSpaceMb` is skipped there. `cpuSeconds` and `maxWallMs` still bound every run.
