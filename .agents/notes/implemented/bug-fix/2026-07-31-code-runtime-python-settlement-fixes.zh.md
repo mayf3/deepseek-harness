@@ -40,7 +40,7 @@ Status: implemented
 
 ### Binding replies complete on the calling loop's thread
 
-同样在 `py/bootstrap.py` 中，一个绑定回复 Future 是在运行 `dispatch` 的那个事件循环上创建的。当模型通过 `asyncio.run(tools.x(...))` 从一个工作线程调用某个绑定时，该 Future 属于该线程的事件循环，而不是 `_pump_replies` 读取回复的主事件循环。`asyncio.Future` 不是线程安全的：从另一个线程完成它并不会唤醒它自己的事件循环，因此直接的 `set_result`／`set_exception` 会让那个正在等待的线程被搁置，该次运行退化为墙钟超时。现在每个待处理条目都会在记录 Future 的同时记录其 Future 所属的事件循环，`_pump_replies` 通过该事件循环的 `call_soon_threadsafe` 来完成它。共享的 `pending`／`next_id` 状态由一把 `threading.Lock` 保护，该锁跨越 id 认领、fd-3 写入和计数器推进这三步持有，因此并发调用方无法以违反宿主所要求的 id 顺序来交错帧。
+同样在 `py/bootstrap.py` 中，一个绑定回复 Future 是在运行 `dispatch` 的那个事件循环上创建的。当模型通过 `asyncio.run(tools.x(...))` 从一个工作线程调用某个绑定时，该 Future 属于该线程的事件循环，而不是 `_pump_replies` 读取回复的主事件循环。`asyncio.Future` 不是线程安全的：从另一个线程完成它并不会唤醒它自己的事件循环，因此直接的 `set_result`／`set_exception` 会让那个正在等待的线程被搁置，该次运行退化为墙钟超时。现在每个待处理条目都会在记录 Future 的同时记录其 Future 所属的事件循环，`_pump_replies` 通过该事件循环的 `call_soon_threadsafe` 来完成它。共享的 `pending`／`next_id` 状态由一把 `threading.Lock` 保护，该锁跨越 id 认领、fd-3 写入和计数器推进这三步持有，因此并发调用方无法以违反宿主所要求的 id 顺序来交错帧。对一个已经关闭的事件循环（工作线程已结束、在回复到达前放弃了它的调用）调用 `call_soon_threadsafe` 会抛出 `RuntimeError`；该调度被包裹起来，使这个已无意义的回复被丢弃，而不是让异常终结 pump 任务并搁置此后的每一个回复。
 
 ## Testing
 
