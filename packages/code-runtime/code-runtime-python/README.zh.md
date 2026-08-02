@@ -36,3 +36,4 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 
 - **跨语言 guard 覆盖执行值与帧字段集，但不覆盖字段类型** —— `tests/protocol-mirror.e2e.ts` 使用真实 `python3` 比较 `PROTOCOL_FD`、日志截断标记，以及每个 `TypedDict` 的必填和可选字段。跨 TypeScript 与 Python 比较字段类型在此没有机械等价物，因此类型级漂移由 review 加后端真子进程套件负责。
 - **`RLIMIT_AS` 在 macOS 上不施加** —— 在 exec 时映射进每个进程的 dyld 共享缓存超过任何实际的地址空间上限，内核会拒绝该 `setrlimit` 调用，故 `addressSpaceMb` 在那里被跳过。`cpuSeconds` 与 `maxWallMs` 仍约束每一次运行。
+- **调用 `setsid()` ／ `start_new_session=True` 的后代会逃出 teardown。** 终止是用 `kill(-pid)` 向子进程的进程组发信号；一个把自己移入新会话的后代已不在该进程组内，任何信号都到不了它。若它同时释放了继承而来的 stdout／stderr／fd-3 管道，leader 的 `close` 仍会结算该次运行，在 `closeDeadline` 到界之后 fiber 变为完全停稳，而那个孤儿仍在运行。这是 containment 边界，而非安全边界——模型代码具有等同 bash 的信任级别，一个 bash 工具同样能 `setsid` 逃逸。要够到这样的孤儿需要追踪每一个后代 pid（如 bash-local 后端的 process-inspector 所做），此项已推迟；进程组 teardown 会回收所有留在组内的进程。
