@@ -1082,8 +1082,15 @@ export class PythonCodeRuntime extends CodeRuntime {
         }
         const deadline = Date.now() + this.config.graceMs + CLOSE_REAP_MARGIN_MS
         const pollGroup = (): void => {
+          // The deadline is a backstop: the group is reachable by `kill(-pid)`
+          // and SIGKILL is uncatchable, so it always empties within graceMs — the
+          // `Date.now() >= deadline` arm exists only so a probe that never sees
+          // ESRCH (a kernel quirk) cannot hang disposal forever.
+          /* v8 ignore next -- SIGKILL always empties the reachable group before the deadline. */
           if (groupEmpty() || Date.now() >= deadline) {
-            if (graceTimer !== undefined) clearTimeout(graceTimer)
+            // graceTimer is always defined here: pollGroup runs only when
+            // `killing` is set, and kill() arms graceTimer before any settle.
+            clearTimeout(graceTimer)
             finalize()
             return
           }
