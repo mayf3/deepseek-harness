@@ -318,9 +318,12 @@ export function hasUnsafeIntegerToken(line: string): boolean {
 /**
  * Lazily yield one plain object's own enumerable property values. A generator
  * (not `Object.values`/`Object.entries`) because {@link hasNonLosslessNumber}
- * traverses breadth it cannot bound: those helpers copy the whole member list
- * up front, so a wide forged object would cost a second full-breadth
- * allocation before a single value is examined.
+ * walks breadth it cannot bound: those helpers copy the whole VALUE (or
+ * key/value pair) list into a fresh array up front, so a wide object would cost
+ * that second full-breadth allocation before a single value is examined. The
+ * `for...in` here does not make the walk sublinear — V8 still materializes the
+ * key-name enumeration when the loop starts — but it avoids the extra value
+ * array, yielding each value straight off the already-parsed object.
  * @param record - a JSON-parse-produced object.
  * @yields each own enumerable property value, in key order.
  */
