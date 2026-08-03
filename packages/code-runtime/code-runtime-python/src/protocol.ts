@@ -387,9 +387,9 @@ function jsonStringBytesUpTo(text: string, maxBytes: number): number | undefined
  * Meter a `JSON.parse`-produced done value's compact-JSON byte length AND its
  * number losslessness in one traversal, stopping the instant `maxBytes` is
  * crossed. This bounds the INCREMENTAL allocation the check itself would add on
- * top of the already-parsed value — the enqueued children (and, in the previous
- * implementation, an escaped-string copy that {@link jsonStringBytesUpTo} now
- * avoids) — not the parse that produced `value`.
+ * top of the already-parsed value — the enqueued children; strings and keys are
+ * metered by {@link jsonStringBytesUpTo} without allocating an escaped copy —
+ * not the parse that produced `value`.
  * That upstream width is bounded separately, by the host-side cap on inbound
  * fd-3 frame size before `JSON.parse` runs (owned by the runtime that reads the
  * channel), so `value` cannot be arbitrarily large when it reaches here, while

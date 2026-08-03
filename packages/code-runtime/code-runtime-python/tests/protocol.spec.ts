@@ -283,11 +283,15 @@ describe('checkDoneValue', () => {
     expect(checkDoneValue(Infinity, 3)).toEqual({ ok: false, reason: 'over-budget' })
   })
 
-  it('meters deep nesting iteratively without overflowing the stack', () => {
+  it('meters and encodes deep nesting iteratively without overflowing the stack', () => {
     let deep: unknown = 0
     for (let i = 0; i < 100_000; i++) deep = [deep]
     // 100000 '[' + '0' + 100000 ']' = 200001 bytes.
     expect(checkDoneValue(deep, 1_000_000)).toEqual({ ok: true, bytes: 200_001 })
+    // encodeJsonPlain's headline contract is the same stack-safety (JSON.stringify
+    // recurses per level and throws RangeError a few thousand deep), so exercise
+    // it on the same 100k-deep value — JSON.stringify would throw here.
+    expect(encodeJsonPlain(deep)).toBe(`${'['.repeat(100_000)}0${']'.repeat(100_000)}`)
   })
 
   it('emits exact digits for beyond-safe integral doubles', () => {
