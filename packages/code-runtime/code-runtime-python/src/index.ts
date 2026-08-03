@@ -217,6 +217,18 @@ const FRAME_ENVELOPE_BYTES = 64
 const CLOSE_REAP_MARGIN_MS = 2_000
 
 /**
+ * The largest fraction of `addressSpaceMb` that `maxLogBytes` may claim, enforced
+ * at load. The child's log ledger encodes an admitted entry to UTF-8 once to
+ * charge its serialized cost, so a near-budget entry transiently needs the entry
+ * plus its encode copy — roughly twice `maxLogBytes` — on top of the interpreter
+ * baseline, all under `RLIMIT_AS`. One eighth leaves an 8x margin over the raw
+ * budget, comfortably past that transient at any admissible cap, so a legitimate
+ * near-budget log entry truncates instead of breaching the address space. A fixed
+ * safety invariant tying two configs together, not a deployment knob.
+ */
+const LOG_CAPTURE_ADDRESS_SPACE_HEADROOM_FRACTION = 1 / 8
+
+/**
  * Interval between process-group liveness probes while settlement waits for an
  * escalated SIGKILL to empty the group (see the `killing` branch in
  * {@link PythonCodeRuntime.execute}'s settle). A poll rather than an event
@@ -675,6 +687,29 @@ export class PythonCodeRuntime extends CodeRuntime {
       if (this.config[key] > limit) {
         throw new Error(`dsh-code-runtime-python: config.${key} must not exceed ${limit} (a payload that large cannot cross the ${FRAME_CEILING_BYTES}-byte fd-3 frame ceiling, so the run would fail as worker-exit rather than output-limit), got ${String(this.config[key])}`)
       }
+    }
+    // The child's log ledger admits an entry up to `maxLogBytes` and, to charge
+    // its serialized cost, encodes it to UTF-8 once — a transient allocation of
+    // up to `maxLogBytes` more bytes (and a control-char-dense entry escapes up
+    // to sixfold on the wire, though the encode itself is the raw copy). That
+    // copy happens under `RLIMIT_AS`, so a `maxLogBytes` that approaches
+    // `addressSpaceMb` makes a legitimate near-budget log entry breach the
+    // address space and die as `worker-exit` instead of truncating. Rather than
+    // meter every child write against the address space at runtime — which trades
+    // the memory bound for a per-character CPU cost on the hot path — reject the
+    // incompatible pair at load: require `maxLogBytes` to leave the child room
+    // for the interpreter baseline plus the entry and its encode copy. The bound
+    // is `LOG_CAPTURE_ADDRESS_SPACE_HEADROOM_FRACTION` of the address space, well
+    // clear of the ~2x-plus-baseline the push path needs at the default 64 KiB
+    // cap. Checked on every platform, not just where `RLIMIT_AS` is enforced: the
+    // incompatibility is a property of the two config values, and the child OOMs
+    // on a Linux deployment regardless of the host that assembled the config, so
+    // a uniform load-time rejection is the fail-loud contract (Darwin skips only
+    // the runtime `setrlimit`, not this static check).
+    const addressSpaceBytes = this.config.addressSpaceMb * 1024 * 1024
+    const logCaptureCeiling = Math.floor(addressSpaceBytes * LOG_CAPTURE_ADDRESS_SPACE_HEADROOM_FRACTION)
+    if (this.config.maxLogBytes > logCaptureCeiling) {
+      throw new Error(`dsh-code-runtime-python: config.maxLogBytes must not exceed ${logCaptureCeiling} (${LOG_CAPTURE_ADDRESS_SPACE_HEADROOM_FRACTION} of the ${addressSpaceBytes}-byte addressSpaceMb, leaving the child room to encode a near-budget log entry without breaching RLIMIT_AS), got ${String(this.config.maxLogBytes)}`)
     }
     ctx.effect(() => () => this.teardown(), 'python code-runtime teardown')
   }

@@ -167,43 +167,9 @@ class _LogStream(io.TextIOBase):
         # ``print("x", end="")`` must not concatenate quadratically.
         self._pending: list[str] = []
         self._pending_chars = 0
-        # Running serialized JSON cost of the pending tail, maintained beside the
-        # character count so the early-flush trigger charges against ``remaining``
-        # (a serialized-byte budget) rather than undercharging control-char text.
-        # Accumulated per fragment through ``_fragment_cost_upto`` so no write
-        # re-scans the whole buffer.
-        self._pending_cost = 0
 
     def writable(self) -> bool:  # noqa: D401 -- inherited contract
         return True
-
-    @staticmethod
-    def _fragment_cost_upto(chunk: str, limit: int, start: int = 0, end: "int | None" = None) -> int:
-        # Serialized JSON cost of ``chunk[start:end]``'s characters (no enclosing
-        # quotes), indexing the str directly and STOPPING once the running total
-        # passes ``limit`` so the walk is bounded by a budget's worth of
-        # characters however large the write is. A control character serializes to
-        # up to six bytes, so a plain character count undercharges a control-char
-        # flood by up to 6x: 30M NUL characters stay under a 50 MB character budget
-        # yet serialize to ~180 MB, which the settlement flush would then allocate
-        # at once and breach RLIMIT_AS. Measuring the true serialized cost fixes
-        # that, but ``.encode`` to measure it would itself be the copy the
-        # ``_push_bounded_prefix`` path exists to avoid (a single 340 MiB write
-        # under a tight addressSpaceMb dies on that encode), and re-scanning the
-        # whole pending list per write would be quadratic under a daemon-thread
-        # flood — so the caller accumulates this per-fragment result once and the
-        # ``limit`` cap keeps each scan bounded. ``start``/``end`` weigh a
-        # sub-range without slicing it (the slice on a 340 MiB write would be that
-        # same copy); CPython ``str`` indexing is O(1) per character.
-        cost = 0
-        stop = len(chunk) if end is None else end
-        index = start
-        while index < stop:
-            cost += _json_char_cost(ord(chunk[index]))
-            if cost > limit:
-                return cost
-            index += 1
-        return cost
 
     def write(self, text: str) -> int:  # noqa: D401 -- inherited contract
         # Serialize the whole read-modify-write against the settlement flush and
@@ -241,16 +207,7 @@ class _LogStream(io.TextIOBase):
             pos = 0
             if self._pending:
                 newline = text.index("\n")
-                # Weigh the reconstructed first line by SERIALIZED cost, not
-                # character count: `_pending_cost` already holds the buffered
-                # chunks' cost, and the first line's cost is scanned up to the
-                # newline without slicing `text` (the slice on a 340 MiB write
-                # would be the copy this path avoids). A character-count check
-                # undercharged a control-char line — 30M NUL characters plus a
-                # newline pass `chars + 3 > remaining` under a 50 MB budget, then
-                # `_logs.push` would encode the 30M-char join and breach RLIMIT_AS.
-                first_line_cost = self._fragment_cost_upto(text, self._logs.remaining, end=newline)
-                if self._pending_cost + first_line_cost + 2 > self._logs.remaining:
+                if self._pending_chars + newline + 3 > self._logs.remaining:
                     # The reconstructed first line cannot fit the ledger, so
                     # LogBuffer would reject it whole: copy only the prefix that
                     # fails its cheap bound and drop the chunks. The slice is
@@ -265,7 +222,6 @@ class _LogStream(io.TextIOBase):
                     line = "".join(self._pending)
                     self._pending = []
                     self._pending_chars = 0
-                    self._pending_cost = 0
                     self._logs.push(line)
                 pos = newline + 1
             # Scan by offset and STOP once the ledger is exhausted: a single
@@ -278,17 +234,14 @@ class _LogStream(io.TextIOBase):
                 newline = text.find("\n", pos)
                 if newline < 0:
                     break
-                # Bound the SLICE by SERIALIZED cost, not character count: a line
-                # whose escaped form exceeds the ledger would be copied whole
-                # before push could reject it, and a control-char-dense line
-                # (30M NUL characters plus a newline) passes a `chars + 3 >
-                # remaining` check under a large budget yet encodes to ~6x that,
-                # so `_logs.push` would allocate the encode and breach RLIMIT_AS.
-                # `_fragment_cost_upto` scans up to the newline without slicing and
-                # stops at `remaining`, so an over-budget line takes the bounded
-                # prefix path; push still rejects that prefix on its own cheap
-                # bound, emits the marker, and never materializes the full line.
-                if self._fragment_cost_upto(text, self._logs.remaining, start=pos, end=newline) + 2 > self._logs.remaining:
+                # Bound the SLICE the same way LogBuffer bounds the encode: a
+                # first line far above the ledger would be copied whole before
+                # push could reject it, and that copy is the allocation an
+                # over-budget write cannot afford. Copy only a budget-sized
+                # prefix, which push still rejects on its own cheap bound (the
+                # prefix is longer than `remaining`), so the marker is emitted
+                # and the oversized line is never materialized.
+                if newline - pos + 3 > self._logs.remaining:
                     self._logs.push(text[pos:pos + self._logs.remaining + 4])
                     break
                 self._logs.push(text[pos:newline])
@@ -298,7 +251,6 @@ class _LogStream(io.TextIOBase):
                     tail = text[pos:]
                     self._pending.append(tail)
                     self._pending_chars = len(tail)
-                    self._pending_cost = self._fragment_cost_upto(tail, self._logs.remaining)
                 else:
                     # The ledger ran out with text still unscanned, so that text
                     # IS being dropped and the run must say so. One push is
@@ -318,21 +270,11 @@ class _LogStream(io.TextIOBase):
         else:
             self._pending.append(text)
             self._pending_chars += len(text)
-            # Add this fragment's serialized cost, capped so a single oversized
-            # write's scan stops at the budget rather than walking all of it.
-            self._pending_cost += self._fragment_cost_upto(text, self._logs.remaining)
         # A newline-free flood must hit the budget while running, not at
-        # settlement. `_pending_cost` weighs the buffered tail by its SERIALIZED
-        # cost: a control byte serializes to up to six bytes, so a character count
-        # undercharged control-char floods by up to 6x and a newline-free flood of
-        # ~30M NUL characters (each 1 char but 6 serialized bytes) stayed under a
-        # character-count trigger yet encoded to ~180 MB at settlement, breaching
-        # RLIMIT_AS. The per-fragment scan never encodes the whole buffer (a single
-        # oversized write must not be copied here, per the `_push_bounded_prefix`
-        # contract) nor re-scans the pending list per write (which would be
-        # quadratic under a daemon-thread flood), yet fires no later than a
-        # character count and strictly earlier for control-dense text.
-        if self._pending_cost > self._logs.remaining:
+        # settlement: once the buffered tail alone can no longer fit the
+        # ledger (chars lower-bound the serialized cost), push it through — LogBuffer
+        # truncates, emits the marker once, and swallows everything after.
+        if self._pending_chars > self._logs.remaining:
             self._push_bounded_prefix()
         return len(text)
 
@@ -365,7 +307,6 @@ class _LogStream(io.TextIOBase):
                 break
         self._pending = []
         self._pending_chars = 0
-        self._pending_cost = 0
         self._logs.push("".join(parts))
 
     def flush(self) -> None:  # noqa: D401 -- inherited contract
@@ -392,7 +333,6 @@ class _LogStream(io.TextIOBase):
                 self._logs.push("".join(self._pending))
                 self._pending = []
                 self._pending_chars = 0
-                self._pending_cost = 0
 
 
 # ---------------------------------------------------------------------------
@@ -1240,34 +1180,6 @@ _JSON_ESCAPE_SURCHARGES = [
 _JSON_BYTE_COST = [1] * 256
 for _escaped_byte, _surcharge in _JSON_ESCAPE_SURCHARGES:
     _JSON_BYTE_COST[_escaped_byte[0]] = 1 + _surcharge
-
-
-def _json_char_cost(code: int) -> int:
-    """Serialized JSON cost of one character, from its code point, without encoding.
-
-    Used by X a buffered write's true
-    serialized cost while scanning the str directly, so the early-flush trigger
-    charges a control character its full escaped width (a NUL is six bytes as
-    ``\\u0000``) rather than the single character a length count sees. A C0
-    control escapes to two bytes for the five shorthand forms or six for the
-    rest; ``"`` and ``\\`` escape to two; every other character stays at its raw
-    UTF-8 width (1/2/3 for the basic plane, 4 for an astral code point), which is
-    what the encoded form would hold. A lone surrogate is unreachable here — a
-    Python ``str`` character iterates as one code point and the caller's text has
-    already replaced any un-encodable surrogate.
-    """
-
-    if code < 0x20:
-        return 2 if code in (0x08, 0x09, 0x0a, 0x0c, 0x0d) else 6
-    if code == 0x22 or code == 0x5c:
-        return 2
-    if code < 0x80:
-        return 1
-    if code < 0x800:
-        return 2
-    if code < 0x10000:
-        return 3
-    return 4
 
 
 def _json_string_cost(raw: bytes) -> int:

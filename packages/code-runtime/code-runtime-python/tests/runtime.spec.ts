@@ -747,61 +747,21 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs.at(-1)).toBe(logTruncationMarker(4096))
   })
 
-  it('bounds a newline-free NUL flood through sys.stdout by serialized cost, not char count', async () => {
-    // `_LogStream` (the child's sys.stdout wrapper) buffers newline-free writes
-    // and early-flushes once the pending tail can no longer fit the ledger.
-    // Charging that trigger by CHARACTER count undercharged a control-char flood
-    // by up to 6x: NUL chars stay under a char-count trigger yet serialize to ~6x
-    // as many bytes, which the settlement "".join + encode then allocated at once.
-    // The program writes the flood in 1 MiB chunks (so no single argument str is
-    // itself the allocation under test) with no newline; the serialized-cost
-    // trigger flushes while running, keeping the pending tail bounded, so the run
-    // completes at the truncation marker. Pre-fix, the char-count trigger stayed
-    // dormant until ~200 MiB of chars accumulated, and the settlement encode of
-    // their ~1.2 GiB serialized form breached the 512 MiB RLIMIT_AS as a
-    // worker-exit. Driven through sys.stdout.write (not os.write, which bypasses
-    // the wrapper into host stray capture) to exercise the in-child stream.
-    // RLIMIT_AS is skipped on Darwin, so the worker-exit repro is Linux-only;
-    // on macOS this asserts the happy path, matching the control-char cases.
-    const { runtime } = await setup({ maxLogBytes: 20_000_000, addressSpaceMb: 512, maxWallMs: 30_000 })
-    const result = await runtime.run({
-      program: [
-        'import sys',
-        'chunk = "\\x00" * (1024 * 1024)',
-        'for _ in range(200):',
-        '    sys.stdout.write(chunk)',
-        'return None',
-      ].join('\n'),
-      bindings: [],
-    })
-    expect(result.error).toBeUndefined()
-    expect(result.logs.at(-1)).toBe(logTruncationMarker(20_000_000))
-  })
-
-  it('bounds a NEWLINE-terminated NUL flood through sys.stdout by serialized cost', async () => {
-    // The newline path of `_LogStream.write` scans and pushes each completed
-    // LINE. Its per-line fit check charged CHARACTER count, so a control-char
-    // line (a chunk of NULs ending in a newline) passed `chars + 3 > remaining`
-    // under a large budget yet `_logs.push` then encoded the whole line at
-    // settlement — the same RLIMIT_AS breach as the newline-free path, on a
-    // different branch. The check now weighs the line by serialized cost via
-    // `_fragment_cost_upto` (scanning to the newline without slicing), so an
-    // over-budget line takes the bounded-prefix path and the run truncates. Each
-    // 1 MiB NUL chunk is newline-terminated so it exercises the line branch;
-    // driven through sys.stdout.write, Linux-only RLIMIT_AS repro, macOS happy path.
-    const { runtime } = await setup({ maxLogBytes: 20_000_000, addressSpaceMb: 512, maxWallMs: 30_000 })
-    const result = await runtime.run({
-      program: [
-        'import sys',
-        'chunk = "\\x00" * (1024 * 1024) + "\\n"',
-        'for _ in range(200):',
-        '    sys.stdout.write(chunk)',
-        'return None',
-      ].join('\n'),
-      bindings: [],
-    })
-    expect(result.error).toBeUndefined()
-    expect(result.logs.at(-1)).toBe(logTruncationMarker(20_000_000))
+  it('rejects a maxLogBytes that could breach addressSpaceMb during log encode at load', async () => {
+    // The child's log ledger encodes an admitted entry to UTF-8 once to charge
+    // its serialized cost, so a `maxLogBytes` approaching `addressSpaceMb` lets a
+    // legitimate near-budget log entry breach RLIMIT_AS and die as worker-exit
+    // instead of truncating. The incompatible pair is rejected at load rather
+    // than metered per-write at runtime: `maxLogBytes` must stay within one
+    // eighth of the `addressSpaceMb` byte count. 50 MB against a 64 MiB address
+    // space is far over that bound; the default 64 KiB against 512 MiB is not.
+    const ctx = new Context()
+    await expect(ctx.plugin(PythonCodeRuntime, { maxLogBytes: 50_000_000, addressSpaceMb: 64 }))
+      .rejects.toThrow(/maxLogBytes must not exceed .* of the .*addressSpaceMb/)
+    // A compatible pair loads.
+    const ok = new Context()
+    const fiber = await ok.plugin(PythonCodeRuntime, { maxLogBytes: 65536, addressSpaceMb: 512 })
+    await fiber.dispose()
   })
 
   it('bounds an illegal-UTF-8 native residual by its U+FFFD-decoded cost', async () => {
