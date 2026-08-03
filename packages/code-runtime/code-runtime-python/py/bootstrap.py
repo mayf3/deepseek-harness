@@ -48,6 +48,16 @@ _READ_CHUNK_BYTES = 65536
 # real class name is touched.
 _MAX_FALLBACK_NAME_CHARS = 200
 
+# Mirror of the host's output-budget/address-space gate (src/index.ts's
+# OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE and INTERPRETER_BASELINE_BYTES),
+# re-applied against the EFFECTIVE RLIMIT_AS after inheritance clamping. An astral
+# character is one character but ~4 bytes of str storage and ~4 UTF-8 bytes, live
+# at once while the ledger charges and frames it, so a budget's worst-case peak is
+# eight times its byte count; the interpreter's own footprint is reserved on top.
+# Kept in sync with the host constants by the shared reasoning, not a wire field.
+_OUTPUT_BUDGET_WORST_CASE_MULTIPLE = 8
+_INTERPRETER_BASELINE_BYTES = 64 * 1024 * 1024
+
 
 # ---------------------------------------------------------------------------
 # Log buffer — Python-side ledger for captured text.
@@ -637,9 +647,30 @@ async def _run(channel: ProtocolChannel) -> None:
         # ceiling still bound the run.
         if sys.platform != "darwin":
             addr_bytes = int(boot["addressSpaceBytes"])
-            resource.setrlimit(
-                resource.RLIMIT_AS, _clamped(resource.RLIMIT_AS, addr_bytes, addr_bytes)
-            )
+            effective_as = _clamped(resource.RLIMIT_AS, addr_bytes, addr_bytes)
+            resource.setrlimit(resource.RLIMIT_AS, effective_as)
+            # The host rejected an output budget too large for the CONFIGURED
+            # addressSpaceMb, but a launch environment can inherit a STRICTER
+            # RLIMIT_AS (e.g. a `ulimit -v` wrapper below addressSpaceMb), which
+            # `_clamped` correctly lowers the effective limit to — leaving the
+            # budgets validated against a ceiling the child never gets. Re-check
+            # both budgets against the EFFECTIVE soft limit here, mirroring the
+            # host gate (each budget times the worst-case Unicode multiple must
+            # fit the room left after the interpreter baseline), and fail loud at
+            # boot rather than letting a near-budget output OOM mid-run. The
+            # constants match src/index.ts's OUTPUT_BUDGET_WORST_CASE_ADDRESS_
+            # SPACE_MULTIPLE and INTERPRETER_BASELINE_BYTES.
+            effective_soft = effective_as[0]
+            if effective_soft != resource.RLIM_INFINITY:
+                budgetable = effective_soft - _INTERPRETER_BASELINE_BYTES
+                for _budget_key in ("maxLogBytes", "maxValueBytes"):
+                    if int(boot[_budget_key]) * _OUTPUT_BUDGET_WORST_CASE_MULTIPLE > budgetable:
+                        raise ValueError(
+                            "config.%s is too large for the inherited RLIMIT_AS of %d bytes "
+                            "(a near-budget output would breach it during encode); "
+                            "lower the budget or raise the inherited address-space limit"
+                            % (_budget_key, effective_soft)
+                        )
     except BaseException as exc:  # noqa: BLE001 -- report every failure to host
         channel.send_sync(
             {

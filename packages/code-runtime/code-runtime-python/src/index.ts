@@ -239,14 +239,30 @@ const CLOSE_REAP_MARGIN_MS = 2_000
  * of astral characters is ~4x the budget in the built string and ~4x again in
  * the `encode` copy taken to measure or ship it, live at the same time (the
  * concat that briefly holds both is bounded by those two). Eight covers that
- * simultaneous pair with margin for the interpreter baseline. Used to bound
+ * simultaneous pair. The interpreter baseline is NOT in this multiple — it is
+ * reserved separately as {@link INTERPRETER_BASELINE_BYTES} — because it is a
+ * fixed cost, not one that scales with the budget. Used to bound
  * `maxLogBytes`/`maxValueBytes` against `addressSpaceMb` at load, with a STRICT
- * `>` so a budget whose worst-case peak exactly equals the address space is
- * rejected, so a legitimate near-budget output truncates (log) or fails as
- * `output-limit` (value) rather than breaching `RLIMIT_AS` as `worker-exit`. A
- * fixed safety invariant tying the budgets to the address space, not a knob.
+ * `>` so a budget whose worst-case peak exactly equals the room left after the
+ * baseline is rejected, so a legitimate near-budget output truncates (log) or
+ * fails as `output-limit` (value) rather than breaching `RLIMIT_AS` as
+ * `worker-exit`. A fixed safety invariant tying the budgets to the address
+ * space, not a knob.
  */
 const OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE = 8
+
+/**
+ * Fixed address-space headroom reserved for the CPython interpreter itself
+ * (loaded modules, the asyncio loop, import machinery) before the output-budget
+ * multiple claims the rest. The budget check subtracts this from `addressSpaceMb`
+ * so a budget sized right at `addressSpaceMb / MULTIPLE` — which the multiple
+ * alone would admit — cannot leave the peak output allocation plus the
+ * interpreter over the limit. 64 MiB is generous for a `python3 -I` process
+ * whose own resident set is tens of MiB; the value is a fixed safety margin, not
+ * a deployment knob.
+ */
+const INTERPRETER_BASELINE_BYTES = 64 * 1024 * 1024
+
 
 /**
  * Interval between process-group liveness probes while settlement waits for an
@@ -727,9 +743,16 @@ export class PythonCodeRuntime extends CodeRuntime {
     // the host that assembled the config, so a uniform load-time rejection is the
     // fail-loud contract (Darwin skips only the runtime `setrlimit`).
     const addressSpaceBytes = this.config.addressSpaceMb * 1024 * 1024
+    // Room left for the peak output allocation after the interpreter's own fixed
+    // footprint. A budget must fit MULTIPLE times over into THIS, not the whole
+    // address space, so a budget sized right at `addressSpaceMb / MULTIPLE` — which
+    // the multiple alone would admit — cannot leave the peak plus the interpreter
+    // over the limit.
+    const budgetableBytes = addressSpaceBytes - INTERPRETER_BASELINE_BYTES
+    const admissibleBudget = Math.floor(budgetableBytes / OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE)
     for (const key of ['maxLogBytes', 'maxValueBytes'] as const) {
-      if (this.config[key] * OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE > addressSpaceBytes) {
-        throw new Error(`dsh-code-runtime-python: config.${key} times the ${OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE}x worst-case Unicode expansion must fit the ${addressSpaceBytes}-byte addressSpaceMb, so a near-budget output truncates rather than breaching RLIMIT_AS as worker-exit; got ${String(this.config[key])} against an address space that admits at most ${Math.floor(addressSpaceBytes / OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE)}`)
+      if (this.config[key] * OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE > budgetableBytes) {
+        throw new Error(`dsh-code-runtime-python: config.${key} times the ${OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE}x worst-case Unicode expansion must fit the ${budgetableBytes} bytes left after the ${INTERPRETER_BASELINE_BYTES}-byte interpreter baseline within the ${addressSpaceBytes}-byte addressSpaceMb, so a near-budget output truncates rather than breaching RLIMIT_AS as worker-exit; got ${String(this.config[key])} against a limit of ${admissibleBudget}`)
       }
     }
     ctx.effect(() => () => this.teardown(), 'python code-runtime teardown')

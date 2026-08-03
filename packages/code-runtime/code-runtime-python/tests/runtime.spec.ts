@@ -410,6 +410,30 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     expect(result.value).toBe(256 * 1024 * 1024)
   }, 15_000)
 
+  it('rejects at boot when an inherited RLIMIT_AS is too tight for the output budgets', async () => {
+    // The host gate validates the output budgets against the CONFIGURED
+    // addressSpaceMb, but a launch environment can inherit a STRICTER RLIMIT_AS
+    // (a `ulimit -v` wrapper below addressSpaceMb), which the bootstrap clamps the
+    // effective limit down to — leaving the budgets sized for a ceiling the child
+    // never gets, so a near-budget output would OOM mid-run as an opaque
+    // worker-exit. The bootstrap re-checks both budgets against the EFFECTIVE
+    // clamped limit and fails loud at boot instead. A 128 MiB inherited limit
+    // leaves 64 MiB budgetable (8 MiB admissible), under which a 32 MiB
+    // maxLogBytes — admitted by the 512 MiB configured default — is rejected. The
+    // repro is Linux-only (macOS ignores `ulimit -v`); there the run proceeds.
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-'))
+    const wrapper = join(dir, 'python3-tight')
+    await writeFile(wrapper, '#!/bin/sh\nulimit -v 131072\nexec python3 "$@"\n', { mode: 0o755 })
+    const { runtime } = await setup({ pythonBin: wrapper, maxLogBytes: 32 * 1024 * 1024, addressSpaceMb: 512 })
+    const result = await runtime.run({ program: 'return 1', bindings: [] })
+    if (process.platform === 'darwin') {
+      expect(result.error).toBeUndefined()
+    } else {
+      expect(result.error?.kind).toBe('worker-exit')
+      expect(result.error?.message).toContain('too large for the inherited RLIMIT_AS')
+    }
+  }, 15_000)
+
   it('applies the configured limits when nothing tighter is inherited', async () => {
     // The clamp must not weaken the normal path: with an infinite inherited hard
     // limit there is nothing to clamp against, and RLIM_INFINITY compares as -1,
@@ -757,14 +781,17 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     // one character but ~4 bytes stored and ~4 encoded, so a budget approaching
     // the address space lets a legitimate near-budget output breach it and die as
     // worker-exit. The incompatible pair is rejected at load: each budget times
-    // the worst-case multiple (8) must fit the addressSpaceMb byte count. 50 MB
-    // against a 64 MiB address space is far over; the default caps against 512 MiB
-    // are not. Both budgets are gated symmetrically.
+    // the worst-case multiple (8) must fit the address space LEFT after the fixed
+    // interpreter baseline. Against a 256 MiB address space that leaves 192 MiB
+    // budgetable (24 MiB admissible), so a 50 MB cap is far over; the default caps
+    // against 512 MiB are not. Both budgets are gated symmetrically — the value
+    // case sets a default-fitting maxLogBytes so the maxValueBytes check is what
+    // fires.
     const ctxLog = new Context()
-    await expect(ctxLog.plugin(PythonCodeRuntime, { maxLogBytes: 50_000_000, addressSpaceMb: 64 }))
+    await expect(ctxLog.plugin(PythonCodeRuntime, { maxLogBytes: 50_000_000, addressSpaceMb: 256 }))
       .rejects.toThrow(/maxLogBytes times the 8x worst-case Unicode expansion must fit/)
     const ctxValue = new Context()
-    await expect(ctxValue.plugin(PythonCodeRuntime, { maxValueBytes: 50_000_000, addressSpaceMb: 64 }))
+    await expect(ctxValue.plugin(PythonCodeRuntime, { maxValueBytes: 50_000_000, addressSpaceMb: 256 }))
       .rejects.toThrow(/maxValueBytes times the 8x worst-case Unicode expansion must fit/)
     // The default caps against the default 512 MiB address space load.
     const ok = new Context()
