@@ -3587,12 +3587,17 @@ describe('PythonCodeRuntime — hostile peer', () => {
     // catch (the tail far exceeds maxLogBytes). The tail is now sliced to a
     // budget-sized prefix, so the run truncates and completes. Linux-only RLIMIT_AS
     // repro (Darwin skips the limit); on macOS this asserts the happy path.
+    //
+    // Sizing: the model builds `tail` (N) then the `"\n" + tail` write argument
+    // (another ~N), so construction peaks at ~2N — kept under the 384 MiB address
+    // space at N = 150 MiB (~300 MiB). The pre-fix code then buffered the whole
+    // ~150 MiB tail again, pushing past 384 MiB; the sliced prefix does not.
     const { runtime } = await setup({ maxLogBytes: 256, addressSpaceMb: 384, maxWallMs: 20_000 })
     const result = await runtime.run({
       program: [
         'import sys',
-        // A short first line, then a 200 MiB unterminated tail on the same write.
-        'sys.stdout.write("first\\n" + "A" * (200 * 1024 * 1024))',
+        'tail = "A" * (150 * 1024 * 1024)',
+        'sys.stdout.write("\\n" + tail)',
         'return "done"',
       ].join('\n'),
       bindings: [],
