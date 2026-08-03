@@ -890,6 +890,16 @@ async def _run(channel: ProtocolChannel) -> None:
         exec(code, ns)  # noqa: S102 -- defines __dsh_main__; executing model code is the point
         value = await ns["__dsh_main__"]()
         die_if_cpu_exhausted(cpu_seconds)
+        # Flush the log buffers BEFORE metering and framing the completion value.
+        # `_done_with_value` materializes the value's escaped JSON form to meter
+        # it, and `send_done` encodes the frame — several copies of a near-budget
+        # value live at once (see OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE).
+        # Any unflushed log pending would add its own bytes to that peak, so a
+        # `maxLogBytes` and a `maxValueBytes` each admitted alone by the load gate
+        # could together breach RLIMIT_AS. Flushing first frees the log pending so
+        # the value frame's peak stands alone against the address space.
+        flush_out()
+        flush_err()
         done = _done_with_value(value, max_value_bytes)
     except BaseException as exc:  # noqa: BLE001 -- report every failure to host
         done = {
@@ -911,7 +921,9 @@ async def _run(channel: ProtocolChannel) -> None:
 
     # Flush any print output not terminated by a newline (a traceback always
     # ends in one, but `print(x, end="")` or a bare write may not), so the
-    # final partial line is not silently dropped.
+    # final partial line is not silently dropped. The success path already
+    # flushed before framing the value; this is an idempotent no-op there and
+    # the flush the exception path needs.
     flush_out()
     flush_err()
     reply_task.cancel()

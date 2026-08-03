@@ -240,13 +240,14 @@ const CLOSE_REAP_MARGIN_MS = 2_000
  * as a multiple of the budget. The child's ledgers trigger on CHARACTER count
  * against a serialized-BYTE budget, and an astral character is one character but
  * four bytes of CPython `str` storage and four UTF-8 bytes — so a budget's worth
- * of astral characters is ~4x the budget in each string that holds it. THREE
- * such copies are live at the peak: on the newline path a single
- * `sys.stdout.write(line + "\n")` holds the caller's `text` argument (alive for
+ * of astral characters is ~4x the budget in each string that holds it. The
+ * heaviest path holds THREE such copies at once: a single
+ * `sys.stdout.write(line + "\n")` keeps the caller's `text` argument (alive for
  * the whole `write` call, ~4x), the line slice `text[pos:newline]` handed to
  * `LogBuffer.push` (~4x), and the `text.encode("utf-8")` copy `_push_locked`
- * takes to charge and ship it (~4x); the settlement `flush_line` path holds the
- * pending chunks, their `"".join(...)`, and that same encode copy. Twelve covers
+ * takes to charge and ship it (~4x). The settlement `flush_line` path holds only
+ * two (its `"".join(...)` and that encode copy — it drops the pending chunks
+ * before pushing), so the newline path is the binding worst case. Twelve covers
  * those three simultaneous ~4x copies. The interpreter baseline is NOT in this
  * multiple — it is reserved separately as {@link INTERPRETER_BASELINE_BYTES} —
  * because it is a fixed cost, not one that scales with the budget. Used to bound

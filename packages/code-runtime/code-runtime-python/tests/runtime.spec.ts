@@ -3649,6 +3649,42 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.logs.some(line => line.includes('log capture truncated'))).toBe(true)
   }, 30_000)
 
+  it('flushes logs before framing the value so their peaks do not add against RLIMIT_AS', async () => {
+    // The load gate bounds maxLogBytes and maxValueBytes INDEPENDENTLY against the
+    // address space, each at the 12x worst case. But the child framed the
+    // completion value (materializing its escaped form to meter it, then encoding
+    // the frame) while a newline-free log tail still sat unflushed in _pending.
+    // Those two peaks added: two budgets each admitted alone could together breach
+    // RLIMIT_AS, dying as worker-exit instead of settling. The flush now runs
+    // before the value is framed, so the log pending is freed first.
+    //
+    // Config: 32 MiB each against 512 MiB (each 32*12 = 384 MiB < 448 MiB
+    // budgetable, so both load). The program writes ~33M astral chars with no
+    // newline (buffered ~132 MB, under the char-count flush trigger) then returns
+    // ~33M astral chars — a ~132 MB serialized value that is itself OVER the 32 MiB
+    // maxValueBytes, so the correct outcome is `output-limit`. Pre-fix the
+    // unflushed 132 MB plus the value's build-and-encode (~396 MB) exceeded 512 MiB
+    // and OOM'd (reported as exception/worker-exit); flushing first lets the value
+    // check complete (~460 MB alone) and report output-limit. On Darwin (no
+    // RLIMIT_AS) the value is over budget too, so output-limit holds either way;
+    // the OOM the reorder prevents is the Linux-only failure.
+    const { runtime } = await setup({
+      maxLogBytes: 32 * 1024 * 1024,
+      maxValueBytes: 32 * 1024 * 1024,
+      addressSpaceMb: 512,
+      maxWallMs: 20_000,
+    })
+    const result = await runtime.run({
+      program: [
+        'import sys',
+        'sys.stdout.write("\\U0001F600" * 33_000_000)',
+        'return "\\U0001F600" * 33_000_000',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('output-limit')
+  }, 30_000)
+
   it('bounds a flood of zero-byte log lines through the per-entry separator charge', async () => {
     // Blank print() lines carry zero content bytes; without the +1 separator
     // charge they would bypass maxLogBytes entirely and grow the retained
