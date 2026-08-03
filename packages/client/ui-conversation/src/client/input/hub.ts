@@ -12,6 +12,7 @@ import type { ClientContext, ISessions, SessionBinding, SessionFace, SessionId }
 import type { SlashController, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-slash/client'
 import { queueReadFaceOf } from '../queue/store.ts'
 import type { ComposerKeyboard, InputService, SessionInput } from './contract.ts'
+import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import type { PopupDismissFace } from './facade.ts'
 import { SessionInputShell } from './facade.ts'
 
@@ -112,14 +113,25 @@ export class InputHub implements InputService {
   }
 
   /**
-   * Default sink: submit through the real host session and report acceptance
-   * to the input transaction. The draft and its reference occurrences remain
-   * resident until this promise succeeds.
+   * Resolve the optional slash controller for composer chrome that launches
+   * the shared candidate menu without typing a trigger.
+   * @param id - session id.
+   * @returns the resident controller, or undefined when ui-slash is absent.
+   */
+  slash(id: SessionId): SlashController | undefined {
+    const actx = this.sessions().scope(id)
+    return actx === undefined ? undefined : this.controller(actx)
+  }
+
+  /**
+   * Default sink: submit through the addressed Host session and report
+   * acceptance to the input transaction. The draft and its reference
+   * occurrences remain resident until this promise succeeds.
    */
   private async sink(
     session: SessionFace,
     text: string,
-    mode: 'queue' | 'steer',
+    mode: InputSubmitMode,
     signal: AbortSignal,
   ): Promise<SubmitOutcome> {
     if (text === '') return { kind: 'error', text: 'prompt is empty' }

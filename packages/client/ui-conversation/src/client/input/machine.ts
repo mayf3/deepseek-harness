@@ -14,6 +14,7 @@
  * paste-upgrade all answer their bail events this way).
  */
 import type { CommandClaim, ReferenceInsert, TokenSpan } from '@deepseek-ai/dsh-client-ui-slash/client'
+import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import type {
   ConsumeTokenGuard, EditRange, EditSelection, InputEffect, InputEvent, InputMachineOptions,
   InputState, Occurrence, PasteAttemptState, PasteComponent, SubmitAttempt,
@@ -112,7 +113,6 @@ export class InputMachine {
   private inflight: {
     readonly attempt: SubmitAttempt
     readonly controller: AbortController
-    readonly mode: 'queue' | 'steer'
   } | undefined
   private log: Transaction[] = []
   private redoStack: Transaction[] = []
@@ -150,7 +150,6 @@ export class InputMachine {
   dispatch(ev: InputEvent): readonly InputEffect[] {
     switch (ev.type) {
       case 'draft-changed': return this.onDraftChanged(ev.draft, ev.editRange)
-      case 'newline': return this.onNewline(ev.selection)
       case 'begin-command': return this.onBeginCommand(ev.claim, ev.span)
       case 'insert-ref': return this.onInsertRef(ev.reference, ev.span)
       case 'consume-token': return this.onConsumeToken(ev.guard)
@@ -249,19 +248,6 @@ export class InputMachine {
     this.typingRun = typing ? { end: range.start + 1, at } : undefined
     this.reconcile(range)
     this.adopt(draft)
-    this.watchClaim()
-    this.paste = undefined
-    return []
-  }
-
-  /** F1: caret newline as an ordinary machine transaction (execCommand path removed). */
-  private onNewline(selection: EditSelection): InputEffect[] {
-    const { start, end } = selection
-    if (start < 0 || start > end || end > this.draft.length) return []
-    this.pushTxn(selection)
-    this.typingRun = undefined
-    this.reconcile({ start, end, insertedLength: 1 })
-    this.adopt(this.draft.slice(0, start) + '\n' + this.draft.slice(end))
     this.watchClaim()
     this.paste = undefined
     return []
@@ -461,15 +447,15 @@ export class InputMachine {
   // ---- submit plane ----
 
   /** Mint the next SubmitAttempt and take the in-flight slot. */
-  private beginAttempt(mode: 'queue' | 'steer'): SubmitAttempt {
+  private beginAttempt(mode: InputSubmitMode): SubmitAttempt {
     const controller = new AbortController()
     this.seq += 1
-    const attempt: SubmitAttempt = { seq: this.seq, signal: controller.signal, draftSnapshot: this.draft }
-    this.inflight = { attempt, controller, mode }
+    const attempt: SubmitAttempt = { seq: this.seq, signal: controller.signal, draftSnapshot: this.draft, mode }
+    this.inflight = { attempt, controller }
     return attempt
   }
 
-  private onEnter(mode: 'queue' | 'steer'): InputEffect[] {
+  private onEnter(mode: InputSubmitMode): InputEffect[] {
     if (this.phase === 'adjudicating' || this.phase === 'submitting') return []
     if (this.phase === 'claimed' && this.claim !== undefined) {
       const attempt = this.beginAttempt(mode)
@@ -511,7 +497,7 @@ export class InputMachine {
         type: 'default-sink',
         attempt,
         draft: attempt.draftSnapshot,
-        mode: flight.mode,
+        mode: attempt.mode,
       }]
     }
     this.inflight = undefined

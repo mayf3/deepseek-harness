@@ -10,13 +10,18 @@ import type { WorkspaceApi } from './workspace.ts'
 import type { CommandsApi } from './commands.ts'
 import type { SkillsApi } from './skills.ts'
 import type { ReferencesApi } from './references.ts'
+import type { SubagentsApi } from './subagents.ts'
 import type { EventsApi } from './events.ts'
 import type { GoalsApi } from './goals.ts'
+import type { SettingsApi } from './settings.ts'
+import type { CredentialsApi } from './credentials.ts'
+import type { LlmApi } from './llm.ts'
 import type { ClientResponse, RpcReceipt } from './rpc.ts'
 
 /** Root interface of the unified API surface. New client-request domain = one new file pair + one field here + one map row. */
 export interface ApiProxy {
   sessions: SessionsApi
+  subagents: SubagentsApi
   host: HostApi
   workspace: WorkspaceApi
   commands: CommandsApi
@@ -24,6 +29,9 @@ export interface ApiProxy {
   references: ReferencesApi
   events: EventsApi
   goals: GoalsApi
+  settings: SettingsApi
+  credentials: CredentialsApi
+  llm: LlmApi
   /** Response entry for server-requests (client-response, echoing their rpcId); not a domain method (four-quadrant model). */
   respond(message: ClientResponse): Promise<RpcReceipt>
 }
@@ -31,15 +39,22 @@ export interface ApiProxy {
 // ---- Domain interfaces and payload entities ----
 export type {
   HistoryEntry, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
-  ModelReasoningEffort, ModelTarget, QueueAction, SessionModels, SessionProjectionsBlock, SessionsApi, SessionSummary,
+  ModelReasoningEffort, ModelTarget, QueueAction, SessionModels, SessionProjectionsBlock, SessionSearchItem,
+  SessionsApi, SessionSummary,
 } from './sessions.ts'
 export type { DirectoryEntry, DirectoryListing, HostApi } from './host.ts'
+export type {
+  SubagentAddress, SubagentCatalog, SubagentListEntry, SubagentPromptReceipt, SubagentsApi,
+} from './subagents.ts'
 export type { WorkspaceApi, WorkspaceId, WorkspaceView } from './workspace.ts'
 export type { CommandsApi, CommandDescriptor } from './commands.ts'
 export type { SkillsApi, SkillEntry } from './skills.ts'
 export type { FileReferenceItem, ReferencesApi, SessionReferenceItem } from './references.ts'
 export type { EventsApi, MuxFrame, HostFrame, QueuedInboxItem, ToolCallView, ToolEventView, ToolResultView } from './events.ts'
 export type { GoalsApi, GoalId, GoalRef } from './goals.ts'
+export type { SettingsApi, SettingsNamespaceView, SettingsPathOpView, SettingsSecretView } from './settings.ts'
+export type { CredentialsApi, CredentialView } from './credentials.ts'
+export type { ConfigurableProviderView, LlmApi } from './llm.ts'
 export type { ApprovalResponsePayload } from './approvals.ts'
 export type { QuestionResponsePayload } from './questions.ts'
 
@@ -60,6 +75,12 @@ export type {
 export { RpcId, transportError } from './rpc.ts'
 export type { RpcError, RpcErrorCode, RpcErrorDetailsMap, RpcResult } from './rpc.ts'
 export type { InboxItemId } from '@deepseek-ai/dsh-agent/brand'
+
+// ---- Fixed session-search product bounds ----
+export {
+  SESSION_SEARCH_RESULT_LIMIT,
+  SESSION_SEARCH_SNIPPET_MAX_CODE_POINTS,
+} from './session-search.ts'
 
 // ---- Method registry and derived generics ----
 export type { RequestPayload, ResponseValue, RpcMethodMap } from './rpc-map.ts'

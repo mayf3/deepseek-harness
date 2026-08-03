@@ -10,6 +10,7 @@ import AgentRegistry, {
 } from '@deepseek-ai/dsh-agent'
 import { createUserMessage,
   createToolResultMessage,
+  LlmError,
   ReasoningEffortId,
   type LlmCallConfig,
   type LlmModelReasoningInfo,
@@ -19,6 +20,7 @@ import { createUserMessage,
 } from '@deepseek-ai/dsh-llm'
 import { GOAL_CHANGE_VERSION, GoalId, renderGoalChange, type GoalSnapshotChangeMeta } from '@deepseek-ai/dsh-goal'
 import CommandService, { type CommandInvocation } from '@deepseek-ai/dsh-commands'
+import { COMPACT_CHECKPOINT_SOURCE } from '@deepseek-ai/dsh-compact'
 import SessionStore, { SessionId, type JsonValue, type SessionEvent, type SessionHeader, type TurnEndReason } from '@deepseek-ai/dsh-session'
 import type { SessionRecord } from '@deepseek-ai/dsh-session-query'
 import SkillService, { type SkillCatalogSnapshot, type SkillDefinition, type SkillProvider, type SkillSummary } from '@deepseek-ai/dsh-skill'
@@ -40,7 +42,7 @@ import {
   type TuiRuntime,
 } from '../src/index.ts'
 import { WorkspaceFileSearch } from '@deepseek-ai/dsh-file-reference-local'
-import { ATTRIBUTE_ROLES, COLOR_ROLES, paletteSpec } from '../src/components/theme.ts'
+import { ATTRIBUTE_ROLES, brandText, COLOR_ROLES, paletteSpec } from '../src/components/theme.ts'
 import {
   appendAssistant,
   appendUser,
@@ -48,6 +50,7 @@ import {
   disposeTuiTestHarness,
   type TuiHarnessOptions,
 } from './harness.ts'
+import { HeadlessTerminal } from './headless-terminal.ts'
 import { TestSessionQueryService } from './session-query.ts'
 
 const UNUSED_TOOL_OUTPUT: ToolDefinition['output'] = {
@@ -136,6 +139,12 @@ async function tick(): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, 25))
 }
 
+function promptWidth(output: string): number {
+  const row = output.split('\n').find(line => line.includes('dsh'))
+  if (row === undefined) throw new Error('prompt row not rendered')
+  return visibleWidth(row.slice(row.indexOf('dsh'), row.indexOf('dsh') + 6))
+}
+
 async function setup(options: TuiHarnessOptions = {}) {
   const terminal = new FakeTerminal()
   const exit = vi.fn()
@@ -177,6 +186,7 @@ describe('TUI config', () => {
     expect(resolveTuiConfig(undefined)).toEqual({
       showReasoning: true,
       maxToolOutputLines: 6,
+      maxDiffEditLength: 1000,
       maxQuestionOptions: 8,
       maxModelOptions: 8,
       maxResumeOptions: 8,
@@ -184,6 +194,7 @@ describe('TUI config', () => {
       questionDialogMaxHeight: 20,
       modelDialogWidth: 76,
       modelDialogMaxHeight: 20,
+      detailsDialogWidth: 72,
       fileSearchMaxResults: 20,
       fileSearchMaxEntries: 10_000,
       fileSearchExcludedDirectories: ['.git', 'node_modules'],
@@ -201,6 +212,7 @@ describe('TUI config', () => {
     expect(resolveTuiConfig({
       showReasoning: false,
       maxToolOutputLines: 2,
+      maxDiffEditLength: 12,
       maxQuestionOptions: 3,
       maxModelOptions: 4,
       maxResumeOptions: 5,
@@ -208,6 +220,7 @@ describe('TUI config', () => {
       questionDialogMaxHeight: 14,
       modelDialogWidth: 64,
       modelDialogMaxHeight: 16,
+      detailsDialogWidth: 44,
       fileSearchMaxResults: 7,
       fileSearchMaxEntries: 123,
       fileSearchExcludedDirectories: ['.git', 'generated'],
@@ -217,6 +230,7 @@ describe('TUI config', () => {
     })).toEqual({
       showReasoning: false,
       maxToolOutputLines: 2,
+      maxDiffEditLength: 12,
       maxQuestionOptions: 3,
       maxModelOptions: 4,
       maxResumeOptions: 5,
@@ -224,6 +238,7 @@ describe('TUI config', () => {
       questionDialogMaxHeight: 14,
       modelDialogWidth: 64,
       modelDialogMaxHeight: 16,
+      detailsDialogWidth: 44,
       fileSearchMaxResults: 7,
       fileSearchMaxEntries: 123,
       fileSearchExcludedDirectories: ['.git', 'generated'],
@@ -246,7 +261,7 @@ describe('goodbye message and /resume', () => {
     ({ version: 0, id: SessionId(id), createdAt, cwd })
   const resumeEvents = (
     title: string,
-    provider = 'deepseek',
+    provider = 'deepseek-official',
     time = 100,
     reason: TurnEndReason = { kind: 'completed' },
   ): SessionEvent[] => [
@@ -318,8 +333,8 @@ describe('goodbye message and /resume', () => {
       sessionPersistence: {
         list: async () => [older, newer, header('foreign-session', 3000, '/elsewhere')],
         load: async id => id === newer.id
-          ? { meta: newer, events: resumeEvents('Newer product work', 'deepseek', 300) }
-          : { meta: older, events: resumeEvents('Older investigation', 'deepseek', 100) },
+          ? { meta: newer, events: resumeEvents('Newer product work', 'deepseek-official', 300) }
+          : { meta: older, events: resumeEvents('Older investigation', 'deepseek-official', 100) },
       },
     })
     result.terminal.send('/resume')
@@ -418,7 +433,7 @@ describe('goodbye message and /resume', () => {
         list: async () => targets,
         load: async id => ({
           meta: targets.find(target => target.id === id)!,
-          events: resumeEvents(`Paged ${id.slice('paged-'.length)}`, 'deepseek', 1000 - Number(id.slice('paged-'.length)) * 10),
+          events: resumeEvents(`Paged ${id.slice('paged-'.length)}`, 'deepseek-official', 1000 - Number(id.slice('paged-'.length)) * 10),
         }),
       },
     })
@@ -474,7 +489,7 @@ describe('goodbye message and /resume', () => {
       cwd: '/workspace',
       sessionPersistence: {
         list: async () => [target],
-        load: async () => ({ meta: target, events: resumeEvents(`Turn ${label}`, 'deepseek', 100, reason) }),
+        load: async () => ({ meta: target, events: resumeEvents(`Turn ${label}`, 'deepseek-official', 100, reason) }),
       },
     })
     result.terminal.send('/resume')
@@ -710,7 +725,7 @@ describe('goodbye message and /resume', () => {
   it('falls back to assistant provenance and header creation time for sparse logs', async () => {
     const assistantOnly = header('assistant-route', 20, '/workspace')
     const empty = header('empty-log', 10, '/workspace')
-    const events = resumeEvents('Assistant route', 'deepseek')
+    const events = resumeEvents('Assistant route', 'deepseek-official')
       .filter(event => event.type !== 'request/header')
       .map((event, seq) => ({ ...event, seq })) as SessionEvent[]
     const result = await setup({
@@ -725,7 +740,7 @@ describe('goodbye message and /resume', () => {
     result.terminal.send('/resume')
     result.terminal.send('\r')
     await tick(); await tick()
-    expect(result.terminal.output).toContain('deepseek/model-1')
+    expect(result.terminal.output).toContain('deepseek-official/model-1')
     expect(result.terminal.output).toContain(new Date(empty.createdAt).toISOString())
     await dispose(result)
   })
@@ -1949,12 +1964,6 @@ describe('pi-tui chat lifecycle and transcript', () => {
     // `dsh <glyph> ` with the same visible width as the idle `dsh > `, so the
     // cursor never shifts. Assert both the glyph slot and that constant width
     // (color is off in this harness, so output carries no ANSI to strip).
-    const promptWidth = (): number => {
-      const row = result.terminal.output.split('\n').find(line => line.includes('dsh'))
-      if (row === undefined) throw new Error('prompt row not rendered')
-      return visibleWidth(row.slice(row.indexOf('dsh'), row.indexOf('dsh') + 6))
-    }
-
     // Each phase swaps only the glyph character in the same slot at equal width.
     const phaseGlyph: [() => void, string][] = [
       [() => result.session.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'weighing' } }), 'dsh ✻ '],
@@ -1967,8 +1976,8 @@ describe('pi-tui chat lifecycle and transcript', () => {
       drive()
       await tick()
       expect(result.terminal.output).toContain(expected)
-      runningWidth ??= promptWidth()
-      expect(promptWidth()).toBe(runningWidth)
+      runningWidth ??= promptWidth(result.terminal.output)
+      expect(promptWidth(result.terminal.output)).toBe(runningWidth)
     }
 
     // Idle begins a fade-out; once it settles (clock past the fade window) the
@@ -1985,10 +1994,187 @@ describe('pi-tui chat lifecycle and transcript', () => {
       return rows.at(-1) ?? ''
     }
     expect(promptRow()).toContain('dsh > ')
-    expect(promptRow()).not.toMatch(/dsh(?:\x1b\[[0-9;]*m| )*[◍✻●⚙]/u)
-    expect(promptWidth()).toBe(runningWidth)
+    expect(promptRow()).not.toMatch(/dsh(?:\x1b\[[0-9;]*m| )*[◍✻●⚙⊙]/u)
+    expect(promptWidth(result.terminal.output)).toBe(runningWidth)
 
     await dispose(result)
+  })
+
+  it('shows a live standalone compaction in the fixed status area', async () => {
+    let clock = 0
+    const result = await setup({ omitInitialLifecycle: true, now: () => clock })
+    const idleWidth = promptWidth(result.terminal.output)
+
+    result.session.append('compact/start', { turn: null })
+    clock = 1_000
+    result.terminal.output = ''
+    await new Promise(resolve => setTimeout(resolve, 75))
+
+    expect(result.terminal.output).toContain('dsh ⊙ ')
+    expect(result.terminal.output).toContain('Context being compacted 1.0s')
+    expect(promptWidth(result.terminal.output)).toBe(idleWidth)
+    expect(result.terminal.progress.at(-1)).toBe(true)
+
+    clock = 1_450
+    result.terminal.output = ''
+    await new Promise(resolve => setTimeout(resolve, 75))
+    expect(result.terminal.output).toContain('Context being compacted 1.4s')
+
+    await dispose(result)
+  })
+
+  it('ignores a numbered compaction bracket while the status line is idle', async () => {
+    const result = await setup({ now: () => 1_000 })
+    result.session.append('compact/start', { turn: 1 })
+    await tick()
+
+    expect(result.terminal.output).toContain('dsh > ')
+    expect(result.terminal.output).not.toContain('dsh ⊙ ')
+    expect(result.terminal.progress.at(-1)).toBe(false)
+    await dispose(result)
+  })
+
+  it('fades a closed standalone compaction back to the plain caret', async () => {
+    let clock = 0
+    const result = await setup({ omitInitialLifecycle: true, now: () => clock })
+    clock = 1_000
+    result.session.append('compact/start', { turn: null })
+    await tick()
+    result.session.append('compact/end', { turn: null })
+    await tick()
+
+    clock = 2_000
+    await new Promise(resolve => setTimeout(resolve, 120))
+    result.terminal.output = ''
+    result.terminal.resize(result.terminal.columns + 1)
+    await tick()
+
+    expect(result.terminal.output).toContain('dsh > ')
+    expect(result.terminal.output).not.toMatch(/dsh [◍✻●⚙⊙]/u)
+    expect(result.terminal.output).not.toContain('Context being compacted')
+    expect(result.terminal.progress.at(-1)).toBe(false)
+    await dispose(result)
+  })
+
+  it('reports a failed standalone compaction when its live bracket closes', async () => {
+    const result = await setup({ omitInitialLifecycle: true, now: () => 1_000 })
+    result.session.append('compact/start', { turn: null })
+    result.terminal.output = ''
+    result.session.append('compact/end', { turn: null, error: 'summary failed' })
+    await tick()
+
+    expect(result.terminal.output).toContain('Compaction failed: summary failed')
+    expect(result.terminal.progress.at(-1)).toBe(false)
+    await dispose(result)
+  })
+
+  it('preserves live compaction progress across an idle status edge', async () => {
+    let clock = 0
+    const result = await setup({ omitInitialLifecycle: true, now: () => clock })
+    result.session.append('compact/start', { turn: null })
+    clock = 1_000
+    result.terminal.output = ''
+    result.ctx.emit('agent/status', result.agent, 'idle')
+    result.terminal.resize(result.terminal.columns + 1)
+    await tick()
+
+    expect(result.terminal.output).toContain('dsh ⊙ ')
+    expect(result.terminal.progress.at(-1)).toBe(true)
+    await dispose(result)
+  })
+
+  it('keeps a running turn phase glyph ahead of standalone compaction', async () => {
+    let clock = 0
+    const result = await setup({ status: 'running', now: () => clock })
+    clock = 1_000
+    result.terminal.output = ''
+    result.session.append('compact/start', { turn: null })
+    await tick()
+
+    expect(result.terminal.output).toContain('dsh ◍ ')
+    expect(result.terminal.output).not.toContain('dsh ⊙ ')
+    result.session.append('compact/end', { turn: null })
+    await tick()
+    result.terminal.output = ''
+    result.terminal.resize(result.terminal.columns + 1)
+    await tick()
+
+    expect(result.terminal.output).toContain('dsh ◍ ')
+    expect(result.terminal.output).not.toContain('dsh ⊙ ')
+    expect(result.terminal.progress.at(-1)).toBe(true)
+    await dispose(result)
+  })
+
+  it('treats duplicate live compaction starts as one owned bracket', async () => {
+    const intervalSpy = vi.spyOn(globalThis, 'setInterval')
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval')
+    let result: Awaited<ReturnType<typeof setup>> | undefined
+    let didDispose = false
+    let clock = 0
+    try {
+      result = await setup({ omitInitialLifecycle: true, now: () => clock })
+      intervalSpy.mockClear()
+      clearIntervalSpy.mockClear()
+      result.session.append('compact/start', { turn: null })
+      clock = 1_000
+      result.session.append('compact/start', { turn: null })
+      await tick()
+
+      expect(intervalSpy).toHaveBeenCalledOnce()
+      expect(result.terminal.output).toContain('dsh ⊙ ')
+      expect(result.terminal.progress.at(-1)).toBe(true)
+
+      result.session.append('compact/end', { turn: null })
+      await tick()
+      expect(clearIntervalSpy).toHaveBeenCalledOnce()
+      expect(result.terminal.progress.at(-1)).toBe(false)
+
+      await dispose(result)
+      didDispose = true
+    } finally {
+      if (result !== undefined && !didDispose) await dispose(result)
+      intervalSpy.mockRestore()
+      clearIntervalSpy.mockRestore()
+    }
+  })
+
+  it('does not show compaction progress for a resumed orphaned start', async () => {
+    const result = await setup({
+      omitInitialLifecycle: true,
+      now: () => 1_000,
+      beforeMount(session) {
+        session.append('compact/start', { turn: null })
+      },
+    })
+
+    expect(result.terminal.output).toContain('dsh > ')
+    expect(result.terminal.output).not.toContain('dsh ⊙ ')
+    expect(result.terminal.output).not.toContain('Context being compacted')
+    expect(result.terminal.progress.at(-1)).toBe(false)
+    await dispose(result)
+  })
+
+  it('releases the live compaction timer and progress bit on dispose', async () => {
+    const intervalSpy = vi.spyOn(globalThis, 'setInterval')
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval')
+    let result: Awaited<ReturnType<typeof setup>> | undefined
+    let didDispose = false
+    try {
+      result = await setup({ omitInitialLifecycle: true, now: () => 1_000 })
+      intervalSpy.mockClear()
+      clearIntervalSpy.mockClear()
+      result.session.append('compact/start', { turn: null })
+      expect(intervalSpy).toHaveBeenCalledOnce()
+
+      await dispose(result)
+      didDispose = true
+      expect(clearIntervalSpy).toHaveBeenCalledOnce()
+      expect(result.terminal.progress.at(-1)).toBe(false)
+    } finally {
+      if (result !== undefined && !didDispose) await dispose(result)
+      intervalSpy.mockRestore()
+      clearIntervalSpy.mockRestore()
+    }
   })
 
   // Extract the running glyph's interpolated gray channel from a rendered frame.
@@ -2098,7 +2284,7 @@ describe('pi-tui chat lifecycle and transcript', () => {
   it('shows the plain prompt caret while idle', async () => {
     const result = await setup({ now: () => 0 })
     expect(result.terminal.output).toContain('dsh > ')
-    expect(result.terminal.output).not.toMatch(/dsh [◍✻●⚙]/u)
+    expect(result.terminal.output).not.toMatch(/dsh [◍✻●⚙⊙]/u)
     await dispose(result)
   })
 
@@ -2396,7 +2582,7 @@ describe('pi-tui chat lifecycle and transcript', () => {
       contextWindow: 128_000,
       contextTokens: 42_000,
       config: { showReasoning: false },
-      agentOptions: { provider: 'deepseek', model: 'deepseek-v4-pro' },
+      agentOptions: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
       tools: {
         read: {
           name: 'read', description: 'Read a file', parameters: {},
@@ -2444,7 +2630,7 @@ describe('pi-tui chat lifecycle and transcript', () => {
     expect(result.terminal.output).toContain('main-session')
     expect(result.terminal.output).toContain('Inspect status \\x1b]2;unsafe\\x07')
     expect(result.terminal.output).toContain('/workspace/status')
-    expect(result.terminal.output).toContain('deepseek/deepseek-v4-pro (effort default; reasoning blocks')
+    expect(result.terminal.output).toContain('deepseek-official/deepseek-v4-pro (effort default; reasoning blocks')
     expect(result.terminal.output).toContain('hidden)')
     // 6 domain events + the /status invocation's own command/run (open turn: joined directly).
     expect(result.terminal.output).toContain('running · 7 events · 1 turn · 1 step · 2 tool calls')
@@ -2505,6 +2691,94 @@ describe('pi-tui chat lifecycle and transcript', () => {
     await tick()
 
     expect(result.exit).toHaveBeenCalledWith(0)
+    await dispose(result)
+  })
+
+  it('/details sets card visibility and reasoning display from arguments', async () => {
+    const result = await setup()
+    const run = async (line: string): Promise<void> => {
+      result.terminal.send(line)
+      result.terminal.send('\r')
+      await tick()
+    }
+
+    await run('/details hidden')
+    expect(result.terminal.output).toContain('Tool cards hidden.')
+
+    await run('/details expanded reasoning off')
+    expect(result.terminal.output).toContain('Tool and context cards expanded.')
+    expect(result.terminal.output).toContain('Reasoning blocks hidden.')
+
+    await run('/details reasoning on')
+    expect(result.terminal.output).toContain('Reasoning blocks shown.')
+
+    // Bare `reasoning` toggles: shown -> hidden.
+    const toggleOutput = result.terminal.output.length
+    await run('/details reasoning')
+    expect(result.terminal.output.slice(toggleOutput)).toContain('Reasoning blocks hidden.')
+    await run('/details collapsed')
+    expect(result.terminal.output.slice(toggleOutput)).toContain('Tool and context cards collapsed.')
+
+    await run('/details bogus')
+    expect(result.terminal.output).toContain('Unknown /details argument "bogus"')
+
+    await dispose(result)
+  })
+
+  it('bare /details opens the transcript-details toggle and Tab applies immediately', async () => {
+    const result = await setup()
+    const open = async (): Promise<number> => {
+      const from = result.terminal.output.length
+      result.terminal.send('/details')
+      result.terminal.send('\r')
+      await vi.waitFor(() => { expect(result.terminal.output.slice(from)).toContain('Transcript details') })
+      return from
+    }
+
+    const opened = await open()
+    expect(result.terminal.output.slice(opened)).toContain('Tool cards')
+    expect(result.terminal.output.slice(opened)).toContain('Reasoning')
+
+    // A second /details while the selector is open replaces the overlay
+    // instead of stacking a second one behind it.
+    await result.ctx.commands.execute(result.agent, '/details', new AbortController().signal)
+    await tick()
+
+    // Each Tab applies one step immediately while the dialog stays open:
+    // collapsed -> expanded -> hidden -> collapsed (wraparound).
+    result.terminal.send('\t')
+    await tick()
+    expect(result.terminal.output).toContain('Tool and context cards expanded.')
+    result.terminal.send('\t')
+    await tick()
+    expect(result.terminal.output).toContain('Tool cards hidden.')
+    result.terminal.send('\t')
+    await tick()
+    expect(result.terminal.output).toContain('Tool and context cards collapsed.')
+
+    // The reasoning entry toggles the same way.
+    result.terminal.send('\x1b[B')
+    result.terminal.send('\t')
+    await tick()
+    expect(result.terminal.output).toContain('Reasoning blocks hidden.')
+
+    // Enter closes without further changes.
+    const entered = result.terminal.output.length
+    result.terminal.send('\r')
+    await tick()
+    expect(result.terminal.output.slice(entered)).not.toContain('Reasoning blocks')
+
+    // Esc and Ctrl+C also close; the reopened dialog shows the live values.
+    const reopened = await open()
+    expect(result.terminal.output.slice(reopened)).toContain('collapsed')
+    expect(result.terminal.output.slice(reopened)).toContain('hidden')
+    result.terminal.send('\x1b')
+    await tick()
+    const ctrlCOutput = await open()
+    result.terminal.send('\x03')
+    await tick()
+    expect(result.terminal.output.slice(ctrlCOutput)).not.toContain('Reasoning blocks')
+
     await dispose(result)
   })
 
@@ -3600,7 +3874,7 @@ describe('pi-tui chat lifecycle and transcript', () => {
 
     const failed = await setup({
       catalog: {
-        providers: [{ id: 'deepseek', name: 'DeepSeek' }],
+        providers: [{ id: 'deepseek-official', name: 'DeepSeek' }],
         models: [],
         listModels: () => Promise.reject(new Error('catalog offline')),
         resolveModelInfo: () => Promise.reject(new Error('capacity offline')),
@@ -3616,8 +3890,8 @@ describe('pi-tui chat lifecycle and transcript', () => {
 
     const reasoningFailed = await setup({
       catalog: {
-        providers: [{ id: 'deepseek', name: 'DeepSeek' }],
-        models: [{ provider: 'deepseek', id: 'model-1', name: 'Model One' }],
+        providers: [{ id: 'deepseek-official', name: 'DeepSeek' }],
+        models: [{ provider: 'deepseek-official', id: 'model-1', name: 'Model One' }],
         resolveModelInfo: () => Promise.reject(new Error('reasoning metadata offline')),
       },
     })
@@ -3629,11 +3903,101 @@ describe('pi-tui chat lifecycle and transcript', () => {
     await dispose(reasoningFailed)
   })
 
+  it('defers a NO_ADAPTER context resolution until the provider registers instead of surfacing an error', async () => {
+    // Loader activation order is service-driven: the TUI can mount before a
+    // configured adapter plugin activates, so the initial resolveModelInfo
+    // fails with NO_ADAPTER. That transient state must not print an error;
+    // the resolution retries on llm/adapters-updated.
+    const adapters = new Set<string>()
+    const result = await setup({
+      agentOptions: { provider: 'openai-codex', model: 'gpt-x' },
+      contextTokens: 50_000,
+      catalog: {
+        providers: [],
+        models: [],
+        resolveModelInfo: () => adapters.has('openai-codex')
+          ? Promise.resolve({ context: { contextWindow: 100_000 } })
+          : Promise.reject(new LlmError('no adapter registered for provider "openai-codex"', 'NO_ADAPTER')),
+      },
+    })
+    await tick()
+    expect(result.terminal.output).not.toContain('Could not resolve model context')
+
+    // A topology commit that still lacks the route parks the wait again.
+    result.ctx.emit('llm/adapters-updated')
+    await tick()
+    expect(result.terminal.output).not.toContain('% context')
+    expect(result.terminal.output).not.toContain('Could not resolve model context')
+
+    adapters.add('openai-codex')
+    result.ctx.emit('llm/adapters-updated')
+    await vi.waitFor(() => {
+      expect(result.terminal.output).toContain('% context')
+    })
+    expect(result.terminal.output).not.toContain('Could not resolve model context')
+
+    // A commit after satisfaction is a no-op for the resolved value.
+    result.ctx.emit('llm/adapters-updated')
+    await tick()
+    expect(result.terminal.output).not.toContain('Could not resolve model context')
+    await dispose(result)
+  })
+
+  it('stops listening for adapter registrations after channel detach', async () => {
+    // The listener disposer rides detachListeners() through the controller's
+    // detach(): after dispose, a registry commit must not re-enter resolution
+    // at all (the isDisposed() guard is a fallback, not the removal).
+    const calls: string[] = []
+    const result = await setup({
+      agentOptions: { provider: 'openai-codex', model: 'gpt-x' },
+      catalog: {
+        providers: [],
+        models: [],
+        resolveModelInfo: (provider) => {
+          calls.push(provider)
+          return Promise.reject(new LlmError('no adapter registered for provider "openai-codex"', 'NO_ADAPTER'))
+        },
+      },
+    })
+    await tick()
+    const callsAtDetach = calls.length
+    await result.controller.dispose()
+    result.ctx.emit('llm/adapters-updated')
+    await tick()
+    expect(calls.length).toBe(callsAtDetach)
+    await result.ctx.fiber.dispose()
+  })
+
+  it('drops a deferred NO_ADAPTER resolution when the target moved before the adapter registered', async () => {
+    const result = await setup({
+      agentOptions: { provider: 'openai-codex', model: 'gpt-x' },
+      catalog: {
+        providers: [{ id: 'alpha', name: 'Alpha' }],
+        models: [{ provider: 'alpha', id: 'a1', name: 'Alpha One' }],
+        resolveModelInfo: provider => provider === 'alpha'
+          ? Promise.resolve({ context: { contextWindow: 64_000 } })
+          : Promise.reject(new LlmError('no adapter registered for provider "openai-codex"', 'NO_ADAPTER')),
+      },
+    })
+    await tick()
+    // Switching the model re-resolves and clears the deferred wait, so the
+    // stale route's adapter arriving afterwards must be a no-op.
+    result.terminal.send('/model alpha/a1')
+    result.terminal.send('\r')
+    await vi.waitFor(() => {
+      expect(result.terminal.output).toContain('Model selected: alpha/a1')
+    })
+    result.ctx.emit('llm/adapters-updated')
+    await tick()
+    expect(result.terminal.output).not.toContain('Could not resolve model context')
+    await dispose(result)
+  })
+
   it('does not render a model catalog that resolves after TUI disposal', async () => {
     const deferred = Promise.withResolvers<never[]>()
     const result = await setup({
       catalog: {
-        providers: [{ id: 'deepseek', name: 'DeepSeek' }],
+        providers: [{ id: 'deepseek-official', name: 'DeepSeek' }],
         models: [],
         listModels: () => deferred.promise,
       },
@@ -3649,7 +4013,7 @@ describe('pi-tui chat lifecycle and transcript', () => {
     const rejected = Promise.withResolvers<never[]>()
     const rejectedResult = await setup({
       catalog: {
-        providers: [{ id: 'deepseek', name: 'DeepSeek' }],
+        providers: [{ id: 'deepseek-official', name: 'DeepSeek' }],
         models: [],
         listModels: () => rejected.promise,
       },
@@ -3666,7 +4030,7 @@ describe('pi-tui chat lifecycle and transcript', () => {
     const contextResult = await setup({
       contextTokens: 99,
       catalog: {
-        providers: [{ id: 'deepseek', name: 'DeepSeek' }],
+        providers: [{ id: 'deepseek-official', name: 'DeepSeek' }],
         models: [],
         resolveModelInfo: () => context.promise.then(value => ({ context: value })),
       },
@@ -3932,8 +4296,9 @@ describe('skill slash command', () => {
       source: 'runtime',
       content: 'Dynamic body.',
     })
-    await tick()
-    expect(result.terminal.output).toContain('DYNAMIC_COMPLETION_MARKER')
+    await vi.waitFor(() => {
+      expect(result.terminal.output).toContain('DYNAMIC_COMPLETION_MARKER')
+    })
 
     result.terminal.send('\x03')
     disposeSkill()
@@ -4314,7 +4679,30 @@ describe('tool cards and surface replay', () => {
       presentCall: () => ({
         card: 'diff',
         title: 'Edit src/only.ts',
-        diffs: [{ path: 'src/only.ts', oldText: 'old', newText: 'new' }],
+        diffs: [{
+          path: 'src/only.ts',
+          oldText: 'my: my-MM\nne: ne-NP\nnl: nl-NL\nnb: no-NO\npa: pa-Guru-IN\npl: pl-PL\npt_pt: pt-PT',
+          newText: 'my: my-MM\nne: ne-NP\nnl: nl-NL\nnb: nb-NO\npa: pa-Guru-IN\npl: pl-PL\npt_pt: pt-PT',
+        }],
+      }),
+    },
+    scatteredDiff: {
+      name: 'scatteredDiff', description: '', parameters: {}, output: UNUSED_TOOL_OUTPUT, execute: async () => [],
+      // Three hunks in ONE file. The first two sides end in the terminator
+      // newline real write/edit content carries; the third removes a line and
+      // leaves an EMPTY added side (a full deletion), so `diffContentLines('')`
+      // returns zero lines. The footer must read `+2 -1 · 1 file`: each trailing
+      // newline terminates its line rather than adding a phantom empty one, the
+      // empty side contributes no `+ ` row, and the three hunks count as the
+      // single distinct path they touch.
+      presentCall: () => ({
+        card: 'diff',
+        title: 'Edit src/scatter.ts',
+        diffs: [
+          { path: 'src/scatter.ts', oldText: null, newText: 'first\n' },
+          { path: 'src/scatter.ts', oldText: null, newText: 'second\n' },
+          { path: 'src/scatter.ts', oldText: 'gone\n', newText: '' },
+        ],
       }),
     },
     generic: {
@@ -4367,6 +4755,20 @@ describe('tool cards and surface replay', () => {
       presentCall: () => ({ card: 'generic', title: 'Becomes terminal' }),
       presentResult: () => ({ card: 'terminal', output: 'converted terminal' }),
     },
+    // A search card carries no result text of its own; the TUI has no dedicated
+    // search arm and falls back to the raw result content, rendered as the same
+    // dim generic body a pre-search-card grep/glob result showed.
+    search: {
+      name: 'search', description: '', parameters: {}, output: UNUSED_TOOL_OUTPUT, execute: async () => [],
+      presentCall: () => ({ card: 'generic', title: 'Grep todo', kind: 'search' }),
+      presentResult: () => ({
+        card: 'search',
+        shape: 'matches',
+        files: [{ path: 'a.ts', matches: [{ lineNumber: 1, line: 'todo one' }] }],
+        truncated: false,
+        total: 1,
+      }),
+    },
     symbolic: {
       name: 'symbolic', description: '', parameters: {}, output: UNUSED_TOOL_OUTPUT, execute: async () => [],
       presentCall: () => ({ card: 'generic', title: 'Symbol input', rawInput: Symbol('input') }),
@@ -4374,6 +4776,14 @@ describe('tool cards and surface replay', () => {
     knownXml: {
       name: 'knownXml', description: '', parameters: {}, output: UNUSED_TOOL_OUTPUT, execute: async () => [],
       presentCall: () => ({ card: 'generic', title: 'Known XML' }),
+    },
+    // A web card carries no `content` copy, so it falls back to the raw result
+    // content, which must still render through the dim Markdown path (bold
+    // markers stripped) rather than as bare text.
+    webCard: {
+      name: 'webCard', description: '', parameters: {}, output: UNUSED_TOOL_OUTPUT, execute: async () => [],
+      presentCall: () => ({ card: 'generic', title: 'Fetch page', kind: 'fetch' }),
+      presentResult: () => ({ card: 'web', kind: 'fetch', title: 'https://a.test', url: 'https://a.test', statusCode: 200, truncated: false }),
     },
   }
 
@@ -4395,6 +4805,8 @@ describe('tool cards and surface replay', () => {
       ['c11', 'terminalResult', '{}'],
       ['c12', 'symbolic', '{}'],
       ['c13', 'knownXml', '{}'],
+      ['c16', 'webCard', '{}'],
+      ['c17', 'search', '{"pattern":"todo"}'],
     ] as const
     appendAssistant(result.session, [
       { type: 'text', text: 'Calling tools' },
@@ -4489,6 +4901,22 @@ describe('tool cards and surface replay', () => {
       }),
     }, { surfaceOp: 'append' })
     result.session.append('tool/result', {
+      turn: 1, step: 1,
+      message: createToolResultMessage({
+        callId: 'c16' as never,
+        content: [{ type: 'text', text: 'Fetched **body** text' }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+    result.session.append('tool/result', {
+      turn: 1, step: 1,
+      message: createToolResultMessage({
+        callId: 'c17' as never,
+        content: [{ type: 'text', text: 'Found 1 match\n\na.ts\nLine 1: todo one' }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+    result.session.append('tool/result', {
       turn: 1,
       step: 1,
       message: createToolResultMessage({
@@ -4519,6 +4947,11 @@ describe('tool cards and surface replay', () => {
     expect(output).toContain('$ blank desc command')
     // A card whose title only repeats the name renders header-only (empty body).
     expect(output).toContain('Tool / emptyBody')
+    // A search result view carries no `content` of its own, so the card renders
+    // the raw model-facing result text through the same dim generic body — the
+    // TUI has no dedicated search arm.
+    expect(output).toContain('Tool / search')
+    expect(output).toContain('Line 1: todo one')
     // A diff card drops its title (the paths + change footer carry the meaning).
     // The first file's path is head-visible; the second file and the change
     // footer sit past this card's 4-line budget and appear only when expanded.
@@ -4537,6 +4970,11 @@ describe('tool cards and surface replay', () => {
     expect(output).toContain('Empty card')
     expect(output).toContain('converted terminal')
     expect(output).toContain('<known><value>literal</value></known>')
+    // A web card carries no `content` copy, so it falls back to the raw result
+    // content, which still renders through the dim Markdown path: the bold
+    // markers are stripped rather than shown literally.
+    expect(output).toContain('Fetched body text')
+    expect(output).not.toContain('Fetched **body** text')
     expect(output).toContain('path: /tmp/a.txt')
     expect(output).toContain('line (number="1"): hello')
     expect(output).not.toContain('<result>')
@@ -4599,7 +5037,7 @@ describe('tool cards and surface replay', () => {
   })
 
   it('names a single-file diff in the body once, under a fixed Tool header', async () => {
-    const result = await setup({ tools })
+    const result = await setup({ tools, config: { maxToolOutputLines: 20 } })
     appendUser(result.session, 'edit one file')
     appendAssistant(result.session, [
       { type: 'text', text: 'Editing' },
@@ -4615,9 +5053,152 @@ describe('tool cards and surface replay', () => {
     expect(output).toContain('Tool / singleDiff')
     expect(output).not.toContain('Edit src/only.ts')
     expect(output.split('src/only.ts').length - 1).toBe(1)
-    expect(output).toContain('- old')
-    expect(output).toContain('+ new')
+    expect(output).toContain('  my: my-MM')
+    expect(output).not.toContain('- my: my-MM')
+    expect(output).not.toContain('+ my: my-MM')
+    expect(output).toContain('- nb: no-NO')
+    expect(output).toContain('+ nb: nb-NO')
+    expect(output).toContain('└ +1 -1 · 1 file')
+    await dispose(result)
+  })
+
+  it('renders an empty create without a synthetic added row', async () => {
+    const emptyCreate: Record<string, ToolDefinition> = {
+      emptyCreate: {
+        name: 'emptyCreate',
+        description: '',
+        parameters: {},
+        output: UNUSED_TOOL_OUTPUT,
+        execute: async () => [],
+        presentCall: () => ({
+          card: 'diff',
+          title: 'Write empty.txt',
+          diffs: [{ path: 'empty.txt', oldText: null, newText: '' }],
+        }),
+      },
+    }
+    const result = await setup({
+      tools: emptyCreate,
+      config: { maxToolOutputLines: 20, theme: { color: false } },
+    })
+    appendAssistant(result.session, [
+      { type: 'tool-call', id: 'empty-create' as never, name: 'emptyCreate', arguments: '{}' },
+    ])
+    result.session.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId: 'empty-create' as never,
+      name: 'emptyCreate',
+      arguments: '{}',
+    })
+    await tick()
+    const rows = result.terminal.output.split('\n').map(row => row.trim())
+    expect(result.terminal.output).toContain('empty.txt')
+    expect(result.terminal.output).toContain('└ +0 -0 · 1 file')
+    expect(rows).not.toContain('+')
+    await dispose(result)
+  })
+
+  it('bounds and caches exact diff comparison before whole-side fallback', async () => {
+    let oldTextReads = 0
+    let newText = 'new one\nnew two'
+    const boundedDiff = {
+      path: 'bounded.txt',
+      get oldText() {
+        oldTextReads += 1
+        return 'old one\nold two'
+      },
+      get newText() { return newText },
+    }
+    const boundedView = {
+      card: 'diff' as const,
+      title: 'Edit bounded.txt',
+      diffs: [boundedDiff],
+    }
+    const bounded: Record<string, ToolDefinition> = {
+      bounded: {
+        name: 'bounded',
+        description: '',
+        parameters: {},
+        output: UNUSED_TOOL_OUTPUT,
+        execute: async () => [],
+        presentCall: () => boundedView,
+        presentResult: () => {
+          newText = 'settled one\nsettled two'
+          return boundedView
+        },
+      },
+    }
+    const result = await setup({
+      tools: bounded,
+      config: {
+        maxToolOutputLines: 20,
+        maxDiffEditLength: 1,
+        theme: { color: false },
+      },
+    })
+    appendAssistant(result.session, [
+      { type: 'tool-call', id: 'bounded-diff' as never, name: 'bounded', arguments: '{}' },
+    ])
+    result.session.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId: 'bounded-diff' as never,
+      name: 'bounded',
+      arguments: '{}',
+    })
+    await tick()
+    expect(result.terminal.output).toContain('[exact line diff omitted: >1 changed lines]')
+    expect(result.terminal.output).toContain('- old one')
+    expect(result.terminal.output).toContain('+ new one')
+    expect(result.terminal.output).toContain('└ +2 -2 · 1 file · approximate')
+    const readsAfterFirstRender = oldTextReads
+    expect(readsAfterFirstRender).toBeGreaterThan(0)
+    result.session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId: 'bounded-diff' as never,
+        content: [{ type: 'text', text: 'done' }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+    await tick()
+    expect(result.terminal.output).toContain('+ settled one')
+    expect(oldTextReads).toBeGreaterThan(readsAfterFirstRender)
+    const readsAfterResult = oldTextReads
+    result.terminal.resize(87)
+    await tick()
+    expect(oldTextReads).toBe(readsAfterResult)
+    await dispose(result)
+  })
+
+  it('counts a same-file diff once and terminates its trailing newline', async () => {
+    // A budget past the card's row count so every hunk row stays visible (the
+    // collapse arithmetic is covered elsewhere); this test is about the
+    // terminator rule and the distinct-path footer count.
+    const result = await setup({ tools, config: { maxToolOutputLines: 20 } })
+    appendUser(result.session, 'scatter edits in one file')
+    appendAssistant(result.session, [
+      { type: 'text', text: 'Editing' },
+      { type: 'tool-call', id: 'scatter' as never, name: 'scatteredDiff', arguments: '{}' },
+    ])
+    result.session.append('tool/call', {
+      turn: 1, step: 1, callId: 'scatter' as never, name: 'scatteredDiff', arguments: '{}',
+    })
+    await tick()
+    const output = result.terminal.output
+    // Three hunks, one path: distinct-path count, same as the Web DiffBlock.
     expect(output).toContain('· 1 file')
+    expect(output).not.toContain('· 3 files')
+    // The `first\n`/`second\n` sides each contribute exactly one added line —
+    // the trailing newline terminates rather than adding a phantom empty `+ `.
+    expect(output).toContain('+ first')
+    expect(output).toContain('+ second')
+    // The third hunk removes `gone` and leaves an empty added side, which
+    // contributes no `+ ` row (diffContentLines('') is zero lines).
+    expect(output).toContain('- gone')
+    expect(output).toContain('+2 -1')
     await dispose(result)
   })
 
@@ -4661,10 +5242,10 @@ describe('tool cards and surface replay', () => {
     await dispose(result)
   })
 
-  it('rebuilds after a surface replacement and hides shadowed tool calls', async () => {
+  it('keeps append-origin history and marks a landed compaction, live and on rebuild', async () => {
     const result = await setup({ tools })
     appendUser(result.session, 'old prompt')
-    const assistant = result.session.append('assistant/message', {
+    result.session.append('assistant/message', {
       turn: 1,
       step: 1,
       message: createMessage({
@@ -4687,26 +5268,297 @@ describe('tool cards and surface replay', () => {
         isError: false,
       }),
     }, { surfaceOp: 'append' })
-    const start = result.session.surface.nodes[0] as number
-    result.session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'summary replacement' }],
-      source: { kind: 'plugin', plugin: 'compact' },
-    }), {
-      surfaceOp: { op: 'replace', start, end: toolResult.seq },
-      sourceEventSeqs: [start, assistant.seq, toolResult.seq],
+    // Result pruning rewrites one node's content in place: model-only, and no
+    // boundary in the conversation, so the terminal keeps the full output.
+    const originalResult = toolResult.data.message.content[0]
+    result.session.append('tool/result', {
+      ...toolResult.data,
+      message: freezeMessage({
+        ...toolResult.data.message,
+        content: [{ ...originalResult, content: [{ type: 'text', text: 'pruned result copy' }] }] as [typeof originalResult],
+      }),
+    }, {
+      surfaceOp: { op: 'replace', start: toolResult.seq, end: toolResult.seq },
+      sourceEventSeqs: [toolResult.seq],
     })
+    const nodes = [...result.session.surface.nodes]
+    const checkpoint = result.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: '<context_checkpoint>model-only summary payload</context_checkpoint>' }],
+      source: COMPACT_CHECKPOINT_SOURCE,
+    }), {
+      surfaceOp: { op: 'replace', start: nodes[0] as number, end: nodes.at(-1) as number },
+      sourceEventSeqs: nodes,
+    })
+    // A regenerated assistant message replaces one node without summarizing
+    // anything, so it marks no boundary either.
+    const generic = result.session.append('assistant/message', {
+      turn: 1,
+      step: 1,
+      message: createMessage({
+        role: 'assistant',
+        content: [{ type: 'text', text: 'generic replacement copy' }],
+        source: {
+          kind: 'model',
+          ...{ provider: 'mock', model: 'deepseek-v4-flash' },
+        },
+      }),
+    }, { surfaceOp: { op: 'replace', start: checkpoint.seq, end: checkpoint.seq }, sourceEventSeqs: [checkpoint.seq] })
+    // Only a checkpoint carrying the compaction seam's source marks a boundary:
+    // another plugin replacing a node is model-only.
+    result.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'foreign plugin replacement copy' }],
+      source: { kind: 'plugin', plugin: 'other' },
+    }), { surfaceOp: { op: 'replace', start: generic.seq, end: generic.seq }, sourceEventSeqs: [generic.seq] })
     await tick()
 
     result.terminal.resize(89)
     await tick()
-    const lastFullRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
-    expect(lastFullRender).toContain('summary replacement')
-    expect(lastFullRender).not.toContain('old output')
+    const liveRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(liveRender).toContain('old prompt')
+    // The shadowed step keeps its card: one call row, one full result, no
+    // second card from the pruned copy.
+    expect(liveRender.split('$ printf hello')).toHaveLength(2)
+    expect(liveRender).toContain('third')
+    expect(liveRender.split('[exit 0]')).toHaveLength(2)
+    expect(liveRender.split('… earlier context was compacted …')).toHaveLength(2)
+    expect(liveRender).not.toContain('model-only summary payload')
+    expect(liveRender).not.toContain('generic replacement copy')
+    expect(liveRender).not.toContain('foreign plugin replacement copy')
+
+    // Ctrl+R toggles reasoning, which rebuilds the transcript from the log; the
+    // replayed projection matches what the live appends produced, including the
+    // shadowed assistant message's tool card.
+    result.terminal.send('\x12')
+    await tick()
+    result.terminal.resize(90)
+    await tick()
+    const replayRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(replayRender).toContain('old prompt')
+    expect(replayRender.split('$ printf hello')).toHaveLength(2)
+    expect(replayRender).toContain('third')
+    expect(replayRender.split('[exit 0]')).toHaveLength(2)
+    expect(replayRender.split('… earlier context was compacted …')).toHaveLength(2)
+    expect(replayRender).not.toContain('model-only summary payload')
+    expect(replayRender).not.toContain('generic replacement copy')
+    expect(replayRender).not.toContain('foreign plugin replacement copy')
+    await dispose(result)
+  })
+
+  it('replays a stored compaction as preserved history plus its marker', async () => {
+    const result = await setup({
+      beforeMount(session) {
+        appendUser(session, 'prompt before compaction')
+        session.append('assistant/message', {
+          turn: 1,
+          step: 1,
+          message: createMessage({
+            role: 'assistant',
+            content: [{ type: 'text', text: 'reply before compaction' }],
+            source: {
+              kind: 'model',
+              ...{ provider: 'mock', model: 'deepseek-v4-flash' },
+            },
+          }),
+        }, { surfaceOp: 'append' })
+        const nodes = [...session.surface.nodes]
+        session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text: '<context_checkpoint>stored model-only payload</context_checkpoint>' }],
+          source: COMPACT_CHECKPOINT_SOURCE,
+        }), {
+          surfaceOp: { op: 'replace', start: nodes[0] as number, end: nodes.at(-1) as number },
+          sourceEventSeqs: nodes,
+        })
+      },
+    })
+    result.terminal.resize(89)
+    await tick()
+
+    const mounted = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(mounted).toContain('prompt before compaction')
+    expect(mounted).toContain('reply before compaction')
+    expect(mounted.split('… earlier context was compacted …')).toHaveLength(2)
+    expect(mounted).not.toContain('stored model-only payload')
+    await dispose(result)
+  })
+
+  /** The last repainted frame, with CSI/OSC escapes and carriage returns stripped. */
+  const lastFrame = (terminal: FakeTerminal): string => terminal.output
+    .slice(terminal.output.lastIndexOf('\x1b[2J'))
+    .replaceAll(/\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07|\r/g, '')
+
+  const countAssistantHeaders = (frame: string): number => frame.split('\n')
+    .filter(row => row.trim() === 'Assistant').length
+
+  /** One turn with text -> tool call/result -> text across two steps. */
+  const appendTwoStepTurn = (session: Awaited<ReturnType<typeof setup>>['session']): void => {
+    appendUser(session, 'fold me')
+    appendAssistant(session, [{ type: 'text', text: 'first step text' }])
+    session.append('tool/call', { turn: 1, step: 1, callId: 'fold-1' as never, name: 'bash', arguments: '{}' })
+    session.append('tool/result', {
+      turn: 1, step: 1,
+      message: createToolResultMessage({
+        callId: 'fold-1' as never, content: [{ type: 'text', text: 'tool body' }], isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('step/start', { turn: 1, step: 2 })
+    appendAssistant(session, [{ type: 'text', text: 'second step text' }], undefined, { turn: 1, step: 2 })
+    session.append('step/end', { turn: 1, step: 2 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  }
+
+  it('folds a turn to one Assistant header in hidden mode and restores headers on cycle', async () => {
+    const result = await setup({ tools })
+    appendTwoStepTurn(result.session)
+    await tick()
+
+    // Collapsed (default): each step keeps its own header.
+    result.terminal.send('\x0c')
+    await tick()
+    expect(countAssistantHeaders(lastFrame(result.terminal))).toBe(2)
+
+    // collapsed -> expanded -> hidden.
+    result.terminal.send('\x0f')
+    result.terminal.send('\x0f')
+    await tick()
+    result.terminal.send('\x0c')
+    await tick()
+    const hidden = lastFrame(result.terminal)
+    expect(countAssistantHeaders(hidden)).toBe(1)
+    expect(hidden).toContain('first step text')
+    expect(hidden).toContain('second step text')
+    expect(hidden).not.toContain('Tool / bash')
+    // The fold keeps model order: header text precedes the continuation.
+    expect(hidden.indexOf('first step text')).toBeLessThan(hidden.indexOf('second step text'))
+
+    // hidden -> collapsed restores per-step headers.
+    result.terminal.send('\x0f')
+    await tick()
+    result.terminal.send('\x0c')
+    await tick()
+    expect(countAssistantHeaders(lastFrame(result.terminal))).toBe(2)
+    await dispose(result)
+  })
+
+  it('gives the hidden-mode header to the first step with a visible body and keeps turns separate', async () => {
+    const result = await setup({ tools })
+    // Turn 1, step 1 is tool-only; step 2 carries the turn's text.
+    appendUser(result.session, 'tool-only first step')
+    appendAssistant(result.session, [{ type: 'tool-call', id: 'only-1' as never, name: 'bash', arguments: '{}' }])
+    result.session.append('tool/call', { turn: 1, step: 1, callId: 'only-1' as never, name: 'bash', arguments: '{}' })
+    result.session.append('tool/result', {
+      turn: 1, step: 1,
+      message: createToolResultMessage({
+        callId: 'only-1' as never, content: [{ type: 'text', text: 'tool body' }], isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+    result.session.append('step/end', { turn: 1, step: 1 })
+    result.session.append('step/start', { turn: 1, step: 2 })
+    appendAssistant(result.session, [{ type: 'text', text: 'late turn-one text' }], undefined, { turn: 1, step: 2 })
+    result.session.append('step/end', { turn: 1, step: 2 })
+    result.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    // Turn 2 keeps its own header.
+    result.session.append('turn/start', { turn: 2, trigger: { kind: 'message', source: { kind: 'user' } } })
+    appendUser(result.session, 'next turn')
+    result.session.append('step/start', { turn: 2, step: 1 })
+    appendAssistant(result.session, [{ type: 'text', text: 'turn-two text' }], undefined, { turn: 2, step: 1 })
+    result.session.append('step/end', { turn: 2, step: 1 })
+    result.session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+    await tick()
+
+    result.terminal.send('\x0f')
+    result.terminal.send('\x0f')
+    await tick()
+    result.terminal.send('\x0c')
+    await tick()
+    const hidden = lastFrame(result.terminal)
+    // One header per turn: the tool-only step neither renders a blank segment
+    // nor consumes turn one's header, which the late text step owns.
+    expect(countAssistantHeaders(hidden)).toBe(2)
+    expect(hidden).toContain('late turn-one text')
+    expect(hidden).toContain('turn-two text')
+    const rows = hidden.split('\n').map(row => row.trim())
+    const turnOneHeader = rows.indexOf('Assistant')
+    expect(rows[turnOneHeader + 1]).toBe('late turn-one text')
+    await dispose(result)
+  })
+
+  it('folds live hidden-mode streaming once a later step shows text', async () => {
+    const result = await setup({ tools, status: 'running' })
+    result.terminal.send('\x0f')
+    result.terminal.send('\x0f')
+    await tick()
+    result.session.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'live first' } })
+    result.session.append('step/end', { turn: 1, step: 1 })
+    result.session.append('step/start', { turn: 1, step: 2 })
+    result.session.append('assistant/chunk', { turn: 1, step: 2, chunk: { type: 'text-delta', index: 0, text: 'live second' } })
+    await tick()
+    result.terminal.send('\x0c')
+    await tick()
+    const hidden = lastFrame(result.terminal)
+    expect(countAssistantHeaders(hidden)).toBe(1)
+    expect(hidden).toContain('live first')
+    expect(hidden).toContain('live second')
+
+    // A transcript rebuild (resize) recomputes the same fold from the log.
+    result.terminal.resize(89)
+    await tick()
+    const rebuilt = lastFrame(result.terminal)
+    expect(countAssistantHeaders(rebuilt)).toBe(1)
+    expect(rebuilt).toContain('live second')
     await dispose(result)
   })
 })
 
 describe('TUI user-interaction dialogs', () => {
+  it('limits the visible option window to maxQuestionOptions', async () => {
+    const result = await setup({
+      config: { maxQuestionOptions: 1, questionDialogWidth: 60, questionDialogMaxHeight: 20 },
+    })
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'cap',
+        question: 'Pick one',
+        options: [{ label: 'Visible first' }, { label: 'Hidden second' }],
+      }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    expect(result.terminal.output).toContain('Visible first')
+    expect(result.terminal.output).not.toContain('Hidden second')
+    expect(result.terminal.output).toContain('↓ 1 more')
+    result.terminal.send('\x03')
+    await rejected
+
+    await dispose(result)
+  })
+
+  it('renders a pending question between the transcript and editor', async () => {
+    const result = await setup({
+      config: { questionDialogWidth: 40, questionDialogMaxHeight: 10 },
+    })
+    result.terminal.send('draft input')
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'placement',
+        question: 'Pick one',
+        options: [{ label: 'First' }, { label: 'Second' }],
+      }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    result.terminal.resize(60, 20)
+    await tick()
+    const render = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    const questionIndex = render.indexOf('Pick one')
+    const editorIndex = render.indexOf('draft input')
+    expect(questionIndex).toBeGreaterThanOrEqual(0)
+    expect(editorIndex).toBeGreaterThan(questionIndex)
+    result.terminal.send('\x03')
+    await rejected
+    await dispose(result)
+  })
+
   it('answers single-select, multi-select, custom, and optionless questions', async () => {
     const result = await setup({ config: { maxQuestionOptions: 1 } })
 
@@ -4732,8 +5584,29 @@ describe('TUI user-interaction dialogs', () => {
     result.terminal.send(' ')
     result.terminal.send('\x1b[B')
     result.terminal.send(' ')
+    result.terminal.send('\t')
+    await tick()
+    expect(result.terminal.output).toContain('2 selected • Enter submit • Esc options')
+    result.terminal.send('Tests')
     result.terminal.send('\r')
-    await expect(multi).resolves.toEqual({ answers: [{ id: 'targets', selected: ['Code', 'Docs'] }] })
+    await expect(multi).resolves.toEqual({
+      answers: [{ id: 'targets', selected: ['Code', 'Docs'], custom: 'Tests' }],
+    })
+
+    const labelsOnly = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'labels-only',
+        question: 'Pick one target',
+        multiSelect: true,
+        options: [{ label: 'Code' }, { label: 'Docs' }],
+      }],
+    })
+    await tick()
+    result.terminal.send(' ')
+    result.terminal.send('\r')
+    await expect(labelsOnly).resolves.toEqual({
+      answers: [{ id: 'labels-only', selected: ['Code'] }],
+    })
 
     const custom = result.ctx.userInteraction.ask({
       questions: [{ id: 'other', question: 'Choose or type', options: [{ label: 'Default' }] }],
@@ -4776,7 +5649,6 @@ describe('TUI user-interaction dialogs', () => {
         options: [{ label: 'One', description: 'first' }, { label: 'Two' }],
       }],
     })
-    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
     await tick()
     result.terminal.send('\x1b[A')
     result.terminal.send('\x1b[B')
@@ -4792,12 +5664,480 @@ describe('TUI user-interaction dialogs', () => {
     })
     result.terminal.send('c')
     await tick()
+    result.terminal.send('keep this')
+    await tick()
+    expect(result.terminal.output).toContain('0 selected • Enter submit • Esc options')
     result.terminal.send('\x1b')
     await tick()
     expect(result.terminal.output).toContain('Space toggle')
+    result.terminal.send(' ')
+    result.terminal.send('\r')
+    await expect(answer).resolves.toEqual({
+      answers: [{ id: 'options', selected: ['One'], custom: 'keep this' }],
+    })
+    await dispose(result)
+  })
+
+  it('scrolls tall option lists with ↑/↓ overflow markers when the dialog height is capped', async () => {
+    const result = await setup({
+      config: {
+        questionDialogWidth: 60,
+        questionDialogMaxHeight: 12,
+        maxQuestionOptions: 8,
+      },
+    })
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'scroll',
+        question: 'Pick one',
+        options: [
+          { label: 'Alpha', description: 'first choice with a description that will wrap to multiple lines when the dialog is narrow' },
+          { label: 'Bravo', description: 'second choice' },
+          { label: 'Charlie', description: 'third choice' },
+          { label: 'Delta', description: 'fourth choice' },
+          { label: 'Echo', description: 'fifth choice' },
+          { label: 'Foxtrot', description: 'sixth choice' },
+        ],
+      }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    expect(result.terminal.output).toContain('↓')
+    expect(result.terminal.output).toContain('more')
+    for (let step = 0; step < 5; step += 1) result.terminal.send('\x1b[B')
+    await tick()
+    expect(result.terminal.output).toContain('↑')
     result.terminal.send('\x03')
     await rejected
     await dispose(result)
+  })
+
+  it('keeps controls visible when the selected option block exceeds the row budget', async () => {
+    const result = await setup({
+      config: { questionDialogWidth: 40, questionDialogMaxHeight: 10 },
+    })
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'oversize',
+        question: 'Pick one',
+        options: [
+          { label: 'Huge', description: `start ${'middle '.repeat(40)}visible tail` },
+          { label: 'Other' },
+        ],
+      }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    expect(result.terminal.output).toContain('Huge')
+    expect(result.terminal.output).toContain('PgUp/PgDn')
+    expect(result.terminal.output).toContain('↑↓ Tab ↵ Esc')
+    expect(result.terminal.output).not.toContain('visible tail')
+    for (let page = 0; page < 30; page += 1) result.terminal.send('\x1b[6~')
+    await tick()
+    expect(result.terminal.output).toContain('visible tail')
+    for (let page = 0; page < 30; page += 1) result.terminal.send('\x1b[5~')
+    result.terminal.send('\x1b[6~')
+    await tick()
+    expect(result.terminal.output).toContain('start middle')
+    result.terminal.send('\x03')
+    await rejected
+    await dispose(result)
+  })
+
+  it('pages long question detail so every plan-review line remains reachable', async () => {
+    const result = await setup({
+      config: { questionDialogWidth: 20, questionDialogMaxHeight: 10 },
+    })
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'long-detail',
+        question: 'Approve this plan?',
+        detail: `visible start ${'review step '.repeat(60)}visible tail`,
+        options: [{ label: 'Approve' }, { label: 'Reject' }],
+      }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    result.terminal.resize(60, 20)
+    await tick()
+    const initialRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(initialRender).toContain('plan?')
+    expect(initialRender).toContain('visible start')
+    expect(initialRender).not.toContain('visible tail')
+    expect(initialRender).toMatch(/PgUp\/PgDn \d+\/\d+/u)
+    for (let page = 0; page < 30; page += 1) result.terminal.send('\x1b[6~')
+    await tick()
+    const finalRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(finalRender).toContain('visible tail')
+    expect(finalRender).toContain('Approve')
+    result.terminal.send('\x1b[B')
+    await tick()
+    const movedRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(movedRender).toContain('visible tail')
+    expect(movedRender).toContain('Reject')
+    result.terminal.send('\x1b[A')
+    result.terminal.send('\t')
+    await tick()
+    result.terminal.send('\x1b[6~')
+    await tick()
+    result.terminal.send('\x1b[5~')
+    result.terminal.resize(61, 20)
+    await tick()
+    const customPagedRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(customPagedRender).not.toContain('visible tail')
+    expect(customPagedRender).toContain('Esc options')
+    result.terminal.send('\x1b')
+    for (let page = 0; page < 30; page += 1) result.terminal.send('\x1b[5~')
+    await tick()
+    const restoredRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(restoredRender).toContain('visible start')
+    result.terminal.send('\x03')
+    await rejected
+    await dispose(result)
+  })
+
+  it('reclaims enough rows to keep selected content, paging, and option markers visible', async () => {
+    const result = await setup({
+      config: { questionDialogWidth: 60, questionDialogMaxHeight: 8 },
+    })
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'one-row',
+        question: 'Pick one',
+        options: [
+          { label: 'Selected first', description: `start ${'middle '.repeat(30)}visible tail` },
+          { label: 'Hidden second' },
+        ],
+      }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    expect(result.terminal.output).toContain('Selected first')
+    expect(result.terminal.output).not.toContain('Hidden second')
+    expect(result.terminal.output).toContain('↓ 1 more')
+    expect(result.terminal.output).toContain('PgUp/PgDn')
+    expect(result.terminal.output).toContain('Esc interrupt')
+    for (let page = 0; page < 30; page += 1) result.terminal.send('\x1b[6~')
+    await tick()
+    expect(result.terminal.output).toContain('visible tail')
+    result.terminal.send('\x03')
+    await rejected
+    await dispose(result)
+  })
+
+  it('preserves both option markers and controls at the minimum configured height', async () => {
+    const result = await setup({
+      config: { questionDialogWidth: 60, questionDialogMaxHeight: 6 },
+    })
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'minimum-options',
+        question: 'Pick one',
+        multiSelect: true,
+        options: ['One', 'Two', 'Three', 'Four', 'Five'].map(label => ({
+          label,
+          description: `${label} ${'wrapped detail '.repeat(20)}`,
+        })),
+      }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    result.terminal.send('\x1b[B')
+    result.terminal.send('\x1b[B')
+    await tick()
+    expect(result.terminal.output).toContain('↑ 2 more')
+    expect(result.terminal.output).toContain('Three')
+    expect(result.terminal.output).toContain('PgUp/PgDn')
+    expect(result.terminal.output).toContain('↓ 2 more')
+    expect(result.terminal.output).toContain('Tab custom')
+    expect(result.terminal.output).toContain('Space toggle')
+    expect(result.terminal.output).toContain('Esc interrupt')
+    result.terminal.send('\r')
+    await tick()
+    expect(result.terminal.output).toContain('Error: Select at least one')
+    result.terminal.resize(61)
+    await tick()
+    const validationRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(validationRender).toContain('Tab custom')
+    expect(validationRender).toContain('Space toggle')
+    result.terminal.send('\x03')
+    await rejected
+    await dispose(result)
+  })
+
+  it('preserves detail text and every action when one compact header row remains', async () => {
+    const result = await setup({
+      config: { questionDialogWidth: 20, questionDialogMaxHeight: 6 },
+    })
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'one-header-row',
+        question: 'Plan?',
+        detail: 'abcdvisible tail',
+        multiSelect: true,
+        options: [
+          { label: 'Yes', description: 'accept' },
+          { label: 'No', description: 'reject' },
+        ],
+      }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    result.terminal.resize(60, 20)
+    await tick()
+    const initialRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(initialRender).toContain('P↑↓ ↑↓ Tab S↵Esc')
+    result.terminal.send('\x1b[6~')
+    result.terminal.send('\x1b[6~')
+    await tick()
+    const detailRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(detailRender).toContain('visible tail')
+    result.terminal.send('\x03')
+    await rejected
+
+    const single = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'one-header-row-single',
+        question: 'Plan?',
+        detail: 'abcdvisible tail',
+        options: [
+          { label: 'Yes', description: 'accept' },
+          { label: 'No', description: 'reject' },
+        ],
+      }],
+    })
+    const singleRejected = expect(single).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    result.terminal.resize(61, 20)
+    await tick()
+    const singleRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(singleRender).toContain('P↑↓ ↑↓ Tab↵Esc')
+    result.terminal.send('\x03')
+    await singleRejected
+
+    const compact = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'one-header-row-compact',
+        question: 'Pick?',
+        multiSelect: true,
+        options: [
+          { label: 'Yes', description: 'accept' },
+          { label: 'No', description: 'reject' },
+        ],
+      }],
+    })
+    const compactRejected = expect(compact).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    result.terminal.resize(60, 20)
+    await tick()
+    const compactRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(compactRender).toContain('↑↓ Tab Sp ↵Esc')
+    result.terminal.send('\x03')
+    await compactRejected
+
+    const oneOption = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'one-header-row-one-option',
+        question: 'Pick?',
+        detail: 'Review every line.',
+        options: [{ label: 'Yes', description: 'wrapped detail '.repeat(8) }],
+      }],
+    })
+    const oneOptionRejected = expect(oneOption).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    result.terminal.resize(61, 20)
+    await tick()
+    const oneOptionRender = result.terminal.output.slice(result.terminal.output.lastIndexOf('\x1b[2J'))
+    expect(oneOptionRender).toContain('P↑↓ Tab↵Esc')
+    expect(oneOptionRender).not.toContain('P↑↓ ↑↓')
+    result.terminal.send('\x03')
+    await oneOptionRejected
+    await dispose(result)
+  })
+
+  it('expands the visible option window forward and backward around the selection', async () => {
+    const result = await setup({
+      config: {
+        questionDialogWidth: 60,
+        questionDialogMaxHeight: 14,
+        maxQuestionOptions: 8,
+      },
+    })
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'middle-scroll',
+        question: 'Pick one',
+        options: [
+          { label: 'One', description: 'a' },
+          { label: 'Two', description: 'b' },
+          { label: 'Three', description: 'c' },
+          { label: 'Four', description: 'd' },
+          { label: 'Five', description: 'e' },
+          { label: 'Six', description: 'f' },
+          { label: 'Seven', description: 'g' },
+          { label: 'Eight', description: 'h' },
+          { label: 'Nine', description: 'i' },
+          { label: 'Ten', description: 'j' },
+        ],
+      }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    for (let step = 0; step < 4; step += 1) result.terminal.send('\x1b[B')
+    await tick()
+    expect(result.terminal.output).toContain('↑')
+    expect(result.terminal.output).toContain('↓')
+    expect(result.terminal.output).toContain('Five')
+    result.terminal.send('\x03')
+    await rejected
+    await dispose(result)
+  })
+
+  it('wraps a long option label across multiple lines instead of truncating it', async () => {
+    const result = await setup({ config: { questionDialogWidth: 40 } })
+    const longLabel = 'this is a very long option label that will not fit on one line in a narrow dialog'
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'long-label',
+        question: 'Pick one',
+        options: [{ label: longLabel }, { label: 'Short' }],
+      }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    expect(result.terminal.output).toContain('narrow dialog')
+    result.terminal.send('\x03')
+    await rejected
+    await dispose(result)
+  })
+
+  it('wraps fixed question chrome within the minimum dialog width', async () => {
+    const result = await setup({ config: { questionDialogWidth: 20 } })
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{ id: 'narrow', question: 'Answer?' }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    expect(result.terminal.output).not.toContain('Question 1/1 (1 unanswered)')
+    expect(result.terminal.output).toContain('unanswered)')
+    expect(result.terminal.output).not.toContain('Enter submit • Esc cancel')
+    expect(result.terminal.output).toContain('Esc cancel')
+    result.terminal.send('\x03')
+    await rejected
+    await dispose(result)
+  })
+
+  it('keeps custom controls visible at the minimum dialog height', async () => {
+    const result = await setup({
+      config: { questionDialogWidth: 20, questionDialogMaxHeight: 6 },
+    })
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{ id: 'short-viewport', question: 'Answer this deliberately long question?' }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    expect(result.terminal.output).toContain('long question?')
+    expect(result.terminal.output).toContain('Esc cancel')
+    result.terminal.resize(60, 4)
+    result.terminal.send('\r')
+    await tick()
+    expect(result.terminal.output).toContain('Enter an answer')
+    expect(result.terminal.output).toContain('long question?')
+    result.terminal.send('\x03')
+    await rejected
+    await dispose(result)
+  })
+
+  it('compacts custom controls for a question that also has options', async () => {
+    const result = await setup({
+      config: { questionDialogWidth: 20, questionDialogMaxHeight: 6 },
+    })
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'compact-custom-options',
+        question: 'Choose or type a deliberately long answer',
+        options: [{ label: 'Default' }],
+      }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    result.terminal.send('\t')
+    await tick()
+    expect(result.terminal.output).toContain('Esc options')
+    result.terminal.send('\x1b')
+    await tick()
+    result.terminal.send('\x03')
+    await rejected
+    await dispose(result)
+  })
+
+  it('reports hidden question rows when the viewport leaves one row', async () => {
+    const result = await setup({
+      config: { questionDialogWidth: 60, questionDialogMaxHeight: 6 },
+    })
+    result.terminal.resize(60, 2)
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{ id: 'one-row-dialog', question: 'Answer this deliberately long question?' }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    expect(result.terminal.output).toContain('lines hidden')
+    result.terminal.send('\x03')
+    await rejected
+    await dispose(result)
+  })
+
+  it('keeps question text when the viewport leaves two question rows', async () => {
+    const result = await setup({
+      config: { questionDialogWidth: 60, questionDialogMaxHeight: 6 },
+    })
+    result.terminal.resize(60, 3)
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{ id: 'two-row-dialog', question: 'Answer this deliberately long question?' }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    expect(result.terminal.output).toContain('long question?')
+    result.terminal.send('\x03')
+    await rejected
+    await dispose(result)
+  })
+
+  it('bounds option mode when the viewport leaves three question rows', async () => {
+    const result = await setup({
+      config: { questionDialogWidth: 60, questionDialogMaxHeight: 6 },
+    })
+    result.terminal.resize(60, 4)
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{
+        id: 'three-row-options',
+        question: 'Pick one',
+        options: [{ label: 'First' }, { label: 'Second' }],
+      }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await tick()
+    expect(result.terminal.output).toContain('lines hidden')
+    result.terminal.send('\x03')
+    await rejected
+    await dispose(result)
+  })
+
+  it('keeps question rows within a sub-five-column viewport', async () => {
+    const terminal = new HeadlessTerminal(4, 12)
+    const result = await createTuiTestHarness(terminal, vi.fn(), {
+      config: { questionDialogWidth: 20 },
+    })
+    const beforeQuestion = terminal.frames
+    const answer = result.ctx.userInteraction.ask({
+      questions: [{ id: 'narrow-viewport', question: 'Pick?', options: [{ label: 'Yes' }] }],
+    })
+    const rejected = expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
+    await terminal.waitForFrame(beforeQuestion)
+    await expect(terminal.snapshot()).resolves.toContain('terminal 4x12')
+    terminal.send('\x03')
+    await rejected
+    await disposeTuiTestHarness(result)
   })
 
   it('asks batches in order and rejects cancelled or aborted work', async () => {
@@ -4897,6 +6237,7 @@ describe('TUI extension service', () => {
                 host.theme.accent(`${label} plugin overlay`),
                 [
                   host.theme.text('text'),
+                  host.theme.brand('brand'),
                   host.theme.dim('dim'),
                   host.theme.success('success'),
                   host.theme.warning('warning'),
@@ -5064,7 +6405,7 @@ describe('terminal mounting', () => {
     const session = ctx.sessions.create(SessionId('main'))
     ctx.agents.register({
       id: session.id, options: {}, session, status: 'idle', acceptsNextStep: false, ctx,
-      followup: () => {}, steer: () => {}, inject: () => {}, send: () => {}, updateInbox: () => 'not-found', cancel() {}, whenIdle: () => Promise.resolve(),
+      followup: () => {}, steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }), inject: () => {}, send: () => {}, updateInbox: () => 'not-found', reserveTurnAdmission: () => undefined, cancel() {}, whenIdle: () => Promise.resolve(),
     })
     const terminal = new FakeTerminal()
     mountTui(ctx, { theme: { color: false } }, { terminal, exit: vi.fn() })
@@ -5089,7 +6430,7 @@ describe('terminal mounting', () => {
     const session = ctx.sessions.create(SessionId('main'))
     ctx.agents.register({
       id: session.id, options: {}, session, status: 'idle', acceptsNextStep: false, ctx,
-      followup: () => {}, steer: () => {}, inject: () => {}, send: () => {}, updateInbox: () => 'not-found', cancel() {}, whenIdle: () => Promise.resolve(),
+      followup: () => {}, steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }), inject: () => {}, send: () => {}, updateInbox: () => 'not-found', reserveTurnAdmission: () => undefined, cancel() {}, whenIdle: () => Promise.resolve(),
     })
     const terminal = new FakeTerminal()
     // Mirror dsh-tui's own inject (minus loader, the absence under test).
@@ -5124,14 +6465,14 @@ describe('terminal mounting', () => {
     const otherSession = ctx.sessions.create(SessionId('other-session'))
     ctx.agents.register({
       id: otherSession.id, options: {}, session: otherSession, status: 'idle', acceptsNextStep: false, ctx,
-      followup: () => {}, steer: () => {}, inject: () => {}, send: () => {}, updateInbox: () => 'not-found', cancel() {}, whenIdle: () => Promise.resolve(),
+      followup: () => {}, steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }), inject: () => {}, send: () => {}, updateInbox: () => 'not-found', reserveTurnAdmission: () => undefined, cancel() {}, whenIdle: () => Promise.resolve(),
     })
     expect(terminal.started).toBe(0)
 
     const session = ctx.sessions.create(SessionId('late-session'))
     const agent = {
       id: session.id, options: {}, session, status: 'idle', acceptsNextStep: false, ctx,
-      followup: () => {}, steer: () => {}, inject: () => {}, send: () => {}, updateInbox: () => 'not-found', cancel() {}, whenIdle: () => Promise.resolve(),
+      followup: () => {}, steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }), inject: () => {}, send: () => {}, updateInbox: () => 'not-found', reserveTurnAdmission: () => undefined, cancel() {}, whenIdle: () => Promise.resolve(),
     } as Agent
     ctx.agents.register(agent)
     await tick()
@@ -5162,7 +6503,7 @@ describe('terminal mounting', () => {
     const session = ctx.sessions.create(SessionId('main-session'))
     ctx.agents.register({
       id: session.id, options: {}, session, status: 'idle', acceptsNextStep: false, ctx,
-      followup: () => {}, steer: () => {}, inject: () => {}, send: () => {}, updateInbox: () => 'not-found', cancel() {}, whenIdle: () => Promise.resolve(),
+      followup: () => {}, steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }), inject: () => {}, send: () => {}, updateInbox: () => 'not-found', reserveTurnAdmission: () => undefined, cancel() {}, whenIdle: () => Promise.resolve(),
     })
     await tick()
     expect(terminal.started).toBe(0)
@@ -5206,7 +6547,7 @@ describe('terminal mounting', () => {
     session.append('step/start', { turn: 1, step: 1 })
     ctx.agents.register({
       id: session.id, options: {}, session, status: 'running', acceptsNextStep: true, ctx,
-      followup: () => {}, steer: () => {}, inject: () => {}, send: () => {}, updateInbox: () => 'not-found', cancel() {}, whenIdle: () => Promise.resolve(),
+      followup: () => {}, steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }), inject: () => {}, send: () => {}, updateInbox: () => 'not-found', reserveTurnAdmission: () => undefined, cancel() {}, whenIdle: () => Promise.resolve(),
     })
     const terminal = new FakeTerminal()
     terminal.start = () => { throw new Error('terminal startup failed') }
@@ -5272,6 +6613,10 @@ describe('terminal mounting', () => {
     // `text` is the terminal default, emitted as no escape at all.
     expect(printed).toContain('no escape')
     await dispose(result)
+  })
+
+  it('uses the official DeepSeek SVG ink for truecolor brand art', () => {
+    expect(brandText('mark')).toBe('\x1b[38;2;77;107;254mmark\x1b[39m')
   })
 
   it('detects a light terminal color scheme and switches the scheme-dependent code role', async () => {

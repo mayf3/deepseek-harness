@@ -47,6 +47,7 @@ describe('tsdown client artifact', () => {
     const modules = new Map<string, unknown>([
       ['react', await import('react')],
       ['react/jsx-runtime', await import('react/jsx-runtime')],
+      ['@deepseek-ai/dsh-client-runtime/client', await import('@deepseek-ai/dsh-client-runtime/client')],
       ['@deepseek-ai/dsh-client-ui-primitives', await import('@deepseek-ai/dsh-client-ui-primitives')],
     ])
     const surface = handoff!.factory((spec) => {
@@ -72,8 +73,9 @@ describe('tsdown client artifact', () => {
       name: 'root',
       children: { 'conversation.view': { kind: 'list', scope: 'session' } },
     }, (_p: { renderSlot?: unknown }) => null)
-    // The plugin injects 'conversation' as an ordering edge and 'sessionHistory'
-    // for its per-session history callback; this bench supplies both.
+    // The plugin injects 'conversation' as an ordering edge and
+    // 'sessionHistory' for its per-session history source; this bench
+    // supplies both.
     ctx.provide('conversation', {})
     ctx.provide('sessionHistory', {})
     const fiber = ctx.plugin(surface as { apply: (ctx: Context) => void })

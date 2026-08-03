@@ -10,13 +10,23 @@
 
 # ── surface-specific values the base deliberately omits ─────────────────────
 
+- id: system-prompt
+  config:
+    persona: >-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+
 # TODO: Re-enable shared HMR for Web after its reload lifecycle is tested.
 - id: hmr
   disabled: true
 
+# Web content search runs on an ephemeral in-memory index. The service
+# activates at boot, while first-search defers the node:sqlite import and
+# in-memory handle so Node 22 startup stays quiet until content search
+# actually uses SQLite. That search then reconciles this boot's sources.
 - id: session-query-sqlite
   config:
-    path: './.sessions/session-query.db'
+    path: ':memory:'
+    openAt: first-search
 
 - id: tools
   config:
@@ -30,50 +40,6 @@
   config:
     apiKey: !!js process.env.DEEPSEEK_API_KEY
     baseURL: !!js process.env.DEEPSEEK_BASE_URL
-
-# The web surface replaces the unrestricted local executors with the shared
-# sandbox policy. Its default preserves the previous unrestricted behavior;
-# DSH_PERMISSION_MODE and the browser permission picker can confine a session.
-- insert:
-    - id: sandbox
-      name: '@deepseek-ai/dsh-sandbox-local'
-
-    - id: sandbox-policy
-      name: '@deepseek-ai/dsh-sandbox-policy'
-      config:
-        mode: !!js process.env.DSH_PERMISSION_MODE ?? 'danger-full-access'
-        workspaceRoot: !!js process.cwd()
-
-    - id: bash-sandbox
-      name: '@deepseek-ai/dsh-bash-sandbox'
-
-    - id: approval
-      name: '@deepseek-ai/dsh-user-approval'
-      config:
-        policy: !!js "(process.env.DSH_PERMISSION_MODE ?? 'danger-full-access') === 'danger-full-access' ? 'never' : 'ask'"
-
-    - id: permission
-      name: '@deepseek-ai/dsh-permission'
-      config:
-        presets:
-          read-only:
-            sandbox: read-only
-            approval: ask
-          workspace-write:
-            sandbox: workspace-write
-            approval: ask
-          danger-full-access:
-            sandbox: danger-full-access
-            approval: never
-
-    - id: fs-sandbox
-      name: '@deepseek-ai/dsh-fs-sandbox'
-
-- id: bash-local
-  disabled: true
-
-- id: fs-local
-  disabled: true
 
 # ── web-only host rows, the transport layer, and the browser roster ─────────
 
@@ -98,7 +64,7 @@
     - id: storage-json
       name: '@deepseek-ai/dsh-storage-json'
       config:
-        root: './.storages'
+        root: !!js dshHomePath('storages')
 
     - id: storage-domain
       name: '@deepseek-ai/dsh-storage-domain'
@@ -114,19 +80,19 @@
         writeEveryEvents: 200
         writeIntervalMs: 5000
 
-    - id: tool-todo
-      name: '@deepseek-ai/dsh-tool-todo'
+    # Resolve bind host, SSH launch, and display once at boot, then mount the
+    # matching dual-face directory picker. Mount -native or -browse directly in
+    # an overlay to pin the interaction.
+    - id: directory-picker
+      name: '@deepseek-ai/dsh-host-directory-picker-auto'
 
     # The API gateway: the transport-agnostic dispatch face every client shape
     # shares. provider/model are the host default routing — the profile json's
     # mapping target (user config overrides these engineering defaults).
-    - id: directory-picker
-      name: '@deepseek-ai/dsh-host-directory-picker-browse'
-
     - id: api-gateway
       name: '@deepseek-ai/dsh-host-apiproxy'
       config:
-        provider: deepseek
+        provider: deepseek-official
         model: deepseek-v4-flash
 
     # ── layer 2: transport/service ──────────────────────────────────────────────
@@ -185,7 +151,7 @@
       name: '@deepseek-ai/dsh-client-ui-workspace'
 
     # Input triggers: the '/' | '@' pipeline (ui-slash), the command surface over
-    # it (ui-command), and the reference sources (ui-skill / ui-reference).
+    # it (ui-command), and reference sources (ui-skill / ui-subagent / ui-reference).
     - id: ui-slash
       name: '@deepseek-ai/dsh-client-ui-slash'
 
@@ -194,6 +160,9 @@
 
     - id: ui-skill
       name: '@deepseek-ai/dsh-client-ui-skill'
+
+    - id: ui-subagent
+      name: '@deepseek-ai/dsh-client-ui-subagent'
 
     - id: ui-reference
       name: '@deepseek-ai/dsh-client-ui-reference'

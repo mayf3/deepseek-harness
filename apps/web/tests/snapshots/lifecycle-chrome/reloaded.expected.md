@@ -5,33 +5,31 @@
     - tab "Chat" [selected]
     - tab "Trajectory"
 - text: Reply with the single word LIGHTHOUSE and stop. {{clock}}
-- button "复制":
+- button "Copy":
   - img
-- button "在新对话中分支":
+- button "Branch into a new conversation" [disabled]:
   - img
-- button "编辑":
+- text: Available only on the last message of a completed turn
+- button "Context injection":
   - img
-- button "上下文注入":
   - img
-  - img
-  - text: 上下文注入
+  - text: Context injection
 - button "Think The user wants me to reply with a single word. Let me comply.":
   - img
   - img
   - text: Think The user wants me to reply with a single word. Let me comply.
 - paragraph: LIGHTHOUSE
-- button "复制":
+- button "Copy":
   - img
-- button "在新对话中分支":
+- button "Branch into a new conversation":
   - img
 - text: {{clock}}
 - textbox "Message the agent"
-- button "Add attachment":
+- button "Commands":
   - img
-- 'button "Access mode, current: Danger Full Access"': Danger Full Access
-- button "Plan mode off, press to turn on": Plan off
+- 'button "Access mode, current: Workspace Write"': Workspace Write
 - button "Select model, current DeepSeek-V4-Flash":
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: 1 turns · 1 steps Cache hit 99% Input 7.8K tok · Output 21 tok
+- text: 1 turns · 1 steps Context 6% of 128K Cache hit 99% Input 7.8K tok · Output 21 tok

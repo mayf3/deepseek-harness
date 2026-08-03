@@ -50,7 +50,7 @@ async function stubAgent(
     updateInbox() { return 'not-found' as const },
     cancel() {},
     whenIdle: () => Promise.resolve(),
-  } as Agent
+  } as unknown as Agent
   return { agent, dispose: ctx.agents.register(agent) }
 }
 

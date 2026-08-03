@@ -46,13 +46,14 @@ export function conversationSnapshot(sessionId: SessionId): ConversationSnapshot
   return {
     sessionId,
     nodes: [],
-    foldDegraded: false,
+    turnEnds: new Map(),
     partial: null,
     runningCalls: [],
     codeDispatches: new Map(),
     pending: [],
     queue: [],
     running: false,
+    subagent: null,
     composerPhase: 'active',
     removed: false,
     openState: 'open',
@@ -73,6 +74,7 @@ export function conversationSnapshot(sessionId: SessionId): ConversationSnapshot
 export function workspaceListState(): WorkspaceListState {
   return {
     items: [],
+    archivedSessionIds: [],
     state: 'idle',
     phase: 'ready',
     error: null,

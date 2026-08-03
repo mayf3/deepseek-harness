@@ -57,7 +57,7 @@ function enterSubmitting(m: InputMachine, name: string, args: string): { attempt
 }
 
 function staleAttempt(): SubmitAttempt {
-  return { seq: 9999, signal: new AbortController().signal, draftSnapshot: '' }
+  return { seq: 9999, signal: new AbortController().signal, draftSnapshot: '', mode: 'queue' }
 }
 
 describe('input-machine: plain × enter', () => {
@@ -69,13 +69,20 @@ describe('input-machine: plain × enter', () => {
     expect(m.state.phase).toBe('plain')
   })
 
-  it('non-command text falls to the default sink with the given mode', () => {
+  it('non-command text falls to the default sink', () => {
     const m = new InputMachine()
     m.dispatch({ type: 'draft-changed', draft: 'hello world' })
     const effect = effectAt(m.dispatch({ type: 'enter', mode: 'steer' }), 0, 'default-sink')
     expect(effect).toMatchObject({ draft: 'hello world', mode: 'steer' })
     expect(effect.attempt.draftSnapshot).toBe('hello world')
     expect(m.state.phase).toBe('submitting')
+  })
+
+  it('retains an explicit steer mode on the default sink effect', () => {
+    const m = new InputMachine()
+    m.dispatch({ type: 'draft-changed', draft: 'steer now' })
+    expect(effectAt(m.dispatch({ type: 'enter', mode: 'steer' }), 0, 'default-sink'))
+      .toMatchObject({ draft: 'steer now', mode: 'steer' })
   })
 
   it('leading "/" enters adjudicating with a minted attempt carrying the draft snapshot', () => {
@@ -125,7 +132,7 @@ describe('input-machine: adjudication outcomes', () => {
     expect(effectAt(b.dispatch({ type: 'adjudicated', attempt: attemptB, outcome: { claim: claimOf('goal') } }), 0, 'begin-submit').args).toBe('x')
   })
 
-  it('undefined outcome falls back to the default sink preserving the enter mode', () => {
+  it('undefined outcome falls back to the default sink', () => {
     const m = new InputMachine()
     const attempt = enterAdjudicating(m, '/unknown thing', 'steer')
     expect(effectAt(
@@ -345,31 +352,6 @@ describe('input-machine: occurrence reconciliation on draft edits', () => {
     const rev = m.state.draftRev
     expect(m.dispatch({ type: 'draft-changed', draft: m.state.draft })).toEqual([])
     expect(m.state.draftRev).toBe(rev)
-  })
-})
-
-describe('input-machine: newline transaction (F1)', () => {
-  it('inserts \\n at the caret and shifts trailing occurrences', () => {
-    const m = new InputMachine()
-    m.dispatch({ type: 'draft-changed', draft: 'ab @wor' })
-    m.dispatch({ type: 'insert-ref', reference: refOf('w'), span: spanOf(m, 3, 7) })
-    m.dispatch({ type: 'newline', selection: { start: 2, end: 2 } })
-    expect(m.state.draft).toBe(`ab\n ${P} `)
-    expect(m.state.occurrences[0]?.offset).toBe(4)
-    m.dispatch({ type: 'undo' })
-    expect(m.state.draft).toBe(`ab ${P} `)
-  })
-
-  it('replaces a selection, breaks the claim prefix when leading, and rejects out-of-bounds', () => {
-    const m = new InputMachine()
-    m.dispatch({ type: 'draft-changed', draft: '/go' })
-    m.dispatch({ type: 'begin-command', claim: claimOf('goal'), span: spanOf(m, 0, 3) })
-    expect(m.dispatch({ type: 'newline', selection: { start: 0, end: 99 } })).toEqual([])
-    expect(m.state.phase).toBe('claimed')
-    m.dispatch({ type: 'newline', selection: { start: 0, end: 0 } })
-    expect(m.state.draft).toBe('\n/goal ')
-    expect(m.state.phase).toBe('plain')
-    expect(m.state.claim).toBeUndefined()
   })
 })
 
