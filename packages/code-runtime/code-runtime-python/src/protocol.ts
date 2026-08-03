@@ -170,15 +170,44 @@ type OptionalKeys<T> = { [K in keyof T]-?: object extends Pick<T, K> ? K : never
  */
 type FrameFieldRoles<T> = Record<RequiredKeys<T>, 'required'> & Record<OptionalKeys<T>, 'optional'>
 
+interface WireFrameShapes {
+  BootMessage: BootMessage
+  Namespace: Namespace
+  RunMessage: RunMessage
+  BootAckMessage: BootAckMessage
+  CallMessage: CallMessage
+  LogMessage: LogMessage
+  DoneErrorField: DoneErrorField
+  DoneMessage: DoneMessage
+  ErrorClass: ErrorClass
+  ReplyOk: ReplyOk
+  ReplyErr: ReplyErr
+}
+
+/**
+ * Compile-time proof that {@link WireFrameShapes} lists every frame carried on a
+ * message union: the union of the frame types (`ChildToHost`, the reply
+ * variants, and the host-to-child boot/run frames) must be assignable to the
+ * union of the roster's value types. Adding a frame to a union without a
+ * `WireFrameShapes` entry makes this alias `false`, so the assignment below
+ * fails to compile — closing the whole-frame drift the field-level binding
+ * alone could not see. Nested shapes (`Namespace`, `ErrorClass`,
+ * `DoneErrorField`) are not union members; they are covered by the roles
+ * `satisfies` and the mirror e2e's roster comparison.
+ */
+type WireFrameShapesCoverUnions =
+  [ChildToHost | ReplyMessage | BootMessage | RunMessage] extends [WireFrameShapes[keyof WireFrameShapes]] ? true : false
+const _wireFrameShapesCoverUnions: WireFrameShapesCoverUnions = true
+void _wireFrameShapesCoverUnions
+
 /**
  * Each frame's wire fields tagged by required/optional, keyed by field name so
- * the mapping is exhaustive over the frame interface (see
- * {@link FrameFieldRoles}). Bound to the interfaces by `satisfies` below, this
- * is the single source of truth the cross-language mirror test derives its
- * expectations from; {@link WIRE_FRAME_FIELDS} projects it to sorted
- * required/optional arrays for the comparison. `global` is the JSON key
- * {@link CallMessage} and {@link Namespace} send (a reserved word the Python
- * side carries via a functional `TypedDict`).
+ * the mapping is exhaustive over the frame interface (see {@link FrameFieldRoles})
+ * across the whole {@link WireFrameShapes} roster. Bound to the interfaces by
+ * `satisfies` below; {@link WIRE_FRAME_FIELDS} projects it to sorted
+ * required/optional arrays for the cross-language mirror comparison. `global` is
+ * the JSON key {@link CallMessage} and {@link Namespace} send (a reserved word
+ * the Python side carries via a functional `TypedDict`).
  */
 const WIRE_FRAME_FIELD_ROLES = {
   BootMessage: { type: 'required', cpuSeconds: 'required', addressSpaceBytes: 'required', maxLogBytes: 'required', maxValueBytes: 'required', namespaces: 'required' },
@@ -192,19 +221,7 @@ const WIRE_FRAME_FIELD_ROLES = {
   ErrorClass: { name: 'required', memberNameProperty: 'required' },
   ReplyOk: { type: 'required', id: 'required', ok: 'required', value: 'required' },
   ReplyErr: { type: 'required', id: 'required', ok: 'required', message: 'required' },
-} as const satisfies {
-  BootMessage: FrameFieldRoles<BootMessage>
-  Namespace: FrameFieldRoles<Namespace>
-  RunMessage: FrameFieldRoles<RunMessage>
-  BootAckMessage: FrameFieldRoles<BootAckMessage>
-  CallMessage: FrameFieldRoles<CallMessage>
-  LogMessage: FrameFieldRoles<LogMessage>
-  DoneErrorField: FrameFieldRoles<DoneErrorField>
-  DoneMessage: FrameFieldRoles<DoneMessage>
-  ErrorClass: FrameFieldRoles<ErrorClass>
-  ReplyOk: FrameFieldRoles<ReplyOk>
-  ReplyErr: FrameFieldRoles<ReplyErr>
-}
+} as const satisfies { [K in keyof WireFrameShapes]: FrameFieldRoles<WireFrameShapes[K]> }
 
 /**
  * The wire field names of each frame, split into sorted required and optional
@@ -308,6 +325,53 @@ function scalarJson(current: unknown): string {
 }
 
 /**
+ * Exact UTF-8 byte length of one string's compact JSON form (quotes + escapes),
+ * computed by a single non-allocating scan that stops the instant the running
+ * total exceeds `maxBytes`. Used instead of `Buffer.byteLength(JSON.stringify(s))`
+ * so a control-heavy forged string — whose escaped copy expands up to ~6x — is
+ * rejected BEFORE that copy is materialized: `JSON.stringify` would allocate the
+ * full escaped form first, the very hundreds-of-MB spike the metered traversal
+ * exists to avoid. Mirrors `JSON.stringify`'s escaping byte-for-byte: `"` and
+ * `\` and the five short C0 escapes cost 2, other C0 controls `\uXXXX` cost 6, a
+ * valid surrogate pair is one astral code point emitted as raw 4-byte UTF-8, a
+ * LONE surrogate becomes `\uXXXX` at 6, and any other code point costs its raw
+ * UTF-8 width.
+ * @param text - the string to meter.
+ * @param maxBytes - largest serialized size the caller can still admit.
+ * @returns the exact serialized byte length, or `undefined` once it exceeds `maxBytes`.
+ */
+function jsonStringBytesUpTo(text: string, maxBytes: number): number | undefined {
+  let bytes = 2 // the two quotes
+  if (bytes > maxBytes) return undefined
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index)
+    if (code === 0x22 || code === 0x5c || code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d) {
+      bytes += 2 // `\"` `\\` `\b` `\t` `\n` `\f` `\r`
+    } else if (code < 0x20) {
+      bytes += 6 // other C0 controls: `\uXXXX`
+    } else if (code < 0x80) {
+      bytes += 1
+    } else if (code < 0x800) {
+      bytes += 2
+    } else if (code >= 0xd800 && code <= 0xdbff && index + 1 < text.length) {
+      const next = text.charCodeAt(index + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4 // valid high+low pair: one astral code point, raw 4-byte UTF-8
+        index++
+      } else {
+        bytes += 6 // lone high surrogate: `\uXXXX`
+      }
+    } else if (code >= 0xd800 && code <= 0xdfff) {
+      bytes += 6 // lone surrogate (unpaired high at end, or any low): `\uXXXX`
+    } else {
+      bytes += 3 // other BMP code point
+    }
+    if (bytes > maxBytes) return undefined
+  }
+  return bytes
+}
+
+/**
  * Meter a `JSON.parse`-produced done value's compact-JSON byte length AND its
  * number losslessness in one traversal, stopping the instant `maxBytes` is
  * crossed. This bounds the INCREMENTAL allocation the check itself would add on
@@ -325,10 +389,11 @@ function scalarJson(current: unknown): string {
  * enqueue loop. A non-lossless number (non-finite, negative zero) is caught only
  * when the value fits the budget — an over-budget value is rejected regardless,
  * so the distinction is moot. Same JSON-plain precondition and traversal shape
- * as {@link encodeJsonPlain}; per-scalar byte length is measured through
+ * as {@link encodeJsonPlain}; a number's byte length is measured through
  * {@link scalarJson} (matching the encoder, so a beyond-safe-range integer
  * meters its exact BigInt digits, not `JSON.stringify`'s rounded spelling) and
- * `JSON.stringify` for strings.
+ * a string's/key's through {@link jsonStringBytesUpTo} (the exact escaped size,
+ * scanned without allocating the escaped copy).
  * @param value - a JSON-plain value (e.g. straight from `JSON.parse`).
  * @param maxBytes - the completion-value budget in bytes.
  * @returns `{ ok: true, bytes }` with the exact serialized size, or
@@ -356,12 +421,13 @@ export function checkDoneValue(value: unknown, maxBytes: number): { ok: true; by
       if (!Number.isFinite(current) || Object.is(current, -0)) nonLossless = true
       bytes += Buffer.byteLength(scalarJson(current), 'utf8')
     } else if (typeof current === 'string') {
-      // Lower-bound BEFORE materializing the escaped form: every UTF-16 code
-      // unit is at least one UTF-8 byte plus the two quotes, so a huge or
-      // control-heavy forged string (whose escaped copy expands severalfold)
-      // is rejected without allocating that copy.
-      if (bytes + current.length + 2 > maxBytes) return { ok: false, reason: 'over-budget' }
-      bytes += Buffer.byteLength(JSON.stringify(current), 'utf8')
+      // Meter the escaped form WITHOUT allocating it: jsonStringBytesUpTo scans
+      // and bails the instant the running cost crosses the remaining budget, so
+      // a control-heavy forgery (escaped copy up to ~6x) never materializes that
+      // copy the way `JSON.stringify` would.
+      const stringBytes = jsonStringBytesUpTo(current, maxBytes - bytes)
+      if (stringBytes === undefined) return { ok: false, reason: 'over-budget' }
+      bytes += stringBytes
     } else if (Array.isArray(current)) {
       // Brackets plus one comma per gap; elements add themselves. Reject
       // BEFORE enqueuing children: every element serializes to at least one
@@ -384,9 +450,11 @@ export function checkDoneValue(value: unknown, maxBytes: number): { ok: true; by
       if (bytes + count * 4 > maxBytes) return { ok: false, reason: 'over-budget' }
       for (const key in record) {
         if (!Object.hasOwn(record, key)) continue
-        // The same string lower bound, before escaping the key.
-        if (bytes + key.length + 3 > maxBytes) return { ok: false, reason: 'over-budget' }
-        bytes += Buffer.byteLength(JSON.stringify(key), 'utf8') + 1
+        // Meter the key's escaped form without allocating it (same reason as the
+        // string branch), then add the colon separator. `+ 1` for the `:`.
+        const keyBytes = jsonStringBytesUpTo(key, maxBytes - bytes)
+        if (keyBytes === undefined) return { ok: false, reason: 'over-budget' }
+        bytes += keyBytes + 1
         stack.push(record[key])
       }
     } else {

@@ -213,20 +213,33 @@ describe('checkDoneValue', () => {
     expect(checkDoneValue(wide, 12)).toEqual({ ok: false, reason: 'over-budget' })
   })
 
-  it('rejects an over-budget string on its length before escaping it', () => {
-    // A control-heavy forged string escapes to ~6x its length (each NUL becomes
-    // the 6-character `\u0000`); the walk must refuse it on the cheap
-    // `length + 2` lower bound so the escaped copy is never allocated. Observable
-    // through the boundary: a string whose LENGTH already exceeds the cap fails
-    // even though every source character is one UTF-16 code unit.
-    expect(checkDoneValue('\0'.repeat(4096), 1024)).toEqual({ ok: false, reason: 'over-budget' })
-    // The bound is a lower bound, never a false rejection: a string that fits
-    // exactly still passes with its exact escaped size — one NUL serializes to
-    // `"\u0000"`, i.e. two quotes plus the 6-character escape = 8 bytes.
+  it('meters a string\'s exact escaped size without allocating it', () => {
+    // A control-heavy string that fits by DECODED length but not once escaped
+    // must still reject: 200 NULs are 200 UTF-16 units (would pass a naive
+    // length bound against cap 1024) but escape to 200*6 + 2 = 1202 bytes.
+    // jsonStringBytesUpTo scans and bails before the escaped copy is built.
+    expect(checkDoneValue('\0'.repeat(200), 1024)).toEqual({ ok: false, reason: 'over-budget' })
+    // Exact-size acceptance, no false rejection: one NUL serializes to a
+    // 6-char \\uXXXX escape, so with the two quotes = 8 bytes.
     expect(checkDoneValue('\0', 8)).toEqual({ ok: true, bytes: 8 })
     expect(checkDoneValue('\0', 7)).toEqual({ ok: false, reason: 'over-budget' })
-    // Same lower bound for keys, checked before the key is escaped.
-    expect(checkDoneValue({ ['\0'.repeat(4096)]: 1 }, 1024)).toEqual({ ok: false, reason: 'over-budget' })
+    // Multi-byte and astral characters meter at their raw UTF-8 width (a valid
+    // surrogate pair is 4 bytes, matching JSON.stringify), not a 6-byte escape.
+    expect(checkDoneValue('\u00e9', 4)).toEqual({ ok: true, bytes: 4 }) // 2 quotes + 2-byte UTF-8
+    expect(checkDoneValue('\u{1f600}', 6)).toEqual({ ok: true, bytes: 6 }) // 2 quotes + 4-byte UTF-8
+    expect(checkDoneValue('\u{1f600}', 5)).toEqual({ ok: false, reason: 'over-budget' })
+    // A lone surrogate escapes to \\uXXXX = 6, so with quotes = 8.
+    expect(checkDoneValue('\ud800', 8)).toEqual({ ok: true, bytes: 8 })
+    // A high surrogate followed by a NON-low character is a lone surrogate (6-byte
+    // escape) plus that character: `\ud800` + `a` = 2 quotes + 6 + 1 = 9.
+    expect(checkDoneValue('\ud800a', 9)).toEqual({ ok: true, bytes: 9 })
+    // A BMP 3-byte code point (CJK) meters at its raw UTF-8 width: 2 quotes + 3.
+    expect(checkDoneValue('中', 5)).toEqual({ ok: true, bytes: 5 })
+    // Same non-allocating meter for object keys, before the value is enqueued.
+    expect(checkDoneValue({ ['\0'.repeat(200)]: 1 }, 1024)).toEqual({ ok: false, reason: 'over-budget' })
+    // A string reached with less than the two quotes' worth of budget is refused
+    // immediately (even the empty escaped form does not fit).
+    expect(checkDoneValue('x', 1)).toEqual({ ok: false, reason: 'over-budget' })
   })
 
   it('meters only own enumerable keys', () => {
