@@ -185,20 +185,32 @@ interface WireFrameShapes {
 }
 
 /**
- * Compile-time proof that {@link WireFrameShapes} lists every frame carried on a
- * message union: the union of the frame types (`ChildToHost`, the reply
- * variants, and the host-to-child boot/run frames) must be assignable to the
- * union of the roster's value types. Adding a frame to a union without a
- * `WireFrameShapes` entry makes this alias `false`, so the assignment below
- * fails to compile — closing the whole-frame drift the field-level binding
- * alone could not see. Nested shapes (`Namespace`, `ErrorClass`,
- * `DoneErrorField`) are not union members; they are covered by the roles
- * `satisfies` and the mirror e2e's roster comparison.
+ * The frames carried on a message union: everything the host and child send as
+ * a top-level frame (`ChildToHost`, the two reply variants, and the host→child
+ * boot/run frames). The nested shapes `Namespace`, `ErrorClass`, and
+ * `DoneErrorField` are fields of other frames, not frames themselves, so they
+ * are excluded here and covered only by the roles `satisfies` and the mirror e2e.
  */
-type WireFrameShapesCoverUnions =
-  [ChildToHost | ReplyMessage | BootMessage | RunMessage] extends [WireFrameShapes[keyof WireFrameShapes]] ? true : false
-const _wireFrameShapesCoverUnions: WireFrameShapesCoverUnions = true
-void _wireFrameShapesCoverUnions
+type MessageFrames = ChildToHost | ReplyMessage | BootMessage | RunMessage
+/** The roster's value types minus the three nested (non-frame) shapes. */
+type RosterMessageFrames = Exclude<WireFrameShapes[keyof WireFrameShapes], Namespace | ErrorClass | DoneErrorField>
+
+/**
+ * Compile-time proof that {@link WireFrameShapes}'s message-frame entries are
+ * EXACTLY the frames on the message unions — checked BOTH directions. Forward
+ * (`MessageFrames extends RosterMessageFrames`) catches a frame added to a union
+ * without a roster entry; reverse (`RosterMessageFrames extends MessageFrames`)
+ * catches a frame removed from a union while the roster still lists it (e.g.
+ * dropping `ReplyErr` from `ReplyMessage`). Either divergence makes an alias
+ * `false`, failing the assignment below. Type-only; the `const`s emit nothing
+ * meaningful at runtime.
+ */
+type UnionCoversRoster = [MessageFrames] extends [RosterMessageFrames] ? true : false
+type RosterCoversUnion = [RosterMessageFrames] extends [MessageFrames] ? true : false
+const _unionCoversRoster: UnionCoversRoster = true
+const _rosterCoversUnion: RosterCoversUnion = true
+void _unionCoversRoster
+void _rosterCoversUnion
 
 /**
  * Each frame's wire fields tagged by required/optional, keyed by field name so
@@ -375,8 +387,9 @@ function jsonStringBytesUpTo(text: string, maxBytes: number): number | undefined
  * Meter a `JSON.parse`-produced done value's compact-JSON byte length AND its
  * number losslessness in one traversal, stopping the instant `maxBytes` is
  * crossed. This bounds the INCREMENTAL allocation the check itself would add on
- * top of the already-parsed value — the escaped-string copy, the enqueued
- * children, the per-key `JSON.stringify` — not the parse that produced `value`.
+ * top of the already-parsed value — the enqueued children (and, in the previous
+ * implementation, an escaped-string copy that {@link jsonStringBytesUpTo} now
+ * avoids) — not the parse that produced `value`.
  * That upstream width is bounded separately, by the host-side cap on inbound
  * fd-3 frame size before `JSON.parse` runs (owned by the runtime that reads the
  * channel), so `value` cannot be arbitrarily large when it reaches here, while

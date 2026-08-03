@@ -45,7 +45,7 @@ describe.skipIf(!python3Available)('protocol.py mirrors protocol.ts at runtime',
       '  "markers": [log_truncation_marker(b) for b in budgets],',
       '}))',
     ].join('\n')
-    const { stdout } = await execFileAsync('python3', ['-I', '-c', probe])
+    const { stdout } = await execFileAsync('python3', ['-I', '-B', '-c', probe])
     const seen = JSON.parse(stdout) as { fd: number; markers: string[] }
     // Assert against the TS-side PROTOCOL_FD export (the value the host wires),
     // not a bare literal, so a drift on either side of the wire is caught here.
@@ -75,7 +75,7 @@ describe.skipIf(!python3Available)('protocol.py mirrors protocol.ts at runtime',
       + ' if not n.startswith("_") and hasattr(v, "__required_keys__")}',
       'print(json.dumps(frames))',
     ].join('\n')
-    const { stdout } = await execFileAsync('python3', ['-I', '-c', probe])
+    const { stdout } = await execFileAsync('python3', ['-I', '-B', '-c', probe])
     const seen = JSON.parse(stdout) as Record<string, { required: string[]; optional: string[] }>
     // Normalize the TS source of truth to the same sorted shape Python reports.
     const expected = Object.fromEntries(
