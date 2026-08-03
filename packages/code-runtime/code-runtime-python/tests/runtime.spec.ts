@@ -420,7 +420,9 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     // clamped limit and fails loud at boot instead. A 128 MiB inherited limit
     // leaves 64 MiB budgetable (8 MiB admissible), under which a 32 MiB
     // maxLogBytes — admitted by the 512 MiB configured default — is rejected. The
-    // repro is Linux-only (macOS ignores `ulimit -v`); there the run proceeds.
+    // rejection surfaces as an 'exception' (bootstrap's setrlimit-phase failure
+    // class), not a mid-run OOM. The repro is Linux-only (macOS ignores
+    // `ulimit -v`); there the run proceeds.
     const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-'))
     const wrapper = join(dir, 'python3-tight')
     await writeFile(wrapper, '#!/bin/sh\nulimit -v 131072\nexec python3 "$@"\n', { mode: 0o755 })
@@ -429,7 +431,10 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     if (process.platform === 'darwin') {
       expect(result.error).toBeUndefined()
     } else {
-      expect(result.error?.kind).toBe('worker-exit')
+      // The re-check raises inside bootstrap's resource-limit block, which
+      // reports every setrlimit-phase failure as kind 'exception'; the message
+      // discriminates this config rejection from a generic setrlimit error.
+      expect(result.error?.kind).toBe('exception')
       expect(result.error?.message).toContain('too large for the inherited RLIMIT_AS')
     }
   }, 15_000)
