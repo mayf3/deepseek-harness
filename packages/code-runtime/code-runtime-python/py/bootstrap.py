@@ -51,11 +51,13 @@ _MAX_FALLBACK_NAME_CHARS = 200
 # Mirror of the host's output-budget/address-space gate (src/index.ts's
 # OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE and INTERPRETER_BASELINE_BYTES),
 # re-applied against the EFFECTIVE RLIMIT_AS after inheritance clamping. An astral
-# character is one character but ~4 bytes of str storage and ~4 UTF-8 bytes, live
-# at once while the ledger charges and frames it, so a budget's worst-case peak is
-# eight times its byte count; the interpreter's own footprint is reserved on top.
-# Kept in sync with the host constants by the shared reasoning, not a wire field.
-_OUTPUT_BUDGET_WORST_CASE_MULTIPLE = 8
+# character is one character but ~4 bytes of str storage and ~4 UTF-8 bytes, and
+# three such copies are live at the peak — the caller's write argument, the line
+# slice or joined pending handed to push, and the encode copy push takes — so a
+# budget's worst-case peak is twelve times its byte count; the interpreter's own
+# footprint is reserved on top. Kept in sync with the host constants by the shared
+# reasoning, not a wire field.
+_OUTPUT_BUDGET_WORST_CASE_MULTIPLE = 12
 _INTERPRETER_BASELINE_BYTES = 64 * 1024 * 1024
 
 
@@ -350,9 +352,16 @@ class _LogStream(io.TextIOBase):
         # against them.
         with self._logs.lock:
             if self._pending:
-                self._logs.push("".join(self._pending))
+                # Join, drop the chunks, THEN push — the same order the newline
+                # path uses (:232-235). Pushing before the clear would keep the
+                # pending chunks alive through `_push_locked`'s `text.encode`, so
+                # the chunks, their join, and the encode copy would all be live at
+                # once; dropping the chunks first leaves only the join and its
+                # encode, matching that path's peak.
+                line = "".join(self._pending)
                 self._pending = []
                 self._pending_chars = 0
+                self._logs.push(line)
 
 
 # ---------------------------------------------------------------------------
@@ -664,7 +673,7 @@ async def _run(channel: ProtocolChannel) -> None:
             if effective_soft != resource.RLIM_INFINITY:
                 budgetable = effective_soft - _INTERPRETER_BASELINE_BYTES
                 for _budget_key in ("maxLogBytes", "maxValueBytes"):
-                    if int(boot[_budget_key]) * _OUTPUT_BUDGET_WORST_CASE_MULTIPLE > budgetable:
+                    if int(boot[_budget_key]) * _OUTPUT_BUDGET_WORST_CASE_MULTIPLE >= budgetable:
                         raise ValueError(
                             "config.%s is too large for the inherited RLIMIT_AS of %d bytes "
                             "(a near-budget output would breach it during encode); "

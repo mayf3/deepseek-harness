@@ -57,24 +57,28 @@ export interface Config {
    * cleanly. Not applied on Darwin, where the dyld shared cache mapped into
    * every process at exec exceeds any practical cap and the kernel rejects
    * the call; `cpuSeconds` and `maxWallMs` still bound the run there. Bounds
-   * `maxLogBytes`/`maxValueBytes` at load on EVERY platform (not just where the
-   * limit is enforced): each budget times a worst-case Unicode expansion must
-   * fit this byte count, so a near-budget output cannot breach the address space
-   * during the child's build-and-encode.
+   * `maxLogBytes`/`maxValueBytes` at load on EVERY platform (this static check
+   * runs on Darwin too, where only the runtime `setrlimit` is skipped): each
+   * budget times a worst-case Unicode expansion must fit this byte count minus a
+   * fixed interpreter baseline, so a near-budget output cannot breach the address
+   * space during the child's build-and-encode.
    */
   addressSpaceMb?: number
   /**
    * Shared byte budget for captured log text (host-side ledger). Bounded at load
    * against `addressSpaceMb`: the child builds and encodes a near-budget entry
-   * under RLIMIT_AS, so this cap times the worst-case Unicode expansion must fit
-   * the address space (see `addressSpaceMb`).
+   * under RLIMIT_AS with several copies live at once, so this cap times the
+   * worst-case Unicode expansion must fit the address space left after the
+   * interpreter baseline (see `addressSpaceMb`) — a load-time rejection, not a
+   * runtime clamp.
    */
   maxLogBytes?: number
   /**
    * Byte cap for the completion value. Bounded at load against `addressSpaceMb`
    * the same way `maxLogBytes` is: the child builds and encodes a near-budget
-   * value under RLIMIT_AS, so this cap times the worst-case Unicode expansion
-   * must fit the address space.
+   * value under RLIMIT_AS with several copies live at once, so this cap times the
+   * worst-case Unicode expansion must fit the address space left after the
+   * interpreter baseline.
    */
   maxValueBytes?: number
   /** SIGTERM→SIGKILL grace period on kill, matching bash-local's default. */
@@ -236,20 +240,24 @@ const CLOSE_REAP_MARGIN_MS = 2_000
  * as a multiple of the budget. The child's ledgers trigger on CHARACTER count
  * against a serialized-BYTE budget, and an astral character is one character but
  * four bytes of CPython `str` storage and four UTF-8 bytes — so a budget's worth
- * of astral characters is ~4x the budget in the built string and ~4x again in
- * the `encode` copy taken to measure or ship it, live at the same time (the
- * concat that briefly holds both is bounded by those two). Eight covers that
- * simultaneous pair. The interpreter baseline is NOT in this multiple — it is
- * reserved separately as {@link INTERPRETER_BASELINE_BYTES} — because it is a
- * fixed cost, not one that scales with the budget. Used to bound
- * `maxLogBytes`/`maxValueBytes` against `addressSpaceMb` at load, with a STRICT
- * `>` so a budget whose worst-case peak exactly equals the room left after the
- * baseline is rejected, so a legitimate near-budget output truncates (log) or
- * fails as `output-limit` (value) rather than breaching `RLIMIT_AS` as
- * `worker-exit`. A fixed safety invariant tying the budgets to the address
- * space, not a knob.
+ * of astral characters is ~4x the budget in each string that holds it. THREE
+ * such copies are live at the peak: on the newline path a single
+ * `sys.stdout.write(line + "\n")` holds the caller's `text` argument (alive for
+ * the whole `write` call, ~4x), the line slice `text[pos:newline]` handed to
+ * `LogBuffer.push` (~4x), and the `text.encode("utf-8")` copy `_push_locked`
+ * takes to charge and ship it (~4x); the settlement `flush_line` path holds the
+ * pending chunks, their `"".join(...)`, and that same encode copy. Twelve covers
+ * those three simultaneous ~4x copies. The interpreter baseline is NOT in this
+ * multiple — it is reserved separately as {@link INTERPRETER_BASELINE_BYTES} —
+ * because it is a fixed cost, not one that scales with the budget. Used to bound
+ * `maxLogBytes`/`maxValueBytes` against `addressSpaceMb` at load, with a `>=` so
+ * a budget whose worst-case peak exactly equals the room left after the baseline
+ * is rejected (that peak plus the baseline is the whole address space, the
+ * RLIMIT_AS edge), so a legitimate near-budget output truncates (log) or fails
+ * as `output-limit` (value) rather than breaching `RLIMIT_AS` as `worker-exit`.
+ * A fixed safety invariant tying the budgets to the address space, not a knob.
  */
-const OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE = 8
+const OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE = 12
 
 /**
  * Fixed address-space headroom reserved for the CPython interpreter itself
@@ -728,20 +736,21 @@ export class PythonCodeRuntime extends CodeRuntime {
     // `maxValueBytes` completion value under `RLIMIT_AS`, and both paths trigger
     // on CHARACTER count against a serialized-BYTE budget. An astral character is
     // one character but four bytes of `str` storage and four UTF-8 bytes, so a
-    // budget's worth of them peaks at several simultaneous ~4x copies (the built
-    // string, the concat that still references it, and the encode taken to
-    // measure or ship it). A budget approaching `addressSpaceMb` therefore makes
-    // a LEGITIMATE near-budget output breach the address space and die as
-    // `worker-exit` instead of truncating (log) or failing as `output-limit`
-    // (value). Metering every child write against the address space at runtime is
-    // the wrong fix — an exact serialized-cost check is either a full encode (the
-    // allocation being avoided) or a per-character Python loop that burns the CPU
-    // budget — so the incompatible pair is rejected at load: each budget times the
-    // worst-case multiple must fit the address space. Checked on every platform,
-    // not just where `RLIMIT_AS` is enforced: the incompatibility is a property of
-    // the config values, and the child OOMs on a Linux deployment regardless of
-    // the host that assembled the config, so a uniform load-time rejection is the
-    // fail-loud contract (Darwin skips only the runtime `setrlimit`).
+    // budget's worth of them peaks at three simultaneous ~4x copies (the caller's
+    // write argument, the line slice or joined pending handed to push, and the
+    // encode push takes to charge and ship it). A budget approaching
+    // `addressSpaceMb` therefore makes a LEGITIMATE near-budget output breach the
+    // address space and die as `worker-exit` instead of truncating (log) or
+    // failing as `output-limit` (value). Metering every child write against the
+    // address space at runtime is the wrong fix — an exact serialized-cost check
+    // is either a full encode (the allocation being avoided) or a per-character
+    // Python loop that burns the CPU budget — so the incompatible pair is rejected
+    // at load: each budget times the worst-case multiple must fit the address
+    // space. Checked on every platform, not just where `RLIMIT_AS` is enforced:
+    // the incompatibility is a property of the config values, and the child OOMs
+    // on a Linux deployment regardless of the host that assembled the config, so a
+    // uniform load-time rejection is the fail-loud contract (Darwin skips only the
+    // runtime `setrlimit`).
     const addressSpaceBytes = this.config.addressSpaceMb * 1024 * 1024
     // Room left for the peak output allocation after the interpreter's own fixed
     // footprint. A budget must fit MULTIPLE times over into THIS, not the whole
@@ -749,10 +758,15 @@ export class PythonCodeRuntime extends CodeRuntime {
     // the multiple alone would admit — cannot leave the peak plus the interpreter
     // over the limit.
     const budgetableBytes = addressSpaceBytes - INTERPRETER_BASELINE_BYTES
-    const admissibleBudget = Math.floor(budgetableBytes / OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE)
+    // The largest budget that fits: the peak (budget * MULTIPLE) must leave room,
+    // so a budget whose peak exactly equals `budgetableBytes` is rejected — that
+    // peak plus the reserved baseline is the whole address space, the RLIMIT_AS
+    // edge. `ceil(budgetableBytes / MULTIPLE) - 1` is the last integer strictly
+    // under `budgetableBytes / MULTIPLE`.
+    const admissibleBudget = Math.ceil(budgetableBytes / OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE) - 1
     for (const key of ['maxLogBytes', 'maxValueBytes'] as const) {
-      if (this.config[key] * OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE > budgetableBytes) {
-        throw new Error(`dsh-code-runtime-python: config.${key} times the ${OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE}x worst-case Unicode expansion must fit the ${budgetableBytes} bytes left after the ${INTERPRETER_BASELINE_BYTES}-byte interpreter baseline within the ${addressSpaceBytes}-byte addressSpaceMb, so a near-budget output truncates rather than breaching RLIMIT_AS as worker-exit; got ${String(this.config[key])} against a limit of ${admissibleBudget}`)
+      if (this.config[key] * OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE >= budgetableBytes) {
+        throw new Error(`dsh-code-runtime-python: config.${key} times the ${OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE}x worst-case Unicode expansion must fit within the ${budgetableBytes} bytes left after the ${INTERPRETER_BASELINE_BYTES}-byte interpreter baseline within the ${addressSpaceBytes}-byte addressSpaceMb, so a near-budget output truncates rather than breaching RLIMIT_AS as worker-exit; got ${String(this.config[key])} against a limit of ${admissibleBudget}`)
       }
     }
     ctx.effect(() => () => this.teardown(), 'python code-runtime teardown')

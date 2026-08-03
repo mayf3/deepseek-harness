@@ -119,7 +119,7 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     // The boundary value itself loads: the bound is the largest cap a frame can
     // still carry, not one below it. It needs an address space large enough to
     // clear the separate maxValueBytes/addressSpaceMb worst-case gate (the cap
-    // times the 8x Unicode expansion must fit), so this pairs it with a 4 GiB
+    // times the 12x Unicode expansion must fit), so this pairs it with a 4 GiB
     // addressSpaceMb — the two load-time bounds are independent.
     const boundary = await ctx.plugin(PythonCodeRuntime, { maxValueBytes: admissible, addressSpaceMb: 4096 })
     await boundary.dispose()
@@ -418,11 +418,11 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     // never gets, so a near-budget output would OOM mid-run as an opaque
     // worker-exit. The bootstrap re-checks both budgets against the EFFECTIVE
     // clamped limit and fails loud at boot instead. A 128 MiB inherited limit
-    // leaves 64 MiB budgetable (8 MiB admissible), under which a 32 MiB
-    // maxLogBytes — admitted by the 512 MiB configured default — is rejected. The
-    // rejection surfaces as an 'exception' (bootstrap's setrlimit-phase failure
-    // class), not a mid-run OOM. The repro is Linux-only (macOS ignores
-    // `ulimit -v`); there the run proceeds.
+    // leaves 64 MiB budgetable (~5 MiB admissible under the 12x multiple), under
+    // which a 32 MiB maxLogBytes — admitted by the 512 MiB configured default — is
+    // rejected. The rejection surfaces as an 'exception' (bootstrap's
+    // setrlimit-phase failure class), not a mid-run OOM. The repro is Linux-only
+    // (macOS ignores `ulimit -v`); there the run proceeds.
     const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-'))
     const wrapper = join(dir, 'python3-tight')
     await writeFile(wrapper, '#!/bin/sh\nulimit -v 131072\nexec python3 "$@"\n', { mode: 0o755 })
@@ -783,21 +783,30 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     // The child builds, charges, and encodes a `maxLogBytes` log entry or a
     // `maxValueBytes` completion value under RLIMIT_AS, and both trigger on
     // character count against a serialized-byte budget — an astral character is
-    // one character but ~4 bytes stored and ~4 encoded, so a budget approaching
-    // the address space lets a legitimate near-budget output breach it and die as
-    // worker-exit. The incompatible pair is rejected at load: each budget times
-    // the worst-case multiple (8) must fit the address space LEFT after the fixed
-    // interpreter baseline. Against a 256 MiB address space that leaves 192 MiB
-    // budgetable (24 MiB admissible), so a 50 MB cap is far over; the default caps
-    // against 512 MiB are not. Both budgets are gated symmetrically — the value
-    // case sets a default-fitting maxLogBytes so the maxValueBytes check is what
-    // fires.
+    // one character but ~4 bytes stored and ~4 encoded, and THREE such copies are
+    // live at the peak (the caller's write argument, the slice/join handed to
+    // push, and the encode copy), so a budget approaching the address space lets a
+    // legitimate near-budget output breach it and die as worker-exit. The
+    // incompatible pair is rejected at load: each budget times the worst-case
+    // multiple (12) must fit the address space LEFT after the fixed interpreter
+    // baseline. Against a 256 MiB address space that leaves 192 MiB budgetable
+    // (~16 MiB admissible), so a 50 MB cap is far over; the default caps against
+    // 512 MiB are not. Both budgets are gated symmetrically — the value case sets
+    // a default-fitting maxLogBytes so the maxValueBytes check is what fires.
     const ctxLog = new Context()
     await expect(ctxLog.plugin(PythonCodeRuntime, { maxLogBytes: 50_000_000, addressSpaceMb: 256 }))
-      .rejects.toThrow(/maxLogBytes times the 8x worst-case Unicode expansion must fit/)
+      .rejects.toThrow(/maxLogBytes times the 12x worst-case Unicode expansion must fit/)
     const ctxValue = new Context()
     await expect(ctxValue.plugin(PythonCodeRuntime, { maxValueBytes: 50_000_000, addressSpaceMb: 256 }))
-      .rejects.toThrow(/maxValueBytes times the 8x worst-case Unicode expansion must fit/)
+      .rejects.toThrow(/maxValueBytes times the 12x worst-case Unicode expansion must fit/)
+    // Discriminates 12 from 8: a 48 MiB maxLogBytes against a 512 MiB address
+    // space leaves 448 MiB budgetable. 48*8 = 384 MiB fits (the old 8x multiple
+    // wrongly ADMITTED this), but 48*12 = 576 MiB does not — and this is exactly
+    // the config that OOMs, since a settlement flush holds the pending chunks,
+    // their join, and the encode copy at once (~12x). The 12x gate rejects it.
+    const ctxTwelve = new Context()
+    await expect(ctxTwelve.plugin(PythonCodeRuntime, { maxLogBytes: 48 * 1024 * 1024, addressSpaceMb: 512 }))
+      .rejects.toThrow(/maxLogBytes times the 12x worst-case Unicode expansion must fit/)
     // The default caps against the default 512 MiB address space load.
     const ok = new Context()
     const fiber = await ok.plugin(PythonCodeRuntime, { maxLogBytes: 65536, maxValueBytes: 32768, addressSpaceMb: 512 })
@@ -3588,15 +3597,16 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(serialized).toBeLessThan(1024)
   })
 
-  it('charges the serialized cost child-side, so a control-heavy line truncates instead of breaching the address space', async () => {
+  it('charges the serialized cost child-side, so a control-heavy line truncates instead of being admitted whole', async () => {
     // The child's ledger must charge what the entry costs on the wire, not its
     // raw UTF-8 length: a NUL is one raw byte but six as its escape. A 24 MiB NUL
     // line clears the cheap char-count lower bound (24 MiB < 32 MiB budget), so
-    // charging raw bytes would ADMIT it and then encode a ~144 MiB escaped
-    // payload plus its UTF-8 copy — past the 384 MiB address space, killing the
-    // child (surfaced host-side as `worker-exit`) instead of truncating.
-    // Charging the serialized cost rejects it before any encode.
-    const { runtime } = await setup({ maxLogBytes: 32 * 1024 * 1024, addressSpaceMb: 384, maxWallMs: 20_000 })
+    // charging raw bytes would ADMIT it and emit a ~144 MiB escaped entry;
+    // charging the serialized cost (~144 MiB > the 32 MiB budget) rejects it
+    // before any encode and emits the marker instead. The address space (512 MiB,
+    // clearing the 12x load gate for a 32 MiB budget) is sized so the run loads;
+    // the gate separately guarantees a correctly-charged near-budget entry fits.
+    const { runtime } = await setup({ maxLogBytes: 32 * 1024 * 1024, addressSpaceMb: 512, maxWallMs: 20_000 })
     const result = await runtime.run({
       program: [
         'print("\\x00" * (24 * 1024 * 1024))',

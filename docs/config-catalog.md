@@ -379,24 +379,28 @@ export interface Config {
    * cleanly. Not applied on Darwin, where the dyld shared cache mapped into
    * every process at exec exceeds any practical cap and the kernel rejects
    * the call; `cpuSeconds` and `maxWallMs` still bound the run there. Bounds
-   * `maxLogBytes`/`maxValueBytes` at load on EVERY platform (not just where the
-   * limit is enforced): each budget times a worst-case Unicode expansion must
-   * fit this byte count, so a near-budget output cannot breach the address space
-   * during the child's build-and-encode.
+   * `maxLogBytes`/`maxValueBytes` at load on EVERY platform (this static check
+   * runs on Darwin too, where only the runtime `setrlimit` is skipped): each
+   * budget times a worst-case Unicode expansion must fit this byte count minus a
+   * fixed interpreter baseline, so a near-budget output cannot breach the address
+   * space during the child's build-and-encode.
    */
   addressSpaceMb?: number
   /**
    * Shared byte budget for captured log text (host-side ledger). Bounded at load
    * against `addressSpaceMb`: the child builds and encodes a near-budget entry
-   * under RLIMIT_AS, so this cap times the worst-case Unicode expansion must fit
-   * the address space (see `addressSpaceMb`).
+   * under RLIMIT_AS with several copies live at once, so this cap times the
+   * worst-case Unicode expansion must fit the address space left after the
+   * interpreter baseline (see `addressSpaceMb`) — a load-time rejection, not a
+   * runtime clamp.
    */
   maxLogBytes?: number
   /**
    * Byte cap for the completion value. Bounded at load against `addressSpaceMb`
    * the same way `maxLogBytes` is: the child builds and encodes a near-budget
-   * value under RLIMIT_AS, so this cap times the worst-case Unicode expansion
-   * must fit the address space.
+   * value under RLIMIT_AS with several copies live at once, so this cap times the
+   * worst-case Unicode expansion must fit the address space left after the
+   * interpreter baseline.
    */
   maxValueBytes?: number
   /** SIGTERM→SIGKILL grace period on kill, matching bash-local's default. */
