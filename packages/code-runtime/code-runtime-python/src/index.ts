@@ -56,12 +56,26 @@ export interface Config {
    * RLIMIT_AS in mebibytes; caps address space so a runaway allocation fails
    * cleanly. Not applied on Darwin, where the dyld shared cache mapped into
    * every process at exec exceeds any practical cap and the kernel rejects
-   * the call; `cpuSeconds` and `maxWallMs` still bound the run there.
+   * the call; `cpuSeconds` and `maxWallMs` still bound the run there. Bounds
+   * `maxLogBytes`/`maxValueBytes` at load on EVERY platform (not just where the
+   * limit is enforced): each budget times a worst-case Unicode expansion must
+   * fit this byte count, so a near-budget output cannot breach the address space
+   * during the child's build-and-encode.
    */
   addressSpaceMb?: number
-  /** Shared byte budget for captured log text (host-side ledger). */
+  /**
+   * Shared byte budget for captured log text (host-side ledger). Bounded at load
+   * against `addressSpaceMb`: the child builds and encodes a near-budget entry
+   * under RLIMIT_AS, so this cap times the worst-case Unicode expansion must fit
+   * the address space (see `addressSpaceMb`).
+   */
   maxLogBytes?: number
-  /** Byte cap for the completion value. */
+  /**
+   * Byte cap for the completion value. Bounded at load against `addressSpaceMb`
+   * the same way `maxLogBytes` is: the child builds and encodes a near-budget
+   * value under RLIMIT_AS, so this cap times the worst-case Unicode expansion
+   * must fit the address space.
+   */
   maxValueBytes?: number
   /** SIGTERM→SIGKILL grace period on kill, matching bash-local's default. */
   graceMs?: number
@@ -217,16 +231,22 @@ const FRAME_ENVELOPE_BYTES = 64
 const CLOSE_REAP_MARGIN_MS = 2_000
 
 /**
- * The largest fraction of `addressSpaceMb` that `maxLogBytes` may claim, enforced
- * at load. The child's log ledger encodes an admitted entry to UTF-8 once to
- * charge its serialized cost, so a near-budget entry transiently needs the entry
- * plus its encode copy — roughly twice `maxLogBytes` — on top of the interpreter
- * baseline, all under `RLIMIT_AS`. One eighth leaves an 8x margin over the raw
- * budget, comfortably past that transient at any admissible cap, so a legitimate
- * near-budget log entry truncates instead of breaching the address space. A fixed
- * safety invariant tying two configs together, not a deployment knob.
+ * Worst-case peak child-process bytes a one-`maxLogBytes`/`maxValueBytes`-budget
+ * output can transiently occupy while the child charges and frames it, expressed
+ * as a multiple of the budget. The child's ledgers trigger on CHARACTER count
+ * against a serialized-BYTE budget, and an astral character is one character but
+ * four bytes of CPython `str` storage and four UTF-8 bytes — so a budget's worth
+ * of astral characters is ~4x the budget in the built string and ~4x again in
+ * the `encode` copy taken to measure or ship it, live at the same time (the
+ * concat that briefly holds both is bounded by those two). Eight covers that
+ * simultaneous pair with margin for the interpreter baseline. Used to bound
+ * `maxLogBytes`/`maxValueBytes` against `addressSpaceMb` at load, with a STRICT
+ * `>` so a budget whose worst-case peak exactly equals the address space is
+ * rejected, so a legitimate near-budget output truncates (log) or fails as
+ * `output-limit` (value) rather than breaching `RLIMIT_AS` as `worker-exit`. A
+ * fixed safety invariant tying the budgets to the address space, not a knob.
  */
-const LOG_CAPTURE_ADDRESS_SPACE_HEADROOM_FRACTION = 1 / 8
+const OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE = 8
 
 /**
  * Interval between process-group liveness probes while settlement waits for an
@@ -688,28 +708,29 @@ export class PythonCodeRuntime extends CodeRuntime {
         throw new Error(`dsh-code-runtime-python: config.${key} must not exceed ${limit} (a payload that large cannot cross the ${FRAME_CEILING_BYTES}-byte fd-3 frame ceiling, so the run would fail as worker-exit rather than output-limit), got ${String(this.config[key])}`)
       }
     }
-    // The child's log ledger admits an entry up to `maxLogBytes` and, to charge
-    // its serialized cost, encodes it to UTF-8 once — a transient allocation of
-    // up to `maxLogBytes` more bytes (and a control-char-dense entry escapes up
-    // to sixfold on the wire, though the encode itself is the raw copy). That
-    // copy happens under `RLIMIT_AS`, so a `maxLogBytes` that approaches
-    // `addressSpaceMb` makes a legitimate near-budget log entry breach the
-    // address space and die as `worker-exit` instead of truncating. Rather than
-    // meter every child write against the address space at runtime — which trades
-    // the memory bound for a per-character CPU cost on the hot path — reject the
-    // incompatible pair at load: require `maxLogBytes` to leave the child room
-    // for the interpreter baseline plus the entry and its encode copy. The bound
-    // is `LOG_CAPTURE_ADDRESS_SPACE_HEADROOM_FRACTION` of the address space, well
-    // clear of the ~2x-plus-baseline the push path needs at the default 64 KiB
-    // cap. Checked on every platform, not just where `RLIMIT_AS` is enforced: the
-    // incompatibility is a property of the two config values, and the child OOMs
-    // on a Linux deployment regardless of the host that assembled the config, so
-    // a uniform load-time rejection is the fail-loud contract (Darwin skips only
-    // the runtime `setrlimit`, not this static check).
+    // The child builds, charges, and frames a `maxLogBytes` log entry or a
+    // `maxValueBytes` completion value under `RLIMIT_AS`, and both paths trigger
+    // on CHARACTER count against a serialized-BYTE budget. An astral character is
+    // one character but four bytes of `str` storage and four UTF-8 bytes, so a
+    // budget's worth of them peaks at several simultaneous ~4x copies (the built
+    // string, the concat that still references it, and the encode taken to
+    // measure or ship it). A budget approaching `addressSpaceMb` therefore makes
+    // a LEGITIMATE near-budget output breach the address space and die as
+    // `worker-exit` instead of truncating (log) or failing as `output-limit`
+    // (value). Metering every child write against the address space at runtime is
+    // the wrong fix — an exact serialized-cost check is either a full encode (the
+    // allocation being avoided) or a per-character Python loop that burns the CPU
+    // budget — so the incompatible pair is rejected at load: each budget times the
+    // worst-case multiple must fit the address space. Checked on every platform,
+    // not just where `RLIMIT_AS` is enforced: the incompatibility is a property of
+    // the config values, and the child OOMs on a Linux deployment regardless of
+    // the host that assembled the config, so a uniform load-time rejection is the
+    // fail-loud contract (Darwin skips only the runtime `setrlimit`).
     const addressSpaceBytes = this.config.addressSpaceMb * 1024 * 1024
-    const logCaptureCeiling = Math.floor(addressSpaceBytes * LOG_CAPTURE_ADDRESS_SPACE_HEADROOM_FRACTION)
-    if (this.config.maxLogBytes > logCaptureCeiling) {
-      throw new Error(`dsh-code-runtime-python: config.maxLogBytes must not exceed ${logCaptureCeiling} (${LOG_CAPTURE_ADDRESS_SPACE_HEADROOM_FRACTION} of the ${addressSpaceBytes}-byte addressSpaceMb, leaving the child room to encode a near-budget log entry without breaching RLIMIT_AS), got ${String(this.config.maxLogBytes)}`)
+    for (const key of ['maxLogBytes', 'maxValueBytes'] as const) {
+      if (this.config[key] * OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE > addressSpaceBytes) {
+        throw new Error(`dsh-code-runtime-python: config.${key} times the ${OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE}x worst-case Unicode expansion must fit the ${addressSpaceBytes}-byte addressSpaceMb, so a near-budget output truncates rather than breaching RLIMIT_AS as worker-exit; got ${String(this.config[key])} against an address space that admits at most ${Math.floor(addressSpaceBytes / OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE)}`)
+      }
     }
     ctx.effect(() => () => this.teardown(), 'python code-runtime teardown')
   }

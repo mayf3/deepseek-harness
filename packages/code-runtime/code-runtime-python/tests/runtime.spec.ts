@@ -117,8 +117,11 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     await expect(ctx.plugin(PythonCodeRuntime, { maxValueBytes: admissible + 1 }))
       .rejects.toThrow(/maxValueBytes must not exceed 268435392 .*fd-3 frame ceiling/)
     // The boundary value itself loads: the bound is the largest cap a frame can
-    // still carry, not one below it.
-    const boundary = await ctx.plugin(PythonCodeRuntime, { maxValueBytes: admissible })
+    // still carry, not one below it. It needs an address space large enough to
+    // clear the separate maxValueBytes/addressSpaceMb worst-case gate (the cap
+    // times the 8x Unicode expansion must fit), so this pairs it with a 4 GiB
+    // addressSpaceMb — the two load-time bounds are independent.
+    const boundary = await ctx.plugin(PythonCodeRuntime, { maxValueBytes: admissible, addressSpaceMb: 4096 })
     await boundary.dispose()
   })
 
@@ -747,20 +750,25 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs.at(-1)).toBe(logTruncationMarker(4096))
   })
 
-  it('rejects a maxLogBytes that could breach addressSpaceMb during log encode at load', async () => {
-    // The child's log ledger encodes an admitted entry to UTF-8 once to charge
-    // its serialized cost, so a `maxLogBytes` approaching `addressSpaceMb` lets a
-    // legitimate near-budget log entry breach RLIMIT_AS and die as worker-exit
-    // instead of truncating. The incompatible pair is rejected at load rather
-    // than metered per-write at runtime: `maxLogBytes` must stay within one
-    // eighth of the `addressSpaceMb` byte count. 50 MB against a 64 MiB address
-    // space is far over that bound; the default 64 KiB against 512 MiB is not.
-    const ctx = new Context()
-    await expect(ctx.plugin(PythonCodeRuntime, { maxLogBytes: 50_000_000, addressSpaceMb: 64 }))
-      .rejects.toThrow(/maxLogBytes must not exceed .* of the .*addressSpaceMb/)
-    // A compatible pair loads.
+  it('rejects an output budget that could breach addressSpaceMb during encode at load', async () => {
+    // The child builds, charges, and encodes a `maxLogBytes` log entry or a
+    // `maxValueBytes` completion value under RLIMIT_AS, and both trigger on
+    // character count against a serialized-byte budget — an astral character is
+    // one character but ~4 bytes stored and ~4 encoded, so a budget approaching
+    // the address space lets a legitimate near-budget output breach it and die as
+    // worker-exit. The incompatible pair is rejected at load: each budget times
+    // the worst-case multiple (8) must fit the addressSpaceMb byte count. 50 MB
+    // against a 64 MiB address space is far over; the default caps against 512 MiB
+    // are not. Both budgets are gated symmetrically.
+    const ctxLog = new Context()
+    await expect(ctxLog.plugin(PythonCodeRuntime, { maxLogBytes: 50_000_000, addressSpaceMb: 64 }))
+      .rejects.toThrow(/maxLogBytes times the 8x worst-case Unicode expansion must fit/)
+    const ctxValue = new Context()
+    await expect(ctxValue.plugin(PythonCodeRuntime, { maxValueBytes: 50_000_000, addressSpaceMb: 64 }))
+      .rejects.toThrow(/maxValueBytes times the 8x worst-case Unicode expansion must fit/)
+    // The default caps against the default 512 MiB address space load.
     const ok = new Context()
-    const fiber = await ok.plugin(PythonCodeRuntime, { maxLogBytes: 65536, addressSpaceMb: 512 })
+    const fiber = await ok.plugin(PythonCodeRuntime, { maxLogBytes: 65536, maxValueBytes: 32768, addressSpaceMb: 512 })
     await fiber.dispose()
   })
 
@@ -3569,6 +3577,29 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.logs.filter(line => line.includes('log capture truncated'))).toHaveLength(1)
     // Nothing of the line itself was retained: the ledger refused the whole entry.
     expect(result.logs.every(line => !line.includes(String.fromCharCode(0)))).toBe(true)
+  }, 30_000)
+
+  it('bounds a huge unterminated tail after an early newline without copying it whole', async () => {
+    // The newline branch of _LogStream.write buffered the whole unterminated
+    // tail after the last newline into `_pending` before the flush trigger could
+    // bound it, so an early newline followed by a huge tail made a second full
+    // copy of the model's own string — a MemoryError the config gate cannot
+    // catch (the tail far exceeds maxLogBytes). The tail is now sliced to a
+    // budget-sized prefix, so the run truncates and completes. Linux-only RLIMIT_AS
+    // repro (Darwin skips the limit); on macOS this asserts the happy path.
+    const { runtime } = await setup({ maxLogBytes: 256, addressSpaceMb: 384, maxWallMs: 20_000 })
+    const result = await runtime.run({
+      program: [
+        'import sys',
+        // A short first line, then a 200 MiB unterminated tail on the same write.
+        'sys.stdout.write("first\\n" + "A" * (200 * 1024 * 1024))',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs.some(line => line.includes('log capture truncated'))).toBe(true)
   }, 30_000)
 
   it('bounds a flood of zero-byte log lines through the per-entry separator charge', async () => {

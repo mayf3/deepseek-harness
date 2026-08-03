@@ -248,7 +248,17 @@ class _LogStream(io.TextIOBase):
                 pos = newline + 1
             if pos < length:
                 if self._logs.remaining > 0:
-                    tail = text[pos:]
+                    # Buffer only a budget-sized PREFIX of the tail, not the whole
+                    # `text[pos:]`: an early newline followed by a huge unterminated
+                    # tail (`"\n" + "A" * 30 MiB`) would otherwise copy the entire
+                    # tail into `_pending` here — a second full copy of the model's
+                    # own string, the RLIMIT_AS death this path exists to avoid —
+                    # before the newline-free trigger below could bound it. Anything
+                    # past `remaining` characters cannot be admitted (the char count
+                    # is a lower bound on the serialized cost), so a
+                    # `remaining + 4`-character prefix is all that can ever survive;
+                    # the flush trigger below rejects it and emits the marker.
+                    tail = text[pos:pos + self._logs.remaining + 4]
                     self._pending.append(tail)
                     self._pending_chars = len(tail)
                 else:
