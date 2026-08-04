@@ -148,7 +148,7 @@ async coldSnapshot(id: SessionId, signal?: AbortSignal): Promise<ProjectionSnaps
 
 Types: [Session](session.md) · [SessionHeader](persistence.md) · [SessionId](core.md)
 
-Source: [`packages/session/session-projection-cache/src/index.ts:71`](../../packages/session/session-projection-cache/src/index.ts)
+Source: [`packages/session/session-projection-cache/src/index.ts`](../../packages/session/session-projection-cache/src/index.ts)
 
 <a id="ctxsessionprojections--sessionprojectionregistry"></a>
 
@@ -258,5 +258,5 @@ restore(checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseS
 
 Types: [Session](session.md) · [SessionEvent](session.md)
 
-Source: [`packages/session/session-projection/src/index.ts:156`](../../packages/session/session-projection/src/index.ts)
+Source: [`packages/session/session-projection/src/index.ts`](../../packages/session/session-projection/src/index.ts)
 <!-- END GENERATED cordis-surface -->

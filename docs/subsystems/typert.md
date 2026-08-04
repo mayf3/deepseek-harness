@@ -274,7 +274,7 @@ toJSONSchema(key: string, params?: z.core.ToJSONSchemaParams): z.core.JSONSchema
 
 Types: [TypertContribution](invariants.md) · [TypertFace](invariants.md) · [TypertPackageFilter](invariants.md) · [TypertPackageRecord](invariants.md) · [TypertSchemaFilter](invariants.md) · [TypertSchemaRecord](invariants.md)
 
-Source: [`packages/typert/registry/src/service.ts:446`](../../packages/typert/registry/src/service.ts)
+Source: [`packages/typert/registry/src/service.ts`](../../packages/typert/registry/src/service.ts)
 
 <a id="ctxtypertgateway--typertgatewayservice"></a>
 
@@ -292,5 +292,5 @@ Resolve strict generated definitions or conservative SRC markers against current
 async invoke(request: InvokeRemoteRequest): Promise<unknown>
 ```
 
-Source: [`packages/api/gateway/src/index.ts:78`](../../packages/api/gateway/src/index.ts)
+Source: [`packages/api/gateway/src/index.ts`](../../packages/api/gateway/src/index.ts)
 <!-- END GENERATED cordis-surface -->

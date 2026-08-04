@@ -139,7 +139,7 @@ variable(name: string, provider: (context: AssembleContext) => string | undefine
 async assemble(context: AssembleContext = {}): Promise<PromptAssembly>
 ```
 
-Source: [`packages/core/system-prompt/src/index.ts:314`](../../packages/core/system-prompt/src/index.ts)
+Source: [`packages/core/system-prompt/src/index.ts`](../../packages/core/system-prompt/src/index.ts)
 
 <a id="system-prompt-events"></a>
 
@@ -167,7 +167,7 @@ Expert waterfall over the assembled sections, contexts, tools, and variables. Sc
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/system-prompt/src/index.ts:29`](../../packages/core/system-prompt/src/index.ts)
+Source: [`packages/core/system-prompt/src/index.ts`](../../packages/core/system-prompt/src/index.ts)
 
 <a id="system-promptchange--emit"></a>
 
@@ -184,5 +184,5 @@ Emitted when any prompt provider changes. This registry notification is unfilter
 'system-prompt/change'(): void
 ```
 
-Source: [`packages/core/system-prompt/src/index.ts:35`](../../packages/core/system-prompt/src/index.ts)
+Source: [`packages/core/system-prompt/src/index.ts`](../../packages/core/system-prompt/src/index.ts)
 <!-- END GENERATED cordis-surface -->

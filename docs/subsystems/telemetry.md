@@ -142,7 +142,7 @@ flush?(): void
 abstract shutdown(): Promise<void>
 ```
 
-Source: [`packages/session/session-telemetry/src/index.ts:140`](../../packages/session/session-telemetry/src/index.ts)
+Source: [`packages/session/session-telemetry/src/index.ts`](../../packages/session/session-telemetry/src/index.ts)
 
 <a id="telemetry-events"></a>
 
@@ -176,5 +176,5 @@ Transform one outbound record before it reaches the backend. This waterfall is t
 'telemetry/record'(record: TelemetryRecord, next: () => TelemetryRecord): TelemetryRecord
 ```
 
-Source: [`packages/session/session-telemetry/src/index.ts:43`](../../packages/session/session-telemetry/src/index.ts)
+Source: [`packages/session/session-telemetry/src/index.ts`](../../packages/session/session-telemetry/src/index.ts)
 <!-- END GENERATED cordis-surface -->

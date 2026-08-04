@@ -180,5 +180,5 @@ list(owner: Agent): PtySessionSnapshot[]
 
 Types: [Agent](core.md)
 
-Source: [`packages/pty/pty/src/index.ts:105`](../../packages/pty/pty/src/index.ts)
+Source: [`packages/pty/pty/src/index.ts`](../../packages/pty/pty/src/index.ts)
 <!-- END GENERATED cordis-surface -->

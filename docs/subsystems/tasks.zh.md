@@ -256,5 +256,5 @@ abstract attachSurface(name: string): () => void
 
 Types: [Agent](core.md)
 
-Source: [`packages/tasks/tasks/src/index.ts:50`](../../packages/tasks/tasks/src/index.ts)
+Source: [`packages/tasks/tasks/src/index.ts`](../../packages/tasks/tasks/src/index.ts)
 <!-- END GENERATED cordis-surface -->
