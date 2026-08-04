@@ -2,4 +2,4 @@
   - text: reference 文件与文件夹
   - option "File · reference.txt reference.txt" [selected]
   - text: Session 对话
-  - option "Session · Research notes reference-source-session · {{cwd}} · 2026-08-03T{{clock}}Z"
+  - option "Session · Research notes reference-source-session · {{cwd}} · {{timestamp}}"

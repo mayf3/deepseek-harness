@@ -1,6 +1,6 @@
 /**
- * Web reference source coverage: Host-backed file/session discovery, TUI
- * ordering and labels, quoted-path suppression, pick projections, codec
+ * Web reference source coverage: Host-backed file/session discovery,
+ * deterministic ordering and labels, quoted-path suppression, pick projections, codec
  * round-trip, and registration lifecycle.
  */
 import { Context } from 'cordis'
@@ -106,7 +106,7 @@ describe('apply', () => {
 })
 
 describe('candidates', () => {
-  it('starts both Host lookups together and renders files before sessions with TUI labels', async () => {
+  it('starts both Host lookups together and renders files before sessions with stable labels', async () => {
     let releaseFiles!: () => void
     let releaseSessions!: () => void
     const files = vi.fn(() => new Promise<{

@@ -2,9 +2,9 @@
 
 English | [中文](README.zh.md)
 
-Unified Web `@file` and `@session` source. The browser starts `reference.files` and `reference.sessions` Host RPCs together for an unquoted token, keeps the TUI's file-before-session ordering and labels, renders the rows under the non-selectable `文件与文件夹` and `Session 对话` headings, and degrades either failed candidate domain independently. An open `@"…` token searches files only.
+Unified Web `@file` and `@session` source. The browser starts `reference.files` and `reference.sessions` Host RPCs together for an unquoted token, deterministically orders files before sessions with stable `Folder ·`, `File ·`, and `Session ·` labels, renders the rows under the non-selectable `文件与文件夹` and `Session 对话` headings, and degrades either failed candidate domain independently. An open `@"…` token searches files only.
 
-File picks insert the natural `@path` text used by the TUI. A file closes completion and adds a trailing space; a directory keeps the menu active at its trailing slash so the user can descend another level. Paths containing whitespace use `@"path with spaces"`, and a quote the user opened explicitly remains quoted.
+File picks insert the natural text defined by the shared `@path` grammar. A file closes completion and adds a trailing space; a directory keeps the menu active at its trailing slash so the user can descend another level. Paths containing whitespace use `@"path with spaces"`, and a quote the user opened explicitly remains quoted.
 
 Session picks insert an atomic composer chip whose hidden `ref` and clipboard representation are the canonical `@[label](dsh-session:…)` mention returned by the Host. The visible chip uses `@label`; serialization never reconstructs identity from that label. Ordinary send delegates the canonical mention to `session.prompt`, where Host-side session-reference preparation owns validation, snapshotting, and model context.
 
@@ -22,4 +22,4 @@ Candidate browsing has no model effect. A selected file or session changes only 
 
 - **Candidate failure is intentionally quiet** — one unavailable or failed reference RPC yields no rows for that domain, while prompt submission still reports session-reference preparation failures through the ordinary send path.
 - **No browser-side file scan** — Web completion requires a mounted Host `ctx.fileReferences` provider; the browser cannot fall back to its own filesystem.
-- **Session search remains metadata-only** — discovery filters session id and cwd through `ctx.sessionReferences`; title and transcript full-text search are not available.
+- **Session search remains metadata-only** — discovery filters session id, cwd, and the latest log-backed title through `ctx.sessionReferences`; message bodies and full transcripts are not searched.

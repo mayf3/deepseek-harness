@@ -1,6 +1,6 @@
 /**
  * Unified Web `@` reference source. File and session discovery run through
- * cancellable Host RPCs in parallel and retain the TUI's ordering and labels.
+ * cancellable Host RPCs in parallel with deterministic ordering and labels.
  *
  * @module @deepseek-ai/dsh-client-ui-reference/client
  */

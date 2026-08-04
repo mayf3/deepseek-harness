@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-`ctx.sessionReferences` prepares bounded, read-only snapshots of other sessions as sourced model-facing context. It consumes `ctx.sessionQuery` and the backend-independent compact checkpoint marker; SQLite FTS is not required. The standard TUI bundle mounts it, while other hosts may call the service directly.
+`ctx.sessionReferences` prepares bounded, read-only snapshots of other sessions as sourced model-facing context. It consumes `ctx.sessionQuery` and the backend-independent compact checkpoint marker; SQLite FTS is not required. The standard Web composition mounts it, while other hosts may call the service directly.
 
 ## Public API
 
@@ -14,7 +14,7 @@ English | [中文](README.zh.md)
 
 Preparation calls `ctx.sessionQuery.readSurface()` once per distinct source and never rereads it after enqueue. It projects only direct-user `user/message`, direct-user `steering/message`, assistant text, and `user/message` checkpoints carrying the canonical `dsh-compact` source marker from the folded current surface. Session-reference snapshots are separate sourced `user/message` events and are excluded as injected context, preventing recursive snapshot propagation. Shadowed pre-compaction events, tools, reasoning, other plugin-generated user messages besides marked compact checkpoints, log-only records, and unfinished assistant chunks are also excluded. A compacted source therefore contributes its latest checkpoint plus retained later conversation, not restored shadowed text.
 
-The context source is `{ kind: 'session-reference', version: 1, references }`; each reference records its source id and label, capture seq, compact presence, retained/omitted message counts, omitted UTF-8 bytes, and truncation state. The standard TUI preserves admission ownership without attaching context to the generic inbox record: outside the next-step acceptance window, a one-shot `agent/prompt-submit` wrapper adds the snapshot only to an allowed decision; during prompt admission or an open turn, `inject()` and `steer()` stage beside each other for the same safe boundary. The target log records the sourced context and readable direct message as separate events; later source mutation, compaction, or deletion cannot change target replay.
+The context source is `{ kind: 'session-reference', version: 1, references }`; each reference records its source id and label, capture seq, compact presence, retained/omitted message counts, omitted UTF-8 bytes, and truncation state. The standard Web Host preserves admission ownership without attaching context to the generic inbox record: queued delivery installs a one-shot `agent/prompt-submit` wrapper matched to the exact submitted message id, removes it when that message reaches admission or is discarded, and adds the snapshot only to an allowed decision; steering delivery calls `inject()` immediately before `steer()` so the context and readable message reach the same safe boundary in order. The target log records the sourced context and readable direct message as separate events; later source mutation, compaction, or deletion cannot change target replay.
 
 ## Configuration
 
