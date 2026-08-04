@@ -13,6 +13,7 @@ import {
   SubagentReadOnlyComposer, type SubagentReadOnlyMatch,
 } from '../src/client/SubagentReadOnlyComposer.tsx'
 import { apply, inject } from '../src/client/index.ts'
+import { apply as nodeApply } from '../src/index.ts'
 
 const sid = (id: string) => id as SessionId
 
@@ -56,6 +57,10 @@ async function bench() {
 }
 
 describe('apply', () => {
+  it('exposes a no-op Host half for Loader discovery', () => {
+    expect(nodeApply).not.toThrow()
+  })
+
   it('declares the services it binds', () => {
     expect(inject).toEqual(['sessions', 'conversation', 'slots', 'locale'])
   })
