@@ -20,7 +20,8 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import { createChatStore } from '../src/client/stores.ts'
 import { ChatView } from '../src/client/chat/ChatView.tsx'
 import { zh } from '../src/client/locales.ts'
-import { assistantActionsSeqs, deriveChatFlow, flowKeys, messageBranchSeqs } from '../src/client/chat/chat-flow.ts'
+import { assistantActionsSeqs, deriveChatFlow, flowKeys, messageBranchSeqs, runningTurnStartTime } from '../src/client/chat/chat-flow.ts'
+import { formatRunDuration } from '../src/client/chat/message-chrome.ts'
 
 afterEach(() => {
   cleanup()
@@ -36,7 +37,7 @@ const SID = 's1' as SessionId
 
 function snapshotBase(): ConversationSnapshot {
   return {
-    sessionId: SID, nodes: [], turnEnds: new Map(), partial: null, runningCalls: [], codeDispatches: new Map(),
+    sessionId: SID, nodes: [], turnTimings: new Map(), turnEnds: new Map(), partial: null, runningCalls: [], codeDispatches: new Map(),
     pending: [], queue: [], running: false, composerPhase: 'active', removed: false, openState: 'open', openError: null,
     hasMore: false, loadingOlder: false, promptError: null, blank: false, subagent: null, lastAgentError: null,
   }
@@ -205,26 +206,28 @@ describe('chat-flow derivation', () => {
       content: [{ type: 'text', text: 'snapshot' }] as never,
       source: {
         kind: 'session-reference',
+        form: 'recall',
         references: [{ sessionId: `source-${seq}`, label }],
       },
+      provenance: { role: 'recall', label },
+      form: 'recall',
     })
     const steering: ConversationNode = {
       kind: 'steering',
       messageId: 'steer-reference' as never,
       seq: 5,
       time: 5_000,
-      turn: 1,
       content: [{ type: 'text', text: '@Steer continue' }] as never,
       source: { kind: 'user' },
     }
     const items = deriveChatFlow([
-      user(1, '@Direct compare'),
-      reference(2, 'Direct'),
+      reference(1, 'Direct'),
+      user(2, '@Direct compare'),
       assistant(3, 'answer'),
       reference(4, 'Steer'),
       steering,
     ])
-    expect(items.map(item => item.key)).toEqual(['n1', 'n3', 'n5'])
+    expect(items.map(item => item.key)).toEqual(['n2', 'n3', 'n5'])
     expect(items[0]).toMatchObject({ kind: 'node', sessionLabels: ['Direct'] })
     expect(items[2]).toMatchObject({ kind: 'node', sessionLabels: ['Steer'] })
   })
@@ -237,8 +240,11 @@ describe('chat-flow derivation', () => {
       content: [{ type: 'text', text: 'snapshot' }] as never,
       source: {
         kind: 'session-reference',
+        form: 'recall',
         references: [{ sessionId: 'source', label: 'Source' }],
       },
+      provenance: { role: 'recall', label: 'Source' },
+      form: 'recall',
     }
     expect(deriveChatFlow([orphan, assistant(2, 'answer')]).map(item => item.key))
       .toEqual(['n1', 'n2'])
@@ -288,6 +294,25 @@ describe('chat-flow derivation', () => {
     expect([...seqs].sort((a, b) => a - b)).toEqual([5, 7])
   })
 
+  it('runningTurnStartTime selects the latest turn/start without a turn/end', () => {
+    expect(runningTurnStartTime(new Map([
+      [1, { startTime: 1_000, endTime: 5_000 }],
+      [2, { startTime: 6_000 }],
+    ]))).toBe(6_000)
+    expect(runningTurnStartTime(new Map([
+      [1, { startTime: 1_000, endTime: 5_000 }],
+      [2, { startTime: 6_000, endTime: 9_000 }],
+    ]))).toBeNull()
+  })
+
+  it('formatRunDuration localizes units and floors partial seconds', () => {
+    const t = makeTranslate(zh, commonZh)
+    expect(formatRunDuration(0, t)).toBe('0秒')
+    expect(formatRunDuration(-500, t)).toBe('0秒')
+    expect(formatRunDuration(15_999, t)).toBe('15秒')
+    expect(formatRunDuration(125_000, t)).toBe('2分05秒')
+  })
+
   it('messageBranchSeqs keeps only message rows at completed transcript tails', () => {
     const interruptedThink: AssistantMessageNode = {
       kind: 'assistant', seq: 4.1, time: 4_100, turn: 1, step: 2,
@@ -301,11 +326,7 @@ describe('chat-flow derivation', () => {
       user(6, 'second'),
       assistant(7, 'clean tail', 2),
       user(10, 'user-only tail'),
-      {
-        kind: 'steering', messageId: 'steering-tail' as never,
-        seq: 13, time: 13_000, turn: 4,
-        content: [{ type: 'text', text: 'steering tail' }], source: null,
-      },
+      user(13, 'steering tail'),
     ]
     const seqs = messageBranchSeqs(nodes, new Map([[1, 5], [2, 8], [3, 11], [4, 14]]))
     expect([...seqs]).toEqual([7, 10, 13])
@@ -407,6 +428,9 @@ describe('ChatView', () => {
     expect(view.queryByText('later')).toBeNull()
     const pendingBubble = view.getByText('interrupt now').closest('[data-pending-steering]')
     expect(pendingBubble).not.toBeNull()
+    // Pending and durable steering carry the same interjection caption, so the
+    // hand-off does not change what the row says it is.
+    expect(within(pendingBubble as HTMLElement).getByText('插话')).toBeTruthy()
     fireEvent.click(within(pendingBubble as HTMLElement).getByRole('button', { name: '复制' }))
     expect(writeText).toHaveBeenCalledWith('interrupt now')
     expect(within(pendingBubble as HTMLElement).queryByRole('button', { name: '在新对话中分支' })).toBeNull()
@@ -420,7 +444,7 @@ describe('ChatView', () => {
           assistant(1, 'working'),
           {
             kind: 'steering', messageId: pending.messageId,
-            seq: 2, time: 2_000, turn: 1,
+            seq: 2, time: 2_000,
             content: [{ type: 'text', text: 'interrupt now' }], source: null,
           },
         ],
@@ -428,6 +452,7 @@ describe('ChatView', () => {
     })
     expect(view.getAllByText('interrupt now')).toHaveLength(1)
     expect(view.container.querySelector('[data-pending-steering]')).toBeNull()
+    expect(view.getAllByText('插话')).toHaveLength(1)
     expect(view.getAllByRole('button', { name: '复制' })).toHaveLength(2)
     const durableBubble = view.getByText('interrupt now').closest('[class*="userRow"]') as HTMLElement
     const unavailable = within(durableBubble).getByRole('button', { name: '在新对话中分支' })
@@ -457,8 +482,7 @@ describe('ChatView', () => {
     const h = makeHarness({
       queue: [pending],
       nodes: [{
-        kind: 'steering', messageId: pending.messageId,
-        seq: 2, time: 2_000, turn: 1,
+        kind: 'user', seq: 2, time: 2_000,
         content: pending.content, source: null,
       }],
       running: true,
@@ -474,6 +498,8 @@ describe('ChatView', () => {
     const nextRetry = { ...retry(3), turn: 2, retry: 2 }
     const context = {
       kind: 'context', seq: 4, time: 4_000, content: [], source: null,
+      provenance: { role: 'inject', label: null },
+      form: null,
     } as const satisfies ConversationNode
     const h = makeHarness({ nodes: [user(1, 'try'), retryNode], running: true })
     const view = render(<h.ChatView {...h.props} />)
@@ -549,6 +575,81 @@ describe('ChatView', () => {
     const branchButtons = view.getAllByRole('button', { name: '在新对话中分支' })
     expect(branchButtons).toHaveLength(4)
     expect(branchButtons.map(button => button.getAttribute('aria-disabled'))).toEqual(['true', null, 'true', null])
+  })
+
+  it('the actions-owning assistant footer shows the turn run time', () => {
+    const h = makeHarness({
+      nodes: [
+        user(1, 'hi'), // time 1_000
+        assistant(2, 'mid-turn text'),
+        assistant(16, 'final answer'),
+        toolResult(18, 'trailing'),
+      ],
+      turnTimings: new Map([[1, { startTime: 1_000, endTime: 20_000 }]]),
+      turnEnds: new Map([[1, 20]]),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    // The exact turn/end includes trailing tool activity after the final text.
+    expect(view.getAllByText(/用时 19秒/)).toHaveLength(1)
+  })
+
+  it('the settled footer appends first-step ttft and turn decode throughput', () => {
+    const first: AssistantMessageNode = {
+      kind: 'assistant', seq: 2, time: 2_000, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'mid' }],
+      timing: { stepStartTime: 1_000, firstTokenTime: 2_200, completedTime: 5_200 },
+      usage: { outputTokens: 40 },
+    }
+    const second: AssistantMessageNode = {
+      kind: 'assistant', seq: 16, time: 16_000, turn: 1, step: 2, blocks: [{ kind: 'text', text: 'final' }],
+      timing: { stepStartTime: 10_000, firstTokenTime: 10_200, completedTime: 12_200 },
+      usage: { outputTokens: 60 },
+    }
+    const h = makeHarness({
+      nodes: [user(1, 'hi'), first, second],
+      turnTimings: new Map([[1, { startTime: 1_000, endTime: 20_000 }]]),
+      turnEnds: new Map([[1, 20]]),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    // First-step ttft (1.2s) plus 100 tokens over 5s of decode.
+    expect(view.getAllByText(/用时 19秒/)).toHaveLength(1)
+    expect(view.getAllByText(/首 token 1\.2秒/)).toHaveLength(1)
+    expect(view.getAllByText(/20 tok\/s/)).toHaveLength(1)
+  })
+
+  it('withholds ttft and throughput while the turn is still running', () => {
+    const settled: AssistantMessageNode = {
+      kind: 'assistant', seq: 2, time: 2_000, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'answer' }],
+      timing: { stepStartTime: 1_000, firstTokenTime: 1_500, completedTime: 2_000 },
+      usage: { outputTokens: 10 },
+    }
+    const h = makeHarness({
+      nodes: [user(1, 'hi'), settled],
+      turnTimings: new Map([[1, { startTime: 1_000 }]]),
+      turnEnds: new Map(),
+      running: true,
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.queryByText(/首 token|tok\/s/)).toBeNull()
+  })
+
+  it('user and assistant message containers scope the hover-revealed time chrome', () => {
+    const h = makeHarness({
+      nodes: [user(1, 'hi'), assistant(2, 'answer')],
+      turnTimings: new Map([[1, { startTime: 1_000, endTime: 2_000 }]]),
+      turnEnds: new Map([[1, 2]]),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    // One scope per message row; the CSS reveal keys off this attribute.
+    expect(view.container.querySelectorAll('[data-time-hover-root]')).toHaveLength(2)
+  })
+
+  it('the run-time label is withheld when the turn start is outside the window', () => {
+    const h = makeHarness({
+      nodes: [assistant(16, 'tail without trigger')],
+      turnEnds: new Map([[1, 16]]),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.queryByText(/用时/)).toBeNull()
   })
 
   it('enables fork only on the finalized assistant at the completed transcript tail', () => {
@@ -709,6 +810,30 @@ describe('ChatView', () => {
     expect(view.container.querySelector('[data-state="running"]')).not.toBeNull()
     expect(view.getByText('cmd-r1')).toBeTruthy()
     expect(view.getByRole('status').textContent).toBe('Deep diving...')
+  })
+
+  it('the running clock uses turn/start, ignores steering, and stays out of the live region', () => {
+    const startTime = Date.now() - 125_000
+    const trigger: UserMessageNode = { ...user(1, 'go'), time: startTime + 1 }
+    const h = makeHarness({
+      nodes: [trigger], turnTimings: new Map([[1, { startTime }]]), running: true,
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    // Freshly mounted (as after a reload) yet already past the 15s gate.
+    const status = view.getByRole('status')
+    expect(status.textContent).toMatch(/^Deep diving\.\.\.2分0\d秒$/)
+    expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
+    act(() => {
+      h.set({ queue: [{
+        id: 'steering-occurrence' as never,
+        messageId: 'steering-message' as never,
+        placement: 'steering',
+        content: [{ type: 'text', text: 'also' }],
+        preview: 'also',
+        text: 'also',
+      }] })
+    })
+    expect(status.textContent).toMatch(/^Deep diving\.\.\.2分0\d秒$/)
   })
 
   it('dispatches each tool row through the keyed slot with the tool name as entryKey', () => {

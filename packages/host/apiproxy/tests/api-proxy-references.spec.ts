@@ -5,7 +5,7 @@
  */
 import { Context } from 'cordis'
 import { describe, expect, it, vi } from 'vitest'
-import AgentRegistry, { agentEvents, InboxItemId } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { agentEvents, Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
@@ -48,15 +48,27 @@ async function harness(): Promise<Context> {
   return ctx
 }
 
-function stubAgent(ctx: Context) {
+function stubAgent(ctx: Context, status: Agent['status'] = 'idle') {
   const session = ctx.sessions.create(undefined, { meta: { cwd: '/project' } })
   const followup = vi.fn<Agent['followup']>()
   const steer = vi.fn<Agent['steer']>()
   const inject = vi.fn<Agent['inject']>()
+  const inbox = new Inbox(session, {
+    inserted(message) {
+      agentEvents(ctx, agent).emit('agent/inbox/inserted', { message })
+    },
+    discarded(message) {
+      agentEvents(ctx, agent).emit('agent/inbox/discarded', { message })
+    },
+    claimed(message, turn) {
+      agentEvents(ctx, agent).emit('agent/inbox/claimed', { message, turn })
+    },
+  })
   const agent = {
     id: session.id,
     session,
-    status: 'idle',
+    inbox,
+    status,
     ctx,
     followup,
     steer,
@@ -67,13 +79,9 @@ function stubAgent(ctx: Context) {
     steer: typeof steer
     inject: typeof inject
   }
-  followup.mockImplementation((message) => {
-    ctx.emit('agent/inbox/enqueue', agent, {
-      id: InboxItemId(message.id),
-      message,
-      placement: 'queued',
-    })
-  })
+  followup.mockImplementation((message) => { inbox.append('next-turn', message) })
+  steer.mockImplementation((message) => { inbox.append('next-step', message) })
+  inject.mockImplementation((message) => { inbox.append('next-step', message) })
   ctx.agents.register(agent)
   return agent
 }
@@ -143,12 +151,18 @@ describe('referenced prompt preparation', () => {
   it('normalizes the visible mention and waits for all context preparation before enqueue', async () => {
     const ctx = await harness()
     const agent = stubAgent(ctx)
+    const earlier = createUserMessage({
+      source: { kind: 'user' },
+      content: [{ type: 'text', text: 'earlier queued prompt' }],
+    })
+    agent.followup(earlier)
     const source = 'source-session' as SessionId
     const mention = formatSessionReferenceMention({ sessionId: source, label: 'Research' })
     let finish!: () => void
     const context = createUserMessage({
       source: {
         kind: 'session-reference' as const,
+        form: 'recall' as const,
         version: 1 as const,
         references: [{
           sessionId: source,
@@ -185,7 +199,7 @@ describe('referenced prompt preparation', () => {
       mode: 'queue' as const,
     }), signal)
     await Promise.resolve()
-    expect(agent.followup).not.toHaveBeenCalled()
+    expect(agent.followup).toHaveBeenCalledTimes(1)
     expect(prepare).toHaveBeenCalledWith(
       agent,
       [{ type: 'text', text: 'compare @Research now' }],
@@ -194,36 +208,46 @@ describe('referenced prompt preparation', () => {
     )
     finish()
     expect(expectOk(await pending)).toEqual({ accepted: true })
-    expect(agent.followup).toHaveBeenCalledTimes(1)
-    const sent = agent.followup.mock.calls[0]?.[0]
+    expect(agent.followup).toHaveBeenCalledTimes(2)
+    const sent = agent.followup.mock.calls[1]?.[0]
     expect(sent).toMatchObject({
       content: [{ type: 'text', text: 'compare @Research now' }],
       source: { kind: 'user' },
     })
     if (sent === undefined) throw new Error('expected queued prompt')
+    const firstBatch = agent.inbox.claim('next-turn', 1)
+    const firstDecision = await agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      firstBatch,
+      { turn: 1, step: 1, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: firstBatch }),
+    )
+    expect(firstDecision).toEqual({ kind: 'enter', messages: [earlier] })
+    const referencedBatch = agent.inbox.claim('next-turn', 2)
     const decision = await agentEvents(ctx, agent).waterfall(
-      'agent/prompt-submit',
-      sent,
-      signal,
-      () => Promise.resolve({ kind: 'allow' as const }),
+      'agent/pre-step',
+      referencedBatch,
+      { turn: 2, step: 1, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: referencedBatch }),
     )
-    expect(decision.kind === 'allow' && decision.additionalContexts).toEqual([context])
+    expect(decision).toEqual({ kind: 'enter', messages: [context, sent] })
     const replay = await agentEvents(ctx, agent).waterfall(
-      'agent/prompt-submit',
-      sent,
-      signal,
-      () => Promise.resolve({ kind: 'allow' as const }),
+      'agent/pre-step',
+      referencedBatch,
+      { turn: 2, step: 1, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: referencedBatch }),
     )
-    expect(replay.kind === 'allow' && replay.additionalContexts).toBeUndefined()
+    expect(replay).toEqual({ kind: 'enter', messages: referencedBatch })
   })
 
-  it('injects prepared session context immediately before steering', async () => {
+  it('inserts prepared session context immediately before steering at admission', async () => {
     const ctx = await harness()
     const agent = stubAgent(ctx)
     const source = 'source-session' as SessionId
     const context = createUserMessage({
       source: {
         kind: 'session-reference' as const,
+        form: 'recall' as const,
         version: 1 as const,
         references: [{
           sessionId: source,
@@ -256,13 +280,81 @@ describe('referenced prompt preparation', () => {
       mode: 'steer' as const,
     }))
     expect(expectOk(response)).toEqual({ accepted: true })
-    expect(agent.inject).toHaveBeenCalledWith(context)
     const steered = agent.steer.mock.calls[0]?.[0]
     expect(steered?.content).toEqual([{ type: 'text', text: 'continue @Research' }])
     expect(steered?.source.kind).toBe('user')
-    expect(agent.inject.mock.invocationCallOrder[0]).toBeLessThan(
-      agent.steer.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    if (steered === undefined) throw new Error('expected steering prompt')
+    const signal = new AbortController().signal
+    const batch = agent.inbox.claim('next-step', 1)
+    const decision = await agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      batch,
+      { turn: 1, step: 1, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: batch }),
     )
+    expect(decision).toEqual({ kind: 'enter', messages: [context, steered] })
+    expect(agent.inject).not.toHaveBeenCalled()
+  })
+
+  it('keeps prepared context paired when a queued prompt moves to steering', async () => {
+    const ctx = await harness()
+    const agent = stubAgent(ctx, 'running')
+    const source = 'source-session' as SessionId
+    const context = createUserMessage({
+      source: {
+        kind: 'session-reference' as const,
+        form: 'recall' as const,
+        version: 1 as const,
+        references: [{
+          sessionId: source,
+          label: 'Research',
+          capturedThroughSeq: null,
+          compacted: false,
+          originalMessages: 1,
+          retainedMessages: 1,
+          omittedMessages: 0,
+          omittedBytes: 0,
+          truncated: false,
+          inputIndex: 0,
+        }],
+      },
+      content: [{ type: 'text' as const, text: 'snapshot' }],
+    })
+    ctx.provide('sessionReferences', {
+      prepare: () => Promise.resolve({
+        content: [{ type: 'text' as const, text: 'continue @Research' }],
+        additionalContext: context,
+      }),
+    } as never)
+    const api = createApiProxy(ctx, DEFAULTS)
+    expect(expectOk(await api.sessions.prompt(request({
+      sessionId: agent.id,
+      content: [{
+        type: 'text' as const,
+        text: formatSessionReferenceMention({ sessionId: source, label: 'Research' }),
+      }],
+      mode: 'queue' as const,
+    })))).toEqual({ accepted: true })
+    const queued = agent.inbox.nextTurn[0]
+    if (queued === undefined) throw new Error('expected queued reference prompt')
+
+    expect(expectOk(await api.sessions.updateQueue(request({
+      sessionId: agent.id,
+      itemId: queued.id,
+      action: { kind: 'steer' as const },
+    })))).toEqual({ accepted: true })
+    expect(agent.inbox.nextTurn).toEqual([])
+    expect(agent.inbox.nextStep).toEqual([queued])
+
+    const signal = new AbortController().signal
+    const batch = agent.inbox.claim('next-step', 1)
+    const decision = await agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      batch,
+      { turn: 1, step: 1, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: batch }),
+    )
+    expect(decision).toEqual({ kind: 'enter', messages: [context, queued] })
   })
 
   it.each(['queue', 'steer'] as const)(
@@ -281,8 +373,20 @@ describe('referenced prompt preparation', () => {
             additionalContext: {
               source: {
                 kind: 'session-reference' as const,
+                form: 'recall' as const,
                 version: 1 as const,
-                references: [{ sessionId: source, label: 'Research' }],
+                references: [{
+                  sessionId: source,
+                  label: 'Research',
+                  capturedThroughSeq: null,
+                  compacted: false,
+                  originalMessages: 1,
+                  retainedMessages: 1,
+                  omittedMessages: 0,
+                  omittedBytes: 0,
+                  truncated: false,
+                  inputIndex: 0,
+                }],
               },
               content: [{ type: 'text' as const, text: 'snapshot' }],
             },

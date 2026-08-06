@@ -1,7 +1,8 @@
 // MessageItem: simple chat nodes — user and consumed-steering bubbles
-// (right-aligned, with clock + copy / branch IconActions), pending steering
-// (copy only), context injection, compaction marker, retry disclosure, and
-// unknown-surface JSON rows.
+// (right-aligned, with clock + copy / branch IconActions; steering adds the
+// interjection caption that names it), pending steering (caption + copy only),
+// context injection, compaction marker, retry disclosure, and unknown-surface
+// JSON rows.
 
 import { memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -192,7 +193,7 @@ function projectUserText(text: string, sessionLabels: readonly string[] = []): R
 
 /** Right-aligned bubble shared by user and steering rows. */
 function UserStyleBubble({
-  content, actions, pending = false, sessionLabels = [], t,
+  content, actions, pending = false, sessionLabels = [], steering = false, t,
 }: {
   content: readonly unknown[]
   /** Optional IconActions (or similar) below the bubble; receives the joined text. */
@@ -201,12 +202,15 @@ function UserStyleBubble({
   pending?: boolean
   /** Durable labels from a neighboring session-reference context event. */
   sessionLabels?: readonly string[]
+  /** Marks the bubble as mid-turn steering rather than a turn-opening prompt. */
+  steering?: boolean
   t: ChatViewSlotProps['t']
 }): ReactNode {
   const { text, rest } = contentText(content)
   const truncated = (total: number): string => t('json.truncated', { total })
   return (
-    <div className={css.userRow} data-pending-steering={pending || undefined}>
+    <div className={css.userRow} data-pending-steering={pending || undefined} data-time-hover-root>
+      {steering && <span className={css.steeringMark} data-steering-mark>{t('message.steering')}</span>}
       <div className={css.bubble}>
         {projectUserText(text, sessionLabels)}
         {rest.map((block, i) => <JsonBlock key={i} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />)}
@@ -233,6 +237,7 @@ export function PendingSteeringBubble({ content, t }: {
     <UserStyleBubble
       content={content}
       pending
+      steering
       t={t}
       actions={text => (
         <MessageIconActions
@@ -258,6 +263,7 @@ export const MessageItem = memo(function MessageItem({
         <UserStyleBubble
           content={node.content}
           sessionLabels={sessionLabels}
+          steering={node.kind === 'steering'}
           t={t}
           actions={text => (
             <MessageIconActions
@@ -274,7 +280,13 @@ export const MessageItem = memo(function MessageItem({
       )
     case 'context':
       return (
-        <ContextInjectionRow content={node.content} source={node.source} t={t} />
+        <ContextInjectionRow
+          content={node.content}
+          source={node.source}
+          provenance={node.provenance}
+          form={node.form}
+          t={t}
+        />
       )
     case 'compaction':
       return <CompactionItem node={node} t={t} />

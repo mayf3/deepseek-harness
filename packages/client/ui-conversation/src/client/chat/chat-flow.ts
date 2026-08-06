@@ -9,7 +9,7 @@
  * flow share their gates.
  */
 import type {
-  AssistantBlock, ConversationNode, ToolResultNode,
+  AssistantBlock, ConversationNode, ConversationSnapshot, ToolResultNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
 
 /** One renderable flow item; key is the React key and the parent's identity unit. */
@@ -71,6 +71,21 @@ export function assistantActionsSeqs(nodes: readonly ConversationNode[]): Readon
 }
 
 /**
+ * Exact start time of the latest in-window turn without a matching end time.
+ * @param turnTimings - In-window turn timings in event order.
+ * @returns Unix epoch ms, or null when the running turn started outside the window.
+ */
+export function runningTurnStartTime(
+  turnTimings: ConversationSnapshot['turnTimings'],
+): number | null {
+  let latest: number | null = null
+  for (const timing of turnTimings.values()) {
+    if (timing.endTime === undefined) latest = timing.startTime
+  }
+  return latest
+}
+
+/**
  * Seq set of message rows that may fork: the last transcript node of a
  * completed turn, when that node owns message chrome. A later tool, reasoning,
  * error, or other transcript node leaves the earlier message's branch action
@@ -94,8 +109,7 @@ export function messageBranchSeqs(
       tail = candidate
       nodeIndex++
     }
-    if (tail?.kind === 'user'
-      || (tail?.kind === 'steering' && tail.turn === turn)
+    if (tail?.kind === 'user' || tail?.kind === 'steering'
       || (tail?.kind === 'assistant' && tail.turn === turn && hasContentText(tail.blocks))) {
       result.add(tail.seq)
     }

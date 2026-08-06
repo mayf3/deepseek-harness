@@ -43,7 +43,6 @@ describe('SessionTitleService', () => {
     const session = ctx.sessions.create(SessionId('fresh'))
     session.append('turn/start', {
       turn: 1,
-      trigger: { kind: 'message', source: { kind: 'user' } },
     })
     const message = session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: '  Build\nlog-backed session titles please  ' }],
@@ -82,13 +81,13 @@ describe('SessionTitleService', () => {
       content: [{ type: 'text', text: 'Referenced session snapshot' }],
       source: {
         kind: 'session-reference',
+        form: 'recall',
         version: 1,
         references: [],
       },
     }), { surfaceOp: 'append' })
     session.append('turn/start', {
       turn: 1,
-      trigger: { kind: 'message', source: { kind: 'user' } },
     })
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'Explain this referenced session' }],
@@ -107,7 +106,6 @@ describe('SessionTitleService', () => {
     const session = ctx.sessions.create(SessionId('eligibility'))
     session.append('turn/start', {
       turn: 1,
-      trigger: { kind: 'message', source: { kind: 'user' } },
     })
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'plugin text' }],
@@ -142,7 +140,7 @@ describe('SessionTitleService', () => {
   })
 
   it('folds the latest title event during replay', () => {
-    const seed = new Session(SessionId('source'))
+    const seed = Session.create(SessionId('source'))
     seed.append('session/title', {
       title: 'Earlier',
       messageSeqs: [1],

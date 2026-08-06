@@ -33,10 +33,9 @@ const SOURCE_SESSION_ID = 'reference-source-session'
 
 /** Build one closed source session with a stable title for reference discovery. */
 function sourceSessionFixture(): string {
-  const session = new Session(SessionId(SOURCE_SESSION_ID))
+  const session = Session.create(SessionId(SOURCE_SESSION_ID))
   session.append('turn/start', {
     turn: 1,
-    trigger: { kind: 'message', source: { kind: 'user' } },
   })
   const user = session.append('user/message', createUserMessage({
     content: [{ type: 'text', text: 'Research context for the reference menu.' }],

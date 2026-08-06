@@ -43,7 +43,6 @@ async function provideSlotFaces(ctx: Context): Promise<void> {
       'conversation.composer': { kind: 'chain', scope: 'session' },
     },
   } as never, () => null)
-  ctx.provide('conversation', {})
 }
 
 async function bench() {
@@ -62,7 +61,7 @@ describe('apply', () => {
   })
 
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['sessions', 'conversation', 'slots', 'locale'])
+    expect(inject).toEqual(['sessions', 'slots', 'locale'])
   })
 
   it('registers catalog actions and selects read-only subagent composers from session facts', async () => {
