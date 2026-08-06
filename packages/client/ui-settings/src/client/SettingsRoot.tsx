@@ -49,7 +49,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
     return () => { document.removeEventListener('keydown', onKeyDown) }
   }, [onClose])
 
-  // Baseline focus management: entering the dialog lands on the close button.
+  // Entering the dialog focuses the close button; the root restores its trigger on close.
   const closeButton = useRef<HTMLButtonElement | null>(null)
   useEffect(() => { closeButton.current?.focus() }, [])
 
@@ -105,6 +105,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const close = useCallback(() => {
     setOpen(false)
     setActiveId(undefined)
+    // Defer until React flushes the close state so panel unmount cannot steal focus; an unmounted root clears the ref.
     queueMicrotask(() => { triggerButton.current?.focus() })
   }, [])
   const openSection = useCallback((id: string) => {
