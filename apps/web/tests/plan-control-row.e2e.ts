@@ -110,7 +110,9 @@ describe('web e2e: plan chip click area at the narrow viewport', () => {
     // disjoint click areas (a non-zero overlap would fail), and — in the
     // click below — the chip center receiving the pointer.
     const chipInViewport = chipBox!.x >= 0 && chipBox!.x + chipBox!.width <= VIEWPORT.width
+      && chipBox!.y >= 0 && chipBox!.y + chipBox!.height <= VIEWPORT.height
     const triggerInViewport = triggerBox!.x >= 0 && triggerBox!.x + triggerBox!.width <= VIEWPORT.width
+      && triggerBox!.y >= 0 && triggerBox!.y + triggerBox!.height <= VIEWPORT.height
     const overlapLeft = Math.max(chipBox!.x, triggerBox!.x)
     const overlapTop = Math.max(chipBox!.y, triggerBox!.y)
     const overlapRight = Math.min(chipBox!.x + chipBox!.width, triggerBox!.x + triggerBox!.width)
