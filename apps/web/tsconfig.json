@@ -28,6 +28,7 @@
     "tests/live-interactions.e2e.ts",
     "tests/question-composer.e2e.ts",
     "tests/approval-composer.e2e.ts",
+    "tests/plan-chip-overlap.e2e.ts",
     "tests/plan-review.e2e.ts",
     "tests/steering.e2e.ts",
     "tests/navigation-panes.e2e.ts",
