@@ -101,9 +101,11 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const [open, setOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())
+  const triggerButton = useRef<HTMLButtonElement | null>(null)
   const close = useCallback(() => {
     setOpen(false)
     setActiveId(undefined)
+    queueMicrotask(() => { triggerButton.current?.focus() })
   }, [])
   const openSection = useCallback((id: string) => {
     setActiveId(id)
@@ -145,6 +147,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   return (
     <>
       <button
+        ref={triggerButton}
         type="button"
         className={clsx(css.trigger, !wide && css.rail)}
         aria-haspopup="dialog"
