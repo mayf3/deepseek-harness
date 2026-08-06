@@ -14,7 +14,7 @@
 
 控制行换行而不是把左侧组收缩进右侧组的区域：`.row { flex-wrap: wrap }` 加上 `.trailing` 的 `margin-left: auto`——后者把 trailing 组（模型选择 + 发送）重新锚定到换行后的右缘，单行时 `space-between` 已把它钉在右侧。换行是验收中"空间不足时允许换行、折叠或重新排列控件"的选项，保持每个控件全宽（不做会隐藏模型名或 Plan 字样的 label 折叠），并且按构造在所有视口宽度下成立，而非依赖标定的容器查询阈值。
 
-新增 `apps/web/tests/plan-chip-overlap.e2e.ts`：录制时通过真实 `/plan` 命令进入一次 Plan 模式（模型只回复 OK 且不调用任何工具，因此 review takeover 不会替换控制行），随后 keyless 回放录制的回合。Plan 状态从会话日志折叠（`plan/mode`，最后一条生效），回放时无需模型调用即可渲染 chip。该文件与所有导入 host 平面类型的 web e2e 一样加入 `apps/web/tsconfig.json` 的 exclude 列表，client 图绝不编译它。
+新增 `apps/web/tests/plan-control-row.e2e.ts`：录制时通过真实 `/plan` 命令进入一次 Plan 模式（模型只回复 OK 且不调用任何工具，因此 review takeover 不会替换控制行），随后 keyless 回放录制的回合。Plan 状态从会话日志折叠（`plan/mode`，最后一条生效），回放时无需模型调用即可渲染 chip。该文件与所有导入 host 平面类型的 web e2e 一样加入 `apps/web/tsconfig.json` 的 exclude 列表，client 图绝不编译它。
 
 几何 golden 记录稳定事实——视口内位置、中心命中测试结论、chip 右缘与 trigger 左缘的间隙、重叠面积、退出结果——绝不记录绝对坐标，其像素值依赖安装字体。行为断言直接实现验收：chip 中心命中 chip 自身、点击区域不相交、点击 chip 通过真实命令通道（经 `commands.execute` 执行 `/plan off`）退出 Plan 模式。
 

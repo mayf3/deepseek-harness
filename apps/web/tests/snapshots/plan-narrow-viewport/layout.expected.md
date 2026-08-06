@@ -2,5 +2,4 @@
 
 - Plan chip fully in viewport: true
 - Model trigger fully in viewport: true
-- Gap between chip right edge and trigger left edge: 178.28125px (negative would overlap)
-- Overlap area: 0px²
+- Click areas disjoint: true
