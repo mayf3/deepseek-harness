@@ -27,6 +27,10 @@ import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+// Type-only: pulls the plan/mode SessionEventMap merge so the discriminant
+// filter below types as the plan-mode event in the host aggregate.
+import type {} from '@deepseek-ai/dsh-plan-mode'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   assertFixtureInventory, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
@@ -58,9 +62,11 @@ describe('web e2e: plan chip click area at the narrow viewport', () => {
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 })
+    scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser, VIEWPORT.height)
     tripwire = watchConsole(page)
@@ -138,6 +144,12 @@ describe('web e2e: plan chip click area at the narrow viewport', () => {
     // coordinate probe.
     await chip.click()
     await expect.poll(() => page.getByRole('button', { name: CHIP_ARIA }).count(), { timeout: 15_000 }).toBe(0)
+    // The click must have committed the exit: the last plan/mode event flips
+    // inactive (the recorded turn's entry event stays active:true earlier in
+    // the log, so the pair proves the exit and not just the entry).
+    const planModes = sessionEvents.filter(event => event.type === 'plan/mode')
+    const lastPlanMode = planModes.at(-1)
+    expect(JSON.stringify(lastPlanMode)).toContain('"active":false')
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 200_000)
