@@ -14,7 +14,7 @@ Status: implemented
 
 控制行换行而不是把左侧组收缩进右侧组的区域：`.row { flex-wrap: wrap }` 加上 `.trailing` 的 `margin-left: auto`——后者把 trailing 组（模型选择 + 发送）重新锚定到换行后的右缘，单行时 `space-between` 已把它钉在右侧。换行是验收中"空间不足时允许换行、折叠或重新排列控件"的选项，保持每个控件全宽（不做会隐藏模型名或 Plan 字样的 label 折叠），并且按构造在所有视口宽度下成立，而非依赖标定的容器查询阈值。
 
-新增 `apps/web/tests/plan-control-row.e2e.ts`：录制时通过真实 `/plan` 命令进入一次 Plan 模式（模型只回复 OK 且不调用任何工具，因此 review takeover 不会替换控制行），随后 keyless 回放录制的回合。Plan 状态从会话日志折叠（`plan/mode`，最后一条生效），回放时无需模型调用即可渲染 chip。该文件与所有同类 host 平面 e2e 一样采用成对登记：在 `apps/web/tsconfig.json` 的 exclude 列表（它导入 host 平面类型，client 图绝不编译它），同时在 `tsconfig.host.json` 的 host 聚合 include 中——恰好一个 TypeScript 程序拥有它，这也是 lint 类型服务获得程序的配对方式。
+新增 `apps/web/tests/plan-control-row.e2e.ts`：通过真实 `/plan` 命令（无参数——命令 handler 不经模型回合即提交 plan/mode active，lifecycle-chrome 先例）进入 Plan 模式，因此测试无需 fixture 与 API key。该文件与所有同类 host 平面 e2e 一样采用成对登记：在 `apps/web/tsconfig.json` 的 exclude 列表（它导入 host 平面类型，client 图绝不编译它），同时在 `tsconfig.host.json` 的 host 聚合 include 中——恰好一个 TypeScript 程序拥有它，这也是 lint 类型服务获得程序的配对方式。
 
 几何 golden 记录稳定事实——两个轴上的视口内位置与点击区域不相交——绝不记录绝对坐标，其像素值依赖安装字体且在 macOS 与 Linux 间不同。行为断言直接实现验收：点击区域不相交、点击 chip 中心（Playwright 的可操作性检查）经真实命令通道（`commands.execute` 执行 `/plan off`）退出 Plan 模式，且会话日志中最后一条 `plan/mode` 事件翻转为 inactive。
 
@@ -30,4 +30,4 @@ Status: implemented
 
 ## 后果
 
-任何改变控制行布局的后续改动——字体、间距、媒体查询或容器查询——一旦重新引入重叠或把 chip 沿任一轴移出视口，本测试即失败。录制需要本地真实 API key；CI keyless 回放。fixture 中录制的用户 prompt 是驱动步骤与录制事实之间的唯一纽带（`fixtureUserPrompts`），prompt 与 fixture 不会漂移。
+任何改变控制行布局的后续改动——字体、间距、媒体查询或容器查询——一旦重新引入重叠或把 chip 沿任一轴移出视口，本测试即失败。测试无需 API key：Plan 模式经命令 handler 切换，不经模型回合；golden 在 replay/refresh 模式下比较。

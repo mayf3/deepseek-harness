@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-06-plan-narrow-viewport-regression.md
-2026-08-06-plan-narrow-viewport-regression.md: a183a17ce90eecbf0d1af524dbbefe8e417dd463
-2026-08-06-plan-narrow-viewport-regression.zh.md: 5ef610b12e9e5c8c79e2a2279f70f20e1e59aee7
+2026-08-06-plan-narrow-viewport-regression.md: c4d7281d09b706c1270e9c43592d558825c63250
+2026-08-06-plan-narrow-viewport-regression.zh.md: aed430dc95793b8086a838ae534ffaed0256012e
