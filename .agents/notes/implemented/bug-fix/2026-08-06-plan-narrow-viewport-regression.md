@@ -20,7 +20,7 @@ The geometry golden records stable facts — viewport membership on both axes an
 
 ## Alternatives considered
 
-**Seed a cold session (composer-tab-geometry pattern).** Rejected: the exit path executes `/plan off` through `commands.execute`, which needs the live agent a cold seeded session does not have. The recorded turn keeps one, matching the product's user path.
+**Seed a cold session (composer-tab-geometry pattern).** Rejected: the exit path executes `/plan off` through `commands.execute`, which needs the live agent a cold seeded session does not have; `connectFreshWorkspace` keeps one, matching the product's user path.
 
 **Pin absolute bounding boxes in the golden.** Rejected: chip and trigger widths depend on the installed fonts, so absolute coordinates would churn across platforms without a behavior change.
 
@@ -30,4 +30,4 @@ The geometry golden records stable facts — viewport membership on both axes an
 
 ## Consequences
 
-Any future change to the control row layout — fonts, gaps, media or container queries — that re-introduces overlap or moves the chip out of the viewport on either axis fails this test. The test needs no API key: plan mode toggles through the command handler without a model round, and the golden is compared in replay/refresh modes.
+Any future change to the control row layout — fonts, gaps, media or container queries — that re-introduces overlap or moves the chip out of the viewport on either axis fails this test. The test needs no API key: plan mode toggles through the command handler without a model round, and a providers-only replay fixture (no recorded script, consumption check skipped) mounts the model directory so the trigger renders its real long label — the width that made the reported overlap measurable; the test asserts that label before measuring. The golden is compared in replay and record modes and rewritten in refresh mode.

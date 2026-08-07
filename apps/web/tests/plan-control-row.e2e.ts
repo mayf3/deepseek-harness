@@ -35,6 +35,7 @@ import {
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/plan-narrow-viewport', import.meta.url))
+const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
 const LAYOUT_EXPECTED = join(SNAPSHOT_DIR, 'layout.expected.md')
 const MODE = webSnapshotMode()
 
@@ -52,7 +53,11 @@ describe('web e2e: plan chip click area at the narrow viewport', () => {
   const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({})
+    // The fixture carries the deterministic provider catalog (no model call
+    // happens — the /plan command never steers a message), so the model
+    // trigger renders its real long label, which is what made the reported
+    // overlap measurable.
+    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, replayProvidersOnly: true })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser, VIEWPORT.height)
@@ -82,6 +87,9 @@ describe('web e2e: plan chip click area at the narrow viewport', () => {
     const trigger = page.getByRole('button', { name: /Select model/ })
     await chip.waitFor({ timeout: 30_000 })
     await trigger.waitFor({ timeout: 10_000 })
+    // The regression depends on the real model label width: a bare fallback
+    // trigger would fit beside the chip even on the pre-fix layout.
+    expect(await trigger.getAttribute('aria-label')).toContain('DeepSeek-V4-Flash')
     const chipBox = await chip.boundingBox()
     const triggerBox = await trigger.boundingBox()
     expect(chipBox).not.toBeNull()
@@ -132,6 +140,6 @@ describe('web e2e: plan chip click area at the narrow viewport', () => {
   }, 200_000)
 
   it('keeps the snapshot inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['layout.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl', 'layout.expected.md'])
   })
 })

@@ -20,7 +20,7 @@ Status: implemented
 
 ## 备选方案
 
-**冷会话 seed（composer-tab-geometry 模式）。** 否决：退出路径经 `commands.execute` 执行 `/plan off`，需要 live agent，而冷 seed 会话没有。录制的回合保留一个，与产品的用户路径一致。
+**冷会话 seed（composer-tab-geometry 模式）。** 否决：退出路径经 `commands.execute` 执行 `/plan off`，需要 live agent，而冷 seed 会话没有；`connectFreshWorkspace` 保留一个，与产品的用户路径一致。
 
 **golden 固定绝对 bounding box。** 否决：chip 与 trigger 宽度依赖安装字体，绝对坐标会在平台间漂移而不反映行为变化。
 
@@ -30,4 +30,4 @@ Status: implemented
 
 ## 后果
 
-任何改变控制行布局的后续改动——字体、间距、媒体查询或容器查询——一旦重新引入重叠或把 chip 沿任一轴移出视口，本测试即失败。测试无需 API key：Plan 模式经命令 handler 切换，不经模型回合；golden 在 replay/refresh 模式下比较。
+任何改变控制行布局的后续改动——字体、间距、媒体查询或容器查询——一旦重新引入重叠或把 chip 沿任一轴移出视口，本测试即失败。测试无需 API key：Plan 模式经命令 handler 切换，不经模型回合；providers-only replay fixture（无录制脚本，跳过消费检查）挂载模型目录，使触发器渲染真实的长标签——正是使报告重叠可测量的宽度；测试在测量前断言该标签。golden 在 replay 与 record 模式下比较，在 refresh 模式下重写。

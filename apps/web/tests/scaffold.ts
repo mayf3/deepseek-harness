@@ -130,6 +130,13 @@ export interface LaunchOptions {
    */
   replayFixture?: string
   /**
+   * Mount the replay provider catalog (the model directory the UI shows)
+   * without any recorded script to consume: for scenarios that never call a
+   * model but need the real provider/model labels rendered. The teardown
+   * consumption check is skipped for this mode.
+   */
+  replayProvidersOnly?: boolean
+  /**
    * Recorded child logs assigned in child creation order. Each child owns its
    * own positional replay cursor across initial and continuation turns.
    */
@@ -402,10 +409,12 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       // Fixture-consumption check first, while the run's binding state is
       // still authoritative — a scenario that drove fewer model calls than
       // recorded fails here instead of drifting green.
-      try {
-        replayHandle?.assertConsumed()
-      } catch (error) {
-        failures.push(error)
+      if (!options.replayProvidersOnly) {
+        try {
+          replayHandle?.assertConsumed()
+        } catch (error) {
+          failures.push(error)
+        }
       }
       try {
         failures.push(...await cleanupScaffoldWorld(ctx, workspaceCwd, persistenceRoot))
