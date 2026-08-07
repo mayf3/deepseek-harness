@@ -401,12 +401,18 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       if (options.replayFixture === undefined) {
         throw new Error('replayProvidersOnly requires replayFixture (its file supplies the header)')
       }
-      // The consumption check is skipped for this mode, so a fixture that
-      // records model calls would silently go unconsumed: reject one here.
+      const fixtureText = readFileSync(options.replayFixture, 'utf8')
+      // A fixture without a session header row must not mount the catalog
+      // silently: the consumption-skip assumes the header-only shape.
+      if (!fixtureText.trimStart().startsWith('{"type":"session"')) {
+        throw new Error('replayProvidersOnly fixture must open with a session header row')
+      }
       if (options.replayOverride !== undefined || options.replayChildFixtures !== undefined) {
         throw new Error('replayProvidersOnly cannot combine with replayOverride or replayChildFixtures')
       }
-      const recorded = parseSessionLog(readFileSync(options.replayFixture, 'utf8'))
+      // The consumption check is skipped for this mode, so a fixture that
+      // records model calls would silently go unconsumed: reject one here.
+      const recorded = parseSessionLog(fixtureText)
       const hasModelCall = recorded.some(event => (
         event.type === 'assistant/chunk' || event.type === 'request/header' || event.type === 'tool/call'
       ))
