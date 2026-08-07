@@ -8,9 +8,9 @@
 // Plan mode is entered through the real /plan command with no argument:
 // the command handler commits plan/mode active on the live agent without a
 // model round (the lifecycle-chrome precedent), so the test needs no model
-// call and no API key in replay/refresh modes; a providers-only fixture
-// mounts the model catalog without a script to consume. Plan state folds
-// from the session log (`plan/mode`, last one wins); the chip executes
+// call in any mode and no API key in replay/refresh; a providers-only
+// fixture mounts the model catalog without a script to consume. Plan state
+// folds from the session log (`plan/mode`, last one wins); the chip executes
 // /plan off through commands.execute, which needs the live agent
 // connectFreshWorkspace keeps.
 //
@@ -19,8 +19,8 @@
 // absolute coordinates, whose pixel values depend on installed fonts and
 // differ between macOS and Linux. The center hit-test is Playwright's
 // actionability check: clicking the chip fails in a real engine when the
-// element center does not receive pointer events. jsdom resolves no
-// layout, so only a real engine can answer any of these facts.
+// element center does not receive pointer events. jsdom resolves no layout,
+// so only a real engine can answer any of these facts.
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
