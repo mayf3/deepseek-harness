@@ -1,6 +1,6 @@
-# Agent Note：窄视口下 Plan chip 点击区域回归测试
+# Agent Note: 窄视口下 Plan chip 点击区域回归测试
 
-状态：已实现
+Status: implemented
 
 [English](2026-08-06-plan-narrow-viewport-regression.md) | 中文
 

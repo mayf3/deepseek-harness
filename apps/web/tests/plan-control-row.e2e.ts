@@ -13,9 +13,10 @@
 // commands.execute, which needs the live agent the recorded turn keeps — the
 // product's own user path for this scenario.
 //
-// The geometry golden records stable facts — viewport membership, disjoint
-// click areas, and the exit result — never absolute coordinates, whose pixel
-// values depend on installed fonts and differ between macOS and Linux. The
+// The geometry golden records stable facts — viewport membership on both
+// axes for the chip and the trigger, and disjoint click areas — never
+// absolute coordinates, whose pixel values depend on installed fonts and
+// differ between macOS and Linux. The
 // center hit-test is Playwright's actionability check: clicking the chip
 // fails in a real engine when the element center does not receive pointer
 // events. jsdom resolves no layout, so only a real engine can answer any of
@@ -150,11 +151,9 @@ describe('web e2e: plan chip click area at the narrow viewport', () => {
     // inactive (the recorded turn's entry event stays active:true earlier in
     // the log, so the pair proves the exit and not just the entry).
     const planModes = sessionEvents.filter(
-      (event): event is SessionEvent & { type: 'plan/mode'; data: { active: boolean } } =>
-        event.type === 'plan/mode',
+      (event): event is SessionEvent<'plan/mode'> => event.type === 'plan/mode',
     )
-    const lastPlanMode = planModes.at(-1)
-    expect(lastPlanMode?.data.active).toBe(false)
+    expect(planModes.at(-1)?.data.active).toBe(false)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 200_000)
