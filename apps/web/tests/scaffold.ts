@@ -131,9 +131,11 @@ export interface LaunchOptions {
   replayFixture?: string
   /**
    * Mount the replay provider catalog (the model directory the UI shows)
-   * without any recorded script to consume: for scenarios that never call a
-   * model but need the real provider/model labels rendered. The teardown
-   * consumption check is skipped for this mode.
+   * without consuming any recorded script: for scenarios that never call a
+   * model but need the real provider/model labels rendered. Requires
+   * {@link replayFixture} (its file is read for the header); the teardown
+   * consumption check is skipped for this mode. `replayFixture` without this
+   * flag keeps the consumption check.
    */
   replayProvidersOnly?: boolean
   /**
@@ -358,6 +360,9 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // disable llm-deepseek; the first-run lane keeps it mounted but has no
     // replay fixture and never streams. The direct install, unlike the plugin
     // row, returns the ReplayHandle for the teardown consumption check.
+    if (options.replayProvidersOnly && options.replayFixture === undefined) {
+      throw new Error('replayProvidersOnly requires replayFixture (its file supplies the header)')
+    }
     if (mode !== 'record' && options.replayFixture !== undefined) {
       replayHandle = installLlmReplay(ctx, {
         file: options.replayFixture,

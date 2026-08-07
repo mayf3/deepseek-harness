@@ -53,10 +53,10 @@ describe('web e2e: plan chip click area at the narrow viewport', () => {
   const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
-    // The fixture carries the deterministic provider catalog (no model call
-    // happens — the /plan command never steers a message), so the model
-    // trigger renders its real long label, which is what made the reported
-    // overlap measurable.
+    // replayProvidersOnly mounts the provider catalog without any recorded
+    // script to consume (no model call happens — the /plan command never
+    // steers a message), so the model trigger renders its real long label,
+    // which is what made the reported overlap measurable.
     scaffold = await launchWebScaffold({ replayFixture: FIXTURE, replayProvidersOnly: true })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
@@ -88,8 +88,9 @@ describe('web e2e: plan chip click area at the narrow viewport', () => {
     await chip.waitFor({ timeout: 30_000 })
     await trigger.waitFor({ timeout: 10_000 })
     // The regression depends on the real model label width: a bare fallback
-    // trigger would fit beside the chip even on the pre-fix layout.
-    expect(await trigger.getAttribute('aria-label')).toContain('DeepSeek-V4-Flash')
+    // trigger would fit beside the chip even on the pre-fix layout. The
+    // directory loads asynchronously, so poll for the real label.
+    await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 10_000 }).toContain('DeepSeek-V4-Flash')
     const chipBox = await chip.boundingBox()
     const triggerBox = await trigger.boundingBox()
     expect(chipBox).not.toBeNull()
