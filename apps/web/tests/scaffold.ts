@@ -21,7 +21,7 @@
 // llm seam post-boot with installLlmReplay on the settled root ctx
 // (the plugin-row path discards the ReplayHandle; the direct install keeps
 // assertConsumed for the teardown fixture-consumption check).
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, readFile, readdir, realpath, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -126,7 +126,8 @@ export interface LaunchOptions {
    * in replay/refresh modes; ignored in record mode (the real adapter
    * answers). Omit for scenarios issuing no model calls — a stray stream then
    * fails loud with NO_ADAPTER (llm-deepseek is disabled and no replay row
-   * mounts).
+   * mounts). With {@link replayProvidersOnly}, the fixture must record no
+   * model calls (its header alone mounts the catalog).
    */
   replayFixture?: string
   /**
@@ -360,8 +361,19 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // disable llm-deepseek; the first-run lane keeps it mounted but has no
     // replay fixture and never streams. The direct install, unlike the plugin
     // row, returns the ReplayHandle for the teardown consumption check.
-    if (options.replayProvidersOnly && options.replayFixture === undefined) {
-      throw new Error('replayProvidersOnly requires replayFixture (its file supplies the header)')
+    if (options.replayProvidersOnly) {
+      if (options.replayFixture === undefined) {
+        throw new Error('replayProvidersOnly requires replayFixture (its file supplies the header)')
+      }
+      // The consumption check is skipped for this mode, so a fixture that
+      // records model calls would silently go unconsumed: reject one here.
+      const recorded = parseSessionLog(readFileSync(options.replayFixture, 'utf8'))
+      const hasModelCall = recorded.some(event => (
+        event.type === 'assistant/chunk' || event.type === 'request/header' || event.type === 'tool/call'
+      ))
+      if (hasModelCall) {
+        throw new Error('replayProvidersOnly fixture must record no model calls')
+      }
     }
     if (mode !== 'record' && options.replayFixture !== undefined) {
       replayHandle = installLlmReplay(ctx, {
