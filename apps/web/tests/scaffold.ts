@@ -398,6 +398,9 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       }
       // The consumption check is skipped for this mode, so a fixture that
       // records model calls would silently go unconsumed: reject one here.
+      if (options.replayOverride !== undefined || options.replayChildFixtures !== undefined) {
+        throw new Error('replayProvidersOnly cannot combine with replayOverride or replayChildFixtures')
+      }
       const recorded = parseSessionLog(readFileSync(options.replayFixture, 'utf8'))
       const hasModelCall = recorded.some(event => (
         event.type === 'assistant/chunk' || event.type === 'request/header' || event.type === 'tool/call'
@@ -456,7 +459,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       const failures: unknown[] = []
       // Fixture-consumption check first, while the run's binding state is
       // still authoritative — a scenario that drove fewer model calls than
-      // recorded fails here instead of drifting green.
+      // recorded fails here instead of drifting green. Skipped for
+      // replayProvidersOnly, whose fixture is validated call-free at boot.
       if (!options.replayProvidersOnly) {
         try {
           replayHandle?.assertConsumed()
