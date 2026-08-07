@@ -8,8 +8,8 @@
 // Plan mode is entered through the real /plan command with no argument:
 // the command handler commits plan/mode active on the live agent without a
 // model round (the lifecycle-chrome precedent), so the test needs no model
-// call and no API key; a providers-only fixture mounts the model catalog
-// without a script to consume. Plan state folds from the session log
+// call and no API key in replay/refresh modes; a providers-only fixture
+// mounts the model catalog without a script to consume. Plan state folds from the session log
 // (`plan/mode`, last one wins); the chip executes /plan off through
 // commands.execute, which needs the live agent connectFreshWorkspace keeps.
 //

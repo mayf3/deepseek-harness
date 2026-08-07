@@ -117,7 +117,11 @@ export interface WebScaffold {
   harnessHome: string
   /** Await a settled turn end: in-process turn/end, then the agent's idle flip (which follows the persistence flush). */
   whenTurnSettled(timeoutMs?: number): Promise<SessionId>
-  /** Tear everything down; asserts the replay fixture was fully consumed first (replay/refresh). */
+  /**
+   * Tear everything down; asserts the replay fixture was fully consumed first
+   * (replay/refresh), unless booted with replayProvidersOnly (whose fixture
+   * is validated call-free at boot).
+   */
   close(): Promise<void>
 }
 
@@ -142,7 +146,8 @@ export interface LaunchOptions {
    * Mount the replay provider catalog (the model directory the UI shows)
    * without consuming any recorded script: for scenarios that never call a
    * model but need the real provider/model labels rendered. Requires
-   * {@link replayFixture} (its file is read for the header); the teardown
+   * {@link replayFixture} whose log records no model calls, and rejects
+   * {@link replayOverride} and {@link replayChildFixtures}; the teardown
    * consumption check is skipped for this mode. `replayFixture` without this
    * flag keeps the consumption check.
    */
