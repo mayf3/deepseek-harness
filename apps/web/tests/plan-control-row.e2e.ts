@@ -149,9 +149,12 @@ describe('web e2e: plan chip click area at the narrow viewport', () => {
     // The click must have committed the exit: the last plan/mode event flips
     // inactive (the recorded turn's entry event stays active:true earlier in
     // the log, so the pair proves the exit and not just the entry).
-    const planModes = sessionEvents.filter(event => event.type === 'plan/mode')
+    const planModes = sessionEvents.filter(
+      (event): event is SessionEvent & { type: 'plan/mode'; data: { active: boolean } } =>
+        event.type === 'plan/mode',
+    )
     const lastPlanMode = planModes.at(-1)
-    expect(JSON.stringify(lastPlanMode)).toContain('"active":false')
+    expect(lastPlanMode?.data.active).toBe(false)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 200_000)
