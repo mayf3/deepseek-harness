@@ -16,7 +16,8 @@
   - list:
     - listitem:
       - text: DeepSeek
-      - button "编辑"
+      - img "API 密钥已配置"
+      - button "编辑 DeepSeek (deepseek-official)": 编辑
       - text: DeepSeek deepseek-official API 密钥
       - textbox "API 密钥":
         - /placeholder: 已配置——输入新值可替换
@@ -69,3 +70,6 @@
   - button "添加提供方":
     - img
     - text: 添加提供方
+  - button "添加自定义提供方":
+    - img
+    - text: 添加自定义提供方
