@@ -16,8 +16,8 @@
 // The geometry golden records stable facts — viewport membership on both
 // axes for the chip and the trigger, and disjoint click areas — never
 // absolute coordinates, whose pixel values depend on installed fonts and
-// differ between macOS and Linux. The
-// center hit-test is Playwright's actionability check: clicking the chip
+// differ between macOS and Linux. The center hit-test is Playwright's
+// actionability check: clicking the chip
 // fails in a real engine when the element center does not receive pointer
 // events. jsdom resolves no layout, so only a real engine can answer any of
 // these facts.
