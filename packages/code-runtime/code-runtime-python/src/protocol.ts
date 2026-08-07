@@ -205,12 +205,12 @@ type RosterMessageFrames = Exclude<WireFrameShapes[keyof WireFrameShapes], Names
  * `false`, failing the assignment below. Type-only; the `const`s emit nothing
  * meaningful at runtime.
  */
-type UnionCoversRoster = [MessageFrames] extends [RosterMessageFrames] ? true : false
-type RosterCoversUnion = [RosterMessageFrames] extends [MessageFrames] ? true : false
-const _unionCoversRoster: UnionCoversRoster = true
-const _rosterCoversUnion: RosterCoversUnion = true
-void _unionCoversRoster
-void _rosterCoversUnion
+type UnionSubsetOfRoster = [MessageFrames] extends [RosterMessageFrames] ? true : false
+type RosterSubsetOfUnion = [RosterMessageFrames] extends [MessageFrames] ? true : false
+const _unionSubsetOfRoster: UnionSubsetOfRoster = true
+const _rosterSubsetOfUnion: RosterSubsetOfUnion = true
+void _unionSubsetOfRoster
+void _rosterSubsetOfUnion
 
 /**
  * Each frame's wire fields tagged by required/optional, keyed by field name so

@@ -15,7 +15,7 @@ CPython code-runtime 后端（`@deepseek-ai/dsh-code-runtime-python`，分多个
 `src/protocol.ts` 是 wire vocabulary 的 host 侧及其敌意帧编解码：
 
 - **`validateChildFrame`** 对每个入站帧做形状校验并重建。编译期 union 在 fd 3 上毫无意义——伪造帧可携带 `null`、被污染的字段，或省略必需字段——所以每个被接受的帧都逐字段重建：伪造的额外字段绝不随行，非有限的 call id 绝不会被回显进 reply，垃圾返回 `undefined` 被丢弃，而不是在 host 的 message handler 里抛错。
-- **`encodeJsonPlain` / `checkDoneValue` / `hasUnsafeIntegerToken` / `hasNonLosslessNumber`** 是 lossless-JSON 编解码器与计量器。它们迭代遍历（显式栈，非递归），使低于字节预算的深层值能完整穿越；`checkDoneValue` 把字节计量和数字无损性折进一次遍历，在它本会新增的 INCREMENTAL 工作之前就拒绝超预算 payload——先做非分配的转义尺寸扫描（`jsonStringBytesUpTo`），再入栈子节点。它不会重新约束帧自身的宽度：`done.value` 在检查运行时已被 `JSON.parse`，故 payload 的尺寸是上游代价，由 host 固定的 fd-3 接收缓冲（后续 stack 层）在那里封顶，而非本函数。超出安全范围的整数型 double 通过 `BigInt` 数字序列化，穿越的是精确整数而非 `String()` 的舍入形式。
+- **`encodeJsonPlain` / `checkDoneValue` / `hasUnsafeIntegerToken` / `hasNonLosslessNumber`** 是 lossless-JSON 编解码器与计量器。它们迭代遍历（显式栈，非递归），使低于字节预算的深层值能完整穿越；`checkDoneValue` 把字节计量和数字无损性折进一次遍历，在它本会新增的 INCREMENTAL 工作之前就拒绝超预算 payload——即入栈子节点；字符串与 key 由非分配的转义尺寸扫描（`jsonStringBytesUpTo`）计量，从不物化转义副本。它不会重新约束帧自身的宽度：`done.value` 在检查运行时已被 `JSON.parse`，故 payload 的尺寸是上游代价，由 host 固定的 fd-3 接收缓冲（后续 stack 层）在那里封顶，而非本函数。超出安全范围的整数型 double 通过 `BigInt` 数字序列化，穿越的是精确整数而非 `String()` 的舍入形式。
 - **`logTruncationMarker`** 产出日志 ledger 耗尽字节预算时发出的带内标记文本。
 
 `py/protocol.py` 用 `TypedDict` 镜像消息形状，并重新声明两侧都会 EXECUTE 的两个面——`PROTOCOL_FD = 3` 与 `log_truncation_marker`——文本逐字节一致。

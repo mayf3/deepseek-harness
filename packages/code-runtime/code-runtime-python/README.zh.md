@@ -12,7 +12,7 @@ host 与 CPython 子进程在子进程的 fd 3 上交换一个无版本号的 JS
 
 - **fd 3，而非 stdout** —— Node 通过 `stdio: ['pipe','pipe','pipe','pipe']` 按位置钉住通道；Python bootstrap 读取相同的 `PROTOCOL_FD` 常量。JSON-lines 帧。
 - **host 把每个入站帧当作敌意输入** —— 模型代码对 fd 3 有完全访问权、可通过它发送任意内容，所以 `validateChildFrame` 在 host 读取前对每个帧做形状校验并重建：伪造的额外字段绝不随行，非数字的 call id 绝不会被回显进 reply，垃圾降为 `undefined` 被丢弃，而不是在 host 的 message handler 里抛错。Python 侧信任 host 回复（host 不受模型控制）。
-- **lossless-JSON 穿越** —— 完成值与 binding 参数以精确 JSON 穿越。`encodeJsonPlain` 无递归地序列化一个 `JSON.parse` 产出的值，使低于字节预算的深层值能完整穿越，而不是死在 `JSON.stringify` 的栈限制上；`checkDoneValue` 在一次遍历中同时计量伪造完成值的字节长度与数字无损性，在它本会新增的增量工作之前就拒绝超预算 payload（先做非分配的转义尺寸扫描，再入栈子节点）——帧自身的宽度已被上游 `JSON.parse` 支付、由 host 的 fd-3 接收缓冲封顶，并非在此重新约束；`hasUnsafeIntegerToken` 读取原始帧文本，捕获 `JSON.parse` 会静默舍入的整数 token；`hasNonLosslessNumber` 拒绝无字节上限的 `call.args` 中的非有限数或负零。超出安全范围的整数型 double 通过 `BigInt` 数字序列化，穿越的是精确整数而非 `String()` 的舍入形式。
+- **lossless-JSON 穿越** —— 完成值与 binding 参数以精确 JSON 穿越。`encodeJsonPlain` 无递归地序列化一个 `JSON.parse` 产出的值，使低于字节预算的深层值能完整穿越，而不是死在 `JSON.stringify` 的栈限制上；`checkDoneValue` 在一次遍历中同时计量伪造完成值的字节长度与数字无损性，在它本会新增的增量工作之前就拒绝超预算 payload（即入栈子节点；字符串与 key 由非分配的转义尺寸扫描计量，从不物化转义副本）——帧自身的宽度已被上游 `JSON.parse` 支付、由 host 的 fd-3 接收缓冲封顶，并非在此重新约束；`hasUnsafeIntegerToken` 读取原始帧文本，捕获 `JSON.parse` 会静默舍入的整数 token；`hasNonLosslessNumber` 拒绝无字节上限的 `call.args` 中的非有限数或负零。超出安全范围的整数型 double 通过 `BigInt` 数字序列化，穿越的是精确整数而非 `String()` 的舍入形式。
 - **共享截断标记** —— `logTruncationMarker(maxBytes)` 在两侧产出逐字节一致的文本，使被截断的日志运行无论从哪侧触达上限都读起来一致。`log` 帧的 `truncated` 标志把子进程 ledger 自身的标记与程序输出区分开。
 
 ## Model Experience
