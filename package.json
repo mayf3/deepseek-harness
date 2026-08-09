@@ -67,6 +67,7 @@
     "verify-md-links": "tsx scripts/verify-md-links.ts",
     "verify-public-repository-links": "tsx scripts/verify-public-repository-links.ts",
     "verify-doc-refs": "tsx scripts/verify-doc-refs.ts",
+    "verify-subsystem-pages": "tsx scripts/verify-subsystem-pages.ts",
     "verify-package-paths": "tsx scripts/verify-package-paths.ts",
     "verify-config-source-ownership": "tsx scripts/verify-config-source-ownership.ts",
     "verify-package-invariants": "tsx scripts/verify-package-invariants.ts",

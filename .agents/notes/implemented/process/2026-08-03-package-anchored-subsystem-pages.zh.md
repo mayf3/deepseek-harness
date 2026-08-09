@@ -14,7 +14,9 @@ Status: implemented
 
 生成签名引用的每个类型都必须能在目录中某处解析：agent 所有权词汇从生成器的 `TYPE_LINK_EXEMPTIONS` 移入 `LINK_MAP → core.md`，因此豁免只留给真正服务本地或 vendored 的形状。每个粘贴的声明只有一个家（`SessionEvent` 位于 [session.md](../../../../docs/subsystems/session.md)；core.md 概括并链接）。
 
-每个 `packages/<group>/README.md` 配对都是统一形状的轻薄门面：一段以「为什么」开头的介绍、一张包表格（包 / 角色 / ctx 键）、一个指向拥有方子系统页面的收尾指针。超出该形状的承重散文迁移到拥有方子系统页面，而非删除。
+每个 `packages/<group>/README.md` 配对都是统一形状的轻薄门面：一段以「为什么」开头的介绍、一张包表格（包 / 角色 / ctx 键）、一个指向拥有方子系统页面的收尾指针。未声明独立子系统参考资料的分组，改为在 `GROUPS_WITHOUT_SUBSYSTEM_PAGE` 中以非空理由分类；超出分组 README 体量的承重散文迁移到拥有方子系统页面，而非删除。
+
+`verify-subsystem-pages` 同时从分组 README 和子包 manifest（元数据清单）发现分组。它会拒绝缺少分组 README、分组既没有直接子系统页面链接也没有显式豁免、豁免为空或成为孤立项、已豁免分组新增链接，以及链接指向的页面不存在。该门禁作为独立的 `doc-sync`（文档同步门禁）叶节点运行，因此新增包分组时不能悄悄遗漏其文档拥有方。
 
 [子系统 README](../../../../docs/subsystems/README.md) 在两个语言侧索引目录中的每一页；`scripts/project-doc-site.spec.ts` 强制每页一行表格，因此后续 PR 新增（或合并吸收）的页面无法悄悄缺席索引。
 
@@ -29,6 +31,7 @@ Status: implemented
 ## Consequences
 
 - 哪一页记录某类型可由 `packages/<group>/` 预测；子系统 README 是由测试强制的完整索引。
+- 每个包分组都会将其子系统拥有方或合理的缺席原因暴露给评审，且仓库门禁会拒绝未分类的新增项和陈旧豁免。
 - 生成的签名页脚链接 agent 所有权词汇，而不是静默豁免。
 - `verify-type-equiv` 的 1:1 manifest 保证每个粘贴单一归属；重复的 `SessionEvent` 粘贴已移除。
 - [原目录 note](2026-06-20-core-data-structures-catalog.md) 仍拥有 `ts type-equiv` 漂移检查机制；此处仅取代其页面范围界定规则。
