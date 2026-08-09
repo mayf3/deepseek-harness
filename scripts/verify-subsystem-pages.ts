@@ -6,6 +6,7 @@
 
 import { existsSync, globSync, readFileSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
+import { parseMarkdown, visitMarkdown } from './markdown.ts'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -56,13 +57,12 @@ function groupOf(path: string): string {
 /** Return canonical subsystem-page targets linked by one group README. */
 function subsystemLinks(source: string): string[] {
   const links = new Set<string>()
-  const pattern = /\]\(\.\.\/\.\.\/docs\/subsystems\/([^\s)#]+\.md)(?:#[^)]+)?\)/g
-  for (const match of source.matchAll(pattern)) {
-    const page = match[1]
-    if (page !== undefined && page !== 'README.md' && !page.endsWith('.zh.md')) {
-      links.add(`docs/subsystems/${page}`)
-    }
-  }
+  visitMarkdown(parseMarkdown(source), (node) => {
+    if (node.type !== 'link') return
+    const match = /^\.\.\/\.\.\/docs\/subsystems\/([^/#?]+\.md)(?:#[^?#]*)?$/.exec(node.url)
+    const page = match?.[1]
+    if (page !== undefined && page !== 'README.md' && !page.endsWith('.zh.md')) links.add(`docs/subsystems/${page}`)
+  })
   return [...links].sort()
 }
 
@@ -107,7 +107,7 @@ export function auditSubsystemPages(
         exempt += 1
       } else {
         violations.push(
-          `${readme}: no direct docs/subsystems/*.md link; add the owning page and link,`
+          `${readme}: no reader-visible direct docs/subsystems/*.md link; add the owning page and link,`
           + ' or add a justified GROUPS_WITHOUT_SUBSYSTEM_PAGE entry',
         )
       }

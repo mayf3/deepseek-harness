@@ -16,7 +16,7 @@ Status: implemented
 
 每个 `packages/<group>/README.md` 配对都是统一形状的轻薄门面：一段以「为什么」开头的介绍、一张包表格（包 / 角色 / ctx 键）、一个指向拥有方子系统页面的收尾指针。未声明独立子系统参考资料的分组，改为在 `GROUPS_WITHOUT_SUBSYSTEM_PAGE` 中以非空理由分类；超出分组 README 体量的承重散文迁移到拥有方子系统页面，而非删除。
 
-`verify-subsystem-pages` 同时从分组 README 和子包 manifest（元数据清单）发现分组。它会拒绝缺少分组 README、分组既没有直接子系统页面链接也没有显式豁免、豁免为空或成为孤立项、已豁免分组新增链接，以及链接指向的页面不存在。该门禁作为独立的 `doc-sync`（文档同步门禁）叶节点运行，因此新增包分组时不能悄悄遗漏其文档拥有方。
+`verify-subsystem-pages` 同时从分组 README 和子包 manifest（元数据清单）发现分组。它会拒绝缺少分组 README、分组既没有面向读者且直接指向 `docs/subsystems/` 下某一个英文文件的链接也没有显式豁免、豁免为空或成为孤立项、已豁免分组新增链接，以及链接指向的页面不存在；代码、注释、图片、嵌套路径和路径穿越都不能满足所有权声明。该门禁作为独立的 `doc-sync`（文档同步门禁）叶节点运行，因此新增包分组时不能悄悄遗漏其文档拥有方。
 
 [子系统 README](../../../../docs/subsystems/README.md) 在两个语言侧索引目录中的每一页；`scripts/project-doc-site.spec.ts` 强制每页一行表格，因此后续 PR 新增（或合并吸收）的页面无法悄悄缺席索引。
 

@@ -27,7 +27,7 @@ function write(root: string, path: string, source: string): void {
 describe('package-group subsystem pages', () => {
   it('accepts a direct page link and a justified no-page group', () => {
     const root = fixture()
-    write(root, 'packages/alpha/README.md', '[types](../../docs/subsystems/alpha.md)\n')
+    write(root, 'packages/alpha/README.md', '[types](../../docs/subsystems/alpha.md#contract)\n')
     write(root, 'packages/alpha/alpha/package.json', '{}\n')
     write(root, 'docs/subsystems/alpha.md', '# Alpha\n')
     write(root, 'packages/adapter/README.md', '# Adapter\n')
@@ -46,7 +46,7 @@ describe('package-group subsystem pages', () => {
     write(root, 'packages/schedule/tool-schedule/package.json', '{}\n')
 
     expect(auditSubsystemPages(root, {}).violations).toEqual([
-      'packages/schedule/README.md: no direct docs/subsystems/*.md link; add the owning page and link, or add a justified GROUPS_WITHOUT_SUBSYSTEM_PAGE entry',
+      'packages/schedule/README.md: no reader-visible direct docs/subsystems/*.md link; add the owning page and link, or add a justified GROUPS_WITHOUT_SUBSYSTEM_PAGE entry',
     ])
   })
 
@@ -61,7 +61,39 @@ describe('package-group subsystem pages', () => {
     write(root, 'docs/subsystems/wrong.zh.md', '# Wrong\n')
 
     expect(auditSubsystemPages(root, {}).violations).toEqual([
-      'packages/wrong/README.md: no direct docs/subsystems/*.md link; add the owning page and link, or add a justified GROUPS_WITHOUT_SUBSYSTEM_PAGE entry',
+      'packages/wrong/README.md: no reader-visible direct docs/subsystems/*.md link; add the owning page and link, or add a justified GROUPS_WITHOUT_SUBSYSTEM_PAGE entry',
+    ])
+  })
+
+  it('does not count links hidden in code, comments, or image syntax', () => {
+    const root = fixture()
+    write(
+      root,
+      'packages/hidden/README.md',
+      [
+        '`[inline](../../docs/subsystems/hidden.md)`',
+        '```md',
+        '[fenced](../../docs/subsystems/hidden.md)',
+        '```',
+        '<!-- [comment](../../docs/subsystems/hidden.md) -->',
+        '![image](../../docs/subsystems/hidden.md)',
+        '',
+      ].join('\n'),
+    )
+    write(root, 'docs/subsystems/hidden.md', '# Hidden\n')
+
+    expect(auditSubsystemPages(root, {}).violations).toEqual([
+      'packages/hidden/README.md: no reader-visible direct docs/subsystems/*.md link; add the owning page and link, or add a justified GROUPS_WITHOUT_SUBSYSTEM_PAGE entry',
+    ])
+  })
+
+  it('rejects a link that escapes the subsystem directory', () => {
+    const root = fixture()
+    write(root, 'packages/escape/README.md', '[escape](../../docs/subsystems/../architecture.md)\n')
+    write(root, 'docs/architecture.md', '# Architecture\n')
+
+    expect(auditSubsystemPages(root, {}).violations).toEqual([
+      'packages/escape/README.md: no reader-visible direct docs/subsystems/*.md link; add the owning page and link, or add a justified GROUPS_WITHOUT_SUBSYSTEM_PAGE entry',
     ])
   })
 
