@@ -51,6 +51,14 @@ type PreparedStep =
   | { kind: 'reject' }
   | { kind: 'enter'; messages: UserMessage[]; assembly: PromptAssembly }
 
+/** One live streaming attempt whose logged chunk prefix an abort can still finalize. */
+interface InterruptedAttempt {
+  readonly assembler: BlockAssembler
+  readonly chunkSeqs: number[]
+  readonly provider: string
+  readonly model: string
+}
+
 /** Remove adapter-derived values before plugins propose the next request config. */
 function requestProposal(header: EpochHeader): LlmCallConfig {
   if (header.adapterDefaults === undefined) return header.config
@@ -336,68 +344,110 @@ export class ReactLoopAgent implements Agent {
     signal.throwIfAborted()
     const system = renderPrompt(assembly)
 
-    while (true) {
-      const { request, preparedCall } = await this.buildRequest(
-        turn, step, assembly.tools, system, this.session.deriveMessages(), signal,
-      )
-      const assembler = new BlockAssembler()
-      const chunkSeqs: number[] = []
-      const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request)
-      signal.throwIfAborted()
-      for await (const chunk of stream) {
+    // The streaming attempt an abort may still finalize: chunks already logged
+    // reached the user, so cancellation commits their assemblable prefix to the
+    // surface instead of dropping it (see appendInterruptedAssistant). Cleared
+    // once the attempt commits normally or a retry resets the visible stream.
+    let attempt: InterruptedAttempt | undefined
+    try {
+      while (true) {
+        const { request, preparedCall } = await this.buildRequest(
+          turn, step, assembly.tools, system, this.session.deriveMessages(), signal,
+        )
+        const assembler = new BlockAssembler()
+        const chunkSeqs: number[] = []
+        attempt = { assembler, chunkSeqs, provider: request.provider, model: request.model }
+        const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request)
         signal.throwIfAborted()
-        chunkSeqs.push(this.session.append('assistant/chunk', { turn, step, chunk }).seq)
-        assembler.push(chunk)
-      }
-      signal.throwIfAborted()
-      const finish = assembler.finish
-      if (finish.kind === 'error' || finish.kind === 'aborted') {
-        const action = await this.dispatch.waterfall(
-          'agent/request-error', {
+        for await (const chunk of stream) {
+          signal.throwIfAborted()
+          chunkSeqs.push(this.session.append('assistant/chunk', { turn, step, chunk }).seq)
+          assembler.push(chunk)
+        }
+        signal.throwIfAborted()
+        const finish = assembler.finish
+        if (finish.kind === 'error' || finish.kind === 'aborted') {
+          const action = await this.dispatch.waterfall(
+            'agent/request-error', {
+              turn,
+              step,
+              provider: request.provider,
+              failure: finish.failure,
+              retryPolicy: preparedCall?.retryPolicy,
+              signal,
+            },
+            () => Promise.resolve<RequestErrorAction>(undefined),
+          )
+          signal.throwIfAborted()
+          if (action?.kind !== 'retry') {
+            throw new LlmError(finish.failure.message, finish.failure.code, finish.failure)
+          }
+          attempt = undefined
+          continue
+        }
+
+        const message = createAssistantMessage({
+          content: assembler.blocks(),
+          source: {
+            provider: request.provider,
+            model: request.model,
+            ...assembler.replayState !== undefined ? { replayState: assembler.replayState } : {},
+          },
+        })
+        attempt = undefined
+        this.session.append(
+          'assistant/message',
+          {
             turn,
             step,
-            provider: request.provider,
-            failure: finish.failure,
-            retryPolicy: preparedCall?.retryPolicy,
-            signal,
+            message,
+            ...assembler.usage === undefined ? {} : { usage: assembler.usage },
           },
-          () => Promise.resolve<RequestErrorAction>(undefined),
+          { surfaceOp: 'append', sourceEventSeqs: chunkSeqs },
         )
-        signal.throwIfAborted()
-        if (action?.kind !== 'retry') {
-          throw new LlmError(finish.failure.message, finish.failure.code, finish.failure)
-        }
-        continue
+        if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
+
+        const toolCalls = message.content.filter(block => block.type === 'tool-call')
+        if (toolCalls.length === 0) return { kind: 'completed' }
+        const { concluded } = await executeToolCalls(
+          this.loopCtx, turn, step, toolCalls, signal,
+          context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
+        )
+        return concluded ? { kind: 'completed' } : null
       }
-
-      const message = createAssistantMessage({
-        content: assembler.blocks(),
-        source: {
-          provider: request.provider,
-          model: request.model,
-          ...assembler.replayState !== undefined ? { replayState: assembler.replayState } : {},
-        },
-      })
-      this.session.append(
-        'assistant/message',
-        {
-          turn,
-          step,
-          message,
-          ...assembler.usage === undefined ? {} : { usage: assembler.usage },
-        },
-        { surfaceOp: 'append', sourceEventSeqs: chunkSeqs },
-      )
-      if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
-
-      const toolCalls = message.content.filter(block => block.type === 'tool-call')
-      if (toolCalls.length === 0) return { kind: 'completed' }
-      const { concluded } = await executeToolCalls(
-        this.loopCtx, turn, step, toolCalls, signal,
-        context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
-      )
-      return concluded ? { kind: 'completed' } : null
+    } catch (error: unknown) {
+      if (signal.aborted && attempt !== undefined) {
+        this.appendInterruptedAssistant(turn, step, attempt)
+      }
+      throw error
     }
+  }
+
+  /**
+   * Finalize a cancelled streaming attempt's user-visible prefix onto the
+   * surface: everything already logged as `assistant/chunk` events was
+   * delivered to the user, and the next request must contain what the user saw.
+   * Keeps the assembler's interrupted-safe blocks (text/reasoning; tool calls
+   * were never dispatched and are dropped); appends nothing when no visible
+   * content streamed before the interruption.
+   */
+  private appendInterruptedAssistant(turn: number, step: number, attempt: InterruptedAttempt): void {
+    const content = attempt.assembler.interruptedBlocks()
+    if (content.length === 0) return
+    const message = createAssistantMessage({
+      content,
+      source: { provider: attempt.provider, model: attempt.model },
+    })
+    this.session.append(
+      'assistant/message',
+      {
+        turn,
+        step,
+        message,
+        ...attempt.assembler.usage === undefined ? {} : { usage: attempt.assembler.usage },
+      },
+      { surfaceOp: 'append', sourceEventSeqs: attempt.chunkSeqs },
+    )
   }
 
   /**

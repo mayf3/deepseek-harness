@@ -138,6 +138,26 @@ export class BlockAssembler {
       : blocks
   }
 
+  /**
+   * Assemble the prefix an interrupted stream can safely finalize: closed and
+   * open text/reasoning blocks with any streamed content, in stream order.
+   * Tool calls are dropped whole — interruption precedes dispatch, so a kept
+   * call would demand a fabricated result — as are empty text/reasoning blocks
+   * and open blocks of unknown type (there is nothing assembled to keep).
+   * @returns the kept blocks; empty when nothing streamed before the interruption.
+   */
+  interruptedBlocks(): ContentBlock[] {
+    return this.order
+      .map((index) => {
+        const partial = this.mustGet(index)
+        const type = partial.block?.type ?? partial.blockType
+        if (type !== 'text' && type !== 'reasoning') return undefined
+        return this.assemble(partial, index)
+      })
+      .filter((block): block is ContentBlock =>
+        (block?.type === 'text' || block?.type === 'reasoning') && block.text.trim() !== '')
+  }
+
   /** Usage from the `usage` chunk; undefined until one arrives. */
   get usage(): TokenUsage | undefined {
     return this._usage

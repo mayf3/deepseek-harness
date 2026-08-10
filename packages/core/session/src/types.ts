@@ -240,7 +240,10 @@ export interface SessionEventMap {
    * Assembled assistant message for one step (derived history uses this).
    * Carries the step's `usage` when the adapter reported token accounting, so
    * the model output and its accounting travel together (there is no separate
-   * usage record). `usage` is absent when the adapter reported none.
+   * usage record). `usage` is absent when the adapter reported none. A turn
+   * cancelled mid-stream finalizes its delivered text/reasoning prefix as this
+   * event (undispatched tool calls are absent); an aborted turn with no such
+   * event streamed no visible content.
    */
   'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage }
   /**

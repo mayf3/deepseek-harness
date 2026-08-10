@@ -1,4 +1,4 @@
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 /**
  * Tests for the queue-aware `Agent.cancel()` primitive. The default clears
  * queued and steering work, while `keepInbox` preserves pending input for a
@@ -477,6 +477,104 @@ describe('Agent.cancel()', () => {
     // The second turn completed (its reply was streamed).
     const reasons = agent.session.events.filter(e => e.type === 'turn/end')
     expect(reasons.length).toBe(2)
+  })
+
+  it('cancel mid-stream finalizes the streamed prefix onto the surface', async () => {
+    const adapter = new MockAdapter(['hang', textResponse('after')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('partial-finalize'), { provider: 'mock', model: 'mock' })
+
+    send(agent, 'go')
+    await new Promise(r => setTimeout(r, 30))
+    agent.cancel({ kind: 'user' })
+    await waitForIdle(ctx, agent)
+
+    // The prefix the user watched stream is committed as the step's message,
+    // citing exactly the chunk events that delivered it.
+    const message = agent.session.events.find(e => e.type === 'assistant/message')
+    expect(message?.type === 'assistant/message' ? message.data.message.content : undefined)
+      .toEqual([{ type: 'text', text: 'partial' }])
+    const chunkSeqs = agent.session.events.filter(e => e.type === 'assistant/chunk').map(e => e.seq)
+    expect(message?.sourceEventSeqs).toEqual(chunkSeqs)
+    const types = agent.session.events.map(e => e.type)
+    expect(types.indexOf('assistant/message')).toBeLessThan(types.indexOf('step/end'))
+    expect(types.indexOf('step/end')).toBeLessThan(types.indexOf('turn/end'))
+
+    // The next request derives the finalized prefix: the model sees what the user saw.
+    send(agent, 'continue')
+    await waitForIdle(ctx, agent)
+    const replayed = adapter.requests[1]!.messages
+      .filter(m => m.role === 'assistant')
+      .flatMap(m => m.content)
+      .flatMap(b => b.type === 'text' ? [b.text] : [])
+    expect(replayed).toContain('partial')
+  })
+
+  it('cancel during reasoning-only streaming finalizes the reasoning prefix', async () => {
+    const adapter = new MockAdapter([{
+      hangAfter: [
+        { type: 'block-start', index: 0, blockType: 'reasoning' },
+        { type: 'reasoning-delta', index: 0, text: 'thinking about it' },
+        { type: 'usage', usage: { inputTokens: 7, outputTokens: 4 } },
+      ],
+    }])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('reasoning-finalize'), { provider: 'mock', model: 'mock' })
+
+    send(agent, 'go')
+    await new Promise(r => setTimeout(r, 30))
+    agent.cancel({ kind: 'user' })
+    await waitForIdle(ctx, agent)
+
+    const message = agent.session.events.find(e => e.type === 'assistant/message')
+    expect(message?.type === 'assistant/message' ? message.data.message.content : undefined)
+      .toEqual([{ type: 'reasoning', text: 'thinking about it' }])
+    // A usage chunk delivered before the cancel travels with the finalized prefix.
+    expect(message?.type === 'assistant/message' ? message.data.usage : undefined)
+      .toEqual({ inputTokens: 7, outputTokens: 4 })
+  })
+
+  it('cancel drops a half-streamed tool call and keeps the completed text before it', async () => {
+    const adapter = new MockAdapter([{
+      hangAfter: [
+        { type: 'block-start', index: 0, blockType: 'text' },
+        { type: 'text-delta', index: 0, text: 'reading the file' },
+        { type: 'block-end', index: 0, block: { type: 'text', text: 'reading the file' } },
+        { type: 'block-start', index: 1, blockType: 'tool-call' },
+        { type: 'tool-call-delta', index: 1, id: CallId('c1'), name: 'read', argumentsDelta: '{"pa' },
+      ],
+    }])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('tool-call-drop'), { provider: 'mock', model: 'mock' })
+
+    send(agent, 'go')
+    await new Promise(r => setTimeout(r, 30))
+    agent.cancel({ kind: 'user' })
+    await waitForIdle(ctx, agent)
+
+    // The undispatched call is dropped whole — no dangling tool_use to pair.
+    const message = agent.session.events.find(e => e.type === 'assistant/message')
+    expect(message?.type === 'assistant/message' ? message.data.message.content : undefined)
+      .toEqual([{ type: 'text', text: 'reading the file' }])
+    expect(agent.session.events.some(e => e.type === 'tool/call')).toBe(false)
+  })
+
+  it('cancel before any visible content finalizes nothing', async () => {
+    const adapter = new MockAdapter([{
+      hangAfter: [
+        { type: 'block-start', index: 0, blockType: 'tool-call' },
+        { type: 'tool-call-delta', index: 0, id: CallId('c1'), name: 'read', argumentsDelta: '{"pa' },
+      ],
+    }])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('nothing-to-finalize'), { provider: 'mock', model: 'mock' })
+
+    send(agent, 'go')
+    await new Promise(r => setTimeout(r, 30))
+    agent.cancel({ kind: 'user' })
+    await waitForIdle(ctx, agent)
+
+    expect(agent.session.events.some(e => e.type === 'assistant/message')).toBe(false)
   })
 
   it('cancel from a synchronous step/start session-event listener drops the step (post-step-start window)', async () => {
