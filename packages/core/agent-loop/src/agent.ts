@@ -367,6 +367,11 @@ export class ReactLoopAgent implements Agent {
         signal.throwIfAborted()
         const finish = assembler.finish
         if (finish.kind === 'error' || finish.kind === 'aborted') {
+          // A failed attempt is never finalizable: provider failures commit
+          // nothing, and a cancel landing during recovery (typically the
+          // llm/retry backoff, after clients reset the streamed rendering)
+          // must not resurrect the failed stream's prefix.
+          attempt = undefined
           const action = await this.dispatch.waterfall(
             'agent/request-error', {
               turn,
@@ -382,7 +387,6 @@ export class ReactLoopAgent implements Agent {
           if (action?.kind !== 'retry') {
             throw new LlmError(finish.failure.message, finish.failure.code, finish.failure)
           }
-          attempt = undefined
           continue
         }
 
@@ -444,6 +448,7 @@ export class ReactLoopAgent implements Agent {
         turn,
         step,
         message,
+        interrupted: true,
         ...attempt.assembler.usage === undefined ? {} : { usage: attempt.assembler.usage },
       },
       { surfaceOp: 'append', sourceEventSeqs: attempt.chunkSeqs },

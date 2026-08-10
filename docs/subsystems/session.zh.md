@@ -61,10 +61,11 @@ interface SessionEventMap {
    * the model output and its accounting travel together (there is no separate
    * usage record). `usage` is absent when the adapter reported none. A turn
    * cancelled mid-stream finalizes its delivered text/reasoning prefix as this
-   * event (undispatched tool calls are absent); an aborted turn with no such
-   * event streamed no visible content.
+   * event with `interrupted: true` (undispatched tool calls are absent), so
+   * consumers classify the truncation without re-deriving it from turn
+   * boundaries; an aborted turn with no such event streamed no visible content.
    */
-  'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage }
+  'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true }
   /**
    * The model requested one tool invocation: `name` with the raw `arguments`
    * JSON string exactly as the model produced it (unparsed). `callId` pairs the

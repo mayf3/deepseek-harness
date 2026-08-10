@@ -12,7 +12,7 @@ Status: implemented
 
 ## Decision
 
-`Agent.step()` 让当前流式尝试（assembler、已记录的分片 seq、提供方路由）在请求循环之间保持存活。当 abort 在尝试未提交时逃出 step，`appendInterruptedAssistant` 会在 abort 继续走向 `step/end`/`turn/end` 收尾之前，把该尝试的用户可见前缀定稿为该 step 的普通 `assistant/message`，`surfaceOp: 'append'`，`sourceEventSeqs` 恰好引用已记录的分片。重试决定会先清空尝试：`llm/retry` 会重置客户端渲染的内容，因此其后的 abort 不会从被放弃的尝试中定稿任何东西。
+`Agent.step()` 让当前流式尝试（assembler、已记录的分片 seq、提供方路由）在请求循环之间保持存活。当 abort 在尝试未提交时逃出 step，`appendInterruptedAssistant` 会在 abort 继续走向 `step/end`/`turn/end` 收尾之前，把该尝试的用户可见前缀定稿为该 step 的带 `interrupted: true` 的 `assistant/message`，`surfaceOp: 'append'`，`sourceEventSeqs` 恰好引用已记录的分片。这个持久标记就是消费者读取的分类：chat 投影继续把定稿前缀渲染为被打断（Stopped 徽章），请求检查让该请求保持未完成，由 step 边界照旧归类。以 `error`/`aborted` finish 结束的尝试会在恢复 waterfall 运行前被清空：提供方故障不提交任何内容，落在恢复期间的取消（典型是 `llm/retry` 退避期，此时客户端已重置流式渲染）不得复活失败流的前缀。
 
 `BlockAssembler.interruptedBlocks()` 拥有「什么可以安全定稿」的规则，与既有的 max-tokens 截断规则放在一起：按流顺序保留内容非空白的已闭合与未闭合 `text`/`reasoning` 块。工具调用整块丢弃，因为打断先于分派，保留的调用会要求捏造一个结果；空块和未知类型的未闭合块同样丢弃。没有内容存活时不追加任何事件，轮次保持原有形状：分片、`step/end`、`turn/end` aborted。
 
@@ -30,7 +30,7 @@ Status: implemented
 
 ## Consequences
 
-surface 现在包含取消瞬间用户看到的内容，取消后的追问和 fork 都能接上。cancel 与 goal 两组快照 fixture 记录了定稿前缀事件，ACP 桥在 cancelled stop reason 之后把它作为最后一条 `agent_message_chunk` 更新转发。被打断 step 的 `assistant/message` 现在可能带着一个中途截断的前缀；消费者读到 aborted 的 `turn/end` 即可归类。终局提供方错误保持旧行为，其已流出前缀仍会从 surface 消失，这个不对称是有意留给后续决定的，因为 error 轮次的结束不是用户主动选择的停止。
+surface 现在包含取消瞬间用户看到的内容，取消后的追问和 fork 都能接上。cancel 与 goal 两组快照 fixture 记录了定稿前缀事件，ACP 桥在 cancelled stop reason 之后把它作为最后一条 `agent_message_chunk` 更新转发，prompt 的结算不等待循环收尾，因此自动化客户端可能在 cancelled stop reason 之后才收到该更新。被打断 step 的 `assistant/message` 带着中途截断的前缀和用于归类的 `interrupted: true` 标记。终局提供方错误保持旧行为，其已流出前缀仍会从 surface 消失，这个不对称是有意留给后续决定的，因为 error 轮次的结束不是用户主动选择的停止。
 
 ## Testing
 

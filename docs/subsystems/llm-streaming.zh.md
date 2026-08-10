@@ -278,7 +278,8 @@ interface TokenUsage {
  * {@link ContentBlock}s and a final assistant {@link Message}.
  *
  * The agent loop feeds it while logging raw chunks for replay fidelity, then
- * reads `blocks()` / `message()` / `usage` / `finish` once the stream ends.
+ * reads `blocks()` / `message()` / `usage` / `finish` once the stream ends,
+ * or `interruptedBlocks()` when cancellation cut the stream short.
  *
  * Tolerant of delta-only protocols (no block-start/end); deltas arriving for
  * an index already closed by `block-end` are ignored (malformed stream) so a

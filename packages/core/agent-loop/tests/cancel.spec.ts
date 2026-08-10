@@ -490,10 +490,12 @@ describe('Agent.cancel()', () => {
     await waitForIdle(ctx, agent)
 
     // The prefix the user watched stream is committed as the step's message,
-    // citing exactly the chunk events that delivered it.
+    // carrying the truncation marker and citing exactly the chunk events that
+    // delivered it.
     const message = agent.session.events.find(e => e.type === 'assistant/message')
     expect(message?.type === 'assistant/message' ? message.data.message.content : undefined)
       .toEqual([{ type: 'text', text: 'partial' }])
+    expect(message?.type === 'assistant/message' ? message.data.interrupted : undefined).toBe(true)
     const chunkSeqs = agent.session.events.filter(e => e.type === 'assistant/chunk').map(e => e.seq)
     expect(message?.sourceEventSeqs).toEqual(chunkSeqs)
     const types = agent.session.events.map(e => e.type)
@@ -557,6 +559,61 @@ describe('Agent.cancel()', () => {
     expect(message?.type === 'assistant/message' ? message.data.message.content : undefined)
       .toEqual([{ type: 'text', text: 'reading the file' }])
     expect(agent.session.events.some(e => e.type === 'tool/call')).toBe(false)
+  })
+
+  it('cancel during error recovery does not finalize the failed stream', async () => {
+    const adapter = new MockAdapter([[
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text: 'doomed partial' },
+      { type: 'finish', reason: { kind: 'error', failure: { message: 'boom', code: 'SERVER_ERROR' } } },
+    ]])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('recovery-cancel'), { provider: 'mock', model: 'mock' })
+    // Cancellation lands while agent/request-error is in flight — the window
+    // dsh-llm-retry opens when its backoff waits after appending llm/retry.
+    ctx.on('agent/request-error', async ({ agent: subject }) => {
+      if (subject === agent) subject.cancel({ kind: 'user' })
+    })
+
+    send(agent, 'go')
+    await waitForIdle(ctx, agent)
+
+    // The failed stream's prefix stays off the surface: clients reset it on
+    // retry, and provider failures commit nothing.
+    expect(agent.session.events.some(e => e.type === 'assistant/message')).toBe(false)
+    const end = agent.session.events.find(e => e.type === 'turn/end')
+    expect(end?.type === 'turn/end' ? end.data.reason.kind : undefined).toBe('aborted')
+  })
+
+  it('retry discards the failed attempt; the final message cites only its own chunks', async () => {
+    const adapter = new MockAdapter([
+      [
+        { type: 'block-start', index: 0, blockType: 'text' },
+        { type: 'text-delta', index: 0, text: 'doomed partial' },
+        { type: 'finish', reason: { kind: 'error', failure: { message: 'boom', code: 'SERVER_ERROR' } } },
+      ],
+      textResponse('recovered'),
+    ])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('retry-discards-content'), { provider: 'mock', model: 'mock' })
+    ctx.on('agent/request-error', async () => ({ kind: 'retry' as const }))
+
+    send(agent, 'go')
+    await waitForIdle(ctx, agent)
+
+    const messages = agent.session.events.filter(e => e.type === 'assistant/message')
+    expect(messages).toHaveLength(1)
+    const message = messages[0]!
+    expect(message.type === 'assistant/message' ? message.data.message.content : undefined)
+      .toEqual([{ type: 'text', text: 'recovered' }])
+    expect(message.type === 'assistant/message' ? message.data.interrupted : undefined).toBeUndefined()
+    // The abandoned attempt's chunks stay out of the completion's source set.
+    const doomedSeqs = agent.session.events
+      .filter(e => e.type === 'assistant/chunk'
+        && e.data.chunk.type === 'text-delta' && e.data.chunk.text === 'doomed partial')
+      .map(e => e.seq)
+    expect(doomedSeqs).toHaveLength(1)
+    expect(message.sourceEventSeqs).not.toContain(doomedSeqs[0])
   })
 
   it('cancel before any visible content finalizes nothing', async () => {
