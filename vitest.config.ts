@@ -25,23 +25,26 @@ const windowsUnsupportedPackages = process.platform === 'win32'
       // INCLUDED: PowerShell ships with Windows, so they run natively here.
       // This explicit list (not a 'packages/bash/*' glob) keeps
       // packages/bash/bash — the Service Definition package — running on Windows.
+      // subprocess-local and pty-local are NOT listed: their win32 branches are
+      // first-class (Windows inspector, pwsh dialect), so their suites run and
+      // their sources stay coverage-required on the windows-native lane; the
+      // bash-requiring tests inside them self-skip through hasBash probes.
       'packages/bash/bash-local',
       'packages/bash/bash-sandbox',
       'packages/bash/tool-bash',
       'packages/hooks/*',
-      'packages/subprocess/*',
-      'packages/pty/pty-local',
       'packages/sandbox/sandbox-local',
     ]
   : []
 
-// Windows-only packages: their sources execute exclusively on win32 (koffi
-// loads Win32 libraries), so the Linux coverage lane can never cover them.
-// The Windows dev/CI lane exercises them through the probe/runner suites; the
-// per-file 100% gate must not fail on their Linux-uncovered paths.
+// Windows-only sources: they execute exclusively on win32 (koffi loads Win32
+// libraries), so the Linux coverage lane can never cover them. The Windows
+// dev/CI lane exercises them through the probe/runner suites; the per-file
+// 100% gate must not fail on their Linux-uncovered paths.
 const windowsOnlyCoverageExclusions = process.platform !== 'win32'
   ? [
       'packages/sandbox/sandbox-windows-acl/src/**/*.ts',
+      'packages/subprocess/subprocess-local/src/windows-inspector.ts',
     ]
   : []
 
