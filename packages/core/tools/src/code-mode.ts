@@ -6,7 +6,7 @@
  * @module @deepseek-ai/dsh-tools/src/code-mode
  */
 
-import { CallId, HarnessError } from '@deepseek-ai/dsh-llm'
+import { CallId, createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { CodeBindingFunction, CodeRunResult, CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
@@ -48,7 +48,7 @@ const TYPESCRIPT_FLAVOR: RunCodeFlavor = {
     'Execute a TypeScript program against the available tools. Write the BODY of an '
     + 'async function (erasable syntax only; top-level `await` and `return` work) and '
     + 'call tools as `await tools.name(args)` per the declarations in the system prompt. '
-    + 'Only what you print or return comes back — curate it.',
+    + 'Only what you print or return is program output; image-bearing subtool results are attached after the run.',
   codeDescription: 'The program: the body of an async TypeScript function.',
 }
 
@@ -61,8 +61,9 @@ const PYTHON_FLAVOR: RunCodeFlavor = {
   description:
     'Execute a Python program against the available tools. Write the BODY of an '
     + 'async function (top-level `await` and `return` work) and call tools as '
-    + '`await tools.name(args)` per the declarations in the system prompt. Answer '
-    + 'with `print(...)` and/or `return <value>` — only that comes back, so curate it.',
+    + '`await tools.name(args)` per the declarations in the system prompt. Use '
+    + '`print(...)` and/or `return <value>` for program output; image-bearing '
+    + 'subtool results attach after the run.',
   codeDescription: 'The program: the body of an async Python function.',
 }
 
@@ -557,6 +558,12 @@ export function createRunCodeTool(registry: ToolRegistry, options: RunCodeBridge
               const result = parked.kind === 'post-result'
                 ? await scheduler.finalize(parked.exec, parked.result)
                 : scheduler.finish(parked.exec, parked.result)
+              if (!result.isError && result.content.some(block => block.type === 'image')) {
+                exec.deferContext(createUserMessage({
+                  content: result.content,
+                  source: { kind: 'plugin', plugin: 'tools-code-mode' },
+                }))
+              }
               for (const context of result.additionalContexts ?? []) {
                 exec.deferContext(context)
               }
