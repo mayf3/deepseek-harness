@@ -287,6 +287,70 @@ describe('ACP prompt lifecycle', () => {
     expect(events.some(event => event.type === 'user/message' || event.type === 'turn/start')).toBe(false)
   })
 
+  it('does not cancel unrelated Agent work while its prompt is still in admission', async () => {
+    harness = await makeBridgeHarness({ imageCapable: true, script: ['hang'] })
+    const validationStarted = Promise.withResolvers<undefined>()
+    const releaseValidation = Promise.withResolvers<undefined>()
+    harness.attachments!.beforeValidate = () => {
+      validationStarted.resolve(undefined)
+      return releaseValidation.promise
+    }
+    const sessionId = await newSession(harness)
+    const agent = harness.ctx.agents.get(SessionId(sessionId))!
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'unrelated work' }],
+      source: { kind: 'plugin', plugin: 'test' },
+    }))
+    await vi.waitFor(() => { expect(harness!.adapter.requests).toHaveLength(1) })
+
+    const prompt = harness.client.prompt({
+      sessionId,
+      prompt: [{ type: 'image', data: 'AQ==', mimeType: 'image/png' }],
+    })
+    await validationStarted.promise
+    await harness.client.cancel({ sessionId })
+
+    expect(harness.adapter.requests[0]?.signal?.aborted).toBe(false)
+    releaseValidation.resolve(undefined)
+    await expect(prompt).resolves.toEqual({ stopReason: 'cancelled' })
+    expect(agent.status).toBe('running')
+    agent.cancel({ kind: 'hook', reason: 'test cleanup' })
+    await agent.whenIdle()
+  })
+
+  it('does not attribute an unrelated Agent failure during prompt admission', async () => {
+    harness = await makeBridgeHarness({ imageCapable: true, script: [textResponse('answer')] })
+    const validationStarted = Promise.withResolvers<undefined>()
+    const releaseValidation = Promise.withResolvers<undefined>()
+    harness.attachments!.beforeValidate = () => {
+      validationStarted.resolve(undefined)
+      return releaseValidation.promise
+    }
+    let failUnrelatedWork = true
+    harness.ctx.on('agent/pre-step', (_payload, next) => {
+      if (!failUnrelatedWork) return next()
+      failUnrelatedWork = false
+      throw new Error('unrelated pre-step failure')
+    })
+    const sessionId = await newSession(harness)
+    const agent = harness.ctx.agents.get(SessionId(sessionId))!
+    const prompt = harness.client.prompt({
+      sessionId,
+      prompt: [{ type: 'image', data: 'AQ==', mimeType: 'image/png' }],
+    })
+    await validationStarted.promise
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'unrelated work' }],
+      source: { kind: 'plugin', plugin: 'test' },
+    }))
+    await agent.whenIdle()
+    releaseValidation.resolve(undefined)
+
+    await expect(prompt).resolves.toEqual({ stopReason: 'end_turn' })
+    expect(messageText(harness)).toBe('answer')
+  })
+
   it('does not queue admitted content into an agent retired during storage', async () => {
     harness = await makeBridgeHarness({ imageCapable: true, script: [] })
     const validationStarted = Promise.withResolvers<undefined>()

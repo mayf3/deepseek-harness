@@ -95,6 +95,8 @@ interface SessionRecord {
     reject: (error: Error) => void
     /** Set only after rich-content admission succeeds and the message is built. */
     messageId: string | undefined
+    /** Whether this prompt has entered the Agent's durable inbox interval. */
+    messageQueued: boolean
     turn: number | undefined
     /** The correlated turn's ending, set at turn/end and settled at whole-agent idle. */
     endReason: TurnEndReason | undefined
@@ -106,7 +108,7 @@ interface SessionRecord {
     settlementStarted: boolean
     /** Conversion failure for committed output owned by this prompt's turn. */
     outputError: Error | undefined
-    /** Failure before a correlated turn exists. */
+    /** Interval-wide failure outside the correlated turn. */
     agentError: Error | undefined
   } | undefined
 }
@@ -172,10 +174,12 @@ export function apply(ctx: Context, config: AcpConfig): void {
     inflight.settlementStarted = true
     void (async () => {
       await inflight.admissionDone
-      await record.agent.whenIdle()
-      // session/event enqueues synchronously before the agent becomes idle;
-      // reading the live tail here includes every committed output task.
-      await record.outputTail
+      if (inflight.messageQueued) {
+        await record.agent.whenIdle()
+        // session/event enqueues synchronously before the agent becomes idle;
+        // reading the live tail here includes every committed output task.
+        await record.outputTail
+      }
       /* v8 ignore next -- this prompt owns the slot until this exact settlement clears it. */
       if (record.inflight !== inflight) return
       record.inflight = undefined
@@ -202,7 +206,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
         inflight.resolve(end.kind === 'max-tokens' ? 'end_turn' : turnEndToStopReason(end))
       }
     })()
-    /* v8 ignore start -- admissionDone only resolves, whenIdle is a quiescence gate, and outputTail contains its own failures. */
+    /* v8 ignore start -- admissionDone only resolves, and the queued path's idle/output gates contain their own failures. */
       .catch((error: unknown) => {
         if (record.inflight !== inflight) return
         record.inflight = undefined
@@ -256,7 +260,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
   ctx.on('agent/error', ({ agent, turn, error }) => {
     const record = ownedRecord(agent)
     const inflight = record?.inflight
-    if (record === undefined || inflight === undefined || inflight.turn === turn) return
+    if (record === undefined || inflight === undefined || !inflight.messageQueued || inflight.turn === turn) return
     inflight.agentError = new Error(errorChain(error))
     settleAfterQuiescence(record, inflight)
   })
@@ -341,6 +345,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
           resolve: completion.resolve,
           reject: completion.reject,
           messageId: undefined,
+          messageQueued: false,
           turn: undefined,
           endReason: undefined,
           admissionDone: admission.promise,
@@ -379,7 +384,15 @@ export function apply(ctx: Context, config: AcpConfig): void {
           }
           const message = createUserMessage({ content, source: { kind: 'user' } })
           inflight.messageId = message.id
-          record.agent.followup(message)
+          inflight.messageQueued = true
+          try {
+            record.agent.followup(message)
+          } catch (error: unknown) {
+            // The typed same-process seam may fail synchronously before durable
+            // inbox receipt; restore the pre-operation boundary for mapping.
+            inflight.messageQueued = false
+            throw error
+          }
         } catch (error: unknown) {
           admissionFailed = true
           admissionFailure = error
@@ -418,7 +431,10 @@ export function apply(ctx: Context, config: AcpConfig): void {
           inflight.admissionController.abort(new Error('ACP prompt cancelled'))
           settleAfterQuiescence(record, inflight)
         }
-        record.agent.cancel({ kind: 'user' })
+        // Admission is not Agent work. Preserve unrelated producers until this
+        // prompt has entered the durable inbox; without a prompt, cancellation
+        // continues to target autonomous work on the addressed Agent.
+        if (inflight === undefined || inflight.messageQueued) record.agent.cancel({ kind: 'user' })
         return Promise.resolve()
       },
     }
