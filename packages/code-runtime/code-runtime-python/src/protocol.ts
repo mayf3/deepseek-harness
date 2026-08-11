@@ -392,8 +392,9 @@ function jsonStringBytesUpTo(text: string, maxBytes: number): number | undefined
  * not the parse that produced `value`.
  * That upstream width is bounded separately, by the host-side cap on inbound
  * fd-3 frame size before `JSON.parse` runs (owned by the runtime that reads the
- * channel), so `value` cannot be arbitrarily large when it reaches here, while
- * `maxValueBytes` defaults to 32 KiB. The traversal rejects over-budget BEFORE
+ * channel), so `value` cannot be arbitrarily large when it reaches here. The
+ * budget is the `maxValueBytes` the boot frame carries — a required wire field
+ * with no default at this layer. The traversal rejects over-budget BEFORE
  * materializing a string's escaped form or enqueuing an array's/object's
  * children, so a forgery within that frame cap cannot force those secondary
  * allocations. Object key COUNTING is

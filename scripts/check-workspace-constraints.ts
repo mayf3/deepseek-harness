@@ -107,7 +107,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-web-app': ['cordis.patch.yml'],
   '@deepseek-ai/dsh-headless': ['cordis.patch.yml'],
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
-  // The CPython bootstrap ships as source .py files the host spawns by path.
+  // The CPython side ships as source .py files, published as-is rather than built.
   '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
   '@deepseek-ai/dsh-helper': ['lib/assets'],
   '@deepseek-ai/dsh-pty-local': ['scripts/ensure-spawn-helper.mjs'],
