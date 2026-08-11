@@ -10,13 +10,16 @@
   ],
   "references": [
     {
+      "path": "../../attachment/attachment"
+    },
+    {
       "path": "../../llm/llm"
     },
     {
       "path": "../../core/session"
     },
     {
-      "path": "../../ui/commands"
+      "path": "../../interaction/commands"
     },
     {
       "path": "../../util/brand"
@@ -28,10 +31,10 @@
       "path": "../../host/webserver"
     },
     {
-      "path": "../../ui/user-approval"
+      "path": "../../interaction/user-approval"
     },
     {
-      "path": "../../ui/user-interaction"
+      "path": "../../interaction/user-interaction"
     },
     {
       "path": "../../support/invariants"

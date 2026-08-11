@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, CallId  } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
@@ -330,7 +330,7 @@ describe('fold onto the downstream decision', () => {
 
     const found = reminders(agent)
     expect(found).toHaveLength(3)
-    // Only the repeated call adds guard context; downstream provenance survives.
+    // Only the repeated call adds guard context; downstream source fields survive.
     expect(found[0]!.text).toBe('downstream-ctx')
     expect(found[0]!.source).toEqual({ kind: 'plugin', plugin: 'test' })
     expect(found[1]!.text).toContain('repeating the exact same tool call')

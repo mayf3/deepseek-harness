@@ -1,6 +1,6 @@
 /** Package-owned invariant companion for the bash seam. @module @deepseek-ai/dsh-bash/invariant */
 
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-bash'
@@ -10,7 +10,7 @@ export const name = 'bash-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
-/** No runtime invariant: this stateless seam owns request/result types, while executors and policy own observations. */
+/** No runtime invariant: this stateless Service Definition owns request/result types, while executors and policy own observations. */
 const install: InvariantInstaller = () => {}
 
 /**

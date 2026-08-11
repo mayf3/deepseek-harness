@@ -8,16 +8,20 @@ The dsh-base bundle patch every profile applies first; mode bundles (dsh-web-app
 ```mermaid
 flowchart LR
   cfg["packages/bundle/base/cordis.patch.yml<br/>cordis.yml"]
-  plugin_dsh_base_timer["timer<br/>@cordisjs/plugin-timer"]
+  plugin_dsh_base_timer["timer<br/>@deepseek-ai/cordis-plugin-timer"]
   cfg --> plugin_dsh_base_timer
-  plugin_dsh_base_hmr["hmr<br/>@cordisjs/plugin-hmr"]
+  plugin_dsh_base_hmr["hmr<br/>@deepseek-ai/cordis-plugin-hmr"]
   cfg --> plugin_dsh_base_hmr
-  plugin_dsh_base_repository_plugins["repository-plugins<br/>@deepseek-ai/dsh-repository-plugin"]
-  cfg --> plugin_dsh_base_repository_plugins
   plugin_dsh_base_llm["llm<br/>@deepseek-ai/dsh-llm"]
   cfg --> plugin_dsh_base_llm
   plugin_dsh_base_session["session<br/>@deepseek-ai/dsh-session"]
   cfg --> plugin_dsh_base_session
+  plugin_dsh_base_typert["typert<br/>@deepseek-ai/dsh-typert-registry"]
+  cfg --> plugin_dsh_base_typert
+  plugin_dsh_base_typert_loader["typert-loader<br/>@deepseek-ai/dsh-typert-loader"]
+  cfg --> plugin_dsh_base_typert_loader
+  plugin_dsh_base_typert_gateway["typert-gateway<br/>@deepseek-ai/dsh-api-gateway"]
+  cfg --> plugin_dsh_base_typert_gateway
   plugin_dsh_base_session_title["session-title<br/>@deepseek-ai/dsh-session-title"]
   cfg --> plugin_dsh_base_session_title
   plugin_dsh_base_session_title_llm["session-title-llm<br/>@deepseek-ai/dsh-session-title-first-message-llm"]
@@ -26,6 +30,8 @@ flowchart LR
   cfg --> plugin_dsh_base_user_interaction
   plugin_dsh_base_agent["agent<br/>@deepseek-ai/dsh-agent"]
   cfg --> plugin_dsh_base_agent
+  plugin_dsh_base_agent_default_model["agent-default-model<br/>@deepseek-ai/dsh-agent-default-model"]
+  cfg --> plugin_dsh_base_agent_default_model
   plugin_dsh_base_tasks["tasks<br/>@deepseek-ai/dsh-tasks-local"]
   cfg --> plugin_dsh_base_tasks
   plugin_dsh_base_llm_retry["llm-retry<br/>@deepseek-ai/dsh-llm-retry"]
@@ -38,6 +44,8 @@ flowchart LR
   cfg --> plugin_dsh_base_llm_pi_ai
   plugin_dsh_base_session_persistence_jsonl["session-persistence-jsonl<br/>@deepseek-ai/dsh-session-persistence-jsonl"]
   cfg --> plugin_dsh_base_session_persistence_jsonl
+  plugin_dsh_base_attachment_local["attachment-local<br/>@deepseek-ai/dsh-attachment-local"]
+  cfg --> plugin_dsh_base_attachment_local
   plugin_dsh_base_session_query_sqlite["session-query-sqlite<br/>@deepseek-ai/dsh-session-query-sqlite"]
   cfg --> plugin_dsh_base_session_query_sqlite
   plugin_dsh_base_session_projection["session-projection<br/>@deepseek-ai/dsh-session-projection"]
@@ -74,10 +82,14 @@ flowchart LR
   cfg --> plugin_dsh_base_skill
   plugin_dsh_base_skill_local["skill-local<br/>@deepseek-ai/dsh-skill-local"]
   cfg --> plugin_dsh_base_skill_local
+  plugin_dsh_base_skill_badge["skill-badge<br/>@deepseek-ai/dsh-skill-badge"]
+  cfg --> plugin_dsh_base_skill_badge
   plugin_dsh_base_tool_skill["tool-skill<br/>@deepseek-ai/dsh-tool-skill"]
   cfg --> plugin_dsh_base_tool_skill
   plugin_dsh_base_commands["commands<br/>@deepseek-ai/dsh-commands"]
   cfg --> plugin_dsh_base_commands
+  plugin_dsh_base_command_feedback["command-feedback<br/>@deepseek-ai/dsh-command-feedback"]
+  cfg --> plugin_dsh_base_command_feedback
   plugin_dsh_base_goal["goal<br/>@deepseek-ai/dsh-goal"]
   cfg --> plugin_dsh_base_goal
   plugin_dsh_base_goal_session["goal-session<br/>@deepseek-ai/dsh-goal-session"]
@@ -98,6 +110,10 @@ flowchart LR
   cfg --> plugin_dsh_base_subagent_spawn
   plugin_dsh_base_subagent_fork["subagent-fork<br/>@deepseek-ai/dsh-subagent-fork"]
   cfg --> plugin_dsh_base_subagent_fork
+  plugin_dsh_base_subagent_codex["subagent-codex<br/>@deepseek-ai/dsh-subagent-codex"]
+  cfg --> plugin_dsh_base_subagent_codex
+  plugin_dsh_base_subagent_claude_code["subagent-claude-code<br/>@deepseek-ai/dsh-subagent-claude-code"]
+  cfg --> plugin_dsh_base_subagent_claude_code
   plugin_dsh_base_tool_subagent_control["tool-subagent-control<br/>@deepseek-ai/dsh-tool-subagent-control"]
   cfg --> plugin_dsh_base_tool_subagent_control
   plugin_dsh_base_tool_subagent_list_agents["tool-subagent-list-agents<br/>@deepseek-ai/dsh-tool-subagent-control/list-agents"]
@@ -152,21 +168,25 @@ flowchart LR
 
 | Plugin id | Package / module |
 | --- | --- |
-| `timer` | `@cordisjs/plugin-timer` |
-| `hmr` | `@cordisjs/plugin-hmr` |
-| `repository-plugins` | `@deepseek-ai/dsh-repository-plugin` |
+| `timer` | `@deepseek-ai/cordis-plugin-timer` |
+| `hmr` | `@deepseek-ai/cordis-plugin-hmr` |
 | `llm` | `@deepseek-ai/dsh-llm` |
 | `session` | `@deepseek-ai/dsh-session` |
+| `typert` | `@deepseek-ai/dsh-typert-registry` |
+| `typert-loader` | `@deepseek-ai/dsh-typert-loader` |
+| `typert-gateway` | `@deepseek-ai/dsh-api-gateway` |
 | `session-title` | `@deepseek-ai/dsh-session-title` |
 | `session-title-llm` | `@deepseek-ai/dsh-session-title-first-message-llm` |
 | `user-interaction` | `@deepseek-ai/dsh-user-interaction` |
 | `agent` | `@deepseek-ai/dsh-agent` |
+| `agent-default-model` | `@deepseek-ai/dsh-agent-default-model` |
 | `tasks` | `@deepseek-ai/dsh-tasks-local` |
 | `llm-retry` | `@deepseek-ai/dsh-llm-retry` |
 | `settings` | `@deepseek-ai/dsh-settings-local` |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` |
 | `llm-pi-ai` | `@deepseek-ai/dsh-llm-pi-ai` |
 | `session-persistence-jsonl` | `@deepseek-ai/dsh-session-persistence-jsonl` |
+| `attachment-local` | `@deepseek-ai/dsh-attachment-local` |
 | `session-query-sqlite` | `@deepseek-ai/dsh-session-query-sqlite` |
 | `session-projection` | `@deepseek-ai/dsh-session-projection` |
 | `telemetry-otel` | `@deepseek-ai/dsh-session-telemetry-otel` |
@@ -185,8 +205,10 @@ flowchart LR
 | `workspace-context` | `@deepseek-ai/dsh-workspace-context` |
 | `skill` | `@deepseek-ai/dsh-skill` |
 | `skill-local` | `@deepseek-ai/dsh-skill-local` |
+| `skill-badge` | `@deepseek-ai/dsh-skill-badge` |
 | `tool-skill` | `@deepseek-ai/dsh-tool-skill` |
 | `commands` | `@deepseek-ai/dsh-commands` |
+| `command-feedback` | `@deepseek-ai/dsh-command-feedback` |
 | `goal` | `@deepseek-ai/dsh-goal` |
 | `goal-session` | `@deepseek-ai/dsh-goal-session` |
 | `command-goal` | `@deepseek-ai/dsh-command-goal` |
@@ -197,6 +219,8 @@ flowchart LR
 | `subagent` | `@deepseek-ai/dsh-subagent` |
 | `subagent-spawn` | `@deepseek-ai/dsh-subagent-spawn` |
 | `subagent-fork` | `@deepseek-ai/dsh-subagent-fork` |
+| `subagent-codex` | `@deepseek-ai/dsh-subagent-codex` |
+| `subagent-claude-code` | `@deepseek-ai/dsh-subagent-claude-code` |
 | `tool-subagent-control` | `@deepseek-ai/dsh-tool-subagent-control` |
 | `tool-subagent-list-agents` | `@deepseek-ai/dsh-tool-subagent-control/list-agents` |
 | `tool-subagent` | `@deepseek-ai/dsh-tool-subagent` |

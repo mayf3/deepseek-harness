@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { agentEvents, Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
@@ -245,6 +245,22 @@ describe('GoalService creation and replay', () => {
 })
 
 describe('GoalService mutations', () => {
+  it('adapts Remote creation and reuses business methods for later mutations', async () => {
+    const { ctx, agent } = await harness()
+    const created = ctx.goals.remoteExportCreate(agent, { objective: 'remote lifecycle' })
+    const edited = ctx.goals.edit(agent, created.ref, { objective: 'edited remotely' })
+    const paused = ctx.goals.pause(agent, edited)
+    const resumed = ctx.goals.resume(agent, paused)
+    const completed = ctx.goals.complete(agent, resumed)
+    const cleared = ctx.goals.clear(agent, completed)
+
+    expect(edited).toMatchObject({ objective: 'edited remotely', revision: 2 })
+    expect(paused).toMatchObject({ phase: 'paused', revision: 3 })
+    expect(resumed).toMatchObject({ phase: 'active', revision: 4 })
+    expect(completed).toMatchObject({ phase: 'complete', revision: 5 })
+    expect(cleared).toEqual({ id: created.ref.id, revision: 6 })
+  })
+
   it('edits with compare-and-set revisions and rejects empty edits', async () => {
     const { ctx, agent } = await harness()
     const created = ctx.goals.create(agent, { objective: 'old', maxGoalRounds: 4 })
@@ -486,8 +502,8 @@ describe('GoalService mutations', () => {
     session.append('goal/change', change)
     session.append('goal/change', { ...change, operation: 'edit', extra: true } as never)
 
-    expect(() => ctx.goals.get(agent)).toThrow('invalid shape')
-    expect(() => ctx.goals.get(agent)).toThrow('invalid shape')
+    expect(() => ctx.goals.get(agent)).toThrow('snapshot change must have exactly')
+    expect(() => ctx.goals.get(agent)).toThrow('snapshot change must have exactly')
   })
 })
 
@@ -593,13 +609,13 @@ describe('goal replay validation', () => {
     expect(() => foldGoal(session.events)).toThrow('not the next admitted round')
   })
 
-  it('rejects unsupported versions, operations, and top-level shapes', () => {
+  it('rejects unsupported versions, operations, and extra top-level fields', () => {
     expect(() => decodeGoalChange({ ...snapshotChange(), version: 2 })).toThrow('unsupported goal change version')
     expect(() => decodeGoalChange({ ...snapshotChange(), operation: 'explode' })).toThrow('operation is invalid')
-    expect(() => decodeGoalChange({ ...snapshotChange(), extra: true })).toThrow('snapshot change has an invalid shape')
+    expect(() => decodeGoalChange({ ...snapshotChange(), extra: true })).toThrow('snapshot change must have exactly')
     expect(() => decodeGoalChange({
       kind: 'goal/change', version: 1, operation: 'clear', cleared: { id: 'x', revision: 2 }, clearedAt: 1, extra: true,
-    })).toThrow('clear change has an invalid shape')
+    })).toThrow('clear change must have exactly')
   })
 
   it('rejects invalid create and missing-current mutation sequences', () => {

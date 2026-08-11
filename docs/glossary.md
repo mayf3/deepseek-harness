@@ -4,7 +4,9 @@ English | [中文](glossary.zh.md)
 
 Domain vocabulary for the DeepSeek Harness SDK uses one canonical term per concept. Terms link to their entries with standard Markdown anchors; implementation detail stays in package READMEs and Agent Notes.
 
-FIXME(glossary-completeness): Expand this glossary before the first release so it covers the SDK's other core and capability subsystems, not only agent scope.
+## capability-seam
+
+- **seam** — a *swappable capability* with three roles: a **Service Definition** (the Cordis `Service` that owns its `ctx.<key>` and vocabulary types — an abstract class such as `BashExecutor`, or a concrete registry such as `WebService`, never a TypeScript `interface`), one or more **Service providers**, and one or more **Consumers** that inject the service. `packages/bash` is the canonical example: `dsh-bash` (Service Definition), `dsh-bash-local` / `dsh-bash-sandbox` (providers), and `dsh-tool-bash` (Consumer). Roles normally occupy separate packages when they evolve independently, but a package may own multiple roles when they are one concern (`dsh-llm` owns its Service Definition and Consumer). The seam is the complete capability, never one role; reserve the term for that meaning and name a constituent by its role, class, service, contract, or extension point.
 
 ## agent-scope
 
@@ -14,7 +16,7 @@ FIXME(glossary-completeness): Expand this glossary before the first release so i
 - **scope carrier** — the `thisArg` a scope-filtered dispatch carries (built by `scopeTarget`); its filter admits untagged listeners plus the subject's own. A *subject-less* carrier (no key) admits untagged listeners only.
 - **scoped dispatch** — the rule: an event about one agent's activity dispatches with that agent's carrier. Events about a registry itself (a tool was added) are *registry-subject* and stay unfiltered.
 - **shadowing** — most-specific-wins name resolution: a scoped tool/section/variable replaces its same-named global twin for that scope alone. The per-agent persona and per-agent tool-variant mechanism.
-- **restriction / scope-local registration** — a restriction (`tools.restrict`) filters the GLOBAL tool surface for one scope (compose by intersection); scope-local registrations are merged after that filter. A filtered-away global tool is absent from the prompt AND refuses execution, indistinguishably from a nonexistent one.
+- **restriction / scope-local registration** — a restriction (`tools.restrict`) filters the GLOBAL tool set for one scope (compose by intersection); scope-local registrations are merged after that filter. A filtered-away global tool is absent from the prompt AND refuses execution, indistinguishably from a nonexistent one.
 - **setup window** — the creation slot where a creator composes an agent's scoped world (`CreateAgentOptions.setup`): after the scope and agent object exist but before the agent or session is published, `agent/session-start` fires, or the first prompt is assembled. Setup registers; it never drives the agent.
 - **lineage** — parent/child facts carried as data (`parentSession`, durable `delegationDepth`, runtime `subagentDepth`); never affects visibility. <a id="lineage"></a>
 

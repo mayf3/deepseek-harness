@@ -61,6 +61,7 @@ function props(
     },
     current: PARENT, phase: 'ready',
     subagentsByParent: value === undefined ? nested : { [PARENT]: value, ...nested },
+    tasksBySession: {},
     currentAddress: undefined,
   } satisfies SessionListState
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
@@ -108,7 +109,7 @@ describe('SubagentCatalogAction', () => {
     }
     const view = render(<SubagentCatalogAction {...props(catalog(), {}, summaries)} />)
 
-    const trigger = screen.getByRole('button', { name: '3 个子代理，正在运行' })
+    const trigger = screen.getByRole('button', { name: '1 个子代理，正在运行' })
     expect(trigger.querySelector('[data-state="ongoing"]')).not.toBeNull()
 
     view.rerender(<SubagentCatalogAction {...props(catalog(), {}, {
@@ -322,7 +323,9 @@ describe('SubagentCatalogAction', () => {
     })) as Record<SessionId, SessionSummary>
     const input = props(catalog({ entries }), {}, summaries)
     render(<SubagentCatalogAction {...input} />)
-    fireEvent.click(screen.getByRole('button', { name: /9 个子代理/ }))
+    const trigger = screen.getByRole('button', { name: '1 个子代理，正在运行' })
+    expect(within(trigger).getByText('9 个子代理')).toBeTruthy()
+    fireEvent.click(trigger)
 
     const runningRow = screen.getByRole('treeitem', { name: /running.*4\.6K tok · 1分10秒/ })
     const runningMetrics = within(runningRow)
@@ -506,7 +509,8 @@ describe('SubagentCatalogAction', () => {
     const absent = props(undefined, {}, summaries)
     const view = render(<SubagentCatalogAction {...absent} />)
 
-    const trigger = screen.getByRole('button', { name: '2 个子代理，正在运行' })
+    const trigger = screen.getByRole('button', { name: '1 个子代理，正在运行' })
+    expect(within(trigger).getByText('2 个子代理')).toBeTruthy()
     fireEvent.click(trigger)
     expect(absent.setCatalogOpen).toHaveBeenCalledWith(PARENT, true)
     expect(screen.getAllByRole('treeitem', { name: '正在加载子代理' })).toHaveLength(2)
@@ -514,27 +518,28 @@ describe('SubagentCatalogAction', () => {
 
     const staleEmpty = props(catalog({ entries: [] }), {}, summaries)
     view.rerender(<SubagentCatalogAction {...staleEmpty} />)
-    expect(screen.getByRole('button', { name: '2 个子代理，正在运行' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '1 个子代理，正在运行' })).toBeTruthy()
     expect(screen.getAllByRole('treeitem', { name: '正在加载子代理' })).toHaveLength(2)
     expect(staleEmpty.openChild).not.toHaveBeenCalled()
   })
 
-  it('renders empty loading and fallback error states without focusable rows', async () => {
+  it('hides a bare loading catalog and keeps the error fallback without focusable rows', async () => {
+    // Selecting any session schedules a catalog refresh; a loading snapshot
+    // with no other evidence of children must not flash the action in.
     const loading = props(catalog({ entries: [], state: 'loading' }))
     const view = render(<SubagentCatalogAction {...loading} />)
-    const trigger = screen.getByRole('button', { name: /0 个子代理/ })
-    fireEvent.click(trigger)
-    expect(screen.getByText('正在加载子代理…')).toBeTruthy()
-    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
-    await Promise.resolve()
-    expect(screen.getByRole('tree')).toBeTruthy()
-    fireEvent.keyDown(screen.getByRole('tree'), { key: 'ArrowUp' })
+    expect(screen.queryByRole('button')).toBeNull()
     view.unmount()
 
     const failed = props(catalog({ entries: [], state: 'error', error: null }))
     render(<SubagentCatalogAction {...failed} />)
-    fireEvent.click(screen.getByRole('button', { name: /0 个子代理/ }))
+    const trigger = screen.getByRole('button', { name: /0 个子代理/ })
+    fireEvent.click(trigger)
     expect(screen.getByText('无法加载子代理')).toBeTruthy()
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    await Promise.resolve()
+    expect(screen.getByRole('tree')).toBeTruthy()
+    fireEvent.keyDown(screen.getByRole('tree'), { key: 'ArrowUp' })
   })
 
   it('navigates from outside the tree and tolerates a deferred focus after unmount', async () => {

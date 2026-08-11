@@ -9,11 +9,11 @@
  * @module @deepseek-ai/dsh-acp
  */
 
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import { Readable, Writable } from 'node:stream'
-import Schema from 'schemastery'
+import Schema from '@deepseek-ai/schemastery'
 import { createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
 import {
   AgentSideConnection,
@@ -66,7 +66,7 @@ function internalError(detail: string): RequestError {
   return RequestError.internalError(undefined, detail)
 }
 
-/** Plugin config: the provider/model target used for each ACP-created agent. */
+/** Plugin config: the provider/model selection used for each ACP-created agent. */
 export interface AcpConfig {
   /** Provider route for created agents. */
   provider?: string
@@ -100,7 +100,7 @@ interface SessionRecord {
 /**
  * Mount the automation-only ACP server.
  * @param ctx - Cordis context carrying the agent factory and session events.
- * @param config - Initial provider/model target and optional test transport.
+ * @param config - Initial provider/model selection and optional test transport.
  */
 export function apply(ctx: Context, config: AcpConfig): void {
   // ACP handlers execute outside this plugin's injection scope, so capture the
@@ -164,6 +164,17 @@ export function apply(ctx: Context, config: AcpConfig): void {
               update: {
                 sessionUpdate: 'agent_message_chunk',
                 content: { type: 'text', text: block.text },
+              },
+            })
+          } else if (block.type === 'image') {
+            notify({
+              sessionId: record.agent.session.id,
+              update: {
+                sessionUpdate: 'agent_message_chunk',
+                content: {
+                  type: 'text',
+                  text: `[image attachment ${block.attachment.attachmentId}]`,
+                },
               },
             })
           }
@@ -241,6 +252,10 @@ export function apply(ctx: Context, config: AcpConfig): void {
         assertOpen()
         validateSessionParams(params)
         const sessionId = SessionId(randomUUID())
+        // No preset composition: the ACP bundle keeps the model-facing rows in
+        // the host plane, so this agent reads them from the global layer. A
+        // deployment that configures a roster has to join one here first
+        // (@deepseek-ai/dsh-agent-presets README, "Composing a child agent").
         const handle = await agents.create({
           sessionId,
           meta: { cwd: params.cwd },

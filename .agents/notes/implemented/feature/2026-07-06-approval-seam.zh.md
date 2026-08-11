@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-一个包`dsh-user-approval`（`packages/ui/user-approval`）负责定义词汇表和 `ctx.approval` 服务——即机制。策略——谁来应答、某个会话是否需要被询问——不在其中：应答者是 `approval/request` waterfall 监听器，由拥有通道的插件注册（ACP（Agent Client Protocol）桥、宿主适配器、测试脚本），而每会话的策略层可以在任何通道介入之前做出决定。消费方（`dsh-tools` 的 ask 路由和沙箱升级门禁）将问题解析为一个封闭结果，并从中派生各自的工具结果。刻意设计为一个包，而非能力 seam 的三包拆分（见「替代方案」）。
+一个包`dsh-user-approval`（`packages/interaction/user-approval`）负责定义词汇表和 `ctx.approval` 服务——即机制。策略——谁来应答、某个会话是否需要被询问——不在其中：应答者是 `approval/request` waterfall 监听器，由拥有通道的插件注册（ACP（Agent Client Protocol）桥、宿主适配器、测试脚本），而每会话的策略层可以在任何通道介入之前做出决定。消费方（`dsh-tools` 的 ask 路由和沙箱升级门禁）将问题解析为一个封闭结果，并从中派生各自的工具结果。刻意设计为一个包，而非能力 seam 的三包拆分（见「替代方案」）。
 
 ### 部署如何使用它
 
@@ -77,7 +77,7 @@ ACP 桥只应答其会话映射所拥有的精确 agent 对象。它携带既有
 
 #### 实体与依赖
 
-`dsh-user-approval` 依赖 Cordis，以及会话、agent 和带 brand 的调用契约；`dsh-tools` 与 `dsh-acp` 消费它。沙箱执行器保持独立，因为升级请求归 `dsh-tool-bash` 所有。固定的派发与审计服务仍是一个包；可替换的应答者留在各自的通道所有者中。静态能力授权和 `subagent-acp` 子侧权限应答仍是独立关注点。
+`dsh-user-approval` 依赖 Cordis，以及会话、agent 和带 brand 的调用约定；`dsh-tools` 与 `dsh-acp` 消费它。沙箱执行器保持独立，因为升级请求归 `dsh-tool-bash` 所有。固定的派发与审计服务仍是一个包；可替换的应答者留在各自的通道所有者中。静态能力授权和 `subagent-acp` 子侧权限应答仍是独立关注点。
 
 ### 测试
 
@@ -95,14 +95,14 @@ ACP 桥只应答其会话映射所拥有的精确 agent 对象。它携带既有
 
 - **单一注册提供方而非 waterfall 监听器**：否决。`registerProvider()` 接口迫使所有组合问题——允许列表预过滤、外部钩子决策者、脚本化测试应答、人类前面的策略门禁——都塞进一个提供方实现。waterfall 直接复用运行时已有的组合能力、缺失时默认拒绝行为和 HMR（热模块替换）资源释放机制；seam 的 JSDoc 以约定固定单决策槽语义，而非发明一个提供方注册表。
 - **在 ACP 桥中内联 `tools/pre-execute` 权限门禁**：否决。对桥拥有的每次调用都弹出提示，会将请求策略硬编码进传输层，无法服务第二个发起方（沙箱升级发生在执行开始之后，没有 pre-execute 时刻），且钩子产生的 `ask` 决策没有共享机制。
-- **通用用户交互 seam（`ctx.userInteraction`）**：否决作为审批机制。二者骨架相似（按 agent 路由、阻塞等待人类、处理缺失），但审批的契约在每个关键维度上都更窄：封闭的结果词汇而非自由文本、附着在工具调用上的协议原生提示而非通用表单、强制的缺失时失败关闭、以及审计事件。因此审批不走已交付的 `packages/ui/user-interaction` / `ask_user_question` 信息征集路径——信息征集表单不是权限提示，自由文本应答不是封闭结果；如果二者将来趋同，共享提供方管道仍然开放。
+- **通用用户交互 seam（`ctx.userInteraction`）**：否决作为审批机制。二者骨架相似（按 agent 路由、阻塞等待人类、处理缺失），但审批的约定在每个关键维度上都更窄：封闭的结果词汇而非自由文本、附着在工具调用上的协议原生提示而非通用表单、强制的缺失时失败关闭、以及审计事件。因此审批不走已交付的 `packages/interaction/user-interaction` / `ask_user_question` 信息征集路径——信息征集表单不是权限提示，自由文本应答不是封闭结果；如果二者将来趋同，共享提供方管道仍然开放。
 - **`dsh-tools` 中的静态可选注入**：否决。vendor 的 Cordis `Inject` 类型没有 optional 标志——对象形式将服务名映射到拦截配置，声明的 inject 会阻塞 fiber。`ctx.get('approval')` 是文档化的机会性消费模式（`tool-bash` 的 owner-token 查找、loop 的持久化探测），按调用读取存在性，跨 HMR 正确降级，无需额外机制。
-- **能力 seam 的三包拆分**：否决。接口/实现/消费方适合实现可替换的 seam（bash-local vs bash-sandbox）。此处服务体是固定机制，可变部分是留在各自通道拥有者插件中的监听器——拆分只会制造一个空的实现包（「不要预防性拆分」）。
+- **能力 seam 的三包拆分**：否决。Service Definition/Service provider/Consumer 适合 Service provider 可替换的 seam（bash-local vs bash-sandbox）。此处服务体是固定机制，可变部分是留在各自通道拥有者插件中的监听器——拆分只会制造一个空的 Service provider 包（「不要预防性拆分」）。
 - **现在就提供 `allow_always`**：否决。协议能表达它，但兑现它意味着设计授权存储、作用域标识和撤销（§ 延后）。展示 harness 无法兑现的选项只会制造注定失败的授权。
 
 ## 后果
 
-实现后的契约由「测试」一节所列套件固定：
+实现后的约定由「测试」一节所列套件固定：
 
 - `allowed-once` 派发一次操作；其他所有结果都以不同原因拒绝，而 `'never'` 会在提示前拒绝。
 - 缺失、外部、无 agent、抛异常、无效或断开连接的应答路径都会失败关闭。
@@ -113,7 +113,7 @@ ACP 桥只应答其会话映射所拥有的精确 agent 对象。它携带既有
 
 - **两个都会直接作出决策的应答者会竞争同一槽位。** 兄弟插件的监听器顺序不确定，seam 无法仲裁竞争的终端应答者。通过约定缓解（每个部署一个终端应答者；仅对「先决策或委派」门禁使用 `prepend`），而非事件总线不具备的优先级机制。
 - **生产路径仅在一种组合下得到验证。** `ask` 有两个生产者家族——钩子桥通过 `tools/pre-execute`，沙箱升级通过自己的门禁——协议格式录制在沙箱示例的快照套件中；因此在更多部署组合它之前，seam 的真实覆盖面就是这一种组合。
-- **归属以 `Agent` 对象标识为键。** 应答者先在 `agent.session.id` 处解析会话映射记录，再要求该记录拥有精确的 agent 对象；当前所有路径在 loop 和各 seam 之间传递同一对象，但未来如果某个边界克隆或代理了 agent，桥会委派并失败关闭，届时需要另一种归属契约。
+- **归属以 `Agent` 对象标识为键。** 应答者先在 `agent.session.id` 处解析会话映射记录，再要求该记录拥有精确的 agent 对象；当前所有路径在 loop 和各 seam 之间传递同一对象，但未来如果某个边界克隆或代理了 agent，桥会委派并失败关闭，届时需要另一种归属约定。
 
 ## FAQ
 
@@ -123,7 +123,7 @@ ACP 桥只应答其会话映射所拥有的精确 agent 对象。它携带既有
 - **谁决定一次调用是否需要 ask？** 策略生产者：返回 `permissionDecision: ask` 的钩子、任何 `tools/pre-execute` 监听器、或沙箱升级门禁。seam 和桥只负责路由和应答；二者都不注入自己对「什么值得弹出提示」的判断。
 - **用户关闭提示或轮次在 ask 进行中中止时会发生什么？** 关闭映射为 `cancelled` 并携带自己的拒绝文本。已中止的 signal 直接结算为 `cancelled` 而不派发；ask 进行中的中止丢弃迟到的应答。当两个审计追加都提交时，任一路径都记录恰好一对事件，绝不会两对。
 - **如果客户端以 harness 从未提供的选项应答呢？** 除已提供的 `allow_once` 之外的任何选项都映射为 `rejected`——来自不合规客户端的未知 optionId 永远不能授权。
-- **subagent 的审批如何路由？** 没有应答者拥有的 agent 穿过整个 waterfall 委派并失败关闭——进程内 subagent 被刻意设计为不可应答。`'never'` 父级会把该覆盖项预置到每个进程内子 agent 的日志中（[决策](2026-07-25-subagent-policy-inheritance.md)），因此子 agent 一开始就会得知，而不是向空的 waterfall 发出 ask。`subagent-acp` 的子侧自动应答是独立的；将子 agent 的 ask 路由到父控制器已延后（§ 延后）。
+- **subagent 的审批如何路由？** 不路由：委派会把每个进程内子 agent 钉定为 `'never'`（[审批钉定决策](2026-08-10-subagent-approval-pinned-never.md)），因此子 agent 的每次 ask 都在任何应答者之前解析为 `rejected`，子 agent 则通过其运行时上下文一开始就会得知。`subagent-acp` 的子侧自动应答是独立的；将子 agent 的 ask 路由到父控制器已延后（§ 延后）。
 - **`policy: 'never'` 在运行时实际改变了什么？** 服务在派发任何应答者之前，将该会话的每次 ask 解析为 `rejected`（在服务内部，因此没有注册顺序能绕过它）；下一份原子化的运行时上下文快照会声明该策略；每次成功的自动拒绝都会记录审计对。
 - **热重载或应答者在会话中途卸载时会发生什么？** 应答者随其拥有的 fiber 一起 dispose，因此下一次 ask 降级为 `unavailable` 而非挂在死通道上；重新挂载会重新注册应答者，无需追赶状态。
 - **客户端从哪里获得审批上下文？** 请求携带精确的 `callId` 和发起方的人类可读 `reason`；通道适配器可自行关联更丰富的工具调用状态，而无需在审批 seam 中重复携带参数。
@@ -132,8 +132,8 @@ ACP 桥只应答其会话映射所拥有的精确 agent 对象。它携带既有
 
 本设计复用或对照的仓库内先例：
 
-- `fs/write-intent` 门禁（`packages/fs/fs/`）——文档化的单占用决策槽 waterfall 语义（先到先得，通过 `next()` 委派），应答者契约复用了它。
+- `fs/write-intent` 门禁（`packages/fs/fs/`）——文档化的单占用决策槽 waterfall 语义（先到先得，通过 `next()` 委派），应答者约定复用了它。
 - `hook/invoked`/`hook/result`——仅日志审计对先例，`approval/asked`/`approval/decided` 沿用了它；[钩子桥 Agent Note](2026-06-30-hook-bridges.md) 交付了 `permissionDecision: ask`，即第一个生产者。
-- [拦截 seam Agent Note](2026-06-30-interception-seams.md)——`tools/pre-execute` 的 `allow`/`deny`/`ask` 词汇，本 seam 服务其中的 `ask`。
+- [拦截扩展点 Agent Note](2026-06-30-interception-extension-points.md)——`tools/pre-execute` 的 `allow`/`deny`/`ask` 词汇，本 seam 服务其中的 `ask`。
 - [仅面向自动化的 ACP Agent Note](../simplification/2026-07-23-acp-automation-only-protocol.md)——应答者路由时对会话映射执行的精确 agent 归属检查；[多会话 Agent Note](2026-06-14-acp-multi-session.md)——本设计实现的每会话权限归属阻塞项。
 - 机会性 `ctx.get()` 消费模式（`tool-bash` 的 owner-token 查找、loop 的持久化探测）——`dsh-tools` 消费该 seam 而不阻塞其 fiber 的方式。

@@ -7,7 +7,7 @@
  * scope-birth roster warm — is SlashController behavior, tested on a real
  * session scope (createScope).
  */
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { createScope, scopeOf } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
@@ -483,7 +483,7 @@ describe('pick / scoped input events', () => {
     expect(inserts).toEqual([{ reference: insert, span: { start: 0, end: 2, draftRev: 3 } }])
   })
 
-  it('routes a text outcome through the scoped insert-text event (decision 21) and closes the menu', async () => {
+  it('routes a text outcome through the scoped insert-text event and closes the menu', async () => {
     const { controller, actx } = pickBench(() => ({ text: '/goal ' }))
     const texts: Array<{ text: string; span: unknown }> = []
     actx.on('slash/input-insert-text', (req) => {

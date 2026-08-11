@@ -2,10 +2,12 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { CompactionId } from '@deepseek-ai/dsh-compact'
 import LlmService, { CallId, createUserMessage, GenerateOptions, LlmAdapter, StreamChunk } from '@deepseek-ai/dsh-llm'
 import {
+  type Config,
   type ReplayEntry,
   type SessionScript,
   apply,
@@ -23,7 +25,7 @@ import {
 /**
  * Unit tests for the replay llm/stream plugin. These drive the listener through
  * the REAL LlmService waterfall (not a hand-rolled stub) so they verify the
- * actual seam the snapshot harness depends on, plus the pure
+ * actual LLM capability seam the snapshot harness depends on, plus the pure
  * derive/parse/load helpers that turn a recorded session JSONL into a script.
  */
 
@@ -34,6 +36,8 @@ const TEXT_CHUNKS: StreamChunk[] = [
   { type: 'usage', usage: { inputTokens: 1, outputTokens: 1 } },
   { type: 'finish', reason: { kind: 'stop' } },
 ]
+
+const COMPACTION_ID = CompactionId('replay-compaction')
 
 /** Build a minimal session-JSONL string: a header line + the given events. */
 function sessionJsonl(events: SessionEvent[], header?: { id?: string; createdAt?: number; seedLength?: number }): string {
@@ -178,6 +182,148 @@ describe('deriveReplayScript', () => {
     expect(deriveReplayScript(events)).toEqual([{ kind: 'chunks', chunks: errChunks }])
   })
 
+  it('inserts compact/summary output between the calls surrounding it', () => {
+    const overflow: StreamChunk[] = [
+      { type: 'finish', reason: { kind: 'error', failure: { message: 'too large', code: 'CONTEXT_WINDOW_EXCEEDED' } } },
+    ]
+    const block = { type: 'text' as const, text: 'durable checkpoint' }
+    const rawOutput = [block]
+    const usage = { inputTokens: 9, outputTokens: 2 }
+    const summaryChunks: StreamChunk[] = [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'block-end', index: 0, block },
+      { type: 'usage', usage },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    let seq = 1
+    const events: SessionEvent[] = [
+      ...overflow.map(chunk => chunkEvent(seq++, 1, 2, chunk)),
+      {
+        type: 'compact/start',
+        seq: seq++,
+        time: 0,
+        data: { compactionId: COMPACTION_ID, turn: 1 },
+      },
+      {
+        type: 'compact/summary',
+        seq: seq++,
+        time: 0,
+        data: {
+          compactionId: COMPACTION_ID,
+          summary: rawOutput,
+          rawOutput,
+          llmStreamCall: true,
+          shadowedRange: { start: 1, end: 1 },
+          shadowedSeqs: [1],
+          shadowedTokenCount: 20,
+          provider: 'mock',
+          model: 'mock',
+          usage,
+        },
+      },
+      ...TEXT_CHUNKS.map(chunk => chunkEvent(seq++, 1, 2, chunk)),
+    ]
+
+    expect(deriveReplayScript(events)).toEqual([
+      { kind: 'chunks', chunks: overflow },
+      { kind: 'chunks', chunks: summaryChunks },
+      { kind: 'chunks', chunks: TEXT_CHUNKS },
+    ])
+  })
+
+  it('does not infer an LLM call from compact/summary without raw output', () => {
+    const event: SessionEvent<'compact/summary'> = {
+      type: 'compact/summary',
+      seq: 1,
+      time: 0,
+      data: {
+        compactionId: COMPACTION_ID,
+        summary: [{ type: 'text', text: 'template result' }],
+        shadowedRange: { start: 1, end: 1 },
+        shadowedSeqs: [1],
+        shadowedTokenCount: 20,
+        provider: 'template',
+        model: 'template',
+      },
+    }
+
+    expect(deriveReplayScript([event])).toEqual([])
+  })
+
+  it('does not infer a local LLM call from external compact output', () => {
+    const block = { type: 'text' as const, text: 'remote summary' }
+    const event: SessionEvent<'compact/summary'> = {
+      type: 'compact/summary',
+      seq: 1,
+      time: 0,
+      data: {
+        compactionId: COMPACTION_ID,
+        summary: [block],
+        rawOutput: [block],
+        shadowedRange: { start: 1, end: 1 },
+        shadowedSeqs: [1],
+        shadowedTokenCount: 20,
+        provider: 'remote',
+        model: 'remote',
+      },
+    }
+
+    expect(deriveReplayScript([event])).toEqual([])
+  })
+
+  it('rejects a persisted marked compact LLM call without its complete output', () => {
+    const [event] = parseSessionLog([
+      JSON.stringify({ type: 'session', version: 0, id: 'invalid-compact', createdAt: 0 }),
+      JSON.stringify({
+        type: 'compact/summary',
+        seq: 1,
+        time: 0,
+        data: {
+          compactionId: COMPACTION_ID,
+          summary: [{ type: 'text', text: 'missing source events' }],
+          llmStreamCall: true,
+          shadowedRange: { start: 1, end: 1 },
+          shadowedSeqs: [1],
+          shadowedTokenCount: 20,
+          provider: 'mock',
+          model: 'mock',
+        },
+      }),
+    ].join('\n'))
+
+    expect(() => deriveReplayScript(event === undefined ? [] : [event]))
+      .toThrow(/LLM stream call without rawOutput/)
+  })
+
+  it('derives a compact/summary stream when usage is unavailable', () => {
+    const block = { type: 'text' as const, text: 'summary without usage' }
+    const event: SessionEvent<'compact/summary'> = {
+      type: 'compact/summary',
+      seq: 1,
+      time: 0,
+      data: {
+        compactionId: COMPACTION_ID,
+        summary: [block],
+        rawOutput: [block],
+        llmStreamCall: true,
+        shadowedRange: { start: 1, end: 1 },
+        shadowedSeqs: [1],
+        shadowedTokenCount: 20,
+        provider: 'mock',
+        model: 'mock',
+      },
+    }
+
+    expect(deriveReplayScript([event])).toEqual([{
+      kind: 'chunks',
+      chunks: [
+        { type: 'block-start', index: 0, blockType: 'text' },
+        { type: 'block-end', index: 0, block },
+        { type: 'finish', reason: { kind: 'stop' } },
+      ],
+    }])
+  })
+
   it('throws on a group that lacks a terminal finish chunk (a thrown stream)', () => {
     // A thrown stream(): prefix chunks logged, then turn/end (error reason), NO finish.
     const events: SessionEvent[] = [
@@ -200,6 +346,28 @@ describe('deriveReplayScript', () => {
       chunkEvent(1, 1, 1, { type: 'block-start', index: 0, blockType: 'text' }),
       chunkEvent(2, 1, 2, { type: 'finish', reason: { kind: 'stop' } }),
     ]
+    expect(() => deriveReplayScript(events)).toThrow(/model call 1\/1 ended without a finish chunk/)
+  })
+
+  it('rejects an unfinished call at a compact summary boundary', () => {
+    const events: SessionEvent[] = [
+      chunkEvent(1, 1, 1, { type: 'block-start', index: 0, blockType: 'text' }),
+      {
+        type: 'compact/summary',
+        seq: 2,
+        time: 0,
+        data: {
+          compactionId: COMPACTION_ID,
+          summary: [{ type: 'text', text: 'external checkpoint' }],
+          shadowedRange: { start: 1, end: 1 },
+          shadowedSeqs: [1],
+          shadowedTokenCount: 20,
+          provider: 'external',
+          model: 'external',
+        },
+      },
+    ]
+
     expect(() => deriveReplayScript(events)).toThrow(/model call 1\/1 ended without a finish chunk/)
   })
 })
@@ -425,8 +593,15 @@ describe('installLlmReplay (through the real LlmService)', () => {
             backoff: { initialDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 },
           },
           models: [
-            { id: 'flash', contextWindow: 128_000 },
-            { id: 'pro', name: 'Pro', description: 'Larger model' },
+            {
+              id: 'flash',
+              contextWindow: 128_000,
+              inputModalities: ['text', 'image'],
+              defaultMaxTokens: 64_000,
+              reasoningEfforts: ['off', 'max'],
+              defaultReasoningEffort: 'max',
+            },
+            { id: 'pro', name: 'Pro', description: 'Larger model', reasoningEfforts: ['high'] },
           ],
         },
         { id: 'empty' },
@@ -438,14 +613,26 @@ describe('installLlmReplay (through the real LlmService)', () => {
       { id: 'empty', name: 'empty' },
     ])
     await expect(ctx.llm.listModels('deepseek')).resolves.toEqual([
-      { provider: 'deepseek', id: 'flash', name: 'flash' },
+      { provider: 'deepseek', id: 'flash', name: 'flash', inputModalities: ['text', 'image'] },
       { provider: 'deepseek', id: 'pro', name: 'Pro', description: 'Larger model' },
     ])
     await expect(ctx.llm.listModels('empty')).resolves.toEqual([])
     await expect(ctx.llm.resolveModelInfo('deepseek', 'flash')).resolves.toMatchObject({
       context: { contextWindow: 128_000 },
+      inputModalities: ['text', 'image'],
+      defaultMaxTokens: 64_000,
+      reasoning: {
+        efforts: [{ id: 'off', name: 'off' }, { id: 'max', name: 'max' }],
+        defaultEffort: 'max',
+      },
     })
+    await expect(ctx.llm.resolveModelInfo('deepseek', 'pro')).resolves.not.toHaveProperty('inputModalities')
     await expect(ctx.llm.resolveModelInfo('deepseek', 'pro')).resolves.not.toHaveProperty('context')
+    // Efforts without a configured default preserve the provider's own default.
+    await expect(ctx.llm.resolveModelInfo('deepseek', 'pro')).resolves.toMatchObject({
+      reasoning: { efforts: [{ id: 'high', name: 'high' }] },
+    })
+    await expect(ctx.llm.resolveModelInfo('deepseek', 'pro')).resolves.not.toHaveProperty('defaultMaxTokens')
     await expect(ctx.llm.resolveModelInfo('deepseek', 'unlisted')).resolves.not.toHaveProperty('context')
     await expect(ctx.llm.resolveModelInfo('empty', 'unlisted')).resolves.not.toHaveProperty('context')
     expect(ctx.llm.providerRetryPolicy('deepseek')).toMatchObject({
@@ -928,9 +1115,29 @@ describe('apply (the plugin entry)', () => {
     writeFileSync(file, sessionJsonl(TEXT_CHUNKS.map((c, i) => chunkEvent(i + 1, 1, 1, c))), 'utf8')
     const ctx = new Context()
     await ctx.plugin(LlmService)
-    apply(ctx, { file, providers: [{ id: 'm', models: [{ id: 'm' }] }], paceMs: 1 })
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'm', name: 'm' }])
+    apply(ctx, {
+      file,
+      providers: [
+        { id: 'm', models: [{ id: 'm', inputModalities: ['image'] }, { id: 'text' }] },
+        { id: 'empty' },
+      ],
+      paceMs: 1,
+    })
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'm', name: 'm' }, { id: 'empty', name: 'empty' }])
+    await expect(ctx.llm.resolveModelInfo('m', 'm')).resolves.toMatchObject({ inputModalities: ['image'] })
     expect(await drain(ctx.llm.stream({ provider: 'm', model: 'm', messages: [] }))).toEqual(TEXT_CHUNKS)
+  })
+
+  it.each([
+    ['a string', 'image'],
+    ['an unknown modality', ['audio']],
+  ])('rejects inputModalities configured as %s during load', (_case, inputModalities) => {
+    const ctx = new Context()
+    const providers = [{ id: 'm', models: [{ id: 'm', inputModalities }] }] as unknown as
+      NonNullable<Config['providers']>
+    expect(() => { apply(ctx, { file, providers }) }).toThrow(
+      'llm-replay: provider "m" model "m" inputModalities must be an array containing only "text" and "image"',
+    )
   })
 
   it('falls back to $DSH_SNAPSHOT_FILE / $DSH_SNAPSHOT_OVERRIDE when config is empty', async () => {

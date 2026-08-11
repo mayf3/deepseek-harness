@@ -1,6 +1,6 @@
-/** Package-owned hook provenance-stream invariants. @module @deepseek-ai/dsh-hook-protocol/invariant */
+/** Package-owned hook invocation/result stream invariants. @module @deepseek-ai/dsh-hook-protocol/invariant */
 
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import type {} from './types.ts'
@@ -98,7 +98,7 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
     }
     if (event.type !== 'hook/invoked' && event.type !== 'hook/result') return
     const candidate = staged.get(event)
-    /* v8 ignore next -- internal/dispatch stages every hook provenance event */
+    /* v8 ignore next -- internal/dispatch stages every hook invocation/result event */
     if (candidate === undefined || candidate.session !== session) return fail('hook event published without pre-commit validation')
     staged.delete(event)
     applyHookTransition(trace.pending, candidate.transition)

@@ -1,13 +1,13 @@
-/** The default composer body: the 'conversation.composer.bar' slot entry
- * (decision 20). Machine state arrives through the standard provide channel
+/** The default composer body: the 'conversation.composer.bar' slot entry.
+ * Machine state arrives through the standard provide channel
  * (useInput + inputActions); the keyboard/DOM command face and stop arrive
  * through this entry's own inject, whose hooks compartment binds
  * useNotices/useLexicon; layout-phase inputs (variant, placeholder,
  * region-slot content) ride the owner props. Session facts
  * (running/removed/promptError) are self-selected via useSession. */
 
-import { useEffect, useRef } from 'react'
-import type { ChangeEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent, DragEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import { IconPlusOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: the `plan` projection key merge (the TodoDock posture — the
@@ -16,10 +16,11 @@ import type {} from '@deepseek-ai/dsh-plan-mode/client'
 // Type-only: the `goal` projection key merge (hint disambiguation).
 import type {} from '@deepseek-ai/dsh-goal/client'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ComposerBarProps } from '../contract/slots.ts'
+import type { ComposerAttachment, ComposerBarProps } from '../contract/slots.ts'
 import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
 import { ContextMeter } from './ContextMeter.tsx'
+import { ImageLightbox } from './ImageLightbox.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
 import css from './InputBar.module.css'
 
@@ -35,9 +36,12 @@ export interface InputBarError {
 export type InputBarProps = ComposerBarProps
 
 export function InputBar({
-  useSession, useInput, inputActions, keyboard, resolveSubmitMode, toggleCommandMenu, stop, command, t,
+  useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages,
+  resolveSubmitMode, toggleCommandMenu, stop, command, t,
   renderSlot, useNotices, useLexicon, useMenuLauncher,
-  useProjection, sessionId, variant, disabled: inert = false, placeholder, accessory, overlay, leftItems, rightItems, footer,
+  useProjection, sessionId, variant, disabled: inert = false, blocked,
+  workspacePickerOpen = false, onRequestWorkspace,
+  placeholder, accessory, overlay, leftItems, rightItems, footer,
 }: InputBarProps) {
   const input = useInput(s => s)
   const notice = useNotices(s => s)
@@ -62,8 +66,16 @@ export function InputBar({
   // current; the bar renders the same DOM inert instead of a parallel tree.
   const live = input !== undefined && keyboard !== undefined && inputActions !== undefined
   const draft = input?.draft ?? ''
-  const empty = draft.trim() === ''
+  const attachments = useMemo(
+    () => input === undefined || draftImages === undefined ? [] : draftImages(input.imageIds),
+    [draftImages, input?.imageIds],
+  )
+  const empty = draft.trim() === '' && attachments.length === 0
+  const [preview, setPreview] = useState<ComposerAttachment | null>(null)
+  const [dragActive, setDragActive] = useState(false)
+  const [dropError, setDropError] = useState<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const dragDepthRef = useRef(0)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const mirrorRef = useRef<HTMLDivElement | null>(null)
   // IME guard: composition Enter picks a candidate, it must not send. The ref outlives renders;
@@ -82,13 +94,41 @@ export function InputBar({
   // (undefined = capability absent → the chip renders nothing).
   const permissions = useProjection('permissions')
 
-  // Queue cut 1: running input stays free; locked = session removed, the
-  // inert no-workspace state, or the machine faces absent (no session). The
-  // transient machine locks (adjudicating pending / submitting) render
-  // read-only — the draft stays visible and focused, keystrokes drop.
-  const disabled = removed || inert || !live
+  // A continuable child without its live parent cannot accept human input,
+  // but its independent Stop below stays available while it runs.
+  const continuable = subagent?.address.mode === 'continuable'
+  const parentOffline = continuable && !subagent.parentAvailable
+  // Running input stays free; locked = session removed, the
+  // inert no-workspace state, the machine faces absent (no session), or a
+  // parent-offline continuable child. An owner block also disables input;
+  // adjudicating and submitting render read-only so the draft stays visible.
+  const disabled = removed || inert || !live || blocked !== undefined || parentOffline
   const locked = disabled
+  // The model seat is the ONE control a block leaves live: every block this
+  // contract has is cleared by choosing a model, so locking it too would leave
+  // the composer asking for the only thing it prevents. The other reasons to
+  // be disabled do lock it — there is no session to choose a model for.
+  const modelSeatLocked = removed || inert || !live
   const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting'
+  // The no-workspace textarea remains the resident DOM node but acts as the
+  // existing picker trigger. Message controls stay locked until a Session
+  // exists; the trigger itself is read-only rather than disabled so pointer
+  // and keyboard users can reach the recovery action.
+  const workspaceTrigger = inert && !removed && onRequestWorkspace !== undefined
+  const textareaDisabled = removed || (locked && !workspaceTrigger)
+  const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && subagent === null
+    && input.queue.some(row => row.placement === 'queued')
+
+  useEffect(() => {
+    if (input === undefined || inputActions === undefined) return
+    if (attachments.length !== input.imageIds.length) {
+      inputActions.pruneImages(attachments.map(attachment => attachment.id))
+    }
+  }, [attachments, input?.imageIds, inputActions])
+
+  useEffect(() => {
+    if (preview !== null && !attachments.some(attachment => attachment.id === preview.id)) setPreview(null)
+  }, [attachments, preview])
 
   // Scroll the draft scrollport the minimum that brings `caret` into view — the
   // browser's own behavior for typing, performed for the paths where it does
@@ -200,8 +240,15 @@ export function InputBar({
   }, [])
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
-    // Absent machine (no session): the textarea is disabled so events cannot
-    // fire; the guard narrows the faces for the paths below.
+    if (workspaceTrigger) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        onRequestWorkspace()
+      }
+      return
+    }
+    // Absent machine without a Workspace recovery action stays disabled; the
+    // guard narrows the faces for the paths below.
     if (keyboard === undefined || inputActions === undefined) return
     // Shift+Enter is the native newline UNCONDITIONALLY — decided before the
     // IME guard so a composition-closing Shift+Enter still breaks the line.
@@ -247,15 +294,25 @@ export function InputBar({
     e.preventDefault()
     if (e.repeat) return // held-down Enter must not machine-gun sends
     if (locked || machineBusy) return
+    const accelerated = e.ctrlKey || e.metaKey
+    // Empty-draft accelerated Enter acts on the queue instead of the (empty)
+    // draft: the machine rejects empty drafts, so the gesture steers every
+    // still-pending queued message into the running turn (the dock's per-row
+    // steer button applied to the whole queue). Steering needs the same
+    // window as the per-row button: a running ordinary session.
+    if (accelerated && canSteerQueue) {
+      keyboard.steerQueue()
+      return
+    }
     keyboard.submit(resolveSubmitMode(
       running,
-      e.ctrlKey || e.metaKey ? 'accelerated' : 'enter',
+      accelerated ? 'accelerated' : 'enter',
       subagent === null,
     ))
   }
 
   const onChange = (e: ChangeEvent<HTMLTextAreaElement>): void => {
-    if (keyboard === undefined) return // absent machine: disabled textarea, no events
+    if (keyboard === undefined || locked) return // disabled/read-only states cannot edit the draft
     if (machineBusy) return // submitting is the read-only span; adjudicating holds the pending lock
     const next = e.target.value
     keyboard.setDraft(next)
@@ -281,7 +338,7 @@ export function InputBar({
   /* oxlint-enable typescript/no-unnecessary-condition */
 
   const onCopyOrCut = (e: React.ClipboardEvent<HTMLTextAreaElement>, cut: boolean): void => {
-    if (input === undefined || keyboard === undefined) return // absent machine: disabled textarea, no events
+    if (input === undefined || keyboard === undefined) return // absent machine: no draft can be copied or cut
     const el = e.currentTarget
     const { start, end } = selectionOf(el)
     if (start === end) return
@@ -306,10 +363,18 @@ export function InputBar({
   }
 
   const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>): void => {
-    if (keyboard === undefined) return // absent machine: disabled textarea, no events
+    if (keyboard === undefined) return // absent machine: no draft can accept a paste
     if (machineBusy || locked) return
+    const files = Array.from(e.clipboardData.items)
+      .filter(item => item.kind === 'file')
+      .map(item => item.getAsFile())
+      .filter((file): file is File => file !== null)
+    if (files.length > 0 && addImages !== undefined) setDropError(addImages(files))
     const text = e.clipboardData.getData('text/plain')
-    if (text === '') return
+    if (text === '') {
+      if (files.length > 0) e.preventDefault()
+      return
+    }
     e.preventDefault()
     const el = e.currentTarget
     const sel = selectionOf(el)
@@ -322,6 +387,39 @@ export function InputBar({
     restoreCaret(el, caret)
     keyboard.track(keyboard.snapshot.draft, caret)
   }
+
+  const onDragEnter = (event: DragEvent<HTMLDivElement>): void => {
+    if (!event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    if (locked || machineBusy || addImages === undefined) return
+    dragDepthRef.current += 1
+    setDropError(null)
+    setDragActive(true)
+  }
+
+  const onDragOver = (event: DragEvent<HTMLDivElement>): void => {
+    if (!event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = locked || machineBusy || addImages === undefined ? 'none' : 'copy'
+  }
+
+  const onDragLeave = (event: DragEvent<HTMLDivElement>): void => {
+    if (!event.dataTransfer.types.includes('Files') || locked || machineBusy) return
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setDragActive(false)
+  }
+
+  const onDrop = (event: DragEvent<HTMLDivElement>): void => {
+    if (!event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    dragDepthRef.current = 0
+    setDragActive(false)
+    if (locked || machineBusy || addImages === undefined) return
+    const dropped = [...event.dataTransfer.files]
+    if (dropped.length > 0) setDropError(addImages(dropped))
+  }
+
+  const closePreview = useCallback(() => { setPreview(null) }, [])
 
   const onSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>): void => {
     // Any caret/selection gesture ends a live paste attempt (the machine
@@ -344,11 +442,14 @@ export function InputBar({
     if (el !== null) toggleCommandMenu?.(selectionOf(el))
   }
 
-  const ordinary = subagent === null
-  const stopping = running && ordinary
-  const primaryLabel = stopping ? t('input.stop') : t('input.send')
+  // Ordinary sessions retain their primary Send/Stop toggle. A continuable
+  // child keeps Send as the primary action and exposes Stop independently so
+  // pointer users can queue follow-ups while its current turn is running.
+  const primaryStops = running && subagent === null
+  const interruptible = running && continuable
+  const primaryLabel = primaryStops ? t('input.stop') : t('input.send')
   const onPrimary = (): void => {
-    if (stopping) {
+    if (primaryStops) {
       stop?.()
       return
     }
@@ -372,7 +473,7 @@ export function InputBar({
   const backdrop: ReactNode[] = []
   {
     // Segment boundaries: the token range end, every chip offset, and every
-    // text-ref range (decision 21) — merged in draft order (the sources never
+    // text-ref range — merged in draft order (the sources never
     // overlap: chips sit on placeholders, text-refs on plain tokens, the
     // claim token only leads).
     let cursor = 0
@@ -417,7 +518,7 @@ export function InputBar({
         )
         cursor = chip.offset + 1 // the placeholder char the chip stands for
       } else {
-        // Plain-range highlight (decision 21): the glyphs stay the
+        // Plain-range highlight: the glyphs stay the
         // textarea's (advance untouched); the mark paints the chip look.
         backdrop.push(
           <mark key={`ref-${b.ref.start}`} className={css.textRef} data-decoration="text-ref">
@@ -429,7 +530,7 @@ export function InputBar({
     }
     pushPlain(draft.length)
     if (deco.hint !== null) {
-      // Claim tokens are shaped `/name ` (trailing space); trim to the bare name.
+      // Claim tokens have the `/name ` format (trailing space); trim to the bare name.
       const commandName = input?.claim?.token.slice(1).trim() ?? ''
       const hintKey = `hint.${commandName === 'goal' && hasGoal ? 'goal.active' : commandName}`
       // Dynamic lookup by claimed command name: unknown commands miss the
@@ -452,9 +553,50 @@ export function InputBar({
           {notice.text}
         </div>
       )}
-      <div className={css.card} data-composer-card>
+      {/* Trigger clicks land on the card, not the textarea: the toolbar row's
+          disabled controls swallow clicks otherwise (the CSS state disarms
+          their pointer events), so the WHOLE capsule is the pick target.
+          pointerdown stops here so the Menu's outside-close cannot race the
+          click's reopen (close-then-open flickers the chip's open echo). */}
+      {dropError !== null && <div className={css.error} role="alert">{dropError}</div>}
+      <div
+        className={clsx(css.card, workspaceTrigger && css.cardWorkspaceTrigger, dragActive && css.dragActive)}
+        data-composer-card
+        onClick={workspaceTrigger ? onRequestWorkspace : undefined}
+        onPointerDown={workspaceTrigger ? (e) => { e.stopPropagation() } : undefined}
+        onDragEnter={onDragEnter}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+      >
+        {dragActive && <div className={css.dropHint} role="status">{t('image.dropHint')}</div>}
         {overlay !== undefined && <div className={css.overlayAnchor}>{overlay}</div>}
         {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
+        {attachments.length > 0 && (
+          <div className={css.attachments} role="group" aria-label={t('image.pending')}>
+            {attachments.map(attachment => (
+              <div key={attachment.id} className={css.attachment}>
+                <button
+                  type="button"
+                  className={css.thumbnail}
+                  title={t('image.openOriginal')}
+                  onDoubleClick={() => { setPreview(attachment) }}
+                >
+                  <img src={attachment.previewUrl} alt={attachment.file.name || t('image.pending')} />
+                </button>
+                <button
+                  type="button"
+                  className={css.remove}
+                  aria-label={t('image.remove', { name: attachment.file.name })}
+                  onClick={() => {
+                    setDropError(null)
+                    removeImage?.(attachment.id)
+                  }}
+                >×</button>
+              </div>
+            ))}
+          </div>
+        )}
         {/* One scrollport, two text layers. The hidden mirror renders draft+'\n' and stretches the
             stack to the draft's FULL height (counting rows by '\n' cannot see soft wraps); the
             absolutely-positioned backdrop and textarea ride that height, and .scroll — capped at 14
@@ -469,14 +611,27 @@ export function InputBar({
               ref={inputRef}
               className={css.input}
               value={draft}
-              disabled={locked}
-              readOnly={machineBusy}
+              disabled={textareaDisabled}
+              readOnly={machineBusy || workspaceTrigger}
+              aria-label={workspaceTrigger ? t('hero.chooseWorkspace') : undefined}
+              aria-haspopup={workspaceTrigger ? 'menu' : undefined}
+              aria-expanded={workspaceTrigger ? workspacePickerOpen : undefined}
               data-phase={input?.phase ?? 'inert'}
-              placeholder={placeholder ?? (disabled
-                ? t('placeholder.unavailable')
-                : planActive ? t('placeholder.plan') : t('placeholder.default'))}
+              placeholder={placeholder ?? (parentOffline
+                ? t('placeholder.parentOffline')
+                : disabled
+                  ? t('placeholder.unavailable')
+                  // The steer hint deliberately outranks the plan placeholder:
+                  // while it shows, the whole-queue gesture is genuinely available
+                  // (the gate never consults plan mode), so the actionable hint wins.
+                  : canSteerQueue
+                    ? t('placeholder.steerQueue')
+                    : planActive ? t('placeholder.plan') : t('placeholder.default'))}
               rows={2}
-              onChange={onChange}
+              onChange={(event) => {
+                setDropError(null)
+                onChange(event)
+              }}
               onKeyDown={onKeyDown}
               onSelect={onSelect}
               onCopy={(e) => { onCopyOrCut(e, false) }}
@@ -512,19 +667,34 @@ export function InputBar({
           </div>
           <div className={css.trailing}>
             {rightItems}
-            {renderSlot('conversation.input.model', { locked })}
+            {renderSlot('conversation.input.model', { locked: modelSeatLocked })}
             <ContextMeter useProjection={useProjection} t={t} />
-            {/* {machineBusy && <span className={css.pending} data-input-pending aria-label="处理中" />} */}
+            {interruptible && (
+              <Tooltip label={t('input.stop')} side="top" delayMs={500}>
+                <button
+                  type="button"
+                  className={css.primary}
+                  aria-label={t('input.stop')}
+                  disabled={stop === undefined}
+                  onMouseDown={keepFocus}
+                  onClick={stop}
+                >
+                  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+                    <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
+                  </svg>
+                </button>
+              </Tooltip>
+            )}
             <Tooltip label={primaryLabel} side="top" delayMs={500}>
               <button
                 type="button"
                 className={css.primary}
                 aria-label={primaryLabel}
-                disabled={stopping ? stop === undefined : empty || disabled || machineBusy}
+                disabled={primaryStops ? stop === undefined : empty || disabled || machineBusy}
                 onMouseDown={keepFocus}
                 onClick={onPrimary}
               >
-                {stopping ? (
+                {primaryStops ? (
                   <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
                     <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
                   </svg>
@@ -538,6 +708,14 @@ export function InputBar({
           </div>
         </div>
       </div>
+      {preview !== null && (
+        <ImageLightbox
+          src={preview.previewUrl}
+          alt={preview.file.name || t('image.original')}
+          onClose={closePreview}
+          t={t}
+        />
+      )}
       {footer}
     </div>
   )

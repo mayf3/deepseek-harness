@@ -1,5 +1,5 @@
 /**
- * Per-run worker-side vm hooks, child RPC, concurrency/caps, cancellation, and result shaping; it
+ * Per-run worker-side vm hooks, child RPC, concurrency/caps, cancellation, and result serialization; it
  * never touches Cordis. Script values leaving the realm are materialized as plain JSON before
  * messaging. Values entering the trusted model-written realm are passed directly; `args` alone is
  * cloned so script mutation cannot alter initialization data. See `./realm.ts` for the trust model.
@@ -180,7 +180,7 @@ export class WorkflowExecution {
         return { value: null, stopReason: 'cancelled', error: this.cancelledError().message, agentsStarted: this.started }
       }
       // renderThrown is total (thrown values of any realm), so this arm
-      // cannot throw — drive() resolving is the `result` never-rejects seam
+      // cannot throw — drive() resolving is the `result` never-rejects contract
       // contract.
       return { value: null, stopReason: 'error', error: renderThrown(error), agentsStarted: this.started }
     }
@@ -283,7 +283,7 @@ export class WorkflowExecution {
       } catch (error: unknown) {
         // The host refuses starts once the run is cancelled — a refusal that
         // races our own cancel state must read as the cancellation it is,
-        // not as a broken seam.
+        // not as a broken contract.
         if (this.isCancelled()) throw this.cancelledError()
         throw new WorkflowError(`agent() could not start a child: ${renderThrown(error)}`, 'AGENT_START', { cause: error })
       }

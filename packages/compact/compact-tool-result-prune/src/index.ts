@@ -4,8 +4,8 @@
  * @module @deepseek-ai/dsh-compact-tool-result-prune
  */
 
-import { Context, Service } from 'cordis'
-import z from 'schemastery'
+import { Context, Service } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { freezeMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, ToolResultMessage } from '@deepseek-ai/dsh-session'
@@ -29,7 +29,7 @@ export type {
   ToolResultPruneConfig,
 } from './types.ts'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     toolResultPrune: ToolResultPruneService
   }
@@ -124,7 +124,7 @@ export class ToolResultPruneService extends Service {
   /**
    * Prune every over-budget tool result from one stable current-surface snapshot.
    * Each replacement preserves the complete event data except for `content`,
-   * points at the shadowed node for durable provenance and replay, and is
+   * cites the shadowed node so replay can recover the replacement input, and is
    * immediately preceded by a `compact/prune` shadow-price event pricing the
    * shadowed node through the injected token meter, so pure consumers can
    * subtract it without per-node state.

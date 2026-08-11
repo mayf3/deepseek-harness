@@ -27,8 +27,8 @@ const ALL_KINDS = ['dependencies', 'devDependencies', 'optionalDependencies', 'p
  * root manifest), test infrastructure, the documentation site, the runnable
  * demo leaves, and the native launcher's build workspace. A runtime
  * declaration by anything outside these areas is a disclosure-relevant
- * runtime dependency, because `scripts/install.sh` installs the repository
- * itself and any plugin package can be mounted from a user's `cordis.yml`.
+ * runtime dependency because any plugin package can be mounted from a user's
+ * `cordis.yml`.
  */
 const DEV_ONLY_AREAS = [
   'package.json',
@@ -39,14 +39,11 @@ const DEV_ONLY_AREAS = [
   'native/',
 ] as const
 
-/**
- * First-party packages released from sibling repositories under the project's
- * own license: reachable from workspace manifests but not third-party.
- */
+/** First-party public native packages: reachable at runtime but not third-party. */
 const FIRST_PARTY = new Set([
-  'node-addon-landlock-run',
-  'node-addon-landlock-run-linux-arm64',
-  'node-addon-landlock-run-linux-x64',
+  '@deepseek-ai/node-addon-landlock-run',
+  '@deepseek-ai/node-addon-landlock-run-linux-arm64',
+  '@deepseek-ai/node-addon-landlock-run-linux-x64',
 ])
 
 /** Official SDK identity covered by the project's narrow owner authorization. */
@@ -86,7 +83,7 @@ const OVERRIDES: Record<string, { license?: string; repo?: string }> = {
  * the generator fails when a manifest names a package this map misses.
  */
 const PYTHON_METADATA: Record<string, { license: string; repo: string; role: string }> = {
-  pydantic: { license: 'MIT', repo: 'https://github.com/pydantic/pydantic', role: 'runtime dependency of `deepseek-harness`' },
+  pydantic: { license: 'MIT', repo: 'https://github.com/pydantic/pydantic', role: 'runtime dependency of `deepseek-harness-sdk`' },
   hatchling: { license: 'MIT', repo: 'https://github.com/pypa/hatch', role: 'build backend' },
   pytest: { license: 'MIT', repo: 'https://github.com/pytest-dev/pytest', role: 'test-only' },
 }
@@ -135,16 +132,13 @@ function readManifest(rel: string): Manifest {
  * here, so a new member area (`tools/*`) is read the day it is declared.
  * @returns one glob per manifest-bearing location, repository-relative.
  */
-export function manifestPatterns(rootMembers: readonly string[], nativeMembers: readonly string[]): string[] {
+export function manifestPatterns(rootMembers: readonly string[]): string[] {
   return [
     'package.json',
     ...rootMembers.map(member => `${member}/package.json`),
     // The demo leaves join the workspace through `examples/package.json`, so
     // their own manifests are members of nothing and no glob above reaches them.
     'examples/*/package.json',
-    // `native/landlock-run` is a nested workspace with its own lock file.
-    'native/landlock-run/package.json',
-    ...nativeMembers.map(member => `native/landlock-run/${member}/package.json`),
   ]
 }
 
@@ -165,7 +159,7 @@ function workspaceMembers(rel: string): string[] {
  * would silently push dev-area manifests into the runtime tier.
  */
 function loadWorkspaceManifests(): { manifests: Map<string, Manifest>; names: Set<string> } {
-  const patterns = manifestPatterns(workspaceMembers('pnpm-workspace.yaml'), workspaceMembers('native/landlock-run/pnpm-workspace.yaml'))
+  const patterns = manifestPatterns(workspaceMembers('pnpm-workspace.yaml'))
   const manifests = new Map<string, Manifest>()
   const names = new Set<string>()
   for (const pattern of patterns) {
@@ -279,8 +273,8 @@ export function virtualManifest(virtual: string, name: string): VirtualManifest 
 /** Resolve one installed external package manifest from either pnpm store. */
 function installedManifest(name: string): VirtualManifest | undefined {
   let manifest: (Manifest & { license?: string; repository?: string | { url?: string }; homepage?: string }) | undefined
-  // The nested Landlock workspace installs into its own store, so a package
-  // only that workspace depends on is unreachable from the root one.
+  // Workspace-local link farms can expose a dependency that is not linked at
+  // the repository root; both are backed by the root workspace's lockfile.
   for (const store of ['node_modules', 'native/landlock-run/node_modules']) {
     const direct = resolve(root, store, name, 'package.json')
     if (existsSync(direct)) {
@@ -303,7 +297,7 @@ function installedMetadata(name: string): { license: string; repo: string } {
   const rawRepo = typeof manifest?.repository === 'string' ? manifest.repository : manifest?.repository?.url ?? manifest?.homepage
   const repo = override?.repo ?? normalizeRepo(rawRepo)
   if (license === undefined || repo === undefined) {
-    throw new Error(`gen-third-party-notices: cannot resolve ${license === undefined ? 'license' : 'repository'} for ${name}; run \`pnpm install\` (or, for a Landlock-only dependency, \`pnpm --dir native/landlock-run install\`), or add an OVERRIDES entry.`)
+    throw new Error(`gen-third-party-notices: cannot resolve ${license === undefined ? 'license' : 'repository'} for ${name}; run \`pnpm install\`, or add an OVERRIDES entry.`)
   }
   return { license, repo }
 }
@@ -375,7 +369,7 @@ function collectNpmDeps(): ExternalDep[] {
  */
 export function tierExternalDeps(manifests: Map<string, Manifest>, names: Set<string>): Map<string, boolean> {
   const tiers = new Map<string, boolean>()
-  // `tsx` is runtime by fiat: `bin/dsh` execs the CLI through its ESM hook.
+  // `tsx` is runtime by fiat: the root source-run scripts execute through its ESM hook.
   tiers.set('tsx', true)
   for (const [path, manifest] of manifests) {
     const devOnly = DEV_ONLY_AREAS.some(area => (area.endsWith('/') ? path.startsWith(area) : path === area))
@@ -393,6 +387,8 @@ export function tierExternalDeps(manifests: Map<string, Manifest>, names: Set<st
 /** A vendored package row parsed out of the `vendor/README.md` manifest table. */
 export interface VendoredRow {
   npmName: string
+  /** The name this package carries upstream; MIT attribution names the fork's origin, not our scope. */
+  upstreamName: string
   upstream: string
 }
 
@@ -404,11 +400,12 @@ export interface VendoredRow {
 export function parseVendoredRows(text: string): VendoredRow[] {
   const rows: VendoredRow[] = []
   for (const line of text.split('\n')) {
-    const match = /^\| \x60\S+\/\x60 \| \x60([^\x60]+)\x60 \| \S+ \| (https:\/\/\S+?)(?: \([^)]*\))? \| \x60[0-9a-f]+\x60 \|$/.exec(line)
+    const match = new RegExp(String.raw`^\| \x60\S+\/\x60 \| \x60([^\x60]+)\x60 \| \x60([^\x60]+)\x60 \| \S+ \| `
+      + String.raw`(https:\/\/\S+?)(?: \([^)]*\))? \| \x60[0-9a-f]+\x60 \|$`).exec(line)
     if (match === null) continue
-    const [, npmName, upstream] = match
-    if (npmName === undefined || upstream === undefined) continue
-    rows.push({ npmName, upstream })
+    const [, npmName, upstreamName, upstream] = match
+    if (npmName === undefined || upstreamName === undefined || upstream === undefined) continue
+    rows.push({ npmName, upstreamName, upstream })
   }
   return rows
 }
@@ -481,7 +478,7 @@ function collectPythonRequirementArray(
   }
 }
 
-/** Read an optional TOML table and reject a present value of another shape. */
+/** Read an optional TOML table and reject a present non-table value. */
 function optionalTomlTable(value: TomlValueWithoutBigInt | undefined, location: string): TomlTableWithoutBigInt | undefined {
   if (value === undefined || isTomlTable(value)) return value
   throw new Error(`gen-third-party-notices: ${location} must be a table.`)
@@ -493,7 +490,7 @@ function optionalTomlTable(value: TomlValueWithoutBigInt | undefined, location: 
  * `[build-system]`, `dependencies` under `[project]`, and every key under
  * `[project.optional-dependencies]` and `[dependency-groups]`. A TOML parser
  * owns comments, quoted keys, escapes, and array boundaries; unsupported
- * requirement shapes fail instead of disappearing from the notices.
+ * requirement forms fail instead of disappearing from the notices.
  * @param text - the complete `pyproject.toml` contents.
  * @returns the local project name and declared requirement names.
  */
@@ -698,19 +695,19 @@ DeepSeek Harness is licensed under [BSD 3-Clause](LICENSE). It depends on the th
 
 This file lists **direct** dependencies declared by the workspace and the explicitly disclosed official Claude platform payload closure. It is generated from the workspace manifests by \`scripts/gen-third-party-notices.ts\`: a pre-commit hook regenerates it whenever a staged file changes one of its inputs, and \`scripts/gen-third-party-notices.spec.ts\` asserts in the test lane that the committed bytes match. Deleting a manifest runs no hook, so that case is caught by the assertion instead. Run \`pnpm run verify-third-party-notices\` for the standalone check.
 
-The complete npm transitive closure, with exact pinned versions, is recorded in [\`pnpm-lock.yaml\`](pnpm-lock.yaml) — inspect it with \`pnpm licenses list\`. The Python closure is recorded in [\`python/sdk/uv.lock\`](python/sdk/uv.lock), and the Landlock launcher workspace keeps its own in [\`native/landlock-run/pnpm-lock.yaml\`](native/landlock-run/pnpm-lock.yaml).
+The complete npm transitive closure, including the Landlock launcher workspace, is recorded with exact pinned versions in [\`pnpm-lock.yaml\`](pnpm-lock.yaml) — inspect it with \`pnpm licenses list\`. The Python closure is recorded separately in [\`python/sdk/uv.lock\`](python/sdk/uv.lock).
 
 ## Vendored source (\`vendor/\`)
 
-The Cordis framework and its foundation libraries are source-vendored into this repository rather than consumed from npm. All are MIT-licensed; each directory preserves its upstream \`LICENSE\` file. Exact upstream commits and local modifications are recorded in [\`vendor/README.md\`](vendor/README.md).
+The Cordis framework and its foundation libraries are source-vendored into this repository rather than consumed from npm, and republished under the \`@deepseek-ai\` scope. All are MIT-licensed; each directory preserves its upstream \`LICENSE\` file. Exact upstream commits and local modifications are recorded in [\`vendor/README.md\`](vendor/README.md).
 
-| Package | Upstream | License |
-| --- | --- | --- |
-${vendored.map(row => `| \`${row.npmName}\` | [${row.upstream.replace('https://', '')}](${row.upstream}) | MIT |`).join('\n')}
+| Package | Upstream name | Upstream | License |
+| --- | --- | --- | --- |
+${vendored.map(row => `| \`${row.npmName}\` | \`${row.upstreamName}\` | [${row.upstream.replace('https://', '')}](${row.upstream}) | MIT |`).join('\n')}
 
 ## Runtime npm dependencies
 
-External packages that a workspace package resolves at runtime. \`scripts/install.sh\` installs this repository itself, so the tier covers every plugin a user can mount from \`cordis.yml\` — not only what the \`dsh\` CLI, Web UI, and Python SDK runtime load by default.
+External packages that a workspace package resolves at runtime. The tier covers every plugin a user can mount from \`cordis.yml\` — not only what the \`dsh\` CLI, Web UI, and Python SDK runtime load by default.
 
 ${renderNpmTable(runtimeDeps)}
 
@@ -740,9 +737,9 @@ ${python.map(dep => `| [\`${dep.name}\`](${dep.repo}) | ${dep.license} | ${dep.r
 | --- | --- | --- |
 ${BUILD_TIME_TOOLS.map(tool => `| [\`${tool.name}\`](${tool.repo}) | ${tool.license} | ${tool.role} |`).join('\n')}
 
-## First-party sibling releases
+## First-party native packages
 
-\`node-addon-landlock-run\` (and its platform packages) is released from a DeepSeek Harness sibling repository under BSD 3-Clause. It is listed here for completeness; it is first-party, not third-party.
+\`@deepseek-ai/node-addon-landlock-run\` (and its platform packages) is built and released from this repository under BSD 3-Clause. It is listed here for completeness; it is first-party, not third-party.
 `
 }
 

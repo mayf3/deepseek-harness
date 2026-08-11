@@ -5,22 +5,35 @@
  * @module @deepseek-ai/dsh-agent
  */
 
-import { Context, FiberState, getTraceable, Service, symbols } from 'cordis'
-import type { Fiber } from 'cordis'
+import { Context, FiberState, getTraceable, Service, symbols } from '@deepseek-ai/cordis'
+import type { Fiber } from '@deepseek-ai/cordis'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { isPromise } from 'node:util/types'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
-import type { Agent, AgentOptions } from './types.ts'
+import type { TypeRTContext, TypeRTLookup } from '@deepseek-ai/dsh-type-meta'
+import type { Agent, AgentOptions } from './runtime-types.ts'
 
+export * from './runtime-types.ts'
 export * from './types.ts'
 export * from './inbox.ts'
-export * from './llm-target.ts'
+export * from './consumed-work.ts'
+export * from './model-selection.ts'
 export { agentCarrier, agentEvents, assembleContextFor, emitAgentEvent } from './dispatch.ts'
 export type { AgentEventDispatch, AgentSubjectEvent } from './dispatch.ts'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/dsh-type-meta' {
+  interface TypeRTLookupMap {
+    agent: TypeRTLookup<Agent, SessionId>
+  }
+
+  interface TypeRTContextMap {
+    agent: TypeRTContext<SessionId>
+  }
+}
+
+declare module '@deepseek-ai/cordis' {
   interface Context {
     agents: AgentRegistry
     /**
@@ -84,6 +97,7 @@ export interface CreateAgentOptions {
     readonly seedLength?: number
     readonly origin?: 'subagent'
     readonly delegationDepth?: number
+    readonly agentPreset?: string
   }
   /**
    * Initial replay/fork history. A fork supplies a balanced completed-turn
@@ -146,7 +160,7 @@ export interface ResumeAgentOptions {
  * {@link AgentRegistry.resume}. The disposer is a CAPABILITY: among consumers,
  * only the holder can tear this agent down. The registered factory provider is
  * also a structural owner because the scoped agent depends on that provider's
- * service surface; provider unload stops and drains every live handle it made.
+ * service API; provider unload stops and drains every live handle it made.
  * `dispose()` stops the loop, awaits its exit, unregisters the agent, removes
  * its session from the store, and finally unwinds its scoped world.
  *
@@ -251,6 +265,20 @@ export class AgentRegistry extends Service {
 
   constructor(ctx: Context) {
     super(ctx, 'agents')
+    ctx.inject(['typert'], (typeCtx) => {
+      typeCtx.typert.lookups.register('agent', {
+        parameter: 'agent',
+        wire: 'agentId',
+        hostTypeSymbol: '@deepseek-ai/dsh-agent#Agent',
+        wireTypeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
+        resolve: sessionId => this.get(sessionId),
+      })
+      typeCtx.typert.contexts.registerHost('agent', {
+        wire: 'agentId',
+        wireTypeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
+        resolve: sessionId => this.get(sessionId)?.ctx,
+      })
+    })
     // The `ctx.agent` DX accessor: default `undefined` on every context, so a
     // plain plugin context reads cleanly instead of hitting the Cordis
     // unknown-property throw. Each Agent.ctx shadows it with an own property
@@ -287,7 +315,7 @@ export class AgentRegistry extends Service {
    * Read the initiating Agent and fail when no initiator boundary is active.
    * Use this for private helpers contractually below a driver, or for a
    * deployment-owned outbound request whose contract forbids agentless calls.
-   * Generic or direct-call seams use optional lookup or explicit request fields.
+   * Generic or direct-call paths use optional lookup or explicit request fields.
    * @returns the inherited Agent.
    * @throws when no initiator is active or this service instance has been disposed.
    */

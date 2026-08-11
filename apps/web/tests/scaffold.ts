@@ -29,12 +29,12 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Page } from 'playwright'
 import { expect } from 'vitest'
-import { Context } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
-import Include, { type PatchOptions } from '@cordisjs/plugin-include'
-import { scrubRequestHeaders } from '@deepseek-ai/dsh-acp-snapshot'
+import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
+import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import Group from '@deepseek-ai/cordis-plugin-group'
+import { scrubRequestHeaders, stabilizeFixtureMessageIds } from '@deepseek-ai/dsh-acp-snapshot'
 import {
-  addHarnessSourceSection,
   assertEntriesLoaded,
   composeEntries,
   healProfilesModuleFallback,
@@ -45,6 +45,10 @@ import {
   WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_SETTINGS_NAMESPACE, WELCOME_NOTICE_VERSION,
 } from '@deepseek-ai/dsh-client-ui-settings-general'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { LlmAdapter } from '@deepseek-ai/dsh-llm'
+import type {
+  LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk,
+} from '@deepseek-ai/dsh-llm'
 import type { ReplayHandle } from '@deepseek-ai/dsh-llm-replay'
 import { installLlmReplay, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import SessionStore, {
@@ -60,6 +64,7 @@ import * as ToolCordis from '@deepseek-ai/dsh-tool-cordis'
 // Empty type imports carry the httpServer/agents/sessionPersistence Context merges.
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
+import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { REPO_ROOT, requireDist } from './support.ts'
 
 /** Snapshot mode for the lane, from $DSH_SNAPSHOT (same vocabulary as the other snapshot suites). */
@@ -81,6 +86,8 @@ const BASE_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
 const WEB_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
 /** The installation anchor whose dependency surface the profile module fallback mirrors. */
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
+/** The deployment's own agent-preset root, shipped beside the app's config. */
+const SHIPPED_PRESET_DIR = join(REPO_ROOT, 'apps/cli/config/agent-presets')
 
 // Replay publishes the provider catalog the gateway routes to (providers
 // mode, never catch-all: with llm-deepseek disabled no adapter exists, so a
@@ -92,6 +99,46 @@ const REPLAY_PROVIDERS = [{
   name: 'DeepSeek',
   models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: 128_000 }],
 }]
+
+/**
+ * The routes a shipped composition always has, with no ability to stream.
+ * A fixture-less keyless scenario issues no model calls, but its tree must
+ * still answer `listProviders()` — surfaces legitimately gate on whether any
+ * adapter serves a session's route, and an empty registry is a test artifact,
+ * not a product state.
+ */
+class RouteOnlyAdapter extends LlmAdapter {
+  constructor(private readonly providers: typeof REPLAY_PROVIDERS) {
+    super()
+  }
+
+  override providerInfo(provider: string): LlmProviderInfo {
+    return { id: provider, name: this.providers.find(entry => entry.id === provider)?.name ?? provider }
+  }
+
+  override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
+    return Promise.resolve((this.providers.find(entry => entry.id === provider)?.models ?? [])
+      .map(model => ({ provider, id: model.id, name: model.name })))
+  }
+
+  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    const listed = this.providers.find(entry => entry.id === provider)?.models
+      .find(entry => entry.id === model)
+    return Promise.resolve({
+      provider,
+      id: model,
+      name: listed?.name ?? model,
+      ...listed?.contextWindow === undefined ? {} : { contextWindow: listed.contextWindow },
+    })
+  }
+
+  override async *stream(): AsyncIterable<StreamChunk> {
+    throw new Error(
+      'web e2e scaffold: a model call was issued by a scenario that declared no replay fixture'
+      + ' — pass replayFixture, or keep the scenario free of model calls',
+    )
+  }
+}
 
 function replayProviders(contextWindow: number | undefined): typeof REPLAY_PROVIDERS {
   if (contextWindow === undefined) return REPLAY_PROVIDERS
@@ -107,7 +154,7 @@ export interface WebScaffold {
   mode: WebSnapshotMode
   /** Browser-facing origin for the bound test server. */
   baseUrl: string
-  /** Settled root context (the in-process barrier seam; headless event subscription is its sanctioned use). */
+  /** Settled root context (the in-process readiness barrier; headless event subscription is its sanctioned use). */
   ctx: Context
   /** Temp project directory sessions run in (bash/fs tool cwd). */
   workspaceCwd: string
@@ -182,14 +229,37 @@ export interface LaunchOptions {
     /** Credential reference resolved by the shipped search provider. */
     apiKeyEnv: string
   }
+  /**
+   * Replace the roster the scaffold mounts by default (the shipped directory
+   * at `system` trust, default `standard`). Supply this only to change WHICH
+   * presets a scenario sees — a writable user root, a different default —
+   * never to turn the roster on: without one every session composes an agent
+   * with no tools, no persona, and no token meter, which is not a shape the
+   * product ever boots in. The patch lands after the default, so it wins.
+   */
+  agentPresets?: {
+    /** Roots to discover, in precedence order; the shipped directory is `system`. */
+    roots: { path: string; trust: 'system' | 'user' }[]
+    /** The preset a session that names none is composed from. */
+    default: string
+  }
   /** Leave the current welcome notice unacknowledged; ordinary scenarios publish it as complete before browser boot. */
   welcomeNoticePending?: boolean
+  /**
+   * Mount the shipped telemetry row in FULL mode against this exporter URL
+   * instead of disabling it. Used to pin a real backend disclosure in
+   * assembled coverage; point the URL at a local dead endpoint so no record
+   * leaves the process.
+   */
+  telemetryUrl?: string
   /**
    * Browse through a trusted non-loopback hostname that the browser resolves
    * to loopback (for example `*.localhost`). The test server stays bound to
    * 127.0.0.1; a non-resolving authority fails before Host trust is exercised.
    */
   remoteAuthority?: string
+  /** Reuse an existing harness home so a second Host can verify user settings across origins. */
+  harnessHome?: string
 }
 
 /** Dispose the booted tree and remove both owned temp roots, reporting every independent cleanup failure. */
@@ -236,13 +306,42 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   // Isolated harness home: the settings/credentials rows resolve $DSH_HOME
   // paths at load, and an in-process boot must NEVER touch the developer's
   // real ~/.dsh document or credential file.
-  const harnessHome = join(workspaceCwd, '.dsh-home')
+  const harnessHome = options.harnessHome ?? join(workspaceCwd, '.dsh-home')
+  // Skill discovery is model-visible input, and its roots now resolve inside a
+  // PRESET — a subtree this lane's include patches cannot reach, because the
+  // roster mounts it directly per session rather than as a row of the booted
+  // tree. The row's documented fallback is the environment, so pin that: the
+  // whole scaffold lifetime, not just the boot, since presets mount when a
+  // session is created. Without this a developer's real ~/.dsh/skills silently
+  // enters replay requests and goldens while CI sees none. `DSH_HOME` follows
+  // the resolved harness home so a scaffold sharing another's home — the
+  // cross-port persistence scenario — pins the same roots the settings and
+  // credentials rows were configured with.
+  const skillRootEnvironment = {
+    DSH_HOME: harnessHome,
+    DSH_AGENTS_HOME: join(workspaceCwd, '.agents-home'),
+    DSH_BUNDLED_SKILL_DIR: join(workspaceCwd, '.bundled-skills'),
+  }
+  const originalSkillRootEnvironment = Object.fromEntries(
+    Object.keys(skillRootEnvironment).map(key => [key, process.env[key]]),
+  )
+  let skillRootEnvironmentRestored = false
+  const restoreSkillRootEnvironment = (): void => {
+    if (skillRootEnvironmentRestored) return
+    skillRootEnvironmentRestored = true
+    for (const [key, value] of Object.entries(originalSkillRootEnvironment)) {
+      if (value === undefined) Reflect.deleteProperty(process.env, key)
+      else process.env[key] = value
+    }
+  }
+  Object.assign(process.env, skillRootEnvironment)
   let persistenceRoot: string
   try {
     persistenceRoot = await mkdtemp(join(tmpdir(), 'dsh-web-e2e-sessions-'))
   } catch (error) {
     const failures: unknown[] = [error]
     await rm(workspaceCwd, { recursive: true, force: true }).catch((cleanupError: unknown) => failures.push(cleanupError))
+    restoreSkillRootEnvironment()
     if (failures.length > 1) throw new AggregateError(failures, 'web scaffold temp-root setup failed')
     throw error
   }
@@ -266,6 +365,18 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     ...basePatches,
     ...surfacePatches,
     ...extraOverlayPatches,
+    // The roster's `roots` is an assembly fact AppCLIEntry resolves and patches
+    // in, exactly like `distIndex` on the webserver row — the shipped preset
+    // directory sits beside the composition that names it, and no config author
+    // chooses it. This lane boots the shipped tree WITHOUT AppCLIEntry, so it
+    // has to supply the same fact or the roster resolves nothing and every
+    // session composes an agent with no tools, no persona, and no token meter.
+    // Only the shipped root: a developer's own `~/.dsh/.agent-presets` must not be
+    // able to change a golden.
+    {
+      id: 'agent-presets',
+      config: { default: 'standard', roots: [{ path: SHIPPED_PRESET_DIR, trust: 'system' }] },
+    },
     { id: 'session-persistence-jsonl', config: { root: persistenceRoot } },
     { id: 'session-query-sqlite', config: { path: ':memory:', openAt: 'first-search' } },
     // storage-json's yml root is anchored to the real $DSH_HOME; pin the row
@@ -292,8 +403,11 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     { id: 'session-title-llm', disabled: true },
     // Fixture sessions must never leave the process: the shipped row defaults
     // to the production OTLP endpoint (or whatever DSH_TELEMETRY_OTLP_URL
-    // names in the ambient environment).
-    { id: 'telemetry-otel', disabled: true },
+    // names in the ambient environment). A scenario that pins a real backend
+    // disclosure passes a local dead endpoint instead of disabling the row.
+    options.telemetryUrl === undefined
+      ? { id: 'telemetry-otel', disabled: true }
+      : { id: 'telemetry-otel', config: { exporter: { url: options.telemetryUrl }, shutdownTimeoutMillis: 1_000 } },
     {
       id: 'webserver',
       config: { host: '127.0.0.1', port: 0 },
@@ -316,6 +430,9 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // disable+insert pair.
     { id: 'directory-picker', disabled: true },
     { insert: [{ id: 'directory-picker-browse', name: '@deepseek-ai/dsh-host-directory-picker-browse' }] },
+    ...options.agentPresets === undefined
+      ? []
+      : [{ id: 'agent-presets', config: options.agentPresets }],
     ...options.toolsMode === undefined ? [] : [{ id: 'tools', config: { mode: options.toolsMode } }],
     ...options.cordisTools === true
       ? [{ insert: [{ id: 'tool-cordis', name: 'cordis:tool-cordis' }] }]
@@ -342,7 +459,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   let replayHandle: ReplayHandle | undefined
   try {
     process.chdir(workspaceCwd)
-    // The production resolution shape: an empty profile root inside the temp
+    // The production module-resolution setup: an empty profile root inside the temp
     // harness home, with bare plugin names resolving through the flat module
     // fallback the launcher heals under <home>/profiles.
     healProfilesModuleFallback(INSTALL_ANCHOR, harnessHome)
@@ -353,14 +470,26 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     ctx.baseUrl = pathToFileURL(profileDir).href + '/'
     // This direct Loader harness supplies the same root-path capability as app-boot.
     ctx.provide('dshHomePath', dshHomePath)
+    // A host with no command line still provides one: the web bundle's startup
+    // row releases the rows waiting on it, and with no arguments each starts on
+    // the values this scaffold composed above. An exit request can only come
+    // from a rejected argument, which a fixed empty list has none of.
+    provideCmdline(ctx, {
+      args: [],
+      exit: (code) => {
+        throw new Error(`web e2e scaffold: the web app requested exit ${String(code)} with no arguments to reject`)
+      },
+    })
     await ctx.plugin(Loader)
     ctx.loader.builtins.include = Include
+    // `cordis:group` beside it, exactly as `boot()` registers it: a group row is
+    // how a preset gives one `isolate` realm to a provider and its consumers,
+    // and a preset resolving package names from its own directory cannot reach
+    // `@deepseek-ai/cordis-plugin-group` by name.
+    ctx.loader.builtins.group = Group
     // The shipped CLI deliberately has no dependency on this opt-in package.
     // Keep the Loader row real without broadening the product installation.
     if (options.cordisTools === true) ctx.loader.builtins['tool-cordis'] = ToolCordis
-    if (surfaceContext) {
-      ctx.inject(['systemPrompt'], (promptCtx) => { addHarnessSourceSection(promptCtx, REPO_ROOT) })
-    }
     await ctx.loader.create({
       name: 'cordis:include',
       config: { path: pathToFileURL(rootConfig).href, patches },
@@ -390,11 +519,22 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         ...(options.replayChildFixtures === undefined ? {} : { childFiles: options.replayChildFixtures }),
         ...(options.paceMs === undefined ? {} : { paceMs: options.paceMs }),
       })
+    } else if (mode !== 'record' && options.deepSeekMissingCredential !== true) {
+      // No fixture and no shipped adapter would leave the tree with ZERO
+      // provider routes — a state no product composition has, and one the
+      // composer refuses to type into. Register the same routes
+      // a fixture would, with streaming that still fails loud: the scenario
+      // issues no model calls, and one that slipped in must not pass quietly.
+      ctx.effect(() => ctx.llm.registerAdapter(
+        replayProviders(options.replayContextWindow).map(provider => provider.id),
+        new RouteOnlyAdapter(replayProviders(options.replayContextWindow)),
+      ), 'web e2e scaffold: route-only adapter')
     }
   } catch (error) {
     if (process.cwd() !== originalCwd) process.chdir(originalCwd)
     const cleanupFailures = await cleanupScaffoldWorld(ctx, workspaceCwd, persistenceRoot)
     restoreCredentialEnvironment()
+    restoreSkillRootEnvironment()
     if (cleanupFailures.length > 0) {
       throw new AggregateError([error, ...cleanupFailures], 'web scaffold setup failed and cleanup was incomplete')
     }
@@ -442,6 +582,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         failures.push(...await cleanupScaffoldWorld(ctx, workspaceCwd, persistenceRoot))
       } finally {
         restoreCredentialEnvironment()
+        restoreSkillRootEnvironment()
       }
       if (failures.length > 0) throw new AggregateError(failures, 'web scaffold teardown failed')
     },
@@ -474,11 +615,14 @@ function rawSessionLog(session: Session): string {
 export async function recordFixture(scaffold: WebScaffold, sessionId: SessionId, fixturePath: string): Promise<void> {
   const agent = scaffold.ctx.agents.get(sessionId)
   if (agent === undefined) throw new Error(`record harvest: no live agent for ${sessionId}`)
-  const tokenized = scrubRequestHeaders(rawSessionLog(agent.session))
+  const fresh = scrubRequestHeaders(rawSessionLog(agent.session))
     .split(sessionId).join('{{sessionId}}')
     .split(scaffold.workspaceCwd).join('{{cwd}}')
     .replace(/"rpcId":"[^"]+"/g, '"rpcId":"{{rpcId}}"')
-  await writeFile(fixturePath, tokenized)
+  const existing = existsSync(fixturePath) ? await readFile(fixturePath, 'utf8') : ''
+  const stable = stabilizeFixtureMessageIds([fresh], [existing])[0]
+  if (stable === undefined) throw new Error('record harvest: no stabilized fixture')
+  await writeFile(fixturePath, stable)
 }
 
 /**
@@ -500,11 +644,13 @@ export function fixtureUserPrompts(fixtureText: string): string[] {
  * through the REAL backend API (throwaway Context + SessionStore + JSONL
  * plugin — the semantic-checkpoint precedent), never raw file writes: no
  * knowledge of bucket hashing, filename encoding, or compression, and
- * malformed shapes fail loud at seed time. The fixture's tokenized identity
+ * malformed session events fail loud at seed time. The fixture's tokenized identity
  * ({{sessionId}}/{{cwd}}) is realized for this world before parsing.
  * @param scaffold - the target scaffold.
  * @param fixtureText - raw recorded session.jsonl contents.
  * @param id - the seeded session id (stable for deterministic goldens).
+ * @param agentPreset - the preset the recorded session was composed from,
+ *   for scenarios asserting what a resumed session reports running.
  * @returns the seeded id.
  */
 /**
@@ -528,7 +674,12 @@ export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, i
     : realized.split(fixtureCwd).join(scaffold.workspaceCwd)
 }
 
-export async function seedSession(scaffold: WebScaffold, fixtureText: string, id: string): Promise<SessionId> {
+export async function seedSession(
+  scaffold: WebScaffold,
+  fixtureText: string,
+  id: string,
+  agentPreset?: string,
+): Promise<SessionId> {
   const events = parseSessionLog(realizeSeedFixture(scaffold, fixtureText, id))
   if (events.length === 0) throw new Error('seed fixture has no events')
   const last = events[events.length - 1]!
@@ -541,6 +692,7 @@ export async function seedSession(scaffold: WebScaffold, fixtureText: string, id
     createdAt: Date.now() - 60_000,
     cwd: scaffold.workspaceCwd,
     delegationDepth: 0,
+    ...agentPreset === undefined ? {} : { agentPreset },
   }
   const seeder = new Context()
   try {
@@ -563,8 +715,9 @@ export async function seedSession(scaffold: WebScaffold, fixtureText: string, id
 }
 
 /**
- * Normalize an aria snapshot: uuid, cwd, workspace-basename, duration, and
- * decode-throughput volatility collapse to stable tokens.
+ * Normalize an aria snapshot: uuid, cwd, workspace-basename, duration,
+ * decode-throughput, and path-sensitive compaction estimates collapse to
+ * stable tokens.
  *
  * Throughput needs a token for the same reason durations do, and no fixture
  * can supply one: the figure divides a replayed step's output tokens by the
@@ -591,8 +744,11 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
       duration => duration.startsWith('约') ? duration : '{{duration}}',
     )
     .replace(/\d+(?:\.\d+)?(?= tok\/s(?!\w))/g, '{{throughput}}')
+    // Seeded compaction prices realized file paths, whose length differs
+    // between local worktrees and CI scratch directories.
+    .replace(/(Compacted \d+ history items \(~)\d+( tokens\))/g, '$1{{tokens}}$2')
     // Message IconActions clocks widen by calendar day/year; collapse every
-    // shape so goldens stay stable across midnight and year boundaries.
+    // format so goldens stay stable across midnight and year changes.
     .replace(/\d{4}年\d{1,2}月\d{1,2}日 \d{2}:\d{2}/g, '{{clock}}')
     .replace(/\d{1,2}月\d{1,2}日 \d{2}:\d{2}/g, '{{clock}}')
     .replace(/(?<!\d)\d{1,2}:\d{2}:\d{2}(?:\.\d+)?(?:\s*[AP]M)?(?!\d)/gi, '{{clock}}')

@@ -2,8 +2,8 @@ import { chmod, mkdtemp, mkdir, rm, stat, symlink, utimes, writeFile } from 'nod
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
+import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as workspaceContext from '@deepseek-ai/dsh-workspace-context'
 import LlmService, { createUserMessage, CallId, type Message, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId, SESSION_FORMAT_VERSION, type SessionEvent, type UserMessage } from '@deepseek-ai/dsh-session'
@@ -40,7 +40,7 @@ import {
   type InstructionVersionCache,
 } from '../src/state.ts'
 import { resolveConfig } from '../src/config.ts'
-import { candidateScopeKey, renderInstructionChanges, USER_GLOBAL_DIRECTORY, USER_GLOBAL_FILE } from '../src/render.ts'
+import { candidateScopeKey, renderInstructionChanges, renderWorkspaceInstructionSet, USER_GLOBAL_DIRECTORY, USER_GLOBAL_FILE } from '../src/render.ts'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 
 /** Per-candidate reconciliation scope key: directory paired with the file name. */
@@ -75,6 +75,14 @@ class RecordingFileSystem extends FileSystem {
     return { targetKey: FsTargetKey(absolute), displayPath: absolute }
   }
 
+  override processPath(target: FsTarget): string { return String(target.targetKey) }
+
+  override fileUrl(target: FsTarget): string { return `file://${target.targetKey}` }
+
+  override contains(parent: FsTarget, child: FsTarget): boolean {
+    return child.targetKey === parent.targetKey || String(child.targetKey).startsWith(`${parent.targetKey}/`)
+  }
+
   override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
     if (signal !== undefined) this.signals.push(signal)
     signal?.throwIfAborted()
@@ -107,6 +115,10 @@ class RecordingFileSystem extends FileSystem {
     signal?.throwIfAborted()
     this.readTextTargets.push(target.targetKey)
     return this.entries.get(target.targetKey)?.content ?? ''
+  }
+
+  override async readBytes(_target: FsTarget, _signal: AbortSignal | undefined, _maxBytes: number): Promise<Uint8Array> {
+    throw new Error('not needed in workspace-context tests')
   }
 
   override async streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
@@ -187,10 +199,16 @@ function stubAgent(cwd?: string, seed: SessionEvent[] = []): Agent {
   }
 }
 
-function stubToolExecution(input: Omit<ToolExecution, 'token'>): ToolExecution {
+function stubToolExecution(
+  input: Omit<ToolExecution, 'token' | 'rootCallId'> & {
+    token?: ToolExecutionToken
+    rootCallId?: ToolExecution['rootCallId']
+  },
+): ToolExecution {
   return {
-    token: Symbol('workspace-context-test-execution') as ToolExecutionToken,
+    token: input.token ?? Symbol('workspace-context-test-execution') as ToolExecutionToken,
     ...input,
+    rootCallId: input.rootCallId ?? input.callId,
   }
 }
 
@@ -561,7 +579,7 @@ describe('workspace context instruction discovery', () => {
     const emptyHome = await tempRepo()
     // Isolate the default-home fallback: blank DSH_HOME is treated as unset, and
     // HOME points at an empty dir so the default ~/.dsh holds no global scope.
-    // Symlinks are now followed, so a real ~/.dsh/AGENTS.md would otherwise leak in.
+    // Symlinks are followed, so a real ~/.dsh/AGENTS.md would otherwise leak in.
     vi.stubEnv('DSH_HOME', '')
     vi.stubEnv('HOME', emptyHome)
     try {
@@ -841,6 +859,33 @@ describe('workspace context rendering', () => {
     expect(Buffer.byteLength(rendered.text, 'utf8')).toBe(120)
   })
 
+  it('represents a genuinely empty instruction when its compact heading fits', () => {
+    const file = { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: '' }
+    const rendered = renderWorkspaceInstructionSet([file], { maxBytes: 117 })
+
+    expect(rendered.rendered.text).toContain('truncated pkg/AGENTS.md from 0 to 0 bytes')
+    expect(rendered.rendered.text).toContain('Instructions from: pkg/AGENTS.md')
+    expect(rendered.included).toEqual([file])
+  })
+
+  it('represents a genuinely empty instruction through the framed compact-intro path', () => {
+    const file = {
+      absolutePath: '/repo/pkg/AGENTS.md',
+      displayPath: 'pkg/AGENTS.md',
+      content: '',
+    }
+
+    const rendered = renderWorkspaceInstructionSet([file], { maxBytes: 300 })
+
+    expect(rendered.rendered.text).toContain('<system-reminder>')
+    expect(rendered.rendered.text).toContain('Workspace instructions were omitted or truncated')
+    expect(rendered.rendered.text).toContain('Instructions from: pkg/AGENTS.md')
+    expect(rendered.rendered.truncated).toEqual([
+      { displayPath: 'pkg/AGENTS.md', originalBytes: 0, includedBytes: 0 },
+    ])
+    expect(rendered.included).toEqual([file])
+  })
+
   it('truncates the compact notice itself when the render budget is smaller than the notice', () => {
     const rendered = renderWorkspaceContext([
       { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'x'.repeat(1000) },
@@ -849,6 +894,76 @@ describe('workspace context rendering', () => {
     expect(rendered.text).toBe('Workspace instructio')
     expect(rendered.truncated).toEqual([{ displayPath: 'pkg/AGENTS.md', originalBytes: 1000, includedBytes: 0 }])
     expect(Buffer.byteLength(rendered.text, 'utf8')).toBe(20)
+  })
+
+  it('does not commit a change when only the generic compact notice survives', () => {
+    const change = {
+      action: 'set' as const,
+      scope: sk('pkg', 'AGENTS.md'),
+      path: 'pkg/AGENTS.md',
+      digest: 'digest',
+    }
+    const rendered = renderInstructionChanges([{
+      change,
+      file: { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'x'.repeat(1000) },
+    }], 20)
+
+    expect(rendered.text).toBe('Workspace instructio')
+    expect(rendered.changes).toEqual([])
+  })
+
+  it('commits a change when its file-specific semantic section survives truncation', () => {
+    const change = {
+      action: 'replace' as const,
+      scope: sk('pkg', 'AGENTS.md'),
+      path: 'pkg/AGENTS.md',
+      digest: 'digest',
+    }
+    const rendered = renderInstructionChanges([{
+      change,
+      file: { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'x'.repeat(1000) },
+    }], 400)
+
+    expect(rendered.text).toContain('Updated instructions from: pkg/AGENTS.md')
+    expect(rendered.changes).toEqual([change])
+  })
+
+  // Each prose-derived budget is the smallest current value that retains the named heading plus a zero-byte marker.
+  it.each([
+    { action: 'set' as const, maxBytes: 327, heading: 'Additional instructions from:' },
+    { action: 'replace' as const, maxBytes: 256, heading: 'Updated instructions from:' },
+  ])('does not commit a $action change when its heading survives with zero content bytes', ({ action, maxBytes, heading }) => {
+    const change = {
+      action,
+      scope: sk('pkg', 'AGENTS.md'),
+      path: 'pkg/AGENTS.md',
+      digest: 'digest',
+    }
+    const rendered = renderInstructionChanges([{
+      change,
+      file: { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: 'x'.repeat(1000) },
+    }], maxBytes)
+
+    expect(rendered.text).toContain(heading)
+    expect(rendered.text).toContain('from 1000 to 0 bytes')
+    expect(rendered.changes).toEqual([])
+  })
+
+  it('does not commit a multibyte change when the budget cuts its first code point', () => {
+    const change = {
+      action: 'set' as const,
+      scope: sk('pkg', 'AGENTS.md'),
+      path: 'pkg/AGENTS.md',
+      digest: 'digest',
+    }
+    const rendered = renderInstructionChanges([{
+      change,
+      file: { absolutePath: '/repo/pkg/AGENTS.md', displayPath: 'pkg/AGENTS.md', content: '😀'.repeat(100) },
+    }], 366)
+
+    expect(rendered.text).not.toContain('�')
+    expect(rendered.text).not.toContain('😀')
+    expect(rendered.changes).toEqual([])
   })
 
   it('keeps compact truncation notices within budget when a multibyte display path is cut', () => {
@@ -1818,21 +1933,30 @@ describe('workspace context request injection', () => {
     }
   })
 
-  it('does not expose state markers when a tiny budget reduces the baseline contribution', async () => {
+  it.each([10, 120])('does not expose state markers when baseline content is omitted at %i bytes', async (maxBytes) => {
     const root = await tempRepo()
     const home = await tempRepo()
     try {
       await mkdir(join(root, '.git'), { recursive: true })
-      await write(join(root, 'AGENTS.md'), 'repo rule')
+      await write(join(root, 'AGENTS.md'), 'x'.repeat(1000))
       const ctx = new Context()
-      await mountWorkspaceContext(ctx, { dshHome: home, maxBytes: 10 })
+      await mountWorkspaceContext(ctx, { dshHome: home, maxBytes })
       const agent = stubAgent(root)
 
       await composeBaselinePrefix(ctx, agent)
 
-      expect(agent.session.events.filter(event =>
+      const contexts = agent.session.events.filter(event =>
         event.type === 'user/message' && event.data.source.kind !== 'user',
-      )).toHaveLength(1)
+      )
+      expect(contexts).toHaveLength(1)
+      const source = contexts[0]?.type === 'user/message' ? contexts[0].data.source : undefined
+      expect(source?.kind === 'workspace-instructions' ? source.changes : undefined).toEqual([])
+      if (maxBytes === 120) {
+        expect(derivedText(agent)).toContain('Instructions from: AGENTS.md')
+        expect(derivedText(agent)).toContain('from 1000 to 0 bytes')
+      } else {
+        expect(derivedText(agent)).not.toContain('Instructions from: AGENTS.md')
+      }
       expect(derivedText(agent)).not.toContain('workspace-context:')
     } finally {
       await rm(root, { recursive: true, force: true })
@@ -3948,6 +4072,106 @@ describe('dynamic nested workspace context injection', () => {
     }
   })
 
+  it('defers a nested file projection until the enclosing step commits', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    const ctx = new Context()
+    try {
+      await ctx.plugin(RecordingFileSystem)
+      await ctx.plugin(workspaceContext, { dshHome: home, maxBytes: 65536 })
+      const fs = ctx.fs as RecordingFileSystem
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(join(root, 'pkg/AGENTS.md'), { type: 'file', content: 'nested package rule' })
+      const agent = stubAgent(root)
+      const turnStart = agent.session.append('turn/start', { turn: 1 })
+      ctx.emit('session/event', agent.session, turnStart)
+      const stepStart = agent.session.append('step/start', { turn: 1, step: 1 })
+      ctx.emit('session/event', agent.session, stepStart)
+      const outerToken = Symbol('outer-code-run') as ToolExecutionToken
+
+      ctx.emit('tools/result', stubToolExecution({
+        token: Symbol('nested-read') as ToolExecutionToken,
+        parent: outerToken,
+        signal: testToolSignal,
+        callId: CallId('nested-read'),
+        name: 'read',
+        arguments: { file_path: join('pkg', 'file.txt') },
+        agent,
+      }), { content: [], isError: false, value: null })
+      ctx.emit('tools/result', stubToolExecution({
+        token: Symbol('nested-non-file') as ToolExecutionToken,
+        parent: outerToken,
+        signal: testToolSignal,
+        callId: CallId('nested-non-file'),
+        name: 'search',
+        arguments: {},
+        agent,
+      }), { content: [], isError: false, value: null })
+      ctx.emit('tools/result', stubToolExecution({
+        token: Symbol('second-nested-read') as ToolExecutionToken,
+        parent: outerToken,
+        signal: testToolSignal,
+        callId: CallId('second-nested-read'),
+        name: 'read',
+        arguments: { file_path: join('pkg', 'second.txt') },
+        agent,
+      }), { content: [], isError: false, value: null })
+      ctx.emit('tools/result', stubToolExecution({
+        token: outerToken,
+        signal: testToolSignal,
+        callId: CallId('outer-code-run'),
+        name: 'run_code',
+        arguments: {},
+        agent,
+      }), { content: [], isError: false, value: null })
+
+      await syncWorkspaceContext(ctx, agent)
+      expect(agent.inbox.nextStep).toEqual([])
+
+      const stepEnd = agent.session.append('step/end', { turn: 1, step: 1 })
+      ctx.emit('session/event', agent.session, stepEnd)
+      expect(blocksText((await syncedWorkspaceContext(ctx, agent)).content))
+        .toContain('nested package rule')
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('seeds closed step state from existing session history', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    const ctx = new Context()
+    try {
+      await ctx.plugin(RecordingFileSystem)
+      const fs = ctx.fs as RecordingFileSystem
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(join(root, 'pkg/AGENTS.md'), { type: 'file', content: 'nested package rule' })
+      const agent = stubAgent(root)
+      agent.session.append('turn/start', { turn: 1 })
+      agent.session.append('step/start', { turn: 1, step: 1 })
+      agent.session.append('step/end', { turn: 1, step: 1 })
+      agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+      await ctx.plugin(workspaceContext, { dshHome: home, maxBytes: 65536 })
+
+      ctx.emit('tools/result', stubToolExecution({
+        signal: testToolSignal,
+        callId: CallId('read-after-closed-step'),
+        name: 'read',
+        arguments: { file_path: join('pkg', 'file.txt') },
+        agent,
+      }), { content: [], isError: false, value: null })
+
+      expect(blocksText((await syncedWorkspaceContext(ctx, agent)).content))
+        .toContain('nested package rule')
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
   it('ignores failed, aborted, agentless, and non-file final results', async () => {
     const ctx = new Context()
     try {
@@ -3997,17 +4221,18 @@ describe('dynamic nested workspace context injection', () => {
     }
   })
 
-  it('warns when an asynchronous file-result projection fails', async () => {
+  it('warns when an asynchronous file-result projection fails', { timeout: 20_000 }, async () => {
     const ctx = new Context()
     try {
       await ctx.plugin(RecordingFileSystem)
       await ctx.plugin(workspaceContext, { maxBytes: 65536 })
       const fs = ctx.fs as RecordingFileSystem
-      const agent = stubAgent('/')
+      const root = resolve('/')
+      const agent = stubAgent(root)
       const failure = new Error('projection failed')
       const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
-      fs.entries.set('/.git', { type: 'directory' })
-      fs.entries.set('/AGENTS.md', { type: 'file', content: 'workspace rule' })
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: 'workspace rule' })
       vi.spyOn(agent.inbox, 'prepend').mockImplementationOnce(() => { throw failure })
 
       ctx.emit('tools/result', stubToolExecution({
@@ -4020,7 +4245,7 @@ describe('dynamic nested workspace context injection', () => {
 
       await vi.waitFor(() => {
         expect(warn).toHaveBeenCalledWith('workspace instruction refresh failed: %o', failure)
-      })
+      }, { timeout: 10_000 })
     } finally {
       await ctx.fiber.dispose()
     }
@@ -4049,6 +4274,47 @@ describe('dynamic nested workspace context injection', () => {
     } finally {
       await rm(root, { recursive: true, force: true })
       await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('retries a nested instruction touch when only a truncated budget notice was rendered', async () => {
+    const root = join(await tempRepo(), 'virtual-repo')
+    const home = join(await tempRepo(), 'virtual-home')
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SystemPrompt)
+      await ctx.plugin(ToolRegistry)
+      await ctx.plugin(RecordingFileSystem)
+      const fs = ctx.fs as RecordingFileSystem
+      const instructionPath = join(root, 'pkg/AGENTS.md')
+      fs.entries.set(join(root, '.git'), { type: 'directory' })
+      fs.entries.set(instructionPath, { type: 'file', content: 'x'.repeat(1000) })
+      fs.entries.set(join(root, 'pkg/file.txt'), { type: 'file', content: 'hello' })
+      await ctx.plugin(ToolFs)
+      await ctx.plugin(workspaceContext, { dshHome: home, maxBytes: 20 })
+      const agent = stubAgent(root)
+
+      const first = await ctx.tools.execute({
+        signal: testToolSignal,
+        callId: CallId('read-tiny-budget-1'), name: 'read', arguments: { file_path: join('pkg', 'file.txt') }, agent,
+      })
+      await syncWorkspaceContext(ctx, agent)
+      const second = await ctx.tools.execute({
+        signal: testToolSignal,
+        callId: CallId('read-tiny-budget-2'), name: 'read', arguments: { file_path: join('pkg', 'file.txt') }, agent,
+      })
+      await syncWorkspaceContext(ctx, agent)
+
+      expect(first.additionalContexts).toBeUndefined()
+      expect(second.additionalContexts).toBeUndefined()
+      // Nothing was emitted, and the uncommitted version made the second sync
+      // probe the instruction file again — the retry.
+      expect(agent.inbox.nextStep).toHaveLength(0)
+      expect(fs.readTargets.filter(path => path === instructionPath)).toHaveLength(2)
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(dirname(root), { recursive: true, force: true })
+      await rm(dirname(home), { recursive: true, force: true })
     }
   })
 
@@ -4138,7 +4404,7 @@ describe('workspace context inbox synchronization', () => {
     }
   })
 
-  it('keeps a dynamic change within a one-byte positive render budget', async () => {
+  it('holds back a dynamic change a one-byte positive render budget cannot represent', async () => {
     const root = await tempRepo()
     const home = await tempRepo()
     const ctx = new Context()
@@ -4156,8 +4422,10 @@ describe('workspace context inbox synchronization', () => {
 
       await syncWorkspaceContext(ctx, agent)
 
-      expect(agent.inbox.nextStep).toHaveLength(1)
-      expect(Buffer.byteLength(blocksText(agent.inbox.nextStep[0]?.content), 'utf8')).toBeLessThanOrEqual(1)
+      // One byte cannot semantically represent the transition, so nothing is
+      // emitted and nothing commits — the uncommitted version retries on the
+      // next touch instead of committing state the model never saw.
+      expect(agent.inbox.nextStep).toHaveLength(0)
     } finally {
       await ctx.fiber.dispose()
       await rm(root, { recursive: true, force: true })

@@ -38,19 +38,31 @@ const WORKSPACE_CONTEXT_CONFIG = fileURLToPath(new URL('../workspace-context.cor
 const ADVANCED_CONFIG = fileURLToPath(new URL('../advanced.cordis.yml', import.meta.url))
 const FS_CONFIG = fileURLToPath(new URL('../fs.cordis.yml', import.meta.url))
 const SESSION_QUERY_CONFIG = fileURLToPath(new URL('../session-query.cordis.yml', import.meta.url))
+const IMAGE_CONFIG = fileURLToPath(new URL('../image.cordis.yml', import.meta.url))
+const IMAGE_TEXT_ROUTE_CONFIG = fileURLToPath(new URL('../image-text-route.cordis.yml', import.meta.url))
 const PTY_CONFIG = fileURLToPath(new URL('../pty.cordis.yml', import.meta.url))
 const DEPTH_TWO_CONFIG = fileURLToPath(new URL('../depth-two.cordis.yml', import.meta.url))
+const CHILD_QUESTION_CONFIG = fileURLToPath(new URL('../child-question.cordis.yml', import.meta.url))
 const SESSION_SANDBOX_ROOT_CONFIG = fileURLToPath(new URL('../session-sandbox-root.cordis.yml', import.meta.url))
 const RETRY_CONFIG = fileURLToPath(new URL('../retry.cordis.yml', import.meta.url))
 const SESSION_TITLE_CONFIG = fileURLToPath(new URL('../session-title.cordis.yml', import.meta.url))
+const SUBAGENT_REPORT_QUIET_CONFIG = fileURLToPath(
+  new URL('../subagent-report-quiet.cordis.yml', import.meta.url),
+)
 const SUBAGENT_DURABILITY_FAILURE_CONFIG = fileURLToPath(
   new URL('../subagent-durability-failure.cordis.yml', import.meta.url),
+)
+const SUBAGENT_CONTINUABLE_INHERITANCE_CONFIG = fileURLToPath(
+  new URL('../subagent-continuable-inheritance.cordis.yml', import.meta.url),
 )
 const LSP_CONFIG = fileURLToPath(new URL('./lsp.cordis.yml', import.meta.url))
 const WEB_CONFIG = fileURLToPath(new URL('../web.cordis.yml', import.meta.url))
 const FS_SEARCH_CONFIG = fileURLToPath(new URL('./fs-search.cordis.yml', import.meta.url))
 const PARTIAL_LANDLOCK_CONFIG = fileURLToPath(new URL('../partial-landlock.cordis.yml', import.meta.url))
 const PWSH_CONFIG = fileURLToPath(new URL('./pwsh.cordis.yml', import.meta.url))
+const PRODUCT_SUBAGENT_CODEX_CONFIG = fileURLToPath(new URL('../product-subagent-codex.cordis.yml', import.meta.url))
+const PRODUCT_SUBAGENT_BOTH_CONFIG = fileURLToPath(new URL('../product-subagent-both.cordis.yml', import.meta.url))
+const FS_DIFF_BOUND_CONFIG = fileURLToPath(new URL('./fs-diff-bound.cordis.yml', import.meta.url))
 const SNAPSHOTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'snapshots')
 const PACKED_CHUNKS_SOURCE = 'hook-cc-pretool-deny'
 
@@ -90,8 +102,8 @@ async function prepareFsSearchWorkspace(cwd: string): Promise<void> {
   }
 }
 
-// FIXME: Migrate backend-oriented scenarios to the headless stream-json suite;
-// this ACP suite should eventually retain only automation-protocol contracts.
+// TODO(acp-snapshot-ownership): Move backend/product scenarios to headless while
+// retaining ACP protocol contracts here.
 
 function fixtureRecords(name: string): unknown[] {
   return readFileSync(join(SNAPSHOTS_DIR, name, 'session.jsonl'), 'utf8')
@@ -121,6 +133,27 @@ const SCENARIOS: Scenario[] = [
   // text-turn is the default header pin and owns the prompt and tool-schema
   // sidecars reused by alternate classes with identical component sequences.
   { name: 'text-turn', hasModelTurn: true, recorded: true, pinsHeader: true },
+  // Product-subagent scenarios are authored schema-isolation fixtures: they
+  // reuse the stable text-turn transcript so only Loader-composed headers and
+  // tool sidecars vary. Model output and usage are not evidence here, so record
+  // mode must not replace them with live-API output.
+  {
+    name: 'product-subagent-codex',
+    hasModelTurn: true,
+    recorded: false,
+    pinsHeader: true,
+    headerClass: 'product-subagent-codex',
+    configPath: PRODUCT_SUBAGENT_CODEX_CONFIG,
+  },
+  {
+    name: 'product-subagent-both',
+    hasModelTurn: true,
+    recorded: false,
+    pinsHeader: true,
+    headerClass: 'product-subagent-both',
+    systemPromptSource: 'product-subagent-codex',
+    configPath: PRODUCT_SUBAGENT_BOTH_CONFIG,
+  },
   {
     name: 'session-title-after-turn',
     hasModelTurn: true,
@@ -151,6 +184,30 @@ const SCENARIOS: Scenario[] = [
     headerClass: 'session-query',
     configPath: SESSION_QUERY_CONFIG,
     posixOnly: true,
+  },
+  // Authored keyless replays through the assembled app: the replay catalog
+  // declares flash image-capable (success) or text-only (refusal), and the
+  // real read_image tool executes against the workspace fixture and the real
+  // attachment store. Both boot the same composed header (the tool registers
+  // with the attachment store, independent of route), so they share one class.
+  {
+    name: 'read-image',
+    hasModelTurn: true,
+    recorded: false,
+    pinsHeader: true,
+    headerClass: 'image',
+    // The overlay adds no prompt section (read_image carries no guidance), so
+    // the composed system prompt is byte-identical to the default class; only
+    // the tool-schema sidecar is class-specific.
+    systemPromptSource: 'text-turn',
+    configPath: IMAGE_CONFIG,
+  },
+  {
+    name: 'read-image-text-route',
+    hasModelTurn: true,
+    recorded: false,
+    headerClass: 'image',
+    configPath: IMAGE_TEXT_ROUTE_CONFIG,
   },
   {
     name: 'pty-tools',
@@ -235,7 +292,7 @@ const SCENARIOS: Scenario[] = [
   // and then `migrate:packed-session-fixtures`, which canonicalizes the live
   // log's eager-drain-packed rows into the maximal-run layout replay produces.
   // The recorded fixture's `request/header` config and `request/context` are
-  // normalized to the replay-produced minimal shape (the live adapter logs
+  // normalized to the minimal fields produced during replay (the live adapter logs
   // model capabilities like maxTokens/reasoningEffort that llm-replay has no
   // data for), and its tool-result paths are canonicalized to `/` separators.
   {
@@ -252,8 +309,24 @@ const SCENARIOS: Scenario[] = [
   { name: 'fs-write', hasModelTurn: true, recorded: true },
   { name: 'fs-edit', hasModelTurn: true, recorded: true },
   { name: 'fs-write-overwrite', hasModelTurn: true, recorded: true },
+  // An overwrite whose replacement is at/above the configured diff-basis bound:
+  // the persisted result meta carries no contextual hunks and presentation
+  // falls back to the whole-file diff. The overlay leaves the prompt and tool
+  // sequence identical to text-turn, but the freshly recorded header carries
+  // the current adapter capability fields, so the scenario pins its own class.
+  {
+    name: 'fs-write-overwrite-bounded',
+    hasModelTurn: true,
+    recorded: true,
+    pinsHeader: true,
+    headerClass: 'fs-diff-bound',
+    systemPromptSource: 'text-turn',
+    toolSchemasSource: 'text-turn',
+    configPath: FS_DIFF_BOUND_CONFIG,
+  },
   { name: 'fs-read-window', hasModelTurn: true, recorded: true },
   { name: 'fs-policy-reject', hasModelTurn: true, recorded: true },
+  { name: 'fs-delete-recreate', hasModelTurn: true, recorded: true },
   { name: 'multi-turn', hasModelTurn: true, recorded: true },
   { name: 'error-finish', hasModelTurn: true, recorded: false, overridden: true },
   // Keyless, authored (like error-finish): a live provider cannot be coaxed
@@ -297,7 +370,17 @@ const SCENARIOS: Scenario[] = [
   // Windows bash process-tree kill is deferred with the Bash execution domain.
   { name: 'cancel-tool-calls', hasModelTurn: true, recorded: false, overridden: true, posixOnly: true },
   { name: 'subagent-spawn', hasModelTurn: true, recorded: true },
+  // Keyless authored scenario: the child ends at max-tokens with an empty
+  // usage-only assistant/message after earlier text and a tool call. The
+  // parent's tool result must retain that assistant output and stop reason.
+  { name: 'subagent-max-tokens-partial', hasModelTurn: true, recorded: false },
   { name: 'subagent-multi', hasModelTurn: true, recorded: true },
+  // Authored keyless replay: one assistant message carries two subagent calls
+  // and the parent log pins call/call/result/result instead of the serial
+  // interleaving. The twin delegations must stay identical: replay binds child
+  // scripts and harvest order nondeterministically across concurrent children
+  // (XXX(concurrent-subagents) in dsh-llm-replay).
+  { name: 'subagent-parallel', hasModelTurn: true, recorded: false },
   { name: 'subagent-fork', hasModelTurn: true, recorded: true },
   { name: 'subagent-mixed', hasModelTurn: true, recorded: true },
   // Authored continuable-subagent transcript: a background delegation returns
@@ -305,13 +388,35 @@ const SCENARIOS: Scenario[] = [
   // turns on that same child (the parent is never woken with their output),
   // send_message to an unknown subagent id fails without delivering, and the
   // child's retained handle is disposed child-first at teardown despite a
-  // failed final durability confirmation.
+  // failed final durability confirmation. That failed confirmation is also what
+  // the settlement notice must report: the child's last turn claimed the third
+  // message and then died on its durability checkpoint without entering a step,
+  // so the notice opening the parent's second turn says the child FAILED and the
+  // parent must not read the earlier answer as final. The scenario's fixture
+  // fences the child behind the parent's spawn turn so that notice can only
+  // arrive at an idle parent.
   {
     name: 'subagent-continuable',
     hasModelTurn: true,
     recorded: false,
     pinsChildToolSchemas: [1],
+    pinsChildSystemPrompts: [1],
     configPath: SUBAGENT_DURABILITY_FAILURE_CONFIG,
+  },
+  // Authored policy-inheritance transcript: the root session is switched to
+  // read-only at creation (the UI Access switch equivalent), and the
+  // continuable background child's log carries that override as a
+  // `sandbox/mode` `source: 'delegation'` event, so the child's runtime
+  // context states the inherited policy instead of the deployment default.
+  // The input also waits for the manager-owned settlement turn, keeping that
+  // delivery from racing transcript harvest.
+  {
+    name: 'subagent-continuable-inheritance',
+    hasModelTurn: true,
+    recorded: false,
+    pinsChildToolSchemas: [1],
+    pinsChildSystemPrompts: [1],
+    configPath: SUBAGENT_CONTINUABLE_INHERITANCE_CONFIG,
   },
   // The in-process child is published before its first follow-up fails. The
   // foreground tool retains both that run-result failure and an independent
@@ -325,24 +430,31 @@ const SCENARIOS: Scenario[] = [
     configPath: SUBAGENT_DURABILITY_FAILURE_CONFIG,
   },
   // Authored child-to-parent transcript: the child calls its scope-local
-  // `report`, quiet delivery reaches the idle parent without waking it, and a
-  // later parent turn consumes the logged report.
+  // `report`, and the runtime's unconditional settlement notice then wakes the
+  // parked parent into one ordinary turn that claims both. The overlay pins
+  // quiet report delivery because two independent wakes have no orderable
+  // transcript; the shipped waking default is covered by package tests.
   {
     name: 'subagent-report',
     hasModelTurn: true,
     recorded: false,
+    overridden: false,
+    configPath: SUBAGENT_REPORT_QUIET_CONFIG,
     pinsChildToolSchemas: [1],
+    pinsChildSystemPrompts: [1],
   },
   // Authored durable-catalog transcript: the snapshot-only lifecycle marker
   // fences the second parent turn behind the child's Activation end, so
-  // `list_agents` deterministically reads the persisted child as complete.
-  // The tool itself executes for real against the control service, session
-  // query, and JSONL persistence; the marker is not model-visible.
+  // `list_agents({ scope: 'descendants' })` deterministically reads the
+  // persisted child as complete, then `interrupt_agent` executes its accepted
+  // no-op against that settled id. Both tools run through the assembled control
+  // service; the marker is not model-visible.
   {
     name: 'subagent-list-agents',
     hasModelTurn: true,
     recorded: false,
     pinsChildToolSchemas: [1],
+    pinsChildSystemPrompts: [1],
   },
   {
     name: 'subagent-depth-two-rejection',
@@ -350,6 +462,19 @@ const SCENARIOS: Scenario[] = [
     recorded: false,
     overridden: true,
     configPath: DEPTH_TWO_CONFIG,
+  },
+  // Authored keyless replay through the assembled app: a one-shot child calls
+  // the real ask_user_question tool, the runtime-ownership guard rejects before
+  // the tripwire provider, and the child carries the unresolved decision in its
+  // final result so the parent can complete instead of waiting forever.
+  {
+    name: 'subagent-child-question-rejection',
+    hasModelTurn: true,
+    recorded: false,
+    pinsHeader: true,
+    headerClass: 'child-question',
+    systemPromptSource: 'text-turn',
+    configPath: CHILD_QUESTION_CONFIG,
   },
   // The workflow tool: the model writes a one-child orchestration script; the
   // child runs as a spawn subagent under the worker-thread engine (its session is the
@@ -383,7 +508,7 @@ const SCENARIOS: Scenario[] = [
   // the real Loader/app path, rather than retaining the earlier valid group.
   { name: 'hook-cc-invalid-matcher', hasModelTurn: true, recorded: false },
   { name: 'hook-codex-invalid-matcher', hasModelTurn: true, recorded: false },
-  // The mid-turn seams fire during a real model turn, so each is recorded with its hook active
+  // The mid-turn interception points fire during a real model turn, so each is recorded with its hook active
   // (the model's reaction to a deny/block/force-continue is part of the captured transcript).
   // SessionStart/SubagentStart are excluded because detached injection races log
   // order; SubagentStop writes no transcript, so an expected output could not prove it ran.

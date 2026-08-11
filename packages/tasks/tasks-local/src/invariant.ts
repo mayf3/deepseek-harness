@@ -4,7 +4,7 @@
  */
 
 /* jscpd:ignore-start */
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-tasks-local'
@@ -15,7 +15,7 @@ export const name = 'tasks-local-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: the seam companion in `@deepseek-ai/dsh-tasks` already
+ * No runtime invariant: the Service Definition companion in `@deepseek-ai/dsh-tasks` already
  * validates every registry snapshot this implementation publishes.
  */
 const install: InvariantInstaller = () => {}

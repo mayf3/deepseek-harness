@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SubagentService from '@deepseek-ai/dsh-subagent'
 import LocalSubprocessService from '@deepseek-ai/dsh-subprocess-local'
@@ -11,7 +11,7 @@ import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 import * as acp from '../src/index.ts'
 
 /**
- * With-key cross-process seam proof: the backend spawns the real acp-agent example, speaks ACP over
+ * With-key cross-process boundary proof: the backend spawns the real acp-agent example, speaks ACP over
  * stdio, and returns its real model answer. This is the out-of-process counterpart to in-process
  * spawn coverage and self-skips without `DEEPSEEK_API_KEY`.
  */

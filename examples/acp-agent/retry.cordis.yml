@@ -6,15 +6,13 @@
 # adapter fields around `retryPolicy`, while the app patch re-pins the recorded
 # flash model and restates its base fields.
 - id: base
-  name: '@cordisjs/plugin-include'
+  name: '@deepseek-ai/cordis-plugin-include'
   config:
     path: ./cordis.yml
     patches:
       - id: llm-deepseek
         name: '@deepseek-ai/dsh-llm-deepseek'
         config:
-          apiKey: !!js process.env.DEEPSEEK_API_KEY
-          baseURL: !!js process.env.DEEPSEEK_BASE_URL
           thinking: enabled
           reasoningEffort: max
           retryPolicy:

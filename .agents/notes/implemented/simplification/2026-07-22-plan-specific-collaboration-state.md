@@ -34,7 +34,7 @@ The active state contributes the deployment's section at prompt order 50. Inacti
 
 The tool renders the submitted plan as a generic card titled by its first heading. An absent or failed user-interaction provider, a failed review, or plugin disposal while review is pending fails closed and leaves manual `/plan off` as the human escape path.
 
-## Deleted surface
+## Deleted API
 
 - The arbitrary definition map, mode-name regular expression, reserved-name rules, and per-definition command loop.
 - `ModeDefinition`, the resolved definition map, `ctx.modes.list()`, string-valued get/set state, and unknown or retired mode handling.
@@ -49,7 +49,7 @@ The tool renders the submitted plan as a generic card titled by its first headin
 
 **Let one presentation transport own plan state.** Rejected because TUI, Web, resume, fork, prompt assembly, and the exit tool need the same logged fact independently of any one transport. Presentation adapters own only their projections.
 
-**Split a capability-seam trio or put the state in the agent loop.** Rejected because plan mode has no swappable backend, while existing session, prompt, tool, command, and lifecycle seams already provide every required hook.
+**Split a capability-seam trio or put the state in the agent loop.** Rejected because plan mode has no swappable backend, while existing session, prompt, tool, command, and lifecycle extension points already provide every required hook.
 
 **Put flips in surface messages or store plans in files.** Rejected because the stance is a log-only fact and the tool argument already records the reviewable plan. Surface duplication spends model context, while a plan directory creates a second durable home.
 

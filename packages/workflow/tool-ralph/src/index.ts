@@ -5,8 +5,8 @@
  * @module @deepseek-ai/dsh-tool-ralph
  */
 
-import type { Context } from 'cordis'
-import z from 'schemastery'
+import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import type { SubagentProvider } from '@deepseek-ai/dsh-subagent'
@@ -243,7 +243,7 @@ function normalizedList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(normalizedText)
 }
 
-/** Defensively decode the fixed script's report across an implementation seam. */
+/** Defensively decode the fixed script's report across a provider boundary. */
 function readReport(value: unknown, expectedStatus: RalphRoundStatus, maxChars: number): RalphRoundReport {
   if (!isRecord(value)
     || Object.keys(value).sort().join(',') !== 'blocker,evidence,nextSteps,status,summary'

@@ -1,13 +1,13 @@
 /**
- * User-settings seam (`ctx.settings`). Providers store one raw document of
+ * Service Definition for the user-settings capability seam (`ctx.settings`). Providers store one raw document of
  * per-namespace sections; plugins register a namespace schema and read the
  * resolved value, which layers schema defaults, the registrant's composition
  * `base`, and the user document section, in that order.
  * @module @deepseek-ai/dsh-settings
  */
 
-import { Context, Service } from 'cordis'
-import type z from 'schemastery'
+import { Context, Service } from '@deepseek-ai/cordis'
+import type z from '@deepseek-ai/schemastery'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import { redactSecrets } from './redact.ts'
 import type { RedactedSecret } from './redact.ts'
@@ -69,7 +69,7 @@ export interface SettingsRegisterOptions<T> {
 /** One registered namespace as surfaced to configuration UIs. */
 export interface SettingsDescriptor {
   // TODO(settings-namespace-vocabulary): Rename `ns` to `namespace` across the
-  // public seam, provider contract, implementations, tests, and consumers.
+  // public API, provider contract, implementations, tests, and consumers.
   /** The registered namespace. */
   ns: SettingsNamespace
   /** Serialized schemastery schema (`schema.toJSON()`). */
@@ -120,20 +120,20 @@ export interface SettingsScope<T> {
   watch(callback: (next: T, prev: T) => void | Promise<void>): () => void
   /**
    * Merge a partial patch into this namespace's user layer and persist it.
-   * @param patch - plain-object patch over the user section; JSON-shaped data
+   * @param patch - plain-object patch over the user section; JSON-compatible data
    * only (non-JSON values reject with their path before anything persists).
    */
   update(patch: object): Promise<void>
   /**
    * Replace this namespace's user section wholesale; absent keys re-inherit
    * the composition `base` and schema defaults (`replace({})` resets all).
-   * @param section - the complete next user section; JSON-shaped data only,
+   * @param section - the complete next user section; JSON-compatible data only,
    * as for {@link update}.
    */
   replace(section: object): Promise<void>
 }
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     settings: Settings
   }
@@ -172,11 +172,11 @@ declare module 'cordis' {
 }
 
 /**
- * Deep equality over JSON-shaped data (objects, arrays, primitives) — the
- * seam's single change-detection predicate, exported so the invariant
+ * Deep equality over JSON-compatible data (objects, arrays, primitives) — the
+ * Service Definition's single change-detection predicate, exported so the invariant
  * companion checks exactly the implementation's relation.
- * @param a - one JSON-shaped value.
- * @param b - the other JSON-shaped value.
+ * @param a - one JSON-compatible value.
+ * @param b - the other JSON-compatible value.
  * @returns whether the two values are structurally equal.
  */
 export function deepEqualJson(a: unknown, b: unknown): boolean {
@@ -195,7 +195,7 @@ export function deepEqualJson(a: unknown, b: unknown): boolean {
 
 /**
  * A write refused because the namespace moved since the caller read it. The
- * seam's serialized write queue orders writes; it cannot tell a fresh writer
+ * Service Definition's serialized write queue orders writes; it cannot tell a fresh writer
  * from one holding a stale snapshot, which is what this reports.
  */
 export class SettingsConflictError extends Error {
@@ -264,7 +264,7 @@ function applyPathOp(section: Record<string, unknown>, op: SettingsPathOp): Reco
   return { ...section, [head]: applyPathOp(child, { ...op, path: rest }) }
 }
 
-/** Human label for a value rejected by the JSON-shape boundary (numbers reject inline). */
+/** Human label for a value that lossless JSON cannot represent (numbers reject inline). */
 function describeRejected(value: unknown): string {
   if (value === undefined) return 'undefined'
   if (typeof value === 'object' && value !== null) {
@@ -276,16 +276,16 @@ function describeRejected(value: unknown): string {
 }
 
 /**
- * Detach one write input in a single walk that doubles as the durable-boundary
- * shape check: only JSON data (plain objects, arrays, strings, finite numbers,
+ * Detach and validate one write input in a single walk before persistence:
+ * only JSON data (plain objects, arrays, strings, finite numbers,
  * booleans, `null`) may reach a provider document. `structuredClone` alone
  * would admit Dates, Maps, BigInts, and cycles that YAML/JSON storage then
  * silently distorts on the reload round-trip. `undefined` entries in objects
  * are skipped — the same sparse-patch semantics as {@link mergeLayers} — while
  * an `undefined` array entry is rejected rather than coerced.
  * @param root - plain-object write input (caller-checked).
- * @param reject - builds the boundary error from a value label and its `$`-rooted path.
- * @returns the detached JSON-shaped clone.
+ * @param reject - builds the validation error from a value label and its `$`-rooted path.
+ * @returns the detached JSON-compatible clone.
  */
 function cloneJsonShaped(
   root: Record<string, unknown>,
@@ -640,9 +640,9 @@ export abstract class Settings extends Service {
     }
     // Snapshot at call time: the queue must never read a caller-owned object
     // the caller may keep mutating while the write waits its turn. The same
-    // walk is the JSON-shape boundary check (see cloneJsonShaped).
+    // walk rejects values that JSON cannot preserve (see cloneJsonShaped).
     const snapshot = cloneJsonShaped(payload, (label, path) =>
-      new TypeError(`settings ${verb} for "${ns}" must be JSON-shaped data (found ${label} at ${path})`))
+      new TypeError(`settings ${verb} for "${ns}" must contain only JSON-compatible data (found ${label} at ${path})`))
     const previous = this.writeQueues.get(ns) ?? Promise.resolve()
     // Chain past a failed predecessor: one rejected write must not poison the
     // namespace queue for every later caller.

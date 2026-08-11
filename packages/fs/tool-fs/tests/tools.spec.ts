@@ -1,10 +1,10 @@
 /**
- * Consumer-surface tests over a fake provider and the real policy collaborator: schemas,
+ * Consumer API tests over a fake provider and the real policy collaborator: schemas,
  * validation, formatting, typed errors, intent dispatch, and observation-driven authorization.
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -48,6 +48,11 @@ class FakeFs extends FileSystem {
   override async resolve(path: string): Promise<FsTarget> {
     return { targetKey: FsTargetKey(`key:${path}`), displayPath: `/abs/${path}` }
   }
+  override processPath(target: FsTarget): string { return String(target.targetKey) }
+  override fileUrl(target: FsTarget): string { return `file://${target.targetKey}` }
+  override contains(parent: FsTarget, child: FsTarget): boolean {
+    return child.targetKey === parent.targetKey || String(child.targetKey).startsWith(`${parent.targetKey}/`)
+  }
   override async stat(target: FsTarget): Promise<FsInfo | undefined> {
     this.throwIfArmed()
     const content = this.files.get(target.targetKey)
@@ -65,6 +70,13 @@ class FakeFs extends FileSystem {
   override async streamText(target: FsTarget): Promise<AsyncIterable<string>> {
     const content = this.files.get(target.targetKey) ?? ''
     return (async function* () { yield content })()
+  }
+  override async readBytes(target: FsTarget, _signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array> {
+    const bytes = new TextEncoder().encode(this.files.get(target.targetKey) ?? '')
+    if (bytes.length > maxBytes) {
+      throw new FsError(`too large: ${target.displayPath}`, 'FS_TOO_LARGE')
+    }
+    return bytes
   }
   override async listDir(_target: FsTarget): Promise<FsDirEntry[]> {
     return []
@@ -747,7 +759,7 @@ describe('read caps are plugin config', () => {
   })
 })
 
-describe('sandbox escalation surface (write/edit)', () => {
+describe('sandbox escalation API (write/edit)', () => {
   /** A confining fake `ctx.fs`: reports a default mode, records each per-call policy, and can arm a sandbox denial. */
   class SandboxingFakeFs extends FakeFs {
     stamped: (SandboxExecutionPolicy | undefined)[] = []
@@ -788,7 +800,7 @@ describe('sandbox escalation surface (write/edit)', () => {
     return { ctx, fs: ctx.fs as SandboxingFakeFs }
   }
 
-  /** A fake agent whose session records appends (the approval audit surface), mid-turn, carrying the given events for the fold. */
+  /** A fake agent whose session records appends (the approval audit trail), mid-turn, carrying the given events for the fold. */
   function escalationAgent(events: Array<{ type: string; data?: Record<string, unknown> }> = []): object {
     return {
       id: 'agent-fs-esc',

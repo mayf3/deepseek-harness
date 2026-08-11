@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mkdir, readdir, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import SkillService from '@deepseek-ai/dsh-skill'
 import { FileSystem, FsError, FsVersion, type FsDirEntry, type FsEditOutcome, type FsEditRequest, type FsInfo, type FsPathInfo, type FsTarget, type FsWriteOutcome } from '@deepseek-ai/dsh-fs'
 import * as SkillLocal from '../src/index.ts'
@@ -40,6 +40,14 @@ class TestFileSystem extends FileSystem {
     if (this.failResolvePaths.has(path)) throw new FsError('resolve failed', 'FS_NOT_FOUND')
     if (this.errorResolvePaths.has(path)) throw new Error('resolve temporarily failed')
     return { targetKey: path as never, displayPath: path }
+  }
+
+  override processPath(target: FsTarget): string { return String(target.targetKey) }
+
+  override fileUrl(target: FsTarget): string { return `file://${target.targetKey}` }
+
+  override contains(parent: FsTarget, child: FsTarget): boolean {
+    return child.targetKey === parent.targetKey || String(child.targetKey).startsWith(`${parent.targetKey}/`)
   }
 
   override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
@@ -85,6 +93,10 @@ class TestFileSystem extends FileSystem {
   }
 
   override async streamText(_target: FsTarget): Promise<AsyncIterable<string>> {
+    throw new Error('not needed in skill tests')
+  }
+
+  override async readBytes(_target: FsTarget, _signal: AbortSignal | undefined, _maxBytes: number): Promise<Uint8Array> {
     throw new Error('not needed in skill tests')
   }
 
@@ -488,7 +500,7 @@ describe('LocalSkillProvider', () => {
     ctx.emit(
       'fs/observed',
       { targetKey: path as never, displayPath: path },
-      FsVersion('failed-read'),
+      { kind: 'present', version: FsVersion('failed-read') },
       { name: 'edit' },
     )
     expect(await ctx.skills.snapshot()).toEqual({ skills: [], complete: false })
@@ -518,7 +530,7 @@ describe('LocalSkillProvider', () => {
       ctx.emit(
         'fs/observed',
         { targetKey: path as never, displayPath: path },
-        FsVersion('entry-failure'),
+        { kind: 'present', version: FsVersion('entry-failure') },
         { name: 'write' },
       )
     }
@@ -666,7 +678,7 @@ describe('LocalSkillProvider', () => {
       ctx.emit(
         'fs/observed',
         { targetKey: displayPath as never, displayPath },
-        FsVersion('observed'),
+        { kind: 'present', version: FsVersion('observed') },
         actor,
       )
     }
@@ -681,7 +693,7 @@ describe('LocalSkillProvider', () => {
     ctx.emit(
       'fs/observed',
       { targetKey: path as never, displayPath: path },
-      FsVersion('observed'),
+      { kind: 'present', version: FsVersion('observed') },
       { name: 'edit' },
     )
 
@@ -822,7 +834,7 @@ describe('LocalSkillProvider', () => {
 
       // Isolated providers see only their explicit roots: the environment
       // bundled root is a default root, so includeDefaultRoots: false must
-      // drop it — repository providers never re-claim the app's builtins.
+      // drop it — isolated providers never re-claim the app's builtins.
       const isolated = new Context()
       await isolated.plugin(SkillService)
       const customOnly = join(envHome, 'custom-only')

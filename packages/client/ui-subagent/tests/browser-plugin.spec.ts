@@ -5,11 +5,13 @@
  * real ClientSessionContext projections — zero-RPC candidates from the root
  * session list (running children of the projected session, label-contains
  * filtering, childless session → empty), the synchronous lexicon roster,
- * pick → plain-text outcome (decision 21), and the reference codec's two
+ * pick → plain-text outcome (the plain-text-reference decision:
+ * .agents/notes/implemented/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md),
+ * and the reference codec's two
  * projections. Direct driving is deliberate: this spec owns only the
  * source's own contract.
  */
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import {
   SlotsService, type ConversationSnapshot, type SessionId, type SessionListState,
@@ -18,7 +20,7 @@ import {
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { SlashService } from '@deepseek-ai/dsh-client-ui-slash/client'
 import type { ClientSessionContext, SlashSource } from '@deepseek-ai/dsh-client-ui-slash/client'
-import { apply as applyLocale } from '@deepseek-ai/dsh-client-locale/client'
+import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import {
   SubagentCatalogAction, type SubagentCatalogInjected,
 } from '../src/client/SubagentCatalogAction.tsx'
@@ -84,8 +86,9 @@ async function fullBench(sessions: SessionSummary[]) {
   const face = sessionsWith(sessions)
   ctx.provide('slash', { registerSource: (src: SlashSource) => { captured = src; return () => {} } })
   ctx.provide('sessions', face)
+  ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
   await provideSlotFaces(ctx)
-  await ctx.plugin({ inject: ['slots'], apply: applyLocale }).await()
+  await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
   await ctx.plugin({ inject: [...inject], apply }).await()
   return { source: captured!, face, ctx }
 }
@@ -119,8 +122,9 @@ describe('apply', () => {
     const ctx = new Context()
     await ctx.plugin(SlashService).await()
     ctx.provide('sessions', sessionsWith(FAMILY))
+    ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
     await provideSlotFaces(ctx)
-    await ctx.plugin({ inject: ['slots'], apply: applyLocale }).await()
+    await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const slash = ctx.get('slash') as SlashService
@@ -161,19 +165,26 @@ describe('apply', () => {
     const select = composerEntry.select as (owner: ComposerChainProps) => SubagentReadOnlyMatch | null
     const owner = (
       subagent: ConversationSnapshot['subagent'] | undefined,
+      running = false,
     ): ComposerChainProps => ({
       interactions: [],
       session: subagent === undefined
         ? undefined
-        : ({ subagent } as unknown as ConversationSnapshot),
+        : ({ subagent, running } as unknown as ConversationSnapshot),
     })
     expect(select(owner(undefined))).toBeNull()
     expect(select(owner(null))).toBeNull()
     expect(select(owner({ address: { ...address, mode: 'one-shot' }, parentAvailable: true })))
       .toEqual({ reason: 'one-shot' })
+    // One-shot stays read-only even while running: it has no stop action.
+    expect(select(owner({ address: { ...address, mode: 'one-shot' }, parentAvailable: true }, true)))
+      .toEqual({ reason: 'one-shot' })
     expect(select(owner({ address, parentAvailable: true }))).toBeNull()
     expect(select(owner({ address, parentAvailable: false })))
       .toEqual({ reason: 'parent-unavailable' })
+    // A RUNNING parent-offline continuable yields the default composer, whose
+    // disabled input still carries the primary Stop; stopped, it takes back over.
+    expect(select(owner({ address, parentAvailable: false }, true))).toBeNull()
   })
 })
 
@@ -220,7 +231,7 @@ describe('lexicon', () => {
 })
 
 describe('pick and codec', () => {
-  it('onPick returns the literal @label text with a closing space (decision 21)', async () => {
+  it('onPick returns the literal @label text with a closing space', async () => {
     const source = await bench(FAMILY)
     const outcome = source.onPick({
       candidate: { name: 'worker-1' },

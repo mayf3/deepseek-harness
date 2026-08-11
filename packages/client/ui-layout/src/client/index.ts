@@ -3,7 +3,7 @@
  * the runtime's built-in 'root' slot and, in the same breath, declares the
  * four child slots (declaration = exclusive render authority), seats the
  * layout store (panel geometry), and wires the panel-action service face.
- * ctx.layout is the cross-plugin panel-action seam; navigation state lives
+ * ctx.layout is the cross-plugin panel-action contract; navigation state lives
  * with the runtime sessions service. A second effect seats the theme
  * presenter, which projects ctx.theme snapshots onto document.body.
  */
@@ -15,7 +15,7 @@ import { createLayoutStore } from './stores.ts'
 import { LayoutService } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
 
-// Contract surface only (export-convergence rule: cross-package consumers
+// Contract exports only (export-convergence rule: cross-package consumers
 // keep a symbol exported; test-only/package-internal symbols live off /src).
 // ILayout: the ctx.layout face consumers and test fakes type against.
 // OwnerShare contracts below are the render-side halves registrants compose
@@ -23,7 +23,7 @@ import { ThemePresenter } from './theme-presenter.ts'
 export { LayoutService } from './service.ts'
 export type { ILayout } from './service.ts'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     /** The outward face only; the concrete service stays inside this plugin. */
     layout: import('./service.ts').ILayout
@@ -64,7 +64,7 @@ export interface ConvOwnerProps {}
 /** Details owner share: empty — sessionId arrives as a framework-standard prop. */
 export interface DetailsOwnerProps {}
 
-/** Required services (cordis fiber inject — the loader passes the whole export surface as an object plugin). */
+/** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
 export const inject = ['slots', 'theme']
 
 /**

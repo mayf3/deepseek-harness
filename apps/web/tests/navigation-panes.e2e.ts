@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page, Response } from 'playwright'
 import { chromium } from 'playwright'
+import { strFromU8, unzipSync } from 'fflate'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFailed } from 'vitest'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -78,8 +79,8 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
     // The workspace-aware flow runs sessions in <workspaceCwd>/workspace;
-    // the read targets must live in that session cwd (pre-creation is safe:
-    // create-by-name adopts an existing directory).
+    // the read targets must live in that session cwd (pre-creation is safe
+    // because the picker adopts an existing directory by path).
     const sessionCwd = join(scaffold.workspaceCwd, 'workspace')
     await mkdir(sessionCwd, { recursive: true })
     await writeFile(join(sessionCwd, 'nav-a.md'), '# alpha nav\n')
@@ -164,8 +165,8 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
       sessionId = await settled
     }
     await recordFixture(scaffold, sessionId!, SEED)
-    // Fixture honesty: the recording must carry the shape the replay
-    // scenarios assert on — three calls in turn 1 and two closed turns.
+    // Fixture honesty: the recording must contain the events the replay
+    // scenarios assert on: three calls in turn 1 and two closed turns.
     const recorded = parseSessionLog(await readFile(SEED, 'utf8'))
     expect(recorded.filter(e => e.type === 'turn/end')).toHaveLength(2)
     const calls = recorded.filter((e): e is SessionEvent & { data: { name: string } } => e.type === 'tool/call')
@@ -274,6 +275,23 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     await details.getByRole('button', { name: 'Close details' }).click()
   }, 60_000)
 
+  it.skipIf(MODE === 'record')('downloads the session-log ZIP from the trajectory toolbar', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-export'))
+    await ensureSeedOpen(page)
+    await page.getByRole('tab', { name: 'Trajectory' }).click()
+    const downloadPromise = page.waitForEvent('download', { timeout: 30_000 })
+    await page.getByRole('button', { name: 'Export session log' }).click()
+    const download = await downloadPromise
+    expect(download.suggestedFilename()).toMatch(/^dsh-session-.+\.zip$/)
+    // The real host streamed the ZIP; its root entry is the persisted log
+    // text verbatim (the assembled seam: real route, real persistence read).
+    const files = unzipSync(await readFile(await download.path()))
+    expect(Object.keys(files)).toEqual(['session.jsonl'])
+    const content = strFromU8(files['session.jsonl'] as Uint8Array)
+    expect(content.split('\n')[0]).toContain(SEED_ID)
+    expect(content).toContain('FIRST_DONE')
+  }, 60_000)
+
   it.skipIf(MODE === 'record')('focuses the ledger by dragging an overview interval', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-timeline'))
     await ensureSeedOpen(page)
@@ -331,7 +349,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     // Real layout, not jsdom's stub (which computes no geometry at all):
     // squeeze the output pane below its content width and the line must keep
     // its single row and overflow sideways instead of folding. Soft-wrapping
-    // here is what shredded the column alignment this card exists to hold.
+    // here shreds the column alignment this card exists to hold.
     const layout = await card.locator('[class*="_output_"]').first().evaluate((node) => {
       const pane = node as HTMLElement
       const row = pane.querySelector<HTMLElement>('[class*="_line_"]')

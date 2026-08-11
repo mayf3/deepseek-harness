@@ -4,7 +4,7 @@
 
 工具无关的 shell 环境插件：拥有 `ctx.bashEnv` 注册表，管理受信任的、每次执行收集的 `DSH_*` 变量，供模型可见的 shell 工具（`dsh-tool-bash`、`dsh-tool-pwsh`）收集进每次 shell 调用的环境。内置 shell 事实（`DSH_HOME`、`DSH_SHELL=1`、`DSH_SESSION_ID`）归注册表自身所有；其他插件可以注册额外的可枚举事实，注册随插件纤维（fiber）释放，重复所有权或未声明的运行时键会响亮失败。
 
-包根导出 Cordis 插件契约（`name`、`inject`、`Config`、`apply`）以及 `BashEnvRegistry` 服务类及其 contributor 类型；消费者在加载本插件后使用 `ctx.bashEnv`。
+包根导出 Cordis 插件约定（`name`、`inject`、`Config`、`apply`）以及 `BashEnvRegistry` 服务类及其 contributor 类型；消费方在加载本插件后使用 `ctx.bashEnv`。
 
 ## Config
 
@@ -22,7 +22,7 @@
 `ctx.bashEnv` 负责收集。其他插件可以注册一个受 effect 作用域约束的 contributor，带有稳定名称、已声明的键/描述以及 `resolve(execution: ToolExecution)`；重复所有权与未声明的运行时键会响亮失败，而 `list()` 只枚举声明、不执行 provider。Harness 内置键保留 `DSH_HOME`、`DSH_SHELL` 与 `DSH_SESSION_ID`；本插件的持久化翻译器通过读取与后端无关的 `sessionPersistence.locate()` seam 拥有 `DSH_SESSION_JSONL`。
 
 ```ts
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-bash-env'
 
 export const inject = ['bashEnv']

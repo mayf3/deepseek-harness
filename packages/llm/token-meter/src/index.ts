@@ -4,13 +4,13 @@
  * @module @deepseek-ai/dsh-token-meter
  */
 
-import { Context, Service } from 'cordis'
-import z from 'schemastery'
+import { Context, Service } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { BlockAssembler, deepFreeze } from '@deepseek-ai/dsh-llm'
 import type { Message, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { EpochHeader, Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { canonicalHeader, headerEquals, isSurfaceEvent } from '@deepseek-ai/dsh-session'
-// Type-only: resolves the optional projection registry Context seam.
+// Type-only: resolves the optional projection registry Context declaration.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {
   TokenMeasurement,
@@ -64,7 +64,7 @@ function validateConfigKeys(config: TokenMeterConfig): void {
   }
 }
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     tokenMeter: TokenMeterService
   }
@@ -206,7 +206,7 @@ export class TokenMeterService extends Service {
         if (state.stepStart === undefined
           || state.stepStart.turn !== event.data.turn
           || state.stepStart.step !== event.data.step) {
-          throw new Error(`token meter: step/end at seq ${event.seq} has no matching step/start boundary`)
+          throw new Error(`token meter: step/end at seq ${event.seq} has no matching step/start event`)
         }
         nextStepStart = undefined
         break
@@ -223,7 +223,7 @@ export class TokenMeterService extends Service {
       if (stepStart === undefined
         || stepStart.turn !== event.data.turn
         || stepStart.step !== event.data.step) {
-        throw new Error(`token meter: assistant/message at seq ${event.seq} has no matching step/start boundary`)
+        throw new Error(`token meter: assistant/message at seq ${event.seq} has no matching step/start event`)
       }
 
       // assistant/message is surface-mandatory at every append/seed boundary.
@@ -270,9 +270,9 @@ export class TokenMeterService extends Service {
   }
 
   /**
-   * Reassemble provider output from exact chunk provenance for a usage anchor.
-   * Missing legacy provenance conservatively treats the durable output as the
-   * provider output; explicit empty provenance prices a known empty stream.
+   * Reassemble provider output from the exact cited chunk seqs for a usage anchor.
+   * Missing legacy source seqs conservatively treat the durable output as the
+   * provider output; an explicit empty list prices a known empty stream.
    */
   private _estimateProviderAssistant(
     session: Session,

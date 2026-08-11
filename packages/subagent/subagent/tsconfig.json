@@ -27,13 +27,25 @@
       "path": "../../core/scope"
     },
     {
-      "path": "../../session-persistence/session-persistence"
+      "path": "../../interaction/user-approval"
     },
     {
-      "path": "../../session-projection/session-projection"
+      "path": "../../preset/agent-presets"
     },
     {
-      "path": "../../session-projection/session-projection-cache"
+      "path": "../../sandbox/sandbox"
+    },
+    {
+      "path": "../../sandbox/sandbox-policy"
+    },
+    {
+      "path": "../../session/session-persistence"
+    },
+    {
+      "path": "../../session/session-projection"
+    },
+    {
+      "path": "../../session/session-projection-cache"
     },
     {
       "path": "../../tasks/tasks"

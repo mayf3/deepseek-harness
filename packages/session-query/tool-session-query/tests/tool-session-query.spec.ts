@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context, type Fiber } from 'cordis'
+import { Context, type Fiber } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, CallId, HarnessError , createMessage } from '@deepseek-ai/dsh-llm'
 import { MAX_TIMER_DELAY_MS, TimeoutReason } from '@deepseek-ai/dsh-timeout'
@@ -1978,6 +1978,7 @@ describe('trace and exact read rendering', () => {
     )
     const result = await mounted.call('session_event_trace', { session_id: session.id, seq: 0 })
     expect(text(result)).toContain('Replacement chain: 1')
+    expect(text(result)).toContain('Events cited directly as sources: none')
     expect(text(result)).toContain('Direct derived events: 1')
     expect(text(result)).toContain(new Date(session.events[0]?.time ?? 0).toISOString())
   })

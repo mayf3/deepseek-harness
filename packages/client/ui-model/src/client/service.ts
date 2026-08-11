@@ -7,18 +7,18 @@
  * Per-session storage follows the client service pattern (SlashService /
  * CommandService): a lazy service-internal map whose entry is deleted by the
  * owning scope's disposer. The host `dsh-scope` ScopedLayers registry does
- * not transplant here: it derives scope from the host carrier mechanism
+ * does not belong here: it derives scope from the host carrier mechanism
  * (object-keyed), while client scopes tag contexts with branded SessionId
  * strings, and it models global+shadow named registries — this is a
  * per-session singleton with no global layer to merge.
  */
-import { Service } from 'cordis'
-import type { Context } from 'cordis'
+import { Service } from '@deepseek-ai/cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionHandle, SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionsService } from '@deepseek-ai/dsh-client-runtime/client'
 import { ModelDirectory } from './directory.ts'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     models: ModelService
   }
@@ -36,11 +36,16 @@ export class ModelService extends Service {
 
   private readonly live: LiveState = { directories: new Map() }
 
+  /** Localized composer-block copy; this plugin owns the string it raises. */
+  private readonly blockReason: () => string
+
   /**
    * @param ctx - owning root context (the service registers itself as `models`).
+   * @param config - the bound translator for this plugin's own dictionary.
    */
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: { blockReason: () => string }) {
     super(ctx, 'models')
+    this.blockReason = config.blockReason
     ctx.on('connection/reset', () => {
       for (const directory of this.live.directories.values()) directory.resetConnected()
     })
@@ -74,6 +79,27 @@ export class ModelService extends Service {
       () => sessions.subagentAddress(sessionId) === undefined,
     )
     live.directories.set(sessionId, directory)
+    // The composer cannot read this plugin (the dependency runs one way), so
+    // the block is pushed: the Host says whether an adapter serves the
+    // session's route, and only a definite `false` makes the input inert.
+    // `null` — before the first load, or after one failed — must not, or a
+    // slow or unreachable Host would lock a working composer.
+    const conversation = this.ctx.get('conversation')
+    if (conversation !== undefined) {
+      const publish = (): void => {
+        conversation.blocks.set(sessionId, directory.store.getSnapshot().routable === false
+          ? { reason: this.blockReason() }
+          : undefined)
+      }
+      publish()
+      actx.effect(() => {
+        const stop = directory.store.subscribe(publish)
+        return () => {
+          stop()
+          conversation.blocks.set(sessionId, undefined)
+        }
+      }, 'ui-model: composer block')
+    }
     actx.effect(() => () => {
       directory.dispose()
       live.directories.delete(sessionId)

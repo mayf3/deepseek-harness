@@ -54,6 +54,8 @@ interface EditorTarget extends ProviderIdentity {
   settingsPath: readonly string[]
   /** Writable credential identified under this page's conventional reference. */
   credentialRef?: string
+  /** The adapter reports this route as one it does not ship (see {@link ProviderEditorProps.declared}). */
+  declared?: boolean
 }
 
 /** Values that vary around the shared provider-editor rendering. */
@@ -71,6 +73,7 @@ function renderProviderEditor({ target, ...props }: ProviderEditorRenderProps): 
       provider={target.provider}
       displayName={target.displayName}
       settingsPath={target.settingsPath}
+      {...target.declared === true ? { declared: true } : {}}
       {...props}
     />
   )
@@ -80,8 +83,8 @@ function renderProviderEditor({ target, ...props }: ProviderEditorRenderProps): 
  * Remove one user-added provider and its page-managed credential. Credential
  * removal comes first so a second-step failure leaves the provider row visible
  * and the whole operation safely retryable; both unsets are idempotent.
- * The settings removal names the profile rather than rebuilding its redacted
- * namespace, which would drop literal secrets stored elsewhere.
+ * The settings removal names the profile rather than rebuilding its whole
+ * namespace from a partial view.
  * @param api - settings and credential wire faces.
  * @param controller - the page store to refresh.
  * @param target - the provider's settings address and optional managed credential.
@@ -112,16 +115,14 @@ export async function removeProviderProfile(
 }
 
 /**
- * Whether a whole-section provider still needs its first key: nothing marks
- * the credential configured and no literal `apiKey` is stored, so the page
- * opens the setup card instead of showing a row.
+ * Whether a whole-section provider still needs its first key: an unconfigured
+ * credential opens the setup card instead of showing a row.
  * @param row - the joined provider row.
  * @returns whether to render the setup card.
  */
 export function needsSetup(row: ProviderRow): boolean {
   if (row.entry.settingsPath.length > 0) return false
-  if (row.credential?.configured === true) return false
-  return !row.literalApiKeyConfigured
+  return row.credential?.configured !== true
 }
 
 function targetOf(row: ProviderRow): EditorTarget {
@@ -137,6 +138,10 @@ function targetOf(row: ProviderRow): EditorTarget {
     settingsNs: row.entry.settingsNs,
     settingsPath: row.entry.settingsPath,
     ...credentialRef === undefined ? {} : { credentialRef },
+    // Absent is not "shipped": an adapter that answers nothing leaves the
+    // route-level fields only a declared route owns off the card, exactly as
+    // it leaves the custom tag off the row.
+    ...row.entry.declared === true ? { declared: true } : {},
   }
 }
 
@@ -179,8 +184,10 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
     setAdding(false)
     setDeclaring(false)
     if (changed) {
-      setSavedTarget(target)
-      void controller.load()
+      // Announced only once the refreshed directory is in the snapshot the
+      // notice reads its name from: an apply can rename the route, and the
+      // target captured when the card opened still carries the old name.
+      void controller.load().then(() => { setSavedTarget(target) })
     }
   }
 
@@ -220,6 +227,17 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
     )
   }
 
+  // The saved provider as the directory currently names it. The route id is
+  // what the apply cannot change, so it is what the notice is keyed by; a row
+  // the same apply removed keeps the captured identity, since nothing newer
+  // exists to name it with.
+  const savedRow = savedTarget === undefined
+    ? undefined
+    : state.rows.find(row => row.entry.provider === savedTarget.provider)
+  const savedIdentity = savedRow === undefined
+    ? savedTarget
+    : { provider: savedRow.entry.provider, displayName: savedRow.entry.displayName }
+
   const configured = state.rows.filter(row => row.configured)
   const addable = state.rows.filter(row => !row.configured && row.entry.settingsNs !== '')
   const addTarget = adding ? editing : undefined
@@ -234,11 +252,11 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
       <h2 className={styles['title']}>{t('title')}</h2>
       <p className={styles['intro']}>{t('intro')}</p>
       {!state.writable && state.status === 'ready' ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
-      {savedTarget === undefined
+      {savedIdentity === undefined
         ? null
         : (
           <p className={styles['savedNotice']} role="status" aria-live="polite">
-            {providerCopy(t('savedProvider'), savedTarget)}
+            {providerCopy(t('savedProvider'), savedIdentity)}
           </p>
         )}
       <ul className={styles['rows']}>
@@ -264,7 +282,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
             )
           }
           const open = !adding && editing?.provider === row.entry.provider
-          const credentialConfigured = row.literalApiKeyConfigured || row.credential?.configured === true
+          const credentialConfigured = row.credential?.configured === true
           const credentialMissing = !credentialConfigured
             && row.apiKeyEnv !== undefined
             && row.credential?.configured === false
@@ -273,6 +291,12 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
               <div className={styles['rowHead']}>
                 <span className={styles['rowIdentity']}>
                   <span className={styles['rowName']}>{row.entry.displayName}</span>
+                  {/* Only the adapter can tell a hand-declared route from a
+                      shipped one it also has a stored profile for, so the tag
+                      follows its answer and stays off when it gives none. */}
+                  {row.entry.declared === true
+                    ? <span className={styles['rowTag']}>{t('customTag')}</span>
+                    : null}
                   {credentialConfigured
                     ? (
                       <span

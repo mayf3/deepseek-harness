@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { type Agent } from '@deepseek-ai/dsh-agent'
 
 import { HarnessError } from '@deepseek-ai/dsh-llm'
@@ -15,6 +15,7 @@ import SubagentService, {
   type SubagentProvider,
   type SubagentResult,
   type SubagentRun,
+  type SubagentRunEndInfo,
   type SubagentStartRequest,
 } from '@deepseek-ai/dsh-subagent'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
@@ -131,6 +132,16 @@ describe('SubagentService', () => {
     // Without `ctx.agents` no manager exists, so nothing was ever materialized.
     expect('drainContinuable' in subagents).toBe(false)
     await expect(subagents.drainContinuableDescendants([])).resolves.toBeUndefined()
+  })
+
+  it('treats interrupt as an accepted no-op when no manager was bound', async () => {
+    const { subagents } = await service()
+    // Without a continuation manager no live Activation can exist, so there is
+    // nothing to stop and nothing to authorize against.
+    expect(() => { subagents.interrupt(SessionId('child'), {
+      kind: 'user',
+      parentSessionId: SessionId('parent-1'),
+    }) }).not.toThrow()
   })
 
   it('rejects continuable operations when their runtime services are absent', async () => {
@@ -252,6 +263,17 @@ describe('SubagentService', () => {
       lastAssistantMessage: [{ type: 'text', text: 'answer' }],
       stopReason: 'completed',
     }))
+
+    // The lifecycle event omits lastAssistantMessage when output is empty,
+    // matching the continuable epoch event.
+    const silent = new StubProvider('silent', NO_CAPS, { output: [], stopReason: 'completed' })
+    subagents.registerProvider(silent)
+    const silentRun = await subagents.start('silent', baseRequest())
+    await silentRun.result
+    await Promise.resolve()
+    const silentEnd = ended.mock.calls.map(call => call[0] as SubagentRunEndInfo).find(info => info.provider === 'silent')
+    expect(silentEnd).toBeDefined()
+    expect('lastAssistantMessage' in silentEnd!).toBe(false)
 
     const failure = Promise.withResolvers<SubagentResult>()
     subagents.registerProvider({

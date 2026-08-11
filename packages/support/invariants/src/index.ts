@@ -6,10 +6,10 @@
  * @module @deepseek-ai/dsh-invariants
  */
 
-import { Context, Service } from 'cordis'
-import type { Inject } from 'cordis'
-import z from 'schemastery'
-import type Schema from 'schemastery'
+import { Context, Service } from '@deepseek-ai/cordis'
+import type { Inject } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import type Schema from '@deepseek-ai/schemastery'
 
 /** Runtime invariant selection configured on the service plugin. */
 export interface Config {
@@ -65,7 +65,7 @@ export class InvariantError extends Error {
   }
 }
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     invariants: InvariantService
   }
@@ -191,7 +191,7 @@ export class InvariantService extends Service {
       throw error
     }
     // Cordis attaches setup thenability and async teardown to this callable;
-    // the service seam intentionally exposes only the conventional disposer.
+    // the service contract intentionally exposes only the conventional disposer.
     // oxlint-disable-next-line typescript/no-misused-promises -- the extra runtime shape stays private.
     return registration
   }

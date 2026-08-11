@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Context } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
+import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import CredentialsLocal from '@deepseek-ai/dsh-credentials-local'
 import WebService from '@deepseek-ai/dsh-web'
@@ -455,7 +455,7 @@ describe('web-search-deepseek plugin registration', () => {
     const ctx = new Context()
     try {
       await ctx.plugin(WebService, { searchProvider: DEEPSEEK_PROVIDER_ID })
-      await ctx.plugin(CredentialsLocal, { path: join(dir, '.env'), watch: false })
+      await ctx.plugin(CredentialsLocal, { path: join(dir, '.credentials.yaml'), watch: false })
       await ctx.plugin(deepseekPlugin, { baseURL: 'https://api.deepseek.test/anthropic/v1' })
 
       await expect(ctx.web.search({ query: 'missing' }))

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -42,7 +42,7 @@ describe('write-drain teardown', () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsh-credentials-drain-'))
     cleanups.push(() => rm(dir, { recursive: true, force: true }))
     const ctx = new Context()
-    const fiber = ctx.plugin(CredentialsLocal, { path: join(dir, '.env'), watch: false })
+    const fiber = ctx.plugin(CredentialsLocal, { path: join(dir, '.credentials.yaml'), watch: false })
     await fiber
     const service = ctx.credentials
 

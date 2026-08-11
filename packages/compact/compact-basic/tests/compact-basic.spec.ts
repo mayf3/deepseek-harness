@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import BasicCompactService from '@deepseek-ai/dsh-compact-basic'
 import type { BasicCompactConfig } from '@deepseek-ai/dsh-compact-basic'
 import { selectCompactableRange } from '@deepseek-ai/dsh-compact-basic/src/region.ts'
-import type { SummarizationInput } from '@deepseek-ai/dsh-compact-basic/src/summarizer.ts'
-import { toolPairingBalancedAfter, toolPairingBalancedBefore } from '@deepseek-ai/dsh-compact'
+import type { SummarizationInput, SummaryResult } from '@deepseek-ai/dsh-compact-basic/src/summarizer.ts'
+import { CompactionId, toolPairingBalancedAfter, toolPairingBalancedBefore } from '@deepseek-ai/dsh-compact'
 import {
   resolveCompactSpec,
   resolveConfig,
@@ -838,7 +839,7 @@ describe('optional model-free tool-result pruning', () => {
 })
 
 describe('compaction region transaction', () => {
-  it('lands a framed, replayable checkpoint with exact pricing provenance', async () => {
+  it('lands a framed, replayable checkpoint with exact source seqs and token price', async () => {
     const compact = service()
     compact.rawOutput = [
       { type: 'reasoning', text: 'private compact thought' },
@@ -868,6 +869,7 @@ describe('compaction region transaction', () => {
       rawOutput: compact.rawOutput,
       usage: compact.usage,
     })
+    expect(summary?.data).not.toHaveProperty('llmStreamCall')
     const head = session.deriveMessages()[0]!
     expect(head.content[0]?.type).toBe('text')
     expect(head.content[0]?.type === 'text' ? head.content[0].text : '').toContain('<compacted-summary>')
@@ -944,7 +946,10 @@ describe('compaction region transaction', () => {
     )).rejects.toThrow(/no open turn/)
 
     const locked = conversation(1)
-    locked.append('compact/start', { turn: 2 })
+    locked.append('compact/start', {
+      compactionId: CompactionId('locked-compaction'),
+      turn: 2,
+    })
     const lockedNodes = locked.surface.nodes
     await expect(compact.compactRegion(
       lockedNodes[0]!,
@@ -1165,6 +1170,15 @@ async function summarizerHarness(
 }
 
 describe('default one-shot summarizer', () => {
+  it('requires complete raw output when a subclass marks one local LLM stream call', () => {
+    expectTypeOf<{
+      summary: ContentBlock[]
+      llmStreamCall: true
+      provider: string
+      model: string
+    }>().not.toExtend<SummaryResult>()
+  })
+
   it('uses configured model/default cap, forwards cancellation, and keeps only safe text', async () => {
     const { adapter, compact } = await summarizerHarness([
       { type: 'reasoning', text: 'private' },
@@ -1187,6 +1201,7 @@ describe('default one-shot summarizer', () => {
         { type: 'text', text: 'public summary' },
         { type: 'tool-call', id: CallId('unexpected'), name: 'x', arguments: '{}' },
       ],
+      llmStreamCall: true,
       provider: MODEL,
       model: MODEL,
       maxTokens: 321,
@@ -1208,7 +1223,19 @@ describe('default one-shot summarizer', () => {
     const { adapter, compact } = await summarizerHarness([{ type: 'text', text: 'summary' }])
     const tools = [{ name: 'do_thing', description: 'd', parameters: { type: 'object' } }]
     const prefix: Message = createUserMessage({
-      content: [{ type: 'text', text: 'earlier turn' }],
+      content: [
+        { type: 'text', text: 'earlier turn' },
+        {
+          type: 'image',
+          attachment: {
+            attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+            mediaType: 'image/png',
+            bytes: 1,
+            width: 1,
+            height: 1,
+          },
+        },
+      ],
       source: { kind: 'plugin', plugin: 'test' },
     })
     await compact.runSummarize({
@@ -1300,6 +1327,7 @@ describe('default one-shot summarizer', () => {
     await compact.compactRegion(nodes[0]!, nodes[3]!, agent(session, MODEL), SIGNAL)
     expect(session.events.findLast(event => event.type === 'compact/summary')?.data).toMatchObject({
       summary: [{ type: 'text', text: 'routed summary' }],
+      llmStreamCall: true,
       provider: 'routed-summary-provider',
       model: 'routed-summary-model',
     })
@@ -1366,6 +1394,43 @@ describe('default one-shot summarizer', () => {
     const { compact } = await summarizerHarness([{ type: 'reasoning', text: 'private' }])
     await expect(compact.runSummarize(promptInput('history'), agent(conversation(1), MODEL)))
       .rejects.toThrow(/no text summary content/)
+  })
+
+  it('rejects image summary output instead of silently dropping it', async () => {
+    const { compact } = await summarizerHarness([
+      {
+        type: 'image',
+        attachment: {
+          attachmentId: AttachmentId(`sha256:${'b'.repeat(64)}`),
+          mediaType: 'image/png',
+          bytes: 1,
+          width: 1,
+          height: 1,
+        },
+      },
+      { type: 'text', text: 'partial summary' },
+    ])
+    await expect(compact.runSummarize(promptInput('history'), agent(conversation(1), MODEL)))
+      .rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
+  })
+
+  it('rejects image summary output nested in a tool result', async () => {
+    const { compact } = await summarizerHarness([{
+      type: 'tool-result',
+      toolCallId: CallId('summary-tool'),
+      content: [{
+        type: 'image',
+        attachment: {
+          attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`),
+          mediaType: 'image/png',
+          bytes: 1,
+          width: 1,
+          height: 1,
+        },
+      }],
+    }])
+    await expect(compact.runSummarize(promptInput('history'), agent(conversation(1), MODEL)))
+      .rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
   })
 })
 
@@ -1611,6 +1676,7 @@ describe('automatic listener and loader composition', () => {
     const compact = new TestCompactService(ctx)
     const session = conversation(2)
     const fakeResult: CompactionResult = {
+      compactionId: CompactionId('fake-compaction'),
       startSeq: 1,
       summarySeq: 2,
       endSeq: 3,

@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
 import { expect, it } from 'vitest'
-import { Context } from 'cordis'
-import type { Fiber } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
+import type { Fiber } from '@deepseek-ai/cordis'
 import LocalSubprocessService from '@deepseek-ai/dsh-subprocess-local'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { REPO_ROOT } from './support.ts'
@@ -75,8 +75,8 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
   if (!existsSync(binPath)) throw new Error('HMR browser test needs the built dsh bin; run pnpm run build first')
   const originalSource = await readFile(sourcePath)
   const originalBundle = await readFile(bundlePath)
-  const oldText = "Let's start building"
-  const sourceNeedle = "'hero.headline': 'Let\\'s start building'"
+  const oldText = 'Into the Unknown'
+  const sourceNeedle = "'hero.headline': 'Into the Unknown'"
   const newText = `HMR UPDATED ${'x'.repeat(80)}`
   const updatedSource = originalSource.toString().replace(sourceNeedle, `'hero.headline': '${newText}'`)
   if (updatedSource === originalSource.toString()) throw new Error(`HMR source lacks ${JSON.stringify(sourceNeedle)}`)

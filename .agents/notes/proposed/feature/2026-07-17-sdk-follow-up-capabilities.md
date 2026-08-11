@@ -12,7 +12,7 @@ These gaps are coupled. Create and config already share questions, feature confi
 
 ## Proposal
 
-The SDK extends the existing prompt and project-editing boundaries instead of creating parallel workflows. A non-interactive prompt port and structured feature plan drive create and config, `dsh-sdk create <source>` delegates dependency resolution to the project package manager before mounting the resolved package through `ProjectEditSession`, launcher-side telemetry wraps `create-sdk` and every `dsh-sdk` command, and injected prompt streams provide the primary interactive-test seam.
+The SDK extends the existing prompt and project-editing boundaries instead of creating parallel workflows. A non-interactive prompt port and structured feature plan drive create and config, `dsh-sdk create <source>` delegates dependency resolution to the project package manager before mounting the resolved package through `ProjectEditSession`, launcher-side telemetry wraps `create-sdk` and every `dsh-sdk` command, and injected prompt streams provide the primary interactive-test hook.
 
 | Capability | Product entrypoint | Owning mechanism | Required outcome |
 |---|---|---|---|
@@ -47,7 +47,7 @@ The repository ships a thin `SKILL.md` that teaches an agent to construct the st
 
 The package manager owns source parsing, version or commit resolution, integrity data, lockfile updates, and any build policy. The SDK does not download or unpack a second copy through giget or pacote. An external plugin remains a dependency under `node_modules`; local plugin scaffolding remains a separate project-creation concern.
 
-This proposal concerns dependencies of developer-owned SDK projects. Standalone app repository caching, its bundled-pnpm policy, and its explicit preparation trust boundary are owned by the [package-manager-native repository cache](../../implemented/architecture/2026-07-30-package-manager-native-repository-cache.md).
+This proposal concerns dependencies of developer-owned SDK projects. Standalone apps install external packages as [profile bundles](../../implemented/simplification/2026-08-09-remove-repository-plugin.md), with their profile package manager and lockfile owning acquisition and lifecycle policy.
 
 ## Launcher telemetry
 

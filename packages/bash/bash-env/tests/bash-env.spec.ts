@@ -7,7 +7,7 @@
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -23,6 +23,7 @@ function execution(sessionId?: string): ToolExecution {
     signal: testToolSignal,
     token: Symbol('bash-env-test') as ToolExecution['token'],
     callId: CallId('bash-env-call'),
+    rootCallId: CallId('bash-env-call'),
     name: 'bash',
     arguments: { command: 'true' },
     ...(sessionId === undefined

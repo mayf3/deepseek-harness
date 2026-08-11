@@ -10,8 +10,8 @@ import { Worker } from 'node:worker_threads'
 import { stripTypeScriptTypes } from 'node:module'
 import type { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import { Context } from 'cordis'
-import z from 'schemastery'
+import { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { CodeRuntime, DUNDER_MEMBER, PORTABLE_RESERVED_WORDS, RESERVED_BINDING_GLOBALS, RESERVED_ERROR_MEMBERS } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeBindingNamespace, CodeJsonValue, CodeRunFailure, CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
@@ -231,7 +231,7 @@ class OutputLedger {
 /**
  * The shipped {@link CodeRuntime} backend (`ctx.codeRuntime`). Registers as
  * the `codeRuntime` service; every cap comes from validated config. See the
- * module doc for the containment model and the class JSDoc on the seam for
+ * module doc for the containment model and the Service Definition's class JSDoc for
  * the contract this implements (error-as-field, hostile-peer port,
  * no cross-run state, dispose to quiescence).
  */
@@ -285,7 +285,7 @@ export class WorkerCodeRuntime extends CodeRuntime {
   /**
    * Execute one program in a fresh worker. Program outcomes — including a
    * type-strip syntax error, which never spawns a worker — resolve with
-   * `result.error`; the method rejects only for seam misuse (a disposed
+   * `result.error`; the method rejects only for Service Definition contract misuse (a disposed
    * runtime, an invalid binding namespace).
    * @param request - the program, its bindings, and the abort signal.
    * @returns the run's outcome per the seam contract.
@@ -316,7 +316,7 @@ export class WorkerCodeRuntime extends CodeRuntime {
     return new OutputLedger(this.config.maxOutputBytes).failure([], error)
   }
 
-  /** Reject malformed binding globals or typed-error declarations as seam misuse. */
+  /** Reject malformed binding globals or typed-error declarations as Service Definition contract misuse. */
   private validateBindings(request: CodeRunRequest): Map<string, CodeBindingNamespace> {
     const bindings = new Map<string, CodeBindingNamespace>()
     for (const namespace of request.bindings) {

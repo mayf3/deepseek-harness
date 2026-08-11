@@ -16,8 +16,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const pkgDir = fileURLToPath(new URL('..', import.meta.url))
 const seamLib = join(pkgDir, '../lsp/lib/index.js')
+const fsLib = join(pkgDir, '../../fs/fs-local/lib/index.js')
 const subprocessLib = join(pkgDir, '../../subprocess/subprocess-local/lib/index.js')
-const built = existsSync(join(pkgDir, 'lib/index.js')) && existsSync(seamLib) && existsSync(subprocessLib)
+const built = existsSync(join(pkgDir, 'lib/index.js')) && existsSync(seamLib) && existsSync(fsLib) && existsSync(subprocessLib)
 
 const fixtureServer = fileURLToPath(new URL('./fixture-server.ts', import.meta.url))
 
@@ -39,13 +40,15 @@ describe.skipIf(!built)('built lib real load path (plain node)', () => {
   it('runs a query through lib/index.js and disposes cleanly, framing over the base protocol', async () => {
     const location = JSON.stringify({ uri: pathToFileURL(join(ws, 'a.ts')).href, range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } } })
     const script = `
-      const { Context } = await import('cordis')
+      const { Context } = await import('@deepseek-ai/cordis')
       const { default: Lsp } = await import('@deepseek-ai/dsh-lsp')
       const LspLocal = await import('@deepseek-ai/dsh-lsp-local')
+      const { default: LocalFileSystem } = await import('@deepseek-ai/dsh-fs-local')
       const { default: LocalSubprocessService } = await import('@deepseek-ai/dsh-subprocess-local')
       const ctx = new Context()
       await ctx.plugin(Lsp)
       await ctx.plugin(LocalSubprocessService)
+      await ctx.plugin(LocalFileSystem, { cwd: process.cwd() })
       await ctx.plugin(LspLocal, {
         servers: {
           fake: {

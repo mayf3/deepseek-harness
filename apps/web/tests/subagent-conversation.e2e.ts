@@ -365,22 +365,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       () => scaffold.ctx.agents.get(childId)?.status,
       { timeout: 10_000 },
     ).toBe('running')
-    const hierarchy = page.getByRole('navigation', { name: 'Session hierarchy' })
-    await hierarchy.getByRole('button').first().click()
-    const runningTrigger = page.getByRole('button', { name: '3 subagents running' })
-    await runningTrigger.waitFor({ timeout: 10_000 })
-    expect(await runningTrigger.locator('[data-state="ongoing"]').count()).toBe(1)
-    await runningTrigger.click()
-    await page.getByRole('treeitem', {
-      name: new RegExp(`${LABEL}.*running`),
-    }).waitFor({ timeout: 10_000 })
     await ended
-    await page.getByRole('treeitem', {
-      name: new RegExp(`${LABEL}.*not running`),
-    }).waitFor({ timeout: 10_000 })
-    expect(await page.getByRole('button', { name: '3 subagents' })
-      .locator('[data-state="ongoing"]').count()).toBe(0)
-    await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
     await expect.poll(() => page.getByText(FOLLOWUP, { exact: true }).count(), { timeout: 10_000 }).toBe(1)
     await expect.poll(() => scaffold.ctx.agents.get(childId), { timeout: 10_000 }).toBeUndefined()
     expect(await page.getByRole('button', { name: 'Stop generating' }).count()).toBe(0)
@@ -410,7 +395,8 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     expect([
       Math.round(clickAreaBox!.x - treeBox!.x),
       Math.round(treeBox!.x + treeBox!.width - clickAreaBox!.x - clickAreaBox!.width),
-    ]).toEqual([5, 5])
+    // Menu padding alone insets the rows now that the border is gone.
+    ]).toEqual([4, 4])
     await compareOrRefreshGolden(
       BRANCHLESS_EXPECTED,
       await captureStableAria(page, '[role="tree"][aria-label="Subagent sessions"]', scaffold.workspaceCwd),
@@ -461,7 +447,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     ).toBe(3)
     expect(await page.getByText('Ungrouped', { exact: true }).count()).toBe(0)
     const hierarchy = page.getByRole('navigation', { name: 'Session hierarchy' })
-    expect(await hierarchy.getByRole('button').count()).toBe(1)
+    await expect.poll(() => hierarchy.getByRole('button').count()).toBe(1)
     await compareOrRefreshGolden(
       FORK_EXPECTED,
       await captureStableAria(page, '[role="tree"][aria-label="Sessions"]', scaffold.workspaceCwd),

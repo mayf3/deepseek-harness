@@ -2,7 +2,7 @@
 // plus the shared estimator's pricing branches.
 
 import { describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
@@ -10,6 +10,7 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeterService from '@deepseek-ai/dsh-token-meter'
 import type { ContextBreakdownProjection } from '@deepseek-ai/dsh-token-meter/client'
+import { CompactionId } from '@deepseek-ai/dsh-compact'
 import { contextBreakdownProjectionDefinition } from '../src/breakdown-projection.ts'
 import {
   estimateContent,
@@ -59,6 +60,7 @@ function appendSummaryMeter(ctx: Context, session: Session, start: number, end: 
   const endIdx = nodes.findIndex(node => node.seq === end)
   const shadowed = nodes.slice(startIdx, endIdx + 1)
   session.append('compact/summary', {
+    compactionId: CompactionId('context-breakdown-summary'),
     summary: [{ type: 'text', text: 'summary' }],
     shadowedRange: { start, end },
     shadowedSeqs: shadowed.map(node => node.seq),
@@ -136,7 +138,7 @@ describe('contextBreakdown session projection', () => {
     expect(projected(ctx, session).messageTokens).toBe(estimateMessage(summary))
   })
 
-  it('keeps the message figure equal to the service surface across appends and a compaction', async () => {
+  it('keeps the message figure equal to the service result across appends and a compaction', async () => {
     const { ctx, session } = await harness()
     // The panel's composition rows and `measure()` answer the same question in
     // the same vocabulary; one shared fold is what makes that true.

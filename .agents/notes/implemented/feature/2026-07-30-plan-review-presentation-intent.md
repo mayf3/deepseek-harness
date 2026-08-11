@@ -12,15 +12,15 @@ Every one of those affordances is wrong for the surface. Reviewing a plan is one
 
 ## Decision
 
-A question may declare a **presentation intent**, and the Web composer renders a declared intent as its own surface. `AskUserQuestionItem` gains `intent?: AskUserQuestionIntent`, a tagged shape whose one member is `{ kind: 'plan-review', approve: string }`; `plan-mode` sets it on the review question, naming `Approve` as the label that approves.
+A question may declare a **presentation intent**, and the Web composer renders a declared intent as its own surface. `AskUserQuestionItem` gains `intent?: AskUserQuestionIntent`, a tagged union whose one member is `{ kind: 'plan-review', approve: string }`; `plan-mode` sets it on the review question, naming `Approve` as the label that approves.
 
-An intent shapes presentation only. The answer protocol is untouched: a UI honouring the intent answers with the same option labels a generic UI would send, so `exit_plan_mode` reads one answer shape regardless of which surface collected it, and a UI that does not know a tag renders the generic flow with nothing lost but the layout.
+An intent changes presentation only. The answer protocol is untouched: a UI honouring the intent answers with the same option labels a generic UI would send, so `exit_plan_mode` reads the same answer fields regardless of which surface collected them, and a UI that does not know a tag renders the generic flow with nothing lost but the layout.
 
 `approve` names the affirmative option instead of relying on option order, so no UI infers a verdict from a position. Two assertions an intent makes are beyond the types, and `UserInteractionService.ask()` rejects both as `BAD_INTENT` at the asker: an `approve` naming none of that question's own options — before any UI can answer a choice never offered — and an intent on a question with no `detail`, the thing it declares itself a review of, which would ask the user to approve something invisible. On the wire the intent is a discriminated union, so an unrecognised tag is a rejected frame rather than a silently generic render.
 
 `ui-question` renders the intent as `PlanReviewPanel`, in the waiting-approval card language: the amber strip carries `Plan review`, the plan is the scrolling markdown body, and the decision row holds three actions — `Chat about it`, `Refuse`, `Approve`. The question text becomes the card's accessible name rather than a headline, because the buttons already say what the decision is. Approve and Refuse answer with the asker's own option labels and keep the asker's descriptions as tooltips; `Chat about it` cancels the request, which returns the composer so the user can simply say what they want. All copy is bilingual under the existing `question` namespace.
 
-Routing lives inside the single composer entry (`QuestionComposer` chooses the shape) rather than in a second chain registration, and `planReviewOf` claims a request only when the card can send every answer that request allows: one question declaring the intent, the plan as its `detail`, the named approve label offered, and a binary single choice — at most one option besides approve, and not multi-select. A third option or a multi-select batch has answers two buttons cannot express, so the generic flow keeps it, and keeps anything else the card cannot render. "Presentation only" is therefore literal: an intent never costs the user a reachable answer, and the client — downstream of a wire boundary — leaves every request answerable.
+Routing lives inside the single composer entry (`QuestionComposer` chooses the presentation) rather than in a second chain registration, and `planReviewOf` claims a request only when the card can send every answer that request allows: one question declaring the intent, the plan as its `detail`, the named approve label offered, and a binary single choice — at most one option besides approve, and not multi-select. A third option or a multi-select batch has answers two buttons cannot express, so the generic flow keeps it, and keeps anything else the card cannot render. "Presentation only" is therefore literal: an intent never costs the user a reachable answer, and the client — downstream of a wire boundary — leaves every request answerable.
 
 Dismissal became its own model-facing outcome. `ASK_CANCELLED` previously reached the model as "the user cancelled ask_user_question", naming a tool it never called; `exit_plan_mode` now reports that the user dismissed the review to speak instead and to stay in plan mode and wait. Every other ask failure — an abort from turn cancel or provider teardown, where no user is coming — keeps its own message.
 
@@ -30,7 +30,7 @@ Dismissal became its own model-facing outcome. `ASK_CANCELLED` previously reache
 
 **Route the card on the question's `id` or `header` (`plan-review` / `Plan review`).** Rejected: string-sniffing a foreign package's copy across a wire boundary, which any wording change silently breaks. The intent is the declaration that makes the routing legible.
 
-**Order the options and let the card read position 0 as approve.** Rejected: a positional contract at a package seam, invisible in both the type and the wire frame, and unenforceable — a producer that reorders its options would invert a user's verdict. Naming the label costs one string.
+**Order the options and let the card read position 0 as approve.** Rejected: a positional contract at a package boundary, invisible in both the type and the wire frame, and unenforceable — a producer that reorders its options would invert a user's verdict. Naming the label costs one string.
 
 **Register a second composer-chain entry for the plan card.** Rejected: two entries would select over the same pending question carrier, making the surface depend on chain priority and on whether the plan package's client half is composed at all. One entry that picks its own shape cannot race itself, and the generic flow is the built-in fallback.
 
@@ -42,7 +42,7 @@ Dismissal became its own model-facing outcome. `ASK_CANCELLED` previously reache
 
 ## Consequences
 
-The question protocol now carries a presentation axis. Adding a second intent is a tag on the union, a producer that sets it, a schema member, and a panel — no new frame, service, or answer shape. The cost is that the question seam knows presentation exists at all, and that `ui-question` knows the word "plan"; both are the price of one entry owning every question surface.
+The question protocol now carries a presentation axis. Adding a second intent is a tag on the union, a producer that sets it, a schema member, and a panel — no new frame, service, or answer shape. The cost is that the question contract knows presentation exists at all, and that `ui-question` knows the word "plan"; both are the price of one entry owning every question surface.
 
 The plan gate reads as a plan gate: the plan is the card's content, the verdict is two labelled buttons, and taking the turn back is a third. The generic flow is untouched for every other question, and its committed goldens did not move.
 

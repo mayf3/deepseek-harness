@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import * as HookInvariant from '@deepseek-ai/dsh-hook-protocol/invariant'
 import InvariantService from '@deepseek-ai/dsh-invariants'
@@ -45,7 +45,7 @@ describe('hook-protocol invariants', () => {
     session.append('hook/result', result())
   })
 
-  it('rebuilds pending hook provenance from an existing session', async () => {
+  it('rebuilds pending hook invocations from an existing session', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     const session = ctx.sessions.create()

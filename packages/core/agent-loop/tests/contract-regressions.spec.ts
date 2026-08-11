@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import LlmService, { createUserMessage, CallId, LlmError, MessageSource, ProviderRequestId, StreamChunk  } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionEvent, SessionId, TurnEndReason, type UserMessage } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -59,7 +59,7 @@ function inboxText(message: UserMessage): string {
     .join('')
 }
 
-describe('assistant replay provenance', () => {
+describe('assistant replay provider and model fields', () => {
   it('records adapter replay state with the assembled assistant content', async () => {
     const response = textResponse('unchanged')
     const replayState = { private: 'state' }

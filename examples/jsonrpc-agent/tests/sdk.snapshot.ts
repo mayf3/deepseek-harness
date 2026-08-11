@@ -9,6 +9,7 @@
  * fixtures and rewrites expected outputs.
  */
 
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, delimiter, join } from 'node:path'
@@ -19,6 +20,7 @@ import {
   normalizeStdout,
   refreshFixtureReplacements,
   scrubRequestHeaders,
+  stabilizeFixtureMessageIds,
   stabilizeRefreshLog,
   tokenizeSessionFixtureCwd,
   type HarvestedLog,
@@ -31,10 +33,20 @@ const testsDir = dirOf(import.meta.url)
 const snapshotsDir = join(testsDir, 'snapshots')
 const liveConfig = join(testsDir, '..', 'cordis.yml')
 const replayConfig = join(testsDir, '..', 'cordis.snapshot.yml')
-const persistentToolsLiveConfig = join(testsDir, '..', 'persistent-tools.cordis.yml')
-const persistentToolsReplayConfig = join(testsDir, '..', 'persistent-tools.snapshot.cordis.yml')
+const minimalLiveConfig = join(testsDir, '..', 'minimal.cordis.yml')
+const minimalReplayConfig = join(testsDir, '..', 'minimal.snapshot.cordis.yml')
 const runtimeBin = fileURLToPath(new URL('../../../packages/examples/jsonrpc-demo/src/bin.ts', import.meta.url))
 const repoTsconfig = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
+
+const MINIMAL_SYSTEM_PROMPT = 'You are a helpful software engineer assistant.'
+const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
+* When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
+* You don't have access to the internet via this tool.
+* You do have access to a mirror of common linux and python packages via apt and pip.
+* State is persistent across command calls and discussions with the user.
+* To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
+* Please avoid commands that may produce a very large amount of output.
+* Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.`
 
 const mode = process.env.DSH_SNAPSHOT ?? 'replay'
 const recording = mode === 'record'
@@ -59,6 +71,10 @@ interface SdkScenario {
   expectedFiles?: Readonly<Record<string, string>>
   /** Assembled model-facing tool names and required argument keys. */
   expectedTools?: Readonly<Record<string, readonly string[]>>
+  /** Exact assembled system prompt for the root request. */
+  expectedSystem?: string
+  /** Exact model-facing descriptions for selected tools. */
+  expectedToolDescriptions?: Readonly<Record<string, string>>
   /** Stable policy-context clauses the real assembled request must include or omit. */
   policyContext?: { includes: readonly string[]; excludes: readonly string[] }
 }
@@ -87,9 +103,11 @@ const SCENARIOS: SdkScenario[] = [
     prompt: 'Prove that bash state persists. Then create {{cwd}}/note.txt with a tab-indented line, view it, replace that literal tab-indented line, and make the persistent shell exit with code 9.',
     sessionId: 'persistent-tools-snapshot',
     children: 0,
-    configs: { live: persistentToolsLiveConfig, replay: persistentToolsReplayConfig },
+    configs: { live: minimalLiveConfig, replay: minimalReplayConfig },
     expectedFiles: { 'note.txt': 'target:\n\tnew\n' },
     expectedTools: { bash: ['command'], str_replace_editor: ['command', 'path'] },
+    expectedSystem: MINIMAL_SYSTEM_PROMPT,
+    expectedToolDescriptions: { bash: MINIMAL_BASH_DESCRIPTION },
     policyContext: {
       includes: ['Current DSH file policy: danger-full-access.', 'file modifications by available operations'],
       excludes: ['write and edit tools', 'terminal sessions', 'one-shot bash commands'],
@@ -123,16 +141,33 @@ async function persistedLogs(sessionsRoot: string): Promise<PersistedLog[]> {
 
 interface LoggedRequestHeader {
   type?: string
-  data?: { header?: { system?: unknown; tools?: Array<{ name: string; parameters: { required?: string[] } }> } }
+  data?: { header?: { system?: unknown; tools?: LoggedTool[] } }
 }
 
-function assembledToolRequirements(log: PersistedLog): Record<string, string[]> {
+interface LoggedTool {
+  readonly name: string
+  readonly description?: unknown
+  readonly parameters: { readonly required?: string[] }
+}
+
+function assembledTools(log: PersistedLog): LoggedTool[] {
   const event = log.content.trimEnd().split('\n')
     .map(line => JSON.parse(line) as LoggedRequestHeader)
     .find(candidate => candidate.type === 'request/header')
   const tools = event?.data?.header?.tools
   if (tools === undefined) throw new Error('session log has no request/header tools')
-  return Object.fromEntries(tools.map(tool => [tool.name, tool.parameters.required ?? []]))
+  return tools
+}
+
+function assembledToolRequirements(log: PersistedLog): Record<string, string[]> {
+  return Object.fromEntries(assembledTools(log).map(tool => [tool.name, tool.parameters.required ?? []]))
+}
+
+function assembledToolDescriptions(log: PersistedLog): Record<string, string> {
+  return Object.fromEntries(assembledTools(log).map((tool) => {
+    if (typeof tool.description !== 'string') throw new Error(`tool ${tool.name} has no description`)
+    return [tool.name, tool.description]
+  }))
 }
 
 function assembledSystem(log: PersistedLog): string {
@@ -319,20 +354,25 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       const { result, notifications, logs, observedFiles, cwd } = await runScenario(scenario)
       const ordered = orderLogs(logs, scenario)
       const actualContext = contextOf(ordered, cwd)
+      const files = fixtureFiles(scenario)
 
       if (recording) {
         // Fixtures carry tokenized request headers; llm-replay reads only
         // assistant output and tool traffic, so scrubbing keeps prompts and
         // schemas out of the corpus without affecting replay.
         await mkdir(scenarioDir, { recursive: true })
-        await Promise.all(ordered.map(async (log, index) => {
-          const file = fixtureFiles(scenario)[index]
+        const existing = await Promise.all(files.map(async file => existsSync(file) ? readFile(file, 'utf8') : ''))
+        const fixtures = stabilizeFixtureMessageIds(
+          ordered.map(log => scrubRequestHeaders(tokenizeSessionFixtureCwd(log.content))),
+          existing,
+        )
+        await Promise.all(fixtures.map(async (fixture, index) => {
+          const file = files[index]
           if (file === undefined) throw new Error(`no fixture path for persisted log ${index}`)
-          await writeFile(file, scrubRequestHeaders(tokenizeSessionFixtureCwd(log.content)))
+          await writeFile(file, fixture)
         }))
       }
 
-      const files = fixtureFiles(scenario)
       let expectedContents = await Promise.all(files.map(file => readFile(file, 'utf8')))
 
       if (refreshing) {
@@ -343,15 +383,18 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
           content: log.content,
         }))
         const replacements = refreshFixtureReplacements(harvested, expectedContents)
-        expectedContents = await Promise.all(ordered.map(async (log, index) => {
+        const refreshed = ordered.map((log, index) => {
           const existing = expectedContents[index]
-          const file = files[index]
-          if (existing === undefined || file === undefined) throw new Error(`no fixture for persisted log ${index}`)
-          const stable = scrubRequestHeaders(tokenizeSessionFixtureCwd(
+          if (existing === undefined) throw new Error(`no fixture for persisted log ${index}`)
+          return scrubRequestHeaders(tokenizeSessionFixtureCwd(
             stabilizeRefreshLog(log.content, existing, replacements, actualContext),
           ))
+        })
+        expectedContents = stabilizeFixtureMessageIds(refreshed, expectedContents)
+        await Promise.all(expectedContents.map(async (stable, index) => {
+          const file = files[index]
+          if (file === undefined) throw new Error(`no fixture for persisted log ${index}`)
           await writeFile(file, stable)
-          return stable
         }))
       }
 
@@ -389,6 +432,16 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         const parent = ordered[0]
         if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)
         expect(assembledToolRequirements(parent)).toEqual(scenario.expectedTools)
+      }
+      if (scenario.expectedSystem !== undefined) {
+        const parent = ordered[0]
+        if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)
+        expect(assembledSystem(parent)).toBe(scenario.expectedSystem)
+      }
+      if (scenario.expectedToolDescriptions !== undefined) {
+        const parent = ordered[0]
+        if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)
+        expect(assembledToolDescriptions(parent)).toMatchObject(scenario.expectedToolDescriptions)
       }
       if (scenario.policyContext !== undefined) {
         const parent = ordered[0]

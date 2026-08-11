@@ -6,7 +6,7 @@ English | [中文](2026-07-19-package-invariant-runtime-contracts.zh.md)
 
 ## Problem
 
-The package-owned invariant seam made publication and registration exhaustive, but its first generated baseline accepted empty installers. A follow-up then replaced those empties with generic assertions about plugin names, injections, effects, service methods, and fixed pure-library examples. Those assertions made every companion executable without making the system safer: TypeScript, Cordis startup, package tests, and module-load tests already enforce those shapes, while the invariant service should detect impossible runtime state.
+The package-owned invariant service made publication and registration exhaustive, but its first generated baseline accepted empty installers. A follow-up then replaced those empties with generic assertions about plugin names, injections, effects, service methods, and fixed pure-library examples. Those assertions made every companion executable without making the system safer: TypeScript, Cordis startup, package tests, and module-load tests already enforce those shapes, while the invariant service should detect impossible runtime state.
 
 A useful runtime invariant relates observations over time or across a mutable data structure. Examples include a terminal event without its start, an LLM delta for a block that is not open, or a durable result whose identity differs from its request. Merely confirming that a declared method exists, that a plugin has its expected name, or that a constant example still returns a known value is not such a relation.
 
@@ -73,6 +73,6 @@ Vitest mounts `InvariantService` with `{ enabled: true }` for every package test
 
 - Every package has visible ownership and publication wiring, but only packages with a plausible runtime relation add listeners or trace state.
 - Empty companions remain reviewable decisions with package-specific explanations and fail the gate if the explanation is removed.
-- Type declarations, Cordis loadability, plugin metadata, service method surfaces, and pure algebra remain covered by their owning compile, load, unit, or integration gates.
+- Type declarations, Cordis loadability, plugin metadata, service method APIs, and pure algebra remain covered by their owning compile, load, unit, or integration gates.
 - Runtime failures identify the owning npm package and point to an inconsistent observation rather than restating a required API shape.
 - The original selection, blocklist precedence, duplicate ownership, rollback, disposal, and HMR service contracts remain unchanged.

@@ -2,7 +2,7 @@
 
 English | [中文](config.zh.md)
 
-Harness uses `cordis.yml` to describe which plugins an agent loads and the configuration passed to each one. The file composes capabilities; the generated configuration catalog records the fields and defaults each package actually supports, avoiding a second hand-maintained reference.
+Harness uses `cordis.yml` to describe which plugins an agent loads and the configuration passed to each one. The file composes capabilities; the generated configuration catalog records the fields and defaults each package actually supports.
 
 ## Start from a real configuration
 
@@ -51,7 +51,7 @@ Cordis starts sibling entries concurrently. A plugin declares required services 
 
 ## CLI patch layers
 
-`dsh --profile <name>` composes the profile's bundle patch layers (its manifest's `dsh.profile.bundles` list, in order) over an empty root, then the profile's own `~/.dsh/profiles/<name>/cordis.patch.yml`, then each `--patch <path>` overlay, then CLI-flag patches. Later layers win per row.
+`dsh --profile <name>` composes the profile's bundle patch layers (its manifest's `dsh.profile.bundles` list, in order) over an empty root, then the profile's own `~/.dsh/profiles/<name>/cordis.patch.yml`, the home-level `$DSH_HOME/cordis.patch.yml`, and each `--patch <path>` overlay. Later layers win per row. App flags are not another patch layer: an ordinary bundle plugin injects `cmdlineArgs` and provides parsed values as its own service, while rows that inject and retain a `!!js` read of that service give the invocation value precedence.
 
 A patch replaces a row's entire `config` value; it does not deep-merge keys. For example, patching `llm-deepseek` with only `config: { thinking: disabled }` also removes that row's configured `apiKey` and `baseURL`, so restate every key the row must retain.
 
@@ -69,4 +69,4 @@ The tag is `!!js`, not `!js`.
 
 ## Exact configuration reference
 
-The generated [plugin configuration catalog](../../config-catalog.md) lists every current field, type, and default. For composition concepts, continue to the [architecture](../../architecture.md) and [capability interfaces](../../capability-seams.md). To create a configuration, copy the closest entry from the [examples overview](../../../examples/README.md) and adapt it.
+The generated [plugin configuration catalog](../../config-catalog.md) lists every current field, type, and default. For composition concepts, continue to the [architecture](../../architecture.md) and [capability seams](../../capability-seams.md). To create a configuration, copy the closest entry from the [examples overview](../../../examples/README.md) and adapt it.

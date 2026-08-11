@@ -14,25 +14,27 @@
 
 - insert:
     - id: timer
-      name: '@cordisjs/plugin-timer'
+      name: '@deepseek-ai/cordis-plugin-timer'
 
     - id: hmr
-      name: '@cordisjs/plugin-hmr'
+      name: '@deepseek-ai/cordis-plugin-hmr'
       config:
         root: ['.']
-
-    # The profile's cordis.patch.yml replaces this row's config to select exact GitHub
-    # repository Plugin generations. The app registers the DSH-owned runtime even
-    # when the list is empty so a later personal-config edit can load
-    # transactionally; one-shot headless runs consume the startup value only.
-    - id: repository-plugins
-      name: '@deepseek-ai/dsh-repository-plugin'
 
     - id: llm
       name: '@deepseek-ai/dsh-llm'
 
     - id: session
       name: '@deepseek-ai/dsh-session'
+
+    - id: typert
+      name: '@deepseek-ai/dsh-typert-registry'
+
+    - id: typert-loader
+      name: '@deepseek-ai/dsh-typert-loader'
+
+    - id: typert-gateway
+      name: '@deepseek-ai/dsh-api-gateway'
 
     - id: session-title
       name: '@deepseek-ai/dsh-session-title'
@@ -56,6 +58,14 @@
     - id: agent
       name: '@deepseek-ai/dsh-agent'
 
+    # The transport-independent default for Agents created by entry points.
+    # Settings may supply a saved selection; consumers read it at creation time.
+    - id: agent-default-model
+      name: '@deepseek-ai/dsh-agent-default-model'
+      config:
+        provider: deepseek-official
+        model: deepseek-v4-flash
+
     - id: tasks
       name: '@deepseek-ai/dsh-tasks-local'
 
@@ -68,12 +78,10 @@
     - id: settings
       name: '@deepseek-ai/dsh-settings-local'
 
-    # Credential store: the live process environment over `$DSH_HOME/.env`
-    # (owner-only file, hot-reloaded). Adapters resolve their key references
-    # through it at each request, so no key is inlined in this file. The web
-    # Models page's key inputs write it through `credentials.set`; nothing hoists
-    # the document into the process environment, which would make every stored key
-    # read as an unrotatable ambient override.
+    # Credential sources: inherited environment over the managed
+    # `$DSH_HOME/.credentials.yaml`, with project and user `.env` fallbacks.
+    # Adapters resolve references per request; the Models page writes only the
+    # managed document, which is never materialized into the process environment.
     - id: credentials
       name: '@deepseek-ai/dsh-credentials-local'
 
@@ -91,6 +99,12 @@
       name: '@deepseek-ai/dsh-session-persistence-jsonl'
       config:
         root: !!js dshHomePath('sessions')
+
+    # Durable image bytes live outside the append-only session log. Messages
+    # keep content-addressed references that this shared backend resolves for
+    # provider requests and authorized history reads.
+    - id: attachment-local
+      name: '@deepseek-ai/dsh-attachment-local'
 
     # Raw configs can supply a process-local path or disable this shared session
     # capability. The neutral default is process-local and opens only when used.
@@ -211,11 +225,18 @@
     - id: skill-local
       name: '@deepseek-ai/dsh-skill-local'
 
+    - id: skill-badge
+      name: '@deepseek-ai/dsh-skill-badge'
+      disabled: true
+
     - id: tool-skill
       name: '@deepseek-ai/dsh-tool-skill'
 
     - id: commands
       name: '@deepseek-ai/dsh-commands'
+
+    - id: command-feedback
+      name: '@deepseek-ai/dsh-command-feedback'
 
     - id: goal
       name: '@deepseek-ai/dsh-goal'
@@ -266,6 +287,15 @@
       config:
         providerName: fork
 
+    # Product providers stay on the host plane because the registry is a
+    # process singleton. Agent presets decide whether their own model sees the
+    # matching delegation tools; loading either provider starts no product.
+    - id: subagent-codex
+      name: '@deepseek-ai/dsh-subagent-codex'
+
+    - id: subagent-claude-code
+      name: '@deepseek-ai/dsh-subagent-claude-code'
+
     # Continuable background children are selected per delegation tool. The
     # separately loaded follow-up tool registers the one global `send_message`.
     - id: tool-subagent-control
@@ -281,12 +311,16 @@
         toolName: subagent
         backgroundMode: continuable
 
+    # Fork stays one-shot: a continuable child's `report` tool and prompt
+    # section precede the inherited history a fork exists to reuse; one-shot
+    # fork children install neither, keeping the parent's request prefix.
+    # See .agents/notes/implemented/architecture/2026-08-10-fork-children-stay-one-shot.md.
     - id: tool-subagent-fork
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: fork
         toolName: subagent_fork
-        backgroundMode: continuable
+        backgroundMode: one-shot
 
     # Optional direct-child return channel; absent from roots and one-shot agents.
     - id: tool-subagent-report
@@ -353,7 +387,7 @@
         thresholds: [3, 5, 8]
         argumentsPreviewChars: 500
 
-    # Every mode enables the stable web_search model surface. DeepSeek search
+    # Every mode enables the stable model-facing web_search tool. DeepSeek search
     # resolves the same DEEPSEEK_API_KEY credential the Models page manages for
     # chat, at each search; its Messages endpoint is separate from the
     # chat-completions endpoint, so it takes its own base-URL override. Fetch stays
@@ -370,7 +404,6 @@
       name: '@deepseek-ai/dsh-web-search-deepseek'
       config:
         apiKeyEnv: DEEPSEEK_API_KEY
-        baseURL: !!js process.env.DEEPSEEK_SEARCH_BASE_URL
 
     - id: tool-web
       name: '@deepseek-ai/dsh-tool-web'

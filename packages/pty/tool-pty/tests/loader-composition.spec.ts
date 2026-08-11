@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
-import Include from '@cordisjs/plugin-include'
+import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
+import Include from '@deepseek-ai/cordis-plugin-include'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
@@ -16,6 +16,7 @@ import PtyService from '@deepseek-ai/dsh-pty'
 import SandboxProvider from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
+import LocalSubprocessService from '@deepseek-ai/dsh-subprocess-local'
 import * as PtyLocal from '@deepseek-ai/dsh-pty-local'
 import * as ToolPty from '@deepseek-ai/dsh-tool-pty'
 
@@ -72,6 +73,7 @@ suite('terminal real Loader composition through cordis.yml', () => {
       '  config:',
       '    mode: danger-full-access',
       `    workspaceRoot: ${JSON.stringify(root)}`,
+      "- name: '@deepseek-ai/dsh-subprocess-local'",
       "- name: '@deepseek-ai/dsh-pty-local'",
       '  config:',
       '    pollIntervalMs: 10',
@@ -95,6 +97,7 @@ suite('terminal real Loader composition through cordis.yml', () => {
       ['@deepseek-ai/dsh-pty', PtyService],
       ['@deepseek-ai/dsh-test-sandbox', PassthroughSandbox],
       ['@deepseek-ai/dsh-sandbox-policy', SandboxPolicyService],
+      ['@deepseek-ai/dsh-subprocess-local', LocalSubprocessService],
       ['@deepseek-ai/dsh-pty-local', PtyLocal],
       ['@deepseek-ai/dsh-tool-pty', ToolPty],
     ])

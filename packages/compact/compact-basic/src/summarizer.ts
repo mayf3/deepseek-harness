@@ -4,8 +4,8 @@
  * @module @deepseek-ai/dsh-compact-basic/summarizer
  */
 
-import type { Context } from 'cordis'
-import { createUserMessage, BlockAssembler } from '@deepseek-ai/dsh-llm'
+import type { Context } from '@deepseek-ai/cordis'
+import { contentHasImage, createUserMessage, BlockAssembler, LlmError } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock, FinishReason, GenerateOptions, Message, TokenUsage, ToolSchema,
 } from '@deepseek-ai/dsh-llm'
@@ -84,17 +84,28 @@ export interface SummarizationInput {
   readonly messages: readonly Message[]
 }
 
-/** Safe summary content plus the exact auxiliary call envelope recorded in provenance. */
-export interface SummaryResult {
+/** Safe summary content plus the exact auxiliary call envelope recorded with it. */
+export type SummaryResult = {
   summary: ContentBlock[]
-  /** Complete provider output before the text-only summary projection. */
-  rawOutput?: ContentBlock[]
   provider: string
   model: string
   maxTokens?: number
   /** Provider-reported usage for this summarization request. */
   usage?: TokenUsage
-}
+} & (
+  | {
+    /** Complete provider output before the text-only summary projection. */
+    rawOutput: ContentBlock[]
+    /** Identifies exactly one call through this context's `ctx.llm.stream()`. */
+    llmStreamCall: true
+  }
+  | {
+    /** Optional complete output from an unmarked template, remote, or other summarizer. */
+    rawOutput?: ContentBlock[]
+    /** An unmarked result does not identify a call through this context's LLM seam. */
+    llmStreamCall?: never
+  }
+)
 
 /**
  * Run the default cache-reusing `ctx.llm.stream()` summarization call: replay
@@ -105,7 +116,7 @@ export interface SummaryResult {
  * @param input - replayed conversation prefix (system, tools, and leading messages) to condense.
  * @param agent - supplies routed-model history, fallback model, and session id.
  * @param signal - optional cancellation forwarded to the adapter.
- * @returns safe text-only summary blocks and exact call provenance.
+ * @returns safe text-only summary blocks and the exact call envelope and output.
  */
 export async function summarizeWithLlm(
   ctx: Context,
@@ -155,13 +166,14 @@ export async function summarizeWithLlm(
   if (error !== undefined) throw error
 
   const rawOutput = assembler.blocks()
-  const summary = textOnly(rawOutput)
+  const summary = summaryText(rawOutput)
   if (!summary.some(block => block.text.trim().length > 0)) {
     throw new Error('summarization produced no text summary content')
   }
   return {
     summary,
     rawOutput,
+    llmStreamCall: true,
     provider: options.provider,
     model: options.model,
     maxTokens: config.maxTokens,
@@ -201,9 +213,12 @@ function finishError(finish: FinishReason): Error | undefined {
   }
 }
 
-/** Keep only text blocks before synthesizing a user message. */
-function textOnly(
+/** Reject visual output and keep only text before synthesizing a user message. */
+function summaryText(
   blocks: readonly ContentBlock[],
 ): Array<Extract<ContentBlock, { type: 'text' }>> {
+  if (contentHasImage(blocks)) {
+    throw new LlmError('compaction summary cannot contain image output', 'UNSUPPORTED_CONTENT')
+  }
   return blocks.filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
 }

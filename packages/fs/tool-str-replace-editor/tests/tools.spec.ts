@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { FsVersion } from '@deepseek-ai/dsh-fs'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -194,6 +194,35 @@ describe('tool-str-replace-editor', () => {
       new_str: 'between',
     }))).toBe(`The file ${sample} has been edited successfully.`)
     expect(await readFile(sample, 'utf8')).toBe('one\nbetween\n\nthree\n')
+  })
+
+  it('a failed view records absence so create can recover after external deletion', async () => {
+    const { ctx, root, owner } = await setup({}, { fsPolicy: true })
+    const sample = join(root, 'deleted.txt')
+    await writeFile(sample, 'original')
+    expect((await call(ctx, owner, { command: 'view', path: sample })).isError).toBe(false)
+    await rm(sample)
+
+    const missing = await call(ctx, owner, { command: 'view', path: sample })
+    expect(missing.isError).toBe(true)
+    expect(missing.error).toMatchObject({ info: { code: 'FS_NOT_FOUND' } })
+
+    const edit = await call(ctx, owner, {
+      command: 'str_replace',
+      path: sample,
+      old_str: 'original',
+      new_str: 'edited',
+    })
+    expect(edit.isError).toBe(true)
+    expect(edit.error).toMatchObject({ info: { code: 'FS_NOT_FOUND' } })
+
+    const created = await call(ctx, owner, {
+      command: 'create',
+      path: sample,
+      file_text: 'fresh',
+    })
+    expect(created.isError).toBe(false)
+    expect(await readFile(sample, 'utf8')).toBe('fresh')
   })
 
   it('writes replacement text literally', async () => {

@@ -5,7 +5,7 @@
  * declaration, registration, scope, store, inject, rendering, updates, and
  * disposal without hand-building the machinery per suite.
  *
- * Not part of the product plugin graph (no `dshClient`); feature packages
+ * Not part of the product plugin graph (no `dsh.client`); feature packages
  * depend on it in devDependencies only. It copies no SlotCore/renderer/store
  * machinery — everything mounts the production implementations.
  * @module @deepseek-ai/dsh-client-test-runtime
@@ -14,15 +14,17 @@
  * `keyof SlotMap & string` is the declare-merge key pattern (see ui-slots):
  * this compilation unit sees only the runtime's 'root' row, but consumer
  * programs merge their own keys in; the rule fires on the narrow-map view. */
-import { Context, Inject } from 'cordis'
-import type { Fiber, Plugin } from 'cordis'
+import { Context, Inject } from '@deepseek-ai/cordis'
+import type { Fiber, Plugin } from '@deepseek-ai/cordis'
 import { createElement, Fragment, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { act, render, within } from '@testing-library/react'
 import type { RenderResult } from '@testing-library/react'
 import type { queries } from '@testing-library/dom'
 import type { BoundFunctions } from '@testing-library/dom'
-import { SlotsService } from '@deepseek-ai/dsh-client-runtime/client'
+import {
+  ConversationEventRegistry, ConversationViewRegistry, SlotsService,
+} from '@deepseek-ai/dsh-client-runtime/client'
 import { createSlotRenderer } from '@deepseek-ai/dsh-client-web-react'
 import type {
   ChildrenDecl, ComposedProps, OwnerOf, SlotComponent, SlotMap, SlotRendererHost, StoreInstanceLike,
@@ -34,13 +36,15 @@ import type { Stabilizer } from './fixtures.ts'
 
 export { domSnapshotSerializer, registerDomSnapshotSerializer } from './snapshot.ts'
 export { FixtureSession, TestSessions } from './sessions.ts'
+export { stubSettingsScope } from './settings-scope.ts'
+export type { StubSettingsScope } from './settings-scope.ts'
 export { TestWorkspaces } from './workspaces.ts'
 export { conversationSnapshot, workspaceListState } from './fixtures.ts'
 export type { SessionBehaviorOverrides, SessionFixture, Stabilizer } from './fixtures.ts'
 export { makeTranslate } from './translate.ts'
 export { usePinnedBrowserLanguages } from './locale-env.ts'
 
-/** Erased register face for the internal root call (the public declare seam holds the typing). */
+/** Erased register face for the internal root call (the public declaration contract holds the typing). */
 type ErasedRegister = (options: object, component: unknown) => () => void
 
 /**
@@ -80,7 +84,7 @@ export interface FeatureHandle {
 /**
  * Owner-props cell behind the auto frame: one external store the frame
  * subscribes to, so {@link SlotTestRuntime.renderSlot} and
- * {@link SlotView.update} drive React through the standard uSES seam.
+ * {@link SlotView.update} drive React through the standard uSES boundary.
  */
 class OwnerPropsCell {
   private readonly owners = new Map<string, object>()
@@ -142,11 +146,11 @@ export class TestRoot {
    */
   async declare<const D extends ChildrenDecl>(
     children: D,
-    frame: SlotComponent<ComposedProps<'root', keyof NoInfer<D> & keyof SlotMap & string, undefined, object>>,
+    frame: SlotComponent<ComposedProps<'root', never, keyof NoInfer<D> & keyof SlotMap & string, undefined, object>>,
   ): Promise<void> {
     await this.stabilize(() => {
       // Erased hop (same pattern as SlotsService's own implementation arm);
-      // the declare signature above is the typed seam.
+      // the declaration signature above is the typed contract.
       this.disposeEntry = (this.slots.register as unknown as ErasedRegister)({ name: 'root', children }, frame)
     })
   }
@@ -218,6 +222,8 @@ export class SlotTestRuntime {
     const ctx = new Context()
     const fiber = ctx.plugin(SlotsService)
     await fiber.await()
+    await ctx.plugin(ConversationEventRegistry).await()
+    await ctx.plugin(ConversationViewRegistry).await()
     return new SlotTestRuntime(ctx, ctx.get('slots') as SlotsService)
   }
 
@@ -267,7 +273,7 @@ export class SlotTestRuntime {
 
   /**
    * Render the root slot tree through the ctx-level entry (the shell's own
-   * seam): `ctx.slots.renderSlot('root', {})` under Testing Library.
+   * entry point): `ctx.slots.renderSlot('root', {})` under Testing Library.
    * @returns the Testing Library view.
    */
   renderRoot(): RenderResult {

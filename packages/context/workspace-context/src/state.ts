@@ -33,7 +33,7 @@ import {
 
 export const name = 'workspace-context'
 
-/** Durable provenance and reconciliation facts for one workspace context. */
+/** Durable producer, file, and reconciliation facts for one workspace context. */
 export interface WorkspaceInstructionSource {
   kind: 'workspace-instructions'
   /** Every workspace context carries instructions read out of a file (the `instructions` context form). */
@@ -422,6 +422,10 @@ export async function reconcileInstructionContext(
   }
   if (items.length === 0) return undefined
   const rendered = renderInstructionChanges(items, resolved.maxBytes)
+  // When no transition survived rendering (tiny budgets render notice-only
+  // text), emit nothing and commit nothing — the uncommitted versions make the
+  // next pass retry instead of spamming notice-only contexts.
+  if (rendered.text.length === 0 || rendered.changes.length === 0) return undefined
   return {
     context: workspaceContextHook(rendered.text, rendered.changes),
     versionUpdates: retainedInstructionVersionUpdates(versionUpdates, rendered.changes),

@@ -2,14 +2,14 @@
 /** Model-list editing, endpoint interrogation, and hand-declared provider creation. */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import Schema from 'schemastery'
+import Schema from '@deepseek-ai/schemastery'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-client-connection/client'
-import { ModelsSection } from '../src/client/ModelsSection.tsx'
+import { ModelsSection, providerCopy } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected } from '../src/client/ModelsSection.tsx'
 import { CustomProviderCard } from '../src/client/CustomProviderCard.tsx'
 import { formatCapacity, parseCapacity } from '../src/client/DeepSeekModelsEditor.tsx'
-import { ModelsSettingsStore, protocolChoices } from '../src/client/store.ts'
+import { ModelsSettingsStore, deriveKeyRef, protocolChoices } from '../src/client/store.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -47,6 +47,7 @@ function fail<T>(message: string, code: string): RpcResponse<T> {
 function piAiNamespace(
   providers: Record<string, unknown>,
   userProviders: Record<string, unknown> = providers,
+  baseProviders: Record<string, unknown> = {},
 ): SettingsNamespaceView {
   return {
     ns: 'llm-pi-ai',
@@ -54,7 +55,7 @@ function piAiNamespace(
     // `value` is the effective section; `user` is only the layer this page
     // writes. They differ whenever a composition `base` supplies something.
     value: { providers },
-    base: {},
+    base: { providers: baseProviders },
     user: { providers: userProviders },
     applies: 'live',
     secrets: [],
@@ -66,6 +67,10 @@ function scriptedFace(options: {
   providers?: Record<string, unknown>
   /** User layer, when it differs from the effective section. */
   userProviders?: Record<string, unknown>
+  /** Composition layer, for a route a `cordis.yml` pins rather than the page. */
+  baseProviders?: Record<string, unknown>
+  /** Routes the adapter reports as hand-declared; the rest come back as shipped. */
+  declaredRoutes?: readonly string[]
   discover?: ReturnType<typeof vi.fn>
   mutate?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
@@ -73,7 +78,7 @@ function scriptedFace(options: {
   const providers = options.providers ?? {
     openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy.example/v1' },
   }
-  const namespace = piAiNamespace(providers, options.userProviders ?? providers)
+  const namespace = piAiNamespace(providers, options.userProviders ?? providers, options.baseProviders ?? {})
   const discover = options.discover ?? vi.fn(() => Promise.resolve(ok({ models: [] })))
   const mutate = options.mutate ?? vi.fn(() => Promise.resolve(ok(namespace)))
   const set = options.set ?? vi.fn(() => Promise.resolve(ok({})))
@@ -86,6 +91,7 @@ function scriptedFace(options: {
           settingsNs: 'llm-pi-ai',
           settingsPath: ['providers', provider],
           active: true,
+          declared: options.declaredRoutes?.includes(provider) ?? false,
         })),
       }))),
       models: vi.fn(() => Promise.resolve(ok({ groups: [], failures: [] }))),
@@ -599,9 +605,59 @@ describe('endpoint interrogation', () => {
   })
 })
 
+describe('provider rows', () => {
+  it('tags the routes the adapter declared, and only those', async () => {
+    await mountSection({
+      providers: {
+        openai: { apiKeyEnv: 'OPENAI_API_KEY' },
+        'acme-gateway': { apiKeyEnv: 'ACME_GATEWAY_API_KEY', baseURL: 'https://acme.test/v1' },
+      },
+      declaredRoutes: ['acme-gateway'],
+    })
+
+    const rowOf = (provider: string): HTMLElement => {
+      const row = screen.getByText(provider).closest('li')
+      if (row === null) throw new Error(`no row for ${provider}`)
+      return row
+    }
+    expect(rowOf('acme-gateway').textContent).toContain(en.customTag)
+    // `openai` carries a stored profile too — the tag follows the adapter's
+    // catalog, not the presence of settings, so it stays off here.
+    expect(rowOf('openai').textContent).not.toContain(en.customTag)
+  })
+
+  it('shows no tag when the adapter draws no catalog distinction', async () => {
+    const scripted = scriptedFace({ providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } })
+    scripted.face.llm.providers = vi.fn(() => Promise.resolve(ok({
+      providers: [{
+        provider: 'openai',
+        displayName: 'openai',
+        settingsNs: 'llm-pi-ai',
+        settingsPath: ['providers', 'openai'],
+        active: true,
+      }],
+    }))) as never
+    const controller = new ModelsSettingsStore(scripted.face as unknown as WireFace)
+    await controller.load()
+    render(<ModelsSection
+      controller={controller}
+      useSnapshot={bindSnapshotSelector(controller.store)}
+      api={scripted.face as never}
+      t={t}
+    />)
+
+    // Absent is "unknown", never "shipped": an adapter that answers nothing
+    // must not have its routes labelled either way.
+    expect(screen.queryByText(en.customTag)).toBeNull()
+  })
+})
+
 describe('hand-declared providers', () => {
-  function mountCard(overrides: Partial<Parameters<typeof CustomProviderCard>[0]> = {}) {
-    const scripted = scriptedFace()
+  function mountCard(
+    overrides: Partial<Parameters<typeof CustomProviderCard>[0]> = {},
+    wire: Parameters<typeof scriptedFace>[0] = {},
+  ) {
+    const scripted = scriptedFace(wire)
     const onClose = vi.fn()
     render(
       <CustomProviderCard
@@ -650,6 +706,282 @@ describe('hand-declared providers', () => {
       expectedRevision: 7,
     })
     expect(set).toHaveBeenCalledWith({ ref: 'ACME_GATEWAY_API_KEY', value: 'gw-key' })
+  })
+
+  it('scopes each card to fields a provider can actually own', async () => {
+    // Reasoning effort is a per-MODEL capability and the
+    // models under one provider disagree about it, so a provider-scoped
+    // control could only be set to a value some of them reject — which would
+    // take the whole provider out of the picker. The composer's model picker
+    // owns the choice, and a switch there records provider+model+effort together.
+    const fields = () => [...document.querySelectorAll('input,select')]
+      .map(el => el.getAttribute('aria-label')).filter(Boolean)
+
+    mountCard()
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
+    expect(fields()).toEqual([en.customRoute, en.customDisplayName, en.baseUrl, en.customApi, en.keyInput])
+    cleanup()
+
+    // A shipped route's models each carry their own protocol, so its editor
+    // offers no route-level protocol to override them with.
+    await mountSection({ providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } })
+    openEditor('openai')
+    fireEvent.click(screen.getByText(en.customized))
+    expect(fields()).toEqual([en.keyInput, en.baseUrl])
+    cleanup()
+
+    // A hand-declared route named its own protocol at creation, so editing it
+    // reaches the same field the create card asked for.
+    await mountSection({
+      providers: { 'acme-gateway': { api: 'openai-completions', baseURL: 'https://gateway.acme.example/v1' } },
+      declaredRoutes: ['acme-gateway'],
+    })
+    openEditor('acme-gateway')
+    expect(fields()).toEqual([en.keyInput, en.customDisplayName, en.baseUrl, en.customApi])
+  })
+
+  it('renames a declared route and falls back to its id when the name is cleared', async () => {
+    const { mutate } = await mountSection({
+      providers: {
+        'acme-gateway': { displayName: 'Acme Gateway', api: 'openai-completions', baseURL: 'https://acme.test/v1' },
+      },
+      declaredRoutes: ['acme-gateway'],
+    })
+    openEditor('acme-gateway')
+
+    const name = screen.getByLabelText<HTMLInputElement>(en.customDisplayName)
+    expect(name.value).toBe('Acme Gateway')
+    // The route id, not the stored name: it is what the route will be called
+    // the moment the field is cleared.
+    expect(name.placeholder).toBe('acme-gateway')
+    fireEvent.change(name, { target: { value: 'Acme 网关' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    expect(firstMutate(mutate).ops)
+      .toEqual([{ op: 'set', path: ['providers', 'acme-gateway', 'displayName'], value: 'Acme 网关' }])
+  })
+
+  it('offers the composition name as what a cleared field falls back to', async () => {
+    // A `cordis.yml` can pin a route the catalog does not ship, so a declared
+    // route's profile is not always the page's own. The field edits the user
+    // layer alone, and clearing it restores the layer beneath — the
+    // composition name here, not the route id — so that is what it offers.
+    await mountSection({
+      providers: { 'acme-gateway': { displayName: 'Acme (pinned)', api: 'openai-completions' } },
+      baseProviders: { 'acme-gateway': { displayName: 'Acme (pinned)', api: 'openai-completions' } },
+      userProviders: {},
+      declaredRoutes: ['acme-gateway'],
+    })
+    openEditor('acme-gateway')
+
+    const name = screen.getByLabelText<HTMLInputElement>(en.customDisplayName)
+    expect(name.value).toBe('')
+    expect(name.placeholder).toBe('Acme (pinned)')
+  })
+
+  it('names the provider as the refreshed directory reports it after a rename', async () => {
+    // The status line used to echo the target captured when the card opened,
+    // which never lied while the name could not change. It can now.
+    const { face } = await mountSection({
+      providers: { 'acme-gateway': { displayName: 'Acme Gateway', api: 'openai-completions' } },
+      declaredRoutes: ['acme-gateway'],
+    })
+    // The reload after the write answers with the renamed route, exactly as
+    // the adapter re-registers it.
+    face.llm.providers = vi.fn(() => Promise.resolve(ok({
+      providers: [{
+        provider: 'acme-gateway',
+        displayName: 'Acme 网关',
+        settingsNs: 'llm-pi-ai',
+        settingsPath: ['providers', 'acme-gateway'],
+        active: true,
+        declared: true,
+      }],
+    })))
+    openEditor('acme-gateway')
+
+    fireEvent.change(screen.getByLabelText(en.customDisplayName), { target: { value: 'Acme 网关' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    const notice = await screen.findByRole('status')
+    expect(notice.textContent).toBe(providerCopy(en.savedProvider, {
+      provider: 'acme-gateway',
+      displayName: 'Acme 网关',
+    }))
+  })
+
+  it('drops the stored name rather than storing an empty one the adapter refuses', async () => {
+    // `llm-pi-ai` rejects an empty displayName outright, so clearing the field
+    // must unset it — which is also what the user means: use the route id.
+    const { mutate } = await mountSection({
+      providers: { 'acme-gateway': { displayName: 'Acme Gateway', api: 'openai-completions' } },
+      declaredRoutes: ['acme-gateway'],
+    })
+    openEditor('acme-gateway')
+
+    fireEvent.change(screen.getByLabelText(en.customDisplayName), { target: { value: '   ' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    expect(firstMutate(mutate).ops)
+      .toEqual([{ op: 'unset', path: ['providers', 'acme-gateway', 'displayName'] }])
+  })
+
+  it('edits the protocol a declared route was created with', async () => {
+    const { mutate } = await mountSection({
+      providers: {
+        'acme-gateway': {
+          apiKeyEnv: 'ACME_GATEWAY_API_KEY',
+          api: 'openai-completions',
+          baseURL: 'https://gateway.acme.example/v1',
+          models: [{ id: 'acme-large' }],
+        },
+      },
+      declaredRoutes: ['acme-gateway'],
+    })
+    openEditor('acme-gateway')
+
+    const protocol = screen.getByLabelText<HTMLSelectElement>(en.customApi)
+    expect(protocol.value).toBe('openai-completions')
+    fireEvent.change(protocol, { target: { value: 'anthropic-messages' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    // Only the protocol travels: every other stored field is unchanged, so no
+    // op restates it.
+    expect(firstMutate(mutate)).toEqual({
+      ns: 'llm-pi-ai',
+      ops: [{ op: 'set', path: ['providers', 'acme-gateway', 'api'], value: 'anthropic-messages' }],
+      expectedRevision: 3,
+    })
+  })
+
+  it('selects nothing for a declared route whose profile names no protocol', async () => {
+    // A route hand-written into settings.yaml with no model needs no protocol
+    // to resolve, so the card can be opened over one. The select must not read
+    // as if that route had picked its first choice.
+    await mountSection({
+      providers: { 'acme-gateway': { baseURL: 'https://gateway.acme.example/v1' } },
+      declaredRoutes: ['acme-gateway'],
+    })
+    openEditor('acme-gateway')
+
+    expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).value).toBe('')
+  })
+
+  it('retries only the key after the profile landed, and reports the provider on cancel', async () => {
+    const set = vi.fn()
+      .mockResolvedValueOnce(fail('credential store is read-only', 'credential-rejected'))
+      .mockResolvedValueOnce(ok({}))
+    const { mutate, onClose } = mountCard({}, { set })
+
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: '  gw-key  ' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
+    fireEvent.click(screen.getByText(en.create))
+
+    // The profile landed; only the key failed. The card says so and stays open.
+    await waitFor(() => { expect(screen.getByText('credential store is read-only')).toBeTruthy() })
+    expect(onClose).not.toHaveBeenCalled()
+    expect(mutate).toHaveBeenCalledTimes(1)
+    // The key is stored trimmed, matching the editor.
+    expect(set).toHaveBeenNthCalledWith(1, { ref: 'ACME_API_KEY', value: 'gw-key' })
+
+    // The provider exists now, so the fields describing it are settled and
+    // only the key can still be corrected.
+    expect(screen.getByLabelText<HTMLInputElement>(en.customRoute).disabled).toBe(true)
+    expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).disabled).toBe(true)
+    expect(screen.getByLabelText<HTMLInputElement>(en.keyInput).disabled).toBe(false)
+
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'gw-key-2' } })
+    fireEvent.click(screen.getByText(en.create))
+    await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+    // Re-running the profile write would carry the revision this card's own
+    // first write superseded, so the Host would answer settings-conflict and
+    // the key could never be stored from here at all.
+    expect(mutate).toHaveBeenCalledTimes(1)
+    expect(set).toHaveBeenNthCalledWith(2, { ref: 'ACME_API_KEY', value: 'gw-key-2' })
+  })
+
+  it('reports the created provider when cancelled after its profile landed', async () => {
+    const set = vi.fn().mockResolvedValue(fail('nope', 'credential-rejected'))
+    const { onClose } = mountCard({}, { set })
+
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'gw-key' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
+    fireEvent.click(screen.getByText(en.create))
+    await waitFor(() => { expect(screen.getByText('nope')).toBeTruthy() })
+
+    // Walking away leaves a real provider behind; reporting no change would
+    // leave the page without the row it now has.
+    fireEvent.click(screen.getByText(en.cancel))
+    expect(onClose).toHaveBeenCalledWith(true)
+  })
+
+  it('never contradicts a filled-in field with the next gate\u2019s copy', () => {
+    mountCard()
+    const routeField = screen.getByLabelText(en.customRoute)
+    fireEvent.change(routeField, { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'm' } })
+
+    // The route field explains itself right under the input; the shared line
+    // must stay silent rather than falling through to "no models yet" while
+    // the list above plainly has one.
+    expect(screen.getByText(en.customRouteInvalid)).toBeTruthy()
+    expect(screen.queryByText(en.customNeedsModels)).toBeNull()
+
+    // Fixing the route hands the line back to the gate that is actually unmet.
+    fireEvent.change(routeField, { target: { value: 'acme' } })
+    expect(screen.queryByText(en.customNeedsModels)).toBeNull()
+    expect(buttonNamed(en.create).disabled).toBe(false)
+  })
+
+  it('refuses a route id whose derived credential reference would be illegal', () => {
+    mountCard()
+    const routeField = screen.getByLabelText(en.customRoute)
+    fireEvent.change(routeField, { target: { value: 'https://acme.test/v1' } })
+
+    // Without this check a digit-leading id passes the card and fails at the
+    // credential seam with a raw regular expression: the
+    // reference derives as `123_API_KEY`, and a credential reference is a
+    // POSIX shell identifier, which cannot start with a digit.
+    fireEvent.change(routeField, { target: { value: '123' } })
+    expect(screen.getByText(en.customRouteInvalid)).toBeTruthy()
+    expect(buttonNamed(en.create).disabled).toBe(true)
+
+    fireEvent.change(routeField, { target: { value: 'a1' } })
+    expect(screen.queryByText(en.customRouteInvalid)).toBeNull()
+  })
+
+  it('styles a rejected route id as a fault and its guidance as a hint', () => {
+    mountCard()
+    const routeField = screen.getByLabelText(en.customRoute)
+    // Same split the key field makes: what the user got wrong reads as a
+    // fault, what they have yet to do reads as guidance.
+    expect(screen.getByText(en.customRouteHint).className).toMatch(/advancedHint/)
+
+    fireEvent.change(routeField, { target: { value: '2' } })
+    expect(screen.getByText(en.customRouteInvalid).className).toMatch(/error/)
+
+    fireEvent.change(routeField, { target: { value: 'openai' } })
+    expect(screen.getByText(en.customRouteTaken).className).toMatch(/error/)
+  })
+
+  it('derives a reference the credential seam accepts for every id it admits', () => {
+    // The two rules have to stay in step; this is the relation, checked
+    // directly rather than through the DOM.
+    const CREDENTIAL_REF = /^[A-Za-z_][A-Za-z0-9_]*$/
+    for (const id of ['a', 'ds', 'a1', 'acme-gateway', 'x-1-y', 'zz9']) {
+      expect(CREDENTIAL_REF.test(deriveKeyRef(id))).toBe(true)
+    }
   })
 
   it('names the blocked gate under the form, and nothing once it is satisfied', () => {
@@ -815,8 +1147,10 @@ describe('hand-declared providers', () => {
 
     await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
     // No display name configured means none stored; the route id is the name.
+    // No key typed means no reference either, matching the editor: the route
+    // keeps its provider-native auth path instead of resolving a reference
+    // nothing ever sets. The with-key case is covered above.
     expect(firstMutate(mutate).ops[0]?.value).toEqual({
-      apiKeyEnv: 'ACME_API_KEY',
       api: 'anthropic-messages',
       baseURL: 'https://acme.test/v1',
       models: [{ id: 'm' }],

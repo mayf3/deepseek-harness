@@ -2,6 +2,9 @@
 import type {
   ConversationSnapshot, ISession, SessionId, SessionSummary, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
+import {
+  EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
+} from '@deepseek-ai/dsh-client-runtime/client'
 
 /**
  * Fixture overrides for the session behavior face: any subset of the
@@ -45,12 +48,13 @@ export interface SessionFixture {
 export function conversationSnapshot(sessionId: SessionId): ConversationSnapshot {
   return {
     sessionId,
+    views: EMPTY_CONVERSATION_VIEWS,
+    chat: EMPTY_CHAT_SNAPSHOT,
     nodes: [],
     turnTimings: new Map(),
     turnEnds: new Map(),
     partial: null,
     runningCalls: [],
-    codeDispatches: new Map(),
     pending: [],
     queue: [],
     running: false,

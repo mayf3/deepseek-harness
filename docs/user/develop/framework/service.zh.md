@@ -36,7 +36,7 @@ export function apply(ctx: Context) {
 ### 使用 Service 基类
 
 ```ts
-import { Service, type Context } from 'cordis'
+import { Service, type Context } from '@deepseek-ai/cordis'
 
 export default class MetricsService extends Service {
   static inject = ['llm']  // A service may depend on other services.
@@ -67,9 +67,9 @@ export function apply(ctx: Context) {
 使用 TypeScript 声明合并让 `ctx.metrics` 有正确类型：
 
 ```ts
-import { Service, type Context } from 'cordis'
+import { Service, type Context } from '@deepseek-ai/cordis'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     metrics: MetricsService
   }
@@ -114,7 +114,7 @@ export function apply(ctx: Context) {
 
 ```yaml
 - id: group-a
-  name: '@cordisjs/plugin-group'
+  name: '@deepseek-ai/cordis-plugin-group'
   group: true
   isolate:
     bash: true
@@ -125,7 +125,7 @@ export function apply(ctx: Context) {
     - name: './src/plugin-a.ts'
 
 - id: group-b
-  name: '@cordisjs/plugin-group'
+  name: '@deepseek-ai/cordis-plugin-group'
   group: true
   isolate:
     bash: true
@@ -140,7 +140,7 @@ export function apply(ctx: Context) {
 
 ## Harness 内置服务
 
-仓库会自动生成[服务目录](../../../cordis-catalog/services.md)，其中包含服务名、公开方法和源码位置。开发插件时应以该目录和服务的 TypeScript 接口为准，不要维护另一份静态清单。
+服务名、公开方法和源码位置由仓库自动生成到各服务的[子系统页面](../../../subsystems/core.md)。开发插件时应以这些生成区块和服务接口的 TypeScript 类型为准，不要复制一份静态清单。
 
 ## 下一步
 

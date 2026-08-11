@@ -3,7 +3,7 @@
 // deferred-controlled timing). Streams are hand pumps: pushMux/pushHost.
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type {
-  CommandDescriptor, HostFrame, IApiClient, ModelTarget, MuxFrame,
+  CommandDescriptor, HostFrame, IApiClient, ModelSelection, MuxFrame,
   RpcRequest, RpcResponse, SessionId, SessionModels, SessionSearchItem, SkillEntry,
 } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
@@ -50,22 +50,25 @@ export class FakeApiClient implements IApiClient {
   onRename: (payload: unknown) => Promise<RpcResponse<{ title: string; seq: number }>> = () => Promise.resolve(ok({ title: 'fk-renamed', seq: 0 }))
   onFork: (payload: unknown) => Promise<RpcResponse<{ sessionId: SessionId }>> = () => Promise.resolve(ok({ sessionId: 'fk-fork' as SessionId }))
   onHistory: (payload: { sessionId: SessionId; beforeSeq?: number; maxMessages?: number })
-  => Promise<RpcResponse<{ events: never[]; hasMore: boolean; modelTarget: ModelTarget }>> =
+  => Promise<RpcResponse<{ events: never[]; hasMore: boolean; modelSelection: ModelSelection }>> =
     () => Promise.resolve(ok({
       events: [],
       hasMore: false,
-      modelTarget: { provider: 'deepseek-official', model: 'deepseek-chat' },
+      modelSelection: { provider: 'deepseek-official', model: 'deepseek-chat' },
     }))
 
   onModels: (payload: unknown) => Promise<RpcResponse<SessionModels>> = () => Promise.resolve(ok({
     current: { provider: 'deepseek-official', model: 'deepseek-chat' },
+    routable: true,
     groups: [],
     failures: [],
   }))
-  onSelectModel: (payload: ModelTarget & { sessionId: SessionId })
-  => Promise<RpcResponse<{ selected: ModelTarget }>> =
+  onSelectModel: (payload: ModelSelection & { sessionId: SessionId })
+  => Promise<RpcResponse<{ selected: ModelSelection }>> =
     payload => Promise.resolve(ok({ selected: { provider: payload.provider, model: payload.model } }))
   onPrompt: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
+  onAttachment: (payload: unknown) => Promise<RpcResponse<{ attachment: { attachmentId: never; mediaType: 'image/png'; bytes: number; width: number; height: number }; data: string }>> =
+    () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, data: 'AA==' }))
   onUpdateQueue: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onCancel: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onDescribe: (payload: unknown) => Promise<RpcResponse<{ version: string; cwd: string; attachedSessions: number }>> =
@@ -104,11 +107,12 @@ export class FakeApiClient implements IApiClient {
     history: (payload: { sessionId: SessionId; beforeSeq?: number; maxMessages?: number }) =>
       this.record('session.history', payload, this.onHistory(payload)),
     models: (payload: unknown) => this.record('session.models', payload, this.onModels(payload)),
-    selectModel: (payload: ModelTarget & { sessionId: SessionId }) =>
+    selectModel: (payload: ModelSelection & { sessionId: SessionId }) =>
       this.record('session.selectModel', payload, this.onSelectModel(payload)),
     rename: (payload: unknown) => this.record('session.rename', payload, this.onRename(payload)),
     fork: (payload: unknown) => this.record('session.fork', payload, this.onFork(payload)),
     prompt: (payload: unknown) => this.record('session.prompt', payload, this.onPrompt(payload)),
+    attachment: (payload: unknown) => this.record('session.attachment', payload, this.onAttachment(payload)),
     updateQueue: (payload: unknown) => this.record('session.updateQueue', payload, this.onUpdateQueue(payload)),
     cancel: (payload: unknown) => this.record('session.cancel', payload, this.onCancel(payload)),
   }
@@ -124,6 +128,9 @@ export class FakeApiClient implements IApiClient {
     }))),
     prompt: (payload: unknown) => this.record('subagent.prompt', payload, Promise.resolve(ok({
       messageId: 'fake-message' as never,
+    }))),
+    interrupt: (payload: unknown) => this.record('subagent.interrupt', payload, Promise.resolve(ok({
+      accepted: true as const,
     }))),
   }
 
@@ -162,9 +169,26 @@ export class FakeApiClient implements IApiClient {
   onSkillList: (payload: unknown) => Promise<RpcResponse<{ skills: SkillEntry[] }>>
     = () => Promise.resolve(ok({ skills: [] }))
 
+
   readonly commands: IApiClient['commands'] = {
     list: (payload: unknown) => this.record('command.list', payload, this.onCommandList(payload)),
     execute: (payload: unknown) => this.record('command.execute', payload, this.onCommandExecute(payload)),
+  }
+
+  readonly agentPresets: IApiClient['agentPresets'] = {
+    list: (payload: unknown) => this.record('agentPreset.list', payload, Promise.resolve(ok({ presets: [], authorable: false, hasDocument: false }))),
+    select: (payload: { agentPreset: string }) =>
+      this.record('agentPreset.select', payload, Promise.resolve(ok({ agentPreset: payload.agentPreset }))),
+    read: (payload: { agentPreset: string }) =>
+      this.record('agentPreset.read', payload, Promise.resolve(ok({
+        agentPreset: payload.agentPreset, trust: 'user' as const, content: '',
+      }))),
+    copy: (payload: { agentPreset: string }) =>
+      this.record('agentPreset.copy', payload, Promise.resolve(ok({ agentPreset: payload.agentPreset }))),
+    openDocument: (payload: { agentPreset: string }) =>
+      this.record('agentPreset.openDocument', payload, Promise.resolve(ok({ opened: true as const }))),
+    remove: (payload: { agentPreset: string }) =>
+      this.record('agentPreset.remove', payload, Promise.resolve(ok({}))),
   }
 
   readonly skills: IApiClient['skills'] = {

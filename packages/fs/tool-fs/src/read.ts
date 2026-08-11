@@ -4,14 +4,13 @@
  * @module @deepseek-ai/dsh-tool-fs/src/read
  */
 
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, ReadResultView, ToolResult } from '@deepseek-ai/dsh-tools'
-import { FsError } from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { buildWindow, formatReadOutput, langFromPath, readMetaFromMeta } from './read-render.ts'
-import { sessionResolveOptions } from './session-cwd.ts'
+import { resolveRegularReadTarget } from './read-target.ts'
 
 /** Default and maximum number of lines returned by one `read` call (the `readLimit` config). */
 export const READ_LIMIT = 2000
@@ -136,13 +135,9 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
     isConcurrencySafe: () => true,
     async execute(args, exec) {
       const input = parseReadArgs(args, caps.limit)
-      const target = await ctx.fs.resolve(input.filePath, sessionResolveOptions(exec, input.filePath))
-
-      // One stat: type check + size routing + the version recorded as observed.
+      // One stat: absence observation OR type check + size routing + present version.
       // A concurrent write can only make a later guarded mutation fail stale and require reread.
-      const info = await ctx.fs.stat(target, exec.signal)
-      if (!info) throw new FsError(`cannot read "${target.displayPath}": not found`, 'FS_NOT_FOUND')
-      if (info.type !== 'file') throw new FsError(`cannot read "${target.displayPath}": not a regular file`, 'FS_NOT_REGULAR_FILE')
+      const { target, info } = await resolveRegularReadTarget(ctx, exec, input.filePath)
 
       // Stream when the file is large OR size is unknown, so a size-less backend
       // never buffers an arbitrarily large file.
@@ -161,10 +156,10 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
         lines: window.lines,
         totalLines: window.totalLines,
       }
-      // Record the observed version (a no-op when no policy plugin listens). The
+      // Record the present observation (a no-op when no policy plugin listens). The
       // read already succeeded; an fs/observed listener is contractually a
       // synchronous, side-effect-only recorder.
-      ctx.emit('fs/observed', target, info.version, exec)
+      ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
       return outcome
     },
     // Result-time display: a `read` card carrying the structured line window a

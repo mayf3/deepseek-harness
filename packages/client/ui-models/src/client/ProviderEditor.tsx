@@ -7,12 +7,18 @@
  * a key is entered; a blank key materializes a reference-free profile for
  * provider-native authentication);
  * the collapsed 自定义设置 area carries the per-family extras (`baseURL` for
- * both families, `reasoningEffort` for deepseek / `reasoning` for pi-ai, and
- * DeepSeek's id/name/context-window model catalog). Everything else stays
+ * both families, DeepSeek's id/name/context-window model catalog, and the
+ * display name and wire protocol of a pi-ai route the adapter does not ship —
+ * the two fields the create card asked that route for, editable here for the
+ * same reason).
+ * Reasoning effort is deliberately absent: it is a per-MODEL capability, and
+ * the models under one provider disagree about it, so a provider-scoped
+ * control can only be set to a value some of them reject. The composer's
+ * model picker offers each model its own levels; `settings.yaml` keeps the
+ * profile field for a deployment that knows its route. Everything else stays
  * owned by `settings.yaml`. Profile edits land as minimal `settings.mutate`
- * path ops against the stored section — the card reads the redacted
- * descriptor, so it names only the fields it can see and a stored literal
- * secret is never collaterally removed.
+ * path ops against the stored section — the card names only the fields it can
+ * see instead of rebuilding the whole subtree from a partial descriptor.
  */
 
 import { useEffect, useMemo, useState } from 'react'
@@ -27,24 +33,12 @@ import {
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
-import { deriveKeyRef, messageOf } from './store.ts'
+import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
 type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
-
-/** Reasoning vocabularies per layout; the empty option means "inherit". */
-const EFFORT_CHOICES: Record<'deepseek' | 'pi-ai', readonly string[]> = {
-  deepseek: ['off', 'high', 'max'],
-  'pi-ai': ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
-}
-
-/** The draft key the effort select edits, per layout. */
-const EFFORT_FIELD: Record<'deepseek' | 'pi-ai', string> = {
-  deepseek: 'reasoningEffort',
-  'pi-ai': 'reasoning',
-}
 
 /** The public DeepSeek endpoint shown as the deepseek base-URL placeholder. */
 const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
@@ -57,6 +51,14 @@ export interface ProviderEditorProps {
   displayName: string
   /** Hide the title row (the add card renders its own provider select). */
   hideTitle?: boolean
+  /**
+   * Whether the adapter reports this route as hand-declared — absent from its
+   * installed catalog. Such a route carries its own wire protocol, chosen when
+   * it was created and editable here for the same reason; a catalog route's
+   * models each carry theirs, so a route-level protocol there could only
+   * override every one of them and the card does not offer it.
+   */
+  declared?: boolean
   /** The owning namespace view (schema, layers, secrets). */
   namespace: SettingsNamespaceView
   /** Path from the section root to this provider's profile. */
@@ -80,10 +82,9 @@ function draftAt(namespace: SettingsNamespaceView, path: readonly string[]): Rec
 
 /**
  * The minimal path ops carrying `after` over `before`, both as the card sees
- * them (that is, redacted). Only keys the card observed are named: a stored
- * `role('secret')` field appears in neither side, so it produces no op and
- * survives the write — the whole reason edits are path-addressed rather than
- * a rebuilt section.
+ * them. Only keys the card observed are named; fields absent from both sides
+ * produce no op, which is why edits are path-addressed rather than a rebuilt
+ * section.
  * @param base - path of the edited subtree inside the user section.
  * @param before - the subtree as loaded, or undefined when it is new.
  * @param after - the subtree as edited.
@@ -149,6 +150,14 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const disabled = props.readOnly || busy
   const layout = layoutOf(namespace.ns)
   const keyRef = refFor(namespace, settingsPath, props.provider)
+  // The same schema read the create card makes, so the choices offered here
+  // and there cannot drift apart: both come from the adapter's own `Config`.
+  // Only the pi-ai layout has a per-route protocol for the read to find, and
+  // it rehydrates the whole section schema, so the other layouts skip it.
+  const protocols = useMemo(
+    () => layout === 'pi-ai' ? protocolChoices(namespace) : [],
+    [layout, namespace],
+  )
 
   useEffect(() => {
     let stale = false
@@ -205,9 +214,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   /**
    * The write for this card, or a failure message. Every edit travels as
    * path ops against the STORED section: the draft comes from the redacted
-   * descriptor, so a wholesale replace rebuilt from it would delete the
-   * literal secrets the wire never returned. Ops name only the fields this
-   * card can see, so a stored secret is untouched by construction.
+   * descriptor, so a wholesale replace rebuilt from it could delete fields
+   * outside the card. Ops name only the fields this card can see.
    */
   const applyOnce = async (): Promise<string | undefined> => {
     const ns = namespace.ns
@@ -300,12 +308,15 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   }
 
   /**
-   * The curated fields of one known adapter family. Taking the narrowed
-   * family as a parameter is what makes `EFFORT_FIELD` total here: an
-   * unknown namespace never reaches this body.
+   * The curated fields of one known adapter family. The family arrives
+   * narrowed so the per-family branches below are total: an unknown namespace
+   * renders the hint instead and never reaches this body.
    */
   const curatedFields = (family: 'deepseek' | 'pi-ai'): ReactNode => {
-    const effortField = EFFORT_FIELD[family]
+    // What a hand-declared route names for itself and nothing else can supply.
+    // A whole-section `llm-deepseek` profile is a composition fact with no
+    // per-route identity for its schema to carry, hence the family test.
+    const ownsIdentity = family === 'pi-ai' && props.declared === true
     const customModels = getPath(draft, ['models'])
     const modelsOverridden = hasPath(draft, ['models'])
     const models = modelDrafts(modelsOverridden ? customModels : inheritedModels())
@@ -346,6 +357,33 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         <details className={styles['customized']}>
           <summary className={styles['customizedSummary']}>{t('customized')}</summary>
           <div className={styles['customizedBody']}>
+            {/* The name and the protocol are the create card's two remaining
+                profile fields; a route the adapter ships defaults both from
+                its catalog entry and neither belongs on its card. */}
+            {ownsIdentity
+              ? (
+                <div className={styles['field']}>
+                  <span className={styles['fieldLabel']}>{t('customDisplayName')}</span>
+                  <input
+                    className={styles['input']}
+                    type="text"
+                    value={stringAt(draft, 'displayName') ?? ''}
+                    // What this route is called the moment the field is
+                    // cleared, which is the layer beneath the one this field
+                    // edits: a `cordis.yml` may pin a name for a route the
+                    // catalog does not ship, and only when nothing does is
+                    // the answer the route id. Reading the effective value
+                    // instead would echo the stored override back as the
+                    // thing clearing restores.
+                    placeholder={stringAt(getPath(namespace.base, settingsPath), 'displayName')
+                      ?? props.provider}
+                    aria-label={t('customDisplayName')}
+                    disabled={disabled}
+                    onChange={(event) => { setField('displayName', event.target.value) }}
+                  />
+                </div>
+              )
+              : null}
             <div className={styles['field']}>
               <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
               <input
@@ -362,23 +400,31 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 }}
               />
             </div>
-            <div className={styles['field']}>
-              <span className={styles['fieldLabel']}>{t('effort')}</span>
-              <select
-                className={`${styles['input']} ${styles['selectInput']}`}
-                value={stringAt(draft, effortField) ?? ''}
-                aria-label={t('effort')}
-                disabled={disabled}
-                onChange={(event) => {
-                  setField(effortField, event.target.value === '' ? undefined : event.target.value)
-                }}
-              >
-                <option value="">{t('effortInherit')}</option>
-                {EFFORT_CHOICES[family].map(choice => (
-                  <option key={choice} value={choice}>{choice}</option>
-                ))}
-              </select>
-            </div>
+            {/* The protocol sits beside the endpoint it describes, as it does
+                on the create card. */}
+            {ownsIdentity
+              ? (
+                <div className={styles['field']}>
+                  <span className={styles['fieldLabel']}>{t('customApi')}</span>
+                  <select
+                    className={`${styles['input']} ${styles['selectInput']}`}
+                    value={probeApi ?? ''}
+                    aria-label={t('customApi')}
+                    disabled={disabled}
+                    onChange={(event) => { setField('api', event.target.value) }}
+                  >
+                    {/* A profile naming no protocol — hand-written into
+                        settings.yaml with no model to need one — selects
+                        nothing rather than reading as if it had picked the
+                        first choice. The option is named because a screen
+                        reader announces it either way, and an empty one is
+                        announced as a choice with no identity. */}
+                    {probeApi === undefined ? <option value="">{t('customApiUnset')}</option> : null}
+                    {protocols.map(choice => <option key={choice} value={choice}>{choice}</option>)}
+                  </select>
+                </div>
+              )
+              : null}
             {/* Both families edit the same rows through the same contract; only
                 the extras differ — DeepSeek's inherited capacities, pi-ai's
                 endpoint interrogation. */}

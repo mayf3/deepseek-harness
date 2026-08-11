@@ -11,8 +11,8 @@ LLM 适配器是一个继承 `LlmAdapter` 并实现 `stream()` 方法的类，�
 ## 最小实现
 
 ```ts
-import type { Context } from 'cordis'
-import Schema from 'schemastery'
+import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 
 class MyAdapter extends LlmAdapter {
@@ -150,7 +150,7 @@ ctx.llm.registerAdapter(['model-name-1', 'model-name-2'], adapter)
 - `packages/llm/llm-deepseek/` — DeepSeek API 适配器（OpenAI 兼容格式）
 - `packages/llm/llm-pi-ai/` — Pi AI 适配器（不同的 API 格式）
 
-对比这两个已交付的适配器，可以看到同一套 harness 契约如何在不同提供方 SDK 之上实现。
+对比这两个已交付的适配器，可以看到同一套 harness 约定如何在不同提供方 SDK 之上实现。
 
 ## 错误处理
 

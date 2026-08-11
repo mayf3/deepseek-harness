@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { Context } from 'cordis'
-import type { Fiber } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
+import type { Fiber } from '@deepseek-ai/cordis'
 import LlmService, { createUserMessage, CallId, EMPTY_RESPONSE_CODE, LlmAdapter, LlmError, resolveRetryPolicy  } from '@deepseek-ai/dsh-llm'
 import type {
   AlwaysRetryPolicyConfig,
@@ -191,7 +191,9 @@ describe('provider-routed retry policy', () => {
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     const event = await scheduled
 
+    expect(event.data.retryId).toEqual(expect.any(String))
     expect(event.data).toEqual({
+      retryId: event.data.retryId,
       turn: 1,
       step: 1,
       provider: 'mock',
