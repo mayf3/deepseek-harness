@@ -18,6 +18,7 @@ import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { ListToolsResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import type { Context } from '@deepseek-ai/cordis'
+import { isImageAdmissionError } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, ImageMediaType, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolDefinition, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
@@ -474,10 +475,13 @@ async function prepareImageProjection(
       type: 'image',
       attachment: byIndex.get(index) as ImageAttachmentRef,
     }))
-  } catch {
+  } catch (error: unknown) {
+    const reason = isImageAdmissionError(error)
+      ? `image admission rejected the result: ${error.message}`
+      : 'durable image storage rejected the result'
     return projectContent(content, toolName, block => ({
       type: 'text',
-      text: imageDiagnostic(block, 'durable image storage rejected the result'),
+      text: imageDiagnostic(block, reason),
     }))
   }
 }

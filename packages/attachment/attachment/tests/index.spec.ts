@@ -1,7 +1,9 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import AttachmentStore, {
+  AttachmentError,
   AttachmentId,
+  isImageAdmissionError,
   type ImageAttachmentRef,
   type ImageMediaType,
   type SaveImageAttachment,
@@ -91,5 +93,16 @@ describe('AttachmentStore.saveImages', () => {
     await expect(store.saveImages([image(1), image(2)]))
       .rejects.toThrow('write:2')
     expect(store.calls).toEqual(['validate:1', 'validate:2', 'save:1', 'save:2'])
+  })
+})
+
+describe('isImageAdmissionError', () => {
+  it('separates caller-correctable image policy failures from storage faults', () => {
+    expect(isImageAdmissionError(new AttachmentError('bad bytes', 'INVALID_IMAGE'))).toBe(true)
+    expect(isImageAdmissionError(new AttachmentError('too many', 'TOO_MANY_IMAGES'))).toBe(true)
+    expect(isImageAdmissionError(Object.assign(new Error('foreign policy error'), { code: 'IMAGE_TOO_LARGE' }))).toBe(true)
+    expect(isImageAdmissionError(new AttachmentError('corrupt object', 'ATTACHMENT_CORRUPT'))).toBe(false)
+    expect(isImageAdmissionError(new AttachmentError('disk failed', 'ATTACHMENT_WRITE_FAILED'))).toBe(false)
+    expect(isImageAdmissionError(new Error('unknown failure'))).toBe(false)
   })
 })

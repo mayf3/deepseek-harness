@@ -24,3 +24,26 @@ export class AttachmentError extends Error {
     this.code = code
   }
 }
+
+/** Attachment failures caused by the caller's proposed image batch. */
+const IMAGE_ADMISSION_ERROR_CODES = new Set([
+  'TOO_MANY_IMAGES',
+  'IMAGES_TOO_LARGE',
+  'UNSUPPORTED_IMAGE_TYPE',
+  'INVALID_IMAGE',
+  'IMAGE_TYPE_MISMATCH',
+  'IMAGE_TOO_LARGE',
+  'IMAGE_TOO_MANY_PIXELS',
+])
+
+/**
+ * Distinguish caller-correctable image admission failures from storage faults.
+ * @param error - failure raised while validating or persisting an image batch.
+ * @returns whether the caller can correct the proposed image content or batch.
+ */
+export function isImageAdmissionError(error: unknown): error is AttachmentError {
+  return error instanceof Error
+    && 'code' in error
+    && typeof error.code === 'string'
+    && IMAGE_ADMISSION_ERROR_CODES.has(error.code)
+}

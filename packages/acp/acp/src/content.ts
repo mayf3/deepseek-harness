@@ -2,7 +2,7 @@
 
 import type { ContentBlock as AcpContentBlock } from '@agentclientprotocol/sdk'
 import type { Context } from '@deepseek-ai/cordis'
-import { AttachmentError } from '@deepseek-ai/dsh-attachment'
+import { isImageAdmissionError } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, ImageMediaType, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -72,7 +72,7 @@ async function assertImageRoute(ctx: Context, agent: Agent, signal: AbortSignal)
   try {
     info = await llm.resolveModelInfo(provider, model, signal)
   } catch (error: unknown) {
-    throw new AcpContentError('the current model route could not be verified for image input', 'invalid', { cause: error })
+    throw new AcpContentError('the current model route could not be verified for image input', 'internal', { cause: error })
   }
   if (info.inputModalities === undefined || !info.inputModalities.includes('image')) {
     throw new AcpContentError(`model "${model}" does not declare image input`, 'invalid')
@@ -157,7 +157,7 @@ export async function admitAcpPrompt(
     try {
       refs = await attachments.saveImages(images)
     } catch (error: unknown) {
-      if (error instanceof AttachmentError && error.code !== 'ATTACHMENT_WRITE_FAILED') {
+      if (isImageAdmissionError(error)) {
         throw new AcpContentError(error.message, 'invalid', { cause: error })
       }
       throw new AcpContentError('unable to persist the prompt image batch', 'internal', { cause: error })

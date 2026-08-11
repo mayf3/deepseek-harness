@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { Context } from '@deepseek-ai/cordis'
-import AttachmentStore, { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import AttachmentStore, { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { CallId, LlmAdapter, LlmService } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -674,6 +674,29 @@ describe('tool execution', () => {
     })
 
     expect(textAt(result.content)).toContain('durable image storage rejected the result')
+  })
+
+  it('reports attachment policy rejection as image admission rather than storage failure', async () => {
+    const rich = await mountRichRegistry()
+    vi.spyOn(rich.attachments, 'saveImages').mockRejectedValueOnce(
+      new AttachmentError('too many images', 'TOO_MANY_IMAGES'),
+    )
+    const client = createMockClient(
+      [{ name: 'img', inputSchema: { type: 'object' } }],
+      { content: [{ type: 'image', mimeType: 'image/png', data: 'AQ==' }] },
+    )
+
+    await syncTools(client as never, rich.ctx, defaultOpts, new Map())
+    const result = await rich.ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('policy-rejected'),
+      name: 'mcp__srv__img',
+      arguments: {},
+      agent: agentOn() as never,
+    })
+
+    expect(textAt(result.content)).toContain('image admission rejected the result: too many images')
+    expect(textAt(result.content)).not.toContain('storage rejected')
   })
 
   it('lets post-execute replacement win over a prepared image projection', async () => {

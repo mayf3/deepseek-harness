@@ -10,7 +10,7 @@ import type {
 } from './types.ts'
 
 export { AttachmentId } from './brand.ts'
-export { AttachmentError } from './error.ts'
+export { AttachmentError, isImageAdmissionError } from './error.ts'
 export type {
   AttachmentId as AttachmentIdType,
   ImageAttachmentLimits,
