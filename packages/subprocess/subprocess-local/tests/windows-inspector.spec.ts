@@ -134,9 +134,9 @@ win32('WindowsProcessInspector over the real koffi bindings', () => {
   it('reports unreadable identities for absent processes and no-ops tree signalling', () => {
     const inspector = createWindowsProcessInspector()
     expect(inspector.isAlive({ pid: 0x7FFFFFFF, started: 'absent' })).toBe(false)
-    expect(() => inspector.signalGroup(0x7FFFFFFF, 'SIGKILL')).not.toThrow()
-    expect(() => inspector.signalGroup(0x7FFFFFFF, 'SIGTERM')).not.toThrow()
-    expect(() => inspector.signalGroup(0, 'SIGKILL')).not.toThrow()
-    expect(() => inspector.signalProcess({ pid: 0x7FFFFFFF, started: 'absent' }, 'SIGKILL')).not.toThrow()
+    expect(() => { inspector.signalGroup(0x7FFFFFFF, 'SIGKILL') }).not.toThrow()
+    expect(() => { inspector.signalGroup(0x7FFFFFFF, 'SIGTERM') }).not.toThrow()
+    expect(() => { inspector.signalGroup(0, 'SIGKILL') }).not.toThrow()
+    expect(() => { inspector.signalProcess({ pid: 0x7FFFFFFF, started: 'absent' }, 'SIGKILL') }).not.toThrow()
   })
 })

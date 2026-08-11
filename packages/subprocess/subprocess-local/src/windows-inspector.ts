@@ -86,7 +86,7 @@ export class WindowsProcessInspector implements ProcessInspector {
   }
 
   processTree(rootPid: number): ProcessIdentity[] {
-    return windowsProcessTree(this.internals.snapshot(), rootPid, this.internals.creationTime)
+    return windowsProcessTree(this.internals.snapshot(), rootPid, pid => this.internals.creationTime(pid))
   }
 
   processSession(_sessionId: number): ProcessIdentity[] {
@@ -231,6 +231,18 @@ function win32Bindings(): Win32Bindings {
   return cachedBindings
 }
 
+/**
+ * Allocate koffi memory as a branded {@link NativePtr}; koffi's TS types are
+ * `any`, so the cast goes through `unknown` to keep the unsafe surface here.
+ * @param type - the koffi type to allocate.
+ * @param count - element count.
+ * @returns the branded allocation pointer.
+ */
+function allocNative(type: Parameters<typeof koffi.alloc>[0], count: number): NativePtr {
+  const value: unknown = koffi.alloc(type, count)
+  return value as NativePtr
+}
+
 /** Enumerate the current process table through Toolhelp32. */
 function snapshotWindowsProcesses(bindings: Win32Bindings): ProcessEntry[] {
   const { PROCESSENTRY32W } = win32Structs()
@@ -240,7 +252,7 @@ function snapshotWindowsProcesses(bindings: Win32Bindings): ProcessEntry[] {
   if (isInvalidHandle(snapshot)) return []
   const entries: ProcessEntry[] = []
   try {
-    const entry = koffi.alloc(PROCESSENTRY32W, 1)
+    const entry = allocNative(PROCESSENTRY32W, 1)
     koffi.encode(entry, 'uint32', PROCESSENTRY32W.size)
     let ok = bindings.process32FirstW(snapshot, entry)
     while (ok !== 0) {
@@ -263,10 +275,10 @@ function windowsCreationTime(bindings: Win32Bindings, pid: number): string | und
   const handle = bindings.openProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid)
   if (isInvalidHandle(handle)) return undefined
   try {
-    const creation = koffi.alloc(FILETIME, 1)
-    const exit = koffi.alloc(FILETIME, 1)
-    const kernel = koffi.alloc(FILETIME, 1)
-    const user = koffi.alloc(FILETIME, 1)
+    const creation = allocNative(FILETIME, 1)
+    const exit = allocNative(FILETIME, 1)
+    const kernel = allocNative(FILETIME, 1)
+    const user = allocNative(FILETIME, 1)
     /* v8 ignore next -- a GetProcessTimes failure after a successful open races process exit and
        cannot be staged deterministically; the absent-process path is covered and the caller
        treats undefined as a detector miss. */
