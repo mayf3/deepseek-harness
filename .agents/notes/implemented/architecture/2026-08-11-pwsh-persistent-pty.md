@@ -1,0 +1,65 @@
+# Agent Note: Persistent pwsh over the PTY seam on Windows
+
+Status: implemented
+
+English | [中文](2026-08-11-pwsh-persistent-pty.zh.md)
+
+## Problem
+
+The harness had no persistent shell on Windows. The persistent `bash` stack was POSIX-only by construction: `@deepseek-ai/dsh-subprocess-local` threw at terminal allocation (`createProcessInspector()` rejected win32), `@deepseek-ai/dsh-pty-local` was bash-shaped (`/bin/bash` defaults, `PS1`/`PROMPT_COMMAND` environment markers), `@deepseek-ai/dsh-tool-bash-persistent` wrapped commands in bash syntax, and every pty test skipped on win32. The one-shot `pwsh` tool (`@deepseek-ai/dsh-tool-pwsh` over `@deepseek-ai/dsh-pwsh-local`) already ran on Windows, but each call started a fresh `pwsh -Command` process: cwd, `$env:` variables, functions, and interactive children ended with the call, and its README recorded "No persistent shell or PTY" as deferred work.
+
+The gap excluded Windows workflows whose state lives in a terminal: stepping a debugger, exploring in a Python or Node REPL, or returning to a shell after interrupting its foreground command — the same class of work the persistent bash pty serves on POSIX.
+
+Two foundations already existed. The PTY service itself (`ctx.pty` registry, owner scoping, send/read/signal/kill contract) is platform-neutral. The Loader's `disabled: !!js` interpolation (PR #2234) gates shell rows per platform and pins the invariant that exactly one shell stack mounts per host; a persistent pwsh stack composes through the same rows.
+
+## Decision
+
+A model-facing persistent `pwsh` tool ships on Windows with the same contract as `tool-bash-persistent`: one owner-scoped persistent shell per Agent, marker-detected command completion, exact native exit codes, bounded output, and timeout/cancel/`exit` semantics that reset the shell and tell the model. Three pieces deliver it: a Windows substrate in `subprocess-local`, a shell-dialect option in `pty-local`, and the new `tool-pwsh-persistent` package with the minimal-preset composition rows.
+
+### Windows substrate in `@deepseek-ai/dsh-subprocess-local`
+
+`createProcessInspector()` returns a `WindowsProcessInspector` on win32 instead of throwing. The koffi-backed inspector enumerates the process table through Toolhelp32 with GetProcessTimes creation-time identities (pid-reuse fencing like the POSIX start identity), reports the **shell pid as a pseudo foreground group** (Windows has no POSIX groups; the stable value lets the prompt-marker readiness fast path settle in one poll interval), reports no stdin-wait evidence (readiness degrades exactly like macOS), and signals through `taskkill /T` escalation (`/F` only for SIGKILL). koffi (`^3.1.0`, the version `sandbox-windows-acl` already pins) loads lazily on win32 only.
+
+`LocalTerminalHandle` branches for win32 because node-pty's `kill(signal)` throws ("Signals not supported on windows") and its bare kill delegates to a console-list agent that fails without a parent console. Teardown escalates through taskkill fenced on the shell's start identity, and — because an externally taskkilled shell may never fire node-pty's exit notification — the handle settles `done` from the inspector-verified absence (`settleExitIfGone`). `signalForeground` maps SIGINT to a `\x03` Ctrl-C input write (the console-wide delivery conhost turns into a CTRL_C event; verified to interrupt a running command), routes SIGTERM/SIGKILL to taskkill, and rejects SIGTSTP/SIGHUP as unavailable on Windows. The public `PtySignal` set and seam types are unchanged; the mapping lives in the backend.
+
+### Shell dialect in `@deepseek-ai/dsh-pty-local`
+
+One backend, two dialects: `shellDialect: 'bash' | 'pwsh'` (default `'bash'`, existing deployments byte-identical). The effective `shellPath`/`shellArgs` resolve per dialect (bash `/bin/bash --noprofile --norc -i`; pwsh through the shared `dsh-pwsh-local` resolver with `-NoLogo -NoProfile`, keeping the interactive host for child REPLs). The child environment drops the bash-only `PS1`/`PROMPT_COMMAND` markers and adds `NO_COLOR` for pwsh. pwsh cannot install its prompt from the environment, so the backend writes the prompt function through the session at startup and waits until the controlled prompt is actually visible, looping over follow-up sends because the pwsh banner-to-prompt gap can outlast the silence bound; a `session_exit` or `timeout` wait rejects the spawn. Both dialects emit the same BEL-terminated OSC `133;D;` marker, so the sanitizer, `PROMPT_MARKER_PREFIX`, `CONTROLLED_PROMPT`, and the exact-tail readiness logic are reused untouched — the marker stays a readiness signal with an unconsumed payload, exactly as in the bash path, and no model-notification channel was added (aligned with the current implementation; the deferred BEL event channel stays deferred).
+
+### `@deepseek-ai/dsh-tool-pwsh-persistent`
+
+A new package mirroring `tool-bash-persistent`: same `Config` (`backendType` default `shell`, `timeoutMs`, `maxOutputChars`, `description`), same owner-scoped shell registry and serialized per-owner queue, same timeout/abort/exit/reset paths. The tool name is `pwsh`; it never co-mounts with the one-shot `tool-pwsh` because the preset rows are mutually exclusive per platform.
+
+Commands run through a wrapper that resets `$LASTEXITCODE` (assignable, verified), invokes the body via `Invoke-Expression` in a backtick-escaped double-quoted string (`quoteForPwsh`: backtick, quote, `$`, CRLF, and ESC escapes, so no raw control characters ride the input line and the wrapper survives ConstrainedLanguage), and reports the exact native exit code, `1` for a terminating PowerShell error, or `0` for success. PSReadLine echoes the submitted wrapper back into the stream — there is no `stty -echo` equivalent — so the extraction strips the wrapper source from captured output; the echo can never fabricate completion because the status regex needs digits immediately after the END nonce and the echo continues with quote characters. The prompt function installs the tool's own prompt (`__DSH_PERSISTENT_PWSH_PROMPT__ `) over the backend bootstrap value, the same two-layer structure as bash.
+
+### Composition
+
+The minimal preset gates its persistent shell stack by platform with the #2234 `disabled: !!js` interpolation: the bash rows (`pty-local` + `tool-bash-persistent`) mount on POSIX, and the pwsh rows (`pty-local` with `shellDialect: pwsh` + `tool-pwsh-persistent`) mount on win32 — exactly one persistent shell per host. `windows-shell.spec` pins the per-platform roster; the real Loader composition exercises the whole stack over a real ConPTY pwsh.
+
+### Testing
+
+The subprocess-local and pty-local suites now run on Windows: bash-shaped fixtures self-skip through platform gates, the spawn/terminal suites translate their simple shell commands to node one-liners and exercise injected POSIX group paths, and the koffi-backed inspector joins the windows-only coverage exclusions on Linux while the windows-native lane enforces its 100% coverage. The tool suite mirrors `tool-bash-persistent`'s stub-mode matrix plus an echo-stripping mode; the real-pwsh suites prove persistent cwd/env, secret scrubbing, multiline and here-string commands, large-output clipping, and exit/reset over real ConPTY sessions.
+
+## Alternatives considered
+
+- **A separate `pty-pwsh-local` backend package.** Rejected: the local session, sanitizer, readiness tiers, and sandbox fence are shared machinery; duplicating the 500-line session for argv/env/startup differences trades one config field for a package of copy-paste, unlike the bash group's thin parallel executors.
+- **tasklist or wmic polling for the process tree.** Rejected: `inspectForeground` runs on every readiness poll (~50 ms), so a spawned probe per tick is untenable, and wmic is removed from current Windows releases. koffi + Toolhelp32 is in-process and cheap.
+- **A native helper or `GenerateConsoleCtrlEvent` for SIGINT.** Rejected: writing `\x03` to ConPTY input interrupts running commands (verified) with zero new code. The semantic difference — at a prompt, `\x03` cancels the pending line instead of signalling a process — is documented rather than engineered around.
+- **Base64 body encoding for the wrapper.** Rejected: decoding needs `[Convert]`/`[System.Text.Encoding]` calls whose ConstrainedLanguage status is unproven, while backtick-escaped double-quoted strings use only language-level constructs and were verified end-to-end.
+- **Tolerating the echo without stripping the wrapper.** Rejected: in complete and prompt-settled paths the echo is naturally excluded, but timeout and lost-START fallbacks would leak the wrapper source (including marker nonces) into model-visible text.
+- **Resurrecting a BEL model-notification channel.** Rejected: the current implementation consumes no marker payload and delivers no BEL events; the design aligns with the current implementation and keeps the deferred item deferred.
+- **Windows PowerShell 5.1 as a first-class target.** Rejected: pwsh 7 (including the Store install) is the target; `resolvePwshPath` keeps 5.1 as the last-resort executable fallback without promising full persistent-shell behavior on it.
+
+## Consequences
+
+**Windows became a first-class persistent-shell host.** The pty family now runs, tests, and is coverage-gated on the windows-native lane; the one-shot/persistent shell split mirrors POSIX, and the preset spec pins exactly one shell stack per host on both platforms.
+
+**The windows-native coverage flip is a standing commitment.** subprocess-local and pty-local sources are coverage-required on win32; their suites run there (with platform gates and node-translated commands) and must keep 100% coverage on the windows-native lane.
+
+**Windows readiness is weaker than Linux.** The pseudo-pgid marker fast path covers shell prompts, but a child without a prompt settles on the silence tier (~3 s), exactly like macOS; there is no exact stdin-wait tier.
+
+**Windows teardown and signalling differ from POSIX.** taskkill without `/F` does not terminate console processes (the TERM tier is a grace wait before `/F`), SIGINT is console-wide Ctrl-C, SIGTSTP/SIGHUP are unavailable, and externally taskkilled shells may not fire node-pty's exit notification — the handle settles from verified absence instead.
+
+**Input echo is an accepted platform fact.** PSReadLine echoes submitted input; the marker-anchored extraction and wrapper-source strip remove it in complete results, with bounded residual in partial-output fallbacks.
+
+**Risks carried.** Under the Windows ACL sandbox's read-only mode, ConstrainedLanguage may deny the prompt function's `[Console]::` call; the `Write-Host -NoNewline` fallback is designed and decided by the Windows-native lane. A model redefinition of the `prompt` function degrades readiness to the silence tier. Raw ESC characters in model commands are unsupported (PSReadLine consumes them). koffi is now a dependency of the process substrate, carrying the same install/prebuild review the sandbox package already has.
