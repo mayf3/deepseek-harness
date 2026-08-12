@@ -83,7 +83,7 @@ describe('tsdown client artifact', () => {
     // Paging is session-owned; this registration-only probe never renders the
     // entry, so the binding stays deliberately empty. The locale plugin backs
     // the locale-aware view tab label (its settings scope needs a connection
-    // handle and the forwarded-event port).
+    // handle and the Host-facing settings/remote seams).
     ctx.provide('sessions', { binding: () => undefined })
     ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
     ctx.provide('remote', { $on: () => () => {} } as never)
