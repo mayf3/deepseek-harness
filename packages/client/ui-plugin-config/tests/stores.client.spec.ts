@@ -622,6 +622,41 @@ describe('PluginConfigSectionController', () => {
     expect(settings.describe).not.toHaveBeenCalled()
   })
 
+  it('ignores a slot-ledger change that arrives after disposal', async () => {
+    const settings = settingsApi(['bash'])
+    let entries = ledger()
+    const controller = new PluginConfigSectionController(settings.api, () => entries)
+    await controller.load()
+
+    controller.dispose()
+    entries = ledger('bash')
+    controller.refresh()
+
+    expect(controller.inject().hooks.pluginConfigSection.getSnapshot().namespaces).toEqual([])
+  })
+
+  it('drops a read a newer one superseded', async () => {
+    // The section re-reads on every settings-document invalidation, so a slow
+    // first answer must not overwrite the newer one that already landed.
+    const settings = settingsApi(['bash'])
+    const controller = new PluginConfigSectionController(settings.api, () => ledger('bash', 'agent-loop'))
+    const slow = Promise.withResolvers<unknown>()
+    settings.describe.mockReturnValueOnce(slow.promise as never)
+    const stale = controller.load()
+
+    await controller.load()
+    expect(controller.inject().hooks.pluginConfigSection.getSnapshot().namespaces).toEqual(['bash'])
+    slow.resolve({
+      rpcId: 's-0',
+      result: { ok: true, value: { writable: true, hasDocument: true, namespaces: [
+        { ns: 'agent-loop', schema: {}, value: {}, applies: 'live', secrets: [], revision: 0 },
+      ] } },
+    })
+    await stale
+
+    expect(controller.inject().hooks.pluginConfigSection.getSnapshot().namespaces).toEqual(['bash'])
+  })
+
   it('reports the Host answered even when it serves nothing this section shows', async () => {
     const settings = settingsApi(['ui-theme'])
     const controller = new PluginConfigSectionController(settings.api, () => ledger('bash'))

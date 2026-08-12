@@ -116,6 +116,33 @@ describe('ui-plugin-config apply', () => {
     }
   })
 
+  it('re-reads the served namespaces when the Host commits a settings document', async () => {
+    // Which namespaces the Host serves is a registration fact the wire never
+    // announces on its own, so the section rides the invalidation that can
+    // accompany a changed composition.
+    const { ctx, slots, describeSettings } = await bench(['bash'])
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalled() })
+    describeSettings.mockClear()
+
+    ctx.remote.$dispatch('settings/document-updated', ['bash', 1])
+
+    await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalled() })
+  })
+
+  it('re-reads the served namespaces after a reconnect', async () => {
+    const { ctx, slots, describeSettings } = await bench(['bash'])
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalled() })
+    describeSettings.mockClear()
+
+    ctx.emit('connection/reset')
+
+    await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalled() })
+  })
+
   it('re-reads the credential when the Host reports the watched reference changed', async () => {
     const { ctx, slots, describeCredentials } = await bench()
     declareRoot(slots)
