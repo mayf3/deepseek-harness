@@ -20,13 +20,13 @@
   name: cordis:group
   group: true
   isolate:
-    pty: true
+    terminals: true
   config:
     - id: pty
-      name: '@deepseek-ai/dsh-pty'
+      name: '@deepseek-ai/dsh-terminal'
 
-    - id: pty-local
-      name: '@deepseek-ai/dsh-pty-local'
+    - id: terminal-bash
+      name: '@deepseek-ai/dsh-terminal-bash'
       disabled: !!js process.platform === 'win32'
       config:
         timeoutMs: 300000
@@ -46,8 +46,8 @@
           * Please avoid commands that may produce a very large amount of output.
           * Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.
 
-    - id: pty-pwsh
-      name: '@deepseek-ai/dsh-pty-local'
+    - id: terminal-pwsh
+      name: '@deepseek-ai/dsh-terminal-bash'
       disabled: !!js process.platform !== 'win32'
       config:
         shellDialect: pwsh
