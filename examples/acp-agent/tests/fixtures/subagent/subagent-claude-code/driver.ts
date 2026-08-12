@@ -1,20 +1,21 @@
 #!/usr/bin/env node
-/** Inspect both public product-provider compositions without invoking them. */
+/** Inspect the public Claude Code Bundle composition without invoking the product. */
 
-import { boot, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
+import { boot, loadOverlayPatches, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-tools'
 
 const configPath = process.argv[2]
-if (configPath === undefined) {
-  throw new Error('product-provider Loader composition driver requires a config path')
+const bundlePatchPath = process.argv[3]
+if (configPath === undefined || bundlePatchPath === undefined) {
+  throw new Error('Claude Code Loader composition driver requires config and Bundle patch paths')
 }
 
 let starts = 0
 const ctx = await boot(
-  'product-provider-loader-composition',
+  'subagent-claude-code-loader-composition',
   resolveConfigPath(configPath, undefined),
-  undefined,
+  loadOverlayPatches('subagent-claude-code-loader-composition', bundlePatchPath),
   (hostCtx) => {
     hostCtx.on('subagent/start', () => {
       starts += 1
@@ -23,41 +24,27 @@ const ctx = await boot(
 )
 
 try {
-  const providerNames = ['codex', 'claude-code'] as const
-  const toolNames = ['subagent_codex', 'subagent_claude_code'] as const
-  const providers = providerNames.map((providerName) => {
-    const provider = ctx.subagents.getProvider(providerName)
-    if (provider === undefined) {
-      throw new Error(`${providerName} provider was not registered`)
-    }
-    return {
+  const provider = ctx.subagents.getProvider('claude-code')
+  if (provider === undefined) throw new Error('claude-code provider was not registered')
+  const tool = ctx.tools.schemas().find(schema => schema.name === 'subagent_claude_code')
+  if (tool === undefined) throw new Error('subagent_claude_code tool was not registered')
+  const properties = tool.parameters.properties
+  if (typeof properties !== 'object' || properties === null || Array.isArray(properties)) {
+    throw new Error('subagent_claude_code has invalid parameter properties')
+  }
+
+  process.stdout.write(`${JSON.stringify({
+    providers: ctx.subagents.list(),
+    provider: {
       name: provider.name,
       capabilities: provider.capabilities,
       inheritsParentContext: provider.inheritsParentContext,
-    }
-  })
-  const tools = toolNames.map((toolName) => {
-    const tool = ctx.tools.schemas().find(schema => schema.name === toolName)
-    if (tool === undefined) throw new Error(`${toolName} tool was not registered`)
-    const properties = tool.parameters.properties
-    if (
-      typeof properties !== 'object'
-      || properties === null
-      || Array.isArray(properties)
-    ) {
-      throw new Error(`${toolName} has invalid parameter properties`)
-    }
-    return {
+    },
+    tool: {
       name: tool.name,
       parameterNames: Object.keys(properties).sort(),
       required: tool.parameters.required,
-    }
-  })
-
-  process.stdout.write(`${JSON.stringify({
-    registeredProviders: ctx.subagents.list(),
-    providers,
-    tools,
+    },
     starts,
   })}\n`)
 } finally {

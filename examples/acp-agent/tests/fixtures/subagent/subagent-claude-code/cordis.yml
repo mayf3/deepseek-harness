@@ -1,5 +1,5 @@
-# Test-only composition of both public opt-in providers and foreground tools.
-# The owning e2e boots this tree but never invokes a model or product process.
+# Test-only composition of the Claude Code foreground tool around its Bundle-supplied provider.
+# The owning e2e applies the package's real patch and never invokes a model or product process.
 - id: fixture
   name: './fixture.ts'
 
@@ -8,20 +8,6 @@
 
 - id: subprocess
   name: '@deepseek-ai/dsh-subprocess-local'
-
-- id: subagent-codex
-  name: '@deepseek-ai/dsh-subagent-codex'
-
-- id: subagent-claude-code
-  name: '@deepseek-ai/dsh-subagent-claude-code'
-
-- id: tool-subagent-codex
-  name: '@deepseek-ai/dsh-tool-subagent'
-  config:
-    provider: codex
-    toolName: subagent_codex
-    enableRunInBackground: false
-    maxDepth: 'provider-managed'
 
 - id: tool-subagent-claude-code
   name: '@deepseek-ai/dsh-tool-subagent'

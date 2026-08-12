@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
+import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import * as yaml from 'js-yaml'
 import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
@@ -260,6 +264,33 @@ function turnCompleted(
 }
 
 describe('task admission and package contracts', () => {
+  it('ships one independently installable provider-only Bundle patch', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>
+      peerDependencies?: Record<string, string>
+      exports?: Record<string, unknown>
+      files?: string[]
+      dsh?: { bundle?: { patch?: string } }
+    }
+    expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
+    expect(manifest.exports?.['./cordis.patch.yml']).toBe('./cordis.patch.yml')
+    expect(manifest.files).toContain('cordis.patch.yml')
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-sdk-protocol')
+    expect(manifest.peerDependencies).not.toHaveProperty('@deepseek-ai/dsh-sdk-protocol')
+    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
+
+    const parsed = yaml.load(readFileSync(resolve(root, manifest.dsh!.bundle!.patch!), 'utf8'))
+    const rows = Array.isArray(parsed)
+      ? (parsed as Array<{ insert?: Array<{ id?: string; name?: string }> }>).flatMap(entry => entry.insert ?? [])
+      : []
+    expect(rows).toEqual([{
+      id: 'subagent-codex',
+      name: '@deepseek-ai/dsh-subagent-codex',
+    }])
+    expect(JSON.stringify(rows)).not.toContain('tool-subagent')
+  })
+
   it('resolves the fixed app-server command through the Windows npm shim boundary', () => {
     expect(codexAppServerArgv('win32')).toEqual([
       'cmd.exe',

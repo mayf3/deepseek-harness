@@ -1,5 +1,5 @@
-# Test-only composition of the public opt-in provider and foreground tool.
-# The owning e2e boots this tree but never invokes the model or Codex.
+# Test-only composition of the foreground tool around a Bundle-supplied provider.
+# The owning e2e applies the package's real patch and never invokes the model or Codex.
 - id: fixture
   name: './fixture.ts'
 
@@ -8,9 +8,6 @@
 
 - id: subprocess
   name: '@deepseek-ai/dsh-subprocess-local'
-
-- id: subagent-codex
-  name: '@deepseek-ai/dsh-subagent-codex'
 
 - id: tool-subagent-codex
   name: '@deepseek-ai/dsh-tool-subagent'

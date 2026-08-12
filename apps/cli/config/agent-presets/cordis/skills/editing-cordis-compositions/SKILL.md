@@ -123,7 +123,14 @@ After a clean mount-validation, ask the user to start a session on the new prese
 
 ## Native product subagents
 
-Codex and Claude Code providers already live in the host composition. A preset chooses either product by contributing the same ordinary delegation-tool row used for spawn and fork; never move a product provider into the preset and never add a product-specific settings field.
+Codex and Claude Code providers are optional Profile Bundles. Install only the products the Profile needs, then restart the Profile so its Host registers those providers:
+
+```sh
+dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-codex
+dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-claude-code
+```
+
+The Bundle owns Host availability; the preset separately grants one Agent its ordinary delegation tool. Never move a product provider into the preset and never add a product-specific settings field. Removing either package with `dsh plugin --profile <name> remove <package>` withdraws only that provider on the next Profile start.
 
 Copy these disabled templates from a shipped full preset and remove `disabled` only for the products the user requested:
 
@@ -147,7 +154,7 @@ Copy these disabled templates from a shipped full preset and remove `disabled` o
     maxDepth: provider-managed
 ```
 
-The two rows are independent. Leaving both disabled preserves the copied preset, enabling one exposes only that product tool, and enabling both exposes both. The host must provide `codex` or `claude` on `PATH`; the preset does not install, authenticate, select a model for, or probe either product.
+The two rows are independent. Leaving both disabled preserves the copied preset, enabling one exposes only an installed matching provider, and enabling both exposes the installed intersection. The host must already provide `codex` or `claude` on `PATH`; neither the Bundle nor the preset installs, authenticates, selects a model for, starts, or probes either product.
 
 ## What not to move into a preset
 

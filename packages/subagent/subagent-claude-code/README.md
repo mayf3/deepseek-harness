@@ -31,15 +31,26 @@ The provider advertises no optional start-time capabilities and reports `inherit
 
 Production resolves `claude` from the subprocess execution world's credential-scrubbed `PATH`, with explicit `env` entries applied, and passes the resulting path to the SDK as `pathToClaudeCodeExecutable`. On Windows, a resolved `.cmd` or `.bat` path is carried as a quoted, per-spawn environment value that `cmd.exe /v:off` expands once, so valid path metacharacters remain data. The pinned SDK's fixed flags then occupy cmd's command tail and contain no cmd metacharacters; they are not ordinary Windows argv. Native settings and authentication remain authoritative. The plugin does not install another CLI, select a model, create a product home, log in, or probe an account. Credential-shaped ambient variables are removed before the explicit `env` overlay is applied, so an API key or token intended for the child must be supplied there. Non-credential endpoint variables such as `ANTHROPIC_BASE_URL`, along with ordinary ambient values such as `PATH` and `HOME`, remain inherited unless overridden.
 
-Shipped profiles load this provider once on the host and start no Claude process until a tool call. Full Agent Presets carry the tool row below with `disabled: true`; copy a preset and remove that field to expose `subagent_claude_code` only to agents composed from the copy. A custom host composition can still use both rows directly.
+This package is an optional Profile Bundle. Install it into the target Profile, then restart that Profile; its declared `cordis.patch.yml` layer registers only the dormant `claude-code` Host provider and starts no Claude process. Removing the package withdraws that provider on the next Profile start.
+
+```sh
+dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-claude-code
+dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-claude-code
+dsh --profile <name>
+```
+
+Installation controls Host availability, not model permission. Full Agent Presets carry the tool row below with `disabled: true`; copy a preset and remove that field to expose `subagent_claude_code` only to new agents composed from the copy. The Profile's own patch can replace the Bundle row's complete `config`, while a custom Host composition can still mount the package directly.
 
 ```yaml
+# $DSH_HOME/profiles/<name>/cordis.patch.yml (optional provider override)
 - id: subagent-claude-code
-  name: '@deepseek-ai/dsh-subagent-claude-code'
   config:
     env:
       ANTHROPIC_API_KEY: !!js process.env.ANTHROPIC_API_KEY
+```
 
+```yaml
+# A copied Agent Preset; remove `disabled` to grant this tool.
 - id: tool-subagent-claude-code
   name: '@deepseek-ai/dsh-tool-subagent'
   disabled: true

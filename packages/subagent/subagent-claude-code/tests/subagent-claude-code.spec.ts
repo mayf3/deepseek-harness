@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
+import { fileURLToPath } from 'node:url'
 import type {
   Options,
   Query,
@@ -8,6 +11,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import * as yaml from 'js-yaml'
 import {
   afterEach,
   beforeEach,
@@ -282,6 +286,31 @@ afterEach(() => {
 })
 
 describe('task admission and package contracts', () => {
+  it('ships one independently installable provider-only Bundle patch', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>
+      exports?: Record<string, unknown>
+      files?: string[]
+      dsh?: { bundle?: { patch?: string } }
+    }
+    expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
+    expect(manifest.exports?.['./cordis.patch.yml']).toBe('./cordis.patch.yml')
+    expect(manifest.files).toContain('cordis.patch.yml')
+    expect(manifest.dependencies).toHaveProperty('@anthropic-ai/claude-agent-sdk')
+    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-codex')
+
+    const parsed = yaml.load(readFileSync(resolve(root, manifest.dsh!.bundle!.patch!), 'utf8'))
+    const rows = Array.isArray(parsed)
+      ? (parsed as Array<{ insert?: Array<{ id?: string; name?: string }> }>).flatMap(entry => entry.insert ?? [])
+      : []
+    expect(rows).toEqual([{
+      id: 'subagent-claude-code',
+      name: '@deepseek-ai/dsh-subagent-claude-code',
+    }])
+    expect(JSON.stringify(rows)).not.toContain('tool-subagent')
+  })
+
   it('preserves text sequences and rejects empty, blank, and non-text tasks', () => {
     expect(textTask([
       { type: 'text', text: 'one' },
