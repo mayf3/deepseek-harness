@@ -939,6 +939,48 @@ describe('dsh-tool-subagent background mode', () => {
     expect(text(output)).toBe('(no new output)\n[status: killed]')
   })
 
+  it('reports startup rollback failure after cancellation as a failed task', async () => {
+    const ctx = await backgroundSetup({ provider: 'mock' })
+    const parent = ownerAgent(ctx, 'sess-parent')
+    ctx.subagents.registerProvider({
+      name: 'broken-start-rollback',
+      capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
+      inheritsParentContext: false,
+      start: request => new Promise((_resolve, reject) => {
+        request.signal.addEventListener('abort', () => {
+          reject(new AggregateError(
+            [new Error('startup aborted'), new Error('cleanup failed')],
+            'startup failed and cleanup also failed',
+          ))
+        }, { once: true })
+      }),
+    })
+    tool.apply(ctx, { provider: 'broken-start-rollback', toolName: 'subagent_broken_rollback' })
+
+    await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('broken-rollback-start'),
+      name: 'subagent_broken_rollback',
+      arguments: { description: 'broken rollback', prompt: 'p', run_in_background: true },
+      agent: parent,
+    })
+    await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('broken-rollback-kill'),
+      name: 'task_kill',
+      arguments: { task_id: 'subagent-1' },
+      agent: parent,
+    })
+    const output = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('broken-rollback-output'),
+      name: 'task_output',
+      arguments: { task_id: 'subagent-1', wait: true },
+      agent: parent,
+    })
+    expect(text(output)).toContain('[status: failed, AggregateError: startup failed and cleanup also failed]')
+  })
+
   it('forwards task_kill reasons through the run signal (and defaults one when absent)', async () => {
     // Use a provider that remains live until its signal is aborted.
     const ctx = await backgroundSetup({ provider: 'mock', agentOptions: { model: 'child-model' } })

@@ -12,7 +12,7 @@ fork 与 spawn 的唯一区别是 child 的 Session 会以 parent 已完成轮�
 
 ## 决策
 
-所有随附组合都把 fork 委派工具绑定为 `backgroundMode: one-shot`：[base 组合包](../../../../packages/bundle/base/cordis.patch.yml)、[ACP 示例](../../../../examples/acp-agent/cordis.yml)与[headless 示例](../../../../examples/headless-agent/cordis.yml)。三者都能使用通用 Task 运行时：base 组合包保留 `run_in_background`，两个示例则把 `enableRunInBackground: false` 作为显式的仅前台组装选择。
+所有随附组合都把 fork 委派工具绑定为 `backgroundMode: one-shot`：[base 组合包](../../../../packages/bundle/base/cordis.patch.yml)、[ACP 示例](../../../../examples/acp-agent/cordis.yml)与[headless 示例](../../../../examples/headless-agent/cordis.yml)。base 组合包保留 `run_in_background`，因为它挂载了 task 服务；两个示例设置 `enableRunInBackground: false`，因为它们都不挂载 task 服务，否则一次 one-shot 后台启动会在调用时因缺少 `tasks` 服务而失败。
 
 one-shot child——前台与后台皆然——经由 `SubagentService.start()` 创建，该路径从不进入可继续的 activation setup 注册表，因此 `report` 与它的提示词 section 都不会被安装。于是一个 fork 出的 one-shot child 的系统提示词与工具 schema 与其 parent 相同，只差部署逐个委派工具主动选择的 `persona` 与 `toolFilter` 增量。
 
@@ -38,7 +38,7 @@ one-shot child——前台与后台皆然——经由 `SubagentService.start()` 
 
 ## 后果
 
-- 没有任何随附组合会创建可继续的 fork child。base 组合包中的 `subagent_fork` 可以返回 one-shot Task id，而 ACP 与 headless 示例会把结果返回给调用方的轮次；`send_message` 只寻址 spawn 出的 child。
+- 没有任何随附组合会创建可继续的 fork child；`subagent_fork` 把结果返回给调用方的轮次，而 `send_message` 只寻址 spawn 出的 child。
 - 除非部署在 fork 委派工具上配置了 `persona` 或 `toolFilter`，fork child 的请求前缀与其 parent 逐字节相同，因此初始内容的 token 成本重新换来了提供方侧的复用。
 - fork 提供方的可继续路径没有生产调用方，也没有整体组装层面的覆盖。它保留自己的包内测试，seam 也仍然接受它，因此某个组合包或 `--patch` 覆盖层可以无需改动代码、也不会有任何警告地把它重新引入。
 - `subagent_fork` 面向模型的 schema 发生变化：base 组合包中可继续的后台措辞被 one-shot 的 task 措辞取代，在两个示例中则完全消失。受影响的无密钥快照工具 schema 伴随文件在同一次改动中重新记录。

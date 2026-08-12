@@ -12,7 +12,7 @@ The child-scoped `report` return channel is now the largest such addition, and s
 
 ## Decision
 
-Every shipped composition binds the fork delegation tool to `backgroundMode: one-shot`: [the base bundle](../../../../packages/bundle/base/cordis.patch.yml), [the ACP example](../../../../examples/acp-agent/cordis.yml), and [the headless example](../../../../examples/headless-agent/cordis.yml). All three have access to the generic Task runtime: the base bundle leaves `run_in_background` available, while the two examples set `enableRunInBackground: false` as an explicit foreground-only composition choice.
+Every shipped composition binds the fork delegation tool to `backgroundMode: one-shot`: [the base bundle](../../../../packages/bundle/base/cordis.patch.yml), [the ACP example](../../../../examples/acp-agent/cordis.yml), and [the headless example](../../../../examples/headless-agent/cordis.yml). The base bundle leaves `run_in_background` available, because it mounts a task service; the two examples set `enableRunInBackground: false`, because they mount none and a one-shot background start would otherwise fail at call time on a missing `tasks` service.
 
 One-shot children — foreground and background alike — are created through `SubagentService.start()`, which never enters the continuable activation-setup registry, so neither `report` nor its prompt section is installed. A forked one-shot child's system prompt and tool schemas therefore equal its parent's, apart from the `persona` and `toolFilter` deltas a deployment opts into per delegation tool.
 
@@ -38,7 +38,7 @@ The reintroduction condition is recorded as a `TODO(fork-continuable-prefix-reus
 
 ## Consequences
 
-- No shipped composition creates a continuable forked child. The base bundle may return a one-shot Task id for `subagent_fork`, while the ACP and headless examples return the result to the caller's turn; `send_message` addresses only spawned children.
+- No shipped composition creates a continuable forked child; `subagent_fork` returns a result to its caller's turn, and `send_message` addresses only spawned children.
 - A forked child's request prefix stays byte-identical to its parent's unless the deployment configures `persona` or `toolFilter` on the fork delegation tool, so the token cost of seeding buys provider-side reuse again.
 - The fork provider's continuable path has no production caller and no assembled-composition coverage. It keeps its package-level tests, and the seam still accepts it, so a bundle or `--patch` overlay can reintroduce it with no code change and no warning.
 - `subagent_fork`'s model-visible schema changes: the continuable background wording is replaced by the one-shot task wording in the base bundle, and disappears entirely from the two examples. The affected keyless snapshot tool-schema sidecars are re-recorded in the same change.

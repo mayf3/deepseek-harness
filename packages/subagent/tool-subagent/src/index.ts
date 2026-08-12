@@ -113,7 +113,9 @@ async function settleStart(start: Promise<SubagentRun>, signal: AbortSignal): Pr
   try {
     return await settleRun(await start)
   } catch (error: unknown) {
-    return signal.aborted
+    // Product providers aggregate startup and rollback failures. Cancellation
+    // must not turn a failed cleanup into a cleanly killed Task.
+    return signal.aborted && !(error instanceof AggregateError)
       ? { status: 'killed' }
       : { status: 'failed', detail: String(error) }
   }

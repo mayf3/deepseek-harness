@@ -82,7 +82,7 @@ Claude Code 子任务会在一个全新的 SDK query 中接收独立文本任务
 
 #### 模型看到的内容
 
-通过 `dsh-tool-subagent`，前台调用会让父级模型看到符合严格成功条件的 Claude Code 最终答案，或者在结果未完成时看到消费方给出的原样错误。后台调用会先返回 Task id；随后通用任务控制面会送达有界完成通知，通过 `task_output` 公开最终答案与状态，并允许 `task_kill` 请求取消。Claude Code 的推理、工具活动、中间消息、stderr、工作区差异、用量信息和产品标识符均不会复制到父会话。
+通过 `dsh-tool-subagent`，前台调用会让父级模型看到符合严格成功条件的 Claude Code 最终答案，或者在结果未完成时看到消费方给出的原样错误。后台调用会先返回 Task id；随后通用任务控制面会送达完成通知，通过 `task_output` 公开最终答案与状态，并允许 `task_kill` 请求取消。Claude Code 的推理、工具活动、中间消息、stderr、工作区差异、用量信息和产品标识符均不会复制到父会话。
 
 #### 对 token 的影响
 
