@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-07-22-web-multimodal-image-input-and-durable-attachments.md
 2026-07-22-web-multimodal-image-input-and-durable-attachments.md: c12821f9d01be12117e987a2612f3953a8eaae20
-2026-07-22-web-multimodal-image-input-and-durable-attachments.zh.md: 17626bc7696e8e3b6cad01c7fec3b5f0a718921a
+2026-07-22-web-multimodal-image-input-and-durable-attachments.zh.md: dbd22d2637919223db9fc282221736d819940cb9

@@ -423,7 +423,11 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       ? { id: 'telemetry-otel', disabled: true }
       : {
         id: 'telemetry-otel',
-        config: { mode: 'FULL', exporter: { url: options.telemetryUrl }, shutdownTimeoutMillis: 1_000 },
+        config: {
+          mode: 'FULL',
+          exporter: { url: options.telemetryUrl },
+          shutdownTimeoutMillis: 1_000,
+        },
       },
     {
       id: 'webserver',
