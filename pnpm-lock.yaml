@@ -608,6 +608,12 @@ importers:
       '@deepseek-ai/dsh-subagent-acp':
         specifier: workspace:*
         version: link:../packages/subagent/subagent-acp
+      '@deepseek-ai/dsh-subagent-claude-code':
+        specifier: workspace:*
+        version: link:../packages/subagent/subagent-claude-code
+      '@deepseek-ai/dsh-subagent-codex':
+        specifier: workspace:*
+        version: link:../packages/subagent/subagent-codex
       '@deepseek-ai/dsh-subagent-dsh-sdk':
         specifier: workspace:*
         version: link:../packages/subagent/subagent-dsh-sdk
