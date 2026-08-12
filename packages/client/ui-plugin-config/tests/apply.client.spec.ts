@@ -13,12 +13,31 @@ import { apply, inject } from '@deepseek-ai/dsh-client-ui-plugin-config/client'
 // the shipped Chinese copy, so they state the browser they assume.
 usePinnedBrowserLanguages('zh-CN')
 
-async function bench() {
+/**
+ * @param served - namespaces the Host describes; omitted answers a failed read,
+ * which is what most of these specs want (no card has anything to render).
+ */
+async function bench(served?: string[]) {
   const ctx = new Context()
   await ctx.plugin(SlotsService).await()
   const locale = new LocaleService(ctx)
   ctx.provide('locale', locale)
   const describeCredentials = vi.fn(() => Promise.resolve({ rpcId: 'c', result: { ok: false, error: {} } }))
+  const describeSettings = vi.fn(() => Promise.resolve(served === undefined
+    ? { rpcId: 's', result: { ok: false, error: {} } }
+    : {
+      rpcId: 's',
+      result: {
+        ok: true,
+        value: {
+          writable: true,
+          hasDocument: true,
+          namespaces: served.map(ns => ({
+            ns, schema: {}, value: {}, applies: 'live', secrets: [], revision: 0,
+          })),
+        },
+      },
+    }))
   // The section binds its scopes through the Settings surface's service, and
   // forwarded Host events reach it through the same `$dispatch` handoff the
   // connection sink makes.
@@ -26,12 +45,12 @@ async function bench() {
   ctx.provide('connection', {
     isLoopback: true,
     api: {
-      settings: { describe: vi.fn(() => Promise.resolve({ rpcId: 's', result: { ok: false, error: {} } })) },
+      settings: { describe: describeSettings },
       credentials: { describe: describeCredentials },
     },
   } as never)
   await ctx.plugin(SettingsScopeService).await()
-  return { ctx, slots: ctx.get('slots') as SlotsService, describeCredentials }
+  return { ctx, slots: ctx.get('slots') as SlotsService, describeCredentials, describeSettings }
 }
 
 function declareRoot(slots: SlotsService): () => void {
@@ -56,26 +75,40 @@ describe('ui-plugin-config apply', () => {
     expect(section.options).toMatchObject({ id: 'plugins', order: 30 })
     // The nav label is a locale-following thunk; owners resolve it at read time.
     expect(resolveSlotLabel(section.options.label)).toBe('插件配置')
-    expect(slots.spec('settings.plugin.item')).toMatchObject({ kind: 'list', scope: 'root' })
+    expect(slots.spec('settings.plugin.item')).toMatchObject({ kind: 'keyed', scope: 'root' })
   })
 
-  it('registers one card per host-plane section it ships, in a stable order', async () => {
+  it('keys each card it ships on the settings namespace that card edits', async () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
 
     await ctx.plugin({ inject: [...inject], apply }).await()
 
-    expect(slots.entries('settings.plugin.item').map(entry => entry.options.id))
-      .toEqual(['bash', 'agent-loop', 'web-search'])
+    expect(slots.entries('settings.plugin.item').map(entry => entry.options.key))
+      .toEqual(['bash', 'agent-loop', 'web-search-deepseek'])
   })
 
-  it('injects a live card count and one business face per card', async () => {
-    const { ctx, slots } = await bench()
+  it('dispatches the served namespaces its cards claim, and no others', async () => {
+    // ui-theme is served but belongs to another surface, and a deployment
+    // composing no PowerShell/POSIX executor serves no `bash` at all.
+    const { ctx, slots } = await bench(['agent-loop', 'ui-theme', 'web-search-deepseek'])
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     const section = slots.entries('settings.section')[0]!
-    expect((section as { inject?: () => unknown }).inject?.()).toEqual({ cardCount: 3 })
+    const face = (section as { inject?: () => unknown })
+      .inject?.() as { hooks: { pluginConfigSection: { getSnapshot: () => { namespaces: string[] } } } }
+    await vi.waitFor(() => {
+      expect(face.hooks.pluginConfigSection.getSnapshot().namespaces)
+        .toEqual(['agent-loop', 'web-search-deepseek'])
+    })
+  })
+
+  it('injects one business face per card', async () => {
+    const { ctx, slots } = await bench()
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
     for (const entry of slots.entries('settings.plugin.item')) {
       const face = (entry as { inject?: () => unknown }).inject?.() as { hooks: Record<string, unknown> }
       // Each card injects exactly one snapshot store plus its own actions.

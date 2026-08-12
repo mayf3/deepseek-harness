@@ -8,6 +8,7 @@ import { stubSettingsScope, type StubSettingsScope } from '@deepseek-ai/dsh-clie
 import { CardForm, numberField, textField } from '../src/client/card-store.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-store.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-store.ts'
+import { PluginConfigSectionController } from '../src/client/section-store.ts'
 import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-store.ts'
 
 /** Make the stub behave like a Host that accepts every write. */
@@ -536,5 +537,98 @@ describe('WebSearchCardController', () => {
 
     expect(host.set.mock.calls).toEqual([['baseURL', 'https://other.test'], ['maxUses', 3]])
     expect(credentials.set).not.toHaveBeenCalled()
+  })
+})
+
+describe('PluginConfigSectionController', () => {
+  function settingsApi(namespaces: string[]) {
+    const describe = vi.fn(() => Promise.resolve({
+      rpcId: 's-1' as never,
+      result: {
+        ok: true as const,
+        value: {
+          writable: true,
+          hasDocument: true,
+          namespaces: namespaces.map(ns => ({
+            ns, schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0,
+          })),
+        },
+      },
+    }))
+    return { api: { settings: { describe } } as never, describe }
+  }
+
+  /** Slot ledger stand-in: one stored entry per registered card key. */
+  function ledger(...keys: string[]) {
+    return keys.map(key => ({ component: null, options: { key } }))
+  }
+
+  it('dispatches the served namespaces a card claims, in card registration order', async () => {
+    const settings = settingsApi(['bash', 'ui-theme', 'agent-loop'])
+    const controller = new PluginConfigSectionController(settings.api, () => ledger('agent-loop', 'bash'))
+
+    await controller.load()
+
+    // ui-theme is served but claimed by no card here — another surface owns
+    // it. The order is the cards', not the Host's: plugin activation can
+    // reorder the description between boots.
+    expect(controller.inject().hooks.pluginConfigSection.getSnapshot().namespaces)
+      .toEqual(['agent-loop', 'bash'])
+  })
+
+  it('never dispatches a card whose namespace this deployment does not serve', async () => {
+    const settings = settingsApi(['bash'])
+    const controller = new PluginConfigSectionController(settings.api, () => ledger('bash', 'web-search-deepseek'))
+
+    await controller.load()
+
+    expect(controller.inject().hooks.pluginConfigSection.getSnapshot().namespaces).toEqual(['bash'])
+  })
+
+  it('takes a card registered after the read without asking the Host again', async () => {
+    const settings = settingsApi(['bash'])
+    let entries = ledger()
+    const controller = new PluginConfigSectionController(settings.api, () => entries)
+    await controller.load()
+    expect(controller.inject().hooks.pluginConfigSection.getSnapshot().namespaces).toEqual([])
+
+    entries = ledger('bash')
+    controller.refresh()
+
+    expect(controller.inject().hooks.pluginConfigSection.getSnapshot().namespaces).toEqual(['bash'])
+    expect(settings.describe).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the namespaces it knew when a read fails', async () => {
+    const settings = settingsApi(['bash'])
+    const controller = new PluginConfigSectionController(settings.api, () => ledger('bash'))
+    await controller.load()
+    settings.describe.mockRejectedValueOnce(new Error('offline') as never)
+
+    await controller.load()
+
+    expect(controller.inject().hooks.pluginConfigSection.getSnapshot().namespaces).toEqual(['bash'])
+  })
+
+  it('publishes nothing once disposed, and never claims it was answered', async () => {
+    const settings = settingsApi(['bash'])
+    const controller = new PluginConfigSectionController(settings.api, () => ledger('bash'))
+
+    controller.dispose()
+    await controller.load()
+
+    expect(controller.inject().hooks.pluginConfigSection.getSnapshot())
+      .toEqual({ loaded: false, namespaces: [] })
+    expect(settings.describe).not.toHaveBeenCalled()
+  })
+
+  it('reports the Host answered even when it serves nothing this section shows', async () => {
+    const settings = settingsApi(['ui-theme'])
+    const controller = new PluginConfigSectionController(settings.api, () => ledger('bash'))
+
+    await controller.load()
+
+    expect(controller.inject().hooks.pluginConfigSection.getSnapshot())
+      .toEqual({ loaded: true, namespaces: [] })
   })
 })

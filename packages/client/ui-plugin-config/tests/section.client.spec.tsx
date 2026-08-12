@@ -20,6 +20,7 @@ import type { WebSearchCardProps } from '../src/client/WebSearchCard.tsx'
 import type { AgentLoopCardState } from '../src/client/agent-loop-store.ts'
 import type { BashCardState } from '../src/client/bash-store.ts'
 import type { CardFieldState, CardShell } from '../src/client/card-store.ts'
+import type { PluginConfigSectionState } from '../src/client/section-store.ts'
 import type { WebSearchCardState } from '../src/client/web-search-store.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -46,11 +47,20 @@ function cardActions() {
   return { edit: vi.fn(), resetField: vi.fn(), save: vi.fn(), discard: vi.fn() }
 }
 
-function renderSection(cardCount: number, cards = 'cards') {
+/**
+ * Render the section over the namespaces it was told to dispatch, with `cards`
+ * standing in for the slot ledger: a key it names renders that text, and one
+ * it does not renders nothing, exactly as an unclaimed key does.
+ */
+function renderSection(namespaces: string[], cards: Record<string, string> = {}, loaded = true) {
+  const store = createSnapshotStore<PluginConfigSectionState>({ loaded, namespaces })
   const props = {
     t,
-    cardCount,
-    renderSlot: () => <li>{cards}</li>,
+    usePluginConfigSection: bindSnapshotSelector(store),
+    renderSlot: (_name: string, _owner: object, opts?: { entryKey?: string }) => {
+      const card = opts?.entryKey === undefined ? undefined : cards[opts.entryKey]
+      return card === undefined ? null : <li>{card}</li>
+    },
   } as unknown as PluginConfigSectionProps
   render(<PluginConfigSection {...props} />)
 }
@@ -70,21 +80,30 @@ function renderBash(state: Partial<BashCardState> = {}) {
 
 describe('PluginConfigSection', () => {
   it('says so when no plugin contributed a card', () => {
-    renderSection(0)
+    renderSection([], { bash: 'shell' })
 
     expect(screen.getByText(en.empty)).toBeTruthy()
-    expect(screen.queryByText('cards')).toBeNull()
+    expect(screen.queryByText('shell')).toBeNull()
   })
 
-  it('renders the card list once a plugin contributed one', () => {
-    renderSection(1)
+  it('withholds the empty line until the Host has answered once', () => {
+    // An unanswered read is not the statement that this deployment configures
+    // no plugin; saying it anyway would flash a wrong answer on every open.
+    renderSection([], { bash: 'shell' }, false)
 
-    expect(screen.getByText('cards')).toBeTruthy()
+    expect(screen.queryByText(en.empty)).toBeNull()
+    expect(screen.getByRole('heading', { name: en.title })).toBeTruthy()
+  })
+
+  it('dispatches one card per namespace, keyed by it', () => {
+    renderSection(['bash', 'agent-loop'], { bash: 'shell', 'agent-loop': 'loop' })
+
+    expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['shell', 'loop'])
     expect(screen.queryByText(en.empty)).toBeNull()
   })
 
   it('leads with its own heading and intro', () => {
-    renderSection(1)
+    renderSection(['bash'], { bash: 'shell' })
 
     expect(screen.getByRole('heading', { name: en.title })).toBeTruthy()
     expect(screen.getByText(en.intro)).toBeTruthy()

@@ -197,4 +197,4 @@ New behavior attaches to a documented extension point; a loop change updates thi
 | Fork a live session | call `ctx.sessions.fork(source, boundary?, childSessionId?)` |
 | Scope a registration to one agent | use its `agent.ctx` (see Agent Scope) |
 
-[Extension cookbook](cookbook/extension-cookbook.md) maps features to capabilities; guides cover [packages](cookbook/adding-a-package.md), [tools](cookbook/adding-a-tool.md), [LLM adapters](cookbook/adding-an-llm-adapter.md), [Chat nodes](cookbook/adding-a-conversation-node.md), and [vendored packages](cookbook/adding-a-vendored-package.md).
+[Extension cookbook](cookbook/extension-cookbook.md) maps features to capabilities; guides cover [packages](cookbook/adding-a-package.md), [tools](cookbook/adding-a-tool.md), [LLM adapters](cookbook/adding-an-llm-adapter.md), [Chat nodes](cookbook/adding-a-conversation-node.md), [settings cards](cookbook/adding-a-settings-card.md), and [vendored packages](cookbook/adding-a-vendored-package.md).
