@@ -99,6 +99,7 @@ type StubMode =
   | 'empty-page-after-latest'
   | 'paged-scrollback'
   | 'with-echo'
+  | 'exit-after-send'
 
 const START_PATTERN = /__DSH_PERSISTENT_PWSH_START_[^_]+(?:-[^_]+)*__/
 const END_PATTERN = /__DSH_PERSISTENT_PWSH_END_[^:]+:/
@@ -113,6 +114,7 @@ class StubPtySession implements PtyBackendSession {
   sends = 0
   pendingText = ''
   historyTruncated = false
+  throwOnSend = false
 
   constructor(mode: StubMode) {
     this.mode = mode
@@ -131,6 +133,7 @@ class StubPtySession implements PtyBackendSession {
       return this.operation(Promise.resolve(this.result(this.motd, 'stdin_read')))
     }
     if (this.mode === 'send-error') throw new Error('stub send failed')
+    if (this.throwOnSend) throw new Error('PTY session has exited')
     if (this.mode === 'wait-for-abort' || this.mode === 'end-on-abort') {
       const done = new Promise<ReturnType<StubPtySession['result']>>((resolve) => {
         request.signal?.addEventListener('abort', () => {
@@ -177,6 +180,18 @@ class StubPtySession implements PtyBackendSession {
       const output = `${sent}\n${start ?? ''}\nhello from stub\n${end ?? ''}0\n${this.motd}`
       this.scrollback += output
       return this.operation(Promise.resolve(this.result(output, 'stdin_read')))
+    }
+    if (this.mode === 'exit-after-send') {
+      // A fast `exit` settles the send with an echoed wrapper (marker end,
+      // no status digits) while the exit event is still in flight; the shell
+      // flips to exited before the tool's next poll, exactly like the real
+      // ConPTY backend. The tool must re-observe status instead of sending.
+      const output = `${sent}\n${start ?? ''}\n`
+      this.scrollback += output
+      const settled = this.result(output, 'inferred_idle')
+      this.statusValue = { kind: 'exited', exitCode: 9, signal: null }
+      this.throwOnSend = true
+      return this.operation(Promise.resolve(settled))
     }
     if (this.mode === 'incremental-fallback') {
       const incremental = `${start ?? ''}\nincrement\n${this.motd}`
@@ -345,6 +360,21 @@ describe('tool-pwsh-persistent', () => {
     expect(result).not.toContain('__DSH_PERSISTENT_PWSH_START_')
     expect(result).not.toContain('__DSH_PERSISTENT_PWSH_END_')
     expect(result).not.toContain('Invoke-Expression')
+  })
+
+  it('reports the exit path when the shell exits between send settlement and the next poll', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub' })
+    await call(ctx, owner, 'warm up')
+    const session = stub.sessions[0]!
+    session.mode = 'exit-after-send'
+
+    const result = text(await call(ctx, owner, 'exit'))
+    expect(result).toContain('[shell exited: code 9]')
+    expect(result).toContain('next pwsh call starts from the workspace')
+    expect(session.closed).toContain('persistent pwsh shell exited')
+
+    expect(text(await call(ctx, owner, 'Write-Output "$PWD"'))).toBe('hello from stub')
+    expect(stub.sessions).toHaveLength(2)
   })
 
   it('handles inferred idle, prompt fallback, shell exit, clipping, and cleanup', async () => {

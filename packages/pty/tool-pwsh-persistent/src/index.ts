@@ -220,6 +220,37 @@ function renderShellExitStatus(
 }
 
 /**
+ * Render the exited-session result, reset the owner's shell, and reset the
+ * message that tells the model the next call starts fresh.
+ * @param shells - the owner-scoped registry to reset.
+ * @param status - the exited session status (exit code and signal).
+ * @returns the complete model-facing result.
+ */
+async function respondToSessionExit(
+  ctx: Context,
+  shells: PersistentShells,
+  owner: Agent,
+  id: PtySessionId,
+  status: { exitCode: number | null; signal: NodeJS.Signals | null },
+  marker: CommandMarkers,
+  wrapped: string,
+  fallback: string,
+  fallbackTruncated: boolean,
+  config: ResolvedConfig,
+): Promise<string> {
+  const snapshot = retainedScrollback(ctx, owner, id)
+  await shells.reset(owner, 'persistent pwsh shell exited')
+  return [
+    renderShellExitStatus(
+      renderCaptured(partialOutput(snapshot, marker, wrapped, fallback, fallbackTruncated), config.maxOutputChars),
+      status.exitCode,
+      status.signal,
+    ),
+    SHELL_RESET_MESSAGE,
+  ].filter(part => part.length > 0).join('\n')
+}
+
+/**
  * The pwsh prompt function that overrides the backend bootstrap value with
  * this tool's own prompt. `[char]27`/`[char]7` build the OSC bytes at runtime
  * because raw ESC characters in submitted input are unreliable under
@@ -317,6 +348,16 @@ async function executeCommand(
   let fallbackTruncated = false
 
   while (true) {
+    // The shell may flip to exited between iterations (a fast `exit` can
+    // settle the previous send while its exit event is still in flight, and
+    // the echoed wrapper can then carry a marker end without status digits);
+    // re-observing status before the next send closes that gap.
+    const status = ctx.pty.list(owner).find(session => session.sessionId === id)?.status
+    if (status?.kind === 'exited') {
+      return await respondToSessionExit(
+        ctx, shells, owner, id, status, marker, wrapped, fallback, fallbackTruncated, config,
+      )
+    }
     let operation
     let result
     try {
@@ -359,16 +400,9 @@ async function executeCommand(
       if (complete !== undefined) return renderCaptured(complete, config.maxOutputChars)
     }
     if (result.sessionStatus.kind === 'exited') {
-      const snapshot = retainedScrollback(ctx, owner, id, latest)
-      await shells.reset(owner, 'persistent pwsh shell exited')
-      return [
-        renderShellExitStatus(
-          renderCaptured(partialOutput(snapshot, marker, wrapped, fallback, fallbackTruncated), config.maxOutputChars),
-          result.sessionStatus.exitCode,
-          result.sessionStatus.signal,
-        ),
-        SHELL_RESET_MESSAGE,
-      ].filter(part => part.length > 0).join('\n')
+      return await respondToSessionExit(
+        ctx, shells, owner, id, result.sessionStatus, marker, wrapped, fallback, fallbackTruncated, config,
+      )
     }
     if (promptCompleted(result)) {
       const snapshot = retainedScrollback(ctx, owner, id, latest)
