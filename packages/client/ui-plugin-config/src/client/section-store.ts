@@ -60,12 +60,17 @@ export class PluginConfigSectionController {
     private readonly entries: () => readonly StoredEntry[],
   ) {}
 
+  /** Opaque read of {@link disposed}: control flow cannot narrow it across awaits. */
+  private isDisposed(): boolean {
+    return this.disposed
+  }
+
   /**
    * Re-read the served namespaces from the Host and republish.
    * @returns settlement after the read, or immediately once disposed.
    */
   async load(): Promise<void> {
-    if (this.disposed) return
+    if (this.isDisposed()) return
     const generation = ++this.generation
     let response: Awaited<ReturnType<IApiClient['settings']['describe']>>
     try {
@@ -75,7 +80,7 @@ export class PluginConfigSectionController {
       // or reconnect reads again.
       return
     }
-    if (this.disposed || generation !== this.generation || !response.result.ok) return
+    if (this.isDisposed() || generation !== this.generation || !response.result.ok) return
     this.served = response.result.value.namespaces.map(view => view.ns)
     this.loaded = true
     this.publish()

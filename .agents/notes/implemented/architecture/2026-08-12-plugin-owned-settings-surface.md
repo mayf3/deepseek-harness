@@ -30,9 +30,11 @@ Keying makes absence the signal, and that is what removes the bookkeeping the pr
 
 ## What the allowlist protected
 
-The removed gate was not the boundary it read as. Every `settings.*` method sits in `PRIVILEGED_METHODS` (`packages/client/connection`), so a non-loopback or cross-origin request is refused with 403 before reaching this code; `role('secret')` fields are structurally stripped from every layer of every response; and the document the plane edits is the user's own `settings.yaml`. The read the gate blocked was already available to the same browser through the plugin inventory page, which lists every mounted plugin with its effective configuration. The writes it blocked were the least consequential ones on the plane: `permission` (which can widen the approval preset) and `agent-presets` (which decides what a session mounts) were both already served.
+The gate did keep one thing off the wire, and this note states it plainly because the decision has to survive the accurate version: a registered namespace the list did not name never had its resolved, `base`, or `user` values reach the browser at all. The plugin inventory page is not a substitute — `PluginInventoryEntry` carries `entryId`, `moduleName`, `enabled`, and `fiberPhase`, and its "configuration" row renders an enabled/disabled tag, never a stored value.
 
-The one namespace whose exposure actually changes is `agent-default-model`. It has no browser half, so nothing renders it.
+What the gate was not is the boundary its position suggested. Every `settings.*` method sits in `PRIVILEGED_METHODS` (`packages/client/connection`), so a non-loopback or cross-origin request is refused with 403 before reaching this code; `role('secret')` fields are structurally stripped from every layer of every response; and the document the plane edits is the user's own `settings.yaml`, which the same settings page offers to open. The writes it did not block were also the consequential ones: `permission` (which can widen the approval preset) and `agent-presets` (which decides what a session mounts) were both already served.
+
+So the exposure this change actually adds, in this repository, is one namespace: `agent-default-model`, whose two fields name a provider and a model and which no browser half renders. A future namespace whose values genuinely must not cross the wire is answered per field by `role('secret')` — finer than a namespace switch, and already enforced.
 
 ## Alternatives considered
 

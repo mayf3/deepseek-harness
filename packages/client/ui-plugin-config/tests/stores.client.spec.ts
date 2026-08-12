@@ -603,7 +603,7 @@ describe('PluginConfigSectionController', () => {
     const settings = settingsApi(['bash'])
     const controller = new PluginConfigSectionController(settings.api, () => ledger('bash'))
     await controller.load()
-    settings.describe.mockRejectedValueOnce(new Error('offline') as never)
+    settings.describe.mockRejectedValueOnce(new Error('offline'))
 
     await controller.load()
 
