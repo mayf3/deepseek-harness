@@ -85,7 +85,11 @@ describe('dsh-tool-subagent', () => {
 
   it('registers a `subagent` tool that delegates to the configured provider and returns its output', async () => {
     const ctx = await setup({ provider: 'mock' }, { reply: 'child says hi' })
-    const result = await callSubagent(ctx, { description: 'do a thing', prompt: 'go research X' })
+    const result = await callSubagent(ctx, {
+      description: 'do a thing',
+      prompt: 'go research X',
+      run_in_background: false,
+    })
     expect(result.isError).toBe(false)
     if (result.isError) throw new Error('expected subagent success')
     expect(result.value).toEqual({

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-10-fork-children-stay-one-shot.md
-2026-08-10-fork-children-stay-one-shot.md: 030bed3c1b516a54afd5f97b00000ed7ceaf64d8
-2026-08-10-fork-children-stay-one-shot.zh.md: 4b033a70c3674315c491e85be67a1d357aeac51b
+2026-08-10-fork-children-stay-one-shot.md: f799f9f7affe7dfecbbe12d0988cf6f9b936d43e
+2026-08-10-fork-children-stay-one-shot.zh.md: 5c55e96296ed6678ac82afc0e40150d443f74c96

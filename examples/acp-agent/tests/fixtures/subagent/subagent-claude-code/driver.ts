@@ -53,11 +53,16 @@ try {
       required: tool.parameters.required,
     }
   })
+  const taskTools = ctx.tools.schemas()
+    .map(schema => schema.name)
+    .filter(name => name === 'task_kill' || name === 'task_list' || name === 'task_output')
+    .sort()
 
   process.stdout.write(`${JSON.stringify({
     registeredProviders: ctx.subagents.list(),
     providers,
     tools,
+    taskTools,
     starts,
   })}\n`)
 } finally {

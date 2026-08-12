@@ -134,7 +134,7 @@ Copy these disabled templates from a shipped full preset and remove `disabled` o
   config:
     provider: codex
     toolName: subagent_codex
-    enableRunInBackground: false
+    backgroundMode: one-shot
     maxDepth: provider-managed
 
 - id: tool-subagent-claude-code
@@ -143,11 +143,11 @@ Copy these disabled templates from a shipped full preset and remove `disabled` o
   config:
     provider: claude-code
     toolName: subagent_claude_code
-    enableRunInBackground: false
+    backgroundMode: one-shot
     maxDepth: provider-managed
 ```
 
-The two rows are independent. Leaving both disabled preserves the copied preset, enabling one exposes only that product tool, and enabling both exposes both. The host must provide `codex` or `claude` on `PATH`; the preset does not install, authenticate, select a model for, or probe either product.
+The two rows are independent. Leaving both disabled preserves the copied preset, enabling one exposes only that product tool, and enabling both exposes both. `backgroundMode: one-shot` keeps omitted or `false` calls in the foreground and lets explicit `run_in_background: true` return a generic Task id. Full presets already carry `tool-tasks`, while the host carries the task registry; retain both when making a custom composition so `task_output`, `task_list`, `task_kill`, cancellation, and completion notices stay available. The host must provide `codex` or `claude` on `PATH`; the preset does not install, authenticate, select a model for, or probe either product.
 
 ## What not to move into a preset
 
