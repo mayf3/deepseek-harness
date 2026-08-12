@@ -591,17 +591,12 @@ describe('dsh-workflow-workerthread', () => {
 
     it('workerSpawnEnv forwards TSX_TSCONFIG_PATH when the snapshot harness pins it', () => {
       const tsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
-      vi.stubEnv('TSX_TSCONFIG_PATH', tsconfig)
-      try {
-        expect(workerSpawnEnv('linux')).toEqual({ TSX_TSCONFIG_PATH: tsconfig })
-        expect(workerSpawnEnv('win32')).toEqual({
-          TMP: tmpdir(),
-          TEMP: tmpdir(),
-          TSX_TSCONFIG_PATH: tsconfig,
-        })
-      } finally {
-        vi.unstubAllEnvs()
-      }
+      expect(workerSpawnEnv('linux', tsconfig)).toEqual({ TSX_TSCONFIG_PATH: tsconfig })
+      expect(workerSpawnEnv('win32', tsconfig)).toEqual({
+        TMP: tmpdir(),
+        TEMP: tmpdir(),
+        TSX_TSCONFIG_PATH: tsconfig,
+      })
     })
 
     it('the unbuilt worker forwards exactly TSX_TSCONFIG_PATH through the scrub: the paths-map pin survives, secrets do not', async () => {
