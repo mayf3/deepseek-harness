@@ -11,6 +11,7 @@ import type {
 
 export { AttachmentId } from './brand.ts'
 export { AttachmentError, isImageAdmissionError } from './error.ts'
+export type { AttachmentErrorCode, ImageAdmissionErrorCode } from './error.ts'
 export type {
   AttachmentId as AttachmentIdType,
   ImageAttachmentLimits,

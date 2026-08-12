@@ -97,8 +97,9 @@ describe('AttachmentStore.saveImages', () => {
 })
 
 describe('isImageAdmissionError', () => {
-  it('separates caller-correctable image policy failures from storage faults', () => {
+  it('separates caller-correctable image admission failures from storage faults', () => {
     expect(isImageAdmissionError(new AttachmentError('bad bytes', 'INVALID_IMAGE'))).toBe(true)
+    expect(isImageAdmissionError(new AttachmentError('bad base64', 'INVALID_IMAGE_BASE64'))).toBe(true)
     expect(isImageAdmissionError(new AttachmentError('too many', 'TOO_MANY_IMAGES'))).toBe(true)
     expect(isImageAdmissionError(Object.assign(new Error('foreign policy error'), { code: 'IMAGE_TOO_LARGE' }))).toBe(true)
     expect(isImageAdmissionError(new AttachmentError('corrupt object', 'ATTACHMENT_CORRUPT'))).toBe(false)
