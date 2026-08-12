@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-08-11-preset-authoring-agent-validates-its-own-composition.md) | 中文
 
-## Problem
+## 问题
 
 `cordis` preset 随包发布 `editing-cordis-compositions`，它是 agent 创作 preset 时唯一的指导来源。其中四条陈述与事实不符，而分量最重的两条恰好指向该 skill 自称「最容易让人栽跟头的规则」。
 
@@ -18,7 +18,7 @@ Status: implemented
 
 四条之下还压着一个能力断言：agent「自己起不了会话」，于是校验退化成肉眼核对 YAML 字段，再把结果经设置页的红色标记交给用户。那个标记是发现阶段的结构检查，远弱于这句话给人的印象。
 
-## Decision
+## 决策
 
 skill 教 agent 通过 `ctx.agentPresets` 自行挂载校验其组装，其余每个示例都取自同一仓库中已发布的组装。
 
@@ -32,7 +32,9 @@ agent 按 `cordis_mount` 自身文档所述的方式够到 roster 服务：挂�
 
 「某行是否发布服务」改由 `cordis_inspect what:"services"` 回答，它会给出每个存活服务的持有 fiber。
 
-指导保留 `${DSH_HOME:-$HOME/.dsh}/.agent-presets/` 作为「我的 preset 在哪」的答案——每个 `dsh` 启动器都把它们放在那里——同时把 agent 实际读取或编辑的路径改走 `list()` 或 `resolve()`。`Config.roots` 默认为 `[]`，两个根均由 `apps/cli` 补入，`writableRoot()` 取其中第一个 `user` 根，且没有任何调用会报告任一路径；`authorable` 只回答是否存在可写根，而 `list()` 无法揭示一个尚且为空的用户根。因此写出该路径对人讲是对的，喂给文件工具是错的。
+指导保留 `${DSH_HOME:-$HOME/.dsh}/.agent-presets/` 作为「我的 preset 在哪」的答案，同时把 agent 实际读取或编辑的路径改走 `list()` 或 `resolve()`。写出该路径对人讲是对的，喂给文件工具是错的：部署可以配置其他根目录，而 `list()` 无法揭示一个尚且为空的用户根。
+
+该路径如今是本包的属性，而非某个启动器的属性。除非 `includeUserRoot` 为 false，`AgentPresets` 自行推导 `<dshHome>/.agent-presets` 作为 `user` 根，正如 [`dsh-skill-local`](../../../../packages/skill/skill-local/README.md) 推导 `<dshHome>/skills`；`apps/cli` 只提供**随附**根——那是唯有已安装 app 才能解析的路径。它取代的那种不对称曾付出过代价：两个根都由单一启动器补入时，`dsh run` 启动的 roster 一个根都没有，解析 `standard` 直接失败（当时的修法是让每个启动器都执行该 patch）。推导出的根追加在全部已配置根之后，因此随附 id 仍会遮蔽占用它的家目录目录，而 `writableRoot()` 仍优先选择显式配置的 `user` 根。它在构造时解析一次：若根目录集合在一次 `list()` 与依据其答案执行的 `copy()` 之间发生变化，写入的将是调用方从未见过的目录。
 
 禁止改动随发布安装的约束，从创作步骤中的一段提升为顶部的 `## Off-limits` 一节，并扩展到禁止改宿主组装绕行。新增的自校验调用不削弱它：`copy()` 拒绝任何根已提供的 id，`remove()` 拒绝随部署发布的 preset。
 
@@ -51,7 +53,7 @@ agent 按 `cordis_mount` 自身文档所述的方式够到 roster 服务：挂�
 
 skill 自带的 `cordis_mount` 代码片段经工具注册表逐字执行：它成功挂载，其 `preset_check` 工具在下一次读取时出现在组装该 agent 的目录中，对有效 preset 回答 `mounted OK`，对无效 preset 回答挂载拒绝原因。
 
-## Alternatives considered
+## 考虑过的替代方案
 
 **把校验留给用户，只修四处错误。** 这些错误与那句能力断言同源——指导是按 preset 层的公开面写的，而不是按被组装出的 agent 实际够得到的东西写的——而无法自查的 agent 交出的组装，其缺陷设置页同样看不见。
 
@@ -59,7 +61,7 @@ skill 自带的 `cordis_mount` 代码片段经工具注册表逐字执行：它�
 
 **给 preset 加一个一等的 preset 校验工具。** 组合出的路径已经存在，且由 `cordis_mount` 自己的 schema 记载；专用工具会给一个「无需专用工具即可够到运行时」的 preset 再添一个面向模型的行。
 
-## Consequences
+## 后果
 
 - 校验成功会留下一个永不回收的常驻代际，这是 roster 按代际本就承担的[常驻挂载](../architecture/2026-08-08-per-preset-standing-mounts.md)代价——由 agent 在编辑收尾时付一次，而不是由用户在首次会话时付。
 - skill 现在依赖 `cordis_inspect` 生成的 API 目录对 `agentPresets` 保持最新；`doc-sync` 中的 `verify-cordis-api` 是守住这一点的门禁。

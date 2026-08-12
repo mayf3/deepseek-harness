@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh",
   "description": "dsh CLI: profile boot, plugin management, and the browser UI alias",
-  "version": "0.0.1-rc.1",
+  "version": "0.0.1-rc.2",
   "publishConfig": {
     "access": "restricted"
   },
@@ -35,6 +35,7 @@
     "@deepseek-ai/dsh-goal-session": "workspace:^",
     "@deepseek-ai/dsh-cmdline": "workspace:^",
     "@deepseek-ai/dsh-environment": "workspace:^",
+    "@deepseek-ai/dsh-fs-local": "workspace:^",
     "@deepseek-ai/dsh-headless": "workspace:^",
     "@deepseek-ai/dsh-mcp-client": "workspace:^",
     "@deepseek-ai/dsh-paths": "workspace:^",
@@ -46,6 +47,7 @@
     "@deepseek-ai/dsh-pwsh-sandbox": "workspace:^",
     "@deepseek-ai/dsh-session-projection": "workspace:^",
     "@deepseek-ai/dsh-session-reference": "workspace:^",
+    "@deepseek-ai/dsh-time-context": "workspace:^",
     "@deepseek-ai/dsh-skill": "workspace:^",
     "@deepseek-ai/dsh-skill-local": "workspace:^",
     "@deepseek-ai/dsh-tasks-local": "workspace:^",
@@ -61,6 +63,7 @@
     "@deepseek-ai/dsh-tool-goal": "workspace:^",
     "@deepseek-ai/dsh-tool-pwsh": "workspace:^",
     "@deepseek-ai/dsh-tool-ralph": "workspace:^",
+    "@deepseek-ai/dsh-tool-schedule": "workspace:^",
     "@deepseek-ai/dsh-tool-skill": "workspace:^",
     "@deepseek-ai/dsh-tool-str-replace-editor": "workspace:^",
     "@deepseek-ai/dsh-tool-subagent": "workspace:^",

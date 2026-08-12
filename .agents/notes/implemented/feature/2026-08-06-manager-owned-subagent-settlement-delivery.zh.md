@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-08-06-manager-owned-subagent-settlement-delivery.md) | 中文
 
-## Problem
+## 问题
 
 可继续后台委派是模型唯一一种能够发起、却无法抵达终点的异步操作。其他每一种形态都有取回原语或返回值：后台 bash 命令与一次性后台 subagent 都通过 Task 结算，`task_output(wait: true)` 可以阻塞等待；workflow 与前台 subagent 会把结果返回给调用方。可继续后台 child 只返回它持久化的 id，而父级既没有可等待的对象，也不会被交付任何东西。
 
@@ -12,11 +12,11 @@ Status: implemented
 
 信号本身早就存在。自可继续 Activation 发布以来，`subagent/end` 就一直携带 `stopReason` 与 `lastAssistantMessage`。缺的是把它变成父级模型能看到的上下文的那个消费者。
 
-## Decision
+## 决策
 
 继续执行管理器自己投递这份记账，就在结束 Activation 的那笔 dispose 事务内部完成。
 
-当驻留 Activation 结算时，`notifySettlement()` 解析该 child 持久化的直接父级，并向它发送一条用户角色消息：先是父级可据以行动的一句结果说明，然后是 child 的最终 assistant 内容，或一句说明它没有产出内容。对每个调用方真正拿到过 id 的 child，投递都是无条件的。它不查询 child 是否上报过，也不保留任何可能让这项承诺变成有条件的记账——正是这种无条件性，才让 `tool-subagent` 能够告诉模型「它结束时你会被告知，因此绝不要轮询或等待它」并且这句话为真。在第一条消息被接受之前就回滚的物化保持静默，因为调用方已被告知该 child 未建立。
+当驻留 Activation 结算时，`notifySettlement()` 解析该 child 持久化的直接父级，并向它发送一条用户角色消息：先是父级可据以行动的一句结果说明，然后是 child 的最终 assistant 内容，或一句说明它没有产出内容。对每个调用方真正拿到过 id 的 child，投递都是无条件的。它不查询 child 是否上报过，也不保留任何可能让这项承诺变成有条件的记账——正是这种无条件性，才让 `tool-subagent` 能够承诺一条包含结局与可能存在的最终 assistant 消息的运行时通知。在第一条消息被接受之前就回滚的物化保持静默，因为调用方已被告知该 child 未建立。
 
 ### 来源信息
 
@@ -44,7 +44,7 @@ Status: implemented
 
 ### epoch 自己的日志就是全部交代
 
-`epochStopReason()` 从 epoch 自己的日志读取结局，因为拆卸成功与否，对「模型是否报错、是否撞到上限、是否被停下」什么也没说明。只读轮次这件事已经错了两次，而两次的形状相同：在第一个 step 之前被停下的轮次，其 `turn/end` 与「拒绝」或「被清空的认领」产生的平衡空转轮次长得一模一样，于是那道用来跳过后者的过滤，也把真实的结局一起跳过了，转而用上一个轮次的干净收尾作答。持久化检查点（`dsh-session-checkpoint-policy`，存在于每个随附 profile 中）与提示词组装都运行在这个边界上、且都会向外传播，而此时 `Inbox.claim()` 已经把消息取走了——于是父级被告知 child 已完成，而它正在等待的那条投递已被吞掉。在「你会在它完成时被告知，所以永远不要轮询」这一承诺之下，这恰恰是父级无法察觉、也不会重试的那一种失败。
+`epochStopReason()` 从 epoch 自己的日志读取结局，因为拆卸成功与否，对「模型是否报错、是否撞到上限、是否被停下」什么也没说明。只读轮次这件事已经错了两次，而两次的形状相同：在第一个 step 之前被停下的轮次，其 `turn/end` 与「拒绝」或「被清空的认领」产生的平衡空转轮次长得一模一样，于是那道用来跳过后者的过滤，也把真实的结局一起跳过了，转而用上一个轮次的干净收尾作答。持久化检查点（`dsh-session-checkpoint-policy`，存在于每个随附 profile 中）与提示词组装都运行在这个边界上、且都会向外传播，而此时 `Inbox.claim()` 已经把消息取走了——于是父级被告知 child 已完成，而它正在等待的那条投递已被吞掉。在已公布的自动结算通知约定下，这恰恰是父级无法察觉、也不会重试的那一种失败。
 
 缺失的事实从来不属于轮次，而属于 inbox。`Inbox` 会把每次改动连同 `removedCount` 一起记入日志，并给取消标记 `outcome: 'canceled'`，这就把「某个轮次认领了它的输入」与「工作被丢弃且从未运行」区分开来。`dsh-agent` 中的 `foldConsumedWork()` 把两套词汇折叠成一个答案：能为已消费工作作出交代的最新轮次——进入过 step 的，或认领后失败、被停下或被拒绝的——以及此后是否有已接受的工作被取消、而没有任何轮次为它开启过。认领过输入、以 `blocked` 结束的轮次同样是一份交代：产生它的 pre-step 拒绝——hook deny、策略插件——把该轮次认领的消息一并丢弃了，因此通知会说 child 拒绝了任务，而不是完成了任务。只有没认领任何输入的 `blocked` 轮次保持不可见。
 
@@ -60,13 +60,13 @@ Status: implemented
 
 `subagent-continuable` 是其中固定失败结局的那个。它的 child 最后一个轮次在被强制的持久化检查点上死亡，且未进入任何 step，因此该 transcript 正是上面那条终止原因规则的端到端可见之处：通知说该 child **失败**，把此前的 `SECOND_OK` 作为它最后产出的内容而非结果携带，而父级自己的确认轮次会到达 ACP 客户端。
 
-另有一个无密钥的 headless Loader 快照端到端覆盖用户可见路径。其重放父级通过 `run_in_background: true` 启动一个可继续 child，从不调用 `list_agents`、`send_message` 或 Task 工具，消费管理器写入的 `subagent-settled` 通知，并给出最终答案。child 从不调用 `report`，因此该 transcript 不可能经由协作式上报路径通过。一个仅用于测试的 Loader 栅栏会把父级启动后的请求保持到真实管理器通知进入其 inbox 为止，从 transcript 中排除平台调度差异，但不会伪造该通知。
+另有一个无密钥的 headless Loader 快照端到端覆盖用户可见路径。其重放父级省略 `run_in_background` 以覆盖可继续后台默认路径，从不调用 `list_agents`、`send_message` 或 Task 工具，消费管理器写入的 `subagent-settled` 通知，并给出最终答案。child 从不调用 `report`，因此该 transcript 不可能经由协作式上报路径通过。一个仅用于测试的 Loader 栅栏会把父级启动后的请求保持到真实管理器通知进入其 inbox 为止，从 transcript 中排除平台调度差异，但不会伪造该通知。
 
 `subagent-report` 还需要多做一步让步。在随附的唤醒上报默认值下，该场景有两个互相独立的父级唤醒——上报与结算——而第二个究竟是延长第一个的轮次还是另开一个轮次，是一枚真正的硬币，多次运行实测约为五五开。任何手写 transcript 都无法同时容纳两种顺序。因此它的 overlay 固定 `reportDelivery: quiet`，使结算成为唯一唤醒；另一个仅用于快照的 pre-step 栅栏会把 child 保持到父级启动轮次结束，使这次唤醒开启一个确定轮次并同时认领两条消息。唤醒上报默认值的覆盖则保留在 report 包自身的测试中。
 
 拒绝与中断两种措辞在单元测试中逐字钉死，而不进入重放 transcript：触发它们需要一个会拒绝的策略插件、或一次在 step 边界被栅栏卡住的取消，而无密钥组装本身并不携带这些；通知通路本身已由整体组装场景端到端钉住。
 
-## Alternatives considered
+## 考虑过的替代方案
 
 **给可继续 child 引入 Task。** Task 是一次性契约：一个生产者、一次结算、一个结果。Activation 会执行许多轮次、比其中任何一轮活得更久，并且可以在结束后被恢复。用 Task 包装它，恰好重建了可继续 child 当初为消除而引入的生命周期错配，还会让某一个轮次看起来是终局。
 
@@ -80,7 +80,7 @@ Status: implemented
 
 **始终使用 `followup`。** 更简单也更统一，但一批同时结算的 child 会各自消耗一个父级轮次。step 边界的批量语义本来就存在，用它是免费的。
 
-## Consequences
+## 后果
 
 - 可继续 child 的父级会为每个已结算 Activation 收到一条消息。因此，做扇出的部署会增加父级轮次；steer 会把同时结算的一批压缩到一个 step。
 - `tool-subagent` 在其 schema 中承诺该通知，因为返回通道是服务行为，不是可选插件。

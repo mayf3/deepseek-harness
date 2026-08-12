@@ -25,7 +25,7 @@ import { isUserInvocable } from '@deepseek-ai/dsh-skill'
 import type { Workspace, WorkspaceRecord } from '@deepseek-ai/dsh-workspace'
 import {
   workspaceDomainState, workspaceRecord, WorkspaceId as brandWorkspaceId,
-  WorkspaceMoveInvalidError, WorkspaceUnknownSessionError,
+  WorkspaceMoveInvalidError, WorkspaceOrderInvalidError, WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
 // Type-only: brings the `ctx.tools` Context merge into this program (viewFor reads presenters).
 import {
@@ -67,7 +67,7 @@ import type {} from '@deepseek-ai/dsh-session-projection-cache'
 // GoalError narrows domain rejections to their stable codes at the wire boundary.
 import { GoalError } from '@deepseek-ai/dsh-goal'
 import type { GoalRef as CoreGoalRef } from '@deepseek-ai/dsh-goal'
-// Type-only edges: resolve `ctx.get('commands')`, the `commands/change` event, and `ctx.get('skills')`.
+// Type-only edges: resolve the command-change stream and `ctx.get('skills')`.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-skill'
 // The settings/credentials seams: brand guards run at this wire boundary; the
@@ -85,6 +85,7 @@ import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-a
 // `ctx.get('approval')` without a value dependency on the seam (optional composition).
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { approvalResponsePayloadSchema } from './api/approvals.schema.ts'
+import { imageLimitsProjectionSchema } from './api/sessions.schema.ts'
 import { questionResponsePayloadSchema } from './api/questions.schema.ts'
 import type { ClientResponse, RpcError, RpcReceipt, RpcRequest, RpcResponse } from './api/rpc.ts'
 import { RpcId } from './api/rpc.ts'
@@ -246,6 +247,25 @@ function referencedImage(events: readonly SessionEvent[], attachmentId: string):
  * configuration boundary or the pickers silently fail to persist.
  */
 const PRODUCT_SETTINGS_NAMESPACES = new Set(['ui-onboarding', AGENT_PRESET_SETTINGS_NAMESPACE])
+
+/** Strict browser-zone profile: UTC or an IANA Area/Location-style identifier. */
+const IANA_TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+.-]*(?:\/[A-Za-z0-9_+.-]+)+$/
+
+/** Validate and canonicalize one browser-supplied IANA zone at the wire boundary. */
+function canonicalClientTimeZone(value: string): string | undefined {
+  if (value.length === 0 || value.trim() !== value
+    || (value !== 'UTC' && !IANA_TIME_ZONE.test(value))) return undefined
+  try {
+    const canonical = new Intl.DateTimeFormat('en-US', { timeZone: value })
+      .resolvedOptions().timeZone
+    /* v8 ignore next -- Intl returns UTC or a canonical IANA Area/Location for accepted input. */
+    if (canonical !== 'UTC' && !IANA_TIME_ZONE.test(canonical)) return undefined
+    return canonical
+  } catch {
+    // Intl rejects unsupported zone names; the RPC maps that parser rejection below.
+    return undefined
+  }
+}
 
 /** Read live abort state across awaits without treating it as synchronously immutable. */
 function isAborted(signal: AbortSignal): boolean {
@@ -1205,6 +1225,30 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   ctx.inject(['sessionProjections'], (projectionCtx) => {
     projectionCtx.sessionProjections.onChanged((session, key, value, seq) => {
       broadcast({ type: 'session/projection', sessionId: session.id, key, value, seq })
+    })
+  })
+
+  // The imageLimits projection unit: the attachments config this proxy
+  // enforces at prompt admission, constant per host boot. `apply` keeps the
+  // same state reference for every event, so no change frames are ever
+  // pushed — baselines alone carry the value — and clients pre-check intake
+  // and label upload affordances from it. Registered here, not in the
+  // attachment Service Definition: dsh-llm depends on dsh-attachment, so the
+  // seam package cannot reference the projection registry without a cycle,
+  // and the per-message rules the value describes are this proxy's own
+  // admission checks. The child activates only while both seams are composed.
+  // `view` reading the live service instead of the (null) state is sanctioned
+  // exactly for boot-constant units: the value cannot change within a process
+  // lifetime, so the fold stays observationally pure, and a stale persisted
+  // cache row re-viewing to the current config is the correct outcome.
+  ctx.inject(['sessionProjections', 'attachments'], (projectionCtx) => {
+    projectionCtx.sessionProjections.register<'imageLimits', null>({
+      key: 'imageLimits',
+      schema: imageLimitsProjectionSchema,
+      init: () => null,
+      apply: state => state,
+      view: () => projectionCtx.attachments.imageLimits,
+      stateVersion: 1,
     })
   })
 
@@ -2333,12 +2377,26 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async prompt(request) {
-        const { sessionId, mode, content } = request.payload
+        const { sessionId, mode, content, clientTimeZone } = request.payload
+        const canonicalTimeZone = clientTimeZone === undefined
+          ? undefined
+          : canonicalClientTimeZone(clientTimeZone)
+        if (clientTimeZone !== undefined && canonicalTimeZone === undefined) {
+          return err(request, {
+            code: 'invalid-time-zone',
+            message: 'clientTimeZone must be UTC or a valid IANA Area/Location name',
+            details: { value: clientTimeZone },
+          })
+        }
         const resolved = await turnAgentFor<{ accepted: true }>(request, sessionId)
         if ('refused' in resolved) return resolved.refused
         const agent = resolved.agent
-        // The rpcId rides MessageSource into user/message (merge declaration in api/sessions.ts; provisional correlation).
-        const source: MessageSource = { kind: 'user', rpcId: request.rpcId }
+        // Request identity and optional browser zone ride the exact durable user message.
+        const source: MessageSource = {
+          kind: 'user',
+          rpcId: request.rpcId,
+          ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
+        }
         const hasImage = content.some(part => part.type === 'image')
         const admit = async (): Promise<RpcResponse<{ accepted: true }>> => {
           try {
@@ -2595,7 +2653,17 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       async prompt(request, signal) {
-        const { parentSessionId, childSessionId, content } = request.payload
+        const { parentSessionId, childSessionId, content, clientTimeZone } = request.payload
+        const canonicalTimeZone = clientTimeZone === undefined
+          ? undefined
+          : canonicalClientTimeZone(clientTimeZone)
+        if (clientTimeZone !== undefined && canonicalTimeZone === undefined) {
+          return err(request, {
+            code: 'invalid-time-zone',
+            message: 'clientTimeZone must be UTC or a valid IANA Area/Location name',
+            details: { value: clientTimeZone },
+          })
+        }
         const parent = ctx.agents.get(parentSessionId)
         if (parent === undefined) {
           return err(request, {
@@ -2610,7 +2678,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         if (verified.error !== undefined) return err(request, verified.error)
         try {
           const messageId = await ctx.subagents.followup(parent, childSessionId, content, {
-            source: { kind: 'user', rpcId: request.rpcId },
+            source: {
+              kind: 'user',
+              rpcId: request.rpcId,
+              ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
+            },
             signal,
           })
           return ok(request, { messageId })
@@ -2711,6 +2783,20 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         return ok(request, { deleted: true as const })
       },
 
+      async insertBefore(request) {
+        const { workspaceId, beforeWorkspaceId } = request.payload
+        try {
+          const workspaceIds = await ctx.workspace.insertBefore(
+            brandWorkspaceId(workspaceId),
+            beforeWorkspaceId === undefined ? undefined : brandWorkspaceId(beforeWorkspaceId),
+          )
+          return ok(request, { workspaceIds: [...workspaceIds] })
+        } catch (error: unknown) {
+          if (!(error instanceof WorkspaceOrderInvalidError)) throw error
+          return workspaceNotFound(request, error.workspaceId)
+        }
+      },
+
       async insertSessionBefore(request) {
         const { payload } = request
         const workspace = ctx.workspace.get(brandWorkspaceId(payload.workspaceId))
@@ -2766,6 +2852,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           provider: selection.provider,
           model: selection.model,
           attachedSessions: ctx.agents.list().length,
+          canOpenPath: canOpenPaths(),
         }))
       },
 
@@ -2838,49 +2925,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async openPath(request, signal) {
         return openPath(request, request.payload.path, signal)
-      },
-    },
-
-    commands: {
-      // Both methods address one session's agent. agentFor resumes on miss
-      // and fences every subagent-owned identity with `agent-busy`; the
-      // api/commands.ts module contract owns that fence's wording, so this
-      // comment only notes the routing shape: clients send a sessionId for a
-      // published session, and resume restores an existing entity.
-      async list(request) {
-        // Missing service = the deployment omitted dsh-commands from its
-        // composition, not an empty catalog: fail loud instead of serving [].
-        const commands = ctx.get('commands')
-        if (commands === undefined) {
-          return err(request, { code: 'internal', message: 'command registry is absent: this deployment does not mount @deepseek-ai/dsh-commands in its composition (cordis.yml or explicit assembly)', details: {} })
-        }
-        const found = await agentFor(request.payload.sessionId)
-        if ('error' in found) return err(request, found.error)
-        return ok(request, { commands: commands.list(found.agent) })
-      },
-
-      async execute(request, signal) {
-        const commands = ctx.get('commands')
-        if (commands === undefined) {
-          return err(request, { code: 'internal', message: 'command registry is absent: this deployment does not mount @deepseek-ai/dsh-commands in its composition (cordis.yml or explicit assembly)', details: {} })
-        }
-        const { sessionId, line } = request.payload
-        const found = await agentFor(sessionId)
-        if ('error' in found) return err(request, found.error)
-        try {
-          // Pure admission: the executor's durable command/run + command/done
-          // pair (broadcast on the mux stream) carries the outcome; the
-          // response reports whether the line resolved to a handler, plus the
-          // minted pairing id so the issuing client can correlate its request
-          // with the flow node the lifecycle events produce.
-          const execution = await commands.execute(found.agent, line, signal)
-          return ok(request, execution === undefined
-            ? { matched: false }
-            : { matched: true, commandId: execution.commandId })
-        } catch (error: unknown) {
-          if (signal.aborted) return err(request, { code: 'cancelled', message: 'command execution was aborted', details: {} })
-          return err(request, { code: 'internal', message: `command failed: ${String(error)}`, details: {} })
-        }
       },
     },
 
@@ -3407,9 +3451,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       host(_request, signal) {
         const queue = new FrameQueue<RpcRequest<HostFrame>>()
+        const committedWorkspaces = ctx.workspace.list()
         const committedWorkspaceIds = new Set(
-          ctx.workspace.list().map(workspace => String(workspace.id)),
+          committedWorkspaces.map(workspace => String(workspace.id)),
         )
+        let committedWorkspaceOrder = committedWorkspaces.map(workspace => workspace.id)
         // Frame-dedup baseline, same posture as committedWorkspaceIds: the
         // stream opens against the current set; workspace.list re-baselines
         // reconnecting clients, so only later changes need frames.
@@ -3440,6 +3486,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             if (change.table === '') {
               if (change.operation !== 'put') return
               const state = workspaceDomainState.parse(change.value)
+              const orderChanged = state.workspaceIds.length === committedWorkspaceOrder.length
+                && state.workspaceIds.every(workspaceId => committedWorkspaceIds.has(String(workspaceId)))
+                && state.workspaceIds.some((workspaceId, index) => workspaceId !== committedWorkspaceOrder[index])
               for (const workspaceId of state.workspaceIds) {
                 if (committedWorkspaceIds.has(workspaceId)) continue
                 const workspace = ctx.workspace.get(workspaceId)
@@ -3448,6 +3497,13 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                 }
                 committedWorkspaceIds.add(workspaceId)
                 queue.push(frame({ type: 'host/workspace-changed', workspace: workspaceView(workspace) }))
+              }
+              committedWorkspaceOrder = [...state.workspaceIds]
+              if (orderChanged) {
+                queue.push(frame({
+                  type: 'host/workspace-order-changed',
+                  workspaceIds: [...state.workspaceIds],
+                }))
               }
               if (state.archivedSessionIds.length !== archivedSessionIds.length
                 || state.archivedSessionIds.some((id, index) => id !== archivedSessionIds[index])) {

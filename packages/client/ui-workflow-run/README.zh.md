@@ -12,7 +12,7 @@
 
 ## 展示与导航
 
-运行和每个阶段分别拥有本地 disclosure 状态。运行使用 32 像素 `--dsw-alias-bg-module-platform` 背景行，常驻向右／向下 chevron，并以内联状态点加状态文字表达结局，不使用胶囊。阶段使用 32 像素 disclosure 行，在可伸缩主区显示标题与成员数，在固定尾部精确显示聚合状态且不重复状态点。成员使用 16 像素状态点槽、可省略名称区和固定 64 像素状态列。运行中记录首次挂载时展开，从历史加载的终态记录首次挂载时折叠。只要 keyed 节点仍挂载，本地选择就在数据更新时保持；只有完整 remount 才重新初始化。
+运行和每个阶段都从当前生命周期事实派生 disclosure 控制。运行自身处于运行中、失败、已取消或已中断，或者任一阶段包含这些状态的成员时，运行保持展开；受影响的阶段也保持展开。强制展开的标题行只是静态展开行，不承诺按钮、键盘操作或 `aria-expanded`。阶段在全部成员完成时折叠一次；运行在自身和全部阶段都完成时折叠一次。每个干净层级随后恢复普通 disclosure 控件，其本地选择在干净状态的 rerender 中保持；新活动会重新取得控制，remount 则从当前数据派生初始状态。运行使用 32 像素 `--dsw-alias-bg-module-platform` 背景行，常驻向右／向下 chevron，并以内联状态点加状态文字表达结局，不使用胶囊。阶段使用 32 像素 disclosure 行，在可伸缩主区显示标题与成员数，在固定尾部精确显示聚合状态且不重复状态点。成员使用 16 像素状态点槽、可省略名称区和固定 64 像素状态列。
 
 只有所有实时事实同时成立时，成员才可打开子 Session：成员仍在运行、子 id 位于普通 Session 列表、列表行为 `origin: 'subagent'`、`parentId` 等于当前 Session，且列表行仍标记运行。带下划线的成员文字是唯一可见导航提示；键盘聚焦时，名称区显示 2 像素 business-primary 焦点环，右侧状态仍只显示“运行中”。组件只调用注入的普通 `sessions.open(id)`；远程、仅地址化、父级不符或终态的行都不可交互。
 
@@ -20,7 +20,7 @@
 
 本包把 Definition、locale 字典和 `workflow-run` renderer 都注册为 Cordis effect；移除客户端 entry 会撤销三者。shipped Web bundle 在 `ui-conversation` 与 `ui-tool` 之后装配该插件。
 
-## Model Experience
+## 模型体验
 
 无，因为本包只为人类展示持久 Session 事实，不增加 prompt、工具 schema、请求内容或模型可见结果。
 
@@ -28,7 +28,7 @@
 
 无。
 
-## Known Limitations and Deferred Work
+## 已知限制与暂缓事项
 
 - 只有经 `dsh-tool-workflow` 发起的顶层调用会生成这些记录；嵌套 Code Mode 调用和直接 `WorkflowService` 消费方不会生成。
 - 导航刻意只面向实时运行。终态成员继续保留供复盘，但本节点永不为其提供冷 Session 入口。

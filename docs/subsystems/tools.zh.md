@@ -2,7 +2,7 @@
 
 [English](tools.md) | 中文
 
-[dsh-tools](../../packages/core/tools) 的工具处理流程。[core.md](core.md) 介绍了核心包共用的流程编写类型 `ToolDefinition`；面向模型的 [`ToolSchema`](llm-streaming.md#the-model-request-and-result) 协议类型与模型请求一起声明。本页记录 `ToolDefinition` 的每个字段、用于构建它的类型化 schema DSL、带守卫的执行类型和 UI 展示类型。
+[dsh-tools](../../packages/core/tools) 的工具流水线。[core.md](core.md) 介绍了核心包共用、用于编写流水线的类型 `ToolDefinition`；面向模型的 [`ToolSchema`](llm-streaming.md#the-model-request-and-result) 协议类型与模型请求一起声明。本页记录 `ToolDefinition` 的每个字段、用于构建它的类型化 schema DSL、带守卫的执行类型和 UI 展示类型。
 
 源码：[`packages/core/tools/src/index.ts`](../../packages/core/tools/src/index.ts) · [`packages/core/tools/src/schema.ts`](../../packages/core/tools/src/schema.ts) · [`packages/core/tools/src/presentation.ts`](../../packages/core/tools/src/presentation.ts)
 
@@ -146,7 +146,7 @@ type InferValue<S> = InferValueAt<S, []>
 type InferArgs<S> = InferProperties<S, []>
 ```
 
-`defineTool({ name, description, parameters, output, execute, … })` 将参数推导与 `parameterSchemaSpecToJsonSchema()` 和 `validateArgs()` 绑定，并将 `execute`/`render`/`presentationMeta` 与 `InferValue<OutputSchema>` 绑定。Schema 记录只包含自有且可枚举的字符串键，schema 数组是稠密的内建数组，因此推导、编译与校验观察到的是同一份声明。精确推导保持到 16 层容器，之后放宽为 `JsonValue`；运行时校验仍会继续遍历完整 schema。`valueSchemaSpecToJsonSchema()` 通过同一套已强制执行的原始子集编译输出声明。参数不匹配时抛出 `ToolArgsError`（`INVALID_ARGS`）；函数体或后置策略产生的值无效时抛出 `ToolOutputError`（`INVALID_TOOL_OUTPUT`）。两者都经由常规工具错误路径处理。原始 JSON Schema 默认保持开放；不支持的关键字会被拒绝，而不会在未强制执行的情况下获准进入。
+`defineTool({ name, description, parameters, output, execute, … })` 将参数推导与 `parameterSchemaSpecToJsonSchema()` 和 `validateArgs()` 绑定，并将 `execute`/`render`/`presentationMeta` 与 `InferValue<OutputSchema>` 绑定。schema 记录只包含自有且可枚举的字符串键，schema 数组是稠密的内建数组，因此推导、编译与校验观察到的是同一份声明。精确推导保持到 16 层容器，之后放宽为 `JsonValue`；运行时校验仍会继续遍历完整 schema。`valueSchemaSpecToJsonSchema()` 通过同一套已强制执行的原始子集编译输出声明。参数不匹配时抛出 `ToolArgsError`（`INVALID_ARGS`）；函数体或后置策略产生的值无效时抛出 `ToolOutputError`（`INVALID_TOOL_OUTPUT`）。两者都经由常规工具错误路径处理。原始 JSON Schema 默认保持开放；不支持的关键字会被拒绝，而不会在未强制执行的情况下获准进入。
 
 注册是一项受信任的同进程约定。注册表以 readonly 输入借用已类型化定义，要求它声明 `output`，校验其原始 schema，并检查 `timeoutMs` 必须为正有限值等语义要求；`schemas()` 在构建请求时生成面向模型的投影，使执行和展示共享同一份已解析定义，而不会将回调泄漏到协议上。
 
@@ -156,14 +156,13 @@ type InferArgs<S> = InferProperties<S, []>
 
 ```ts type-equiv
 /**
- * Per-scope filter over the tools a scope INHERITS — the global layer and
- * every ancestor layer on its chain. Restrictions intersect, and do not affect
- * the scope's own registrations or the reserved Code Mode transport.
+ * Per-scope filter over global tools. Restrictions intersect and do not affect
+ * scoped registrations or the reserved Code Mode transport.
  */
 interface ToolRestriction {
-  /** Inherited tool names that stay visible; every other inherited one is removed. */
+  /** Global tool names that stay visible; everything else is removed. */
   readonly allow?: readonly string[]
-  /** Inherited tool names removed from visibility. */
+  /** Global tool names removed from visibility. */
   readonly deny?: readonly string[]
 }
 ```
@@ -198,8 +197,12 @@ interface ToolExecutionInput {
   /**
    * Opaque token of the enclosing transport execution, when one exists. Code
    * Mode sets this on SDK sub-dispatches so commit-style observers can wait for
-  * the outer `run_code` outcome without receiving its live mutable execution.
-  */
+   * the outer `run_code` outcome without receiving its live mutable execution.
+   * The token also marks the call as a transport sub-dispatch rather than a
+   * model-direct call: under `mode: 'code'`, only calls WITH a parent may
+   * execute a native tool name — a model-direct call (no parent) is denied as
+   * `UNKNOWN_TOOL` before the policy pipeline. See {@link ToolRegistry.execute}.
+   */
   readonly parent?: ToolExecutionToken
   /** Required caller-owned cancellation for this invocation. */
   readonly signal: AbortSignal
@@ -568,7 +571,7 @@ async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:761`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:787`](../../packages/core/tools/src/index.ts)
 
 <a id="tools-events"></a>
 
@@ -593,7 +596,7 @@ A tool was registered or unregistered, or a scoped restriction changed (the avai
 'tools/change'(): void
 ```
 
-Source: [`packages/core/tools/src/index.ts:193`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:207`](../../packages/core/tools/src/index.ts)
 
 <a id="toolscode-dispatch-log--waterfall"></a>
 
@@ -620,7 +623,7 @@ Allow a listener to replace content in the DURABLE LOG COPY of one `run_code` su
 
 Types: [ContentBlock](llm-streaming.md) · [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:175`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:189`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsexecute--waterfall"></a>
 
@@ -644,7 +647,7 @@ Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns a nor
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:149`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:163`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspost-execute--waterfall"></a>
 
@@ -669,7 +672,7 @@ Accept, replace, enrich, or block a normalized dispatch result. `next()` accepts
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:161`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:175`](../../packages/core/tools/src/index.ts)
 
 <a id="toolspre-execute--waterfall"></a>
 
@@ -692,7 +695,7 @@ Allow, deny, or ask before dispatch. `next()` delegates to allow; missing approv
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:138`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:152`](../../packages/core/tools/src/index.ts)
 
 <a id="toolsresult--emit"></a>
 
@@ -713,5 +716,5 @@ Observe the frozen, lossless-JSON final outcome. Listener failures are contained
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/tools/src/index.ts:183`](../../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:197`](../../packages/core/tools/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -240,7 +240,7 @@ Source: [`packages/core/session/src/types.ts:273`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/interaction/commands/src/types.ts:56`](../packages/interaction/commands/src/types.ts)
+Source: [`packages/interaction/commands/src/types.ts:95`](../packages/interaction/commands/src/types.ts)
 
 #### `command/run` — log-only
 
@@ -258,7 +258,7 @@ Source: [`packages/interaction/commands/src/types.ts:56`](../packages/interactio
 'command/run': { commandId: CommandId; name: string; args?: string; source: CommandSource }
 ```
 
-Source: [`packages/interaction/commands/src/types.ts:49`](../packages/interaction/commands/src/types.ts)
+Source: [`packages/interaction/commands/src/types.ts:88`](../packages/interaction/commands/src/types.ts)
 
 ### `compact/*`
 
@@ -533,6 +533,22 @@ Source: [`packages/core/session/src/types.ts:304`](../packages/core/session/src/
 ```
 
 Source: [`packages/sandbox/sandbox-policy/src/session-mode.ts:33`](../packages/sandbox/sandbox-policy/src/session-mode.ts)
+
+### `schedule/*`
+
+#### `schedule/change` — log-only
+
+```ts persistence-catalog
+/**
+ * Versioned Schedule mutation. The owning package validates the complete
+ * session-local transition stream before accepting a candidate event.
+ */
+'schedule/change': ScheduleChange
+```
+
+Types: [ScheduleChange](subsystems/schedule.md)
+
+Source: [`packages/schedule/tool-schedule/src/types.ts:219`](../packages/schedule/tool-schedule/src/types.ts)
 
 ### `session/*`
 

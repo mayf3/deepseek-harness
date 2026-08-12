@@ -35,6 +35,7 @@ const root = resolve(import.meta.dirname, '..')
 // specifiers resolve from apps/cli rather than the examples workspace.
 const appOverlayFiles = new Set([
   'examples/web-cordis/cordis.yml',
+  'examples/web-schedule/cordis.yml',
   ...globSync('examples/mcp-memory/*.cordis.yml', { cwd: root }),
 ])
 const metadataFields = ['id', 'name', 'group', 'inject', 'intercept', 'isolate'] as const
@@ -43,14 +44,17 @@ const metadataFields = ['id', 'name', 'group', 'inject', 'intercept', 'isolate']
 const CHOOSER_PACKAGE = '@deepseek-ai/dsh-host-directory-picker-auto'
 
 /**
- * The backends the chooser mounts by runtime string (mirror of its exported
- * `BACKEND_PACKAGES`), invisible to yml-row scanning: a composition mounting
- * the chooser must resolve both, or keyless Linux CI (which only ever
- * resolves `browse`) hides a dropped `-native` dependency until a macOS boot.
+ * The packages the chooser mounts by runtime string (mirror of its exported
+ * `BACKEND_PACKAGES` and `SURFACE_PACKAGES`), invisible to yml-row scanning: a
+ * composition mounting the chooser must resolve every one, or keyless Linux CI
+ * (which only ever resolves `browse`) hides a dropped `-native` dependency
+ * until a macOS boot.
  */
 const CHOOSER_BACKEND_PACKAGES = [
   '@deepseek-ai/dsh-host-directory-picker-native',
   '@deepseek-ai/dsh-host-directory-picker-browse',
+  '@deepseek-ai/dsh-client-ui-directory-picker',
+  '@deepseek-ai/dsh-client-ui-directory-picker-native',
 ]
 const jsExprType = new yaml.Type('tag:yaml.org,2002:js', {
   kind: 'scalar',

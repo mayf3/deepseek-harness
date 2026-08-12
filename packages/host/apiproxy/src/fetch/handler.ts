@@ -38,11 +38,11 @@ import {
   workspaceArchiveSessionRequestSchema,
   workspaceCreateRequestSchema,
   workspaceDeleteRequestSchema,
+  workspaceInsertBeforeRequestSchema,
   workspaceInsertSessionBeforeRequestSchema,
   workspaceListRequestSchema,
   workspaceRenameRequestSchema,
 } from '../api/workspace.schema.ts'
-import { commandExecuteRequestSchema, commandListRequestSchema } from '../api/commands.schema.ts'
 import { skillListRequestSchema } from '../api/skills.schema.ts'
 import {
   agentPresetCopyRequestSchema, agentPresetListRequestSchema, agentPresetOpenDocumentRequestSchema,
@@ -113,10 +113,9 @@ const UNARY_ROUTES: UnaryRoutes = {
   'workspace.create': { schema: workspaceCreateRequestSchema, invoke: (api, r) => api.workspace.create(r) },
   'workspace.rename': { schema: workspaceRenameRequestSchema, invoke: (api, r) => api.workspace.rename(r) },
   'workspace.delete': { schema: workspaceDeleteRequestSchema, invoke: (api, r) => api.workspace.delete(r) },
+  'workspace.insertBefore': { schema: workspaceInsertBeforeRequestSchema, invoke: (api, r) => api.workspace.insertBefore(r) },
   'workspace.insertSessionBefore': { schema: workspaceInsertSessionBeforeRequestSchema, invoke: (api, r) => api.workspace.insertSessionBefore(r) },
   'workspace.archiveSession': { schema: workspaceArchiveSessionRequestSchema, invoke: (api, r) => api.workspace.archiveSession(r) },
-  'command.list': { schema: commandListRequestSchema, invoke: (api, r) => api.commands.list(r) },
-  'command.execute': { schema: commandExecuteRequestSchema, invoke: (api, r, signal) => api.commands.execute(r, signal) },
   'skill.list': { schema: skillListRequestSchema, invoke: (api, r) => api.skills.list(r) },
   'agentPreset.list': { schema: agentPresetListRequestSchema, invoke: (api, r) => api.agentPresets.list(r) },
   'agentPreset.select': { schema: agentPresetSelectRequestSchema, invoke: (api, r) => api.agentPresets.select(r) },
@@ -250,7 +249,7 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
       const url = new URL(req.url)
       const path = url.pathname
 
-      // No-envelope GET channel surface (SSE streams + host-only download):
+      // No-envelope read channels (SSE GET streams + host-only download):
       // physical routes that answer directly, without a wire envelope.
       if (path === '/api/events.mux' && req.method === 'GET') {
         return sseResponse(api.events.mux({ rpcId: RpcId(randomUUID()), payload: {} }, req.signal))
@@ -258,14 +257,17 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
       if (path === '/api/events.host' && req.method === 'GET') {
         return sseResponse(api.events.host({ rpcId: RpcId(randomUUID()), payload: {} }, req.signal))
       }
-      if (path === '/api/session.export' && req.method === 'GET') {
+      if (path === '/api/session.export' && (req.method === 'GET' || req.method === 'HEAD')) {
         // Query params are a different boundary from the POST envelope, but
         // the request still casts its brands only through the domain schema.
         const parsed = sessionLogQuerySchema.safeParse(Object.fromEntries(url.searchParams))
         if (!parsed.success) {
           return new Response('missing or invalid sessionId query parameter', { status: 400 })
         }
-        return api.downloads.sessionLog(parsed.data, req.signal)
+        const response = await api.downloads.sessionLog(parsed.data, req.signal)
+        if (req.method === 'GET') return response
+        await response.body?.cancel()
+        return new Response(null, { status: response.status, headers: response.headers })
       }
 
       if (req.method !== 'POST' || !path.startsWith('/api/')) {

@@ -25,25 +25,40 @@ const windowsUnsupportedPackages = process.platform === 'win32'
       // INCLUDED: PowerShell ships with Windows, so they run natively here.
       // This explicit list (not a 'packages/bash/*' glob) keeps
       // packages/bash/bash — the Service Definition package — running on Windows.
-      // subprocess-local and pty-local are NOT listed: their win32 branches are
-      // first-class (Windows inspector, pwsh dialect), so their suites run and
-      // their sources stay coverage-required on the windows-native lane; the
-      // bash-requiring tests inside them self-skip through hasBash probes.
       'packages/bash/bash-local',
       'packages/bash/bash-sandbox',
       'packages/bash/tool-bash',
       'packages/hooks/*',
+      'packages/pty/pty-local',
       'packages/sandbox/sandbox-local',
     ]
   : []
 
-// Windows-only sources: they execute exclusively on win32 (koffi loads Win32
-// libraries), so the Linux coverage lane can never cover them. The Windows
-// dev/CI lane exercises them through the probe/runner suites; the per-file
-// 100% gate must not fail on their Linux-uncovered paths.
+const windowsUnsupportedTests = process.platform === 'win32'
+  ? [
+      ...windowsUnsupportedPackages.map(path => `${path}/tests/**/*.spec.ts`),
+      'packages/subprocess/subprocess/tests/**/*.spec.ts',
+      'packages/subprocess/subprocess-local/tests/local.spec.ts',
+      'packages/subprocess/subprocess-local/tests/process-inspector.spec.ts',
+      'packages/subprocess/subprocess-local/tests/spawn.spec.ts',
+      'packages/subprocess/subprocess-local/tests/terminal.spec.ts',
+    ]
+  : []
+
+const windowsUnsupportedCoveragePackages = process.platform === 'win32'
+  ? [...windowsUnsupportedPackages, 'packages/subprocess/*']
+  : []
+
+// Windows-only packages: their sources execute exclusively on win32 (koffi
+// loads Win32 libraries), so the Linux coverage lane can never cover them.
+// The Windows dev/CI lane exercises them through the probe/runner suites; the
+// per-file 100% gate must not fail on their Linux-uncovered paths.
 const windowsOnlyCoverageExclusions = process.platform !== 'win32'
   ? [
       'packages/sandbox/sandbox-windows-acl/src/**/*.ts',
+      // The koffi-backed Win32 table (Toolhelp32/GetProcessTimes/taskkill)
+      // executes only on win32; its decision logic is unit-pinned on every
+      // host through the injected-internals suites.
       'packages/subprocess/subprocess-local/src/windows-inspector.ts',
     ]
   : []
@@ -95,6 +110,7 @@ const coverageExemptExcludes = coverageExemptRaw === '1'
 const processBoundTests = [
   'packages/session/session-persistence-jsonl/tests/jsonl.spec.ts',
   'packages/subagent/subagent-acp/tests/subagent-acp.spec.ts',
+  'packages/subprocess/subprocess-local/tests/process-exit.spec.ts',
   'packages/subprocess/subprocess-local/tests/spawn.spec.ts',
   'packages/context/time-context/tests/time-context.spec.ts',
   'packages/llm/llm-pi-ai/tests/adapter.spec.ts',
@@ -108,7 +124,7 @@ export default defineConfig({
     setupFiles: ['./scripts/test-invariants.ts'],
     // .tsx: client component specs (jsdom via per-file @vitest-environment pragma).
     include: testIncludes,
-    exclude: windowsUnsupportedPackages.map(path => `${path}/tests/**/*.spec.ts`),
+    exclude: windowsUnsupportedTests,
     // One coverage invocation aggregates both projects. Every suite forks for
     // Node stability; process-bound suites stay separate for inventory control.
     projects: [
@@ -124,7 +140,7 @@ export default defineConfig({
           setupFiles: ['./scripts/test-invariants.ts'],
           include: testIncludes,
           exclude: [
-            ...windowsUnsupportedPackages.map(path => `${path}/tests/**/*.spec.ts`),
+            ...windowsUnsupportedTests,
             ...processBoundTests,
             ...coverageExemptExcludes,
           ],
@@ -139,7 +155,7 @@ export default defineConfig({
           setupFiles: ['./scripts/test-invariants.ts'],
           include: processBoundTests,
           exclude: [
-            ...windowsUnsupportedPackages.map(path => `${path}/tests/**/*.spec.ts`),
+            ...windowsUnsupportedTests,
             ...coverageExemptExcludes,
           ],
         },
@@ -242,7 +258,7 @@ export default defineConfig({
         'packages/interaction/commands/src/index.ts',
         'packages/interaction/commands/src/invariant.ts',
         'packages/session/session-projection/src/index.ts',
-        ...windowsUnsupportedPackages.map(path => `${path}/src/**/*.ts`),
+        ...windowsUnsupportedCoveragePackages.map(path => `${path}/src/**/*.ts`),
         ...windowsOnlyCoverageExclusions,
         ...windowsRunnerCoverageExclusions,
         ...pwshCoverageExclusions,

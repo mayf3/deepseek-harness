@@ -9,11 +9,11 @@
  */
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
-import type { ConnectionHandle, SessionId } from '@deepseek-ai/dsh-client-connection/client'
-import type { ClientContext, ISessions } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the ctx.remote merge and the forwarded-event key face
 // (`commands/change` rides the allowlist) into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { CommandResult } from '@deepseek-ai/dsh-commands/types'
+import type { ClientContext, ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   CandidateRequest, ClientSessionContext, CommandClaim, PickOutcome, SlashCandidate, SlashPick,
   SubmitOutcome,
@@ -23,6 +23,28 @@ import type { CommandDescriptor } from './directory.ts'
 import { CommandDirectory } from './directory.ts'
 import { PopupSelectController } from './popup.ts'
 import type { TokenSegment } from './popup.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * This browser client completed one admitted Host command execution.
+     * Other clients receive the durable command nodes but never this local
+     * submission acknowledgment.
+     * @param sessionId - Session addressed by the local submission.
+     * @param name - Executed command name without the leading slash.
+     * @param result - Host command result returned to this browser.
+     * @mode emit
+     */
+    'command/executed'(sessionId: SessionId, name: string, result: CommandResult): void
+  }
+}
+
+/** Recover the command name from a line the Host confirmed as executed. */
+function submittedCommandName(line: string): string {
+  const trimmed = line.trim()
+  const separator = trimmed.search(/\s/u)
+  return (separator === -1 ? trimmed : trimmed.slice(0, separator)).slice(1)
+}
 
 /** Live mutable state in one holder (service methods run behind the caller-ctx tracker). */
 interface LiveState {
@@ -96,7 +118,7 @@ function fuzzyCandidates(candidates: readonly SlashCandidate[], rawQuery: string
 
 /** Command surface: session-keyed directory + '/' source + contribution registry + per-session popups. */
 export class CommandService extends Service implements CommandServiceContract {
-  static inject = ['slash', 'sessions', 'connection', 'remote']
+  static inject = ['slash', 'sessions', 'remote', 'remote.commands']
 
   private readonly directory: CommandDirectory
   private readonly live: LiveState = { contributions: new Map(), decorations: new Map(), popups: new Map() }
@@ -107,13 +129,11 @@ export class CommandService extends Service implements CommandServiceContract {
    */
   constructor(ctx: Context) {
     super(ctx, 'command')
-    const connection = ctx.get('connection') as ConnectionHandle | undefined
-    if (connection === undefined) throw new Error('ui-command: connection service unavailable')
     this.directory = new CommandDirectory(async (sessionId) => {
       if (this.sessions().subagentAddress(sessionId) !== undefined) return []
-      const { result } = await connection.api.commands.list({ sessionId })
+      const result = await ctx.remote.commands.list(sessionId)
       if (!result.ok) throw new Error(`command.list failed: ${result.error.code}: ${result.error.message}`)
-      return result.value.commands
+      return result.value
     })
     const slash = ctx.get('slash')
     if (slash === undefined) throw new Error('ui-command: slash service unavailable')
@@ -351,11 +371,34 @@ export class CommandService extends Service implements CommandServiceContract {
     session: ClientSessionContext,
     line: string,
   ): Promise<SubmitOutcome> {
-    const connection = this.ctx.get('connection') as ConnectionHandle
-    const { result } = await connection.api.commands.execute({ sessionId: session.sessionId, line })
+    const result = await this.ctx.remote.commands.execute(session.sessionId, line)
     if (!result.ok) throw new Error(`command.execute failed: ${result.error.code}: ${result.error.message}`)
-    if (!result.value.matched) return { kind: 'error', text: `unknown or malformed command: ${line}` }
+    if (result.value === undefined) return { kind: 'error', text: `unknown or malformed command: ${line}` }
+    this.notifyExecuted(session.sessionId, submittedCommandName(line), result.value.result)
     return { kind: 'success' }
+  }
+
+  /** Publish the local acknowledgment without letting an observer change command admission. */
+  private notifyExecuted(sessionId: SessionId, name: string, result: CommandResult): void {
+    const args = ['command/executed', sessionId, name, result]
+    for (const listener of this.ctx.events.dispatch('emit', args) as Array<(...listenerArgs: unknown[]) => unknown>) {
+      try {
+        const returned = listener(sessionId, name, result)
+        if (returned != null && typeof (returned as PromiseLike<unknown>).then === 'function') {
+          void Promise.resolve(returned as PromiseLike<unknown>).then(undefined, (error: unknown) => {
+            this.warnExecutedListenerFailure(name, error)
+          })
+        }
+      } catch (error) {
+        this.warnExecutedListenerFailure(name, error)
+      }
+    }
+  }
+
+  /** Log one contained `command/executed` observer failure. */
+  private warnExecutedListenerFailure(name: string, error: unknown): void {
+    this.ctx.logger.warn('client command: a command/executed listener for "%s" failed', name)
+    this.ctx.logger.warn(error)
   }
 
   /**
