@@ -38,7 +38,7 @@ minimal 预设用 #2234 的 `disabled: !!js` 插值按平台门控持久 shell �
 
 ### 测试
 
-subprocess-local 与 pty-local 套件现在在 Windows 上运行：bash 形态 fixture 通过平台门控自跳过，spawn/terminal 套件把简单 shell 命令翻译为 node 单行并覆盖注入的 POSIX 组路径，koffi-backed inspector 在 Linux 侧加入 windows-only 覆盖豁免，windows-native 车道强制执行其 100% 覆盖。工具套件镜像 `tool-bash-persistent` 的 stub 模式矩阵并加回显剥离模式；真实 pwsh 套件在真实 ConPTY 会话上证明持久 cwd/env、密钥清洗、多行与 here-string 命令、大输出裁剪与退出/重置。
+Windows 测试面沿用 master 的豁免结构：pty-local 与 subprocess-local 的测试在 win32 上继续排除（`windowsUnsupportedTests`），其源码在 win32 上继续覆盖豁免（`windowsUnsupportedCoveragePackages`），平台门控 fixture 与 node 翻译命令因此仍是 win32 开发车道的证据；koffi-backed inspector 在 Linux 侧加入 windows-only 覆盖豁免。`tool-pwsh-persistent` 不在豁免之列：其套件在 windows-native 车道上运行、源码受覆盖约束，镜像 `tool-bash-persistent` 的 stub 模式矩阵并加回显剥离模式；真实 pwsh 套件在真实 ConPTY 会话上证明持久 cwd/env、密钥清洗、多行与 here-string 命令、大输出裁剪与退出/重置。
 
 ## 备选方案
 
@@ -52,9 +52,9 @@ subprocess-local 与 pty-local 套件现在在 Windows 上运行：bash 形态 f
 
 ## 后果
 
-**Windows 成为一等公民的持久 shell 宿主。** pty 家族现在在 windows-native 车道上运行、测试并受覆盖门禁约束；一次性/持久 shell 的划分与 POSIX 镜像，预设 spec 在两种平台上都钉死每宿主恰好一个 shell 栈。
+**Windows 成为一等公民的持久 shell 宿主。** 持久 pwsh 栈在 windows-native 车道上运行并受覆盖门禁约束；一次性/持久 shell 的划分与 POSIX 镜像，预设 spec 在两种平台上都钉死每宿主恰好一个 shell 栈。
 
-**windows-native 覆盖翻转是常驻承诺。** subprocess-local 与 pty-local 源码在 win32 上受覆盖约束；它们的套件在那里运行（带平台门控与 node 翻译命令），并必须在 windows-native 车道保持 100% 覆盖。
+**Windows 覆盖沿用 master 的豁免结构。** subprocess-local 与 pty-local 源码在 win32 上保持覆盖豁免、其套件保持测试排除，与 master 完全一致；Windows 代码路径经 win32 开发车道与真实 pwsh 工具套件验证，新表面的覆盖义务在 windows-native 车道上落在 `tool-pwsh-persistent`。
 
 **Windows 就绪弱于 Linux。** 伪 pgid marker 快路径覆盖 shell 提示符，但没有提示符的子进程按静默档结算（约 3s），与 macOS 完全一致；没有精确的 stdin-wait 档。
 

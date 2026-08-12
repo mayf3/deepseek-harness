@@ -38,7 +38,7 @@ The minimal preset gates its persistent shell stack by platform with the #2234 `
 
 ### Testing
 
-The subprocess-local and pty-local suites now run on Windows: bash-shaped fixtures self-skip through platform gates, the spawn/terminal suites translate their simple shell commands to node one-liners and exercise injected POSIX group paths, and the koffi-backed inspector joins the windows-only coverage exclusions on Linux while the windows-native lane enforces its 100% coverage. The tool suite mirrors `tool-bash-persistent`'s stub-mode matrix plus an echo-stripping mode; the real-pwsh suites prove persistent cwd/env, secret scrubbing, multiline and here-string commands, large-output clipping, and exit/reset over real ConPTY sessions.
+The Windows test surface follows master's exemption structure: pty-local and subprocess-local tests stay excluded on win32 (`windowsUnsupportedTests`) and their sources stay coverage-exempt there (`windowsUnsupportedCoveragePackages`), so the platform-gated fixtures and node-translated commands remain the win32 dev-lane evidence, while the koffi-backed inspector joins the windows-only coverage exclusions on Linux. `tool-pwsh-persistent` is not exempt: its suite runs and its sources are coverage-required on the windows-native lane, mirroring `tool-bash-persistent`'s stub-mode matrix plus an echo-stripping mode; the real-pwsh suites prove persistent cwd/env, secret scrubbing, multiline and here-string commands, large-output clipping, and exit/reset over real ConPTY sessions.
 
 ## Alternatives considered
 
@@ -52,9 +52,9 @@ The subprocess-local and pty-local suites now run on Windows: bash-shaped fixtur
 
 ## Consequences
 
-**Windows became a first-class persistent-shell host.** The pty family now runs, tests, and is coverage-gated on the windows-native lane; the one-shot/persistent shell split mirrors POSIX, and the preset spec pins exactly one shell stack per host on both platforms.
+**Windows became a first-class persistent-shell host.** The persistent pwsh stack runs and is coverage-gated on the windows-native lane; the one-shot/persistent shell split mirrors POSIX, and the preset spec pins exactly one shell stack per host on both platforms.
 
-**The windows-native coverage flip is a standing commitment.** subprocess-local and pty-local sources are coverage-required on win32; their suites run there (with platform gates and node-translated commands) and must keep 100% coverage on the windows-native lane.
+**Windows coverage keeps master's exemption structure.** subprocess-local and pty-local sources stay coverage-exempt and their suites test-excluded on win32 exactly as on master; the Windows code paths are exercised through the win32 dev lane and the real-pwsh tool suites, and the new surface's coverage obligation on the windows-native lane sits on `tool-pwsh-persistent`.
 
 **Windows readiness is weaker than Linux.** The pseudo-pgid marker fast path covers shell prompts, but a child without a prompt settles on the silence tier (~3 s), exactly like macOS; there is no exact stdin-wait tier.
 
