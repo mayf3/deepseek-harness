@@ -1,7 +1,7 @@
 /**
- * The plugin configuration section's card list.
+ * The configurable-plugins tab's card list.
  *
- * The section dispatches its slot by settings namespace, so what it renders is
+ * The tab dispatches its slot by settings namespace, so what it renders is
  * the intersection of two ledgers: the namespaces the Host serves and the
  * cards registered into `settings.plugin.item`. A served namespace no card
  * claims renders nothing — another surface owns it, or this deployment ships
@@ -15,7 +15,7 @@ import type { StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 
 /** What the section renders. */
-export interface PluginConfigSectionState {
+export interface ConfigurablePluginsTabState {
   /**
    * Whether the Host has answered once. The empty line waits for it: an
    * unanswered read is not the same statement as "this deployment configures
@@ -34,17 +34,17 @@ export interface PluginConfigSectionState {
   namespaces: string[]
 }
 
-/** The registration-side face the section's slot entry injects. */
-export interface PluginConfigSectionFace {
+/** The registration-side face the tab's slot entry injects. */
+export interface ConfigurablePluginsTabFace {
   hooks: {
     /** Section snapshot bound by the renderer as usePluginConfigSection. */
-    pluginConfigSection: SnapshotStore<PluginConfigSectionState>
+    configurablePlugins: SnapshotStore<ConfigurablePluginsTabState>
   }
 }
 
 /** Reads the served namespaces and pairs them with the cards that claim them. */
-export class PluginConfigSectionController {
-  private readonly store = createSnapshotStore<PluginConfigSectionState>({ loaded: false, namespaces: [] })
+export class ConfigurablePluginsTabController {
+  private readonly store = createSnapshotStore<ConfigurablePluginsTabState>({ loaded: false, namespaces: [] })
   /** Last Host answer; kept so a slot mutation republishes without a wire read. */
   private served: readonly string[] = []
   private loaded = false
@@ -76,7 +76,7 @@ export class PluginConfigSectionController {
     try {
       response = await this.api.settings.describe({})
     } catch (_settingsReadFailure) {
-      // The section keeps the namespaces it last knew; the next invalidation
+      // The tab keeps the namespaces it last knew; the next invalidation
       // or reconnect reads again.
       return
     }
@@ -99,11 +99,11 @@ export class PluginConfigSectionController {
   }
 
   /**
-   * Build the face the section's slot registration injects.
-   * @returns the section's snapshot source.
+   * Build the face the tab's slot registration injects.
+   * @returns the tab's snapshot source.
    */
-  inject(): PluginConfigSectionFace {
-    return { hooks: { pluginConfigSection: this.store } }
+  inject(): ConfigurablePluginsTabFace {
+    return { hooks: { configurablePlugins: this.store } }
   }
 
   private publish(): void {

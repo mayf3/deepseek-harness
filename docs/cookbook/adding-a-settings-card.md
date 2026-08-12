@@ -69,9 +69,9 @@ export function apply(ctx: ClientContext): void {
 
 The scope snapshot carries what a form needs: the resolved `value`, the composition `base`, and the raw `user` layer, whose key **presence** — not its value — is what marks a field overridden. `scope.set(field, value)` stores one field and `scope.unset(field)` clears it back to the composition layer.
 
-## 3. What the section does with it
+## 3. What the tab does with it
 
-The section reads which namespaces the Host serves and dispatches one slot key per namespace. A card is rendered when the Host serves its key and skipped when it does not, so a deployment that never composed the Host half shows no trace of the card. A served namespace no card claims renders nothing — that is how the namespaces owned by other pages (`ui-theme`, `permission`, `llm-*`) stay off this page.
+The **Plugin configuration** tab reads which namespaces the Host serves and dispatches one slot key per namespace. A card is rendered when the Host serves its key and skipped when it does not, so a deployment that never composed the Host half shows no trace of the card. A served namespace no card claims renders nothing — that is how the namespaces owned by other pages (`ui-theme`, `permission`, `llm-*`) stay off this tab.
 
 Cards appear in the order they registered into the slot; a keyed entry declares no `order` of its own.
 

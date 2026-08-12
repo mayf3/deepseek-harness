@@ -1,14 +1,12 @@
 /**
- * Plugin configuration surface, browser half — one settings section holding
- * an expandable card per Host plugin whose configuration a user owns.
+ * Plugins settings surface, browser half — one section whose feature-owned
+ * tabs include configurable Host plugin cards and read-only inventory.
  *
- * The section owns no knowledge of any namespace's meaning: it declares the
- * `settings.plugin.item` slot, reads which namespaces the Host serves, and
- * dispatches one key per namespace, so a plugin that ships a browser half
- * contributes its own card under its own namespace and owns its controls. The
- * three cards this package registers are the host-plane sections this
- * repository ships; each binds its namespace through the client settings
- * scope, which keeps them unaware of one another.
+ * The section declares `settings.plugins.tab`; its own `configurable` tab then
+ * declares `settings.plugin.item` and renders whatever cards were registered
+ * into it. The three cards this package ships are the host-plane sections the
+ * deployment already exposes; each binds its namespace through the client
+ * settings scope, which keeps them unaware of one another and of other tabs.
  */
 
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
@@ -19,26 +17,30 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // through the service, never a value import (client bundle purity gate).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the ctx.remote Context merge and the forwarded-event key face.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { AgentLoopCard } from './AgentLoopCard.tsx'
 import { BashCard } from './BashCard.tsx'
+import { ConfigurablePluginsTab } from './ConfigurablePluginsTab.tsx'
 import { PluginConfigSection } from './PluginConfigSection.tsx'
+import type { PluginConfigSectionInjected, PluginSettingsTabRow } from './PluginConfigSection.tsx'
 import { WebSearchCard } from './WebSearchCard.tsx'
 import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-store.ts'
 import { BASH_NS, BashCardController } from './bash-store.ts'
-import { PluginConfigSectionController } from './section-store.ts'
+import { ConfigurablePluginsTabController } from './tab-store.ts'
 import { WEB_SEARCH_NS, WebSearchCardController } from './web-search-store.ts'
 import { en, zh } from './locales.ts'
 
-export type { PluginConfigSectionProps } from './PluginConfigSection.tsx'
+export type { PluginConfigSectionInjected, PluginConfigSectionProps } from './PluginConfigSection.tsx'
+export type { ConfigurablePluginsTabProps } from './ConfigurablePluginsTab.tsx'
+export type { ConfigurablePluginsTabFace, ConfigurablePluginsTabState } from './tab-store.ts'
 export type { PluginCardProps } from './PluginCard.tsx'
 export type { SettingsPluginItemOwnerProps } from './slot-contract.ts'
 export type { FieldProps } from './fields.tsx'
 export type {
   CardActions, CardFieldSpec, CardFieldState, CardSecretSpec, CardShell,
 } from './card-store.ts'
-export type { PluginConfigSectionFace, PluginConfigSectionState } from './section-store.ts'
 export type { AgentLoopCardFace, AgentLoopCardState } from './agent-loop-store.ts'
 export type { BashCardFace, BashCardState } from './bash-store.ts'
 export type { WebSearchCardFace, WebSearchCardState } from './web-search-store.ts'
@@ -61,8 +63,6 @@ export function apply(ctx: ClientContext): void {
   const bash = new BashCardController(ctx.settingsScope.bind({ namespace: BASH_NS }))
   const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
   const webSearch = new WebSearchCardController(ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }), api)
-  const section = new PluginConfigSectionController(api, () => ctx.slots.entries('settings.plugin.item'))
-  ctx.effect(() => () => { section.dispose() }, 'ui-plugin-config: section directory')
 
   // The credential a card reports is not part of any settings section, so its
   // scope publishes nothing when one is written. This is the only signal that
@@ -75,30 +75,82 @@ export function apply(ctx: ClientContext): void {
   // Which namespaces the Host serves is a registration fact the wire does not
   // announce, so the directory re-reads on the two signals that can carry a
   // changed composition: a settings document commit and a reconnect.
+  const configurable = new ConfigurablePluginsTabController(
+    api, () => ctx.slots.entries('settings.plugin.item'))
+  ctx.effect(() => () => { configurable.dispose() }, 'ui-plugin-config: tab directory')
   ctx.effect(
-    () => ctx.remote.$on('settings/document-updated', () => { void section.load() }),
+    () => ctx.remote.$on('settings/document-updated', () => { void configurable.load() }),
     'ui-plugin-config: served-namespace invalidations',
   )
   ctx.effect(
-    () => ctx.on('connection/reset', () => { void section.load() }),
+    () => ctx.on('connection/reset', () => { void configurable.load() }),
     'ui-plugin-config: served-namespace reconnect',
   )
   // A card registered after the first read joins the list without a wire call.
   ctx.effect(
-    () => ctx.slots.subscribe('settings.plugin.item', () => { section.refresh() }),
+    () => ctx.slots.subscribe('settings.plugin.item', () => { configurable.refresh() }),
     'ui-plugin-config: card ledger',
   )
-  void section.load()
+  void configurable.load()
 
+  let tabsVersion = -1
+  let tabsRevision = -1
+  let tabs: readonly PluginSettingsTabRow[] = []
+  const sectionInjected = (): PluginConfigSectionInjected => ({
+    hooks: {
+      tabs: {
+        getSnapshot: () => {
+          const version = ctx.slots.getVersion('settings.plugins.tab')
+          const revision = ctx.locale.getSnapshot().revision
+          if (version !== tabsVersion || revision !== tabsRevision) {
+            tabsVersion = version
+            tabsRevision = revision
+            tabs = ctx.slots.entries('settings.plugins.tab')
+              .map(entry => ({
+                /* v8 ignore next -- list-slot registration requires id */
+                id: entry.options.id ?? '',
+                order: entry.options.order ?? 0,
+                label: resolveSlotLabel(entry.options.label) ?? '',
+              }))
+              .sort((a, b) => a.order - b.order)
+          }
+          return tabs
+        },
+        subscribe: (listener) => {
+          const offLedger = ctx.slots.subscribe('settings.plugins.tab', listener)
+          const offLocale = ctx.locale.subscribe(listener)
+          return () => {
+            offLedger()
+            offLocale()
+          }
+        },
+      },
+    },
+  })
+
+  // This package owns the one Plugins navigation entry and the tab chrome;
+  // feature plugins contribute pages without competing for Settings nav rows.
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'plugins',
-    order: 30,
+    order: 15,
     label: () => t('nav'),
     locale: NS,
-    inject: () => section.inject(),
-    children: { 'settings.plugin.item': { kind: 'keyed', scope: 'root' } },
+    inject: sectionInjected,
+    children: { 'settings.plugins.tab': { kind: 'list', scope: 'root' } },
   }, PluginConfigSection))
+
+  // The existing configuration page is one ordinary tab. It keeps ownership
+  // of the card slot and the three shipped card contributions below.
+  ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
+    name: 'settings.plugins.tab',
+    id: 'configurable',
+    order: 0,
+    label: () => t('configurableTab'),
+    locale: NS,
+    inject: () => configurable.inject(),
+    children: { 'settings.plugin.item': { kind: 'keyed', scope: 'root' } },
+  }, ConfigurablePluginsTab))
 
   ctx.slots.inject('settings.plugin.item', function* () {
     yield ctx.slots.register({

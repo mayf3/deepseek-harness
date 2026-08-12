@@ -13,14 +13,16 @@ import { AgentLoopCard } from '../src/client/AgentLoopCard.tsx'
 import type { AgentLoopCardProps } from '../src/client/AgentLoopCard.tsx'
 import { BashCard } from '../src/client/BashCard.tsx'
 import type { BashCardProps } from '../src/client/BashCard.tsx'
+import { ConfigurablePluginsTab } from '../src/client/ConfigurablePluginsTab.tsx'
+import type { ConfigurablePluginsTabProps } from '../src/client/ConfigurablePluginsTab.tsx'
 import { PluginConfigSection } from '../src/client/PluginConfigSection.tsx'
-import type { PluginConfigSectionProps } from '../src/client/PluginConfigSection.tsx'
+import type { PluginConfigSectionProps, PluginSettingsTabRow } from '../src/client/PluginConfigSection.tsx'
 import { WebSearchCard } from '../src/client/WebSearchCard.tsx'
 import type { WebSearchCardProps } from '../src/client/WebSearchCard.tsx'
 import type { AgentLoopCardState } from '../src/client/agent-loop-store.ts'
 import type { BashCardState } from '../src/client/bash-store.ts'
 import type { CardFieldState, CardShell } from '../src/client/card-store.ts'
-import type { PluginConfigSectionState } from '../src/client/section-store.ts'
+import type { ConfigurablePluginsTabState } from '../src/client/tab-store.ts'
 import type { WebSearchCardState } from '../src/client/web-search-store.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -47,22 +49,33 @@ function cardActions() {
   return { edit: vi.fn(), resetField: vi.fn(), save: vi.fn(), discard: vi.fn() }
 }
 
+function renderSection(rows: readonly PluginSettingsTabRow[]) {
+  const props = {
+    t,
+    useTabs: (selector: (value: readonly PluginSettingsTabRow[]) => unknown) => selector(rows),
+    renderSlot: (_name: string, _owner: unknown, options: { only?: string }) => (
+      <span>{options.only}</span>
+    ),
+  } as unknown as PluginConfigSectionProps
+  render(<PluginConfigSection {...props} />)
+}
+
 /**
- * Render the section over the namespaces it was told to dispatch, with `cards`
+ * Render the tab over the namespaces it was told to dispatch, with `cards`
  * standing in for the slot ledger: a key it names renders that text, and one
  * it does not renders nothing, exactly as an unclaimed key does.
  */
-function renderSection(namespaces: string[], cards: Record<string, string> = {}, loaded = true) {
-  const store = createSnapshotStore<PluginConfigSectionState>({ loaded, namespaces })
+function renderConfigurable(namespaces: string[], cards: Record<string, string> = {}, loaded = true) {
+  const store = createSnapshotStore<ConfigurablePluginsTabState>({ loaded, namespaces })
   const props = {
     t,
-    usePluginConfigSection: bindSnapshotSelector(store),
+    useConfigurablePlugins: bindSnapshotSelector(store),
     renderSlot: (_name: string, _owner: object, opts?: { entryKey?: string }) => {
       const card = opts?.entryKey === undefined ? undefined : cards[opts.entryKey]
       return card === undefined ? null : <li>{card}</li>
     },
-  } as unknown as PluginConfigSectionProps
-  render(<PluginConfigSection {...props} />)
+  } as unknown as ConfigurablePluginsTabProps
+  render(<ConfigurablePluginsTab {...props} />)
 }
 
 function renderBash(state: Partial<BashCardState> = {}) {
@@ -79,8 +92,78 @@ function renderBash(state: Partial<BashCardState> = {}) {
 }
 
 describe('PluginConfigSection', () => {
+  it('says so when no plugin contributed a tab', () => {
+    renderSection([])
+
+    expect(screen.getByText(en.empty)).toBeTruthy()
+    expect(screen.queryByRole('tab')).toBeNull()
+  })
+
+  it('defaults to the first ordered tab and mounts another only after selection', () => {
+    renderSection([
+      { id: 'configurable', order: 0, label: en.configurableTab },
+      { id: 'all', order: 10, label: 'Plugin list' },
+    ])
+
+    const configurable = screen.getByRole('tab', { name: en.configurableTab })
+    const all = screen.getByRole('tab', { name: 'Plugin list' })
+    expect(configurable.getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByText('configurable')).toBeTruthy()
+    expect(screen.queryByText('all')).toBeNull()
+
+    fireEvent.click(all)
+    expect(all.getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByText('all')).toBeTruthy()
+    expect(screen.getByText('configurable').closest('[role="tabpanel"]')).toHaveProperty('hidden', true)
+
+    fireEvent.click(configurable)
+    expect(configurable.getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByText('all').closest('[role="tabpanel"]')).toHaveProperty('hidden', true)
+  })
+
+  it('leads with its own heading and intro', () => {
+    renderSection([{ id: 'configurable', order: 0, label: en.configurableTab }])
+
+    expect(screen.getByRole('heading', { name: en.title })).toBeTruthy()
+    expect(screen.getByText(en.intro)).toBeTruthy()
+  })
+
+  it('moves focus and selection with standard horizontal tab keys', () => {
+    renderSection([
+      { id: 'configurable', order: 0, label: en.configurableTab },
+      { id: 'all', order: 10, label: 'Plugin list' },
+      { id: 'diagnostics', order: 20, label: 'Diagnostics' },
+    ])
+
+    const configurable = screen.getByRole('tab', { name: en.configurableTab })
+    const all = screen.getByRole('tab', { name: 'Plugin list' })
+    const diagnostics = screen.getByRole('tab', { name: 'Diagnostics' })
+    expect(configurable.getAttribute('tabindex')).toBe('0')
+    expect(all.getAttribute('tabindex')).toBe('-1')
+
+    configurable.focus()
+    fireEvent.keyDown(configurable, { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(all)
+    expect(all.getAttribute('aria-selected')).toBe('true')
+
+    fireEvent.keyDown(all, { key: 'End' })
+    expect(document.activeElement).toBe(diagnostics)
+    fireEvent.keyDown(diagnostics, { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(configurable)
+    fireEvent.keyDown(configurable, { key: 'ArrowLeft' })
+    expect(document.activeElement).toBe(diagnostics)
+    fireEvent.keyDown(diagnostics, { key: 'Home' })
+    expect(document.activeElement).toBe(configurable)
+
+    fireEvent.keyDown(configurable, { key: 'Escape' })
+    expect(document.activeElement).toBe(configurable)
+    expect(configurable.getAttribute('aria-selected')).toBe('true')
+  })
+})
+
+describe('ConfigurablePluginsTab', () => {
   it('says so when no plugin contributed a card', () => {
-    renderSection([], { bash: 'shell' })
+    renderConfigurable([], { bash: 'shell' })
 
     expect(screen.getByText(en.empty)).toBeTruthy()
     expect(screen.queryByText('shell')).toBeNull()
@@ -89,24 +172,16 @@ describe('PluginConfigSection', () => {
   it('withholds the empty line until the Host has answered once', () => {
     // An unanswered read is not the statement that this deployment configures
     // no plugin; saying it anyway would flash a wrong answer on every open.
-    renderSection([], { bash: 'shell' }, false)
+    renderConfigurable([], { bash: 'shell' }, false)
 
     expect(screen.queryByText(en.empty)).toBeNull()
-    expect(screen.getByRole('heading', { name: en.title })).toBeTruthy()
   })
 
   it('dispatches one card per namespace, keyed by it', () => {
-    renderSection(['bash', 'agent-loop'], { bash: 'shell', 'agent-loop': 'loop' })
+    renderConfigurable(['bash', 'agent-loop'], { bash: 'shell', 'agent-loop': 'loop' })
 
     expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['shell', 'loop'])
     expect(screen.queryByText(en.empty)).toBeNull()
-  })
-
-  it('leads with its own heading and intro', () => {
-    renderSection(['bash'], { bash: 'shell' })
-
-    expect(screen.getByRole('heading', { name: en.title })).toBeTruthy()
-    expect(screen.getByText(en.intro)).toBeTruthy()
   })
 })
 

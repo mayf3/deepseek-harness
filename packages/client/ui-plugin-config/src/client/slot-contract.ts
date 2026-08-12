@@ -1,15 +1,15 @@
 /**
- * The `settings.plugin.item` slot type — one plugin's card inside the plugin
- * configuration section, keyed by the settings namespace the card edits.
- * Options: `key` (the namespace). A card draws its own internals; the section
- * only decides which namespaces to dispatch and stacks what comes back.
+ * The `settings.plugin.item` slot type — one plugin's card inside the
+ * configurable-plugins tab, keyed by the settings namespace the card edits.
+ * Options: `key` (the namespace). A card draws its own internals; the tab only
+ * decides which namespaces to dispatch and stacks what comes back.
  *
  * Keying on the namespace is what lets a plugin distributed outside this
  * repository contribute a card: it registers its own settings namespace on the
- * Host and its own card under that key in the browser, and the section pairs
- * the two without ever learning what the namespace means.
+ * Host and its own card under that key in the browser, and the tab pairs the
+ * two without ever learning what the namespace means.
  *
- * TYPE HOME RATIONALE: the section declares this slot at runtime, and a plugin
+ * TYPE HOME RATIONALE: the tab declares this slot at runtime, and a plugin
  * registering its own card already depends on this package for the slot's
  * declaration. The type therefore lives with its declarer.
  */

@@ -8,6 +8,9 @@ import { LocaleService } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { SettingsScopeService } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-plugin-config/client'
+import type {
+  ConfigurablePluginsTabFace, PluginConfigSectionInjected,
+} from '@deepseek-ai/dsh-client-ui-plugin-config/client'
 
 // The service reads its initial locale from the browser; these specs assert
 // the shipped Chinese copy, so they state the browser they assume.
@@ -65,17 +68,54 @@ describe('ui-plugin-config apply', () => {
     expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope'])
   })
 
-  it('registers the section and declares the per-plugin card slot', async () => {
+  it('registers one Plugins section and declares the tab and card slots', async () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
 
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     const section = slots.entries('settings.section')[0]!
-    expect(section.options).toMatchObject({ id: 'plugins', order: 30 })
+    expect(section.options).toMatchObject({ id: 'plugins', order: 15 })
     // The nav label is a locale-following thunk; owners resolve it at read time.
-    expect(resolveSlotLabel(section.options.label)).toBe('插件配置')
+    expect(resolveSlotLabel(section.options.label)).toBe('插件')
+    expect(slots.spec('settings.plugins.tab')).toMatchObject({ kind: 'list', scope: 'root' })
+    const tab = slots.entries('settings.plugins.tab')[0]!
+    expect(tab.options).toMatchObject({ id: 'configurable', order: 0 })
+    expect(resolveSlotLabel(tab.options.label)).toBe('插件配置')
     expect(slots.spec('settings.plugin.item')).toMatchObject({ kind: 'keyed', scope: 'root' })
+  })
+
+
+  it('injects a live tab projection, the card directory, and one business face per card', async () => {
+    const { ctx, slots } = await bench()
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    const section = slots.entries('settings.section')[0]!
+    const sectionFace = (section.inject as unknown as () => PluginConfigSectionInjected)()
+    const initialTabs = sectionFace.hooks.tabs.getSnapshot()
+    expect(initialTabs).toEqual([
+      { id: 'configurable', order: 0, label: '插件配置' },
+    ])
+    expect(sectionFace.hooks.tabs.getSnapshot()).toBe(initialTabs)
+
+    const listener = vi.fn()
+    const unsubscribe = sectionFace.hooks.tabs.subscribe(listener)
+    slots.register({ name: 'settings.plugins.tab', id: 'plain' } as never, () => null)
+    expect(sectionFace.hooks.tabs.getSnapshot()).toEqual([
+      { id: 'configurable', order: 0, label: '插件配置' },
+      { id: 'plain', order: 0, label: '' },
+    ])
+    unsubscribe()
+
+    const tab = slots.entries('settings.plugins.tab')[0]!
+    const tabFace = (tab.inject as unknown as () => ConfigurablePluginsTabFace)()
+    expect(Object.keys(tabFace.hooks)).toEqual(['configurablePlugins'])
+    for (const entry of slots.entries('settings.plugin.item')) {
+      const face = (entry as { inject?: () => unknown }).inject?.() as { hooks: Record<string, unknown> }
+      // Each card injects exactly one snapshot store plus its own actions.
+      expect(Object.keys(face.hooks)).toHaveLength(1)
+    }
   })
 
   it('keys each card it ships on the settings namespace that card edits', async () => {
@@ -95,30 +135,17 @@ describe('ui-plugin-config apply', () => {
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
-    const section = slots.entries('settings.section')[0]!
-    const face = (section as { inject?: () => unknown })
-      .inject?.() as { hooks: { pluginConfigSection: { getSnapshot: () => { namespaces: string[] } } } }
+    const tab = slots.entries('settings.plugins.tab')[0]!
+    const face = (tab.inject as unknown as () => ConfigurablePluginsTabFace)()
     await vi.waitFor(() => {
-      expect(face.hooks.pluginConfigSection.getSnapshot().namespaces)
+      expect(face.hooks.configurablePlugins.getSnapshot().namespaces)
         .toEqual(['agent-loop', 'web-search-deepseek'])
     })
   })
 
-  it('injects one business face per card', async () => {
-    const { ctx, slots } = await bench()
-    declareRoot(slots)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-
-    for (const entry of slots.entries('settings.plugin.item')) {
-      const face = (entry as { inject?: () => unknown }).inject?.() as { hooks: Record<string, unknown> }
-      // Each card injects exactly one snapshot store plus its own actions.
-      expect(Object.keys(face.hooks)).toHaveLength(1)
-    }
-  })
-
   it('re-reads the served namespaces when the Host commits a settings document', async () => {
     // Which namespaces the Host serves is a registration fact the wire never
-    // announces on its own, so the section rides the invalidation that can
+    // announces on its own, so the tab rides the invalidation that can
     // accompany a changed composition.
     const { ctx, slots, describeSettings } = await bench(['bash'])
     declareRoot(slots)
@@ -189,6 +216,7 @@ describe('ui-plugin-config apply', () => {
     await fiber.dispose()
 
     expect(slots.entries('settings.section')).toHaveLength(0)
+    expect(slots.spec('settings.plugins.tab')).toBeUndefined()
     expect(slots.spec('settings.plugin.item')).toBeUndefined()
   })
 })
