@@ -110,6 +110,14 @@ export class PluginConfigSectionController {
     const served = new Set(this.served)
     const namespaces = this.entries().flatMap(entry =>
       entry.options.key !== undefined && served.has(entry.options.key) ? [entry.options.key] : [])
+    const previous = this.store.getSnapshot()
+    // Every settings-document commit re-reads, and most of them change nothing
+    // this section shows. An observable source must keep its snapshot
+    // reference until the fact moves, or each unrelated save re-renders the
+    // whole card list (packages/client/AGENTS.md reactive rule 5).
+    if (previous.loaded === this.loaded
+      && previous.namespaces.length === namespaces.length
+      && previous.namespaces.every((ns, index) => ns === namespaces[index])) return
     this.store.set({ loaded: this.loaded, namespaces })
   }
 }
