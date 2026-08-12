@@ -2156,7 +2156,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/pty/tool-bash-persistent/src/index.ts:405`](../packages/pty/tool-bash-persistent/src/index.ts)
+Source: [`packages/pty/tool-bash-persistent/src/index.ts:437`](../packages/pty/tool-bash-persistent/src/index.ts)
 
 ## `@deepseek-ai/dsh-tool-cordis`
 
@@ -2306,7 +2306,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/pty/tool-pwsh-persistent/src/index.ts:436`](../packages/pty/tool-pwsh-persistent/src/index.ts)
+Source: [`packages/pty/tool-pwsh-persistent/src/index.ts:470`](../packages/pty/tool-pwsh-persistent/src/index.ts)
 
 ## `@deepseek-ai/dsh-tool-ralph`
 
