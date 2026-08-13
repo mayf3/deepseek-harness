@@ -24,7 +24,7 @@
 
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -182,7 +182,9 @@ function ensureSymlink(link: string, target: string): void {
       throw new Error(`dsh: ${link} exists and is not a symlink; remove it so dsh can manage the installation fallback`)
     }
     if (readlinkSync(link) === target) return
-    rmSync(link)
+    // unlink deletes the reparse point itself on Windows too; rmSync treats a
+    // junction as a directory and throws EISDIR unless recursive.
+    unlinkSync(link)
   }
   try {
     symlinkSync(target, link, 'junction')
@@ -209,7 +211,7 @@ function ensureSymlink(link: string, target: string): void {
  * installation" contract. The closure (not just direct dependencies) is
  * required for out-of-tree plugins: their peer dependencies name Service
  * Definition packages (`dsh-compaction`, `dsh-invariants`, ...) that the app
- * reaches only through its Service provider packages. Symlinked packages
+ * reaches only through its Service Provider packages. Symlinked packages
  * resolve their own dependencies from their real directories (Node's default
  * symlink-following), so each package needs only its one flat link.
  * Idempotent: correct links are kept and moved installations are
