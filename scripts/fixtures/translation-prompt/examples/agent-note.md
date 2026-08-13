@@ -1,4 +1,4 @@
-# Agent Note: Offline-first defaults
+# Agent Note: Consistent examples
 
 Status: implemented
 
@@ -6,12 +6,12 @@ English | [中文](agent-note.zh.md)
 
 ## Problem
 
-Online checks delayed every run.
+Similar examples used different headings.
 
 ## Decision
 
-Run offline by default; expose one opt-in flag.
+Use the same headings for similar examples.
 
 ## Consequences
 
-Runs start instantly. Telemetry stays off unless enabled.
+Examples are easier to compare.

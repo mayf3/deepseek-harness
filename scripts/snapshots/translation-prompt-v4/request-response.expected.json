@@ -24,11 +24,11 @@
       },
       {
         "role": "user",
-        "content": "# Agent Note: Offline-first defaults\n\nStatus: implemented\n\nEnglish | [中文](agent-note.zh.md)\n\n## Problem\n\nOnline checks delayed every run.\n\n## Decision\n\nRun offline by default; expose one opt-in flag.\n\n## Consequences\n\nRuns start instantly. Telemetry stays off unless enabled.\n"
+        "content": "# Agent Note: Consistent examples\n\nStatus: implemented\n\nEnglish | [中文](agent-note.zh.md)\n\n## Problem\n\nSimilar examples used different headings.\n\n## Decision\n\nUse the same headings for similar examples.\n\n## Consequences\n\nExamples are easier to compare.\n"
       },
       {
         "role": "assistant",
-        "content": "# Agent Note: 默认离线\n\nStatus: implemented\n\n[English](agent-note.md) | 中文\n\n## 问题\n\n每次运行都被在线检查拖慢。\n\n## 决策\n\n默认离线运行；提供一个选择加入的开关。\n\n## 后果\n\n运行即刻启动；遥测保持关闭，除非显式启用。\n"
+        "content": "# Agent Note: 一致的示例\n\nStatus: implemented\n\n[English](agent-note.md) | 中文\n\n## 问题\n\n相似示例使用了不同的标题。\n\n## 决策\n\n相似示例使用相同的标题。\n\n## 后果\n\n示例更易于比较。\n"
       },
       {
         "role": "user",
