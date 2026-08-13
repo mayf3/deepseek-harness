@@ -857,8 +857,11 @@ describe('coverage seams', () => {
       ...spec('unused', { graceMs: 100 }),
       argv: [process.execPath, '-e', childScript],
     })
-    const helper = await waitForPidFile(pidFile)
+    // The drain timer starts when the child's stdio closes, which can precede
+    // the pid file becoming visible; measure from before that wait so the
+    // lower bound cannot be eroded by the pid-file handoff.
     const started = Date.now()
+    const helper = await waitForPidFile(pidFile)
     const outcome = await running.done
     expect(outcome.exitCode).toBe(0)
     expect(Date.now() - started).toBeGreaterThanOrEqual(90)
