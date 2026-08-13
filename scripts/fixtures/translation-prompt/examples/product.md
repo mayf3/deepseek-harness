@@ -4,7 +4,7 @@ English | [中文](product.zh.md)
 
 Acme Agent is an open-source agent harness that automates repository chores.
 
-It runs fully offline. **No telemetry is transmitted.**
+This paragraph contains neutral placeholder text for the example.
 
 ## Install
 

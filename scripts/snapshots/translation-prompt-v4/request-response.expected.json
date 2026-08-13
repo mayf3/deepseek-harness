@@ -8,11 +8,11 @@
       },
       {
         "role": "user",
-        "content": "# Acme Agent\n\nEnglish | [中文](product.zh.md)\n\nAcme Agent is an open-source agent harness that automates repository chores.\n\nIt runs fully offline. **No telemetry is transmitted.**\n\n## Install\n\nInstall Node.js 24, then run:\n\n```sh\nnpx acme-agent setup\n```\n\nThe command prints the setup URL, which is `http://127.0.0.1:3080` by default.\n\n## Community\n\n- Report bugs in the issue tracker.\n- Add the `acme-agent` topic to your plugin repository.\n"
+        "content": "# Acme Agent\n\nEnglish | [中文](product.zh.md)\n\nAcme Agent is an open-source agent harness that automates repository chores.\n\nThis paragraph contains neutral placeholder text for the example.\n\n## Install\n\nInstall Node.js 24, then run:\n\n```sh\nnpx acme-agent setup\n```\n\nThe command prints the setup URL, which is `http://127.0.0.1:3080` by default.\n\n## Community\n\n- Report bugs in the issue tracker.\n- Add the `acme-agent` topic to your plugin repository.\n"
       },
       {
         "role": "assistant",
-        "content": "# Acme Agent\n\n[English](product.md) | 中文\n\nAcme Agent 是一款开源 agent harness（智能体框架），用于自动化仓库日常事务。\n\n它完全离线运行。**不会传输任何遥测数据。**\n\n## 安装\n\n安装 Node.js 24，然后运行：\n\n```sh\nnpx acme-agent setup\n```\n\n该命令会打印设置地址，默认地址为 `http://127.0.0.1:3080`。\n\n## 社区\n\n- 在 Issue 跟踪器中报告 bug。\n- 为你的插件仓库添加 `acme-agent` 主题。\n"
+        "content": "# Acme Agent\n\n[English](product.md) | 中文\n\nAcme Agent 是一款开源 agent harness（智能体框架），用于自动化仓库日常事务。\n\n本段包含供示例使用的中性占位文本。\n\n## 安装\n\n安装 Node.js 24，然后运行：\n\n```sh\nnpx acme-agent setup\n```\n\n该命令会打印设置地址，默认地址为 `http://127.0.0.1:3080`。\n\n## 社区\n\n- 在 Issue 跟踪器中报告 bug。\n- 为你的插件仓库添加 `acme-agent` 主题。\n"
       },
       {
         "role": "user",
