@@ -17,7 +17,7 @@ type CredentialRef = Branded<'CredentialRef'>
 
 ## 解析
 
-`resolve(ref)` 返回值，连同提供该值、由提供方定义的来源层；未配置期间返回 `undefined`。消费方在每个操作中重新解析，绝不跨操作缓存——这种按操作进行的读取正是热更新机制。
+`resolve(ref)` 返回值及提供该值的来源层（由提供方定义）；未配置期间返回 `undefined`。消费方在每个操作中重新解析，绝不跨操作缓存——这种按操作进行的读取正是热更新机制。
 
 ```ts type-equiv
 /** One resolved credential value and the source layer that supplied it. */
@@ -36,18 +36,18 @@ interface ResolvedCredential {
 ```ts type-equiv
 /** Source and writability facts for one reference, safe for configuration UIs — never the value. */
 interface CredentialInfo {
-  /** Whether {@link Credentials.resolve} would currently return a value. */
+  /** Whether {@link CredentialProvider.resolve} would currently return a value. */
   configured: boolean
   /** Source layer currently supplying the value; absent while unconfigured. */
   source?: string
-  /** Whether {@link Credentials.set} would currently succeed for this reference. */
+  /** Whether {@link CredentialProvider.set} would currently succeed for this reference. */
   writable: boolean
 }
 ```
 
-## 变更提交
+## 已提交的变更
 
-`credentials/updated (ref)` 在提供方管理的来源发生已提交变更后触发——`set`、`unset` 或在存储中观察到的外部编辑。进程环境自身的变化不可观测，永不发出事件。消费方不需要该事件（它们按操作重新解析）；它服务于配置界面刷新「已配置」徽标。
+`credentials/updated (ref)` 在提供方管理的来源发生已提交变更后发出——`set`、`unset` 或在存储中观察到的外部编辑。进程环境自身的变化不可观测，永不发出事件。消费方不需要该事件（它们按操作重新解析）；它服务于配置界面刷新「已配置」徽标。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -57,9 +57,9 @@ interface CredentialInfo {
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
-<a id="ctxcredentials--credentials-abstract-seam"></a>
+<a id="ctxcredentials--credentialprovider-abstract-seam"></a>
 
-### `ctx.credentials` — `Credentials` (abstract seam)
+### `ctx.credentials` — `CredentialProvider` (abstract seam)
 
 Abstract credential service. Providers implement the four operations over their source layers; one seam-wide rule binds them all: an empty stored value is absent everywhere — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.
 

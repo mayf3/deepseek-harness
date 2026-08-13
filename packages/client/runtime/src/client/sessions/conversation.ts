@@ -169,6 +169,17 @@ export interface TurnErrorNode {
   code?: string
 }
 
+/** Durable notice for a turn ended by the per-request output-token cap. */
+export interface TurnMaxTokensNode {
+  kind: 'turn-max-tokens'
+  /** Seq of the owning turn/end event. */
+  seq: number
+  /** Unix epoch ms from the turn/end event. */
+  time: number
+  turn: number
+  step: number
+}
+
 /** A tool result paired (when in-window) with its call head. */
 export interface ToolResultNode {
   kind: 'tool-result'
@@ -205,10 +216,10 @@ export interface CompactionSummaryNode {
   seq: number
   /** Unix epoch ms of the checkpoint event. */
   time: number
-  /** Summary text from the checkpoint's cited `compact/summary` event; null when
+  /** Summary text from the checkpoint's cited `compaction/summary` event; null when
    *  the window cut left that event outside (the marker is then not expandable). */
   summary: string | null
-  /** Seq of the loaded `compact/summary` event, or null when that event is outside the window. */
+  /** Seq of the loaded `compaction/summary` event, or null when that event is outside the window. */
   summaryEventSeq: number | null
   /** Number of surface items replaced, or null when the summary event is unavailable or malformed. */
   shadowedItemCount: number | null
@@ -274,6 +285,7 @@ export type ConversationNode =
   | ContextMessageNode
   | ModelRetryNode
   | TurnErrorNode
+  | TurnMaxTokensNode
   | ToolResultNode
   | CommandNode
   | CompactionSummaryNode

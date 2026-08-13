@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/subagent/subagent-claude-code/README.md
 README.md: b1a5c4bb4b9d1c3221c38092d8b0b967888b7746
-README.zh.md: 0b5419c3b0c57798068556891b2940e3689a7f74
+README.zh.md: b17b78f03f47b35409e211d814dce444835058bd

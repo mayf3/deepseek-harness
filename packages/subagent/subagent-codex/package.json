@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-subagent-codex",
   "description": "One-shot Codex subagent provider over the official app-server protocol",
-  "version": "0.0.1-rc.2",
+  "version": "0.0.1-rc.5",
   "publishConfig": {
     "access": "restricted"
   },
@@ -32,7 +32,7 @@
     "cordis.patch.yml",
     "lib/types/**/*.d.ts"
   ],
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

@@ -1,6 +1,9 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Math rendering" [disabled]
+  - button "Session log":
+    - text: Session log
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -45,4 +48,4 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: 1 turns · 1 steps LLM {{duration}} Input 0 tok · Output 0 tok
+- text: 1 turns · 1 steps LLM {{duration}}

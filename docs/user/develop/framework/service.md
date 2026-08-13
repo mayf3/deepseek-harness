@@ -9,7 +9,7 @@ A service is a capability one plugin exposes to other plugins. `inject` declares
 In Harness, `tools`, `llm`, and `agents` are services. Each is a named capability mounted on `ctx`:
 
 ```ts ignore-check
-ctx.tools    // ToolRegistry service
+ctx.tools    // ToolRuntime service
 ctx.llm      // LLM service
 ctx.agents   // Agent service
 ```
@@ -117,7 +117,7 @@ This prevents a plugin from calling a service that no longer exists.
   name: '@deepseek-ai/cordis-plugin-group'
   group: true
   isolate:
-    bash: true
+    shell: true
   config:
     - name: '@deepseek-ai/dsh-bash-local'
       config:
@@ -128,7 +128,7 @@ This prevents a plugin from calling a service that no longer exists.
   name: '@deepseek-ai/cordis-plugin-group'
   group: true
   isolate:
-    bash: true
+    shell: true
   config:
     - name: '@deepseek-ai/dsh-bash-local'
       config:

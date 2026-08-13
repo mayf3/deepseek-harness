@@ -22,7 +22,7 @@ ctx.emit('event-name', payload)
 
 ## 事件模式
 
-Cordis 提供多种事件模式，适用于不同的交互约定：
+Cordis 提供多种事件模式，适用于不同的交互契约：
 
 ### emit — 广播
 
@@ -40,7 +40,7 @@ ctx.on('my-plugin/ready', ({ id }) => {
 
 ### bail — 短路
 
-依次调用监听器，第一个非 `undefined` 的返回值将作为最终结果：
+监听器按顺序运行，第一个不是 `null`、`false` 或 `undefined` 的返回值会成为最终结果：
 
 ```ts ignore-check
 // Dispatch
@@ -49,13 +49,13 @@ const result = ctx.bail('some-check', input)
 // Listen: a returned value stops later listeners.
 ctx.on('some-check', (input) => {
   if (shouldBlock(input)) return 'blocked'
-  // Return undefined to continue to the next listener.
+  // Return null, false, or undefined to continue to the next listener.
 })
 ```
 
 ### serial — 顺序执行
 
-监听器按注册顺序依次执行，并等待异步结果；第一个返回非空值的监听器会终止后续执行：
+监听器按注册顺序依次执行，并等待异步结果；第一个不是 `null`、`false` 或 `undefined` 的返回值会终止后续执行：
 
 ```ts ignore-check
 await ctx.serial('setup-phase', context)
@@ -103,7 +103,7 @@ declare module '@deepseek-ai/cordis' {
 
 Harness 的 Cordis 事件遵循 `namespace/action` 命名，例如 `agent/step`、`agent/request`、`agent/request-error`、`tools/result` 和 `session/event`。完整签名与触发模式见[子系统页面](../../../subsystems/core.md)上生成的 `cordis-surface` 区块。
 
-`turn/*`、`step/*`、`tool/call`、`tool/result` 和 `compact/*` 是持久化的会话事件类型，不是同名 Cordis 事件。需要观察它们时，监听 `session/event` 并检查 `event.type`。
+`turn/*`、`step/*`、`tool/call`、`tool/result` 和 `compaction/*` 是持久化的会话事件类型，不是同名 Cordis 事件。需要观察它们时，监听 `session/event` 并检查 `event.type`。
 
 ## 事件监听器也是效果
 

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-session-telemetry",
-  "description": "Telemetry seam for the DeepSeek Harness: session-event capture, projection, redaction, and handoff to a reporting backend",
-  "version": "0.0.1-rc.2",
+  "description": "SessionTelemetryBackend seam for the DeepSeek Harness: session-event capture, projection, redaction, and handoff to a reporting backend",
+  "version": "0.0.1-rc.5",
   "publishConfig": {
     "access": "restricted"
   },
@@ -30,7 +30,7 @@
     "lib/invariant.js",
     "lib/types/**/*.d.ts"
   ],
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",

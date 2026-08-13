@@ -14,6 +14,7 @@ import { messageDefinition } from '../src/client/conversation-nodes/message.ts'
 import { retryDefinition } from '../src/client/conversation-nodes/retry.ts'
 import { toolDefinition } from '../src/client/conversation-nodes/tool.ts'
 import { turnErrorDefinition } from '../src/client/conversation-nodes/turn-error.ts'
+import { turnMaxTokensDefinition } from '../src/client/conversation-nodes/turn-max-tokens.ts'
 import { turnTailDefinition } from '../src/client/conversation-nodes/turn-tail.ts'
 import type {
   AssistantChatData, ManualCompactionChatData, RetryChatData, ToolChatData, TurnTailChatData,
@@ -29,6 +30,7 @@ const DEFINITIONS: readonly ConversationNodeDefinition[] = [
   compactionDefinition,
   retryDefinition,
   turnErrorDefinition,
+  turnMaxTokensDefinition,
   turnTailDefinition,
 ]
 
@@ -586,12 +588,12 @@ describe('built-in conversation node Definitions', () => {
         name: 'compact',
         source: { kind: 'user' },
       }),
-      at(11, 'compact/start', {
+      at(11, 'compaction/start', {
         compactionId: 'manual-1',
         sourceCommandId: 'command-1',
         turn: null,
       }),
-      at(12, 'compact/summary', {
+      at(12, 'compaction/summary', {
         compactionId: 'manual-1',
         sourceCommandId: 'command-1',
         summary: [{ type: 'text', text: 'manual summary' }],
@@ -607,7 +609,7 @@ describe('built-in conversation node Definitions', () => {
           sourceCommandId: 'command-1',
         },
       }, { surfaceOp: { op: 'replace', start: 1, end: 2 } }),
-      at(14, 'compact/end', {
+      at(14, 'compaction/end', {
         compactionId: 'manual-1',
         sourceCommandId: 'command-1',
         turn: null,
@@ -617,8 +619,8 @@ describe('built-in conversation node Definitions', () => {
         kind: 'success',
         sourceEventSeq: 12,
       }),
-      at(20, 'compact/start', { compactionId: 'automatic-1', turn: null }),
-      at(21, 'compact/summary', {
+      at(20, 'compaction/start', { compactionId: 'automatic-1', turn: null }),
+      at(21, 'compaction/summary', {
         compactionId: 'automatic-1',
         summary: [{ type: 'text', text: 'automatic summary' }],
         shadowedSeqs: [3, 4],
@@ -628,7 +630,7 @@ describe('built-in conversation node Definitions', () => {
         ...textMessage('automatic-checkpoint', 'checkpoint'),
         source: { kind: 'plugin', plugin: 'compact', compactionId: 'automatic-1' },
       }, { surfaceOp: { op: 'replace', start: 3, end: 4 } }),
-      at(23, 'compact/end', { compactionId: 'automatic-1', turn: null }),
+      at(23, 'compaction/end', { compactionId: 'automatic-1', turn: null }),
     ])
 
     const manual = node(snapshot(compactions), 'manual-compaction')
@@ -652,8 +654,8 @@ describe('built-in conversation node Definitions', () => {
     expect(before?.data).toMatchObject({ summary: null, summaryEventSeq: null })
 
     value.prepend([
-      at(9, 'compact/start', { compactionId: 'compact-1', turn: null }),
-      at(10, 'compact/summary', {
+      at(9, 'compaction/start', { compactionId: 'compact-1', turn: null }),
+      at(10, 'compaction/summary', {
         compactionId: 'compact-1',
         summary: [
           { type: 'text', text: 'older ' },
@@ -678,7 +680,7 @@ describe('built-in conversation node Definitions', () => {
 
   it('renders a historical compaction when its start remains outside the loaded window', () => {
     const value = assembler([
-      at(10, 'compact/summary', {
+      at(10, 'compaction/summary', {
         compactionId: 'compact-windowed',
         summary: [{ type: 'text', text: 'loaded summary' }],
         shadowedSeqs: [1, 2, 3],
@@ -700,10 +702,10 @@ describe('built-in conversation node Definitions', () => {
 
   it('ignores legacy compaction transactions without correlation ids', () => {
     const value = assembler([
-      at(10, 'compact/start', { turn: null }),
-      at(11, 'compact/end', { turn: null, error: 'This operation was aborted' }),
-      at(20, 'compact/start', { turn: null }),
-      at(21, 'compact/summary', {
+      at(10, 'compaction/start', { turn: null }),
+      at(11, 'compaction/end', { turn: null, error: 'This operation was aborted' }),
+      at(20, 'compaction/start', { turn: null }),
+      at(21, 'compaction/summary', {
         summary: [{ type: 'text', text: 'legacy summary' }],
         shadowedSeqs: [1, 2, 3],
         shadowedTokenCount: 42,
@@ -712,7 +714,7 @@ describe('built-in conversation node Definitions', () => {
         ...textMessage('legacy-checkpoint', 'checkpoint'),
         source: { kind: 'plugin', plugin: 'compact' },
       }, { surfaceOp: { op: 'replace', start: 1, end: 3 } }),
-      at(23, 'compact/end', { turn: null }),
+      at(23, 'compaction/end', { turn: null }),
     ], true)
 
     expect(node(snapshot(value), 'compaction')).toBeUndefined()
@@ -812,6 +814,75 @@ describe('built-in conversation node Definitions', () => {
     expect(node(snapshot(value), 'turn-error')).toBeUndefined()
   })
 
+  it('materializes a max-tokens notice and keeps completed and error turns clean', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'assistant/message', {
+        turn: 1, step: 1, message: assistantMessage('a1', 'truncated answer'),
+      }, { surfaceOp: 'append' }),
+      at(4, 'step/end', { turn: 1, step: 1 }),
+      at(5, 'turn/end', { turn: 1, reason: { kind: 'max-tokens' } }),
+    ])
+    const notice = node(snapshot(value), 'turn-max-tokens')
+    expect(notice?.data).toMatchObject({ kind: 'turn-max-tokens', seq: 5, turn: 1, step: 1 })
+    expect(node(snapshot(value), 'turn-error')).toBeUndefined()
+    // The tail stays the turn's last node so its branch action survives; the
+    // notice slots between the truncated closing Assistant and the tail.
+    const tail = node(snapshot(value), 'turn-tail')
+    expect(notice?.anchorSeq).toBeLessThan(tail?.anchorSeq ?? Number.NEGATIVE_INFINITY)
+    expect(notice?.anchorSeq).toBeGreaterThan(3)
+
+    const completed = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ])
+    expect(node(snapshot(completed), 'turn-max-tokens')).toBeUndefined()
+
+    const failed = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'turn/end', {
+        turn: 1,
+        reason: { kind: 'error', error: { code: 'TRANSPORT', message: 'failed' } },
+      }),
+    ])
+    expect(node(snapshot(failed), 'turn-max-tokens')).toBeUndefined()
+    expect(node(snapshot(failed), 'turn-error')).toBeDefined()
+  })
+
+  it('keeps the max-tokens notice when the window starts after the owning turn/start', () => {
+    const value = assembler([
+      at(9, 'turn/end', { turn: 3, reason: { kind: 'max-tokens' } }),
+    ], true)
+    const notice = node(snapshot(value), 'turn-max-tokens')
+    expect(notice?.data).toMatchObject({ kind: 'turn-max-tokens', seq: 9, turn: 3 })
+  })
+
+  it('pins the max-tokens Definition edges the engine cannot reach', () => {
+    // The engine only hands start the single matched turn/end and never emits
+    // update Matches for this kind; these direct calls pin the declared
+    // behavior of both required Definition members anyway.
+    const match = (seq: number, type: string, data: unknown) => ({
+      event: { seq, time: seq * 1_000, type, data },
+      view: undefined,
+      role: 'start',
+      location: undefined,
+    }) as unknown as Parameters<typeof turnMaxTokensDefinition.start>[1]
+    const context = (state: unknown, matches: unknown[] = []) => ({
+      key: 'k', kind: 'turn-max-tokens', id: '1', matches, start: undefined, state, current: new Map(),
+    }) as unknown as Parameters<NonNullable<typeof turnMaxTokensDefinition.buildViewNode>>[0]
+    const reader = { previous: () => undefined }
+
+    expect(() => turnMaxTokensDefinition.start(context(undefined), match(1, 'turn/start', { turn: 1 }), reader))
+      .toThrow('turn-max-tokens start requires a max-tokens turn/end')
+    const state = { turn: 1, seq: 5, time: 5_000 }
+    expect(turnMaxTokensDefinition.update(
+      context(state) as Parameters<typeof turnMaxTokensDefinition.update>[0],
+      match(6, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    )).toBe(state)
+    expect(turnMaxTokensDefinition.buildViewNode?.(context(undefined))).toBeNull()
+  })
+
   it('preserves nested Tools and manual compaction evidence when their start events are outside the window', () => {
     const value = assembler([
       at(12, 'tool/code-dispatch-start', {
@@ -826,7 +897,7 @@ describe('built-in conversation node Definitions', () => {
         step: 1,
         message: toolResult('root', 'root result'),
       }, { surfaceOp: 'append' }),
-      at(20, 'compact/summary', {
+      at(20, 'compaction/summary', {
         compactionId: 'manual-1',
         sourceCommandId: 'command-1',
         summary: [{ type: 'text', text: 'manual summary' }],

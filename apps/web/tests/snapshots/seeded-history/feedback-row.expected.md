@@ -1,6 +1,9 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Use the read tool twice" [disabled]
+  - button "Session log":
+    - text: Session log
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -42,10 +45,10 @@
   - text: Context injection AGENTS.md
 - img
 - text: permission preset read-only
-- 'button "feedback Feedback recorded for session {{seededId}} User: {{uuid}}. Session sharing is not configured." [expanded]':
+- 'button "feedback Feedback recorded for session {{seededId}} Anonymous user: {{uuid}}. Session sharing is not configured." [expanded]':
   - img
-  - text: "feedback Feedback recorded for session {{seededId}} User: {{uuid}}. Session sharing is not configured."
-- text: "Feedback recorded for session {{seededId}} User: {{uuid}}. Session sharing is not configured."
+  - text: "feedback Feedback recorded for session {{seededId}} Anonymous user: {{uuid}}. Session sharing is not configured."
+- text: "Feedback recorded for session {{seededId}} Anonymous user: {{uuid}}. Session sharing is not configured."
 - textbox "Message the agent"
 - button "Commands":
   - img

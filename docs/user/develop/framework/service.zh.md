@@ -9,7 +9,7 @@
 在 Harness 中，`tools`、`llm`、`agents` 都是服务。服务是挂载在 `ctx` 上的命名能力：
 
 ```ts ignore-check
-ctx.tools    // ToolRegistry service
+ctx.tools    // ToolRuntime service
 ctx.llm      // LLM service
 ctx.agents   // Agent service
 ```
@@ -108,6 +108,8 @@ export function apply(ctx: Context) {
 
 这可以防止插件调用已不存在的服务。
 
+<a id="service-isolation"></a>
+
 ## 服务隔离
 
 `cordis.yml` 支持服务隔离——同一个服务可以有多个实例，不同插件组看到不同实例：
@@ -117,7 +119,7 @@ export function apply(ctx: Context) {
   name: '@deepseek-ai/cordis-plugin-group'
   group: true
   isolate:
-    bash: true
+    shell: true
   config:
     - name: '@deepseek-ai/dsh-bash-local'
       config:
@@ -128,7 +130,7 @@ export function apply(ctx: Context) {
   name: '@deepseek-ai/cordis-plugin-group'
   group: true
   isolate:
-    bash: true
+    shell: true
   config:
     - name: '@deepseek-ai/dsh-bash-local'
       config:
@@ -140,7 +142,7 @@ export function apply(ctx: Context) {
 
 ## Harness 内置服务
 
-服务名、公开方法和源码位置由仓库自动生成到各服务的[子系统页面](../../../subsystems/core.md)。开发插件时应以这些生成区块和服务接口的 TypeScript 类型为准，不要复制一份静态清单。
+服务名、公开方法和源码位置由仓库自动生成到各服务的[子系统页面](../../../subsystems/core.md)。开发插件时应以这些生成区块和服务的 TypeScript 接口为准，不要维护另一份静态清单。
 
 ## 下一步
 

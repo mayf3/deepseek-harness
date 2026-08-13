@@ -246,6 +246,7 @@ function ciSharedStaticGates(): Gate[] {
   return [
     pnpmScript('runtime-closure', 'verify-runtime-closure', { label: 'runtime closure' }),
     pnpmScript('constraints', 'constraints'),
+    pnpmScript('dsh-package-licenses', 'verify-dsh-package-licenses', { label: 'DSH package licenses' }),
     pnpmScript('package-invariants', 'verify-package-invariants', { label: 'package invariants' }),
     pnpmScript('cordis-config', 'verify-cordis-config', { label: 'Cordis config' }),
     pnpmScript('issue-management', 'test:issue-management', { label: 'Issue management policy' }),
@@ -307,7 +308,7 @@ function nodeCompatSmokeGates(options: { cliSmoke?: boolean } = {}): Gate[] {
     pnpmExec('source-worker-smoke', [
       'vitest',
       'run',
-      'packages/workflow/workflow-workerthread/tests/source-worker.compat.spec.ts',
+      'packages/workflow/workflow-worker-thread/tests/source-worker.compat.spec.ts',
     ], { label: 'source worker smoke' }),
     pnpmExec('jsonl-zstd-smoke', [
       'vitest',
@@ -455,7 +456,7 @@ function ciWindowsObservationalGates(): Gate[] {
 }
 
 function typertContractsGate(): Gate {
-  return pnpmScript('typert-contracts', 'build:lib:host', { label: 'TypeRT contracts' })
+  return pnpmScript('typert-contracts', 'build:lib:host', { label: 'Typert contracts' })
 }
 
 function lintGate(options: { needs?: string[] } = {}): Gate {
@@ -557,6 +558,7 @@ function hygieneLeafGates(options: { artifactNeeds?: string[] } = {}): Gate[] {
     pnpmScript('knip', 'knip'),
     pnpmScript('publint', 'publint', artifactOptions),
     pnpmScript('constraints', 'constraints'),
+    pnpmScript('dsh-package-licenses', 'verify-dsh-package-licenses', { label: 'DSH package licenses' }),
     pnpmScript('package-invariants', 'verify-package-invariants', { label: 'package invariants' }),
     builtPackageInvariantsGate(options.artifactNeeds),
     pnpmScript('node-next-types', 'verify-node-next-types', {
@@ -581,6 +583,7 @@ function docSyncLeafGates(options: {
       ? []
       : [pnpmScript('doc-typecheck', options.docTypecheckScript ?? 'doc-typecheck', docTypecheckOptions)],
     pnpmScript('cordis-catalog', 'verify-cordis-catalog', { label: 'cordis catalog' }),
+    pnpmScript('client-catalog', 'verify-client-catalog', { label: 'client catalog' }),
     pnpmScript('export-jsdoc', 'verify-export-jsdoc', { label: 'export jsdoc' }),
     pnpmScript('tool-catalog', 'verify-tool-catalog', { label: 'tool catalog' }),
     pnpmScript('config-catalog', 'verify-config-catalog', { label: 'config catalog' }),
@@ -603,8 +606,8 @@ function docSyncLeafGates(options: {
     pnpmScript('translation-prompt', 'verify-translation-prompt', { label: 'translation prompt' }),
     pnpmScript('translation-pairing', 'verify-translation-pairing', { label: 'translation pairing' }),
     pnpmScript('doc-budgets', 'verify-doc-budgets', { label: 'doc budgets' }),
-    pnpmExec('docs-site-projection', ['vitest', 'run', 'scripts/project-doc-site.spec.ts'], {
-      label: 'documentation projection',
+    pnpmExec('docs-site-projection', ['vitest', 'run', 'scripts/project-doc-site.spec.ts', 'scripts/verify-doc-site-fragments.spec.ts'], {
+      label: 'documentation site checks',
     }),
     // Keep the VitePress build itself in one gate because projection rewrites website/.generated.
     pnpmScript('docs-site-build', options.docsBuildScript ?? 'docs:build', { label: 'documentation build' }),
@@ -629,9 +632,9 @@ function builtBinSmokeGate(needs: string[] = ['build']): Gate {
     // Built execution consumers: the only automated proof that package-name
     // imports reach their lib/ entrypoints under plain Node. The e2e lane runs
     // unbuilt, so these files self-skip there.
-    'packages/workflow/workflow-workerthread/tests/built-worker.e2e.ts',
-    'packages/code-runtime/code-runtime-worker/tests/built-lib.e2e.ts',
-    'packages/lsp/lsp-local/tests/built-lib.e2e.ts',
+    'packages/workflow/workflow-worker-thread/tests/built-worker.e2e.ts',
+    'packages/code-runtime/code-runtime-worker-thread/tests/built-lib.e2e.ts',
+    'packages/lsp/lsp-stdio/tests/built-lib.e2e.ts',
   ], {
     label: 'built-bin smoke',
     needs,
