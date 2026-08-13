@@ -818,7 +818,7 @@ describe('dsh-tool-subagent background mode', () => {
       agent: parent,
     })
 
-    expect(text(started)).toBe('started background subagent task subagent-1')
+    expect(text(started)).toBe('started background subagent job subagent-1')
     expect(prepareCalls).toBe(0)
   })
 
@@ -830,7 +830,7 @@ describe('dsh-tool-subagent background mode', () => {
     expect(start.isError).toBe(false)
     if (start.isError) throw new Error('expected background subagent success')
     expect(start.value).toEqual({ kind: 'background', jobId: 'subagent-1' })
-    expect(text(start)).toBe('started background subagent task subagent-1')
+    expect(text(start)).toBe('started background subagent job subagent-1')
 
     const collected = await ctx.tools.execute({
       signal: testToolSignal,
@@ -891,7 +891,7 @@ describe('dsh-tool-subagent background mode', () => {
       arguments: { description: 'broken', prompt: 'p', run_in_background: true },
       agent: parent,
     })
-    expect(text(started)).toBe('started background subagent task subagent-1')
+    expect(text(started)).toBe('started background subagent job subagent-1')
     const output = await ctx.tools.execute({
       signal: testToolSignal,
       callId: CallId('broken-output'),
@@ -1012,8 +1012,8 @@ describe('dsh-tool-subagent background mode', () => {
 
     const startOne = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('h1'), name: 'subagent_hang', arguments: { description: 'one', prompt: 'p', run_in_background: true }, agent: parent })
     const startTwo = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('h2'), name: 'subagent_hang', arguments: { description: 'two', prompt: 'p', run_in_background: true }, agent: parent })
-    expect(text(startOne)).toBe('started background subagent task subagent-1')
-    expect(text(startTwo)).toBe('started background subagent task subagent-2')
+    expect(text(startOne)).toBe('started background subagent job subagent-1')
+    expect(text(startTwo)).toBe('started background subagent job subagent-2')
 
     const withReason = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('k1'), name: 'job_kill', arguments: { job_id: 'subagent-1', reason: 'superseded' }, agent: parent })
     const withoutReason = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('k2'), name: 'job_kill', arguments: { job_id: 'subagent-2' }, agent: parent })

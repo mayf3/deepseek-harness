@@ -359,7 +359,7 @@ export function apply(ctx: Context, config: Config): void {
         render: (_args, value) => [{
           type: 'text',
           text: value.kind === 'background'
-            ? `started background subagent task ${value.jobId}`
+            ? `started background subagent job ${value.jobId}`
             : value.kind === 'continuable'
               ? `started subagent ${value.subagentId}`
               : outputValueText(value.output),
