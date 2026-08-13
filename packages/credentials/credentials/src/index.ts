@@ -24,10 +24,23 @@ const KEY_SEGMENT_PATTERN = /^[a-z][a-z0-9-]*$/
  * @returns the branded reference.
  */
 export function credentialRef(value: string): CredentialRef {
-  if (!REF_PATTERN.test(value)) {
+  if (!isCredentialRefName(value)) {
     throw new TypeError(`credential ref "${value}" must match ${String(REF_PATTERN)}`)
   }
   return value as CredentialRef
+}
+
+/**
+ * Whether a raw string could name a reference at all. Consumers that receive
+ * environment-variable names from somewhere else — a provider library's own
+ * ambient discovery, a hook payload — ask this before resolving, because a name
+ * outside the grammar has no reference to miss and should read as "not set"
+ * rather than as a thrown error.
+ * @param value - candidate reference.
+ * @returns true when {@link credentialRef} would accept it.
+ */
+export function isCredentialRefName(value: string): boolean {
+  return REF_PATTERN.test(value)
 }
 
 /**
@@ -73,6 +86,16 @@ export function credentialKeyScope(key: CredentialKey): string {
   // The brand's only constructors both validate two segments, so the split
   // cannot come back short here.
   return key.slice(0, key.indexOf('/'))
+}
+
+/**
+ * The owning plugin's own addressing unit for one key — the half that plugin
+ * chose, such as a provider route.
+ * @param key - the key to read.
+ * @returns the id segment.
+ */
+export function credentialKeyId(key: CredentialKey): string {
+  return key.slice(key.indexOf('/') + 1)
 }
 
 /** One resolved credential value and the source layer that supplied it. */

@@ -254,6 +254,29 @@ describe('AuthorizationService.begin', () => {
     await expect(attempt).resolves.toEqual({ status: 'cancelled' })
   })
 
+  it('settles a withdrawn attempt even when its flow never reacts to the signal', async () => {
+    const ctx = await harness()
+    const orphan = Promise.withResolvers<undefined>()
+    const started = Promise.withResolvers<undefined>()
+    ctx.authorization.registerFlow(committingFlow(ctx, KEY, () => {
+      started.resolve(undefined)
+      return orphan.promise
+    }))
+
+    const attempt = ctx.authorization.begin({ key: KEY, interaction: surface() })
+    await started.promise
+    ctx.authorization.cancel(KEY)
+
+    await expect(attempt).resolves.toEqual({ status: 'cancelled' })
+    // The key is free again immediately, rather than at the mercy of a flow
+    // that may never settle.
+    expect(ctx.authorization.describe(KEY)?.inFlight).toBe(false)
+    // The orphan's own failure is nobody's to await, and must not surface as an
+    // unhandled rejection.
+    orphan.reject(new Error('gave up long after the human left'))
+    await expect(orphan.promise).rejects.toThrow('gave up long after the human left')
+  })
+
   it('propagates a flow failure to its caller and settles the key as failed', async () => {
     const ctx = await harness()
     ctx.authorization.registerFlow(committingFlow(ctx, KEY, () =>

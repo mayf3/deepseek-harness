@@ -208,7 +208,7 @@ abstract modifyRecord( key: CredentialKey, mutate: (current: CredentialRecord | 
 abstract deleteRecord(key: CredentialKey): Promise<void>
 ```
 
-Source: [`packages/credentials/credentials/src/index.ts:141`](../../packages/credentials/credentials/src/index.ts)
+Source: [`packages/credentials/credentials/src/index.ts:164`](../../packages/credentials/credentials/src/index.ts)
 
 <a id="authorization-events"></a>
 

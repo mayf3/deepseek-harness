@@ -297,13 +297,30 @@ export class AuthorizationService extends Service {
     signal: AbortSignal,
     interaction: AuthorizationInteraction,
   ): Promise<AuthorizationOutcome> {
+    // Withdrawal settles the attempt whether or not the flow reacts to it. A
+    // flow is supposed to stop when its signal fires, but one that does not
+    // would otherwise hold the key for the life of the process, and a wedged
+    // key is indistinguishable from a busy one from the outside. The orphaned
+    // run is left to finish on its own; nothing waits on it, and a record it
+    // still manages to commit is a record the human did authorize.
+    const withdrawn = new Promise<'withdrawn'>((resolve) => {
+      // `begin()` returns before claiming the key when its caller has already
+      // withdrawn, so this signal cannot already be aborted here.
+      signal.addEventListener('abort', () => { resolve('withdrawn') }, { once: true })
+    })
+    const running = flow.run({
+      method,
+      signal,
+      notify: (notice) => { interaction.notify(notice) },
+      prompt: prompt => interaction.prompt(prompt),
+    })
     try {
-      await flow.run({
-        method,
-        signal,
-        notify: (notice) => { interaction.notify(notice) },
-        prompt: prompt => interaction.prompt(prompt),
-      })
+      if (await Promise.race([running.then(() => 'ran' as const), withdrawn]) === 'withdrawn') {
+        // Nothing awaits the orphan any more, so its eventual failure has to be
+        // marked handled or it would take down the process.
+        void running.catch(() => { this.ctx.logger.debug('authorization: withdrawn flow failed after the fact') })
+        return { status: 'cancelled' }
+      }
     } catch (error) {
       // A withdrawn attempt is an outcome, not a failure: the human said no, or
       // closed the page. Anything else is the flow failing and belongs to the
