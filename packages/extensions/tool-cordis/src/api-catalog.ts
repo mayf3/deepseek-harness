@@ -458,6 +458,44 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'authorization',
+    summary: '`ctx.authorization`: a registry of credential-obtaining flows, one attempt at a time per key.',
+    description: '`ctx.authorization`: a registry of credential-obtaining flows, one attempt at a time per key.',
+    methods: [
+      {
+        signature: 'registerFlow(flow: AuthorizationFlow): () => void',
+        description: 'Offer a way to obtain one credential. One flow per key: two plugins claiming the same key would each write a record in their own format, and whichever ran last would leave the other reading a payload it cannot parse.',
+        parameters: [{ name: 'flow', description: 'the key it writes, its label, its methods, and its runner.' }],
+        returns: 'Disposer that withdraws this flow.',
+        throws: ['{AuthorizationError} code `DUPLICATE_FLOW` when the key is already claimed.'],
+      },
+      {
+        signature: 'list(): readonly AuthorizationEntry[]',
+        description: 'Every registered flow, for a surface listing what can be authorized.',
+        parameters: [],
+        returns: 'one entry per flow, in registration order.',
+      },
+      {
+        signature: 'describe(key: CredentialKey): AuthorizationEntry | undefined',
+        description: 'One registered flow.',
+        parameters: [{ name: 'key', description: 'the credential record to ask about.' }],
+        returns: 'the entry, or undefined when no flow claims that key.',
+      },
+      {
+        signature: 'cancel(key: CredentialKey): void',
+        description: 'Withdraw the attempt running for a key, if any. Separate from the request\'s own signal because a request/response transport answers a Cancel button on a second call, with no handle on the first one\'s signal.',
+        parameters: [{ name: 'key', description: 'the credential record whose attempt should stop.' }],
+      },
+      {
+        signature: 'async begin(request: AuthorizationRequest): Promise<AuthorizationOutcome>',
+        description: 'Run one attempt to authorize a key, and report how it ended.\n\nOne attempt per key at a time. A second caller is refused rather than joined: the two would be prompting different humans through the same flow, and the second would answer questions the first was asked.',
+        parameters: [{ name: 'request', description: 'the key, the method, the surface, and the cancel signal.' }],
+        returns: '`authorized` once the flow\'s record is committed and observed, or `cancelled` when the human or the caller withdrew.',
+        throws: ['{AuthorizationError} code `NO_FLOW` when nothing claims the key, `UNKNOWN_METHOD` when the named method is not one the flow offers, `ALREADY_IN_FLIGHT` when an attempt is already running for the key, or `NOT_COMMITTED` when the flow resolved without leaving a record behind.'],
+      },
+    ],
+  },
+  {
     key: 'clientModules',
     summary: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index injection rows.',
     description: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index injection rows. Construction runs the activation scan synchronously — a malformed declaration or missing bundle among the already-loaded entries aggregates into one loud throw (FAILED fiber; the boot activation audit reports it).',
@@ -2447,6 +2485,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'req', description: 'the pending decision (agent, tool identity, reason, signal).' }],
   },
   {
+    name: 'authorization/settled',
+    mode: 'emit',
+    signature: '\'authorization/settled\'(key: CredentialKey, settlement: AuthorizationSettlement): void',
+    summary: 'One authorization attempt has finished and released its key.',
+    description: 'One authorization attempt has finished and released its key. Fires for every terminal outcome, failures included, so a surface watching a key it did not start (a second browser tab) learns the attempt is over.',
+    parameters: [{ name: 'key', description: 'the credential record the finished attempt was authorizing.' }, { name: 'settlement', description: 'how it ended, including the `failed` case its caller sees as a thrown error.' }],
+  },
+  {
     name: 'commands/change',
     mode: 'emit',
     signature: '\'commands/change\'(): void',
@@ -2901,6 +2947,54 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AttachmentId',
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
+  },
+  {
+    name: 'AuthorizationEntry',
+    declaration: 'export interface AuthorizationEntry {\n    key: CredentialKey;\n    label: string;\n    methods: readonly AuthorizationMethod[];\n    inFlight: boolean;\n}',
+  },
+  {
+    name: 'AuthorizationFlow',
+    declaration: 'export interface AuthorizationFlow {\n    readonly key: CredentialKey;\n    readonly label: string;\n    readonly methods: readonly [\n        AuthorizationMethod,\n        ...AuthorizationMethod[]\n    ];\n    run(session: AuthorizationSession): Promise<void>;\n}',
+  },
+  {
+    name: 'AuthorizationInteraction',
+    declaration: 'export interface AuthorizationInteraction {\n    notify(notice: AuthorizationNotice): void;\n    prompt(prompt: AuthorizationPrompt): Promise<string>;\n}',
+  },
+  {
+    name: 'AuthorizationMethod',
+    declaration: 'export interface AuthorizationMethod {\n    id: string;\n    label: string;\n}',
+  },
+  {
+    name: 'AuthorizationNotice',
+    declaration: 'export interface AuthorizationNotice {\n    message: string;\n    url?: string;\n    code?: string;\n}',
+  },
+  {
+    name: 'AuthorizationOutcome',
+    declaration: 'export interface AuthorizationOutcome {\n    status: AuthorizationStatus;\n}',
+  },
+  {
+    name: 'AuthorizationPrompt',
+    declaration: 'export type AuthorizationPrompt = {\n    signal?: AbortSignal;\n} & ({\n    kind: \'text\';\n    message: string;\n    placeholder?: string;\n} | {\n    kind: \'secret\';\n    message: string;\n    placeholder?: string;\n} | {\n    kind: \'select\';\n    message: string;\n    options: readonly AuthorizationPromptOption[];\n});',
+  },
+  {
+    name: 'AuthorizationPromptOption',
+    declaration: 'export interface AuthorizationPromptOption {\n    id: string;\n    label: string;\n    description?: string;\n}',
+  },
+  {
+    name: 'AuthorizationRequest',
+    declaration: 'export interface AuthorizationRequest {\n    key: CredentialKey;\n    method?: string;\n    interaction: AuthorizationInteraction;\n    signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'AuthorizationSession',
+    declaration: 'export interface AuthorizationSession {\n    readonly method: string;\n    readonly signal: AbortSignal;\n    notify(notice: AuthorizationNotice): void;\n    prompt(prompt: AuthorizationPrompt): Promise<string>;\n}',
+  },
+  {
+    name: 'AuthorizationSettlement',
+    declaration: 'export type AuthorizationSettlement = AuthorizationStatus | \'failed\';',
+  },
+  {
+    name: 'AuthorizationStatus',
+    declaration: 'export type AuthorizationStatus = \'authorized\' | \'cancelled\';',
   },
   {
     name: 'BackendRegistry',

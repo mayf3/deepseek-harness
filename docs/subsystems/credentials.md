@@ -57,6 +57,65 @@ interface CredentialInfo {
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxauthorization--authorizationservice"></a>
+
+### `ctx.authorization` — `AuthorizationService`
+
+`ctx.authorization`: a registry of credential-obtaining flows, one attempt at a time per key.
+
+```ts cordis-catalog
+/**
+ * Offer a way to obtain one credential. One flow per key: two plugins
+ * claiming the same key would each write a record in their own format, and
+ * whichever ran last would leave the other reading a payload it cannot parse.
+ *
+ * @param flow - the key it writes, its label, its methods, and its runner.
+ * @returns Disposer that withdraws this flow.
+ * @throws {AuthorizationError} code `DUPLICATE_FLOW` when the key is already claimed.
+ */
+registerFlow(flow: AuthorizationFlow): () => void
+
+/**
+ * Every registered flow, for a surface listing what can be authorized.
+ * @returns one entry per flow, in registration order.
+ */
+list(): readonly AuthorizationEntry[]
+
+/**
+ * One registered flow.
+ * @param key - the credential record to ask about.
+ * @returns the entry, or undefined when no flow claims that key.
+ */
+describe(key: CredentialKey): AuthorizationEntry | undefined
+
+/**
+ * Withdraw the attempt running for a key, if any. Separate from the
+ * request's own signal because a request/response transport answers a Cancel
+ * button on a second call, with no handle on the first one's signal.
+ * @param key - the credential record whose attempt should stop.
+ */
+cancel(key: CredentialKey): void
+
+/**
+ * Run one attempt to authorize a key, and report how it ended.
+ *
+ * One attempt per key at a time. A second caller is refused rather than
+ * joined: the two would be prompting different humans through the same flow,
+ * and the second would answer questions the first was asked.
+ *
+ * @param request - the key, the method, the surface, and the cancel signal.
+ * @returns `authorized` once the flow's record is committed and observed,
+ *   or `cancelled` when the human or the caller withdrew.
+ * @throws {AuthorizationError} code `NO_FLOW` when nothing claims the key,
+ *   `UNKNOWN_METHOD` when the named method is not one the flow offers,
+ *   `ALREADY_IN_FLIGHT` when an attempt is already running for the key, or
+ *   `NOT_COMMITTED` when the flow resolved without leaving a record behind.
+ */
+async begin(request: AuthorizationRequest): Promise<AuthorizationOutcome>
+```
+
+Source: [`packages/credentials/authorization/src/index.ts:163`](../../packages/credentials/authorization/src/index.ts)
+
 <a id="ctxcredentials--credentialprovider-abstract-seam"></a>
 
 ### `ctx.credentials` — `CredentialProvider` (abstract seam)
@@ -150,6 +209,30 @@ abstract deleteRecord(key: CredentialKey): Promise<void>
 ```
 
 Source: [`packages/credentials/credentials/src/index.ts:141`](../../packages/credentials/credentials/src/index.ts)
+
+<a id="authorization-events"></a>
+
+### `authorization/*` events
+
+<a id="authorizationsettled--emit"></a>
+
+#### `authorization/settled` — emit
+
+One authorization attempt has finished and released its key. Fires for every terminal outcome, failures included, so a surface watching a key it did not start (a second browser tab) learns the attempt is over.
+
+```ts cordis-catalog
+/**
+ * One authorization attempt has finished and released its key. Fires for
+ * every terminal outcome, failures included, so a surface watching a key it
+ * did not start (a second browser tab) learns the attempt is over.
+ * @mode emit
+ * @param key - the credential record the finished attempt was authorizing.
+ * @param settlement - how it ended, including the `failed` case its caller sees as a thrown error.
+ */
+'authorization/settled'(key: CredentialKey, settlement: AuthorizationSettlement): void
+```
+
+Source: [`packages/credentials/authorization/src/index.ts:57`](../../packages/credentials/authorization/src/index.ts)
 
 <a id="credentials-events"></a>
 
