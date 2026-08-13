@@ -50,7 +50,6 @@ The standalone composition below shows the complete explicit capability. A Profi
 
 - id: tool-subagent-claude-code
   name: '@deepseek-ai/dsh-tool-subagent'
-  disabled: true
   config:
     provider: claude-code
     toolName: subagent_claude_code

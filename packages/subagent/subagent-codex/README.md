@@ -46,7 +46,6 @@ The standalone composition below shows the complete explicit capability. A Profi
 
 - id: tool-subagent-codex
   name: '@deepseek-ai/dsh-tool-subagent'
-  disabled: true
   config:
     provider: codex
     toolName: subagent_codex

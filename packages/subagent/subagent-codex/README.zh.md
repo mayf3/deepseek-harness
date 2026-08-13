@@ -46,7 +46,6 @@
 
 - id: tool-subagent-codex
   name: '@deepseek-ai/dsh-tool-subagent'
-  disabled: true
   config:
     provider: codex
     toolName: subagent_codex

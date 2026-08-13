@@ -50,7 +50,6 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 
 - id: tool-subagent-claude-code
   name: '@deepseek-ai/dsh-tool-subagent'
-  disabled: true
   config:
     provider: claude-code
     toolName: subagent_claude_code
