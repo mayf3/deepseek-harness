@@ -908,14 +908,73 @@ describe('run publication, cancellation, and settlement', () => {
     expect(factoryController?.signal.aborted).toBe(true)
     expect(spawned.terminate).toHaveBeenCalledOnce()
 
+    const spawnError = Object.assign(
+      new Error('spawn /sdk/claude EACCES'),
+      { code: 'EACCES', path: '/sdk/claude' },
+    )
     const failedSpawn = fakeChild({
       pid: -1,
-      doneError: new Error('spawn failed'),
+      doneError: spawnError,
     })
     const failed = fakeRun([], undefined, failedSpawn)
     await expect(startClaudeCodeRun(request(), failed.spec))
-      .rejects.toBeInstanceOf(AggregateError)
+      .rejects.toBe(spawnError)
     expect(failed.close).toHaveBeenCalledOnce()
+    expect(failedSpawn.terminate).not.toHaveBeenCalled()
+    expect(failedSpawn.waitForExit).not.toHaveBeenCalled()
+
+    const failedSpawnAbort = new AbortController()
+    const cancelledFailedSpawn = fakeChild({
+      pid: -1,
+      doneError: spawnError,
+    })
+    const cancelledFailedClose = vi.fn()
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      failedSpawnAbort.abort(new Error('startup cancelled'))
+      return queryFrom([], undefined, cancelledFailedClose)
+    })
+    await expect(startClaudeCodeRun(
+      request(undefined, failedSpawnAbort.signal),
+      { ...unused.spec, spawn: () => cancelledFailedSpawn.handle },
+    )).rejects.toThrow('aborted before SDK startup')
+    expect(cancelledFailedClose).toHaveBeenCalledOnce()
+
+    const failedSpawnCloseError = new Error('query close failed')
+    const failedSpawnClose = vi.fn(() => { throw failedSpawnCloseError })
+    const failedSpawnWithCloseFailure = fakeChild({
+      pid: -1,
+      doneError: spawnError,
+    })
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      return queryFrom([], undefined, failedSpawnClose)
+    })
+    const failedWithCloseFailure = startClaudeCodeRun(request(), {
+      ...unused.spec,
+      spawn: () => failedSpawnWithCloseFailure.handle,
+    })
+    await expect(failedWithCloseFailure)
+      .rejects.toThrow('spawn /sdk/claude EACCES')
+    await expect(failedWithCloseFailure).rejects.toMatchObject({
+      errors: [spawnError, failedSpawnCloseError],
+    })
+
+    const cleanupError = new Error('live child cleanup failed')
+    const constructionError = new Error(
+      'query construction failed with a live child',
+    )
+    const liveChildCleanupFailure = fakeChild({ doneError: cleanupError })
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      throw constructionError
+    })
+    await expect(startClaudeCodeRun(request(), {
+      ...unused.spec,
+      spawn: () => liveChildCleanupFailure.handle,
+    })).rejects.toMatchObject({
+      errors: [constructionError, cleanupError],
+    })
   })
 })
 
