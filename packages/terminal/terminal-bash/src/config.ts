@@ -59,8 +59,10 @@ export const DEFAULT_PWSH_ARGS = ['-NoLogo', '-NoProfile']
 
 /**
  * Resolve the effective per-dialect shell specification. Defaulting is this
- * explicit step: an unset `shellPath`/`shellArgs` selects the dialect's
- * defaults, while an explicit value always wins.
+ * explicit step: an unset or empty `shellPath`/`shellArgs` selects the
+ * dialect's defaults, while a non-empty explicit value always wins.
+ * (Schemastery materializes an absent optional array as `[]`, so emptiness —
+ * not just `undefined` — means "dialect default".)
  * @param config - Schemastery-resolved plugin configuration.
  * @returns the fully resolved configuration.
  */
@@ -69,8 +71,12 @@ export function resolveConfig(config: Config): ResolvedConfig {
   return {
     ...(config as Required<Config>),
     shellDialect,
-    shellPath: config.shellPath ?? (shellDialect === 'pwsh' ? resolvePwshPath() : DEFAULT_BASH_SHELL),
-    shellArgs: config.shellArgs ?? (shellDialect === 'pwsh' ? DEFAULT_PWSH_ARGS : DEFAULT_BASH_ARGS),
+    shellPath: config.shellPath !== undefined && config.shellPath.length > 0
+      ? config.shellPath
+      : (shellDialect === 'pwsh' ? resolvePwshPath() : DEFAULT_BASH_SHELL),
+    shellArgs: config.shellArgs !== undefined && config.shellArgs.length > 0
+      ? config.shellArgs
+      : (shellDialect === 'pwsh' ? DEFAULT_PWSH_ARGS : DEFAULT_BASH_ARGS),
   }
 }
 

@@ -54,6 +54,17 @@ describe('terminal-bash dialect resolution', () => {
     expect(resolved.shellArgs).toEqual(['-NoProfile'])
   })
 
+  it('treats empty shell values as unset so Schemastery materialization cannot drop the dialect defaults', () => {
+    // Schemastery materializes an absent optional array as `[]`; the resolver
+    // must treat that shape like an unset value or a real bash spawn would
+    // start non-interactive without the controlled prompt.
+    const resolved = resolveConfig({
+      backendType: 'shell', shellDialect: 'bash', shellPath: '', shellArgs: [], rows: 24, cols: 80,
+    })
+    expect(resolved.shellPath).toBe('/bin/bash')
+    expect(resolved.shellArgs).toEqual(['--noprofile', '--norc', '-i'])
+  })
+
   it('validates the effective shell path, not only the raw one', () => {
     expect(() => { validateConfig(resolveConfig({ backendType: 'shell', shellDialect: 'bash', rows: 24, cols: 80 })) }).not.toThrow()
     expect(() => { validateConfig(resolveConfig({ backendType: 'shell', shellDialect: 'pwsh', rows: 24, cols: 80 })) }).not.toThrow()
