@@ -1,3 +1,5 @@
+/* jscpd:ignore-start -- deliberate mirror of tool-bash-persistent (persistent-pty note 2026-08-11-pwsh-persistent-pty):
+   the PowerShell counterpart shares the session registry, polling loop, and reset contract by design. */
 /**
  * Model-facing persistent `pwsh` tool over the owner-scoped PTY seam.
  * @module @deepseek-ai/dsh-tool-pwsh-persistent
@@ -508,3 +510,5 @@ export function apply(ctx: Context, config: Config): void {
   }
   registerPersistentPwsh(ctx, resolved)
 }
+
+/* jscpd:ignore-end */

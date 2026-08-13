@@ -38,6 +38,9 @@ export interface WindowsProcessInspectorInternals {
  * @param started - creation-time identity resolver for one member.
  * @returns the root and its current transitive descendants, children first.
  */
+/* jscpd:ignore-start -- the Windows inspector deliberately mirrors process-inspector.ts:
+   the decision logic (tree walk, identity fencing, group signalling) is the same contract over
+   Win32 primitives, per the persistent-pty note 2026-08-11-pwsh-persistent-pty. */
 export function windowsProcessTree(
   entries: ProcessEntry[],
   rootPid: number,
@@ -106,6 +109,7 @@ export class WindowsProcessInspector implements ProcessInspector {
     if (this.isAlive(identity)) this.internals.taskkill(identity.pid, signal === 'SIGKILL')
   }
 }
+/* jscpd:ignore-end */
 
 /**
  * Create the Windows process inspector.
