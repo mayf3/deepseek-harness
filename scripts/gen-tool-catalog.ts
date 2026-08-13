@@ -281,11 +281,11 @@ const TOOL_PACKAGES: ToolPackage[] = [
   {
     pkg: '@deepseek-ai/dsh-tool-pwsh-persistent',
     dir: 'tool-pwsh-persistent',
-    source: 'packages/pty/tool-pwsh-persistent/src/index.ts',
-    requires: ['ctx.tools', 'ctx.pty', 'an owning Agent at execution time'],
+    source: 'packages/shell/tool-pwsh-persistent/src/index.ts',
+    requires: ['ctx.tools', 'ctx.terminals', 'an owning Agent at execution time'],
     writes: ['tool/call', 'PTY shell state', 'tool/result'],
     async mount(ctx) {
-      await ctx.plugin(PtyService)
+      await ctx.plugin(TerminalSessionService)
       await ctx.plugin(ToolPwshPersistent)
     },
     note:

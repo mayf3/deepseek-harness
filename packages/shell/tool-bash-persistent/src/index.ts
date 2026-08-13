@@ -208,7 +208,7 @@ async function respondToSessionExit(
   ctx: Context,
   shells: PersistentShells,
   owner: Agent,
-  id: PtySessionId,
+  id: TerminalSessionId,
   status: { exitCode: number | null; signal: NodeJS.Signals | null },
   marker: CommandMarkers,
   fallback: string,
@@ -319,7 +319,7 @@ async function executeCommand(
     // The shell may flip to exited between iterations (a fast `exit` can
     // settle the previous send while its exit event is still in flight);
     // re-observing status before the next send closes that gap.
-    const status = ctx.pty.list(owner).find(session => session.sessionId === id)?.status
+    const status = ctx.terminals.list(owner).find(session => session.sessionId === id)?.status
     if (status?.kind === 'exited') {
       return await respondToSessionExit(
         ctx, shells, owner, id, status, marker, fallback, fallbackTruncated, config,

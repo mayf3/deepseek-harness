@@ -142,17 +142,17 @@ describe('shipped agent presets gate both shell tools by platform', () => {
     const byId = new Map(rows
       .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
       .map(entry => [entry.id, entry]))
-    // The bash stack (pty-local + persistent-bash) mounts on POSIX only; the
-    // pwsh twin (pty-local with shellDialect pwsh + persistent-pwsh) mounts on
+    // The bash stack (terminal-bash + persistent-bash) mounts on POSIX only; the
+    // pwsh twin (terminal-bash with shellDialect pwsh + persistent-pwsh) mounts on
     // win32 only — exactly one persistent shell per host.
-    for (const id of ['pty-local', 'persistent-bash']) {
+    for (const id of ['terminal-bash', 'persistent-bash']) {
       expect(disabledOn(byId.get(id)!, 'win32'), `${id} on win32`).toBe(true)
       expect(disabledOn(byId.get(id)!, 'linux'), `${id} on linux`).toBe(false)
     }
-    for (const id of ['pty-pwsh', 'persistent-pwsh']) {
+    for (const id of ['terminal-pwsh', 'persistent-pwsh']) {
       expect(disabledOn(byId.get(id)!, 'win32'), `${id} on win32`).toBe(false)
       expect(disabledOn(byId.get(id)!, 'linux'), `${id} on linux`).toBe(true)
     }
-    expect(byId.get('pty-pwsh')?.config).toMatchObject({ shellDialect: 'pwsh' })
+    expect(byId.get('terminal-pwsh')?.config).toMatchObject({ shellDialect: 'pwsh' })
   })
 })

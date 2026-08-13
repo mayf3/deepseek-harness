@@ -1,4 +1,4 @@
-# Agent Note: Persistent pwsh over the PTY seam on Windows
+# Agent Note: Persistent pwsh over the terminal seam on Windows
 
 Status: implemented
 
@@ -6,15 +6,15 @@ English | [中文](2026-08-11-pwsh-persistent-pty.zh.md)
 
 ## Problem
 
-The harness had no persistent shell on Windows. The persistent `bash` stack was POSIX-only by construction: `@deepseek-ai/dsh-subprocess-local` threw at terminal allocation (`createProcessInspector()` rejected win32), `@deepseek-ai/dsh-pty-local` was bash-shaped (`/bin/bash` defaults, `PS1`/`PROMPT_COMMAND` environment markers), `@deepseek-ai/dsh-tool-bash-persistent` wrapped commands in bash syntax, and every pty test skipped on win32. The one-shot `pwsh` tool (`@deepseek-ai/dsh-tool-pwsh` over `@deepseek-ai/dsh-pwsh-local`) already ran on Windows, but each call started a fresh `pwsh -Command` process: cwd, `$env:` variables, functions, and interactive children ended with the call, and its README recorded "No persistent shell or PTY" as deferred work.
+The harness had no persistent shell on Windows. The persistent `bash` stack was POSIX-only by construction: `@deepseek-ai/dsh-subprocess-local` threw at terminal allocation (`createProcessInspector()` rejected win32), `@deepseek-ai/dsh-terminal-bash` was bash-shaped (`/bin/bash` defaults, `PS1`/`PROMPT_COMMAND` environment markers), `@deepseek-ai/dsh-tool-bash-persistent` wrapped commands in bash syntax, and every pty test skipped on win32. The one-shot `pwsh` tool (`@deepseek-ai/dsh-tool-pwsh` over `@deepseek-ai/dsh-pwsh-local`) already ran on Windows, but each call started a fresh `pwsh -Command` process: cwd, `$env:` variables, functions, and interactive children ended with the call, and its README recorded "No persistent shell or PTY" as deferred work.
 
 The gap excluded Windows workflows whose state lives in a terminal: stepping a debugger, exploring in a Python or Node REPL, or returning to a shell after interrupting its foreground command — the same class of work the persistent bash pty serves on POSIX.
 
-Two foundations already existed. The PTY service itself (`ctx.pty` registry, owner scoping, send/read/signal/kill contract) is platform-neutral. The Loader's `disabled: !!js` interpolation (PR #2234) gates shell rows per platform and pins the invariant that exactly one shell stack mounts per host; a persistent pwsh stack composes through the same rows.
+Two foundations already existed. the terminal service itself (`ctx.terminals` registry, owner scoping, send/read/signal/kill contract) is platform-neutral. The Loader's `disabled: !!js` interpolation (PR #2234) gates shell rows per platform and pins the invariant that exactly one shell stack mounts per host; a persistent pwsh stack composes through the same rows.
 
 ## Decision
 
-A model-facing persistent `pwsh` tool ships on Windows with the same contract as `tool-bash-persistent`: one owner-scoped persistent shell per Agent, marker-detected command completion, exact native exit codes, bounded output, and timeout/cancel/`exit` semantics that reset the shell and tell the model. Three pieces deliver it: a Windows substrate in `subprocess-local`, a shell-dialect option in `pty-local`, and the new `tool-pwsh-persistent` package with the minimal-preset composition rows.
+A model-facing persistent `pwsh` tool ships on Windows with the same contract as `tool-bash-persistent`: one owner-scoped persistent shell per Agent, marker-detected command completion, exact native exit codes, bounded output, and timeout/cancel/`exit` semantics that reset the shell and tell the model. Three pieces deliver it: a Windows substrate in `subprocess-local`, a shell-dialect option in `terminal-bash`, and the new `tool-pwsh-persistent` package with the minimal-preset composition rows.
 
 ### Windows substrate in `@deepseek-ai/dsh-subprocess-local`
 
@@ -22,7 +22,7 @@ A model-facing persistent `pwsh` tool ships on Windows with the same contract as
 
 `LocalTerminalHandle` branches for win32 because node-pty's `kill(signal)` throws ("Signals not supported on windows") and its bare kill delegates to a console-list agent that fails without a parent console. Teardown escalates through taskkill fenced on the shell's start identity, and — because an externally taskkilled shell may never fire node-pty's exit notification — the handle settles `done` from the inspector-verified absence (`settleExitIfGone`). `signalForeground` maps SIGINT to a `\x03` Ctrl-C input write (the console-wide delivery conhost turns into a CTRL_C event; verified to interrupt a running command), routes SIGTERM/SIGKILL to taskkill, and rejects SIGTSTP/SIGHUP as unavailable on Windows. The public `PtySignal` set and seam types are unchanged; the mapping lives in the backend.
 
-### Shell dialect in `@deepseek-ai/dsh-pty-local`
+### Shell dialect in `@deepseek-ai/dsh-terminal-bash`
 
 One backend, two dialects: `shellDialect: 'bash' | 'pwsh'` (default `'bash'`, existing deployments byte-identical). The effective `shellPath`/`shellArgs` resolve per dialect (bash `/bin/bash --noprofile --norc -i`; pwsh through the shared `dsh-pwsh-local` resolver with `-NoLogo -NoProfile`, keeping the interactive host for child REPLs). The child environment drops the bash-only `PS1`/`PROMPT_COMMAND` markers and adds `NO_COLOR` for pwsh. pwsh cannot install its prompt from the environment, so the backend writes the prompt function through the session at startup and waits until the controlled prompt is actually visible, looping over follow-up sends because the pwsh banner-to-prompt gap can outlast the silence bound; a `session_exit` or `timeout` wait rejects the spawn. Both dialects emit the same BEL-terminated OSC `133;D;` marker, so the sanitizer, `PROMPT_MARKER_PREFIX`, `CONTROLLED_PROMPT`, and the exact-tail readiness logic are reused untouched — the marker stays a readiness signal with an unconsumed payload, exactly as in the bash path, and no model-notification channel was added (aligned with the current implementation; the deferred BEL event channel stays deferred).
 
@@ -34,11 +34,11 @@ Commands run through a wrapper that resets `$LASTEXITCODE` (assignable, verified
 
 ### Composition
 
-The minimal preset gates its persistent shell stack by platform with the #2234 `disabled: !!js` interpolation: the bash rows (`pty-local` + `tool-bash-persistent`) mount on POSIX, and the pwsh rows (`pty-local` with `shellDialect: pwsh` + `tool-pwsh-persistent`) mount on win32 — exactly one persistent shell per host. `windows-shell.spec` pins the per-platform roster; the real Loader composition exercises the whole stack over a real ConPTY pwsh.
+The minimal preset gates its persistent shell stack by platform with the #2234 `disabled: !!js` interpolation: the bash rows (`terminal-bash` + `tool-bash-persistent`) mount on POSIX, and the pwsh rows (`terminal-bash` with `shellDialect: pwsh` + `tool-pwsh-persistent`) mount on win32 — exactly one persistent shell per host. `windows-shell.spec` pins the per-platform roster; the real Loader composition exercises the whole stack over a real ConPTY pwsh.
 
 ### Testing
 
-The Windows test surface follows master's exemption structure: pty-local and subprocess-local tests stay excluded on win32 (`windowsUnsupportedTests`) and their sources stay coverage-exempt there (`windowsUnsupportedCoveragePackages`), so the platform-gated fixtures and node-translated commands remain the win32 dev-lane evidence, while the koffi-backed inspector joins the windows-only coverage exclusions on Linux. `tool-pwsh-persistent` is not exempt: its suite runs and its sources are coverage-required on the windows-native lane, mirroring `tool-bash-persistent`'s stub-mode matrix plus an echo-stripping mode; the real-pwsh suites prove persistent cwd/env, secret scrubbing, multiline and here-string commands, large-output clipping, and exit/reset over real ConPTY sessions.
+The Windows test surface follows master's exemption structure: terminal-bash and subprocess-local tests stay excluded on win32 (`windowsUnsupportedTests`) and their sources stay coverage-exempt there (`windowsUnsupportedCoveragePackages`), so the platform-gated fixtures and node-translated commands remain the win32 dev-lane evidence, while the koffi-backed inspector joins the windows-only coverage exclusions on Linux. `tool-pwsh-persistent` is not exempt: its suite runs and its sources are coverage-required on the windows-native lane, mirroring `tool-bash-persistent`'s stub-mode matrix plus an echo-stripping mode; the real-pwsh suites prove persistent cwd/env, secret scrubbing, multiline and here-string commands, large-output clipping, and exit/reset over real ConPTY sessions.
 
 ## Alternatives considered
 
@@ -54,7 +54,7 @@ The Windows test surface follows master's exemption structure: pty-local and sub
 
 **Windows became a first-class persistent-shell host.** The persistent pwsh stack runs and is coverage-gated on the windows-native lane; the one-shot/persistent shell split mirrors POSIX, and the preset spec pins exactly one shell stack per host on both platforms.
 
-**Windows coverage keeps master's exemption structure.** subprocess-local and pty-local sources stay coverage-exempt and their suites test-excluded on win32 exactly as on master; the Windows code paths are exercised through the win32 dev lane and the real-pwsh tool suites, and the new surface's coverage obligation on the windows-native lane sits on `tool-pwsh-persistent`.
+**Windows coverage keeps master's exemption structure.** subprocess-local and terminal-bash sources stay coverage-exempt and their suites test-excluded on win32 exactly as on master; the Windows code paths are exercised through the win32 dev lane and the real-pwsh tool suites, and the new surface's coverage obligation on the windows-native lane sits on `tool-pwsh-persistent`.
 
 **Windows readiness is weaker than Linux.** The pseudo-pgid marker fast path covers shell prompts, but a child without a prompt settles on the silence tier (~3 s), exactly like macOS; there is no exact stdin-wait tier.
 

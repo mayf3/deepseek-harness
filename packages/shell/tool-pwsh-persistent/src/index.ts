@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { PtyReadResult, PtySendResult, PtySessionId } from '@deepseek-ai/dsh-pty'
+import type { TerminalReadResult, TerminalSendResult, TerminalSessionId } from '@deepseek-ai/dsh-terminal'
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
@@ -48,7 +48,7 @@ interface CapturedOutput {
 }
 
 interface PersistentShells {
-  get(owner: Agent, signal: AbortSignal): Promise<PtySessionId>
+  get(owner: Agent, signal: AbortSignal): Promise<TerminalSessionId>
   reset(owner: Agent, reason: string): Promise<void>
 }
 
@@ -128,7 +128,7 @@ function commandOutput(
   }
 }
 
-function promptCompleted(result: PtySendResult): boolean {
+function promptCompleted(result: TerminalSendResult): boolean {
   return result.viewport.endsWith(SHELL_PROMPT)
     || result.viewport.endsWith(`${SHELL_PROMPT}\r\n`)
     || result.viewport.endsWith(`${SHELL_PROMPT}\n`)
@@ -164,7 +164,7 @@ async function pause(): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS))
 }
 
-function nextScrollbackOffset(page: PtyReadResult, offset: number): number | undefined {
+function nextScrollbackOffset(page: TerminalReadResult, offset: number): number | undefined {
   if (page.text.length === 0 || page.lineEnd <= offset) return undefined
   return page.lineEnd
 }
@@ -172,15 +172,15 @@ function nextScrollbackOffset(page: PtyReadResult, offset: number): number | und
 function retainedScrollback(
   ctx: Context,
   owner: Agent,
-  id: PtySessionId,
-  latest = ctx.pty.read(owner, id, { offset: 0, count: SCROLLBACK_PAGE_LINES }),
+  id: TerminalSessionId,
+  latest = ctx.terminals.read(owner, id, { offset: 0, count: SCROLLBACK_PAGE_LINES }),
 ): RetainedOutput {
   const pages: string[] = latest.text.length === 0 ? [] : [latest.text]
   let offset = latest.lineEnd
   let truncated = latest.truncated
   while (true) {
     if (offset >= latest.totalLines) break
-    const page = ctx.pty.read(owner, id, { offset, count: SCROLLBACK_PAGE_LINES })
+    const page = ctx.terminals.read(owner, id, { offset, count: SCROLLBACK_PAGE_LINES })
     truncated ||= page.truncated
     if (page.text.length > 0) pages.unshift(page.text)
     const next = nextScrollbackOffset(page, offset)
@@ -230,7 +230,7 @@ async function respondToSessionExit(
   ctx: Context,
   shells: PersistentShells,
   owner: Agent,
-  id: PtySessionId,
+  id: TerminalSessionId,
   status: { exitCode: number | null; signal: NodeJS.Signals | null },
   marker: CommandMarkers,
   wrapped: string,
@@ -260,15 +260,15 @@ const PWSH_PROMPT_SETUP =
   "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + SHELL_PROMPT + "' }"
 
 function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShells {
-  const pending = new WeakMap<Agent, Promise<PtySessionId>>()
-  const live = new Map<Agent, PtySessionId>()
-  const creating = new Set<Promise<PtySessionId>>()
+  const pending = new WeakMap<Agent, Promise<TerminalSessionId>>()
+  const live = new Map<Agent, TerminalSessionId>()
+  const creating = new Set<Promise<TerminalSessionId>>()
   const ownerCleanupInstalled = new WeakSet<Agent>()
   const lifecycle = new AbortController()
 
-  const close = async (owner: Agent, id: PtySessionId, reason: string): Promise<void> => {
-    if (!ctx.pty.list(owner).some(snapshot => snapshot.sessionId === id)) return
-    await ctx.pty.kill(owner, id, reason)
+  const close = async (owner: Agent, id: TerminalSessionId, reason: string): Promise<void> => {
+    if (!ctx.terminals.list(owner).some(snapshot => snapshot.sessionId === id)) return
+    await ctx.terminals.kill(owner, id, reason)
   }
 
   ctx.effect(() => async () => {
@@ -286,14 +286,14 @@ function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShell
     if (id !== undefined) await close(owner, id, reason)
   }
 
-  const get = (owner: Agent, signal: AbortSignal): Promise<PtySessionId> => {
+  const get = (owner: Agent, signal: AbortSignal): Promise<TerminalSessionId> => {
     const existing = pending.get(owner)
     if (existing !== undefined) return existing
     const combinedSignal = AbortSignal.any([signal, lifecycle.signal])
     const creation = (async () => {
       try {
         const cwd = owner.session.header.cwd
-        const spawned = await ctx.pty.spawn(owner, {
+        const spawned = await ctx.terminals.spawn(owner, {
           type: config.backendType,
           ...cwd === undefined ? {} : { cwd },
         }, combinedSignal)
@@ -305,7 +305,7 @@ function persistentShells(ctx: Context, config: ResolvedConfig): PersistentShell
             live.delete(owner)
           }, 'tool-pwsh-persistent owner cache cleanup')
         }
-        const setup = ctx.pty.startSend(owner, spawned.sessionId, {
+        const setup = ctx.terminals.startSend(owner, spawned.sessionId, {
           text: PWSH_PROMPT_SETUP,
           submit: true,
           signal: combinedSignal,
@@ -352,7 +352,7 @@ async function executeCommand(
     // settle the previous send while its exit event is still in flight, and
     // the echoed wrapper can then carry a marker end without status digits);
     // re-observing status before the next send closes that gap.
-    const status = ctx.pty.list(owner).find(session => session.sessionId === id)?.status
+    const status = ctx.terminals.list(owner).find(session => session.sessionId === id)?.status
     if (status?.kind === 'exited') {
       return await respondToSessionExit(
         ctx, shells, owner, id, status, marker, wrapped, fallback, fallbackTruncated, config,
@@ -361,7 +361,7 @@ async function executeCommand(
     let operation
     let result
     try {
-      operation = ctx.pty.startSend(owner, id, {
+      operation = ctx.terminals.startSend(owner, id, {
         text: first ? wrapped : '',
         submit: first,
         signal: commandDeadline.signal,
@@ -375,7 +375,7 @@ async function executeCommand(
     const incremental = operation.readOutput()
     fallback = incremental.delta.length > 0 ? fallback + incremental.delta : result.viewport
     fallbackTruncated ||= incremental.truncated || result.truncated
-    const latest = ctx.pty.read(owner, id, { offset: 0, count: SCROLLBACK_PAGE_LINES })
+    const latest = ctx.terminals.read(owner, id, { offset: 0, count: SCROLLBACK_PAGE_LINES })
     const timedOut = timeoutOf(commandDeadline.signal, TIMEOUT_CODE)
     if (timedOut !== undefined) {
       const snapshot = retainedScrollback(ctx, owner, id, latest)
@@ -464,7 +464,7 @@ function registerPersistentPwsh(ctx: Context, config: ResolvedConfig): void {
 }
 
 export const name = 'tool-pwsh-persistent'
-export const inject = ['tools', 'pty']
+export const inject = ['tools', 'terminals']
 
 /** Configuration for the persistent pwsh tool. */
 export interface Config {

@@ -2,13 +2,13 @@
 
 [English](README.md) | 中文
 
-模型侧 `pwsh(command)`，由一个 owner 作用域的 `ctx.pty` shell 支撑。本包拥有工具契约与 shell 复用；部署方选择 PTY backend（配置 `shellDialect: pwsh` 的 `pty-local` 实例）与沙箱策略。它是 `tool-bash-persistent` 的 Windows 对应物：相同的持久状态契约，PowerShell 方言。
+模型侧 `pwsh(command)`，由一个 owner 作用域的 `ctx.terminals` shell 支撑。本包拥有工具契约与 shell 复用；部署方选择 terminal backend（配置 `shellDialect: pwsh` 的 `terminal-bash` 实例）与沙箱策略。它是 `tool-bash-persistent` 的 Windows 对应物：相同的持久状态契约，PowerShell 方言。
 
 ## 配置
 
 | 键 | 默认值 | 含义 |
 |---|---:|---|
-| `backendType` | `shell` | 每个 Agent shell 使用的已注册 PTY backend。 |
+| `backendType` | `shell` | 每个 Agent shell 使用的已注册 terminal backend。 |
 | `timeoutMs` | `300000` | 单条命令的墙钟上限；超时关闭 shell。 |
 | `maxOutputChars` | `16000` | 保留的命令输出字符上限；固定诊断文本在其后追加。 |
 | `description` | 持久 shell 描述 | 模型可见的环境契约。 |
@@ -45,7 +45,7 @@
 
 ## 已知限制与延后工作
 
-- 工具需要拥有 Agent 与一个真实支持 pwsh 方言的 PTY backend（Windows ConPTY 或 POSIX 上的 pwsh）。
+- 工具需要拥有 Agent 与一个真实支持 pwsh 方言的 terminal backend（Windows ConPTY 或 POSIX 上的 pwsh）。
 - **输入回显不可避免**：PowerShell 的 PSReadLine 会把提交的输入渲染回终端流，且没有 `stty -echo` 的对应物。完整结果中 marker 锚定提取排除回显；包装器原文剥离覆盖回退路径，但跨越终端宽度的包装器折行可能在部分输出结果中残留片段回显，受 `maxOutputChars` 约束。
 - 模型命令中的裸 ESC 字符不受支持：PSReadLine 会在执行前吞掉它们。包装器转义它需要的控制字节（`[char]27` 构造的 OSC 标记、body 的反引号转义）。
 - 模型重定义 `prompt` 函数会移除就绪标记；shell 随后退化为静默档而非 marker 快路径。

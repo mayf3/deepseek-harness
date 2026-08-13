@@ -4,17 +4,17 @@ import { CallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import PtyService from '@deepseek-ai/dsh-pty'
+import TerminalSessionService from '@deepseek-ai/dsh-terminal'
 import type {
-  PtyBackend,
-  PtyBackendSession,
-  PtyReadRequest,
-  PtySendOperation,
-  PtySendRequest,
-  PtySessionStatus,
-  PtySignal,
-  PtyWaitReason,
-} from '@deepseek-ai/dsh-pty'
+  TerminalBackend,
+  TerminalBackendSession,
+  TerminalReadRequest,
+  TerminalSendOperation,
+  TerminalSendRequest,
+  TerminalSessionStatus,
+  TerminalSignal,
+  TerminalWaitReason,
+} from '@deepseek-ai/dsh-terminal'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRegistry from '@deepseek-ai/dsh-tools'
 import * as ToolPwshPersistent from '@deepseek-ai/dsh-tool-pwsh-persistent'
@@ -104,10 +104,10 @@ type StubMode =
 const START_PATTERN = /__DSH_PERSISTENT_PWSH_START_[^_]+(?:-[^_]+)*__/
 const END_PATTERN = /__DSH_PERSISTENT_PWSH_END_[^:]+:/
 
-class StubPtySession implements PtyBackendSession {
+class StubTerminalSession implements TerminalBackendSession {
   readonly motd = '__DSH_PERSISTENT_PWSH_PROMPT__ '
   readonly pid = 123
-  statusValue: PtySessionStatus = { kind: 'running' }
+  statusValue: TerminalSessionStatus = { kind: 'running' }
   scrollback = this.motd
   closed: string[] = []
   mode: StubMode
@@ -120,7 +120,7 @@ class StubPtySession implements PtyBackendSession {
     this.mode = mode
   }
 
-  startSend(request: PtySendRequest): PtySendOperation {
+  startSend(request: TerminalSendRequest): TerminalSendOperation {
     this.sends += 1
     if (request.text.startsWith('function prompt')) {
       if (this.mode === 'init-exit') {
@@ -135,7 +135,7 @@ class StubPtySession implements PtyBackendSession {
     if (this.mode === 'send-error') throw new Error('stub send failed')
     if (this.throwOnSend) throw new Error('PTY session has exited')
     if (this.mode === 'wait-for-abort' || this.mode === 'end-on-abort') {
-      const done = new Promise<ReturnType<StubPtySession['result']>>((resolve) => {
+      const done = new Promise<ReturnType<StubTerminalSession['result']>>((resolve) => {
         request.signal?.addEventListener('abort', () => {
           const start = START_PATTERN.exec(request.text)?.[0]
           const end = END_PATTERN.exec(request.text)?.[0]
@@ -232,7 +232,7 @@ class StubPtySession implements PtyBackendSession {
     return this.operation(Promise.resolve(this.result(output, 'stdin_read')))
   }
 
-  read(request: PtyReadRequest) {
+  read(request: TerminalReadRequest) {
     if (this.mode === 'empty-read') {
       return { text: '', totalLines: 0, lineBegin: 0, lineEnd: 0, truncated: false }
     }
@@ -265,7 +265,7 @@ class StubPtySession implements PtyBackendSession {
     }
   }
 
-  signal(_signal: PtySignal) {
+  signal(_signal: TerminalSignal) {
     return Promise.resolve({ delivered: true as const, targetPgid: 123 })
   }
 
@@ -278,11 +278,11 @@ class StubPtySession implements PtyBackendSession {
     this.statusValue = { kind: 'exited', exitCode: 0, signal: null }
   }
 
-  private result(viewport: string, waitReason: PtyWaitReason) {
+  private result(viewport: string, waitReason: TerminalWaitReason) {
     return { viewport, waitReason, sessionStatus: this.statusValue, truncated: false }
   }
 
-  private operation(done: Promise<ReturnType<StubPtySession['result']>>, delta = ''): PtySendOperation {
+  private operation(done: Promise<ReturnType<StubTerminalSession['result']>>, delta = ''): TerminalSendOperation {
     return {
       done,
       readOutput: () => ({ delta, truncated: false }),
@@ -292,12 +292,12 @@ class StubPtySession implements PtyBackendSession {
 }
 
 function stubBackend(initialMode: StubMode = 'normal') {
-  const sessions: StubPtySession[] = []
-  const backend: PtyBackend = {
+  const sessions: StubTerminalSession[] = []
+  const backend: TerminalBackend = {
     type: 'stub',
     async spawn() {
       if (initialMode === 'spawn-error') throw new Error('stub spawn failed')
-      const session = new StubPtySession(initialMode)
+      const session = new StubTerminalSession(initialMode)
       sessions.push(session)
       return session
     },
@@ -314,9 +314,9 @@ async function setup(
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRegistry)
   await ctx.plugin(AgentRegistry)
-  await ctx.plugin(PtyService)
+  await ctx.plugin(TerminalSessionService)
   const stub = stubBackend(initialMode)
-  ctx.pty.registerBackend(stub.backend)
+  ctx.terminals.registerBackend(stub.backend)
   const fiber = await ctx.plugin(ToolPwshPersistent, config)
   return { ctx, stub, fiber, owner: agent(ctx, '/workspace') }
 }
@@ -433,9 +433,9 @@ describe('tool-pwsh-persistent', () => {
 
     await call(ctx, owner, 'another shell')
     expect(stub.sessions).toHaveLength(3)
-    const externallyClosed = ctx.pty.list(owner)[0]?.sessionId
+    const externallyClosed = ctx.terminals.list(owner)[0]?.sessionId
     expect(externallyClosed).toBeDefined()
-    await ctx.pty.kill(owner, externallyClosed!, 'external cleanup')
+    await ctx.terminals.kill(owner, externallyClosed!, 'external cleanup')
     await fiber.dispose()
     expect(stub.sessions[2]?.closed).toEqual(['external cleanup'])
   })
@@ -572,10 +572,10 @@ describe('tool-pwsh-persistent', () => {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRegistry)
     await ctx.plugin(AgentRegistry)
-    await ctx.plugin(PtyService)
+    await ctx.plugin(TerminalSessionService)
     const spawnStarted = Promise.withResolvers<undefined>()
     const spawnAborted = Promise.withResolvers<undefined>()
-    ctx.pty.registerBackend({
+    ctx.terminals.registerBackend({
       type: 'slow',
       spawn: spec => new Promise((_resolve, reject) => {
         spawnStarted.resolve(undefined)
@@ -595,7 +595,7 @@ describe('tool-pwsh-persistent', () => {
     await fiber.dispose()
     await spawnAborted.promise
     expect((await running).isError).toBe(true)
-    expect(ctx.pty.list(owner)).toEqual([])
+    expect(ctx.terminals.list(owner)).toEqual([])
   })
 
   it('rejects invalid config and invalid calls', async () => {

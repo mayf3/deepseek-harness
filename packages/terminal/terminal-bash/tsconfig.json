@@ -18,7 +18,7 @@
       "path": "../../../vendor/schemastery"
     },
     {
-      "path": "../../bash/pwsh-local"
+      "path": "../../shell/pwsh-local"
     },
     {
       "path": "../../core/agent"

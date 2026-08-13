@@ -259,7 +259,7 @@ const hasPwsh = spawnSync(
   { encoding: 'utf8' },
 ).status === 0
 
-describe.skipIf(!hasPwsh)('pty-local pwsh real shell', () => {
+describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
   it('bootstraps a persistent pwsh, persists state, and scrubs secrets', async () => {
     const previous = process.env.DSH_TEST_SECRET
     process.env.DSH_TEST_SECRET = 'must-not-leak'
@@ -269,15 +269,15 @@ describe.skipIf(!hasPwsh)('pty-local pwsh real shell', () => {
         handoffGraceMs: 300,
         timeoutMs: 8_000,
       }, 'pwsh')
-      const created = await ctx.pty.spawn(agent, { type: 'shell', name: 'main', cwd: root })
+      const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
       expect(created.motd).toContain('dsh> ')
 
-      const first = ctx.pty.startSend(agent, created.sessionId, {
+      const first = ctx.terminals.startSend(agent, created.sessionId, {
         text: '$env:KEEP = "ok"; Set-Location /',
         submit: true,
       })
       expect((await first.done).waitReason).toBe('stdin_read')
-      const second = ctx.pty.startSend(agent, created.sessionId, {
+      const second = ctx.terminals.startSend(agent, created.sessionId, {
         text: 'Write-Output "keep=$env:KEEP secret=$env:DSH_TEST_SECRET"',
         submit: true,
       })
@@ -286,9 +286,9 @@ describe.skipIf(!hasPwsh)('pty-local pwsh real shell', () => {
       expect(result.viewport).toContain('secret=')
       expect(result.viewport).not.toContain('must-not-leak')
 
-      expect(ctx.pty.read(agent, created.sessionId, { offset: 0, count: 40 }).text).toContain('keep=ok')
-      expect(await ctx.pty.kill(agent, created.sessionId)).toBe(true)
-      expect(ctx.pty.list(agent)).toEqual([])
+      expect(ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 40 }).text).toContain('keep=ok')
+      expect(await ctx.terminals.kill(agent, created.sessionId)).toBe(true)
+      expect(ctx.terminals.list(agent)).toEqual([])
     } finally {
       if (previous === undefined) delete process.env.DSH_TEST_SECRET
       else process.env.DSH_TEST_SECRET = previous
