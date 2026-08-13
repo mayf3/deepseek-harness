@@ -96,6 +96,7 @@ export const Config: z<Config> = z.object({
 /**
  * Assert every effective numeric config field is a positive safe integer and bounds compose.
  * @param config - Schemastery-resolved plugin configuration.
+ * @returns Narrows the input to the fully resolved configuration.
  */
 export function validateConfig(config: Config): asserts config is ResolvedConfig {
   const resolved = config as ResolvedConfig
