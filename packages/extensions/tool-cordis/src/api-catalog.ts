@@ -577,8 +577,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'credentials',
-    summary: 'Abstract credential service.',
-    description: 'Abstract credential service. Providers implement the four operations over their source layers; one seam-wide rule binds them all: an empty stored value is absent everywhere — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.',
+    summary: 'Abstract credential service over two key spaces that answer two questions.',
+    description: 'Abstract credential service over two key spaces that answer two questions.\n\nA CredentialRef answers "what is behind this environment-variable name", layered over the process environment, the provider-managed store, and `.env` files. One seam-wide rule binds that half: an empty stored value is absent everywhere — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.\n\nA CredentialKey answers "what credential does this plugin hold for this id". Nothing can layer here — an authorization grant has no environment to be read from — so presence of the record is the whole fact, and modifyRecord is the only write path because a correct write depends on the current value (a token refresh is read-decide-replace under one lock).',
     methods: [
       {
         signature: 'abstract resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined>',
@@ -601,6 +601,35 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract unset(ref: CredentialRef): Promise<void>',
         description: 'Remove one reference from the provider-managed writable source; removing an absent reference is a no-op. Rejects while a read-only source shadows the reference, like set.',
         parameters: [{ name: 'ref', description: 'the reference to remove.' }],
+      },
+      {
+        signature: 'abstract readRecord(key: CredentialKey): Promise<CredentialRecord | undefined>',
+        description: 'Read one stored record. The value is returned as its owner wrote it; a GrantRecord payload is not interpreted on the way out.',
+        parameters: [{ name: 'key', description: 'the record to read.' }],
+        returns: 'the record, or `undefined` while none is stored.',
+      },
+      {
+        signature: 'abstract describeRecord(key: CredentialKey): Promise<CredentialRecordInfo>',
+        description: 'Describe one record for configuration surfaces without exposing its value.',
+        parameters: [{ name: 'key', description: 'the record to describe.' }],
+        returns: 'presence, discriminant, and writability.',
+      },
+      {
+        signature: 'abstract listRecords(): Promise<readonly CredentialRecordEntry[]>',
+        description: 'Enumerate every stored record\'s address and tag. Unlike the reference half, which has no enumeration because configuration surfaces learn which references exist from settings schemas, records have no such discovery path: a surface that cannot list them cannot show what a user is authorized for, nor find an orphan left by an uninstalled plugin.',
+        parameters: [],
+        returns: 'every stored record, values excluded.',
+      },
+      {
+        signature: 'abstract modifyRecord( key: CredentialKey, mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>, ): Promise<CredentialRecord | undefined>',
+        description: 'Serialized read-modify-write over one record — the only write path. `mutate` sees the record as it stands at the moment the write is exclusive, and returning `undefined` leaves the entry untouched. Exclusion holds across processes where the backing store supports it, which is what makes a token refresh safe: two processes rotating one refresh token concurrently would otherwise lose whichever wrote first.',
+        parameters: [{ name: 'key', description: 'the record to modify.' }, { name: 'mutate', description: 'receives the current record and returns its replacement, or `undefined` to leave it.' }],
+        returns: 'the record after the write, or the current one when `mutate` declined.',
+      },
+      {
+        signature: 'abstract deleteRecord(key: CredentialKey): Promise<void>',
+        description: 'Remove one record; removing an absent record is a no-op.',
+        parameters: [{ name: 'key', description: 'the record to remove.' }],
       },
     ],
   },
@@ -2474,6 +2503,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'resolved', description: 'request identity and outcome.' }],
   },
   {
+    name: 'credentials/record-updated',
+    mode: 'emit',
+    signature: '\'credentials/record-updated\'(key: CredentialKey): void',
+    summary: 'Committed change to a stored credential record: a `modifyRecord` that wrote, a `deleteRecord` that removed, or an external edit observed in storage.',
+    description: 'Committed change to a stored credential record: a `modifyRecord` that wrote, a `deleteRecord` that removed, or an external edit observed in storage. Separate from `credentials/updated` because the two key grammars are disjoint — a listener that received both on one event could not tell which space a subject belongs to. Listener failures are contained on the same terms as `credentials/updated`.',
+    parameters: [{ name: 'key', description: 'the record whose stored value changed.' }],
+  },
+  {
     name: 'credentials/updated',
     mode: 'emit',
     signature: '\'credentials/updated\'(ref: CredentialRef): void',
@@ -2798,6 +2835,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AgentStatus = \'idle\' | \'running\';',
   },
   {
+    name: 'ApiKeyRecord',
+    declaration: 'export interface ApiKeyRecord {\n    readonly kind: \'api-key\';\n    readonly key?: string;\n    readonly env?: Readonly<Record<string, string>>;\n}',
+  },
+  {
     name: 'ApprovalOutcome',
     declaration: 'export type ApprovalOutcome = \'allowed-once\' | \'rejected\' | \'cancelled\' | \'unavailable\';',
   },
@@ -3070,6 +3111,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CredentialInfo {\n    configured: boolean;\n    source?: string;\n    writable: boolean;\n}',
   },
   {
+    name: 'CredentialKey',
+    declaration: 'export type CredentialKey = Branded<\'CredentialKey\'>;',
+  },
+  {
+    name: 'CredentialRecord',
+    declaration: 'export type CredentialRecord = ApiKeyRecord | GrantRecord;',
+  },
+  {
+    name: 'CredentialRecordEntry',
+    declaration: 'export interface CredentialRecordEntry {\n    key: CredentialKey;\n    kind: CredentialRecord[\'kind\'];\n}',
+  },
+  {
+    name: 'CredentialRecordInfo',
+    declaration: 'export interface CredentialRecordInfo {\n    configured: boolean;\n    kind?: CredentialRecord[\'kind\'];\n    writable: boolean;\n}',
+  },
+  {
     name: 'CredentialRef',
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
   },
@@ -3288,6 +3345,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'GoalView',
     declaration: 'export interface GoalView extends GoalSnapshot {\n    readonly roundsStarted: number;\n    readonly createdAt: number;\n    readonly updatedAt: number;\n    readonly activation: GoalActivation;\n}',
+  },
+  {
+    name: 'GrantRecord',
+    declaration: 'export interface GrantRecord {\n    readonly kind: \'grant\';\n    readonly payload: unknown;\n}',
   },
   {
     name: 'ImageAttachmentLimits',

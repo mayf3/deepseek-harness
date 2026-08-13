@@ -28,14 +28,36 @@ Under the product CLI, resolution reads the launcher's frozen [environment snaps
 
 ## The document
 
-A YAML mapping of credential reference to value, and nothing else:
+A versioned YAML document with one section per key space, and nothing else:
 
 ```yaml
-DEEPSEEK_API_KEY: sk-…
-OPENAI_API_KEY: sk-…
+version: 1
+
+refs:
+  DEEPSEEK_API_KEY: sk-…
+  OPENAI_API_KEY: sk-…
+
+records:
+  llm-pi-ai/openai-codex:
+    kind: grant
+    payload:                    # written verbatim; this provider does not interpret it
+      type: oauth
+      access: eyJhbGciOi…
+      refresh: rft_9f8e7d…
+      expires: 1786000000000
+  llm-pi-ai/amazon-bedrock:
+    kind: api-key               # environment values, no key: this route uses an AWS profile
+    env:
+      AWS_PROFILE: prod
+  llm-pi-ai/amazon-bedrock-dev:
+    kind: api-key               # neither: the owner confirmed the ambient credential chain
 ```
 
-The document holds credentials only, so every deviation is a rejection rather than a skipped entry — a silently ignored key would read as "the secret I stored has no effect". A non-mapping root, a key that is not a POSIX identifier, a non-string value, an empty string, a duplicate key, and malformed YAML all fail: loud at boot, and warn-and-keep-the-last-good-snapshot on a live reload. There is no `version` field and no wrapper level; the format is the mapping.
+The document holds credentials only, so every deviation is a rejection rather than a skipped entry — a silently ignored key would read as "the credential I stored has no effect". A non-mapping root, an unknown top-level key, a key that is not addressable in its space, a wrong-typed value, an empty string, an unknown record tag or field, a duplicate key, and malformed YAML all fail: loud at boot, and warn-and-keep-the-last-good-snapshot on a live reload.
+
+A `grant` payload must survive a JSON round trip, enforced in both directions. YAML spells values JSON has none for — `.inf`, alias cycles — and an owner may hand over a `Date` or a `bigint`; either way the store refuses rather than saving something it could not read back exactly as written.
+
+The pre-release layout was a flat mapping with no `version`. It is refused by name, with the entry count and the one edit needed (`version: 1`, nest under `refs:`) — never read as an empty store, which would surface as an authentication failure on the first request instead of at load.
 
 Writes patch the parsed document rather than rebuilding it, so comments and the formatting of every untouched entry survive. A comment directly above an entry is that entry's annotation and is removed with it. Every write first re-reads the document under the cross-process writer lock of [`dsh-atomic-write`](../../util/atomic-write/README.md) and publishes anything it had not observed, then commits atomically with mode `0600` under an owner-only (`0700`) directory — so a concurrent writer or an external edit inside the watcher's debounce window is folded in rather than overwritten. An on-disk document that no longer parses fails the write instead of overwriting content the provider could not understand.
 
