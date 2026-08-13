@@ -31,9 +31,9 @@ try {
   if (typeof properties !== 'object' || properties === null || Array.isArray(properties)) {
     throw new Error('subagent_codex tool has invalid parameter properties')
   }
-  const taskTools = ctx.tools.schemas()
+  const jobTools = ctx.tools.schemas()
     .map(schema => schema.name)
-    .filter(name => name === 'task_kill' || name === 'task_list' || name === 'task_output')
+    .filter(name => name === 'job_kill' || name === 'job_list' || name === 'job_output')
     .sort()
 
   process.stdout.write(`${JSON.stringify({
@@ -48,7 +48,7 @@ try {
       parameterNames: Object.keys(properties).sort(),
       required: tool.parameters.required,
     },
-    taskTools,
+    jobTools,
     starts,
   })}\n`)
 } finally {

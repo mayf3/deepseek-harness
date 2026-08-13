@@ -22,9 +22,16 @@
     },
     {
       "path": "../../credentials/credentials"
+
+    },
+    {
+      "path": "../../extensions/cordis-host-runner"
     },
     {
       "path": "../../goal/goal"
+    },
+    {
+      "path": "../../feedback/message-feedback"
     },
     {
       "path": "../../host/plugin-inventory"
@@ -42,7 +49,7 @@
       "path": "../../settings/settings"
     },
     {
-      "path": "../../typert/type-meta"
+      "path": "../../typert/protocol"
     }
   ]
 }

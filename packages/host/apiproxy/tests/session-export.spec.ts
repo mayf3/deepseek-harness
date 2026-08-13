@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { unzipSync, strFromU8 } from 'fflate'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import UserInteractionService from '@deepseek-ai/dsh-user-interaction'
+import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionLineageNode } from '@deepseek-ai/dsh-session-query'
 import type { SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
@@ -77,7 +77,7 @@ async function buildApi(
   } = {},
 ) {
   const ctx = new Context()
-  await ctx.plugin(UserInteractionService)
+  await ctx.plugin(UserQuestionService)
   const query = services.query ?? true
   const persistence = services.persistence ?? true
   if (query) {
@@ -150,6 +150,30 @@ describe('session.export download endpoint', () => {
     const files = unzipSync(await responseBytes(response))
     expect(Object.keys(files)).toEqual(['session.jsonl'])
     expect(strFromU8(files['session.jsonl'] as Uint8Array)).toBe(artifact('session-root').content)
+  })
+
+  it('preflights root preparation through HEAD without streaming a body', async () => {
+    const readRaw = vi.fn(async () => artifact('session-root'))
+    const api = await buildApi({}, [], { readRaw })
+    const response = await toFetchHandler(api).fetch(
+      new Request('http://host/api/session.export?sessionId=session-root', { method: 'HEAD' }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('application/zip')
+    expect(response.headers.get('content-disposition')).toContain('dsh-session-session-root.zip')
+    expect(response.body).toBeNull()
+    expect(readRaw).toHaveBeenCalledOnce()
+  })
+
+  it('returns a bodyless preparation error from HEAD', async () => {
+    const api = await buildApi({})
+    const response = await toFetchHandler(api).fetch(
+      new Request('http://host/api/session.export?sessionId=session-root', { method: 'HEAD' }),
+    )
+
+    expect(response.status).toBe(404)
+    expect(response.body).toBeNull()
   })
 
   it('uses the resolved compression level for ZIP entries', async () => {

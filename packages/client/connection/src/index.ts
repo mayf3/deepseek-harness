@@ -2,11 +2,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-attachment'
-// Activates the httpServer Context merge used below.
+// Activates the webServer Context merge used below.
 import type { WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import { toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
 import { API_PATH, HOST_EVENTS_PATH, MUX_EVENTS_PATH } from './api-path.ts'
-import { bridge } from './http-bridge.ts'
+import { bridge, DEFAULT_MAX_REQUEST_BODY_BYTES } from './http-bridge.ts'
 import { assertTrustedAuthority, isTrustedApiRequest } from './api-request-trust.ts'
 import { HostConnectionService } from './rpc-host.ts'
 import { rejectWebSocketUpgrade, WebSocketDownlinks } from './websocket-downlink.ts'
@@ -42,11 +42,9 @@ function assertImageBodyCapacity(ctx: Context, maxRequestBodyBytes: number): voi
     )
   }
 }
-/** Default carrier cap for all HTTP RPC bodies. */
-const DEFAULT_MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024
 
 /** Services required before providing Connection; API Proxy is an optional `/api` fallback. */
-export const inject = ['httpServer']
+export const inject = ['webServer']
 
 /** Plugin config: the deployment's non-loopback serving authorities. */
 export interface ConnectionConfig {
@@ -172,7 +170,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
       await bridge(req, res, fetchHandler, maxRequestBodyBytes)
     },
   }
-  ctx.effect(() => ctx.httpServer.register(route), 'client-connection: /api route')
+  ctx.effect(() => ctx.webServer.register(route), 'client-connection: /api route')
   ctx.inject(['apiProxy'], (apiCtx) => {
     assertImageBodyCapacity(apiCtx, maxRequestBodyBytes)
     const downlinks = new WebSocketDownlinks(apiCtx.apiProxy)
@@ -180,7 +178,7 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
       path: string,
       handle: WebUpgradeRoute['handler'],
     ): void => {
-      apiCtx.effect(() => apiCtx.httpServer.registerUpgrade({
+      apiCtx.effect(() => apiCtx.webServer.registerUpgrade({
         path,
         handler: (req, socket, head) => {
           if (!isTrustedApiRequest(req, trustedHosts)) {

@@ -34,7 +34,7 @@ const HEADER_EXPECTED = join(SNAPSHOT_DIR, 'header.expected.md')
 const SHIPPED_PRESETS = fileURLToPath(new URL('../../cli/config/agent-presets', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'agent-preset-selection-web-e2e'
-/** A project skill only a preset that mounts `skill-local` can discover. */
+/** A project skill only a preset that mounts `skill-filesystem` can discover. */
 const SKILL_NAME = 'preset-catalog-demo'
 
 /**
@@ -283,6 +283,7 @@ describe('web e2e: agent-preset selection', () => {
     expect(snapshot).toContain('Minimal mode')
     expect(snapshot).toContain('button "1 subagent"')
     expect(snapshot.indexOf('Minimal mode')).toBeLessThan(snapshot.indexOf('button "1 subagent"'))
+    expect(snapshot.indexOf('button "1 subagent"')).toBeLessThan(snapshot.indexOf('button "Session log"'))
     // Static chrome, not a control: the header can only report a composition
     // the host would refuse to change.
     expect(snapshot).not.toContain('button "Minimal mode"')

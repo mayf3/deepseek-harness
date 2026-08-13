@@ -1,14 +1,14 @@
 /** Settings shell registration: slot declaration injection, the ledger projections, and HMR recovery. */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { SlotsService } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply, inject } from '../src/client/index.ts'
 import type { SettingsRootInjected } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
 
 async function bench() {
   const ctx = new Context()
-  await ctx.plugin(SlotsService).await()
+  await ctx.plugin(SlotRegistry).await()
   // Copy machinery the shell only reads a revision from; the real locale
   // plugin would drag its own settings-row dependencies into this bench.
   ctx.provide('locale', {
@@ -22,17 +22,17 @@ async function bench() {
     isLoopback: false,
   } as never)
   ctx.provide('remote', { $on: () => () => {} } as never)
-  return { ctx, slots: ctx.get('slots') as SlotsService }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry }
 }
 
-function declare(slots: SlotsService): () => void {
+function declare(slots: SlotRegistry): () => void {
   return slots.register(
     { name: 'root', children: { 'sidebar.settings': { kind: 'single', scope: 'root' } } } as never,
     () => null,
   )
 }
 
-function injectedOf(slots: SlotsService): SettingsRootInjected {
+function injectedOf(slots: SlotRegistry): SettingsRootInjected {
   const entry = slots.entries('sidebar.settings')[0]!
   return (entry.inject as () => SettingsRootInjected)()
 }
@@ -49,7 +49,7 @@ const CHILD_SPECS = {
 
 describe('ui-settings apply', () => {
   it('declares only the slot registry (a pure composition face, no locale)', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote'])
+    expect(inject).toEqual(['slots', 'locale', 'connection'])
   })
 
   it('registers the shell and declares every child slot, before or after the declaration', async () => {
@@ -110,8 +110,6 @@ describe('ui-settings apply', () => {
     b.slots.register({ name: 'settings.onboarding', id: 'default-order' } as never, () => null)
     const steps = onboardingSteps.getSnapshot()
     expect(steps).toEqual([
-      // This package's own onboarding page, registered by the same apply.
-      { id: 'welcome-notice', order: -100 },
       { id: 'welcome', order: -100 },
       { id: 'credential', order: 0 },
       { id: 'default-order', order: 0 },

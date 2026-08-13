@@ -5,7 +5,7 @@
  */
 
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
-import type { AttachmentIdType, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 // The pure-type outlet: api/ is browser-importable, and the package root's
@@ -14,6 +14,19 @@ import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/t
 import type { RpcId, RpcRequest, RpcResponse } from './rpc.ts'
 import type { ToolEventView } from './events.ts'
 import type { WorkspaceId } from './workspace.ts'
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionMap {
+    /**
+     * The deployment's image-intake limits: the attachments service's config
+     * as this proxy enforces it at prompt admission, constant per host boot.
+     * Clients pre-check count and bytes at intake and show the limits in
+     * upload affordances. Key absence means no attachment service is
+     * composed — clients skip the pre-check and let the host answer.
+     */
+    imageLimits: ImageAttachmentLimits
+  }
+}
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -237,7 +250,7 @@ export interface SessionsApi {
    * Reads a window of history events; page boundaries align to append-origin message
    * boundaries: one page = all raw events owned by a whole number of such messages (including
    * their chunk / tool events), never cut mid-message. Model-only replacement copies consume no
-   * `maxMessages`, so a compaction's `compact/summary` record stays on the page of its replacement. The tail
+   * `maxMessages`, so a compaction's `compaction/summary` record stays on the page of its replacement. The tail
    * page (beforeSeq absent) additionally carries the in-flight
    * partial — chunk events already emitted for the last unfinalized message.
    * Each entry pairs the raw SessionEvent with the host-computed view (tool events whose

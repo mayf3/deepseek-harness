@@ -15,7 +15,7 @@ const configPath = join(fixtureDir, 'cordis.yml')
 const repoTsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
 
 describe('product-provider public Loader composition', () => {
-  it('loads both opt-in packages, one-shot task tools, and task controls without starting either product', async () => {
+  it('loads both opt-in packages, one-shot task tools, and job controls without starting either product', async () => {
     const { stdout, stderr } = await runLoaderSmoke({
       label: 'product-provider Loader composition',
       tempDirPrefix: 'dsh-product-provider-loader-',
@@ -66,7 +66,7 @@ describe('product-provider public Loader composition', () => {
           required: ['description', 'prompt'],
         },
       ],
-      taskTools: ['task_kill', 'task_list', 'task_output'],
+      jobTools: ['job_kill', 'job_list', 'job_output'],
       starts: 0,
     })
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)

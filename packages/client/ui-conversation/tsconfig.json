@@ -45,6 +45,9 @@
       "path": "../../session/session-projection"
     },
     {
+      "path": "../../session/session-stats"
+    },
+    {
       "path": "../../llm/token-meter"
     },
     {
@@ -60,7 +63,7 @@
       "path": "../../todo/tool-todo"
     },
     {
-      "path": "../ui-slash"
+      "path": "../ui-input-trigger"
     },
     {
       "path": "../ui-layout"
@@ -72,10 +75,10 @@
       "path": "../../settings/settings"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../runtime-diagnostics/invariants"
     },
     {
-      "path": "../../interaction/permission"
+      "path": "../../interaction/permission-presets"
     },
     {
       "path": "../ui-settings"

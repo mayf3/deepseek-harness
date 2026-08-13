@@ -14,7 +14,7 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { resolveSessionPreset, SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-agent-presets'
 import { applyChildComposition, childSessionMeta } from '@deepseek-ai/dsh-subagent'
 import { CallId } from '@deepseek-ai/dsh-llm'
-import type {} from '@deepseek-ai/dsh-compact-basic'
+import type {} from '@deepseek-ai/dsh-compaction-basic'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-tools'
 // Type-only: resolves `ctx.get('sessionProjections')` and `ctx.get('tokenMeter')`.
@@ -28,6 +28,7 @@ const BASE_PATCH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
 const WEB_PATCH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
 /** The installation anchor whose dependency surface the preset module fallback mirrors. */
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
+const EXAMPLES_INSTALL_ANCHOR = join(REPO_ROOT, 'examples/package.json')
 const MINIMAL_PROMPT = 'You are a helpful software engineer assistant.'
 const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
@@ -43,7 +44,11 @@ const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
  * touch the network, or write outside the test. Everything that decides an
  * agent's capabilities is the real thing, including both shipped presets.
  */
-async function bootWeb(settingsFile: string, extra: PatchOptions[] = []): Promise<Context> {
+async function bootWeb(
+  settingsFile: string,
+  extra: PatchOptions[] = [],
+  extraInstallAnchor?: string,
+): Promise<Context> {
   const storageRoot = join(dirname(settingsFile), 'storages')
   const patches: PatchOptions[] = [
     ...loadOverlayPatches('dsh-test', BASE_PATCH),
@@ -67,12 +72,12 @@ async function bootWeb(settingsFile: string, extra: PatchOptions[] = []): Promis
     // moved into the presets that a host row still waits for. The boot audit
     // is that assertion.
     { id: 'webserver', disabled: true },
-    // The web bundle's runtime row injects `httpServer`, so it cannot
+    // The web bundle's runtime row injects `webServer`, so it cannot
     // activate without the bound port disabled above. It owns dist serving
     // and the URL prompt line — surface glue, not anything that decides an
     // agent's capabilities, which is all this file asserts.
     { id: 'web-runtime', disabled: true },
-    { id: 'telemetry-otel', disabled: true },
+    { id: 'session-telemetry-otel', disabled: true },
     // A deployment-level skill on the host registry's GLOBAL layer — the same
     // registration shape a repository plugin's skill root uses. The layered
     // skills test below proves it reaches preset-composed agents.
@@ -88,7 +93,7 @@ async function bootWeb(settingsFile: string, extra: PatchOptions[] = []): Promis
     { id: 'directory-picker', disabled: true },
     { insert: [
       { id: 'directory-picker-browse', name: '@deepseek-ai/dsh-host-directory-picker-browse' },
-      { id: 'ui-directory-picker', name: '@deepseek-ai/dsh-client-ui-directory-picker' },
+      { id: 'ui-directory-picker-browse', name: '@deepseek-ai/dsh-client-ui-directory-picker-browse' },
     ] },
     // The roster AppCLIEntry would patch in; only the shipped root, so a
     // developer's own `~/.dsh/.preset` cannot change this test's outcome.
@@ -110,6 +115,7 @@ async function bootWeb(settingsFile: string, extra: PatchOptions[] = []): Promis
   // them resolvable — the same mechanism, not a test-only shim.
   const home = dirname(settingsFile)
   healProfilesModuleFallback(INSTALL_ANCHOR, home)
+  if (extraInstallAnchor !== undefined) healProfilesModuleFallback(extraInstallAnchor, home)
   const profileDir = join(home, 'profiles', 'spec')
   await mkdir(profileDir, { recursive: true })
   const rootConfig = join(profileDir, 'cordis.yml')
@@ -209,9 +215,8 @@ describe('the shipped Web composition', () => {
       // depend on ripgrep being present on the machine.
       expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
         'ask_user_question', 'bash', 'create_goal', 'edit', 'exit_plan_mode',
-        'get_goal', 'interrupt_agent', 'list_agents', 'ralph', 'read', 'read_image', 'send_message', 'skill',
-        'subagent', 'subagent_fork', 'task_kill',
-        'task_list', 'task_output', 'todo_write', 'update_goal', 'web_search',
+        'get_goal', 'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'ralph', 'read', 'read_image', 'send_message', 'skill',
+        'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'web_search',
         'workflow', 'write',
       ])
     } finally {
@@ -233,8 +238,8 @@ describe('the shipped Web composition', () => {
       expect(assembly.tools.find(tool => tool.name === 'bash')?.description).toBe(MINIMAL_BASH_DESCRIPTION)
       expect(JSON.stringify(assembly.tools.find(tool => tool.name === 'str_replace_editor')?.parameters))
         .toContain('Absolute path')
-      expect(ctx.agentPresets.serviceFor(handle.agent, 'compact')).toBeUndefined()
-      expect(handle.agent.ctx.get('compact')).toBeUndefined()
+      expect(ctx.agentPresets.serviceFor(handle.agent, 'compaction')).toBeUndefined()
+      expect(handle.agent.ctx.get('compaction')).toBeUndefined()
     } finally {
       await handle.dispose()
     }
@@ -271,7 +276,10 @@ describe('the shipped Web composition', () => {
     try {
       const tools = toolNames(ctx, handle.agent)
       // The self-referential toolset is what distinguishes this preset.
-      expect(tools).toEqual(expect.arrayContaining(['cordis_inspect', 'cordis_mount', 'cordis_unmount']))
+      expect(tools).toEqual(expect.arrayContaining([
+        'cordis_inspect_list', 'cordis_inspect_query', 'cordis_inspect_self',
+        'cordis_define', 'cordis_run', 'cordis_stop', 'cordis_undefine',
+      ]))
       // And it keeps the standard agent's own tools rather than replacing them.
       expect(tools).toEqual(expect.arrayContaining(['bash', 'read', 'edit', 'skill']))
       expect(tools).not.toContain('str_replace_editor')
@@ -325,7 +333,7 @@ describe('the shipped Web composition', () => {
     })
     try {
       // Editing the live runtime is opt-in per session, not ambient.
-      expect(toolNames(ctx, handle.agent)).not.toContain('cordis_mount')
+      expect(toolNames(ctx, handle.agent)).not.toContain('cordis_define')
     } finally {
       await handle.dispose()
     }
@@ -362,7 +370,7 @@ describe('the shipped Web composition', () => {
     })
     try {
       // The host (global) view carries the deployment-level provider alone:
-      // local discovery moved behind the presets with `skill-local`.
+      // local discovery moved behind the presets with `skill-filesystem`.
       expect((await ctx.skills.list({ cwd: proj })).map(skill => skill.name)).toEqual(['dsh-badge'])
 
       // The standard agent's view merges the global layer with its preset's
@@ -448,17 +456,23 @@ describe('product subagent rows in user presets', () => {
       await mkdir(directory, { recursive: true })
       await writeFile(join(directory, 'agent.cordis.yml'), composition)
     }
-    productCtx = await bootWeb(settingsFile, [{
-      id: 'agent-presets',
-      config: {
-        default: 'standard',
-        roots: [
-          { path: join(CONFIG_DIR, 'agent-presets'), trust: 'system' },
-          { path: userRoot, trust: 'user' },
-        ],
-        includeUserRoot: false,
+    productCtx = await bootWeb(settingsFile, [
+      { insert: [
+        { id: 'subagent-codex', name: '@deepseek-ai/dsh-subagent-codex' },
+        { id: 'subagent-claude-code', name: '@deepseek-ai/dsh-subagent-claude-code' },
+      ] },
+      {
+        id: 'agent-presets',
+        config: {
+          default: 'standard',
+          roots: [
+            { path: join(CONFIG_DIR, 'agent-presets'), trust: 'system' },
+            { path: userRoot, trust: 'user' },
+          ],
+          includeUserRoot: false,
+        },
       },
-    }])
+    ], EXAMPLES_INSTALL_ANCHOR)
   }, 120_000)
 
   afterAll(async () => {
@@ -485,7 +499,7 @@ describe('product subagent rows in user presets', () => {
         const tools = toolNames(productCtx, handle.agent)
         expect(tools.filter(name => name === 'subagent_codex' || name === 'subagent_claude_code'))
           .toEqual(productTools)
-        expect(tools).toEqual(expect.arrayContaining(['task_kill', 'task_list', 'task_output']))
+        expect(tools).toEqual(expect.arrayContaining(['job_kill', 'job_list', 'job_output']))
         for (const productTool of productTools) {
           expect(toolParameterNames(productCtx, handle.agent, productTool)).toEqual([
             'description', 'prompt', 'run_in_background',

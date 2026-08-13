@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-agent-loop",
   "description": "The concrete agent loop plugin for the DeepSeek Harness",
-  "version": "0.0.1-rc.2",
+  "version": "0.0.1-rc.5",
   "publishConfig": {
     "access": "restricted"
   },
@@ -29,7 +29,7 @@
     "lib/invariant.js",
     "lib/types/**/*.d.ts"
   ],
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",

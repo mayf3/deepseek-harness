@@ -10,7 +10,7 @@
 
 SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK 消息流，而且只接受满足以下条件的 `result` 消息：其 `subtype: "success"`、`is_error: false` 且 `result` 非空白，之后迭代器还须正常结束。所有 SDK 错误子类型、标记为错误的成功消息、缺失答案、迭代器失败、协议失败或进程失败都映射为 `error`；该提供方不会产生 `max-tokens` 或 `refusal`。
 
-本地取消会在结果竞态中胜出并映射为 `aborted`。`dispose()` 具有幂等性：它会中止此次运行、请求 SDK query 关闭、调用共享的进程树逐级终止机制，并等待整棵进程树退出。SDK 的优雅关闭只表达协议意图；进程是否完全停稳仍以子进程句柄为准。结果失败与独立的清理失败仍彼此分离。
+本地取消会在结果竞态中胜出并映射为 `aborted`。`dispose()`（资源释放）具有幂等性：它会中止此次运行、请求 SDK query 关闭、调用共享的进程树逐级终止机制，并等待整棵进程树退出。SDK 的优雅关闭只表达协议意图；进程是否完全停稳仍以子进程句柄为准。结果失败与独立的清理失败仍彼此分离。
 
 ## 原生设置与交互
 
@@ -31,7 +31,7 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 
 生产环境从子进程执行世界清除凭证后的 `PATH` 解析 `claude`，再应用显式 `env` 条目，并把所得路径作为 `pathToClaudeCodeExecutable` 交给 SDK。在 Windows 上，解析到的 `.cmd` 或 `.bat` 路径会作为带引号、仅供本次 spawn 使用的环境值交给 `cmd.exe /v:off` 展开一次，因此合法路径中的元字符仍只是数据。锁定版本的 SDK 随后把固定命令行选项放在 cmd 的命令尾部；这些选项不含 cmd 元字符，也并不是普通的 Windows argv。原生设置与身份验证继续是权威来源。本插件不安装另一份 CLI、不选择模型、不创建产品主目录、不执行登录，也不探测账户。具有凭证特征的环境变量会在显式 `env` 覆盖生效前被清除，因此供子进程使用的 API 密钥或 token 必须在该配置中显式提供。除非被覆盖，`ANTHROPIC_BASE_URL` 等非凭证端点变量以及 `PATH` 和 `HOME` 等普通环境变量仍会被继承。
 
-随附 profile 会在宿主上加载一次该提供方，而且在工具被调用前不会启动 Claude 进程。完整 Agent Preset 携带下列工具行并设置 `disabled: true`；复制一个 preset 后删除该字段，即可只向由该副本组装的 agent 暴露 `subagent_claude_code`。其 `one-shot` 策略会让省略 `run_in_background` 或传入 `false` 的调用继续在前台等待，而显式传入 `true` 会返回由父 agent 拥有的 Task ID，供 `task_output` 或 `task_kill` 使用。随附完整 profile 已提供任务注册表和控制工具；自定义组装若启用该后台路径，也必须加载同一通用任务提供方与消费方。
+随附 profile 会在宿主上加载一次该提供方，而且在工具被调用前不会启动 Claude 进程。完整 Agent Preset 携带下列工具行并设置 `disabled: true`；复制一个 preset 后删除该字段，即可只向由该副本组装的 agent 暴露 `subagent_claude_code`。其 `one-shot` 策略会让省略 `run_in_background` 或传入 `false` 的调用继续在前台等待，而显式传入 `true` 会返回由父 agent 拥有的 Job ID，供 `job_output` 或 `job_kill` 使用。随附完整 profile 已提供作业注册表和控制工具；自定义组装若启用该后台路径，也必须加载同一通用作业提供方与消费方。
 
 ```yaml
 - id: subagent-claude-code
@@ -40,11 +40,11 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
     env:
       ANTHROPIC_API_KEY: !!js process.env.ANTHROPIC_API_KEY
 
-- id: tasks
-  name: '@deepseek-ai/dsh-tasks-local'
+- id: jobs
+  name: '@deepseek-ai/dsh-jobs-local'
 
-- id: tool-tasks
-  name: '@deepseek-ai/dsh-tool-tasks'
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
 
 - id: tool-subagent-claude-code
   name: '@deepseek-ai/dsh-tool-subagent'
@@ -60,19 +60,19 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 
 运行时依赖精确锁定为 `@anthropic-ai/claude-agent-sdk@0.3.220`。生产运行使用原生 `claude` 安装。无密钥真实产品测试使用由 SDK 分发的 Claude Code 2.1.220 CLI 作为确定性 fixture（测试前置数据），并通过同一套原生可执行文件解析路径与 Windows batch shim 路径运行；这项测试不声称兼容每个独立安装的版本。Loader 组合证明两个产品包能够共存且不会启动任一产品。
 
-项目所有者按身份范围授权分发官方 SDK 及每个 SDK 版本声明的官方 CLI／平台载荷。[`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md) 会披露当前可选载荷闭包，但不会把其声明条款归类为宽松许可证；其他无关的非宽松运行时依赖仍会使第三方声明门禁失败。
+限定于项目所有者身份的分发授权涵盖官方 SDK 及每个 SDK 版本声明的官方 CLI／平台载荷。[`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md) 会披露当前可选载荷闭包，但不会认定其中声明的条款属于宽松许可；其他无关的非宽松运行时依赖仍会使第三方声明门禁失败。
 
 ## 模型体验
 
-### 子任务请求
+### 子级请求
 
 #### 模型看到的内容
 
-Claude Code 子任务会在一个全新的 SDK query 中接收独立文本任务。它的工作区是父会话 cwd；其模型、系统指令、工具、权限和身份验证来自宿主机原生 Claude 设置与产品安装。
+Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。它的工作区是父会话 cwd；其模型、系统指令、工具、权限和身份验证来自宿主机原生 Claude 设置与产品安装。
 
 #### 对 token 的影响
 
-子任务需为独立的 Claude Code 上下文和 query 承担 token 开销。子任务 token 不会进入父级上下文。
+子级需为独立的 Claude Code 上下文和 query 承担 token 开销。子级 token 不会进入父级上下文。
 
 #### 对 KV Cache 的影响
 
@@ -82,15 +82,15 @@ Claude Code 子任务会在一个全新的 SDK query 中接收独立文本任务
 
 #### 模型看到的内容
 
-通过 `dsh-tool-subagent`，前台调用会让父级模型看到符合严格成功条件的 Claude Code 最终答案，或者在结果未完成时看到消费方给出的原样错误。后台调用会先返回 Task id；随后通用任务控制面会送达完成通知，通过 `task_output` 公开最终答案与状态，并允许 `task_kill` 请求取消。Claude Code 的推理、工具活动、中间消息、stderr、工作区差异、用量信息和产品标识符均不会复制到父会话。
+通过 `dsh-tool-subagent`，前台调用会让父级模型看到符合严格成功条件的 Claude Code 最终答案，或者在结果未完成时看到消费方给出的原样错误。后台调用会先返回 Job id；随后通用作业控制面会送达完成通知，通过 `job_output` 公开最终答案与状态，并允许 `job_kill` 请求取消。Claude Code 的推理、工具活动、中间消息、stderr、工作区差异、用量信息和产品标识符均不会复制到父会话。
 
 #### 对 token 的影响
 
-前台输入会增加工具结果中保留的最终答案或错误内容。后台输入还会包含启动确认、完成通知，以及 `task_output`、`task_kill` 或后续状态结果；子任务 token 仍不会进入父级上下文。本提供方自身不添加父级工具 schema。
+前台输入会增加工具结果中保留的最终答案或错误内容。后台输入还会包含启动确认、完成通知，以及 `job_output`、`job_kill` 或后续状态结果；子任务 token 仍不会进入父级上下文。本提供方自身不添加父级工具 schema。
 
 #### 对 KV Cache 的影响
 
-仅追加：前台会在可复用的父请求前缀后增加一个结果，后台则会继续追加 Task 启动确认、通知以及后续控制或收集结果。后台调度可能增加一个由通知唤醒的轮次，但这些消息都不会改写更早的前缀。
+仅追加：前台会在可复用的父请求前缀后增加一个结果，后台则会继续追加 Job 启动确认、通知以及后续控制或收集结果。后台调度可能增加一个由通知唤醒的轮次，但这些消息都不会改写更早的前缀。
 
 ## 已知限制与后续工作
 
@@ -99,6 +99,6 @@ Claude Code 子任务会在一个全新的 SDK query 中接收独立文本任务
 - **产品安装与账户状态仍由原生机制管理**：`claude` 缺失或不兼容、配置错误或身份验证失败都会呈现为启动错误或运行错误；本插件不提供安装程序或登录流程。
 - **SDK 平台 CLI 仍在安装闭包内**：生产环境会忽略它，改用宿主提供的 `claude`，但当前 SDK 的可选依赖仍会安装，并提供无密钥兼容性 fixture。移除该载荷属于独立的产品安装闭包后续项。
 - **没有人工交互路径**：`AskUserQuestion` 被禁用，其他交互回调也不存在，因此需要新审批或输入的任务会失败而不会挂起。
-- **产品载荷仅包含最终文本**：推理、中间消息、工具通信、用量信息、stderr 和工作区差异仍只保留在产品内部；通用 Task id、通知与状态来自共享任务运行时。
+- **产品载荷仅包含最终文本**：推理、中间消息、工具通信、用量信息、stderr 和工作区差异仍只保留在产品内部；通用 Job id、通知与状态来自共享作业运行时。
 - **没有可选的共享能力**：对于本提供方，共享服务会拒绝输出 schema、子任务角色设定、工具筛选和 harness 深度强制约束。
 - **没有按实际经过时间触发的超时或副作用回滚**：长时间运行的工作由调用方取消，且取消前已更改的文件或外部系统不会恢复原状。

@@ -88,8 +88,8 @@ When a preset genuinely owns a service, wrap the provider **and every consumer t
   isolate:
     workflows: true
   config:
-    - id: workflow-workerthread
-      name: '@deepseek-ai/dsh-workflow-workerthread'
+    - id: workflow-worker-thread
+      name: '@deepseek-ai/dsh-workflow-worker-thread'
       config:
         provider: spawn
     - id: tool-workflow
@@ -100,7 +100,7 @@ When a preset genuinely owns a service, wrap the provider **and every consumer t
 
 A consumer left outside the group resolves the host's registry, which the preset did not populate, and then contributes nothing. Mount-validation catches that as a row that never activated.
 
-Realms are for services a preset owns, not for every group. A host capability the preset only consumes must stay outside a realm, or the row cannot resolve it: `tool-bash`, `tool-tasks`, and `tool-goal` publish nothing and sit loose in `standard`, which explains in comments which host instance each one resolves and why a realm would break it. Wrapping a consumer row in a realm of its own is the same error as leaving one outside its provider's realm.
+Realms are for services a preset owns, not for every group. A host capability the preset only consumes must stay outside a realm, or the row cannot resolve it: `tool-bash`, `tool-jobs`, and `tool-goal` publish nothing and sit loose in `standard`, which explains in comments which host instance each one resolves and why a realm would break it. Wrapping a consumer row in a realm of its own is the same error as leaving one outside its provider's realm.
 
 ## Verifying a change
 
@@ -147,7 +147,7 @@ Copy these disabled templates from a shipped full preset and remove `disabled` o
     maxDepth: provider-managed
 ```
 
-The two rows are independent. Leaving both disabled preserves the copied preset, enabling one exposes only that product tool, and enabling both exposes both. `backgroundMode: one-shot` keeps omitted or `false` calls in the foreground and lets explicit `run_in_background: true` return a generic Task id. Full presets already carry `tool-tasks`, while the host carries the task registry; retain both when making a custom composition so `task_output`, `task_list`, `task_kill`, cancellation, and completion notices stay available. The host must provide `codex` or `claude` on `PATH`; the preset does not install, authenticate, select a model for, or probe either product.
+The two rows are independent. Leaving both disabled preserves the copied preset, enabling one exposes only that product tool, and enabling both exposes both. `backgroundMode: one-shot` keeps omitted or `false` calls in the foreground and lets explicit `run_in_background: true` return a generic Job id. Full presets already carry `tool-jobs`, while the host carries the job registry; retain both when making a custom composition so `job_output`, `job_list`, `job_kill`, cancellation, and completion notices stay available. The host must provide `codex` or `claude` on `PATH`; the preset does not install, authenticate, select a model for, or probe either product.
 
 ## What not to move into a preset
 

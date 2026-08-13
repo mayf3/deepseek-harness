@@ -84,12 +84,99 @@ describe('CI workflow', () => {
     expect(aggregate.needs).not.toContain('serial-windows')
   })
 
+  it('exempts push from cancellation, so one master merge does not cancel the running drill', () => {
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    if (!isRecord(workflow.jobs) || !isRecord(workflow.concurrency)) {
+      throw new TypeError('CI workflow must define jobs and a workflow-level concurrency block')
+    }
+
+    // Cancellation applies to the whole superseded RUN, so this has to be
+    // decided at workflow level and gated on the event: a job-level group
+    // cannot exempt its job from its run being cancelled. Only push is exempt —
+    // a drill takes longer than the interval between master merges. The negated
+    // form is load-bearing: `== 'pull_request'` would also stop cancelling
+    // workflow_dispatch, and a re-dispatched runner benchmark holds up to 12
+    // larger runners for 15 minutes in this same group on master. The
+    // expression is evaluated against the NEWLY TRIGGERED run, so a dispatch on
+    // master still cancels a mid-flight drill; the runbook records that bound.
+    expect(workflow.concurrency['cancel-in-progress']).toBe("${{ github.event_name != 'push' }}")
+
+    // Neither drill may carry a job-level group: it would not exempt the job
+    // from run-scoped cancellation.
+    for (const name of ['serial-linux-selfhosted', 'serial-windows']) {
+      const job = workflow.jobs[name]
+      if (!isRecord(job)) throw new TypeError(`${name} must be defined`)
+      expect(job.concurrency).toBeUndefined()
+      // Both stay master-push-only; that is what makes the push carve-out safe.
+      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+    }
+
+    // What bounds the cost of exempting push: a master push may only carry the
+    // cache seeder and the two drills. Any job reachable on push would start
+    // accumulating uncancelled runs, so the set is pinned here.
+    //
+    // Classification is an exact allowlist of the conditions in use, not a
+    // substring match: `github.event_name != 'pull_request'` mentions
+    // `pull_request` yet IS push-reachable, so matching on the event name alone
+    // would silently misclassify it as gated.
+    const NOT_PUSH_REACHABLE = new Set([
+      "github.event_name == 'pull_request'",
+      "always() && github.event_name == 'pull_request'",
+      "github.event_name == 'workflow_dispatch' && inputs.suite == 'larger-runner-benchmark'",
+      "github.event_name == 'workflow_dispatch' && inputs.suite == 'consolidated-runner-benchmark'",
+    ])
+    const pushReachable = Object.entries(workflow.jobs)
+      .filter(([, job]) => {
+        if (!isRecord(job)) return false
+        if (job.if === undefined) return true // unconditional: runs on every event
+        if (job.if === false) return false // `if: false` parses as a boolean
+        if (typeof job.if !== 'string') return true // unrecognized shape: surface it
+        return !NOT_PUSH_REACHABLE.has(job.if.trim())
+      })
+      .map(([name]) => name)
+      .sort()
+    expect(pushReachable).toEqual(['serial-linux-selfhosted', 'serial-windows', 'wine-apt-cache'])
+
+    // Why workflow_dispatch must keep cancelling: each benchmark fans out to a
+    // dozen larger runners at once, in this same group on master. If it stopped
+    // cancelling, a re-dispatch would queue ahead of a drill instead of
+    // replacing the stale measurement.
+    for (const name of ['larger-runner-benchmark', 'consolidated-runner-benchmark']) {
+      const job = workflow.jobs[name]
+      if (!isRecord(job) || !isRecord(job.strategy)) {
+        throw new TypeError(`${name} must define a matrix strategy`)
+      }
+      expect(job.strategy['max-parallel']).toBe(12)
+      expect(job['timeout-minutes']).toBe(15)
+    }
+  })
+
   it('keeps supported LSP source under native Windows coverage', () => {
     const config = readFileSync(resolve(root, 'vitest.config.ts'), 'utf8')
 
-    expect(config).not.toContain('packages/lsp/lsp-local/src/connection.ts')
-    expect(config).not.toContain('packages/lsp/lsp-local/src/index.ts')
-    expect(config).not.toContain('packages/lsp/lsp-local/src/instance.ts')
+    expect(config).not.toContain('packages/lsp/lsp-stdio/src/connection.ts')
+    expect(config).not.toContain('packages/lsp/lsp-stdio/src/index.ts')
+    expect(config).not.toContain('packages/lsp/lsp-stdio/src/instance.ts')
+  })
+
+  it('requires one release-shaped Python runtime target on every pull request', () => {
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    const pythonRuntime = workflowJob(workflow, 'python-runtime')
+    const aggregate = workflowJob(workflow, 'all-checks-passed')
+    if (!Array.isArray(aggregate.needs)) {
+      throw new TypeError('CI aggregate must define required job dependencies')
+    }
+
+    expect(pythonRuntime).toMatchObject({
+      if: "github.event_name == 'pull_request'",
+      name: 'python runtime / release-shaped Linux x64',
+      uses: './.github/workflows/build-exe-for-python-sdk.yml',
+      with: {
+        targets: 'node24-linux-x64',
+        ci: true,
+      },
+    })
+    expect(aggregate.needs).toContain('python-runtime')
   })
 
   it('keeps every Vitest project process-isolated on native Windows', () => {
@@ -220,7 +307,14 @@ describe('Python release workflows', () => {
     const macosCheck = buildSteps.find(step => isRecord(step) && step.name === 'Check macOS deployment target')
     const manylinuxSmoke = buildSteps.find(step => isRecord(step) && step.name === 'Run wheel in a manylinux 2.28 container')
     expect(call.inputs).toHaveProperty('targets')
-    expect(call.inputs).toMatchObject({ release: { type: 'boolean', default: false } })
+    expect(call.inputs).toMatchObject({
+      ci: { type: 'boolean', default: false },
+      release: { type: 'boolean', default: false },
+    })
+    expect(workflow.concurrency).toMatchObject({
+      group: 'build-single-exe-${{ github.workflow }}-${{ github.ref }}',
+    })
+    expect(plan.if).toContain('inputs.ci')
     expect(plan.if).toContain('inputs.release')
     expect(JSON.stringify(plan.steps)).toContain('pep440_version')
     expect(JSON.stringify(workflow)).toContain('macosx_14_0_arm64')

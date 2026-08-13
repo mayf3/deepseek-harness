@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-命名的 [`ctx.subagents`](2026-06-21-subagent-capability-seam.md) 注册表让父 agent（智能体）无需了解子级的运行方式即可委派工作，但 harness 需要通往真实 Codex 与 Claude Code 产品的第一方路径。每条路径都必须向产品交付一项自包含任务，让它在父会话的工作区中执行，返回最终回答或明确的失败或取消结果，并且不留下任何受管的产品进程。
+命名的 [`ctx.subagents`](2026-06-21-subagent-capability-seam.md) 注册表让父 agent（智能体）无需了解子 agent 的运行方式即可委派工作，但 harness 需要通往真实 Codex 与 Claude Code 产品的第一方路径。每条路径都必须向产品交付一项自包含任务，让它在父会话的工作区中执行，返回最终回答或明确的失败或取消结果，并且不留下任何受管的产品进程。
 
 产品集成不得成为任务文本、cwd、取消、结果结算或进程树的第二责任方。因此，所需证据要区分三个事实：无密钥真实产品测试证明官方集成、原生身份验证形态、确定性答案与资源清理；Loader 组合测试证明公开包和文档所示的工具配置无需启动产品即可加载；带密钥 e2e 证明生产提供方与真实产品能够从真实 DeepSeek 服务取得唯一答案。直接发起模型 HTTP 请求或使用产品替身无法取代上述任一产品运行层级；手工挂载插件无法取代 Loader 层级。
 
@@ -14,12 +14,12 @@ Status: implemented
 
 harness 交付两个同级的一次性提供方包：`codex` 与 `claude-code`。本说明负责它们的产品协议、结果映射和进程生命周期；[共享 profile 宿主归属决策](../architecture/2026-08-10-product-subagent-providers-in-shared-host.md)负责提供方位置，[产品一次性后台任务决策](2026-08-12-product-subagent-one-shot-background-tasks.md)负责模型可见的调度选择。加载任一提供方都不会启动产品进程，而且每个工具只接受独立文本任务；产品选择仍属于部署配置。
 
-这两个提供方都报告 `inheritsParentContext: false`，不声明任何可选的启动能力，并传递父会话 cwd，但不会复制父级对话。文档所示的工具使用 `backgroundMode: 'one-shot'` 与 `maxDepth: 'provider-managed'`：消费方默认在前台收集结果，也可把同一次运行放入通用 Task 运行时，而递归策略仍由进程外产品负责。每次调用都会创建一个全新的产品进程和一次不可续接的产品对话。`ctx.subagents` 负责具名请求解析与成对生命周期事件；`dsh-tool-subagent` 负责模型可见的调度以及前台与 Task 适配；`ctx.tasks` 和 `dsh-tool-tasks` 负责 Task id、状态、输出、控制、通知与父级 owner 取消；各产品提供方负责原生结果映射，`dsh-subprocess` 则负责凭证清洗、进程树终止以及整棵进程树的退出观测。
+这两个提供方都报告 `inheritsParentContext: false`，不声明任何可选的启动能力，并传递父会话 cwd，但不会复制父级对话。文档所示的工具使用 `backgroundMode: 'one-shot'` 与 `maxDepth: 'provider-managed'`：消费方默认在前台收集结果，也可把同一次运行放入通用 Job 运行时，而递归策略仍由进程外产品负责。每次调用都会创建一个全新的产品进程和一次不可续接的产品对话。`ctx.subagents` 负责具名请求解析与成对生命周期事件；`dsh-tool-subagent` 负责模型可见的调度以及前台与 Job 适配；`ctx.jobs` 和 `dsh-tool-jobs` 负责 Job id、状态、输出、控制、通知与父级 owner 取消；各产品提供方负责原生结果映射，`dsh-subprocess` 则负责凭证清洗、进程树终止以及整棵进程树的退出观测。
 
 ```text
 fixed tool -> dsh-tool-subagent -> ctx.subagents -> product provider -> product process
   foreground <- final product outcome
-  background -> ctx.tasks / dsh-tool-tasks -> Task id / state / notice / controls
+  background -> ctx.jobs / dsh-tool-jobs -> Job id / state / notice / controls
   both -> provider disposal -> dsh-subprocess -> whole-tree exit
 ```
 
@@ -28,9 +28,9 @@ fixed tool -> dsh-tool-subagent -> ctx.subagents -> product provider -> product 
 | 层级 | 责任方 | 职责 | 可观察结果 |
 | --- | --- | --- | --- |
 | 委派生命周期 | `ctx.subagents` | 解析具名提供方请求，并为已发布的 `SubagentRun` 配对生命周期事件 | 不受支持的上下文或格式错误的输入会在发布运行前报错；启动与终态事件保持成对 |
-| 调度与适配 | `dsh-tool-subagent` | 解释 `run_in_background`，选择前台收集或 one-shot Task 登记，并映射共享停止原因 | 前台返回产品结果；后台在登记完成后返回 Task id |
-| Task 状态与控制 | `ctx.tasks` 与 `dsh-tool-tasks` | 负责 Task 状态、输出、取消、owner 清理、完成通知与面向模型的控制工具 | 准确父级可以收集、列出或停止后台工作，并收到完成通知 |
-| 原生运行与清理 | 产品提供方与 `dsh-subprocess` | 产生一个原生结果、关闭产品协议、请求尽力而为的原生取消，并证明进程树退出 | 前台返回与 Task 结算都会等待幂等资源释放和整棵进程树退出 |
+| 调度与适配 | `dsh-tool-subagent` | 解释 `run_in_background`，选择前台收集或 one-shot Job 登记，并映射共享停止原因 | 前台返回产品结果；后台在登记完成后返回 Job id |
+| Job 状态与控制 | `ctx.jobs` 与 `dsh-tool-jobs` | 负责 Job 状态、输出、取消、owner 清理、完成通知与面向模型的控制工具 | 准确父级可以收集、列出或停止后台工作，并收到完成通知 |
+| 原生运行与清理 | 产品提供方与 `dsh-subprocess` | 产生一个原生结果、关闭产品协议、请求尽力而为的原生取消，并证明进程树退出 | 前台返回与 Job 结算都会等待幂等资源释放和整棵进程树退出 |
 
 ## Codex 提供方
 
@@ -84,12 +84,12 @@ Claude Code 证据锁定 Agent SDK 0.3.220，并使用 SDK 按平台分发的 Cl
 
 **由插件管理登录、产品主目录、模型、设置或权限。** 这些选择会在每个产品的原生配置之外建立另一套权威来源，并将一次性提供方扩张为账户管理功能。提供方只公开显式环境覆盖项和清理宽限期；无人值守交互会以默认拒绝方式失败。
 
-**续接、进度、产品原生后台状态和共享父级上下文。** 提供方载荷仍是一项自包含任务的一个最终回答。通用 Task 层可以额外提供 id、状态、通知、收集与取消结果，但产品会话、恢复、后续交互、中间消息、父级 transcript（文本记录）传递、结构化输出和提供方专属后台状态都需要独立的用户约定，当前实现不会预先构建这些功能。
+**续接、进度、产品原生后台状态和共享父级上下文。** 提供方载荷仍是一项自包含任务的一个最终回答。通用 Job 层可以额外提供 id、状态、通知、收集与取消结果，但产品会话、恢复、后续交互、中间消息、父级 transcript（文本记录）传递、结构化输出和提供方专属后台状态都需要独立的用户约定，当前实现不会预先构建这些功能。
 
 ## 后果
 
-用户通过官方产品集成支持的两个稳定一次性工具进行委派。它们在 Profile 中的归属和按 Preset 暴露方式由[共享宿主归属决策](../architecture/2026-08-10-product-subagent-providers-in-shared-host.md)负责，默认前台且可选通用 Task 的调度方式由[产品一次性后台任务决策](2026-08-12-product-subagent-one-shot-background-tasks.md)负责。本说明规定的提供方生命周期会保留原生设置与行为，而共享服务继续独占任务结算与进程树完全停稳的责任。
+用户通过官方产品集成支持的两个稳定一次性工具进行委派。它们在 Profile 中的归属和按 Preset 暴露方式由[共享宿主归属决策](../architecture/2026-08-10-product-subagent-providers-in-shared-host.md)负责，默认前台且可选通用 Job 的调度方式由[产品一次性后台任务决策](2026-08-12-product-subagent-one-shot-background-tasks.md)负责。本说明规定的提供方生命周期会保留原生设置与行为，而共享服务继续独占作业结算与进程树完全停稳的责任。
 
-每次委派都要承担新建产品进程和独立模型上下文的开销。到达父级的产品载荷仍只有最终文本；后台调度还会额外公开通用 Task id、状态、完成通知以及收集或取消结果。产品原生配置使行为取决于部署环境中安装的产品、账户状态和工作区设置。带密钥 e2e 运行还会消耗外部 API 配额，并依赖 DeepSeek 官方端点；对协议、失败、取消与审批的确定性覆盖仍由无密钥层级承担。提供方不会恢复会话、以流式方式传送进度、接受新的人工交互、回滚工具或文件副作用，也不会施加按实际经过时间触发的超时。
+每次委派都要承担新建产品进程和独立模型上下文的开销。到达父级的产品载荷仍只有最终文本；后台调度还会额外公开通用 Job id、状态、完成通知以及收集或取消结果。产品原生配置使行为取决于部署环境中安装的产品、账户状态和工作区设置。带密钥 e2e 运行还会消耗外部 API 配额，并依赖 DeepSeek 官方端点；对协议、失败、取消与审批的确定性覆盖仍由无密钥层级承担。提供方不会恢复会话、以流式方式传送进度、接受新的人工交互、回滚工具或文件副作用，也不会施加按实际经过时间触发的超时。
 
 兼容性由包级单元测试覆盖率、无密钥真实产品回环测试、带密钥 DeepSeek 随机数测试、公开 Loader 组合、已构建包与 NodeNext 消费方检查、生成的文档与声明以及仓库 CI 矩阵共同锁定。更改受支持的产品基线或 DeepSeek 端点／模型基线时必须刷新这些事实；生产环境不会另行执行运行时版本探测。

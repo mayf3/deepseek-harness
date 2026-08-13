@@ -24,7 +24,7 @@ ACP（Agent Client Protocol）与 tool-bash 的若干限制是同一个所有权
 
 ### 3. Service Definition 中的 Bash 所有者令牌
 
-后台任务所有权从 `tool-bash` 插件本地的 `Map<string, Agent>` 移入执行器。`BashExecRequest` 新增可选的 `owner?: string`；解析后的 `BashExecSpec` 将其作为必需但可空的 `owner: string | undefined` 携带（被遗忘的 owner 是可见的 `undefined`，而非静默缺失的属性）。执行器把 token 存在任务上，并通过新的 `BashExecutor.ownerOf(id): string | undefined` 方法暴露它（不放在公开的 `BashTask` 上——只有一条读取路径，没有冗余 API）。`tool-bash` 完全删除其 `Map`：它在 `start` 时将 `exec.agent?.id`（共享的注册表/会话 id）盖章为 owner，`bash_output`/`bash_kill` 则以 `!== undefined` 语义把 `ctx.bash.ownerOf(id)` 与调用方 token 比较（空字符串 token 仍是真实 owner）。完成通知通过扫描 `ctx.get('agents')?.list()` 查找 `agent.id === ownerToken` 的存活 agent（经 `ctx.get` 读取——`onTaskDone` 运行在 bash fiber 这一外部 fiber 上，直接使用 `ctx.agents` proxy 会抛异常）。由于所有权现在保存在执行器的任务上（随 `dsh-bash` fiber dispose），它能跨越 `tool-bash` HMR 重载，关闭旧的 `XXX(tool-bash-owner-hmr)` 缺口。（`onTaskDone` 监听器仍受 `tool-bash` 的 `apply` effect 约束，因此落在重载间隙的完成仍会丢失一条通知——既有的重载间隙丢失——但所有权隔离本身已经不受 HMR 影响。）
+后台任务所有权从 `tool-bash` 插件本地的 `Map<string, Agent>` 移入执行器。`ShellExecRequest` 新增可选的 `owner?: string`；解析后的 `ShellExecSpec` 将其作为必需但可空的 `owner: string | undefined` 携带（被遗忘的 owner 是可见的 `undefined`，而非静默缺失的属性）。执行器把 token 存在任务上，并通过新的 `ShellExecutor.ownerOf(id): string | undefined` 方法暴露它（不放在公开的 `BashTask` 上——只有一条读取路径，没有冗余 API）。`tool-bash` 完全删除其 `Map`：它在 `start` 时将 `exec.agent?.id`（共享的注册表/会话 id）盖章为 owner，`bash_output`/`bash_kill` 则以 `!== undefined` 语义把 `ctx.shell.ownerOf(id)` 与调用方 token 比较（空字符串 token 仍是真实 owner）。完成通知通过扫描 `ctx.get('agents')?.list()` 查找 `agent.id === ownerToken` 的存活 agent（经 `ctx.get` 读取——`onJobDone` 运行在 bash fiber 这一外部 fiber 上，直接使用 `ctx.agents` proxy 会抛异常）。由于所有权现在保存在执行器的任务上（随 `dsh-shell` fiber dispose），它能跨越 `tool-bash` HMR 重载，关闭旧的 `XXX(tool-bash-owner-hmr)` 缺口。（`onJobDone` 监听器仍受 `tool-bash` 的 `apply` effect 约束，因此落在重载间隙的完成仍会丢失一条通知——既有的重载间隙丢失——但所有权隔离本身已经不受 HMR 影响。）
 
 ## 验证
 
@@ -37,11 +37,11 @@ ACP（Agent Client Protocol）与 tool-bash 的若干限制是同一个所有权
 
 ## 会话所有者令牌在存活 agent 中唯一
 
-bash 所有者 token 比较依赖共享的 `Agent.id`/`SessionId` 在存活 agent 中唯一。并发的同 ID 操作可以都私下准备，但发布时会依次登记会话和 agent；`SessionStore.enter()` 拒绝重复的存活会话 id，每个失败事务都回滚自己的私有状态。因此程序化调用方无法发布两个共享同一会话 token 的存活 agent。访问*策略*（token 比较）留在 Consumer `tool-bash`；bash 能力只存储不透明的 `owner` 字符串且从不解释它——这是正确的 Service Definition / Service provider / Consumer 拆分。
+bash 所有者 token 比较依赖共享的 `Agent.id`/`SessionId` 在存活 agent 中唯一。并发的同 ID 操作可以都私下准备，但发布时会依次登记会话和 agent；`SessionStore.enter()` 拒绝重复的存活会话 id，每个失败事务都回滚自己的私有状态。因此程序化调用方无法发布两个共享同一会话 token 的存活 agent。访问*策略*（token 比较）留在 Consumer `tool-bash`；bash 能力只存储不透明的 `owner` 字符串且从不解释它——这是正确的 Service Definition / Service Provider / Consumer 拆分。
 
 ## 曾考虑的替代方案
 
-- **公开的 `BashTask.owner` 字段**而非 `BashExecutor.ownerOf(id)` Service Definition 方法：否决。一条读取路径即可，无需冗余 API。
+- **公开的 `BashTask.owner` 字段**而非 `ShellExecutor.ownerOf(id)` Service Definition 方法：否决。一条读取路径即可，无需冗余 API。
 - **为 agent 的会话生命周期使用兄弟 Cordis effect**：否决。fiber 卸载时并发释放兄弟 effect（`Promise.all`），store 拥有的 append 发布钩子的移除与循环的关闭 `session/flush` 产生竞争；单一复合 effect 的有序 LIFO 链才能在两条释放路径上都捕获关闭的 `turn/end`。
 - **在 `cancel()` 之外另设一个仅中止步骤的 `abort()`**：最初发布过，后因无人使用而移除；`cancel()` 是唯一的公开停止原语（见[公开停止接口 Agent Note](../simplification/2026-06-20-public-agent-stop-api.md)）。
 

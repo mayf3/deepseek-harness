@@ -34,7 +34,7 @@ type ToolExecutionResult =
 
 `tools/post-execute` 为成功结果提供两种互斥的投影方式。替换 `content` 只改变 Native／模型展示，并保留规范值和元数据。替换 `value` 会重新校验替代值，并重新计算两份展示投影。阻止操作会移除值并转为失败。因此，替换内容并不是保密机制：必须阻止程序化访问的策略，应当阻止调用或替换值。
 
-规范值仅存在于执行期间。agent loop（智能体循环）持久化的 `tool/result` 只包含 `content`、`error` 和可选的 `meta`；Code Mode 的 `tool/code-dispatch` 持久化子调用渲染后的 `content` 与 `isError`。两个事件都不存储规范中间值，因此回放可以重现展示，却无法重建程序化结果。当工具声明 `presentationMeta` 时，系统只会为直接的外层调用计算它；嵌套 Code 分发没有元数据或结果卡片。外层 `run_code` 卡片则读取最终的 post-policy 内容，并且不声明展示元数据。通用以及工具自有的输出落盘投影同样跳过嵌套分发，因为它们的规范值永远不会进入模型上下文。
+规范值仅存在于执行期间。agent loop（智能体循环）持久化的 `tool/result` 只包含 `content`、`error` 和可选的 `meta`；Code Mode 的 `tool/code-dispatch` 持久化子调用渲染后的 `content` 与 `isError`。两个事件都不存储规范中间值，因此回放可以重现展示，却无法重建程序化结果。当工具声明 `presentationMeta` 时，系统只会为直接的外层调用计算它；嵌套 Code 分发没有元数据或结果卡片。外层 `run_code` 卡片则读取最终的 post-policy 内容，并且不声明展示元数据。通用以及工具自有的 spill 投影同样跳过嵌套分发，因为它们的规范值永远不会进入模型上下文。
 
 第一方工具在保持现有 Native 文本不变的同时返回领域 DTO：
 
@@ -47,9 +47,9 @@ type ToolExecutionResult =
 | `grep` | `{ matches: [{ path, lineNumber, line }] }` |
 | `web_search` ／ `web_fetch` | 归一化后的 `WebSearchResult` ／ `WebFetchResult` |
 | `lsp` | `{ kind: "locations", locations, resolvedWorkspaceUri }` 或 `{ kind: "hover", hover }` |
-| `bash` | `{ kind: "background", taskId }` 或 `{ kind: "foreground" } & BashRunResult` |
+| `bash` | `{ kind: "background", jobId }` 或 `{ kind: "foreground" } & ShellRunResult` |
 | `terminal_open` ／ `terminal_list` ／ `terminal_send` ／ `terminal_read` ／ `terminal_signal` ／ `terminal_close` | 公开会话快照、有界的读取／发送 DTO、信号／关闭操作结果，或后台任务句柄 |
-| `task_output` ／ `task_list` ／ `task_kill` | 不含所有者或通知管理信息的公开任务快照 |
+| `job_output` ／ `job_list` ／ `job_kill` | 不含所有者或通知管理信息的公开任务快照 |
 | `subagent` | 后台任务句柄或 `{ kind: "foreground", runId, output: JsonValue[] }` |
 | `workflow` ／ `ralph` | `{ runId, agentsStarted, result: JsonValue }` |
 | `skill` | `{ name, provider, resourceBase?, content }` |
@@ -60,13 +60,13 @@ type ToolExecutionResult =
 | `structured_output` | `{ recorded: true }` |
 | `run_code` | `{ logs: string[], result?: JsonValue }` |
 
-提供方和执行器的采集上限仍会实际限制规范值。仅用于格式化的限制归 `render` 所有；例如，`glob` 和 `grep` 会在 `value` 中保留所有已采集项，而其 Native 投影会保留配置指定的第一页，并尽力将其写入落盘文件。通用落盘机制会前置注册其 post-execute 监听器，并让该监听器先向后委托，因此无论插件加载顺序如何，普通工具自有的异步投影都会在通用字节数上限处理之前完成。文件系统变更工具根据 `args` 和规范的变更前／后值推导可回放的 diff 元数据，不再由工具主体返回 UI 状态。
+提供方和执行器的采集上限仍会实际限制规范值。仅用于格式化的限制归 `render` 所有；例如，`glob` 和 `grep` 会在 `value` 中保留所有已采集项，而其 Native 投影会保留配置指定的第一页，并尽力将其写入 spill 文件。通用 spill 会前置注册其 post-execute 监听器，并让该监听器先向后委托，因此无论插件加载顺序如何，普通工具自有的异步投影都会在通用字节数上限处理之前完成。文件系统变更工具根据 `args` 和规范的变更前／后值推导可回放的 diff 元数据，不再由工具主体返回 UI 状态。
 
 MCP 桥接层通过 `McpResult<{...}> = { content: JsonValue[]; structuredContent? }` 保留协议内容块。当公布的 `outputSchema` 属于受支持的原始子集时，系统会强制校验；不受支持的 schema 则回退为 `JsonValue`，而不会假装已完成校验。Native 渲染仍使用现有的 MCP 到 `ContentBlock` 投影，MCP `isError` 则会变为失败的工具结果。
 
 ## 备选方案
 
-- **向 Code Mode 返回渲染后的文本：**不予采纳。调用方仍需从自然语言中提取 task id、挂载 id、路径和结构化提供方结果。
+- **向 Code Mode 返回渲染后的文本：**不予采纳。调用方仍需从自然语言中提取 job id、挂载 id、路径和结构化提供方结果。
 - **在 `tool/result` 上持久化规范值：**不予采纳。嵌套执行值不属于模型历史记录，无需在回放后继续存在；持久化还会引入与 Native 重建无关的会话格式和存储承诺。
 - **允许工具同时返回值和内容：**不予采纳。由作者分别维护的两份结果可能互相矛盾，策略也无法说明哪一份才是权威结果。渲染器会根据已校验值确定性地产生展示。
 - **将内容替换视为值脱敏：**不予采纳。展示内容和程序化访问面向不同消费方；只隐藏前者会制造虚假的安全边界。

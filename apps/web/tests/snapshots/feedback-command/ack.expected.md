@@ -3,6 +3,9 @@
     - button "Reply with the single word" [disabled]
   - img
   - text: Standard mode
+  - button "Session log":
+    - text: Session log
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -20,13 +23,17 @@
 - paragraph: LIGHTHOUSE
 - button "Copy":
   - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
 - button "Branch into a new conversation":
   - img
 - text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
-- 'button "feedback Feedback recorded for session session-{{uuid}} User: {{uuid}}. Session sharing is enabled."':
+- 'button "feedback Feedback recorded for session session-{{uuid}} Anonymous user: {{uuid}}. Session sharing is enabled."':
   - img
   - img
-  - text: "feedback Feedback recorded for session session-{{uuid}} User: {{uuid}}. Session sharing is enabled."
+  - text: "feedback Feedback recorded for session session-{{uuid}} Anonymous user: {{uuid}}. Session sharing is enabled."
 - textbox "Message the agent"
 - button "Commands":
   - img
