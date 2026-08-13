@@ -311,6 +311,11 @@ describe('task admission and package contracts', () => {
       '@anthropic-ai/claude-agent-sdk',
       CLAUDE_AGENT_SDK_VERSION,
     )
+    expect(manifest.dependencies).toHaveProperty(
+      '@modelcontextprotocol/sdk',
+      '^1.29.0',
+    )
+    expect(manifest.dependencies).toHaveProperty('zod', '^4.4.3')
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-codex')
 
     const sdkRoot = dirname(fileURLToPath(
