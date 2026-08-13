@@ -47,7 +47,7 @@ Codex 0.147.0 使用 Responses 协议，而 DeepSeek 的公开 OpenAI 兼容端�
 
 ## Claude Code 提供方
 
-`@deepseek-ai/dsh-subagent-claude-code` 注册固定的 `claude-code` 提供方，并调用 `@anthropic-ai/claude-agent-sdk@0.3.220`。每次运行前，提供方经宿主 subprocess 执行世界解析固定名称 `claude`，并把准确路径作为 `pathToClaudeCodeExecutable` 交给 SDK；SDK 因此使用启动 DSH 的原生产品，而不是选择自身的 platform `optionalDependency`。Windows `.cmd` 或 `.bat` 路径会作为带引号、仅供本次 spawn 使用的环境展开值穿过 `cmd.exe /v:off`，因此路径中的百分号、与号和感叹号仍只是数据，且无需改变共享子进程约定。提供方使用官方 `query()` 入口点，并将 SDK 的 `spawnClaudeCodeProcess` 参数、cwd、环境和转发的信号交给 `dsh-subprocess`；其私有 `SpawnedProcess` 适配器只公开 SDK 所需的流、事件、终止和退出事实。
+`@deepseek-ai/dsh-subagent-claude-code` 注册固定的 `claude-code` 提供方，并调用 `@anthropic-ai/claude-agent-sdk@0.3.220`。提供方会省略 `pathToClaudeCodeExecutable`，因此 SDK 会从自己的 optional dependency 闭包中，按操作系统、CPU 与 Linux libc 选择携带 Claude Code 2.1.220 的匹配平台包。提供方既不会解析也不会回退宿主 `claude`；省略 optional dependency、不受支持的平台，以及缺失或损坏的平台载荷，都会在第一次委派的 SDK 启动边界失败。提供方使用官方 `query()` 入口点，并把 SDK 的 `spawnClaudeCodeProcess` 给出的原生 `claude` 或 `claude.exe` 命令、参数、cwd、环境和转发的信号交给 `dsh-subprocess`；其私有 `SpawnedProcess` 适配器只公开 SDK 所需的流、事件、终止和退出事实。
 
 公开配置包含与 Codex 兄弟提供方相同、由部署方负责的两个值：显式的 `env` 覆盖项，以及须为正有限值且不得大于仓库共享 `MAX_TIMER_DELAY_MS` 的 `disposeGraceMs`。每次运行都会创建自己的 `AbortController`，设置 `persistSession: false` 并禁用 `AskUserQuestion`。提供方故意省略 `settingSources`，因此 SDK 会相对于父会话 cwd 读取宿主机常规的用户、项目和本地 Claude 设置。它既不复制也不过滤这些设置，也不会创建或修改登录状态。提供方不设置 `canUseTool`、elicitation 或对话回调，因此无人值守交互会经 SDK 失败，而不会等待本提供方不负责的用户界面。
 
@@ -65,7 +65,7 @@ Codex 证据锁定 `@openai/codex@0.147.0` 与 `codex-cli 0.147.0`。其真实�
 
 带密钥 Codex e2e 会注册生产提供方，启动同样的真实 app-server，并通过上述测试专用桥接层请求一个随机数。该测试固定外部端点与模型，不存储任何凭据或请求载荷，要求上游恰好完成一次响应，将去除首尾空白后的产品答案与该随机数逐字节比较，并等待所有受管句柄退出。
 
-Claude Code 证据锁定 Agent SDK 0.3.220，并使用 SDK 按平台分发的 Claude Code 2.1.220 CLI 作为确定性兼容性 fixture（测试前置数据），且该 fixture 经生产环境所用的同一原生可执行文件解析路径运行。其真实产品测试会观测确切的 `x-api-key`、原始任务、逐字节完全一致的最终回答、继承的临时宿主设置标记、进程失败、本地取消、整棵进程树退出，以及位于同时含百分号、与号和感叹号路径中的真实 Windows batch shim。这项证据证明官方 SDK/CLI 集成路径，而不证明它与每个独立安装的产品版本兼容。Loader 与可选 Bundle 组装证据会按名称解析已选择的产品包且不启动产品，provider 测试则证明 SDK 收到由宿主 `PATH` 解析出的可执行文件。
+Claude Code 证据会锁定 Agent SDK 0.3.220、Claude Code 2.1.220，以及八个 SDK 平台包的身份与版本。真实产品测试会让 SDK 选择已安装载荷，断言共享子进程 argv 以该包的原生 CLI 开头，并观测确切的 `x-api-key`、原始任务、逐字节完全一致的最终回答、继承的临时宿主设置标记、进程失败、本地取消和整棵进程树退出。单元覆盖会证明生产运行从不解析宿主 `PATH`、省略可执行文件覆盖、直接转发 SDK 所选的 Windows `claude.exe` 而不经过 batch shim，并且在载荷缺失时原样暴露 SDK 错误且不回退宿主 CLI。这项证据证明锁定的官方 SDK/CLI 集成，而不证明与独立安装的 Claude 版本兼容。Loader 与可选 Bundle 组装证据会按名称解析已选择的产品包且不启动产品。
 
 带密钥 Claude Code e2e 仅在提供方的内存环境中映射密钥与固定的官方端点，把模型变量设为文档所示的 `deepseek-v4-pro[1m]` 与 `deepseek-v4-flash`，并实际经过生产提供方、官方 SDK 与真实 CLI。它将去除首尾空白后的结果与一个随机数比较，并证明整棵进程树退出，且测试不会直接调用 Messages API。
 
@@ -89,6 +89,6 @@ Claude Code 证据锁定 Agent SDK 0.3.220，并使用 SDK 按平台分发的 Cl
 
 用户通过官方产品集成支持的两个稳定前台工具进行委派。已安装提供方位于进程级 Host、工具按 Preset 暴露，这些规则由[共享宿主归属决策](../architecture/2026-08-10-product-subagent-providers-in-shared-host.md)负责；可选包可用性与默认排除由[生产依赖闭包决策](../simplification/2026-08-12-production-dsh-excludes-product-subagent-providers.md)负责。本说明规定的提供方生命周期会保留原生设置与行为，而共享服务继续独占任务结算与进程树完全停稳的责任。
 
-每次委派都要承担新建产品进程和独立模型上下文的开销，且只有最终文本会到达父级。产品原生配置使行为取决于部署环境中安装的产品、账户状态和工作区设置。带密钥 e2e 运行还会消耗外部 API 配额，并依赖 DeepSeek 官方端点；对协议、失败、取消与审批的确定性覆盖仍由无密钥层级承担。提供方不会恢复会话、以流式方式传送进度、接受新的人工交互、回滚工具或文件副作用，也不会施加按实际经过时间触发的超时。
+每次委派都要承担新建产品进程和独立模型上下文的开销，且只有最终文本会到达父级。Codex 行为取决于部署环境中安装的 CLI 与原生配置；Claude Code 行为取决于 Bundle 锁定的平台 CLI，以及原生账户和工作区设置。带密钥 e2e 运行还会消耗外部 API 配额，并依赖 DeepSeek 官方端点；对协议、失败、取消与审批的确定性覆盖仍由无密钥层级承担。提供方不会恢复会话、以流式方式传送进度、接受新的人工交互、回滚工具或文件副作用，也不会施加按实际经过时间触发的超时。
 
 兼容性由包级单元测试覆盖率、无密钥真实产品回环测试、带密钥 DeepSeek 随机数测试、公开 Loader 组合、已构建包与 NodeNext 消费方检查、生成的文档与声明以及仓库 CI 矩阵共同锁定。更改受支持的产品基线或 DeepSeek 端点／模型基线时必须刷新这些事实；生产环境不会另行执行运行时版本探测。

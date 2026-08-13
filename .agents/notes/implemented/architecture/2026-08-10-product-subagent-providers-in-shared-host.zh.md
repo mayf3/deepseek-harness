@@ -16,15 +16,15 @@ Status: implemented
 
 [生产依赖闭包决策](../simplification/2026-08-12-production-dsh-excludes-product-subagent-providers.md)只部分取代本说明先前关于默认包含提供方的选择：base 组合包排除两个提供方，每个提供方包负责其可直接安装的 Bundle patch。本说明继续负责产品 Bundle 安装后进程级的 Host 放置。提供方约定说明继续负责每个产品的协议、结果映射、取消、进程树生命周期与证据层级。[Agent Preset 架构](2026-08-03-per-session-agent-presets.md)继续负责宿主与 agent 的划分、preset 创作，以及改动只影响新组装会话的规则。
 
-这些提供方使用宿主环境已经选定的产品。Codex 启动 `codex`，该命令从 `PATH` 解析；Claude Code 通过共享的子进程执行世界解析 `claude`，并把确切路径交给官方 SDK。加载 Bundle 不会安装产品、创建产品状态、探测版本、测试身份验证，也不会新增产品专属设置。命令缺失和产品故障仍局限于发生问题的那次委派。
+两个提供方的可执行文件归属不同。Codex 会启动从 `PATH` 解析出的宿主 `codex`。Claude Code Bundle 会安装锁定的 Agent SDK 与匹配平台 CLI；提供方让 SDK 选择该私有原生可执行文件，再把命令交给共享子进程责任方，既不查询也不回退宿主 `claude`。加载任一 Bundle 只会注册提供方，不会创建产品状态、探测版本或身份验证，也不会新增产品专属设置。Codex 命令缺失、Claude 平台载荷缺失、身份验证失败和其他产品故障仍局限于发生问题的那次委派。
 
 ## 验证
 
-真实组装会加载未安装产品 Bundle、仅安装 Codex、仅安装 Claude Code 或两者都安装这四种集合，并与不授权工具、仅授权其中一个或同时授权两者的 Agent Preset 完整交叉。测试证明 Host 注册表等于已安装 Bundle 集合，模型可见工具等于已安装且已授权集合的交集，并且组装期间不会启动产品进程。Preset 编辑覆盖继续证明代际隔离。无密钥 ACP（Agent Client Protocol）快照固定模型可见工具 schema，提供方测试则另行证明原生可执行文件解析、失败、取消和进程树完全停稳。
+真实组装会加载未安装产品 Bundle、仅安装 Codex、仅安装 Claude Code 或两者都安装这四种集合，并与不授权工具、仅授权其中一个或同时授权两者的 Agent Preset 完整交叉。测试证明 Host 注册表等于已安装 Bundle 集合，模型可见工具等于已安装且已授权集合的交集，并且组装期间不会启动产品进程。Preset 编辑覆盖继续证明代际隔离。无密钥 ACP（Agent Client Protocol）快照固定模型可见工具 schema，提供方测试则分别证明 Codex 的宿主可执行文件解析、Claude Code 的 SDK 平台载荷选择与无回退行为，以及失败、取消和进程树完全停稳。
 
 ## 考虑过的替代方案
 
-**在每个 base Profile 中保留两个休眠提供方。** 这样每条匹配的 Preset 行都能立即使用，但即使用户不需要任一集成，每次生产安装仍会携带两个提供方包和 Claude Agent SDK。
+**在每个 base Profile 中保留两个休眠提供方。** 这样每条匹配的 Preset 行都能立即使用，但即使用户不需要任一集成，每次生产安装仍会携带两个提供方包、Claude Agent SDK 及其大型平台 CLI 载荷。
 
 **存储全局或按 Profile 配置的产品启用开关。** 进程级开关会与 Preset 争夺模型可见工具的责任归属，也无法表示两个会话使用不同组合。可用性与身份验证属于部署事实，并非另一份需要持久化的产品状态。
 

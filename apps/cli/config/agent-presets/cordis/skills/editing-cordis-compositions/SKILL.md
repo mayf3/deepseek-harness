@@ -154,7 +154,7 @@ Copy these disabled templates from a shipped full preset and remove `disabled` o
     maxDepth: provider-managed
 ```
 
-The two rows are independent. Leaving both disabled preserves the copied preset, enabling one exposes only an installed matching provider, and enabling both exposes the installed intersection. The host must already provide `codex` or `claude` on `PATH`; neither the Bundle nor the preset starts, authenticates, selects a model for, probes, or manages a host-level installation of either product. The Claude Code Bundle's Agent SDK dependency still carries its platform CLI payload, which production ignores in favor of the host's `claude`.
+The two rows are independent. Leaving both disabled preserves the copied preset, enabling one exposes only an installed matching provider, and enabling both exposes the installed intersection. The host must provide `codex` on `PATH` for the Codex provider. The Claude Code Bundle installs and exclusively uses the matching platform CLI selected by its pinned Agent SDK; it does not inspect or fall back to a host `claude`, and a missing optional payload fails the first delegation. Neither Bundle nor the preset starts a product during composition, authenticates an account, selects a model, probes credentials, or manages native product settings.
 
 ## What not to move into a preset
 

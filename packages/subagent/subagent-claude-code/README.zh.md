@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-本包（package）注册固定的 `claude-code` subagent 提供方。每次接受运行请求后，它都会在发起委托的会话工作区中调用官方 Claude Agent SDK，通过共享子进程服务解析原生 `claude` 可执行文件，提交一个自包含的文本任务，并通过共享的 [`dsh-subagent`](../subagent/README.md) 结果约定仅返回最终答案。
+本包（package）注册固定的 `claude-code` subagent 提供方。每次接受运行请求后，它都会在发起委托的会话工作区中调用官方 Claude Agent SDK，让锁定版本的 SDK 选择随包安装的平台 CLI，提交一个自包含的文本任务，并通过共享的 [`dsh-subagent`](../subagent/README.md) 结果约定仅返回最终答案。
 
 ## 启动与所有权
 
@@ -29,9 +29,9 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 | `env` | `{}` | 显式指定的 SDK/CLI 环境，叠加在由共享机制清除凭证后的父环境之上。 |
 | `disposeGraceMs` | `3000` | 共享进程树责任方各终止层级之间的宽限期，单位为毫秒且须为正有限值，并不得大于仓库共享的 [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md)；随后资源释放会等待整棵进程树退出。 |
 
-生产环境从子进程执行世界清除凭证后的 `PATH` 解析 `claude`，再应用显式 `env` 条目，并把所得路径作为 `pathToClaudeCodeExecutable` 交给 SDK。在 Windows 上，解析到的 `.cmd` 或 `.bat` 路径会作为带引号、仅供本次 spawn 使用的环境值交给 `cmd.exe /v:off` 展开一次，因此合法路径中的元字符仍只是数据。锁定版本的 SDK 随后把固定命令行选项放在 cmd 的命令尾部；这些选项不含 cmd 元字符，也并不是普通的 Windows argv。原生设置与身份验证继续是权威来源。本插件不安装另一份 CLI、不选择模型、不创建产品主目录、不执行登录，也不探测账户。具有凭证特征的环境变量会在显式 `env` 覆盖生效前被清除，因此供子进程使用的 API 密钥或 token 必须在该配置中显式提供。除非被覆盖，`ANTHROPIC_BASE_URL` 等非凭证端点变量以及 `PATH` 和 `HOME` 等普通环境变量仍会被继承。
+生产环境会省略 `pathToClaudeCodeExecutable`，因此 Agent SDK 0.3.220 会从自己的平台包中选择匹配的原生 `claude` 或 `claude.exe`，再通过 custom-spawn 钩子把该绝对命令交给 `dsh-subprocess`。提供方不会检查 `PATH`、重复实现平台选择，也不会回退到宿主 `claude`。原生设置与身份验证继续是权威来源。本插件不选择模型、不创建产品主目录、不执行登录，也不探测账户。具有凭证特征的环境变量会在显式 `env` 覆盖生效前被清除，因此供子进程使用的 API 密钥或 token 必须在该配置中显式提供。除非被覆盖，`ANTHROPIC_BASE_URL` 等非凭证端点变量以及 `PATH` 和 `HOME` 等普通环境变量仍会被继承；`PATH` 不参与选择 Claude 可执行文件。
 
-本包是可选的 Profile Bundle。将它安装进目标 Profile 后重启该 Profile；包所声明的 `cordis.patch.yml` 层只注册休眠的 `claude-code` Host provider，不会启动 Claude 进程。移除该包后，下一次 Profile 启动会撤回这一 provider。
+本包是可选的 Profile Bundle。将它安装进目标 Profile 后重启该 Profile；安装会把锁定的 Agent SDK 与一个兼容的平台 CLI 载荷带入该 Profile，而包所声明的 `cordis.patch.yml` 层只注册休眠的 `claude-code` Host provider，不会启动 Claude 进程。移除该包后，下一次 Profile 启动会撤回这一 provider 及其私有运行时闭包。
 
 ```sh
 dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-claude-code
@@ -63,7 +63,9 @@ dsh --profile <name>
 
 ## 产品兼容性与证据
 
-运行时依赖精确锁定为 `@anthropic-ai/claude-agent-sdk@0.3.220`。生产运行使用原生 `claude` 安装。无密钥真实产品测试使用由 SDK 分发的 Claude Code 2.1.220 CLI 作为确定性 fixture（测试前置数据），并通过同一套原生可执行文件解析路径与 Windows batch shim 路径运行；这项测试不声称兼容每个独立安装的版本。Loader 组合证明两个产品包能够共存且不会启动任一产品。
+运行时依赖精确锁定为 `@anthropic-ai/claude-agent-sdk@0.3.220`，其八个平台包都携带 Claude Code 2.1.220。普通安装会按当前操作系统、CPU 及 Linux libc 选择一个载荷。对于当前 darwin-arm64 载荷，`npm pack --dry-run --json` 报告压缩包为 74,858,812 字节、解包后为 256,908,856 字节；其他平台可能不同，这些数值只用于披露而不是安装阈值。无密钥真实产品测试会让 SDK 选择 CLI，通过回环 Messages fixture 运行它，并断言共享子进程 argv 的首项就是该平台包的原生可执行文件。Loader 组合证明两个产品包能够共存且不会启动任一产品。
+
+如果安装时省略 optional dependencies、当前平台不受支持，或所选载荷缺失，提供方注册仍保持休眠，但第一次委派会以 SDK 的原生载荷启动错误失败。提供方既不会探测宿主 CLI，也不会用它重试。
 
 限定于项目所有者身份的分发授权涵盖官方 SDK 及每个 SDK 版本声明的官方 CLI／平台载荷。[`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md) 会披露当前可选载荷闭包，但不会认定其中声明的条款属于宽松许可；其他无关的非宽松运行时依赖仍会使第三方声明门禁失败。
 
@@ -73,7 +75,7 @@ dsh --profile <name>
 
 #### 模型看到的内容
 
-Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。它的工作区是父会话 cwd；其模型、系统指令、工具、权限和身份验证来自宿主机原生 Claude 设置与产品安装。
+Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。它的工作区是父会话 cwd；其模型、系统指令、工具、权限和身份验证来自原生 Claude 设置，可执行版本则来自 Bundle 锁定的 SDK 平台载荷。
 
 #### 对 token 的影响
 
@@ -101,8 +103,8 @@ Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。
 
 - **每次运行均新建一个 query 和一个进程**：不支持续接、恢复、池化、进度流或产品会话持久化。
 - **宿主设置有意保持权威**：项目和用户设置可以改变模型、工具与行为；本提供方不提供经过筛选或与宿主环境隔离的生产模式。
-- **产品安装与账户状态仍由原生机制管理**：`claude` 缺失或不兼容、配置错误或身份验证失败都会呈现为启动错误或运行错误；本插件不提供安装程序或登录流程。
-- **SDK 平台 CLI 仍在安装闭包内**：生产环境会忽略它，改用宿主提供的 `claude`，但当前 SDK 的可选依赖仍会安装，并提供无密钥兼容性 fixture。移除该载荷属于独立的产品安装闭包后续项。
+- **身份验证与账户状态仍由原生机制管理**：Bundle 会提供 CLI，但不会创建账户、登录或改写 Claude 设置；配置与身份验证失败会呈现为启动错误或运行错误。
+- **委派时必须存在 SDK 平台载荷**：省略 optional dependencies 的安装、不受支持的平台以及缺失或损坏的载荷都会在第一次 query 时失败；不会回退到宿主 CLI。
 - **没有人工交互路径**：`AskUserQuestion` 被禁用，其他交互回调也不存在，因此需要新审批或输入的任务会失败而不会挂起。
 - **仅返回最终文本**：推理、中间消息、工具通信、用量信息、stderr 和工作区差异仍只保留在产品内部。
 - **没有可选的共享能力**：对于本提供方，共享服务会拒绝输出 schema、子任务角色设定、工具筛选和 harness 深度强制约束。

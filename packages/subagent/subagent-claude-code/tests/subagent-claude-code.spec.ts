@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import type {
@@ -55,6 +55,19 @@ type QueryFactory = (params: {
 }) => Query
 
 const queryMock = vi.hoisted(() => vi.fn<QueryFactory>())
+
+const CLAUDE_AGENT_SDK_VERSION = '0.3.220'
+const CLAUDE_CODE_VERSION = '2.1.220'
+const CLAUDE_PLATFORM_PACKAGES = [
+  '@anthropic-ai/claude-agent-sdk-darwin-arm64',
+  '@anthropic-ai/claude-agent-sdk-darwin-x64',
+  '@anthropic-ai/claude-agent-sdk-linux-arm64',
+  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl',
+  '@anthropic-ai/claude-agent-sdk-linux-x64',
+  '@anthropic-ai/claude-agent-sdk-linux-x64-musl',
+  '@anthropic-ai/claude-agent-sdk-win32-arm64',
+  '@anthropic-ai/claude-agent-sdk-win32-x64',
+] as const
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async importOriginal => ({
   ...await importOriginal<typeof import('@anthropic-ai/claude-agent-sdk')>(),
@@ -252,7 +265,6 @@ function fakeRun(
   const options: FakeRun['options'] = []
   const spec: ClaudeCodeRunSpec = {
     cwd: '/workspace',
-    executable: '/native/claude',
     env: { ANTHROPIC_API_KEY: 'fake-key' },
     disposeGraceMs: 5,
     spawn: (spawnSpec) => {
@@ -295,8 +307,40 @@ describe('task admission and package contracts', () => {
     }
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.files).toContain('cordis.patch.yml')
-    expect(manifest.dependencies).toHaveProperty('@anthropic-ai/claude-agent-sdk')
+    expect(manifest.dependencies).toHaveProperty(
+      '@anthropic-ai/claude-agent-sdk',
+      CLAUDE_AGENT_SDK_VERSION,
+    )
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-codex')
+
+    const sdkRoot = dirname(fileURLToPath(
+      import.meta.resolve('@anthropic-ai/claude-agent-sdk'),
+    ))
+    const sdkManifest = JSON.parse(readFileSync(
+      resolve(sdkRoot, 'package.json'),
+      'utf8',
+    )) as {
+      version: string
+      claudeCodeVersion: string
+      optionalDependencies: Record<string, string>
+    }
+    expect(sdkManifest.version).toBe(CLAUDE_AGENT_SDK_VERSION)
+    expect(sdkManifest.claudeCodeVersion).toBe(CLAUDE_CODE_VERSION)
+    expect(sdkManifest.optionalDependencies).toEqual(Object.fromEntries(
+      CLAUDE_PLATFORM_PACKAGES.map(packageName => [
+        packageName,
+        CLAUDE_AGENT_SDK_VERSION,
+      ]),
+    ))
+    const lockfile = readFileSync(resolve(root, '../../../pnpm-lock.yaml'), 'utf8')
+    for (const packageName of CLAUDE_PLATFORM_PACKAGES) {
+      expect(lockfile).toContain(
+        `  '${packageName}@${CLAUDE_AGENT_SDK_VERSION}':`,
+      )
+      expect(lockfile).toContain(
+        `      '${packageName}': ${CLAUDE_AGENT_SDK_VERSION}`,
+      )
+    }
 
     const parsed = yaml.load(readFileSync(resolve(root, manifest.dsh!.bundle!.patch!), 'utf8'))
     const rows = Array.isArray(parsed)
@@ -360,7 +404,7 @@ describe('task admission and package contracts', () => {
     const spawn = vi.spyOn(ctx.subprocess, 'spawn')
       .mockImplementation(() => child.handle)
     const resolveExecutable = vi.spyOn(ctx.subprocess, 'resolveExecutable')
-      .mockResolvedValue('/native/claude')
+      .mockResolvedValue('/host/bin/claude')
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     await ctx.plugin(claudeCode, {
       env: {
@@ -382,10 +426,15 @@ describe('task admission and package contracts', () => {
     )
     expect(queryMock).not.toHaveBeenCalled()
 
-    resolveExecutable.mockRejectedValueOnce(new Error('claude missing from PATH'))
+    vi.stubEnv('PATH', '/host/bin')
+    queryMock.mockImplementationOnce(() => {
+      throw new Error(
+        'Native CLI binary for fixture-platform not found. Reinstall @anthropic-ai/claude-agent-sdk without --omit=optional, or set options.pathToClaudeCodeExecutable.',
+      )
+    })
     await expect(ctx.subagents.start('claude-code', request()))
-      .rejects.toThrow('claude missing from PATH')
-    expect(queryMock).not.toHaveBeenCalled()
+      .rejects.toThrow('Native CLI binary for fixture-platform not found')
+    expect(resolveExecutable).not.toHaveBeenCalled()
 
     const run = await ctx.subagents.start('claude-code', request())
     child.settle({ exitCode: 9, signal: null })
@@ -397,13 +446,9 @@ describe('task admission and package contracts', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(
       'subagent-claude-code: child run failed (error):',
     ))
-    expect(resolveExecutable).toHaveBeenCalledWith(
-      'claude',
-      expect.objectContaining({ ANTHROPIC_API_KEY: 'provider-fake-key' }),
-      expect.any(AbortSignal),
-    )
-    expect(queryMock.mock.calls[0]?.[0].options.pathToClaudeCodeExecutable)
-      .toBe('/native/claude')
+    expect(resolveExecutable).not.toHaveBeenCalled()
+    expect(queryMock.mock.calls[1]?.[0].options)
+      .not.toHaveProperty('pathToClaudeCodeExecutable')
     expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
       cwd: process.cwd(),
       graceMs: 29,
@@ -483,20 +528,17 @@ describe('official spawn projection', () => {
     )).toThrow('SDK spawn request omitted its workspace')
   })
 
-  it.each(['cmd', 'bat'])('routes a Windows .%s shim through cmd.exe', (extension) => {
-    const command = String.raw`C:\Program Files\Claude\claude.${extension}`
+  it('forwards the SDK-selected Windows native executable without a batch shim', () => {
+    const command = String.raw`C:\Program Files\Claude\claude.exe`
     const spec = claudeSpawnSpec(sdkSpawnOptions({
       command,
       args: ['--output-format', 'stream-json'],
-    }), 7, 'win32')
+    }), 7)
 
     expect(spec.argv).toEqual([
-      'cmd.exe', '/d', '/v:off', '/s', '/c', '%DSH_CLAUDE_CODE_EXECUTABLE%',
-      '--output-format', 'stream-json',
+      command, '--output-format', 'stream-json',
     ])
-    expect(spec.env).toEqual(expect.objectContaining({
-      DSH_CLAUDE_CODE_EXECUTABLE: `"${command}"`,
-    }))
+    expect(spec.env).not.toHaveProperty('DSH_CLAUDE_CODE_EXECUTABLE')
   })
 
   it('projects streams, exit facts, listeners, and idempotent tree termination', async () => {
@@ -566,7 +608,6 @@ describe('query options and result mapping', () => {
     const captured: SubprocessHandle[] = []
     const spec: ClaudeCodeRunSpec = {
       cwd: '/workspace',
-      executable: '/native/claude',
       env: {
         HOST_VISIBLE: 'overridden',
         ANTHROPIC_API_KEY: 'explicit-fake-key',
@@ -582,10 +623,10 @@ describe('query options and result mapping', () => {
     expect(options).toMatchObject({
       abortController: controller,
       cwd: '/workspace',
-      pathToClaudeCodeExecutable: '/native/claude',
       persistSession: false,
       disallowedTools: ['AskUserQuestion'],
     })
+    expect(options).not.toHaveProperty('pathToClaudeCodeExecutable')
     expect(options.env).toMatchObject({
       HOST_VISIBLE: 'overridden',
       ANTHROPIC_API_KEY: 'explicit-fake-key',
@@ -730,7 +771,6 @@ describe('run publication, cancellation, and settlement', () => {
     let index = 0
     const spec: ClaudeCodeRunSpec = {
       cwd: '/workspace',
-      executable: '/native/claude',
       env: {},
       disposeGraceMs: 5,
       spawn: () => children[index++]!.handle,
@@ -781,7 +821,6 @@ describe('run publication, cancellation, and settlement', () => {
       request(undefined, parentAbort.signal),
       {
         cwd: '/workspace',
-        executable: '/native/claude',
         env: {},
         disposeGraceMs: 5,
         spawn: () => child.handle,
