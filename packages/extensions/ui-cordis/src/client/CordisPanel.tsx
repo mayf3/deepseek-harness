@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import {
   IconCheckOutline16, IconCloseOutline16, IconCordisPluginOutline14, IconPlayOutline16,
-  IconStopFill16, IconTrashOutline16, Tooltip,
+  IconStopFill16, IconTrashOutline16, Tooltip, useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -137,16 +137,7 @@ export function CordisPanel({
     return () => { window.removeEventListener('resize', place) }
   }, [open])
 
-  useEffect(() => {
-    if (!open) return
-    const closeOutside = (event: PointerEvent): void => {
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('pointerdown', closeOutside)
-    return () => { document.removeEventListener('pointerdown', closeOutside) }
-  }, [open])
+  useDismissOnOutsidePointer(rootRef, open, setOpen)
 
   useEffect(() => {
     const now = new Set<ApprovalRequestId>()
