@@ -123,7 +123,7 @@ After a clean mount-validation, ask the user to start a session on the new prese
 
 ## Native product subagents
 
-Codex and Claude Code providers already live in the host composition. A preset chooses either product by contributing the same ordinary delegation-tool row used for spawn and fork; never move a product provider into the preset and never add a product-specific settings field.
+Codex and Claude Code providers belong on the host plane but are not installed by production `dsh`. The active Profile must install and mount the selected provider before a preset can expose its ordinary delegation-tool row; never move a product provider into the preset and never add a product-specific settings field.
 
 Copy these disabled templates from a shipped full preset and remove `disabled` only for the products the user requested:
 
