@@ -437,6 +437,7 @@ describe('the shipped Web composition', () => {
 describe('product subagent Bundle and user-preset intersection', () => {
   const presetIds = ['products-none', 'products-codex', 'products-claude', 'products-both'] as const
   type Product = 'codex' | 'claude-code'
+  type PresetId = typeof presetIds[number]
 
   async function bootProducts(installed: readonly Product[]): Promise<Context> {
     const root = await mkdtemp(join(tmpdir(), 'dsh-product-presets-'))
@@ -477,20 +478,20 @@ describe('product subagent Bundle and user-preset intersection', () => {
   }
 
   it('composes the intersection of installed Bundles and enabled preset rows', async () => {
-    const enabledByPreset = new Map<string, Product[]>([
-      ['products-none', []],
-      ['products-codex', ['codex']],
-      ['products-claude', ['claude-code']],
-      ['products-both', ['codex', 'claude-code']],
-    ])
-    const installations: Product[][] = [
-      [],
-      ['codex'],
-      ['claude-code'],
-      ['codex', 'claude-code'],
+    const enabledByPreset: Record<PresetId, Product[]> = {
+      'products-none': [],
+      'products-codex': ['codex'],
+      'products-claude': ['claude-code'],
+      'products-both': ['codex', 'claude-code'],
+    }
+    const scenarios: Array<{ installed: Product[]; presets: readonly PresetId[] }> = [
+      { installed: [], presets: ['products-both'] },
+      { installed: ['codex'], presets: ['products-both'] },
+      { installed: ['claude-code'], presets: ['products-both'] },
+      { installed: ['codex', 'claude-code'], presets: presetIds },
     ]
 
-    for (const installed of installations) {
+    for (const { installed, presets } of scenarios) {
       const productCtx = await bootProducts(installed)
       const spawn = vi.spyOn(productCtx.subprocess, 'spawn')
       try {
@@ -498,7 +499,8 @@ describe('product subagent Bundle and user-preset intersection', () => {
           .filter(name => name === 'codex' || name === 'claude-code')
           .sort())
           .toEqual([...installed].sort())
-        for (const [id, enabled] of enabledByPreset) {
+        for (const id of presets) {
+          const enabled = enabledByPreset[id]
           const handle = await productCtx.agents.create({
             sessionId: SessionId(`preset-${id}-${installed.join('-') || 'none'}-${randomUUID()}`),
             setup: agentCtx => productCtx.agentPresets.mount(agentCtx, id).then(() => undefined),

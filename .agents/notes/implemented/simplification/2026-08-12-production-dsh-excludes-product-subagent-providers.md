@@ -16,7 +16,7 @@ The two Bundles remain independent. The Codex Bundle owns its `@deepseek-ai/dsh-
 
 ## Verification
 
-Package tests pin each Bundle manifest, exported patch, exact self-provider row, and product-specific runtime dependency. Workspace validation discovers Bundle manifests by declaration rather than directory. Production-closure tests prove the default, Codex-only, and Claude-only dependency boundaries, while real Bundle-patch and Agent-Preset composition covers all four installed sets against all four tool sets and proves composition starts no product process. The base bundle test continues to reject both provider dependencies and configuration rows.
+Package tests pin each Bundle manifest, published patch, exact self-provider row, and product-specific runtime dependency. Workspace validation derives each published patch from its Bundle declaration rather than a package catalog. Production-closure tests prove the default, Codex-only, and Claude-only dependency boundaries, while real Bundle-patch and Agent-Preset composition covers all four installed sets, the full tool-grant matrix on a Host with both providers, representative missing-provider cases, and zero product processes. The base bundle test continues to reject both provider dependencies and configuration rows.
 
 ## Alternatives considered
 

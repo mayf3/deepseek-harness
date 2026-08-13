@@ -16,7 +16,7 @@ Status: implemented
 
 ## 验证
 
-包测试会固定每个 Bundle 的 manifest、导出的 patch、准确的自身提供方行以及产品专属运行时依赖。工作区验证会按 Bundle 声明发现 manifest，而非按目录发现。生产闭包测试证明默认、仅 Codex 与仅 Claude 三种依赖边界；真实 Bundle patch 与 Agent Preset 的组装会覆盖四种安装集合与四种工具集合的完整矩阵，并证明组装不会启动产品进程。base 组合包测试仍会拒绝这两个提供方依赖与配置行。
+包测试会固定每个 Bundle 的 manifest、发布 patch、准确的自身提供方行以及产品专属运行时依赖。工作区验证会从 Bundle 声明派生每个发布 patch，而非维护包目录。生产闭包测试证明默认、仅 Codex 与仅 Claude 三种依赖边界；真实 Bundle patch 与 Agent Preset 的组装会覆盖四种安装集合、同时安装两个提供方时的完整工具授权矩阵、缺失提供方的代表场景以及零产品进程。base 组合包测试仍会拒绝这两个提供方依赖与配置行。
 
 ## 考虑过的替代方案
 

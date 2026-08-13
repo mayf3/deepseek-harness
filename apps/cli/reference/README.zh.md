@@ -52,7 +52,7 @@ dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-codex
 dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-claude-code
 ```
 
-pnpm 操作成功后只会改变磁盘上的 Profile manifest 与 Bundle 列表；正在运行的 Profile 会保留本次启动时的 Bundle 集合。添加、移除或更新 Bundle 后须重启该 Profile。这个启动边界只适用于 Bundle 成员变化，Profile 或 home 中普通 `cordis.patch.yml` 的编辑仍保留既有热重载行为。下一次启动时，每个已安装的产品 Bundle 只注册自己的休眠 Host provider，不会启动、安装、认证或配置原生产品。完整 Agent Preset 中的两个产品工具行仍默认禁用，因此还须在复制出的 Preset 中单独启用对应行，新 Agent 才能看到该工具。只安装一个 provider 不会安装另一个产品包；默认 dsh 依赖闭包不包含任一 provider，也不包含 Claude Agent SDK。
+pnpm 操作成功后只会改变磁盘上的 Profile manifest 与 Bundle 列表；正在运行的 Profile 会保留本次启动时的 Bundle 集合。添加、移除或更新 Bundle 后须重启该 Profile。这个启动边界只适用于 Bundle 成员变化，Profile 或 home 中普通 `cordis.patch.yml` 的编辑仍保留既有热重载行为。下一次启动时，每个已安装的产品 Bundle 只注册自己的休眠 Host provider，不会启动、认证、配置原生产品，也不会管理宿主级产品安装。Claude Code Bundle 的 Agent SDK 依赖仍携带平台 CLI 载荷，但生产环境会忽略该载荷并使用宿主提供的 `claude`。完整 Agent Preset 中的两个产品工具行仍默认禁用，因此还须在复制出的 Preset 中单独启用对应行，新 Agent 才能看到该工具。只安装一个 provider 不会安装另一个产品包；默认 dsh 依赖闭包不包含任一 provider，也不包含 Claude Agent SDK。
 
 ```sh
 dsh plugin --profile tui add github:deepseek-harness/turtle-ui

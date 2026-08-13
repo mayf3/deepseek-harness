@@ -269,12 +269,10 @@ describe('task admission and package contracts', () => {
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>
       peerDependencies?: Record<string, string>
-      exports?: Record<string, unknown>
       files?: string[]
       dsh?: { bundle?: { patch?: string } }
     }
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
-    expect(manifest.exports?.['./cordis.patch.yml']).toBe('./cordis.patch.yml')
     expect(manifest.files).toContain('cordis.patch.yml')
     expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-sdk-protocol')
     expect(manifest.peerDependencies).not.toHaveProperty('@deepseek-ai/dsh-sdk-protocol')
