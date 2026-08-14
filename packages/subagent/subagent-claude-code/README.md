@@ -39,7 +39,7 @@ dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-claude-code
 dsh --profile <name>
 ```
 
-Installation controls Host availability, not model permission. Full Agent Presets carry the tool row below with `disabled: true`; copy a preset and remove that field to expose `subagent_claude_code` only to new agents composed from the copy. The Profile's own patch can replace the Bundle row's complete `config`, while a custom Host composition can still mount the package directly.
+Installation controls Host availability, not model permission. Full Agent Presets carry the tool row below with `disabled: true`; copy a preset and remove that field to expose `subagent_claude_code` only to new agents composed from the copy. Its `one-shot` policy keeps omitted or `false` `run_in_background` calls in the foreground, while explicit `true` returns a parent-owned Job id for `job_output` or `job_kill`. The base Host and full presets already provide the generic Job registry and controls. The Profile's own patch can replace the Bundle row's complete `config`, while a custom Host composition can still mount the package directly.
 
 ```yaml
 # $DSH_HOME/profiles/<name>/cordis.patch.yml (optional provider override)
@@ -53,11 +53,10 @@ Installation controls Host availability, not model permission. Full Agent Preset
 # A copied Agent Preset; remove `disabled` to grant this tool.
 - id: tool-subagent-claude-code
   name: '@deepseek-ai/dsh-tool-subagent'
-  disabled: true
   config:
     provider: claude-code
     toolName: subagent_claude_code
-    enableRunInBackground: false
+    backgroundMode: one-shot
     maxDepth: provider-managed
 ```
 
@@ -85,19 +84,19 @@ The child pays for an independent Claude Code context and query. Child tokens do
 
 Independent of the parent request cache. Reuse depends only on Claude Code's own model, instructions, tools, native settings, and fresh query.
 
-### Parent tool result, indirectly
+### Parent scheduling and results, indirectly
 
 #### What the model sees
 
-Through `dsh-tool-subagent`, the parent sees only the strict final Claude Code answer or the consumer's exact error for a non-completed result. Claude Code reasoning, tool activity, intermediate messages, stderr, workspace diffs, usage, and product ids are not copied into the parent Session.
+Through `dsh-tool-subagent`, a foreground call gives the parent the strict final Claude Code answer or the consumer's exact error for a non-completed result. A background call first returns a Job id; the generic job controls later deliver a completion notice, expose the final answer and status through `job_output`, and let `job_kill` request cancellation. Claude Code reasoning, tool activity, intermediate messages, stderr, workspace diffs, usage, and product ids are not copied into the parent Session.
 
 #### Token effect
 
-Parent input grows only by the final answer or error retained in the tool result. This provider adds no parent tool schema by itself.
+Foreground input grows by the retained final answer or error. Background input also includes the start acknowledgement, completion notice, and any `job_output`, `job_kill`, or later status results; child tokens still do not enter the parent context. This provider adds no parent tool schema by itself.
 
 #### KV Cache effect
 
-Append-only: the new tool result follows the reusable parent request prefix.
+Append-only: foreground adds one result after the reusable parent prefix, while background appends the Job acknowledgement, notice, and later control or collection results. Background scheduling can add a notice-driven turn, but none of these messages rewrites the earlier prefix.
 
 ## Known Limitations and Deferred Work
 
@@ -106,6 +105,6 @@ Append-only: the new tool result follows the reusable parent request prefix.
 - **Authentication and account state remain native** — the Bundle supplies the CLI but does not create an account, log in, or rewrite Claude settings; configuration and authentication failures surface as startup or run errors.
 - **The SDK platform payload is required at delegation time** — installs that omit optional dependencies, unsupported platforms, and missing or damaged payloads fail at the first query; there is no host-CLI fallback.
 - **No human interaction path** — `AskUserQuestion` is disabled and other interactive callbacks are absent, so tasks requiring new approval or input fail instead of suspending.
-- **Final text only** — reasoning, intermediate messages, tool traffic, usage, stderr, and workspace diffs remain product-local.
+- **Product payload is final text only** — reasoning, intermediate messages, tool traffic, usage, stderr, and workspace diffs remain product-local; generic Job ids, notices, and status come from the shared job runtime.
 - **No optional shared capabilities** — output schemas, child personas, tool filtering, and harness depth enforcement are rejected by the shared service for this provider.
 - **No wall-clock timeout or side-effect rollback** — the caller cancels long work, and files or external systems changed before cancellation are not restored.

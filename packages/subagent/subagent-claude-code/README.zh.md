@@ -39,7 +39,7 @@ dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-claude-code
 dsh --profile <name>
 ```
 
-安装决定 Host 可用性，而不是模型权限。完整 Agent Preset 携带下列工具行并设置 `disabled: true`；复制一个 preset 后删除该字段，即可只向由该副本组装的新 agent 暴露 `subagent_claude_code`。Profile 自己的 patch 可以替换 Bundle 行的完整 `config`，而自定义 Host 组合仍可直接挂载本包。
+安装决定 Host 可用性，而不是模型权限。完整 Agent Preset 携带下列工具行并设置 `disabled: true`；复制一个 preset 后删除该字段，即可只向由该副本组装的新 agent 暴露 `subagent_claude_code`。其 `one-shot` 策略会让省略 `run_in_background` 或传入 `false` 的调用继续在前台等待，而显式传入 `true` 会返回由父 agent 拥有的 Job ID，供 `job_output` 或 `job_kill` 使用。base Host 与完整 preset 已提供通用 Job 注册表和控制工具。Profile 自己的 patch 可以替换 Bundle 行的完整 `config`，而自定义 Host 组合仍可直接挂载本包。
 
 ```yaml
 # $DSH_HOME/profiles/<name>/cordis.patch.yml (optional provider override)
@@ -53,11 +53,10 @@ dsh --profile <name>
 # A copied Agent Preset; remove `disabled` to grant this tool.
 - id: tool-subagent-claude-code
   name: '@deepseek-ai/dsh-tool-subagent'
-  disabled: true
   config:
     provider: claude-code
     toolName: subagent_claude_code
-    enableRunInBackground: false
+    backgroundMode: one-shot
     maxDepth: provider-managed
 ```
 
@@ -85,19 +84,19 @@ Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。
 
 这与父请求缓存相互独立。能否复用只取决于 Claude Code 自身的模型、指令、工具、原生设置和全新 query。
 
-### 父级工具结果（间接）
+### 父级调度与结果（间接）
 
 #### 模型看到的内容
 
-通过 `dsh-tool-subagent`，父级模型只会看到符合严格成功条件的 Claude Code 最终答案，或者在结果未完成时看到消费方给出的原样错误。Claude Code 的推理、工具活动、中间消息、stderr、工作区差异、用量信息和产品标识符均不会复制到父会话。
+通过 `dsh-tool-subagent`，前台调用会让父级模型看到符合严格成功条件的 Claude Code 最终答案，或者在结果未完成时看到消费方给出的原样错误。后台调用会先返回 Job id；随后通用作业控制面会送达完成通知，通过 `job_output` 公开最终答案与状态，并允许 `job_kill` 请求取消。Claude Code 的推理、工具活动、中间消息、stderr、工作区差异、用量信息和产品标识符均不会复制到父会话。
 
 #### 对 token 的影响
 
-父级输入只会增加工具结果中保留的最终答案或错误内容。本提供方自身不添加父级工具 schema。
+前台输入会增加工具结果中保留的最终答案或错误内容。后台输入还会包含启动确认、完成通知，以及 `job_output`、`job_kill` 或后续状态结果；子任务 token 仍不会进入父级上下文。本提供方自身不添加父级工具 schema。
 
 #### 对 KV Cache 的影响
 
-仅追加：新的工具结果接在可复用的父请求前缀之后。
+仅追加：前台会在可复用的父请求前缀后增加一个结果，后台则会继续追加 Job 启动确认、通知以及后续控制或收集结果。后台调度可能增加一个由通知唤醒的轮次，但这些消息都不会改写更早的前缀。
 
 ## 已知限制与后续工作
 
@@ -106,6 +105,6 @@ Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。
 - **身份验证与账户状态仍由原生机制管理**：Bundle 会提供 CLI，但不会创建账户、登录或改写 Claude 设置；配置与身份验证失败会呈现为启动错误或运行错误。
 - **委派时必须存在 SDK 平台载荷**：省略 optional dependencies 的安装、不受支持的平台以及缺失或损坏的载荷都会在第一次 query 时失败；不会回退到宿主 CLI。
 - **没有人工交互路径**：`AskUserQuestion` 被禁用，其他交互回调也不存在，因此需要新审批或输入的任务会失败而不会挂起。
-- **仅返回最终文本**：推理、中间消息、工具通信、用量信息、stderr 和工作区差异仍只保留在产品内部。
+- **产品载荷仅包含最终文本**：推理、中间消息、工具通信、用量信息、stderr 和工作区差异仍只保留在产品内部；通用 Job id、通知与状态来自共享作业运行时。
 - **没有可选的共享能力**：对于本提供方，共享服务会拒绝输出 schema、子任务角色设定、工具筛选和 harness 深度强制约束。
 - **没有按实际经过时间触发的超时或副作用回滚**：长时间运行的工作由调用方取消，且取消前已更改的文件或外部系统不会恢复原状。

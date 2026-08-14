@@ -1,4 +1,4 @@
-# Test-only composition of the Claude Code foreground tool around its Bundle-supplied provider.
+# Test-only composition of the Claude Code one-shot tool around its Bundle-supplied provider.
 # The owning e2e applies the package's real patch and never invokes a model or product process.
 - id: fixture
   name: './fixture.ts'
@@ -14,7 +14,7 @@
   config:
     provider: claude-code
     toolName: subagent_claude_code
-    enableRunInBackground: false
+    backgroundMode: one-shot
     maxDepth: 'provider-managed'
 
 - id: agent-spine

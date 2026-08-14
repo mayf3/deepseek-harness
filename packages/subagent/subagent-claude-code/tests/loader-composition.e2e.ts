@@ -23,7 +23,7 @@ const bundlePatchPath = join(packageDir, bundlePatch)
 const repoTsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
 
 describe('Claude Code provider public Loader composition', () => {
-  it('loads its Bundle patch and foreground tool without starting Claude Code', async () => {
+  it('loads its Bundle patch, one-shot tool, and job controls without starting Claude Code', async () => {
     const { stdout, stderr } = await runLoaderSmoke({
       label: 'product-provider Loader composition',
       tempDirPrefix: 'dsh-product-provider-loader-',
@@ -53,9 +53,10 @@ describe('Claude Code provider public Loader composition', () => {
       },
       tool: {
         name: 'subagent_claude_code',
-        parameterNames: ['description', 'prompt'],
+        parameterNames: ['description', 'prompt', 'run_in_background'],
         required: ['description', 'prompt'],
       },
+      jobTools: ['job_kill', 'job_list', 'job_output'],
       starts: 0,
     })
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)

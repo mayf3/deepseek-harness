@@ -45,6 +45,10 @@ try {
       parameterNames: Object.keys(properties).sort(),
       required: tool.parameters.required,
     },
+    jobTools: ctx.tools.schemas()
+      .map(schema => schema.name)
+      .filter(name => name === 'job_kill' || name === 'job_list' || name === 'job_output')
+      .sort(),
     starts,
   })}\n`)
 } finally {

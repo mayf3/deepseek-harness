@@ -197,18 +197,17 @@
         toolName: subagent_fork
         backgroundMode: continuable
 
-    # Product providers are host-plane singletons. Copy this preset, then
-    # remove `disabled` from either ordinary tool row to expose that product
-    # only to agents composed from the copy.
-    # Install the optional Claude Code Provider Bundle in this Profile and restart
-    # the Host before enabling its template. Installation alone grants no tool.
+    # Production dsh does not install these optional providers. A deployment
+    # mounts Codex explicitly; the Claude Code Bundle mounts its provider once
+    # on the host plane. Copy this preset, then remove `disabled` from the
+    # matching tool row; Host availability alone grants no tool.
     - id: tool-subagent-codex
       name: '@deepseek-ai/dsh-tool-subagent'
       disabled: true
       config:
         provider: codex
         toolName: subagent_codex
-        enableRunInBackground: false
+        backgroundMode: one-shot
         maxDepth: provider-managed
 
     - id: tool-subagent-claude-code
@@ -217,7 +216,7 @@
       config:
         provider: claude-code
         toolName: subagent_claude_code
-        enableRunInBackground: false
+        backgroundMode: one-shot
         maxDepth: provider-managed
 
     - id: workflow-worker-thread
