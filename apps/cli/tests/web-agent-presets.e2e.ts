@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { boot, healProfilesModuleFallback, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
+import { boot, healProfilesModuleFallback, loadOverlayPatches, loadProfile } from '@deepseek-ai/dsh-app-boot'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -26,8 +26,8 @@ const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 /** The shipped Web surface: the dsh-base and dsh-web-app bundle patches over an empty preset root. */
 const BASE_PATCH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
 const WEB_PATCH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
-const CODEX_PATCH = join(REPO_ROOT, 'packages/subagent/subagent-codex/cordis.patch.yml')
-const CLAUDE_CODE_PATCH = join(REPO_ROOT, 'packages/subagent/subagent-claude-code/cordis.patch.yml')
+const CODEX_PACKAGE_DIR = join(REPO_ROOT, 'packages/subagent/subagent-codex')
+const CLAUDE_CODE_PACKAGE_DIR = join(REPO_ROOT, 'packages/subagent/subagent-claude-code')
 /** The installation anchor whose dependency surface the preset module fallback mirrors. */
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 const MINIMAL_PROMPT = 'You are a helpful software engineer assistant.'
@@ -49,11 +49,10 @@ async function bootWeb(
   settingsFile: string,
   extra: PatchOptions[] = [],
   profilePackages: readonly string[] = [],
+  profileBundles?: readonly string[],
 ): Promise<Context> {
   const storageRoot = join(dirname(settingsFile), 'storages')
-  const patches: PatchOptions[] = [
-    ...loadOverlayPatches('dsh-test', BASE_PATCH),
-    ...loadOverlayPatches('dsh-test', WEB_PATCH),
+  const overrides: PatchOptions[] = [
     // The settings row defaults to `$DSH_HOME/settings.yaml`. Left alone it
     // reads the developer's own document — and since the default preset is a
     // setting, a stored `agent-presets.default` would decide this file's
@@ -128,9 +127,22 @@ async function bootWeb(
     await mkdir(dirname(link), { recursive: true })
     await symlink(packageDir, link, 'junction')
   }
+  let bundlePatches: PatchOptions[] = [
+    ...loadOverlayPatches('dsh-test', BASE_PATCH),
+    ...loadOverlayPatches('dsh-test', WEB_PATCH),
+  ]
+  if (profileBundles !== undefined) {
+    await writeFile(join(profileDir, 'package.json'), JSON.stringify({
+      private: true,
+      dependencies: Object.fromEntries(profileBundles.map(name => [name, 'workspace:*'])),
+      dsh: { profile: { bundles: profileBundles } },
+    }, null, 2) + '\n')
+    const profile = loadProfile('dsh-test', 'spec', INSTALL_ANCHOR, home, { userLayer: false })
+    bundlePatches = profile.layers.flatMap(layer => layer.patches)
+  }
   const rootConfig = join(profileDir, 'cordis.yml')
   await writeFile(rootConfig, '[]\n')
-  return await boot('dsh-test', rootConfig, patches, (bootCtx) => {
+  return await boot('dsh-test', rootConfig, [...bundlePatches, ...overrides], (bootCtx) => {
     provideCmdline(bootCtx, { args: [], exit: () => {} })
   })
 }
@@ -467,14 +479,15 @@ describe('product Bundle and user-preset intersection', () => {
       await mkdir(directory, { recursive: true })
       await writeFile(join(directory, 'agent.cordis.yml'), composition)
     }
-    const patchPath = (product: Product): string => (
-      product === 'codex' ? CODEX_PATCH : CLAUDE_CODE_PATCH
+    const packageDir = (product: Product): string => (
+      product === 'codex' ? CODEX_PACKAGE_DIR : CLAUDE_CODE_PACKAGE_DIR
     )
-    const productPatches = installed.flatMap(product => (
-      loadOverlayPatches('dsh-test', patchPath(product))
-    ))
+    const packageName = (product: Product): string => (
+      product === 'codex'
+        ? '@deepseek-ai/dsh-subagent-codex'
+        : '@deepseek-ai/dsh-subagent-claude-code'
+    )
     return await bootWeb(settingsFile, [
-      ...productPatches,
       {
         id: 'agent-presets',
         config: {
@@ -486,7 +499,11 @@ describe('product Bundle and user-preset intersection', () => {
           includeUserRoot: false,
         },
       },
-    ], installed.map(product => dirname(patchPath(product))))
+    ], installed.map(packageDir), [
+      '@deepseek-ai/dsh-base',
+      '@deepseek-ai/dsh-web-app',
+      ...installed.map(packageName),
+    ])
   }
 
   it('composes the intersection of installed Bundles and enabled preset rows', async () => {
