@@ -387,12 +387,7 @@ describe('official Codex platform payloads', () => {
         fixtureRoot,
         'node_modules/@openai/codex/package.json',
       )
-      const payloadPath = join(
-        fixtureRoot,
-        'node_modules/@openai/codex-darwin-arm64/package.json',
-      )
       mkdirSync(resolve(wrapperPath, '..'), { recursive: true })
-      mkdirSync(resolve(payloadPath, '..'), { recursive: true })
       writeFileSync(wrapperPath, JSON.stringify({
         name: CODEX_PACKAGE,
         version: '9.8.7',
@@ -401,11 +396,18 @@ describe('official Codex platform payloads', () => {
           '@openai/codex-linux-x64': 'npm:@openai/codex@9.8.7-linux-x64',
         },
       }))
-      writeFileSync(payloadPath, JSON.stringify({
-        name: CODEX_PACKAGE,
-        version: '9.8.7-darwin-arm64',
-        license: 'Apache-2.0',
-      }))
+      for (const platform of ['darwin-arm64', 'linux-x64']) {
+        const payloadPath = join(
+          fixtureRoot,
+          `node_modules/@openai/codex-${platform}/package.json`,
+        )
+        mkdirSync(resolve(payloadPath, '..'), { recursive: true })
+        writeFileSync(payloadPath, JSON.stringify({
+          name: CODEX_PACKAGE,
+          version: `9.8.7-${platform}`,
+          license: 'Apache-2.0',
+        }))
+      }
 
       expect(codexDistributionFromInstalledPackage(wrapperPath)).toEqual({
         wrapperVersion: '9.8.7',
