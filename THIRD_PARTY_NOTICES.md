@@ -5,7 +5,7 @@
 
 DeepSeek Harness is licensed under [MIT](LICENSE). It depends on the third-party software listed below. Each project remains under its own license; nothing in this file changes those terms.
 
-This file lists **direct** dependencies declared by the workspace and the explicitly disclosed official Claude Code and Codex platform payload closures. It is generated from the workspace manifests by `scripts/gen-third-party-notices.ts`: a pre-commit hook regenerates it whenever a staged file changes one of its inputs, and `scripts/gen-third-party-notices.spec.ts` asserts in the test lane that the committed bytes match. Deleting a manifest runs no hook, so that case is caught by the assertion instead. Run `pnpm run verify-third-party-notices` for the standalone check.
+This file lists **direct** dependencies declared by the workspace and the explicitly disclosed official Claude Code platform payload closure. It is generated from the workspace manifests by `scripts/gen-third-party-notices.ts`: a pre-commit hook regenerates it whenever a staged file changes one of its inputs, and `scripts/gen-third-party-notices.spec.ts` asserts in the test lane that the committed bytes match. Deleting a manifest runs no hook, so that case is caught by the assertion instead. Run `pnpm run verify-third-party-notices` for the standalone check.
 
 The complete npm transitive closure, including the Landlock launcher workspace, is recorded with exact pinned versions in [`pnpm-lock.yaml`](pnpm-lock.yaml) — inspect it with `pnpm licenses list`. The Python closure is recorded separately in [`python/sdk/uv.lock`](python/sdk/uv.lock).
 
@@ -112,20 +112,6 @@ The installed SDK 0.3.220 declares the following optional platform packages. Eac
 | [`@anthropic-ai/claude-agent-sdk-linux-x64-musl`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk-linux-x64-musl) | 0.3.220 | SEE LICENSE IN LICENSE.md |
 | [`@anthropic-ai/claude-agent-sdk-win32-arm64`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk-win32-arm64) | 0.3.220 | SEE LICENSE IN LICENSE.md |
 | [`@anthropic-ai/claude-agent-sdk-win32-x64`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk-win32-x64) | 0.3.220 | SEE LICENSE IN LICENSE.md |
-
-
-## Official Codex platform payloads
-
-The installed `@openai/codex` wrapper 0.147.0 declares the following optional-dependency aliases. Every alias resolves to an official platform-specific `@openai/codex` version that carries the native Codex CLI and its bundled resources; the declared license is verified against the payload installed for the current host.
-
-| Optional dependency alias | Published package | Version | Declared license |
-| --- | --- | --- | --- |
-| `@openai/codex-darwin-arm64` | [`@openai/codex`](https://www.npmjs.com/package/@openai/codex/v/0.147.0-darwin-arm64) | 0.147.0-darwin-arm64 | Apache-2.0 |
-| `@openai/codex-darwin-x64` | [`@openai/codex`](https://www.npmjs.com/package/@openai/codex/v/0.147.0-darwin-x64) | 0.147.0-darwin-x64 | Apache-2.0 |
-| `@openai/codex-linux-arm64` | [`@openai/codex`](https://www.npmjs.com/package/@openai/codex/v/0.147.0-linux-arm64) | 0.147.0-linux-arm64 | Apache-2.0 |
-| `@openai/codex-linux-x64` | [`@openai/codex`](https://www.npmjs.com/package/@openai/codex/v/0.147.0-linux-x64) | 0.147.0-linux-x64 | Apache-2.0 |
-| `@openai/codex-win32-arm64` | [`@openai/codex`](https://www.npmjs.com/package/@openai/codex/v/0.147.0-win32-arm64) | 0.147.0-win32-arm64 | Apache-2.0 |
-| `@openai/codex-win32-x64` | [`@openai/codex`](https://www.npmjs.com/package/@openai/codex/v/0.147.0-win32-x64) | 0.147.0-win32-x64 | Apache-2.0 |
 
 
 ## Development-only npm dependencies

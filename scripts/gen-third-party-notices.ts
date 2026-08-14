@@ -9,7 +9,6 @@
  */
 
 import { existsSync, globSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { parse as parseToml, type TomlTableWithoutBigInt, type TomlValueWithoutBigInt } from 'smol-toml'
@@ -51,9 +50,6 @@ const FIRST_PARTY = new Set([
 export const CLAUDE_AGENT_SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk'
 const CLAUDE_PLATFORM_PACKAGE_PREFIX = `${CLAUDE_AGENT_SDK_PACKAGE}-`
 const CLAUDE_PLATFORM_DECLARED_LICENSE = 'SEE LICENSE IN LICENSE.md'
-export const CODEX_PACKAGE = '@openai/codex'
-const CODEX_PLATFORM_ALIAS_PREFIX = `${CODEX_PACKAGE}-`
-const CODEX_DECLARED_LICENSE = 'Apache-2.0'
 
 /**
  * Whether a non-permissive runtime declaration has an identity-scoped owner
@@ -198,18 +194,6 @@ export interface ClaudeDistribution {
   readonly payloads: ClaudePlatformPayload[]
 }
 
-/** One optional-dependency alias for an official Codex platform payload. */
-export interface CodexPlatformPayload {
-  readonly alias: string
-  readonly version: string
-}
-
-/** Current Codex wrapper and platform payload facts from the official manifest. */
-export interface CodexDistribution {
-  readonly wrapperVersion: string
-  readonly payloads: CodexPlatformPayload[]
-}
-
 function requiredManifestString(
   value: string | undefined,
   field: string,
@@ -257,91 +241,6 @@ export function claudeDistributionFromManifest(
     }
   }).sort((left, right) => left.name.localeCompare(right.name))
   return { sdkVersion, claudeCodeVersion, payloads }
-}
-
-/** Derive official Codex platform aliases and published package versions. */
-export function codexDistributionFromManifest(
-  manifest: VirtualManifest,
-): CodexDistribution {
-  if (manifest.name !== CODEX_PACKAGE) {
-    throw new Error(
-      `gen-third-party-notices: expected ${CODEX_PACKAGE} manifest, got ${JSON.stringify(manifest.name)}.`,
-    )
-  }
-  const wrapperVersion = manifest.version
-  if (wrapperVersion === undefined || wrapperVersion.length === 0) {
-    throw new Error(`gen-third-party-notices: ${CODEX_PACKAGE} has no version.`)
-  }
-  const entries = Object.entries(manifest.optionalDependencies ?? {})
-  if (entries.length === 0) {
-    throw new Error(`gen-third-party-notices: ${CODEX_PACKAGE} declares no optional platform payloads.`)
-  }
-  const payloads = entries.map(([alias, spec]) => {
-    if (!alias.startsWith(CODEX_PLATFORM_ALIAS_PREFIX)) {
-      throw new Error(
-        `gen-third-party-notices: ${CODEX_PACKAGE} optional dependency ${alias} is outside its platform alias namespace.`,
-      )
-    }
-    const prefix = `npm:${CODEX_PACKAGE}@`
-    if (!spec.startsWith(prefix) || spec.length === prefix.length) {
-      throw new Error(
-        `gen-third-party-notices: ${CODEX_PACKAGE} optional dependency ${alias} does not alias an official versioned payload.`,
-      )
-    }
-    return { alias, version: spec.slice(prefix.length) }
-  }).sort((left, right) => left.alias.localeCompare(right.alias))
-  return { wrapperVersion, payloads }
-}
-
-function requireManifest(
-  requireFrom: NodeJS.Require,
-  name: string,
-): VirtualManifest | undefined {
-  let packageJsonPath: string
-  try {
-    packageJsonPath = requireFrom.resolve(`${name}/package.json`)
-  } catch (error: unknown) {
-    if (error instanceof Error && 'code' in error && error.code === 'MODULE_NOT_FOUND') {
-      return undefined
-    }
-    throw error
-  }
-  return JSON.parse(readFileSync(packageJsonPath, 'utf8')) as VirtualManifest
-}
-
-/**
- * Derive and verify the Codex distribution from the wrapper package's own
- * Node resolution context.
- * @param packageJsonPath - absolute manifest path for the installed wrapper.
- * @returns the wrapper version and all declared platform aliases.
- */
-export function codexDistributionFromInstalledPackage(
-  packageJsonPath: string,
-): CodexDistribution {
-  const manifest = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as VirtualManifest
-  const distribution = codexDistributionFromManifest(manifest)
-  const requireFromWrapper = createRequire(packageJsonPath)
-  let installedPayloads = 0
-  for (const payload of distribution.payloads) {
-    const installed = requireManifest(requireFromWrapper, payload.alias)
-    if (installed === undefined) continue
-    installedPayloads += 1
-    if (
-      installed.name !== CODEX_PACKAGE
-      || installed.version !== payload.version
-      || installed.license !== CODEX_DECLARED_LICENSE
-    ) {
-      throw new Error(
-        `gen-third-party-notices: installed ${payload.alias} does not match its official ${CODEX_PACKAGE}@${payload.version} payload and ${CODEX_DECLARED_LICENSE} license.`,
-      )
-    }
-  }
-  if (installedPayloads === 0) {
-    throw new Error(
-      'gen-third-party-notices: no Codex platform payload is installed; install optional dependencies before regenerating.',
-    )
-  }
-  return distribution
 }
 
 /**
@@ -432,20 +331,6 @@ function collectClaudeDistribution(): ClaudeDistribution {
     )
   }
   return distribution
-}
-
-function collectCodexDistribution(): CodexDistribution {
-  const requireFromProvider = createRequire(resolve(
-    root,
-    'packages/subagent/subagent-codex/package.json',
-  ))
-  let packageJsonPath: string
-  try {
-    packageJsonPath = requireFromProvider.resolve(`${CODEX_PACKAGE}/package.json`)
-  } catch {
-    throw new Error(`gen-third-party-notices: cannot resolve ${CODEX_PACKAGE}; run \`pnpm install\`.`)
-  }
-  return codexDistributionFromInstalledPackage(packageJsonPath)
 }
 
 /** Normalize a manifest repository/homepage value to a browsable https URL. */
@@ -771,24 +656,6 @@ ${rows.join('\n')}
 `
 }
 
-function renderCodexDistribution(
-  distribution: CodexDistribution | undefined,
-): string {
-  if (distribution === undefined) return ''
-  const rows = distribution.payloads.map(payload => (
-    `| \`${payload.alias}\` | [\`${CODEX_PACKAGE}\`](https://www.npmjs.com/package/${CODEX_PACKAGE}/v/${payload.version}) | ${payload.version} | ${CODEX_DECLARED_LICENSE} |`
-  ))
-  return `
-## Official Codex platform payloads
-
-The installed \`${CODEX_PACKAGE}\` wrapper ${distribution.wrapperVersion} declares the following optional-dependency aliases. Every alias resolves to an official platform-specific \`${CODEX_PACKAGE}\` version that carries the native Codex CLI and its bundled resources; the declared license is verified against the payload installed for the current host.
-
-| Optional dependency alias | Published package | Version | Declared license |
-| --- | --- | --- | --- |
-${rows.join('\n')}
-`
-}
-
 /**
  * Render the complete notices document.
  * @returns the exact bytes `THIRD_PARTY_NOTICES.md` must hold.
@@ -806,10 +673,6 @@ export function render(): string {
   )
     ? collectClaudeDistribution()
     : undefined
-  const codexDistribution = runtimeDeps.some(dep => dep.name === CODEX_PACKAGE)
-    ? collectCodexDistribution()
-    : undefined
-
   const nonPermissiveDev = devDeps.filter(dep => !isPermissive(dep.license))
   // A copyleft license reaching a shipped surface is a distribution decision,
   // not a rendering detail; the notices cannot quietly absorb it.
@@ -829,7 +692,7 @@ export function render(): string {
 
 DeepSeek Harness is licensed under [MIT](LICENSE). It depends on the third-party software listed below. Each project remains under its own license; nothing in this file changes those terms.
 
-This file lists **direct** dependencies declared by the workspace and the explicitly disclosed official Claude Code and Codex platform payload closures. It is generated from the workspace manifests by \`scripts/gen-third-party-notices.ts\`: a pre-commit hook regenerates it whenever a staged file changes one of its inputs, and \`scripts/gen-third-party-notices.spec.ts\` asserts in the test lane that the committed bytes match. Deleting a manifest runs no hook, so that case is caught by the assertion instead. Run \`pnpm run verify-third-party-notices\` for the standalone check.
+This file lists **direct** dependencies declared by the workspace and the explicitly disclosed official Claude Code platform payload closure. It is generated from the workspace manifests by \`scripts/gen-third-party-notices.ts\`: a pre-commit hook regenerates it whenever a staged file changes one of its inputs, and \`scripts/gen-third-party-notices.spec.ts\` asserts in the test lane that the committed bytes match. Deleting a manifest runs no hook, so that case is caught by the assertion instead. Run \`pnpm run verify-third-party-notices\` for the standalone check.
 
 The complete npm transitive closure, including the Landlock launcher workspace, is recorded with exact pinned versions in [\`pnpm-lock.yaml\`](pnpm-lock.yaml) — inspect it with \`pnpm licenses list\`. The Python closure is recorded separately in [\`python/sdk/uv.lock\`](python/sdk/uv.lock).
 
@@ -851,7 +714,6 @@ pnpm applies local patches to the following packages at install time, so shipped
 
 ${patchedLines.join('\n')}
 ${renderClaudeDistribution(claudeDistribution)}
-${renderCodexDistribution(codexDistribution)}
 
 ## Development-only npm dependencies
 
