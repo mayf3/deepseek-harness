@@ -7,6 +7,7 @@ import {
   CODEX_PACKAGE,
   claudeDistributionFromManifest,
   codexDistributionFromManifest,
+  codexDistributionFromInstalledPackage,
   collectPythonDependencies,
   isOwnerAuthorizedRuntime,
   isPermissive,
@@ -377,6 +378,45 @@ describe('official Codex platform payloads', () => {
         '@openai/codex-linux-x64': '1.0.0',
       },
     })).toThrow('does not alias an official versioned payload')
+  })
+
+  it('resolves installed payload aliases from the wrapper package', () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'dsh-notices-codex-wrapper-'))
+    try {
+      const wrapperPath = join(
+        fixtureRoot,
+        'node_modules/@openai/codex/package.json',
+      )
+      const payloadPath = join(
+        fixtureRoot,
+        'node_modules/@openai/codex-darwin-arm64/package.json',
+      )
+      mkdirSync(resolve(wrapperPath, '..'), { recursive: true })
+      mkdirSync(resolve(payloadPath, '..'), { recursive: true })
+      writeFileSync(wrapperPath, JSON.stringify({
+        name: CODEX_PACKAGE,
+        version: '9.8.7',
+        optionalDependencies: {
+          '@openai/codex-darwin-arm64': 'npm:@openai/codex@9.8.7-darwin-arm64',
+          '@openai/codex-linux-x64': 'npm:@openai/codex@9.8.7-linux-x64',
+        },
+      }))
+      writeFileSync(payloadPath, JSON.stringify({
+        name: CODEX_PACKAGE,
+        version: '9.8.7-darwin-arm64',
+        license: 'Apache-2.0',
+      }))
+
+      expect(codexDistributionFromInstalledPackage(wrapperPath)).toEqual({
+        wrapperVersion: '9.8.7',
+        payloads: [
+          { alias: '@openai/codex-darwin-arm64', version: '9.8.7-darwin-arm64' },
+          { alias: '@openai/codex-linux-x64', version: '9.8.7-linux-x64' },
+        ],
+      })
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true })
+    }
   })
 })
 

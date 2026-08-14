@@ -9,6 +9,7 @@
  */
 
 import { existsSync, globSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { parse as parseToml, type TomlTableWithoutBigInt, type TomlValueWithoutBigInt } from 'smol-toml'
@@ -292,6 +293,57 @@ export function codexDistributionFromManifest(
   return { wrapperVersion, payloads }
 }
 
+function requireManifest(
+  requireFrom: NodeJS.Require,
+  name: string,
+): VirtualManifest | undefined {
+  let packageJsonPath: string
+  try {
+    packageJsonPath = requireFrom.resolve(`${name}/package.json`)
+  } catch (error: unknown) {
+    if (error instanceof Error && 'code' in error && error.code === 'MODULE_NOT_FOUND') {
+      return undefined
+    }
+    throw error
+  }
+  return JSON.parse(readFileSync(packageJsonPath, 'utf8')) as VirtualManifest
+}
+
+/**
+ * Derive and verify the Codex distribution from the wrapper package's own
+ * Node resolution context.
+ * @param packageJsonPath - absolute manifest path for the installed wrapper.
+ * @returns the wrapper version and all declared platform aliases.
+ */
+export function codexDistributionFromInstalledPackage(
+  packageJsonPath: string,
+): CodexDistribution {
+  const manifest = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as VirtualManifest
+  const distribution = codexDistributionFromManifest(manifest)
+  const requireFromWrapper = createRequire(packageJsonPath)
+  let installedPayloads = 0
+  for (const payload of distribution.payloads) {
+    const installed = requireManifest(requireFromWrapper, payload.alias)
+    if (installed === undefined) continue
+    installedPayloads += 1
+    if (
+      installed.name !== CODEX_PACKAGE
+      || installed.version !== payload.version
+      || installed.license !== CODEX_DECLARED_LICENSE
+    ) {
+      throw new Error(
+        `gen-third-party-notices: installed ${payload.alias} does not match its official ${CODEX_PACKAGE}@${payload.version} payload and ${CODEX_DECLARED_LICENSE} license.`,
+      )
+    }
+  }
+  if (installedPayloads === 0) {
+    throw new Error(
+      'gen-third-party-notices: no Codex platform payload is installed; install optional dependencies before regenerating.',
+    )
+  }
+  return distribution
+}
+
 /**
  * Resolve one package's manifest inside a pnpm virtual store. The prefix scan
  * matches ordinary `@scope+name@version` directory names; pnpm 11 truncates
@@ -382,52 +434,18 @@ function collectClaudeDistribution(): ClaudeDistribution {
   return distribution
 }
 
-/** Resolve an installed versioned Codex payload manifest from either pnpm store. */
-function installedCodexPayload(version: string): VirtualManifest | undefined {
-  for (const store of ['node_modules', 'native/landlock-run/node_modules']) {
-    const candidate = resolve(
-      root,
-      store,
-      '.pnpm',
-      `${CODEX_PACKAGE.replace('/', '+')}@${version}`,
-      'node_modules',
-      CODEX_PACKAGE,
-      'package.json',
-    )
-    if (existsSync(candidate)) {
-      return JSON.parse(readFileSync(candidate, 'utf8')) as VirtualManifest
-    }
-  }
-  return undefined
-}
-
 function collectCodexDistribution(): CodexDistribution {
-  const manifest = installedManifest(CODEX_PACKAGE)
-  if (manifest === undefined) {
+  const requireFromProvider = createRequire(resolve(
+    root,
+    'packages/subagent/subagent-codex/package.json',
+  ))
+  let packageJsonPath: string
+  try {
+    packageJsonPath = requireFromProvider.resolve(`${CODEX_PACKAGE}/package.json`)
+  } catch {
     throw new Error(`gen-third-party-notices: cannot resolve ${CODEX_PACKAGE}; run \`pnpm install\`.`)
   }
-  const distribution = codexDistributionFromManifest(manifest)
-  let installedPayloads = 0
-  for (const payload of distribution.payloads) {
-    const installed = installedCodexPayload(payload.version)
-    if (installed === undefined) continue
-    installedPayloads += 1
-    if (
-      installed.name !== CODEX_PACKAGE
-      || installed.version !== payload.version
-      || installed.license !== CODEX_DECLARED_LICENSE
-    ) {
-      throw new Error(
-        `gen-third-party-notices: installed ${payload.alias} does not match its official ${CODEX_PACKAGE}@${payload.version} payload and ${CODEX_DECLARED_LICENSE} license.`,
-      )
-    }
-  }
-  if (installedPayloads === 0) {
-    throw new Error(
-      'gen-third-party-notices: no Codex platform payload is installed; install optional dependencies before regenerating.',
-    )
-  }
-  return distribution
+  return codexDistributionFromInstalledPackage(packageJsonPath)
 }
 
 /** Normalize a manifest repository/homepage value to a browsable https URL. */
