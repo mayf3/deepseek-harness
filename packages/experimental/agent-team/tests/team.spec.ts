@@ -512,6 +512,41 @@ describe('Team identity and provisioning', () => {
 })
 
 describe('Team shared task DAG', () => {
+  it('projects browser views and preserves task mutation failures across Remote', async () => {
+    const { ctx, lead } = await setup([])
+    expect(ctx.teams.view(lead)).toEqual({
+      members: [expect.objectContaining({ id: lead.id, name: 'lead', role: 'lead' })],
+      tasks: [],
+    })
+
+    const task = await ctx.teams.createTaskForClient(lead, {
+      subject: 'browser task',
+      description: 'created through the Remote face',
+    })
+    await expect(ctx.teams.updateTaskForClient(lead, {
+      taskId: task.id,
+      expectedRevision: task.revision,
+      action: 'claim',
+    })).resolves.toMatchObject({ ok: true, value: { status: 'in_progress' } })
+    await expect(ctx.teams.updateTaskForClient(lead, {
+      taskId: task.id,
+      expectedRevision: task.revision,
+      action: 'delete',
+    })).resolves.toMatchObject({ ok: false, error: { code: 'team-task-conflict' } })
+    await expect(ctx.teams.updateTaskForClient(lead, {
+      taskId: TeamTaskId('task-999'),
+      expectedRevision: 1,
+      action: 'delete',
+    })).resolves.toMatchObject({ ok: false, error: { code: 'team-rejected' } })
+
+    vi.spyOn(ctx.teams, 'updateTask').mockRejectedValueOnce(new Error('unexpected mutation failure'))
+    await expect(ctx.teams.updateTaskForClient(lead, {
+      taskId: task.id,
+      expectedRevision: 2,
+      action: 'delete',
+    })).rejects.toThrow('unexpected mutation failure')
+  })
+
   it('fails loudly when the durable numeric task id space is exhausted', async () => {
     const { ctx, lead } = await setup([])
     const id = TeamTaskId(`task-${Number.MAX_SAFE_INTEGER}`)

@@ -164,6 +164,11 @@ dispose 会关闭准入、中止并等待已获准的创建与 mailbox dispatch 
 -----
 
 <a id="model-experience"></a>
+
+### Client Remote 界面
+
+`TeamService` 提供生成式 `teams/view`、`teams/createTask` 与 `teams/updateTask` Typert Remote method。`./client` 只导出浏览器安全的 Team request 与 view type；`./typert` 和 `./remote` 是生成的 Host 与 Client artifact。View 不包含 mailbox 内容或已删除 task tombstone。Task conflict 通过显式 business result 跨越 Remote，使 Client 能重新读取状态，而不会把 Team error code 丢失在通用 carrier failure 中。
+
 ## 模型体验
 
 ### Peer 消息

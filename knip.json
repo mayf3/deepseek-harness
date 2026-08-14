@@ -756,6 +756,17 @@
         "@deepseek-ai/.+"
       ]
     },
+    "packages/experimental/agent-team-remotes": {
+      "entry": [
+        "tests/**/*.e2e.ts"
+      ]
+    },
+    "packages/experimental/agent-team-web-profile": {
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-agent-team-remotes",
+        "@deepseek-ai/dsh-client-ui-agent-team"
+      ]
+    },
     "packages/bundle/web-app": {
       "ignoreDependencies": [
         "@deepseek-ai/.+"

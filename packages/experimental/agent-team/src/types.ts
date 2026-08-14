@@ -96,6 +96,23 @@ export interface TeamTaskView {
   readonly writeScopeWarnings: string[]
 }
 
+/** Browser-safe point-in-time roster and task-board view. */
+export interface TeamView {
+  readonly members: TeamMemberView[]
+  readonly tasks: TeamTaskView[]
+}
+
+/** Browser mutation result preserving stale-revision recovery across Remote. */
+export type TeamTaskMutationResult =
+  | { readonly ok: true; readonly value: TeamTaskView }
+  | {
+    readonly ok: false
+    readonly error: {
+      readonly code: 'team-task-conflict' | 'team-rejected'
+      readonly message: string
+    }
+  }
+
 /** One peer message retained until its target Session records it. */
 export interface TeamMessageSnapshot {
   readonly id: TeamMessageId
