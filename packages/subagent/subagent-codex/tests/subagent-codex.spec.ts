@@ -108,6 +108,7 @@ interface FakeChildOptions {
   readonly pid?: number
   readonly exitOnTerminate?: boolean
   readonly doneError?: Error
+  readonly collectStderr?: boolean
   readonly stderr?: string
 }
 
@@ -118,6 +119,7 @@ interface FakeChild {
   readonly toChild: PassThrough
   readonly settle: (outcome?: SubprocessOutcome) => void
   readonly fail: (error: Error) => void
+  readonly setStderr: (text: string) => void
   readonly terminate: () => void
   readonly waitForExit: (signal?: AbortSignal) => Promise<boolean>
 }
@@ -126,7 +128,7 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
   const fromChild = new PassThrough()
   const toChild = new PassThrough()
   const peer = new ProtocolPeer(toChild, fromChild)
-  const stderrText = options.stderr
+  let stderrText = options.stderr ?? ''
   let exited = false
   let resolveDone!: (outcome: SubprocessOutcome) => void
   let rejectDone!: (error: Error) => void
@@ -176,7 +178,7 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
     stdin: toChild,
     stdout: fromChild,
     stderr: undefined,
-    collected: stderrText === undefined
+    collected: options.stderr === undefined && options.collectStderr !== true
       ? {}
       : {
         stderr: {
@@ -198,6 +200,7 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
     toChild,
     settle,
     fail,
+    setStderr: (text: string): void => { stderrText = text },
     terminate,
     waitForExit,
   }
@@ -1086,6 +1089,20 @@ describe('run lifecycle and quiescence', () => {
     expect(error.message).toContain('Missing optional dependency @openai/codex-linux-x64')
     expect(error.message).not.toContain('credential-like unrelated stderr')
     expect(child.terminate).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for process settlement before sampling the missing-payload diagnostic', async () => {
+    const child = fakeChild({ collectStderr: true, exitOnTerminate: false })
+    const starting = startCodexRun(request(), runSpec(child))
+    child.fromChild.end()
+    await vi.waitFor(() => { expect(child.terminate).toHaveBeenCalledTimes(1) })
+
+    child.setStderr('Error: Missing optional dependency @openai/codex-linux-x64.')
+    child.settle({ exitCode: 1, signal: null })
+
+    await expect(starting).rejects.toThrow(
+      'Missing optional dependency @openai/codex-linux-x64',
+    )
   })
 
   it('keeps overlapping runs isolated', async () => {

@@ -197,19 +197,19 @@ export async function startCodexRun(
     await Promise.race([wire.startThread(spec.cwd, request.signal), processFailure])
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
-    const startupError = withMissingPayloadDiagnostic(thrown(error), child)
+    const startupCause = thrown(error)
     try {
       await disposeProcess()
     } catch (disposeError: unknown) {
       throw new AggregateError(
-        [startupError, thrown(disposeError)],
+        [withMissingPayloadDiagnostic(startupCause, child), thrown(disposeError)],
         'subagent-codex: startup failed and app-server cleanup also failed',
       )
     }
     if (runAbort.signal.aborted) {
       throw new Error('subagent-codex: request was aborted before run publication')
     }
-    throw startupError
+    throw withMissingPayloadDiagnostic(startupCause, child)
   }
 
   const collectOutput = (): ContentBlock[] => wire.collectOutput()
