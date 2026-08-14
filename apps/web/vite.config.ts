@@ -93,6 +93,7 @@ export default defineConfig({
   plugins: [rejectStandaloneServe(), react()],
   build: {
     sourcemap: true,
+    modulePreload: { polyfill: false },
     rollupOptions: {
       output: {
         // Output layout: the two main chunks stay at assets/ root; lazy
