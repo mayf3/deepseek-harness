@@ -24,6 +24,7 @@ import {
 } from '@agentclientprotocol/sdk'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { AssistantOutputFold } from '@deepseek-ai/dsh-subagent'
 import type { SubagentResult, SubagentRun, SubagentStartRequest, SubagentStopReason } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 
@@ -62,9 +63,9 @@ export interface AcpRunSpec {
    */
   disposeEofGraceMs: number
   /**
-   * Termination confirmation window (ms) in {@link SubagentRun.dispose}; POSIX applies it after
-   * `SIGTERM` and `SIGKILL`, while Windows applies it after direct forced termination. The plugin
-   * fills this from its `disposeGraceMs` config.
+   * Termination-escalation grace (ms) in {@link SubagentRun.dispose}; POSIX
+   * waits this long after `SIGTERM` before `SIGKILL`, while Windows
+   * force-terminates directly. The plugin fills it from `disposeGraceMs`.
    */
   disposeGraceMs: number
   /**
@@ -105,14 +106,12 @@ async function treeExitsWithin(child: SubprocessHandle, ms: number): Promise<boo
  * Cooperative teardown ladder for an out-of-process agent, over the seam's
  * public verbs; resolves only at whole-tree quiescence: stdin EOF (the child's
  * window to flush persistence and reap its own descendants), then the
- * terminate() escalation (SIGTERM → spec grace → SIGKILL), then a bounded
- * confirmation wait.
+ * terminate() escalation (SIGTERM → spec grace → SIGKILL) and its
+ * whole-tree exit proof.
  * @param child - the spawned ACP child's handle.
  * @param eofGraceMs - tier-1 window after stdin EOF.
- * @param graceMs - confirmation window after the escalation's SIGKILL.
- * @throws when the tree still has not exited `graceMs` after forced termination.
  */
-export async function disposeAcpChild(child: SubprocessHandle, eofGraceMs: number, graceMs: number): Promise<void> {
+export async function disposeAcpChild(child: SubprocessHandle, eofGraceMs: number): Promise<void> {
   // A spawn failure has no process to tear down; observe the rejection so
   // disposal in a finally block cannot surface it as unhandled.
   if (child.pid <= 0) {
@@ -121,13 +120,10 @@ export async function disposeAcpChild(child: SubprocessHandle, eofGraceMs: numbe
   }
   child.stdin?.end()
   if (await treeExitsWithin(child, eofGraceMs)) return
-  // terminate() sends SIGTERM now and SIGKILL after the spawn spec's grace
-  // (this plugin passes disposeGraceMs there), so the bound covers both the
-  // escalation window and an equal confirmation window after the SIGKILL.
+  // terminate() owns the bounded SIGTERM→SIGKILL timer. Its unbounded wait is
+  // the process owner's exit proof, not a second derived grace that can overflow.
   child.terminate()
-  if (!(await treeExitsWithin(child, graceMs * 2))) {
-    throw new Error('ACP child process tree did not exit within its dispose windows')
-  }
+  await child.waitForExit()
 }
 
 /**
@@ -186,7 +182,7 @@ export function toAcpPrompt(prompt: ContentBlock[]): AcpContentBlock[] {
 function toError(value: unknown): Error {
   // The catch only sees rejections from the ACP SDK RPCs and the spawn `error`
   // event, which are always `Error`s; the `String(value)` arm is a defensive
-  // fallback for a non-Error throw that the typed surfaces cannot produce.
+  // fallback for a non-Error throw that the typed APIs cannot produce.
   /* v8 ignore next */
   return value instanceof Error ? value : new Error(String(value))
 }
@@ -235,10 +231,11 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
 
   // Startup rollback and the published handle share one process teardown.
   let processDisposal: Promise<void> | undefined
-  const disposeProcess = (): Promise<void> => (processDisposal ??= disposeAcpChild(child, spec.disposeEofGraceMs, spec.disposeGraceMs))
+  const disposeProcess = (): Promise<void> => (processDisposal ??= disposeAcpChild(child, spec.disposeEofGraceMs))
 
-  // Accumulate the child's streamed assistant text — the SubagentResult output.
-  const output: string[] = []
+  // ACP exposes no complete assistant messages, so the shared fold selects its
+  // accumulated assistant text.
+  const fold = new AssistantOutputFold()
   // Shared mutable state keeps cancellation visible across async closures.
   const flags = { cancelled: false }
 
@@ -246,15 +243,15 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
     sessionUpdate(params: SessionNotification): Promise<void> {
       const update = params.update
       if (update.sessionUpdate === 'agent_message_chunk') {
-        output.push(acpContentText(update.content))
+        fold.pushText(acpContentText(update.content))
       }
       // Other updates (thoughts, tool calls, plans) are consumed but not
-      // surfaced in this cut — the subagent returns only its final answer.
+      // surfaced — the subagent returns only its final answer.
       return Promise.resolve()
     },
     requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
-      // Auto-answer by the configured policy. `allow` selects the first
-      // allow-shaped option the child offered; if it offered none (or we
+      // Auto-answer by the configured policy. `allow` selects the first option
+      // whose kind is `allow_once` or `allow_always`; if the child offered none (or we
       // reject), answer `cancelled` so the child does not proceed.
       if (spec.permission === 'allow') {
         const allow = params.options.find(o => o.kind === 'allow_once' || o.kind === 'allow_always')
@@ -289,13 +286,8 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
   const onAbort = (): void => { requestCancel() }
   request.signal.addEventListener('abort', onAbort, { once: true })
 
-  // The accumulated child text as harness ContentBlocks (empty array when the
-  // child streamed nothing). Read at every return so a partial answer survives
-  // a later cancel/error.
-  const collectOutput = (): ContentBlock[] => {
-    const text = output.join('')
-    return text.length > 0 ? [{ type: 'text', text }] : []
-  }
+  // Read at every return so a partial answer survives a later cancel/error.
+  const collectOutput = (): ContentBlock[] => fold.collect() ?? []
 
   // Establish the remote session before publishing a handle. Any failure owns
   // the still-private process and therefore reaps it before rejecting.

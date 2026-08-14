@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -97,7 +97,7 @@ describe('LocalFileReferenceService', () => {
 
     dispose()
     expect(close).toHaveBeenCalledOnce()
-    ctx.emit('agent/disposed', agent)
+    ctx.emit('agent/disposed', { agent })
   })
 
   it('installs guidance for agents announced after the service and validates deployment tunables', async () => {
@@ -131,7 +131,7 @@ describe('LocalFileReferenceService', () => {
     const fiber = ctx.plugin(LocalFileReferenceService)
     await fiber
     const { agent } = await stubAgent(ctx, 'cwd-fallback', false)
-    ctx.emit('agent/created', agent)
+    ctx.emit('agent/created', { agent })
     const list = vi.spyOn(WorkspaceFileSearch.prototype, 'list').mockResolvedValue([])
     await expect(ctx.fileReferences.list(agent, '', new AbortController().signal)).resolves.toEqual([])
     await expect(ctx.fileReferences.list(agent, 'src', new AbortController().signal)).resolves.toEqual([])

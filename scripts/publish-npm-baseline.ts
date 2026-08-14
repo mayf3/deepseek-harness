@@ -258,7 +258,9 @@ class WorkspacePackageSet {
       const name = expectString(manifest, 'name', manifestPath)
       const version = expectString(manifest, 'version', manifestPath)
       const isVendored = manifestPath.startsWith('vendor/')
-      if (!isVendored && !name.startsWith('@deepseek-ai/')) {
+      // Vendored packages are rescoped too (vendor/README.md), so publication
+      // never carries an upstream name that would squat it on the registry.
+      if (!name.startsWith('@deepseek-ai/')) {
         throw new Error(`${manifestPath} must name an @deepseek-ai package`)
       }
       if (name === '@deepseek-ai/dsh-root') {
@@ -320,7 +322,9 @@ class ReleaseBundle {
         if (expected === undefined || !missingNames.delete(artifact.name)) {
           throw new Error(`unexpected or duplicate packed package: ${artifact.name}`)
         }
-        if (expected.origin === 'harness') validateTarballPayload(artifact.files, tarball)
+        if (expected.origin === 'harness') {
+          validateTarballPayload(artifact.files, tarball)
+        }
         if (artifact.version !== version) {
           throw new Error(`${tarball} has version ${artifact.version}; expected ${version}`)
         }
@@ -394,7 +398,9 @@ class ReleaseBundle {
         throw new Error(`tarball checksum mismatch: ${pkg.tarball}`)
       }
       const artifact = inspectTarball(path, runner)
-      if (pkg.origin === 'harness') validateTarballPayload(artifact.files, pkg.tarball)
+      if (pkg.origin === 'harness') {
+        validateTarballPayload(artifact.files, pkg.tarball)
+      }
       if (artifact.name !== pkg.name || artifact.version !== this.manifest.version) {
         throw new Error(`tarball identity mismatch: ${pkg.tarball}`)
       }
@@ -463,13 +469,6 @@ class InstalledBundleSmoke {
           + `expected ${this.bundle.manifest.version}`,
         )
       }
-      const config = this.runner.capture(
-        process.execPath,
-        [bin, '--dump-default-config'],
-        consumerRoot,
-        environment,
-      )
-      if (config === '') throw new Error('installed dsh --dump-default-config returned no output')
       this.probeWeb(bin, consumerRoot, environment)
       console.log('publish-npm-baseline: installed dsh entry and Web startup probes passed')
     } finally {

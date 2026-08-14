@@ -1,6 +1,6 @@
 /** Package-owned agent lifecycle invariants. @module @deepseek-ai/dsh-agent/invariant */
 
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
 
@@ -14,7 +14,7 @@ export const inject = ['invariants']
 /** Install the agent contribution into its child registration fiber. */
 const install: InvariantInstaller = (ctx, fail) => {
   const lastStatus = new WeakMap<Agent, AgentStatus>()
-  ctx.on('agent/status', (agent, status) => {
+  ctx.on('agent/status', ({ agent, status }) => {
     const previous = lastStatus.get(agent)
     if (previous === status) {
       fail(`agent/status repeated ${status} (no-op transition)`)

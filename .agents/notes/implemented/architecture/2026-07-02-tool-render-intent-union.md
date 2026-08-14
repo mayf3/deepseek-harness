@@ -14,7 +14,7 @@ A tool declares how its calls render in a UI (an editor's tool-call card) throug
 - Which combinations are *valid* is unwritten: a `terminal` call that also sets `content` means "description above the card"; a generic call that sets `terminal` is meaningless but representable. The type permits nonsense.
 - There is no way to express the one file-tool affordance an editor most wants — a **diff card** (`{path, oldText, newText}`, which Zed renders as an inline diff / new-file preview). `ToolCallPresentation.content` is the *LLM* `ContentBlock[]` vocabulary (text/image), so a tool literally cannot ask for a diff.
 
-The existing `FIXME(tool-presentation)` in `packages/core/tools/src/index.ts` named the fix: "redesign the type so a tool declares its render INTENT once (e.g. a tagged union over card kinds) rather than a bag of optional fields the bridge stitches together." An earlier rejected collapse-tool-owned-presentation proposal deferred it explicitly: rich rendering "should return later as a tagged render-intent union after there are at least two real tools and two real consumers to validate the vocabulary." That bar is met by multiple producer families plus the TUI and host/client-runtime (Web) consumers.
+An earlier rejected collapse-tool-owned-presentation proposal deferred rich rendering until it could "return later as a tagged render-intent union after there are at least two real tools and two real consumers to validate the vocabulary." That bar is met by multiple producer families plus the TUI and host/client-runtime (Web) consumers.
 
 ## Decision
 
@@ -47,14 +47,14 @@ interface TerminalResultView { card: 'terminal'; title?: string; output?: string
 ### Producer mapping
 
 - `dsh-tool-fs` read → `generic` (`kind:'read'`, a follow-along `location`); write → `diff` (`oldText:null`); edit → `diff` (`oldText:old_string || null`, `newText:new_string ?? ''`). This mirrors `claude-agent-acp`'s `toolInfoFromToolUse` Read/Write/Edit arms field-for-field.
-- `dsh-tool-bash` foreground → `terminal` call + `terminal` result; `run_in_background` → `generic`. The generic `task_*` controls own their own generic cards.
+- `dsh-tool-bash` foreground → `terminal` call + `terminal` result; `run_in_background` → `generic`. The generic `job_*` controls own their own generic cards.
 - `dsh-tool-todo` → `generic`.
 
 ### Terminal fallback ownership
 
 `TerminalResultView` carries only `output`/`exitCode`/`signal`. A UI without the terminal capability needs a fenced ` ```console ` text fallback; that derivation moves to the **bridge** (it wraps `output` in a fenced block on the no-capability path), rather than the tool double-encoding it. This keeps the bash tool's result a single structured shape and preserves the existing capability-gated behavior byte-for-byte.
 
-The terminal intent is display-only. The harness still executes the command through its bash service, preserving sandboxing, environment scrubbing, task ownership, and per-session cwd; a UI projects the completed call and never becomes a second execution backend.
+The terminal intent is display-only. The harness still executes the command through its bash service, preserving sandboxing, environment scrubbing, job ownership, and per-session cwd; a UI projects the completed call and never becomes a second execution backend.
 
 ### Purity preserved
 

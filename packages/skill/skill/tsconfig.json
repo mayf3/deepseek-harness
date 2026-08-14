@@ -16,7 +16,13 @@
       "path": "../../../vendor/schemastery"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../core/scope"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

@@ -2,7 +2,20 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
-import { collectPythonDependencies, isPermissive, type Manifest, manifestPatterns, parsePyprojectRequirements, parseVendoredRows, render, tierExternalDeps, virtualManifest } from './gen-third-party-notices.ts'
+import {
+  CLAUDE_AGENT_SDK_PACKAGE,
+  claudeDistributionFromManifest,
+  collectPythonDependencies,
+  isOwnerAuthorizedRuntime,
+  isPermissive,
+  type Manifest,
+  manifestPatterns,
+  parsePyprojectRequirements,
+  parseVendoredRows,
+  render,
+  tierExternalDeps,
+  virtualManifest,
+} from './gen-third-party-notices.ts'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -12,7 +25,9 @@ describe('THIRD_PARTY_NOTICES.md', () => {
   // Pre-commit regenerates the file whenever a manifest is staged, so reaching
   // this assertion means the notices were committed without that hook.
   it('matches what the generator produces from the current manifests', () => {
-    expect(readFileSync(resolve(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'), 'stale notices — run `pnpm run gen-third-party-notices`').toBe(render())
+    const generated = render()
+    expect(generated).toContain('It depends on the third-party software listed below.')
+    expect(readFileSync(resolve(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'), 'stale notices — run `pnpm run gen-third-party-notices`').toBe(generated)
   })
 })
 
@@ -31,8 +46,8 @@ describe('tierExternalDeps', () => {
     const { manifests, names } = workspace({
       // Root tooling and test infrastructure never ship, whichever section declares them.
       'package.json': { dependencies: { 'root-runtime-looking': '^1' }, devDependencies: { 'lint-tool': '^1' } },
-      'packages/support/loader-smoke/package.json': { name: '@deepseek-ai/dsh-loader-smoke', dependencies: { 'smoke-helper': '^1' } },
-      'packages/client/test-runtime/package.json': { name: '@deepseek-ai/dsh-client-test-runtime', dependencies: { 'test-lib': '^1' } },
+      'packages/test-support/loader-smoke/package.json': { name: '@deepseek-ai/dsh-loader-smoke', dependencies: { 'smoke-helper': '^1' } },
+      'packages/test-support/client-runtime/package.json': { name: '@deepseek-ai/dsh-client-test-runtime', dependencies: { 'test-lib': '^1' } },
       'website/package.json': { devDependencies: { 'site-tool': '^1' } },
       // A plugin package's runtime dependency ships even when no app mounts it by default.
       'packages/mcp/mcp-client/package.json': { name: '@deepseek-ai/dsh-mcp-client', dependencies: { 'protocol-sdk': '^1' }, devDependencies: { 'protocol-fixture-server': '^1' } },
@@ -55,7 +70,7 @@ describe('tierExternalDeps', () => {
   it('keeps a package runtime when any shipping area declares it, and excludes workspace links', () => {
     const { manifests, names } = workspace({
       'package.json': { devDependencies: { shared: '^1' } },
-      'packages/ui/tui/package.json': { name: '@deepseek-ai/dsh-tui', dependencies: { shared: '^1', '@deepseek-ai/dsh-cli': 'workspace:^' } },
+      'packages/interaction/tui/package.json': { name: '@deepseek-ai/dsh-tui', dependencies: { shared: '^1', '@deepseek-ai/dsh-cli': 'workspace:^' } },
       'apps/cli/package.json': { name: '@deepseek-ai/dsh-cli' },
     })
 
@@ -119,13 +134,17 @@ describe('parseVendoredRows', () => {
     const rows = parseVendoredRows(readFileSync(resolve(root, 'vendor/README.md'), 'utf8'))
 
     expect(rows.length).toBeGreaterThan(0)
-    expect(rows).toContainEqual({ npmName: 'cordis', upstream: 'https://github.com/cordiverse/cordis' })
+    expect(rows).toContainEqual({
+      npmName: '@deepseek-ai/cordis',
+      upstreamName: 'cordis',
+      upstream: 'https://github.com/cordiverse/cordis',
+    })
     // The upstream column carries a trailing package path for some rows; it is not part of the URL.
     expect(rows.every(row => /^https:\/\/\S+$/.test(row.upstream))).toBe(true)
   })
 
-  it('yields nothing when the table shape changes, so the generator fails loud', () => {
-    expect(parseVendoredRows('| `cordis/` | cordis | 4.0.0 | https://example.com | `abc123` |\n')).toEqual([])
+  it('yields nothing when the table columns change, so the generator fails loud', () => {
+    expect(parseVendoredRows('| `cordis/` | `@deepseek-ai/cordis` | cordis | 4.0.0 | https://example.com | `abc123` |\n')).toEqual([])
   })
 
   it('covers every vendored directory, so no package can drop out of the notices', () => {
@@ -200,7 +219,7 @@ describe('parsePyprojectRequirements', () => {
     ].join('\n'))).toEqual(['pydantic', 'tomli', 'pytest'])
   })
 
-  it('accepts dependency-group includes and rejects unsupported requirement shapes', () => {
+  it('accepts dependency-group includes and rejects unsupported requirement forms', () => {
     expect(parsePyprojectRequirements('[dependency-groups]\nbase = ["pytest"]\nall = [{ include-group = "base" }]\n'))
       .toEqual(['pytest'])
     expect(() => parsePyprojectRequirements('[project]\ndependencies = "pytest"\n')).toThrow(/must be an array/)
@@ -212,7 +231,7 @@ describe('collectPythonDependencies', () => {
   it('excludes normalized local project names without exempting a third-party prefix', () => {
     const pyprojects = [
       '[project]\nname = "deepseek-harness-runtime-bin"\ndependencies = ["pydantic"]\n',
-      '[project]\nname = "deepseek-harness"\ndependencies = ["DeepSeek.Harness_Runtime-Bin", "deepseek-unrelated"]\n',
+      '[project]\nname = "deepseek-harness-sdk"\ndependencies = ["DeepSeek.Harness_Runtime-Bin", "deepseek-unrelated"]\n',
     ]
     expect(() => collectPythonDependencies(pyprojects)).toThrow(
       'python dependency deepseek-unrelated is missing from PYTHON_METADATA',
@@ -223,7 +242,14 @@ describe('collectPythonDependencies', () => {
 describe('isPermissive', () => {
   it('accepts the licenses this project ships and rejects copyleft or unknown ones', () => {
     expect(['MIT', 'ISC', 'BSD-3-Clause', 'Apache-2.0', 'MIT / Apache-2.0', '(MIT OR CC0-1.0)'].every(isPermissive)).toBe(true)
-    expect(['LGPL-3.0-only', 'MPL-2.0', 'GPL-3.0-or-later', 'SEE LICENSE IN LICENSE'].some(isPermissive)).toBe(false)
+    expect([
+      'LGPL-3.0-only',
+      'MPL-2.0',
+      'GPL-3.0-or-later',
+      'SEE LICENSE IN LICENSE',
+      'SEE LICENSE IN README.md',
+      'SEE LICENSE IN LICENSE.md',
+    ].some(isPermissive)).toBe(false)
   })
 
   it('requires every operand of an AND, so a copyleft conjunct cannot ride along', () => {
@@ -245,15 +271,75 @@ describe('isPermissive', () => {
   })
 })
 
+describe('official Claude distribution authorization', () => {
+  it('authorizes only the direct SDK identity without relabeling its license', () => {
+    expect(isOwnerAuthorizedRuntime(CLAUDE_AGENT_SDK_PACKAGE)).toBe(true)
+    expect(isOwnerAuthorizedRuntime(`${CLAUDE_AGENT_SDK_PACKAGE}-linux-x64`))
+      .toBe(false)
+    expect(isOwnerAuthorizedRuntime('@anthropic-ai/unrelated')).toBe(false)
+    expect(isPermissive('SEE LICENSE IN README.md')).toBe(false)
+  })
+
+  it('derives version-independent platform payloads from the official SDK manifest', () => {
+    expect(claudeDistributionFromManifest({
+      name: CLAUDE_AGENT_SDK_PACKAGE,
+      version: '9.8.7',
+      license: 'future declared terms',
+      claudeCodeVersion: '6.5.4',
+      optionalDependencies: {
+        [`${CLAUDE_AGENT_SDK_PACKAGE}-linux-x64`]: '9.8.7',
+        [`${CLAUDE_AGENT_SDK_PACKAGE}-darwin-arm64`]: '9.8.7',
+      },
+    })).toEqual({
+      sdkVersion: '9.8.7',
+      claudeCodeVersion: '6.5.4',
+      payloads: [
+        {
+          name: `${CLAUDE_AGENT_SDK_PACKAGE}-darwin-arm64`,
+          version: '9.8.7',
+        },
+        {
+          name: `${CLAUDE_AGENT_SDK_PACKAGE}-linux-x64`,
+          version: '9.8.7',
+        },
+      ],
+    })
+  })
+
+  it('rejects a wrong SDK identity, missing payloads, and unrelated optionals', () => {
+    expect(() => claudeDistributionFromManifest({
+      name: '@anthropic-ai/unrelated',
+      version: '1.0.0',
+      claudeCodeVersion: '1.0.0',
+      optionalDependencies: {
+        [`${CLAUDE_AGENT_SDK_PACKAGE}-linux-x64`]: '1.0.0',
+      },
+    })).toThrow(`expected ${CLAUDE_AGENT_SDK_PACKAGE} manifest`)
+    expect(() => claudeDistributionFromManifest({
+      name: CLAUDE_AGENT_SDK_PACKAGE,
+      version: '1.0.0',
+      claudeCodeVersion: '1.0.0',
+    })).toThrow('declares no optional platform payloads')
+    expect(() => claudeDistributionFromManifest({
+      name: CLAUDE_AGENT_SDK_PACKAGE,
+      version: '1.0.0',
+      claudeCodeVersion: '1.0.0',
+      optionalDependencies: {
+        '@anthropic-ai/unrelated': '1.0.0',
+      },
+    })).toThrow('outside its authorized platform-payload identity')
+  })
+})
+
 describe('manifestPatterns', () => {
   it('derives globs from the declared members, so a new member area is read', () => {
-    expect(manifestPatterns(['packages/*/*', 'tools/*'], ['packages/*'])).toEqual([
+    expect(manifestPatterns(['packages/*/*', 'tools/*', 'native/landlock-run', 'native/landlock-run/packages/*'])).toEqual([
       'package.json',
       'packages/*/*/package.json',
       'tools/*/package.json',
-      'examples/*/package.json',
       'native/landlock-run/package.json',
       'native/landlock-run/packages/*/package.json',
+      'examples/*/package.json',
     ])
   })
 })

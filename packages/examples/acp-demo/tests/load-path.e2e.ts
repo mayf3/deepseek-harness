@@ -33,8 +33,6 @@ const repoTsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.m
 const CORDIS_YML = `
 - id: llm-deepseek
   name: '@deepseek-ai/dsh-llm-deepseek'
-  config:
-    apiKey: !!js process.env.DEEPSEEK_API_KEY
 - id: subprocess
   name: '@deepseek-ai/dsh-subprocess-local'
 - id: bash
@@ -49,7 +47,7 @@ const CORDIS_YML = `
 - id: tool-session-query
   name: '@deepseek-ai/dsh-tool-session-query'
 - id: timeout-policy
-  name: '@deepseek-ai/dsh-timeout-policy'
+  name: '@deepseek-ai/dsh-tool-call-timeout-policy'
 - id: spill-local
   name: '@deepseek-ai/dsh-spill-local'
 - id: spill-policy

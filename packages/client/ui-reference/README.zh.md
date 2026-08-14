@@ -22,4 +22,4 @@
 
 - **候选失败有意保持静默**：引用 RPC 不可用或失败时，该领域不产生候选行；提示词提交仍会通过普通发送路径报告会话引用准备失败。
 - **浏览器侧不扫描文件**：Web 补全需要挂载宿主 `ctx.fileReferences` 提供方；浏览器无法回退到自身文件系统。
-- **会话搜索仍仅使用元数据**：发现流程通过 `ctx.sessionReferences` 筛选 session id、cwd 和以日志为依据的最新标题；不搜索消息主体或完整 transcript（文本记录）。
+- **会话搜索仍仅使用元数据**：发现流程通过 `ctx.sessionReferenceResolver` 筛选 session id、cwd 和以日志为依据的最新标题；不搜索消息主体或完整 transcript（文本记录）。

@@ -1,6 +1,6 @@
 /** Package-owned durable todo-snapshot invariants. @module @deepseek-ai/dsh-tool-todo/invariant */
 
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
@@ -12,11 +12,18 @@ export const name = 'tool-todo-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
-/** Validate one whole-list todo snapshot before it reaches the durable log. */
+/**
+ * Validate one whole-list todo snapshot before it reaches the durable log.
+ *
+ * Deliberately silent on how many items are `in_progress`. That is the tool's
+ * per-deployment policy (`Config.allowParallelInProgress`), not a durable-shape
+ * rule: a log written while parallel work was allowed must still replay after a
+ * deployment tightens the policy, so tying the invariant to the current config
+ * would reject history that was valid when it was written.
+ */
 function validateTodos(value: unknown, fail: InvariantFailure): void {
   if (!Array.isArray(value)) fail('todo/write todos must be an array')
   const seen = new Set<string>()
-  let active = 0
   for (const item of value) {
     if (typeof item !== 'object' || item === null) fail('todo/write entries must be objects')
     const { content, status } = item as Record<string, unknown>
@@ -28,13 +35,11 @@ function validateTodos(value: unknown, fail: InvariantFailure): void {
     if (typeof status !== 'string' || !TODO_STATUSES.has(status)) {
       fail(`todo/write carries unknown status ${JSON.stringify(status)}`)
     }
-    if (status === 'in_progress') active += 1
   }
-  if (active > 1) fail(`todo/write contains ${active} in-progress entries; at most one is allowed`)
 }
 
 /* jscpd:ignore-start -- package companions share replay and dispatch plumbing */
-/** Validate the package-owned event shape and ignore unrelated events. */
+/** Validate the package-owned event fields and ignore unrelated events. */
 function validateEvent(event: SessionEvent, fail: InvariantFailure): void {
   if (event.type === 'todo/write') validateTodos(event.data.todos, fail)
 }

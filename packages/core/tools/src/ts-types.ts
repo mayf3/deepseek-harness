@@ -2,7 +2,7 @@
  * Code Mode codegen: the pure projection from registered tool schemas to the TypeScript SDK
  * text the model programs against (the `tools:sdk` prompt section). Sibling of
  * `json-schema.ts` — `schemas()` (native function calling) and this module (the generated
- * `declare const tools` surface) are two projections of the same store.
+ * `declare const tools` API) are two projections of the same store.
  * @module @deepseek-ai/dsh-tools/src/ts-types
  */
 
@@ -249,7 +249,7 @@ export function jsonSchemaToTs(schema: unknown, indent = 0): string {
 /** The fixed model-facing usage contract rendered above the declarations (see the Code Mode Agent Note's "What the model sees"). */
 const SDK_INSTRUCTIONS = `## Writing code for run_code
 
-Pass \`run_code\` the body of an async TypeScript function (erasable syntax only — no \`enum\` or namespaces; type annotations are advisory, the code runs type-stripped). Inside the program:
+\`run_code\` takes two required arguments: \`code\` — the body of an async TypeScript function (erasable syntax only — no \`enum\` or namespaces; type annotations are advisory, the code runs type-stripped) — and \`description\`, a short summary of what the program does. Inside the program:
 
 - Call tools as \`await tools.name(args)\` — quoted access for exotic names: \`tools["my-tool"](args)\`. Every call resolves to the tool's typed canonical JSON value. Tool arguments must be lossless JSON.
 - A FAILED tool call rejects with \`ToolCallError\`, whose \`toolName\` identifies the failed tool and whose \`message\` is human-readable — \`try/catch\` it to handle and continue.
@@ -262,7 +262,10 @@ The available tools:`
  * Render the full `tools:sdk` prompt section: the fixed usage instructions
  * plus one `declare const tools` interface covering every given tool.
  * Deterministic — tools are emitted in lexicographic name order, so an
- * unchanged tool set produces byte-identical text across assemblies.
+ * unchanged tool set produces byte-identical text across assemblies. The sort
+ * is not a total order on byte-equal names, so two schemas sharing a name
+ * would render in argument order; the caller's visible-capability map is keyed
+ * by name, so the input never carries a duplicate.
  * @param schemas - the tool schemas to declare (the caller excludes
  *   `run_code` itself).
  * @returns the complete section text.

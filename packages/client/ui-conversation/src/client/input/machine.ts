@@ -1,6 +1,6 @@
 /**
- * InputMachine: the pure per-session input state machine (design §9.1, eng.
- * plan §3.9-3.12). Events in, effects out; zero React / DOM / cordis / ambient
+ * InputMachine: the pure per-session input state machine.
+ * Events in, effects out; zero React / DOM / cordis / ambient
  * clock. Package-private — the SessionInput shell is the only caller and the
  * sole executor of the returned effects.
  *
@@ -13,7 +13,7 @@
  * as a draftRev advance (begin-command / insert-ref / consume-token /
  * paste-upgrade all answer their bail events this way).
  */
-import type { CommandClaim, ReferenceInsert, TokenSpan } from '@deepseek-ai/dsh-client-ui-slash/client'
+import type { CommandClaim, ReferenceInsert, TokenSpan } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import type {
   ConsumeTokenGuard, EditRange, EditSelection, InputEffect, InputEvent, InputMachineOptions,
@@ -23,10 +23,10 @@ import type {
 /** The object-replacement character backing every chip occurrence in the draft. */
 export const PLACEHOLDER = '￼'
 
-/** The machine never writes the queue; the wiring layer overlays the T9 store projection. */
+/** The machine never writes the queue; the wiring layer overlays the queue store's projection. */
 const EMPTY_QUEUE: InputState['queue'] = []
 
-/** Undo ring depth (design §9.1: bounded self-managed transaction log). */
+/** Undo ring depth (bounded self-managed transaction log). */
 const LOG_LIMIT = 100
 
 /** Exhaustiveness backstop for the closed InputEvent / guard unions. */
@@ -68,7 +68,7 @@ function diffEdit(prev: string, next: string): EditRange {
 
 /**
  * Expand the draft's placeholders into their occurrences' clipboard text
- * (decision 16: the persistence mirror and clipboard both write this
+ * (the persistence mirror and clipboard both write this
  * projection — U+FFFC never leaves the machine). Table order is offset
  * order, so one linear walk pairs placeholders with entries.
  * @param state - published input state.
@@ -133,6 +133,7 @@ export class InputMachine {
     const c = this.claim
     return {
       draft: this.draft,
+      imageIds: [],
       draftRev: this.draftRev,
       phase: this.phase,
       ...(c ? { claim: { token: c.token, ...(c.hint !== undefined ? { hint: c.hint } : {}) } } : {}),
@@ -166,6 +167,7 @@ export class InputMachine {
       case 'adjudicated': return this.onAdjudicated(ev.attempt, ev.outcome)
       case 'adjudication-failed': return this.onAdjudicationFailed(ev.attempt, ev.message)
       case 'submit-settled': return this.onSubmitSettled(ev)
+      case 'send-committed': return this.onSendCommitted()
       case 'release': return this.onRelease()
       default: return unreachable(ev)
     }
@@ -193,7 +195,7 @@ export class InputMachine {
   /**
    * Reconcile the occurrence table with one edit (old-draft coordinates):
    * entries past the range shift by the length delta; entries whose
-   * placeholder sits inside the replaced range go away whole (design §9.1: a
+   * placeholder sits inside the replaced range go away whole (a
    * deletion/replacement intersecting a placeholder acts on the whole chip).
    */
   private reconcile(range: EditRange): void {
@@ -337,7 +339,7 @@ export class InputMachine {
   /**
    * Owner-resolution style bits: exactly the listed occurrences render
    * invalid. Not a transaction — the draft, revision, and undo log are
-   * untouched (design §9.1: invalidation never deletes or rewrites chips).
+   * untouched (invalidation never deletes or rewrites chips).
    */
   private onSetInvalid(invalidIds: readonly number[]): InputEffect[] {
     const ids = new Set(invalidIds)
@@ -544,6 +546,19 @@ export class InputMachine {
     this.phase = 'plain'
     this.claim = undefined
     return [{ type: 'notice', level: 'error', text }]
+  }
+
+  /** Cut undo state after an accepted image-only send. */
+  private onSendCommitted(): InputEffect[] {
+    if (this.phase !== 'plain') return []
+    this.claim = undefined
+    this.occurrences = []
+    this.adopt('')
+    this.log = []
+    this.redoStack = []
+    this.typingRun = undefined
+    this.paste = undefined
+    return []
   }
 
   private onRelease(): InputEffect[] {

@@ -4,16 +4,18 @@
  *
  * @module @deepseek-ai/dsh-client-ui-reference/client
  */
-import type { ConnectionHandle, FileReferenceItem, SessionReferenceItem } from '@deepseek-ai/dsh-client-connection/client'
+import type { ConnectionHandle, FileReferenceItem, SessionReferenceItem } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ClientSessionContext, SlashServiceContract, SlashSource } from '@deepseek-ai/dsh-client-ui-slash/client'
+import type {
+  ClientSessionContext, InputTriggerServiceContract, InputTriggerSource,
+} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
 
 const FILE_SECTION = '文件与文件夹'
 const SESSION_SECTION = 'Session 对话'
 
 /** Required services: the slash registry and Host connection. */
-export const inject = ['slash', 'connection']
+export const inject = ['inputTriggers', 'connection']
 
 /**
  * Register the combined `@file` / `@session` source.
@@ -21,7 +23,7 @@ export const inject = ['slash', 'connection']
  */
 export function apply(ctx: ClientContext): void {
   const references = (ctx.get('connection') as ConnectionHandle).api.references
-  const source: SlashSource = {
+  const source: InputTriggerSource = {
     trigger: '@',
     name: 'reference',
     async candidates(session: ClientSessionContext, { query, quoted, signal }) {
@@ -67,8 +69,8 @@ export function apply(ctx: ClientContext): void {
       serialize: ref => Promise.resolve(ref),
     },
   }
-  const slash = ctx.get('slash') as SlashServiceContract
-  ctx.effect(() => slash.registerSource(source), 'ui-reference: @ source')
+  const inputTriggers = ctx.get('inputTriggers') as InputTriggerServiceContract
+  ctx.effect(() => inputTriggers.registerSource(source), 'ui-reference: @ source')
 }
 
 type ReferenceCandidateValue =

@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
-import LlmService, { createUserMessage, CallId, LlmError, MessageSource, ProviderRequestId, StreamChunk  } from '@deepseek-ai/dsh-llm'
+import { Context } from '@deepseek-ai/cordis'
+import LlmRuntime, { createUserMessage, CallId, LlmError, MessageSource, ProviderRequestId, StreamChunk  } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionEvent, SessionId, TurnEndReason, type UserMessage } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRegistry, { defineContentToolFixture, type PostToolDecision } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { defineContentToolFixture, type PostToolDecision } from '@deepseek-ai/dsh-tools'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { ReactLoopAgent } from '../src/agent.ts'
-import InvariantService from '@deepseek-ai/dsh-invariants'
+import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import * as SessionInvariant from '@deepseek-ai/dsh-session/invariant'
 import * as AgentInvariant from '@deepseek-ai/dsh-agent/invariant'
 import * as AgentLoopInvariant from '@deepseek-ai/dsh-agent-loop/invariant'
 import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 
 async function mountInvariants(ctx: Context): Promise<void> {
-  await ctx.plugin(InvariantService)
+  await ctx.plugin(InvariantRegistry)
   await ctx.plugin(SessionInvariant)
   await ctx.plugin(AgentInvariant)
   await ctx.plugin(AgentLoopInvariant)
@@ -28,10 +28,10 @@ function driverDone(agent: Agent): Promise<void> {
 
 async function harness(adapter: MockAdapter) {
   const ctx = new Context()
-  await ctx.plugin(LlmService)
+  await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRegistry)
+  await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)
@@ -40,7 +40,7 @@ async function harness(adapter: MockAdapter) {
 
 function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
   return new Promise((resolve) => {
-    const dispose = ctx.on('agent/status', (subject, status) => {
+    const dispose = ctx.on('agent/status', ({ agent: subject, status }) => {
       if (subject === agent && status === 'idle') {
         dispose()
         resolve()
@@ -59,7 +59,7 @@ function inboxText(message: UserMessage): string {
     .join('')
 }
 
-describe('assistant replay provenance', () => {
+describe('assistant replay provider and model fields', () => {
   it('records adapter replay state with the assembled assistant content', async () => {
     const response = textResponse('unchanged')
     const replayState = { private: 'state' }
@@ -191,7 +191,7 @@ describe('abort during tool execution ends the turn', () => {
     const adapter = new MockAdapter([textResponse('must not run')])
     const ctx = await harness(adapter)
     const agent = ctx.agentLoop.create(SessionId('a-empty-batch'), { provider: 'mock', model: 'mock' })
-    ctx.on('agent/pre-step', (subject, _messages, _context, next) => {
+    ctx.on('agent/pre-step', ({ agent: subject }, next) => {
       if (subject !== agent) return next()
       return Promise.resolve({ kind: 'enter', messages: [] })
     })
@@ -288,7 +288,7 @@ describe('abort during tool execution ends the turn', () => {
 
     send(agent, 'leave an unmatched historical call')
     await waitForIdle(ctx, agent)
-    const disposeInjection = ctx.on('agent/pre-step', async (subject, _messages, { turn }, next) => {
+    const disposeInjection = ctx.on('agent/pre-step', async ({ agent: subject, turn }, next) => {
       const decision = await next()
       if (subject === agent && turn === 2 && decision.kind === 'enter') {
         disposeInjection()
@@ -382,7 +382,7 @@ describe('disposal leaves the two-state status contract balanced', () => {
 
     const statuses: string[] = []
     const reasons: TurnEndReason[] = []
-    ctx.on('agent/status', (_agent, status) => void statuses.push(status))
+    ctx.on('agent/status', ({ status }) => void statuses.push(status))
     ctx.on('session/event', (_s, event) => { if (event.type === 'turn/end') reasons.push(event.data.reason) })
 
     send(agent, 'go')
@@ -411,7 +411,7 @@ describe('disposal leaves the two-state status contract balanced', () => {
       agent = inner.agentLoop.create(SessionId('scoped'), { provider: 'mock', model: 'mock' })
     }, { inject: ['agentLoop'] }))
 
-    ctx.on('agent/status', (_agent, status) => {
+    ctx.on('agent/status', ({ status }) => {
       if (status === 'idle') throw new Error('broken status listener')
     })
 
@@ -427,7 +427,7 @@ describe('disposal leaves the two-state status contract balanced', () => {
 describe('adapter registration, routing, and accepted-input ownership', () => {
   it('duplicate adapter registration is rejected', async () => {
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     const adapter = new MockAdapter([])
     ctx.llm.registerAdapter(['m1'], adapter)
     expect(() => ctx.llm.registerAdapter(['m1'], new MockAdapter([])))
@@ -457,7 +457,7 @@ describe('adapter registration, routing, and accepted-input ownership', () => {
     const ctx = await harness(adapter)
     const agent = ctx.agentLoop.create(SessionId('a1'), {}) // no model — router plugin decides
 
-    ctx.on('agent/request', async (_agent, _turn, _step, _signal, next) => {
+    ctx.on('agent/request', async (_payload, next) => {
       return { ...await next(), provider: 'mock', model: 'mock' }
     })
 
@@ -523,10 +523,10 @@ describe('turn numbering continues across seeded sessions', () => {
     // fork: seed a second context's agent with the first session's log
     const second = new MockAdapter([textResponse('turn two')])
     const ctx2 = new Context()
-    await ctx2.plugin(LlmService)
+    await ctx2.plugin(LlmRuntime)
     await ctx2.plugin(SessionStore)
     await ctx2.plugin(SystemPrompt)
-    await ctx2.plugin(ToolRegistry)
+    await ctx2.plugin(ToolRuntime)
     await ctx2.plugin(AgentRegistry)
     await ctx2.plugin(AgentLoop, { agents: [] })
     ctx2.llm.registerAdapter(['mock'], second)
@@ -540,7 +540,7 @@ describe('turn numbering continues across seeded sessions', () => {
     ctx2.on('session/event', (_s, event) => { if (event.type === 'turn/start') turns.push(event.data.turn) })
     forked.followup(createUserMessage({ content: [{ type: 'text', text: 'continue' }], source: { kind: 'user' } }))
     await new Promise<void>((resolve) => {
-      ctx2.on('agent/status', (subject, status) => {
+      ctx2.on('agent/status', ({ agent: subject, status }) => {
         if (subject === forked && status === 'idle') resolve()
       })
     })
@@ -586,7 +586,7 @@ describe('a finish-error stream chunk ends the turn as error, not completed', ()
 
     const reasons: TurnEndReason[] = []
     const errors: unknown[] = []
-    ctx.on('agent/error', (_agent, turn, step, error) => {
+    ctx.on('agent/error', ({ turn, step, error }) => {
       expect({ turn, step }).toEqual({ turn: 1, step: 1 })
       errors.push(error)
     })
@@ -674,10 +674,10 @@ describe('turn and step boundary recovery', () => {
   // The session invariant companion makes an unbalanced log fail the test.
   async function balancedHarness(adapter: MockAdapter) {
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRegistry)
+    await ctx.plugin(ToolRuntime)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
     await mountInvariants(ctx)
@@ -710,7 +710,7 @@ describe('turn and step boundary recovery', () => {
       if (event.type === 'step/start' && !threw) { threw = true; throw new Error('boom step-start') }
     })
     const errors: Error[] = []
-    ctx.on('agent/error', (_a, _t, _s, error) => {
+    ctx.on('agent/error', ({ error }) => {
       if (error instanceof Error) errors.push(error)
     })
 
@@ -743,7 +743,7 @@ describe('turn and step boundary recovery', () => {
       }
     })
     const errors: Error[] = []
-    ctx.on('agent/error', (_agent, _turn, _step, error) => {
+    ctx.on('agent/error', ({ error }) => {
       if (error instanceof Error) errors.push(error)
     })
 
@@ -800,7 +800,7 @@ describe('turn and step boundary recovery', () => {
       }
     })
     const errors: Error[] = []
-    ctx.on('agent/error', (_agent, _turn, _step, error) => {
+    ctx.on('agent/error', ({ error }) => {
       if (error instanceof Error) errors.push(error)
     })
 
@@ -893,14 +893,14 @@ describe('turn and step boundary recovery', () => {
     }, { inject: ['agentLoop'] }))
 
     let threw = false
-    ctx.on('agent/pre-step', (_subject, _messages, _context, next) => {
+    ctx.on('agent/pre-step', (_payload, next) => {
       if (threw) return next()
       threw = true
       void fiber.dispose()
       throw new Error('boom pre-step during disposal')
     })
     const errorEmits: Error[] = []
-    ctx.on('agent/error', (_a, _t, _s, error) => {
+    ctx.on('agent/error', ({ error }) => {
       if (error instanceof Error) errorEmits.push(error)
     })
 
@@ -926,7 +926,7 @@ describe('turn and step boundary recovery', () => {
       if (!threw && event.type === 'turn/start') { threw = true; throw new Error('boom turn/start append') }
     })
     const errors: Error[] = []
-    ctx.on('agent/error', (_a, _t, _s, error) => {
+    ctx.on('agent/error', ({ error }) => {
       if (error instanceof Error) errors.push(error)
     })
 
@@ -959,7 +959,7 @@ describe('turn and step boundary recovery', () => {
       if (event.type === 'step/end' && !threw) { threw = true; throw new Error('boom step-end') }
     })
     const errors: Error[] = []
-    ctx.on('agent/error', (_a, _t, _s, error) => {
+    ctx.on('agent/error', ({ error }) => {
       if (error instanceof Error) errors.push(error)
     })
 
@@ -1000,7 +1000,7 @@ describe('turn and step boundary recovery', () => {
       if (!threw && event.type === 'step/end') { threw = true; throw new Error('boom step/end listener') }
     })
     const errors: Error[] = []
-    ctx.on('agent/error', (_a, _t, _s, error) => {
+    ctx.on('agent/error', ({ error }) => {
       if (error instanceof Error) errors.push(error)
     })
 
@@ -1106,10 +1106,10 @@ describe('disposal and cancellation during pre-step assembly', () => {
     const blocked = new Promise<void>(r => void (releaseAssemble = r))
 
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRegistry)
+    await ctx.plugin(ToolRuntime)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
     await mountInvariants(ctx)
@@ -1156,10 +1156,10 @@ describe('disposal and cancellation during pre-step assembly', () => {
     const blocker = new Promise<void>(r => void (releaseAssemble = r))
 
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRegistry)
+    await ctx.plugin(ToolRuntime)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
     await mountInvariants(ctx)
@@ -1206,16 +1206,16 @@ describe('disposal and cancellation during pre-step assembly', () => {
     const blocker = new Promise<void>(r => void (releasePreStep = r))
 
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRegistry)
+    await ctx.plugin(ToolRuntime)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
     await mountInvariants(ctx)
     ctx.llm.registerAdapter(['mock'], adapter)
 
-    ctx.on('agent/pre-step', async (_subject, _messages, _context, next) => {
+    ctx.on('agent/pre-step', async (_payload, next) => {
       await blocker
       return next()
     })
@@ -1252,16 +1252,16 @@ describe('disposal and cancellation during pre-step assembly', () => {
     const blocker = new Promise<void>(r => void (releasePreStep = r))
 
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRegistry)
+    await ctx.plugin(ToolRuntime)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
     await mountInvariants(ctx)
     ctx.llm.registerAdapter(['mock'], adapter)
 
-    ctx.on('agent/pre-step', async (_subject, _messages, _context, next) => {
+    ctx.on('agent/pre-step', async (_payload, next) => {
       await blocker
       return next()
     })
@@ -1300,10 +1300,10 @@ describe('disposal and cancellation during pre-step assembly', () => {
     const blocker = new Promise<void>(r => void (releaseAssemble = r))
 
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRegistry)
+    await ctx.plugin(ToolRuntime)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
     await mountInvariants(ctx)

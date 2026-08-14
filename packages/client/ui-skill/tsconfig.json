@@ -9,22 +9,34 @@
   ],
   "references": [
     {
+      "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
       "path": "../../../vendor/cordis"
     },
     {
-      "path": "../connection"
+      "path": "../locale"
     },
     {
       "path": "../runtime"
     },
     {
-      "path": "../ui-slash"
+      "path": "../ui-tool"
+    },
+    {
+      "path": "../ui-primitives"
+    },
+    {
+      "path": "../ui-input-trigger"
     },
     {
       "path": "../ui-slots"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../../api/remotes/tsconfig.client.json"
     }
   ]
 }

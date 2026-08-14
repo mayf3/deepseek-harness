@@ -22,4 +22,4 @@ Candidate browsing has no model effect. A selected file or session changes only 
 
 - **Candidate failure is intentionally quiet** — one unavailable or failed reference RPC yields no rows for that domain, while prompt submission still reports session-reference preparation failures through the ordinary send path.
 - **No browser-side file scan** — Web completion requires a mounted Host `ctx.fileReferences` provider; the browser cannot fall back to its own filesystem.
-- **Session search remains metadata-only** — discovery filters session id, cwd, and the latest log-backed title through `ctx.sessionReferences`; message bodies and full transcripts are not searched.
+- **Session search remains metadata-only** — discovery filters session id, cwd, and the latest log-backed title through `ctx.sessionReferenceResolver`; message bodies and full transcripts are not searched.

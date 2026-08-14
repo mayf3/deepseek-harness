@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import { Context } from '@deepseek-ai/cordis'
+import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore from '@deepseek-ai/dsh-session'
-import UserInteractionService from '@deepseek-ai/dsh-user-interaction'
+import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { ApiProxy, MuxFrame, RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { createApiProxy } from '../src/api-proxy.ts'
@@ -10,15 +10,19 @@ import { createApiProxy } from '../src/api-proxy.ts'
 async function harness(): Promise<{ ctx: Context; api: ApiProxy }> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
-  await ctx.plugin(UserInteractionService)
+  await ctx.plugin(AgentRegistry)
+  await ctx.plugin(UserQuestionService)
   return {
     ctx,
-    api: createApiProxy(ctx, { provider: 'p', model: 'm', cwd: '/tmp', workspaceRoot: '/tmp' }),
+    api: createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' }),
   }
 }
 
-function agent(id: string): Agent {
-  return { id } as unknown as Agent
+function agent(ctx: Context): Agent {
+  const session = ctx.sessions.create()
+  const value = { id: session.id, session, status: 'idle', ctx } as Agent
+  ctx.agents.register(value)
+  return value
 }
 
 function openMux(api: ApiProxy, abort: AbortController): {
@@ -70,8 +74,8 @@ describe('question response validation', () => {
     const { ctx, api } = await harness()
     const abort = new AbortController()
     const mux = openMux(api, abort)
-    const asked = ctx.userInteraction.ask({
-      agent: agent('session-multi'),
+    const asked = ctx.userQuestions.ask({
+      agent: agent(ctx),
       questions: [{
         id: 'targets',
         question: 'Choose targets and add another',
@@ -94,8 +98,8 @@ describe('question response validation', () => {
     const { ctx, api } = await harness()
     const abort = new AbortController()
     const mux = openMux(api, abort)
-    const asked = ctx.userInteraction.ask({
-      agent: agent('session-single'),
+    const asked = ctx.userQuestions.ask({
+      agent: agent(ctx),
       questions: [{
         id: 'target',
         question: 'Choose one target',

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRegistry, { type JsonValue } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { type JsonValue } from '@deepseek-ai/dsh-tools'
 import { publicToolName, syncTools, type ToolBridgeOptions } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
 import { createTransport } from '@deepseek-ai/dsh-mcp-client/src/transport.ts'
 import type { Config } from '@deepseek-ai/dsh-mcp-client'
@@ -59,11 +59,12 @@ function createMockClient(tools: MockTool[], callResult: MockCallResult = { cont
 async function mountRegistry(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRegistry)
+  await ctx.plugin(ToolRuntime)
   return ctx
 }
 
 const defaultOpts: ToolBridgeOptions = {
+  registrationFailure: 'contain',
   serverName: 'srv',
   toolCallTimeoutMs: 60_000,
 }
@@ -206,7 +207,6 @@ describe('syncTools', () => {
     const firstDisposers = await syncTools(client as never, ctx, defaultOpts, new Map())
     expect(ctx.tools.get('mcp__srv__old_tool')).toBeDefined()
 
-    // Second sync with different tools should remove old_tool.
     client.listTools.mockResolvedValue({ tools: [{ name: 'new_tool', inputSchema: { type: 'object' } }], nextCursor: undefined })
     const secondDisposers = await syncTools(client as never, ctx, defaultOpts, firstDisposers)
 
@@ -713,6 +713,7 @@ describe('createTransport', () => {
       env: {},
       cwd: '/tmp',
       toolCallTimeoutMs: 60_000,
+      failOnStartupError: false,
     }
     const transport = createTransport(config)
     expect(transport).toBeDefined()
@@ -727,6 +728,7 @@ describe('createTransport', () => {
       url: 'http://localhost:3000/mcp',
       headers: {},
       toolCallTimeoutMs: 60_000,
+      failOnStartupError: false,
     }
     const transport = createTransport(config)
     expect(transport).toBeDefined()
@@ -741,6 +743,7 @@ describe('createTransport', () => {
       url: 'http://localhost:3000/mcp',
       headers: { Authorization: 'Bearer token' },
       toolCallTimeoutMs: 60_000,
+      failOnStartupError: false,
     }
     const transport = createTransport(config)
     expect(transport).toBeDefined()
@@ -764,14 +767,13 @@ describe('createTransport', () => {
         env: { EXTRA: 'injected' },
         cwd: '',
         toolCallTimeoutMs: 60_000,
+        failOnStartupError: false,
       }
-      // createTransport internally calls buildChildEnv; we verify by inspecting
-      // the constructed StdioClientTransport. Since we can't inspect private fields
-      // easily, we at least confirm it doesn't throw and returns a transport.
+      // StdioClientTransport keeps its env private; the observable contract is
+      // that createTransport(config) returns a transport without throwing.
       const transport = createTransport(config)
       expect(transport).toBeDefined()
     } finally {
-      // Restore env
       delete process.env.SAFE_VAR
       delete process.env.MY_SECRET
       delete process.env.API_KEY
@@ -791,6 +793,7 @@ describe('createTransport', () => {
       env: { CUSTOM: 'value' },
       cwd: '',
       toolCallTimeoutMs: 60_000,
+      failOnStartupError: false,
     }
     const transport = createTransport(config)
     expect(transport).toBeDefined()

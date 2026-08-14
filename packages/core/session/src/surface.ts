@@ -88,7 +88,7 @@ export function deriveEventMessage(event: SessionEvent): Message | null {
     // Ordinary prompts and injected context project in user role: the event's
     // model-facing content stays verbatim. Do NOT re-add per-type framing
     // (e.g. `<context>`) here: framing is caller-owned — a producer bakes it
-    // into `content`, as workspace-context does with `<system-reminder>` — or,
+    // into `content`, as agent-instructions does with `<system-reminder>` — or,
     // if reintroduced, must be driven by the event `meta` map and a dedicated
     // renderer, keeping this projection a verbatim pass-through. See the
     // deferred design note in
@@ -207,7 +207,7 @@ function surfaceOpOf(event: SessionEvent): SurfaceOp | undefined {
   return op
 }
 
-/** Validate provenance against prior log entries and the replacement range. */
+/** Validate cited source-event seqs against prior log entries and the replacement range. */
 function assertProvenance(
   event: SessionEvent,
   shadowedSeqs: readonly number[],
@@ -382,7 +382,7 @@ function applySurfacePlan(
  * Replay a complete session log through the canonical surface fold.
  * @param events - session events in contiguous seq order.
  * @returns detached current sequences and replacement history.
- * @throws when an event violates surface metadata, provenance, range, or tool-result rewrite rules.
+ * @throws when an event violates surface metadata, source-event references, range, or tool-result rewrite rules.
  */
 export function foldSurface(events: readonly SessionEvent[]): SurfaceFoldResult {
   const state = createFoldState()

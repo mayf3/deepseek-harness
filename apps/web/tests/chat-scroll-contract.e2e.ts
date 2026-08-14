@@ -40,6 +40,11 @@ const LIVE_TOOL_FIRST = 'CHAT_SCROLL_TOOL_STREAM_FIRST'
 const LIVE_TOOL_DONE = 'CHAT_SCROLL_TOOL_STREAM_DONE'
 const TOOL_READY_FILE = '.chat-scroll-tool-ready'
 const TOOL_RELEASE_FILE = '.chat-scroll-tool-release'
+const INPUTS_SESSION_ID = 'chat-scroll-inputs-e2e'
+const FLING_SESSION_ID = 'chat-scroll-fling-e2e'
+const LIVE_FLING_PROMPT = 'CHAT_SCROLL_FLING_USER Keep streaming while I fling back through older output.'
+const LIVE_FLING_FIRST = 'CHAT_SCROLL_FLING_STREAM_FIRST'
+const LIVE_FLING_DONE = 'CHAT_SCROLL_FLING_STREAM_DONE'
 
 const HISTORY_FIXTURE = createChatScrollFixture({
   markerPrefix: 'HISTORY',
@@ -57,6 +62,10 @@ const RESTORE_FIXTURE_B = createChatScrollFixture({
   markerPrefix: 'RESTORE_B',
   title: 'CHAT_SCROLL_RESTORE_B comparison session',
   turns: 32,
+})
+const INPUTS_FIXTURE = createChatScrollFixture({
+  markerPrefix: 'INPUTS',
+  title: 'CHAT_SCROLL_INPUTS non-wheel reader input session',
 })
 
 interface ScrollGeometry {
@@ -159,8 +168,10 @@ async function launchScrollWorld(options: ScrollWorldOptions): Promise<ScrollWor
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     // Session-list bootstrap can replace the controlled search state. Wait
-    // for the seeded baseline before openSeed starts the lazy content query.
-    await page.getByText(/^\d+ sessions?$/, { exact: true }).waitFor({ timeout: 30_000 })
+    // for the seeded baseline before openSeed starts the lazy content query
+    // (the compact layout dropped group session counts; the Ungrouped bucket
+    // row is the barrier).
+    await page.getByText('Ungrouped', { exact: true }).waitFor({ timeout: 30_000 })
     return {
       events,
       page,
@@ -239,19 +250,25 @@ function scrollGeometry(page: Page): Promise<ScrollGeometry> {
   }))
 }
 
-async function conversationTurns(page: Page): Promise<number> {
-  const stats = page.getByText(/\d+ turns · \d+ steps/, { exact: true }).last()
-  await stats.waitFor({ timeout: 15_000 })
-  const value = await stats.textContent()
-  const match = value?.match(/^(\d+) turns · \d+ steps$/)
-  if (match?.[1] === undefined) throw new Error(`unexpected conversation stats ${JSON.stringify(value)}`)
-  return Number(match[1])
+/**
+ * Rendered transcript rows in the loaded window. The stats strip cannot serve
+ * as this probe: its turn/step counts ride the whole-log sessionStats
+ * projection and stay fixed across paging by design, while the row count is
+ * exactly what grows when an older page prepends or a live turn streams in.
+ * @param page - the scenario page.
+ * @returns the number of mounted chat flow rows.
+ */
+async function loadedFlowRows(page: Page): Promise<number> {
+  return page.locator('[data-chat-flow-key]').count()
 }
 
 async function openSeed(page: Page, fixture: ChatScrollFixture, tailMarker?: string): Promise<void> {
-  const search = page.getByRole('textbox', { name: 'Search name, keywords...', exact: true })
+  // Search collapsed into a header action; expand it before filling.
+  const searchButton = page.getByRole('button', { name: 'Search sessions' })
+  if (await searchButton.getAttribute('aria-expanded') !== 'true') await searchButton.click()
+  const search = page.getByRole('textbox', { name: 'Search sessions...', exact: true })
   // Cold summaries initially show the temporary workspace basename, so the
-  // persisted first-message marker is the stable user-facing identity. The
+  // persisted first-prompt marker is the stable user-facing identity. The
   // query itself triggers lazy content-index reconciliation; no transient
   // empty-state paint is used as a barrier.
   await search.fill(fixture.markers.user(1))
@@ -270,6 +287,34 @@ async function wheelTranscript(page: Page, deltaY: number): Promise<void> {
   if (box === null) throw new Error('conversation scrollport has no layout box')
   await page.mouse.move(box.x + box.width / 2, box.y + Math.min(140, box.height / 3))
   await page.mouse.wheel(0, deltaY)
+  await nextPaint(page)
+}
+
+/**
+ * Touch-style momentum fling over the transcript. Headless Chromium in the
+ * test lane cannot synthesize device scrolling (Input.synthesizeScrollGesture
+ * and Input.dispatchTouchEvent both deliver DOM events without moving any
+ * scroller, and compositor scrollbars ignore synthetic mouse input), so the
+ * fling replays the signature a real pan leaves on the scrollport: per-frame
+ * decaying displacements the component never authored, carrying no wheel
+ * events. Wheel-sign semantics: positive deltaY reads downward.
+ */
+async function flingTranscript(page: Page, deltaY: number): Promise<void> {
+  await page.locator('[data-conversation-scroll]').evaluate(async (host, delta) => {
+    const direction = Math.sign(delta)
+    let remaining = Math.abs(delta)
+    // Fast launch decaying toward a floor speed, like a released finger. The
+    // floor stays above the follow threshold so contended frames (streaming
+    // writes racing the fling) still deviate far enough to read as input.
+    let velocity = Math.max(120, remaining / 8)
+    while (remaining > 0) {
+      const step = Math.min(velocity, remaining)
+      host.scrollTop += direction * step
+      remaining -= step
+      velocity = Math.max(48, velocity * 0.9)
+      await new Promise<void>(resolve => requestAnimationFrame(() => { resolve() }))
+    }
+  }, deltaY)
   await nextPaint(page)
 }
 
@@ -383,9 +428,9 @@ async function loadEarlierWithAnchor(page: Page): Promise<void> {
   const older = page.getByRole('button', { name: 'Load earlier', exact: true })
   await older.waitFor({ timeout: 10_000 })
   const anchor = await visibleFlowAnchor(page)
-  const before = await conversationTurns(page)
+  const before = await loadedFlowRows(page)
   await older.click()
-  await expect.poll(() => conversationTurns(page), { timeout: 30_000 }).toBeGreaterThan(before)
+  await expect.poll(() => loadedFlowRows(page), { timeout: 30_000 }).toBeGreaterThan(before)
   await nextPaint(page)
   await expectSameFlowTop(page, anchor)
 }
@@ -456,7 +501,7 @@ describe('web e2e: long Chat scroll contract', () => {
         await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
         await world.page.getByText(LIVE_TEXT_FIRST, { exact: false }).last().waitFor({ timeout: 15_000 })
         await wheelToHistoryStart(world.page)
-        const beforeTurns = await conversationTurns(world.page)
+        const beforeRows = await loadedFlowRows(world.page)
         await world.page.getByRole('button', { name: 'Load earlier', exact: true }).click()
         await expect.poll(() => held, { timeout: 10_000 }).toBe(true)
 
@@ -469,7 +514,7 @@ describe('web e2e: long Chat scroll contract', () => {
         ).toBeGreaterThan(chunksAfterAnchor + 5)
 
         releaseHistory()
-        await expect.poll(() => conversationTurns(world.page), { timeout: 30_000 }).toBeGreaterThan(beforeTurns)
+        await expect.poll(() => loadedFlowRows(world.page), { timeout: 30_000 }).toBeGreaterThan(beforeRows)
         await nextPaint(world.page)
         await expectSameFlowTop(world.page, readerAnchor)
       } finally {
@@ -489,7 +534,11 @@ describe('web e2e: long Chat scroll contract', () => {
         additionalPages += 1
       }
       expect(additionalPages).toBeGreaterThan(0)
-      expect(await conversationTurns(world.page)).toBe(HISTORY_FIXTURE.turns + 1)
+      // The whole log is loaded: turn 1's unique marker renders in the
+      // transcript (scoped: the sidebar search row also carries it) and no
+      // page remains.
+      expect(await world.page.locator('[data-conversation-scroll]')
+        .getByText(HISTORY_FIXTURE.markers.user(1), { exact: false }).count()).toBe(1)
       expect(await world.page.getByRole('button', { name: 'Load earlier', exact: true }).count()).toBe(0)
       assertClean(world)
     })
@@ -680,6 +729,114 @@ describe('web e2e: long Chat scroll contract', () => {
       await world.page.mouse.wheel(0, -320)
       await expect.poll(async () => (await scrollGeometry(world.page)).scrollTop, { timeout: 10_000 })
         .toBeLessThan(beforeChain.scrollTop)
+      assertClean(world)
+    })
+  }, 180_000)
+
+  // Keyboard is the only non-wheel device this lane's Chromium can drive for
+  // real (see flingTranscript for the probe results on touch and scrollbars),
+  // so it stands in for the whole hardware input pipeline here.
+  it.skipIf(MODE === 'record')('keyboard paging owns bottom-follow without wheel input', async () => {
+    await withScrollWorld({
+      failureShot: 'web-e2e-chat-scroll-keyboard',
+      seeds: [{ fixture: INPUTS_FIXTURE, id: INPUTS_SESSION_ID }],
+    }, async (world) => {
+      await openSeed(
+        world.page,
+        INPUTS_FIXTURE,
+        INPUTS_FIXTURE.markers.assistant(INPUTS_FIXTURE.turns),
+      )
+      await expectBottom(world.page)
+      const backToBottom = world.page.getByRole('button', { name: 'Back to bottom', exact: true })
+
+      // Focus rides the last seeded tool row (a tabbable button whose keydown
+      // handler passes scrolling keys through). End first normalizes the
+      // focus-driven scrollIntoView back to the floor.
+      const lastToolRow = world.page.locator(
+        `[data-chat-call-id="chat-scroll-${String(INPUTS_FIXTURE.turns).padStart(3, '0')}-1"] [data-sample="bash"]`,
+      )
+      await lastToolRow.focus()
+      await world.page.keyboard.press('End')
+      await expectBottom(world.page)
+      await expect.poll(() => backToBottom.count(), { timeout: 10_000 }).toBe(0)
+      for (let press = 0; press < 3; press += 1) {
+        await world.page.keyboard.press('PageUp')
+        await nextPaint(world.page)
+      }
+      await backToBottom.waitFor({ timeout: 10_000 })
+      await expect.poll(async () => (await scrollGeometry(world.page)).distanceFromBottom, { timeout: 10_000 })
+        .toBeGreaterThan(100)
+      await world.page.keyboard.press('End')
+      await expectBottom(world.page)
+      await expect.poll(() => backToBottom.count(), { timeout: 10_000 }).toBe(0)
+      assertClean(world)
+    })
+  }, 180_000)
+
+  it.skipIf(MODE === 'record')('touch-style fling scrolling owns streaming bottom-follow without wheel input', async () => {
+    await withScrollWorld({
+      failureShot: 'web-e2e-chat-scroll-fling-stream',
+      replay: [
+        replayEntry(toolStream()),
+        replayEntry(textStream(LIVE_FLING_FIRST, LIVE_FLING_DONE, 240)),
+      ],
+      seeds: [{ fixture: INPUTS_FIXTURE, id: FLING_SESSION_ID }],
+    }, async (world) => {
+      const readyPath = join(world.scaffold.workspaceCwd, TOOL_READY_FILE)
+      const releasePath = join(world.scaffold.workspaceCwd, TOOL_RELEASE_FILE)
+      await openSeed(world.page, INPUTS_FIXTURE, INPUTS_FIXTURE.markers.assistant(INPUTS_FIXTURE.turns))
+      const backToBottom = world.page.getByRole('button', { name: 'Back to bottom', exact: true })
+      const settled = world.scaffold.whenTurnSettled(60_000)
+      let released = false
+      try {
+        const composer = world.page.locator('textarea:enabled').last()
+        await composer.fill(LIVE_FLING_PROMPT)
+        await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
+        await expect.poll(() => fileExists(readyPath), { timeout: 15_000 }).toBe(true)
+        await expectBottom(world.page)
+
+        // Fling away while the turn is mid-flight: the scroll burst alone must
+        // release bottom ownership, exactly like a wheel scroll would, even
+        // while streaming keeps re-asserting the floor between frames.
+        await flingTranscript(world.page, -900)
+        await backToBottom.waitFor({ timeout: 10_000 })
+        const awayAnchor = await visibleFlowAnchor(world.page)
+        const chunksBeforeRelease = world.events.filter(event => event.type === 'assistant/chunk').length
+        await writeFile(releasePath, 'release\n')
+        released = true
+        await expect.poll(
+          () => world.events.some(event => event.type === 'tool/result'),
+          { timeout: 15_000 },
+        ).toBe(true)
+        await expect.poll(
+          () => world.events.filter(event => event.type === 'assistant/chunk').length,
+          { timeout: 15_000 },
+        ).toBeGreaterThan(chunksBeforeRelease + 5)
+        await expectSameFlowTop(world.page, awayAnchor)
+
+        // Fling back to the floor: re-pin must come from the reader's scroll
+        // itself, and follow must then own the still-streaming tail. The
+        // retry loop chases the floor that streaming keeps pushing down.
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+          if ((await scrollGeometry(world.page)).distanceFromBottom <= 1) break
+          await flingTranscript(world.page, 1_600)
+        }
+        await expectBottom(world.page)
+        await expect.poll(() => backToBottom.count(), { timeout: 10_000 }).toBe(0)
+        const chunksAtRepin = world.events.filter(event => event.type === 'assistant/chunk').length
+        await expect.poll(
+          () => world.events.filter(event => event.type === 'assistant/chunk').length,
+          { timeout: 15_000 },
+        ).toBeGreaterThan(chunksAtRepin + 5)
+        await expectBottom(world.page)
+      } finally {
+        if (!released) await writeFile(releasePath, 'release\n').catch(() => {})
+      }
+
+      await settled
+      await expect.poll(() => world.page.locator('[data-streaming="true"]').count(), { timeout: 15_000 }).toBe(0)
+      await world.page.getByText(LIVE_FLING_DONE, { exact: false }).last().waitFor({ timeout: 15_000 })
+      await expectBottom(world.page)
       assertClean(world)
     })
   }, 180_000)

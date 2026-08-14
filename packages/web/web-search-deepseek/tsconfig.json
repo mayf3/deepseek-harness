@@ -9,6 +9,9 @@
   ],
   "references": [
     {
+      "path": "../../util/launch-environment"
+    },
+    {
       "path": "../../../vendor/cosmokit"
     },
     {
@@ -30,7 +33,10 @@
       "path": "../../credentials/credentials"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../settings/settings"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { Context } from 'cordis'
-import type { Fiber } from 'cordis'
-import LlmService, { createUserMessage, CallId, EMPTY_RESPONSE_CODE, LlmAdapter, LlmError, resolveRetryPolicy  } from '@deepseek-ai/dsh-llm'
+import { Context } from '@deepseek-ai/cordis'
+import type { Fiber } from '@deepseek-ai/cordis'
+import LlmRuntime, { createUserMessage, CallId, EMPTY_RESPONSE_CODE, LlmAdapter, LlmError, resolveRetryPolicy  } from '@deepseek-ai/dsh-llm'
 import type {
   AlwaysRetryPolicyConfig,
   BackoffConfig,
@@ -15,7 +15,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { LlmRetryEventData } from '@deepseek-ai/dsh-llm-retry/types'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRegistry, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -105,10 +105,10 @@ async function harness(
   internals: retry.RetryInternals = {},
 ): Promise<{ ctx: Context; retryFiber: Fiber; disposeAdapter: () => void }> {
   const ctx = new Context()
-  await ctx.plugin(LlmService)
+  await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRegistry)
+  await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   beforeRetry?.(ctx)
   adapter.configureRetryPolicies(policies)
@@ -191,7 +191,9 @@ describe('provider-routed retry policy', () => {
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     const event = await scheduled
 
+    expect(event.data.retryId).toEqual(expect.any(String))
     expect(event.data).toEqual({
+      retryId: event.data.retryId,
       turn: 1,
       step: 1,
       provider: 'mock',
@@ -506,7 +508,7 @@ describe('provider-routed retry policy', () => {
     ;({ ctx: context } = await harness(adapter, {
       other: alwaysConfig({ initialDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 }),
     }, (ctx) => {
-      ctx.on('agent/request', async (_agent, _turn, _step, _signal, next) => ({
+      ctx.on('agent/request', async (_payload, next) => ({
         ...await next(),
         provider: 'other',
       }))
@@ -543,7 +545,7 @@ describe('provider-routed retry policy', () => {
         backoff: { initialDelayMs: 1, maxDelayMs: 1 },
       }),
     }, (ctx) => {
-      ctx.on('agent/request', async (_agent, _turn, _step, _signal, next) => ({
+      ctx.on('agent/request', async (_payload, next) => ({
         ...await next(),
         provider: adapter.requests.length === 0 ? 'mock' : 'other',
       }))
@@ -881,7 +883,7 @@ describe('provider-routed retry policy', () => {
     context = mounted.ctx
     const downstream = Promise.withResolvers<RequestErrorAction>()
     const entered = Promise.withResolvers<undefined>()
-    context.on('agent/request-error', (agent) => {
+    context.on('agent/request-error', ({ agent }) => {
       agent.cancel({ kind: 'user' })
       entered.resolve(undefined)
       return downstream.promise
@@ -917,7 +919,7 @@ describe('provider-routed retry policy', () => {
     const captured = Promise.withResolvers<undefined>()
     let invokeCaptured: (() => Promise<void>) | undefined
     const mounted = await harness(adapter, {}, (ctx) => {
-      ctx.on('agent/request-error', (_agent, _context, _signal, next) => {
+      ctx.on('agent/request-error', (_payload, next) => {
         return new Promise<RequestErrorAction>((resolve) => {
           invokeCaptured = async () => { resolve(await next()) }
           captured.resolve(undefined)
@@ -926,7 +928,7 @@ describe('provider-routed retry policy', () => {
     })
     context = mounted.ctx
     let downstreamCalls = 0
-    context.on('agent/request-error', async (_agent, _context, _signal, next) => {
+    context.on('agent/request-error', async (_payload, next) => {
       downstreamCalls += 1
       return next()
     })
@@ -980,7 +982,7 @@ describe('provider-routed retry policy', () => {
       textResponse('must not run'),
     ])
     ;({ ctx: context } = await harness(adapter, { mock: policy }, (ctx) => {
-      ctx.on('agent/request-error', async (agent, _context, _signal, next) => {
+      ctx.on('agent/request-error', async ({ agent }, next) => {
         agent.cancel({ kind: 'user' })
         return next()
       })

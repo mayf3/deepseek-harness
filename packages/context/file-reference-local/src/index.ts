@@ -4,8 +4,8 @@
  * @module @deepseek-ai/dsh-file-reference-local
  */
 
-import { Context } from 'cordis'
-import z from 'schemastery'
+import { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import FileReferenceService, {
   FILE_REFERENCE_PROMPT,
@@ -88,8 +88,8 @@ export class LocalFileReferenceService extends FileReferenceService {
       })
     }
     for (const agent of ctx.agents.list()) installPrompt(agent)
-    ctx.on('agent/created', installPrompt)
-    ctx.on('agent/disposed', (agent) => {
+    ctx.on('agent/created', ({ agent }) => { installPrompt(agent) })
+    ctx.on('agent/disposed', ({ agent }) => {
       this.searches.get(agent)?.dispose()
       this.searches.delete(agent)
       disposePrompt(agent)

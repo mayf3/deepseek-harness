@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { Context } from '@deepseek-ai/cordis'
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import LlmService from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { INVALID_CREDENTIAL_CODE } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { CredentialsLocal } from '@deepseek-ai/dsh-credentials-local'
+import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { SettingsLocal } from '@deepseek-ai/dsh-settings-local'
+import { FileSettingsProvider } from '@deepseek-ai/dsh-settings-file'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
@@ -35,20 +35,21 @@ interface Harness {
 }
 
 /**
- * Real dynamic composition: llm + settings-local + credentials-local +
+ * Real dynamic composition: llm + settings-file + credentials-local +
  * llm-deepseek over one temp harness home. `watch: false` keeps every change
  * flowing through the in-process write path, which is deterministic; external
  * file watching is the providers' own covered concern.
  */
 async function boot(dir: string, config: object): Promise<Harness> {
+  vi.stubEnv('DSH_HOME', dir)
   const ctx = new Context()
   cleanups.push(async () => {
     await ctx.fiber.dispose()
   })
-  await ctx.plugin(LlmService)
-  const settingsFiber = ctx.plugin(SettingsLocal, { path: join(dir, 'settings.yaml'), watch: false })
+  await ctx.plugin(LlmRuntime)
+  const settingsFiber = ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
   await settingsFiber
-  await ctx.plugin(CredentialsLocal, { path: join(dir, '.env'), watch: false })
+  await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
   await ctx.plugin(LlmDeepSeek, config)
   return { ctx, settingsFiber }
 }
@@ -61,7 +62,7 @@ describe('request-level dynamic configuration', () => {
   it('routes the next request with the freshly resolved base URL and credential', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const dir = await home()
-    await writeFile(join(dir, '.env'), 'DEEPSEEK_API_KEY=first-key\n')
+    await writeFile(join(dir, '.credentials.yaml'), 'DEEPSEEK_API_KEY: first-key\n', { mode: 0o600 })
     const serverA = await mockServer([{ kind: 'sse', events: textEvents }])
     const serverB = await mockServer([{ kind: 'sse', events: textEvents }])
     const { ctx } = await boot(dir, { baseURL: serverA.url })
@@ -78,18 +79,6 @@ describe('request-level dynamic configuration', () => {
     expect(serverB.headers[0]?.authorization).toBe('Bearer second-key')
   })
 
-  it('prefers a literal settings apiKey over the credential layers', async () => {
-    vi.stubEnv('DEEPSEEK_API_KEY', '')
-    const dir = await home()
-    await writeFile(join(dir, '.env'), 'DEEPSEEK_API_KEY=file-key\n')
-    const server = await mockServer([{ kind: 'sse', events: textEvents }])
-    const { ctx } = await boot(dir, { baseURL: server.url })
-
-    await ctx.settings.update(NS, { apiKey: 'literal-key' })
-    await prompt(ctx)
-    expect(server.headers[0]?.authorization).toBe('Bearer literal-key')
-  })
-
   it('starts keyless and serves the next request once the key arrives', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const dir = await home()
@@ -98,25 +87,46 @@ describe('request-level dynamic configuration', () => {
 
     const keyless = await prompt(ctx)
     expect(keyless.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
+    await expect(access(join(dir, '.anonymous-user-id'))).rejects.toMatchObject({ code: 'ENOENT' })
     await ctx.credentials.set(KEY_REF, 'sk-arrived')
     await prompt(ctx)
     expect(server.headers[0]?.authorization).toBe('Bearer sk-arrived')
+    await expect(access(join(dir, '.anonymous-user-id'))).resolves.toBeUndefined()
+  })
+
+  it('rejects a stored credential no header can carry, never echoing it in the failure', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const dir = await home()
+    const { ctx } = await boot(dir, { baseURL: 'http://127.0.0.1:1' })
+    const secret = 'sk-\u{1F600}supersecret'
+
+    // The real credentials seam (the path the web Models page writes through),
+    // not a hand-built stub: this package's own dynamic-config harness already
+    // boots one, and round-tripping the value through its actual store/read
+    // path is stronger evidence than a canned in-memory return would be.
+    await ctx.credentials.set(KEY_REF, secret)
+    const result = await prompt(ctx)
+    expect(result.finish).toMatchObject({ kind: 'error', failure: { code: INVALID_CREDENTIAL_CODE } })
+    if (result.finish.kind !== 'error') throw new Error('expected an error finish')
+    expect(result.finish.failure.message).not.toContain(secret)
+    expect(result.finish.failure.message).not.toContain('supersecret')
+    expect(result.finish.failure.message).not.toContain('ByteString')
   })
 
   it('advertises a live settings catalog without re-registration', async () => {
     const dir = await home()
-    const { ctx } = await boot(dir, { apiKey: 'k', baseURL: 'http://127.0.0.1:1' })
+    const { ctx } = await boot(dir, { baseURL: 'http://127.0.0.1:1' })
 
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(2)
     await ctx.settings.update(NS, { models: [{ id: 'settings-model', name: 'From Settings' }] })
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
-      { provider: 'deepseek-official', id: 'settings-model', name: 'From Settings' },
+      { provider: 'deepseek-official', id: 'settings-model', name: 'From Settings', inputModalities: ['text'] },
     ])
   })
 
   it('re-registers the route in place when the captured retry policy changes, without an empty-registry window', async () => {
     const dir = await home()
-    const { ctx } = await boot(dir, { apiKey: 'k', baseURL: 'http://127.0.0.1:1' })
+    const { ctx } = await boot(dir, { baseURL: 'http://127.0.0.1:1' })
 
     // Observing the topology event, not just the end state: disposing and
     // re-registering also lands on the right final registry, but publishes an
@@ -141,7 +151,7 @@ describe('request-level dynamic configuration', () => {
 
   it('keeps the last good options when a settings snapshot fails beyond-schema validation', async () => {
     const dir = await home()
-    const { ctx } = await boot(dir, { apiKey: 'k', baseURL: 'http://127.0.0.1:1' })
+    const { ctx } = await boot(dir, { baseURL: 'http://127.0.0.1:1' })
 
     // Schema-valid but resolver-invalid: duplicate catalog ids pass the array
     // schema and fail the explicit resolve step.
@@ -149,21 +159,20 @@ describe('request-level dynamic configuration', () => {
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(2)
     await ctx.settings.update(NS, { models: [{ id: 'recovered' }] })
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
-      { provider: 'deepseek-official', id: 'recovered', name: 'recovered' },
+      { provider: 'deepseek-official', id: 'recovered', name: 'recovered', inputModalities: ['text'] },
     ])
   })
 
-  it('sends the whole last-good snapshot when a rejected one changed both the key and the URL', async () => {
-    vi.stubEnv('DEEPSEEK_API_KEY', '')
+  it('keeps the whole last-good snapshot when a rejected one changed the URL', async () => {
     const dir = await home()
     const good = await mockServer([{ kind: 'sse', events: textEvents }])
     const rejected = await mockServer([{ kind: 'sse', events: textEvents }])
-    const { ctx } = await boot(dir, { apiKey: 'good-key', baseURL: good.url })
+    vi.stubEnv('DEEPSEEK_API_KEY', 'good-key')
+    const { ctx } = await boot(dir, { baseURL: good.url })
 
-    // One snapshot moves the endpoint AND the literal key, and fails the
-    // resolve step beyond the schema (duplicate catalog ids).
+    // One snapshot moves the endpoint and fails the resolve step beyond the
+    // schema (duplicate catalog ids).
     await ctx.settings.update(NS, {
-      apiKey: 'rejected-key',
       baseURL: rejected.url,
       models: [{ id: 'dup' }, { id: 'dup' }],
     })
@@ -179,7 +188,7 @@ describe('request-level dynamic configuration', () => {
   it('falls back to the composition entry when settings detach', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const dir = await home()
-    await writeFile(join(dir, '.env'), 'DEEPSEEK_API_KEY=steady-key\n')
+    await writeFile(join(dir, '.credentials.yaml'), 'DEEPSEEK_API_KEY: steady-key\n', { mode: 0o600 })
     const serverA = await mockServer([{ kind: 'sse', events: textEvents }])
     const serverB = await mockServer([{ kind: 'sse', events: textEvents }])
     const { ctx, settingsFiber } = await boot(dir, { baseURL: serverA.url })

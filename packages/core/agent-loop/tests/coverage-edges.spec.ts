@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
-import LlmService, { createUserMessage, CallId, LlmError, StreamChunk, errorChain  } from '@deepseek-ai/dsh-llm'
+import { Context } from '@deepseek-ai/cordis'
+import LlmRuntime, { createUserMessage, CallId, LlmError, StreamChunk, errorChain  } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, TurnEndReason } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRegistry, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -16,10 +16,10 @@ function driverDone(agent: Agent): Promise<void> {
 
 async function harness(adapter: MockAdapter) {
   const ctx = new Context()
-  await ctx.plugin(LlmService)
+  await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRegistry)
+  await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)
@@ -28,7 +28,7 @@ async function harness(adapter: MockAdapter) {
 
 function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
   return new Promise((resolve) => {
-    const dispose = ctx.on('agent/status', (subject, status) => {
+    const dispose = ctx.on('agent/status', ({ agent: subject, status }) => {
       if (subject === agent && status === 'idle') {
         dispose()
         resolve()
@@ -120,7 +120,7 @@ describe('thrown-value propagation', () => {
     })
 
     const errors: unknown[] = []
-    ctx.on('agent/error', (_agent, _turn, _step, error) => void errors.push(error))
+    ctx.on('agent/error', ({ error }) => void errors.push(error))
 
     send(agent, 'fails before turn start')
     send(agent, 'survives as the next item')
@@ -143,7 +143,7 @@ describe('thrown-value propagation', () => {
     const agent = ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
 
     let threwOnce = false
-    ctx.on('agent/request', async (_agent, _turn, _step, _signal, next) => {
+    ctx.on('agent/request', async (_payload, next) => {
       if (!threwOnce) {
         threwOnce = true
         throw { code: 500 }
@@ -167,7 +167,7 @@ describe('durable error rendering', () => {
     const agent = ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
 
     let threwOnce = false
-    ctx.on('agent/request', async (_agent, _turn, _step, _signal, next) => {
+    ctx.on('agent/request', async (_payload, next) => {
       if (!threwOnce) {
         threwOnce = true
         throw new LlmError('server overloaded', 'RATE_LIMIT')
@@ -250,7 +250,7 @@ describe('request-error action edges', () => {
     ])
     const ctx = await harness(adapter)
     const agent = ctx.agentLoop.create(SessionId('retry-after-cancel'), { provider: 'mock', model: 'mock' })
-    ctx.on('agent/request-error', async (subject) => {
+    ctx.on('agent/request-error', async ({ agent: subject }) => {
       subject.cancel({ kind: 'user' })
       return { kind: 'retry' }
     })
@@ -271,7 +271,7 @@ describe('request-error action edges', () => {
     ])
     const ctx = await harness(adapter)
     const agent = ctx.agentLoop.create(SessionId('retry-raced'), { provider: 'mock', model: 'mock' })
-    ctx.on('agent/request-error', async (subject, _context, signal, next) => {
+    ctx.on('agent/request-error', async ({ agent: subject, signal }, next) => {
       await next()
       subject.cancel({ kind: 'user' })
       expect(signal.aborted).toBe(true)
@@ -350,7 +350,7 @@ describe('persistent step-close rejection', () => {
       if (event.type === 'step/end') throw new Error('step close permanently rejected')
     })
     const statuses: string[] = []
-    ctx.on('agent/status', (subject, status) => { if (subject === agent) statuses.push(status) })
+    ctx.on('agent/status', ({ agent: subject, status }) => { if (subject === agent) statuses.push(status) })
 
     send(agent, 'go')
     await agent.whenIdle()
@@ -406,7 +406,7 @@ describe('turn close failure containment', () => {
       }
     })
     const errors: unknown[] = []
-    ctx.on('agent/error', (_agent, _turn, _step, error) => { errors.push(error) })
+    ctx.on('agent/error', ({ error }) => { errors.push(error) })
 
     send(agent, 'go')
     await agent.whenIdle()
@@ -484,11 +484,11 @@ describe('driver bookkeeping edges', () => {
     const ctx = await harness(adapter)
     const agent = ctx.agentLoop.create(SessionId('reject-next-step'), { provider: 'mock', model: 'mock' })
     let proposals = 0
-    ctx.on('agent/pre-step', async (_subject, _messages, _context, next) => {
+    ctx.on('agent/pre-step', async (_payload, next) => {
       proposals += 1
       return proposals === 2 ? { kind: 'reject' } : next()
     })
-    ctx.on('agent/turn-stopping', (subject) => {
+    ctx.on('agent/turn-stopping', ({ agent: subject }) => {
       subject.inject(createUserMessage({
         content: [{ type: 'text', text: 'do not enter the next step' }],
         source: { kind: 'plugin', plugin: 'test' },

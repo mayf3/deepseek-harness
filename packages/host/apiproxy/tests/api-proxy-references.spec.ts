@@ -3,7 +3,7 @@
  * canonical session mentions, atomic snapshot preparation before enqueue,
  * and error/cancellation behavior.
  */
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import AgentRegistry, { agentEvents, Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -13,12 +13,12 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { formatSessionReferenceMention } from '@deepseek-ai/dsh-session-reference'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRegistry from '@deepseek-ai/dsh-tools'
-import UserInteractionService from '@deepseek-ai/dsh-user-interaction'
+import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { RpcRequest, RpcResponse } from '../src/api/rpc.ts'
 import { RpcId } from '../src/api/rpc.ts'
 import { createApiProxy } from '../src/api-proxy.ts'
 
-const DEFAULTS = { provider: 'p', model: 'm', cwd: '/tmp', workspaceRoot: '/tmp' }
+const DEFAULTS = { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' }
 let nextRpc = 1
 
 function request<P>(payload: P): RpcRequest<P> {
@@ -42,7 +42,7 @@ async function harness(): Promise<Context> {
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt, { persona: '' })
   await ctx.plugin(ToolRegistry)
-  await ctx.plugin(UserInteractionService)
+  await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
   ctx.provide('workspace', { list: () => [] } as never)
   return ctx
@@ -118,7 +118,7 @@ describe('reference discovery', () => {
       cwd: '/project',
       createdAt: 42,
     }]))
-    ctx.provide('sessionReferences', { listCandidates } as never)
+    ctx.provide('sessionReferenceResolver', { listCandidates } as never)
     const api = createApiProxy(ctx, DEFAULTS)
     const value = expectOk(await api.references.sessions(
       request({ sessionId: agent.id, query: 'res' }),
@@ -190,7 +190,7 @@ describe('referenced prompt preparation', () => {
         })
       }
     }))
-    ctx.provide('sessionReferences', { prepare } as never)
+    ctx.provide('sessionReferenceResolver', { prepare } as never)
     const api = createApiProxy(ctx, DEFAULTS)
     const signal = new AbortController().signal
     const pending = api.sessions.prompt(request({
@@ -198,7 +198,7 @@ describe('referenced prompt preparation', () => {
       content: [{ type: 'text' as const, text: `compare ${mention} now` }],
       mode: 'queue' as const,
     }), signal)
-    await Promise.resolve()
+    await vi.waitFor(() => { expect(prepare).toHaveBeenCalledOnce() })
     expect(agent.followup).toHaveBeenCalledTimes(1)
     expect(prepare).toHaveBeenCalledWith(
       agent,
@@ -218,23 +218,20 @@ describe('referenced prompt preparation', () => {
     const firstBatch = agent.inbox.claim('next-turn', 1)
     const firstDecision = await agentEvents(ctx, agent).waterfall(
       'agent/pre-step',
-      firstBatch,
-      { turn: 1, step: 1, signal },
+      { messages: firstBatch, turn: 1, step: 1, signal },
       () => Promise.resolve({ kind: 'enter' as const, messages: firstBatch }),
     )
     expect(firstDecision).toEqual({ kind: 'enter', messages: [earlier] })
     const referencedBatch = agent.inbox.claim('next-turn', 2)
     const decision = await agentEvents(ctx, agent).waterfall(
       'agent/pre-step',
-      referencedBatch,
-      { turn: 2, step: 1, signal },
+      { messages: referencedBatch, turn: 2, step: 1, signal },
       () => Promise.resolve({ kind: 'enter' as const, messages: referencedBatch }),
     )
     expect(decision).toEqual({ kind: 'enter', messages: [context, sent] })
     const replay = await agentEvents(ctx, agent).waterfall(
       'agent/pre-step',
-      referencedBatch,
-      { turn: 2, step: 1, signal },
+      { messages: referencedBatch, turn: 2, step: 1, signal },
       () => Promise.resolve({ kind: 'enter' as const, messages: referencedBatch }),
     )
     expect(replay).toEqual({ kind: 'enter', messages: referencedBatch })
@@ -264,7 +261,7 @@ describe('referenced prompt preparation', () => {
       },
       content: [{ type: 'text' as const, text: 'snapshot' }],
     })
-    ctx.provide('sessionReferences', {
+    ctx.provide('sessionReferenceResolver', {
       prepare: () => Promise.resolve({
         content: [{ type: 'text' as const, text: 'continue @Research' }],
         additionalContext: context,
@@ -288,8 +285,7 @@ describe('referenced prompt preparation', () => {
     const batch = agent.inbox.claim('next-step', 1)
     const decision = await agentEvents(ctx, agent).waterfall(
       'agent/pre-step',
-      batch,
-      { turn: 1, step: 1, signal },
+      { messages: batch, turn: 1, step: 1, signal },
       () => Promise.resolve({ kind: 'enter' as const, messages: batch }),
     )
     expect(decision).toEqual({ kind: 'enter', messages: [context, steered] })
@@ -320,7 +316,7 @@ describe('referenced prompt preparation', () => {
       },
       content: [{ type: 'text' as const, text: 'snapshot' }],
     })
-    ctx.provide('sessionReferences', {
+    ctx.provide('sessionReferenceResolver', {
       prepare: () => Promise.resolve({
         content: [{ type: 'text' as const, text: 'continue @Research' }],
         additionalContext: context,
@@ -350,8 +346,7 @@ describe('referenced prompt preparation', () => {
     const batch = agent.inbox.claim('next-step', 1)
     const decision = await agentEvents(ctx, agent).waterfall(
       'agent/pre-step',
-      batch,
-      { turn: 1, step: 1, signal },
+      { messages: batch, turn: 1, step: 1, signal },
       () => Promise.resolve({ kind: 'enter' as const, messages: batch }),
     )
     expect(decision).toEqual({ kind: 'enter', messages: [context, queued] })
@@ -365,7 +360,7 @@ describe('referenced prompt preparation', () => {
       const controller = new AbortController()
       const source = 'source-session' as SessionId
       const mention = formatSessionReferenceMention({ sessionId: source, label: 'Research' })
-      ctx.provide('sessionReferences', {
+      ctx.provide('sessionReferenceResolver', {
         prepare: async () => {
           controller.abort()
           return {
@@ -412,7 +407,7 @@ describe('referenced prompt preparation', () => {
     const ctx = await harness()
     const agent = stubAgent(ctx)
     const prepare = vi.fn(() => Promise.reject(new Error('snapshot unavailable')))
-    ctx.provide('sessionReferences', { prepare } as never)
+    ctx.provide('sessionReferenceResolver', { prepare } as never)
     const api = createApiProxy(ctx, DEFAULTS)
 
     const malformed = await api.sessions.prompt(request({

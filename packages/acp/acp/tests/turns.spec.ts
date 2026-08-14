@@ -41,6 +41,35 @@ describe('ACP prompt lifecycle', () => {
     await vi.waitFor(() => { expect(messageText(harness!)).toBe('cut off') })
   })
 
+  it('renders an assistant image as an explicit attachment placeholder', async () => {
+    const attachmentId = `sha256:${'a'.repeat(64)}` as never
+    harness = await makeBridgeHarness({
+      script: [[
+        { type: 'block-start', index: 0, blockType: 'image' },
+        {
+          type: 'block-end',
+          index: 0,
+          block: {
+            type: 'image',
+            attachment: {
+              attachmentId,
+              mediaType: 'image/png',
+              bytes: 1,
+              width: 1,
+              height: 1,
+            },
+          },
+        },
+        { type: 'finish', reason: { kind: 'stop' } },
+      ]],
+    })
+    const sessionId = await newSession(harness)
+    await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'show it' }] })
+    await vi.waitFor(() => {
+      expect(messageText(harness!)).toBe(`[image attachment ${String(attachmentId)}]`)
+    })
+  })
+
   it('rejects a failed turn and never publishes its partial chunks', async () => {
     harness = await makeBridgeHarness({ script: [errorResponse('provider boom')] })
     const sessionId = await newSession(harness)
@@ -87,7 +116,7 @@ describe('ACP prompt lifecycle', () => {
     const sessionId = await newSession(harness)
     const agent = harness.ctx.agents.get(SessionId(sessionId))!
     let injected = false
-    harness.ctx.on('agent/inbox/inserted', (subject, { message }) => {
+    harness.ctx.on('agent/inbox/inserted', ({ agent: subject, message }) => {
       if (subject === agent && message.source.kind === 'user' && !injected) {
         injected = true
         agent.inject(createUserMessage({ content: [{ type: 'text', text: 'context' }], source: { kind: 'plugin', plugin: 'test' } }))
@@ -235,7 +264,7 @@ describe('ACP prompt lifecycle', () => {
     harness = await makeBridgeHarness({ script: [errorResponse('transient boom'), textResponse('recovered')] })
     // A recovery policy: schedule one retry for the failed request.
     let retried = false
-    harness.ctx.on('agent/request-error', async (_subject) => {
+    harness.ctx.on('agent/request-error', async () => {
       if (!retried) {
         retried = true
         return { kind: 'retry' }
@@ -272,7 +301,7 @@ describe('ACP prompt lifecycle', () => {
   it('cancels a prompt removed before its turn claims it', async () => {
     harness = await makeBridgeHarness({ script: [] })
     const sessionId = await newSession(harness)
-    const dispose = harness.ctx.on('agent/inbox/inserted', (agent, { message }) => {
+    const dispose = harness.ctx.on('agent/inbox/inserted', ({ agent, message }) => {
       if (message.source.kind === 'user') agent.inbox.remove(message.id)
     })
 

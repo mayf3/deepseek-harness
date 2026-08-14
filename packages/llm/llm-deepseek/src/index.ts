@@ -11,13 +11,15 @@
  * @module @deepseek-ai/dsh-llm-deepseek
  */
 
-import type { Context } from 'cordis'
-import z from 'schemastery'
-import { LlmError, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
+import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import {
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_MAX_TOKENS,
@@ -58,16 +60,14 @@ const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
  * reasoning effort resolves to `high`.
  */
 export interface Config {
-  /** Literal API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
-  apiKey?: string
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
-  /** Endpoint base; falls back to $DEEPSEEK_BASE_URL, then the public API. */
+  /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
   baseURL?: string
   /** Deployment thinking policy; `disabled` limits every conversation request to `off`. */
   thinking?: 'enabled' | 'disabled'
   /** Default thinking effort (default `high`); `off` disables thinking per request. */
-  reasoningEffort?: 'off' | 'high' | 'max'
+  reasoningEffort?: 'off' | 'low' | 'high' | 'max'
   /** Default per-request output cap (default 256,000); a model's own cap and explicit request values win. */
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 1,000,000). */
@@ -89,11 +89,10 @@ const catalogModel: z<DeepSeekCatalogModel> = z.object({
 })
 
 export const Config: z<Config> = z.object({
-  apiKey: z.string().role('secret'),
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
   baseURL: z.string(),
   thinking: z.union(['enabled', 'disabled']),
-  reasoningEffort: z.union(['off', 'high', 'max']),
+  reasoningEffort: z.union(['off', 'low', 'high', 'max']),
   maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
   models: z.array(catalogModel).default(DEFAULT_MODELS),
@@ -103,6 +102,9 @@ export const Config: z<Config> = z.object({
 
 /** Public API default; the internal endpoint comes from $DEEPSEEK_BASE_URL. */
 export const PUBLIC_BASE_URL = 'https://api.deepseek.com'
+
+/** Environment variable naming this provider's endpoint, honored only from trusted layers. */
+const BASE_URL_ENV = 'DEEPSEEK_BASE_URL'
 
 /**
  * One resolution's complete request facts. Connection and credential facts
@@ -150,9 +152,13 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
  * every default and bound is re-judged here — for the composition entry at
  * load (fail loud) and for each settings snapshot at its first use.
  * @param config - raw plugin config or resolved settings snapshot.
+ * @param environment - this run's environment layers, or `undefined` outside
+ * the product CLI. Every layer may supply an endpoint: the product trusts the
+ * project it is launched in, so a checkout can point its own agent at the
+ * gateway that checkout is meant to use.
  * @returns validated connection facts plus the credential reference.
  */
-export function resolveAdapterOptions(config: Config): ResolvedDeepSeekOptions {
+export function resolveAdapterOptions(config: Config, environment?: LaunchEnvironmentSnapshot): ResolvedDeepSeekOptions {
   if (config.thinking === 'disabled'
     && config.reasoningEffort !== undefined
     && config.reasoningEffort !== 'off') {
@@ -175,9 +181,10 @@ export function resolveAdapterOptions(config: Config): ResolvedDeepSeekOptions {
     )
   }
   return {
-    ...config.apiKey !== undefined && config.apiKey.length > 0 ? { apiKey: config.apiKey } : {},
     apiKeyEnv: credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV),
-    baseURL: config.baseURL ?? process.env.DEEPSEEK_BASE_URL ?? PUBLIC_BASE_URL,
+    baseURL: config.baseURL
+      ?? environment?.get(BASE_URL_ENV)?.value
+      ?? PUBLIC_BASE_URL,
     defaults: {
       thinking: config.thinking,
       reasoningEffort: config.reasoningEffort,
@@ -198,7 +205,7 @@ export function apply(ctx: Context, config: Config): void {
     const raw = current()
     if (raw === lastRaw && lastGood !== undefined) return lastGood
     try {
-      const next = resolveAdapterOptions(raw)
+      const next = resolveAdapterOptions(raw, launchEnvironmentOf(ctx))
       lastRaw = raw
       lastGood = next
       return next
@@ -218,27 +225,29 @@ export function apply(ctx: Context, config: Config): void {
   const resolveApiKey = async (connection: ResolvedDeepSeekOptions): Promise<string> => {
     // Every credential fact comes from the caller's snapshot, so a rejected
     // settings generation cannot leak its key onto the previous endpoint.
-    if (connection.apiKey !== undefined) return connection.apiKey
     const ref = connection.apiKeyEnv
     const credentials = ctx.get('credentials')
     if (credentials !== undefined) {
       const hit = await credentials.resolve(ref)
-      if (hit !== undefined) return hit.value
+      if (hit !== undefined) return assertUsableApiKey(hit.value, 'llm-deepseek', ref)
     } else {
-      // Without the seam, keep the historical ambient fallback so a plain
-      // cordis.yml composition works from the environment alone.
-      const ambient = process.env[ref]
-      if (ambient !== undefined && ambient.length > 0) return ambient
+      // Without the seam there is no managed store to rank against, so the
+      // environment is the whole credential plane.
+      const ambient = launchEnvironmentOf(ctx).get(ref)
+      if (ambient !== undefined && ambient.value.length > 0) {
+        return assertUsableApiKey(ambient.value, 'llm-deepseek', ref)
+      }
     }
     throw new LlmError(
       `llm-deepseek: no API key for provider route "${PROVIDER}"; store ${ref} through the credentials`
-      + ` service (the web Models page writes it), export ${ref} in the launching environment, or — as a`
-      + ' last resort — set a literal "apiKey" in the llm-deepseek settings section',
+      + ` service (the web Models page writes it), or export ${ref} in the launching environment`,
       'MISSING_CREDENTIAL',
     )
   }
 
-  const adapter = new DeepSeekAdapter({ options, resolveApiKey })
+  let userId: AnonymousUserId | undefined
+  const resolveUserId = (): AnonymousUserId => userId ??= getOrCreateAnonymousUserId()
+  const adapter = new DeepSeekAdapter({ options, resolveApiKey, resolveUserId })
   ctx.llm.registerConfigurableProviders([
     { provider: PROVIDER, displayName: 'DeepSeek', settingsNs: NS, settingsPath: [] },
   ])

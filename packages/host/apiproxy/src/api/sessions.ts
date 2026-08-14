@@ -5,6 +5,7 @@
  */
 
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 // The pure-type outlet: api/ is browser-importable, and the package root's
@@ -14,15 +15,44 @@ import type { RpcId, RpcRequest, RpcResponse } from './rpc.ts'
 import type { ToolEventView } from './events.ts'
 import type { WorkspaceId } from './workspace.ts'
 
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionMap {
+    /**
+     * Session-list hints persisted by the projection cache. `blank: false`
+     * is monotonic and may suppress a cold-log probe; `blank: true` is only a
+     * checkpoint-prefix fact and must not hide a cold Session without direct
+     * verification. `lastPromptAt` is the latest human-authored prompt time.
+     */
+    sessionListMetadata: SessionListMetadata
+    /**
+     * The deployment's image-intake limits: the attachments service's config
+     * as this proxy enforces it at prompt admission, constant per host boot.
+     * Clients pre-check count and bytes at intake and show the limits in
+     * upload affordances. Key absence means no attachment service is
+     * composed — clients skip the pre-check and let the host answer.
+     */
+    imageLimits: ImageAttachmentLimits
+  }
+}
+
+/** Persisted hints used to summarize a cold Session without reading a large log. */
+export interface SessionListMetadata {
+  /** Whether the checkpoint prefix contains no turn/start event. */
+  blank: boolean
+  /** Latest source.kind=user message time in the checkpoint prefix. */
+  lastPromptAt: number | null
+}
+
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     /**
      * The prompt's rpcId is passed through MessageSource into the `user/message` event
      * (the client uses it to reconcile the optimistically
      * echoed provisional message with the event stream). kind stays `'user'` — the model face
-     * carries no transport vocabulary; rpcId is an extra durable-JSON field passed back to the client with the event.
+     * carries no transport vocabulary; rpcId and the optional Host-validated browser zone are
+     * durable JSON fields passed back to the client with the event.
      */
-    'user-rpc': { kind: 'user'; rpcId: RpcId }
+    'user-rpc': { kind: 'user'; rpcId: RpcId; clientTimeZone?: string }
   }
 }
 
@@ -53,8 +83,13 @@ export interface SessionProjectionsBlock {
   values: Partial<SessionProjectionMap>
 }
 
-/** Complete model target selected for one session. */
-export interface ModelTarget {
+/** Browser-submitted prompt content; the host promotes image bytes to durable references. */
+export type PromptContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mediaType: ImageMediaType; data: string; name?: string }
+
+/** Complete model selection for one session. */
+export interface ModelSelection {
   /** Registered provider route. */
   provider: string
   /** Provider-owned model id. */
@@ -115,8 +150,17 @@ export interface ModelCatalogFailure {
 
 /** Detached model-directory snapshot for one session. */
 export interface SessionModels {
-  /** Target selected for the session's next assembled step. */
-  current: ModelTarget
+  /** Model selection for the session's next assembled step. */
+  current: ModelSelection
+  /**
+   * Whether an adapter currently serves `current.provider`, and therefore
+   * whether this session can start a turn at all. Deliberately NOT derivable
+   * from `groups`: catalog membership is advisory, so a route serving a model
+   * it stopped advertising is absent from the groups yet perfectly usable,
+   * while a route whose adapter is gone can serve nothing. A surface that
+   * blocks input must read this rather than the groups.
+   */
+  routable: boolean
   /** Successfully loaded provider groups. */
   groups: ModelProviderGroup[]
   /** Provider-local failures; successful groups remain usable. */
@@ -129,25 +173,25 @@ export type QueueAction =
   | { kind: 'remove' }
   | { kind: 'steer' }
 
-/** Session list entry (v1 builds no index: list does readdir+stat). */
+/** One Session list entry. */
 export interface SessionSummary {
   sessionId: SessionId
   /**
-   * Last activity. Attached: the last non-`session/end-seed` event, since a
-   * pickup is not activity. Cold: the log's mtime, or `createdAt` for a backend
-   * with no per-session file (README Known Limitations covers the skew).
+   * The later of creation and the latest human-authored prompt. Attached
+   * Sessions fold their live log; cold Sessions use a projection-cache hint or
+   * an exact small-artifact read, falling back to creation time.
    */
   updatedAt: number
   /** Status of the attached agent; always false for cold (unattached) sessions. */
   running: boolean
   /**
-   * Derived conversation-not-started bit: true while no turn has run (no
-   * prompt was accepted yet). Standalone plugin events — command lifecycle
+   * Derived conversation-not-started bit: true while no turn has run.
+   * Standalone plugin events — command lifecycle
    * records, plan/mode, titles, goals — do not open a turn and therefore do
-   * not clear it. Clients hide blank sessions from lists and reuse them for
-   * New Session on the same workspace. Always false for cold sessions —
-   * lazy persistence keeps a never-appended session out of the store, and a
-   * listed cold session's log holds its turns.
+   * not clear it. Clients hide blank Sessions from lists and reuse them for
+   * New Session on the same workspace. A cold Session is true only when a
+   * small-artifact read verifies that no `turn/start` exists; unavailable
+   * or oversized artifacts conservatively report false.
    */
   blank: boolean
   /** fork/spawn lineage (session.header.parentSession passthrough); absent for root sessions. */
@@ -156,6 +200,13 @@ export interface SessionSummary {
   origin?: 'subagent'
   /** Session working directory (header.cwd passthrough); absent when unrecorded. */
   cwd?: string
+  /**
+   * Agent preset this session's agent was composed from (header passthrough);
+   * absent when the deployment composes no presets. A surface offering a
+   * switch reads this to show what the session actually runs rather than what
+   * the deployment currently defaults to.
+   */
+  agentPreset?: string
   /**
    * Projection baseline for this row, with zero log loads: attached sessions
    * read the registry's live watermark cut; cold sessions read the persisted
@@ -199,15 +250,22 @@ export interface SessionsApi {
    * session, while a different cwd fails with `session-conflict`. Workspace
    * creation attaches the session after publication; an attach failure
    * returns `workspace-attach-failed` with the published session id.
+   *
+   * `agentPreset` names the composition the new session's agent is built
+   * from; omitted, the effective default applies — the user's stored choice
+   * where one exists, else the deployment's own. The resolved id is stored on
+   * the session header, so a later resume rebuilds the same agent. An unknown
+   * id fails with `agent-preset-not-found`, and a preset whose composition
+   * cannot be mounted fails with `agent-preset-invalid`.
    */
-  create(request: RpcRequest<{ workspaceId?: WorkspaceId; cwd?: string; sessionId?: SessionId }>):
-  Promise<RpcResponse<{ sessionId: SessionId }>>
+  create(request: RpcRequest<{ workspaceId?: WorkspaceId; cwd?: string; sessionId?: SessionId; agentPreset?: string }>):
+  Promise<RpcResponse<{ sessionId: SessionId; agentPreset?: string }>>
 
   /**
    * Reads a window of history events; page boundaries align to append-origin message
    * boundaries: one page = all raw events owned by a whole number of such messages (including
    * their chunk / tool events), never cut mid-message. Model-only replacement copies consume no
-   * `maxMessages`, so a compaction's provenance stays on the page of its replacement. The tail
+   * `maxMessages`, so a compaction's `compaction/summary` record stays on the page of its replacement. The tail
    * page (beforeSeq absent) additionally carries the in-flight
    * partial — chunk events already emitted for the last unfinalized message.
    * Each entry pairs the raw SessionEvent with the host-computed view (tool events whose
@@ -231,7 +289,7 @@ export interface SessionsApi {
   models(request: RpcRequest<{ sessionId: SessionId }>): Promise<RpcResponse<SessionModels>>
 
   /**
-   * Selects the complete target for this session. Exact model metadata
+   * Selects the complete model selection for this session. Exact model metadata
    * validates an optional reasoning effort, while catalog membership remains
    * advisory. Session-backed subagents reject with `agent-busy`.
    */
@@ -241,7 +299,7 @@ export interface SessionsApi {
     model: string
     reasoningEffort?: string
   }>):
-  Promise<RpcResponse<{ selected: ModelTarget }>>
+  Promise<RpcResponse<{ selected: ModelSelection }>>
 
   /**
    * Renames a session: appends a `session/title` event with the `user`
@@ -254,6 +312,14 @@ export interface SessionsApi {
   rename(request: RpcRequest<{ sessionId: SessionId; title: string }>):
   Promise<RpcResponse<{ title: string; seq: number }>>
 
+  /**
+   * Sends a message. content is core's ContentBlock[] verbatim; mode maps 1:1 — queue→send, steer→steer.
+   * A prompt whose content is exactly one text block starting with '/' is a slash command: the host
+   * executes it through the command registry (mode-agnostic) and it is never sent to the model. A
+   * successful command returns ok with the command slot (its success text, when the command produced
+   * one — carried for future rendering; the state change is the feedback). A usage/state error is an
+   * RPC error with code command-error; an unrecognized name is an RPC error with code unknown-command.
+   */
   /**
    * Forks a new session from a completed-turn prefix of the source. `atSeq`
    * anchors the cut: the boundary is the first `turn/end` at or after it
@@ -272,21 +338,23 @@ export interface SessionsApi {
   Promise<RpcResponse<{ sessionId: SessionId }>>
 
   /**
-   * Sends a message to an ordinary session Agent. Canonical session mentions
-   * are normalized and their snapshots are prepared atomically before
-   * enqueue. mode maps 1:1 — queue→send, steer→steer. Slash commands use the
-   * separate command.execute contract and do not pass through this method.
-   * Session-backed subagents reject with `agent-busy` and use
+   * Sends text and temporary image bytes to an ordinary session Agent after durable host admission.
+   * Browser callers attach their current IANA zone;
+   * the Host validates, canonicalizes, and records it on that exact user message. Omission remains
+   * valid for non-browser callers. Session-backed subagents reject with `agent-busy` and use
    * `subagent.prompt`.
-   * @param request - session identity, routing mode, and content blocks.
-   * @param signal - optional cancellation for reference preparation.
-   * @returns prompt acceptance.
    */
-  prompt(
-    request: RpcRequest<{ sessionId: SessionId; mode: 'queue' | 'steer'; content: ContentBlock[] }>,
-    signal?: AbortSignal,
-  ):
+  prompt(request: RpcRequest<{
+    sessionId: SessionId
+    mode: 'queue' | 'steer'
+    content: PromptContentPart[]
+    clientTimeZone?: string
+  }>, signal?: AbortSignal):
   Promise<RpcResponse<{ accepted: true; command?: { kind: 'success'; text?: string } }>>
+
+  /** Reads one durable image after proving that this session's log references its id. */
+  attachment(request: RpcRequest<{ sessionId: SessionId; attachmentId: AttachmentIdType }>):
+  Promise<RpcResponse<{ attachment: ImageAttachmentRef; data: string }>>
 
   /**
    * Edits, removes, or strictly steers one pending queued occurrence on an ordinary session.

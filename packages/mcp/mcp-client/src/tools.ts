@@ -1,5 +1,5 @@
 /**
- * Tool bridge: discovers MCP tools, registers them on the harness ToolRegistry
+ * Tool bridge: discovers MCP tools, registers them on the harness ToolRuntime
  * under deterministic server-qualified public names, and handles re-sync when
  * the server's tool list changes.
  *
@@ -16,13 +16,15 @@ import { createHash } from 'node:crypto'
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { ListToolsResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type { ToolDefinition, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { assertSupportedJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode, JsonValue } from '@deepseek-ai/dsh-tools'
 
 /** Resolved options relevant to tool bridging. */
 export interface ToolBridgeOptions {
+  /** Whether a registry conflict is contained or rejects this synchronization. */
+  registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
 }
@@ -89,7 +91,7 @@ function callToolUncached(
  *
  * @param serverName - Stable local namespace from plugin config.
  * @param rawName - The MCP server's own tool name.
- * @returns The globally unique, model-facing ToolRegistry name.
+ * @returns The globally unique, model-facing ToolRuntime name.
  */
 export function publicToolName(serverName: string, rawName: string): string {
   const joined = `mcp__${serverName}__${rawName}`
@@ -100,7 +102,7 @@ export function publicToolName(serverName: string, rawName: string): string {
 }
 
 /**
- * Sync the MCP server's tool list into the harness ToolRegistry.
+ * Sync the MCP server's tool list into the harness ToolRuntime.
  *
  * Two phases keep the swap safe:
  *
@@ -111,8 +113,9 @@ export function publicToolName(serverName: string, rawName: string): string {
  * 2. Swap: dispose the previous generation, register the new one. A registry
  *    conflict here can only mean a foreign registration squats on this
  *    server's `mcp__<serverName>__` namespace — the partial generation is
- *    rolled back (zero tools from this server), the error is logged, and an
- *    empty map is returned.
+ *    rolled back (zero tools from this server) and logged. Initial strict
+ *    synchronization may propagate the conflict so its parent transaction
+ *    rejects; ordinary clients and later re-syncs return an empty map.
  *
  * @param client - Connected MCP Client instance used to list and call tools.
  * @param ctx - Cordis context providing the `tools` service for registration.
@@ -164,6 +167,7 @@ export async function syncTools(
     // sees either the full generation or none of it — never a partial set.
     for (const dispose of disposers.values()) dispose()
     ctx.logger.error(`mcp-client(${opts.serverName}): tool registration failed, no tools registered: ${String(error)}`)
+    if (opts.registrationFailure === 'throw') throw error
     return new Map()
   }
   return disposers
@@ -219,7 +223,7 @@ function createOutput(rawName: string, structuredSchema: JsonSchemaNode | undefi
  * per-page schema cache from pre-validating a different contract.
  *
  * When the MCP server returns `isError: true`, the executor throws so that
- * the ToolRegistry's catch path produces an `isError` result for the model.
+ * the ToolRuntime's catch path produces an `isError` result for the model.
  */
 function createExecutor(
   client: Client,
@@ -254,13 +258,12 @@ function createExecutor(
     }
 
     // Trust boundary: the SDK's return type erases to `any[]` due to the
-    // union of CallToolResult | CompatibilityCallToolResult. We process each
-    // element defensively in extractText (reading only .type/.text/.mimeType
-    // with optional fallbacks).
+    // union of CallToolResult | CompatibilityCallToolResult; extractText
+    // validates each element.
     const content = result.content as unknown as JsonValue[]
     const text = extractText(content, rawName)
 
-    // MCP isError → throw so ToolRegistry produces an isError result for the model.
+    // MCP isError → throw so ToolRuntime produces an isError result for the model.
     if (result.isError === true) {
       throw new Error(text)
     }

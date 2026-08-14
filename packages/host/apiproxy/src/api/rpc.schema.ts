@@ -23,8 +23,8 @@ export type Wire<T> = T extends readonly (infer E)[] ? Wire<E>[]
     : T
 
 /**
- * RpcId: one brand cast after shape validation (the only cast point in this
- * file). No min-length: the id is an opaque echo token, and rejecting shapes
+ * RpcId: one brand cast after schema validation (the only cast point in this
+ * file). No min-length: the id is an opaque echo token, and rejecting values
  * here would only turn a correlatable error report into a client-side parse
  * failure (the handler substitutes a sentinel when a request's id is unreadable).
  */
@@ -37,6 +37,7 @@ export const rpcErrorSchema: z.ZodType<RpcError> = z.discriminatedUnion('code', 
   z.object({ code: z.literal('session-not-found'), message: z.string(), details: z.object({ sessionId: z.string() }) }),
   z.object({ code: z.literal('model-unavailable'), message: z.string(), details: z.object({ provider: z.string(), model: z.string() }) }),
   z.object({ code: z.literal('session-conflict'), message: z.string(), details: z.object({ sessionId: z.string(), requestedCwd: z.string(), existingCwd: z.string().optional() }) }),
+  z.object({ code: z.literal('invalid-time-zone'), message: z.string(), details: z.object({ value: z.string() }) }),
   z.object({ code: z.literal('workspace-attach-failed'), message: z.string(), details: z.object({ sessionId: z.string(), workspaceId: z.string() }) }),
   z.object({ code: z.literal('workspace-not-found'), message: z.string(), details: z.object({ workspaceId: z.string() }) }),
   z.object({ code: z.literal('workspace-invalid-path'), message: z.string(), details: z.object({ path: z.string() }) }),
@@ -46,10 +47,16 @@ export const rpcErrorSchema: z.ZodType<RpcError> = z.discriminatedUnion('code', 
   z.object({ code: z.literal('directory-exists'), message: z.string(), details: z.object({ path: z.string() }) }),
   z.object({ code: z.literal('directory-create-failed'), message: z.string(), details: z.object({ path: z.string() }) }),
   z.object({ code: z.literal('directory-picker-unavailable'), message: z.string(), details: z.object({ capability: z.string() }) }),
+  z.object({ code: z.literal('agent-preset-read-only'), message: z.string(), details: z.object({ agentPreset: z.string(), reason: z.string() }) }),
+  z.object({ code: z.literal('agent-preset-locked'), message: z.string(), details: z.object({ sessionId: z.string(), agentPreset: z.string() }) }),
+  z.object({ code: z.literal('agent-preset-conflict'), message: z.string(), details: z.object({ sessionId: z.string(), requestedPreset: z.string(), existingPreset: z.string().optional() }) }),
+  z.object({ code: z.literal('agent-preset-not-found'), message: z.string(), details: z.object({ agentPreset: z.string(), available: z.array(z.string()) }) }),
+  z.object({ code: z.literal('agent-preset-invalid'), message: z.string(), details: z.object({ agentPreset: z.string(), reason: z.string() }) }),
   z.object({ code: z.literal('agent-busy'), message: z.string(), details: z.object({ reason: z.string() }) }),
   z.object({ code: z.literal('reference-unavailable'), message: z.string(), details: z.object({ kind: z.union([z.literal('file'), z.literal('session')]) }) }),
   z.object({ code: z.literal('reference-invalid'), message: z.string(), details: z.object({ reason: z.string() }) }),
   z.object({ code: z.literal('reference-failed'), message: z.string(), details: z.object({ reason: z.string() }) }),
+  z.object({ code: z.literal('attachment-error'), message: z.string(), details: z.object({ reason: z.string() }) }),
   z.object({ code: z.literal('queue-item-not-found'), message: z.string(), details: z.object({ itemId: z.string() }) }),
   z.object({ code: z.literal('steer-unavailable'), message: z.string(), details: z.object({ itemId: z.string() }) }),
   z.object({ code: z.literal('command-error'), message: z.string(), details: z.object({}) }),
@@ -87,6 +94,9 @@ export function rpcResultSchema<T>(value: z.ZodType<T>): z.ZodUnion<readonly [z.
 }
 
 // ---- The four wire full-form schemas (payload/result.value slots stay wide — business layer does the second parse) ----
+// The wide value slot is optional: a void business result serializes with no
+// `value` field at all. Each endpoint's own second parse still requires its
+// declared value, so absence never passes for a method that returns data.
 
 /** ClientRequest full form (payload stays wide — the business layer runs the second parse). */
 export const clientRequestSchema = z.object({
@@ -100,7 +110,7 @@ export const clientRequestSchema = z.object({
 export const serverResponseSchema = z.object({
   type: z.literal('server-response'),
   rpcId: rpcIdSchema,
-  result: rpcResultSchema(z.unknown()),
+  result: rpcResultSchema(z.unknown().optional()),
 }) as unknown as z.ZodType<ServerResponse>
 
 /** ServerRequest full form (payload stays wide). */
@@ -115,7 +125,7 @@ export const serverRequestSchema = z.object({
 export const clientResponseSchema = z.object({
   type: z.literal('client-response'),
   rpcId: rpcIdSchema,
-  result: rpcResultSchema(z.unknown()),
+  result: rpcResultSchema(z.unknown().optional()),
 }) as unknown as z.ZodType<ClientResponse>
 
 /** Wire full-form union (discriminated by type). */

@@ -24,7 +24,13 @@
       "path": "../../../vendor/schemastery"
     },
     {
+      "path": "../../api/remotes/tsconfig.host.json"
+    },
+    {
       "path": "../../util/brand"
+    },
+    {
+      "path": "../../attachment/attachment"
     },
     {
       "path": "../../llm/llm"
@@ -33,7 +39,10 @@
       "path": "../../core/agent"
     },
     {
-      "path": "../../context/file-reference"
+      "path": "../../core/agent-default-model"
+    },
+    {
+      "path": "../../preset/agent-presets"
     },
     {
       "path": "../../core/session"
@@ -42,22 +51,25 @@
       "path": "../../core/tools"
     },
     {
-      "path": "../../session-persistence/session-persistence"
+      "path": "../../session/session-persistence"
     },
     {
-      "path": "../../context/session-reference"
+      "path": "../../session/session-projection"
     },
     {
-      "path": "../../session-projection/session-projection"
-    },
-    {
-      "path": "../../session-projection/session-projection-cache"
+      "path": "../../session/session-projection-cache"
     },
     {
       "path": "../../session-query/session-query"
     },
     {
-      "path": "../../session-title/session-title"
+      "path": "../../context/file-reference"
+    },
+    {
+      "path": "../../context/session-reference"
+    },
+    {
+      "path": "../../session/session-title"
     },
     {
       "path": "../../session-query/session-query"
@@ -69,13 +81,16 @@
       "path": "../../skill/skill"
     },
     {
-      "path": "../../ui/commands"
+      "path": "../../jobs/jobs"
     },
     {
-      "path": "../../ui/user-approval"
+      "path": "../../interaction/commands"
     },
     {
-      "path": "../../ui/user-interaction"
+      "path": "../../interaction/user-approval"
+    },
+    {
+      "path": "../../interaction/user-questions"
     },
     {
       "path": "../../workspace/workspace"
@@ -84,7 +99,10 @@
       "path": "../directory-picker"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../extensions/cordis-host-runner"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     },
     {
       "path": "../../util/native-command"

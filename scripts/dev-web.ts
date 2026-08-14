@@ -1,8 +1,8 @@
 /**
- * Watch-build for client-plugin HMR: runs every dshClient plugin package
+ * Watch-build for client-plugin HMR: runs every `dsh.client` plugin package
  * through the tsdown JS API in watch mode. Reload signaling is not this
  * script's business — the host webserver stat-polls the bundles it serves and
- * broadcasts `rebuilt` frames itself (`dsh web --dev`), so any process that
+ * broadcasts `rebuilt` frames itself (`dsh web`), so any process that
  * rewrites `lib/client.js` files triggers reloads; this script is merely the
  * convenient way to keep them all rebuilt on source change.
  *
@@ -27,7 +27,7 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
 /**
  * Discover the watch workspace by declaration: every packages/<group>/<name>
- * whose package.json carries `dshClient` with platform "web" is a client
+ * whose package.json carries `dsh.client` with platform "web" is a client
  * plugin bundle emitter. Scanned once at startup — a package added while
  * watching means restarting this script.
  * @param root - repository root containing the grouped package directories.
@@ -36,8 +36,10 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 export function discoverPluginDirs(root = repoRoot): string[] {
   const dirs: string[] = []
   for (const manifestPath of globSync('packages/*/*/package.json', { cwd: root }).sort()) {
-    const manifest = JSON.parse(readFileSync(join(root, manifestPath), 'utf8')) as { dshClient?: { platform?: unknown } }
-    if (manifest.dshClient?.platform === 'web') dirs.push(dirname(manifestPath).split(sep).join('/'))
+    const manifest = JSON.parse(readFileSync(join(root, manifestPath), 'utf8')) as {
+      dsh?: { client?: { platform?: unknown } }
+    }
+    if (manifest.dsh?.client?.platform === 'web') dirs.push(dirname(manifestPath).split(sep).join('/'))
   }
   return dirs
 }
@@ -47,21 +49,40 @@ export function discoverPluginDirs(root = repoRoot): string[] {
  * @param root - repository or fixture root passed to tsdown.
  * @param pluginDirs - workspace-relative package directories to watch.
  * @param pollInterval - optional source-watcher polling interval in milliseconds.
- * @returns live bundles whose async disposers stop every watcher.
+ * @returns live bundles after every watcher has completed its initial build.
  */
 export async function watchClientPlugins(
   root: string,
   pluginDirs: readonly string[],
   pollInterval?: number,
 ): Promise<TsdownBundle[]> {
-  return build({
+  let resolveInitialBuilds: (() => void) | undefined
+  const initialBuilds = new Promise<void>((resolve) => { resolveInitialBuilds = resolve })
+  const initialized = new WeakSet<object>()
+  const readiness: { expectedBuilds?: number; initializedBuilds: number } = { initializedBuilds: 0 }
+  const bundles = await build({
     cwd: root,
     workspace: [...pluginDirs],
     watch: true,
+    hooks: {
+      'build:done': ({ options }) => {
+        if (initialized.has(options)) return
+        initialized.add(options)
+        readiness.initializedBuilds += 1
+        if (
+          readiness.expectedBuilds !== undefined
+          && readiness.initializedBuilds >= readiness.expectedBuilds
+        ) resolveInitialBuilds?.()
+      },
+    },
     ...pollInterval !== undefined
       ? { inputOptions: { watch: { watcher: { usePolling: true, pollInterval } } } }
       : {},
   })
+  readiness.expectedBuilds = bundles.length
+  if (readiness.initializedBuilds >= readiness.expectedBuilds) resolveInitialBuilds?.()
+  await initialBuilds
+  return bundles
 }
 
 const invokedPath = process.argv[1]
@@ -69,7 +90,7 @@ const isMain = invokedPath !== undefined && import.meta.url === pathToFileURL(re
 if (isMain) {
   const pluginDirs = discoverPluginDirs()
   if (pluginDirs.length === 0) {
-    console.error('dev-web: no dshClient (platform "web") packages found under packages/')
+    console.error('dev-web: no dsh.client (platform "web") packages found under packages/')
     process.exit(1)
   }
 
@@ -87,7 +108,7 @@ if (isMain) {
 
   await watchClientPlugins(repoRoot, pluginDirs, pollInterval)
   console.log(
-    `dev-web: watching ${String(pluginDirs.length)} dshClient plugin packages`
+    `dev-web: watching ${String(pluginDirs.length)} dsh.client plugin packages`
     + `${pollInterval !== undefined ? ` (polling ${String(pollInterval)}ms)` : ''}:\n  ${pluginDirs.join('\n  ')}`,
   )
 }

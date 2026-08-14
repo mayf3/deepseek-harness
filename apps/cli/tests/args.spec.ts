@@ -21,53 +21,86 @@ function exitCode(argv: string[]): number {
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('parseDshArgs', () => {
-  it('routes the required raw config, one-shot prompt, and Web command', () => {
-    expect(parse(['--config', 'custom.yml'])).toEqual({ mode: 'config', config: 'custom.yml' })
-    expect(parse(['-p', 'do the thing'])).toEqual({ mode: 'headless', prompt: 'do the thing' })
-    expect(parse(['web'])).toEqual({ mode: 'web', dev: false })
-    expect(parse(['web', '--config', 'web.yml'])).toEqual({ mode: 'web', dev: false, config: 'web.yml' })
-    expect(parse(['web', '--host', '0.0.0.0', '--port', '8080', '--dev', '--workspace-root', '/w']))
-      .toEqual({ mode: 'web', host: '0.0.0.0', port: 8080, dev: true, workspaceRoot: '/w' })
-    expect(parse(['web', '--trusted-host', 'harness.internal:3080', 'lab.internal', '--trusted-host', '10.0.0.9']))
-      .toEqual({ mode: 'web', dev: false, trustedHosts: ['harness.internal:3080', 'lab.internal', '10.0.0.9'] })
+  it('routes profile boots and the web alias, handing the rest to the app', () => {
+    expect(parse(['--profile', 'tui'])).toEqual({ mode: 'profile', profile: 'tui', patches: [], args: [] })
+    expect(parse(['--profile', 'tui', '--patch', 'a.yml', '--patch', 'b.yml']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: ['a.yml', 'b.yml'], args: [] })
+    expect(parse(['web'])).toEqual({ mode: 'profile', profile: 'web', patches: [], args: [] })
+    expect(parse(['web', '--patch', 'web.yml']))
+      .toEqual({ mode: 'profile', profile: 'web', patches: ['web.yml'], args: [] })
   })
 
-  it('routes raw and Web config dumps', () => {
-    expect(parse(['--config', 'c.yml', '--dump-config']))
-      .toEqual({ mode: 'dump-config', surface: 'config', defaultOnly: false, config: 'c.yml' })
-    expect(parse(['--dump-default-config']))
-      .toEqual({ mode: 'dump-config', surface: 'config', defaultOnly: true })
+  it('ends the launcher flags at the first token it does not own', () => {
+    // App flags, including its -h, and positionals reach the app verbatim.
+    expect(parse(['--profile', 'tui', '--resume', 'abc']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: ['--resume', 'abc'] })
+    expect(parse(['--profile', 'web', '-h']))
+      .toEqual({ mode: 'profile', profile: 'web', patches: [], args: ['-h'] })
+    expect(parse(['web', '--host', '127.0.0.1', '--port', '8080', '--dev']))
+      .toEqual({ mode: 'profile', profile: 'web', patches: [], args: ['--host', '127.0.0.1', '--port', '8080', '--dev'] })
+    expect(parse(['--profile', 'headless', 'run', 'the', 'tests']))
+      .toEqual({ mode: 'profile', profile: 'headless', patches: [], args: ['run', 'the', 'tests'] })
+    // Launcher flags placed after that boundary belong to the app too.
+    expect(parse(['--profile', 'tui', '--patch', 'a.yml', '--resume', 'b', '--patch', 'late.yml']))
+      .toEqual({ mode: 'profile', profile: 'tui', patches: ['a.yml'], args: ['--resume', 'b', '--patch', 'late.yml'] })
+  })
+
+  it('routes the plugin pnpm forwarder', () => {
+    expect(parse(['plugin', '--profile', 'tui', 'add', 'turtle-ui']))
+      .toEqual({ mode: 'plugin', profile: 'tui', args: ['add', 'turtle-ui'] })
+    expect(parse(['plugin', '--profile', 'tui', 'remove', 'turtle-ui']))
+      .toEqual({ mode: 'plugin', profile: 'tui', args: ['remove', 'turtle-ui'] })
+    expect(parse(['plugin', '--profile', 'tui', 'why', '@deepseek-ai/cordis']))
+      .toEqual({ mode: 'plugin', profile: 'tui', args: ['why', '@deepseek-ai/cordis'] })
+    // Unknown pnpm flags forward verbatim.
+    expect(parse(['plugin', '--profile', 'tui', 'add', '--save-dev', 'x']))
+      .toEqual({ mode: 'plugin', profile: 'tui', args: ['add', '--save-dev', 'x'] })
+  })
+
+  it('routes profile and web config dumps', () => {
+    expect(parse(['--profile', 'web', '--dump-config']))
+      .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: false, patches: [] })
+    expect(parse(['--profile', 'web', '--dump-default-config']))
+      .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: true, patches: [] })
+    expect(parse(['--profile', 'tui', '--dump-config', '--patch', 'x.yml']))
+      .toEqual({ mode: 'dump-config', profile: 'tui', defaultOnly: false, patches: ['x.yml'] })
     expect(parse(['web', '--dump-config']))
-      .toEqual({ mode: 'dump-config', surface: 'web', defaultOnly: false })
-    expect(parse(['web', '--dump-config', '--config', 'w.yml']))
-      .toEqual({ mode: 'dump-config', surface: 'web', defaultOnly: false, config: 'w.yml' })
+      .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: false, patches: [] })
     expect(parse(['web', '--dump-default-config']))
-      .toEqual({ mode: 'dump-config', surface: 'web', defaultOnly: true })
+      .toEqual({ mode: 'dump-config', profile: 'web', defaultOnly: true, patches: [] })
   })
 
-  it('rejects missing config, removed commands, and contradictory inputs', () => {
+  it('rejects missing profile, removed flags, and contradictory inputs', () => {
     expect(exitCode([])).toBe(1)
-    expect(exitCode(['tui'])).toBe(1)
-    expect(exitCode(['meta'])).toBe(1)
-    expect(exitCode(['upgrade'])).toBe(1)
+    expect(exitCode(['tui'])).toBe(1) // an app argument without --profile has no app to reach
+    expect(exitCode(['--config', 'c.yml'])).toBe(1) // removed
+    expect(exitCode(['-p', 'task'])).toBe(1) // removed
+    expect(exitCode(['run', 'task'])).toBe(1) // app-owned task replaced the launcher subcommand
+    expect(exitCode(['--profile', ''])).toBe(1)
+    expect(exitCode(['--profile', 'x', '--patch='])).toBe(1)
     expect(exitCode(['--dump-config'])).toBe(1)
-    expect(exitCode(['--dump-config', '--dump-default-config', '--config', 'c.yml'])).toBe(1)
-    expect(exitCode(['--dump-default-config', '--config', 'c.yml'])).toBe(1)
-    expect(exitCode(['--dump-config', '--config', 'c.yml', '-p', 'task'])).toBe(1)
-    expect(exitCode(['-p', ''])).toBe(1)
-    expect(exitCode(['--config='])).toBe(1)
-    expect(exitCode(['-p', 'x', '--config', 'c.yml'])).toBe(1)
+    expect(exitCode(['--profile', 'x', '--dump-config', '--dump-default-config'])).toBe(1)
+    expect(exitCode(['--profile', 'x', '--dump-default-config', '--patch', 'p.yml'])).toBe(1)
+    expect(exitCode(['--profile', 'x', '--dump-config', 'task'])).toBe(1)
     expect(exitCode(['--bogus'])).toBe(1)
-    expect(exitCode(['bogus-positional'])).toBe(1)
-    expect(exitCode(['web', '-p', 'task'])).toBe(1)
-    expect(exitCode(['--config', 'c.yml', 'web'])).toBe(1)
+    expect(exitCode(['--profile', 'x', 'web'])).toBe(1)
     expect(exitCode(['web', '--dump-config', '--dump-default-config'])).toBe(1)
-    expect(exitCode(['web', '--dump-default-config', '--config', 'w.yml'])).toBe(1)
-    expect(exitCode(['web', '--config='])).toBe(1)
+    expect(exitCode(['web', '--dump-default-config', '--patch', 'w.yml'])).toBe(1)
+    expect(exitCode(['web', '--patch='])).toBe(1)
+    // A dump never runs app command-line providers, so it cannot show what
+    // those flags would decide; printing a tree that differs from the same
+    // invocation's boot would mislead.
+    expect(exitCode(['web', '--dump-config', '--port', '8080'])).toBe(1)
+    expect(exitCode(['--profile', 'web', '--dump-config', '-h'])).toBe(1)
+    expect(exitCode(['plugin', 'add', 'x'])).toBe(1) // --profile required
+    expect(exitCode(['plugin', '--profile', 'tui'])).toBe(1) // nothing to forward
+    expect(exitCode(['plugin', '--profile', ''])).toBe(1)
+    expect(exitCode(['--profile', 'x', 'plugin', 'add', 'y'])).toBe(1)
   })
 
-  it('exits 0 for help and version', () => {
+  it('keeps its own help for an invocation with no app to hand it to', () => {
     expect(exitCode(['--help'])).toBe(0)
+    expect(exitCode(['-h'])).toBe(0)
     expect(exitCode(['--version'])).toBe(0)
   })
 })

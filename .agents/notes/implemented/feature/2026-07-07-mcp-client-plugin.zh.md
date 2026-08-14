@@ -8,7 +8,7 @@ Status: implemented
 
 harness 此前无法消费 MCP（Model Context Protocol）生态中的工具。MCP 是工具服务器的新兴标准——GitHub、文件系统、数据库、代码搜索以及数百个社区服务器都通过 MCP 暴露工具。用户希望将 harness 指向一个或多个 MCP 服务器，让其工具以原生的模型可见工具形式出现，而无需为每个服务器编写胶水代码。
 
-`ToolRegistry` 已经接受原始 JSON Schema 工具定义（`dsh-tools` README 中有记录：「Raw JSON-Schema tool definitions (from MCP servers) are still accepted by `ToolRegistry.register()` directly」），扩展实操手册（cookbook）也勾勒了预期模式（「MCP | one plugin per server: discover tools → `ctx.tools.register()`」）。基础设施已就绪，缺的是桥接插件。
+`ToolRuntime` 已经接受原始 JSON Schema 工具定义（`dsh-tools` README 中有记录：「Raw JSON-Schema tool definitions (from MCP servers) are still accepted by `ToolRuntime.register()` directly」），扩展实操手册（cookbook）也勾勒了预期模式（「MCP | one plugin per server: discover tools → `ctx.tools.register()`」）。基础设施已就绪，缺的是桥接插件。
 
 ## 决策
 
@@ -90,7 +90,7 @@ type Config = StdioConfig | StreamableHttpConfig
 每个 MCP 工具有两个名称：
 
 - `rawName`——MCP `Tool.name` 的原始值，仅用于协议通信（`tools/call`）。
-- `publicName`——在 `ToolRegistry` 中注册的全局唯一模型可见名称：
+- `publicName`——在 `ToolRuntime` 中注册的全局唯一模型可见名称：
 
       mcp__<serverName>__<rawName>
 
@@ -104,7 +104,7 @@ type Config = StdioConfig | StreamableHttpConfig
 
 ### 公开名称规范化
 
-MCP 允许工具名最长 128 字符且可包含 `.`；DeepSeek 的函数名契约允许 `[A-Za-z0-9_-]` 且最多 64 字符。公开名称按确定性规则规范化：非法字符替换为 `_`，当替换或截断改变了名称时，追加 `(serverName, rawName)` 标识的 12 位十六进制 SHA-256 hash，确保不同的 MCP 标识永远不会坍缩为同一个公开名称：
+MCP 允许工具名最长 128 字符且可包含 `.`；DeepSeek 的函数名约定允许 `[A-Za-z0-9_-]` 且最多 64 字符。公开名称按确定性规则规范化：非法字符替换为 `_`，当替换或截断改变了名称时，追加 `(serverName, rawName)` 标识的 12 位十六进制 SHA-256 hash，确保不同的 MCP 标识永远不会坍缩为同一个公开名称：
 
 ```typescript
 function publicToolName(serverName: string, rawName: string): string {
@@ -131,7 +131,7 @@ MCP 仅保证工具名在[单个服务器内](https://modelcontextprotocol.io/sp
 ### 命名不变式
 
 1. 每个 MCP 工具拥有稳定标识 `(serverName, rawName)`；每个活跃标识恰好对应一个公开名称。
-2. 公开名称是确定性的、全局唯一的，且满足 DeepSeek 64 字符 `[A-Za-z0-9_-]` 契约。
+2. 公开名称是确定性的、全局唯一的，且满足 DeepSeek 64 字符 `[A-Za-z0-9_-]` 约定。
 3. MCP `tools/call` 始终接收原始的 raw name。
 4. 连接、断开或重新同步不相关的服务器永远不会重命名已有工具。
 5. 注册顺序永远不决定哪个工具可用。
@@ -153,13 +153,7 @@ MCP 仅保证工具名在[单个服务器内](https://modelcontextprotocol.io/sp
 
 ### 断连 / 崩溃
 
-不自动重连。如果 MCP 服务器进程退出或传输层关闭：
-
-1. effect dispose → 所有已注册工具被注销（fiber 作用域的 disposer）。
-2. 后续模型对这些工具的调用 → `ToolNotFoundError` → `isError: true`。
-3. 恢复：用户编辑 `cordis.yml`（触发 HMR 重载）或重启 harness。
-
-这与 ACP subagent 模式一致：「崩溃即终态，报告错误，清理资源，不重试。」
+每个实例的连接监督器在连接丢失后以有界指数退避和单次故障尝试预算自动重连，成功后重新执行发现流程；尝试耗尽则注销该服务器的工具并停止，直到重新加载。[自动重连 Agent Note](2026-08-06-mcp-client-auto-reconnect.md) 拥有该决策，包括 `reconnect` 配置块和恢复手动 HMR/重启恢复的 `reconnect.enabled: false` opt-out。
 
 ## 曾考虑的替代方案
 
@@ -173,7 +167,7 @@ MCP 仅保证工具名在[单个服务器内](https://modelcontextprotocol.io/sp
 
 ### 指数退避自动重连
 
-v1 否决。引入复杂性（工具已注册但暂时不可用的部分可用状态），且 stdio 进程崩溃通常表明配置问题，重试无法修复。HMR 已提供手动恢复路径。如有需要，可在未来作为 `reconnect: boolean` 配置项添加。
+v1 否决：引入了部分可用状态（工具已注册但暂时不可用），且 stdio 崩溃往往表明配置问题，重试无法修复；HMR 曾是恢复路径。运营反馈扭转了该延期决定——[自动重连 Agent Note](2026-08-06-mcp-client-auto-reconnect.md) 以有界的单次故障预算和 opt-out 实现了自动重连。
 
 ### 桥接 Resources 和 Prompts
 
@@ -185,7 +179,7 @@ v1 否决。引入复杂性（工具已注册但暂时不可用的部分可用�
 
 ### 仅服务器命名空间（`github__create_issue`，无 `mcp__` 前缀）
 
-v1 否决。它能防止跨服务器冲突，但无法将 MCP 注册与原生 harness 工具分离，也丧失了 MCP 全局策略匹配模式（`mcp__*`）。前缀仅多花 5 个字符；`mcp__<server>__<tool>` 拼写与 Claude Code 和 Codex 一致，最大化模型的熟悉度。如果 ToolRegistry 未来引入源感知命名空间，届时可作为命名策略变更重新考虑去掉字面前缀。
+v1 否决。它能防止跨服务器冲突，但无法将 MCP 注册与原生 harness 工具分离，也丧失了 MCP 全局策略匹配模式（`mcp__*`）。前缀仅多花 5 个字符；`mcp__<server>__<tool>` 拼写与 Claude Code 和 Codex 一致，最大化模型的熟悉度。如果 ToolRuntime 未来引入源感知命名空间，届时可作为命名策略变更重新考虑去掉字面前缀。
 
 ### 从服务器公告的 `serverInfo.name` 派生命名空间
 
@@ -206,9 +200,9 @@ v1 否决。它能防止跨服务器冲突，但无法将 MCP 注册与原生 ha
 ## 后果
 
 - 每个 MCP 服务器只需 `cordis.yml` 中的一条配置即完成集成：`serverName: filesystem` 加一条 stdio 命令（或一个 Streamable HTTP URL），就能将 `mcp__filesystem__read_file` 放入模型的工具列表，可调用，协议上使用原始的 `read_file`。
-- 公开名称是会话历史和权限/配置表面的一部分；命名算法是由测试固定的 v1 契约，发布后变更即为破坏性变更。
+- 公开名称是会话历史和权限/配置 API 的一部分；命名算法是由测试固定的 v1 约定，发布后变更即为破坏性变更。
 - `mcp__<serverName>__` 限定符在每个名称上消耗 token。已接受：描述和 JSON Schema 在工具定义 token 中占主导，而限定符换来了稳定标识、冲突隔离和 MCP 全局策略匹配模式（`mcp__*`、`mcp__github__*`）。
 - **MCP SDK 稳定性**：`@modelcontextprotocol/sdk` 仍在演进中；破坏性变更需要更新桥接。版本已固定，且该 SDK 被广泛采用（Claude Desktop、Cursor、VS Code），因此破坏性变更不太可能悄然发生。
 - **工具 schema 质量**：MCP 服务器可能暴露描述不佳的工具（模糊的描述、不完整的 JSON Schema）。harness 原样透传——垃圾进垃圾出；这是服务器作者的责任，不是桥接的。
 - **Stdio 进程管理**：行为异常的 MCP 服务器如果忽略信号，可能卡住 dispose。Cordis fiber 的 dispose 具有有界的完全停稳过程；卡住的传输层最终会在框架层面超时。
-- 崩溃恢复是手动的（HMR 编辑或重启）——v1 已接受；`reconnect` 配置作为未来工作保持开放。
+- 崩溃恢复在[重连预算](2026-08-06-mcp-client-auto-reconnect.md)内自动进行；耗尽后或配置 `reconnect.enabled: false` 时回退为手动重新加载。
