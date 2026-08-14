@@ -12,6 +12,7 @@
 
 import { globSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
+import { Script } from 'node:vm'
 import ts from 'typescript'
 import { cordisConfigFiles } from './cordis-config-files.ts'
 import { isJsExpr, loadCordisYaml } from './cordis-yaml.ts'
@@ -447,8 +448,8 @@ export function metadataExpressionErrors(entry: Record<string, unknown>, path: s
  */
 function disabledExpressionProblem(expression: string): string | undefined {
   try {
-    // Compilation only — the constructor never executes the body.
-    new Function(`return (${expression})`)
+    // Compilation only — constructing a Script does not execute its source.
+    new Script(`(${expression})`)
     return undefined
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
