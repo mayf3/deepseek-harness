@@ -140,6 +140,32 @@ describe('Linux process inspector', () => {
     ])
   })
 
+  it('contains cycles in the procfs children index', () => {
+    const fake = fakeInternals()
+    fake.files.set('/proc/10/stat', stat(10, 10, 10, 10, '500'))
+    fake.files.set('/proc/10/task/10/children', '11')
+    fake.files.set('/proc/11/stat', stat(11, 10, 10, 10, '501', 10))
+    fake.files.set('/proc/11/task/11/children', '10')
+
+    expect(createProcessInspector('linux', 'x64', fake.internals).processTree(10)).toEqual([
+      { pid: 11, started: '501' },
+      { pid: 10, started: '500' },
+    ])
+  })
+
+  it('falls back to the PID namespace when a descendant children index is unreadable', () => {
+    const fake = fakeInternals()
+    fake.dirs.set('/proc', ['10', '11', '12'])
+    fake.files.set('/proc/10/stat', stat(10, 10, 10, 10, '500'))
+    fake.files.set('/proc/10/task/10/children', '12 invalid 11')
+    fake.files.set('/proc/11/stat', stat(11, 10, 10, 10, '501', 10))
+
+    expect(createProcessInspector('linux', 'x64', fake.internals).processTree(10)).toEqual([
+      { pid: 11, started: '501' },
+      { pid: 10, started: '500' },
+    ])
+  })
+
   it('keeps readiness inspection local when procfs has no children index', () => {
     const fake = fakeInternals()
     fake.files.set('/proc/10/stat', stat(10, 10, 10, 10, '500'))
@@ -147,11 +173,19 @@ describe('Linux process inspector', () => {
 
     expect(inspector.processTree(10, false)).toEqual([{ pid: 10, started: '500' }])
     expect(inspector.isStdinWaiting(10, false)).toBe(false)
+
+    const readFile = fake.internals.readFile.bind(fake.internals)
+    let statReads = 0
+    fake.internals.readFile = (path) => {
+      if (path === '/proc/10/stat' && statReads++ > 0) throw new Error('process exited')
+      return readFile(path)
+    }
+    expect(inspector.processTree(10, false)).toEqual([])
   })
 
   it('detects read, select, poll, and epoll waits across non-leader threads', () => {
     const fake = fakeInternals()
-    fake.dirs.set('/proc', ['100', '101'])
+    fake.dirs.set('/proc', ['77', '100', '101'])
     fake.files.set('/proc/100/stat', stat(100, 77, 100, 77, '1'))
     fake.files.set('/proc/101/stat', stat(101, 77, 100, 77, '2'))
     fake.dirs.set('/proc/100/task', ['100'])

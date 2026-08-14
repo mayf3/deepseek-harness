@@ -12,13 +12,9 @@
 
 import { globSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
-import * as yaml from 'js-yaml'
 import ts from 'typescript'
 import { cordisConfigFiles } from './cordis-config-files.ts'
-
-interface JsExpr {
-  __jsExpr: string
-}
+import { isJsExpr, loadCordisYaml } from './cordis-yaml.ts'
 
 interface PackageManifest {
   name?: string
@@ -56,16 +52,6 @@ const CHOOSER_BACKEND_PACKAGES = [
   '@deepseek-ai/dsh-client-ui-directory-picker-browse',
   '@deepseek-ai/dsh-client-ui-directory-picker-native',
 ]
-const jsExprType = new yaml.Type('tag:yaml.org,2002:js', {
-  kind: 'scalar',
-  resolve: data => typeof data === 'string',
-  construct: (data: unknown): JsExpr => {
-    if (typeof data !== 'string') throw new TypeError('!!js requires a scalar string')
-    return { __jsExpr: data }
-  },
-})
-const schema = yaml.JSON_SCHEMA.extend(jsExprType)
-
 const errors: string[] = []
 const pluginReferences: PluginReference[] = []
 
@@ -73,7 +59,7 @@ if (import.meta.main) {
   const files = cordisConfigFiles(root)
 
   for (const file of files) {
-    const document: unknown = yaml.load(readFileSync(resolve(root, file), 'utf8'), { schema })
+    const document = loadCordisYaml(readFileSync(resolve(root, file), 'utf8'))
     if (!isUnknownArray(document)) {
       errors.push(`${file}: root must be a Loader entry array`)
       continue
@@ -172,7 +158,7 @@ function validatePresetPlaneSeparation(): string[] {
 
 /** Every entry of one config file, or an empty list when it is not an entry array. */
 function loadEntries(file: string): unknown[] {
-  const document: unknown = yaml.load(readFileSync(resolve(root, file), 'utf8'), { schema })
+  const document = loadCordisYaml(readFileSync(resolve(root, file), 'utf8'))
   return isUnknownArray(document) ? document : []
 }
 
@@ -462,7 +448,6 @@ export function metadataExpressionErrors(entry: Record<string, unknown>, path: s
 function disabledExpressionProblem(expression: string): string | undefined {
   try {
     // Compilation only — the constructor never executes the body.
-    // oxlint-disable-next-line typescript/no-implied-eval
     new Function(`return (${expression})`)
     return undefined
   } catch (error) {
@@ -482,10 +467,6 @@ function collectExpressionPaths(value: unknown, path: string, output: string[]):
   }
   if (!isRecord(value)) return
   for (const [key, child] of Object.entries(value)) collectExpressionPaths(child, `${path}.${key}`, output)
-}
-
-function isJsExpr(value: unknown): value is JsExpr {
-  return isRecord(value) && typeof value.__jsExpr === 'string'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

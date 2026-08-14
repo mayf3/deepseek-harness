@@ -8,11 +8,7 @@ import { globSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import * as yaml from 'js-yaml'
-
-interface JsExpr {
-  __jsExpr: string
-}
+import { loadCordisYaml } from './cordis-yaml.ts'
 
 interface PackageManifest {
   name?: string
@@ -33,16 +29,6 @@ interface RuntimePlatform {
 }
 
 type RuntimePlatformManifest = Record<string, RuntimePlatform>
-
-const jsExprType = new yaml.Type('tag:yaml.org,2002:js', {
-  kind: 'scalar',
-  resolve: data => typeof data === 'string',
-  construct: (data: unknown): JsExpr => {
-    if (typeof data !== 'string') throw new TypeError('!!js requires a scalar string')
-    return { __jsExpr: data }
-  },
-})
-const schema = yaml.JSON_SCHEMA.extend(jsExprType)
 
 const root = resolve(import.meta.dirname, '..')
 const { values } = parseArgs({
@@ -107,7 +93,7 @@ async function missingPresetPlugins(
   const failures: string[] = []
   const presetPaths = globSync('apps/cli/config/agent-presets/*/agent.cordis.yml', { cwd: root }).sort()
   for (const presetPath of presetPaths) {
-    const document: unknown = yaml.load(await readFile(resolve(root, presetPath), 'utf8'), { schema })
+    const document = loadCordisYaml(await readFile(resolve(root, presetPath), 'utf8'))
     if (!Array.isArray(document)) {
       failures.push(`${presetPath}: preset root must be a Loader entry array`)
       continue
