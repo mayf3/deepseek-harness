@@ -49,7 +49,11 @@ const CODEX_PACKAGE_BIN = resolve(
 function missingPayloadDiagnostic(child: SubprocessHandle): string | undefined {
   const stderr = child.collected.stderr?.readFrom(0).text
   if (stderr === undefined) return undefined
-  return /Missing optional dependency[^\r\n]*/.exec(stderr)?.[0]?.trim()
+  const platformPackage = /Missing optional dependency (@openai\/codex-[a-z0-9-]+)/
+    .exec(stderr)?.[1]
+  return platformPackage === undefined
+    ? undefined
+    : `Missing optional dependency ${platformPackage}`
 }
 
 function withMissingPayloadDiagnostic(

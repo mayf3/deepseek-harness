@@ -1074,7 +1074,8 @@ describe('run lifecycle and quiescence', () => {
     const child = fakeChild({
       stderr: [
         'credential-like unrelated stderr',
-        'Error: Missing optional dependency @openai/codex-linux-x64.',
+        'Error: Missing optional dependency @openai/codex-linux-x64. '
+          + 'Reinstall Codex: pnpm add -g @openai/codex@latest',
       ].join('\n'),
     })
     const starting = startCodexRun(request(), runSpec(child))
@@ -1088,6 +1089,8 @@ describe('run lifecycle and quiescence', () => {
     if (!(error instanceof Error)) throw new Error('expected startup failure')
     expect(error.message).toContain('Missing optional dependency @openai/codex-linux-x64')
     expect(error.message).not.toContain('credential-like unrelated stderr')
+    expect(error.message).not.toContain('Reinstall Codex')
+    expect(error.message).not.toContain('pnpm add -g')
     expect(child.terminate).toHaveBeenCalledTimes(1)
   })
 
