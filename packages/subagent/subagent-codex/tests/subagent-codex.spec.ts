@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
@@ -19,9 +19,7 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
 import * as invariant from '../src/invariant.ts'
 import {
-  CODEX_PACKAGE_BIN,
   codexAppServerArgv,
-  codexPackageBinPath,
   DEFAULT_DISPOSE_GRACE_MS,
   disposeCodexChild,
   startCodexRun,
@@ -295,7 +293,7 @@ describe('task admission and package contracts', () => {
     const codexPackageJson = fileURLToPath(import.meta.resolve('@openai/codex/package.json'))
     const codexManifest = JSON.parse(readFileSync(codexPackageJson, 'utf8')) as {
       version: string
-      bin: Record<string, string>
+      bin: { codex: string }
       optionalDependencies: Record<string, string>
     }
     expect(codexManifest.version).toBe(CODEX_VERSION)
@@ -306,7 +304,12 @@ describe('task admission and package contracts', () => {
         `npm:@openai/codex@${CODEX_VERSION}-${packageName.slice('@openai/codex-'.length)}`,
       ]),
     ))
-    expect(CODEX_PACKAGE_BIN).toBe(codexPackageBinPath(codexPackageJson, codexManifest))
+    expect(codexAppServerArgv()).toEqual([
+      process.execPath,
+      resolve(dirname(codexPackageJson), codexManifest.bin.codex),
+      'app-server',
+      '--stdio',
+    ])
 
     const lockfile = readFileSync(resolve(root, '../../../pnpm-lock.yaml'), 'utf8')
     for (const packageName of CODEX_PLATFORM_PACKAGES) {
@@ -329,23 +332,8 @@ describe('task admission and package contracts', () => {
   })
 
   it('uses only the official package-declared wrapper for app-server', () => {
-    expect(codexPackageBinPath(
-      '/package/node_modules/@openai/codex/package.json',
-      { bin: 'bin/codex.js' },
-    )).toBe('/package/node_modules/@openai/codex/bin/codex.js')
-    expect(codexPackageBinPath(
-      '/package/node_modules/@openai/codex/package.json',
-      { bin: { codex: 'bin/codex.js' } },
-    )).toBe('/package/node_modules/@openai/codex/bin/codex.js')
-    expect(() => codexPackageBinPath('/package/package.json', {}))
-      .toThrow('does not declare its codex bin')
-    expect(codexAppServerArgv()).toEqual([
-      process.execPath,
-      CODEX_PACKAGE_BIN,
-      'app-server',
-      '--stdio',
-    ])
-    expect(codexAppServerArgv()).not.toContain('codex')
+    expect(codexAppServerArgv()[0]).toBe(process.execPath)
+    expect(codexAppServerArgv().slice(2)).toEqual(['app-server', '--stdio'])
   })
 
   it('accepts one or more text blocks and rejects empty or non-text tasks', () => {

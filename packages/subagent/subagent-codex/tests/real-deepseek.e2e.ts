@@ -7,9 +7,9 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -18,18 +18,18 @@ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
-import { CODEX_PACKAGE_BIN } from '../src/run.ts'
 import {
   startDeepSeekResponsesBridge,
   type DeepSeekResponsesBridge,
 } from './deepseek-responses-bridge.ts'
 
 const execFileAsync = promisify(execFile)
-const packageRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
+const codexPackageJson = createRequire(import.meta.url).resolve('@openai/codex/package.json')
 const codexPackage = JSON.parse(readFileSync(
-  join(packageRoot, 'node_modules', '@openai', 'codex', 'package.json'),
+  codexPackageJson,
   'utf8',
-)) as { version: string }
+)) as { version: string; bin: { codex: string } }
+const codexEntry = resolve(dirname(codexPackageJson), codexPackage.bin.codex)
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -106,7 +106,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)(
         return handle
       })
       await ctx.plugin(codex, { env, disposeGraceMs: 2_000 })
-      const version = await execFileAsync(process.execPath, [CODEX_PACKAGE_BIN, '--version'], {
+      const version = await execFileAsync(process.execPath, [codexEntry, '--version'], {
         env: { ...process.env, ...env },
       })
       expect(codexPackage.version).toBe('0.147.0')

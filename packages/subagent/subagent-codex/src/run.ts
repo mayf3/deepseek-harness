@@ -28,26 +28,9 @@ import { CodexAppServerWire } from './wire.ts'
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
 interface CodexPackageManifest {
-  readonly bin?: string | Readonly<Record<string, string>>
-}
-
-/**
- * Resolve the official package's declared `codex` bin relative to its manifest.
- * @param packageJsonPath - absolute path to the official package manifest.
- * @param manifest - parsed manifest carrying the declared bin entry.
- * @returns absolute path to the package-local JavaScript wrapper.
- */
-export function codexPackageBinPath(
-  packageJsonPath: string,
-  manifest: CodexPackageManifest,
-): string {
-  const declared = typeof manifest.bin === 'string'
-    ? manifest.bin
-    : manifest.bin?.codex
-  if (declared === undefined || declared.length === 0) {
-    throw new Error('@openai/codex does not declare its codex bin')
+  readonly bin: {
+    readonly codex: string
   }
-  return resolve(dirname(packageJsonPath), declared)
 }
 
 const codexPackageJsonPath = createRequire(import.meta.url).resolve('@openai/codex/package.json')
@@ -56,9 +39,9 @@ const codexPackageManifest = JSON.parse(
 ) as CodexPackageManifest
 
 /** Absolute package-local JavaScript wrapper selected by the package manifest. */
-export const CODEX_PACKAGE_BIN = codexPackageBinPath(
-  codexPackageJsonPath,
-  codexPackageManifest,
+const CODEX_PACKAGE_BIN = resolve(
+  dirname(codexPackageJsonPath),
+  codexPackageManifest.bin.codex,
 )
 
 /**

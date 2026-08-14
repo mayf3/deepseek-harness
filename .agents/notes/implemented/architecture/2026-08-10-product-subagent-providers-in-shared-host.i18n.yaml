@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-10-product-subagent-providers-in-shared-host.md
-2026-08-10-product-subagent-providers-in-shared-host.md: f1eac30e2984b6b9c1a0e83594a8f48dde690811
-2026-08-10-product-subagent-providers-in-shared-host.zh.md: 14b7afcf414b9c058670d99531385da49d91fa4e
+2026-08-10-product-subagent-providers-in-shared-host.md: 4d3af18f0985ccf3322eac955bf53c108104c5a0
+2026-08-10-product-subagent-providers-in-shared-host.zh.md: 9e29d8c0d05507261bfbca04b6bb5f3fa96b2c12

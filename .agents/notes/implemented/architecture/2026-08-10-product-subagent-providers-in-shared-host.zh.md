@@ -16,11 +16,11 @@ Status: implemented
 
 [生产依赖闭包决策](../simplification/2026-08-12-production-dsh-excludes-product-subagent-providers.md)只部分取代本说明先前关于默认包含提供方的选择：base 组合包排除两个提供方，每个提供方包都拥有可直接安装的 Bundle patch。本说明继续负责每个已安装提供方的进程级 Host 放置。提供方约定说明继续负责每个产品的协议、结果映射、取消、进程树生命周期与证据层级。[Agent Preset 架构](2026-08-03-per-session-agent-presets.md)继续负责宿主与 agent 的划分、preset 创作，以及改动只影响新组装会话的规则。
 
-两个 Bundle 的可执行文件归属不同。Codex 包锁定官方 wrapper 与六个平台 alias；提供方运行包所声明的 wrapper，再由它选择私有原生载荷。Claude Code 包锁定 Agent SDK 与八个平台包；提供方让 SDK 选择私有原生可执行文件。两个提供方都不会查询或回退宿主产品命令，原生配置与身份验证仍保持权威。加载任一 Bundle 只会完成提供方注册，不会创建产品状态、探测版本或身份验证，也不会新增产品专属设置。平台载荷缺失、身份验证失败和其他产品故障仍局限于发生问题的那次委派。
+每个 Bundle 都把可执行文件选择交给包自有的产品运行时：Codex 包运行自身声明的 wrapper，Claude Code 包则让 Agent SDK 选择私有原生可执行文件。两个提供方都不会查询或回退宿主产品命令，原生配置与身份验证仍保持权威。加载任一 Bundle 只会完成提供方注册，不会创建产品状态、探测版本或身份验证，也不会新增产品专属设置。平台载荷缺失、身份验证失败和其他产品故障仍局限于发生问题的那次委派。
 
 ## 验证
 
-真实组装会覆盖未安装产品 Bundle、仅安装 Codex、仅安装 Claude Code 或两者都安装四种状态，再与不授权工具、只授权其中一个或同时授权两者的 Agent Preset 交叉。测试证明 Host 注册表与模型可见工具会反映这两个独立决策，组装期间不会启动产品进程，而且 Preset 编辑只影响后续 Session。包级 Loader 与真实产品测试分别证明两个私有运行时、载荷缺失时不回退宿主命令、取消和进程树完全停稳。无密钥 ACP（Agent Client Protocol）快照固定模型可见工具 schema 与通用 Job 控制。
+真实组装会覆盖未安装产品 Bundle、仅安装 Codex、仅安装 Claude Code 或两者都安装四种状态，再与不授权工具、只授权其中一个或同时授权两者的 Agent Preset 交叉。测试证明 Host 注册表与模型可见工具会反映这两个独立决策，组装期间不会启动产品进程，而且 Preset 编辑只影响后续 Session。已链接的提供方与后台执行决策分别拥有私有运行时、失败、清理、工具 schema 及 Job 证据。
 
 ## 考虑过的替代方案
 

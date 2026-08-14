@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { rm } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -19,7 +20,6 @@ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
-import { CODEX_PACKAGE_BIN } from '../src/run.ts'
 import {
   startResponsesFixture,
   type ResponsesBehavior,
@@ -29,12 +29,13 @@ import {
 const execFileAsync = promisify(execFile)
 const packageRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const codexBinDir = join(packageRoot, 'node_modules', '.bin')
-const codexEntry = CODEX_PACKAGE_BIN
-const codexPackageRoot = dirname(dirname(codexEntry))
+const codexPackageJson = createRequire(import.meta.url).resolve('@openai/codex/package.json')
 const codexPackage = JSON.parse(readFileSync(
-  join(packageRoot, 'node_modules', '@openai', 'codex', 'package.json'),
+  codexPackageJson,
   'utf8',
-)) as { version: string }
+)) as { version: string; bin: { codex: string } }
+const codexEntry = resolve(dirname(codexPackageJson), codexPackage.bin.codex)
+const codexPackageRoot = dirname(dirname(codexEntry))
 
 const roots: string[] = []
 const fixtures: ResponsesFixture[] = []
