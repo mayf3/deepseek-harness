@@ -180,8 +180,11 @@ export abstract class ReleaseFamily {
     }
     for (const member of byNameSorted) checkInstall(member, [])
 
-    // Emit the order over both kinds of edge. A node already on the stack is a
-    // cycle only peer edges can form, and skipping it drops just that edge.
+    // Emit the order over both kinds of edge. A node already on the stack closes
+    // a cycle, and that cycle carries at least one peer edge because the install
+    // edges were just proved acyclic — but the back edge that reaches the stacked
+    // node is not necessarily the peer one, so the post-condition below decides
+    // whether the emitted order survived.
     const ordered: ReleaseMember[] = []
     const droppedPeerEdges: DroppedPeerEdge[] = []
     const placed = new Set<string>()
@@ -216,7 +219,6 @@ export abstract class ReleaseFamily {
         visit(peer)
       }
       onStack.delete(member.name)
-      if (placed.has(member.name)) return
       placed.add(member.name)
       ordered.push(member)
     }
