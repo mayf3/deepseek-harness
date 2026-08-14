@@ -18,7 +18,7 @@ import { join, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { parseArgs } from 'node:util'
 import { releaseFamily } from './families.ts'
-import { attempt, isEntry } from './process.ts'
+import { attempt, attemptStreaming, isEntry } from './process.ts'
 import { packedIdentity, readPublishOrder } from './tarball.ts'
 
 /**
@@ -102,7 +102,7 @@ async function publishTarball(tarball: string, name: string, version: string): P
     // command-line flag could not serve both and would override the manifest
     // that does. Each packed manifest decides, and
     // check-workspace-constraints holds every manifest to its sequence's level.
-    const result = attempt('npm', ['publish', tarball, ...tagArgs])
+    const result = attemptStreaming('npm', ['publish', tarball, ...tagArgs])
     const output = `${result.stdout}${result.stderr}`
     if (result.status === 0) return
 

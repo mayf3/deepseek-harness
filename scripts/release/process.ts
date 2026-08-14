@@ -39,6 +39,32 @@ export function attempt(command: string, args: readonly string[], options: RunOp
 }
 
 /**
+ * Run a command, letting its output reach the log while also returning it.
+ *
+ * A step that both shows progress and classifies its own failure needs both: the
+ * output has to appear in the workflow log as the command produces it, and the
+ * caller has to read it to decide whether a failure is worth retrying.
+ * @param command - executable name.
+ * @param args - command arguments.
+ * @param options - working directory and environment.
+ * @returns The exit status and captured streams.
+ */
+export function attemptStreaming(command: string, args: readonly string[], options: RunOptions = {}): CommandResult {
+  const result = spawnSync(command, [...args], {
+    cwd: options.cwd,
+    env: options.env,
+    encoding: 'utf8',
+    // 'inherit' would leave nothing to capture, so the streams are piped and
+    // echoed instead.
+    stdio: ['inherit', 'pipe', 'pipe'],
+  })
+  if (result.error !== undefined) throw result.error
+  if (result.stdout !== '') process.stdout.write(result.stdout)
+  if (result.stderr !== '') process.stderr.write(result.stderr)
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr }
+}
+
+/**
  * Run a command, capture its standard output, and fail on a non-zero exit.
  * @param command - executable name.
  * @param args - command arguments.
