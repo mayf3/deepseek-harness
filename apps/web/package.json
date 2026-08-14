@@ -26,7 +26,9 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-client-web": "workspace:^"
+    "@deepseek-ai/dsh-client-web": "workspace:^",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-group": "workspace:^",
@@ -44,8 +46,6 @@
     "typescript": "^6.0.3",
     "vite": "^6.0.0",
     "vitest": "^4.1.8",
-    "fflate": "^0.8.2",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "fflate": "^0.8.2"
   }
 }
