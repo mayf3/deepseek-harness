@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -8,16 +9,17 @@ import {
 } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { delimiter, join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
+import { CODEX_PACKAGE_BIN } from '../src/run.ts'
 import {
   startResponsesFixture,
   type ResponsesBehavior,
@@ -27,7 +29,8 @@ import {
 const execFileAsync = promisify(execFile)
 const packageRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const codexBinDir = join(packageRoot, 'node_modules', '.bin')
-const codexEntry = join(packageRoot, 'node_modules', '@openai', 'codex', 'bin', 'codex.js')
+const codexEntry = CODEX_PACKAGE_BIN
+const codexPackageRoot = dirname(dirname(codexEntry))
 const codexPackage = JSON.parse(readFileSync(
   join(packageRoot, 'node_modules', '@openai', 'codex', 'package.json'),
   'utf8',
@@ -48,6 +51,7 @@ afterEach(async () => {
 interface RealHarness {
   readonly ctx: Context
   readonly handles: SubprocessHandle[]
+  readonly spawnSpecs: SubprocessSpawnSpec[]
   readonly parent: Agent
   readonly env: Record<string, string>
   readonly workspace: string
@@ -89,7 +93,7 @@ async function realHarness(script: readonly ResponsesBehavior[]): Promise<{
     CODEX_HOME: codexHome,
     HOME: root,
     XDG_CONFIG_HOME: join(root, 'xdg'),
-    PATH: `${codexBinDir}${delimiter}${process.env.PATH ?? ''}`,
+    PATH: root,
     HTTP_PROXY: '',
     HTTPS_PROXY: '',
     ALL_PROXY: '',
@@ -100,8 +104,10 @@ async function realHarness(script: readonly ResponsesBehavior[]): Promise<{
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(LocalSubprocessRuntime)
   const handles: SubprocessHandle[] = []
+  const spawnSpecs: SubprocessSpawnSpec[] = []
   const spawn = ctx.subprocess.spawn.bind(ctx.subprocess)
   vi.spyOn(ctx.subprocess, 'spawn').mockImplementation((spec) => {
+    spawnSpecs.push(spec)
     const handle = spawn(spec)
     handles.push(handle)
     return handle
@@ -111,7 +117,7 @@ async function realHarness(script: readonly ResponsesBehavior[]): Promise<{
     id: 'real-parent',
     session: { header: { cwd: workspace } },
   } as unknown as Agent
-  return { harness: { ctx, handles, parent, env, workspace }, fixture }
+  return { harness: { ctx, handles, spawnSpecs, parent, env, workspace }, fixture }
 }
 
 async function expectQuiescent(handles: readonly SubprocessHandle[]): Promise<void> {
@@ -164,6 +170,13 @@ describe('real @openai/codex 0.147.0 product', () => {
     })
     await run.dispose()
 
+    expect(harness.spawnSpecs[0]?.argv).toEqual([
+      process.execPath,
+      codexEntry,
+      'app-server',
+      '--stdio',
+    ])
+
     expect(fixture.requests).toHaveLength(1)
     const recorded = fixture.requests[0]!
     expect(recorded.method).toBe('POST')
@@ -172,6 +185,24 @@ describe('real @openai/codex 0.147.0 product', () => {
     expect(responseInputTexts(recorded.body)).toContain(task)
     await expectQuiescent(harness.handles)
   }, 60_000)
+
+  it('fails a missing platform payload without falling back to a host codex', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-codex-missing-payload-'))
+    roots.push(root)
+    const isolatedPackage = join(root, 'node_modules', '@openai', 'codex')
+    mkdirSync(dirname(isolatedPackage), { recursive: true })
+    cpSync(codexPackageRoot, isolatedPackage, { recursive: true, dereference: true })
+    const isolatedEntry = join(isolatedPackage, 'bin', 'codex.js')
+
+    await expect(execFileAsync(process.execPath, [isolatedEntry, '--version'], {
+      env: {
+        PATH: codexBinDir,
+        ...process.platform === 'win32' && process.env.SystemRoot !== undefined
+          ? { SystemRoot: process.env.SystemRoot }
+          : {},
+      },
+    })).rejects.toThrow('Missing optional dependency')
+  }, 30_000)
 
   it('cancels a real app-server command approval without executing the command', async () => {
     const command = process.platform === 'win32'

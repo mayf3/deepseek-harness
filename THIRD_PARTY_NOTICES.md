@@ -5,7 +5,7 @@
 
 DeepSeek Harness is licensed under [MIT](LICENSE). It depends on the third-party software listed below. Each project remains under its own license; nothing in this file changes those terms.
 
-This file lists **direct** dependencies declared by the workspace and the explicitly disclosed official Claude platform payload closure. It is generated from the workspace manifests by `scripts/gen-third-party-notices.ts`: a pre-commit hook regenerates it whenever a staged file changes one of its inputs, and `scripts/gen-third-party-notices.spec.ts` asserts in the test lane that the committed bytes match. Deleting a manifest runs no hook, so that case is caught by the assertion instead. Run `pnpm run verify-third-party-notices` for the standalone check.
+This file lists **direct** dependencies declared by the workspace and the explicitly disclosed official Claude Code and Codex platform payload closures. It is generated from the workspace manifests by `scripts/gen-third-party-notices.ts`: a pre-commit hook regenerates it whenever a staged file changes one of its inputs, and `scripts/gen-third-party-notices.spec.ts` asserts in the test lane that the committed bytes match. Deleting a manifest runs no hook, so that case is caught by the assertion instead. Run `pnpm run verify-third-party-notices` for the standalone check.
 
 The complete npm transitive closure, including the Landlock launcher workspace, is recorded with exact pinned versions in [`pnpm-lock.yaml`](pnpm-lock.yaml) — inspect it with `pnpm licenses list`. The Python closure is recorded separately in [`python/sdk/uv.lock`](python/sdk/uv.lock).
 
@@ -39,6 +39,7 @@ External packages that a workspace package resolves at runtime. The tier covers 
 | [`@joplin/turndown-plugin-gfm`](https://github.com/laurent22/joplin-turndown-plugin-gfm) | MIT |
 | [`@jridgewell/gen-mapping`](https://github.com/jridgewell/sourcemaps) | MIT |
 | [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk) | MIT |
+| [`@openai/codex`](https://github.com/openai/codex) | Apache-2.0 |
 | [`@opentelemetry/api`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
 | [`@opentelemetry/api-logs`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
 | [`@opentelemetry/exporter-logs-otlp-http`](https://github.com/open-telemetry/opentelemetry-js) | Apache-2.0 |
@@ -113,6 +114,20 @@ The installed SDK 0.3.220 declares the following optional platform packages. Eac
 | [`@anthropic-ai/claude-agent-sdk-win32-x64`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk-win32-x64) | 0.3.220 | SEE LICENSE IN LICENSE.md |
 
 
+## Official Codex platform payloads
+
+The installed `@openai/codex` wrapper 0.147.0 declares the following optional-dependency aliases. Every alias resolves to an official platform-specific `@openai/codex` version that carries the native Codex CLI and its bundled resources; the declared license is verified against the payload installed for the current host.
+
+| Optional dependency alias | Published package | Version | Declared license |
+| --- | --- | --- | --- |
+| `@openai/codex-darwin-arm64` | [`@openai/codex`](https://www.npmjs.com/package/@openai/codex/v/0.147.0-darwin-arm64) | 0.147.0-darwin-arm64 | Apache-2.0 |
+| `@openai/codex-darwin-x64` | [`@openai/codex`](https://www.npmjs.com/package/@openai/codex/v/0.147.0-darwin-x64) | 0.147.0-darwin-x64 | Apache-2.0 |
+| `@openai/codex-linux-arm64` | [`@openai/codex`](https://www.npmjs.com/package/@openai/codex/v/0.147.0-linux-arm64) | 0.147.0-linux-arm64 | Apache-2.0 |
+| `@openai/codex-linux-x64` | [`@openai/codex`](https://www.npmjs.com/package/@openai/codex/v/0.147.0-linux-x64) | 0.147.0-linux-x64 | Apache-2.0 |
+| `@openai/codex-win32-arm64` | [`@openai/codex`](https://www.npmjs.com/package/@openai/codex/v/0.147.0-win32-arm64) | 0.147.0-win32-arm64 | Apache-2.0 |
+| `@openai/codex-win32-x64` | [`@openai/codex`](https://www.npmjs.com/package/@openai/codex/v/0.147.0-win32-x64) | 0.147.0-win32-x64 | Apache-2.0 |
+
+
 ## Development-only npm dependencies
 
 External packages **directly declared** only by repository tooling, test infrastructure, the documentation site, the demo leaves, or the native launcher's build workspace. No shipped surface names them itself. A package here may still be pulled in transitively by a runtime dependency — `pnpm-lock.yaml` is the authority on the full closure — so this tier records who declares a package, not what a build ultimately bundles.
@@ -122,7 +137,6 @@ External packages **directly declared** only by repository tooling, test infrast
 | [`@braintree/sanitize-url`](https://github.com/braintree/sanitize-url) | MIT |
 | [`@modelcontextprotocol/server-everything`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
 | [`@modelcontextprotocol/server-filesystem`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
-| [`@openai/codex`](https://github.com/openai/codex) | Apache-2.0 |
 | [`@stylistic/eslint-plugin`](https://github.com/eslint-stylistic/eslint-stylistic) | MIT |
 | [`@testing-library/dom`](https://github.com/testing-library/dom-testing-library) | MIT |
 | [`@testing-library/react`](https://github.com/testing-library/react-testing-library) | MIT |

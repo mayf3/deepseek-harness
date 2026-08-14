@@ -1,20 +1,21 @@
 #!/usr/bin/env node
 /** Inspect the public Codex provider composition without invoking the product. */
 
-import { boot, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
+import { boot, loadOverlayPatches, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-tools'
 
 const configPath = process.argv[2]
-if (configPath === undefined) {
-  throw new Error('subagent-codex Loader composition driver requires a config path')
+const bundlePatchPath = process.argv[3]
+if (configPath === undefined || bundlePatchPath === undefined) {
+  throw new Error('subagent-codex Loader composition driver requires config and Bundle patch paths')
 }
 
 let starts = 0
 const ctx = await boot(
   'subagent-codex-loader-composition',
   resolveConfigPath(configPath, undefined),
-  undefined,
+  loadOverlayPatches('subagent-codex-loader-composition', bundlePatchPath),
   (hostCtx) => {
     hostCtx.on('subagent/start', () => {
       starts += 1

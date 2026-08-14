@@ -4,46 +4,15 @@
  * metadata field must stay static, and a disabled expression must parse.
  */
 
-import { globSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   bundleManifestPaths,
   bundlePluginDependencyErrors,
   metadataExpressionErrors,
 } from './verify-cordis-config.ts'
-
-interface WorkspaceManifest {
-  name?: string
-  dependencies?: Record<string, string>
-  optionalDependencies?: Record<string, string>
-  peerDependencies?: Record<string, string>
-}
-
-const repoRoot = fileURLToPath(new URL('..', import.meta.url))
-
-function productionClosure(entry: string): Set<string> {
-  const manifests = new Map<string, WorkspaceManifest>()
-  for (const path of globSync(['apps/*/package.json', 'packages/*/*/package.json'], { cwd: repoRoot })) {
-    const manifest = JSON.parse(readFileSync(join(repoRoot, path), 'utf8')) as WorkspaceManifest
-    if (manifest.name !== undefined) manifests.set(manifest.name, manifest)
-  }
-  const visited = new Set<string>()
-  const pending = [entry]
-  for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
-    if (visited.has(name)) continue
-    visited.add(name)
-    const manifest = manifests.get(name)
-    pending.push(
-      ...Object.keys(manifest?.dependencies ?? {}),
-      ...Object.keys(manifest?.optionalDependencies ?? {}),
-      ...Object.keys(manifest?.peerDependencies ?? {}),
-    )
-  }
-  return visited
-}
 
 describe('verify-cordis-config metadata expressions', () => {
   it('accepts a disabled !!js expression', () => {
@@ -115,16 +84,5 @@ describe('workspace Bundle discovery and product dependency closures', () => {
     ])).toEqual([
       `${file}: @deepseek-ai/dsh-missing-plugin must be declared in ${manifestPath} dependencies`,
     ])
-  })
-
-  it('keeps the default and optional Claude Code closure independent', () => {
-    const shipped = productionClosure('@deepseek-ai/dsh')
-    expect(shipped).not.toContain('@deepseek-ai/dsh-subagent-codex')
-    expect(shipped).not.toContain('@deepseek-ai/dsh-subagent-claude-code')
-    expect(shipped).not.toContain('@anthropic-ai/claude-agent-sdk')
-
-    const claudeCode = productionClosure('@deepseek-ai/dsh-subagent-claude-code')
-    expect(claudeCode).toContain('@anthropic-ai/claude-agent-sdk')
-    expect(claudeCode).not.toContain('@deepseek-ai/dsh-subagent-codex')
   })
 })

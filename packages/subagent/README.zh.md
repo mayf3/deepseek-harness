@@ -18,7 +18,7 @@
 | [`tool-subagent-control/`](tool-subagent-control/README.md) | 向模型公开子级消息发送和列举操作 | 注册到 `ctx.tools` |
 | [`tool-subagent-report/`](tool-subagent-report/README.md) | 提供从子级到父级的报告通道 | 注册到子级作用域 |
 
-Claude Code 包也是一个可选的 Profile Bundle。使用 `dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-claude-code` 安装后重启该 Profile；该包只注册休眠的 Host provider，而复制出的 Agent Preset 会单独把默认禁用的工具模板授予新 Session。移除该包后，下一次 Profile 启动会撤回对应 provider。Codex 包仍须作为 Host 插件显式挂载，并使用 `PATH` 中的宿主 `codex`。
+Codex 与 Claude Code 包是彼此独立的可选 Profile Bundle。使用 `dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-codex @deepseek-ai/dsh-subagent-claude-code` 安装其中一个或两个包，再重启该 Profile；每个包只注册自己的休眠 Host provider，而复制出的 Agent Preset 会单独把默认禁用的工具模板授予新 Session。移除其中一个包后，下一次 Profile 启动只会撤回对应 provider 及其私有运行时闭包。
 
 参见有关[能力家族](../../.agents/notes/implemented/feature/2026-06-21-subagent-capability-seam.md)、[可继续执行的子级](../../.agents/notes/implemented/feature/2026-07-21-continuable-background-subagents.md)和[控制工具](../../.agents/notes/implemented/simplification/2026-07-26-merge-subagent-control-service.md)的决策。
 

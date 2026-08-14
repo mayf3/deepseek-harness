@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
+import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import * as yaml from 'js-yaml'
 import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
@@ -15,7 +19,9 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
 import * as invariant from '../src/invariant.ts'
 import {
+  CODEX_PACKAGE_BIN,
   codexAppServerArgv,
+  codexPackageBinPath,
   DEFAULT_DISPOSE_GRACE_MS,
   disposeCodexChild,
   startCodexRun,
@@ -25,6 +31,16 @@ import {
 import { CodexAppServerWire } from '../src/wire.ts'
 
 type JsonObject = Record<string, unknown>
+
+const CODEX_VERSION = '0.147.0'
+const CODEX_PLATFORM_PACKAGES = [
+  '@openai/codex-darwin-arm64',
+  '@openai/codex-darwin-x64',
+  '@openai/codex-linux-arm64',
+  '@openai/codex-linux-x64',
+  '@openai/codex-win32-arm64',
+  '@openai/codex-win32-x64',
+] as const
 
 const fakeParent = {
   id: 'parent',
@@ -260,17 +276,76 @@ function turnCompleted(
 }
 
 describe('task admission and package contracts', () => {
-  it('resolves the fixed app-server command through the Windows npm shim boundary', () => {
-    expect(codexAppServerArgv('win32')).toEqual([
-      'cmd.exe',
-      '/d',
-      '/s',
-      '/c',
-      'codex',
+  it('ships one independently installable provider-only Bundle patch', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>
+      files?: string[]
+      dsh?: { bundle?: { patch?: string } }
+    }
+    expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
+    expect(manifest.files).toContain('cordis.patch.yml')
+    expect(manifest.dependencies).toHaveProperty(
+      '@deepseek-ai/dsh-sdk-protocol',
+      'workspace:^',
+    )
+    expect(manifest.dependencies).toHaveProperty('@openai/codex', CODEX_VERSION)
+    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
+
+    const codexPackageJson = fileURLToPath(import.meta.resolve('@openai/codex/package.json'))
+    const codexManifest = JSON.parse(readFileSync(codexPackageJson, 'utf8')) as {
+      version: string
+      bin: Record<string, string>
+      optionalDependencies: Record<string, string>
+    }
+    expect(codexManifest.version).toBe(CODEX_VERSION)
+    expect(codexManifest.bin).toEqual({ codex: 'bin/codex.js' })
+    expect(codexManifest.optionalDependencies).toEqual(Object.fromEntries(
+      CODEX_PLATFORM_PACKAGES.map(packageName => [
+        packageName,
+        `npm:@openai/codex@${CODEX_VERSION}-${packageName.slice('@openai/codex-'.length)}`,
+      ]),
+    ))
+    expect(CODEX_PACKAGE_BIN).toBe(codexPackageBinPath(codexPackageJson, codexManifest))
+
+    const lockfile = readFileSync(resolve(root, '../../../pnpm-lock.yaml'), 'utf8')
+    for (const packageName of CODEX_PLATFORM_PACKAGES) {
+      const suffix = packageName.slice('@openai/codex-'.length)
+      expect(lockfile).toContain(`  '@openai/codex@${CODEX_VERSION}-${suffix}':`)
+      expect(lockfile).toContain(
+        `      '${packageName}': '@openai/codex@${CODEX_VERSION}-${suffix}'`,
+      )
+    }
+
+    const parsed = yaml.load(readFileSync(resolve(root, manifest.dsh!.bundle!.patch!), 'utf8'))
+    const rows = Array.isArray(parsed)
+      ? (parsed as Array<{ insert?: Array<{ id?: string; name?: string }> }>).flatMap(entry => entry.insert ?? [])
+      : []
+    expect(rows).toEqual([{
+      id: 'subagent-codex',
+      name: '@deepseek-ai/dsh-subagent-codex',
+    }])
+    expect(JSON.stringify(rows)).not.toContain('tool-subagent')
+  })
+
+  it('uses only the official package-declared wrapper for app-server', () => {
+    expect(codexPackageBinPath(
+      '/package/node_modules/@openai/codex/package.json',
+      { bin: 'bin/codex.js' },
+    )).toBe('/package/node_modules/@openai/codex/bin/codex.js')
+    expect(codexPackageBinPath(
+      '/package/node_modules/@openai/codex/package.json',
+      { bin: { codex: 'bin/codex.js' } },
+    )).toBe('/package/node_modules/@openai/codex/bin/codex.js')
+    expect(() => codexPackageBinPath('/package/package.json', {}))
+      .toThrow('does not declare its codex bin')
+    expect(codexAppServerArgv()).toEqual([
+      process.execPath,
+      CODEX_PACKAGE_BIN,
       'app-server',
       '--stdio',
     ])
-    expect(codexAppServerArgv('linux')).toEqual(['codex', 'app-server', '--stdio'])
+    expect(codexAppServerArgv()).not.toContain('codex')
   })
 
   it('accepts one or more text blocks and rejects empty or non-text tasks', () => {

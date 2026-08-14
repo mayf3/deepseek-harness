@@ -123,16 +123,16 @@ After a clean mount-validation, ask the user to start a session on the new prese
 
 ## Native product subagents
 
-The Claude Code provider is an optional Profile Bundle. Install it only in Profiles that need it, then restart the Profile so its Host registers the provider:
+Codex and Claude Code providers are independent optional Profile Bundles. Install only the products a Profile needs, then restart the Profile so its Host registers those providers:
 
 ```sh
+dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-codex
 dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-claude-code
+dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-codex
 dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-claude-code
 ```
 
-The Bundle owns Claude Code Host availability; the preset separately grants one Agent its ordinary delegation tool. Never move a product provider into the preset and never add a product-specific settings field. Removing the package withdraws the provider on the next Profile start.
-
-Codex remains an explicitly mounted Host plugin rather than a directly installable Bundle. A deployment that uses it must install and mount the package once on the Host plane before a preset can expose its tool.
+Each Bundle owns its Host availability; the preset separately grants one Agent its ordinary delegation tool. Never move a product provider into the preset and never add a product-specific settings field. Removing one package withdraws only that provider on the next Profile start.
 
 Copy these disabled templates from a shipped full preset and remove `disabled` only for the products the user requested:
 
@@ -156,7 +156,7 @@ Copy these disabled templates from a shipped full preset and remove `disabled` o
     maxDepth: provider-managed
 ```
 
-The two rows are independent. Leaving both disabled preserves the copied preset; enabling one exposes only that available product tool. The Claude Code row requires its Bundle, while the Codex row requires an explicit Host composition and a host `codex` on `PATH`. The Claude Code Bundle installs and exclusively uses the matching platform CLI selected by its pinned Agent SDK; it does not inspect or fall back to a host `claude`, and a missing optional payload fails the first delegation. `backgroundMode: one-shot` keeps omitted or `false` calls in the foreground and lets explicit `run_in_background: true` return a generic Job id. Full presets already carry `tool-jobs`, while the base Host carries the job registry; retain both so `job_output`, `job_list`, `job_kill`, cancellation, and completion notices stay available. Neither installing the Claude Code Bundle nor composing either preset row starts a product, authenticates an account, selects a model, probes credentials, or manages native product settings.
+The two rows are independent. Leaving both disabled preserves the copied preset; enabling one exposes only that installed product tool. The Codex Bundle exclusively uses the wrapper and native platform payload selected by its pinned official package, while the Claude Code Bundle exclusively uses the platform CLI selected by its pinned Agent SDK. Neither provider inspects or falls back to a host product command, and a missing optional payload fails the first delegation. `backgroundMode: one-shot` keeps omitted or `false` calls in the foreground and lets explicit `run_in_background: true` return a generic Job id. Full presets already carry `tool-jobs`, while the base Host carries the job registry; retain both so `job_output`, `job_list`, `job_kill`, cancellation, and completion notices stay available. Neither installing a product Bundle nor composing either preset row starts a product, authenticates an account, selects a model, probes credentials, or manages native product settings.
 
 ## What not to move into a preset
 

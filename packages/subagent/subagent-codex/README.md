@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-This package registers the fixed `codex` subagent provider. Each accepted run starts the official `codex app-server --stdio` command in the delegating Session's workspace, creates one ephemeral Codex thread, submits one self-contained text task, and returns only the final answer through the shared [`dsh-subagent`](../subagent/README.md) result contract.
+This package registers the fixed `codex` subagent provider. Each accepted run starts the official package-local Codex wrapper with `app-server --stdio` in the delegating Session's workspace, creates one ephemeral Codex thread, submits one self-contained text task, and returns only the final answer through the shared [`dsh-subagent`](../subagent/README.md) result contract.
 
 ## Start and ownership
 
@@ -25,27 +25,31 @@ The provider advertises no optional start-time capabilities and reports `inherit
 | `env` | `{}` | Explicit child environment layered over the subprocess seam's credential-scrubbed parent environment. |
 | `disposeGraceMs` | `3000` | Positive finite grace in milliseconds, no greater than [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md), between the shared process-tree owner's termination tiers; disposal then waits for whole-tree exit. |
 
-Production resolves `codex` from `PATH` and uses the host's native Codex configuration and authentication. The plugin does not install Codex, select a model, create `CODEX_HOME`, log in, or probe a version. Credential-shaped ambient variables are removed by the subprocess seam, so an API key intended for the child must be supplied explicitly in `env`; ordinary ambient values such as `PATH` and `HOME` remain available unless overridden.
+Production resolves the `codex` bin declared by its pinned `@openai/codex@0.147.0` dependency and launches that JavaScript wrapper with the current Node executable. The wrapper selects the matching native platform payload; the provider neither inspects nor falls back to a host `codex` on `PATH`. Native Codex configuration and authentication remain authoritative through the parent cwd, `HOME`, and `CODEX_HOME`. The plugin does not select a model, create a product home, log in, or probe an account. Credential-shaped ambient variables are removed by the subprocess seam before the explicit `env` overlay is applied.
 
-Production `dsh` does not install or mount this optional provider. A Profile that opts in must install `@deepseek-ai/dsh-subagent-codex` and mount it once on the host plane; loading the provider starts no Codex process until a tool call. Full Agent Presets carry a matching product tool row with `disabled: true`; copy a preset and remove that field to expose `subagent_codex` only to agents composed from the copy. Its `one-shot` policy keeps omitted or `false` `run_in_background` calls in the foreground, while explicit `true` returns a parent-owned Job id for `job_output` or `job_kill`. The base host and full presets already provide the generic Job registry and controls.
+This package is an optional Profile Bundle. Install it into the target Profile, then restart that Profile; installation brings the official wrapper and one compatible native platform payload into that Profile, while the declared `cordis.patch.yml` layer registers only the dormant `codex` Host provider and starts no Codex process. Removing the package withdraws that provider and its private runtime closure on the next Profile start.
 
-The standalone composition below shows the complete explicit capability. A Profile based on `@deepseek-ai/dsh-base` keeps its existing Job rows, adds the product provider row, and enables the preset tool row instead of mounting duplicate Job services.
+```sh
+dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-codex
+dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-codex
+dsh --profile <name>
+```
+
+Installation controls Host availability, not model permission. Full Agent Presets carry the tool row below with `disabled: true`; copy a preset and remove that field to expose `subagent_codex` only to new agents composed from the copy. Its `one-shot` policy keeps omitted or `false` `run_in_background` calls in the foreground, while explicit `true` returns a parent-owned Job id for `job_output` or `job_kill`. The base Host and full presets already provide the generic Job registry and controls. The Profile's own patch can replace the Bundle row's complete `config`, while a custom Host composition can still mount the package directly.
 
 ```yaml
+# $DSH_HOME/profiles/<name>/cordis.patch.yml (optional provider override)
 - id: subagent-codex
-  name: '@deepseek-ai/dsh-subagent-codex'
   config:
     env:
       OPENAI_API_KEY: !!js process.env.OPENAI_API_KEY
+```
 
-- id: jobs
-  name: '@deepseek-ai/dsh-jobs-local'
-
-- id: tool-jobs
-  name: '@deepseek-ai/dsh-tool-jobs'
-
+```yaml
+# A copied Agent Preset; remove `disabled` to grant this tool.
 - id: tool-subagent-codex
   name: '@deepseek-ai/dsh-tool-subagent'
+  disabled: true
   config:
     provider: codex
     toolName: subagent_codex
@@ -55,7 +59,9 @@ The standalone composition below shows the complete explicit capability. A Profi
 
 ## Product compatibility and evidence
 
-The production wire intentionally implements only the app-server methods required by this one-shot contract. Development evidence is pinned to `@openai/codex@0.147.0` / `codex-cli 0.147.0`; the npm package is a test-only dependency, and deployments still supply `codex` on `PATH`.
+The production wire intentionally implements only the app-server methods required by this one-shot contract. The runtime dependency and all six optional-dependency aliases are pinned to `@openai/codex@0.147.0` / `codex-cli 0.147.0`. A normal install selects one payload for the current OS and CPU. For the current darwin-arm64 payload, `npm pack --dry-run --json @openai/codex@0.147.0-darwin-arm64` reports 111,199,052 packed bytes and 274,777,843 unpacked bytes. That package contains native `codex`, `codex-code-mode-host`, `rg`, and `zsh` resources; other platforms may differ, and these values are disclosure rather than an installation threshold. The keyless real-product test drives the package wrapper against a loopback Responses fixture, observes the package-local argv, and proves wrapper and native descendants become quiescent.
+
+Installing with optional dependencies omitted, using an unsupported platform, or losing the selected payload makes the first delegation fail with the wrapper's native-payload startup error. The provider neither probes a host CLI nor retries with one.
 
 ## Model Experience
 
@@ -63,7 +69,7 @@ The production wire intentionally implements only the app-server methods require
 
 #### What the model sees
 
-The Codex child receives the standalone text blocks as one turn in a fresh ephemeral thread. Its workspace is the parent Session cwd, and its model, system instructions, tools, sandbox, and authentication come from the native Codex installation and configuration.
+The Codex child receives the standalone text blocks as one turn in a fresh ephemeral thread. Its workspace is the parent Session cwd; its model, system instructions, tools, sandbox, and authentication come from native Codex configuration, while the executable version comes from the Bundle's pinned platform payload.
 
 #### Token effect
 
@@ -90,7 +96,8 @@ Append-only: foreground adds one result after the reusable parent prefix, while 
 ## Known Limitations and Deferred Work
 
 - **One fresh process, thread, and turn per run** — there is no continuation, resume, pooling, progress stream, or product-session persistence.
-- **Host-managed product installation and account state** — a missing or incompatible `codex`, configuration error, or authentication failure is surfaced as a startup or run error; the plugin provides no installer, login flow, or runtime version gate.
+- **Authentication and account state remain native** — the Bundle supplies the CLI but does not create an account, log in, trust a project, or rewrite Codex settings; configuration and authentication failures surface as startup or run errors.
+- **The native platform payload is required at delegation time** — installs that omit optional dependencies, unsupported platforms, and missing or damaged payloads fail at the first run; there is no host-CLI fallback.
 - **Compatibility is pinned by development evidence** — upgrading from the verified 0.147.0 protocol baseline requires regenerating upstream schema evidence and rerunning handshake, answer-selection, approval, cancellation, keyless real-product, and credentialed DeepSeek nonce tests.
 - **No human approval path** — known unattended approval requests are denied and unknown server requests fail closed; deployments cannot configure an allow policy through this package.
 - **Product payload is final text only** — reasoning, commentary, intermediate messages, tool traffic, usage, stderr, and workspace diffs remain product-local; generic Job ids, notices, and status come from the shared job runtime.

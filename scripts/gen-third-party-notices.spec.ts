@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import {
   CLAUDE_AGENT_SDK_PACKAGE,
+  CODEX_PACKAGE,
   claudeDistributionFromManifest,
+  codexDistributionFromManifest,
   collectPythonDependencies,
   isOwnerAuthorizedRuntime,
   isPermissive,
@@ -328,6 +330,53 @@ describe('official Claude distribution authorization', () => {
         '@anthropic-ai/unrelated': '1.0.0',
       },
     })).toThrow('outside its authorized platform-payload identity')
+  })
+})
+
+describe('official Codex platform payloads', () => {
+  it('derives versioned packages from the wrapper aliases', () => {
+    expect(codexDistributionFromManifest({
+      name: CODEX_PACKAGE,
+      version: '9.8.7',
+      optionalDependencies: {
+        '@openai/codex-linux-x64': 'npm:@openai/codex@9.8.7-linux-x64',
+        '@openai/codex-darwin-arm64': 'npm:@openai/codex@9.8.7-darwin-arm64',
+      },
+    })).toEqual({
+      wrapperVersion: '9.8.7',
+      payloads: [
+        { alias: '@openai/codex-darwin-arm64', version: '9.8.7-darwin-arm64' },
+        { alias: '@openai/codex-linux-x64', version: '9.8.7-linux-x64' },
+      ],
+    })
+  })
+
+  it('rejects a wrong identity, missing payloads, and non-official aliases', () => {
+    expect(() => codexDistributionFromManifest({
+      name: '@openai/unrelated',
+      version: '1.0.0',
+      optionalDependencies: {
+        '@openai/codex-linux-x64': 'npm:@openai/codex@1.0.0-linux-x64',
+      },
+    })).toThrow(`expected ${CODEX_PACKAGE} manifest`)
+    expect(() => codexDistributionFromManifest({
+      name: CODEX_PACKAGE,
+      version: '1.0.0',
+    })).toThrow('declares no optional platform payloads')
+    expect(() => codexDistributionFromManifest({
+      name: CODEX_PACKAGE,
+      version: '1.0.0',
+      optionalDependencies: {
+        '@openai/unrelated': 'npm:@openai/codex@1.0.0-linux-x64',
+      },
+    })).toThrow('outside its platform alias namespace')
+    expect(() => codexDistributionFromManifest({
+      name: CODEX_PACKAGE,
+      version: '1.0.0',
+      optionalDependencies: {
+        '@openai/codex-linux-x64': '1.0.0',
+      },
+    })).toThrow('does not alias an official versioned payload')
   })
 })
 

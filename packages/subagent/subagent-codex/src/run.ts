@@ -8,6 +8,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, resolve } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -24,21 +27,46 @@ import { CodexAppServerWire } from './wire.ts'
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
+interface CodexPackageManifest {
+  readonly bin?: string | Readonly<Record<string, string>>
+}
+
 /**
- * Resolve the fixed app-server command for a platform.
- *
- * Windows npm and pnpm installs expose `codex.cmd`, which requires `cmd.exe`;
- * the argv is constant so no task or configuration text enters the
- * shell boundary.
- * @param platform - host platform used to select the executable boundary.
- * @returns argv for the fixed Codex app-server command.
+ * Resolve the official package's declared `codex` bin relative to its manifest.
+ * @param packageJsonPath - absolute path to the official package manifest.
+ * @param manifest - parsed manifest carrying the declared bin entry.
+ * @returns absolute path to the package-local JavaScript wrapper.
  */
-export function codexAppServerArgv(
-  platform: NodeJS.Platform = process.platform,
-): string[] {
-  return platform === 'win32'
-    ? ['cmd.exe', '/d', '/s', '/c', 'codex', 'app-server', '--stdio']
-    : ['codex', 'app-server', '--stdio']
+export function codexPackageBinPath(
+  packageJsonPath: string,
+  manifest: CodexPackageManifest,
+): string {
+  const declared = typeof manifest.bin === 'string'
+    ? manifest.bin
+    : manifest.bin?.codex
+  if (declared === undefined || declared.length === 0) {
+    throw new Error('@openai/codex does not declare its codex bin')
+  }
+  return resolve(dirname(packageJsonPath), declared)
+}
+
+const codexPackageJsonPath = createRequire(import.meta.url).resolve('@openai/codex/package.json')
+const codexPackageManifest = JSON.parse(
+  readFileSync(codexPackageJsonPath, 'utf8'),
+) as CodexPackageManifest
+
+/** Absolute package-local JavaScript wrapper selected by the package manifest. */
+export const CODEX_PACKAGE_BIN = codexPackageBinPath(
+  codexPackageJsonPath,
+  codexPackageManifest,
+)
+
+/**
+ * Fixed package-local app-server command, independent of the host `PATH`.
+ * @returns Node, the official wrapper, and the fixed app-server arguments.
+ */
+export function codexAppServerArgv(): string[] {
+  return [process.execPath, CODEX_PACKAGE_BIN, 'app-server', '--stdio']
 }
 
 /** Fully resolved inputs for one Codex app-server run. */
