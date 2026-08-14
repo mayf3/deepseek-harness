@@ -42,17 +42,14 @@ dsh --profile web --patch ./extra.yml --dump-config
 
 `dsh plugin --profile <name> <args...>` 在 profile 缺失时先初始化它（有随附模板的用模板，其他名称只装 `@deepseek-ai/dsh-base`），然后以 profile 目录为工作目录，把 `<args...>` 转发给 `pnpm`：`add`、`remove`、`why`、`update` 及其他所有 pnpm 子命令都照常可用；pnpm 必须在 PATH 上。相对路径 spec（`.`、`../plugin` 及其 `file:`/`link:` 形式）会先锚定到调用目录，因此在插件 checkout 中执行 `add .` 安装的是该 checkout，而不是 profile。每次成功运行后，系统都会根据当前安装状态更新 `dsh.profile.bundles`：如果某项依赖解析到的包在 manifest 中声明了 `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`，该依赖就会加入配置层栈；如果某项依赖在 `update` 后获得该声明，也会随即激活。没有组合包声明的依赖仍作为普通依赖保留，并显示一次性警告；已移除的依赖则从配置层栈中删除。
 
-Codex 与 Claude Code subagent provider 是两个彼此独立的可选 Bundle。可以只添加一个包、在同一命令中添加两个包，或独立移除任一包：
+Claude Code subagent provider 是一个可选 Bundle，可以独立添加或移除：
 
 ```sh
-dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-codex
 dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-claude-code
-dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-codex @deepseek-ai/dsh-subagent-claude-code
-dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-codex
 dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-claude-code
 ```
 
-pnpm 操作成功后只会改变磁盘上的 Profile manifest 与 Bundle 列表；正在运行的 Profile 会保留本次启动时的 Bundle 集合。添加、移除或更新 Bundle 后须重启该 Profile。这个启动边界只适用于 Bundle 成员变化，Profile 或 home 中普通 `cordis.patch.yml` 的编辑通过热重载生效。下一次启动时，每个已安装的产品 Bundle 只注册自己的休眠 Host provider，不会启动产品进程。Codex provider 会从 `PATH` 解析宿主 `codex`；Claude Code Bundle 则会安装锁定的 Agent SDK 与一个匹配的私有平台 CLI，只使用该 CLI，并且绝不会回退到宿主 `claude`。两个产品的身份验证与原生设置仍由用户管理；[Claude Code provider README](../../../packages/subagent/subagent-claude-code/README.md)会披露当前平台载荷体积与载荷缺失时的失败行为。完整 Agent Preset 中的两个产品工具行仍默认禁用，因此还须在复制出的 Preset 中单独启用对应行，新 Agent 才能看到该工具。只安装一个 provider 不会安装另一个产品包；默认 dsh 依赖闭包不包含任一 provider，也不包含 Claude Agent SDK 或其平台载荷。
+pnpm 操作成功后只会改变磁盘上的 Profile manifest 与 Bundle 列表；正在运行的 Profile 会保留本次启动时的 Bundle 集合。添加、移除或更新 Bundle 后须重启该 Profile。这个启动边界只适用于 Bundle 成员变化，Profile 或 home 中普通 `cordis.patch.yml` 的编辑通过热重载生效。下一次启动时，已安装的包只注册休眠的 Host provider，不会启动 Claude 进程。该 Bundle 会安装锁定的 Agent SDK 与一个匹配的私有平台 CLI，只使用该 CLI，并且绝不会回退到宿主 `claude`。Claude 的身份验证与原生设置仍由用户管理；[Claude Code provider README](../../../packages/subagent/subagent-claude-code/README.md)会披露当前平台载荷体积与载荷缺失时的失败行为。完整 Agent Preset 中的两个产品工具行仍默认禁用，因此还须在复制出的 Preset 中单独启用 Claude Code 行，新 Agent 才能看到该工具。Codex provider 仍须作为 Host 插件显式挂载，并从 `PATH` 解析 `codex`；默认 dsh 依赖闭包不包含任一 provider，也不包含 Claude Agent SDK 或其平台载荷。
 
 ```sh
 dsh plugin --profile tui add github:deepseek-harness/turtle-ui

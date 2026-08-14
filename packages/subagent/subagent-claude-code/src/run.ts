@@ -257,14 +257,24 @@ export async function startClaudeCodeRun(
         spawnError = thrown(childError)
       }
 
-      if (cancelledBeforeCleanup || isAborted(request.signal)) {
-        throw new Error('subagent-claude-code: request was aborted before SDK startup')
-      }
+      const cancelled = cancelledBeforeCleanup || isAborted(request.signal)
       if (closeError !== undefined) {
+        const failures = cancelled
+          ? [
+            new Error('subagent-claude-code: request was aborted before SDK startup'),
+            spawnError,
+            closeError,
+          ]
+          : [spawnError, closeError]
         throw new AggregateError(
-          [spawnError, closeError],
-          `subagent-claude-code: Claude Code process startup failed: ${spawnError.message}; query cleanup also failed`,
+          failures,
+          cancelled
+            ? `subagent-claude-code: request was aborted before SDK startup; Claude Code process startup also failed: ${spawnError.message}; query cleanup also failed`
+            : `subagent-claude-code: Claude Code process startup failed: ${spawnError.message}; query cleanup also failed`,
         )
+      }
+      if (cancelled) {
+        throw new Error('subagent-claude-code: request was aborted before SDK startup')
       }
       throw spawnError
     }

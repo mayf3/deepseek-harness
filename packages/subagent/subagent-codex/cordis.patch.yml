@@ -1,6 +1,0 @@
-# This optional Profile layer registers the dormant Codex provider. Agent
-# presets separately decide whether one session receives its delegation tool.
-
-- insert:
-    - id: subagent-codex
-      name: '@deepseek-ai/dsh-subagent-codex'

@@ -945,6 +945,34 @@ describe('run publication, cancellation, and settlement', () => {
     )).rejects.toThrow('aborted before SDK startup')
     expect(cancelledFailedClose).toHaveBeenCalledOnce()
 
+    const cancelledFailedSpawnCloseError = new Error('cancelled query close failed')
+    const cancelledFailedSpawnClose = vi.fn(() => {
+      throw cancelledFailedSpawnCloseError
+    })
+    const cancelledFailedSpawnWithCloseFailure = fakeChild({
+      pid: -1,
+      doneError: spawnError,
+    })
+    const failedSpawnAbortWithCloseFailure = new AbortController()
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      failedSpawnAbortWithCloseFailure.abort(new Error('startup cancelled'))
+      return queryFrom([], undefined, cancelledFailedSpawnClose)
+    })
+    const cancelledWithCloseFailure = startClaudeCodeRun(
+      request(undefined, failedSpawnAbortWithCloseFailure.signal),
+      { ...unused.spec, spawn: () => cancelledFailedSpawnWithCloseFailure.handle },
+    )
+    await expect(cancelledWithCloseFailure).rejects.toMatchObject({
+      message: 'subagent-claude-code: request was aborted before SDK startup; Claude Code process startup also failed: spawn /sdk/claude EACCES; query cleanup also failed',
+      errors: [
+        expect.objectContaining({ message: 'subagent-claude-code: request was aborted before SDK startup' }),
+        spawnError,
+        cancelledFailedSpawnCloseError,
+      ],
+    })
+    expect(cancelledFailedSpawnClose).toHaveBeenCalledOnce()
+
     const failedSpawnCloseError = new Error('query close failed')
     const failedSpawnClose = vi.fn(() => { throw failedSpawnCloseError })
     const failedSpawnWithCloseFailure = fakeChild({

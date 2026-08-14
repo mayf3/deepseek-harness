@@ -27,26 +27,15 @@
 
 生产环境会从 `PATH` 中解析 `codex`，并使用宿主机原生的 Codex 配置与身份验证。本插件不安装 Codex、不选择模型、不创建 `CODEX_HOME`、不执行登录，也不探测版本。子进程 seam 会移除具有凭证特征的环境变量，因此供子进程使用的 API 密钥必须在 `env` 中显式提供；除非被覆盖，`PATH` 和 `HOME` 等普通环境变量值仍然可用。
 
-本包是可选的 Profile Bundle。将它安装进目标 Profile 后重启该 Profile；包所声明的 `cordis.patch.yml` 层只注册休眠的 `codex` Host provider，不会启动 Codex 进程。移除该包后，下一次 Profile 启动会撤回这一 provider。
-
-```sh
-dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-codex
-dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-codex
-dsh --profile <name>
-```
-
-安装决定 Host 可用性，而不是模型权限。完整 Agent Preset 携带下列工具行并设置 `disabled: true`；复制一个 preset 后删除该字段，即可只向由该副本组装的新 agent 暴露 `subagent_codex`。Profile 自己的 patch 可以替换 Bundle 行的完整 `config`，而自定义 Host 组合仍可直接挂载本包。
+随附 profile 会在宿主上加载一次该提供方，而且在工具被调用前不会启动 Codex 进程。完整 Agent Preset 携带下列工具行并设置 `disabled: true`；复制一个 preset 后删除该字段，即可只向由该副本组装的 agent 暴露 `subagent_codex`。自定义宿主组装仍可直接使用两条配置行。
 
 ```yaml
-# $DSH_HOME/profiles/<name>/cordis.patch.yml (optional provider override)
 - id: subagent-codex
+  name: '@deepseek-ai/dsh-subagent-codex'
   config:
     env:
       OPENAI_API_KEY: !!js process.env.OPENAI_API_KEY
-```
 
-```yaml
-# A copied Agent Preset; remove `disabled` to grant this tool.
 - id: tool-subagent-codex
   name: '@deepseek-ai/dsh-tool-subagent'
   disabled: true

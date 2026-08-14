@@ -201,8 +201,8 @@
     # Product providers are host-plane singletons. Copy this preset, then
     # remove `disabled` from either ordinary tool row to expose that product
     # only to agents composed from the copy.
-    # Install the matching optional Provider Bundle in this Profile and restart
-    # the Host before enabling either template. Installation alone grants no tool.
+    # Install the optional Claude Code Provider Bundle in this Profile and restart
+    # the Host before enabling its template. Installation alone grants no tool.
     - id: tool-subagent-codex
       name: '@deepseek-ai/dsh-tool-subagent'
       disabled: true

@@ -123,14 +123,14 @@ After a clean mount-validation, ask the user to start a session on the new prese
 
 ## Native product subagents
 
-Codex and Claude Code providers are optional Profile Bundles. Install only the products the Profile needs, then restart the Profile so its Host registers those providers:
+The Claude Code provider is an optional Profile Bundle. Install it only in Profiles that need it, then restart the Profile so its Host registers the provider:
 
 ```sh
-dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-codex
 dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-claude-code
+dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-claude-code
 ```
 
-The Bundle owns Host availability; the preset separately grants one Agent its ordinary delegation tool. Never move a product provider into the preset and never add a product-specific settings field. Removing either package with `dsh plugin --profile <name> remove <package>` withdraws only that provider on the next Profile start.
+The Bundle owns Claude Code Host availability; the preset separately grants one Agent its ordinary delegation tool. Never move a product provider into the preset and never add a product-specific settings field. Removing the package withdraws the provider on the next Profile start.
 
 Copy these disabled templates from a shipped full preset and remove `disabled` only for the products the user requested:
 
@@ -154,7 +154,7 @@ Copy these disabled templates from a shipped full preset and remove `disabled` o
     maxDepth: provider-managed
 ```
 
-The two rows are independent. Leaving both disabled preserves the copied preset, enabling one exposes only an installed matching provider, and enabling both exposes the installed intersection. The host must provide `codex` on `PATH` for the Codex provider. The Claude Code Bundle installs and exclusively uses the matching platform CLI selected by its pinned Agent SDK; it does not inspect or fall back to a host `claude`, and a missing optional payload fails the first delegation. Neither Bundle nor the preset starts a product during composition, authenticates an account, selects a model, probes credentials, or manages native product settings.
+The two rows are independent. The Claude Code row becomes available only when its Bundle is installed; the Codex row still requires a deployment whose Host composition registers that provider and whose `PATH` supplies `codex`. The Claude Code Bundle installs and exclusively uses the matching platform CLI selected by its pinned Agent SDK; it does not inspect or fall back to a host `claude`, and a missing optional payload fails the first delegation. Neither installing the Claude Code Bundle nor composing either preset row starts a product, authenticates an account, selects a model, probes credentials, or manages native product settings.
 
 ## What not to move into a preset
 

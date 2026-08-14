@@ -27,26 +27,15 @@ The provider advertises no optional start-time capabilities and reports `inherit
 
 Production resolves `codex` from `PATH` and uses the host's native Codex configuration and authentication. The plugin does not install Codex, select a model, create `CODEX_HOME`, log in, or probe a version. Credential-shaped ambient variables are removed by the subprocess seam, so an API key intended for the child must be supplied explicitly in `env`; ordinary ambient values such as `PATH` and `HOME` remain available unless overridden.
 
-This package is an optional Profile Bundle. Install it into the target Profile, then restart that Profile; its declared `cordis.patch.yml` layer registers only the dormant `codex` Host provider and starts no Codex process. Removing the package withdraws that provider on the next Profile start.
-
-```sh
-dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-codex
-dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-codex
-dsh --profile <name>
-```
-
-Installation controls Host availability, not model permission. Full Agent Presets carry the tool row below with `disabled: true`; copy a preset and remove that field to expose `subagent_codex` only to new agents composed from the copy. The Profile's own patch can replace the Bundle row's complete `config`, while a custom Host composition can still mount the package directly.
+Shipped profiles load this provider once on the host and start no Codex process until a tool call. Full Agent Presets carry the tool row below with `disabled: true`; copy a preset and remove that field to expose `subagent_codex` only to agents composed from the copy. A custom host composition can still use both rows directly.
 
 ```yaml
-# $DSH_HOME/profiles/<name>/cordis.patch.yml (optional provider override)
 - id: subagent-codex
+  name: '@deepseek-ai/dsh-subagent-codex'
   config:
     env:
       OPENAI_API_KEY: !!js process.env.OPENAI_API_KEY
-```
 
-```yaml
-# A copied Agent Preset; remove `disabled` to grant this tool.
 - id: tool-subagent-codex
   name: '@deepseek-ai/dsh-tool-subagent'
   disabled: true

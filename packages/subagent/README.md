@@ -18,7 +18,7 @@ This family lets an agent delegate work to child agents. Multiple named provider
 | [`tool-subagent-control/`](tool-subagent-control/README.md) | Exposes child messaging and listing to the model | registers on `ctx.tools` |
 | [`tool-subagent-report/`](tool-subagent-report/README.md) | Provides the child-to-parent report channel | registers in child scopes |
 
-The Codex and Claude Code packages are also independent Profile Bundles. Install either or both with `dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-codex @deepseek-ai/dsh-subagent-claude-code`, then restart that Profile; each installed package registers only its own dormant Host provider. Full Agent Presets keep separate disabled tool templates, so installation alone exposes no model tool. Removing one package withdraws only that provider on the next Profile start.
+The Claude Code package is also an optional Profile Bundle. Install it with `dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-claude-code`, then restart that Profile; the package registers only its dormant Host provider, while a copied Agent Preset separately grants the disabled tool template to new Sessions. Removing the package withdraws that provider on the next Profile start. The Codex package remains an explicitly mounted Host plugin and uses a host `codex` from `PATH`.
 
 See the decisions for the [capability family](../../.agents/notes/implemented/feature/2026-06-21-subagent-capability-seam.md), [continuable children](../../.agents/notes/implemented/feature/2026-07-21-continuable-background-subagents.md), and [control tools](../../.agents/notes/implemented/simplification/2026-07-26-merge-subagent-control-service.md).
 

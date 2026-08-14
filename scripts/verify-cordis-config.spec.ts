@@ -117,16 +117,11 @@ describe('workspace Bundle discovery and product dependency closures', () => {
     ])
   })
 
-  it('keeps the default and two optional product closures independent', () => {
+  it('keeps the default and optional Claude Code closure independent', () => {
     const shipped = productionClosure('@deepseek-ai/dsh')
     expect(shipped).not.toContain('@deepseek-ai/dsh-subagent-codex')
     expect(shipped).not.toContain('@deepseek-ai/dsh-subagent-claude-code')
     expect(shipped).not.toContain('@anthropic-ai/claude-agent-sdk')
-
-    const codex = productionClosure('@deepseek-ai/dsh-subagent-codex')
-    expect(codex).toContain('@deepseek-ai/dsh-sdk-protocol')
-    expect(codex).not.toContain('@deepseek-ai/dsh-subagent-claude-code')
-    expect(codex).not.toContain('@anthropic-ai/claude-agent-sdk')
 
     const claudeCode = productionClosure('@deepseek-ai/dsh-subagent-claude-code')
     expect(claudeCode).toContain('@anthropic-ai/claude-agent-sdk')
