@@ -67,6 +67,7 @@ const GROUP_ORDER = [
   'core',
   'typert',
   'goal',
+  'team',
   'process',
   'bash',
   'pty',
@@ -468,6 +469,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     implementations: ['subagent-spawn-in-process', 'subagent-fork-in-process', 'subagent-acp', 'subagent-codex', 'subagent-claude-code', 'subagent-dsh-sdk'],
     consumers: ['tool-subagent', 'tool-subagent-control', 'tool-ralph'],
     note: 'Providers implement transports; the service also owns optional Activation-based continuation orchestration, tool-subagent selects one-shot or continuable delegation, tool-subagent-control delivers follow-ups, and tool-ralph requires one fresh structured-output route.',
+  },
+  {
+    key: 'teams',
+    pkg: 'team',
+    title: 'Agent Teams coordination domain',
+    mode: 'core',
+    consumers: ['tool-team'],
+    note: 'Owns the implicit-root roster, durable peer mailbox, shared task DAG, and continuable-child lifecycle; tool-team contributes the scoped model policy and controls.',
   },
   {
     key: 'jobs',

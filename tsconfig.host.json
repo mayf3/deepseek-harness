@@ -266,6 +266,8 @@
     { "path": "./packages/jobs/jobs" },
     { "path": "./packages/jobs/jobs-local" },
     { "path": "./packages/jobs/tool-jobs" },
+    { "path": "./packages/team/team" },
+    { "path": "./packages/team/tool-team" },
     { "path": "./packages/workflow/workflow" },
     { "path": "./packages/workflow/workflow-worker-thread" },
     { "path": "./packages/workflow/tool-workflow" },

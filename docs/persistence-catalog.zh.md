@@ -708,6 +708,65 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent/subagent/src/descriptor.ts)
 
+### `team/*`
+
+<a id="teammember--log-only"></a>
+
+#### `team/member` — log-only
+
+```ts persistence-catalog
+/** Whole teammate lifecycle value, stored only in the Team Lead Session. */
+'team/member': { version: 1; teamId: TeamId; member: TeamMemberSnapshot }
+```
+
+类型：[TeamId](subsystems/team.md) · [TeamMemberSnapshot](subsystems/team.md)
+
+来源：[`packages/team/team/src/types.ts:206`](../packages/team/team/src/types.ts)
+
+<a id="teammessagedelivered--log-only"></a>
+
+#### `team/message/delivered` — log-only
+
+```ts persistence-catalog
+/** Durable acknowledgement that the target Session recorded the message. */
+'team/message/delivered': {
+  version: 1
+  teamId: TeamId
+  messageId: TeamMessageId
+  targetId: SessionId
+}
+```
+
+类型：[TeamId](subsystems/team.md) · [TeamMessageId](subsystems/team.md)
+
+来源：[`packages/team/team/src/types.ts:212`](../packages/team/team/src/types.ts)
+
+<a id="teammessagequeued--log-only"></a>
+
+#### `team/message/queued` — log-only
+
+```ts persistence-catalog
+/** Durable mailbox enqueue, stored before delivery is attempted. */
+'team/message/queued': { version: 1; teamId: TeamId; message: TeamMessageSnapshot }
+```
+
+类型：[TeamId](subsystems/team.md) · [TeamMessageSnapshot](subsystems/team.md)
+
+来源：[`packages/team/team/src/types.ts:210`](../packages/team/team/src/types.ts)
+
+<a id="teamtask--log-only"></a>
+
+#### `team/task` — log-only
+
+```ts persistence-catalog
+/** Whole shared-task value, stored only in the Team Lead Session. */
+'team/task': { version: 1; teamId: TeamId; task: TeamTaskSnapshot }
+```
+
+类型：[TeamId](subsystems/team.md) · [TeamTaskSnapshot](subsystems/team.md)
+
+来源：[`packages/team/team/src/types.ts:208`](../packages/team/team/src/types.ts)
+
 ### `todo/*`
 
 <a id="todowrite--log-only"></a>
