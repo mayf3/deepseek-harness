@@ -23,11 +23,18 @@
  * as a file, so the polyfill in the published `dist` is build glue in the same
  * category as an emitted TypeScript helper, not a redistributed copy of Vite.
  *
+ * The pass runs on a clean tree, as a static gate must. The shell's Vite config
+ * aliases a few workspace packages to source; every other workspace name would
+ * resolve through `node_modules` to a `lib/` entry the real build has emitted but
+ * a clean checkout has not, so this module resolves those names to their own
+ * source instead. `lib/` is compiled from `src/`, so the third-party edges the
+ * pass records are the same either way.
+ *
  * rolldown is resolved through tsdown deliberately: the dry run must use the
  * exact bundler the real build uses, which a separate root pin could drift from.
  */
 
-import { globSync, readFileSync } from 'node:fs'
+import { existsSync, globSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 
@@ -65,13 +72,49 @@ function packageOfFile(file: string): string | undefined {
 }
 
 /**
+ * Source aliases for the workspace packages the shell does not already alias.
+ *
+ * A clean checkout has no `lib/`, so a workspace name would otherwise resolve
+ * through `node_modules` to an entry that does not exist yet. Aliases are the
+ * right seam rather than a plugin hook, because Vite resolves a stylesheet
+ * `@import` through them too — the theme package publishes its stylesheets from
+ * `lib/styles/`. `lib/` is compiled from `src/`, so the third-party edges the
+ * pass records are the same either way.
+ * @param root - repository root.
+ * @param existing - the shell's own alias patterns, whose entry choices win.
+ * @returns alias entries mapping each remaining workspace name to its source.
+ */
+function workspaceSourceAliases(root: string, existing: readonly string[]): { find: RegExp | string; replacement: string }[] {
+  const aliases: { find: RegExp | string; replacement: string }[] = []
+  for (const pattern of ['packages/*/*/package.json', 'vendor/*/package.json']) {
+    for (const relative of globSync(pattern, { cwd: root })) {
+      const dir = join(root, dirname(relative))
+      const manifest = JSON.parse(readFileSync(join(root, relative), 'utf8')) as Manifest & { name?: string }
+      const name = manifest.name
+      if (name === undefined || !existsSync(join(dir, 'src'))) continue
+      if (existing.some(find => find.includes(name))) continue
+      const root_ = manifest.exports?.['.']
+      const target = typeof root_ === 'string' ? root_ : root_?.default
+      const stem = (target ?? './lib/index.js')
+        .replace(/^\.\/lib\/types\//, '').replace(/^\.\/lib\//, '').replace(/\.js$/, '')
+      const entry = [`${stem}.ts`, `${stem}.tsx`, `${stem}/index.ts`, `${stem}/index.tsx`]
+        .map(candidate => join(dir, 'src', candidate))
+        .find(candidate => existsSync(candidate))
+      // The subpath prefix carries `./client`, `./types`, and `./styles/*` alike:
+      // each published subpath mirrors a path under `src/`.
+      aliases.push({ find: `${name}/`, replacement: `${join(dir, 'src')}/` })
+      if (entry !== undefined) aliases.push({ find: new RegExp(`^${name.replaceAll('/', '\\/')}$`), replacement: entry })
+    }
+  }
+  return aliases
+}
+
+/**
  * Build the plugin that records bare specifiers and stops the walk at them.
  * @param seen - set the recorder adds package names to.
- * @param followWorkspace - leave `@deepseek-ai/*` to the host resolver instead of
- * externalizing it, so the walk continues into our own source.
  * @returns the recording plugin.
  */
-function recorder(seen: Set<string>, followWorkspace: boolean): RecorderPlugin {
+function recorder(seen: Set<string>): RecorderPlugin {
   return {
     name: 'dsh-record-direct-externals',
     enforce: 'pre',
@@ -79,7 +122,9 @@ function recorder(seen: Set<string>, followWorkspace: boolean): RecorderPlugin {
       if (importer === undefined) return null // the entry itself
       if (source.startsWith('.') || source.startsWith('/') || source.startsWith('\0')) return null
       if (source.startsWith('virtual:') || source.includes('?')) return null
-      if (followWorkspace && source.startsWith('@deepseek-ai/')) return null
+      // A workspace name that reaches here is one no alias mapped to source, so
+      // nothing of ours is left to walk; it is never a third-party disclosure.
+      if (source.startsWith('@deepseek-ai/')) return { id: source, external: true }
       if (source.startsWith('node:')) return { id: source, external: true }
       if (!source.startsWith('@deepseek-ai/')) {
         const resolved = await this.resolve(source, importer, { skipSelf: true })
@@ -92,7 +137,7 @@ function recorder(seen: Set<string>, followWorkspace: boolean): RecorderPlugin {
 }
 
 interface Manifest {
-  exports?: Record<string, { default?: unknown } | string | null>
+  exports?: Record<string, { default?: string } | string | null>
   files?: string[]
 }
 
@@ -135,7 +180,7 @@ async function collectFromClientBundles(root: string, seen: Set<string>): Promis
     const bundle = await rolldown({
       cwd: dir,
       input: client.entry,
-      plugins: [recorder(seen, false), ...(client.plugins ?? [])],
+      plugins: [recorder(seen), ...(client.plugins ?? [])],
       platform: 'browser',
     })
     await bundle.generate({ format: 'cjs', minify: false, sourcemap: false })
@@ -152,13 +197,21 @@ async function collectFromShellBundle(root: string, seen: Set<string>): Promise<
   for (const relative of globSync('apps/*/vite.config.ts', { cwd: root }).sort()) {
     const dir = join(root, dirname(relative))
     // Vite belongs to the app that builds with it, so it resolves from there.
-    const { build } = await import(createRequire(join(dir, 'package.json')).resolve('vite')) as {
+    const { build, resolveConfig } = await import(createRequire(join(dir, 'package.json')).resolve('vite')) as {
       build: (options: Record<string, unknown>) => Promise<unknown>
+      resolveConfig: (options: Record<string, unknown>, command: string) => Promise<{
+        resolve: { alias: { find: string | RegExp }[] }
+      }>
     }
+    // The shell already aliases some workspace names to source, and its entry
+    // choices win: a stylesheet `@import` resolves through aliases rather than a
+    // plugin hook, so only the names it leaves out get one from here.
+    const resolved = await resolveConfig({ root: dir, logLevel: 'error' }, 'build')
     await build({
       root: dir,
       logLevel: 'error',
-      plugins: [recorder(seen, true)],
+      plugins: [recorder(seen)],
+      resolve: { alias: workspaceSourceAliases(root, resolved.resolve.alias.map(entry => String(entry.find))) },
       build: { write: false, minify: false, sourcemap: false, reportCompressedSize: false },
     })
   }
