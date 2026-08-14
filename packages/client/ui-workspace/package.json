@@ -45,17 +45,13 @@
     "watch": "tsdown --watch"
   },
   "license": "MIT",
-  "dependencies": {
-    "clsx": "^2.0.0"
-  },
   "peerDependencies": {
     "@deepseek-ai/dsh-client-locale": "workspace:^",
     "@deepseek-ai/dsh-client-runtime": "workspace:^",
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
-    "react": "^18.2.0"
+    "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-client-locale": "workspace:^",
@@ -68,7 +64,8 @@
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@types/react": "~18.3.1",
     "@deepseek-ai/cordis": "workspace:^",
-    "react": "^18.2.0"
+    "react": "^18.2.0",
+    "clsx": "^2.0.0"
   },
   "files": [
     "lib/index.js",

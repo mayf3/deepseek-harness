@@ -55,8 +55,7 @@
     "@deepseek-ai/dsh-commands": "workspace:^",
     "@deepseek-ai/dsh-goal": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
-    "react": "^18.2.0"
+    "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-client-locale": "workspace:^",

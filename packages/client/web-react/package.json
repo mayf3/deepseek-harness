@@ -27,9 +27,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
-    "react": "^18.2.0",
-    "use-sync-external-store": "1.2.0"
+    "@deepseek-ai/dsh-client-ui-slots": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-invariants": "workspace:^",
@@ -38,7 +36,9 @@
   "devDependencies": {
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@types/react": "~18.3.1",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "react": "^18.2.0",
+    "use-sync-external-store": "1.2.0"
   },
   "files": [
     "lib/index.js",

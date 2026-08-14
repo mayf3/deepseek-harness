@@ -44,10 +44,6 @@
     "watch": "tsdown --watch"
   },
   "license": "MIT",
-  "dependencies": {
-    "@tanstack/react-virtual": "^3.14.9",
-    "diff": "^9.0.0"
-  },
   "peerDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-client-locale": "workspace:^",
@@ -56,9 +52,7 @@
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-compaction": "workspace:^",
-    "@deepseek-ai/dsh-tools": "workspace:^",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "@deepseek-ai/dsh-tools": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:^",
@@ -75,7 +69,9 @@
     "@types/react-dom": "~18.3.0",
     "@deepseek-ai/cordis": "workspace:^",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@tanstack/react-virtual": "^3.14.9",
+    "diff": "^9.0.0"
   },
   "files": [
     "lib/index.js",
