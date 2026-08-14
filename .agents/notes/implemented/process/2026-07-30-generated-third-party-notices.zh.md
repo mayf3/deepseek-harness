@@ -26,8 +26,6 @@ Status: implemented
 
 manifest 集合由根 `pnpm-workspace.yaml` 声明的 `packages:` 成员派生，其中包括 Landlock 工作区及其公开包，因此新增成员区域在声明当天就会被读取，而不必等谁想起来去补一份列表。许可证与仓库地址取自根工作区已安装的 pnpm store 和包本地链接场；某个包两处都解析不到时直接失败，而不是留下空单元格。`OVERRIDES` 收录已发布 manifest 答不上来的包：用 Rust 构建、发布时省略 `license` 字段的 npm 可执行包，以及 `modelcontextprotocol/servers` 系列——该仓库正处在 MIT 向 Apache-2.0 的重新许可过程中，实际条款按贡献逐条而定。运行时依赖的许可证若不在宽松清单内即为硬失败：交付 copyleft 是一项分发决策，不该被一次重新生成悄悄吸收。被源码收编的包会与 `vendor/README.md` 交叉核对，出现非 MIT 即报错；`pnpm-workspace.yaml` 的 `patchedDependencies` 列入运行时表格，因为 pnpm 在安装期就会打上这些补丁——交付产物携带的是改动过的 `@earendil-works/pi-tui` 与 `node-pty`，补丁文件本身就是改动的完整记录。
 
-**被已发布产物带上的包，无论由哪个区段声明都算 runtime。** 浏览器侧是构建出来的，不是解析出来的：tsdown 把每个非平台 specifier 内联进插件的 `lib/client.js`，Vite 把 shell 的 import 内联进 `@deepseek-ai/dsh-web-frontend` 的 `dist`。因此这些包声明在 `devDependencies`——落位规则归 [客户端构建期依赖那篇](../../proposed/process/2026-08-14-client-build-time-deps.md)——但它们各自都有一份副本被分发出去，所以 react、shiki、katex 与整条 markdown 管线必须留在 runtime 档。到底是哪些包，由 [`scripts/browser-bundled-externals.ts`](../../../../scripts/browser-bundled-externals.ts) 从构建本身取答案：它用各包自己的 `tsdown.config.ts` 驱动每个 client bundle，用 `apps/web` 的 Vite 配置驱动 shell，挂一个记录用插件把每个 bare specifier 解析成 external 并记下来。这一趟只走本仓自己的源码、到包边界即停，约三秒，且给出的正是本文件披露的「直接依赖」粒度。一个 specifier 只有在宿主把它解析到某个包内的文件之后才被计入，所以打包器自己的虚拟模块不会被误当成随产物分发的包：`vite/modulepreload-polyfill` 由 Vite 插件生成而非作为文件发布，因此 `dist` 里那段 polyfill 与 TypeScript 生成的辅助代码同类，属于构建胶水。用真配置而不是一张人工名单，白拿两个手写名单没有的性质：被擦除的类型 import 永远不会出现，因为 transform 在解析前就删了它；某个包最后一处浏览器 import 消失时，它也立刻不再被披露成随产物分发。workspace 名字只在 Vite 那侧继续走，因为 shell 的 alias 会把它们映射到源码——浏览器库包自己的 import，比如 `ui-primitives` 的 katex 与 shiki，正是这样才可见的。 只发布类型声明的包一律算 development-only，无论哪个已发布包具名了它：它不贡献任何被分发的代码，而 dry-run 本来也看不见被擦除的类型 import——transform 在解析前就删了它。`@types/mdast` 与 `micromark-util-types` 正是因此落到该档。
-
 项目所有者另行授权分发每个官方 `@anthropic-ai/claude-agent-sdk` 版本，以及该版本通过 `optionalDependencies` 声明的官方 Claude Code CLI 与平台载荷。生成器将其表示为一项精确匹配直接包身份的例外，而非宽松许可证覆盖项：`SEE LICENSE IN README.md` 与 `SEE LICENSE IN LICENSE.md` 仍归类为非宽松，所有无关的非宽松运行时依赖仍以默认拒绝方式失败。存在该 SDK 时，生成器会读取其已安装 manifest，拒绝不符合官方 SDK 载荷前缀的可选包身份，推导当前 SDK、CLI 与载荷版本，核验已安装宿主载荷的身份、版本和声明许可证字段，并在单独的声明章节中渲染 SDK 声明的完整载荷集合。版本、声明许可证和载荷集合发生变化时无需新的身份授权，但仍须经过常规的依赖、锁文件、兼容性、条款和声明评审。
 
 ## 测试
@@ -54,7 +52,7 @@ Claude 分发测试证明：只有精确匹配的直接 SDK 身份会绕过通�
 
 ## 后果
 
-此后改动依赖时，重新生成的披露文件会随同一个提交入库。触及 manifest 的提交多付一次生成器运行；其余提交不受影响。这次运行从约一秒变成几秒，因为要弄清浏览器产物带了什么就得驱动真实的 client 与 shell 打包器；因此客户端源码坏掉会让这个 hook 失败，而暂存区的 lint job 本来也会失败。若禁用钩子提交，代价推迟为一次测试 lane 失败，其报错会指明补救命令。
+此后改动依赖时，重新生成的披露文件会随同一个提交入库。触及 manifest 的提交多付一次生成器运行——约一秒；其余提交不受影响。若禁用钩子提交，代价推迟为一次测试 lane 失败，其报错会指明补救命令。
 
 生成器需要已安装的依赖树，因此比纯源码生成器更重；发布元数据不可用的新包需要补一条 `OVERRIDES`，而不是默默渲染出空白许可证。这两类失败都会明确报错并指出补救方式。
 

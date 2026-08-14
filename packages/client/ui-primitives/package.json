@@ -26,11 +26,7 @@
     "./package.json": "./package.json"
   },
   "license": "MIT",
-  "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@types/react": "~18.3.1",
-    "@types/react-dom": "~18.3.0",
-    "@deepseek-ai/cordis": "workspace:^",
+  "dependencies": {
     "@shikijs/langs": "^4.3.1",
     "@types/mdast": "^4.0.4",
     "anser": "^2.3.5",
@@ -51,6 +47,12 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "shiki": "^4.3.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0",
+    "@deepseek-ai/cordis": "workspace:^"
   },
   "files": [
     "lib/index.js",
