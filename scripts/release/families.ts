@@ -32,6 +32,28 @@ const PEER_SECTIONS = ['peerDependencies'] as const
 /** The workspace root manifest, which is never a release member. */
 const WORKSPACE_ROOT_PACKAGE = '@deepseek-ai/dsh-root'
 
+/** One peer declaration the publish order leaves unordered. */
+interface DroppedPeerEdge {
+  /** Package declaring the peer. */
+  readonly consumer: string
+  /** The declared peer, which publishes after `consumer` or alongside it in a cycle. */
+  readonly peer: string
+}
+
+/**
+ * A family's publish order together with the ordering it could not honour.
+ *
+ * The dropped edges are part of the result rather than a detail of forming it:
+ * a release drops real ordering constraints, and the operator reading the pack
+ * log is the only one who can judge whether a newly dropped edge is expected.
+ */
+export interface PublishPlan {
+  /** Members in publish order. */
+  readonly order: readonly ReleaseMember[]
+  /** Peer declarations left unordered, in the order the traversal reached them. */
+  readonly droppedPeerEdges: readonly DroppedPeerEdge[]
+}
+
 /** One publishable package of a release family. */
 export interface ReleaseMember {
   /** Repository-relative package directory, for example `packages/core/session`. */
@@ -130,10 +152,12 @@ export abstract class ReleaseFamily {
    * dropped where honouring one would deadlock: sibling packages declare each
    * other as peers, and npm treats an unmet peer as a warning rather than a
    * resolution failure ([rationale](../../.agents/notes/implemented/process/2026-08-10-npm-release-sequences.md)).
+   * Every dropped edge is reported, because dropping one is a decision about a
+   * real release rather than an implementation detail.
    * @param members - this family's members.
-   * @returns The same members in publish order; ties break by name for determinism.
+   * @returns The order, ties broken by name for determinism, and the peer edges it left unordered.
    */
-  publishOrder(members: readonly ReleaseMember[]): ReleaseMember[] {
+  publishOrder(members: readonly ReleaseMember[]): PublishPlan {
     const byName = new Map(members.map(member => [member.name, member]))
     const byNameSorted = [...members].sort((left, right) => left.name.localeCompare(right.name))
     const edges = (member: ReleaseMember, sections: readonly string[]): ReleaseMember[] =>
@@ -159,6 +183,7 @@ export abstract class ReleaseFamily {
     // Emit the order over both kinds of edge. A node already on the stack is a
     // cycle only peer edges can form, and skipping it drops just that edge.
     const ordered: ReleaseMember[] = []
+    const droppedPeerEdges: DroppedPeerEdge[] = []
     const placed = new Set<string>()
     const onStack = new Set<string>()
     // Members reachable from one member through install edges. A peer edge is
@@ -181,7 +206,13 @@ export abstract class ReleaseFamily {
       onStack.add(member.name)
       for (const dependency of edges(member, INSTALL_SECTIONS)) visit(dependency)
       for (const peer of edges(member, PEER_SECTIONS)) {
-        if (installClosure(peer).has(member.name)) continue
+        if (installClosure(peer).has(member.name)) {
+          droppedPeerEdges.push({ consumer: member.name, peer: peer.name })
+          continue
+        }
+        // A peer already on the stack is an ancestor, so it publishes after this
+        // member rather than before it: the edge is dropped, not honoured.
+        if (onStack.has(peer.name)) droppedPeerEdges.push({ consumer: member.name, peer: peer.name })
         visit(peer)
       }
       onStack.delete(member.name)
@@ -190,7 +221,25 @@ export abstract class ReleaseFamily {
       ordered.push(member)
     }
     for (const member of byNameSorted) visit(member)
-    return ordered
+
+    // A cycle mixing both kinds of edge can put an install edge's target on the
+    // stack, where the traversal skips it like a peer edge and emits a consumer
+    // before something it installs. Nothing downstream can detect that, and it
+    // would only surface as an unresolvable install for whoever consumes the
+    // published packages, so the emitted order is checked against the edges it
+    // exists to honour.
+    const position = new Map(ordered.map((entry, index) => [entry.name, index]))
+    for (const [index, member] of ordered.entries()) {
+      for (const dependency of edges(member, INSTALL_SECTIONS)) {
+        const dependencyIndex = position.get(dependency.name)
+        if (dependencyIndex !== undefined && dependencyIndex < index) continue
+        throw new Error(
+          `release family ${this.id}: no publish order honours ${member.name} -> ${dependency.name};`
+          + ' a cycle mixing peer and dependency declarations reaches this dependency through a peer edge',
+        )
+      }
+    }
+    return { order: ordered, droppedPeerEdges }
   }
 
   /**
