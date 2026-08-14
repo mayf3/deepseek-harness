@@ -84,8 +84,8 @@ suite('persistent Bash through a real cordis.yml Loader composition', () => {
       '  config:',
       '    pollIntervalMs: 10',
       '    exactProbeAfterMs: 20',
-      '    idleSilenceMs: 100',
-      '    handoffGraceMs: 100',
+      '    idleSilenceMs: 3000',
+      '    handoffGraceMs: 500',
       '    scrollbackLines: 20000',
       '    timeoutMs: 2000',
       '    disposeGraceMs: 500',
@@ -131,7 +131,9 @@ suite('persistent Bash through a real cordis.yml Loader composition', () => {
     })
 
     expect(context.tools.schemas().map(schema => schema.name)).toEqual(['bash'])
+    const startedAt = Date.now()
     await execute('state', 'export KEEP=loader; mkdir -p nested; cd nested')
+    expect(Date.now() - startedAt).toBeLessThan(2_000)
     const observed = text(await execute('observe', 'printf "cwd=%s keep=%s\\n" "$PWD" "$KEEP"'))
     expect(observed).toContain(`cwd=${join(root, 'nested')} keep=loader`)
     expect(observed).not.toContain('DSH_PERSISTENT_BASH')

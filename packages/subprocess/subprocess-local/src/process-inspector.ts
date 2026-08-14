@@ -13,9 +13,9 @@ export interface ProcessIdentity {
 /** Injectable OS process operations used by one local PTY session. */
 export interface ProcessInspector {
   foregroundPgid(shellPid: number): number | undefined
-  isStdinWaiting(pgid: number): boolean
+  isStdinWaiting(pgid: number, scanNamespace?: boolean): boolean
   /** Return the root and its current transitive descendants, children first. */
-  processTree(rootPid: number): ProcessIdentity[]
+  processTree(rootPid: number, scanNamespace?: boolean): ProcessIdentity[]
   /** Return current members of one POSIX process session when the platform exposes them. */
   processSession(sessionId: number): ProcessIdentity[]
   /** Return whether the exact identity remains a non-quiescent process. */
@@ -226,12 +226,26 @@ function syscallWaitsOnStdin(
   return false
 }
 
+function processWaitsOnStdin(
+  internals: ProcessInspectorInternals,
+  pid: number,
+  processGroupId: number,
+  table: SyscallTable,
+): boolean {
+  if (readLinuxStat(internals, pid)?.pgrp !== processGroupId) return false
+  for (const tid of numericEntries(internals, `/proc/${pid}/task`)) {
+    const syscall = readSyscall(internals, pid, tid)
+    if (syscall !== undefined && syscallWaitsOnStdin(internals, pid, syscall, table)) return true
+  }
+  return false
+}
+
 abstract class PosixProcessInspector implements ProcessInspector {
   constructor(protected readonly internals: ProcessInspectorInternals) {}
 
   abstract foregroundPgid(shellPid: number): number | undefined
-  abstract isStdinWaiting(pgid: number): boolean
-  abstract processTree(rootPid: number): ProcessIdentity[]
+  abstract isStdinWaiting(pgid: number, scanNamespace?: boolean): boolean
+  abstract processTree(rootPid: number, scanNamespace?: boolean): ProcessIdentity[]
   abstract processSession(sessionId: number): ProcessIdentity[]
   abstract isAlive(identity: ProcessIdentity): boolean
 
@@ -270,6 +284,34 @@ function processTree(entries: ProcessTreeEntry[], rootPid: number): ProcessIdent
   return result
 }
 
+function linuxProcessTreeFromChildren(
+  internals: ProcessInspectorInternals,
+  rootPid: number,
+): ProcessIdentity[] | undefined {
+  const root = readLinuxStat(internals, rootPid)
+  if (root === undefined) return []
+  const visited = new Set<number>()
+  const result: ProcessIdentity[] = []
+  const visit = (entry: ProcStat): boolean => {
+    if (visited.has(entry.pid)) return true
+    visited.add(entry.pid)
+    let children: string
+    try {
+      children = internals.readFile(`/proc/${entry.pid}/task/${entry.pid}/children`)
+    } catch (_unreadableChildren) {
+      return false
+    }
+    for (const token of children.trim().split(/\s+/)) {
+      if (token.length === 0 || !/^\d+$/.test(token)) continue
+      const child = readLinuxStat(internals, Number(token))
+      if (child !== undefined && !visit(child)) return false
+    }
+    result.push({ pid: entry.pid, started: entry.started })
+    return true
+  }
+  return visit(root) ? result : undefined
+}
+
 class LinuxProcessInspector extends PosixProcessInspector {
   constructor(
     private readonly arch: NodeJS.Architecture,
@@ -283,20 +325,32 @@ class LinuxProcessInspector extends PosixProcessInspector {
     return tpgid !== undefined && tpgid > 0 ? tpgid : undefined
   }
 
-  isStdinWaiting(pgid: number): boolean {
+  isStdinWaiting(pgid: number, scanNamespace = true): boolean {
     const table = SYSCALLS[this.arch]
     if (table === undefined) return false
+    // A POSIX process group is normally led by PID == PGID. Interactive shells
+    // wait on stdin in that leader, so inspect it before walking the whole PID
+    // namespace. Large container PID namespaces otherwise make every PTY
+    // readiness poll scan thousands of unrelated processes.
+    if (processWaitsOnStdin(this.internals, pgid, pgid, table)) return true
+    if (!scanNamespace) return false
     for (const pid of numericEntries(this.internals, '/proc')) {
-      if (readLinuxStat(this.internals, pid)?.pgrp !== pgid) continue
-      for (const tid of numericEntries(this.internals, `/proc/${pid}/task`)) {
-        const syscall = readSyscall(this.internals, pid, tid)
-        if (syscall !== undefined && syscallWaitsOnStdin(this.internals, pid, syscall, table)) return true
-      }
+      if (pid === pgid) continue
+      if (processWaitsOnStdin(this.internals, pid, pgid, table)) return true
     }
     return false
   }
 
-  processTree(rootPid: number): ProcessIdentity[] {
+  processTree(rootPid: number, scanNamespace = true): ProcessIdentity[] {
+    // Linux exposes each process's direct children without requiring a scan of
+    // the container's whole PID namespace. Fall back for kernels or procfs
+    // mounts that do not provide the children file.
+    const rooted = linuxProcessTreeFromChildren(this.internals, rootPid)
+    if (rooted !== undefined) return rooted
+    if (!scanNamespace) {
+      const root = readLinuxStat(this.internals, rootPid)
+      return root === undefined ? [] : [{ pid: root.pid, started: root.started }]
+    }
     const entries = numericEntries(this.internals, '/proc').flatMap((pid) => {
       const stat = readLinuxStat(this.internals, pid)
       return stat === undefined ? [] : [{ pid, parentPid: stat.parentPid, started: stat.started }]
@@ -338,11 +392,11 @@ class MacProcessInspector extends PosixProcessInspector {
     }
   }
 
-  isStdinWaiting(_pgid: number): boolean {
+  isStdinWaiting(_pgid: number, _scanNamespace = true): boolean {
     return false
   }
 
-  processTree(rootPid: number): ProcessIdentity[] {
+  processTree(rootPid: number, _scanNamespace = true): ProcessIdentity[] {
     return processTree(macProcessTable(this.internals), rootPid)
   }
 

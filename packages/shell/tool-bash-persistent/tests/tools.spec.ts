@@ -4,7 +4,7 @@ import { CallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import TerminalSessionService from '@deepseek-ai/dsh-terminal'
+import TerminalSessionService, { CONTROLLED_PROMPT } from '@deepseek-ai/dsh-terminal'
 import type {
   TerminalBackend,
   TerminalBackendSession,
@@ -100,7 +100,7 @@ type StubMode =
   | 'paged-scrollback'
 
 class StubPtySession implements TerminalBackendSession {
-  readonly motd = '__DSH_PERSISTENT_BASH_PROMPT__ '
+  readonly motd = CONTROLLED_PROMPT
   readonly pid = 123
   statusValue: TerminalSessionStatus = { kind: 'running' }
   scrollback = this.motd

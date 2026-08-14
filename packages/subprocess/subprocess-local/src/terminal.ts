@@ -57,7 +57,7 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
     private readonly graceMs: number,
   ) {
     this.pid = terminal.pid
-    this.rootIdentity = inspector.processTree(this.pid).find(member => member.pid === this.pid)
+    this.rootIdentity = inspector.processTree(this.pid, false).find(member => member.pid === this.pid)
     this.done = this.outcome.promise
     this.dataDisposable = terminal.onData((data) => { this.output.write(Buffer.from(data, 'utf8')) })
     this.exitDisposable = terminal.onExit(({ exitCode, signal: exitSignal }) => {
@@ -81,12 +81,14 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
   // Local inspection is synchronous; the seam returns a promise for remote transports.
   // oxlint-disable-next-line typescript/require-await -- Preserve promise rejection semantics at the async provider contract.
   async inspectForeground(): Promise<SubprocessTerminalForeground | undefined> {
-    this.descendants()
+    // Readiness polling may run every few milliseconds. Track the rooted tree
+    // here, but reserve the full process-session sweep for teardown.
+    this.descendants(false, false)
     const processGroupId = this.inspector.foregroundPgid(this.pid)
     if (processGroupId === undefined) return undefined
     return {
       processGroupId,
-      inputWaiting: this.inspector.isStdinWaiting(processGroupId),
+      inputWaiting: this.inspector.isStdinWaiting(processGroupId, false),
     }
   }
 
@@ -141,20 +143,22 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
     return members.filter(member => this.inspector.isAlive(member))
   }
 
-  private descendants(): ProcessIdentity[] {
+  private descendants(includeSession = true, scanNamespace = true): ProcessIdentity[] {
     // Adopt newly scanned members only while the numeric root pid provably
     // still carries the spawned shell's start identity: after the shell dies,
     // a recycled pid's tree and session must not donate an unrelated
     // process's children to this session's signalling. Already-adopted
     // members keep their own start identities, which every signal rechecks.
-    const tree = this.inspector.processTree(this.pid)
+    const tree = this.inspector.processTree(this.pid, scanNamespace)
     const root = tree.find(member => member.pid === this.pid)
     const rootVerified = this.rootIdentity !== undefined
       && root !== undefined
       && root.started === this.rootIdentity.started
     this.trackedDescendants = this.survivors(this.unionMembers(
       this.trackedDescendants,
-      ...rootVerified ? [tree, this.inspector.processSession(this.pid)] : [],
+      ...rootVerified
+        ? [tree, ...includeSession ? [this.inspector.processSession(this.pid)] : []]
+        : [],
     ).filter(member => member.pid !== this.pid))
     return this.trackedDescendants
   }

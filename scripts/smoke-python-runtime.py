@@ -29,6 +29,9 @@ MINIMAL_PROMPT = "Exercise the packaged minimal agent's persistent Bash and stri
 MINIMAL_TEXT = "minimal agent smoke ok"
 MINIMAL_EDITOR_PATH_PREFIX = "Editor path: "
 MINIMAL_SYSTEM_PROMPT = "You are a helpful software engineer assistant."
+FS_SEARCH_PROMPT = "Exercise the packaged filesystem search tools."
+FS_SEARCH_TEXT = "filesystem search smoke ok"
+FS_SEARCH_MARKER = "PACKAGED_FS_SEARCH_OK"
 MINIMAL_CORDIS = (
     Path(__file__).resolve().parent.parent / "examples" / "jsonrpc-agent" / "minimal.cordis.yml"
 )
@@ -109,6 +112,29 @@ CUSTOM_CORDIS = """\
 - id: cordis-tool
   name: '@deepseek-ai/dsh-tool-cordis'
 """
+FS_SEARCH_CORDIS = """\
+- id: sdk-jsonrpc-server
+  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+- id: agent-core
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    workspaceContext: false
+    skills:
+      enabled: false
+    toolBash: false
+    toolJobs: false
+- id: sessions
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js process.env.DSH_SESSION_ROOT
+    compression: 'none'
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+- id: fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+"""
 class MockModelHandler(BaseHTTPRequestHandler):
     """Return deterministic text, worker, and orchestration completions."""
 
@@ -143,6 +169,9 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
     if latest.get("role") == "tool":
         call_id, tool_name = latest_tool_call(messages)
         tool_text = message_text(latest.get("content"))
+        fs_search = fs_search_tool_followup(call_id, tool_name, tool_text)
+        if fs_search is not None:
+            return fs_search
         minimal = minimal_tool_followup(body, call_id, tool_name, tool_text)
         if minimal is not None:
             return minimal
@@ -192,6 +221,7 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
         SNAPSHOT_PROMPT,
         CODE_PROMPT,
         WORKFLOW_PROMPT,
+        FS_SEARCH_PROMPT,
     }
     prompt = next(
         (candidate for candidate in user_prompts if candidate in scenario_prompts),
@@ -233,7 +263,38 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
                 },
             },
         )
+    if prompt == FS_SEARCH_PROMPT:
+        assert_advertised_tool(body, "grep")
+        assert_advertised_tool(body, "glob")
+        return tool_call_chunks(
+            "fs-search-grep",
+            "grep",
+            {"pattern": FS_SEARCH_MARKER, "path": "."},
+        )
     return text_chunks(EXPECTED_TEXT)
+
+
+def fs_search_tool_followup(
+    call_id: str,
+    tool_name: str,
+    tool_text: str,
+) -> list[dict[str, object]] | None:
+    """Exercise both ripgrep-backed tools through the packaged executable."""
+    if not call_id.startswith("fs-search-"):
+        return None
+    if call_id == "fs-search-grep" and tool_name == "grep":
+        if "needle.txt" not in tool_text or FS_SEARCH_MARKER not in tool_text:
+            raise AssertionError(f"packaged grep returned no marker: {tool_text}")
+        return tool_call_chunks(
+            "fs-search-glob",
+            "glob",
+            {"pattern": "**/*.txt"},
+        )
+    if call_id == "fs-search-glob" and tool_name == "glob":
+        if "needle.txt" not in tool_text:
+            raise AssertionError(f"packaged glob returned no fixture path: {tool_text}")
+        return text_chunks(FS_SEARCH_TEXT)
+    raise AssertionError(f"unexpected filesystem-search follow-up: {call_id} {tool_name}: {tool_text}")
 
 
 def minimal_tool_followup(
@@ -477,13 +538,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scenario",
-        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-snapshot", "direct"),
+        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-snapshot", "direct"),
         default="all",
     )
     parser.add_argument("--exe", type=Path)
     parser.add_argument("--update-snapshots", action="store_true")
     args = parser.parse_args()
-    if args.scenario in {"all", "sdk-custom", "sdk-minimal", "sdk-snapshot", "direct"} and args.exe is None:
+    if args.scenario in {"all", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-snapshot", "direct"} and args.exe is None:
         parser.error("--exe is required for custom, minimal, snapshot, and direct scenarios")
     if args.update_snapshots and args.scenario not in {"all", "sdk-snapshot"}:
         parser.error("--update-snapshots requires --scenario sdk-snapshot or all")
@@ -499,6 +560,9 @@ def main() -> None:
         if args.scenario in {"all", "sdk-minimal"}:
             assert args.exe is not None
             smoke_sdk_minimal(model.url, args.exe.resolve())
+        if args.scenario in {"all", "sdk-fs-search"}:
+            assert args.exe is not None
+            smoke_sdk_fs_search(model.url, args.exe.resolve())
         if args.scenario in {"all", "sdk-snapshot"}:
             assert args.exe is not None
             smoke_sdk_snapshot(model.url, args.exe.resolve(), args.update_snapshots)
@@ -586,6 +650,33 @@ def smoke_sdk_minimal(base_url: str, executable: Path) -> None:
         if editor_path.read_text() != "created by packaged editor\n":
             raise AssertionError(f"packaged editor wrote unexpected content: {editor_path.read_text()!r}")
         assert_session_log(sessions, root, MINIMAL_TEXT, "COUNT=1", "COUNT=2 CWD=/tmp")
+
+
+def smoke_sdk_fs_search(base_url: str, executable: Path) -> None:
+    """Exercise real grep and glob spawns through the packaged executable."""
+    from deepseek_harness import DeepSeekHarness
+
+    with tempfile.TemporaryDirectory(prefix="dsh-sdk-fs-search-") as temporary:
+        root = Path(temporary).resolve()
+        (root / "needle.txt").write_text(f"{FS_SEARCH_MARKER}\n")
+        sessions = root / "sessions"
+        cordis = root / "cordis.yml"
+        cordis.write_text(FS_SEARCH_CORDIS)
+        with DeepSeekHarness(
+            provider="deepseek-official",
+            model="smoke-model",
+            cwd=str(root),
+            session_root=str(sessions),
+            cordis=str(cordis),
+            runtime_bin=str(executable),
+            api_key="sk-keyless-smoke",
+            base_url=base_url,
+            request_timeout_seconds=60,
+        ) as harness:
+            result = harness.run(FS_SEARCH_PROMPT, session_id="fs-search-smoke")
+
+        assert result.final_response == FS_SEARCH_TEXT, result.final_response
+        assert_session_log(sessions, root, FS_SEARCH_TEXT, FS_SEARCH_MARKER, "needle.txt")
 
 
 def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) -> None:
