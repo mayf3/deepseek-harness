@@ -263,6 +263,8 @@ type SessionStartSource = 'startup' | 'resume' | 'clear' | 'compact'
 
 两个模式在每个子系统中反复出现，只在此处记录一次。
 
+<a id="the-map--derived-union-pattern"></a>
+
 ### `…Map → derived-union` 模式
 
 harness 中几乎所有可扩展的和类型都遵循同一模式：一个以判别标签为键的接口（`…Map`），联合类型由 `keyof` 派生。插件通过**声明合并**添加变体——无需修改拥有该类型的包。
@@ -312,7 +314,7 @@ declare module '@deepseek-ai/dsh-llm' {
 type Branded<B extends string> = string & { readonly [BRAND]: B }
 ```
 
-两个核心 ID 是 `CallId`（关联工具调用及其结果；dsh-llm）和 `SessionId`（活跃 agent 与持久会话共享的标识；dsh-session）。能力包也会品牌化各自的 id，例如 [tasks.md](tasks.md) 中的 `TaskId`。
+两个核心 ID 是 `CallId`（关联工具调用及其结果；dsh-llm）和 `SessionId`（活跃 agent 与持久会话共享的标识；dsh-session）。能力包也会品牌化各自的 id，例如 [jobs.md](jobs.md) 中的 `JobId`。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -322,9 +324,9 @@ type Branded<B extends string> = string & { readonly [BRAND]: B }
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
-<a id="ctxagentdefaultmodel--agentdefaultmodelservice"></a>
+<a id="ctxagentdefaultmodel--agentdefaultmodelconfig"></a>
 
-### `ctx.agentDefaultModel` — `AgentDefaultModelService`
+### `ctx.agentDefaultModel` — `AgentDefaultModelConfig`
 
 Owns the default model selection independently of any Host or transport. The composition entry remains usable without a settings provider; when one is mounted, its user layer is read live.
 

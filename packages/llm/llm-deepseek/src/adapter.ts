@@ -19,7 +19,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
-import type { AnonymousUserId } from '@deepseek-ai/dsh-user-id'
+import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { serializeRequest } from './serialize.ts'
 import type { RequestDefaults } from './serialize.ts'
 import { parseSse } from './sse.ts'
@@ -93,10 +93,12 @@ export const DEFAULT_CONTEXT_WINDOW = 1_000_000
 export const DEFAULT_MAX_TOKENS = 256_000
 const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
 const OFF_REASONING_EFFORT = ReasoningEffortId('off')
+const LOW_REASONING_EFFORT = ReasoningEffortId('low')
 const HIGH_REASONING_EFFORT = ReasoningEffortId('high')
 const MAX_REASONING_EFFORT = ReasoningEffortId('max')
 const REASONING_EFFORTS = [
   { id: OFF_REASONING_EFFORT, name: 'Off' },
+  { id: LOW_REASONING_EFFORT, name: 'Low' },
   { id: HIGH_REASONING_EFFORT, name: 'High' },
   { id: MAX_REASONING_EFFORT, name: 'Max' },
 ] as const
@@ -203,9 +205,11 @@ export class DeepSeekAdapter extends LlmAdapter {
             efforts: REASONING_EFFORTS,
             defaultEffort: connection.defaults.reasoningEffort === 'off'
               ? OFF_REASONING_EFFORT
-              : connection.defaults.reasoningEffort === 'max'
-                ? MAX_REASONING_EFFORT
-                : HIGH_REASONING_EFFORT,
+              : connection.defaults.reasoningEffort === 'low'
+                ? LOW_REASONING_EFFORT
+                : connection.defaults.reasoningEffort === 'max'
+                  ? MAX_REASONING_EFFORT
+                  : HIGH_REASONING_EFFORT,
           },
         },
     })

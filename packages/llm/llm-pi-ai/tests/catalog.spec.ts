@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LlmService, { createUserMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
-import SettingsLocal from '@deepseek-ai/dsh-settings-local'
+import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
@@ -45,8 +45,8 @@ async function home(): Promise<string> {
 /** The dormant composition plus a real settings service, as the product mounts it. */
 async function bootWithSettings(dir: string, config: LlmPiAi.Config): Promise<Context> {
   const ctx = new Context()
-  await ctx.plugin(LlmService)
-  await ctx.plugin(SettingsLocal, { path: join(dir, 'settings.yaml'), watch: false })
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
   await ctx.plugin(LlmPiAi, config)
   return ctx
 }
@@ -69,7 +69,7 @@ function gateway(baseURL: string, overrides: Record<string, unknown> = {}): LlmP
 
 async function harness(config: LlmPiAi.Config): Promise<Context> {
   const ctx = new Context()
-  await ctx.plugin(LlmService)
+  await ctx.plugin(LlmRuntime)
   await ctx.plugin(LlmPiAi, config)
   return ctx
 }
@@ -932,5 +932,40 @@ describe('configurable-provider directory', () => {
 
     await ctx.settings.replace(settingsNamespace('llm-pi-ai'), {})
     expect(ctx.llm.listConfigurableProviders()).toHaveLength(catalogOnly)
+  })
+
+  it('withholds a catalog route this adapter cannot authenticate', async () => {
+    const ctx = await harness({})
+    const offered = ctx.llm.listConfigurableProviders().map(entry => entry.provider)
+
+    // `openai-codex` is the one installed provider that authenticates through
+    // OAuth alone. pi-ai resolves OAuth only from a *stored* credential, this
+    // adapter constructs its collection with no credential store, and nothing
+    // here runs a login flow — so every request on such a route fails with
+    // `Provider is not configured` before it goes out. Offering it would put a
+    // provider on the settings page that no amount of configuration can make
+    // work.
+    expect(offered).not.toContain('openai-codex')
+    // A provider that offers OAuth *beside* an api-key method keeps its entry:
+    // the key is a path this adapter can serve.
+    expect(offered).toContain('anthropic')
+    expect(offered).toContain('openai')
+  })
+
+  it('still lists a withheld route a stored profile names, as a catalog route', async () => {
+    // Withholding the offer must not strand a profile someone already stored:
+    // the route keeps its entry so a configuration surface can edit or delete
+    // it, and `declared` still answers catalog membership rather than the
+    // offer, so the page does not mislabel it as a route this deployment
+    // invented.
+    const ctx = await harness({ providers: { 'openai-codex': { apiKeyEnv: KEY_ENV } } })
+
+    expect(ctx.llm.listConfigurableProviders()).toContainEqual({
+      provider: 'openai-codex',
+      displayName: 'openai-codex',
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', 'openai-codex'],
+      declared: false,
+    })
   })
 })

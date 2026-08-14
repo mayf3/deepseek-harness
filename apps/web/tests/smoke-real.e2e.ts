@@ -143,8 +143,8 @@ async function detailsTrack(page: Page): Promise<number> {
 // the frame never appears.
 const UI_PLUGIN_DIRS = [
   'connection', 'runtime', 'ui-theme', 'locale', 'ui-layout', 'ui-sidebar',
-  'ui-settings', 'ui-settings-general', 'ui-models', 'ui-conversation',
-  'ui-model', 'ui-question', 'ui-trajectory', '../session-query/session-export',
+  'ui-settings', 'ui-settings-general', 'ui-settings-models', 'ui-conversation',
+  'ui-model-selection', 'ui-user-questions', 'ui-trajectory', '../session-query/session-log-export',
 ]
 const ROUND_DONE_MARKER = 'WEB_ROUND_DONE'
 const notReady = UI_PLUGIN_DIRS.filter((dir) => {
@@ -533,16 +533,9 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
 
   it('empty-state first send completes a real model round', async () => {
     onTestFailed(() => saveFailureShot(page, 'w5-first-round'))
-    // This scenario spawns its own server against a fresh $DSH_HOME, so the
-    // first-run welcome notice is unacknowledged and its overlay owns pointer
-    // events (the shared scaffold acknowledges it before boot instead). The
-    // notice is anchored structurally, not by its copy: this spec sits in the
-    // client TypeScript program, which does not reference the package that
-    // owns the strings.
-    const welcome = page.locator('[class*="onboardingOverlay"]')
-    await welcome.waitFor({ timeout: 15_000 })
-    await welcome.getByRole('button').click()
-    await welcome.waitFor({ state: 'detached', timeout: 15_000 })
+    // This scenario spawns its own server against a fresh $DSH_HOME with the
+    // DeepSeek credential inherited from the environment, so no onboarding
+    // step mounts and the page is immediately interactive.
     // Fresh world: connect a Workspace so the composer starts live.
     await connectFreshWorkspace(page, sessionsDir)
     const input = page.locator('textarea').first()
