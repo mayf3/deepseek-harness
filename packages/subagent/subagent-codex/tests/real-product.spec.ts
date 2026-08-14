@@ -202,7 +202,7 @@ describe('real @openai/codex 0.147.0 product', () => {
           ? { SystemRoot: process.env.SystemRoot }
           : {},
       },
-    })).rejects.toThrow('Missing optional dependency')
+    })).rejects.toThrow(/Missing optional dependency @openai\/codex-[a-z0-9-]+/)
   }, 30_000)
 
   it('cancels a real app-server command approval without executing the command', async () => {
