@@ -53,6 +53,7 @@ dsh --profile <name>
 # A copied Agent Preset; remove `disabled` to grant this tool.
 - id: tool-subagent-claude-code
   name: '@deepseek-ai/dsh-tool-subagent'
+  disabled: true
   config:
     provider: claude-code
     toolName: subagent_claude_code
