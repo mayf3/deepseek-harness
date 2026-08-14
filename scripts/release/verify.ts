@@ -55,6 +55,15 @@ function main(): void {
   const family = releaseFamily(values.family)
   const members = family.members(process.cwd())
   family.verifyVersions(members)
+  // Resolve the publish order here, before the build: an install-edge cycle
+  // makes the order unrepresentable, and that has to surface at the first gate
+  // rather than when pack is already writing tarballs.
+  const ordered = family.publishOrder(members)
+  if (ordered.length !== members.length) {
+    throw new Error(
+      `release family ${family.id}: publish order covers ${String(ordered.length)} of ${String(members.length)} members`,
+    )
+  }
 
   const publishing = process.env.RELEASE_PUBLISH === 'true'
   if (publishing) {
@@ -64,7 +73,7 @@ function main(): void {
 
   const versions = [...new Set(members.map(member => member.version))]
   const summary = versions.length === 1 ? versions[0] : `${String(versions.length)} versions`
-  console.log(`release verify: family ${family.id}, ${String(members.length)} member(s), ${summary}${publishing ? ', publish gates passed' : ''}`)
+  console.log(`release verify: family ${family.id}, ${String(members.length)} member(s), ${summary}, publish order resolved${publishing ? ', publish gates passed' : ''}`)
 }
 
 if (isEntry(import.meta.url)) main()
