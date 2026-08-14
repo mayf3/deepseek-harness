@@ -26,6 +26,8 @@ import { CodexAppServerWire } from './wire.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
+/** Bounded stderr tail retained only to recognize the wrapper's payload error. */
+const CODEX_STDERR_TAIL_BYTES = 16 * 1024
 
 interface CodexPackageManifest {
   readonly bin: {
@@ -43,6 +45,21 @@ const CODEX_PACKAGE_BIN = resolve(
   dirname(codexPackageJsonPath),
   codexPackageManifest.bin.codex,
 )
+
+function missingPayloadDiagnostic(child: SubprocessHandle): string | undefined {
+  const stderr = child.collected.stderr?.readFrom(0).text
+  if (stderr === undefined) return undefined
+  return /Missing optional dependency[^\r\n]*/.exec(stderr)?.[0]?.trim()
+}
+
+function withMissingPayloadDiagnostic(
+  error: Error,
+  child: SubprocessHandle,
+): Error {
+  const diagnostic = missingPayloadDiagnostic(child)
+  if (diagnostic === undefined || error.message.includes(diagnostic)) return error
+  return new Error(`${error.message}: ${diagnostic}`, { cause: error })
+}
 
 /**
  * Fixed package-local app-server command, independent of the host `PATH`.
@@ -136,7 +153,11 @@ export async function startCodexRun(
   const child = spec.spawn({
     argv: codexAppServerArgv(),
     cwd: spec.cwd,
-    stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
+    stdio: {
+      stdin: 'pipe',
+      stdout: 'pipe',
+      stderr: { maxBytes: CODEX_STDERR_TAIL_BYTES },
+    },
     graceMs: spec.disposeGraceMs,
     env: spec.env,
   })
@@ -148,9 +169,12 @@ export async function startCodexRun(
   const disposeProcess = (): Promise<void> => disposeCodexChild(wire, child)
 
   const processFailure: Promise<never> = child.done.then(
-    outcome => Promise.reject(new Error(
-      'subagent-codex: app-server exited before the run settled '
-      + `(code ${String(outcome.exitCode)}, signal ${String(outcome.signal)})`,
+    outcome => Promise.reject(withMissingPayloadDiagnostic(
+      new Error(
+        'subagent-codex: app-server exited before the run settled '
+        + `(code ${String(outcome.exitCode)}, signal ${String(outcome.signal)})`,
+      ),
+      child,
     )),
     (error: unknown) => Promise.reject(thrown(error)),
   )
@@ -173,18 +197,19 @@ export async function startCodexRun(
     await Promise.race([wire.startThread(spec.cwd, request.signal), processFailure])
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
+    const startupError = withMissingPayloadDiagnostic(thrown(error), child)
     try {
       await disposeProcess()
     } catch (disposeError: unknown) {
       throw new AggregateError(
-        [thrown(error), thrown(disposeError)],
+        [startupError, thrown(disposeError)],
         'subagent-codex: startup failed and app-server cleanup also failed',
       )
     }
     if (runAbort.signal.aborted) {
       throw new Error('subagent-codex: request was aborted before run publication')
     }
-    throw thrown(error)
+    throw startupError
   }
 
   const collectOutput = (): ContentBlock[] => wire.collectOutput()

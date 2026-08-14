@@ -108,6 +108,7 @@ interface FakeChildOptions {
   readonly pid?: number
   readonly exitOnTerminate?: boolean
   readonly doneError?: Error
+  readonly stderr?: string
 }
 
 interface FakeChild {
@@ -125,6 +126,7 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
   const fromChild = new PassThrough()
   const toChild = new PassThrough()
   const peer = new ProtocolPeer(toChild, fromChild)
+  const stderrText = options.stderr
   let exited = false
   let resolveDone!: (outcome: SubprocessOutcome) => void
   let rejectDone!: (error: Error) => void
@@ -174,7 +176,17 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
     stdin: toChild,
     stdout: fromChild,
     stderr: undefined,
-    collected: {},
+    collected: stderrText === undefined
+      ? {}
+      : {
+        stderr: {
+          readFrom: () => ({
+            text: stderrText,
+            nextOffset: Buffer.byteLength(stderrText),
+            lossy: false,
+          }),
+        },
+      },
     done,
     terminate,
     waitForExit,
@@ -927,7 +939,11 @@ describe('run lifecycle and quiescence', () => {
     expect(spawn).toHaveBeenCalledWith({
       argv: codexAppServerArgv(),
       cwd: process.cwd(),
-      stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
+      stdio: {
+        stdin: 'pipe',
+        stdout: 'pipe',
+        stderr: { maxBytes: 16 * 1024 },
+      },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
       env: { OPENAI_API_KEY: 'fake' },
     })
@@ -1048,6 +1064,27 @@ describe('run lifecycle and quiescence', () => {
       expect.objectContaining({ message: 'spawn observer failed' }),
       expect.objectContaining({ message: 'spawn observer failed' }),
     ])
+    expect(child.terminate).toHaveBeenCalledTimes(1)
+  })
+
+  it('surfaces only the wrapper missing-payload diagnostic during startup', async () => {
+    const child = fakeChild({
+      stderr: [
+        'credential-like unrelated stderr',
+        'Error: Missing optional dependency @openai/codex-linux-x64.',
+      ].join('\n'),
+    })
+    const starting = startCodexRun(request(), runSpec(child))
+    child.settle({ exitCode: 1, signal: null })
+
+    const error: unknown = await starting.then(
+      () => undefined,
+      (failure: unknown) => failure,
+    )
+    expect(error).toBeInstanceOf(Error)
+    if (!(error instanceof Error)) throw new Error('expected startup failure')
+    expect(error.message).toContain('Missing optional dependency @openai/codex-linux-x64')
+    expect(error.message).not.toContain('credential-like unrelated stderr')
     expect(child.terminate).toHaveBeenCalledTimes(1)
   })
 
