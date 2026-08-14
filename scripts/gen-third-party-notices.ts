@@ -13,6 +13,7 @@ import { resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { parse as parseToml, type TomlTableWithoutBigInt, type TomlValueWithoutBigInt } from 'smol-toml'
 import parseSpdx from 'spdx-expression-parse'
+import { browserBundledExternals } from './browser-bundled-externals.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const OUT = 'THIRD_PARTY_NOTICES.md'
@@ -347,15 +348,17 @@ function normalizeRepo(raw: string | undefined): string | undefined {
 }
 
 /**
- * External npm dependencies, tiered by which workspace area declares them at
- * runtime: a package is runtime when any manifest outside `DEV_ONLY_AREAS`
- * names it in `dependencies`/`optionalDependencies`. A package declared only
- * by tooling, test infrastructure, the website, or the demo leaves — whatever
- * the declaring section is called — is development-only.
+ * External npm dependencies, tiered by what reaches a user: a package is runtime
+ * when any manifest outside `DEV_ONLY_AREAS` names it in
+ * `dependencies`/`optionalDependencies`, or when a published browser artifact
+ * carries a copy of it. A package declared only by tooling, test infrastructure,
+ * the website, or the demo leaves — whatever the declaring section is called, and
+ * with no shipped artifact carrying it — is development-only.
+ * @returns every external dependency with its tier and metadata.
  */
-function collectNpmDeps(): ExternalDep[] {
+async function collectNpmDeps(): Promise<ExternalDep[]> {
   const { manifests, names } = loadWorkspaceManifests()
-  return [...tierExternalDeps(manifests, names)]
+  return [...tierExternalDeps(manifests, names, await browserBundledExternals(root))]
     .filter(([name]) => !FIRST_PARTY.has(name))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, runtime]) => ({ name, ...installedMetadata(name), runtime }))
@@ -363,11 +366,23 @@ function collectNpmDeps(): ExternalDep[] {
 
 /**
  * Tier every external dependency the workspace declares.
+ *
+ * A package a published browser artifact carries is runtime whatever section
+ * declares it: the client build inlines its code, or the shell `dist` answers it
+ * from the frozen module table, so a copy is redistributed even though nothing on
+ * a user's machine resolves the specifier. Those packages are declared as
+ * `devDependencies` — `verify-client-runtime-deps` owns that rule — and tiering
+ * them by section alone would understate the notice.
  * @param manifests - workspace manifests keyed by repository-relative path.
  * @param names - every workspace package name, which never counts as external.
+ * @param bundled - external packages a published browser artifact carries.
  * @returns each external package mapped to whether it is a runtime dependency.
  */
-export function tierExternalDeps(manifests: Map<string, Manifest>, names: Set<string>): Map<string, boolean> {
+export function tierExternalDeps(
+  manifests: Map<string, Manifest>,
+  names: Set<string>,
+  bundled: ReadonlySet<string> = new Set(),
+): Map<string, boolean> {
   const tiers = new Map<string, boolean>()
   // `tsx` is runtime by fiat: the root source-run scripts execute through its ESM hook.
   tiers.set('tsx', true)
@@ -376,7 +391,7 @@ export function tierExternalDeps(manifests: Map<string, Manifest>, names: Set<st
     for (const kind of ALL_KINDS) {
       for (const [dep, range] of Object.entries(manifest[kind] ?? {})) {
         if (names.has(dep) || range.startsWith('workspace:')) continue
-        const runtime = !devOnly && (RUNTIME_KINDS as readonly string[]).includes(kind)
+        const runtime = bundled.has(dep) || (!devOnly && (RUNTIME_KINDS as readonly string[]).includes(kind))
         tiers.set(dep, (tiers.get(dep) ?? false) || runtime)
       }
     }
@@ -660,9 +675,9 @@ ${rows.join('\n')}
  * Render the complete notices document.
  * @returns the exact bytes `THIRD_PARTY_NOTICES.md` must hold.
  */
-export function render(): string {
+export async function render(): Promise<string> {
   verifyBuildTimePins()
-  const npm = collectNpmDeps()
+  const npm = await collectNpmDeps()
   const runtimeDeps = npm.filter(dep => dep.runtime)
   const devDeps = npm.filter(dep => !dep.runtime)
   const vendored = collectVendored()
@@ -707,7 +722,7 @@ ${vendored.map(row => `| \`${row.npmName}\` | \`${row.upstreamName}\` | [${row.u
 
 ## Runtime npm dependencies
 
-External packages that a workspace package resolves at runtime. The tier covers every plugin a user can mount from \`cordis.yml\` — not only what the \`dsh\` CLI, Web UI, and Python SDK runtime load by default.
+External packages that reach a user: a workspace package resolves them at runtime, or a published browser artifact carries a copy of their code. The tier covers every plugin a user can mount from \`cordis.yml\` — not only what the \`dsh\` CLI, Web UI, and Python SDK runtime load by default — and the packages the client build inlines into a plugin bundle or the shell \`dist\`, which are declared as \`devDependencies\` because nothing on a user's machine resolves their specifiers.
 
 ${renderNpmTable(runtimeDeps)}
 
@@ -718,7 +733,7 @@ ${renderClaudeDistribution(claudeDistribution)}
 
 ## Development-only npm dependencies
 
-External packages **directly declared** only by repository tooling, test infrastructure, the documentation site, the demo leaves, or the native launcher's build workspace. No shipped surface names them itself. A package here may still be pulled in transitively by a runtime dependency — \`pnpm-lock.yaml\` is the authority on the full closure — so this tier records who declares a package, not what a build ultimately bundles.
+External packages **directly declared** only by repository tooling, test infrastructure, the documentation site, the demo leaves, or the native launcher's build workspace, and carried by no published artifact. No shipped surface names them itself. A package here may still be pulled in transitively by a runtime dependency — \`pnpm-lock.yaml\` is the authority on the full closure — so this tier records who declares a package, not what a build ultimately bundles.
 
 ${renderNpmTable(devDeps)}
 ${renderNonPermissiveNote(nonPermissiveDev)}
@@ -746,8 +761,8 @@ ${BUILD_TIME_TOOLS.map(tool => `| [\`${tool.name}\`](${tool.repo}) | ${tool.lice
 /** CLI entry: default writes the notices, `--check` fails if the committed copy
  * is stale. Guarded behind an entry-point check so importing this module for
  * tests neither regenerates the committed file nor calls process.exit. */
-function main(): void {
-  const content = render()
+async function main(): Promise<void> {
+  const content = await render()
   if (process.argv.includes('--check')) {
     let committed: string | null = null
     try {
@@ -771,5 +786,5 @@ function main(): void {
 
 // Run only when invoked as a script, not when imported by a test.
 if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {
-  main()
+  await main()
 }

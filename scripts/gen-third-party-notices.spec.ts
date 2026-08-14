@@ -24,11 +24,12 @@ describe('THIRD_PARTY_NOTICES.md', () => {
   // already runs in the test lane, so the check costs no extra CI process.
   // Pre-commit regenerates the file whenever a manifest is staged, so reaching
   // this assertion means the notices were committed without that hook.
-  it('matches what the generator produces from the current manifests', () => {
-    const generated = render()
+  it('matches what the generator produces from the current manifests', async () => {
+    const generated = await render()
     expect(generated).toContain('It depends on the third-party software listed below.')
     expect(readFileSync(resolve(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'), 'stale notices — run `pnpm run gen-third-party-notices`').toBe(generated)
-  })
+    // Driving the two real bundlers to learn what ships costs a few seconds.
+  }, 60_000)
 })
 
 /** Build the (manifests, names) pair `tierExternalDeps` consumes. */
@@ -64,6 +65,23 @@ describe('tierExternalDeps', () => {
       ['protocol-sdk', true],
       ['protocol-fixture-server', false],
       ['cli-lib', true],
+    ]))
+  })
+
+  it('keeps a devDependency runtime when a published browser artifact carries it', () => {
+    const { manifests, names } = workspace({
+      // The client build inlines these, so a copy ships even though no manifest
+      // resolves the specifier at run time.
+      'packages/client/ui-primitives/package.json': {
+        name: '@deepseek-ai/dsh-client-ui-primitives',
+        devDependencies: { katex: '^0.16', 'test-only-helper': '^1' },
+      },
+    })
+
+    expect(tierExternalDeps(manifests, names, new Set(['katex']))).toEqual(new Map([
+      ['tsx', true],
+      ['katex', true],
+      ['test-only-helper', false],
     ]))
   })
 
