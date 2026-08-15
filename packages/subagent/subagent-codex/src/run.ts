@@ -157,11 +157,10 @@ export async function startCodexRun(
     process.stderr.write(chunk)
     wire.observeStderr(chunk.toString())
   }
-  const stderrFailure = Promise.withResolvers<never>()
-  const onStderrError = (error: Error): void => {
-    stderrFailure.reject(error)
+  const onStderrError = (): void => {
+    // Stderr observation is auxiliary. JSON-RPC and child.done remain the
+    // only terminal authorities if the diagnostic stream itself fails.
   }
-  void stderrFailure.promise.catch(() => {})
   child.stderr?.on('data', onStderr)
   child.stderr?.on('error', onStderrError)
   const disposeProcess = async (): Promise<void> => {
@@ -195,16 +194,8 @@ export async function startCodexRun(
 
   try {
     wire.start()
-    await Promise.race([
-      wire.initialize(request.signal),
-      processFailure,
-      stderrFailure.promise,
-    ])
-    await Promise.race([
-      wire.startThread(spec.cwd, request.signal),
-      processFailure,
-      stderrFailure.promise,
-    ])
+    await Promise.race([wire.initialize(request.signal), processFailure])
+    await Promise.race([wire.startThread(spec.cwd, request.signal), processFailure])
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
     try {
@@ -226,7 +217,6 @@ export async function startCodexRun(
     attempt: () => Promise.race([
       wire.runTurn(texts, runAbort.signal),
       processFailure,
-      stderrFailure.promise,
     ]),
     collectOutput,
     collectDiagnostic: () => wire.collectDiagnostic(),

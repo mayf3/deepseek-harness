@@ -151,7 +151,7 @@ export class CodexAppServerWire {
   constructor(
     private readonly input: Readable,
     output: Writable,
-    private readonly permissionMode: CodexPermissionMode = 'never',
+    private readonly permissionMode: CodexPermissionMode,
   ) {
     this.transport = new JsonRpcLineTransport(input, output)
     // Fatal protocol state can arrive after the current guarded operation has
