@@ -38,7 +38,12 @@ export interface Config {
    * credential-scrubbed parent environment.
    */
   env?: Record<string, string>
-  /** Native non-interactive permission mode fixed for this Provider instance. */
+  /**
+   * Native non-interactive mode fixed for this Provider instance. Defaults to
+   * `dontAsk`; `acceptEdits` accepts edits, `auto` uses the native classifier,
+   * `plan` returns a plan without approving execution, and
+   * `bypassPermissions` explicitly skips permission checks.
+   */
   permissionMode?: ClaudeCodePermissionMode
   /** Grace in milliseconds for Claude Code process-tree termination. */
   disposeGraceMs?: number

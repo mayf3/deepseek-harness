@@ -17,7 +17,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentCapabilities, SubagentResult, SubagentRun, SubagentStopReason } from './types.ts'
 
 /** Maximum UTF-8 size of {@link SubagentResult.diagnostic}. */
-export const MAX_SUBAGENT_DIAGNOSTIC_BYTES = 4_096
+const MAX_SUBAGENT_DIAGNOSTIC_BYTES = 4_096
 
 const DIAGNOSTIC_TRUNCATION_SUFFIX = '\n[diagnostic truncated]'
 const utf8Encoder = new TextEncoder()
@@ -28,7 +28,7 @@ const utf8Decoder = new TextDecoder()
  * @param diagnostic - safe diagnostic text produced by the provider.
  * @returns the original text, or a visibly truncated value within the limit.
  */
-export function limitSubagentDiagnostic(diagnostic: string): string {
+function limitSubagentDiagnostic(diagnostic: string): string {
   const bytes = utf8Encoder.encode(diagnostic)
   if (bytes.byteLength <= MAX_SUBAGENT_DIAGNOSTIC_BYTES) return diagnostic
 
@@ -195,15 +195,10 @@ export async function settleRunResult(parts: RunResultSettlement): Promise<Subag
     } catch {
       // The diagnostic sink cannot reject the run result.
     }
-    let diagnostic: string | undefined
-    try {
-      const collected = parts.collectDiagnostic?.()
-      diagnostic = collected === undefined
-        ? undefined
-        : limitSubagentDiagnostic(collected)
-    } catch {
-      // A provider diagnostic collector cannot reject the terminal result.
-    }
+    const collected = parts.collectDiagnostic?.()
+    const diagnostic = collected === undefined
+      ? undefined
+      : limitSubagentDiagnostic(collected)
     return {
       output: parts.collectOutput(),
       ...diagnostic === undefined ? {} : { diagnostic },

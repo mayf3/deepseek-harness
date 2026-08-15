@@ -38,14 +38,6 @@ import {
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
-/** Profile-selectable non-interactive Claude Code permission mode. */
-export type ClaudeCodePermissionMode =
-  | 'dontAsk'
-  | 'acceptEdits'
-  | 'auto'
-  | 'plan'
-  | 'bypassPermissions'
-
 /** Claude Code permission modes that cannot wait for a human response. */
 export const CLAUDE_CODE_PERMISSION_MODES = [
   'dontAsk',
@@ -53,16 +45,21 @@ export const CLAUDE_CODE_PERMISSION_MODES = [
   'auto',
   'plan',
   'bypassPermissions',
-] as const satisfies readonly ClaudeCodePermissionMode[]
+] as const satisfies readonly NonNullable<Options['permissionMode']>[]
+
+/** Profile-selectable non-interactive Claude Code permission mode. */
+export type ClaudeCodePermissionMode = typeof CLAUDE_CODE_PERMISSION_MODES[number]
 
 /** Safe default for unattended Claude Code runs. */
 export const DEFAULT_CLAUDE_CODE_PERMISSION_MODE: ClaudeCodePermissionMode = 'dontAsk'
 
-const SUPPORTED_UNATTENDED_DIALOG_KINDS = ['refusal_fallback_prompt']
+const SUPPORTED_UNATTENDED_DIALOG_KINDS = [
+  'refusal_fallback_prompt',
+] satisfies NonNullable<Options['supportedDialogKinds']>
 
 function unattendedDiagnostic(
   mode: ClaudeCodePermissionMode,
-  request: 'tool permission' | 'MCP elicitation' | 'user dialog',
+  request: 'tool permission' | 'plan approval' | 'MCP elicitation' | 'user dialog',
   decision: 'denied' | 'declined' | 'cancelled',
   reason: string,
 ): string {
@@ -231,7 +228,19 @@ export function claudeQueryOptions(
     ...spec.permissionMode === 'bypassPermissions'
       ? { allowDangerouslySkipPermissions: true }
       : {
-        canUseTool: () => {
+        canUseTool: (toolName) => {
+          if (spec.permissionMode === 'plan' && toolName === 'ExitPlanMode') {
+            captureDiagnostic(unattendedDiagnostic(
+              spec.permissionMode,
+              'plan approval',
+              'denied',
+              'the provider returns the plan without approving execution',
+            ))
+            return Promise.resolve({
+              behavior: 'deny' as const,
+              message: 'Plan approval is unavailable in this unattended run. Return the completed plan in your final response without executing it.',
+            })
+          }
           captureDiagnostic(unattendedDiagnostic(
             spec.permissionMode,
             'tool permission',
@@ -344,6 +353,7 @@ export async function startClaudeCodeRun(
         )
       }
     }
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- the request can abort while process cleanup is awaited.
     if (cancelledBeforeCleanup || request.signal.aborted) {
       throw new Error('subagent-claude-code: request was aborted before SDK startup')
     }

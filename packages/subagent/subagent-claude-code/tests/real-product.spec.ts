@@ -361,6 +361,23 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
     await expectQuiescent(harness.handles)
   })
 
+  it('returns the completed plan without approving execution', async () => {
+    const { harness, fixture } = await realHarness({
+      kind: 'tool-use',
+      toolName: 'ExitPlanMode',
+      input: {},
+      finalText: 'PLAN_ONLY_RESULT',
+    }, 'plan')
+    const run = await startRequest(harness, 'Design the fixture change without implementing it.')
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'PLAN_ONLY_RESULT' }],
+      stopReason: 'completed',
+    })
+    expect(fixture.requests).toHaveLength(2)
+    await run.dispose()
+    await expectQuiescent(harness.handles)
+  })
+
   it('settles cancellation and leaves the real SDK-spawned CLI tree quiescent', async () => {
     const { harness, fixture } = await realHarness({ kind: 'hold' })
     const controller = new AbortController()

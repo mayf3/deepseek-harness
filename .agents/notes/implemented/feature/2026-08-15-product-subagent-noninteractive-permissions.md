@@ -19,12 +19,12 @@ The Claude Code Provider owns one Profile-level `permissionMode` value. It defau
 | `dontAsk` | Deny operations that are not already authorized instead of prompting. |
 | `acceptEdits` | Accept edits; deny any remaining permission prompt through the unattended callback. |
 | `auto` | Let Claude Code's native classifier allow or deny permission requests. |
-| `plan` | Use Claude Code's planning-only mode without tool execution. |
+| `plan` | Use planning mode, deny execution approval, and return the completed plan as the final answer. |
 | `bypassPermissions` | Set the SDK's explicit dangerous confirmation and bypass permission checks. |
 
 The Provider fixes the resolved value for every run from that plugin instance. The subagent tool schema and `SubagentStartRequest` contain no permission field, so a model or individual delegation cannot change it. The Provider continues to omit `settingSources`: Claude Code remains the owner of user, project, and local settings, authentication, tools, and sandbox behavior outside the selected mode.
 
-Every query disables `AskUserQuestion`. Non-bypass permission callbacks deny instead of returning the SDK's indefinitely blocking `null`; MCP elicitation is declined; the supported refusal dialog is cancelled; undeclared dialog kinds use the SDK's no-dialog failure behavior. A native `permission_denied` message records the same operation-local fact. These paths do not create an approval session, queue, cache, or retry loop.
+Every query disables `AskUserQuestion`. Non-bypass permission callbacks deny instead of returning the SDK's indefinitely blocking `null`; in plan mode, `ExitPlanMode` receives a fixed denial that tells the model to return the completed plan without executing it. MCP elicitation is declined; the supported refusal dialog is cancelled; undeclared dialog kinds use the SDK's no-dialog failure behavior. A native `permission_denied` message records the same operation-local fact. These paths do not create an approval session, queue, cache, or retry loop.
 
 ### Failure diagnostic
 

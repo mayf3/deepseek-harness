@@ -16,7 +16,7 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 
 提供方故意省略 SDK 的 `settingSources` 选项。因此，官方 SDK 会相对于父会话 cwd 读取宿主机常规的用户、项目和本地 Claude 设置，包括原生账户状态与产品配置。提供方既不复制也不过滤这些文件，也不会创建或修改登录状态。Profile 选择的 `permissionMode` 是唯一的 query 级覆盖：Claude Code 仍拥有其设置与沙箱，而所选原生模式决定这个无人值守 query 如何处理权限检查。
 
-每次 query 都设置 `persistSession: false` 并禁用 `AskUserQuestion`。除 bypass 模式外，`canUseTool` 会立即拒绝仍需人工审批的请求。MCP elicitation 会被拒绝，已知的拒绝回退对话会被取消，未声明的对话类型则使用 SDK 的无对话失败行为。这些决定都不会等待用户界面。若权限拒绝或无人值守回调参与了一次失败运行，提供方会生成可选的 `SubagentResult.diagnostic`，其中只包含产品、有效模式、请求类别、决定与固定的安全原因；共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。成功运行与本地取消不会公开已捕获的失败说明。
+每次 query 都设置 `persistSession: false` 并禁用 `AskUserQuestion`。除 bypass 模式外，`canUseTool` 会立即拒绝仍需人工审批的请求。在 plan 模式下，`ExitPlanMode` 审批会被拒绝，同时用固定指令要求模型把完整计划作为最终答案返回且不得执行。MCP elicitation 会被拒绝，已知的拒绝回退对话会被取消，未声明的对话类型则使用 SDK 的无对话失败行为。这些决定都不会等待用户界面。若权限拒绝或无人值守回调参与了一次失败运行，提供方会生成可选的 `SubagentResult.diagnostic`，其中只包含产品、有效模式、请求类别、决定与固定的安全原因；共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。成功运行与本地取消不会公开已捕获的失败说明。
 
 ## 能力与上下文
 
@@ -35,7 +35,7 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 | `dontAsk` | 不弹出提示，直接拒绝尚未获授权的操作。 |
 | `acceptEdits` | 接受文件编辑；其余权限提示由无人值守回调拒绝。 |
 | `auto` | 由 Claude Code 原生分类器允许或拒绝权限请求。 |
-| `plan` | 使用 Claude Code 原生的仅规划模式，不执行工具。 |
+| `plan` | 使用原生规划模式，拒绝执行审批，并把完整计划作为最终答案返回。 |
 | `bypassPermissions` | 显式设置 SDK 的危险确认并跳过权限检查。 |
 
 生产环境从子进程执行世界清除凭证后的 `PATH` 解析 `claude`，再应用显式 `env` 条目，并把所得路径作为 `pathToClaudeCodeExecutable` 交给 SDK。在 Windows 上，解析到的 `.cmd` 或 `.bat` 路径会作为带引号、仅供本次 spawn 使用的环境值交给 `cmd.exe /v:off` 展开一次，因此合法路径中的元字符仍只是数据。锁定版本的 SDK 随后把固定命令行选项放在 cmd 的命令尾部；这些选项不含 cmd 元字符，也并不是普通的 Windows argv。原生设置与身份验证继续是权威来源。本插件不安装另一份 CLI、不选择模型、不创建产品主目录、不执行登录，也不探测账户。具有凭证特征的环境变量会在显式 `env` 覆盖生效前被清除，因此供子进程使用的 API 密钥或 token 必须在该配置中显式提供。除非被覆盖，`ANTHROPIC_BASE_URL` 等非凭证端点变量以及 `PATH` 和 `HOME` 等普通环境变量仍会被继承。

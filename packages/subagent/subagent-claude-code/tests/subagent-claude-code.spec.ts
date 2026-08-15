@@ -689,6 +689,34 @@ describe('query options and result mapping', () => {
     },
   )
 
+  it('returns a plan without approving ExitPlanMode execution', async () => {
+    const child = fakeChild()
+    const diagnostics: string[] = []
+    const options = claudeQueryOptions({
+      cwd: '/workspace',
+      executable: '/native/claude',
+      permissionMode: 'plan',
+      env: {},
+      disposeGraceMs: 17,
+      spawn: () => child.handle,
+    }, new AbortController(), () => {}, value => diagnostics.push(value))
+    await expect(options.canUseTool!(
+      'ExitPlanMode',
+      {},
+      {
+        signal: new AbortController().signal,
+        toolUseID: 'exit-plan',
+        requestId: 'exit-plan-request',
+      },
+    )).resolves.toEqual({
+      behavior: 'deny',
+      message: 'Plan approval is unavailable in this unattended run. Return the completed plan in your final response without executing it.',
+    })
+    expect(diagnostics).toEqual([
+      'Claude Code unattended decision (mode: plan; request: plan approval; decision: denied): the provider returns the plan without approving execution',
+    ])
+  })
+
   it('accepts only a non-error success with a non-blank final result', () => {
     expect(successfulResult(success('exact final'))).toBe('exact final')
     expect(() => successfulResult(success('answer', true)))
