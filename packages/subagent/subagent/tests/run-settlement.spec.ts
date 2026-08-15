@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { settleRun } from '../src/index.ts'
+import {
+  limitSubagentDiagnostic,
+  MAX_SUBAGENT_DIAGNOSTIC_BYTES,
+  settleRun,
+  settleRunResult,
+} from '../src/index.ts'
 
 describe('outcome mapping helpers', () => {
   it.each([
@@ -60,6 +65,58 @@ describe('outcome mapping helpers', () => {
     expect(bothFailed).toEqual({
       status: 'failed',
       detail: 'Error: result failed; dispose failed: Error: reap failed',
+    })
+  })
+
+  it('keeps provider diagnostics separate in failed background outcomes', async () => {
+    await expect(settleRun({
+      id: SessionId('child-diagnostic'),
+      localAgent: undefined,
+      result: Promise.resolve({
+        output: [{ type: 'text', text: 'partial assistant text' }],
+        diagnostic: 'Claude Code denied a tool request',
+        stopReason: 'error',
+      }),
+      dispose: () => Promise.resolve(),
+    })).resolves.toEqual({
+      status: 'failed',
+      detail: 'error; diagnostic: Claude Code denied a tool request',
+    })
+  })
+
+  it('bounds multibyte diagnostics and marks truncation', async () => {
+    const exact = 'x'.repeat(MAX_SUBAGENT_DIAGNOSTIC_BYTES)
+    expect(limitSubagentDiagnostic(exact)).toBe(exact)
+
+    const oversized = '权限'.repeat(MAX_SUBAGENT_DIAGNOSTIC_BYTES)
+    const limited = limitSubagentDiagnostic(oversized)
+    expect(Buffer.byteLength(limited, 'utf8'))
+      .toBeLessThanOrEqual(MAX_SUBAGENT_DIAGNOSTIC_BYTES)
+    expect(limited.endsWith('[diagnostic truncated]')).toBe(true)
+    expect(limited).not.toContain('\uFFFD')
+
+    const controller = new AbortController()
+    const result = await settleRunResult({
+      attempt: async () => { throw new Error('provider failed') },
+      collectOutput: () => [],
+      collectDiagnostic: () => oversized,
+      cancelled: () => false,
+      signal: controller.signal,
+      onAbort: () => {},
+    })
+    expect(result.stopReason).toBe('error')
+    expect(result.diagnostic).toBe(limited)
+
+    await expect(settleRunResult({
+      attempt: async () => { throw new Error('provider failed') },
+      collectOutput: () => [{ type: 'text', text: 'partial' }],
+      collectDiagnostic: () => { throw new Error('collector failed') },
+      cancelled: () => false,
+      signal: controller.signal,
+      onAbort: () => {},
+    })).resolves.toEqual({
+      output: [{ type: 'text', text: 'partial' }],
+      stopReason: 'error',
     })
   })
 })

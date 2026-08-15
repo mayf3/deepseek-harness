@@ -65,6 +65,9 @@ const BACKGROUND_TASK_ADMISSION_CONFIG = fileURLToPath(
 )
 const PRODUCT_SUBAGENT_CODEX_CONFIG = fileURLToPath(new URL('../product-subagent-codex.cordis.yml', import.meta.url))
 const PRODUCT_SUBAGENT_BOTH_CONFIG = fileURLToPath(new URL('../product-subagent-both.cordis.yml', import.meta.url))
+const PRODUCT_SUBAGENT_RESULT_DIAGNOSTIC_CONFIG = fileURLToPath(
+  new URL('../subagent-result-diagnostic.cordis.yml', import.meta.url),
+)
 const FS_DIFF_BOUND_CONFIG = fileURLToPath(new URL('./fs-diff-bound.cordis.yml', import.meta.url))
 const SNAPSHOTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'snapshots')
 const PACKED_CHUNKS_SOURCE = 'hook-cc-pretool-deny'
@@ -145,7 +148,7 @@ const SCENARIOS: Scenario[] = [
     hasModelTurn: true,
     recorded: false,
     pinsHeader: true,
-    headerClass: 'product-subagent-codex',
+    headerClass: 'product-subagent-result-diagnostic',
     configPath: PRODUCT_SUBAGENT_CODEX_CONFIG,
   },
   {
@@ -156,6 +159,17 @@ const SCENARIOS: Scenario[] = [
     headerClass: 'product-subagent-both',
     systemPromptSource: 'product-subagent-codex',
     configPath: PRODUCT_SUBAGENT_BOTH_CONFIG,
+  },
+  {
+    name: 'product-subagent-result-diagnostic',
+    hasModelTurn: true,
+    recorded: false,
+    overridden: true,
+    pinsHeader: true,
+    headerClass: 'product-subagent-codex',
+    systemPromptSource: 'product-subagent-codex',
+    toolSchemasSource: 'product-subagent-codex',
+    configPath: PRODUCT_SUBAGENT_RESULT_DIAGNOSTIC_CONFIG,
   },
   {
     name: 'session-title-after-turn',
