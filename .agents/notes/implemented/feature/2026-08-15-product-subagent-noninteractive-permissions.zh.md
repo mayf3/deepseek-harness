@@ -23,12 +23,12 @@ Claude Code 默认使用 `dontAsk`，而且只接受锁定版本 Agent SDK 支�
 | `dontAsk` | 不弹出提示，直接拒绝尚未获授权的操作。 |
 | `acceptEdits` | 接受编辑；其余权限提示由无人值守回调拒绝。 |
 | `auto` | 由 Claude Code 原生分类器允许或拒绝权限请求。 |
-| `plan` | 使用 Claude Code 的仅规划模式，不执行工具。 |
+| `plan` | 使用规划模式，拒绝执行审批，并把完整计划作为最终答案返回。 |
 | `bypassPermissions` | 设置 SDK 的显式危险确认并跳过权限检查。 |
 
 提供方继续省略 `settingSources`：除所选模式以外，用户、项目和本地设置、身份验证、工具与沙箱行为仍由 Claude Code 拥有。
 
-每次 query 都禁用 `AskUserQuestion`。非 bypass 模式的权限回调会拒绝请求，而不会返回 SDK 中会无限阻塞的 `null`；MCP elicitation 会被拒绝；已支持的拒绝对话会被取消；未声明的对话类型使用 SDK 的无对话失败行为。原生 `permission_denied` 消息会记录同一份当前运行事实。这些路径不会创建审批会话、队列、缓存或重试循环。
+每次 query 都禁用 `AskUserQuestion`。非 bypass 模式的权限回调会拒绝请求，而不会返回 SDK 中会无限阻塞的 `null`；plan 模式还会把 `ExitPlanMode` 放入 `disallowedTools`，因此原生 allow 规则无法把无人值守 query 切回执行模式。MCP elicitation 会被拒绝；已支持的拒绝对话会被取消；未声明的对话类型使用 SDK 的无对话失败行为。原生 `permission_denied` 消息会记录同一份当前运行事实。这些路径不会创建审批会话、队列、缓存或重试循环。
 
 ### Codex
 

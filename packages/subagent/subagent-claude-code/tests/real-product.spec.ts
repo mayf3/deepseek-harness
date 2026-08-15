@@ -127,6 +127,7 @@ interface RealHarness {
 async function realHarness(
   behavior: MessagesBehavior,
   permissionMode?: ClaudeCodePermissionMode,
+  nativeAllow: readonly string[] = [],
 ): Promise<{
   readonly harness: RealHarness
   readonly fixture: MessagesFixture
@@ -151,7 +152,10 @@ async function realHarness(
     join(claudeConfig, 'settings.json'),
     `${JSON.stringify({
       model: settingsModel,
-      permissions: { defaultMode: 'default' },
+      permissions: {
+        defaultMode: 'default',
+        ...nativeAllow.length === 0 ? {} : { allow: nativeAllow },
+      },
     }, null, 2)}\n`,
   )
   const fixture = await startMessagesFixture(behavior)
@@ -357,6 +361,25 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
       stopReason: 'completed',
     })
     expect(readFileSync(target, 'utf8')).toBe('bypass write completed')
+    await run.dispose()
+    await expectQuiescent(harness.handles)
+  })
+
+  it('returns the completed plan without approving execution', async () => {
+    const { harness, fixture } = await realHarness({
+      kind: 'tool-use',
+      toolName: 'ExitPlanMode',
+      input: {},
+      finalText: 'PLAN_ONLY_RESULT',
+    }, 'plan', ['ExitPlanMode'])
+    const run = await startRequest(harness, 'Design the fixture change without implementing it.')
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'PLAN_ONLY_RESULT' }],
+      stopReason: 'completed',
+    })
+    expect(fixture.requests).toHaveLength(2)
+    expect(JSON.stringify(fixture.requests[1]?.body.messages))
+      .toContain('ExitPlanMode exists but is not enabled in this context')
     await run.dispose()
     await expectQuiescent(harness.handles)
   })

@@ -186,26 +186,11 @@ describe('dsh-tool-subagent', () => {
   })
 
   it('renders provider diagnostics before preserved partial assistant output', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(SubagentRuntime)
-    ctx.subagents.registerProvider({
-      name: 'diagnostic',
-      capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
-      inheritsParentContext: false,
-      start: async () => ({
-        id: SessionId('diagnostic-child'),
-        localAgent: undefined,
-        result: Promise.resolve({
-          output: [{ type: 'text', text: 'partial assistant text' }],
-          diagnostic: 'Claude Code denied a tool request',
-          stopReason: 'error',
-        }),
-        dispose: async () => {},
-      }),
+    const ctx = await setup({ provider: 'mock' }, {
+      reply: 'partial assistant text',
+      diagnostic: 'Claude Code denied a tool request',
+      stopReason: 'error',
     })
-    await ctx.plugin(tool, { provider: 'diagnostic', maxDepth: 'provider-managed' })
 
     const result = await callSubagent(ctx, { description: 'd', prompt: 'p' })
     expect(result.isError).toBe(true)
@@ -884,34 +869,17 @@ describe('dsh-tool-subagent background mode', () => {
   })
 
   it('preserves provider diagnostics in one-shot background failure detail', async () => {
-    const ctx = await backgroundSetup({ provider: 'mock' })
+    const ctx = await backgroundSetup({ provider: 'mock' }, {
+      reply: 'not background output',
+      diagnostic: 'Claude Code cancelled an unattended dialog',
+      stopReason: 'error',
+    })
     const parent = ownerAgent(ctx, 'sess-parent')
-    ctx.subagents.registerProvider({
-      name: 'diagnostic-background',
-      capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
-      inheritsParentContext: false,
-      start: async () => ({
-        id: SessionId('diagnostic-background-child'),
-        localAgent: undefined,
-        result: Promise.resolve({
-          output: [{ type: 'text', text: 'not background output' }],
-          diagnostic: 'Claude Code cancelled an unattended dialog',
-          stopReason: 'error',
-        }),
-        dispose: async () => {},
-      }),
-    })
-    tool.apply(ctx, {
-      provider: 'diagnostic-background',
-      toolName: 'subagent_diagnostic_background',
-      backgroundMode: 'one-shot',
-      maxDepth: 'provider-managed',
-    })
 
     const started = await ctx.tools.execute({
       signal: testToolSignal,
       callId: CallId('diagnostic-background-start'),
-      name: 'subagent_diagnostic_background',
+      name: 'subagent',
       arguments: { description: 'd', prompt: 'p', run_in_background: true },
       agent: parent,
     })

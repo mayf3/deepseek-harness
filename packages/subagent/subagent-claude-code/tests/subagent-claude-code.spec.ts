@@ -679,6 +679,9 @@ describe('query options and result mapping', () => {
         spawn: () => child.handle,
       }, new AbortController(), () => {}, () => {})
       expect(options.permissionMode).toBe(permissionMode)
+      expect(options.disallowedTools).toEqual(permissionMode === 'plan'
+        ? ['AskUserQuestion', 'ExitPlanMode']
+        : ['AskUserQuestion'])
       if (permissionMode === 'bypassPermissions') {
         expect(options.allowDangerouslySkipPermissions).toBe(true)
         expect(options).not.toHaveProperty('canUseTool')
@@ -688,6 +691,22 @@ describe('query options and result mapping', () => {
       }
     },
   )
+
+  it('disallows ExitPlanMode before native plan-mode allow rules', () => {
+    const child = fakeChild()
+    const options = claudeQueryOptions({
+      cwd: '/workspace',
+      executable: '/native/claude',
+      permissionMode: 'plan',
+      env: {},
+      disposeGraceMs: 17,
+      spawn: () => child.handle,
+    }, new AbortController(), () => {}, () => {})
+    expect(options.disallowedTools).toEqual([
+      'AskUserQuestion',
+      'ExitPlanMode',
+    ])
+  })
 
   it('accepts only a non-error success with a non-blank final result', () => {
     expect(successfulResult(success('exact final'))).toBe('exact final')
