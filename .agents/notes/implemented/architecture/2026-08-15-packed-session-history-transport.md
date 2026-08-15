@@ -32,6 +32,8 @@ A production-sized private session sample was measured without retaining or comm
 
 Packing reduced uncompressed JSON by 90.8% relative to raw logical events and by 83.4% relative to the lossy completed-step projection candidate. Brotli output was 73.2% smaller than raw and 44.8% smaller than that projection candidate. These figures describe this sample rather than a protocol guarantee; savings scale with the length and regularity of delta runs.
 
+The opt-in `packages/client/runtime/tests/history-transport.perf.client.ts` benchmark constructs the same logical-event, ordinary-event, and delta-run cardinalities from synthetic content. `DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.perf.config.ts packages/client/runtime/tests/history-transport.perf.client.ts` reports wire sizes and Host/client timing under `HISTORY_TRANSPORT_PERF_RESULT`. The manual performance inventory does not run in CI and carries no machine-dependent timing assertions; structural assertions pin the fixture cardinalities, compact input count, and identical final state from its two-consumer Assistant fold fixture.
+
 ## Alternatives considered
 
 **Discard completed-step chunks on the Host.** This lowers logical event count but makes transport semantics depend on the current transcript policy, removes exact evidence from all consumers, and still sends every retained incomplete-step token as a separate envelope. The measured packed response is smaller while remaining lossless.

@@ -1,13 +1,16 @@
 import { defineConfig } from 'vitest/config'
 import webConfig from './vitest.web.config.ts'
 
-// Manual high-cardinality diagnostics stay outside vitest.web.config.ts's
-// .e2e.ts/.snapshot.ts inventory and therefore outside the CI web gate.
+// Manual high-cardinality diagnostics stay outside every default Vitest
+// inventory and therefore outside CI's executed test lanes.
 export default defineConfig({
   ...webConfig,
   test: {
     ...webConfig.test,
-    include: ['apps/web/tests/**/*.perf.ts'],
+    include: [
+      'apps/web/tests/**/*.perf.ts',
+      'packages/api/session-controller/tests/**/*.perf.client.ts',
+    ],
     disableConsoleIntercept: true,
     hookTimeout: 180_000,
     testTimeout: 600_000,

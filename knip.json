@@ -67,6 +67,16 @@
         "tests/**/*.{ts,tsx}"
       ]
     },
+    "packages/api/session-controller": {
+      "entry": [
+        "tests/**/*.spec.ts",
+        "tests/**/*.perf.client.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ]
+    },
     "packages/api/remotes": {
       "entry": [
         "tests/**/*.e2e.ts"

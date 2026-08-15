@@ -32,6 +32,8 @@ Status: implemented
 
 与原始逻辑事件相比，打包使未压缩 JSON 减少 90.8%；与有损的已完成步骤投影候选相比减少 83.4%。Brotli 输出相对原始形式减少 73.2%，相对该投影候选减少 44.8%。这些数字描述该样本，并非协议保证；收益随 delta run 的长度与规律性变化。
 
+可选运行的 `packages/client/runtime/tests/history-transport.perf.client.ts` benchmark 使用合成内容构造相同的逻辑事件数、普通事件数与 delta run 数。`DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.perf.config.ts packages/client/runtime/tests/history-transport.perf.client.ts` 会在 `HISTORY_TRANSPORT_PERF_RESULT` 下报告协议体积与 Host／client 计时。CI 不执行这组手动性能用例，其中也没有依赖机器性能的耗时断言；结构断言固定 fixture 的事件规模、紧凑输入数，以及双消费方 Assistant 折叠 fixture 的一致最终状态。
+
 ## 曾考虑的替代方案
 
 **在 Host 丢弃已完成步骤的分片。** 这会减少逻辑事件数，但会让传输语义取决于当前 transcript 策略，从所有消费方移除精确证据，同时仍把保留的未完成步骤 token 逐个装入信封。实测打包响应在保持无损的同时更小。
