@@ -18,27 +18,34 @@ import {
   type SubagentProvider,
 } from '@deepseek-ai/dsh-subagent'
 import {
+  CODEX_PERMISSION_MODES,
+  DEFAULT_CODEX_PERMISSION_MODE,
   DEFAULT_DISPOSE_GRACE_MS,
   startCodexRun,
+  type CodexPermissionMode,
   type CodexRunSpec,
 } from './run.ts'
 
 export const name = 'subagent-codex'
 export const inject = ['subagents', 'subprocess']
 
-/** Deployment-owned environment and process-release bound. */
+/** Deployment-owned permission, environment, and process-release settings. */
 export interface Config {
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.
    */
   env?: Record<string, string>
+  /** Native non-interactive permission mode fixed for this Provider instance. */
+  permissionMode?: CodexPermissionMode
   /** Grace in milliseconds for app-server process-tree termination. */
   disposeGraceMs?: number
 }
 
 export const Config: z<Config> = z.object({
   env: z.dict(z.string()).default({}),
+  permissionMode: z.union([...CODEX_PERMISSION_MODES])
+    .default(DEFAULT_CODEX_PERMISSION_MODE),
   disposeGraceMs: z.number().default(DEFAULT_DISPOSE_GRACE_MS),
 })
 
@@ -67,6 +74,7 @@ class CodexProvider implements SubagentProvider {
         undefined,
         parentCwd,
       ),
+      permissionMode: this.config.permissionMode,
       env: this.config.env,
       disposeGraceMs: this.config.disposeGraceMs,
       spawn: spawnSpec => this.ctx.subprocess.spawn(spawnSpec),
@@ -83,10 +91,14 @@ class CodexProvider implements SubagentProvider {
 /**
  * Register the fixed `codex` provider.
  * @param ctx - context carrying shared subagent and subprocess services.
- * @param config - explicit child environment and disposal grace.
+ * @param config - permission mode, child environment, and disposal grace.
  */
 export function apply(ctx: Context, config: Config): void {
-  const resolved = config as ResolvedConfig
+  const resolved: ResolvedConfig = {
+    env: config.env as Record<string, string>,
+    permissionMode: config.permissionMode ?? DEFAULT_CODEX_PERMISSION_MODE,
+    disposeGraceMs: config.disposeGraceMs as number,
+  }
   assertPositiveFinite(
     'subagent-codex',
     'disposeGraceMs',

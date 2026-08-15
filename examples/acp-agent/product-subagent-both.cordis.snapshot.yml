@@ -20,6 +20,8 @@
                     - id: deepseek-v4-pro
           - id: subagent-codex
             name: '@deepseek-ai/dsh-subagent-codex'
+            config:
+              permissionMode: approve-for-me
           - id: subagent-claude-code
             name: '@deepseek-ai/dsh-subagent-claude-code'
             config:

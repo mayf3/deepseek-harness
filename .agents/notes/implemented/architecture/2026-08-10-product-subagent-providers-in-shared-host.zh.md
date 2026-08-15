@@ -16,7 +16,7 @@ Status: implemented
 
 本说明继续负责解释为什么已经挂载的产品提供方属于 host plane，而面向模型的工具属于 Agent Preset。生产安装排除决策负责哪些 Profile 安装这些可选包。提供方约定说明继续负责每个产品的协议、结果映射、取消、进程树生命周期与证据层级。[Agent Preset 架构](2026-08-03-per-session-agent-presets.md)仍负责宿主与 agent 的划分、preset 创作，以及改动只影响新组装会话的规则。
 
-这些提供方使用宿主环境已经选定的产品。Codex 启动 `codex`，该命令从 `PATH` 解析；Claude Code 通过共享的子进程执行世界解析 `claude`，并把确切路径交给官方 SDK。加载 Profile 不会安装产品、创建产品状态、探测版本或测试身份验证。它可以提供已挂载 Provider 的部署配置，包括由[非交互权限决策](../feature/2026-08-15-product-subagent-noninteractive-permissions.md)负责的 Claude Code `permissionMode`，但不会把该选择移入 Agent Preset 或面向模型的工具。命令缺失和产品故障仍局限于发生问题的那次委派。
+这些提供方使用宿主环境已经选定的产品。Codex 启动 `codex`，该命令从 `PATH` 解析；Claude Code 通过共享的子进程执行世界解析 `claude`，并把确切路径交给官方 SDK。加载 Profile 不会安装产品、创建产品状态、探测版本或测试身份验证。它可以提供每个已挂载 Provider 的部署配置，包括由[非交互权限决策](../feature/2026-08-15-product-subagent-noninteractive-permissions.md)负责的产品专属 `permissionMode` 值，但不会把这些选择移入 Agent Preset 或面向模型的工具。命令缺失和产品故障仍局限于发生问题的那次委派。
 
 只有选择 Claude Code 提供方的 Profile 才会携带 Claude Agent SDK 的可选平台 CLI（命令行界面）载荷。生产环境仍解析宿主提供的 `claude`；这份 SDK 载荷是提供方包的安装成本，而不是生产可执行文件。
 

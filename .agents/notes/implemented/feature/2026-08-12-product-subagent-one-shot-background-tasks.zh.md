@@ -49,7 +49,7 @@ ACP 产品组装使用相同的固定产品行与通用作业控制工具。其�
 
 ## 验证
 
-Web 组装测试会从仓库 examples 依赖锚点显式挂载两个可选提供方，再启动四种用户 preset 变体——不启用产品、只启用 Codex、只启用 Claude Code，以及同时启用两者——并检查每个已启用产品工具都会与 `job_output`、`job_list` 和 `job_kill` 一起公开 `run_in_background`。两个由包负责的 Loader 组装会在空 `PATH` 下运行，检查相同 schema 与控制工具，并证明显式加载提供方不会启动产品进程。ACP 无密钥快照会固定显式组装后的产品 schema，而现有 `dsh-tool-subagent` 与作业测试套件会固定前台默认值、Job 登记、最终输出收集、共享诊断呈现、取消、完成通知、owner 资源释放与提供方资源释放。
+Web 组装测试会从仓库 examples 依赖锚点显式挂载两个可选提供方，再启动四种用户 preset 变体——不启用产品、只启用 Codex、只启用 Claude Code，以及同时启用两者——并检查每个已启用产品工具都会与 `job_output`、`job_list` 和 `job_kill` 一起公开 `run_in_background`。两个由包负责的 Loader 组装会在空 `PATH` 下运行，检查相同 schema 与控制工具，并证明显式加载提供方不会启动产品进程。ACP 无密钥快照会固定显式组装后的产品 schema，而现有 `dsh-tool-subagent` 与作业测试套件会固定前台默认值、Job 登记、最终输出收集、共享诊断呈现、取消、完成通知、owner 资源释放与提供方资源释放。两个真实产品提供方测试套件还会分别证明各自的原生权限失败先进入同一个共享结果，再由任一调度路径消费。
 
 ## 曾考虑的替代方案
 

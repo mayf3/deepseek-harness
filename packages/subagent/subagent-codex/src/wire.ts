@@ -11,8 +11,41 @@ import type { Readable, Writable } from 'node:stream'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol'
+import type { CodexPermissionMode } from './run.ts'
 
 type JsonObject = Record<string, unknown>
+
+const THREAD_PERMISSION_PARAMS: Readonly<Record<CodexPermissionMode, JsonObject>> = {
+  never: { approvalPolicy: 'never' },
+  'approve-for-me': {
+    approvalPolicy: 'on-request',
+    approvalsReviewer: 'auto_review',
+    sandbox: 'workspace-write',
+  },
+  'dangerously-bypass-approvals-and-sandbox': {
+    approvalPolicy: 'never',
+    sandbox: 'danger-full-access',
+  },
+}
+
+const STDERR_PERMISSION_SIGNATURES = [
+  {
+    text: 'approval policy is Never; reject command',
+    request: 'command execution',
+    decision: 'denied',
+    reason: 'Codex rejected an escalation because the selected policy never asks for approval',
+  },
+  {
+    text: 'recorded sandbox violation:',
+    request: 'sandbox execution',
+    decision: 'failed',
+    reason: 'Codex reported a sandbox violation',
+  },
+] as const
+
+const STDERR_SIGNATURE_TAIL_CHARS = Math.max(
+  ...STDERR_PERMISSION_SIGNATURES.map(signature => signature.text.length),
+) - 1
 
 function object(value: unknown, label: string): JsonObject {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -45,6 +78,24 @@ function isContextWindowExceeded(turn: JsonObject): boolean {
     && typeof error === 'object'
     && !Array.isArray(error)
     && (error as JsonObject).codexErrorInfo === 'contextWindowExceeded'
+}
+
+function isSandboxFailure(turn: JsonObject): boolean {
+  if (turn.status !== 'failed') return false
+  const error = turn.error
+  return error !== null
+    && typeof error === 'object'
+    && !Array.isArray(error)
+    && (error as JsonObject).codexErrorInfo === 'sandboxError'
+}
+
+function unattendedDiagnostic(
+  mode: CodexPermissionMode,
+  request: 'command approval' | 'file approval' | 'permission grant' | 'user input' | 'MCP elicitation' | 'command execution' | 'file change' | 'sandbox execution',
+  decision: 'cancelled' | 'declined' | 'denied' | 'empty response' | 'failed',
+  reason: string,
+): string {
+  return `Codex unattended decision (mode: ${mode}; request: ${request}; decision: ${decision}): ${reason}`
 }
 
 function thrown(value: unknown): Error {
@@ -93,11 +144,14 @@ export class CodexAppServerWire {
   }> = []
   private lastFinalAnswer: string | undefined
   private lastUnphasedAnswer: string | undefined
+  private diagnostic: string | undefined
+  private stderrTail = ''
   private closed = false
 
   constructor(
     private readonly input: Readable,
     output: Writable,
+    private readonly permissionMode: CodexPermissionMode = 'never',
   ) {
     this.transport = new JsonRpcLineTransport(input, output)
     // Fatal protocol state can arrive after the current guarded operation has
@@ -154,6 +208,7 @@ export class CodexAppServerWire {
     const response = object(await this.guarded(this.transport.request('thread/start', {
       cwd,
       ephemeral: true,
+      ...THREAD_PERMISSION_PARAMS[this.permissionMode],
     }, signal), signal), 'thread/start response')
     const thread = object(response.thread, 'thread/start thread')
     const id = string(thread.id, 'thread/start thread id')
@@ -191,8 +246,18 @@ export class CodexAppServerWire {
       return { output: this.collectOutput(), stopReason: 'max-tokens' }
     }
     if (status !== 'completed') {
+      const sandboxFailure = isSandboxFailure(terminal)
+      if (sandboxFailure) {
+        this.recordDiagnostic(
+          'sandbox execution',
+          'failed',
+          'Codex reported a sandbox failure',
+        )
+      }
       const detail = status === 'failed'
-        ? `: ${JSON.stringify(terminal.error)}`
+        ? sandboxFailure
+          ? ': sandboxError'
+          : ': error'
         : ''
       throw new Error(`subagent-codex: Codex turn ended with status ${String(status)}${detail}`)
     }
@@ -224,6 +289,36 @@ export class CodexAppServerWire {
     return selected !== undefined && selected.trim().length > 0
       ? [{ type: 'text', text: selected }]
       : []
+  }
+
+  /**
+   * The latest safe unattended permission fact observed for this run.
+   * @returns provider-authored diagnostic text, when one was observed.
+   */
+  collectDiagnostic(): string | undefined {
+    return this.diagnostic
+  }
+
+  /**
+   * Observe product stderr while retaining only enough tail to recognize fixed
+   * permission signatures. The raw text is never copied into the diagnostic.
+   * @param chunk - one decoded stderr chunk already forwarded to the host.
+   */
+  observeStderr(chunk: string): void {
+    const observed = `${this.stderrTail}${chunk}`
+    let latestIndex = -1
+    let latest: (typeof STDERR_PERMISSION_SIGNATURES)[number] | undefined
+    for (const signature of STDERR_PERMISSION_SIGNATURES) {
+      const index = observed.lastIndexOf(signature.text)
+      if (index > latestIndex) {
+        latestIndex = index
+        latest = signature
+      }
+    }
+    if (latest !== undefined) {
+      this.recordDiagnostic(latest.request, latest.decision, latest.reason)
+    }
+    this.stderrTail = observed.slice(-STDERR_SIGNATURE_TAIL_CHARS)
   }
 
   /** Detach JSON-RPC listeners and reject outstanding requests. Idempotent. */
@@ -291,21 +386,67 @@ export class CodexAppServerWire {
     }
   }
 
+  private recordDiagnostic(
+    request: Parameters<typeof unattendedDiagnostic>[1],
+    decision: Parameters<typeof unattendedDiagnostic>[2],
+    reason: string,
+  ): void {
+    this.diagnostic = unattendedDiagnostic(
+      this.permissionMode,
+      request,
+      decision,
+      reason,
+    )
+  }
+
   private handleServerRequest(method: string, params: JsonObject): Promise<unknown> {
     try {
       switch (method) {
         case 'item/commandExecution/requestApproval':
+          this.validateRunIds(params)
+          {
+            const decision = unattendedDecision(params)
+            this.recordDiagnostic(
+              'command approval',
+              decision === 'cancel' ? 'cancelled' : 'declined',
+              'the provider does not grant interactive approval',
+            )
+            return Promise.resolve({ decision })
+          }
         case 'item/fileChange/requestApproval':
           this.validateRunIds(params)
-          return Promise.resolve({ decision: unattendedDecision(params) })
+          {
+            const decision = unattendedDecision(params)
+            this.recordDiagnostic(
+              'file approval',
+              decision === 'cancel' ? 'cancelled' : 'declined',
+              'the provider does not grant interactive approval',
+            )
+            return Promise.resolve({ decision })
+          }
         case 'item/permissions/requestApproval':
           this.validateRunIds(params)
+          this.recordDiagnostic(
+            'permission grant',
+            'denied',
+            'the provider grants no additional turn permissions',
+          )
           return Promise.resolve({ permissions: {}, scope: 'turn' })
         case 'item/tool/requestUserInput':
           this.validateRunIds(params)
+          this.recordDiagnostic(
+            'user input',
+            'empty response',
+            'the provider does not collect interactive answers',
+          )
           return Promise.resolve({ answers: {} })
         case 'mcpServer/elicitation/request':
           this.validateRunIds(params, true)
+          this.recordDiagnostic(
+            'MCP elicitation',
+            'declined',
+            'the provider does not collect interactive MCP input',
+          )
           return Promise.resolve({ action: 'decline', content: null, _meta: null })
         default:
           throw new Error(`subagent-codex: unsupported app-server request ${JSON.stringify(method)}`)
@@ -340,6 +481,22 @@ export class CodexAppServerWire {
       }
       if (id !== this.turnId) return
       const item = object(params.item, 'item/completed item')
+      if (item.type === 'commandExecution' && item.status === 'declined') {
+        this.recordDiagnostic(
+          'command execution',
+          'declined',
+          'Codex declined the command under the selected permission mode',
+        )
+        return
+      }
+      if (item.type === 'fileChange' && item.status === 'declined') {
+        this.recordDiagnostic(
+          'file change',
+          'declined',
+          'Codex declined the file change under the selected permission mode',
+        )
+        return
+      }
       if (item.type !== 'agentMessage') return
       const text = typeof item.text === 'string'
         ? item.text

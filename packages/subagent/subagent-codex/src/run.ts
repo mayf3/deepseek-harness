@@ -24,6 +24,22 @@ import { CodexAppServerWire } from './wire.ts'
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
+/** Profile-selectable non-interactive Codex permission mode. */
+export type CodexPermissionMode =
+  | 'never'
+  | 'approve-for-me'
+  | 'dangerously-bypass-approvals-and-sandbox'
+
+/** Codex CLI permission modes that cannot wait for a human response. */
+export const CODEX_PERMISSION_MODES = [
+  'never',
+  'approve-for-me',
+  'dangerously-bypass-approvals-and-sandbox',
+] as const satisfies readonly CodexPermissionMode[]
+
+/** Safe default for unattended Codex runs. */
+export const DEFAULT_CODEX_PERMISSION_MODE: CodexPermissionMode = 'never'
+
 /**
  * Resolve the fixed app-server command for a platform.
  *
@@ -45,6 +61,8 @@ export function codexAppServerArgv(
 export interface CodexRunSpec {
   /** Parent Session workspace, also supplied to `thread/start`. */
   readonly cwd: string
+  /** Profile-selected native non-interactive permission mode. */
+  readonly permissionMode: CodexPermissionMode
   /** Explicit deployment/test environment layered after the shared scrub. */
   readonly env: Record<string, string>
   /** Subprocess termination grace passed to the shared process-tree owner. */
@@ -125,7 +143,7 @@ export async function startCodexRun(
   const child = spec.spawn({
     argv: codexAppServerArgv(),
     cwd: spec.cwd,
-    stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
+    stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
     graceMs: spec.disposeGraceMs,
     env: spec.env,
   })
@@ -133,8 +151,27 @@ export async function startCodexRun(
   const wire = new CodexAppServerWire(
     child.stdout as NonNullable<SubprocessHandle['stdout']>,
     child.stdin as NonNullable<SubprocessHandle['stdin']>,
+    spec.permissionMode,
   )
-  const disposeProcess = (): Promise<void> => disposeCodexChild(wire, child)
+  const onStderr = (chunk: Buffer | string): void => {
+    process.stderr.write(chunk)
+    wire.observeStderr(chunk.toString())
+  }
+  const stderrFailure = Promise.withResolvers<never>()
+  const onStderrError = (error: Error): void => {
+    stderrFailure.reject(error)
+  }
+  void stderrFailure.promise.catch(() => {})
+  child.stderr?.on('data', onStderr)
+  child.stderr?.on('error', onStderrError)
+  const disposeProcess = async (): Promise<void> => {
+    try {
+      await disposeCodexChild(wire, child)
+    } finally {
+      child.stderr?.off('data', onStderr)
+      child.stderr?.off('error', onStderrError)
+    }
+  }
 
   const processFailure: Promise<never> = child.done.then(
     outcome => Promise.reject(new Error(
@@ -158,8 +195,16 @@ export async function startCodexRun(
 
   try {
     wire.start()
-    await Promise.race([wire.initialize(request.signal), processFailure])
-    await Promise.race([wire.startThread(spec.cwd, request.signal), processFailure])
+    await Promise.race([
+      wire.initialize(request.signal),
+      processFailure,
+      stderrFailure.promise,
+    ])
+    await Promise.race([
+      wire.startThread(spec.cwd, request.signal),
+      processFailure,
+      stderrFailure.promise,
+    ])
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
     try {
@@ -181,8 +226,10 @@ export async function startCodexRun(
     attempt: () => Promise.race([
       wire.runTurn(texts, runAbort.signal),
       processFailure,
+      stderrFailure.promise,
     ]),
     collectOutput,
+    collectDiagnostic: () => wire.collectDiagnostic(),
     cancelled: () => runAbort.signal.aborted,
     onError: spec.onError,
     signal: request.signal,
