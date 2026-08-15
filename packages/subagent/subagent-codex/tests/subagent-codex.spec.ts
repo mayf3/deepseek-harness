@@ -667,6 +667,17 @@ describe('CodexAppServerWire', () => {
     await nextTask()
     const requests = [
       {
+        id: 'command-decline',
+        method: 'item/commandExecution/requestApproval',
+        params: {
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          availableDecisions: ['decline'],
+        },
+        result: { decision: 'decline' },
+        diagnostic: 'Codex unattended decision (mode: never; request: command approval; decision: declined): the provider does not grant interactive approval',
+      },
+      {
         id: 'file',
         method: 'item/fileChange/requestApproval',
         params: {
@@ -676,6 +687,17 @@ describe('CodexAppServerWire', () => {
         },
         result: { decision: 'decline' },
         diagnostic: 'Codex unattended decision (mode: never; request: file approval; decision: declined): the provider does not grant interactive approval',
+      },
+      {
+        id: 'file-cancel',
+        method: 'item/fileChange/requestApproval',
+        params: {
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          availableDecisions: ['cancel'],
+        },
+        result: { decision: 'cancel' },
+        diagnostic: 'Codex unattended decision (mode: never; request: file approval; decision: cancelled): the provider does not grant interactive approval',
       },
       {
         id: 'file-default',
@@ -742,11 +764,29 @@ describe('CodexAppServerWire', () => {
     wire.close()
   })
 
-  it('records a declined command item without retaining its payload', async () => {
+  it('records declined command and file items without retaining their payloads', async () => {
     const { child, wire } = await initializeWire()
     const result = wire.runTurn(['task'], new AbortController().signal)
     const turnStart = await child.peer.nextMethod('turn/start')
     child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    child.peer.send({
+      method: 'item/completed',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        item: {
+          type: 'commandExecution',
+          status: 'declined',
+          command: 'cat /private/secret.txt',
+        },
+      },
+    })
+    await nextTask()
+    expect(wire.collectDiagnostic()).toBe(
+      'Codex unattended decision (mode: never; request: command execution; decision: declined): Codex declined the command under the selected permission mode',
+    )
+    expect(wire.collectDiagnostic()).not.toContain('/private/secret.txt')
+
     child.peer.send(
       {
         method: 'item/completed',
@@ -754,9 +794,9 @@ describe('CodexAppServerWire', () => {
           threadId: 'thread-1',
           turnId: 'turn-1',
           item: {
-            type: 'commandExecution',
+            type: 'fileChange',
             status: 'declined',
-            command: 'cat /private/secret.txt',
+            patch: 'SECRET_TOKEN in /private/secret.txt',
           },
         },
       },
@@ -767,7 +807,7 @@ describe('CodexAppServerWire', () => {
     )
     await expect(result).rejects.toThrow('status failed')
     expect(wire.collectDiagnostic()).toBe(
-      'Codex unattended decision (mode: never; request: command execution; decision: declined): Codex declined the command under the selected permission mode',
+      'Codex unattended decision (mode: never; request: file change; decision: declined): Codex declined the file change under the selected permission mode',
     )
     expect(wire.collectDiagnostic()).not.toContain('SECRET_TOKEN')
     expect(wire.collectDiagnostic()).not.toContain('/private/secret.txt')
