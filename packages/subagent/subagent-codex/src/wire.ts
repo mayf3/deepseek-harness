@@ -47,6 +47,21 @@ const STDERR_SIGNATURE_TAIL_CHARS = Math.max(
   ...STDERR_PERMISSION_SIGNATURES.map(signature => signature.text.length),
 ) - 1
 
+function stderrSignatureTail(value: string): string {
+  for (
+    let length = Math.min(STDERR_SIGNATURE_TAIL_CHARS, value.length)
+    ; length > 0
+    ; length -= 1
+  ) {
+    const tail = value.slice(-length)
+    if (STDERR_PERMISSION_SIGNATURES.some(signature =>
+      tail.length < signature.text.length && signature.text.startsWith(tail))) {
+      return tail
+    }
+  }
+  return ''
+}
+
 function object(value: unknown, label: string): JsonObject {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`subagent-codex: app-server returned invalid ${label}`)
@@ -318,7 +333,7 @@ export class CodexAppServerWire {
     if (latest !== undefined) {
       this.recordDiagnostic(latest.request, latest.decision, latest.reason)
     }
-    this.stderrTail = observed.slice(-STDERR_SIGNATURE_TAIL_CHARS)
+    this.stderrTail = stderrSignatureTail(observed)
   }
 
   /** Detach JSON-RPC listeners and reject outstanding requests. Idempotent. */
@@ -399,6 +414,26 @@ export class CodexAppServerWire {
     )
   }
 
+  private recordDeclinedItem(item: JsonObject): boolean {
+    if (item.type === 'commandExecution' && item.status === 'declined') {
+      this.recordDiagnostic(
+        'command execution',
+        'declined',
+        'Codex declined the command under the selected permission mode',
+      )
+      return true
+    }
+    if (item.type === 'fileChange' && item.status === 'declined') {
+      this.recordDiagnostic(
+        'file change',
+        'declined',
+        'Codex declined the file change under the selected permission mode',
+      )
+      return true
+    }
+    return false
+  }
+
   private handleServerRequest(method: string, params: JsonObject): Promise<unknown> {
     try {
       switch (method) {
@@ -475,28 +510,15 @@ export class CodexAppServerWire {
       if (this.turnId === undefined) {
         if (this.turnCompleted !== undefined) {
           this.observePendingTurnId(id)
+          const item = object(params.item, 'item/completed item')
+          if (this.recordDeclinedItem(item)) return
           this.earlyTurnNotifications.push({ method, params })
         }
         return
       }
       if (id !== this.turnId) return
       const item = object(params.item, 'item/completed item')
-      if (item.type === 'commandExecution' && item.status === 'declined') {
-        this.recordDiagnostic(
-          'command execution',
-          'declined',
-          'Codex declined the command under the selected permission mode',
-        )
-        return
-      }
-      if (item.type === 'fileChange' && item.status === 'declined') {
-        this.recordDiagnostic(
-          'file change',
-          'declined',
-          'Codex declined the file change under the selected permission mode',
-        )
-        return
-      }
+      if (this.recordDeclinedItem(item)) return
       if (item.type !== 'agentMessage') return
       const text = typeof item.text === 'string'
         ? item.text

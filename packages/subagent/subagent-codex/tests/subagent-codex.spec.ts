@@ -868,7 +868,7 @@ describe('CodexAppServerWire', () => {
 
   it('does not reapply an old stderr signature after a newer request diagnostic', async () => {
     const { child, wire } = await initializeWire()
-    wire.observeStderr('approval policy is Never; reject command')
+    wire.observeStderr('recorded sandbox violation:')
     const result = wire.runTurn(['task'], new AbortController().signal)
     const turnStart = await child.peer.nextMethod('turn/start')
     child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
@@ -888,6 +888,36 @@ describe('CodexAppServerWire', () => {
     expect(wire.collectDiagnostic()).toContain('request: file approval')
     child.peer.send(agentMessage('answer', 'final_answer'), turnCompleted('completed'))
     await expect(result).resolves.toMatchObject({ stopReason: 'completed' })
+    wire.close()
+  })
+
+  it('keeps a newer request diagnostic after replaying an older early item', async () => {
+    const { child, wire } = await initializeWire()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.send({
+      method: 'item/completed',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        item: { type: 'fileChange', status: 'declined' },
+      },
+    })
+    await nextTask()
+    child.peer.send({
+      id: 'newer-command-request',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        availableDecisions: ['cancel'],
+      },
+    })
+    await child.peer.nextResponse('newer-command-request')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    child.peer.send(agentMessage('answer', 'final_answer'), turnCompleted('completed'))
+    await expect(result).resolves.toMatchObject({ stopReason: 'completed' })
+    expect(wire.collectDiagnostic()).toContain('request: command approval')
     wire.close()
   })
 
@@ -1222,11 +1252,37 @@ describe('run lifecycle and quiescence', () => {
     await run.dispose()
   })
 
+  it('drains queued stderr before settling a failed published run', async () => {
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const { child, run, turnStart } = await publishRun()
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+      message: 'fixture terminal failure',
+      codexErrorInfo: 'badRequest',
+    }))
+    setImmediate(() => {
+      child.stderr.write('approval policy is Never; reject command')
+    })
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: 'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
+      stopReason: 'error',
+    })
+    await run.dispose()
+    write.mockRestore()
+  })
+
   it('forwards stderr while extracting only a fixed safe permission signature', async () => {
     const child = fakeChild()
     const forwarded: string[] = []
+    let writes = 0
     const write = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
       forwarded.push(String(chunk))
+      writes += 1
+      if (writes === 1) {
+        setImmediate(() => { process.stderr.emit('drain') })
+        return false
+      }
       return true
     })
     const { run, turnStart } = await publishRun(child)
@@ -1243,9 +1299,26 @@ describe('run lifecycle and quiescence', () => {
       stopReason: 'error',
     })
     expect(forwarded.join('')).toContain('SECRET_TOKEN')
+    expect(writes).toBe(2)
     await run.dispose()
     expect(child.stderr.listenerCount('data')).toBe(0)
     write.mockRestore()
+  })
+
+  it('contains host stderr errors without changing run settlement', async () => {
+    const child = fakeChild()
+    const initialErrorListeners = process.stderr.listenerCount('error')
+    const { run, turnStart } = await publishRun(child)
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    expect(process.stderr.listenerCount('error')).toBeGreaterThan(initialErrorListeners)
+    process.stderr.emit('error', new Error('host stderr broke'))
+    child.peer.send(agentMessage('answer', 'final_answer'), turnCompleted('completed'))
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'answer' }],
+      stopReason: 'completed',
+    })
+    await run.dispose()
+    expect(process.stderr.listenerCount('error')).toBe(initialErrorListeners)
   })
 
   it('rejects before spawn when pre-aborted and rolls back startup failures', async () => {

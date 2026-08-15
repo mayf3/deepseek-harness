@@ -154,21 +154,27 @@ export async function startCodexRun(
     spec.permissionMode,
   )
   const onStderr = (chunk: Buffer | string): void => {
-    process.stderr.write(chunk)
     wire.observeStderr(chunk.toString())
   }
   const onStderrError = (): void => {
     // Stderr observation is auxiliary. JSON-RPC and child.done remain the
     // only terminal authorities if the diagnostic stream itself fails.
   }
+  const onHostStderrError = (): void => {
+    // Host stderr is an observation sink, not a child-run failure authority.
+  }
   child.stderr?.on('data', onStderr)
   child.stderr?.on('error', onStderrError)
+  process.stderr.on('error', onHostStderrError)
+  child.stderr?.pipe(process.stderr, { end: false })
   const disposeProcess = async (): Promise<void> => {
     try {
       await disposeCodexChild(wire, child)
     } finally {
+      child.stderr?.unpipe(process.stderr)
       child.stderr?.off('data', onStderr)
       child.stderr?.off('error', onStderrError)
+      process.stderr.off('error', onHostStderrError)
     }
   }
 
@@ -214,10 +220,17 @@ export async function startCodexRun(
 
   const collectOutput = (): ContentBlock[] => wire.collectOutput()
   const result: Promise<SubagentResult> = settleRunResult({
-    attempt: () => Promise.race([
-      wire.runTurn(texts, runAbort.signal),
-      processFailure,
-    ]),
+    attempt: async () => {
+      try {
+        return await Promise.race([
+          wire.runTurn(texts, runAbort.signal),
+          processFailure,
+        ])
+      } catch (error: unknown) {
+        await new Promise<void>((resolve) => { setImmediate(resolve) })
+        throw error
+      }
+    },
     collectOutput,
     collectDiagnostic: () => wire.collectDiagnostic(),
     cancelled: () => runAbort.signal.aborted,
