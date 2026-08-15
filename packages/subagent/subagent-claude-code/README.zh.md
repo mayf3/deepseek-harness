@@ -16,7 +16,7 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 
 提供方故意省略 SDK 的 `settingSources` 选项。因此，官方 SDK 会相对于父会话 cwd 读取宿主机常规的用户、项目和本地 Claude 设置，包括原生账户状态与产品配置。提供方既不复制也不过滤这些文件，也不会创建或修改登录状态。Profile 选择的 `permissionMode` 是唯一的 query 级覆盖：Claude Code 仍拥有其设置与沙箱，而所选原生模式决定这个无人值守 query 如何处理权限检查。
 
-每次 query 都设置 `persistSession: false` 并禁用 `AskUserQuestion`。除 bypass 模式外，`canUseTool` 会立即拒绝仍需人工审批的请求。在 plan 模式下，`ExitPlanMode` 审批会被拒绝，同时用固定指令要求模型把完整计划作为最终答案返回且不得执行。MCP elicitation 会被拒绝，已知的拒绝回退对话会被取消，未声明的对话类型则使用 SDK 的无对话失败行为。这些决定都不会等待用户界面。若权限拒绝或无人值守回调参与了一次失败运行，提供方会生成可选的 `SubagentResult.diagnostic`，其中只包含产品、有效模式、请求类别、决定与固定的安全原因；共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。成功运行与本地取消不会公开已捕获的失败说明。
+每次 query 都设置 `persistSession: false` 并禁用 `AskUserQuestion`。除 bypass 模式外，`canUseTool` 会立即拒绝仍需人工审批的请求。Plan 模式还会把 `ExitPlanMode` 放入 SDK 的 `disallowedTools`，因此原生 settings 无法预先放行回到执行模式的转换，模型必须把完整计划作为最终答案返回。MCP elicitation 会被拒绝，已知的拒绝回退对话会被取消，未声明的对话类型则使用 SDK 的无对话失败行为。这些决定都不会等待用户界面。若权限拒绝或无人值守回调参与了一次失败运行，提供方会生成可选的 `SubagentResult.diagnostic`，其中只包含产品、有效模式、请求类别、决定与固定的安全原因；共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。成功运行与本地取消不会公开已捕获的失败说明。
 
 ## 能力与上下文
 

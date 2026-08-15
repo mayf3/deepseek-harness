@@ -679,6 +679,9 @@ describe('query options and result mapping', () => {
         spawn: () => child.handle,
       }, new AbortController(), () => {}, () => {})
       expect(options.permissionMode).toBe(permissionMode)
+      expect(options.disallowedTools).toEqual(permissionMode === 'plan'
+        ? ['AskUserQuestion', 'ExitPlanMode']
+        : ['AskUserQuestion'])
       if (permissionMode === 'bypassPermissions') {
         expect(options.allowDangerouslySkipPermissions).toBe(true)
         expect(options).not.toHaveProperty('canUseTool')
@@ -689,9 +692,8 @@ describe('query options and result mapping', () => {
     },
   )
 
-  it('returns a plan without approving ExitPlanMode execution', async () => {
+  it('disallows ExitPlanMode before native plan-mode allow rules', () => {
     const child = fakeChild()
-    const diagnostics: string[] = []
     const options = claudeQueryOptions({
       cwd: '/workspace',
       executable: '/native/claude',
@@ -699,21 +701,10 @@ describe('query options and result mapping', () => {
       env: {},
       disposeGraceMs: 17,
       spawn: () => child.handle,
-    }, new AbortController(), () => {}, value => diagnostics.push(value))
-    await expect(options.canUseTool!(
+    }, new AbortController(), () => {}, () => {})
+    expect(options.disallowedTools).toEqual([
+      'AskUserQuestion',
       'ExitPlanMode',
-      {},
-      {
-        signal: new AbortController().signal,
-        toolUseID: 'exit-plan',
-        requestId: 'exit-plan-request',
-      },
-    )).resolves.toEqual({
-      behavior: 'deny',
-      message: 'Plan approval is unavailable in this unattended run. Return the completed plan in your final response without executing it.',
-    })
-    expect(diagnostics).toEqual([
-      'Claude Code unattended decision (mode: plan; request: plan approval; decision: denied): the provider returns the plan without approving execution',
     ])
   })
 

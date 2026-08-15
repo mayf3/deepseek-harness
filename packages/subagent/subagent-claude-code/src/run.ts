@@ -59,7 +59,7 @@ const SUPPORTED_UNATTENDED_DIALOG_KINDS = [
 
 function unattendedDiagnostic(
   mode: ClaudeCodePermissionMode,
-  request: 'tool permission' | 'plan approval' | 'MCP elicitation' | 'user dialog',
+  request: 'tool permission' | 'MCP elicitation' | 'user dialog',
   decision: 'denied' | 'declined' | 'cancelled',
   reason: string,
 ): string {
@@ -223,24 +223,14 @@ export function claudeQueryOptions(
     pathToClaudeCodeExecutable: spec.executable,
     env: { ...scrubbedParentEnv(), ...spec.env },
     persistSession: false,
-    disallowedTools: ['AskUserQuestion'],
+    disallowedTools: spec.permissionMode === 'plan'
+      ? ['AskUserQuestion', 'ExitPlanMode']
+      : ['AskUserQuestion'],
     permissionMode: spec.permissionMode,
     ...spec.permissionMode === 'bypassPermissions'
       ? { allowDangerouslySkipPermissions: true }
       : {
-        canUseTool: (toolName) => {
-          if (spec.permissionMode === 'plan' && toolName === 'ExitPlanMode') {
-            captureDiagnostic(unattendedDiagnostic(
-              spec.permissionMode,
-              'plan approval',
-              'denied',
-              'the provider returns the plan without approving execution',
-            ))
-            return Promise.resolve({
-              behavior: 'deny' as const,
-              message: 'Plan approval is unavailable in this unattended run. Return the completed plan in your final response without executing it.',
-            })
-          }
+        canUseTool: () => {
           captureDiagnostic(unattendedDiagnostic(
             spec.permissionMode,
             'tool permission',

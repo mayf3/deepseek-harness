@@ -24,7 +24,7 @@ Claude Code 提供方拥有一个 Profile 级 `permissionMode` 值。它默认�
 
 提供方会为该插件实例的每次运行固定已解析值。subagent 工具 schema 与 `SubagentStartRequest` 都不包含权限字段，因此模型或单次委派无法改变它。提供方继续省略 `settingSources`：除所选模式以外，用户、项目和本地设置、身份验证、工具与沙箱行为仍由 Claude Code 拥有。
 
-每次 query 都禁用 `AskUserQuestion`。非 bypass 模式的权限回调会拒绝请求，而不会返回 SDK 中会无限阻塞的 `null`；在 plan 模式下，`ExitPlanMode` 会收到一项固定拒绝，要求模型返回完整计划且不得执行。MCP elicitation 会被拒绝；已支持的拒绝对话会被取消；未声明的对话类型使用 SDK 的无对话失败行为。原生 `permission_denied` 消息会记录同一份当前运行事实。这些路径不会创建审批会话、队列、缓存或重试循环。
+每次 query 都禁用 `AskUserQuestion`。非 bypass 模式的权限回调会拒绝请求，而不会返回 SDK 中会无限阻塞的 `null`；plan 模式还会把 `ExitPlanMode` 放入 `disallowedTools`，因此原生 allow 规则无法把无人值守 query 切回执行模式。MCP elicitation 会被拒绝；已支持的拒绝对话会被取消；未声明的对话类型使用 SDK 的无对话失败行为。原生 `permission_denied` 消息会记录同一份当前运行事实。这些路径不会创建审批会话、队列、缓存或重试循环。
 
 ### 失败诊断
 
