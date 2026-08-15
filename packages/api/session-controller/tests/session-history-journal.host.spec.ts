@@ -4,10 +4,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import SessionStore from '@deepseek-ai/dsh-session'
+import { decodeStorageRecord } from '@deepseek-ai/dsh-session/chunk-rows'
 import { CallId, createMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
-import type { SessionFollowFrame } from '@deepseek-ai/dsh-api-session-controller/types'
+import type {
+  SessionFollowFrame,
+  SessionPage,
+  SessionWireEvent,
+} from '@deepseek-ai/dsh-api-session-controller/types'
 import { createSessionTestRemote, installSessionReadTestServices } from './test-remote.ts'
 
 /** Append a production-shaped human prompt to the session surface. */
@@ -75,6 +80,13 @@ async function openFollow(
     value: { type: 'snapshot' },
   })
   return { [Symbol.asyncIterator]: () => iterator }
+}
+
+/** Expand packed page records for assertions over the logical journal. */
+function pageEvents(page: SessionPage): SessionWireEvent[] {
+  return page.records.flatMap(record => 'event' in record
+    ? [record.event]
+    : decodeStorageRecord(record.chunks))
 }
 
 describe('Session history raw journal', () => {
@@ -169,7 +181,7 @@ describe('Session history raw journal', () => {
     })
     expect(response.ok).toBe(true)
     if (!response.ok) throw new Error('unreachable')
-    expect(response.value.events).toEqual([
+    expect(response.value.records).toEqual([
       { event: start },
       { event: call },
       { event: result },
@@ -210,7 +222,7 @@ describe('Session history raw journal', () => {
       maxMessages: 2,
     })
     if (!response.ok) throw new Error('unreachable')
-    const page = response.value.events.map(entry => entry.event)
+    const page = pageEvents(response.value)
     // Two append-origin messages fill the page even though a replacement copy of
     // the same event type sits in the window: the copy is model-only.
     const messages = page.filter(event => event.type === 'user/message' || event.type === 'assistant/message')
@@ -257,7 +269,8 @@ describe('Session history raw journal', () => {
         maxMessages: 1,
       })
       if (!response.ok) throw new Error('unreachable')
-      expect(response.value.events.map(entry => entry.event.seq)).toEqual([...sources, message.seq])
+      expect(pageEvents(response.value).map(event => event.seq)).toEqual([...sources, message.seq])
+      expect(response.value.records.filter(record => 'chunks' in record)).toHaveLength(1)
       expect(response.value.hasMore).toBe(true)
     } finally {
       min.mockRestore()

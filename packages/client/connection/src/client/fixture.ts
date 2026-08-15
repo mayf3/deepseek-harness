@@ -22,6 +22,8 @@ import type {
   SessionHeader,
   SessionId,
 } from '@deepseek-ai/dsh-session/types'
+import { isChunkRow, packChunkRuns } from '@deepseek-ai/dsh-session/chunk-rows'
+import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 // Type-only: the brand constructor is host-side; the fixture casts at its
 // wire-fabrication boundary (the schema layer's one-cast-point posture).
@@ -76,6 +78,12 @@ interface FixtureHistoryEntry {
   readonly event: SessionEvent
 }
 
+interface FixtureHistoryChunkRun {
+  readonly chunks: ChunkRow
+}
+
+type FixtureHistoryRecord = FixtureHistoryEntry | FixtureHistoryChunkRun
+
 type FixtureSessionAddress =
   | { readonly kind: 'session'; readonly sessionId: SessionId }
   | {
@@ -102,7 +110,7 @@ type FixtureFollowFrame =
     readonly type: 'snapshot'
     readonly header: SessionHeader
     readonly cursor: number
-    readonly events: readonly FixtureHistoryEntry[]
+    readonly records: readonly FixtureHistoryRecord[]
     readonly hasMore: boolean
     readonly projections: FixtureProjectionsBlock
   }
@@ -1392,7 +1400,7 @@ function pageOf(
   log: readonly SessionEvent[],
   beforeSeq: number | undefined,
   maxMessages: number,
-): { events: FixtureHistoryEntry[]; hasMore: boolean } {
+): { records: FixtureHistoryRecord[]; hasMore: boolean } {
   const end = beforeSeq === undefined ? log.length : Math.max(0, Math.min(beforeSeq, log.length))
   let start = 0
   let messages = 0
@@ -1406,8 +1414,10 @@ function pageOf(
       break
     }
   }
-  const events = log.slice(start, end).map((event): FixtureHistoryEntry => ({ event }))
-  return { events, hasMore: start > 0 }
+  const records = packChunkRuns(log.slice(start, end)).map((record): FixtureHistoryRecord => (
+    isChunkRow(record) ? { chunks: record } : { event: record }
+  ))
+  return { records, hasMore: start > 0 }
 }
 
 /** Fixture mirror of host session-scoped attachment authorization. */
@@ -2968,7 +2978,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           ...(summary.agentPreset === undefined ? {} : { agentPreset: summary.agentPreset }),
         },
         cursor,
-        events: initial.events,
+        records: initial.records,
         hasMore: initial.hasMore,
         projections: { asOfSeq: cursor, values: projectionValuesOf(snapshot) },
       }

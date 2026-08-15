@@ -28,6 +28,7 @@ import {
 } from '@deepseek-ai/dsh-api-gateway/client'
 import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
+import { historyEntries } from '../src/client/sessions/history-records.ts'
 
 const AVAILABLE_STREAM_CONNECTION = {
   hostDescription: {
@@ -137,7 +138,7 @@ export class FakeApiClient implements IApiClient {
   onFork: (payload: unknown) => Promise<RpcResponse<{ sessionId: SessionId }>> = () => Promise.resolve(ok({ sessionId: 'fk-fork' as SessionId }))
   onHistory: (payload: { sessionId: SessionId; throughSeq?: number; beforeSeq?: number; maxMessages?: number })
   => Promise<RpcResponse<SessionPage & { readonly projections?: SessionProjectionBaseline }>> =
-    () => Promise.resolve(ok({ events: [], hasMore: false }))
+    () => Promise.resolve(ok({ records: [], hasMore: false }))
 
   onPrompt: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onAttachment: (payload: unknown) => Promise<RpcResponse<{ attachment: { attachmentId: never; mediaType: 'image/png'; bytes: number; width: number; height: number }; data: string }>> =
@@ -439,7 +440,8 @@ export class FakeApiClient implements IApiClient {
       ok: true,
       value: {
         ...result.value,
-        events: result.value.events.filter(entry => entry.event.seq <= request.throughSeq),
+        records: historyEntries(result.value.records)
+          .filter(entry => entry.event.seq <= request.throughSeq),
       },
     }
   }
@@ -467,7 +469,8 @@ export class FakeApiClient implements IApiClient {
         )
       }
       const page = response.result.value
-      const cursor = this.followCursor ?? page.events.at(-1)?.event.seq ?? -1
+      const entries = historyEntries(page.records)
+      const cursor = this.followCursor ?? entries.at(-1)?.event.seq ?? -1
       yield {
         type: 'snapshot',
         header: {
@@ -479,7 +482,7 @@ export class FakeApiClient implements IApiClient {
             : {}),
         },
         cursor,
-        events: page.events.filter(entry => entry.event.seq <= cursor),
+        records: entries.filter(entry => entry.event.seq <= cursor),
         hasMore: page.hasMore,
         projections: page.projections ?? { asOfSeq: cursor, values: {} },
       }

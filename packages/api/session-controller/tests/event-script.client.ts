@@ -146,3 +146,14 @@ export function plainTurn(startSeq: number, turn: number, ask: string, answer: s
 export function entries(events: readonly SessionEvent[]): { event: SessionEvent }[] {
   return events.map(event => ({ event }))
 }
+
+/** Build one view-less history response value. */
+export function historyValue(events: readonly SessionEvent[], hasMore = false): {
+  records: { event: SessionEvent }[]
+  hasMore: boolean
+} {
+  return {
+    records: entries(events),
+    hasMore,
+  }
+}

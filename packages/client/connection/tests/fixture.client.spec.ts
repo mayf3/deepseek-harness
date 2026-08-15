@@ -9,6 +9,8 @@ import type {
   SessionId,
 } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
+import { decodeStorageRecord } from '@deepseek-ai/dsh-session/chunk-rows'
+import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import {
   FixtureApiClient,
   createFixtureFaces,
@@ -38,16 +40,28 @@ interface FixtureHistoryEntry {
   readonly event: SessionEvent
 }
 
+interface FixtureHistoryChunkRun {
+  readonly chunks: ChunkRow
+}
+
+type FixtureHistoryRecord = FixtureHistoryEntry | FixtureHistoryChunkRun
+
 interface FixturePage {
-  readonly events: readonly FixtureHistoryEntry[]
+  readonly records: readonly FixtureHistoryRecord[]
   readonly hasMore: boolean
+}
+
+function historyEvents(records: readonly FixtureHistoryRecord[]): SessionEvent[] {
+  return records.flatMap(record => 'event' in record
+    ? [record.event]
+    : decodeStorageRecord(record.chunks))
 }
 
 type FixtureFollowFrame =
   | {
     readonly type: 'snapshot'
     readonly cursor: number
-    readonly events: readonly FixtureHistoryEntry[]
+    readonly records: readonly FixtureHistoryRecord[]
     readonly hasMore: boolean
     readonly projections: {
       readonly asOfSeq: number
@@ -580,21 +594,22 @@ describe('createFixtureApi', () => {
     if (!tail.result.ok) throw new Error('history failed')
     const tailPage = tail.result.value
     expect(tailPage.hasMore).toBe(true)
-    expect(tailPage.events[0]?.event.type).toBe('turn/start') // cut lands on a turn boundary
-    const boundary = tailPage.events[0]?.event.seq ?? 0
+    const tailEvents = historyEvents(tailPage.records)
+    expect(tailEvents[0]?.type).toBe('turn/start') // cut lands on a turn boundary
+    const boundary = tailEvents[0]?.seq ?? 0
     expect(boundary).toBeGreaterThan(0)
     const older = await api.sessions.history(req({ sessionId: sid('fx-alpha'), beforeSeq: boundary, maxMessages: 10 }))
     if (!older.result.ok) throw new Error('older failed')
-    const olderTail = older.result.value.events.at(-1)?.event
+    const olderTail = historyEvents(older.result.value.records).at(-1)
     expect((olderTail?.seq ?? -1) + 1).toBe(boundary) // pages stitch with no hole/overlap
     // Out-of-range beforeSeq clamps instead of exploding.
     const clamped = await api.sessions.history(req({ sessionId: sid('fx-alpha'), beforeSeq: -5, maxMessages: 10 }))
     if (!clamped.result.ok) throw new Error('clamped failed')
-    expect(clamped.result.value.events).toEqual([])
+    expect(clamped.result.value.records).toEqual([])
     // Unknown session: empty page, not an error (history of a bare id).
     const empty = await api.sessions.history(req({ sessionId: sid('no-such'), maxMessages: 10 }))
     if (!empty.result.ok) throw new Error('empty failed')
-    expect(empty.result.value).toEqual({ events: [], hasMore: false })
+    expect(empty.result.value).toEqual({ records: [], hasMore: false })
   })
 
   it('serves raw history entries with replayable tool-result metadata', async () => {
@@ -602,10 +617,8 @@ describe('createFixtureApi', () => {
     const response = await api.sessions.history(req({ sessionId: sid('fx-alpha'), maxMessages: 200 }))
     if (!response.result.ok) throw new Error('history failed')
 
-    const entries = response.result.value.events
-    expect(entries.every(entry => !Object.hasOwn(entry, 'view'))).toBe(true)
-    const results = entries
-      .map(entry => entry.event)
+    const records = response.result.value.records
+    const results = historyEvents(records)
       .filter(event => event.type === 'tool/result')
 
     expect(results.find(event => event.data.turn === 64)).toMatchObject({
@@ -668,7 +681,7 @@ describe('createFixtureApi', () => {
     await new Promise(resolve => setTimeout(resolve, 600))
     const after = await api.sessions.history(req({ sessionId }))
     if (!after.result.ok) throw new Error('history failed')
-    expect(JSON.stringify(after.result.value.events)).toContain('openai/gpt-5')
+    expect(JSON.stringify(after.result.value.records)).toContain('openai/gpt-5')
   })
 
   it('serves configured DeepSeek readiness and keeps credential values write-only', async () => {
@@ -705,7 +718,7 @@ describe('createFixtureApi', () => {
     const api = createFixtureApi()
     const tail = await api.sessions.history(req({ sessionId: sid('fx-alpha'), maxMessages: 10 }))
     if (!tail.result.ok) throw new Error('history failed')
-    const events = tail.result.value.events.map(e => e.event)
+    const events = historyEvents(tail.result.value.records)
     const todoAt = events.findIndex(e => e.type === 'todo/write')
     expect(todoAt).toBeGreaterThan(0)
     // Production ordering (the tool appends mid-execution): call → snapshot → result.
@@ -1134,8 +1147,8 @@ describe('createFixtureApi', () => {
     // so the event is located by seq and its payload checked structurally).
     const history = await api.sessions.history(req({ sessionId: sid('fx-alpha'), maxMessages: 100 }))
     if (!history.result.ok) throw new Error('history failed')
-    const appended = history.result.value.events.find(entry => entry.event.seq === acceptedSeq)
-    expect(appended?.event).toMatchObject({
+    const appended = historyEvents(history.result.value.records).find(event => event.seq === acceptedSeq)
+    expect(appended).toMatchObject({
       type: 'session/title',
       data: { title: '重命名', messageSeqs: [], source: { kind: 'user' } },
     })
@@ -1433,8 +1446,9 @@ describe('createFixtureApi', () => {
     await new Promise(resolve => setTimeout(resolve, 10))
     await vi.waitFor(() => {
       const snapshot = followed.find(frame => frame.type === 'snapshot')
-      expect(snapshot?.events.some(entry => JSON.stringify(entry.event.data).includes('静默丢帧'))).toBe(true)
-      expect(snapshot?.events.some(entry => JSON.stringify(entry.event.data).includes('正常直播'))).toBe(true)
+      const events = snapshot === undefined ? [] : historyEvents(snapshot.records)
+      expect(events.some(event => JSON.stringify(event.data).includes('静默丢帧'))).toBe(true)
+      expect(events.some(event => JSON.stringify(event.data).includes('正常直播'))).toBe(true)
     })
     hooks.appendTitle('fx-alpha', 'Fixture 修订标题')
     hooks.beginModelRetry('fx-alpha')
@@ -1456,7 +1470,7 @@ describe('createFixtureApi', () => {
     // Paging and resumed follow agree on the recovered durable event.
     const repull = await api.sessions.history(req({ sessionId: sid('fx-alpha'), maxMessages: 5 }))
     if (!repull.result.ok) throw new Error('repull failed')
-    expect(JSON.stringify(repull.result.value.events)).toContain('静默丢帧')
+    expect(JSON.stringify(repull.result.value.records)).toContain('静默丢帧')
     // breakStreams force-ends follow and control without client aborts.
     await new Promise(resolve => setTimeout(resolve, 10))
     hooks.breakStreams()
@@ -1593,7 +1607,7 @@ describe('FixtureApiClient (protocol-level fake carrier)', () => {
 
     const goalHistory = await sessions.history({ sessionId: id })
     if (!goalHistory.result.ok) throw new Error('goal history failed')
-    const goalEvents = goalHistory.result.value.events.map(entry => entry.event as unknown as {
+    const goalEvents = historyEvents(goalHistory.result.value.records).map(event => event as unknown as {
       type: string
       data: {
         operation?: string

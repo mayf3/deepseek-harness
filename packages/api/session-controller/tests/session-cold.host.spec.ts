@@ -390,7 +390,7 @@ describe('cold history recovery view', () => {
       maxMessages: 10,
     })
     if (!history.ok) throw new Error('history failed')
-    expect(history.value.events.map(entry => entry.event)).toMatchInlineSnapshot(`
+    expect(history.value.records.map(record => 'event' in record ? record.event : record.chunks)).toMatchInlineSnapshot(`
       [
         {
           "data": {
@@ -564,7 +564,8 @@ describe('subagent ownership fence', () => {
       },
       throughSeq: 3,
     }, new AbortController().signal)
-    expect(history.events.map(entry => entry.event.type)).toEqual(events.map(event => event.type))
+    expect(history.records.map(record => 'event' in record ? record.event.type : record.chunks.type))
+      .toEqual(events.map(event => event.type))
     expect(ctx.agents.get(sessionId)).toBeUndefined()
 
     const prompt = await remote.prompt(promptRequest({

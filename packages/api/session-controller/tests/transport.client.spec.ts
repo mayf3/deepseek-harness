@@ -40,7 +40,7 @@ function entry(seq: number): SessionEventEntry {
 }
 
 function page(events: readonly SessionEventEntry[], hasMore = false): SessionPage {
-  return { events, hasMore }
+  return { records: events, hasMore }
 }
 
 function snapshot(
@@ -56,7 +56,7 @@ function snapshot(
       createdAt: 0,
     },
     cursor,
-    events,
+    records: events,
     hasMore,
     projections: { asOfSeq: cursor, values: {} },
   }

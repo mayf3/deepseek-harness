@@ -6,6 +6,7 @@ import type {
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
+import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { JsonValue, SessionHeader, SessionId, SurfaceOp } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
@@ -364,6 +365,14 @@ export interface SessionEventEntry {
   readonly event: SessionWireEvent
 }
 
+/** One lossless run of consecutive Assistant delta events in a history page. */
+export interface SessionChunkRun {
+  readonly chunks: ChunkRow
+}
+
+/** One history-page record: a raw event or a packed Assistant delta run. */
+export type SessionHistoryRecord = SessionEventEntry | SessionChunkRun
+
 /** Session event wire form; durable readers own recognition of merge-extensible event names. */
 export interface SessionWireEvent {
   readonly type: string
@@ -392,7 +401,7 @@ export interface SessionFollowRequest {
 
 /** One contiguous backwards page of a Session log. */
 export interface SessionPage {
-  readonly events: readonly SessionEventEntry[]
+  readonly records: readonly SessionHistoryRecord[]
   readonly hasMore: boolean
 }
 
@@ -402,7 +411,7 @@ export type SessionFollowFrame =
     readonly type: 'snapshot'
     readonly header: SessionHeader
     readonly cursor: number
-    readonly events: readonly SessionEventEntry[]
+    readonly records: readonly SessionHistoryRecord[]
     readonly hasMore: boolean
     readonly projections: SessionProjectionBaseline
   }

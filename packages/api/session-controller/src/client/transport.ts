@@ -19,6 +19,7 @@ import type {
   SessionPageRequest,
   SessionProjectionBaseline,
 } from '../types.ts'
+import { historyEntries } from './sessions/history-records.ts'
 
 export {
   SESSION_SEARCH_RESULT_LIMIT,
@@ -117,7 +118,7 @@ export class SessionEventStream extends RemoteJournalStream<
     super(remote, {
       name: 'session event stream',
       emptyCursor: -1,
-      entries: page => page.events,
+      entries: page => historyEntries(page.records),
       hasMore: page => page.hasMore,
       cursor: entry => entry.event.seq,
       compare: (left, right) => left - right,
@@ -144,7 +145,7 @@ export class SessionEventStream extends RemoteJournalStream<
           type: 'opened',
           cursor: frame.cursor,
           page: {
-            events: frame.events,
+            records: frame.records,
             hasMore: frame.hasMore,
             projections: frame.projections,
           },
