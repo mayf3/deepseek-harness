@@ -1,9 +1,9 @@
 {
   "name": "@deepseek-ai/dsh-typert-registry",
   "description": "Runtime registry for generated package reflection and Zod schemas",
-  "version": "0.0.1-rc.5",
+  "version": "0.1.0-rc.6",
   "publishConfig": {
-    "access": "restricted"
+    "access": "public"
   },
   "repository": {
     "type": "git",
@@ -51,7 +51,7 @@
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "dependencies": {
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "zod": "^4.4.3"

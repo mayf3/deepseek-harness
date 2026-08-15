@@ -1,9 +1,9 @@
 {
   "name": "@deepseek-ai/dsh-loader-smoke",
   "description": "Shared subprocess and direct-agent harness for keyless real-Loader example smoke tests",
-  "version": "0.0.1-rc.5",
+  "version": "0.1.0-rc.6",
   "publishConfig": {
-    "access": "restricted"
+    "access": "public"
   },
   "repository": {
     "type": "git",
@@ -30,7 +30,7 @@
     "lib/invariant.js",
     "lib/types/**/*.d.ts"
   ],
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "dependencies": {
     "execa": "^10.0.0",
     "tsx": "^4.22.4"

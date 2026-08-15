@@ -1,9 +1,9 @@
 {
   "name": "@deepseek-ai/dsh-typert-generator",
   "description": "TypeScript project analyzer and model-driven Typert artifact generator",
-  "version": "0.0.1-rc.5",
+  "version": "0.1.0-rc.6",
   "publishConfig": {
-    "access": "restricted"
+    "access": "public"
   },
   "repository": {
     "type": "git",
@@ -35,7 +35,7 @@
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "dependencies": {
     "@jridgewell/gen-mapping": "^0.3.13",
     "typescript": "^6.0.3"

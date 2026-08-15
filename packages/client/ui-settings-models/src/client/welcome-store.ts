@@ -74,8 +74,7 @@ export class WelcomeNoticeStore {
   }
 
   /**
-   * Acknowledge this copy version. The Host path mutation is idempotent across
-   * tabs and preserves sibling settings; remote fallback changes only this store.
+   * Persist this copy version, or advance only this process for a remote browser.
    * @returns true when the selected persistence mode accepted the acknowledgement.
    */
   async acknowledge(): Promise<boolean> {
@@ -118,8 +117,7 @@ export class WelcomeNoticeStore {
 
 /**
  * Refresh only after welcome state has left idle. A memory-mode load retains
- * acknowledgement so reconnect and settings-change refreshes do not reopen a
- * process-local notice.
+ * acknowledgement so reconnect does not reopen a process-local notice.
  * @param controller - welcome state owner whose current status decides whether to load.
  */
 export function refreshWelcomeIfLoaded(controller: WelcomeNoticeStore): void {

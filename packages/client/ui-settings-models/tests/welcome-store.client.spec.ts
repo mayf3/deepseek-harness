@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { RpcResponse } from '@deepseek-ai/dsh-api-remotes/client'
-import { WelcomeNoticeStore } from '../src/client/welcome-store.ts'
-import { refreshWelcomeIfLoaded } from '../src/client/welcome-store.ts'
+import { refreshWelcomeIfLoaded, WelcomeNoticeStore } from '../src/client/welcome-store.ts'
 import {
   WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_SETTINGS_NAMESPACE, WELCOME_NOTICE_VERSION,
 } from '../src/onboarding-copy.ts'
@@ -16,6 +15,8 @@ function namespace(version?: string) {
     ns: WELCOME_NOTICE_SETTINGS_NAMESPACE,
     schema: {},
     value: version === undefined ? {} : { [WELCOME_NOTICE_ACK_FIELD]: version },
+    base: {},
+    user: {},
     applies: 'live' as const,
     secrets: [],
     revision: 0,
@@ -53,7 +54,9 @@ describe('WelcomeNoticeStore', () => {
     ] as const) {
       const api = {
         settings: {
-          describe: vi.fn(() => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [namespace(version)] }))),
+          describe: vi.fn(() => Promise.resolve(ok({
+            writable: true, hasDocument: false, namespaces: [namespace(version)],
+          }))),
         },
       }
       const controller = new WelcomeNoticeStore(api as never)
@@ -88,8 +91,7 @@ describe('WelcomeNoticeStore', () => {
 
     const nonError = new WelcomeNoticeStore({
       // Durable/wire failures are unknown; exercise containment of a non-Error rejection.
-      // oxlint-disable-next-line typescript/prefer-promise-reject-errors
-      settings: { describe: () => Promise.reject('offline string') },
+      settings: { describe: () => Promise.reject(new Error('offline string')) },
     } as never)
     await nonError.load()
     expect(nonError.store.getSnapshot().error).toBe('offline string')
@@ -123,7 +125,14 @@ describe('WelcomeNoticeStore', () => {
     const save = new WelcomeNoticeStore({
       settings: { mutate: () => Promise.resolve({
         rpcId: 'failed-save' as never,
-        result: { ok: false, error: { code: 'settings-rejected', message: 'denied', details: { ns: WELCOME_NOTICE_SETTINGS_NAMESPACE } } },
+        result: {
+          ok: false,
+          error: {
+            code: 'settings-rejected',
+            message: 'denied',
+            details: { ns: WELCOME_NOTICE_SETTINGS_NAMESPACE },
+          },
+        },
       }) },
     } as never)
     await expect(save.acknowledge()).resolves.toBe(false)
@@ -134,11 +143,15 @@ describe('WelcomeNoticeStore', () => {
     const first = deferred<ReturnType<typeof ok>>()
     const describe = vi.fn()
       .mockImplementationOnce(() => first.promise)
-      .mockImplementationOnce(() => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [namespace()] })))
+      .mockImplementationOnce(() => Promise.resolve(ok({
+        writable: true, hasDocument: false, namespaces: [namespace()],
+      })))
     const controller = new WelcomeNoticeStore({ settings: { describe } } as never)
     const stale = controller.load()
     await controller.load()
-    first.resolve(ok({ writable: true, hasDocument: false, namespaces: [namespace(WELCOME_NOTICE_VERSION)] }))
+    first.resolve(ok({
+      writable: true, hasDocument: false, namespaces: [namespace(WELCOME_NOTICE_VERSION)],
+    }))
     await stale
     expect(controller.store.getSnapshot().acknowledged).toBe(false)
 
@@ -157,7 +170,9 @@ describe('WelcomeNoticeStore', () => {
 
   it('contains stale acknowledgement settlements and refreshes only a loaded store', async () => {
     const write = deferred<ReturnType<typeof ok>>()
-    const describe = vi.fn(() => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [namespace()] })))
+    const describe = vi.fn(() => Promise.resolve(ok({
+      writable: true, hasDocument: false, namespaces: [namespace()],
+    })))
     const controller = new WelcomeNoticeStore({
       settings: { mutate: () => write.promise, describe },
     } as never)

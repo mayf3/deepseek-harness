@@ -1,9 +1,9 @@
 {
   "name": "@deepseek-ai/dsh-client-web",
   "description": "Web shell kernel: bootWebShell (module system holding + seed table + two-stage boot + AppRoot gate + app-shell assembly entry), consumed by the apps/web vite entry",
-  "version": "0.0.1-rc.5",
+  "version": "0.1.0-rc.6",
   "publishConfig": {
-    "access": "restricted"
+    "access": "public"
   },
   "repository": {
     "type": "git",
@@ -25,7 +25,7 @@
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "dependencies": {
     "@deepseek-ai/dsh-client-modules": "workspace:^",
     "@deepseek-ai/dsh-client-schema-form": "workspace:^",

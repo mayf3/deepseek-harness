@@ -1,9 +1,9 @@
 {
   "name": "@deepseek-ai/dsh-base",
   "description": "The shared dsh core as a profile bundle: every profile's first patch layer, inserting the base plugin rows over the empty profile root",
-  "version": "0.0.1-rc.5",
+  "version": "0.1.0-rc.6",
   "publishConfig": {
-    "access": "restricted"
+    "access": "public"
   },
   "repository": {
     "type": "git",
@@ -32,7 +32,7 @@
     "cordis.patch.yml",
     "lib/types/**/*.d.ts"
   ],
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -85,8 +85,6 @@
     "@deepseek-ai/dsh-spill-local": "workspace:^",
     "@deepseek-ai/dsh-spill-policy": "workspace:^",
     "@deepseek-ai/dsh-subagent": "workspace:^",
-    "@deepseek-ai/dsh-subagent-claude-code": "workspace:^",
-    "@deepseek-ai/dsh-subagent-codex": "workspace:^",
     "@deepseek-ai/dsh-subagent-fork-in-process": "workspace:^",
     "@deepseek-ai/dsh-subagent-spawn-in-process": "workspace:^",
     "@deepseek-ai/dsh-subprocess-local": "workspace:^",

@@ -26,7 +26,7 @@ Two hard blockers sat in the way. All 217 workspace manifests set `private: true
 | vendored framework | the nine `vendor/*` packages | each package on its own version line | `vendor-<package>-v<version>` (one per package) | `release-vendor.yml` |
 | native | `native/landlock-run/packages/*` | its own `0.0.x` | `landlock-run-v<version>` | `landlock-run-release.yml` |
 
-All three publish privately to the `@deepseek-ai` scope on npmjs.com. `publishConfig.access` in each manifest is `restricted` and no workflow passes `--access`, because a command-line flag overrides the manifest.
+All three publish to the `@deepseek-ai` scope on npmjs.com, and access is per sequence rather than per scope: the vendored framework and the native packages are `public`, the dsh family is `restricted` ([rationale](2026-08-13-public-vendor-and-native-sequences.md)). No publish path passes `--access`, because one flag cannot serve sequences that disagree and would override the manifest that owns the level.
 
 ### Versions land in the repository from a local command; CI only checks and uploads
 
@@ -70,11 +70,23 @@ Publication runs only from GitHub Actions; there is no local publication path. P
 
 The third state catches code that changed without a version bump. The first two provide idempotence — re-running publish over one artifact republishes nothing and needs no manual selection of packages. The same rule resolves the tension between one vendor release carrying several tags and a workflow that can only run from one ref: the workflow never infers which packages to publish from the tag it ran from.
 
+All three sequences decide this way, including the native one: it publishes through its own script rather than a shell loop, because a loop of bare `npm publish` calls cannot be retried — the registry answers a repeat of an existing version permanently, so one failure partway through left no way forward.
+
+Two registry behaviours shape how a publish is attempted. Writes are spaced by at least two seconds and retried with a backoff, because publishing several packages back to back outruns the registry's own processing and earns `E409 Failed to save packument`. And every retry re-reads the registry first: a reported failure can answer a write that landed anyway, so a version that now exists with this tarball's integrity counts as published rather than as a version to place again.
+
 ### Workspace-internal references use the `workspace:` protocol
 
 Every reference to a workspace member uses `workspace:^`, so `pnpm pack` substitutes a range matching the target version: sibling `peerDependencies` follow the family version, and a reference to a vendored package follows that package's own line. The Landlock platform packages keep `workspace:*`, which publishes the exact version, because a platform package and its entry must agree exactly.
 
 `scripts/check-workspace-constraints.ts` requires the protocol, so a new package cannot reintroduce a hand-written range; the invariant-companion rule requires `workspace:^` for `@deepseek-ai/dsh-invariants` for the same reason.
+
+### An optional dependency is never loaded at module scope
+
+A dependency in `optionalDependencies`, or a peer carrying `peerDependenciesMeta.<name>.optional`, may be absent from an installed tree — that absence is the whole promise of "optional". A static import is evaluated when the importing module loads, so one absent package stops being "this capability is unavailable" and becomes a load failure for everything that reaches the importing module. The failure appears only in an installed tree missing that package, and no test here constructs one: a workspace install always has every package, so the unit tests, the snapshots, and the packed-install probe all pass while the published package is broken for the consumer who declined the optional peer.
+
+[`verify-optional-dependency-imports`](../../../../scripts/verify-optional-dependency-imports.ts) closes that hole. It reads each package's own manifest for what that package allows to be absent, then scans the files that ship — `packages/*/*/src/` and `apps/*/src/` — across both compiler faces. `vendor/` is out of scope, as pinned upstream source under the [vendoring policy](../../../../vendor/README.md). Value-versus-type is decided against a bound Program rather than the import syntax, because `verbatimModuleSyntax` is off: the compiler already erases an import whose bindings resolve to types, so `import type {}`, `import {}`, an inline `type` specifier, and a named binding that resolves to a type all emit nothing and are allowed, while a bare import, a value binding, and a star re-export are kept and rejected. Only the type phase erases an import: `import defer` still resolves and links its module, deferring evaluation alone, so the gate counts it as a load.
+
+A violation names the package, the declaration that made it optional, and the way out in order — import it as a type, which is all that declaration merging needs, or restructure so module scope does not need the package. A dynamic `import()` only moves the failure to first use, so it belongs to a caller that genuinely requires the package and handles its absence; reaching for it is a sign the dependency is not optional, and the gate does not offer it as the remedy.
 
 ### Release family objects
 
@@ -84,9 +96,9 @@ The entity in this domain is a **release family**: a set of packages sharing one
 |---|---|
 | `ReleaseFamily` | a family's identity: member discovery, version baseline, tag prefix, packed-payload rule, installed entry |
 | `ReleaseMember` | one publishable package: directory, name, version, manifest |
-| `publishOrder` | topological order over runtime dependencies, ties broken by package name; a cycle is reported rather than resolved arbitrarily |
+| `publishOrder` | topological order over the sections npm installs plus peer declarations, ties broken by package name; a cycle among installed dependencies is reported rather than resolved arbitrarily, and a peer edge no order can honour is dropped and named |
 | `pack` | packs a whole family into one directory and records the upload order |
-| `verify` | the family's version baseline, and — when publishing — that the run comes from that family's tag and its members are publishable |
+| `verify` | the family's version baseline, the publish order it prints in full, and — when publishing — that the run comes from that family's tag and its members are publishable |
 | `verify-packed-install` | installs the tarballs of one or more pack directories into a throwaway consumer and drives the installed executable |
 | `publish` | the three registry states above |
 | `process` / `tarball` | the one home for spawning commands and for reading a packed tarball, including the entry guard that keeps every script importable |
@@ -107,12 +119,12 @@ The verification also packs the Landlock entry, which `dsh-sandbox-local` declar
 
 | Item | Content |
 |---|---|
-| release-set manifests | `private: true` removed; `publishConfig.access: restricted` and `repository` with each package's `directory` added |
+| release-set manifests | `private: true` removed; `publishConfig.access` per sequence and `repository` with each package's `directory` added |
 | release-set boundary | every member of `packages/*/*`, `apps/*`, and `vendor/*` |
 | dependency protocol | workspace-internal references are `workspace:^`, with `check-workspace-constraints.ts` and the invariant-companion rule requiring it |
 | root `AGENTS.md` | the convention that vendored packages are `private: true` no longer holds |
 | `vendor/README.md` | records `src` joining `cordis`'s `files` as a local modification |
-| the three native packages | `publishConfig.access: restricted`, and their workflow no longer passes `--access` |
+| the three native packages | `publishConfig.access: public`, and their workflow passes no `--access` |
 
 ### Relationship to the earlier proposal
 
