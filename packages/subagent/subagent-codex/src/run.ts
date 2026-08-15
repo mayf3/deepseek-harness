@@ -8,7 +8,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { writeSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -158,17 +158,7 @@ export async function startCodexRun(
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
     wire.observeStderr(bytes.toString())
     try {
-      let offset = 0
-      while (offset < bytes.byteLength) {
-        const written = writeSync(
-          process.stderr.fd,
-          bytes,
-          offset,
-          bytes.byteLength - offset,
-        )
-        if (written <= 0) throw new Error('subagent-codex: host stderr made no write progress')
-        offset += written
-      }
+      writeFileSync(process.stderr.fd, bytes)
     } catch {
       // Host stderr is an observation sink, not a child-run failure authority.
     }

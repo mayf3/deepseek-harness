@@ -167,7 +167,6 @@ export class CodexAppServerWire {
   private diagnosticOrder = 0
   private observationOrder = 0
   private pendingDiagnostic: {
-    readonly turnId: string
     readonly order: number
     readonly request: Parameters<typeof unattendedDiagnostic>[1]
     readonly decision: Parameters<typeof unattendedDiagnostic>[2]
@@ -399,7 +398,7 @@ export class CodexAppServerWire {
     this.turnId = id
     const pendingDiagnostic = this.pendingDiagnostic
     this.pendingDiagnostic = undefined
-    if (pendingDiagnostic?.turnId === id) {
+    if (pendingDiagnostic !== undefined) {
       this.recordDiagnostic(
         pendingDiagnostic.request,
         pendingDiagnostic.decision,
@@ -420,32 +419,31 @@ export class CodexAppServerWire {
   private validateRunIds(
     params: JsonObject,
     nullableTurn = false,
-  ): string | undefined {
+  ): boolean {
     if (params.threadId !== this.threadId) {
       throw new Error('subagent-codex: app-server request referenced another thread')
     }
-    if (nullableTurn && params.turnId === null) return undefined
+    if (nullableTurn && params.turnId === null) return false
     const id = string(params.turnId, 'server request turn id')
     if (this.turnId === undefined) {
       this.observePendingTurnId(id)
-      return id
+      return true
     }
     if (id !== this.turnId) {
       throw new Error('subagent-codex: app-server request referenced another turn')
     }
-    return undefined
+    return false
   }
 
   private recordRequestDiagnostic(
-    provisionalTurnId: string | undefined,
+    provisional: boolean,
     request: Parameters<typeof unattendedDiagnostic>[1],
     decision: Parameters<typeof unattendedDiagnostic>[2],
     reason: string,
   ): void {
     const order = this.nextObservationOrder()
-    if (provisionalTurnId !== undefined) {
+    if (provisional) {
       this.pendingDiagnostic = {
-        turnId: provisionalTurnId,
         order,
         request,
         decision,
@@ -504,10 +502,10 @@ export class CodexAppServerWire {
       switch (method) {
         case 'item/commandExecution/requestApproval':
         {
-          const provisionalTurnId = this.validateRunIds(params)
+          const provisional = this.validateRunIds(params)
           const decision = unattendedDecision(params)
           this.recordRequestDiagnostic(
-            provisionalTurnId,
+            provisional,
             'command approval',
             decision === 'cancel' ? 'cancelled' : 'declined',
             'the provider does not grant interactive approval',
@@ -516,10 +514,10 @@ export class CodexAppServerWire {
         }
         case 'item/fileChange/requestApproval':
         {
-          const provisionalTurnId = this.validateRunIds(params)
+          const provisional = this.validateRunIds(params)
           const decision = unattendedDecision(params)
           this.recordRequestDiagnostic(
-            provisionalTurnId,
+            provisional,
             'file approval',
             decision === 'cancel' ? 'cancelled' : 'declined',
             'the provider does not grant interactive approval',

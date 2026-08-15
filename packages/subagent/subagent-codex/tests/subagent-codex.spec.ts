@@ -30,8 +30,6 @@ const { hostStderrWrite } = vi.hoisted(() => ({
   hostStderrWrite: {
     capture: false,
     failNext: false,
-    zeroNext: false,
-    maxBytesPerWrite: undefined as number | undefined,
     chunks: [] as Buffer[],
   },
 }))
@@ -40,17 +38,11 @@ vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
     ...actual,
-    writeSync(
+    writeFileSync(
       fd: number,
       value: string | Uint8Array,
-      offset?: number | null,
-      length?: number | null,
-    ): number {
+    ): void {
       if (fd === 2 && hostStderrWrite.capture) {
-        if (hostStderrWrite.zeroNext) {
-          hostStderrWrite.zeroNext = false
-          return 0
-        }
         if (hostStderrWrite.failNext) {
           hostStderrWrite.failNext = false
           throw Object.assign(new Error('host stderr broke'), { code: 'EIO' })
@@ -58,26 +50,10 @@ vi.mock('node:fs', async (importOriginal) => {
         const bytes = typeof value === 'string'
           ? Buffer.from(value)
           : Buffer.from(value.buffer, value.byteOffset, value.byteLength)
-        const start = typeof value === 'string' ? 0 : offset ?? 0
-        const requested = typeof value === 'string'
-          ? bytes.byteLength
-          : length ?? bytes.byteLength - start
-        const written = Math.min(
-          requested,
-          hostStderrWrite.maxBytesPerWrite ?? requested,
-        )
-        hostStderrWrite.chunks.push(Buffer.from(bytes.subarray(start, start + written)))
-        return written
+        hostStderrWrite.chunks.push(bytes)
+        return
       }
-      return typeof value === 'string'
-        ? actual.writeSync(fd, value, null, 'utf8')
-        : actual.writeSync(
-          fd,
-          value,
-          offset ?? 0,
-          length ?? value.byteLength - (offset ?? 0),
-          null,
-        )
+      actual.writeFileSync(fd, value)
     },
   }
 })
@@ -1390,7 +1366,6 @@ describe('run lifecycle and quiescence', () => {
   it('forwards stderr while extracting only a fixed safe permission signature', async () => {
     const child = fakeChild()
     hostStderrWrite.capture = true
-    hostStderrWrite.maxBytesPerWrite = 3
     hostStderrWrite.chunks.length = 0
     const { run, turnStart } = await publishRun(child)
     child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
@@ -1407,10 +1382,9 @@ describe('run lifecycle and quiescence', () => {
       stopReason: 'error',
     })
     expect(Buffer.concat(hostStderrWrite.chunks).toString()).toContain('SECRET_TOKEN')
-    expect(hostStderrWrite.chunks.length).toBeGreaterThan(3)
+    expect(hostStderrWrite.chunks).toHaveLength(3)
     await run.dispose()
     expect(child.stderr.listenerCount('data')).toBe(0)
-    hostStderrWrite.maxBytesPerWrite = undefined
     hostStderrWrite.capture = false
   })
 
@@ -1418,26 +1392,6 @@ describe('run lifecycle and quiescence', () => {
     const child = fakeChild()
     hostStderrWrite.capture = true
     hostStderrWrite.failNext = true
-    const { run, turnStart } = await publishRun(child)
-    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
-    child.stderr.write('approval policy is Never; reject command')
-    child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
-      message: 'fixture terminal failure',
-      codexErrorInfo: 'badRequest',
-    }))
-    await expect(run.result).resolves.toEqual({
-      output: [],
-      diagnostic: 'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
-      stopReason: 'error',
-    })
-    await run.dispose()
-    hostStderrWrite.capture = false
-  })
-
-  it('contains a zero-progress host stderr write without losing the diagnostic', async () => {
-    const child = fakeChild()
-    hostStderrWrite.capture = true
-    hostStderrWrite.zeroNext = true
     const { run, turnStart } = await publishRun(child)
     child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
     child.stderr.write('approval policy is Never; reject command')
