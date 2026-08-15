@@ -12,6 +12,7 @@ import type { TerminalBackend, TerminalBackendSpawnSpec } from '@deepseek-ai/dsh
 import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import { effectiveSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
+import { ENCODING_PREAMBLE } from '@deepseek-ai/dsh-pwsh-local'
 import { type Config, type ResolvedConfig, resolveConfig, type ShellDialect, validateConfig } from './config.ts'
 import { LocalPtySession } from './session.ts'
 import { CONTROLLED_PROMPT } from './sanitize.ts'
@@ -112,15 +113,18 @@ async function startupSession(
     // pwsh cannot install its prompt from the environment: write the prompt
     // function through the session and wait for the first marker prompt,
     // which is also the readiness contract of the bash initialize path. The
-    // banner-to-prompt gap can outlast the silence bound, so the wait loops
-    // over follow-up sends until the controlled prompt is actually visible
-    // (in the viewport or the retained scrollback when it landed between
-    // sends), bounded by the send deadline.
+    // first send also pins UTF-8 output (the shared pwsh-local preamble)
+    // before anything runs: the session decode path treats PTY bytes as
+    // UTF-8, and an un-pinned console writes its host code page for
+    // non-ASCII output. The banner-to-prompt gap can outlast the silence
+    // bound, so the wait loops over follow-up sends until the controlled
+    // prompt is actually visible (in the viewport or the retained scrollback
+    // when it landed between sends), bounded by the send deadline.
     let viewport = ''
     for (;;) {
       const first = viewport.length === 0
       const operation = session.startSend({
-        text: first ? PWSH_PROMPT_SETUP : '',
+        text: first ? ENCODING_PREAMBLE + PWSH_PROMPT_SETUP : '',
         submit: first,
         ...signal !== undefined ? { signal } : {},
       })
