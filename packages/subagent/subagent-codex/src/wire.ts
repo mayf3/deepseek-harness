@@ -156,10 +156,13 @@ export class CodexAppServerWire {
   private readonly earlyTurnNotifications: Array<{
     readonly method: string
     readonly params: JsonObject
+    readonly order: number
   }> = []
   private lastFinalAnswer: string | undefined
   private lastUnphasedAnswer: string | undefined
   private diagnostic: string | undefined
+  private diagnosticOrder = 0
+  private observationOrder = 0
   private stderrTail = ''
   private closed = false
 
@@ -382,7 +385,11 @@ export class CodexAppServerWire {
     this.turnId = id
     const notifications = this.earlyTurnNotifications.splice(0)
     for (const notification of notifications) {
-      this.handleNotification(notification.method, notification.params)
+      this.handleNotification(
+        notification.method,
+        notification.params,
+        notification.order,
+      )
     }
   }
 
@@ -405,7 +412,10 @@ export class CodexAppServerWire {
     request: Parameters<typeof unattendedDiagnostic>[1],
     decision: Parameters<typeof unattendedDiagnostic>[2],
     reason: string,
+    order = this.nextObservationOrder(),
   ): void {
+    if (order < this.diagnosticOrder) return
+    this.diagnosticOrder = order
     this.diagnostic = unattendedDiagnostic(
       this.permissionMode,
       request,
@@ -414,12 +424,18 @@ export class CodexAppServerWire {
     )
   }
 
-  private recordDeclinedItem(item: JsonObject): boolean {
+  private nextObservationOrder(): number {
+    this.observationOrder += 1
+    return this.observationOrder
+  }
+
+  private recordDeclinedItem(item: JsonObject, order?: number): boolean {
     if (item.type === 'commandExecution' && item.status === 'declined') {
       this.recordDiagnostic(
         'command execution',
         'declined',
         'Codex declined the command under the selected permission mode',
+        order,
       )
       return true
     }
@@ -428,6 +444,7 @@ export class CodexAppServerWire {
         'file change',
         'declined',
         'Codex declined the file change under the selected permission mode',
+        order,
       )
       return true
     }
@@ -493,7 +510,11 @@ export class CodexAppServerWire {
     }
   }
 
-  private handleNotification(method: string, params: JsonObject): void {
+  private handleNotification(
+    method: string,
+    params: JsonObject,
+    order?: number,
+  ): void {
     if (method === 'turn/started') {
       const threadId = string(params.threadId, 'turn/started thread id')
       if (threadId !== this.threadId) return
@@ -510,15 +531,17 @@ export class CodexAppServerWire {
       if (this.turnId === undefined) {
         if (this.turnCompleted !== undefined) {
           this.observePendingTurnId(id)
-          const item = object(params.item, 'item/completed item')
-          if (this.recordDeclinedItem(item)) return
-          this.earlyTurnNotifications.push({ method, params })
+          this.earlyTurnNotifications.push({
+            method,
+            params,
+            order: this.nextObservationOrder(),
+          })
         }
         return
       }
       if (id !== this.turnId) return
       const item = object(params.item, 'item/completed item')
-      if (this.recordDeclinedItem(item)) return
+      if (this.recordDeclinedItem(item, order)) return
       if (item.type !== 'agentMessage') return
       const text = typeof item.text === 'string'
         ? item.text
@@ -541,7 +564,11 @@ export class CodexAppServerWire {
     if (turnCompleted === undefined) return
     if (this.turnId === undefined) {
       this.observePendingTurnId(id)
-      this.earlyTurnNotifications.push({ method, params })
+      this.earlyTurnNotifications.push({
+        method,
+        params,
+        order: this.nextObservationOrder(),
+      })
       return
     }
     if (id !== this.turnId) return

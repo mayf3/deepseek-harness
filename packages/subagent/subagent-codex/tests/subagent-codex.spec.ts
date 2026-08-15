@@ -26,6 +26,37 @@ import {
 } from '../src/run.ts'
 import { CodexAppServerWire } from '../src/wire.ts'
 
+const { hostStderrWrite } = vi.hoisted(() => ({
+  hostStderrWrite: {
+    capture: false,
+    failNext: false,
+    chunks: [] as Buffer[],
+  },
+}))
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    writeSync(fd: number, value: string | Uint8Array): number {
+      if (fd === 2 && hostStderrWrite.capture) {
+        if (hostStderrWrite.failNext) {
+          hostStderrWrite.failNext = false
+          throw Object.assign(new Error('host stderr broke'), { code: 'EIO' })
+        }
+        const bytes = typeof value === 'string'
+          ? Buffer.from(value)
+          : Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+        hostStderrWrite.chunks.push(bytes)
+        return bytes.byteLength
+      }
+      return typeof value === 'string'
+        ? actual.writeSync(fd, value, null, 'utf8')
+        : actual.writeSync(fd, value, 0, value.byteLength, null)
+    },
+  }
+})
+
 type JsonObject = Record<string, unknown>
 
 const fakeParent = {
@@ -983,6 +1014,24 @@ describe('CodexAppServerWire', () => {
     wire.close()
   })
 
+  it('does not retain a diagnostic from a mismatched early item', async () => {
+    const { child, wire } = await initializeWire()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.send({
+      method: 'item/completed',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-early',
+        item: { type: 'fileChange', status: 'declined' },
+      },
+    })
+    child.peer.respond(turnStart, { turn: { id: 'turn-response' } })
+    await expect(result).rejects.toThrow('did not match the active turn')
+    expect(wire.collectDiagnostic()).toBeUndefined()
+    wire.close()
+  })
+
   it('rejects conflicting early notifications and requests before turn/start', async () => {
     {
       const { child, wire } = await initializeWire()
@@ -1253,7 +1302,8 @@ describe('run lifecycle and quiescence', () => {
   })
 
   it('drains queued stderr before settling a failed published run', async () => {
-    const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    hostStderrWrite.capture = true
+    hostStderrWrite.chunks.length = 0
     const { child, run, turnStart } = await publishRun()
     child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
     child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
@@ -1269,26 +1319,18 @@ describe('run lifecycle and quiescence', () => {
       stopReason: 'error',
     })
     await run.dispose()
-    write.mockRestore()
+    hostStderrWrite.capture = false
   })
 
   it('forwards stderr while extracting only a fixed safe permission signature', async () => {
     const child = fakeChild()
-    const forwarded: string[] = []
-    let writes = 0
-    const write = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
-      forwarded.push(String(chunk))
-      writes += 1
-      if (writes === 1) {
-        setImmediate(() => { process.stderr.emit('drain') })
-        return false
-      }
-      return true
-    })
+    hostStderrWrite.capture = true
+    hostStderrWrite.chunks.length = 0
     const { run, turnStart } = await publishRun(child)
     child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
     child.stderr.write('SECRET_TOKEN approval policy is Ne')
     child.stderr.write('ver; reject command — /private/secret.txt')
+    child.stderr.emit('data', 'string stderr suffix')
     child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
       message: 'fixture terminal failure',
       codexErrorInfo: 'badRequest',
@@ -1298,27 +1340,27 @@ describe('run lifecycle and quiescence', () => {
       diagnostic: 'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
       stopReason: 'error',
     })
-    expect(forwarded.join('')).toContain('SECRET_TOKEN')
-    expect(writes).toBe(2)
+    expect(Buffer.concat(hostStderrWrite.chunks).toString()).toContain('SECRET_TOKEN')
+    expect(hostStderrWrite.chunks).toHaveLength(3)
     await run.dispose()
     expect(child.stderr.listenerCount('data')).toBe(0)
-    write.mockRestore()
+    hostStderrWrite.capture = false
   })
 
-  it('contains host stderr errors without changing run settlement', async () => {
+  it('contains host stderr write failures without changing run settlement', async () => {
     const child = fakeChild()
-    const initialErrorListeners = process.stderr.listenerCount('error')
+    hostStderrWrite.capture = true
+    hostStderrWrite.failNext = true
     const { run, turnStart } = await publishRun(child)
     child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
-    expect(process.stderr.listenerCount('error')).toBeGreaterThan(initialErrorListeners)
-    process.stderr.emit('error', new Error('host stderr broke'))
+    child.stderr.write('forwarding failure')
     child.peer.send(agentMessage('answer', 'final_answer'), turnCompleted('completed'))
     await expect(run.result).resolves.toEqual({
       output: [{ type: 'text', text: 'answer' }],
       stopReason: 'completed',
     })
     await run.dispose()
-    expect(process.stderr.listenerCount('error')).toBe(initialErrorListeners)
+    hostStderrWrite.capture = false
   })
 
   it('rejects before spawn when pre-aborted and rolls back startup failures', async () => {
@@ -1406,12 +1448,21 @@ describe('run lifecycle and quiescence', () => {
   })
 
   it('keeps overlapping runs isolated', async () => {
-    const first = fakeChild()
-    const second = fakeChild()
-    const runs = await Promise.all([
-      publishRun(first),
-      publishRun(second),
-    ])
+    const initialStderrListeners = {
+      error: process.stderr.listenerCount('error'),
+      unpipe: process.stderr.listenerCount('unpipe'),
+      close: process.stderr.listenerCount('close'),
+      finish: process.stderr.listenerCount('finish'),
+    }
+    const runs = await Promise.all(
+      Array.from({ length: 6 }, () => publishRun(fakeChild())),
+    )
+    expect({
+      error: process.stderr.listenerCount('error'),
+      unpipe: process.stderr.listenerCount('unpipe'),
+      close: process.stderr.listenerCount('close'),
+      finish: process.stderr.listenerCount('finish'),
+    }).toEqual(initialStderrListeners)
     for (const [index, entry] of runs.entries()) {
       const id = `turn-${index + 1}`
       entry.child.peer.send(
@@ -1421,11 +1472,12 @@ describe('run lifecycle and quiescence', () => {
       )
     }
     const results = await Promise.all(runs.map(entry => entry.run.result))
-    expect(results.map(result => result.output)).toEqual([
-      [{ type: 'text', text: 'answer-1' }],
-      [{ type: 'text', text: 'answer-2' }],
-    ])
-    expect(runs[0].run.id).not.toBe(runs[1].run.id)
+    expect(results.map(result => result.output)).toEqual(
+      Array.from({ length: 6 }, (_, index) => [
+        { type: 'text', text: `answer-${index + 1}` },
+      ]),
+    )
+    expect(runs[0]!.run.id).not.toBe(runs[1]!.run.id)
     await Promise.all(runs.map(entry => entry.run.dispose()))
   })
 

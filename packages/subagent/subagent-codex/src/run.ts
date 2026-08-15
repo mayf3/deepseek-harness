@@ -8,6 +8,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { writeSync } from 'node:fs'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -154,27 +155,26 @@ export async function startCodexRun(
     spec.permissionMode,
   )
   const onStderr = (chunk: Buffer | string): void => {
-    wire.observeStderr(chunk.toString())
+    const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+    wire.observeStderr(bytes.toString())
+    try {
+      writeSync(process.stderr.fd, bytes)
+    } catch {
+      // Host stderr is an observation sink, not a child-run failure authority.
+    }
   }
   const onStderrError = (): void => {
     // Stderr observation is auxiliary. JSON-RPC and child.done remain the
     // only terminal authorities if the diagnostic stream itself fails.
   }
-  const onHostStderrError = (): void => {
-    // Host stderr is an observation sink, not a child-run failure authority.
-  }
   child.stderr?.on('data', onStderr)
   child.stderr?.on('error', onStderrError)
-  process.stderr.on('error', onHostStderrError)
-  child.stderr?.pipe(process.stderr, { end: false })
   const disposeProcess = async (): Promise<void> => {
     try {
       await disposeCodexChild(wire, child)
     } finally {
-      child.stderr?.unpipe(process.stderr)
       child.stderr?.off('data', onStderr)
       child.stderr?.off('error', onStderrError)
-      process.stderr.off('error', onHostStderrError)
     }
   }
 
