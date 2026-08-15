@@ -30,6 +30,8 @@ const { hostStderrWrite } = vi.hoisted(() => ({
   hostStderrWrite: {
     capture: false,
     failNext: false,
+    zeroNext: false,
+    maxBytesPerWrite: undefined as number | undefined,
     chunks: [] as Buffer[],
   },
 }))
@@ -38,8 +40,17 @@ vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
     ...actual,
-    writeSync(fd: number, value: string | Uint8Array): number {
+    writeSync(
+      fd: number,
+      value: string | Uint8Array,
+      offset?: number | null,
+      length?: number | null,
+    ): number {
       if (fd === 2 && hostStderrWrite.capture) {
+        if (hostStderrWrite.zeroNext) {
+          hostStderrWrite.zeroNext = false
+          return 0
+        }
         if (hostStderrWrite.failNext) {
           hostStderrWrite.failNext = false
           throw Object.assign(new Error('host stderr broke'), { code: 'EIO' })
@@ -47,12 +58,26 @@ vi.mock('node:fs', async (importOriginal) => {
         const bytes = typeof value === 'string'
           ? Buffer.from(value)
           : Buffer.from(value.buffer, value.byteOffset, value.byteLength)
-        hostStderrWrite.chunks.push(bytes)
-        return bytes.byteLength
+        const start = typeof value === 'string' ? 0 : offset ?? 0
+        const requested = typeof value === 'string'
+          ? bytes.byteLength
+          : length ?? bytes.byteLength - start
+        const written = Math.min(
+          requested,
+          hostStderrWrite.maxBytesPerWrite ?? requested,
+        )
+        hostStderrWrite.chunks.push(Buffer.from(bytes.subarray(start, start + written)))
+        return written
       }
       return typeof value === 'string'
         ? actual.writeSync(fd, value, null, 'utf8')
-        : actual.writeSync(fd, value, 0, value.byteLength, null)
+        : actual.writeSync(
+          fd,
+          value,
+          offset ?? 0,
+          length ?? value.byteLength - (offset ?? 0),
+          null,
+        )
     },
   }
 })
@@ -698,12 +723,13 @@ describe('CodexAppServerWire', () => {
     expect(await child.peer.nextResponse('command')).toMatchObject({
       result: { decision: 'cancel' },
     })
-    expect(wire.collectDiagnostic()).toBe(
-      'Codex unattended decision (mode: never; request: command approval; decision: cancelled): the provider does not grant interactive approval',
-    )
+    expect(wire.collectDiagnostic()).toBeUndefined()
 
     child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
     await nextTask()
+    expect(wire.collectDiagnostic()).toBe(
+      'Codex unattended decision (mode: never; request: command approval; decision: cancelled): the provider does not grant interactive approval',
+    )
     const requests = [
       {
         id: 'command-decline',
@@ -952,6 +978,25 @@ describe('CodexAppServerWire', () => {
     wire.close()
   })
 
+  it('keeps a newer stderr fact after replaying an older early terminal', async () => {
+    hostStderrWrite.capture = true
+    hostStderrWrite.chunks.length = 0
+    const { child, wire } = await initializeWire()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+      message: 'sandbox failure',
+      codexErrorInfo: 'sandboxError',
+    }))
+    await nextTask()
+    wire.observeStderr('approval policy is Never; reject command')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    await expect(result).rejects.toThrow('sandboxError')
+    expect(wire.collectDiagnostic()).toContain('request: command execution')
+    wire.close()
+    hostStderrWrite.capture = false
+  })
+
   it('fails the run on unknown requests or wrong request association', async () => {
     for (const serverRequest of [
       {
@@ -1026,6 +1071,26 @@ describe('CodexAppServerWire', () => {
         item: { type: 'fileChange', status: 'declined' },
       },
     })
+    child.peer.respond(turnStart, { turn: { id: 'turn-response' } })
+    await expect(result).rejects.toThrow('did not match the active turn')
+    expect(wire.collectDiagnostic()).toBeUndefined()
+    wire.close()
+  })
+
+  it('does not retain a diagnostic from a mismatched provisional request', async () => {
+    const { child, wire } = await initializeWire()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.send({
+      id: 'provisional-approval',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-early',
+        availableDecisions: ['cancel'],
+      },
+    })
+    await child.peer.nextResponse('provisional-approval')
     child.peer.respond(turnStart, { turn: { id: 'turn-response' } })
     await expect(result).rejects.toThrow('did not match the active turn')
     expect(wire.collectDiagnostic()).toBeUndefined()
@@ -1325,6 +1390,7 @@ describe('run lifecycle and quiescence', () => {
   it('forwards stderr while extracting only a fixed safe permission signature', async () => {
     const child = fakeChild()
     hostStderrWrite.capture = true
+    hostStderrWrite.maxBytesPerWrite = 3
     hostStderrWrite.chunks.length = 0
     const { run, turnStart } = await publishRun(child)
     child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
@@ -1341,9 +1407,10 @@ describe('run lifecycle and quiescence', () => {
       stopReason: 'error',
     })
     expect(Buffer.concat(hostStderrWrite.chunks).toString()).toContain('SECRET_TOKEN')
-    expect(hostStderrWrite.chunks).toHaveLength(3)
+    expect(hostStderrWrite.chunks.length).toBeGreaterThan(3)
     await run.dispose()
     expect(child.stderr.listenerCount('data')).toBe(0)
+    hostStderrWrite.maxBytesPerWrite = undefined
     hostStderrWrite.capture = false
   })
 
@@ -1353,11 +1420,35 @@ describe('run lifecycle and quiescence', () => {
     hostStderrWrite.failNext = true
     const { run, turnStart } = await publishRun(child)
     child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
-    child.stderr.write('forwarding failure')
-    child.peer.send(agentMessage('answer', 'final_answer'), turnCompleted('completed'))
+    child.stderr.write('approval policy is Never; reject command')
+    child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+      message: 'fixture terminal failure',
+      codexErrorInfo: 'badRequest',
+    }))
     await expect(run.result).resolves.toEqual({
-      output: [{ type: 'text', text: 'answer' }],
-      stopReason: 'completed',
+      output: [],
+      diagnostic: 'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
+      stopReason: 'error',
+    })
+    await run.dispose()
+    hostStderrWrite.capture = false
+  })
+
+  it('contains a zero-progress host stderr write without losing the diagnostic', async () => {
+    const child = fakeChild()
+    hostStderrWrite.capture = true
+    hostStderrWrite.zeroNext = true
+    const { run, turnStart } = await publishRun(child)
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    child.stderr.write('approval policy is Never; reject command')
+    child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+      message: 'fixture terminal failure',
+      codexErrorInfo: 'badRequest',
+    }))
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: 'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
+      stopReason: 'error',
     })
     await run.dispose()
     hostStderrWrite.capture = false

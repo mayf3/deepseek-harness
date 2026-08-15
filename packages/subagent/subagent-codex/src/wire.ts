@@ -152,7 +152,10 @@ export class CodexAppServerWire {
   private threadId: string | undefined
   private turnId: string | undefined
   private pendingTurnId: string | undefined
-  private turnCompleted: PromiseWithResolvers<JsonObject> | undefined
+  private turnCompleted: PromiseWithResolvers<{
+    readonly params: JsonObject
+    readonly order: number
+  }> | undefined
   private readonly earlyTurnNotifications: Array<{
     readonly method: string
     readonly params: JsonObject
@@ -163,6 +166,13 @@ export class CodexAppServerWire {
   private diagnostic: string | undefined
   private diagnosticOrder = 0
   private observationOrder = 0
+  private pendingDiagnostic: {
+    readonly turnId: string
+    readonly order: number
+    readonly request: Parameters<typeof unattendedDiagnostic>[1]
+    readonly decision: Parameters<typeof unattendedDiagnostic>[2]
+    readonly reason: string
+  } | undefined
   private stderrTail = ''
   private closed = false
 
@@ -247,7 +257,10 @@ export class CodexAppServerWire {
     texts: readonly string[],
     signal: AbortSignal,
   ): Promise<SubagentResult> {
-    const completion = Promise.withResolvers<JsonObject>()
+    const completion = Promise.withResolvers<{
+      readonly params: JsonObject
+      readonly order: number
+    }>()
     this.turnCompleted = completion
     const threadId = this.threadId as string
     const response = object(await this.guarded(this.transport.request('turn/start', {
@@ -258,7 +271,7 @@ export class CodexAppServerWire {
     this.commitTurnId(string(turn.id, 'turn/start turn id'))
 
     const completed = await this.guarded(completion.promise, signal)
-    const terminal = object(completed.turn, 'turn/completed turn')
+    const terminal = object(completed.params.turn, 'turn/completed turn')
     const status = terminal.status
     if (isContextWindowExceeded(terminal)) {
       return { output: this.collectOutput(), stopReason: 'max-tokens' }
@@ -270,6 +283,7 @@ export class CodexAppServerWire {
           'sandbox execution',
           'failed',
           'Codex reported a sandbox failure',
+          completed.order,
         )
       }
       const detail = status === 'failed'
@@ -383,6 +397,16 @@ export class CodexAppServerWire {
       throw new Error('subagent-codex: turn/start response did not match the active turn')
     }
     this.turnId = id
+    const pendingDiagnostic = this.pendingDiagnostic
+    this.pendingDiagnostic = undefined
+    if (pendingDiagnostic?.turnId === id) {
+      this.recordDiagnostic(
+        pendingDiagnostic.request,
+        pendingDiagnostic.decision,
+        pendingDiagnostic.reason,
+        pendingDiagnostic.order,
+      )
+    }
     const notifications = this.earlyTurnNotifications.splice(0)
     for (const notification of notifications) {
       this.handleNotification(
@@ -393,19 +417,43 @@ export class CodexAppServerWire {
     }
   }
 
-  private validateRunIds(params: JsonObject, nullableTurn = false): void {
+  private validateRunIds(
+    params: JsonObject,
+    nullableTurn = false,
+  ): string | undefined {
     if (params.threadId !== this.threadId) {
       throw new Error('subagent-codex: app-server request referenced another thread')
     }
-    if (nullableTurn && params.turnId === null) return
+    if (nullableTurn && params.turnId === null) return undefined
     const id = string(params.turnId, 'server request turn id')
     if (this.turnId === undefined) {
       this.observePendingTurnId(id)
-      return
+      return id
     }
     if (id !== this.turnId) {
       throw new Error('subagent-codex: app-server request referenced another turn')
     }
+    return undefined
+  }
+
+  private recordRequestDiagnostic(
+    provisionalTurnId: string | undefined,
+    request: Parameters<typeof unattendedDiagnostic>[1],
+    decision: Parameters<typeof unattendedDiagnostic>[2],
+    reason: string,
+  ): void {
+    const order = this.nextObservationOrder()
+    if (provisionalTurnId !== undefined) {
+      this.pendingDiagnostic = {
+        turnId: provisionalTurnId,
+        order,
+        request,
+        decision,
+        reason,
+      }
+      return
+    }
+    this.recordDiagnostic(request, decision, reason, order)
   }
 
   private recordDiagnostic(
@@ -455,46 +503,48 @@ export class CodexAppServerWire {
     try {
       switch (method) {
         case 'item/commandExecution/requestApproval':
-          this.validateRunIds(params)
-          {
-            const decision = unattendedDecision(params)
-            this.recordDiagnostic(
-              'command approval',
-              decision === 'cancel' ? 'cancelled' : 'declined',
-              'the provider does not grant interactive approval',
-            )
-            return Promise.resolve({ decision })
-          }
+        {
+          const provisionalTurnId = this.validateRunIds(params)
+          const decision = unattendedDecision(params)
+          this.recordRequestDiagnostic(
+            provisionalTurnId,
+            'command approval',
+            decision === 'cancel' ? 'cancelled' : 'declined',
+            'the provider does not grant interactive approval',
+          )
+          return Promise.resolve({ decision })
+        }
         case 'item/fileChange/requestApproval':
-          this.validateRunIds(params)
-          {
-            const decision = unattendedDecision(params)
-            this.recordDiagnostic(
-              'file approval',
-              decision === 'cancel' ? 'cancelled' : 'declined',
-              'the provider does not grant interactive approval',
-            )
-            return Promise.resolve({ decision })
-          }
+        {
+          const provisionalTurnId = this.validateRunIds(params)
+          const decision = unattendedDecision(params)
+          this.recordRequestDiagnostic(
+            provisionalTurnId,
+            'file approval',
+            decision === 'cancel' ? 'cancelled' : 'declined',
+            'the provider does not grant interactive approval',
+          )
+          return Promise.resolve({ decision })
+        }
         case 'item/permissions/requestApproval':
-          this.validateRunIds(params)
-          this.recordDiagnostic(
+          this.recordRequestDiagnostic(
+            this.validateRunIds(params),
             'permission grant',
             'denied',
             'the provider grants no additional turn permissions',
           )
           return Promise.resolve({ permissions: {}, scope: 'turn' })
         case 'item/tool/requestUserInput':
-          this.validateRunIds(params)
-          this.recordDiagnostic(
+          this.recordRequestDiagnostic(
+            this.validateRunIds(params),
             'user input',
             'empty response',
             'the provider does not collect interactive answers',
           )
           return Promise.resolve({ answers: {} })
         case 'mcpServer/elicitation/request':
-          this.validateRunIds(params, true)
-          this.recordDiagnostic(
+          this.recordRequestDiagnostic(
+            this.validateRunIds(params, true),
             'MCP elicitation',
             'declined',
             'the provider does not collect interactive MCP input',
@@ -575,6 +625,9 @@ export class CodexAppServerWire {
     if (!['completed', 'interrupted', 'failed'].includes(String(turn.status))) {
       throw new Error(`subagent-codex: app-server returned invalid terminal turn status ${String(turn.status)}`)
     }
-    turnCompleted.resolve(params)
+    turnCompleted.resolve({
+      params,
+      order: order ?? this.nextObservationOrder(),
+    })
   }
 }

@@ -158,7 +158,17 @@ export async function startCodexRun(
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
     wire.observeStderr(bytes.toString())
     try {
-      writeSync(process.stderr.fd, bytes)
+      let offset = 0
+      while (offset < bytes.byteLength) {
+        const written = writeSync(
+          process.stderr.fd,
+          bytes,
+          offset,
+          bytes.byteLength - offset,
+        )
+        if (written <= 0) throw new Error('subagent-codex: host stderr made no write progress')
+        offset += written
+      }
     } catch {
       // Host stderr is an observation sink, not a child-run failure authority.
     }
