@@ -343,6 +343,7 @@ describe('workspace browser rows', () => {
         onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onEditTags={vi.fn()} t={t} />)
       // The placeholder has no content yet: no row verbs, no "now" stamp.
       expect(screen.queryByRole('button', { name: /会话.*的操作/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: '归档会话' })).toBeNull()
       expect(screen.queryByText('刚刚')).toBeNull()
       // The hover card keeps title + status but drops the timestamp line.
       const wrapper = screen.getByRole('treeitem').parentElement as HTMLElement
@@ -368,7 +369,9 @@ describe('workspace browser rows', () => {
     }
     render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
       onRename={onRename} onFork={onFork} onArchive={onArchive} onEditTags={vi.fn()} t={t} />)
-    fireEvent.click(screen.getByRole('button', { name: '会话“One”的操作' }))
+    // The menu opens on right-click only; no ellipsis trigger exists.
+    expect(screen.queryByRole('button', { name: /会话.*的操作/ })).toBeNull()
+    fireEvent.contextMenu(screen.getByRole('treeitem'))
     expect(onOpen).not.toHaveBeenCalled()
     // Archive is not destructive (log and accounting slot remain): no danger styling.
     expect(screen.getByRole('menuitem', { name: '归档会话' }).className).not.toMatch(/danger/)
@@ -377,19 +380,42 @@ describe('workspace browser rows', () => {
     expect(screen.queryByRole('menu')).toBeNull()
     expect(onRename).toHaveBeenCalledWith(node.id, 'One')
     expect(onOpen).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: '会话“One”的操作' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem'))
     fireEvent.click(screen.getByRole('menuitem', { name: '分叉会话' }))
     expect(onFork).toHaveBeenCalledWith(node.id)
     // Archive dispatches without opening the session.
-    fireEvent.click(screen.getByRole('button', { name: '会话“One”的操作' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem'))
     fireEvent.click(screen.getByRole('menuitem', { name: '归档会话' }))
     expect(onArchive).toHaveBeenCalledWith(node.id)
     expect(onRename).toHaveBeenCalledOnce()
     expect(onOpen).not.toHaveBeenCalled()
     // Escape closes without selecting (Menu onClose path).
-    fireEvent.click(screen.getByRole('button', { name: '会话“One”的操作' }))
+    fireEvent.contextMenu(screen.getByRole('treeitem'))
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('archives from the one-click row action behind a confirm step', () => {
+    const onArchive = vi.fn()
+    const node: SessionNode = {
+      id: sid('s2'), title: 'Two', blank: false, running: false,
+      runningSubagentCount: 0, completed: false, updatedAt: 0, depth: 0, tags: [], unread: false,
+    }
+    render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={onArchive} onEditTags={vi.fn()} t={t} />)
+    // The only row button is the archive trigger.
+    const archiveButton = screen.getByRole('button', { name: '归档会话' })
+    expect(screen.queryByRole('button', { name: /会话.*的操作/ })).toBeNull()
+    fireEvent.click(archiveButton)
+    // A single danger confirm row appears; selecting it archives.
+    expect(screen.getByRole('menuitem', { name: '确认归档' }).className).toMatch(/danger/)
+    expect(onArchive).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('menuitem', { name: '确认归档' }))
+    expect(onArchive).toHaveBeenCalledWith(node.id)
+    // Closing the confirm without selecting does nothing.
+    fireEvent.click(archiveButton)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onArchive).toHaveBeenCalledOnce()
   })
 
 
@@ -449,7 +475,7 @@ describe('workspace browser rows', () => {
       expect(screen.getAllByText('进行中')).toHaveLength(2)
       fireEvent.pointerLeave(wrapper)
       // Menu open (disabled=true) suppresses the card for the same hover.
-      fireEvent.click(screen.getByRole('button', { name: '会话“Hovered”的操作' }))
+      fireEvent.contextMenu(screen.getByRole('treeitem'))
       fireEvent.pointerEnter(wrapper)
       act(() => { vi.advanceTimersByTime(1000) })
       expect(screen.queryByText('1分钟前')).toBeNull()

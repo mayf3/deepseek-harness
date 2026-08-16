@@ -219,7 +219,7 @@ describe('WorkspaceBrowser', () => {
     })
     // Tag session one through the row menu (workspace view), then switch to tags.
     fireEvent.click(screen.getByText('alpha'))
-    fireEvent.click(screen.getByText('one').closest('[role="treeitem"]')!.querySelector('button[aria-label*="的操作"]') as HTMLElement)
+    fireEvent.contextMenu(screen.getByText('one').closest('[role="treeitem"]') as HTMLElement)
     fireEvent.click(screen.getByRole('menuitem', { name: '设置标签…' }))
     const input = screen.getByPlaceholderText('输入标签，用逗号分隔')
     // The tag input autocompletes from existing tags via a datalist.
@@ -497,7 +497,7 @@ describe('WorkspaceBrowser', () => {
       archiveSession,
     })
     fireEvent.click(screen.getByText('alpha'))
-    fireEvent.click(screen.getByRole('button', { name: '会话“gone-s”的操作' }))
+    fireEvent.contextMenu(screen.getByText('gone-s').closest('[role="treeitem"]') as HTMLElement)
     fireEvent.click(screen.getByRole('menuitem', { name: '归档会话' }))
     expect(archiveSession).toHaveBeenCalledWith(sid('gone-s'))
 
@@ -521,7 +521,7 @@ describe('WorkspaceBrowser', () => {
         archiveSession,
       })
       fireEvent.click(screen.getByText('alpha'))
-      fireEvent.click(screen.getByRole('button', { name: '会话“alpha-s”的操作' }))
+      fireEvent.contextMenu(screen.getByText('alpha-s').closest('[role="treeitem"]') as HTMLElement)
       fireEvent.click(screen.getByRole('menuitem', { name: '归档会话' }))
       await Promise.resolve()
       await Promise.resolve()

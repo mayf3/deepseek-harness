@@ -414,6 +414,10 @@ export function SessionNodeItem({
   const primaryStatus = statuses[0]
   const showStatus = primaryStatus.state !== 'done' || row.completed
   const [menuOpen, setMenuOpen] = useState(false)
+  // Right-click menu anchor: the ellipsis trigger is gone, so the menu is
+  // positioned at the cursor that opened it.
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
+  const [archiveOpen, setArchiveOpen] = useState(false)
   // Archive hides the row through the registry-global archive set and never
   // touches the session log, so it is not styled as destructive and needs no
   // confirmation dialog.
@@ -443,6 +447,7 @@ export function SessionNodeItem({
       onClick={() => { onOpen(node.id) }}
       onContextMenu={(e) => {
         e.preventDefault()
+        setMenuAt({ x: e.clientX, y: e.clientY })
         setMenuOpen(true)
       }}
       draggable={drag !== undefined}
@@ -494,6 +499,30 @@ export function SessionNodeItem({
       {!row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
       {!row.blank && (
         <span className={css.rowActions}>
+          {/* One-click row action: archive, behind a confirm step. */}
+          <Menu
+            open={archiveOpen}
+            onClose={() => { setArchiveOpen(false) }}
+            items={[{ id: 'archive', label: t('menu.archiveConfirm'), icon: <IconArchiveOutline20 size={16} />, danger: true }]}
+            onSelect={(id) => {
+              setArchiveOpen(false)
+              if (id === 'archive') onArchive(node.id)
+            }}
+            portal
+            align="end"
+            anchor={(
+              <button
+                type="button"
+                className={css.iconButton}
+                aria-label={t('menu.archiveSession')}
+                title={t('menu.archiveSession')}
+                onClick={(e) => { e.stopPropagation(); setArchiveOpen(v => !v) }}
+              >
+                <IconArchiveOutline20 size={16} />
+              </button>
+            )}
+          />
+          {/* The full row menu lives on right-click alone (no ellipsis). */}
           <Menu
             open={menuOpen}
             onClose={() => { setMenuOpen(false) }}
@@ -508,17 +537,11 @@ export function SessionNodeItem({
               if (id === 'tags') onEditTags(node.id, node.tags)
             }}
             portal
-            closeOnPointerLeave
-            anchor={(
-              <button
-                type="button"
-                className={css.iconButton}
-                aria-label={t('actions.session.aria', { name: title })}
-                onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
-              >
-                <IconEllipsisOutline16 />
-              </button>
-            )}
+            anchor={<span aria-hidden="true" />}
+            getAnchorRect={() => {
+              if (menuAt === null) return null
+              return new DOMRect(menuAt.x, menuAt.y, 0, 0)
+            }}
           />
         </span>
       )}
