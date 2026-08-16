@@ -20,7 +20,7 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { WorkspaceBrowserProps } from './contract/slots.ts'
 import type { GroupNode, SessionNode, SessionOrderBy } from './tree.ts'
-import { deriveFlat, deriveGroups, deriveSearchResults, deriveTagGroups, UNGROUPED_KEY } from './tree.ts'
+import { deriveFlat, deriveGroups, deriveSearchResults, deriveTagGroups, TAG_GROUP_PREFIX, UNGROUPED_KEY } from './tree.ts'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './rows/Rows.tsx'
 import { FLAT_SESSION_ORDER_KEY, type SessionGroupBy, type SessionMeta } from './stores.ts'
 import { WorkspacePickFlow } from './WorkspacePicker.tsx'
@@ -278,6 +278,8 @@ type SessionTreeProps = Pick<
   setSessionUnread: (sessionId: string, unread: boolean) => void
   /** Delete a tag everywhere (tag-section row menu action). */
   removeTag: (tag: string) => void
+  /** Unread-only filter (hide rows without the unread flag). */
+  unreadOnly: boolean
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
   /** Grouping mode: workspace sections or tag sections (flat has its own body). */
@@ -288,7 +290,7 @@ type SessionTreeProps = Pick<
 function SessionTree({
   useSessions, startSession, open, forkSession, workspaces, archivedSessionIds,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onEditTags,
-  sessionMeta, knownTags, setSessionParent, setSessionTags, setSessionUnread, removeTag,
+  sessionMeta, knownTags, setSessionParent, setSessionTags, setSessionUnread, removeTag, unreadOnly,
   insertWorkspaceBefore, insertSessionBefore, orderBy, groupBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
@@ -339,6 +341,33 @@ function SessionTree({
     if (current === undefined || currentGroup === undefined || Object.hasOwn(groupExpansion, currentGroup)) return
     setGroupExpanded(currentGroup, true)
   }, [current, currentGroup, setGroupExpanded, groupExpansion])
+  // Reveal the current session's tag sections too, so a deep-linked session
+  // is never hidden behind a collapsed tag group in the tag view.
+  useEffect(() => {
+    if (current === undefined || !tagMode) return
+    for (const tag of sessionMeta[current]?.tags ?? []) {
+      const key = TAG_GROUP_PREFIX + tag
+      if (!Object.hasOwn(groupExpansion, key)) setGroupExpanded(key, true)
+    }
+  }, [current, tagMode, sessionMeta, setGroupExpanded, groupExpansion])
+  // Deep-link jumps (notifier clicks) open a session whose row may sit below
+  // the fold; scroll the tree to the row once it renders.
+  useEffect(() => {
+    const id = list.current
+    if (id === undefined) return
+    let tries = 0
+    const timer = window.setInterval(() => {
+      const row = document.querySelector(`[data-session-id="${id}"]`)
+      if (row !== null) {
+        row.scrollIntoView({ block: 'nearest' })
+        window.clearInterval(timer)
+        return
+      }
+      tries += 1
+      if (tries >= 10) window.clearInterval(timer)
+    }, 100)
+    return () => { window.clearInterval(timer) }
+  }, [list.current])
   const expandedGroups = useMemo(
     () => Object.entries(groupExpansion).filter(([, expanded]) => expanded).map(([key]) => key),
     [groupExpansion],
@@ -387,15 +416,16 @@ function SessionTree({
   )
   const groups = useMemo(
     () => tagMode
-      ? deriveTagGroups(list, orderedWorkspaces, archivedSessionIds, { expandedGroups, sessionMeta, knownTags })
+      ? deriveTagGroups(list, orderedWorkspaces, archivedSessionIds, { expandedGroups, sessionMeta, knownTags, unreadOnly })
       : deriveGroups(list, orderedWorkspaces, archivedSessionIds, {
         expandedGroups,
         sessionMeta,
+        unreadOnly,
         ...(sessionOrderByAccount[UNGROUPED_KEY] === undefined
           ? {}
           : { ungroupedOrder: sessionOrderByAccount[UNGROUPED_KEY] }),
       }),
-    [list, orderedWorkspaces, archivedSessionIds, expandedGroups, sessionMeta, knownTags, sessionOrderByAccount, tagMode],
+    [list, orderedWorkspaces, archivedSessionIds, expandedGroups, sessionMeta, knownTags, sessionOrderByAccount, unreadOnly, tagMode],
   )
   const now = Date.now()
   /** Tag-view section-header drop: apply (or clear, for the untagged bucket) the dragged session's tags. */
@@ -669,7 +699,7 @@ function SessionTree({
 function FlatList({
   useSessions, startSession, open, forkSession, onSessionRename, onSessionArchive, onEditTags,
   setSessionParent, setSessionUnread, setSessionTags, sessionMeta, workspaces, archivedSessionIds,
-  orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
+  orderBy, unreadOnly, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
 }: Pick<
   SessionTreeProps,
   | 'useSessions'
@@ -686,6 +716,7 @@ function FlatList({
   | 'workspaces'
   | 'archivedSessionIds'
   | 'orderBy'
+  | 'unreadOnly'
   | 'sessionOrderByAccount'
   | 'sessionUpdatedAtByAccount'
   | 'syncSessionOrderAccount'
@@ -718,9 +749,27 @@ function FlatList({
     setSessionTags(current, pending.tags)
   }, [list, workspaces, setSessionTags])
   const baseRows = useMemo(
-    () => deriveFlat(list, workspaces, archivedSessionIds, sessionMeta),
-    [list, workspaces, archivedSessionIds, sessionMeta],
+    () => deriveFlat(list, workspaces, archivedSessionIds, sessionMeta, unreadOnly),
+    [list, workspaces, archivedSessionIds, sessionMeta, unreadOnly],
   )
+  // Deep-link jumps: scroll the opened session's row into view (flat rows are
+  // always rendered, so this resolves on the first tick).
+  useEffect(() => {
+    const id = list.current
+    if (id === undefined) return
+    let tries = 0
+    const timer = window.setInterval(() => {
+      const row = document.querySelector(`[data-session-id="${id}"]`)
+      if (row !== null) {
+        row.scrollIntoView({ block: 'nearest' })
+        window.clearInterval(timer)
+        return
+      }
+      tries += 1
+      if (tries >= 10) window.clearInterval(timer)
+    }, 100)
+    return () => { window.clearInterval(timer) }
+  }, [list.current])
   const sessionIds = useMemo(() => baseRows.map(row => row.id), [baseRows])
   const previousOrderBy = useRef(orderBy)
   useEffect(() => {
@@ -941,6 +990,7 @@ export function WorkspaceBrowser({
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
   const groupBy = useStore(s => s.groupBy)
   const orderBy = useStore(s => s.orderBy)
+  const unreadOnly = useStore(s => s.unreadOnly)
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const sessionUpdatedAtByAccount = useStore(s => s.sessionUpdatedAtByAccount)
@@ -1258,6 +1308,21 @@ export function WorkspaceBrowser({
               t={t}
             />
           )}
+          {wide && (
+            <Tooltip label={unreadOnly ? t('filter.all') : t('filter.unreadOnly')} side="bottom" delayMs={500}>
+              <button
+                type="button"
+                className={clsx(css.iconButton, unreadOnly && css.unreadFilterOn)}
+                aria-label={unreadOnly ? t('filter.all') : t('filter.unreadOnly')}
+                aria-pressed={unreadOnly}
+                onClick={() => { actions.setUnreadOnly(!unreadOnly) }}
+              >
+                <svg width={14} height={14} viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
+                  <circle cx="7" cy="7" r="4.5" />
+                </svg>
+              </button>
+            </Tooltip>
+          )}
           {/* Adding is the button's one action, so a composition with no
               picking affordance has nothing to offer here: the region hides the
               button rather than leaving a dead one in the header. The tag view
@@ -1355,6 +1420,7 @@ export function WorkspaceBrowser({
                 setSessionTags={actions.setSessionTags}
                 sessionMeta={sessionMeta}
                 workspaces={workspaces}
+                unreadOnly={unreadOnly}
                 archivedSessionIds={archivedSessionIds}
                 orderBy={orderBy}
                 sessionOrderByAccount={sessionOrderByAccount}
@@ -1375,6 +1441,7 @@ export function WorkspaceBrowser({
                 setSessionTags={actions.setSessionTags}
                 setSessionUnread={actions.setSessionUnread}
                 removeTag={actions.removeTag}
+                unreadOnly={unreadOnly}
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
                 onEditTags={onEditTags}

@@ -439,6 +439,7 @@ export function SessionNodeItem({
       role="treeitem"
       aria-selected={selected}
       aria-level={node.depth + 1}
+      data-session-id={node.id}
       onClick={() => { onOpen(node.id) }}
       onContextMenu={(e) => {
         e.preventDefault()

@@ -18,6 +18,8 @@ Status: implemented
 
 **行内「在此工作区新建会话」继承来源行的标签。** `startSession` 打开新会话但不回传新 id，因此 SessionTree/FlatList 在触发前把 `{workspaceId, tags}` 记入 ref，用 effect 等待目标工作区的（空白）会话成为 current 后一次性 `setSessionTags`，并清空 pending（工作区不符则不误标）。
 
+**「只看未读」过滤器 + 深链滚动定位。** `unreadOnly` 作为持久化视图状态；三种派生（workspace/tag/flat）过滤掉无 `unread` 标记的行，unreadOnly 下空分组/空标签组整体隐藏。会话行加 `data-session-id`，current 变化时（通知深链跳转）轮询该行并 `scrollIntoView(nearest)`；标签视图下 current 会话的标签组自动展开，保证行可见。
+
 ## 曾考虑的替代方案
 
 - 在调用方 effect 里把 tag 键并入 `retainAccountKeys` 参数（效果等价），但 deps 需要 `groupExpansion`，而 retain 每次生成新对象身份 → 死循环；用 ref 读取可绕开，但逻辑分散。
