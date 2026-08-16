@@ -303,6 +303,24 @@ function SessionTree({
   const toggleUnread = (id: SessionNode['id']) => {
     setSessionUnread(id, !(sessionMeta[id]?.unread === true))
   }
+  // Tag inheritance: the "new session in this workspace" row action tags the
+  // freshly created (blank) session with the source row's tags once it
+  // becomes current (startSession opens without returning the new id).
+  const inheritTagsRef = useRef<{ workspaceId: WorkspaceId; tags: string[] } | null>(null)
+  const inheritTags = (workspaceId: WorkspaceId, tags: string[]) => {
+    inheritTagsRef.current = tags.length > 0 ? { workspaceId, tags } : null
+  }
+  useEffect(() => {
+    const pending = inheritTagsRef.current
+    if (pending === null) return
+    const current = list.current
+    if (current === undefined) return
+    // Wait until the target workspace's session becomes current; a different
+    // workspace (or none) means the click never landed.
+    if (!workspaces.some(w => w.workspaceId === pending.workspaceId && w.sessionIds.includes(current))) return
+    inheritTagsRef.current = null
+    setSessionTags(current, pending.tags)
+  }, [list, workspaces, setSessionTags])
   const [expandedSessionGroups, setExpandedSessionGroups] = useState<string[]>([])
   // Transient drag marker state; the selected mode owns the resulting order.
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -612,7 +630,14 @@ function SessionTree({
                     onEditTags={onEditTags}
                     onNewSession={node.workspaceId === undefined
                       ? undefined
-                      : () => { startSession(node.workspaceId) }}
+                      : () => {
+                        // Closure narrowing guard: node.workspaceId is a
+                        // property, so tsc drops the ternary narrowing inside
+                        // the arrow; the checked value is captured first.
+                        const workspaceId = node.workspaceId as WorkspaceId
+                        inheritTags(workspaceId, node.tags)
+                        startSession(workspaceId)
+                      }}
                     onToggleUnread={() => { toggleUnread(node.id) }}
                     drag={dragProps}
                     t={t}
@@ -643,7 +668,7 @@ function SessionTree({
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
   useSessions, startSession, open, forkSession, onSessionRename, onSessionArchive, onEditTags,
-  setSessionParent, setSessionUnread, sessionMeta, workspaces, archivedSessionIds,
+  setSessionParent, setSessionUnread, setSessionTags, sessionMeta, workspaces, archivedSessionIds,
   orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
 }: Pick<
   SessionTreeProps,
@@ -656,6 +681,7 @@ function FlatList({
   | 'onEditTags'
   | 'setSessionParent'
   | 'setSessionUnread'
+  | 'setSessionTags'
   | 'sessionMeta'
   | 'workspaces'
   | 'archivedSessionIds'
@@ -675,6 +701,22 @@ function FlatList({
   const toggleUnread = (id: SessionNode['id']) => {
     setSessionUnread(id, !(sessionMeta[id]?.unread === true))
   }
+  // Tag inheritance (same contract as SessionTree): the "new session in this
+  // workspace" row action tags the freshly created session with the source
+  // row's tags once it becomes current.
+  const inheritTagsRef = useRef<{ workspaceId: WorkspaceId; tags: string[] } | null>(null)
+  const inheritTags = (workspaceId: WorkspaceId, tags: string[]) => {
+    inheritTagsRef.current = tags.length > 0 ? { workspaceId, tags } : null
+  }
+  useEffect(() => {
+    const pending = inheritTagsRef.current
+    if (pending === null) return
+    const current = list.current
+    if (current === undefined) return
+    if (!workspaces.some(w => w.workspaceId === pending.workspaceId && w.sessionIds.includes(current))) return
+    inheritTagsRef.current = null
+    setSessionTags(current, pending.tags)
+  }, [list, workspaces, setSessionTags])
   const baseRows = useMemo(
     () => deriveFlat(list, workspaces, archivedSessionIds, sessionMeta),
     [list, workspaces, archivedSessionIds, sessionMeta],
@@ -755,7 +797,12 @@ function FlatList({
               onEditTags={onEditTags}
               onNewSession={node.workspaceId === undefined
                 ? undefined
-                : () => { startSession(node.workspaceId) }}
+                : () => {
+                  // Closure narrowing guard (same as SessionTree).
+                  const workspaceId = node.workspaceId as WorkspaceId
+                  inheritTags(workspaceId, node.tags)
+                  startSession(workspaceId)
+                }}
               onToggleUnread={() => { toggleUnread(node.id) }}
               flat
               drag={{
@@ -1305,6 +1352,7 @@ export function WorkspaceBrowser({
                 onEditTags={onEditTags}
                 setSessionParent={actions.setSessionParent}
                 setSessionUnread={actions.setSessionUnread}
+                setSessionTags={actions.setSessionTags}
                 sessionMeta={sessionMeta}
                 workspaces={workspaces}
                 archivedSessionIds={archivedSessionIds}

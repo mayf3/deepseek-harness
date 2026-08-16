@@ -273,8 +273,29 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().groupExpansion).not.toHaveProperty('tag:前端')
   })
 
-  it('detaches a nested session when it is dropped between rows', async () => {
-    const sessions = sessionState([summary('one', 3), summary('two', 2)])
+  it('tags a new session with the source row tags when created via the row menu', async () => {
+    const sessions = sessionState([summary('one', 3), { ...summary('blank', 1), blank: true }])
+    const b = mount({
+      useSessions: hook(sessions),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'blank'])])),
+    })
+    act(() => { b.store.actions.setSessionTags('one', ['前端']) })
+    fireEvent.click(screen.getByText('alpha'))
+    const row = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    fireEvent.contextMenu(row)
+    fireEvent.click(screen.getByRole('menuitem', { name: '在此工作区新建会话' }))
+    // Simulate startSession: the workspace's blank session becomes current.
+    const next = sessionState(
+      [summary('one', 3), { ...summary('blank', 1), blank: true }],
+      { current: sid('blank') },
+    )
+    rerender(b, { useSessions: hook(next) })
+    await waitFor(() => {
+      expect(b.store.getSnapshot().sessionMeta.blank?.tags).toEqual(['前端'])
+    })
+  })
+
+  it('detaches a nested session when it is dropped between rows', async () => {    const sessions = sessionState([summary('one', 3), summary('two', 2)])
     const b = mount({
       useSessions: hook(sessions),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
