@@ -16,6 +16,8 @@ Status: implemented
 
 **标签可整体删除，标签输入带已有标签下拉。** `removeTag(tag)` 从所有会话元数据、`knownTags` 与 `groupExpansion`（`tag:<name>` 键）中移除该标签；标签组头（`kind: 'tag'`）右键菜单显示 danger 的「删除标签」。两个标签输入框（会话标签编辑器与「新建标签」弹窗）通过 `<datalist id="dsh-existing-tags">` 提供已有标签自动补全（来源：`knownTags` + 所有会话元数据标签，去重排序）。
 
+**行内「在此工作区新建会话」继承来源行的标签。** `startSession` 打开新会话但不回传新 id，因此 SessionTree/FlatList 在触发前把 `{workspaceId, tags}` 记入 ref，用 effect 等待目标工作区的（空白）会话成为 current 后一次性 `setSessionTags`，并清空 pending（工作区不符则不误标）。
+
 ## 曾考虑的替代方案
 
 - 在调用方 effect 里把 tag 键并入 `retainAccountKeys` 参数（效果等价），但 deps 需要 `groupExpansion`，而 retain 每次生成新对象身份 → 死循环；用 ref 读取可绕开，但逻辑分散。
