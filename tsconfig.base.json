@@ -220,6 +220,9 @@
       "@deepseek-ai/dsh-client-ui-settings-plugin-inventory": ["./packages/client/ui-settings-plugin-inventory/src"],
       "@deepseek-ai/dsh-client-locale": ["./packages/client/locale/src"],
       "@deepseek-ai/dsh-client-web": ["./packages/client/web/src"],
+      "@deepseek-ai/dsh-client-render-service": ["./packages/client/render-service/src"],
+      "@deepseek-ai/dsh-client-render-service/client": ["./packages/client/render-service/src/client"],
+      "@deepseek-ai/dsh-client-render-service/invariant": ["./packages/client/render-service/src/invariant.ts"],
       // sdk/ folders are role-named without their npm-side sdk/jsonrpc prefixes,
       // so the generic wildcard cannot map these three package names.
       "@deepseek-ai/dsh-sdk-client": ["./packages/sdk/client/src"],

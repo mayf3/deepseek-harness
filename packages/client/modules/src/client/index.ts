@@ -2,21 +2,23 @@
  * Browser half (the standard `./client` export): the module-system class and
  * wire contract, plus the enrollment plugin face. The module system itself is
  * built by the shell kernel BEFORE cordis exists (the bootstrap exception —
- * the mechanism that loads plugins cannot arrive through
- * itself); the plugin face only enrolls that pre-existing instance by
- * providing it as `ctx.modules`. The kernel statically registers this module,
- * so the graph row for this package never triggers a real fetch — arrival is
- * a no-op against the already-registered entry.
+ * the mechanism that loads plugins cannot arrive through itself). The host
+ * parser-preloads this ordinary client bundle into the handoff queue; the
+ * kernel claims and materializes that handoff, constructs the system, and
+ * registers the same exports for this package's graph row. The plugin face
+ * only enrolls that pre-existing instance by providing it as `ctx.modules`.
  * @module @deepseek-ai/dsh-client-modules/client
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { DshWindow } from './manifest.ts'
 
 export { ClientModuleSystem } from './system.ts'
-export { parseBootManifest } from './manifest.ts'
+export { parseBootManifest, stripClientSuffix } from './manifest.ts'
 export type {
   BootManifest, BootModuleRow, BootPluginRow, ClientModuleLoader, ClientModuleRecord,
-  ClientModuleSystemOptions, ClientPluginHandoff, DshWindow, WebBootEntry, WebBootGraph,
+  ClientModuleHandoffQueue, ClientModuleHandoffSink, ClientModuleHandoffTarget,
+  ClientModuleSystemOptions, ClientPluginHandoff, DshWindow,
+  WebBootEntry, WebBootGraph,
 } from './manifest.ts'
 
 /**

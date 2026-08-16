@@ -4,9 +4,10 @@
  * documented on the public interfaces in `./manifest.ts`; this file owns the
  * state tables and the load/materialize machinery.
  */
+import { stripClientSuffix } from './manifest.ts'
 import type {
   BootModuleRow, ClientModuleLoader, ClientModuleRecord,
-  ClientModuleSystemOptions, ClientPluginHandoff, DshWindow,
+  ClientModuleHandoffSink, ClientModuleSystemOptions, ClientPluginHandoff, DshWindow,
 } from './manifest.ts'
 
 /** Default bundle-load hook: same-origin external classic script. */
@@ -24,14 +25,6 @@ const defaultLoadBundle = (url: string): Promise<void> => new Promise((resolve, 
   }, { once: true })
   document.head.append(el)
 })
-
-/**
- * A plugin bundle IS its package's client half: `<id>/client` (the exports
- * subpath external bundles emit) and the bare graph id name the same
- * exports, so table lookups normalize the suffix away.
- */
-const stripClientSuffix = (spec: string): string =>
-  spec.endsWith('/client') ? spec.slice(0, -'/client'.length) : spec
 
 /**
  * Claim and inventory the <style> tags a factory injected during
@@ -84,15 +77,26 @@ export class ClientModuleSystem implements ClientModuleLoader {
     }
 
     const win = globalThis as DshWindow
-    if (win.__ModuleLoader__ !== undefined) throw new Error('client-modules: window.__ModuleLoader__ already installed (double boot?)')
-    win.__ModuleLoader__ = {
-      load: (handoff: ClientPluginHandoff): void => {
-        // Registration is keyed by the handoff id; a duplicate means a bundle
-        // executed twice without an invalidate — always a bug, always loud.
-        if (this.factories.has(handoff.id)) throw new Error(`client-modules: duplicate factory registration for "${handoff.id}" (bundle executed twice without invalidate?)`)
-        this.factories.set(handoff.id, handoff.factory)
-      },
+    const queued = win.__ModuleLoader__
+    if (queued !== undefined && queued.mode !== 'queue') {
+      throw new Error('client-modules: window.__ModuleLoader__ already installed (double boot?)')
     }
+    const sink: ClientModuleHandoffSink = {
+      mode: 'live',
+      load: (handoff) => { this.register(handoff) },
+    }
+    // Replace first: a bundle that executes while queued handoffs are draining
+    // must register against the live sink rather than append behind the drain.
+    win.__ModuleLoader__ = sink
+    for (const handoff of queued?.handoffs ?? []) sink.load(handoff)
+  }
+
+  /** Register one bundle factory, rejecting a script that executes twice without invalidation. */
+  private register(handoff: ClientPluginHandoff): void {
+    if (this.factories.has(handoff.id)) {
+      throw new Error(`client-modules: duplicate factory registration for "${handoff.id}" (bundle executed twice without invalidate?)`)
+    }
+    this.factories.set(handoff.id, handoff.factory)
   }
 
   /** Load one graph row so its factory is registered (idempotent per in-flight arrival). */
@@ -134,10 +138,9 @@ export class ClientModuleSystem implements ClientModuleLoader {
 
   /**
    * The synchronous require answered to factories: seed → static → memoized
-   * record → registered factory (recursive materialization — this is what
-   * makes load order self-resolving). Fetching is async and therefore
-   * unreachable from here; an unregistered plugin specifier is loud (and a
-   * cross-plugin value import is already a build error upstream).
+   * record → registered factory. Fetching is async and therefore unreachable
+   * from here; an external dynamic package must have arrived before its
+   * consumer materializes.
    */
   private makeRequire(edges: Set<string>): (spec: string) => unknown {
     return (spec: string): unknown => {
@@ -149,8 +152,8 @@ export class ClientModuleSystem implements ClientModuleLoader {
       if (record !== undefined) return record.exports
       if (this.factories.has(id)) return this.materialize(id).exports
       throw new Error(
-        `client-modules: require("${spec}") missed the module table — not a platform seed word, not a shell-own module, `
-        + 'and no registered factory (a build-time externals drift, or a forbidden cross-plugin value import)',
+        `client-modules: require("${spec}") missed the module table — not a platform seed word, not a bootstrap module, `
+        + 'and no registered package factory (a build-time externals drift, or a dynamic dependency that did not arrive)',
       )
     }
   }
@@ -168,7 +171,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
       const row = this.graphRows.get(specifier)
       if (row === undefined) {
         throw new Error(
-          `client-modules: cannot resolve "${specifier}" — not a seed word, not a shell-own module, `
+          `client-modules: cannot resolve "${specifier}" — not a seed word, not a bootstrap module, `
           + 'and not a row in the boot graph (the runtime mirror of the bundle purity gate)',
         )
       }
@@ -178,7 +181,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
   }
 
   registerStatic(id: string, module: unknown): void {
-    if (this.statics.has(id)) throw new Error(`client-modules: shell-own module "${id}" registered twice`)
+    if (this.statics.has(id)) throw new Error(`client-modules: bootstrap module "${id}" registered twice`)
     this.statics.set(id, module)
   }
 
