@@ -274,6 +274,8 @@ type SessionTreeProps = Pick<
   setSessionParent: (sessionId: string, parent: string | undefined) => void
   /** Persist a session's tags (tag-section drag drop and the tag editor). */
   setSessionTags: (sessionId: string, tags: string[]) => void
+  /** Persist a session's unread flag (row menu action; cleared on open). */
+  setSessionUnread: (sessionId: string, unread: boolean) => void
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
   /** Grouping mode: workspace sections or tag sections (flat has its own body). */
@@ -284,13 +286,21 @@ type SessionTreeProps = Pick<
 function SessionTree({
   useSessions, startSession, open, forkSession, workspaces, archivedSessionIds,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onEditTags,
-  sessionMeta, knownTags, setSessionParent, setSessionTags,
+  sessionMeta, knownTags, setSessionParent, setSessionTags, setSessionUnread,
   insertWorkspaceBefore, insertSessionBefore, orderBy, groupBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
 }: SessionTreeProps) {
   const list = useSessions(s => s)
   const current = list.current
+  // Opening a session clears its manual unread flag; the toggle flips it.
+  const openSession = (id: SessionNode['id']) => {
+    if (sessionMeta[id]?.unread === true) setSessionUnread(id, false)
+    open(id)
+  }
+  const toggleUnread = (id: SessionNode['id']) => {
+    setSessionUnread(id, !(sessionMeta[id]?.unread === true))
+  }
   const [expandedSessionGroups, setExpandedSessionGroups] = useState<string[]>([])
   // Transient drag marker state; the selected mode owns the resulting order.
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -357,7 +367,7 @@ function SessionTree({
   )
   const groups = useMemo(
     () => tagMode
-      ? deriveTagGroups(list, archivedSessionIds, { expandedGroups, sessionMeta, knownTags })
+      ? deriveTagGroups(list, orderedWorkspaces, archivedSessionIds, { expandedGroups, sessionMeta, knownTags })
       : deriveGroups(list, orderedWorkspaces, archivedSessionIds, {
         expandedGroups,
         sessionMeta,
@@ -590,14 +600,15 @@ function SessionTree({
                     node={node}
                     currentId={current}
                     now={now}
-                    onOpen={open}
+                    onOpen={openSession}
                     onRename={onSessionRename}
                     onFork={forkSession}
                     onArchive={onSessionArchive}
                     onEditTags={onEditTags}
-                    onNewSession={group.workspaceId === undefined
+                    onNewSession={node.workspaceId === undefined
                       ? undefined
-                      : () => { startSession(group.workspaceId as WorkspaceId) }}
+                      : () => { startSession(node.workspaceId) }}
+                    onToggleUnread={() => { toggleUnread(node.id) }}
                     drag={dragProps}
                     t={t}
                   />
@@ -626,18 +637,22 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  useSessions, open, forkSession, onSessionRename, onSessionArchive, onEditTags, setSessionParent, sessionMeta, archivedSessionIds,
+  useSessions, startSession, open, forkSession, onSessionRename, onSessionArchive, onEditTags,
+  setSessionParent, setSessionUnread, sessionMeta, workspaces, archivedSessionIds,
   orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
 }: Pick<
   SessionTreeProps,
   | 'useSessions'
+  | 'startSession'
   | 'open'
   | 'forkSession'
   | 'onSessionRename'
   | 'onSessionArchive'
   | 'onEditTags'
   | 'setSessionParent'
+  | 'setSessionUnread'
   | 'sessionMeta'
+  | 'workspaces'
   | 'archivedSessionIds'
   | 'orderBy'
   | 'sessionOrderByAccount'
@@ -647,9 +662,17 @@ function FlatList({
   | 't'
 >) {
   const list = useSessions(s => s)
+  // Opening a session clears its manual unread flag; the toggle flips it.
+  const openSession = (id: SessionNode['id']) => {
+    if (sessionMeta[id]?.unread === true) setSessionUnread(id, false)
+    open(id)
+  }
+  const toggleUnread = (id: SessionNode['id']) => {
+    setSessionUnread(id, !(sessionMeta[id]?.unread === true))
+  }
   const baseRows = useMemo(
-    () => deriveFlat(list, archivedSessionIds),
-    [list, archivedSessionIds],
+    () => deriveFlat(list, workspaces, archivedSessionIds, sessionMeta),
+    [list, workspaces, archivedSessionIds, sessionMeta],
   )
   const sessionIds = useMemo(() => baseRows.map(row => row.id), [baseRows])
   const previousOrderBy = useRef(orderBy)
@@ -720,11 +743,15 @@ function FlatList({
               node={node}
               currentId={list.current}
               now={now}
-              onOpen={open}
+              onOpen={openSession}
               onRename={onSessionRename}
               onFork={forkSession}
               onArchive={onSessionArchive}
               onEditTags={onEditTags}
+              onNewSession={node.workspaceId === undefined
+                ? undefined
+                : () => { startSession(node.workspaceId) }}
+              onToggleUnread={() => { toggleUnread(node.id) }}
               flat
               drag={{
                 start: () => {
@@ -1263,13 +1290,16 @@ export function WorkspaceBrowser({
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
                 onEditTags={onEditTags}
                 setSessionParent={actions.setSessionParent}
+                setSessionUnread={actions.setSessionUnread}
                 sessionMeta={sessionMeta}
+                workspaces={workspaces}
                 archivedSessionIds={archivedSessionIds}
                 orderBy={orderBy}
                 sessionOrderByAccount={sessionOrderByAccount}
                 sessionUpdatedAtByAccount={sessionUpdatedAtByAccount}
                 syncSessionOrderAccount={actions.syncSessionOrderAccount}
                 setSessionOrder={actions.setSessionOrder}
+                startSession={startSession}
                 t={t}
               />
             )
@@ -1281,6 +1311,7 @@ export function WorkspaceBrowser({
                 knownTags={knownTags}
                 setSessionParent={actions.setSessionParent}
                 setSessionTags={actions.setSessionTags}
+                setSessionUnread={actions.setSessionUnread}
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
                 onEditTags={onEditTags}

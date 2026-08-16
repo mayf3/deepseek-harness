@@ -41,6 +41,10 @@ export interface SessionNode {
   depth: number
   /** Effective tags for this row (todo tags plus browser-local metadata tags). */
   tags: string[]
+  /** Backing Workspace of this session; absent when it belongs to no Workspace. */
+  workspaceId?: WorkspaceId
+  /** Manually marked unread; the row shows a dot until the session is opened. */
+  unread: boolean
 }
 
 /** Session order selected by the Workspace browser. */
@@ -233,10 +237,12 @@ function sessionNode(
   descendants: ReadonlyMap<SessionId, SubagentDescendantSummary>,
   depth: number,
   meta: Readonly<Record<string, SessionMeta>> | undefined,
+  workspaceId: WorkspaceId | undefined,
 ): SessionNode {
   // Only user-managed tags (browser-local metadata) feed the tag view; tags
   // the model writes into todos stay out so agents can't pollute the sidebar.
-  const tags = [...(meta?.[s.id]?.tags ?? [])]
+  const entry = meta?.[s.id]
+  const tags = [...(entry?.tags ?? [])]
   return {
     id: s.id,
     title: sessionTitle(s),
@@ -247,6 +253,8 @@ function sessionNode(
     updatedAt: s.updatedAt,
     depth,
     tags: [...tags],
+    unread: entry?.unread === true,
+    ...(workspaceId === undefined ? {} : { workspaceId }),
     ...(s.pendingInteraction === undefined ? {} : { pendingInteraction: s.pendingInteraction }),
   }
 }
@@ -326,7 +334,8 @@ export function deriveGroups(
       expanded,
       containsCurrent: g.key === currentGroup,
       sessions: expanded
-        ? waitingOrder(g.sessions, view.sessionMeta).map(row => sessionNode(row.session, descendants, row.depth, view.sessionMeta))
+        ? waitingOrder(g.sessions, view.sessionMeta).map(row =>
+          sessionNode(row.session, descendants, row.depth, view.sessionMeta, g.workspaceId))
         : [],
     })
   }
@@ -341,13 +350,17 @@ export function deriveGroups(
  * into todos by the model are intentionally not shown. Tag groups and the
  * untagged bucket have no backing Workspace, so their rows are not draggable
  * and show no workspace actions; the renderer keys off `kind` for labels.
+ * Rows still carry their real Workspace id so the context menu can start a
+ * new session in the same Workspace.
  * @param list - sessions list snapshot.
+ * @param workspaces - real Workspaces (session membership → workspace id).
  * @param archivedSessionIds - registry-global archive set.
  * @param view - local expansion arrays.
  * @returns tag group sections in tag-name order, then the untagged bucket.
  */
 export function deriveTagGroups(
   list: SessionListState,
+  workspaces: readonly WorkspaceView[],
   archivedSessionIds: readonly SessionId[],
   view: TreeView,
 ): GroupNode[] {
@@ -355,6 +368,12 @@ export function deriveTagGroups(
   const expandedGroups = new Set(view.expandedGroups)
   const descendants = indexSubagentDescendants(list.byId)
   const meta = view.sessionMeta
+  const workspaceBySession = new Map<SessionId, WorkspaceId>()
+  for (const workspace of workspaces) {
+    for (const sessionId of workspace.sessionIds) {
+      if (!workspaceBySession.has(sessionId)) workspaceBySession.set(sessionId, workspace.workspaceId)
+    }
+  }
   const byTag = new Map<string, SessionSummary[]>()
   const untagged: SessionSummary[] = []
   for (const id of list.ids) {
@@ -388,7 +407,8 @@ export function deriveTagGroups(
       expanded,
       containsCurrent: members.some(session => session.id === list.current),
       sessions: expanded
-        ? waitingOrder(members, meta).map(row => sessionNode(row.session, descendants, row.depth, view.sessionMeta))
+        ? waitingOrder(members, meta).map(row =>
+          sessionNode(row.session, descendants, row.depth, view.sessionMeta, workspaceBySession.get(row.session.id)))
         : [],
       kind: 'tag',
     })
@@ -406,7 +426,8 @@ export function deriveTagGroups(
       expanded,
       containsCurrent: untagged.some(session => session.id === list.current),
       sessions: expanded
-        ? waitingOrder(untagged, meta).map(row => sessionNode(row.session, descendants, row.depth, view.sessionMeta))
+        ? waitingOrder(untagged, meta).map(row =>
+          sessionNode(row.session, descendants, row.depth, view.sessionMeta, workspaceBySession.get(row.session.id)))
         : [],
       kind: 'untagged',
     })
@@ -420,15 +441,25 @@ export function deriveTagGroups(
  * no parent/child adjacency. Content search lives outside this derivation
  * (see {@link deriveSearchResults}).
  * @param list - sessions list snapshot.
+ * @param workspaces - real Workspaces (session membership → workspace id).
  * @param archivedSessionIds - registry-global archive set.
+ * @param meta - browser-local organization metadata (tags, unread).
  * @returns flat rows in render order.
  */
 export function deriveFlat(
   list: SessionListState,
+  workspaces: readonly WorkspaceView[],
   archivedSessionIds: readonly SessionId[],
+  meta?: Readonly<Record<string, SessionMeta>>,
 ): SessionNode[] {
   const archived = new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
+  const workspaceBySession = new Map<SessionId, WorkspaceId>()
+  for (const workspace of workspaces) {
+    for (const sessionId of workspace.sessionIds) {
+      if (!workspaceBySession.has(sessionId)) workspaceBySession.set(sessionId, workspace.workspaceId)
+    }
+  }
   const rows: SessionSummary[] = []
   for (const id of list.ids) {
     const s = list.byId[id]
@@ -436,7 +467,7 @@ export function deriveFlat(
     rows.push(s)
   }
   rows.sort(byRecency)
-  return rows.map(session => sessionNode(session, descendants, 0, undefined))
+  return rows.map(session => sessionNode(session, descendants, 0, meta, workspaceBySession.get(session.id)))
 }
 
 /** Relative-time bucket of a session row's trailing label. */

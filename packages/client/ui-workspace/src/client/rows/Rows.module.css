@@ -139,6 +139,25 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* Unread marker: a manually set unread dot before the row title. */
+.unreadDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 6px 0 2px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-business-primary);
+}
+
+/* Menu glyph for the unread toggle row. */
+.menuUnreadDot {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-business-primary);
+}
+
 @keyframes row-in {
   from { opacity: 0; }
 }

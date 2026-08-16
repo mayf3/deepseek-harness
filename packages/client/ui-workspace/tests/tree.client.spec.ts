@@ -27,7 +27,7 @@ const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView 
 const view = (
   expandedGroups: readonly string[] = [],
   ungroupedOrder?: readonly string[],
-  sessionMeta?: Readonly<Record<string, { tags?: string[]; parent?: string }>>,
+  sessionMeta?: Readonly<Record<string, { tags?: string[]; parent?: string; unread?: boolean }>>,
   knownTags?: readonly string[],
 ) => ({
   expandedGroups,
@@ -52,7 +52,7 @@ describe('deriveGroups', () => {
     const sessions = list(awaiting)
     const grouped = deriveGroups(sessions, [workspace('project', ['awaiting'])], noArchive, view(['project']))
     expect(grouped[0]!.sessions[0]).toMatchObject({ pendingInteraction: 'plan-review', running: true })
-    expect(deriveFlat(sessions, noArchive)[0]).toMatchObject({ pendingInteraction: 'plan-review', running: true })
+    expect(deriveFlat(sessions, [], noArchive)[0]).toMatchObject({ pendingInteraction: 'plan-review', running: true })
   })
 
   it('puts only real unaccounted Sessions in the trailing Ungrouped group', () => {
@@ -110,7 +110,7 @@ describe('deriveGroups', () => {
     const plainNode = groups[0]!.sessions.find(session => session.id === plain.id)!
     expect(doneNode.completed).toBe(true)
     expect(plainNode.completed).toBe(false)
-    expect(deriveFlat(sessions, noArchive).find(node => node.id === done.id)!.completed).toBe(true)
+    expect(deriveFlat(sessions, [], noArchive).find(node => node.id === done.id)!.completed).toBe(true)
     const search = deriveSearchResults(sessions, [workspace('first', ['done', 'plain'])], 'done', noArchive, { items: [], hasMore: false }, 10)
     expect(search.items[0]?.completed).toBe(true)
   })
@@ -139,7 +139,7 @@ describe('deriveGroups', () => {
     expect(groups[0]!.sessionCount).toBe(2)
     expect(groups[0]!.sessions[0]).toMatchObject({ running: false, runningSubagentCount: 2 })
     expect(groups[0]!.sessions[1]).toMatchObject({ running: false, runningSubagentCount: 1 })
-    expect(deriveFlat(sessions, noArchive).map(node => [node.id, node.runningSubagentCount])).toEqual([
+    expect(deriveFlat(sessions, [], noArchive).map(node => [node.id, node.runningSubagentCount])).toEqual([
       [fork.id, 1], [parent.id, 2],
     ])
     expect(deriveSearchResults(
@@ -218,7 +218,7 @@ describe('deriveFlat', () => {
     const child = { ...summary('child', 30), parentId: parent.id }
     const tieB = summary('tie-b', 20)
     const tieA = summary('tie-a', 20)
-    const rows = deriveFlat(list(parent, child, tieB, tieA), noArchive)
+    const rows = deriveFlat(list(parent, child, tieB, tieA), [], noArchive)
     expect(rows.map(row => row.id)).toEqual([sid('child'), sid('tie-a'), sid('tie-b'), sid('parent')])
   })
 
@@ -228,6 +228,7 @@ describe('deriveFlat', () => {
     const subagent = { ...summary('subagent', 3), parentId: parent.id, origin: 'subagent' as const }
     const rows = deriveFlat(
       { ...list(parent, fork, subagent), current: subagent.id },
+      [],
       noArchive,
     )
     expect(rows.map(row => row.id)).toEqual([fork.id, parent.id])
@@ -235,7 +236,7 @@ describe('deriveFlat', () => {
 
   it('tolerates ids whose summary has not landed yet', () => {
     const partial: SessionListState = { ...list(summary('present', 1)), ids: [sid('ghost'), sid('present')] }
-    expect(deriveFlat(partial, noArchive).map(row => row.id)).toEqual([sid('present')])
+    expect(deriveFlat(partial, [], noArchive).map(row => row.id)).toEqual([sid('present')])
   })
 
   it('shows only the current blank session and excludes blanks from search', () => {
@@ -245,7 +246,7 @@ describe('deriveFlat', () => {
       ...list(summary('real', 1), currentBlank, staleBlank),
       current: currentBlank.id,
     }
-    const rows = deriveFlat(sessions, noArchive)
+    const rows = deriveFlat(sessions, [], noArchive)
     expect(rows.map(row => row.id)).toEqual([currentBlank.id, sid('real')])
     expect(rows.map(row => row.title)).toEqual(['New Session', 'real'])
     expect(rows.map(row => row.blank)).toEqual([true, false])
@@ -254,7 +255,21 @@ describe('deriveFlat', () => {
   it('hides archived sessions in flat mode', () => {
     const kept = summary('kept', 1)
     const gone = summary('gone', 2)
-    expect(deriveFlat(list(kept, gone), archived('gone')).map(row => row.id)).toEqual([kept.id])
+    expect(deriveFlat(list(kept, gone), [], archived('gone')).map(row => row.id)).toEqual([kept.id])
+  })
+
+  it('carries the Workspace id and unread flag into flat rows', () => {
+    const sessions = list(summary('a', 3), summary('b', 2))
+    const rows = deriveFlat(
+      sessions,
+      [workspace('proj', ['a'])],
+      noArchive,
+      { a: { unread: true } },
+    )
+    expect(rows.map(r => [r.id, r.workspaceId, r.unread])).toEqual([
+      [sid('a'), wid('proj'), true],
+      [sid('b'), undefined, false],
+    ])
   })
 })
 
@@ -471,7 +486,7 @@ describe('deriveTagGroups', () => {
       tagged('b', 2),
       tagged('c', 1),
     )
-    const groups = deriveTagGroups(sessions, noArchive, view(['tag:前端'], undefined, meta({
+    const groups = deriveTagGroups(sessions, [], noArchive, view(['tag:前端'], undefined, meta({
       a: { tags: ['前端'] },
       b: { tags: ['前端', '紧急'] },
     })))
@@ -489,14 +504,14 @@ describe('deriveTagGroups', () => {
 
   it('keeps a folded tag group empty of session rows', () => {
     const sessions = list(tagged('a', 3))
-    const groups = deriveTagGroups(sessions, noArchive, view([], undefined, meta({ a: { tags: ['前端'] } })))
+    const groups = deriveTagGroups(sessions, [], noArchive, view([], undefined, meta({ a: { tags: ['前端'] } })))
     expect(groups[0]!.expanded).toBe(false)
     expect(groups[0]!.sessions).toEqual([])
   })
 
   it('excludes archived and non-current blank sessions from every group', () => {
     const sessions = list(tagged('a', 3), { ...tagged('b', 2), blank: true })
-    const groups = deriveTagGroups(sessions, archived('a'), view([], undefined, meta({
+    const groups = deriveTagGroups(sessions, [], archived('a'), view([], undefined, meta({
       a: { tags: ['前端'] },
       b: { tags: ['前端'] },
     })))
@@ -505,16 +520,33 @@ describe('deriveTagGroups', () => {
 
   it('ignores tags the model wrote into todos — only user metadata tags group', () => {
     const sessions = list(tagged('a', 3, ['check-lint', 'setup']))
-    const groups = deriveTagGroups(sessions, noArchive, view([], undefined, meta({ a: { tags: ['手头'] } })))
+    const groups = deriveTagGroups(sessions, [], noArchive, view([], undefined, meta({ a: { tags: ['手头'] } })))
     expect(groups.map(g => (g.kind === 'tag' ? g.label : g.kind))).toEqual(['手头'])
   })
 
   it('keeps explicitly created empty tags visible as empty sections', () => {
     const sessions = list(summary('a', 3))
-    const groups = deriveTagGroups(sessions, noArchive, view([], undefined, undefined, ['前端', '后端']))
+    const groups = deriveTagGroups(sessions, [], noArchive, view([], undefined, undefined, ['前端', '后端']))
     expect(groups.map(g => (g.kind === 'tag' ? g.label : g.kind))).toEqual(['前端', '后端', 'untagged'])
     expect(groups[1]!.sessionCount).toBe(0)
     expect(groups[1]!.sessions).toEqual([])
+  })
+
+  it('carries each row real Workspace id into tag sections plus the unread flag', () => {
+    const sessions = list(summary('a', 3), summary('b', 2))
+    const groups = deriveTagGroups(
+      sessions,
+      [workspace('proj', ['a']), workspace('other', ['b'])],
+      noArchive,
+      view(['tag:前端'], undefined, {
+        a: { tags: ['前端'], unread: true },
+        b: { tags: ['前端'] },
+      }),
+    )
+    expect(groups[0]!.sessions.map(s => [s.id, s.workspaceId, s.unread])).toEqual([
+      [sid('a'), wid('proj'), true],
+      [sid('b'), wid('other'), false],
+    ])
   })
 
   it('nests waiting-on children under their parent and breaks parent cycles', () => {
