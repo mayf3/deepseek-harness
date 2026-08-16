@@ -380,7 +380,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onEditTags, onNewSession, drag, flat = false, t,
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onEditTags, onNewSession, onToggleUnread, drag, flat = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -396,6 +396,8 @@ export function SessionNodeItem({
   onEditTags: (id: SessionNode['id'], currentTags: string[]) => void
   /** Start a new session in this row's Workspace (row menu action; absent outside directory view). */
   onNewSession?: (() => void) | undefined
+  /** Toggle this session's unread flag (row menu action; absent on non-actionable rows). */
+  onToggleUnread?: ((id: SessionNode['id']) => void) | undefined
   /** Present only on draggable rows (workspace-group sessions outside search). */
   drag?: RowDragProps | undefined
   /** The row is rendered without a parent Workspace header. */
@@ -414,6 +416,7 @@ export function SessionNodeItem({
   // confirmation dialog.
   const sessionMenuItems = [
     ...(onNewSession === undefined ? [] : [{ id: 'newSessionHere', label: t('menu.newSessionHere'), icon: <IconPlusOutline16 /> }]),
+    ...(onToggleUnread === undefined ? [] : [{ id: 'unread', label: node.unread ? t('menu.markRead') : t('menu.markUnread'), icon: <span className={css.menuUnreadDot} aria-hidden="true" /> }]),
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
     { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
     { id: 'tags', label: t('menu.editTags'), icon: <IconEditOutline16 /> },
@@ -476,6 +479,9 @@ export function SessionNodeItem({
           <IconLinkOutline16 />
         </span>
       )}
+      {node.unread && (
+        <span className={css.unreadDot} aria-label={t('status.unread')} title={t('status.unread')} />
+      )}
       <span className={css.title}>{title}</span>
       {/* A blank New Session row is a provisional placeholder: nothing has
           happened in it yet, so a "now" timestamp and the row verbs
@@ -491,6 +497,7 @@ export function SessionNodeItem({
             onSelect={(id) => {
               setMenuOpen(false)
               if (id === 'newSessionHere') onNewSession?.()
+              if (id === 'unread') onToggleUnread?.(node.id)
               if (id === 'rename') onRename(node.id, row.title)
               if (id === 'fork') onFork(node.id)
               if (id === 'archive') onArchive(node.id)

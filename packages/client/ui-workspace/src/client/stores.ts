@@ -6,6 +6,7 @@
  * share from the return type.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { TAG_GROUP_PREFIX } from './tree.ts'
 
 /** Browser-local order account for the hierarchy-free flat Session list. */
 export const FLAT_SESSION_ORDER_KEY = '__flat_session_order__'
@@ -21,6 +22,8 @@ export type SessionMeta = {
   tags?: string[]
   /** Id of the session this one waits on (rendered nested under its parent). */
   parent?: string
+  /** Manually set unread flag; cleared when the session is opened. */
+  unread?: boolean
 }
 
 /** Workspace browser viewing state persisted across surface remounts and reloads. */
@@ -57,6 +60,7 @@ type WorkspaceViewActions = {
   setSessionOrder: (draft: WorkspaceViewState, accountKey: string, order: string[]) => void
   setSessionTags: (draft: WorkspaceViewState, sessionId: string, tags: string[]) => void
   setSessionParent: (draft: WorkspaceViewState, sessionId: string, parent: string | undefined) => void
+  setSessionUnread: (draft: WorkspaceViewState, sessionId: string, unread: boolean) => void
   addKnownTag: (draft: WorkspaceViewState, tag: string) => void
 }
 
@@ -82,8 +86,12 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
       setGroupExpanded: (d, key: string, expanded: boolean) => { d.groupExpansion[key] = expanded },
       retainAccountKeys: (d, workspaceKeys: readonly string[]) => {
         const retained = new Set(workspaceKeys)
+        // Tag-view sections are not Workspace accounts; keep their persisted
+        // expansion state across Workspace changes (otherwise tag groups
+        // reset to collapsed on every reload or Workspace mutation).
+        const keep = (key: string) => retained.has(key) || key.startsWith(TAG_GROUP_PREFIX)
         d.groupExpansion = Object.fromEntries(
-          Object.entries(d.groupExpansion).filter(([key]) => retained.has(key)),
+          Object.entries(d.groupExpansion).filter(([key]) => keep(key)),
         )
         d.sessionOrderByAccount = Object.fromEntries(
           Object.entries(d.sessionOrderByAccount).filter(([key]) => retained.has(key)),
@@ -110,6 +118,9 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
         } else {
           d.sessionMeta[sessionId] = { ...d.sessionMeta[sessionId], parent }
         }
+      },
+      setSessionUnread: (d, sessionId: string, unread: boolean) => {
+        d.sessionMeta[sessionId] = { ...d.sessionMeta[sessionId], unread }
       },
       addKnownTag: (d, tag: string) => {
         if (!d.knownTags.includes(tag)) d.knownTags = [...d.knownTags, tag]

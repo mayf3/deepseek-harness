@@ -117,6 +117,18 @@ describe('WorkspaceBrowser', () => {
     })
   })
 
+  it('keeps tag-view group expansion across Workspace baseline pruning', async () => {
+    const b = mount({ useWorkspaces: hook(workspaceState([])) })
+    act(() => {
+      b.store.actions.setGroupExpanded('tag:前端', true)
+      b.store.actions.setGroupExpanded('deleted', true)
+    })
+    rerender(b, { useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
+    await waitFor(() => {
+      expect(b.store.getSnapshot().groupExpansion).toEqual({ 'tag:前端': true })
+    })
+  })
+
   it('renders the grouped tree by default and switches to the flat list via Group by', () => {
     const sessions = sessionState([summary('alpha-s', 2), summary('beta-s', 1)])
     const b = mount({
