@@ -29,8 +29,10 @@ const view = (
   ungroupedOrder?: readonly string[],
   sessionMeta?: Readonly<Record<string, { tags?: string[]; parent?: string; unread?: boolean }>>,
   knownTags?: readonly string[],
+  unreadOnly = false,
 ) => ({
   expandedGroups,
+  ...(unreadOnly ? { unreadOnly } : {}),
   ...(ungroupedOrder === undefined ? {} : { ungroupedOrder }),
   ...(sessionMeta === undefined ? {} : { sessionMeta }),
   ...(knownTags === undefined ? {} : { knownTags }),
@@ -270,6 +272,27 @@ describe('deriveFlat', () => {
       [sid('a'), wid('proj'), true],
       [sid('b'), undefined, false],
     ])
+  })
+
+  it('filters to unread sessions and hides empty groups in unread-only mode', () => {
+    const unread = summary('unread', 3)
+    const plain = summary('plain', 2)
+    const sessions = list(unread, plain)
+    const meta = { unread: { unread: true } }
+    // Workspace view: the group without unread sessions disappears.
+    const groups = deriveGroups(
+      sessions,
+      [workspace('a', ['unread']), workspace('b', ['plain'])],
+      noArchive,
+      view(['a'], undefined, meta, undefined, true),
+    )
+    expect(groups.map(g => g.key)).toEqual(['a'])
+    expect(groups[0]!.sessions.map(s => s.id)).toEqual([sid('unread')])
+    // Tag view: empty tag sections (knownTags) are hidden too.
+    const tagGroups = deriveTagGroups(sessions, [], noArchive, view([], undefined, meta, ['前端'], true))
+    expect(tagGroups.map(g => (g.kind === 'tag' ? g.label : g.kind))).toEqual(['untagged'])
+    // Flat view: only unread rows survive.
+    expect(deriveFlat(sessions, [], noArchive, meta, true).map(r => r.id)).toEqual([sid('unread')])
   })
 })
 

@@ -38,6 +38,12 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* Unread-only filter toggle: the dot fills with the brand color when on. */
+.unreadFilterOn {
+  color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
 /* Section header: title, an inline search control, and the two trailing
    actions. Expanding search collapses the action cluster and takes its room. */
 .sectionHeader {

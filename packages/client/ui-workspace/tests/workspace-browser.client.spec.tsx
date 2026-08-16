@@ -295,6 +295,25 @@ describe('WorkspaceBrowser', () => {
     })
   })
 
+  it('filters the tree to unread sessions via the header toggle', async () => {
+    const sessions = sessionState([summary('unread', 3), summary('plain', 2)])
+    const b = mount({
+      useSessions: hook(sessions),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['unread', 'plain'])])),
+    })
+    act(() => { b.store.actions.setSessionUnread('unread', true) })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByRole('button', { name: '只看未读' }))
+    // Only the unread row stays; the toggle is persisted in the store.
+    expect(screen.queryByText('plain')).toBeNull()
+    expect(screen.getByText('unread')).toBeTruthy()
+    expect(b.store.getSnapshot().unreadOnly).toBe(true)
+    // Toggling back shows everything again.
+    fireEvent.click(screen.getByRole('button', { name: '全部' }))
+    expect(screen.getByText('plain')).toBeTruthy()
+    expect(b.store.getSnapshot().unreadOnly).toBe(false)
+  })
+
   it('detaches a nested session when it is dropped between rows', async () => {    const sessions = sessionState([summary('one', 3), summary('two', 2)])
     const b = mount({
       useSessions: hook(sessions),
