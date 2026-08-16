@@ -11,6 +11,7 @@ import { CustomProviderCard } from '../src/client/CustomProviderCard.tsx'
 import { formatCapacity, parseCapacity } from '../src/client/DeepSeekModelsEditor.tsx'
 import { ModelsSettingsStore, deriveKeyRef, protocolChoices } from '../src/client/store.ts'
 import { en } from '../src/client/locales.ts'
+import { settingsSchema } from './settings-schema.client.ts'
 
 afterEach(cleanup)
 
@@ -139,7 +140,7 @@ function firstMutate(mutate: ReturnType<typeof vi.fn>): MutateCall {
 
 async function mountSection(options: Parameters<typeof scriptedFace>[0] = {}) {
   const scripted = scriptedFace(options)
-  const controller = new ModelsSettingsStore(scripted.face as unknown as WireFace)
+  const controller = new ModelsSettingsStore(scripted.face as unknown as WireFace, settingsSchema)
   await controller.load()
   const injected: ModelsSectionInjected = {
     controller,
@@ -183,10 +184,10 @@ function within_(scope: HTMLElement, label: string): HTMLElement {
 describe('protocolChoices', () => {
   it('reads the protocols out of the namespace schema and nothing else', async () => {
     const { namespace } = scriptedFace()
-    expect(protocolChoices(namespace)).toEqual(PROTOCOLS)
-    expect(protocolChoices(undefined)).toEqual([])
+    expect(protocolChoices(namespace, settingsSchema)).toEqual(PROTOCOLS)
+    expect(protocolChoices(undefined, settingsSchema)).toEqual([])
     const plain = { ...namespace, schema: JSON.parse(JSON.stringify(Schema.object({}).toJSON())) as unknown }
-    expect(protocolChoices(plain)).toEqual([])
+    expect(protocolChoices(plain, settingsSchema)).toEqual([])
     await Promise.resolve()
   })
 })
@@ -637,7 +638,7 @@ describe('provider rows', () => {
         active: true,
       }],
     }))) as never
-    const controller = new ModelsSettingsStore(scripted.face as unknown as WireFace)
+    const controller = new ModelsSettingsStore(scripted.face as unknown as WireFace, settingsSchema)
     await controller.load()
     render(<ModelsSection
       controller={controller}

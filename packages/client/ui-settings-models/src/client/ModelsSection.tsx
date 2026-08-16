@@ -63,7 +63,7 @@ interface EditorTarget extends ProviderIdentity {
 /** Values that vary around the shared provider-editor rendering. */
 interface ProviderEditorRenderProps extends Pick<
   ProviderEditorProps,
-  'namespace' | 'api' | 't' | 'readOnly' | 'onClose'
+  'namespace' | 'schema' | 'api' | 't' | 'readOnly' | 'onClose'
 > {
   target: EditorTarget
 }
@@ -269,7 +269,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
   // Hand-declared routes live in the pi-ai namespace, which is also the only
   // one whose schema names the protocols one may speak; without it mounted
   // there is nothing to declare and the entry point stays disabled.
-  const protocols = protocolChoices(state.namespaces.get('llm-pi-ai'))
+  const protocols = protocolChoices(state.namespaces.get('llm-pi-ai'), controller.schema)
 
   return (
     <div className={styles['section']}>
@@ -297,6 +297,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
                 {renderProviderEditor({
                   target,
                   namespace,
+                  schema: controller.schema,
                   api,
                   t,
                   readOnly: !state.writable,
@@ -381,6 +382,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
                 ? renderProviderEditor({
                   target,
                   namespace,
+                  schema: controller.schema,
                   api,
                   t,
                   readOnly: !state.writable,
@@ -419,6 +421,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
                 displayName={addTarget.displayName}
                 hideTitle
                 namespace={addNamespace}
+                schema={controller.schema}
                 settingsPath={addTarget.settingsPath}
                 api={api}
                 t={t}

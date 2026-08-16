@@ -17,6 +17,7 @@ import { apiKeyFailure } from '../src/client/apiKey.ts'
 import { deriveKeyRef, ModelsSettingsStore } from '../src/client/store.ts'
 import type { ProviderRow } from '../src/client/store.ts'
 import { en } from '../src/client/locales.ts'
+import { settingsSchema } from './settings-schema.client.ts'
 
 afterEach(cleanup)
 
@@ -185,7 +186,7 @@ type WireFace = ConstructorParameters<typeof ModelsSettingsStore>[0]
 
 async function mountFace(scripted: ReturnType<typeof scriptedFace>) {
   const { face, update, replace, mutate, set, unset } = scripted
-  const controller = new ModelsSettingsStore(face as unknown as WireFace)
+  const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema)
   await controller.load()
   const injected: ModelsSectionInjected = {
     controller,
@@ -265,7 +266,7 @@ describe('ModelsSection', () => {
     face.credentials.describe.mockImplementation((payload: { refs: string[] }) => Promise.resolve(ok({
       credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: false, writable: true }])),
     })))
-    const controller = new ModelsSettingsStore(face as unknown as WireFace)
+    const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema)
     await controller.load()
     render(<ModelsSection
       controller={controller}
@@ -287,7 +288,7 @@ describe('ModelsSection', () => {
     face.credentials.describe.mockImplementation((payload: { refs: string[] }) => Promise.resolve(ok({
       credentials: Object.fromEntries(payload.refs.map(ref => [ref, { configured: true, writable: true }])),
     })))
-    const controller = new ModelsSettingsStore(face as unknown as WireFace)
+    const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema)
     await controller.load()
     cleanup()
     render(<ModelsSection
@@ -369,6 +370,7 @@ describe('ModelsSection', () => {
       displayName="DeepSeek"
       hideTitle
       namespace={wireNamespaces()[0]!}
+      schema={settingsSchema}
       settingsPath={[]}
       api={face as never}
       t={t}
@@ -621,6 +623,7 @@ describe('ModelsSection', () => {
       provider="deepseek-official"
       displayName="DeepSeek"
       namespace={overridden}
+      schema={settingsSchema}
       settingsPath={[]}
       api={face as never}
       t={t}
@@ -850,6 +853,7 @@ describe('ModelsSection', () => {
       provider="deepseek-official"
       displayName="DeepSeek"
       namespace={bare}
+      schema={settingsSchema}
       settingsPath={[]}
       api={face as never}
       t={t}
@@ -1007,7 +1011,7 @@ describe('ModelsSection', () => {
     const unhandled = vi.fn()
     process.on('unhandledRejection', unhandled)
     try {
-      const controller = new ModelsSettingsStore(face as unknown as WireFace)
+      const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema)
       await controller.load()
       render(<ModelsSection
         controller={controller}
@@ -1144,7 +1148,7 @@ describe('ModelsSection', () => {
   it('renders the load failure with a retry control', async () => {
     const face = scriptedFace()
     face.face.llm.providers = vi.fn(() => Promise.resolve(fail('directory down', 'internal'))) as never
-    const controller = new ModelsSettingsStore(face.face as unknown as WireFace)
+    const controller = new ModelsSettingsStore(face.face as unknown as WireFace, settingsSchema)
     await controller.load()
     render(<ModelsSection
       controller={controller}
@@ -1164,7 +1168,7 @@ describe('ModelsSection', () => {
       hasDocument: false,
       namespaces: wireNamespaces(),
     })))
-    const controller = new ModelsSettingsStore(face as unknown as WireFace)
+    const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema)
     await controller.load()
     cleanup()
     render(<ModelsSection
@@ -1226,7 +1230,7 @@ describe('ModelsSection', () => {
 
   it('loads on first render of an idle controller', async () => {
     const { face } = scriptedFace()
-    const controller = new ModelsSettingsStore(face as unknown as WireFace)
+    const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema)
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}

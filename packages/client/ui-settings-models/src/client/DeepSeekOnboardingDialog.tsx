@@ -101,6 +101,7 @@ export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): 
           provider={row.entry.provider}
           displayName={row.entry.displayName}
           namespace={namespace}
+          schema={controller.schema}
           settingsPath={row.entry.settingsPath}
           api={api}
           t={t}

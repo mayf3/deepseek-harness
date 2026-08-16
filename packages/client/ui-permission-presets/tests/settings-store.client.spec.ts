@@ -1,5 +1,7 @@
+import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
+import { SettingsSchemaService } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   PermissionPresetSettingsController, permissionDefaultOf, refreshPermissionIfLoaded,
 } from '../src/client/settings-store.ts'
@@ -12,6 +14,16 @@ const SCHEMA = {
     3: { type: 'union', list: [1, 2] },
     6: { type: 'object', dict: { defaultPreset: 3 } },
   },
+}
+
+const schema = new SettingsSchemaService(new Context())
+
+function resolveDefault(view: SettingsNamespaceView) {
+  return permissionDefaultOf(view, schema)
+}
+
+function createController(api: ConstructorParameters<typeof PermissionPresetSettingsController>[0]) {
+  return new PermissionPresetSettingsController(api, schema)
 }
 
 function view(defaultPreset: string, revision = 0, schema: SettingsNamespaceView['schema'] = SCHEMA): SettingsNamespaceView {
@@ -32,7 +44,7 @@ function ok<T>(value: T) {
 
 describe('permission settings store', () => {
   it('derives dynamic options and host labels from the descriptor schema', () => {
-    expect(permissionDefaultOf(view('read-only'))).toEqual({
+    expect(resolveDefault(view('read-only'))).toEqual({
       currentValue: 'read-only',
       options: [
         { id: 'read-only', label: 'Read Only' },
@@ -46,7 +58,7 @@ describe('permission settings store', () => {
         2: { type: 'object', dict: { defaultPreset: 1 } },
       },
     }
-    expect(permissionDefaultOf(view('read-only', 0, single))).toEqual({
+    expect(resolveDefault(view('read-only', 0, single))).toEqual({
       currentValue: 'read-only',
       options: [{ id: 'read-only', label: 'Read Only' }],
     })
@@ -57,23 +69,23 @@ describe('permission settings store', () => {
         2: { type: 'object', dict: { defaultPreset: 1 } },
       },
     }
-    expect(permissionDefaultOf(view('read-only', 0, undescribed)).options)
+    expect(resolveDefault(view('read-only', 0, undescribed)).options)
       .toEqual([{ id: 'read-only', label: 'Read Only' }])
   })
 
   it('rejects malformed values and dynamic enums at the wire boundary', () => {
-    expect(() => permissionDefaultOf({ ...view('read-only'), value: {} })).toThrow(/no defaultPreset value/)
-    expect(() => permissionDefaultOf(view('read-only', 0, {
+    expect(() => resolveDefault({ ...view('read-only'), value: {} })).toThrow(/no defaultPreset value/)
+    expect(() => resolveDefault(view('read-only', 0, {
       uid: 1, refs: { 1: { type: 'object', dict: {} } },
     }))).toThrow(/no defaultPreset field/)
-    expect(() => permissionDefaultOf(view('read-only', 0, {
+    expect(() => resolveDefault(view('read-only', 0, {
       uid: 2,
       refs: {
         1: { type: 'union' },
         2: { type: 'object', dict: { defaultPreset: 1 } },
       },
     }))).toThrow(/does not advertise/)
-    expect(() => permissionDefaultOf(view('read-only', 0, {
+    expect(() => resolveDefault(view('read-only', 0, {
       uid: 4,
       refs: {
         1: { type: 'string' },
@@ -82,7 +94,7 @@ describe('permission settings store', () => {
         4: { type: 'object', dict: { defaultPreset: 3 } },
       },
     }))).toThrow(/does not advertise/)
-    expect(() => permissionDefaultOf(view('missing'))).toThrow(/does not advertise/)
+    expect(() => resolveDefault(view('missing'))).toThrow(/does not advertise/)
   })
 
   it('loads and writes defaultPreset with optimistic concurrency', async () => {
@@ -92,7 +104,7 @@ describe('permission settings store', () => {
       namespaces: [view('read-only', 4)],
     })))
     const mutate = vi.fn(() => Promise.resolve(ok(view('workspace-write', 5))))
-    const controller = new PermissionPresetSettingsController({
+    const controller = createController({
       settings: { describe, mutate } as never,
     })
     await controller.load()
@@ -117,13 +129,13 @@ describe('permission settings store', () => {
 
   it('hides the row when the namespace is absent and contains write failures', async () => {
     const describe = vi.fn(() => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [] })))
-    const controller = new PermissionPresetSettingsController({
+    const controller = createController({
       settings: { describe, mutate: vi.fn() } as never,
     })
     await controller.load()
     expect(controller.store.getSnapshot().status).toBe('unavailable')
 
-    const failing = new PermissionPresetSettingsController({
+    const failing = createController({
       settings: {
         describe: () => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [view('read-only')] })),
         mutate: () => Promise.resolve({
@@ -149,7 +161,7 @@ describe('permission settings store', () => {
       .mockImplementationOnce(() => first.promise)
       .mockResolvedValueOnce(ok({ writable: false, hasDocument: false, namespaces: [view('read-only', 2)] }))
     const mutate = vi.fn()
-    const controller = new PermissionPresetSettingsController({
+    const controller = createController({
       settings: { describe, mutate } as never,
     })
     const stale = controller.load()
@@ -164,7 +176,7 @@ describe('permission settings store', () => {
     await controller.select('workspace-write')
     expect(mutate).not.toHaveBeenCalled()
 
-    const rejected = new PermissionPresetSettingsController({
+    const rejected = createController({
       settings: {
         describe: () => Promise.resolve({
           rpcId: 'test',
@@ -177,7 +189,7 @@ describe('permission settings store', () => {
     await rejected.load()
     expect(rejected.store.getSnapshot()).toMatchObject({ status: 'error', error: 'offline' })
 
-    const thrown = new PermissionPresetSettingsController({
+    const thrown = createController({
       settings: {
         // Promise consumers must contain unknown rejection values from a
         // transport implementation, including non-Error legacy clients.
@@ -196,7 +208,7 @@ describe('permission settings store', () => {
       namespaces: SettingsNamespaceView[]
     }>>>()
     const describe = vi.fn(() => read.promise)
-    const idle = new PermissionPresetSettingsController({ settings: { describe, mutate: vi.fn() } as never })
+    const idle = createController({ settings: { describe, mutate: vi.fn() } as never })
     refreshPermissionIfLoaded(idle)
     expect(describe).not.toHaveBeenCalled()
     const loading = idle.load()
@@ -209,7 +221,7 @@ describe('permission settings store', () => {
       writable: boolean
       namespaces: SettingsNamespaceView[]
     }>>>()
-    const disposedRead = new PermissionPresetSettingsController({
+    const disposedRead = createController({
       settings: { describe: () => rejectedRead.promise, mutate: vi.fn() } as never,
     })
     const reading = disposedRead.load()
@@ -224,7 +236,7 @@ describe('permission settings store', () => {
       hasDocument: false,
       namespaces: [view('read-only')],
     })))
-    const active = new PermissionPresetSettingsController({
+    const active = createController({
       settings: {
         describe: activeDescribe,
         mutate: () => mutation.promise,
@@ -240,7 +252,7 @@ describe('permission settings store', () => {
     expect(active.store.getSnapshot().status).toBe('saving')
 
     const rejectedMutation = Promise.withResolvers<ReturnType<typeof ok<SettingsNamespaceView>>>()
-    const disposedWrite = new PermissionPresetSettingsController({
+    const disposedWrite = createController({
       settings: {
         describe: () => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [view('read-only')] })),
         mutate: () => rejectedMutation.promise,
