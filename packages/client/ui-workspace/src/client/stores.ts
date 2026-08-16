@@ -61,6 +61,8 @@ type WorkspaceViewActions = {
   setSessionTags: (draft: WorkspaceViewState, sessionId: string, tags: string[]) => void
   setSessionParent: (draft: WorkspaceViewState, sessionId: string, parent: string | undefined) => void
   setSessionUnread: (draft: WorkspaceViewState, sessionId: string, unread: boolean) => void
+  /** Delete a tag everywhere: strip it from sessions, knownTags, and the tag-group expansion key. */
+  removeTag: (draft: WorkspaceViewState, tag: string) => void
   addKnownTag: (draft: WorkspaceViewState, tag: string) => void
 }
 
@@ -124,6 +126,17 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
       },
       addKnownTag: (d, tag: string) => {
         if (!d.knownTags.includes(tag)) d.knownTags = [...d.knownTags, tag]
+      },
+      removeTag: (d, tag: string) => {
+        d.knownTags = d.knownTags.filter(t => t !== tag)
+        for (const [id, entry] of Object.entries(d.sessionMeta)) {
+          if (entry.tags?.includes(tag) === true) {
+            d.sessionMeta[id] = { ...entry, tags: entry.tags.filter(t => t !== tag) }
+          }
+        }
+        d.groupExpansion = Object.fromEntries(
+          Object.entries(d.groupExpansion).filter(([key]) => key !== TAG_GROUP_PREFIX + tag),
+        )
       },
     },
   })

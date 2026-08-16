@@ -222,9 +222,13 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByText('one').closest('[role="treeitem"]')!.querySelector('button[aria-label*="的操作"]') as HTMLElement)
     fireEvent.click(screen.getByRole('menuitem', { name: '设置标签…' }))
     const input = screen.getByPlaceholderText('输入标签，用逗号分隔')
+    // The tag input autocompletes from existing tags via a datalist.
+    expect(input.getAttribute('list')).toBe('dsh-existing-tags')
     fireEvent.change(input, { target: { value: '前端' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     expect(b.store.getSnapshot().sessionMeta.one?.tags).toEqual(['前端'])
+    // The saved tag now appears in the datalist options.
+    expect(document.getElementById('dsh-existing-tags')?.querySelector('option[value="前端"]')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '按标签' }))
@@ -243,6 +247,30 @@ describe('WorkspaceBrowser', () => {
     const untagged = screen.getByText('未打标').closest('[role="treeitem"]') as HTMLElement
     fireEvent.drop(untagged, { dataTransfer: { effectAllowed: '', dropEffect: '' } })
     expect(b.store.getSnapshot().sessionMeta.two?.tags).toEqual([])
+  })
+
+  it('deletes a whole tag from the tag-section row menu', async () => {
+    const sessions = sessionState([summary('one', 3), summary('two', 2)])
+    const b = mount({
+      useSessions: hook(sessions),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
+    })
+    act(() => {
+      b.store.actions.setSessionTags('one', ['前端'])
+      b.store.actions.setSessionTags('two', ['前端'])
+      b.store.actions.addKnownTag('前端')
+      b.store.actions.setGroupExpanded('tag:前端', true)
+    })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '按标签' }))
+    const header = screen.getByText('前端').closest('[role="treeitem"]') as HTMLElement
+    fireEvent.contextMenu(header)
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除标签' }))
+    // The tag is stripped from every session, knownTags, and its expansion key.
+    expect(b.store.getSnapshot().sessionMeta.one?.tags).toEqual([])
+    expect(b.store.getSnapshot().sessionMeta.two?.tags).toEqual([])
+    expect(b.store.getSnapshot().knownTags).toEqual([])
+    expect(b.store.getSnapshot().groupExpansion).not.toHaveProperty('tag:前端')
   })
 
   it('detaches a nested session when it is dropped between rows', async () => {

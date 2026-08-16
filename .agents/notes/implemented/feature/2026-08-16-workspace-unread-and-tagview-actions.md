@@ -14,6 +14,8 @@ Status: implemented
 
 **标签组展开状态跨修剪保留。** 把「保留 `tag:` 前缀键」下沉进 store action `retainAccountKeys`（`key.startsWith(TAG_GROUP_PREFIX)`），浏览器 effect 不新增依赖——先前把 `groupExpansion` 加进 effect deps 会因 retain 每次重建对象身份造成无限渲染循环（Maximum update depth exceeded），因此保留逻辑必须放在 action 内部而非调用方。
 
+**标签可整体删除，标签输入带已有标签下拉。** `removeTag(tag)` 从所有会话元数据、`knownTags` 与 `groupExpansion`（`tag:<name>` 键）中移除该标签；标签组头（`kind: 'tag'`）右键菜单显示 danger 的「删除标签」。两个标签输入框（会话标签编辑器与「新建标签」弹窗）通过 `<datalist id="dsh-existing-tags">` 提供已有标签自动补全（来源：`knownTags` + 所有会话元数据标签，去重排序）。
+
 ## 曾考虑的替代方案
 
 - 在调用方 effect 里把 tag 键并入 `retainAccountKeys` 参数（效果等价），但 deps 需要 `groupExpansion`，而 retain 每次生成新对象身份 → 死循环；用 ref 读取可绕开，但逻辑分散。

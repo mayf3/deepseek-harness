@@ -114,12 +114,14 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
  * @param props.t - the browser root's locale seat.
  * @returns the row element.
  */
-export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, dropTarget, t }: {
+export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteTag, drag, dropTarget, t }: {
   group: GroupNode
   onToggle: () => void
   onCreate: () => void
   /** Real-Workspace actions; absent for the ungrouped bucket (no menu shown). */
   actions?: { rename: () => void; delete: () => void } | undefined
+  /** Delete the whole tag group (tag-view sections only). */
+  onDeleteTag?: (() => void) | undefined
   /** Present only for real Workspace rows in the grouped view. */
   drag?: WorkspaceRowDragProps | undefined
   /** Tag-view drop target: dropping the dragged session on the section header applies/clears tags. */
@@ -139,6 +141,10 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, dropT
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
     { id: 'delete', label: t('delete.workspace'), icon: <IconTrashOutline16 />, danger: true },
   ]
+  const tagMenuItems = onDeleteTag === undefined ? [] : [
+    { id: 'deleteTag', label: t('menu.deleteTag'), icon: <IconTrashOutline16 />, danger: true },
+  ]
+  const menuItems = actions !== undefined ? workspaceMenuItems : tagMenuItems
   const ownRow = (
     <div
       className={clsx(css.projectRow, menuOpen && css.menuOpen, dropTarget?.active && css.dropTarget)}
@@ -181,19 +187,16 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, dropT
         <span className={css.title}>{label}</span>
       </span>
       <span className={css.rowActions}>
-        {actions !== undefined && (
+        {(actions !== undefined || onDeleteTag !== undefined) && (
           <Menu
             open={menuOpen}
             onClose={() => { setMenuOpen(false) }}
-            items={workspaceMenuItems}
+            items={menuItems}
             onSelect={(id) => {
               setMenuOpen(false)
-              // Unknown ids leave before the dispatch: a future menu row must
-              // not inherit the destructive branch as an else fallback.
-              /* v8 ignore next -- workspaceMenuItems carries exactly these two rows today. */
-              if (id !== 'rename' && id !== 'delete') return
-              if (id === 'rename') actions.rename()
-              else actions.delete()
+              if (actions !== undefined && id === 'rename') actions.rename()
+              else if (actions !== undefined && id === 'delete') actions.delete()
+              else if (onDeleteTag !== undefined && id === 'deleteTag') onDeleteTag()
             }}
             portal
             closeOnPointerLeave

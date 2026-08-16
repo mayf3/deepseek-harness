@@ -279,6 +279,25 @@ describe('workspace browser rows', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
+  it('tag section row menu deletes the whole tag', () => {
+    const onDeleteTag = vi.fn()
+    const group: GroupNode = {
+      key: 'tag:前端', workspaceId: undefined, cwd: undefined, createdAt: undefined, label: '前端',
+      sessionCount: 2, expanded: false, containsCurrent: false, sessions: [], kind: 'tag',
+    }
+    render(<ProjectRowItem group={group} onToggle={vi.fn()} onCreate={vi.fn()} onDeleteTag={onDeleteTag} t={t} />)
+    const row = screen.getByRole('treeitem')
+    fireEvent.contextMenu(row)
+    const item = screen.getByRole('menuitem', { name: '删除标签' })
+    expect(item.className).toMatch(/danger/)
+    fireEvent.click(item)
+    expect(onDeleteTag).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('menu')).toBeNull()
+    // No workspace verbs on a tag section.
+    expect(screen.queryByRole('menuitem', { name: '重命名' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: '删除工作区' })).toBeNull()
+  })
+
   it('workspace hover card shows its details and copies the full directory path', async () => {
     vi.useFakeTimers()
     const writeText = vi.fn(async () => {})

@@ -276,6 +276,8 @@ type SessionTreeProps = Pick<
   setSessionTags: (sessionId: string, tags: string[]) => void
   /** Persist a session's unread flag (row menu action; cleared on open). */
   setSessionUnread: (sessionId: string, unread: boolean) => void
+  /** Delete a tag everywhere (tag-section row menu action). */
+  removeTag: (tag: string) => void
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
   /** Grouping mode: workspace sections or tag sections (flat has its own body). */
@@ -286,7 +288,7 @@ type SessionTreeProps = Pick<
 function SessionTree({
   useSessions, startSession, open, forkSession, workspaces, archivedSessionIds,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onEditTags,
-  sessionMeta, knownTags, setSessionParent, setSessionTags, setSessionUnread,
+  sessionMeta, knownTags, setSessionParent, setSessionTags, setSessionUnread, removeTag,
   insertWorkspaceBefore, insertSessionBefore, orderBy, groupBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
@@ -550,6 +552,9 @@ function SessionTree({
                     active: true,
                     onDrop: () => { commitTagDrop(drag, group) },
                   }
+                  : undefined}
+                onDeleteTag={group.kind === 'tag'
+                  ? () => { removeTag(group.label) }
                   : undefined}
                 actions={group.workspaceId === undefined
                   ? undefined
@@ -1055,6 +1060,15 @@ export function WorkspaceBrowser({
   const [tagDraft, setTagDraft] = useState('')
   const [tagCreateOpen, setTagCreateOpen] = useState(false)
   const [tagCreateDraft, setTagCreateDraft] = useState('')
+  // Autocomplete source for tag inputs: every tag currently in use plus
+  // explicitly created empty tags, deduplicated and sorted.
+  const existingTags = useMemo(() => {
+    const seen = new Set(knownTags)
+    for (const entry of Object.values(sessionMeta)) {
+      for (const tag of entry.tags ?? []) seen.add(tag)
+    }
+    return [...seen].sort((a, b) => a.localeCompare(b))
+  }, [knownTags, sessionMeta])
   const confirmTagCreate = () => {
     const tag = tagCreateDraft.trim()
     if (tag === '') return
@@ -1312,6 +1326,7 @@ export function WorkspaceBrowser({
                 setSessionParent={actions.setSessionParent}
                 setSessionTags={actions.setSessionTags}
                 setSessionUnread={actions.setSessionUnread}
+                removeTag={actions.removeTag}
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
                 onEditTags={onEditTags}
@@ -1434,6 +1449,9 @@ export function WorkspaceBrowser({
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
       </Modal>
+      <datalist id="dsh-existing-tags">
+        {existingTags.map(tag => <option key={tag} value={tag} />)}
+      </datalist>
       <Modal
         open={tagTarget !== null}
         onClose={() => { setTagTarget(null) }}
@@ -1449,6 +1467,7 @@ export function WorkspaceBrowser({
         <input
           className={css.renameInput}
           value={tagDraft}
+          list="dsh-existing-tags"
           aria-label={t('tags.placeholder')}
           placeholder={t('tags.placeholder')}
           autoFocus
@@ -1474,6 +1493,7 @@ export function WorkspaceBrowser({
         <input
           className={css.renameInput}
           value={tagCreateDraft}
+          list="dsh-existing-tags"
           aria-label={t('tags.add.placeholder')}
           placeholder={t('tags.add.placeholder')}
           autoFocus
