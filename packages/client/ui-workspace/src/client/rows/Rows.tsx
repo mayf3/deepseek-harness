@@ -9,7 +9,7 @@ import { useState } from 'react'
 import clsx from 'clsx'
 import {
   HoverCard, IconArchiveOutline20, IconBranchOutline16, IconEditOutline16,
-  IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16, IconPlusOutline16,
+  IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16, IconLinkOutline16, IconPlusOutline16,
   IconTrashOutline16, IconTriangleRightFill14, Menu, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -75,11 +75,11 @@ export interface RowDragProps {
   start: () => void
   /** A compatible row drag is in flight. */
   active: boolean
-  /** Current marker on this row: insert line above, below, or none. */
-  marker: 'before' | 'after' | null
-  /** Report the hovered half while a compatible drag passes over this row. */
-  hover: (half: 'before' | 'after') => void
-  drop: (half: 'before' | 'after') => void
+  /** Current marker on this row: insert line above/below, or 'on' = nest under. */
+  marker: 'before' | 'after' | 'on' | null
+  /** Report the hovered zone while a compatible drag passes over this row. */
+  hover: (half: 'before' | 'after' | 'on') => void
+  drop: (half: 'before' | 'after' | 'on') => void
   end: () => void
 }
 
@@ -89,10 +89,17 @@ interface WorkspaceRowDragProps {
   end: () => void
 }
 
-/** Pointer-position half of a row (insert line above or below). */
-function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' | 'after' {
+/**
+ * Pointer-position zone of a row: the middle band drops the dragged session
+ * UNDER the target (waiting-on parent); the top/bottom bands keep the insert
+ * line (reorder) semantics.
+ */
+function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' | 'after' | 'on' {
   const rect = e.currentTarget.getBoundingClientRect()
-  return e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+  const ratio = rect.height === 0 ? 0.5 : (e.clientY - rect.top) / rect.height
+  if (ratio < 0.3) return 'before'
+  if (ratio > 0.7) return 'after'
+  return 'on'
 }
 
 /**
@@ -107,7 +114,7 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
  * @param props.t - the browser root's locale seat.
  * @returns the row element.
  */
-export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, t }: {
+export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, dropTarget, t }: {
   group: GroupNode
   onToggle: () => void
   onCreate: () => void
@@ -115,11 +122,17 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, t }: 
   actions?: { rename: () => void; delete: () => void } | undefined
   /** Present only for real Workspace rows in the grouped view. */
   drag?: WorkspaceRowDragProps | undefined
+  /** Tag-view drop target: dropping the dragged session on the section header applies/clears tags. */
+  dropTarget?: { active: boolean; onDrop: () => void } | undefined
   t: RowTranslate
 }) {
   const row = group
-  // The ungrouped bucket has no workspace title: its label is dictionary copy.
-  const label = row.workspaceId === undefined ? t('group.ungrouped') : row.label
+  // Tag sections show the tag name; the untagged bucket and the ungrouped
+  // bucket have dictionary copy (no backing Workspace title).
+  const label = row.kind === 'tag' ? row.label
+    : row.kind === 'untagged' ? t('group.untagged')
+      : row.workspaceId === undefined ? t('group.ungrouped')
+        : row.label
   const active = group.expanded && group.containsCurrent
   const [menuOpen, setMenuOpen] = useState(false)
   const workspaceMenuItems = [
@@ -128,10 +141,14 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, t }: 
   ]
   const ownRow = (
     <div
-      className={clsx(css.projectRow, menuOpen && css.menuOpen)}
+      className={clsx(css.projectRow, menuOpen && css.menuOpen, dropTarget?.active && css.dropTarget)}
       role="treeitem"
       aria-expanded={row.expanded}
       onClick={onToggle}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        setMenuOpen(true)
+      }}
       draggable={drag !== undefined}
       onDragStart={drag === undefined
         ? undefined
@@ -141,6 +158,18 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, t }: 
           drag.start()
         }}
       onDragEnd={drag?.end}
+      onDragOver={dropTarget === undefined || !dropTarget.active
+        ? undefined
+        : (e) => {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+        }}
+      onDrop={dropTarget === undefined || !dropTarget.active
+        ? undefined
+        : (e) => {
+          e.preventDefault()
+          dropTarget.onDrop()
+        }}
     >
       <span className={clsx(css.slot, css.folder, active && css.folderActive)}>
         {row.expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />}
@@ -350,7 +379,9 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @param props.t - the browser root's locale seat.
  * @returns the session row.
  */
-export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, drag, flat = false, t }: {
+export function SessionNodeItem({
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onEditTags, onNewSession, drag, flat = false, t,
+}: {
   node: SessionNode
   currentId: string | undefined
   now: number
@@ -361,6 +392,10 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
   onFork: (id: SessionNode['id']) => void
   /** Archive this session (row menu action; commits without a dialog). */
   onArchive: (id: SessionNode['id']) => void
+  /** Open the tag editor for this session (row menu action). */
+  onEditTags: (id: SessionNode['id'], currentTags: string[]) => void
+  /** Start a new session in this row's Workspace (row menu action; absent outside directory view). */
+  onNewSession?: (() => void) | undefined
   /** Present only on draggable rows (workspace-group sessions outside search). */
   drag?: RowDragProps | undefined
   /** The row is rendered without a parent Workspace header. */
@@ -378,8 +413,10 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
   // touches the session log, so it is not styled as destructive and needs no
   // confirmation dialog.
   const sessionMenuItems = [
+    ...(onNewSession === undefined ? [] : [{ id: 'newSessionHere', label: t('menu.newSessionHere'), icon: <IconPlusOutline16 /> }]),
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
     { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
+    { id: 'tags', label: t('menu.editTags'), icon: <IconEditOutline16 /> },
     // 20-native glyph in the menu's 16px icon slot (Menu.module.css .itemIcon).
     { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} /> },
   ]
@@ -390,10 +427,17 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
         css.sessionRow, selected && css.selected, menuOpen && css.menuOpen,
         flat && !showStatus && css.flatSessionRowWithoutStatus,
         drag?.marker === 'before' && css.dropBefore, drag?.marker === 'after' && css.dropAfter,
+        drag?.marker === 'on' && css.dropOn,
       )}
+      style={node.depth > 0 ? { paddingLeft: `${10 + node.depth * 16}px` } : undefined}
       role="treeitem"
       aria-selected={selected}
+      aria-level={node.depth + 1}
       onClick={() => { onOpen(node.id) }}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        setMenuOpen(true)
+      }}
       draggable={drag !== undefined}
       onDragStart={drag === undefined
         ? undefined
@@ -427,6 +471,11 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
           {showStatus && <SessionStatusDots statuses={statuses} />}
         </span>
       )}
+      {node.depth > 0 && (
+        <span className={css.waitingMark} aria-label={t('status.waitingOn')} title={t('status.waitingOn')}>
+          <IconLinkOutline16 />
+        </span>
+      )}
       <span className={css.title}>{title}</span>
       {/* A blank New Session row is a provisional placeholder: nothing has
           happened in it yet, so a "now" timestamp and the row verbs
@@ -441,9 +490,11 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
             items={sessionMenuItems}
             onSelect={(id) => {
               setMenuOpen(false)
+              if (id === 'newSessionHere') onNewSession?.()
               if (id === 'rename') onRename(node.id, row.title)
               if (id === 'fork') onFork(node.id)
               if (id === 'archive') onArchive(node.id)
+              if (id === 'tags') onEditTags(node.id, node.tags)
             }}
             portal
             closeOnPointerLeave

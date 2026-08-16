@@ -132,7 +132,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('分组方式')).toBeTruthy() // the menu heading label
     expect(screen.getByRole('separator')).toBeTruthy()
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      '按工作区', '单列表', '手动排序', '最近更新',
+      '按工作区', '单列表', '按标签', '手动排序', '最近更新',
     ])
     expect(screen.getByRole('menuitem', { name: '按工作区' }).querySelector('svg')).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '手动排序' }).querySelector('svg')).toBeTruthy()
@@ -156,6 +156,101 @@ describe('WorkspaceBrowser', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('menu')).toBeNull()
     expect(b.store.getSnapshot().groupBy).toBe('workspace')
+  })
+
+  it('switches to tag grouping and renders tagged sections plus the untagged bucket', async () => {
+    const plain = summary('plain-s', 2)
+    const b = mount({
+      useSessions: hook(sessionState([summary('tagged-s', 3), plain])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['tagged-s', 'plain-s'])])),
+    })
+    act(() => { b.store.actions.setSessionTags('tagged-s', ['前端']) })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '按标签' }))
+    expect(b.store.getSnapshot().groupBy).toBe('tag')
+    expect(screen.getByText('前端')).toBeTruthy()
+    expect(screen.getByText('未打标')).toBeTruthy()
+    // Expanding the tag section reveals its session row.
+    fireEvent.click(screen.getByText('前端'))
+    expect(screen.getByText('tagged-s')).toBeTruthy()
+  })
+
+  it('nests a session under the target when dropped on its middle zone', async () => {
+    const sessions = sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])
+    const b = mount({
+      useSessions: hook(sessions),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
+    })
+    // Expand the workspace group so rows render.
+    fireEvent.click(screen.getByText('alpha'))
+    const one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    const two = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
+    two.getBoundingClientRect = () => ({
+      top: 150, bottom: 184, left: 0, right: 200, width: 200, height: 34,
+      x: 0, y: 150, toJSON: () => ({}),
+    })
+    fireEvent.dragStart(one, { dataTransfer: dragData() })
+    // Middle zone (ratio 0.5) nests one under two.
+    fireDrag(two, 'drop', 167)
+    expect(b.store.getSnapshot().sessionMeta.one?.parent).toBe('two')
+    // The nested row renders indented under its parent.
+    const rows = screen.getAllByRole('treeitem')
+    const oneRow = rows.find(row => row.textContent?.includes('one')) as HTMLElement
+    expect(oneRow.style.paddingLeft).toBe('26px')
+  })
+
+  it('drops a session on a tag section header to apply that tag, and on Untagged to clear tags', async () => {
+    const sessions = sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])
+    const b = mount({
+      useSessions: hook(sessions),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
+    })
+    // Tag session one through the row menu (workspace view), then switch to tags.
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByText('one').closest('[role="treeitem"]')!.querySelector('button[aria-label*="的操作"]') as HTMLElement)
+    fireEvent.click(screen.getByRole('menuitem', { name: '设置标签…' }))
+    const input = screen.getByPlaceholderText('输入标签，用逗号分隔')
+    fireEvent.change(input, { target: { value: '前端' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(b.store.getSnapshot().sessionMeta.one?.tags).toEqual(['前端'])
+
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '按标签' }))
+    // Expand both sections: the 前端 group (one) and the Untagged bucket (two).
+    fireEvent.click(screen.getByText('前端'))
+    fireEvent.click(screen.getByText('未打标'))
+    const two = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
+    fireEvent.dragStart(two, { dataTransfer: dragData() })
+    const header = screen.getByText('前端').closest('[role="treeitem"]') as HTMLElement
+    fireEvent.dragOver(header, { dataTransfer: { effectAllowed: '', dropEffect: '' } })
+    fireEvent.drop(header, { dataTransfer: { effectAllowed: '', dropEffect: '' } })
+    expect(b.store.getSnapshot().sessionMeta.two?.tags).toEqual(['前端'])
+    // Dropping on the Untagged bucket clears the tags (re-query: two moved groups).
+    const twoTagged = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
+    fireEvent.dragStart(twoTagged, { dataTransfer: dragData() })
+    const untagged = screen.getByText('未打标').closest('[role="treeitem"]') as HTMLElement
+    fireEvent.drop(untagged, { dataTransfer: { effectAllowed: '', dropEffect: '' } })
+    expect(b.store.getSnapshot().sessionMeta.two?.tags).toEqual([])
+  })
+
+  it('detaches a nested session when it is dropped between rows', async () => {
+    const sessions = sessionState([summary('one', 3), summary('two', 2)])
+    const b = mount({
+      useSessions: hook(sessions),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
+    })
+    act(() => { b.store.actions.setSessionParent('two', 'one') })
+    fireEvent.click(screen.getByText('alpha'))
+    const two = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
+    const one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    one.getBoundingClientRect = () => ({
+      top: 100, bottom: 134, left: 0, right: 200, width: 200, height: 34,
+      x: 0, y: 100, toJSON: () => ({}),
+    })
+    // Drop two on the top edge of one: reorder zone, detaches from parent.
+    fireEvent.dragStart(two, { dataTransfer: dragData() })
+    fireDrag(one, 'drop', 105)
+    expect(b.store.getSnapshot().sessionMeta.two?.parent).toBeUndefined()
   })
 
   it('persists flat-list drag order locally and applies Last updated within that account', async () => {

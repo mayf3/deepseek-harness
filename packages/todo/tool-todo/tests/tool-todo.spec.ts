@@ -60,8 +60,42 @@ describe('dsh-tool-todo', () => {
     const todos = props.todos as { type: string; items?: { properties?: Record<string, { type: string; enum?: string[] }> } }
     expect(todos.type).toBe('array')
     const itemProps = todos.items?.properties ?? {}
-    expect(Object.keys(itemProps).sort()).toEqual(['content', 'status'])
+    expect(Object.keys(itemProps).sort()).toEqual(['content', 'status', 'tags'])
     expect(itemProps.status?.enum).toEqual(['pending', 'in_progress', 'completed'])
+  })
+
+  it('normalizes optional tags and writes them into the event and the result', async () => {
+    const ctx = await setup(true)
+    const agent = agentWithSession('tagged')
+    const result = await callTodo(ctx, {
+      todos: [
+        { content: 'plan', status: 'in_progress', tags: ['核心', ' 前端 ', '核心', ''] },
+        { content: 'build', status: 'pending' },
+      ],
+    }, { agent })
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected todo_write success')
+    // Tags are trimmed and deduped; the untagged item stays tag-free.
+    expect(result.value).toEqual({
+      todos: [
+        { content: 'plan', status: 'in_progress', tags: ['核心', '前端'] },
+        { content: 'build', status: 'pending' },
+      ],
+      counts: { pending: 1, inProgress: 1, completed: 0 },
+    })
+    const event = agent.session.events.findLast(e => e.type === 'todo/write')!
+    expect(event.data.todos).toEqual([
+      { content: 'plan', status: 'in_progress', tags: ['核心', '前端'] },
+      { content: 'build', status: 'pending' },
+    ])
+  })
+
+  it('rejects tags longer than 32 characters', async () => {
+    const ctx = await setup(true)
+    const result = await callTodo(ctx, {
+      todos: [{ content: 'plan', status: 'pending', tags: ['x'.repeat(33)] }],
+    })
+    expect(result.isError).toBe(true)
   })
 
   it('appends a todo/write event carrying the whole list to the calling session', async () => {

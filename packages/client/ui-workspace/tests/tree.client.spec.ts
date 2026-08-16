@@ -3,7 +3,7 @@ import type {
   SessionId, SessionListState, SessionSummary, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  deriveFlat, deriveGroups, deriveSearchResults, workspaceLabel, relativeTime,
+  deriveFlat, deriveGroups, deriveSearchResults, deriveTagGroups, workspaceLabel, relativeTime,
   UNGROUPED_KEY, UNGROUPED_LABEL,
 } from '../src/client/tree.ts'
 import { createWorkspaceViewStore } from '../src/client/stores.ts'
@@ -24,9 +24,16 @@ const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView 
   workspaceId: wid(id), path: `/projects/${id}`, title,
   sessionIds: sessionIds.map(sid), createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
 })
-const view = (expandedGroups: readonly string[] = [], ungroupedOrder?: readonly string[]) => ({
+const view = (
+  expandedGroups: readonly string[] = [],
+  ungroupedOrder?: readonly string[],
+  sessionMeta?: Readonly<Record<string, { tags?: string[]; parent?: string }>>,
+  knownTags?: readonly string[],
+) => ({
   expandedGroups,
   ...(ungroupedOrder === undefined ? {} : { ungroupedOrder }),
+  ...(sessionMeta === undefined ? {} : { sessionMeta }),
+  ...(knownTags === undefined ? {} : { knownTags }),
 })
 const noArchive: readonly SessionId[] = []
 const archived = (...ids: string[]): readonly SessionId[] => ids.map(sid)
@@ -446,5 +453,86 @@ describe('relativeTime', () => {
     expect(relativeTime(now - 2 * 86_400_000, now)).toEqual({ unit: 'days', n: 2 })
     expect(relativeTime(now - 60 * 86_400_000, now)).toEqual({ unit: 'months', n: 2 })
     expect(relativeTime(0, now)).toEqual({ unit: 'years', n: 1 })
+  })
+})
+
+describe('deriveTagGroups', () => {
+  const tagged = (id: string, updatedAt: number, tags?: string[]): SessionSummary => ({
+    ...summary(id, updatedAt),
+    projectionValues: {
+      todos: [{ content: id, status: 'pending' as const, ...(tags === undefined ? {} : { tags }) }],
+    },
+  })
+  const meta = (entries: Record<string, { tags?: string[] }>) => entries
+
+  it('groups sessions under each distinct user tag and keeps untagged sessions separate', () => {
+    const sessions = list(
+      tagged('a', 3),
+      tagged('b', 2),
+      tagged('c', 1),
+    )
+    const groups = deriveTagGroups(sessions, noArchive, view(['tag:前端'], undefined, meta({
+      a: { tags: ['前端'] },
+      b: { tags: ['前端', '紧急'] },
+    })))
+    expect(groups.map(g => (g.kind === 'tag' ? g.label : g.kind))).toEqual(['前端', '紧急', 'untagged'])
+    const frontend = groups[0]!
+    expect(frontend.key).toBe('tag:前端')
+    expect(frontend.sessionCount).toBe(2)
+    expect(frontend.sessions.map(s => s.id)).toEqual([sid('a'), sid('b')])
+    // Folded groups keep their count but no session rows.
+    expect(groups[1]!.sessionCount).toBe(1)
+    expect(groups[1]!.sessions).toEqual([])
+    expect(groups[2]!.kind).toBe('untagged')
+    expect(groups[2]!.sessionCount).toBe(1)
+  })
+
+  it('keeps a folded tag group empty of session rows', () => {
+    const sessions = list(tagged('a', 3))
+    const groups = deriveTagGroups(sessions, noArchive, view([], undefined, meta({ a: { tags: ['前端'] } })))
+    expect(groups[0]!.expanded).toBe(false)
+    expect(groups[0]!.sessions).toEqual([])
+  })
+
+  it('excludes archived and non-current blank sessions from every group', () => {
+    const sessions = list(tagged('a', 3), { ...tagged('b', 2), blank: true })
+    const groups = deriveTagGroups(sessions, archived('a'), view([], undefined, meta({
+      a: { tags: ['前端'] },
+      b: { tags: ['前端'] },
+    })))
+    expect(groups).toEqual([])
+  })
+
+  it('ignores tags the model wrote into todos — only user metadata tags group', () => {
+    const sessions = list(tagged('a', 3, ['check-lint', 'setup']))
+    const groups = deriveTagGroups(sessions, noArchive, view([], undefined, meta({ a: { tags: ['手头'] } })))
+    expect(groups.map(g => (g.kind === 'tag' ? g.label : g.kind))).toEqual(['手头'])
+  })
+
+  it('keeps explicitly created empty tags visible as empty sections', () => {
+    const sessions = list(summary('a', 3))
+    const groups = deriveTagGroups(sessions, noArchive, view([], undefined, undefined, ['前端', '后端']))
+    expect(groups.map(g => (g.kind === 'tag' ? g.label : g.kind))).toEqual(['前端', '后端', 'untagged'])
+    expect(groups[1]!.sessionCount).toBe(0)
+    expect(groups[1]!.sessions).toEqual([])
+  })
+
+  it('nests waiting-on children under their parent and breaks parent cycles', () => {
+    // a <- b <- c (chain), d waits on c; x/y form a cycle and are ignored.
+    const sessions = list(
+      summary('a', 5), summary('b', 4), summary('c', 3), summary('d', 2),
+      summary('x', 1), summary('y', 0),
+    )
+    const groups = deriveGroups(sessions, [workspace('w', ['a', 'b', 'c', 'd', 'x', 'y'])], noArchive, view(['w'], undefined, {
+      b: { parent: 'a' },
+      c: { parent: 'b' },
+      d: { parent: 'c' },
+      x: { parent: 'y' },
+      y: { parent: 'x' },
+    }))
+    const rows = groups[0]!.sessions
+    expect(rows.map(r => r.id)).toEqual([sid('a'), sid('b'), sid('c'), sid('d'), sid('x'), sid('y')])
+    // The chain nests; the cycle breaks with y left nested under x.
+    expect(rows.map(r => r.depth)).toEqual([0, 1, 2, 3, 0, 1])
   })
 })

@@ -44,7 +44,8 @@ declare module '@deepseek-ai/cordis' {
 
 /** Registry and cross-page router behind the two model-facing inspect tools. */
 export class CordisInspectRegistryService extends Service {
-  private readonly providers = new Map<string, HostCordisInspectProviderRegistration>()
+  /** One stack per provider id: sessions mounting the same plugin coexist; the newest registration answers queries. */
+  private readonly providers = new Map<string, HostCordisInspectProviderRegistration[]>()
   private readonly pending = new Map<CordisInspectRequestId, PendingClientQuery>()
   private clientManifest: readonly CordisInspectProviderManifest[] | undefined
   private nextRequest = 1
@@ -55,17 +56,29 @@ export class CordisInspectRegistryService extends Service {
   }
 
   /**
-   * Register one Host provider.
+   * Register one Host provider. Per-session plugins (e.g. tool-cordis in the
+   * cordis preset) register the same ids concurrently; later registrations
+   * shadow earlier ones for queries, and each disposer removes only its own
+   * entry, so sessions can mount and unmount independently.
    * @param registration - manifest and local query handler.
-   * @returns idempotent disposer.
+   * @returns disposer that removes exactly this registration.
    */
   register(registration: HostCordisInspectProviderRegistration): () => void {
     const manifest = validateManifest(registration.manifest)
-    if (this.providers.has(manifest.id)) throw new Error(`Host Cordis inspect provider "${manifest.id}" is already registered`)
     const stored = { ...registration, manifest }
-    this.providers.set(manifest.id, stored)
+    const stack = this.providers.get(manifest.id)
+    if (stack === undefined) {
+      this.providers.set(manifest.id, [stored])
+    } else {
+      stack.push(stored)
+    }
     return () => {
-      if (this.providers.get(manifest.id) === stored) this.providers.delete(manifest.id)
+      const current = this.providers.get(manifest.id)
+      if (current === undefined) return
+      const index = current.indexOf(stored)
+      if (index === -1) return
+      current.splice(index, 1)
+      if (current.length === 0) this.providers.delete(manifest.id)
     }
   }
 
@@ -85,12 +98,14 @@ export class CordisInspectRegistryService extends Service {
   }
 
   /**
-   * Return the complete known Host and Client provider directory.
+   * Return the complete known Host and Client provider directory. Host ids
+   * appear once, carrying the newest registration's manifest.
    * @returns Host providers followed by the Client providers.
    */
   list(): CordisInspectProviderView[] {
     return [
-      ...[...this.providers.values()].map(provider => view('host', provider.manifest)),
+      // register() pushes and disposers delete the empty stack, so a stored stack is never empty.
+      ...[...this.providers.values()].map(stack => view('host', (stack[stack.length - 1] as HostCordisInspectProviderRegistration).manifest)),
       ...(this.clientManifest ?? []).map(provider => view('client', provider)),
     ]
   }
@@ -114,8 +129,10 @@ export class CordisInspectRegistryService extends Service {
     signal: AbortSignal,
   ): Promise<JsonValue> {
     if (platform === 'host') {
-      const registration = this.providers.get(providerId)
-      if (registration === undefined) throw new Error(`Host Cordis inspect provider "${providerId}" is not registered`)
+      const stack = this.providers.get(providerId)
+      if (stack === undefined || stack.length === 0) throw new Error(`Host Cordis inspect provider "${providerId}" is not registered`)
+      // register() pushes and disposers delete the empty stack, so a non-empty stack has a top.
+      const registration = stack[stack.length - 1] as HostCordisInspectProviderRegistration
       const method = findMethod(registration.manifest, methodName)
       validateInput('Host', providerId, method, input)
       signal.throwIfAborted()

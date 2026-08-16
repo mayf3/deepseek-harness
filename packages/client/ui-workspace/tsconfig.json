@@ -30,6 +30,9 @@
       "path": "../ui-conversation"
     },
     {
+      "path": "../../todo/tool-todo"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

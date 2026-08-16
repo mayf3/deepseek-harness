@@ -12,17 +12,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCloseFill14, IconPersonalizationOutline16,
+  Button, IconCloseFill14, IconPersonalizationOutline16, IconPlusOutline16,
   IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   SessionId, SessionListState, SessionSearchResultItem, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { WorkspaceBrowserProps } from './contract/slots.ts'
-import type { SessionNode, SessionOrderBy } from './tree.ts'
-import { deriveFlat, deriveGroups, deriveSearchResults, UNGROUPED_KEY } from './tree.ts'
+import type { GroupNode, SessionNode, SessionOrderBy } from './tree.ts'
+import { deriveFlat, deriveGroups, deriveSearchResults, deriveTagGroups, UNGROUPED_KEY } from './tree.ts'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './rows/Rows.tsx'
-import { FLAT_SESSION_ORDER_KEY } from './stores.ts'
+import { FLAT_SESSION_ORDER_KEY, type SessionGroupBy, type SessionMeta } from './stores.ts'
 import { WorkspacePickFlow } from './WorkspacePicker.tsx'
 import css from './WorkspaceBrowser.module.css'
 
@@ -145,9 +145,9 @@ function nextSessionOrderAccount({
 
 /** Grouping and ordering menu; own open state so it resets with the wide chrome. */
 function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
-  groupBy: 'workspace' | 'flat'
+  groupBy: SessionGroupBy
   orderBy: SessionOrderBy
-  onGroupPick: (mode: 'workspace' | 'flat') => void
+  onGroupPick: (mode: SessionGroupBy) => void
   onOrderPick: (mode: SessionOrderBy) => void
   t: WorkspaceBrowserProps['t']
 }) {
@@ -160,6 +160,7 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
         { type: 'label' as const, id: 'group-by', text: t('groupBy.label') },
         { id: 'workspace', label: t('groupBy.workspace') },
         { id: 'flat', label: t('groupBy.flat') },
+        { id: 'tag', label: t('groupBy.tag') },
         { type: 'separator' as const, id: 'order-by-separator' },
         { type: 'label' as const, id: 'order-by', text: t('orderBy.label') },
         { id: 'manual', label: t('orderBy.manual') },
@@ -167,7 +168,7 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
       ]}
       selectedIds={[groupBy, orderBy]}
       onSelect={(id) => {
-        if (id === 'workspace' || id === 'flat') onGroupPick(id)
+        if (id === 'workspace' || id === 'flat' || id === 'tag') onGroupPick(id)
         else if (id === 'manual' || id === 'updated') onOrderPick(id)
         setOpen(false)
       }}
@@ -197,8 +198,8 @@ interface DragState {
   /** Workspace id, or {@link UNGROUPED_KEY} for the browser-local loose-session account. */
   accountKey: string
   sessionId: SessionNode['id']
-  /** Row the marker sits on and which half (insert above/below it). */
-  over: { id: SessionNode['id']; half: 'before' | 'after' } | null
+  /** Row the marker sits on and which zone (insert above/below or nest under). */
+  over: { id: SessionNode['id']; half: 'before' | 'after' | 'on' } | null
 }
 
 /** In-flight Workspace-row drag: source identity plus the current marker. */
@@ -211,6 +212,26 @@ interface WorkspaceDragState {
 function workspaceGroupHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' | 'after' {
   const rect = e.currentTarget.getBoundingClientRect()
   return e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+}
+
+/**
+ * Whether `candidate` already waits on `target` somewhere up its waiting-on
+ * chain (i.e. candidate is target's descendant). Used to keep the parent
+ * picker acyclic: a session must never wait on one of its own children.
+ */
+function isDescendantOf(
+  candidate: SessionId,
+  target: SessionId,
+  meta: Readonly<Record<string, SessionMeta>>,
+): boolean {
+  let cursor = candidate as string
+  for (let hops = 0; hops < 64; hops++) {
+    const parent = meta[cursor]?.parent
+    if (parent === undefined) return false
+    if (parent === target as string) return true
+    cursor = parent
+  }
+  return false
 }
 
 type SessionTreeProps = Pick<
@@ -241,15 +262,30 @@ type SessionTreeProps = Pick<
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
   onSessionArchive: (sessionId: SessionNode['id']) => void
+  /** Open the tag editor for a session (row menu action). */
+  onEditTags: (sessionId: SessionNode['id'], currentTags: string[]) => void
+  /** Start a new session in a row's Workspace (row menu action). */
+  startSession: (workspaceId: WorkspaceId) => void
+  /** Browser-local organization metadata (tags + waiting-on parent). */
+  sessionMeta: Readonly<Record<string, SessionMeta>>
+  /** Explicitly created tags; empty tag sections stay visible. */
+  knownTags: readonly string[]
+  /** Persist a session's waiting-on parent (drag nest-under and menu picker). */
+  setSessionParent: (sessionId: string, parent: string | undefined) => void
+  /** Persist a session's tags (tag-section drag drop and the tag editor). */
+  setSessionTags: (sessionId: string, tags: string[]) => void
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
+  /** Grouping mode: workspace sections or tag sections (flat has its own body). */
+  groupBy: Extract<SessionGroupBy, 'workspace' | 'tag'>
 }
 
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
   useSessions, startSession, open, forkSession, workspaces, archivedSessionIds,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
-  insertWorkspaceBefore, insertSessionBefore, orderBy,
+  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onEditTags,
+  sessionMeta, knownTags, setSessionParent, setSessionTags,
+  insertWorkspaceBefore, insertSessionBefore, orderBy, groupBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
 }: SessionTreeProps) {
@@ -264,6 +300,7 @@ function SessionTree({
   const previousOrderBy = useRef(orderBy)
   const nativeDragActive = drag !== null || workspaceDrag !== null
   useNativeDragAcceptance(nativeDragActive)
+  const tagMode = groupBy === 'tag'
   const currentGroup = current === undefined
     ? undefined
     : (workspaces.find(w => w.sessionIds.includes(current))?.workspaceId as string | undefined)
@@ -319,21 +356,55 @@ function SessionTree({
     [sessionOrderByAccount, ungroupedSessionIds],
   )
   const groups = useMemo(
-    () => deriveGroups(list, orderedWorkspaces, archivedSessionIds, {
-      expandedGroups,
-      ...(sessionOrderByAccount[UNGROUPED_KEY] === undefined
-        ? {}
-        : { ungroupedOrder: sessionOrderByAccount[UNGROUPED_KEY] }),
-    }),
-    [list, orderedWorkspaces, archivedSessionIds, expandedGroups, sessionOrderByAccount],
+    () => tagMode
+      ? deriveTagGroups(list, archivedSessionIds, { expandedGroups, sessionMeta, knownTags })
+      : deriveGroups(list, orderedWorkspaces, archivedSessionIds, {
+        expandedGroups,
+        sessionMeta,
+        ...(sessionOrderByAccount[UNGROUPED_KEY] === undefined
+          ? {}
+          : { ungroupedOrder: sessionOrderByAccount[UNGROUPED_KEY] }),
+      }),
+    [list, orderedWorkspaces, archivedSessionIds, expandedGroups, sessionMeta, knownTags, sessionOrderByAccount, tagMode],
   )
   const now = Date.now()
+  /** Tag-view section-header drop: apply (or clear, for the untagged bucket) the dragged session's tags. */
+  const commitTagDrop = (activeDrag: DragState, group: GroupNode): void => {
+    if (sessionDropCommitted.current) return
+    sessionDropCommitted.current = true
+    setDrag(null)
+    if (group.kind === 'untagged') {
+      setSessionTags(activeDrag.sessionId, [])
+      return
+    }
+    if (group.kind === 'tag') {
+      const current = sessionMeta[activeDrag.sessionId]?.tags ?? []
+      if (!current.includes(group.label)) {
+        setSessionTags(activeDrag.sessionId, [...current, group.label])
+      }
+    }
+  }
   const commitSessionDrag = (activeDrag: DragState, over: NonNullable<DragState['over']>): void => {
     if (sessionDropCommitted.current) return
     sessionDropCommitted.current = true
     setDrag(null)
+    // Dropping in the middle zone nests the dragged session under the target
+    // (waiting-on parent) instead of reordering; the drag never changes order.
+    if (over.half === 'on') {
+      if (over.id !== activeDrag.sessionId && !isDescendantOf(over.id, activeDrag.sessionId, sessionMeta)) {
+        setSessionParent(activeDrag.sessionId, over.id)
+      }
+      return
+    }
     const group = groups.find(candidate => candidate.key === activeDrag.accountKey)
     if (group === undefined) return
+    // Tag sections are derived; dropping between their rows changes nothing.
+    if (group.kind !== undefined) return
+    // Reordering a nested row detaches it from its waiting-on parent: dropping
+    // between rows means "back to the flat list" for a nested session.
+    if (sessionMeta[activeDrag.sessionId]?.parent !== undefined) {
+      setSessionParent(activeDrag.sessionId, undefined)
+    }
     const targetIndex = group.sessions.findIndex(session => session.id === over.id)
     if (targetIndex === -1) return
     const anchor = over.half === 'before' ? over.id : group.sessions[targetIndex + 1]?.id
@@ -464,6 +535,12 @@ function SessionTree({
                   }
                 }}
                 drag={workspaceDragProps}
+                dropTarget={tagMode && group.kind !== undefined && drag !== null
+                  ? {
+                    active: true,
+                    onDrop: () => { commitTagDrop(drag, group) },
+                  }
+                  : undefined}
                 actions={group.workspaceId === undefined
                   ? undefined
                   : {
@@ -481,8 +558,9 @@ function SessionTree({
                 ? group.sessions
                 : group.sessions.slice(0, COLLAPSED_SESSION_LIMIT)
               ).map((node) => {
-              // Session drag never leaves its group. Ungrouped writes only the
-              // browser-local account; real Workspaces may also write Host order.
+              // Session drag works in every grouped mode: workspace groups
+              // reorder and nest; tag sections nest and tag (drop on the
+              // section header), but never reorder (derived membership).
                 const sameGroupDrag = drag !== null && drag.accountKey === group.key
                 const dragProps = {
                   start: () => {
@@ -491,11 +569,11 @@ function SessionTree({
                   },
                   active: sameGroupDrag,
                   marker: sameGroupDrag && drag.over?.id === node.id ? drag.over.half : null,
-                  hover: (half: 'before' | 'after') => {
+                  hover: (half: 'before' | 'after' | 'on') => {
                   /* v8 ignore next -- narrowing guard: Rows gates hover on `active`, which is false while the drag state is null. */
                     setDrag(d => (d === null ? d : { ...d, over: { id: node.id, half } }))
                   },
-                  drop: (half: 'before' | 'after') => {
+                  drop: (half: 'before' | 'after' | 'on') => {
                   /* v8 ignore next -- narrowing guard: Rows gates drop on `active`, which is false while the drag state is null. */
                     if (drag === null) return
                     commitSessionDrag(drag, { id: node.id, half })
@@ -516,6 +594,10 @@ function SessionTree({
                     onRename={onSessionRename}
                     onFork={forkSession}
                     onArchive={onSessionArchive}
+                    onEditTags={onEditTags}
+                    onNewSession={group.workspaceId === undefined
+                      ? undefined
+                      : () => { startSession(group.workspaceId as WorkspaceId) }}
                     drag={dragProps}
                     t={t}
                   />
@@ -544,7 +626,7 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  useSessions, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds,
+  useSessions, open, forkSession, onSessionRename, onSessionArchive, onEditTags, setSessionParent, sessionMeta, archivedSessionIds,
   orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
 }: Pick<
   SessionTreeProps,
@@ -553,6 +635,9 @@ function FlatList({
   | 'forkSession'
   | 'onSessionRename'
   | 'onSessionArchive'
+  | 'onEditTags'
+  | 'setSessionParent'
+  | 'sessionMeta'
   | 'archivedSessionIds'
   | 'orderBy'
   | 'sessionOrderByAccount'
@@ -601,6 +686,13 @@ function FlatList({
     if (dropCommitted.current) return
     dropCommitted.current = true
     setDrag(null)
+    // Middle-zone drop nests the dragged session under the target.
+    if (over.half === 'on') {
+      if (over.id !== activeDrag.sessionId && !isDescendantOf(over.id, activeDrag.sessionId, sessionMeta)) {
+        setSessionParent(activeDrag.sessionId, over.id)
+      }
+      return
+    }
     const targetIndex = rows.findIndex(row => row.id === over.id)
     if (targetIndex === -1) return
     const anchor = over.half === 'before' ? over.id : rows[targetIndex + 1]?.id
@@ -632,6 +724,7 @@ function FlatList({
               onRename={onSessionRename}
               onFork={forkSession}
               onArchive={onSessionArchive}
+              onEditTags={onEditTags}
               flat
               drag={{
                 start: () => {
@@ -772,6 +865,8 @@ export function WorkspaceBrowser({
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const sessionUpdatedAtByAccount = useStore(s => s.sessionUpdatedAtByAccount)
+  const sessionMeta = useStore(s => s.sessionMeta)
+  const knownTags = useStore(s => s.knownTags)
   useEffect(() => {
     if (workspacePhase !== 'ready') return
     actions.retainAccountKeys([
@@ -927,6 +1022,34 @@ export function WorkspaceBrowser({
     setSessionRenameError(null)
   }
 
+  // Tag editor: browser-local metadata (persisted by the viewing store), so
+  // the commit is a store action — no host round trip, no dialog busy state.
+  const [tagTarget, setTagTarget] = useState<{ sessionId: SessionNode['id']; tags: string[] } | null>(null)
+  const [tagDraft, setTagDraft] = useState('')
+  const [tagCreateOpen, setTagCreateOpen] = useState(false)
+  const [tagCreateDraft, setTagCreateDraft] = useState('')
+  const confirmTagCreate = () => {
+    const tag = tagCreateDraft.trim()
+    if (tag === '') return
+    actions.addKnownTag(tag.slice(0, 32))
+    setTagCreateOpen(false)
+    setTagCreateDraft('')
+  }
+  const onEditTags = (sessionId: SessionNode['id'], currentTags: string[]) => {
+    setTagTarget({ sessionId, tags: currentTags })
+    setTagDraft(currentTags.join(', '))
+  }
+  const confirmTags = () => {
+    if (tagTarget === null) return
+    const tags = tagDraft.split(/[,，]/)
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0)
+      .filter((tag, index, all) => all.indexOf(tag) === index)
+      .slice(0, 8)
+    actions.setSessionTags(tagTarget.sessionId, tags)
+    setTagTarget(null)
+  }
+
   // Archive is dialog-free: not destructive (the log and the accounting slot
   // remain), so the menu action commits directly; the row disappears when the
   // archive-set echo lands. Failures are non-fatal console diagnostics, the
@@ -977,7 +1100,7 @@ export function WorkspaceBrowser({
       <div className={css.sectionHeader}>
         {wide && (
           <span className={clsx(css.sectionLabel, css.wide, searchExpanded && css.sectionLabelHidden)}>
-            {groupBy === 'flat' ? t('section.sessions') : t('section.workspaces')}
+            {groupBy === 'flat' || groupBy === 'tag' ? t('section.sessions') : t('section.workspaces')}
           </span>
         )}
         {wide && (
@@ -1049,8 +1172,9 @@ export function WorkspaceBrowser({
           )}
           {/* Adding is the button's one action, so a composition with no
               picking affordance has nothing to offer here: the region hides the
-              button rather than leaving a dead one in the header. */}
-          {directoryFlowAvailable && (
+              button rather than leaving a dead one in the header. The tag view
+              swaps the workspace add for the tag add. */}
+          {directoryFlowAvailable && groupBy !== 'tag' && (
             <Tooltip label={t('workspace.add')} side="bottom" delayMs={500}>
               <button
                 ref={wsPlusRef}
@@ -1062,6 +1186,19 @@ export function WorkspaceBrowser({
                 }}
               >
                 <IconProjectAddOutline16 size={wide ? 16 : 18} />
+              </button>
+            </Tooltip>
+          )}
+          {/* Tag view keeps a dedicated tag-creation entry beside the workspace add. */}
+          {groupBy === 'tag' && (
+            <Tooltip label={t('tags.add')} side="bottom" delayMs={500}>
+              <button
+                type="button"
+                className={css.iconButton}
+                aria-label={t('tags.add')}
+                onClick={() => { setTagCreateOpen(true) }}
+              >
+                <IconPlusOutline16 size={wide ? 16 : 18} />
               </button>
             </Tooltip>
           )}
@@ -1124,6 +1261,9 @@ export function WorkspaceBrowser({
               <FlatList
                 useSessions={useSessions} open={open} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
+                onEditTags={onEditTags}
+                setSessionParent={actions.setSessionParent}
+                sessionMeta={sessionMeta}
                 archivedSessionIds={archivedSessionIds}
                 orderBy={orderBy}
                 sessionOrderByAccount={sessionOrderByAccount}
@@ -1136,8 +1276,14 @@ export function WorkspaceBrowser({
             : (
               <SessionTree
                 useSessions={useSessions}
+                groupBy={groupBy}
+                sessionMeta={sessionMeta}
+                knownTags={knownTags}
+                setSessionParent={actions.setSessionParent}
+                setSessionTags={actions.setSessionTags}
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
+                onEditTags={onEditTags}
                 forkSession={forkSession}
                 workspaces={workspaces}
                 groupExpansion={groupExpansion}
@@ -1257,6 +1403,57 @@ export function WorkspaceBrowser({
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
       </Modal>
+      <Modal
+        open={tagTarget !== null}
+        onClose={() => { setTagTarget(null) }}
+        closeLabel={t('close')}
+        title={t('tags.title')}
+        footer={(
+          <>
+            <Button variant="outline" onClick={() => { setTagTarget(null) }}>{t('cancel')}</Button>
+            <Button variant="primary" onClick={confirmTags}>{t('tags.save')}</Button>
+          </>
+        )}
+      >
+        <input
+          className={css.renameInput}
+          value={tagDraft}
+          aria-label={t('tags.placeholder')}
+          placeholder={t('tags.placeholder')}
+          autoFocus
+          onChange={(e) => { setTagDraft(e.target.value) }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); confirmTags() }
+          }}
+        />
+        <div className={css.tagsHint}>{t('tags.hint')}</div>
+      </Modal>
+      <Modal
+        open={tagCreateOpen}
+        onClose={() => { setTagCreateOpen(false) }}
+        closeLabel={t('close')}
+        title={t('tags.add.title')}
+        footer={(
+          <>
+            <Button variant="outline" onClick={() => { setTagCreateOpen(false) }}>{t('cancel')}</Button>
+            <Button variant="primary" disabled={tagCreateDraft.trim() === ''} onClick={confirmTagCreate}>{t('tags.save')}</Button>
+          </>
+        )}
+      >
+        <input
+          className={css.renameInput}
+          value={tagCreateDraft}
+          aria-label={t('tags.add.placeholder')}
+          placeholder={t('tags.add.placeholder')}
+          autoFocus
+          onChange={(e) => { setTagCreateDraft(e.target.value) }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); confirmTagCreate() }
+          }}
+        />
+        <div className={css.tagsHint}>{t('tags.add.hint')}</div>
+      </Modal>
+
     </div>
   )
 }
