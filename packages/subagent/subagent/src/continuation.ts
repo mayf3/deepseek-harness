@@ -43,6 +43,7 @@ import {
   applyChildComposition,
   captureDelegatedPolicyOverrides,
   childSessionMeta,
+  parentEffectiveRoute,
   resolveChildAgentOptions,
   resolveChildDepth,
 } from './child-agent.ts'
@@ -410,8 +411,11 @@ export class SubagentContinuationManager {
     const childDepth = resolveChildDepth(parent, request.maxDepth)
     // Snapshot before any await: invalid descriptor JSON rejects the call
     // before a child exists, and the detached value is what reaches the log.
-    const agentProvider = request.agentOptions?.provider ?? parent.options.provider
-    const agentModel = request.agentOptions?.model ?? parent.options.model
+    // The effective route (latest logged config) matches what the child's own
+    // resolution inherits, so the descriptor never diverges from the child.
+    const { provider: parentProvider, model: parentModel } = parentEffectiveRoute(parent)
+    const agentProvider = request.agentOptions?.provider ?? parentProvider
+    const agentModel = request.agentOptions?.model ?? parentModel
     const descriptor = snapshotSubagentDescriptor({
       mode: 'continuable',
       provider: spec.provider,

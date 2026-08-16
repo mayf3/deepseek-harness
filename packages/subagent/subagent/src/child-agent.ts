@@ -57,9 +57,34 @@ export function resolveChildDepth(parent: Agent, maxDepth: number | undefined): 
 }
 
 /**
- * Resolve the child's `AgentOptions`: the parent's provider/model/maxTokens
- * route unless the request overrides it, stamped with the child's own
- * delegation depth.
+ * The provider/model route the parent is CURRENTLY running on: the config of
+ * its most recent logged request, falling back to the creation-time options
+ * before the parent has made any request.
+ *
+ * A per-session model switch (e.g. the web Models page) mutates only the
+ * parent's live selection, which the request waterfall folds into the routed
+ * config; the loop re-logs `request/header` whenever that config changes.
+ * Reading the header here is what lets a switched parent spawn children on
+ * the switched route instead of the creation-time one.
+ * @param parent - the delegating parent whose effective route is read.
+ * @returns the provider/model pair to inherit, either side omitted when the
+ *   parent has neither an option nor a logged config for it.
+ */
+export function parentEffectiveRoute(parent: Agent): {
+  provider: string | undefined
+  model: string | undefined
+} {
+  const logged = parent.session.requestHeader()?.config
+  return {
+    provider: logged?.provider ?? parent.options.provider,
+    model: logged?.model ?? parent.options.model,
+  }
+}
+
+/**
+ * Resolve the child's `AgentOptions`: the parent's effective current
+ * provider/model/maxTokens route unless the request overrides it, stamped with
+ * the child's own delegation depth.
  * @param parent - the delegating parent whose route the child inherits.
  * @param requested - per-child overrides, if any.
  * @param childDepth - the resolved delegation depth to stamp.
@@ -70,8 +95,7 @@ export function resolveChildAgentOptions(
   requested: AgentOptions | undefined,
   childDepth: number,
 ): AgentOptions {
-  const parentProvider = parent.options.provider
-  const parentModel = parent.options.model
+  const { provider: parentProvider, model: parentModel } = parentEffectiveRoute(parent)
   const parentMaxTokens = parent.options.maxTokens
   return {
     ...parentProvider !== undefined ? { provider: parentProvider } : {},
