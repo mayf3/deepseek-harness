@@ -21,7 +21,7 @@ import {
   CompactionNodeView, ContextMessageNodeView, RetryNodeView, UnknownNodeView,
   UserMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
-import { AssistantMarkdown } from '../src/client/chat/AssistantMarkdown.tsx'
+import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
 import { StatsLine, type StatsLineProps } from '../src/client/chat/StatsLine.tsx'
 import { zh } from '../src/client/locales.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
@@ -42,6 +42,7 @@ afterEach(() => {
 
 // Mirrors the real lookup chain (conversation namespace, then common).
 const t: ChatNodeViewProps['t'] = makeTranslate(zh, commonZh)
+const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
 const RETRY_ID = 'retry-fixture' as Extract<ConversationNode, { kind: 'model-retry' }>['retryId']
 
 interface MessageItemProps {
@@ -949,7 +950,12 @@ describe('useCalendarDay boundary refresh', () => {
 describe('small branch tails', () => {
   it('AssistantMarkdown single-line reasoning summary skips the newline cut', () => {
     const view = render(
-      <AssistantMarkdown t={t} blocks={[{ kind: 'reasoning', text: 'one-liner' }]} streaming={false} />,
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: 'one-liner' }]}
+        streaming={false}
+        renderMessageImages={renderMessageImages}
+      />,
     )
     expect(view.getByText('one-liner')).toBeTruthy()
   })

@@ -21,6 +21,7 @@ import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
 // Mirrors the real lookup chain (conversation namespace, then common).
 const t: AssistantMarkdownProps['t'] = makeTranslate(zh, commonZh)
+const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
 
 /** jsdom has no ResizeObserver; StatsLine watches its row for ellipsis truncation through one. */
 class ResizeObserverStub {
@@ -64,6 +65,7 @@ describe('render branch tails', () => {
         t={t}
         blocks={[{ kind: 'reasoning', text: 'done thinking' }, { kind: 'text', text: 'answer' }]}
         streaming
+        renderMessageImages={renderMessageImages}
       />,
     )
     // reasoning at index 0 with a later block: running is false → ok state.
@@ -100,7 +102,12 @@ describe('render branch tails', () => {
 
   it('AssistantMarkdown reasoning as the streaming tail renders the running ring', () => {
     const view = render(
-      <AssistantMarkdown t={t} blocks={[{ kind: 'reasoning', text: 'still thinking' }]} streaming />,
+      <AssistantMarkdown
+        t={t}
+        blocks={[{ kind: 'reasoning', text: 'still thinking' }]}
+        streaming
+        renderMessageImages={renderMessageImages}
+      />,
     )
     expect(view.container.querySelector('[data-state="running"]')).not.toBeNull()
   })
