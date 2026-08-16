@@ -20,6 +20,8 @@ Status: implemented
 
 **「只看未读」过滤器 + 深链滚动定位。** `unreadOnly` 作为持久化视图状态；三种派生（workspace/tag/flat）过滤掉无 `unread` 标记的行，unreadOnly 下空分组/空标签组整体隐藏。会话行加 `data-session-id`，current 变化时（通知深链跳转）轮询该行并 `scrollIntoView(nearest)`；标签视图下 current 会话的标签组自动展开，保证行可见。
 
+**行操作从三点菜单改为「归档图标 + 右键」。** 会话行唯一的行内按钮是归档图标，点击弹出单项确认菜单（「确认归档」，danger）二次确认后直接归档；重命名/分叉/标签/未读/新建会话等其余操作全部移入右键菜单（`onContextMenu` 记录光标位置，Menu 以 `getAnchorRect` 定位在光标处，不再有省略号触发器）。
+
 ## 曾考虑的替代方案
 
 - 在调用方 effect 里把 tag 键并入 `retainAccountKeys` 参数（效果等价），但 deps 需要 `groupExpansion`，而 retain 每次生成新对象身份 → 死循环；用 ref 读取可绕开，但逻辑分散。
