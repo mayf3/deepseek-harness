@@ -191,6 +191,12 @@ export interface TodoItem {
   content: string
   /** Lifecycle state. `in_progress` marks a task being worked now; parallel work may mark several. */
   status: 'pending' | 'in_progress' | 'completed'
+  /**
+   * Optional free-form labels for cross-cutting organization. The workspace
+   * browser can group sessions by these tags; the model sets them through
+   * `todo_write`. Canonical writes omit the key when the list is empty.
+   */
+  tags?: string[] | undefined
 }
 
 /**

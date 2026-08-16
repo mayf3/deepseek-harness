@@ -20,6 +20,13 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* Tag-section header drop target: dropping a dragged session here applies
+   (or clears, for the untagged bucket) its tags. */
+.projectRow.dropTarget {
+  background: var(--dsw-alias-fill-l2);
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-state-business-primary);
+}
+
 .sessionRow.selected {
   background: var(--dsw-alias-interactive-bg-hover);
 }
@@ -119,6 +126,17 @@
 
 .flatSessionRowWithoutStatus .title {
   margin-left: 0;
+}
+
+/* Waiting-on marker: a nested row waits for its parent task. */
+.waitingMark {
+  flex: none;
+  width: 14px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 @keyframes row-in {
@@ -284,6 +302,14 @@
 
 .sessionRow.dropAfter::after {
   bottom: -7px;
+}
+
+/* Nest-under marker: dropping in the middle band nests the dragged session
+   under this row (waiting-on parent), shown as a full-row tint. */
+.sessionRow.dropOn {
+  background: var(--dsw-alias-fill-l2);
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-state-business-primary);
+  border-radius: 6px;
 }
 
 /* Hover-card body (figma 169:16903): dark surface, fixed colors both themes. */
