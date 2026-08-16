@@ -239,6 +239,36 @@ describe('SubagentRuntime.startContinuable', () => {
     expect(loaded.meta.origin).toBe('subagent')
   })
 
+  it('inherits the parent effective route after a per-session model switch', { timeout: 20_000 }, async () => {
+    const { ctx, parent, adapter } = await setup([textResponse('parent done'), textResponse('child done')])
+    // The parent's first request logs its header under the creation-time route.
+    parent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'parent work' }],
+      source: { kind: 'user' },
+    }))
+    await parent.whenIdle()
+    expect(adapter.requests[0]).toMatchObject({ provider: 'mock', model: 'mock' })
+    // A per-session switch changes the parent's routed config; the loop
+    // re-logs the header on its next request (reason 'change'). The switch
+    // plumbing itself lives in api-proxy, so fold the change in directly.
+    parent.session.append('request/header', {
+      header: { config: { provider: 'mock', model: 'switched-model' } },
+      reason: 'change',
+    })
+
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await waitNoActivation(ctx, started.childId)
+
+    // The child's descriptor and its actual first request both carry the
+    // switched route, not the parent's creation-time one.
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    const descriptor = loaded.events.find(
+      (event): event is SessionEvent<'subagent/descriptor'> => event.type === 'subagent/descriptor',
+    )
+    expect(descriptor?.data).toMatchObject({ agentProvider: 'mock', agentModel: 'switched-model' })
+    expect(adapter.requests[1]).toMatchObject({ provider: 'mock', model: 'switched-model' })
+  })
+
   it('rolls the child back completely when the caller signal aborts before acceptance', async () => {
     const { ctx, parent } = await setup([textResponse('unused')])
     const controller = new AbortController()
