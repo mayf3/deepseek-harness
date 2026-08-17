@@ -42,7 +42,7 @@ function runOutcome(result: SubagentResult): JobOutcome {
     case 'max-tokens':
     case 'refusal':
       return { status: 'failed', detail: failureDetail(result) }
-    // Merge-extensible reasons remain failures with their raw detail.
+    // Merge-extensible reasons remain failures with provider-authored detail.
     default:
       return { status: 'failed', detail: failureDetail(result) }
   }
