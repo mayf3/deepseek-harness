@@ -93,7 +93,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     await phaseDisclosure.click()
     expect(await phaseDisclosure.getAttribute('aria-expanded')).toBe('false')
     expect(await member.count()).toBe(0)
-    const liveSnapshot = await captureStableAria(page, '[data-chat-flow]', scaffold.workspaceCwd)
+    const liveSnapshot = await captureStableAria(page, '[data-workflow-run]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_LIVE_EXPECTED, liveSnapshot, MODE)
     await phaseDisclosure.press('Enter')
     await member.waitFor()

@@ -435,12 +435,16 @@ describe('WorkflowRunPanel', () => {
     const phaseView = render(<WorkflowRunPanel {...panelProps(phaseClean)} />)
     fireEvent.click(screen.getByRole('button', { name: /未分阶段/ }))
     expect(screen.getByText('first')).toBeTruthy()
+    const runHeader = screen.getByRole('button', { name: /^phase-cycle/ })
+    fireEvent.click(runHeader)
+    expect(runHeader.getAttribute('aria-expanded')).toBe('false')
     phaseView.rerender(<WorkflowRunPanel {...panelProps({
       ...phaseClean,
       phases: [phase({ members: [firstMember, {
         seq: 2, label: 'second', childId: 'child-2' as SessionId, status: 'completed',
       }] })],
     })} />)
+    expect(runHeader.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByRole('button', { name: /未分阶段/ }).getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByText('first')).toBeNull()
     expect(screen.queryByText('second')).toBeNull()
@@ -510,7 +514,7 @@ describe('WorkflowRunPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /^audit/ }))
 
     const failed: WorkflowRunChatData = {
-      name: 'audit', status: 'failed',
+      name: 'audit', status: 'running',
       phases: [phase({
         members: [{ seq: 1, label: 'failed', childId: CHILD_ID, status: 'failed' }],
       })],
@@ -667,6 +671,35 @@ describe('WorkflowRunPanel', () => {
     expect(screen.queryByRole('button', { name: '打开 worker' })).toBeNull()
     expect(screen.getByText('worker')).toBeTruthy()
     outside.remove()
+  })
+
+  it('handles a pointer blur and header click as one pending-completion close', () => {
+    const running: WorkflowRunChatData = {
+      name: 'audit', status: 'running', phases: [phase()],
+    }
+    const view = render(<WorkflowRunPanel {...panelProps(running)} />)
+    const member = screen.getByRole('button', { name: '打开 worker' })
+    member.focus()
+    view.rerender(<WorkflowRunPanel {...panelProps({
+      name: 'audit', status: 'completed',
+      phases: [phase({
+        members: [{ seq: 1, label: 'worker', childId: CHILD_ID, status: 'completed' }],
+      })],
+    })} />)
+    const retained = screen.getByRole('button', { name: 'worker' })
+    const phaseHeader = screen.getByRole('button', { name: /未分阶段/ })
+    const runHeader = screen.getByRole('button', { name: /^audit/ })
+
+    fireEvent.blur(retained, { relatedTarget: phaseHeader })
+    phaseHeader.focus()
+    fireEvent.click(phaseHeader)
+    expect(phaseHeader.getAttribute('aria-expanded')).toBe('false')
+    expect(runHeader.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.blur(phaseHeader, { relatedTarget: runHeader })
+    runHeader.focus()
+    fireEvent.click(runHeader)
+    expect(runHeader.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('settles a deferred phase close when the user hides the outer run', () => {

@@ -147,6 +147,16 @@ function collapsePending(state: DisclosureState): DisclosureState {
   return { ...state, open: false, pendingCleanCollapse: false }
 }
 
+function existingPhaseState(
+  phases: ReadonlyMap<string, DisclosureState>,
+  key: string,
+): DisclosureState {
+  const phase = phases.get(key)
+  /* v8 ignore next -- mounted phase callbacks are created from this owner map. */
+  if (phase === undefined) throw new Error(`Missing disclosure state for phase ${key}`)
+  return phase
+}
+
 function phaseStatusSummary(members: readonly WorkflowRunMemberData[], t: WorkflowRunPanelProps['t']): string {
   const counts = new Map<WorkflowRunStatus, number>()
   for (const member of members) counts.set(member.status, (counts.get(member.status) ?? 0) + 1)
@@ -226,20 +236,8 @@ function MemberRow({ member, navigable, openSession, t }: {
   readonly t: WorkflowRunPanelProps['t']
 }) {
   const name = readableMember(member.label, t)
-  const buttonRef = useRef<HTMLButtonElement>(null)
-  const [keepFocusedButton, setKeepFocusedButton] = useState(navigable)
-  const renderButton = navigable || keepFocusedButton
-
-  useLayoutEffect(() => {
-    if (navigable) {
-      if (!keepFocusedButton) setKeepFocusedButton(true)
-      return
-    }
-    const button = buttonRef.current
-    if (button === null || button.ownerDocument.activeElement !== button) {
-      if (keepFocusedButton) setKeepFocusedButton(false)
-    }
-  }, [keepFocusedButton, navigable])
+  const [focused, setFocused] = useState(false)
+  const renderButton = navigable || focused
 
   const content = (
     <>
@@ -253,14 +251,14 @@ function MemberRow({ member, navigable, openSession, t }: {
   }
   return (
     <button
-      ref={buttonRef}
       type="button"
       className={navigable ? css.memberButton : css.memberRow}
       data-member-status={member.status}
       aria-disabled={navigable ? undefined : true}
       aria-label={navigable ? t('member.open', { name }) : name}
       tabIndex={navigable ? undefined : -1}
-      onBlur={navigable ? undefined : () => { setKeepFocusedButton(false) }}
+      onFocus={() => { setFocused(true) }}
+      onBlur={() => { setFocused(false) }}
       onClick={navigable ? () => { openSession(member.childId) } : undefined}
     >
       {content}
@@ -269,10 +267,10 @@ function MemberRow({ member, navigable, openSession, t }: {
 }
 
 function PhaseSection({
-  contentRef, onContentBlur, onToggle, open, phase, navigable, openSession, t,
+  contentRef, onBlur, onToggle, open, phase, navigable, openSession, t,
 }: {
   readonly contentRef: (element: HTMLDivElement | null) => void
-  readonly onContentBlur: (event: FocusEvent<HTMLDivElement>) => void
+  readonly onBlur: (event: FocusEvent<HTMLDivElement>) => void
   readonly onToggle: () => void
   readonly open: boolean
   readonly phase: WorkflowRunPhaseData
@@ -281,38 +279,39 @@ function PhaseSection({
   readonly t: WorkflowRunPanelProps['t']
 }) {
   return (
-    <StatusDisclosure
-      icon={<IconChevronRightOutline14 />}
-      title={readablePhase(phase.phase, t)}
-      open={open}
-      onToggle={onToggle}
-      expandOnRowClick
-      previewChevron={false}
-      keepContentWhenOpen
-      className={css.phase}
-      rowClassName={css.phaseHeader}
-      leadingClassName={css.phaseLeading}
-      titleClassName={css.phaseTitle}
-      collapsedContent={(
-        <>
-          <span className={css.separator} aria-hidden />
-          <span className={css.phaseCount} data-phase-count>{memberCount(phase.members.length, t)}</span>
-          <span className={css.phaseStatus} data-phase-status-text>{phaseStatusSummary(phase.members, t)}</span>
-        </>
-      )}
-    >
-      <div ref={contentRef} className={css.members} onBlur={onContentBlur}>
-        {phase.members.map(member => (
-          <MemberRow
-            key={member.seq}
-            member={member}
-            navigable={navigable.includes(member.childId)}
-            openSession={openSession}
-            t={t}
-          />
-        ))}
-      </div>
-    </StatusDisclosure>
+    <div className={css.phase} onBlur={onBlur}>
+      <StatusDisclosure
+        icon={<IconChevronRightOutline14 />}
+        title={readablePhase(phase.phase, t)}
+        open={open}
+        onToggle={onToggle}
+        expandOnRowClick
+        previewChevron={false}
+        keepContentWhenOpen
+        rowClassName={css.phaseHeader}
+        leadingClassName={css.phaseLeading}
+        titleClassName={css.phaseTitle}
+        collapsedContent={(
+          <>
+            <span className={css.separator} aria-hidden />
+            <span className={css.phaseCount} data-phase-count>{memberCount(phase.members.length, t)}</span>
+            <span className={css.phaseStatus} data-phase-status-text>{phaseStatusSummary(phase.members, t)}</span>
+          </>
+        )}
+      >
+        <div ref={contentRef} className={css.members}>
+          {phase.members.map(member => (
+            <MemberRow
+              key={member.seq}
+              member={member}
+              navigable={navigable.includes(member.childId)}
+              openSession={openSession}
+              t={t}
+            />
+          ))}
+        </div>
+      </StatusDisclosure>
+    </div>
   )
 }
 
@@ -341,7 +340,7 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
     setDisclosures((current) => {
       const phases = new Map<string, DisclosureState>()
       let phasesChanged = current.phases.size !== phaseFacts.length
-      let phaseBecameActive = false
+      let phaseStartedCycle = false
       for (const [key, facts] of phaseFacts) {
         const previous = current.phases.get(key)
         const next = previous === undefined
@@ -349,14 +348,17 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
           : advanceDisclosureState(previous, facts, focusIsWithin(phaseContentRefs.current.get(key)))
         phases.set(key, next)
         if (next !== previous) phasesChanged = true
-        if (previous?.mode === 'clean' && facts.mode !== 'clean') phaseBecameActive = true
+        if (previous?.mode === 'clean'
+          && (facts.mode !== 'clean' || facts.activityCount !== previous.activityCount)) {
+          phaseStartedCycle = true
+        }
       }
       const advancedRun = advanceDisclosureState(
         current.run,
         runFacts,
         focusIsWithin(runContentRef.current),
       )
-      const run = phaseBecameActive && !advancedRun.open
+      const run = phaseStartedCycle && !advancedRun.open
         ? { ...advancedRun, open: true, pendingCleanCollapse: false }
         : advancedRun
       return run !== current.run || phasesChanged ? { run, phases } : current
@@ -373,11 +375,10 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
       },
     }))
   }
-  const togglePhase = (key: string, facts: DisclosureFacts): void => {
+  const togglePhase = (key: string): void => {
     setDisclosures((current) => {
       const phases = new Map(current.phases)
-      /* v8 ignore next -- layout effects insert every rendered phase before user input can toggle it. */
-      const phase = phases.get(key) ?? initialDisclosureState(facts)
+      const phase = existingPhaseState(phases, key)
       phases.set(key, {
         ...phase,
         open: !phase.open,
@@ -386,19 +387,17 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
       return { ...current, phases }
     })
   }
-  const settleRunBlur = (event: FocusEvent<HTMLDivElement>): void => {
+  const settleRunBlur = (event: FocusEvent<HTMLElement>): void => {
     if (event.currentTarget.contains(event.relatedTarget)) return
     setDisclosures((current) => {
       const run = collapsePending(current.run)
       return run === current.run ? current : { ...current, run }
     })
   }
-  const settlePhaseBlur = (key: string, event: FocusEvent<HTMLDivElement>): void => {
+  const settlePhaseBlur = (key: string, event: FocusEvent<HTMLElement>): void => {
     if (event.currentTarget.contains(event.relatedTarget)) return
     setDisclosures((current) => {
-      const phase = current.phases.get(key)
-      /* v8 ignore next -- the blur handler unmounts with the phase whose state it addresses. */
-      if (phase === undefined) return current
+      const phase = existingPhaseState(current.phases, key)
       const next = collapsePending(phase)
       if (next === phase) return current
       const phases = new Map(current.phases)
@@ -408,7 +407,12 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
   }
 
   return (
-    <section className={css.root} data-workflow-run data-run-status={node.data.status}>
+    <section
+      className={css.root}
+      data-workflow-run
+      data-run-status={node.data.status}
+      onBlur={settleRunBlur}
+    >
       <RunHeader
         count={totalMembers}
         name={node.data.name}
@@ -417,7 +421,7 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
         status={node.data.status}
         t={t}
       >
-        <div ref={runContentRef} className={css.phaseList} onBlur={settleRunBlur}>
+        <div ref={runContentRef} className={css.phaseList}>
           {node.data.phases.length === 0
             ? <span className={css.empty}>{t('run.empty')}</span>
             : node.data.phases.map((phase) => {
@@ -430,8 +434,8 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
                     if (element === null) phaseContentRefs.current.delete(phase.key)
                     else phaseContentRefs.current.set(phase.key, element)
                   }}
-                  onContentBlur={(event) => { settlePhaseBlur(phase.key, event) }}
-                  onToggle={() => { togglePhase(phase.key, facts) }}
+                  onBlur={(event) => { settlePhaseBlur(phase.key, event) }}
+                  onToggle={() => { togglePhase(phase.key) }}
                   open={disclosure.open}
                   phase={phase}
                   navigable={navigable}
