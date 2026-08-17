@@ -1120,35 +1120,62 @@ def _encode_json_plain(value: Any) -> str:
     checkable at one glance instead of resting on the caller.
     """
 
-    chunks: list[str] = []
-    # Each frame is either a literal string to emit or a value to expand.
-    stack: list[Any] = [value]
+    # O(DEPTH) auxiliary space, not O(width). A container pushes ONE cursor frame
+    # that pulls its children one at a time and writes each into the shared buffer,
+    # rather than one stack entry (plus a separator marker) per child: a flat
+    # `[0] * 6_000_000` encodes to ~12 MB but per-element frames are ~400 MB — an
+    # RLIMIT_AS death on a value `_check_done_value` already admitted (which now
+    # walks in O(depth) too). The output string is the only width-proportional
+    # allocation, and its size the caller metered within budget. `io.StringIO`
+    # accumulates without the intermediate `"".join(chunks)` second copy. A cursor
+    # frame is [kind, iterator, wrote_any]; a visit frame is (VISIT, value).
+    buffer = io.StringIO()
+    exhausted = object()
+    visit, list_cursor, dict_cursor = 0, 1, 2
+    stack: list[Any] = [(visit, value)]
     while stack:
-        current = stack.pop()
+        frame = stack.pop()
+        kind = frame[0]
+        if kind == list_cursor:
+            iterator, wrote_any = frame[1], frame[2]
+            child = next(iterator, exhausted)
+            if child is exhausted:
+                buffer.write("]")
+                continue
+            if wrote_any:
+                buffer.write(",")
+            else:
+                frame[2] = True
+            stack.append(frame)
+            stack.append((visit, child))
+            continue
+        if kind == dict_cursor:
+            iterator, wrote_any = frame[1], frame[2]
+            entry = next(iterator, exhausted)
+            if entry is exhausted:
+                buffer.write("}")
+                continue
+            key, item = entry
+            if wrote_any:
+                buffer.write(",")
+            else:
+                frame[2] = True
+            buffer.write(_dump_scalar(key))
+            buffer.write(":")
+            stack.append(frame)
+            stack.append((visit, item))
+            continue
+        current = frame[1]
         current_type = type(current)
-        if current_type is _Emit:
-            chunks.append(current.text)
-        elif current_type is list or current_type is tuple:
-            count = len(current)
-            chunks.append("[")
-            stack.append(_Emit("]"))
-            for index in range(count - 1, -1, -1):
-                if index < count - 1:
-                    stack.append(_Emit(","))
-                stack.append(current[index])
+        if current_type is list or current_type is tuple:
+            buffer.write("[")
+            stack.append([list_cursor, iter(current), False])
         elif current_type is dict:
-            chunks.append("{")
-            stack.append(_Emit("}"))
-            items = list(dict.items(current))
-            for index in range(len(items) - 1, -1, -1):
-                key, item = items[index]
-                if index < len(items) - 1:
-                    stack.append(_Emit(","))
-                stack.append(item)
-                stack.append(_Emit(_dump_scalar(key) + ":"))
+            buffer.write("{")
+            stack.append([dict_cursor, iter(dict.items(current)), False])
         else:
-            chunks.append(_dump_scalar(current))
-    return "".join(chunks)
+            buffer.write(_dump_scalar(current))
+    return buffer.getvalue()
 
 
 def _dump_scalar(value: Any) -> str:
@@ -1368,13 +1395,53 @@ def _check_done_value(value: Any, max_bytes: int):
 
     total = 0
     on_path: set[int] = set()
-    # Each frame is (value, is_leave): a leave frame pops its container off the path.
-    stack: list[tuple[Any, bool]] = [(value, False)]
+    # The walk uses O(DEPTH) space, not O(width). A container pushes ONE cursor
+    # frame that pulls its children one at a time, rather than one traversal
+    # frame per child: a flat `[0] * 6_000_000` serializes to ~12 MB (well within
+    # a modest budget) but one tuple per element is ~380 MB — an RLIMIT_AS death
+    # on a value the byte meter would admit, the very inversion this meter exists
+    # to prevent. A cursor frame is (kind, container, iterator); a visit frame is
+    # (VISIT, value, None). The upfront structural bound still rejects a wide
+    # forgery before any iteration begins.
+    exhausted = object()
+    visit, list_cursor, dict_cursor = 0, 1, 2
+    stack: list[tuple[int, Any, Any]] = [(visit, value, None)]
     while stack:
-        current, is_leave = stack.pop()
-        if is_leave:
-            on_path.discard(id(current))
+        frame = stack.pop()
+        kind = frame[0]
+        if kind == list_cursor:
+            container, iterator = frame[1], frame[2]
+            child = next(iterator, exhausted)
+            if child is exhausted:
+                on_path.discard(id(container))
+                continue
+            # Resume this cursor after the child is fully walked; the child goes
+            # on top so it is visited next (order does not affect the byte total).
+            stack.append(frame)
+            stack.append((visit, child, None))
             continue
+        if kind == dict_cursor:
+            container, iterator = frame[1], frame[2]
+            entry = next(iterator, exhausted)
+            if entry is exhausted:
+                on_path.discard(id(container))
+                continue
+            key, item = entry
+            # Only an EXACT str key survives: bool and int coerce or raise, and a
+            # str SUBCLASS can override the ``__len__`` the bound below reads while
+            # the encoder emits its real characters.
+            if type(key) is not str:
+                return invalid(f"non-string dict key ({type(key).__name__})")
+            # The same string lower bound, before escaping the key.
+            if total + len(key) + 3 > max_bytes:
+                return over_budget
+            total += len(_dump_scalar(key).encode("utf-8")) + 1
+            if total > max_bytes:
+                return over_budget
+            stack.append(frame)
+            stack.append((visit, item, None))
+            continue
+        current = frame[1]
         if current is None or type(current) is bool:
             total += len(_dump_scalar(current).encode("utf-8"))
         elif type(current) is str:
@@ -1412,14 +1479,13 @@ def _check_done_value(value: Any, max_bytes: int):
                 return invalid("circular reference")
             count = len(current)
             total += 2 + (count - 1 if count > 1 else 0)
-            # Reject over-budget BEFORE enqueuing children: every element
-            # serializes to at least one byte, so a wide flat forgery fails here
-            # without materializing millions of leave frames first.
+            # Reject over-budget BEFORE iterating: every element serializes to at
+            # least one byte, so a wide flat forgery fails here without pulling a
+            # single child.
             if total + count > max_bytes:
                 return over_budget
             on_path.add(id(current))
-            stack.append((current, True))
-            stack.extend((child, False) for child in current)
+            stack.append((list_cursor, current, iter(current)))
         elif type(current) is dict:
             if id(current) in on_path:
                 return invalid("circular reference")
@@ -1428,38 +1494,19 @@ def _check_done_value(value: Any, max_bytes: int):
             # recreating the spike the bound exists to stop.
             count = len(current)
             total += 2 + (count - 1 if count > 1 else 0)
-            # Same pre-enqueue bound: each entry contributes a quoted key
-            # (>= 2 bytes), a colon, and a >= 1-byte value.
+            # Same pre-iterate bound: each entry contributes a quoted key
+            # (>= 2 bytes), a colon, and a >= 1-byte value. ``iter`` on the items
+            # view is O(1); the cursor meters each key as it is pulled.
             if total + count * 4 > max_bytes:
                 return over_budget
             on_path.add(id(current))
-            stack.append((current, True))
-            for key, item in current.items():
-                # Only an EXACT str key survives: bool and int coerce or raise,
-                # and a str SUBCLASS can override the ``__len__`` the bound
-                # below reads while the encoder emits its real characters.
-                if type(key) is not str:
-                    return invalid(f"non-string dict key ({type(key).__name__})")
-                # The same string lower bound, before escaping the key.
-                if total + len(key) + 3 > max_bytes:
-                    return over_budget
-                total += len(_dump_scalar(key).encode("utf-8")) + 1
-                stack.append((item, False))
+            stack.append((dict_cursor, current, iter(current.items())))
         else:
             # tuple, set, or any other type: not round-trippable JSON.
             return invalid(f"unsupported type ({type(current).__name__})")
         if total > max_bytes:
             return over_budget
     return None
-
-
-class _Emit:
-    """A pre-rendered fragment on :func:`_encode_json_plain`'s explicit stack."""
-
-    __slots__ = ("text",)
-
-    def __init__(self, text: str) -> None:
-        self.text = text
 
 
 def _lossless_json_violation(value: Any) -> str | None:
