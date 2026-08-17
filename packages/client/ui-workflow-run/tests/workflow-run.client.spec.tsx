@@ -702,15 +702,49 @@ describe('WorkflowRunPanel', () => {
     const phaseHeader = screen.getByRole('button', { name: /未分阶段/ })
     const runHeader = screen.getByRole('button', { name: /^audit/ })
 
-    fireEvent.blur(retained, { relatedTarget: phaseHeader })
-    phaseHeader.focus()
+    fireEvent.mouseDown(retained)
+    expect(document.activeElement).toBe(retained)
+    fireEvent.mouseDown(phaseHeader)
     fireEvent.click(phaseHeader)
     expect(phaseHeader.getAttribute('aria-expanded')).toBe('false')
     expect(runHeader.getAttribute('aria-expanded')).toBe('true')
 
+    fireEvent.mouseDown(runHeader)
+    fireEvent.click(runHeader)
+    expect(runHeader.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('settles pending completion when keyboard focus moves from content to its header', () => {
+    const running: WorkflowRunChatData = {
+      name: 'audit', status: 'running', phases: [phase()],
+    }
+    const view = render(<WorkflowRunPanel {...panelProps(running)} />)
+    const member = screen.getByRole('button', { name: '打开 worker' })
+    member.focus()
+    view.rerender(<WorkflowRunPanel {...panelProps({
+      ...running,
+      phases: [phase({
+        members: [{ seq: 1, label: 'worker', childId: CHILD_ID, status: 'completed' }],
+      })],
+    })} />)
+    const retained = screen.getByRole('button', { name: 'worker' })
+    const phaseHeader = screen.getByRole('button', { name: /未分阶段/ })
+    const runHeader = screen.getByRole('button', { name: /^audit/ })
+    fireEvent.blur(retained, { relatedTarget: phaseHeader })
+    phaseHeader.focus()
+    expect(phaseHeader.getAttribute('aria-expanded')).toBe('false')
+    expect(runHeader.getAttribute('aria-expanded')).toBe('true')
+
+    view.rerender(<WorkflowRunPanel {...panelProps({
+      ...running,
+      status: 'completed',
+      phases: [phase({
+        members: [{ seq: 1, label: 'worker', childId: CHILD_ID, status: 'completed' }],
+      })],
+    })} />)
+    expect(runHeader.getAttribute('aria-expanded')).toBe('true')
     fireEvent.blur(phaseHeader, { relatedTarget: runHeader })
     runHeader.focus()
-    fireEvent.click(runHeader)
     expect(runHeader.getAttribute('aria-expanded')).toBe('false')
   })
 

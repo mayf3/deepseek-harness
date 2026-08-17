@@ -1,6 +1,6 @@
 import {
   useLayoutEffect, useMemo, useRef, useState,
-  type FocusEvent, type ReactNode,
+  type FocusEvent, type MouseEvent, type ReactNode,
 } from 'react'
 import {
   DisclosureRow, IconChevronRightOutline14, StateDot,
@@ -157,6 +157,13 @@ function existingPhaseState(
   return phase
 }
 
+function preventPendingHeaderFocus(event: MouseEvent<HTMLElement>): void {
+  const header = event.currentTarget.querySelector('[data-disclosure-row]')
+  /* v8 ignore next -- DisclosureRow always renders its header before the content. */
+  if (header === null) throw new Error('Missing disclosure header')
+  if (header.contains(event.target as Node)) event.preventDefault()
+}
+
 function phaseStatusSummary(members: readonly WorkflowRunMemberData[], t: WorkflowRunPanelProps['t']): string {
   const counts = new Map<WorkflowRunStatus, number>()
   for (const member of members) counts.set(member.status, (counts.get(member.status) ?? 0) + 1)
@@ -267,19 +274,24 @@ function MemberRow({ member, navigable, openSession, t }: {
 }
 
 function PhaseSection({
-  contentRef, onBlur, onToggle, open, phase, navigable, openSession, t,
+  contentRef, onContentBlur, onToggle, open, pendingCleanCollapse,
+  phase, navigable, openSession, t,
 }: {
   readonly contentRef: (element: HTMLDivElement | null) => void
-  readonly onBlur: (event: FocusEvent<HTMLDivElement>) => void
+  readonly onContentBlur: (event: FocusEvent<HTMLDivElement>) => void
   readonly onToggle: () => void
   readonly open: boolean
+  readonly pendingCleanCollapse: boolean
   readonly phase: WorkflowRunPhaseData
   readonly navigable: readonly SessionId[]
   readonly openSession: WorkflowRunInjected['openSession']
   readonly t: WorkflowRunPanelProps['t']
 }) {
   return (
-    <div className={css.phase} onBlur={onBlur}>
+    <div
+      className={css.phase}
+      onMouseDownCapture={pendingCleanCollapse ? preventPendingHeaderFocus : undefined}
+    >
       <StatusDisclosure
         icon={<IconChevronRightOutline14 />}
         title={readablePhase(phase.phase, t)}
@@ -299,7 +311,7 @@ function PhaseSection({
           </>
         )}
       >
-        <div ref={contentRef} className={css.members}>
+        <div ref={contentRef} className={css.members} onBlur={onContentBlur}>
           {phase.members.map(member => (
             <MemberRow
               key={member.seq}
@@ -336,6 +348,7 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
     shallowEqual,
   )
 
+  // Outer hiding unmounts Phase content without a dependable blur event, so this edge settles deferred closes.
   useLayoutEffect(() => {
     setDisclosures((current) => {
       const phases = new Map<string, DisclosureState>()
@@ -387,14 +400,14 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
       return { ...current, phases }
     })
   }
-  const settleRunBlur = (event: FocusEvent<HTMLElement>): void => {
+  const settleRunBlur = (event: FocusEvent<HTMLDivElement>): void => {
     if (event.currentTarget.contains(event.relatedTarget)) return
     setDisclosures((current) => {
       const run = collapsePending(current.run)
       return run === current.run ? current : { ...current, run }
     })
   }
-  const settlePhaseBlur = (key: string, event: FocusEvent<HTMLElement>): void => {
+  const settlePhaseBlur = (key: string, event: FocusEvent<HTMLDivElement>): void => {
     if (event.currentTarget.contains(event.relatedTarget)) return
     setDisclosures((current) => {
       const phase = existingPhaseState(current.phases, key)
@@ -411,7 +424,9 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
       className={css.root}
       data-workflow-run
       data-run-status={node.data.status}
-      onBlur={settleRunBlur}
+      onMouseDownCapture={disclosures.run.pendingCleanCollapse
+        ? preventPendingHeaderFocus
+        : undefined}
     >
       <RunHeader
         count={totalMembers}
@@ -421,7 +436,7 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
         status={node.data.status}
         t={t}
       >
-        <div ref={runContentRef} className={css.phaseList}>
+        <div ref={runContentRef} className={css.phaseList} onBlur={settleRunBlur}>
           {node.data.phases.length === 0
             ? <span className={css.empty}>{t('run.empty')}</span>
             : node.data.phases.map((phase) => {
@@ -434,9 +449,10 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
                     if (element === null) phaseContentRefs.current.delete(phase.key)
                     else phaseContentRefs.current.set(phase.key, element)
                   }}
-                  onBlur={(event) => { settlePhaseBlur(phase.key, event) }}
+                  onContentBlur={(event) => { settlePhaseBlur(phase.key, event) }}
                   onToggle={() => { togglePhase(phase.key) }}
                   open={disclosure.open}
+                  pendingCleanCollapse={disclosure.pendingCleanCollapse}
                   phase={phase}
                   navigable={navigable}
                   openSession={openSession}
