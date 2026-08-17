@@ -29,8 +29,8 @@ import {
 export const name = 'subagent-claude-code'
 export const inject = ['subagents', 'subprocess']
 
-/* jscpd:ignore-start -- sibling product providers intentionally expose the
- * same two deployment-owned fields without adding a shared config owner. */
+/* jscpd:ignore-start -- sibling product providers intentionally expose
+ * overlapping deployment-owned fields without adding a shared config owner. */
 /** Deployment-owned permission, environment, and process-release settings. */
 export interface Config {
   /**

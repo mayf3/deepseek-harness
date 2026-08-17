@@ -193,7 +193,7 @@ export async function startMessagesFixture(
       ) {
         complete(response, body, behavior.finalText)
       }
-      // A hold deliberately leaves the response pending until client abort.
+      // A hold, or a tool-use without final text, waits for client abort.
     })
   })
   await new Promise<void>((resolve, reject) => {
