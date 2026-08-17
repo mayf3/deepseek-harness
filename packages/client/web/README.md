@@ -2,9 +2,9 @@
 
 English | [中文](README.zh.md)
 
-Web boot kernel: `new AppWebEntry(el, seams?).run()` mounts the client through two stages. The module stage builds `@deepseek-ai/dsh-client-modules` over the host-provided `window.__DSH_BOOT__` graph and prefetches the `immediately` tier. The plugin stage mounts the vendored Cordis Loader, injects that module system through the Loader's `internal` interface, creates every graph entry, and waits for every fiber to become ACTIVE. It then calls the dynamic render service's `ctx.appShell.mount(el)` operation, replacing the boot page with the complete UI. The host graph owns the roster and prefetch marks; this package adds only the statically adopted modules bootstrap entry.
+Web boot kernel: `new AppWebEntry(el, seams?).run()` mounts the client through two stages. The module stage builds `@deepseek-ai/dsh-client-modules` over the host-provided `window.__DSH_BOOT__` graph and prefetches the `immediately` tier. The plugin stage mounts the vendored Cordis Loader, injects that module system through the Loader's `internal` interface, creates every graph entry, and waits for every fiber to become ACTIVE. It then calls the dynamic UI renderer's `ctx.uiRenderer.mount(el)` operation, replacing the boot page with the complete UI. The host graph owns the roster and prefetch marks; this package adds only the statically adopted modules bootstrap entry.
 
-The boot page uses plain DOM and local CSS, so client-bundle and plugin-activation failures remain visible. React mounting, the slot renderer, application assembly, and browser-title projection live in [`render-service`](../render-service/README.md). The modules package is the only plugin package registered through `registerStatic`, because the module system cannot load itself.
+The boot page uses plain DOM and local CSS, so client-bundle and plugin-activation failures remain visible. React mounting, slot rendering, application assembly, and browser-title projection live in [`ui-renderer`](../ui-renderer/README.md). The modules package is the only plugin package registered through `registerStatic`, because the module system cannot load itself.
 
 `PLATFORM_MODULES` (src/platform.ts) is the single source of truth for shared modules: seed-table keys, tsdown client externals, and the Vite alias set are its projections.
 

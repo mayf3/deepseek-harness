@@ -61,13 +61,13 @@ describe('client bundle purity gate', () => {
 
   it('leaves platform table entries and non-scoped specifiers alone', () => {
     expect(resolveId('@deepseek-ai/dsh-client-ui-slots')).toBeNull()
-    expect(resolveId('@deepseek-ai/dsh-client-web-react')).toBeNull()
     expect(resolveId('@deepseek-ai/dsh-client-ui-primitives')).toBeNull()
     expect(resolveId('react')).toBeNull()
     expect(resolveId('zod')).toBeNull()
   })
 
-  it('rejects retired table entries (web-react/store left the 8-entry seed)', () => {
+  it('rejects the retired web-react platform package', () => {
+    expect(() => resolveId('@deepseek-ai/dsh-client-web-react')).toThrow(/purity/)
     expect(() => resolveId('@deepseek-ai/dsh-client-web-react/store')).toThrow(/purity/)
   })
 

@@ -50,7 +50,6 @@
     { "path": "./packages/client/ui-slots" },
     { "path": "./packages/client/ui-attachment" },
     { "path": "./packages/client/ui-primitives" },
-    { "path": "./packages/client/web-react" },
     { "path": "./packages/client/modules" },
     { "path": "./packages/client/hmr" },
     { "path": "./packages/client/connection/tsconfig.client.json" },
@@ -91,7 +90,7 @@
     { "path": "./packages/client/ui-settings-models" },
     { "path": "./packages/client/ui-settings-plugin-inventory" },
     { "path": "./packages/client/locale" },
-    { "path": "./packages/client/render-service" },
+    { "path": "./packages/client/ui-renderer" },
     { "path": "./packages/client/web" },
     { "path": "./apps/web" }
   ]

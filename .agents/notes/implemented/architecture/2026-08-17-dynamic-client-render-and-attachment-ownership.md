@@ -12,15 +12,15 @@ The loading and failure page has the opposite requirement: it must remain usable
 
 ## Decision
 
-`@deepseek-ai/dsh-client-web` is a framework-free boot kernel. It draws its loading and failure page with DOM operations and local CSS fallbacks, constructs the client module system and Cordis Loader, creates the statically adopted modules bootstrap entry plus every host-graph entry, and waits until every fiber is ACTIVE. It then resolves `ctx.appShell` and hands the existing container to `mount()`.
+`@deepseek-ai/dsh-client-web` is a framework-free boot kernel. It draws its loading and failure page with DOM operations and local CSS fallbacks, constructs the client module system and Cordis Loader, creates the statically adopted modules bootstrap entry plus every host-graph entry, and waits until every fiber is ACTIVE. It then resolves `ctx.uiRenderer` and hands the existing container to `mount()`.
 
-`@deepseek-ai/dsh-client-render-service` is an `immediately` dynamic client plugin. After `slots`, `sessions`, and `layout` activate, it installs the slot renderer, provides `ctx.appShell`, creates the React root on `mount()`, projects the selected session title, and performs the sole context-level `renderSlot('root')` call. Its service, renderer installation, and React root all dispose with their owners.
+`@deepseek-ai/dsh-client-ui-renderer` is an `immediately` dynamic client plugin. It owns the React slot outlets, SessionProvider, and observable-to-uSES binding. After `slots`, `sessions`, and `layout` activate, it installs the slot renderer, provides `ctx.uiRenderer`, creates the React root on `mount()`, projects the selected session title, and performs the sole context-level `renderSlot('root')` call. Its service, renderer installation, and React root all dispose with their owners.
 
 `ui-conversation` declares `conversation.input.attachments` and `conversation.message.images` and supplies attachment data, callbacks, authorized image loading, and its locale seat. `ui-attachment` waits on those declarations through `ctx.slots.inject()` and registers the draft rail/drop target and historical image gallery/lightbox. The React implementations remain internal package values; cross-plugin composition uses slots. This package integration supersedes the direct-import ruling in the [attachment display note](../feature/2026-08-11-web-attachment-display-alignment.md) without changing that note's visual and interaction decisions.
 
 ui-theme imports its five global stylesheets from its client entry. The shared client-bundle preset compiles ordinary CSS as well as CSS Modules and injects plugin-owned style tags at bundle materialization, so unloading or reloading ui-theme removes or replaces its global CSS with the same lifecycle as its service. The web kernel retains only mount defaults and the self-contained boot-page palette.
 
-React, React DOM, Cordis, ui-slots, ui-primitives, and web-react remain static platform modules with one browser identity. Dynamic ownership determines which graph entry creates rendering effects; it does not duplicate these platform runtimes.
+React, React DOM, Cordis, ui-slots, and ui-primitives remain static platform modules with one browser identity. The dynamic ui-renderer bundle consumes those shared modules and owns the rendering effects.
 
 ## Verification
 
@@ -34,10 +34,10 @@ Component tests pin the boot page, document title, application tree, attachment 
 
 **Keep ui-theme styles in the shell's base stylesheet.** Rejected because theme CSS would remain active when the theme plugin is absent or failed and would not participate in plugin reload cleanup.
 
-**Render the failure page with React.** Rejected because a render-service or React-tree failure must not remove the only diagnostic available in the browser.
+**Render the failure page with React.** Rejected because a ui-renderer or React-tree failure must not remove the only diagnostic available in the browser.
 
 ## Consequences
 
-The host graph contains every dynamic rendering owner, and HMR replaces attachment presentation, render assembly, and theme CSS through plugin lifecycle. A render-service failure leaves a readable DOM failure page instead of a blank React mount. Omitting ui-attachment deliberately leaves its optional slots empty; the shipped web composition includes it, and a configured entry that fails activation prevents the full-application handoff.
+The host graph contains every dynamic rendering owner, and HMR replaces attachment presentation, render assembly, and theme CSS through plugin lifecycle. A ui-renderer failure leaves a readable DOM failure page instead of a blank React mount. Omitting ui-attachment deliberately leaves its optional slots empty; the shipped web composition includes it, and a configured entry that fails activation prevents the full-application handoff.
 
 The application still waits for the complete client roster before its first React frame. The shell still statically bundles the platform module identities, and the boot page maintains a small private light/dark palette because ui-theme CSS is unavailable until that plugin materializes.

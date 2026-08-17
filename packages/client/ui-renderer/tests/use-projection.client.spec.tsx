@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest'
 import { act, render } from '@testing-library/react'
 import type { SessionMaybeProvideInfo, StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
-import { createSlotRenderer, type SlotRendererHost } from '@deepseek-ai/dsh-client-web-react'
+import { createSlotRenderer, type SlotRendererHost } from '@deepseek-ai/dsh-client-ui-renderer/client'
 
 function observable<T>(initial: T) {
   let value = initial

@@ -28,19 +28,19 @@ The first-generation client loader (`createClientLoader`) hand-wrote both layers
 
 What makes a package a plugin? One rule: **a package is a plugin package once its consumption is cordis dependency injection; until then it is a plain package.** How code reaches the page is not part of the taxonomy — arrival follows from the kind instead of defining it.
 
-- **Plain packages** are the absolute base the module system itself needs, plus libraries not yet converted to DI: the react family, cordis, `@deepseek-ai/dsh-client-modules` (the module system itself — it can never be a plugin, because modules precede all modules), the web shell kernel, and — for now — ui-slots, web-react, ui-primitives. Plain packages are shell-bundled, seeded into the module table, and invisible to the host graph.
-- **Plugin packages** are everything else. Each one carries a `dsh.client` manifest declaration (`{ platform, inject, immediately? }`) and one uniform shape: the shared tsdown preset emits `lib/client.js`, and `exports["./client"]` points at that bundle. Each is a governed entry of the host-authored graph, including infrastructure such as connection, runtime, ui-theme, i18n, hmr, and render-service as well as feature packages such as ui-layout, ui-conversation, and ui-attachment.
+- **Plain packages** are the absolute base the module system itself needs, plus libraries not yet converted to DI: the react family, cordis, `@deepseek-ai/dsh-client-modules` (the module system itself — it can never be a plugin, because modules precede all modules), the web shell kernel, and — for now — ui-slots and ui-primitives. Plain packages are shell-bundled, seeded into the module table, and invisible to the host graph.
+- **Plugin packages** are everything else. Each one carries a `dsh.client` manifest declaration (`{ platform, inject, immediately? }`) and one uniform shape: the shared tsdown preset emits `lib/client.js`, and `exports["./client"]` points at that bundle. Each is a governed entry of the host-authored graph, including infrastructure such as connection, runtime, ui-theme, i18n, hmr, and ui-renderer as well as feature packages such as ui-layout, ui-conversation, and ui-attachment.
 
 The manifest owns the package's loading contract: its `inject` dependency edges, plus the optional `immediately` prefetch mark (absent means lazy). The composing app owns only the roster.
 
 To add a plugin package: declare `dsh.client`, emit the `./client` bundle through the shared preset, add the name to the composing app's roster. Nothing else changes hands.
 
-When does a plain package become a plugin? The upgrade law, recorded so the migration path stays honest: **a plain package becomes a plugin package when its consumers switch to cordis DI, not before.** Three promotions are queued: ui-slots (the slots machinery now living in runtime — SlotRegistry, the renderer contract, the root slot), web-react (the renderer install moving into its own `apply`), and ui-primitives (once components are served through slots/services). Until then they stay plain, and their symbol exports stay ordinary static imports.
+When does a plain package become a plugin? The upgrade law, recorded so the migration path stays honest: **a plain package becomes a plugin package when its consumers switch to cordis DI, not before.** Two promotions are queued: ui-slots (the slots machinery now living in runtime — SlotRegistry, the renderer contract, the root slot) and ui-primitives (once components are served through slots/services). Until then they stay plain, and their symbol exports stay ordinary static imports.
 
 Four edge rules govern imports across the two kinds. None of them depends on any per-package mark:
 
 - **Plugin ↔ plugin value imports are a build error.** This holds regardless of either side's `immediately` declaration — the rule must not depend on a mark someone can flip. Cooperation goes through cordis inject/services. `import type` is exempt; the type chain is untouched. This rule is why `scopeOf` is a `SessionRuntime` method and why `transportError` lives in `dsh-host-apiproxy`'s wire layer (its `RpcResult` home, inline-safe).
-- **Plugin → plain package value imports are externals**, judged against the platform list. That list is one constant in the shell (`platform.ts`: react family, cordis, ui-slots, web-react, ui-primitives), imported by both the tsdown preset (for the external judgement) and `seed.ts` (for the table warm-up). One constant, two consumers — the hand-sync drift class stays dead.
+- **Plugin → plain package value imports are externals**, judged against the platform list. That list is one constant in the shell (`platform.ts`: react family, cordis, ui-slots, ui-primitives), imported by both the tsdown preset (for the external judgement) and `seed.ts` (for the table warm-up). One constant, two consumers — the hand-sync drift class stays dead.
 - **The purity gate covers every plugin package.** Its three branches: platform imports become externals; INLINE_SAFE wire layers are inlined; any other workspace leak is a build error. The uniform bundle shape is what makes this coverage total — every plugin builds through the same preset, so no package can sit outside the gate.
 - **The shell is self-sufficient.** Apart from statically adopting the modules package that constructs the module system itself, the kernel value-imports no plugin package. Its loading and failure page uses plain DOM, local state, and local CSS fallbacks, so the fail-loud presentation does not depend on the render service whose failure it may report.
 
@@ -72,15 +72,15 @@ What happens between `dsh web` starting and the UI appearing? Three stages: the 
 
 Why is the roster yml rows and not a scan? Because which plugins compose into a deployment is a composition decision, not a package property — a package declaring `dsh.client` in the repo does not mean this deployment mounts it, so discovery-by-scan cannot make that call; the node half scans only what the tree actually mounted.
 
-**Phase one — the module face.** The shell builds the module system over the graph, then prefetches every `immediately` row in parallel. Prefetch loads the external script and registers its factory only. A single row's prefetch failure is swallowed here: phase two's import retries the load and owns the loud failure, so one bad row cannot mask the others. `immediately` is a prefetch mark — not a barrier, not an identity. The package declares it, the registry carries it into the row. Infrastructure plugins including connection, runtime, ui-theme, i18n, render-service, and hmr declare it; other UI plugins simply arrive on demand.
+**Phase one — the module face.** The shell builds the module system over the graph, then prefetches every `immediately` row in parallel. Prefetch loads the external script and registers its factory only. A single row's prefetch failure is swallowed here: phase two's import retries the load and owns the loud failure, so one bad row cannot mask the others. `immediately` is a prefetch mark — not a barrier, not an identity. The package declares it, the registry carries it into the row. Infrastructure plugins including connection, runtime, ui-theme, i18n, ui-renderer, and hmr declare it; other UI plugins simply arrive on demand.
 
 **Phase two — the plugin face.**
 
 1. The kernel mounts the vendored Loader and injects the module system as `internal` before any entry exists. Ordering matters: `tree.import`'s bare-import fallback must never run in a browser.
-2. It creates the statically adopted modules bootstrap entry and one entry per graph row. Render assembly is an ordinary host-graph row provided by `dsh-client-render-service`; the kernel appends no assembly pseudo-entry.
+2. It creates the statically adopted modules bootstrap entry and one entry per graph row. Render assembly is an ordinary host-graph row provided by `dsh-client-ui-renderer`; the kernel appends no assembly pseudo-entry.
 3. Creation order carries no semantics; fibers activate through service waiting.
 4. `settled` = every entry created + `loader.await()` quiescent + an all-ACTIVE sweep. The sweep lists each import-failed, FAILED, or PENDING fiber with its missing services. It exists because cordis inject waits have no timeout — the sweep is the fail-loud floor.
-5. The framework-free loading page projects real fiber states via `internal/status`. After the sweep, the kernel calls `ctx.appShell.mount(container)` and replaces the page with the real UI in one pass.
+5. The framework-free loading page projects real fiber states via `internal/status`. After the sweep, the kernel calls `ctx.uiRenderer.mount(container)` and replaces the page with the real UI in one pass.
 
 ### Hot reload: one driver plugin, self-watched bundles
 
@@ -110,9 +110,8 @@ The support boundary, stated honestly. Reload is coarse by design: fresh fiber, 
 | vendored `@cordisjs/plugin-loader` | entry governance (same code both sides) | compile-time browserization, kernel-mounted | untouched (vendor policy) |
 | `dsh-client-modules` | the client module system | lazy CJS table; two-phase boot | plain forever (modules precede modules) |
 | `dsh-client-web` | module/Loader kernel + framework-free boot page | self-sufficient except for the statically adopted modules bootstrap | keeps shrinking |
-| `dsh-client-render-service` | React root + slot-renderer assembly | dynamic plugin, declares `immediately` | owns the application mount lifecycle |
+| `dsh-client-ui-renderer` | ctx↔React adapter + React root + slot-renderer assembly | dynamic plugin, declares `immediately` | owns hook binding and the application mount lifecycle |
 | `dsh-client-ui-slots` | slot registry core | plain, seeded | promote to plugin; receive runtime's slots machinery |
-| `dsh-client-web-react` | ctx↔React renderer adapter | plain, seeded; installed by render-service | promote when its consumers switch to DI |
 | `dsh-client-ui-primitives` | base components | plain, seeded | promote to plugin (components via slots/services) |
 | `dsh-client-connection` | wire layer | plugin (`dsh.client` + bundle), declares `immediately` | transport swap (Electron IPC carrier) |
 | `dsh-client-runtime` | session object layer + slots service + store engine | plugin, declares `immediately` | keeps shrinking toward a pure session object layer |

@@ -1,24 +1,22 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-client-web-react`.
- * @module @deepseek-ai/dsh-client-web-react/invariant
+ * Package-owned invariant companion for `@deepseek-ai/dsh-client-ui-renderer`.
+ * @module @deepseek-ai/dsh-client-ui-renderer/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-client-web-react'
+const PACKAGE_NAME = '@deepseek-ai/dsh-client-ui-renderer'
 
 /** Cordis companion plugin name. */
-export const name = 'client-web-react-invariant'
+export const name = 'client-ui-renderer-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: pure ctx-to-React glue — it emits no cordis events
- * and owns no cross-plugin mutable relation; store batching, selector
- * equality short-circuits, and inject-cache identity are asserted directly
- * by this package's behavior specs.
+ * No runtime invariant: the package installs the render adapter and provides a
+ * mount callback but owns no event stream or mutable cross-plugin data relation.
  */
 const install: InvariantInstaller = () => {}
 

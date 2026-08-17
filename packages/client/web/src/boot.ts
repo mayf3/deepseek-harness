@@ -1,6 +1,6 @@
 /**
  * Web boot kernel. It owns only the module system, Cordis loader, and a
- * framework-free boot page. The dynamic render service receives the mount
+ * framework-free boot page. The dynamic UI renderer receives the mount
  * point after every client entry activates.
  * @module @deepseek-ai/dsh-client-web/src/boot
  */
@@ -11,7 +11,7 @@ import {
   ClientModuleSystem, parseBootManifest,
   type BootManifest, type ClientModuleSystemOptions, type DshWindow,
 } from '@deepseek-ai/dsh-client-modules/client'
-import type {} from '@deepseek-ai/dsh-client-render-service/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { BootPage } from './boot-page.ts'
 import { getStaticModules } from './seed.ts'
 import { STATE_LABELS } from './loader-status.ts'
@@ -45,7 +45,7 @@ export class AppWebEntry {
 
   /**
    * Load and activate every client entry, then hand the mount point to the
-   * render service. Plugin failures remain visible on the boot page.
+   * UI renderer. Plugin failures remain visible on the boot page.
    * @returns Resolves after application mount or failure rendering.
    */
   async run(): Promise<void> {
@@ -78,12 +78,12 @@ export class AppWebEntry {
     this.page.dispose()
   }
 
-  /** Mount through a dependency fiber so replacing appShell remounts the application. */
+  /** Mount through a dependency fiber so replacing uiRenderer remounts the application. */
   private async mountApp(ctx: Context): Promise<void> {
-    const mounted = ctx.inject(['appShell'], (scope) => {
-      const shell = scope.get('appShell')
-      if (shell === undefined) throw new Error('web boot: appShell service missing after settled')
-      scope.effect(() => shell.mount(this.container), 'web boot: application mount')
+    const mounted = ctx.inject(['uiRenderer'], (scope) => {
+      const renderer = scope.get('uiRenderer')
+      if (renderer === undefined) throw new Error('web boot: uiRenderer service missing after settled')
+      scope.effect(() => renderer.mount(this.container), 'web boot: application mount')
       this.page.dispose()
     })
     await mounted

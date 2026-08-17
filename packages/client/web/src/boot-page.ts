@@ -1,6 +1,6 @@
 /**
  * Framework-free boot page and failure report. It remains available when a
- * client plugin fails because React arrives only with the render service.
+ * client plugin fails because React arrives only with the UI renderer.
  * @module @deepseek-ai/dsh-client-web/src/boot-page
  */
 import type { LoaderEntryState } from './loader-status.ts'
@@ -53,7 +53,7 @@ export class BootPage {
     this.render()
   }
 
-  /** Detach the page before or after the render service takes the mount point. */
+  /** Detach the page before or after the UI renderer takes the mount point. */
   dispose(): void {
     this.root.remove()
   }

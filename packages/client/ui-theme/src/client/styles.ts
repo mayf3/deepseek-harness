@@ -15,7 +15,10 @@ const STYLES = [
   ['shiki.css', shiki],
 ] as const
 
-/** Mount the global theme sheets for exactly the owning plugin lifetime. */
+/**
+ * Mount the global theme sheets for exactly the owning plugin lifetime.
+ * @param ctx - Owning plugin context.
+ */
 export function installThemeStyles(ctx: Context): void {
   if (typeof document === 'undefined') return
   for (const [name, css] of STYLES) {

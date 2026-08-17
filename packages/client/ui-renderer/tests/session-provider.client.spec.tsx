@@ -13,7 +13,7 @@ import type { SessionMaybeProvideInfo, StoredEntry } from '@deepseek-ai/dsh-clie
 import {
   createSlotRenderer, SessionProvider,
   type SessionProvideInfo, type SlotRendererHost,
-} from '@deepseek-ai/dsh-client-web-react'
+} from '@deepseek-ai/dsh-client-ui-renderer/client'
 
 function observable<T>(initial: T) {
   let value = initial

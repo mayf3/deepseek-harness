@@ -12,15 +12,15 @@ Status: implemented
 
 ## 决定
 
-`@deepseek-ai/dsh-client-web` 是不依赖框架的启动内核。它通过 DOM 操作与本地 CSS 回退绘制加载和失败页面，构造客户端模块系统与 Cordis Loader，创建静态接纳的 modules 启动 entry 和宿主图中的每个 entry，并等待所有 fiber 进入 ACTIVE。随后它解析 `ctx.appShell`，把现有容器交给 `mount()`。
+`@deepseek-ai/dsh-client-web` 是不依赖框架的启动内核。它通过 DOM 操作与本地 CSS 回退绘制加载和失败页面，构造客户端模块系统与 Cordis Loader，创建静态接纳的 modules 启动 entry 和宿主图中的每个 entry，并等待所有 fiber 进入 ACTIVE。随后它解析 `ctx.uiRenderer`，把现有容器交给 `mount()`。
 
-`@deepseek-ai/dsh-client-render-service` 是带 `immediately` 标记的动态客户端插件。`slots`、`sessions` 与 `layout` 激活后，它安装 slot 渲染器、提供 `ctx.appShell`、在 `mount()` 时创建 React 根、投影当前会话标题，并执行唯一一次上下文级 `renderSlot('root')` 调用。其服务、渲染器安装和 React 根都随各自持有方 dispose。
+`@deepseek-ai/dsh-client-ui-renderer` 是带 `immediately` 标记的动态客户端插件。它持有 React slot outlet、SessionProvider 与 observable 到 uSES 的绑定。`slots`、`sessions` 与 `layout` 激活后，它安装 slot 渲染器、提供 `ctx.uiRenderer`、在 `mount()` 时创建 React 根、投影当前会话标题，并执行唯一一次上下文级 `renderSlot('root')` 调用。其服务、渲染器安装和 React 根都随各自持有方 dispose。
 
 `ui-conversation` 声明 `conversation.input.attachments` 与 `conversation.message.images`，并提供附件数据、回调、经会话授权的图片加载及其 locale seat。`ui-attachment` 通过 `ctx.slots.inject()` 等待这些声明，再注册草稿附件栏／拖放目标和历史图片画廊／灯箱。React 实现仍是包内值；跨插件组合通过 slot 完成。这项包集成决策取代[附件展示 Note](../feature/2026-08-11-web-attachment-display-alignment.md)中的直接导入规则，但不改变该 Note 的视觉与交互决策。
 
 ui-theme 从客户端 entry 导入自己的五份全局样式表。共享客户端 bundle 预设会编译普通 CSS 与 CSS Modules，并在 bundle 物化时注入插件持有的 style 标签，因此卸载或重载 ui-theme 时，其全局 CSS 会随服务的同一生命周期删除或替换。Web 内核只保留挂载默认值与自给自足的启动页配色。
 
-React、React DOM、Cordis、ui-slots、ui-primitives 与 web-react 仍是保持单一浏览器身份的静态平台模块。动态归属决定哪个图 entry 创建渲染副作用，并不会复制这些平台运行时。
+React、React DOM、Cordis、ui-slots 与 ui-primitives 仍是保持单一浏览器身份的静态平台模块。动态 ui-renderer bundle 消费这些共享模块并持有渲染副作用。
 
 ## 验证
 

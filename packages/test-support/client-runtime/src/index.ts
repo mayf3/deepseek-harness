@@ -1,6 +1,6 @@
 /**
  * jsdom slot test runtime: a real small runtime — Cordis `Context`, the
- * runtime `SlotRegistry`, and the web-react renderer — assembled around
+ * runtime `SlotRegistry`, and the UI renderer — assembled around
  * test-owned session/workspace doubles, so feature specs exercise
  * declaration, registration, scope, store, inject, rendering, updates, and
  * disposal without hand-building the machinery per suite.
@@ -25,7 +25,7 @@ import type { BoundFunctions } from '@testing-library/dom'
 import {
   ConversationEventRegistry, ConversationViewRegistry, SlotRegistry,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSlotRenderer } from '@deepseek-ai/dsh-client-web-react'
+import { createSlotRenderer } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {
   ChildrenDecl, ComposedProps, OwnerOf, SlotComponent, SlotMap, SlotRendererHost, StoreInstanceLike,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -34,6 +34,8 @@ import { TestSessions } from './sessions.ts'
 import { TestWorkspaces } from './workspaces.ts'
 import type { Stabilizer } from './fixtures.ts'
 
+export { bindSnapshotSelector, createSlotRenderer } from '@deepseek-ai/dsh-client-ui-renderer/client'
+export type { UseSession } from '@deepseek-ai/dsh-client-ui-renderer/client'
 export { domSnapshotSerializer, registerDomSnapshotSerializer } from './snapshot.ts'
 export { FixtureSession, TestSessions } from './sessions.ts'
 export { stubSettingsScope } from './settings-scope.ts'

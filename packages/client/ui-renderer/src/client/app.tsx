@@ -4,11 +4,11 @@
  */
 import type { ReactNode } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
+import { bindSnapshotSelector } from './bind.ts'
 import { DocumentTitle } from './DocumentTitle.tsx'
 import type {} from '@deepseek-ai/dsh-client-runtime/client'
 
-/** Inputs available after the render service's inject set activates. */
+/** Inputs available after the UI renderer's inject set activates. */
 export interface AssemblyDeps {
   /** Client context carrying the slots and sessions services. */
   ctx: Context
@@ -16,13 +16,13 @@ export interface AssemblyDeps {
 
 /**
  * Build the assembled application factory.
- * @param deps - Active render-service dependencies.
+ * @param deps - Active UI-renderer dependencies.
  * @returns Factory producing the application React tree.
  */
 export function buildRenderApp(deps: AssemblyDeps): () => ReactNode {
   const { ctx } = deps
   const sessions = ctx.get('sessions')
-  if (sessions === undefined) throw new Error('render service: sessions service unavailable')
+  if (sessions === undefined) throw new Error('ui renderer: sessions service unavailable')
   const useSessions = bindSnapshotSelector(sessions.list)
   const SessionDocumentTitle = (): ReactNode => {
     const title = useSessions((state) => {

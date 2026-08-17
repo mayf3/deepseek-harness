@@ -24,10 +24,7 @@
       "path": "../ui-primitives"
     },
     {
-      "path": "../render-service"
-    },
-    {
-      "path": "../web-react"
+      "path": "../ui-renderer"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

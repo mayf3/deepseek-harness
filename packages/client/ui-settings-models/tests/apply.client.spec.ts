@@ -61,7 +61,7 @@ describe('ui-settings-models apply', () => {
     expect(injected.t('nav')).toBe('模型')
     expect(injected.t('deleteTitle')).toBe('删除 {provider}？')
     expect(typeof injected.controller.load).toBe('function')
-    expect(typeof injected.useSnapshot).toBe('function')
+    expect(injected.hooks.snapshot).toBe(injected.controller.store)
     expect(injected.api).toBeDefined()
     const onboarding = before.slots.entries('settings.onboarding')
     expect(onboarding).toHaveLength(2)

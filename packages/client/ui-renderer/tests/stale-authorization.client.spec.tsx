@@ -10,7 +10,7 @@ import type { SlotEntryDef, SlotSpec, StoredEntry } from '@deepseek-ai/dsh-clien
 import {
   createSlotRenderer, StaleAuthorizationError,
   type RenderOpts, type SlotRendererHost,
-} from '@deepseek-ai/dsh-client-web-react'
+} from '@deepseek-ai/dsh-client-ui-renderer/client'
 
 type RenderSlotFn = (key: string, owner: object, opts?: RenderOpts) => ReactNode
 type DeclaredSpec = SlotSpec<SlotEntryDef>

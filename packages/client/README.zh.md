@@ -7,9 +7,8 @@ dsh web GUI 的浏览器侧：shell 启动、浏览器与宿主通信、共享 U
 | 包 | 目的 |
 |---|---|
 | [`web/`](web/README.md) | 从客户端条目图启动浏览器 shell。 |
-| [`render-service/`](render-service/README.md) | 在客户端启动稳定后挂载组装完成的 React 应用。 |
+| [`ui-renderer/`](ui-renderer/README.md) | 将 slot 数据绑定到 React，并在客户端启动稳定后挂载组装完成的应用。 |
 | [`modules/`](modules/README.md) | 加载浏览器侧客户端模块。 |
-| [`web-react/`](web-react/README.md) | 连接 shell 运行时与 React 渲染。 |
 | [`connection/`](connection/README.md) | 维护浏览器与宿主之间的 RPC 通信和事件传递。 |
 | [`runtime/`](runtime/README.md) | 为会话、工作区和 UI 组合提供共享客户端服务。 |
 | [`hmr/`](hmr/README.md) | 在开发期间刷新客户端插件。 |

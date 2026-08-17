@@ -7,9 +7,8 @@ The browser side of the dsh web GUI: shell boot, browser-host communication, sha
 | Package | Purpose |
 |---|---|
 | [`web/`](web/README.md) | Boots the browser shell from the client entry graph. |
-| [`render-service/`](render-service/README.md) | Mounts the assembled React application after client boot settles. |
+| [`ui-renderer/`](ui-renderer/README.md) | Binds slot data to React and mounts the assembled application after client boot settles. |
 | [`modules/`](modules/README.md) | Loads browser-side client modules. |
-| [`web-react/`](web-react/README.md) | Connects the shell runtime to React rendering. |
 | [`connection/`](connection/README.md) | Maintains browser-host RPC communication and event delivery. |
 | [`runtime/`](runtime/README.md) | Provides shared client services for sessions, workspaces, and UI composition. |
 | [`hmr/`](hmr/README.md) | Refreshes client plugins during development. |

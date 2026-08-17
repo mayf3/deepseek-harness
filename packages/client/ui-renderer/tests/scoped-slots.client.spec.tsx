@@ -17,7 +17,7 @@ import {
   createSlotRenderer, SessionProvider, SlotOwnershipError, StaleAuthorizationError,
   type RenderOpts, type SessionProvideInfo,
   type SlotRendererHost, type StoreInstanceLike,
-} from '@deepseek-ai/dsh-client-web-react'
+} from '@deepseek-ai/dsh-client-ui-renderer/client'
 
 type AnyProps = Record<string, unknown>
 type RenderSlotFn = (key: string, owner: object, opts?: RenderOpts) => ReactNode
@@ -32,7 +32,7 @@ const entryOf = (partial: Omit<StoredEntry, 'options'> & { options?: StoredEntry
  * create(scopeKey?) + instance with clearPersisted): the machinery consumes
  * only the StoreInstanceLike face (bare snapshot source + baked actions),
  * but entry.store is typed to the full contract — the real defineStore lives
- * in runtime, which web-react tests must not import (dependency direction).
+ * in runtime, which UI-renderer tests must not import (dependency direction).
  */
 function miniStore<T extends object>(
   init: () => T,
