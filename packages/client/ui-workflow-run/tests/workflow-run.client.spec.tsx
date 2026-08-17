@@ -448,6 +448,18 @@ describe('WorkflowRunPanel', () => {
     expect(screen.getByRole('button', { name: /未分阶段/ }).getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByText('first')).toBeNull()
     expect(screen.queryByText('second')).toBeNull()
+
+    phaseView.rerender(<WorkflowRunPanel {...panelProps({
+      ...phaseClean,
+      status: 'completed',
+      phases: [phase({ members: [firstMember, {
+        seq: 2, label: 'second', childId: SECOND_ID, status: 'completed',
+      }, {
+        seq: 3, label: 'final', childId: 'child-3' as SessionId, status: 'completed',
+      }] })],
+    })} />)
+    expect(runHeader.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('button', { name: /未分阶段/ })).toBeNull()
   })
 
   it('initializes a newly observed phase before it becomes interactive', () => {

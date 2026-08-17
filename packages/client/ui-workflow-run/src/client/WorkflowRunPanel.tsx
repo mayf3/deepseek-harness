@@ -358,7 +358,7 @@ export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t 
         runFacts,
         focusIsWithin(runContentRef.current),
       )
-      const run = phaseStartedCycle && !advancedRun.open
+      const run = phaseStartedCycle && runFacts.mode !== 'clean' && !advancedRun.open
         ? { ...advancedRun, open: true, pendingCleanCollapse: false }
         : advancedRun
       return run !== current.run || phasesChanged ? { run, phases } : current
