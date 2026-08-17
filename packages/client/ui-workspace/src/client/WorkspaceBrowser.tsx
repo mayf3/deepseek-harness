@@ -194,6 +194,34 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
 }
 
 /** In-flight root-row drag: source identity plus the current insert marker. */
+/** Pending tag-inheritance holder shared by the two tree bodies. */
+interface InheritTagsHolder {
+  current: { workspaceId: WorkspaceId; tags: string[] } | null
+}
+
+/**
+ * Record a pending tag inheritance for a "new session in this workspace"
+ * row action. The pending entry is applied only to the workspace's freshly
+ * created blank session; a 5s timeout guarantees a stale pending never tags
+ * a later unrelated blank.
+ * @param holder - the component's pending ref.
+ * @param timer - the component's timeout ref (cleared on re-arm).
+ * @param workspaceId - target workspace of the new session.
+ * @param tags - source row tags to inherit.
+ */
+function scheduleTagInheritance(
+  holder: InheritTagsHolder,
+  timer: { current: number | null },
+  workspaceId: WorkspaceId,
+  tags: string[],
+): void {
+  holder.current = tags.length > 0 ? { workspaceId, tags } : null
+  if (timer.current !== null) window.clearTimeout(timer.current)
+  if (holder.current !== null) {
+    timer.current = window.setTimeout(() => { holder.current = null }, 5000)
+  }
+}
+
 interface DragState {
   /** Workspace id, or {@link UNGROUPED_KEY} for the browser-local loose-session account. */
   accountKey: string
@@ -309,17 +337,27 @@ function SessionTree({
   // freshly created (blank) session with the source row's tags once it
   // becomes current (startSession opens without returning the new id).
   const inheritTagsRef = useRef<{ workspaceId: WorkspaceId; tags: string[] } | null>(null)
+  const inheritTagsTimer = useRef<number | null>(null)
   const inheritTags = (workspaceId: WorkspaceId, tags: string[]) => {
-    inheritTagsRef.current = tags.length > 0 ? { workspaceId, tags } : null
+    scheduleTagInheritance(inheritTagsRef, inheritTagsTimer, workspaceId, tags)
   }
   useEffect(() => {
     const pending = inheritTagsRef.current
     if (pending === null) return
     const current = list.current
     if (current === undefined) return
-    // Wait until the target workspace's session becomes current; a different
-    // workspace (or none) means the click never landed.
-    if (!workspaces.some(w => w.workspaceId === pending.workspaceId && w.sessionIds.includes(current))) return
+    const inWorkspace = workspaces.some(w => w.workspaceId === pending.workspaceId && w.sessionIds.includes(current))
+    if (!inWorkspace) return
+    const row = list.byId[current]
+    if (row === undefined) return
+    // Only the freshly created blank session inherits. Matching any session
+    // in the workspace would clobber the tags of a task the user opens
+    // before the blank lands; a real task becoming current first drops the
+    // pending instead.
+    if (!row.blank) {
+      inheritTagsRef.current = null
+      return
+    }
     inheritTagsRef.current = null
     setSessionTags(current, pending.tags)
   }, [list, workspaces, setSessionTags])
@@ -736,15 +774,27 @@ function FlatList({
   // workspace" row action tags the freshly created session with the source
   // row's tags once it becomes current.
   const inheritTagsRef = useRef<{ workspaceId: WorkspaceId; tags: string[] } | null>(null)
+  const inheritTagsTimer = useRef<number | null>(null)
   const inheritTags = (workspaceId: WorkspaceId, tags: string[]) => {
-    inheritTagsRef.current = tags.length > 0 ? { workspaceId, tags } : null
+    scheduleTagInheritance(inheritTagsRef, inheritTagsTimer, workspaceId, tags)
   }
   useEffect(() => {
     const pending = inheritTagsRef.current
     if (pending === null) return
     const current = list.current
     if (current === undefined) return
-    if (!workspaces.some(w => w.workspaceId === pending.workspaceId && w.sessionIds.includes(current))) return
+    const inWorkspace = workspaces.some(w => w.workspaceId === pending.workspaceId && w.sessionIds.includes(current))
+    if (!inWorkspace) return
+    const row = list.byId[current]
+    if (row === undefined) return
+    // Only the freshly created blank session inherits. Matching any session
+    // in the workspace would clobber the tags of a task the user opens
+    // before the blank lands; a real task becoming current first drops the
+    // pending instead.
+    if (!row.blank) {
+      inheritTagsRef.current = null
+      return
+    }
     inheritTagsRef.current = null
     setSessionTags(current, pending.tags)
   }, [list, workspaces, setSessionTags])

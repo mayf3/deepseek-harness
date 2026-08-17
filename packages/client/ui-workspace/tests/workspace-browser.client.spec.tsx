@@ -295,6 +295,36 @@ describe('WorkspaceBrowser', () => {
     })
   })
 
+  it('does not clobber a task opened later while tag inheritance is pending', async () => {
+    const sessions = sessionState([
+      summary('one', 3), summary('two', 2), { ...summary('blank', 1), blank: true },
+    ])
+    const b = mount({
+      useSessions: hook(sessions),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'blank'])])),
+    })
+    act(() => { b.store.actions.setSessionTags('one', ['前端']) })
+    fireEvent.click(screen.getByText('alpha'))
+    const row = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    fireEvent.contextMenu(row)
+    fireEvent.click(screen.getByRole('menuitem', { name: '在此工作区新建会话' }))
+    // A real task of the same workspace becomes current before the blank
+    // lands: the pending inheritance must be dropped, not applied to it.
+    const next = sessionState(
+      [summary('one', 3), summary('two', 2), { ...summary('blank', 1), blank: true }],
+      { current: sid('two') },
+    )
+    rerender(b, { useSessions: hook(next) })
+    expect(b.store.getSnapshot().sessionMeta.two?.tags).toBeUndefined()
+    // And the blank no longer inherits either (pending was cleared).
+    const afterBlank = sessionState(
+      [summary('one', 3), summary('two', 2), { ...summary('blank', 1), blank: true }],
+      { current: sid('blank') },
+    )
+    rerender(b, { useSessions: hook(afterBlank) })
+    expect(b.store.getSnapshot().sessionMeta.blank?.tags).toBeUndefined()
+  })
+
   it('filters the tree to unread sessions via the header toggle', async () => {
     const sessions = sessionState([summary('unread', 3), summary('plain', 2)])
     const b = mount({
