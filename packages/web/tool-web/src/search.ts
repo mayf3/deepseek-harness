@@ -26,7 +26,7 @@ export const WEB_SEARCH_MAX_QUERIES = 4
  * Model-facing `web_search` arguments. `query` preserves the single-query
  * form; `queries` accepts multiple queries in one call.
  */
-export interface WebSearchArgs {
+interface WebSearchArgs {
   query?: string
   queries?: string[]
 }
@@ -34,8 +34,9 @@ export interface WebSearchArgs {
 /**
  * Validate value constraints the schema DSL can't express: a non-blank
  * `query` or a non-empty `queries` array of non-blank strings, but not both.
- * `queries` must also fit the deployment's query-count bound. Throws a plain
- * `Error` otherwise.
+ * `queries` must also fit the deployment's query-count bound. Exact duplicate
+ * query strings are collapsed after the bound check. Throws a plain `Error`
+ * otherwise.
  *
  * @param args - the schema-validated `web_search` arguments.
  * @param maxQueries - the deployment's upper bound on queries in one call.
@@ -43,7 +44,7 @@ export interface WebSearchArgs {
  */
 export function parseSearchArgs(
   args: WebSearchArgs,
-  maxQueries = WEB_SEARCH_MAX_QUERIES,
+  maxQueries: number,
 ): { query: string } | { queries: string[] } {
   if (args.query !== undefined && args.queries !== undefined) {
     throw new Error('provide either query or queries, not both')
@@ -55,9 +56,12 @@ export function parseSearchArgs(
   if (args.queries === undefined) throw new Error('provide either query or queries')
   const queries = args.queries
   if (queries.length === 0) throw new Error('queries must contain at least one query')
-  if (queries.length > maxQueries) throw new Error(`queries must contain at most ${maxQueries} queries`)
+  if (queries.length > maxQueries) {
+    const noun = maxQueries === 1 ? 'query' : 'queries'
+    throw new Error(`queries must contain at most ${maxQueries} ${noun}`)
+  }
   if (queries.some(query => query.trim().length === 0)) throw new Error('each query must be a non-empty string')
-  return { queries }
+  return { queries: [...new Set(queries)] }
 }
 
 /** Display label for a source: its title, else its hostname. */
@@ -109,7 +113,7 @@ export function formatSearchOutput(result: WebSearchResult): string {
  * @param args - the raw tool arguments.
  * @returns a comma-joined title for the search card.
  */
-export function searchTitle(args: WebSearchArgs): string {
+function searchTitle(args: WebSearchArgs): string {
   const queries = args.queries ?? (args.query !== undefined ? [args.query] : [])
   return queries.join(', ')
 }
@@ -245,7 +249,9 @@ function queriesFromSearchArgs(input: { query: string } | { queries: string[] })
 /**
  * Run one or more searches through the web seam. A single query keeps the
  * provider's exact result; multiple queries run concurrently and are merged
- * into one normalized result capped at `maxResults`.
+ * into one normalized result capped at `maxResults`. A failed search aborts
+ * its siblings, and this function waits for every search to settle before
+ * rethrowing the first failure.
  *
  * @param ctx - context whose `web` service performs the searches.
  * @param queries - validated non-empty queries.
@@ -262,7 +268,21 @@ async function runSearchQueries(
   if (queries.length === 1) {
     return ctx.web.search({ query: queries[0] as string, maxResults }, signal)
   }
-  const results = await Promise.all(queries.map(query => ctx.web.search({ query, maxResults }, signal)))
+  const controller = new AbortController()
+  const batchSignal = AbortSignal.any([signal, controller.signal])
+  let firstFailure: { error: unknown } | undefined
+  const results: WebSearchResult[] = []
+  const searches = queries.map(async (query, index) => {
+    try {
+      results[index] = await ctx.web.search({ query, maxResults }, batchSignal)
+    } catch (error) {
+      if (firstFailure === undefined) firstFailure = { error }
+      controller.abort(error)
+      throw error
+    }
+  })
+  await Promise.allSettled(searches)
+  if (firstFailure !== undefined) throw firstFailure.error
   return mergeSearchResults(queries, results, maxResults)
 }
 

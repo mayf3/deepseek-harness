@@ -661,7 +661,7 @@ function presentCall(name: string, argsRaw: string): ToolCallView | undefined {
     // only at result time (the contract's result-only web shape); their pending
     // kind matches the result kind so a call and its result read as one category.
     case 'web_search': {
-      const queries = Array.isArray(args.queries) ? args.queries.filter((query): query is string => typeof query === 'string') : []
+      const queries = Array.isArray(args.queries) ? args.queries.filter((query): query is string => typeof query === 'string' && query !== '') : []
       const title = queries.length > 0 ? queries.join(', ') : str(args.query)
       return { card: 'generic', title: `Search ${title}`, kind: 'search', rawInput: args }
     }

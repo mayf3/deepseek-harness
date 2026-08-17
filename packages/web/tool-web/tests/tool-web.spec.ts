@@ -10,7 +10,6 @@ import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
 import {
   formatSearchOutput,
   formatFetchOutput,
-  parseSearchArgs,
   parseFetchArgs,
   presentSearchCall,
   presentFetchCall,
@@ -25,6 +24,7 @@ import {
 } from '@deepseek-ai/dsh-tool-web'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolResult } from '@deepseek-ai/dsh-tools'
+import { parseSearchArgs } from '../src/search.ts'
 
 const testToolSignal = new AbortController().signal
 
@@ -86,17 +86,19 @@ describe('search formatting', () => {
   })
 
   it('validates the query', () => {
-    expect(() => parseSearchArgs({ query: '   ' })).toThrow('non-empty')
-    expect(parseSearchArgs({ query: 'hi' })).toEqual({ query: 'hi' })
+    expect(() => parseSearchArgs({ query: '   ' }, WEB_SEARCH_MAX_QUERIES)).toThrow('non-empty')
+    expect(parseSearchArgs({ query: 'hi' }, WEB_SEARCH_MAX_QUERIES)).toEqual({ query: 'hi' })
   })
 
   it('validates multiple queries', () => {
-    expect(parseSearchArgs({ queries: ['one', ' two '] })).toEqual({ queries: ['one', ' two '] })
-    expect(() => parseSearchArgs({})).toThrow('provide either query or queries')
-    expect(() => parseSearchArgs({ queries: [] })).toThrow('at least one query')
+    expect(parseSearchArgs({ queries: ['one', 'one', ' two '] }, WEB_SEARCH_MAX_QUERIES))
+      .toEqual({ queries: ['one', ' two '] })
+    expect(() => parseSearchArgs({}, WEB_SEARCH_MAX_QUERIES)).toThrow('provide either query or queries')
+    expect(() => parseSearchArgs({ queries: [] }, WEB_SEARCH_MAX_QUERIES)).toThrow('at least one query')
+    expect(() => parseSearchArgs({ queries: ['one', 'two'] }, 1)).toThrow('at most 1 query')
     expect(() => parseSearchArgs({ queries: ['one', 'two', 'three'] }, 2)).toThrow('at most 2 queries')
-    expect(() => parseSearchArgs({ queries: ['ok', ' '] })).toThrow('each query must be a non-empty string')
-    expect(() => parseSearchArgs({ query: 'one', queries: ['two'] })).toThrow('not both')
+    expect(() => parseSearchArgs({ queries: ['ok', ' '] }, WEB_SEARCH_MAX_QUERIES)).toThrow('each query must be a non-empty string')
+    expect(() => parseSearchArgs({ query: 'one', queries: ['two'] }, WEB_SEARCH_MAX_QUERIES)).toThrow('not both')
   })
 
   it('falls back to the raw URL as a source label when the URL is unparseable', () => {
@@ -560,7 +562,7 @@ describe('tool-web execution through the real registry', () => {
       },
     }
     const { fiber, call } = await mountTools({ webConfig: { searchProvider: 'stub-search' }, search: provider })
-    const pending = call('web_search', { queries: ['one', 'two'] })
+    const pending = call('web_search', { queries: ['one', 'one', 'two'] })
     try {
       await vi.waitFor(() => { expect(seen).toEqual(['one', 'two']) })
     } finally {
@@ -580,6 +582,61 @@ describe('tool-web execution through the real registry', () => {
     const body = out.content.map(b => b.type === 'text' ? b.text : '').join('')
     expect(body).toContain('### one')
     expect(body).toContain('### two')
+    await fiber.dispose()
+  })
+
+  it('continues round-robin merging after a shorter result is exhausted', async () => {
+    const provider: WebSearchProvider = {
+      id: 'stub-search',
+      available: () => available,
+      search: request => Promise.resolve(request.query === 'one'
+        ? { content: '', sources: [{ url: 'https://a.test' }], truncated: false }
+        : { sources: [{ url: 'https://b.test' }, { url: 'https://c.test' }], truncated: false }),
+    }
+    const { fiber, call } = await mountTools({ webConfig: { searchProvider: 'stub-search' }, search: provider })
+    const out = await call('web_search', { queries: ['one', 'two'] })
+    expect(out.isError).toBe(false)
+    expect(out.value).toEqual({
+      sources: [
+        { url: 'https://a.test' },
+        { url: 'https://b.test' },
+        { url: 'https://c.test' },
+      ],
+      truncated: false,
+    })
+    await fiber.dispose()
+  })
+
+  it('aborts sibling searches and waits for them to settle before reporting a batch failure', async () => {
+    let siblingAborted = false
+    let releaseSibling: (() => void) | undefined
+    const provider: WebSearchProvider = {
+      id: 'stub-search',
+      available: () => available,
+      search: (request, signal) => {
+        if (request.query === 'one') return Promise.reject(new Error('first search failed'))
+        return new Promise((_resolve, reject) => {
+          releaseSibling = () => { reject(new Error('sibling search stopped')) }
+          signal?.addEventListener('abort', () => {
+            siblingAborted = true
+          }, { once: true })
+        })
+      },
+    }
+    const { fiber, call } = await mountTools({ webConfig: { searchProvider: 'stub-search' }, search: provider })
+    const pending = call('web_search', { queries: ['one', 'two'] })
+    let callSettled = false
+    void pending.then(() => { callSettled = true })
+    try {
+      await vi.waitFor(() => { expect(siblingAborted).toBe(true) })
+      await Promise.resolve()
+      expect(callSettled).toBe(false)
+    } finally {
+      releaseSibling?.()
+    }
+    const out = await pending
+    expect(out.isError).toBe(true)
+    expect(out.content).toEqual([{ type: 'text', text: 'Error: first search failed' }])
     await fiber.dispose()
   })
 
@@ -734,20 +791,27 @@ describe('tool-web execution through the real registry', () => {
     await fiber.dispose()
   })
 
-  it('forwards the abort signal to every multi-query search', async () => {
+  it('cascades caller cancellation to every multi-query search', async () => {
     const signals: (AbortSignal | undefined)[] = []
     const provider: WebSearchProvider = {
       id: 'stub-search',
       available: () => available,
       search: (_request, signal) => {
         signals.push(signal)
-        return Promise.resolve({ sources: [], truncated: false })
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => { reject(new Error('search aborted')) }, { once: true })
+        })
       },
     }
     const { ctx, fiber } = await mountTools({ webConfig: { searchProvider: 'stub-search' }, search: provider })
     const controller = new AbortController()
-    await ctx.tools.execute({ callId: CallId('search-multi-1'), name: 'web_search', arguments: { queries: ['one', 'two'] }, signal: controller.signal })
-    expect(signals).toEqual([controller.signal, controller.signal])
+    const pending = ctx.tools.execute({ callId: CallId('search-multi-1'), name: 'web_search', arguments: { queries: ['one', 'two'] }, signal: controller.signal })
+    await vi.waitFor(() => { expect(signals).toHaveLength(2) })
+    expect(signals[0]).toBe(signals[1])
+    expect(signals[0]).not.toBe(controller.signal)
+    controller.abort(new Error('caller cancelled'))
+    await pending
+    expect(signals.every(signal => signal?.aborted === true)).toBe(true)
     await fiber.dispose()
   })
 })

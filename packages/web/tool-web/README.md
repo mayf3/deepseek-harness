@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-The model-facing web tool suite — `web_search` and `web_fetch` — over the [web capability seam](../web/README.md) (`ctx.web`). It owns model-facing concerns only: tool names, JSON schemas, snake_case argument names, prompt sections, the result-count bound, result formatting, HTML→markdown presentation, and the UI presentation projection — `presentCall`, `presentResult` (a `card: 'web'` result card discriminated by `kind: 'search' | 'fetch'`), and the `output.presentationMeta` that carries the structured search sources or the fetch summary the lossy render text cannot (see the [web-result-card Agent Note](../../../.agents/notes/implemented/feature/2026-07-30-web-result-card.md)). All web access goes through `ctx.web`; this package never imports a concrete provider. Neither tool exposes a model-facing timeout — each tool's cooperative tool-call budget is declared here via config (`fetchTimeoutMs`/`searchTimeoutMs`, attached as `ToolDefinition.timeoutMs`) and enforced by [`@deepseek-ai/dsh-tool-call-timeout-policy`](../../guard/timeout-policy/README.md) (a `tools/execute` wrapper); each tool just forwards `exec.signal` to the seam.
+The model-facing web tool suite — `web_search` and `web_fetch` — over the [web capability seam](../web/README.md) (`ctx.web`). It owns model-facing concerns only: tool names, JSON schemas, snake_case argument names, prompt sections, the result-count bound, result formatting, HTML→markdown presentation, and the UI presentation projection — `presentCall`, `presentResult` (a `card: 'web'` result card discriminated by `kind: 'search' | 'fetch'`), and the `output.presentationMeta` that carries the structured search sources or the fetch summary the lossy render text cannot (see the [web-result-card Agent Note](../../../.agents/notes/implemented/feature/2026-07-30-web-result-card.md)). All web access goes through `ctx.web`; this package never imports a concrete provider. Neither tool exposes a model-facing timeout — each tool's cooperative tool-call budget is declared here via config (`fetchTimeoutMs`/`searchTimeoutMs`, attached as `ToolDefinition.timeoutMs`) and enforced by [`@deepseek-ai/dsh-tool-call-timeout-policy`](../../guard/timeout-policy/README.md) (a `tools/execute` wrapper). Single operations forward `exec.signal`; a multi-query search fuses it with batch cancellation so a failed query aborts its siblings.
 
 Each tool is registered independently; a product that wants only one disables the other via config (`{ search: false }` / `{ fetch: false }`). Search guidance mentions `web_fetch` only when fetch is also config-enabled; a search-only composition instead tells the model to use returned snippets and cite their URLs.
 
@@ -10,7 +10,7 @@ Each tool is registered independently; a product that wants only one disables th
 
 | Tool | Args | Behavior |
 |---|---|---|
-| `web_search` | `query` (string) or `queries` (string[]) | Discovery. Returns an optional answer plus source URLs. `queries` runs up to `searchMaxQueries` searches concurrently and merges their sources in round-robin order before applying the combined `searchMaxResults` cap. Neither bound is model-facing. |
+| `web_search` | `query` (string) or `queries` (string[]) | Discovery. Returns an optional answer plus source URLs. `queries` runs up to `searchMaxQueries` distinct searches concurrently and merges their sources in round-robin order before applying the combined `searchMaxResults` cap. Exact duplicate queries run once. Any failed search aborts the remaining batch, which settles before the call returns an error. Neither bound is model-facing. |
 | `web_fetch` | `url` (string) | Retrieves a specific URL. HTML bodies are rendered to markdown (turndown with GFM tables/strikethrough); text bodies pass through. A non-2xx status is reported, not an error. The tool-call timeout is deployment policy (`dsh-tool-call-timeout-policy`), not a model argument. |
 
 Both tools opt into concurrent scheduling because provider reads return content without mutating parent-agent state.
@@ -29,7 +29,7 @@ The normalized service results are also the canonical tool values: `WebSearchRes
 | `searchTimeoutMs` | `30000` | Cooperative tool-call timeout budget (ms) for `web_search`. |
 | `fetchMaxOutputChars` | `200000` | Cap on source characters converted synchronously and on one complete `web_fetch` output (header, rendered body, and footer); a cut body gets the truncation notice when it fits. |
 
-`searchMaxQueries` bounds provider fan-out and combined provider-answer growth; validation rejects an oversized array before any search starts. `fetchTimeoutMs`/`searchTimeoutMs` declare each tool's cooperative timeout budget (attached as `ToolDefinition.timeoutMs`), enforced by [`@deepseek-ai/dsh-tool-call-timeout-policy`](../../guard/timeout-policy/README.md); the model-facing schema exposes no timeout argument. `fetchMaxOutputChars` bounds both synchronous conversion work and the complete rendered result: only that many source characters are converted, and the header, converted prefix, and truncation notice are then capped together. The default leaves headroom above the local provider's 100,000-character body cap, but rendered expansion can still make the final bound truncate the result.
+`searchMaxQueries` bounds the accepted array before exact-string deduplication, provider fan-out, and combined provider-answer growth; validation rejects an oversized array before any search starts, then dispatch keeps the first occurrence of each query. Together with each provider's own controls such as `maxUses`, these independent settings are the product's search budgets; the generic seam does not expose provider-internal native-search accounting. `fetchTimeoutMs`/`searchTimeoutMs` declare each tool's cooperative timeout budget (attached as `ToolDefinition.timeoutMs`), enforced by [`@deepseek-ai/dsh-tool-call-timeout-policy`](../../guard/timeout-policy/README.md); the model-facing schema exposes no timeout argument. `fetchMaxOutputChars` bounds both synchronous conversion work and the complete rendered result: only that many source characters are converted, and the header, converted prefix, and truncation notice are then capped together. The default leaves headroom above the local provider's 100,000-character body cap, but rendered expansion can still make the final bound truncate the result.
 
 ```yaml
 - id: tool-web
@@ -94,7 +94,7 @@ Prefix-stable while definitions, resolved query cap, and visibility are unchange
 
 #### What the model sees
 
-The optional provider-owned answer is followed by `Sources:` and data-dependent lines shaped exactly `- [<title-or-url>](<url>)`, optionally suffixed ` — <snippet> (<publishedAt>)`. A multi-query call labels each provider answer with the originating query as a markdown heading, deduplicates sources by URL, and takes one source at each rank from every query before advancing to the next rank. With neither answer nor sources the result says `No results found.` A capped list adds `(Showing the first <count> sources. Refine the query for more.)`; every result ends `Cite the relevant URLs above as markdown links in your answer.`
+The optional provider-owned answer is followed by `Sources:` and data-dependent lines shaped exactly `- [<title-or-url>](<url>)`, optionally suffixed ` — <snippet> (<publishedAt>)`. A multi-query call runs each exact query string once, preserving its first position; it labels each provider answer with the originating query as a markdown heading, deduplicates sources by URL, and takes one source at each rank from every query before advancing to the next rank. With neither answer nor sources the result says `No results found.` A capped list adds `(Showing the first <count> sources. Refine the query for more.)`; every result ends `Cite the relevant URLs above as markdown links in your answer.`
 
 #### Token effect
 
@@ -103,6 +103,20 @@ Data-dependent results are resent until compaction; query fan-out is capped by `
 #### KV Cache effect
 
 Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
+
+### Search failure
+
+#### What the model sees
+
+If any query in a multi-query call fails, `web_search` aborts the other searches, waits for every started search to settle, discards successful results, and returns `Error: <message>` for the first failure.
+
+#### Token effect
+
+Only the retained error result adds tokens; discarded successful results do not enter model history.
+
+#### KV Cache effect
+
+Append-only; the error follows the reusable request prefix and does not invalidate existing KV-cache entries.
 
 ### Fetch result
 
@@ -122,7 +136,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 #### What the model sees
 
-Invalid inputs become exactly `Error: provide either query or queries`, `Error: provide either query or queries, not both`, `Error: query must be a non-empty string`, `Error: queries must contain at least one query`, `Error: queries must contain at most <count> queries`, `Error: each query must be a non-empty string`, or `Error: url must be a non-empty string`.
+Invalid inputs become exactly `Error: provide either query or queries`, `Error: provide either query or queries, not both`, `Error: query must be a non-empty string`, `Error: queries must contain at least one query`, `Error: queries must contain at most 1 query` when the configured cap is one, `Error: queries must contain at most <count> queries` for larger caps, `Error: each query must be a non-empty string`, or `Error: url must be a non-empty string`.
 
 #### Token effect
 
@@ -134,7 +148,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 ## Known Limitations and Deferred Work
 
-- **The query cap is not a total native-search budget** — `searchMaxQueries` bounds `ctx.web.search` calls, but a provider may perform several native searches inside each call. For example, a model-backed provider configured with `maxUses` can permit up to `searchMaxQueries × maxUses` native searches; `searchMaxResults` limits only the combined sources returned to the caller.
+- **There is no batch-wide native-search counter** — `searchMaxQueries` bounds `ctx.web.search` calls, but a provider may perform several native searches inside each call. For example, a model-backed provider configured with `maxUses` can permit up to `searchMaxQueries × maxUses` native searches; `searchMaxResults` limits only the combined sources returned to the caller. Deployments control cost through these independent consumer and provider settings because the generic seam does not know provider-internal search units.
 - **HTML→markdown conversion degrades on inputs GFM cannot safely represent** — [turndown](https://github.com/mixmark-io/turndown) (with GFM tables/strikethrough) converts at most `fetchMaxOutputChars` source characters through a real DOM. A conservative 512-level lexical guard passes deeply or ambiguously nested bodies through as raw HTML, conversion exceptions do the same, and table `colspan` is ignored because GFM has no spanning-cell representation; these bounds avoid blocking the event loop or expanding output from an untrusted numeric attribute ([archived dependency decision](../../../.agents/notes/archived/simplification/2026-07-26-turndown-for-tool-web-html-markdown.md)).
 - **The model-facing API is minimal by design, with promotions deferred** — `max_results` stays a config bound (not a model argument), and `web_fetch` takes only `url` (no `format`/`prompt`/LLM-summarization mode); both are named later steps in [the seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md).
 - **No web-specific permission policy** — both tools execute without requesting `ctx.approval`; a deployment that needs confirmation must add a `tools/pre-execute` policy, and the package does not define persistent URL/domain grants.
