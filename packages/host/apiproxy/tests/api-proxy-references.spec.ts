@@ -1,7 +1,7 @@
 /**
- * Reference RPC coverage over the real ApiProxy: addressed Host discovery,
- * canonical session mentions, atomic snapshot preparation before enqueue,
- * and error/cancellation behavior.
+ * Referenced prompt coverage over the real ApiProxy: atomic snapshot
+ * preparation before enqueue and error/cancellation behavior. Discovery lives
+ * on the owning services' Remote faces, tested in their packages.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
@@ -85,67 +85,6 @@ function stubAgent(ctx: Context, status: Agent['status'] = 'idle') {
   ctx.agents.register(agent)
   return agent
 }
-
-describe('reference discovery', () => {
-  it('addresses the target agent and returns file candidates unchanged', async () => {
-    const ctx = await harness()
-    const agent = stubAgent(ctx)
-    const list = vi.fn(() => Promise.resolve([
-      { path: 'src', kind: 'directory' as const },
-      { path: 'src/index.ts', kind: 'file' as const },
-    ]))
-    ctx.provide('fileReferences', { list } as never)
-    const api = createApiProxy(ctx, DEFAULTS)
-    const signal = new AbortController().signal
-    const value = expectOk(await api.references.files(
-      request({ sessionId: agent.id, query: 'sr' }),
-      signal,
-    ))
-    expect(value.items).toEqual([
-      { path: 'src', kind: 'directory' },
-      { path: 'src/index.ts', kind: 'file' },
-    ])
-    expect(list).toHaveBeenCalledWith(agent, 'sr', signal)
-  })
-
-  it('formats metadata candidates as opaque canonical mentions', async () => {
-    const ctx = await harness()
-    const agent = stubAgent(ctx)
-    const source = 'source-session' as SessionId
-    const listCandidates = vi.fn(() => Promise.resolve([{
-      sessionId: source,
-      label: 'Research]',
-      cwd: '/project',
-      createdAt: 42,
-    }]))
-    ctx.provide('sessionReferenceResolver', { listCandidates } as never)
-    const api = createApiProxy(ctx, DEFAULTS)
-    const value = expectOk(await api.references.sessions(
-      request({ sessionId: agent.id, query: 'res' }),
-      new AbortController().signal,
-    ))
-    expect(value.items).toEqual([{
-      sessionId: source,
-      label: 'Research]',
-      cwd: '/project',
-      createdAt: 42,
-      mention: formatSessionReferenceMention({ sessionId: source, label: 'Research]' }),
-    }])
-    expect(listCandidates).toHaveBeenCalledWith(agent, 'res', undefined, expect.any(AbortSignal))
-  })
-
-  it('fails explicitly when a reference capability is not composed', async () => {
-    const ctx = await harness()
-    const agent = stubAgent(ctx)
-    const api = createApiProxy(ctx, DEFAULTS)
-    expect(expectErr(await api.references.files(
-      request({ sessionId: agent.id, query: '' }),
-    )).code).toBe('reference-unavailable')
-    expect(expectErr(await api.references.sessions(
-      request({ sessionId: agent.id, query: '' }),
-    )).code).toBe('reference-unavailable')
-  })
-})
 
 describe('referenced prompt preparation', () => {
   it('normalizes the visible mention and waits for all context preparation before enqueue', async () => {
@@ -290,6 +229,44 @@ describe('referenced prompt preparation', () => {
     )
     expect(decision).toEqual({ kind: 'enter', messages: [context, steered] })
     expect(agent.inject).not.toHaveBeenCalled()
+  })
+
+  it('releases the admission listeners when the agent is disposed with the prompt pending', async () => {
+    const ctx = await harness()
+    const agent = stubAgent(ctx)
+    const source = 'source-session' as SessionId
+    const context = createUserMessage({
+      source: { kind: 'plugin' as const, plugin: 'session-reference' },
+      content: [{ type: 'text' as const, text: 'snapshot' }],
+    })
+    ctx.provide('sessionReferenceResolver', {
+      prepare: () => Promise.resolve({
+        content: [{ type: 'text' as const, text: 'continue @Research' }],
+        additionalContext: context,
+      }),
+    } as never)
+    const api = createApiProxy(ctx, DEFAULTS)
+    expectOk(await api.sessions.prompt(request({
+      sessionId: agent.id,
+      content: [{
+        type: 'text' as const,
+        text: `continue ${formatSessionReferenceMention({ sessionId: source, label: 'Research' })}`,
+      }],
+      mode: 'queue' as const,
+    })))
+    const queued = agent.followup.mock.calls[0]?.[0]
+    if (queued === undefined) throw new Error('expected queued prompt')
+
+    agentEvents(ctx, agent).emit('agent/disposed', { agent })
+
+    const signal = new AbortController().signal
+    const batch = agent.inbox.claim('next-turn', 1)
+    const decision = await agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      { messages: batch, turn: 1, step: 1, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: batch }),
+    )
+    expect(decision).toEqual({ kind: 'enter', messages: [queued] })
   })
 
   it('keeps prepared context paired when a queued prompt moves to steering', async () => {

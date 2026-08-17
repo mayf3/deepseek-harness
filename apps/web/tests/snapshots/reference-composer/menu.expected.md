@@ -1,5 +1,5 @@
 - listbox "Trigger suggestions":
-  - text: reference 文件与文件夹
+  - text: reference Files & folders
   - option "File · reference.txt reference.txt" [selected]
-  - text: Session 对话
+  - text: Session conversations
   - option "Session · Research notes reference-source-session · {{cwd}} · {{timestamp}}"

@@ -34,7 +34,7 @@ Web 负责快照／直接消息事务，不扩展通用收件箱记录。交付�
 
 统一的 Web `@` source 把会话候选与 Host 支持的文件发现组合在一起。会话候选查询会对 session id、cwd 或最新折叠后的标题执行不区分大小写的子串匹配，显示该标题，并在没有标题观察结果或标题观察失败时回退到 session id。查询遵循请求的取消信号；session id、cwd 和提及标签中的外部控制字符会被转义，但规范 URI 仍保留原始 id。
 
-Web 通过 `reference.sessions` 和 `session.prompt` 暴露发现与准备流程，详见 [Web 文件与会话引用](2026-07-27-web-file-and-session-references.md)。session 选择项是由 Host 生成的规范提及标记支撑的原子 chip。composer 会保留文本和 chip，直到准备与入队均成功；失败后会原样恢复。回放会把独立的 session-reference 上下文与相邻直接消息关联起来，并渲染精简来源摘要，而不暴露快照 JSON。
+Web 通过 `sessionReferenceResolver/candidates` Remote 方法暴露发现流程、通过 `session.prompt` 暴露准备流程，详见 [Web 文件与会话引用](2026-07-27-web-file-and-session-references.md)。session 选择项是由 Host 生成的规范提及标记支撑的原子 chip。composer 会保留文本和 chip，直到准备与入队均成功；失败后会原样恢复。回放会把独立的 session-reference 上下文与相邻直接消息关联起来，并渲染精简来源摘要，而不暴露快照 JSON。
 
 [仅面向自动化的 ACP（Agent Client Protocol）传输层](../simplification/2026-07-23-acp-automation-only-protocol.md)有意不挂载会话查询或会话引用服务。
 

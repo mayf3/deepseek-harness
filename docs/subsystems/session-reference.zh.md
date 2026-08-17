@@ -4,7 +4,7 @@
 
 由 Host 支撑的文件发现，以及结构化的跨会话引用请求与准备后的消息上下文。[文件引用约定](../../packages/context/file-reference)负责仅含路径的补全记录与语法；[会话引用约定](../../packages/context/session-reference)定义规范 URI、当前表层投影、标签安全的 JSON 与字节保留、稳定错误和不可信的模型提示词。宿主适配器使用这些类型，而不会把各自 UI 的提及语法传入 agent（智能体）核心。
 
-来源：[`packages/context/file-reference/src/index.ts`](../../packages/context/file-reference/src/index.ts) · [`packages/context/session-reference/src/types.ts`](../../packages/context/session-reference/src/types.ts)
+来源：[`packages/context/file-reference/src/types.ts`](../../packages/context/file-reference/src/types.ts) · [`packages/context/session-reference/src/types.ts`](../../packages/context/session-reference/src/types.ts)
 
 ## 文件候选项
 
@@ -47,6 +47,16 @@ interface SessionReferenceCandidate {
   cwd?: string
   /** Source session creation time in Unix epoch milliseconds. */
   createdAt: number
+}
+```
+
+`sessionReferenceResolver/candidates` Remote 方法向浏览器消费方提供同一发现能力，并为每个候选附上规范提示词 mention。
+
+```ts type-equiv
+/** One discovery candidate carrying its canonical prompt mention. */
+interface SessionReferenceMentionCandidate extends SessionReferenceCandidate {
+  /** Canonical `@[label](dsh-session:…)` mention serialized into the prompt draft. */
+  mention: string
 }
 ```
 
@@ -103,11 +113,21 @@ Host capability for cancellable file-reference discovery.
  * @returns deterministic path-only candidates.
  */
 abstract list( agent: Agent, query: string, signal: AbortSignal, ): Promise<FileReferenceCandidate[]>
+
+/**
+ * Remote face of {@link list}; the decorator cannot mark the abstract
+ * member, so this concrete adapter carries the identical contract.
+ * @param agent - target agent whose session cwd bounds discovery.
+ * @param query - path text following `@` or `@"`.
+ * @param signal - caller cancellation.
+ * @returns deterministic path-only candidates.
+ */
+@Remote('list') remoteExportList( agent: Agent, query: string, signal: AbortSignal, ): Promise<FileReferenceCandidate[]>
 ```
 
 Types: [Agent](core.md)
 
-Source: [`packages/context/file-reference/src/index.ts:32`](../../packages/context/file-reference/src/index.ts)
+Source: [`packages/context/file-reference/src/index.ts:27`](../../packages/context/file-reference/src/index.ts)
 
 <a id="ctxsessionreferenceresolver--sessionreferenceresolver"></a>
 
@@ -127,6 +147,17 @@ Exact-read consumer that prepares immutable cross-session message context.
 async listCandidates( agent: Agent, query: string = '', limit: number = this.config.candidateLimit, signal?: AbortSignal, ): Promise<SessionReferenceCandidate[]>
 
 /**
+ * Remote face of {@link listCandidates}: the configured candidate limit
+ * applies, and every candidate carries the canonical mention a host inserts
+ * into the prompt draft.
+ * @param agent - target agent; self is excluded and its cwd drives ranking.
+ * @param query - optional case-insensitive session-id/cwd/title substring.
+ * @param signal - caller cancellation.
+ * @returns mention-carrying candidates in rank order.
+ */
+@Remote('candidates') async remoteExportCandidates( agent: Agent, query: string, signal: AbortSignal, ): Promise<SessionReferenceMentionCandidate[]>
+
+/**
  * Snapshot all references before enqueue and return one aggregated durable context.
  * @param agent - target agent; references to it are rejected.
  * @param content - already host-normalized readable message content.
@@ -139,5 +170,5 @@ async prepare( agent: Agent, content: ContentBlock[], references: SessionReferen
 
 Types: [Agent](core.md) · [ContentBlock](llm-streaming.md)
 
-Source: [`packages/context/session-reference/src/index.ts:70`](../../packages/context/session-reference/src/index.ts)
+Source: [`packages/context/session-reference/src/index.ts:75`](../../packages/context/session-reference/src/index.ts)
 <!-- END GENERATED cordis-surface -->

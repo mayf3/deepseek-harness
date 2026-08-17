@@ -1824,6 +1824,51 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   })
 
   /** Canonical fixture implementation of the generated Goal Remote contract. */
+  /** Canonical fixture implementation of the generated reference-discovery Remote contracts. */
+  const referenceRemotes = {
+    files(id: SessionId, query: string): RpcResult<{ path: string; kind: 'file' | 'directory' }[]> {
+      const missing = requireGoalSession(id)
+      if (missing !== undefined) return missing
+      const needle = query.toLocaleLowerCase()
+      const items = [
+        { path: 'notes', kind: 'directory' as const },
+        { path: 'README.md', kind: 'file' as const },
+        { path: 'notes/demo.txt', kind: 'file' as const },
+      ].filter(item => item.path.toLocaleLowerCase().includes(needle))
+      return { ok: true, value: items }
+    },
+    sessions(id: SessionId, query: string): RpcResult<{
+      sessionId: SessionId
+      label: string
+      cwd?: string
+      createdAt: number
+      mention: string
+    }[]> {
+      const missing = requireGoalSession(id)
+      if (missing !== undefined) return missing
+      const needle = query.toLocaleLowerCase()
+      const value = sessions
+        .filter(item => item.sessionId !== id)
+        .filter(item => String(item.sessionId).toLocaleLowerCase().includes(needle)
+          || item.cwd?.toLocaleLowerCase().includes(needle) === true)
+        .map((item) => {
+          const label = item.sessionId === sid('fx-beta') ? 'Fixture child session' : String(item.sessionId)
+          const encoded = btoa(JSON.stringify(item.sessionId))
+            .replaceAll('+', '-')
+            .replaceAll('/', '_')
+            .replace(/=+$/u, '')
+          return {
+            sessionId: item.sessionId,
+            label,
+            ...item.cwd === undefined ? {} : { cwd: item.cwd },
+            createdAt: item.updatedAt,
+            mention: `@[${label}](dsh-session:${encoded})`,
+          }
+        })
+      return { ok: true, value }
+    },
+  }
+
   const goalRemotes = {
     create(id: SessionId, request: { objective: string; maxGoalRounds?: number }): RpcResult<{ ref: FxGoalRef }> {
       const missing = requireGoalSession(id)
@@ -2789,43 +2834,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         })
       },
     },
-    references: {
-      files: (request) => {
-        const missing = requireSession(request)
-        if (missing !== undefined) return missing
-        const query = request.payload.query.toLocaleLowerCase()
-        const items = [
-          { path: 'notes', kind: 'directory' as const },
-          { path: 'README.md', kind: 'file' as const },
-          { path: 'notes/demo.txt', kind: 'file' as const },
-        ].filter(item => item.path.toLocaleLowerCase().includes(query))
-        return ok(request, { items })
-      },
-      sessions: (request) => {
-        const missing = requireSession(request)
-        if (missing !== undefined) return missing
-        const query = request.payload.query.toLocaleLowerCase()
-        const items = sessions
-          .filter(item => item.sessionId !== request.payload.sessionId)
-          .filter(item => String(item.sessionId).toLocaleLowerCase().includes(query)
-            || item.cwd?.toLocaleLowerCase().includes(query) === true)
-          .map((item) => {
-            const label = item.sessionId === sid('fx-beta') ? 'Fixture child session' : String(item.sessionId)
-            const encoded = btoa(JSON.stringify(item.sessionId))
-              .replaceAll('+', '-')
-              .replaceAll('/', '_')
-              .replace(/=+$/u, '')
-            return {
-              sessionId: item.sessionId,
-              label,
-              ...item.cwd === undefined ? {} : { cwd: item.cwd },
-              createdAt: item.updatedAt,
-              mention: `@[${label}](dsh-session:${encoded})`,
-            }
-          })
-        return ok(request, { items })
-      },
-    },
     goals: {
       // Compatibility face only: old API Proxy payloads and acknowledgements
       // adapt to the canonical fixture Remote implementation above.
@@ -3041,6 +3049,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         args: {
           agentId: SessionId
           line?: string
+          query?: string
           ref?: { id: string; revision: number }
           request?: { objective?: string; maxGoalRounds?: number }
         }
@@ -3049,6 +3058,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       switch (endpoint) {
         case 'commands/list': return Promise.resolve(commandRemotes.list(sessionId))
         case 'commands/execute': return Promise.resolve(commandRemotes.execute(sessionId, args.line as string))
+        case 'fileReferences/list': return Promise.resolve(referenceRemotes.files(sessionId, args.query ?? ''))
+        case 'sessionReferenceResolver/candidates': return Promise.resolve(referenceRemotes.sessions(sessionId, args.query ?? ''))
         case 'goals/create': return Promise.resolve(goalRemotes.create(sessionId, {
           objective: args.request?.objective as string,
           ...args.request?.maxGoalRounds === undefined ? {} : { maxGoalRounds: args.request.maxGoalRounds },
@@ -3143,8 +3154,6 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'workspace.insertSessionBefore': return this.api.workspace.insertSessionBefore(request)
       case 'workspace.archiveSession': return this.api.workspace.archiveSession(request)
       case 'skill.list': return this.api.skills.list(request)
-      case 'reference.files': return this.api.references.files(request, signal)
-      case 'reference.sessions': return this.api.references.sessions(request, signal)
       case 'agentPreset.list': return this.api.agentPresets.list(request)
       case 'agentPreset.select': return this.api.agentPresets.select(request)
       case 'agentPreset.read': return this.api.agentPresets.read(request)

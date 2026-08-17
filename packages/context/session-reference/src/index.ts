@@ -5,9 +5,10 @@
  * @module @deepseek-ai/dsh-session-reference
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
@@ -21,7 +22,11 @@ import {
 } from './config.ts'
 import { retainReferencedSession, type ReferenceRetentionStats, type ReferencedSessionData } from './projection.ts'
 import { stringifyTagSafeJson } from './serialization.ts'
-import type { PreparedReferencedMessage, SessionReferenceCandidate, SessionReferenceInput, SessionReferenceSource } from './types.ts'
+import type {
+  PreparedReferencedMessage, SessionReferenceCandidate, SessionReferenceInput,
+  SessionReferenceMentionCandidate, SessionReferenceSource,
+} from './types.ts'
+import { formatSessionReferenceMention } from './uri.ts'
 
 export type * from './types.ts'
 export type { Config, SessionReferenceErrorCode } from './config.ts'
@@ -67,7 +72,7 @@ interface RenderedSource {
 }
 
 /** Exact-read consumer that prepares immutable cross-session message context. */
-export class SessionReferenceResolver extends Service {
+export class SessionReferenceResolver extends TypertRemoteService {
   static inject = ['sessionQuery']
   static Config: z<Config> = z.object({
     maxReferences: z.number().step(1).min(1).max(MAX_REFERENCES).default(MAX_REFERENCES),
@@ -156,6 +161,28 @@ export class SessionReferenceResolver extends Service {
         ...record.header.cwd === undefined ? {} : { cwd: record.header.cwd },
         createdAt: record.header.createdAt,
       }))
+  }
+
+  /**
+   * Remote face of {@link listCandidates}: the configured candidate limit
+   * applies, and every candidate carries the canonical mention a host inserts
+   * into the prompt draft.
+   * @param agent - target agent; self is excluded and its cwd drives ranking.
+   * @param query - optional case-insensitive session-id/cwd/title substring.
+   * @param signal - caller cancellation.
+   * @returns mention-carrying candidates in rank order.
+   */
+  @Remote('candidates')
+  async remoteExportCandidates(
+    agent: Agent,
+    query: string,
+    signal: AbortSignal,
+  ): Promise<SessionReferenceMentionCandidate[]> {
+    const candidates = await this.listCandidates(agent, query, this.config.candidateLimit, signal)
+    return candidates.map(candidate => ({
+      ...candidate,
+      mention: formatSessionReferenceMention({ sessionId: candidate.sessionId, label: candidate.label }),
+    }))
   }
 
   /**

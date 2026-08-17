@@ -244,8 +244,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'File reference discovery',
     mode: 'seam',
     implementations: ['file-reference-local'],
-    consumers: ['apiproxy'],
-    note: 'The interface returns path-only completion candidates within the addressed Agent cwd; providers own namespace access and ranking without reading file contents.',
+    note: 'The interface returns path-only completion candidates within the addressed Agent cwd through its unary Remote contract; providers own namespace access and ranking without reading file contents.',
   },
   {
     key: 'sessionReferenceResolver',

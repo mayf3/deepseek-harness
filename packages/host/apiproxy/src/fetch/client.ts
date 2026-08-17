@@ -42,10 +42,6 @@ import {
 } from '../api/workspace.schema.ts'
 import { skillListValueSchema } from '../api/skills.schema.ts'
 import {
-  referenceFilesValueSchema,
-  referenceSessionsValueSchema,
-} from '../api/references.schema.ts'
-import {
   agentPresetCopyValueSchema, agentPresetListValueSchema, agentPresetOpenDocumentValueSchema,
   agentPresetReadValueSchema, agentPresetRemoveValueSchema, agentPresetSelectValueSchema,
 } from '../api/agent-presets.schema.ts'
@@ -128,10 +124,6 @@ export interface IApiClient {
   skills: {
     list(payload: RequestPayload<'skill.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'skill.list'>>>
   }
-  references: {
-    files(payload: RequestPayload<'reference.files'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'reference.files'>>>
-    sessions(payload: RequestPayload<'reference.sessions'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'reference.sessions'>>>
-  }
   agentPresets: {
     list(payload: RequestPayload<'agentPreset.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.list'>>>
     select(payload: RequestPayload<'agentPreset.select'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.select'>>>
@@ -207,8 +199,6 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'workspace.insertSessionBefore': workspaceInsertSessionBeforeValueSchema,
   'workspace.archiveSession': workspaceArchiveSessionValueSchema,
   'skill.list': skillListValueSchema,
-  'reference.files': referenceFilesValueSchema,
-  'reference.sessions': referenceSessionsValueSchema,
   'agentPreset.list': agentPresetListValueSchema,
   'agentPreset.select': agentPresetSelectValueSchema,
   'agentPreset.read': agentPresetReadValueSchema,
@@ -465,11 +455,6 @@ export abstract class AbstractApiClient implements IApiClient {
 
   readonly skills: IApiClient['skills'] = {
     list: (payload, signal) => this.callUnary('skill.list', payload, signal),
-  }
-
-  readonly references: IApiClient['references'] = {
-    files: (payload, signal) => this.callUnary('reference.files', payload, signal),
-    sessions: (payload, signal) => this.callUnary('reference.sessions', payload, signal),
   }
 
   // Annotated like every sibling, and load-bearing rather than cosmetic:

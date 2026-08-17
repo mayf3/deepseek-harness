@@ -10,7 +10,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
-import type {} from '@deepseek-ai/dsh-file-reference'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { contentHasImage, createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
@@ -20,7 +19,6 @@ import { isAppendSurfaceEvent, isJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import {
-  formatSessionReferenceMention,
   parseSessionReferenceText,
   type SessionReferenceInput,
 } from '@deepseek-ai/dsh-session-reference'
@@ -1121,6 +1119,7 @@ function deliverPrompt(
   let cleanedUp = false
   let detachPreStep = (): void => {}
   let detachDiscard = (): void => {}
+  let detachDisposed = (): void => {}
   const cleanup = (): void => {
     /* v8 ignore next -- all settlement paths share this idempotent release. */
     if (cleanedUp) return
@@ -1128,8 +1127,14 @@ function deliverPrompt(
     ownership.cleanups.delete(message.id)
     detachPreStep()
     detachDiscard()
+    detachDisposed()
   }
   ownership.cleanups.set(message.id, cleanup)
+  // An agent retired with the prepared prompt still pending must not leave
+  // these listeners on the Host root context for the process lifetime.
+  detachDisposed = ctx.on('agent/disposed', ({ agent: subject }) => {
+    if (subject === agent) cleanup()
+  })
   detachPreStep = ctx.on('agent/pre-step', async ({ agent: subject, messages }, next): Promise<PreStepDecision> => {
     if (subject !== agent || !messages.some(candidate => candidate.id === message.id)) return next()
     cleanup()
@@ -3348,85 +3353,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })
         } catch (error: unknown) {
           return err(request, { code: 'internal', message: `skill listing failed: ${String(error)}`, details: {} })
-        }
-      },
-    },
-
-    references: {
-      async files(request, signal) {
-        const { sessionId, query } = request.payload
-        const found = await agentFor(sessionId)
-        if ('error' in found) return err(request, found.error)
-        const fileReferences = ctx.get('fileReferences')
-        if (fileReferences === undefined) {
-          return err(request, {
-            code: 'reference-unavailable',
-            message: 'file reference capability unavailable',
-            details: { kind: 'file' },
-          })
-        }
-        const effectiveSignal = signal ?? new AbortController().signal
-        try {
-          return ok(request, {
-            items: await fileReferences.list(found.agent, query, effectiveSignal),
-          })
-        } catch (error: unknown) {
-          if (effectiveSignal.aborted) {
-            return err(request, {
-              code: 'cancelled',
-              message: 'file reference listing was aborted',
-              details: {},
-            })
-          }
-          return err(request, {
-            code: 'reference-failed',
-            message: 'file reference listing failed',
-            details: { reason: String(error) },
-          })
-        }
-      },
-
-      async sessions(request, signal) {
-        const { sessionId, query } = request.payload
-        const found = await agentFor(sessionId)
-        if ('error' in found) return err(request, found.error)
-        const sessionReferences = ctx.get('sessionReferenceResolver')
-        if (sessionReferences === undefined) {
-          return err(request, {
-            code: 'reference-unavailable',
-            message: 'session reference capability unavailable',
-            details: { kind: 'session' },
-          })
-        }
-        try {
-          const candidates = await sessionReferences.listCandidates(
-            found.agent,
-            query,
-            undefined,
-            signal,
-          )
-          return ok(request, {
-            items: candidates.map(candidate => ({
-              ...candidate,
-              mention: formatSessionReferenceMention({
-                sessionId: candidate.sessionId,
-                label: candidate.label,
-              }),
-            })),
-          })
-        } catch (error: unknown) {
-          if (signal?.aborted === true) {
-            return err(request, {
-              code: 'cancelled',
-              message: 'session reference listing was aborted',
-              details: {},
-            })
-          }
-          return err(request, {
-            code: 'reference-failed',
-            message: 'session reference listing failed',
-            details: { reason: String(error) },
-          })
         }
       },
     },

@@ -283,6 +283,24 @@ describe('session reference discovery and preparation', () => {
     listSessions.mockRestore()
   })
 
+  it('serves the Remote face with the configured limit and canonical mentions', async () => {
+    const ctx = await harness()
+    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same', createdAt: 10 } })
+    ctx.sessions.create(SessionId('source]'), { meta: { cwd: '/same', createdAt: 20 } })
+    const candidates = await ctx.sessionReferenceResolver.remoteExportCandidates(
+      fakeAgent(target),
+      '',
+      new AbortController().signal,
+    )
+    expect(candidates).toEqual([{
+      sessionId: SessionId('source]'),
+      label: 'source]',
+      cwd: '/same',
+      createdAt: 20,
+      mention: formatSessionReferenceMention({ sessionId: SessionId('source]'), label: 'source]' }),
+    }])
+  })
+
   it('keeps metadata matches when one title observation fails and cancels a stalled title batch', async () => {
     const ctx = await harness()
     const target = ctx.sessions.create(SessionId('target'))

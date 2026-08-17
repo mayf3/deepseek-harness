@@ -271,6 +271,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   PreparedReferencedMessage: 'session-reference.md',
   FileReferenceCandidate: 'session-reference.md',
   SessionReferenceCandidate: 'session-reference.md',
+  SessionReferenceMentionCandidate: 'session-reference.md',
   SessionReferenceInput: 'session-reference.md',
   SessionEvent: 'session.md',
   SessionId: 'core.md',

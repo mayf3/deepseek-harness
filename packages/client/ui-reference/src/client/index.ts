@@ -1,47 +1,71 @@
 /**
  * Unified Web `@` reference source. File and session discovery run through
- * cancellable Host RPCs in parallel with deterministic ordering and labels.
+ * the cancellable generated Remote namespaces in parallel with deterministic
+ * ordering and labels.
  *
  * @module @deepseek-ai/dsh-client-ui-reference/client
  */
-import type { ConnectionHandle, FileReferenceItem, SessionReferenceItem } from '@deepseek-ai/dsh-api-remotes/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+// Type-only: pulls the generated Remote API and ctx.remote merge through the Client assembly boundary.
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+// Type-only: pulls the locale plugin's Context merge (ctx.locale).
+import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ClientSessionContext, InputTriggerServiceContract, InputTriggerSource,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
+import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
+import type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-reference/types'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import { en, NS, zh, type ReferenceKey } from './locales.ts'
 
-const FILE_SECTION = '文件与文件夹'
-const SESSION_SECTION = 'Session 对话'
+/**
+ * The two Remote calls this source needs. The generated face wraps every
+ * business result in {@link RemoteResult}: a carrier failure arrives as the
+ * `ok: false` branch rather than a rejection, so discovery reads one envelope
+ * per domain and either domain can fail without hiding the other.
+ */
+interface ReferenceRemotes {
+  readonly fileReferences: {
+    list: (agentId: SessionId, query: string, signal?: AbortSignal) => Promise<RemoteResult<FileReferenceCandidate[]>>
+  }
+  readonly sessionReferenceResolver: {
+    candidates: (agentId: SessionId, query: string, signal?: AbortSignal) => Promise<RemoteResult<SessionReferenceMentionCandidate[]>>
+  }
+}
 
-/** Required services: the slash registry and Host connection. */
-export const inject = ['inputTriggers', 'connection']
+/** Required services: the trigger registry, the Remote namespaces, and the copy. */
+export const inject = [
+  'inputTriggers', 'locale', 'remote', 'remote.fileReferences', 'remote.sessionReferenceResolver',
+]
 
 /**
  * Register the combined `@file` / `@session` source.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  const references = (ctx.get('connection') as ConnectionHandle).api.references
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-reference: dictionaries')
+  const t = ctx.locale.bind(NS)
+  const remote: ReferenceRemotes = ctx.remote
   const source: InputTriggerSource = {
     trigger: '@',
     name: 'reference',
     async candidates(session: ClientSessionContext, { query, quoted, signal }) {
-      const files = references.files({ sessionId: session.sessionId, query }, signal).then(
-        response => response.result.ok ? response.result.value.items : [],
+      const files = remote.fileReferences.list(session.sessionId, query, signal).then(
+        result => result.ok ? result.value : [],
         () => [],
       )
       const sessions = quoted === true
-        ? Promise.resolve([] as SessionReferenceItem[])
-        : references.sessions({ sessionId: session.sessionId, query }, signal).then(
-          response => response.result.ok ? response.result.value.items : [],
+        ? Promise.resolve([] as SessionReferenceMentionCandidate[])
+        : remote.sessionReferenceResolver.candidates(session.sessionId, query, signal).then(
+          result => result.ok ? result.value : [],
           () => [],
         )
       const [fileItems, sessionItems] = await Promise.all([files, sessions])
       if (signal.aborted) return []
       return [
-        ...fileItems.flatMap(candidate => fileCandidate(candidate, quoted === true)),
-        ...sessionItems.map(sessionCandidate),
+        ...fileItems.flatMap(candidate => fileCandidate(candidate, quoted === true, t)),
+        ...sessionItems.map(candidate => sessionCandidate(candidate, t)),
       ]
     },
     onPick({ candidate }) {
@@ -73,11 +97,13 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => inputTriggers.registerSource(source), 'ui-reference: @ source')
 }
 
+type Translate = (key: ReferenceKey) => string
+
 type ReferenceCandidateValue =
-  | { kind: 'file'; fileKind: FileReferenceItem['kind']; mention: string }
+  | { kind: 'file'; fileKind: FileReferenceCandidate['kind']; mention: string }
   | { kind: 'session'; label: string; mention: string }
 
-function fileCandidate(candidate: FileReferenceItem, preserveQuote: boolean) {
+function fileCandidate(candidate: FileReferenceCandidate, preserveQuote: boolean, t: Translate) {
   const mention = formatFileMention(candidate, preserveQuote)
   if (mention === undefined) return []
   const name = candidate.path.slice(candidate.path.lastIndexOf('/') + 1)
@@ -88,15 +114,15 @@ function fileCandidate(candidate: FileReferenceItem, preserveQuote: boolean) {
     mention,
   }
   return [{
-    name: `${directory ? 'Folder' : 'File'} · ${name}${directory ? '/' : ''}`,
+    name: `${t(directory ? 'candidate.folder' : 'candidate.file')} · ${name}${directory ? '/' : ''}`,
     description: candidate.path,
-    section: FILE_SECTION,
+    section: t('section.files'),
     value: JSON.stringify(value),
   }]
 }
 
-function sessionCandidate(candidate: SessionReferenceItem) {
-  const location = candidate.cwd ?? '(no cwd)'
+function sessionCandidate(candidate: SessionReferenceMentionCandidate, t: Translate) {
+  const location = candidate.cwd ?? t('candidate.noCwd')
   const description = `${candidate.label === candidate.sessionId ? '' : `${candidate.sessionId} · `}${location} · ${new Date(candidate.createdAt).toISOString()}`
   const value: ReferenceCandidateValue = {
     kind: 'session',
@@ -104,9 +130,9 @@ function sessionCandidate(candidate: SessionReferenceItem) {
     mention: candidate.mention,
   }
   return {
-    name: `Session · ${candidate.label}`,
+    name: `${t('candidate.session')} · ${candidate.label}`,
     description,
-    section: SESSION_SECTION,
+    section: t('section.sessions'),
     value: JSON.stringify(value),
   }
 }

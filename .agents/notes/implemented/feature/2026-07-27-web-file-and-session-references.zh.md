@@ -10,18 +10,18 @@ Web 输入框已有可复用的斜杠命令／引用触发流水线，但它的 
 
 ## 决策
 
-Web 通过 `@deepseek-ai/dsh-client-ui-reference` 暴露一个合并的 `@file` 与 `@session` 菜单。每次处理未加引号的查询时，它会并发启动两项宿主查询，以确定性顺序把文件排在会话之前，并使用稳定标签；不可选择的 `文件与文件夹` 和 `Session 对话` 标题会区分两个连续的候选分组，且不会进入键盘选择索引。尚未闭合的带引号 token 只搜索文件。任一候选领域都可以独立失败，不会隐藏另一领域成功返回的行。
+Web 通过 `@deepseek-ai/dsh-client-ui-reference` 暴露一个合并的 `@file` 与 `@session` 菜单。每次处理未加引号的查询时，它会并发启动两项 Remote 发现调用，以确定性顺序把文件排在会话之前，并使用注册在 locale 字典中的标签；不可选择的文件与会话分组标题会区分两个连续的候选分组，且不会进入键盘选择索引。尚未闭合的带引号 token 只搜索文件。任一候选领域都可以独立失败，不会隐藏另一领域成功返回的行。
 
-文件功能遵循由三个包构成的 seam：`@deepseek-ai/dsh-file-reference` 拥有 `ctx.fileReferences`、共享 `@path` token 语法、候选形状和稳定的模型指引；`@deepseek-ai/dsh-file-reference-local` 拥有每个 agent（智能体）有界的宿主文件系统索引、失效处理和作用域内的提示词安装；`dsh-client-ui-reference` 消费宿主 RPC 与共享语法。选择文件后仍只会把路径文本写入提示词，选择目录则会在其尾部斜杠后重新触发补全。
+文件功能遵循由三个包构成的 seam：`@deepseek-ai/dsh-file-reference` 拥有 `ctx.fileReferences`、共享 `@path` token 语法、候选形状和稳定的模型指引；`@deepseek-ai/dsh-file-reference-local` 拥有每个 agent（智能体）有界的宿主文件系统索引、失效处理和作用域内的提示词安装；`dsh-client-ui-reference` 消费生成的 Remote 命名空间与共享语法。选择文件后仍只会把路径文本写入提示词，选择目录则会在其尾部斜杠后重新触发补全。
 
-选择会话会创建一个原子的输入框引用。可见标签只用于呈现，隐藏值和剪贴板形式则是宿主生成的规范 `@[label](dsh-session:…)` 提及标记。`session.prompt` 会解析这些提及标记，并在递送前调用 `ctx.sessionReferences.prepare()`。队列递送通过一次性 `agent/prompt-submit` 包装层把准备后的上下文绑定到精确消息 id，并且只为获准决策附加该上下文；steering 递送会紧邻 `steer()` 之前调用 `inject()`。无效提及标记、取消、功能缺失、读取源会话失败和预算失败都不会递送消息。
+选择会话会创建一个原子的输入框引用。可见标签只用于呈现，隐藏值和剪贴板形式则是宿主生成的规范 `@[label](dsh-session:…)` 提及标记。`session.prompt` 会解析这些提及标记，并在递送前调用 `ctx.sessionReferenceResolver.prepare()`。递送通过一次性的外层 `agent/pre-step` 监听器把准备后的上下文绑定到精确消息 id：进入决策时把冻结快照插入到该消息紧前，普通丢弃或 agent（智能体）销毁会释放监听器，队列转 steering 的迁移保持这一配对。无效提及标记、取消、功能缺失、读取源会话失败和预算失败都不会递送消息。
 
-输入状态机在默认 sink 报告宿主已接受前，会保留普通草稿文本和原子引用。序列化或 RPC 失败后，同一草稿会回到可编辑状态。成功后，日志中的提示词封套仍是回放的权威来源：浏览器会把相邻且经元数据确认的会话引用分别渲染为独立的引用 chip，即使后续文本无空白紧邻，也会保持该投影；同时显示精简的会话来源摘要，而不会显示嵌入模型内容中的快照 JSON。
+输入状态机在默认 sink 报告宿主已接受前，会保留普通草稿文本和原子引用。序列化或 Remote 调用失败后，同一草稿会回到可编辑状态。成功后，日志中的提示词封套仍是回放的权威来源：浏览器会把相邻且经元数据确认的会话引用分别渲染为独立的引用 chip，即使后续文本无空白紧邻，也会保持该投影；同时显示精简的会话来源摘要，而不会显示嵌入模型内容中的快照 JSON。
 
 ## 引用事务
 
 ```text
-type @ → parallel file/session RPCs → pick path text or canonical session chip
+type @ → parallel file/session Remote calls → pick path text or canonical session chip
        → serialize draft → Host parses and prepares all sessions → enqueue once
        ↘ any pre-enqueue failure: retain the unchanged editable draft
 ```
@@ -42,8 +42,8 @@ type @ → parallel file/session RPCs → pick path text or canonical session ch
 
 ## 验证
 
-包（package）测试固定共享文件语法和排序、缓存失效及生命周期清理、Web 并行查询、带引号的路径、候选项独立失败、取消、不改变候选项索引的分组标题、文件／目录继续补全、规范会话 chip、相邻引用及相邻文本条件下的引用投影、codec 无损往返、宿主协议校验、全有或全无的提示词准备，以及在序列化和 RPC 失败时保留草稿。无密钥的装配 Web 快照会渲染可用的引用分组，并通过真实客户端组合依次选择文件和会话引用。
+包（package）测试固定共享文件语法和排序、缓存失效及生命周期清理、Web 并行查询、带引号的路径、候选项独立失败、取消、不改变候选项索引的分组标题、文件／目录继续补全、规范会话 chip、相邻引用及相邻文本条件下的引用投影、codec 无损往返、所属服务的 Remote 调用面、全有或全无的提示词准备，以及在序列化和 Remote 调用失败时保留草稿。无密钥的装配 Web 快照会渲染可用的引用分组，并通过真实客户端组合依次选择文件和会话引用。
 
 ## 后果
 
-Web 现在使用共享的 `@file` 发现 seam 和结构化会话引用身份，宿主服务仍然是文件系统与会话访问的权威来源。新的文件引用 seam 增加了两个包和一个宿主 RPC 领域，但浏览器 bundle 中不包含 Node API，并允许其他提供方让补全与远程文件系统对齐。候选查询失败仍会让菜单静默降级；提交失败仍会显式报告且可恢复。文件引用只产生路径文本和稳定的条件式指引成本，而会话引用仍保留 `dsh-session-reference` 所拥有的有界快照开销与信任限定文本。
+Web 现在使用共享的 `@file` 发现 seam 和结构化会话引用身份，宿主服务仍然是文件系统与会话访问的权威来源。新的文件引用 seam 增加了两个包，其发现方法是所属服务上的一元 Remote 契约；浏览器 bundle 中不包含 Node API，并允许其他提供方让补全与远程文件系统对齐。候选查询失败仍会让菜单静默降级；提交失败仍会显式报告且可恢复。文件引用只产生路径文本和稳定的条件式指引成本，而会话引用仍保留 `dsh-session-reference` 所拥有的有界快照开销与信任限定文本。

@@ -4,7 +4,7 @@
  * @module @deepseek-ai/dsh-file-reference/grammar
  */
 
-import type { FileReferenceCandidate } from './index.ts'
+import type { FileReferenceCandidate } from './types.ts'
 
 /** Active `@` token ending at the editor cursor. */
 export interface ActiveAtToken {
