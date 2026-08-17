@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import { CompactionId, compactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import { createUserMessage, CallId , createMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -299,6 +299,79 @@ describe('session reference discovery and preparation', () => {
       createdAt: 20,
       mention: formatSessionReferenceMention({ sessionId: SessionId('source]'), label: 'source]' }),
     }])
+  })
+
+  it('prepares direct mentions at pre-step and keeps ordinary and plugin messages unchanged', async () => {
+    const ctx = await harness()
+    const target = ctx.sessions.create(SessionId('target'))
+    const source = ctx.sessions.create(SessionId('source'))
+    source.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'source fact' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    const agent = fakeAgent(target)
+    const direct = createUserMessage({
+      content: [{
+        type: 'text',
+        text: `compare ${formatSessionReferenceMention({ sessionId: source.id, label: 'Research' })} now`,
+      }],
+      source: { kind: 'user' },
+    })
+    const ordinary = createUserMessage({
+      content: [{ type: 'text', text: 'ordinary prompt' }],
+      source: { kind: 'user' },
+    })
+    const plugin = createUserMessage({
+      content: [{ type: 'text', text: formatSessionReferenceMention({ sessionId: source.id, label: 'Ignored' }) }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })
+    const signal = new AbortController().signal
+
+    const decision = await agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      { messages: [direct, ordinary, plugin], turn: 1, step: 1, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [direct, ordinary, plugin] }),
+    )
+
+    expect(decision.kind).toBe('enter')
+    if (decision.kind !== 'enter') throw new Error('expected entered pre-step')
+    expect(decision.messages).toHaveLength(4)
+    expect(decision.messages[0]?.source).toMatchObject({
+      kind: 'session-reference',
+      references: [{ sessionId: source.id, label: 'Research' }],
+    })
+    expect(decision.messages[1]).toMatchObject({
+      id: direct.id,
+      content: [{ type: 'text', text: 'compare @Research now' }],
+    })
+    expect(decision.messages[1]).not.toBe(direct)
+    expect(decision.messages[2]).toBe(ordinary)
+    expect(decision.messages[3]).toBe(plugin)
+  })
+
+  it('does not prepare a rejected pre-step and rejects malformed direct mentions', async () => {
+    const ctx = await harness()
+    const target = ctx.sessions.create(SessionId('target'))
+    const agent = fakeAgent(target)
+    const malformed = createUserMessage({
+      content: [{ type: 'text', text: '@[bad](dsh-session:not-canonical)' }],
+      source: { kind: 'user' },
+    })
+    const readSurface = vi.spyOn(ctx.sessionQuery, 'readSurface')
+    const signal = new AbortController().signal
+
+    await expect(agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      { messages: [malformed], turn: 1, step: 1, signal },
+      () => Promise.resolve({ kind: 'reject' as const }),
+    )).resolves.toEqual({ kind: 'reject' })
+    expect(readSurface).not.toHaveBeenCalled()
+
+    await expect(agentEvents(ctx, agent).waterfall(
+      'agent/pre-step',
+      { messages: [malformed], turn: 1, step: 1, signal },
+      () => Promise.resolve({ kind: 'enter' as const, messages: [malformed] }),
+    )).rejects.toThrow(/invalid session reference URI/)
   })
 
   it('keeps metadata matches when one title observation fails and cancels a stalled title batch', async () => {

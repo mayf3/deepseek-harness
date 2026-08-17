@@ -258,14 +258,14 @@ export function PendingSteeringBubble({ content, loadImage, t }: {
 
 /** User and admitted-steering keyed Chat renderer. */
 export const UserMessageNodeView = memo(function UserMessageNodeView({
-  node, loadImage, referenceLabels, t,
+  node, loadImage, t,
 }: ChatNodeViewProps<'user' | 'steering'>) {
   const data = node.data
   return (
     <UserStyleBubble
       content={data.content}
       imageLoader={loadImage}
-      {...referenceLabels === undefined ? {} : { referenceLabels }}
+      {...data.referenceLabels === undefined ? {} : { referenceLabels: data.referenceLabels }}
       t={t}
       actions={text => (
         <MessageIconActions

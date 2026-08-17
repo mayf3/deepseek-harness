@@ -61,9 +61,13 @@ function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) 
     anchorSeq: node.seq,
     location: { kind: 'session' },
     visibility: 'visible',
-    data: node.kind === 'model-retry' ? { attempts: [node], current: node } : node,
+    data: node.kind === 'model-retry'
+      ? { attempts: [node], current: node }
+      : (node.kind === 'user' || node.kind === 'steering') && referenceLabels !== undefined
+        ? { ...node, referenceLabels }
+        : node,
   }
-  const props = { node: viewNode, t: translate, referenceLabels } as ChatNodeViewProps
+  const props = { node: viewNode, t: translate } as ChatNodeViewProps
   switch (node.kind) {
     case 'user':
     case 'steering':

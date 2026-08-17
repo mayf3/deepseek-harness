@@ -51,9 +51,6 @@ export interface RpcErrorDetailsMap {
   'agent-preset-not-found': { agentPreset: string; available: string[] }
   'agent-preset-invalid': { agentPreset: string; reason: string }
   'agent-busy': { reason: string }
-  'reference-unavailable': { kind: 'file' | 'session' }
-  'reference-invalid': { reason: string }
-  'reference-failed': { reason: string }
   'attachment-error': { reason: string }
   'queue-item-not-found': { itemId: MessageId }
   'steer-unavailable': { itemId: MessageId }

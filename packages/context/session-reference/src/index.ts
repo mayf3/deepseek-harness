@@ -7,9 +7,9 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionSurfaceSnapshot, SessionTitleObservationResult } from '@deepseek-ai/dsh-session-query'
@@ -26,7 +26,7 @@ import type {
   PreparedReferencedMessage, SessionReferenceCandidate, SessionReferenceInput,
   SessionReferenceMentionCandidate, SessionReferenceSource,
 } from './types.ts'
-import { formatSessionReferenceMention } from './uri.ts'
+import { formatSessionReferenceMention, parseSessionReferenceText } from './uri.ts'
 
 export type * from './types.ts'
 export type { Config, SessionReferenceErrorCode } from './config.ts'
@@ -103,6 +103,46 @@ export class SessionReferenceResolver extends TypertRemoteService {
         'SESSION_REFERENCE_INVALID_CONFIG',
       )
     }
+    ctx.on('agent/pre-step', async ({ agent, signal }, next): Promise<PreStepDecision> => {
+      const decision = await next()
+      if (decision.kind === 'reject') return decision
+      return {
+        kind: 'enter',
+        messages: await this.prepareDirectMessages(agent, decision.messages, signal),
+      }
+    }, { prepend: true })
+  }
+
+  /**
+   * Replace canonical mentions in direct user messages and place each prepared
+   * snapshot immediately before the message that cited it.
+   * @param agent - agent entering the model step.
+   * @param messages - messages accepted by downstream pre-step listeners.
+   * @param signal - active turn cancellation.
+   * @returns messages with session-reference context inserted in citation order.
+   */
+  private async prepareDirectMessages(
+    agent: Agent,
+    messages: readonly UserMessage[],
+    signal: AbortSignal,
+  ): Promise<UserMessage[]> {
+    const prepared = await Promise.all(messages.map(async (message): Promise<UserMessage[]> => {
+      if (message.source.kind !== 'user') return [message]
+      const references: SessionReferenceInput[] = []
+      const content = message.content.map((block): ContentBlock => {
+        if (block.type !== 'text') return block
+        const parsed = parseSessionReferenceText(block.text)
+        references.push(...parsed.references)
+        return { type: 'text', text: parsed.text }
+      })
+      if (references.length === 0) return [message]
+      const resolved = await this.prepare(agent, content, references, signal)
+      const direct = freezeMessage({ ...message, content: resolved.content })
+      return resolved.additionalContext === undefined
+        ? [direct]
+        : [resolved.additionalContext, direct]
+    }))
+    return prepared.flat()
   }
 
   /**
@@ -186,11 +226,11 @@ export class SessionReferenceResolver extends TypertRemoteService {
   }
 
   /**
-   * Snapshot all references before enqueue and return one aggregated durable context.
+   * Snapshot all references for one accepted direct message and return one aggregated durable context.
    * @param agent - target agent; references to it are rejected.
    * @param content - already host-normalized readable message content.
    * @param references - structured source sessions in mention order.
-   * @param signal - optional cancellation boundary for host request teardown.
+   * @param signal - optional cancellation boundary for the active turn.
    * @returns detached content and optional referenced-session context.
    */
   async prepare(

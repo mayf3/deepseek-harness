@@ -9,30 +9,14 @@
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ClientSessionContext, InputTriggerServiceContract, InputTriggerSource,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
 import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
 import type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-reference/types'
-import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { en, NS, zh, type ReferenceKey } from './locales.ts'
-
-/**
- * The two Remote calls this source needs. The generated face wraps every
- * business result in {@link RemoteResult}: a carrier failure arrives as the
- * `ok: false` branch rather than a rejection, so discovery reads one envelope
- * per domain and either domain can fail without hiding the other.
- */
-interface ReferenceRemotes {
-  readonly fileReferences: {
-    list: (agentId: SessionId, query: string, signal?: AbortSignal) => Promise<RemoteResult<FileReferenceCandidate[]>>
-  }
-  readonly sessionReferenceResolver: {
-    candidates: (agentId: SessionId, query: string, signal?: AbortSignal) => Promise<RemoteResult<SessionReferenceMentionCandidate[]>>
-  }
-}
 
 /** Required services: the trigger registry, the Remote namespaces, and the copy. */
 export const inject = [
@@ -46,18 +30,17 @@ export const inject = [
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-reference: dictionaries')
   const t = ctx.locale.bind(NS)
-  const remote: ReferenceRemotes = ctx.remote
   const source: InputTriggerSource = {
     trigger: '@',
     name: 'reference',
     async candidates(session: ClientSessionContext, { query, quoted, signal }) {
-      const files = remote.fileReferences.list(session.sessionId, query, signal).then(
+      const files = ctx.remote.fileReferences.list(session.sessionId, query, signal).then(
         result => result.ok ? result.value : [],
         () => [],
       )
       const sessions = quoted === true
         ? Promise.resolve([] as SessionReferenceMentionCandidate[])
-        : remote.sessionReferenceResolver.candidates(session.sessionId, query, signal).then(
+        : ctx.remote.sessionReferenceResolver.candidates(session.sessionId, query, signal).then(
           result => result.ok ? result.value : [],
           () => [],
         )

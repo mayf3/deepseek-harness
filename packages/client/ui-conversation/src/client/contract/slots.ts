@@ -364,8 +364,6 @@ export interface ChatNodeOwnerProps {
   /** Resolve a session-authorized historical image for inline display. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
-  /** Session-reference labels owned by the immediately preceding recall node. */
-  referenceLabels?: readonly string[] | undefined
 }
 
 /** Full props of one registered keyed Chat business renderer. */

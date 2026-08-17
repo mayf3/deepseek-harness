@@ -96,7 +96,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'session.selectModel': { schema: sessionSelectModelRequestSchema, invoke: (api, r) => api.sessions.selectModel(r) },
   'session.rename': { schema: sessionRenameRequestSchema, invoke: (api, r) => api.sessions.rename(r) },
   'session.fork': { schema: sessionForkRequestSchema, invoke: (api, r) => api.sessions.fork(r) },
-  'session.prompt': { schema: sessionPromptRequestSchema, invoke: (api, r, signal) => api.sessions.prompt(r, signal) },
+  'session.prompt': { schema: sessionPromptRequestSchema, invoke: (api, r) => api.sessions.prompt(r) },
   'session.attachment': { schema: sessionAttachmentRequestSchema, invoke: (api, r) => api.sessions.attachment(r) },
   'session.updateQueue': { schema: sessionUpdateQueueRequestSchema, invoke: (api, r) => api.sessions.updateQueue(r) },
   'session.cancel': { schema: sessionCancelRequestSchema, invoke: (api, r) => api.sessions.cancel(r) },
@@ -172,6 +172,9 @@ function fullResponse(narrow: RpcResponse<unknown>): Response {
  * Wire<> widening back to the exact payload (undefined-valued properties and
  * absent ones are indistinguishable after JSON transport).
  */
+// K appears once in the signature but ties the UNARY_ROUTES[K] row lookup to its own
+// schema/invoke pairing; a union parameter degrades the row to an uninvokable intersection.
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters
 async function handleUnary<K extends keyof RpcMethodMap>(
   api: ApiProxy, method: K, message: ClientRequest, signal: AbortSignal,
 ): Promise<Response> {

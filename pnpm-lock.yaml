@@ -4862,9 +4862,6 @@ importers:
       '@deepseek-ai/dsh-session-query':
         specifier: workspace:^
         version: link:../../session-query/session-query
-      '@deepseek-ai/dsh-session-reference':
-        specifier: workspace:^
-        version: link:../../context/session-reference
       '@deepseek-ai/dsh-session-title':
         specifier: workspace:^
         version: link:../../session/session-title

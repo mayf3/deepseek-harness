@@ -158,11 +158,11 @@ async listCandidates( agent: Agent, query: string = '', limit: number = this.con
 @Remote('candidates') async remoteExportCandidates( agent: Agent, query: string, signal: AbortSignal, ): Promise<SessionReferenceMentionCandidate[]>
 
 /**
- * Snapshot all references before enqueue and return one aggregated durable context.
+ * Snapshot all references for one accepted direct message and return one aggregated durable context.
  * @param agent - target agent; references to it are rejected.
  * @param content - already host-normalized readable message content.
  * @param references - structured source sessions in mention order.
- * @param signal - optional cancellation boundary for host request teardown.
+ * @param signal - optional cancellation boundary for the active turn.
  * @returns detached content and optional referenced-session context.
  */
 async prepare( agent: Agent, content: ContentBlock[], references: SessionReferenceInput[], signal?: AbortSignal, ): Promise<PreparedReferencedMessage>

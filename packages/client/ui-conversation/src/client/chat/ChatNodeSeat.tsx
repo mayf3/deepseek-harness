@@ -1,5 +1,4 @@
 import { memo, useMemo } from 'react'
-import { sessionRecallLabels } from '@deepseek-ai/dsh-client-runtime/client'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
@@ -22,19 +21,6 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   loadImage, fileMentions, useSession, renderSlot, t,
 }: ChatNodeSeatProps) {
   const node = useSession(snapshot => snapshot.chat.nodes.get(nodeKey))
-  const referenceLabelsJson = useSession((snapshot) => {
-    const index = snapshot.chat.order.indexOf(nodeKey)
-    if (index <= 0) return ''
-    const previousKey = snapshot.chat.order[index - 1]
-    const previous = previousKey === undefined ? undefined : snapshot.chat.nodes.get(previousKey)
-    if (previous?.kind !== 'context') return ''
-    const labels = sessionRecallLabels((previous as ChatNode<'context'>).data.source)
-    return labels.length === 0 ? '' : JSON.stringify(labels)
-  })
-  const referenceLabels = useMemo<readonly string[]>(
-    () => referenceLabelsJson === '' ? [] : JSON.parse(referenceLabelsJson) as string[],
-    [referenceLabelsJson],
-  )
   const routedNode = node as ChatNode | undefined
   const owner = useMemo<ChatNodeOwnerProps | null>(() => node === undefined
     ? null
@@ -46,8 +32,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       forkAt,
       loadImage,
       fileMentions,
-      ...(referenceLabels.length === 0 ? {} : { referenceLabels }),
-    }, [node, selectedCallId, cwd, openFile, inspectCall, forkAt, loadImage, fileMentions, referenceLabels])
+    }, [node, selectedCallId, cwd, openFile, inspectCall, forkAt, loadImage, fileMentions])
   if (routedNode === undefined || owner === null) return null
   // Runtime dispatch owns the correlation: every Node's discriminant is the
   // keyed-slot entry passed alongside that same Node. TypeScript does not

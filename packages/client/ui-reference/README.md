@@ -6,7 +6,7 @@ Unified Web `@file` and `@session` source. The browser starts the `fileReference
 
 File picks insert the natural text defined by the shared `@path` grammar. A file closes completion and adds a trailing space; a directory keeps the menu active at its trailing slash so the user can descend another level. Paths containing whitespace use `@"path with spaces"`, and a quote the user opened explicitly remains quoted.
 
-Session picks insert an atomic composer chip whose hidden `ref` and clipboard representation are the canonical `@[label](dsh-session:…)` mention returned by the Host. The visible chip uses `@label`; serialization never reconstructs identity from that label. Ordinary send delegates the canonical mention to `session.prompt`, where Host-side session-reference preparation owns validation, snapshotting, and model context.
+Session picks insert an atomic composer chip whose hidden `ref` and clipboard representation are the canonical `@[label](dsh-session:…)` mention returned by the Host. The visible chip uses `@label`; serialization never reconstructs identity from that label. Ordinary send carries the canonical mention through `session.prompt`; the session-reference service validates it and captures model context at `agent/pre-step`.
 
 The `/client` export is the plugin body (`apply`/`inject`) only; candidate encoding stays internal to the registration effect.
 
@@ -20,6 +20,6 @@ Candidate browsing has no model effect. A selected file or session changes only 
 
 ## Known Limitations and Deferred Work
 
-- **Candidate failure is intentionally quiet** — one unavailable or failed Remote discovery call yields no rows for that domain, while prompt submission still reports session-reference preparation failures through the ordinary send path.
+- **Candidate failure is intentionally quiet** — one unavailable or failed Remote discovery call yields no rows for that domain. A session-reference preparation failure occurs after prompt acceptance and terminates that agent turn.
 - **No browser-side file scan** — Web completion requires a mounted Host `ctx.fileReferences` provider; the browser cannot fall back to its own filesystem.
 - **Session search remains metadata-only** — discovery filters session id, cwd, and the latest log-backed title through `ctx.sessionReferenceResolver`; message bodies and full transcripts are not searched.

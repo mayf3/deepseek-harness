@@ -63,9 +63,6 @@
       "path": "../../session-query/session-query"
     },
     {
-      "path": "../../context/session-reference"
-    },
-    {
       "path": "../../session/session-title"
     },
     {

@@ -8,7 +8,7 @@ import { mkdir, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus, PreStepDecision } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -18,10 +18,6 @@ import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
 import { isAppendSurfaceEvent, isJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
-import {
-  parseSessionReferenceText,
-  type SessionReferenceInput,
-} from '@deepseek-ai/dsh-session-reference'
 import { SessionQueryError, type SessionSearchCursor } from '@deepseek-ai/dsh-session-query'
 import { SubagentError } from '@deepseek-ai/dsh-subagent'
 import type { SubagentListEntry as CatalogSubagentListEntry } from '@deepseek-ai/dsh-subagent'
@@ -86,7 +82,7 @@ import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@dee
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 // Value edge: the rename impl narrows the title service's validation failure; the import also resolves `ctx.get('sessionTitle')`.
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
-import type { CallId, MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { CallId } from '@deepseek-ai/dsh-llm/brand'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-approval'
 // Side-effect type import: resolves the `approval/request` waterfall and
@@ -163,21 +159,6 @@ async function durablePromptContent(ctx: Context, content: readonly PromptConten
     blocks.push({ type: 'image', attachment })
   }
   return blocks
-}
-
-/** Remove canonical session mentions from text blocks and retain their structured identities. */
-function parseReferencedContent(content: readonly PromptContentPart[]): {
-  content: PromptContentPart[]
-  references: SessionReferenceInput[]
-} {
-  const references: SessionReferenceInput[] = []
-  const normalized = content.map((part): PromptContentPart => {
-    if (part.type !== 'text') return part
-    const parsed = parseSessionReferenceText(part.text)
-    references.push(...parsed.references)
-    return { type: 'text', text: parsed.text }
-  })
-  return { content: normalized, references }
 }
 
 /** Search durable content for an image reference, including nested tool results. */
@@ -1085,72 +1066,6 @@ function changedWorkspaceView(workspaceId: string, value: unknown): WorkspaceVie
   }
 }
 
-/** One ApiProxy instance's pending reference-prompt admission listeners. */
-interface PreparedPromptOwnership {
-  readonly relocating: Set<MessageId>
-  readonly cleanups: Map<MessageId, () => void>
-}
-
-/** Deliver a prepared prompt and inject its snapshot immediately before that exact message enters. */
-function deliverPrompt(
-  ctx: Context,
-  agent: Agent,
-  mode: 'queue' | 'steer',
-  message: UserMessage,
-  additionalContext: UserMessage | undefined,
-  ownership: PreparedPromptOwnership,
-): void {
-  if (additionalContext === undefined) {
-    if (mode === 'steer') agent.steer(message)
-    else agent.followup(message)
-    return
-  }
-  let cleanedUp = false
-  let detachPreStep = (): void => {}
-  let detachDiscard = (): void => {}
-  let detachDisposed = (): void => {}
-  const cleanup = (): void => {
-    /* v8 ignore next -- all settlement paths share this idempotent release. */
-    if (cleanedUp) return
-    cleanedUp = true
-    ownership.cleanups.delete(message.id)
-    detachPreStep()
-    detachDiscard()
-    detachDisposed()
-  }
-  ownership.cleanups.set(message.id, cleanup)
-  // An agent retired with the prepared prompt still pending must not leave
-  // these listeners on the Host root context for the process lifetime.
-  detachDisposed = ctx.on('agent/disposed', ({ agent: subject }) => {
-    if (subject === agent) cleanup()
-  })
-  detachPreStep = ctx.on('agent/pre-step', async ({ agent: subject, messages }, next): Promise<PreStepDecision> => {
-    if (subject !== agent || !messages.some(candidate => candidate.id === message.id)) return next()
-    cleanup()
-    const decision = await next()
-    if (decision.kind !== 'enter') return decision
-    const promptIndex = decision.messages.findIndex(candidate => candidate.id === message.id)
-    if (promptIndex < 0) return decision
-    return {
-      kind: 'enter',
-      messages: decision.messages.toSpliced(promptIndex, 0, additionalContext),
-    }
-  }, { prepend: true })
-  detachDiscard = ctx.on('agent/inbox/discarded', ({ agent: subject, message: discarded }) => {
-    if (subject !== agent || discarded.id !== message.id || ownership.relocating.has(message.id)) return
-    const remainsPending = [...agent.inbox.nextTurn, ...agent.inbox.nextStep]
-      .some(candidate => candidate.id === message.id)
-    if (!remainsPending) cleanup()
-  })
-  try {
-    if (mode === 'steer') agent.steer(message)
-    else agent.followup(message)
-  } catch (error: unknown) {
-    cleanup()
-    throw error
-  }
-}
-
 /**
  * Implement ApiProxy over a composed host context.
  * @param ctx - a context with the Host spine and Workspace registry mounted.
@@ -1185,10 +1100,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   const pendingApprovals = new Map<RpcId, PendingApproval>()
   const muxQueues = new Set<FrameQueue<RpcRequest<MuxFrame>>>()
   const imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
-  const preparedPromptOwnership: PreparedPromptOwnership = {
-    relocating: new Set(),
-    cleanups: new Map(),
-  }
 
   /** Serialize image admission with model selection for one agent. */
   function serializeImageAdmission<T>(agent: Agent, operation: () => Promise<T>): Promise<T> {
@@ -2487,7 +2398,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         return ok(request, { sessionId: childId })
       },
 
-      async prompt(request, signal) {
+      async prompt(request) {
         const { sessionId, mode, content, clientTimeZone } = request.payload
         const canonicalTimeZone = clientTimeZone === undefined
           ? undefined
@@ -2502,32 +2413,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const resolved = await turnAgentFor<{ accepted: true }>(request, sessionId)
         if ('refused' in resolved) return resolved.refused
         const agent = resolved.agent
-        let parsed: ReturnType<typeof parseReferencedContent>
-        try {
-          parsed = parseReferencedContent(content)
-        } catch (error: unknown) {
-          return err(request, {
-            code: 'reference-invalid',
-            message: 'invalid session reference',
-            details: { reason: String(error) },
-          })
-        }
         // Request identity and optional browser zone ride the exact durable user message.
         const source: MessageSource = {
           kind: 'user',
           rpcId: request.rpcId,
           ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
         }
-        const hasImage = parsed.content.some(part => part.type === 'image')
+        const hasImage = content.some(part => part.type === 'image')
         const admit = async (): Promise<RpcResponse<{ accepted: true }>> => {
           try {
-            if (signal?.aborted === true) {
-              return err(request, {
-                code: 'cancelled',
-                message: 'prompt submission was aborted',
-                details: {},
-              })
-            }
             if (hasImage) {
               const current = selectionFor(agent).current
               const modelInfo = await ctx.llm.resolveModelInfo(current.provider, current.model)
@@ -2539,45 +2433,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                 })
               }
             }
-            let durable = await durablePromptContent(ctx, parsed.content)
-            let additionalContext: UserMessage | undefined
-            if (parsed.references.length > 0) {
-              const sessionReferences = ctx.get('sessionReferenceResolver')
-              if (sessionReferences === undefined) {
-                return err(request, {
-                  code: 'reference-unavailable',
-                  message: 'session reference capability unavailable',
-                  details: { kind: 'session' },
-                })
-              }
-              try {
-                const prepared = await sessionReferences.prepare(agent, durable, parsed.references, signal)
-                durable = prepared.content
-                additionalContext = prepared.additionalContext
-              } catch (error: unknown) {
-                if (signal !== undefined && isAborted(signal)) {
-                  return err(request, {
-                    code: 'cancelled',
-                    message: 'session reference preparation was aborted',
-                    details: {},
-                  })
-                }
-                return err(request, {
-                  code: 'reference-failed',
-                  message: 'session reference preparation failed',
-                  details: { reason: String(error) },
-                })
-              }
-            }
-            if (signal !== undefined && isAborted(signal)) {
-              return err(request, {
-                code: 'cancelled',
-                message: 'prompt submission was aborted',
-                details: {},
-              })
-            }
+            const durable = await durablePromptContent(ctx, content)
             const message: UserMessage = createUserMessage({ content: durable, source })
-            deliverPrompt(ctx, agent, mode, message, additionalContext, preparedPromptOwnership)
+            if (mode === 'steer') agent.steer(message)
+            else agent.followup(message)
           } catch (error: unknown) {
             if (error instanceof AttachmentError) {
               return err(request, {
@@ -2690,16 +2549,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         if (action.kind === 'edit') {
           agent.inbox.replace(itemId, freezeMessage({ ...message, content: action.content }))
         } else {
-          if (action.kind === 'steer') preparedPromptOwnership.relocating.add(itemId)
-          try {
-            agent.inbox.remove(itemId)
-            if (action.kind === 'steer') agent.steer(message)
-          } catch (error: unknown) {
-            preparedPromptOwnership.cleanups.get(itemId)?.()
-            throw error
-          } finally {
-            preparedPromptOwnership.relocating.delete(itemId)
-          }
+          agent.inbox.remove(itemId)
+          if (action.kind === 'steer') agent.steer(message)
         }
         return Promise.resolve(ok(request, { accepted: true as const }))
       },
