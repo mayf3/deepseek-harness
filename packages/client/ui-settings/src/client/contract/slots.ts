@@ -64,24 +64,26 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * Root-scoped onboarding steps contributed by settings features. The
      * shell mounts one ordered step at a time; the active registrant either
      * completes itself or keeps ownership until the user completes its sole
-     * path. Registrants own readiness, copy, dialog behavior, AND the
-     * takeover chrome: a step wraps its visible content in the
-     * OnboardingSurface primitive (mask, opaque stage, `#root` inert) and
-     * renders null while its private facts are still loading — the shell
-     * paints no chrome of its own, so a mounted-but-deciding step shows and
-     * blocks nothing (prevents a white flash on reload: a bare unwrapped step
-     * would render without mask or stage).
+     * path. Registrants own readiness, copy, dialog behavior, AND visible
+     * chrome: a step wraps its visible content in its modal surface (including
+     * `#root` inert ownership) and renders null while private facts are still
+     * loading. The shell paints no chrome of its own, so a mounted-but-deciding
+     * step shows and blocks nothing.
      */
     'settings.onboarding': { kind: 'list'; scope: 'root'; owner: SettingsOnboardingOwnerProps }
     /**
-     * One preference row inside the General section, contributed by the
-     * feature plugin that owns the preference (locale → Language, ui-theme →
-     * Appearance, ui-conversation → Composer Enter). Options: `id` (row key),
-     * `order` (row position). Rows draw their own internals; the section
-     * column only stacks them. Declared at runtime by ui-settings-general's
-     * General entry — the type lives here with every other settings slot type,
-     * because this package is the settings domain's base layer and every
-     * registrant already depends on it for `ctx.settingsScope`.
+     * One preference row inside the General section — the additive seat for a
+     * single setting that needs no page of its own (a whole page is
+     * `settings.section`), contributed by the feature plugin that owns the
+     * preference (locale → Language, ui-theme → Appearance, ui-conversation →
+     * Composer Enter). Options: `id` (row key), `order` (row position). The
+     * section column only stacks rows, so a row draws its own internals,
+     * including its label: nothing projects a `label` here and the owner passes
+     * no props at all — copy, current value, and the write path are all yours,
+     * through your own inject face and `host.call`. Declared at runtime by
+     * ui-settings-general's General entry; the type lives here with every other
+     * settings slot type, because this package is the settings domain's base
+     * layer and every registrant already depends on it for `ctx.settingsScope`.
      */
     'settings.general.item': { kind: 'list'; scope: 'root'; owner: SettingsGeneralItemOwnerProps }
   }

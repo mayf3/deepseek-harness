@@ -17,11 +17,11 @@ import type {
   SDKSystemMessage,
 } from '@anthropic-ai/claude-agent-sdk'
 import { Context } from '@deepseek-ai/cordis'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import SubagentService from '@deepseek-ai/dsh-subagent'
+import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import LocalSubprocessService from '@deepseek-ai/dsh-subprocess-local'
+import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as claudeCode from '../src/index.ts'
 import {
   startMessagesFixture,
@@ -87,6 +87,22 @@ const roots: string[] = []
 const fixtures: MessagesFixture[] = []
 const contexts: Context[] = []
 
+// Ambient Anthropic model env leaks into the real CLI and overrides the
+// fixture settings.json on developer machines; delete it for this file and
+// restore it after, like the workspace-context USERPROFILE isolation.
+const ambientAnthropicModel = process.env.ANTHROPIC_MODEL
+const ambientAnthropicSmallFastModel = process.env.ANTHROPIC_SMALL_FAST_MODEL
+
+beforeAll(() => {
+  delete process.env.ANTHROPIC_MODEL
+  delete process.env.ANTHROPIC_SMALL_FAST_MODEL
+})
+
+afterAll(() => {
+  if (ambientAnthropicModel !== undefined) process.env.ANTHROPIC_MODEL = ambientAnthropicModel
+  if (ambientAnthropicSmallFastModel !== undefined) process.env.ANTHROPIC_SMALL_FAST_MODEL = ambientAnthropicSmallFastModel
+})
+
 afterEach(async () => {
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   await Promise.all(fixtures.splice(0).map(fixture => fixture.close()))
@@ -150,8 +166,8 @@ async function realHarness(behavior: MessagesBehavior): Promise<{
   }
   const ctx = new Context()
   contexts.push(ctx)
-  await ctx.plugin(SubagentService)
-  await ctx.plugin(LocalSubprocessService)
+  await ctx.plugin(SubagentRuntime)
+  await ctx.plugin(LocalSubprocessRuntime)
   const handles: SubprocessHandle[] = []
   const spawnSpecs: SubprocessSpawnSpec[] = []
   const spawn = ctx.subprocess.spawn.bind(ctx.subprocess)

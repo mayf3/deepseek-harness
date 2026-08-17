@@ -13,7 +13,7 @@ import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionId } from './types.ts'
-import type { TypeRTLookup } from '@deepseek-ai/dsh-type-meta'
+import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
 import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType } from './types.ts'
 import { snapshotJsonValue } from './json.ts'
 import { deriveEventMessage, SurfaceManager } from './surface.ts'
@@ -26,7 +26,7 @@ export type { SessionPreparationOptions } from './preparation.ts'
 export type { AssistantMessage, ToolResultMessage, UserMessage } from '@deepseek-ai/dsh-llm'
 export { isJsonValue, snapshotJsonValue } from './json.ts'
 export type { JsonValue } from './json.ts'
-export { interruptedTurnClosers, lastActivityTime, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from './repair.ts'
+export { interruptedTurnClosers, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from './repair.ts'
 export { decodeStorageRecord, packChunkRuns } from './chunk-rows.ts'
 export type { ChunkRow, StorageRecord } from './chunk-rows.ts'
 export type { SessionSurface, SurfaceFoldReplacement, SurfaceFoldResult } from './surface.ts'
@@ -86,9 +86,9 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-declare module '@deepseek-ai/dsh-type-meta' {
-  interface TypeRTLookupMap {
-    session: TypeRTLookup<Session, SessionId>
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface TypertLookupMap {
+    session: TypertLookup<Session, SessionId>
   }
 }
 
@@ -1010,7 +1010,7 @@ export class SessionStore extends Service {
    * Dispatch the awaited `session/flush` durability checkpoint for `session`,
    * with the carrier captured at {@link enter}. THE flush entry point: the
    * store owns the carrier, so callers (the checkpoint policy's per-request
-   * barrier, goal-session's idle checkpoint, teardown drains, and consumers
+   * barrier, goal-round-driver's idle checkpoint, teardown drains, and consumers
    * that flush themselves before reading storage) must come through here
    * rather than dispatch a raw `ctx.parallel('session/flush', …)` — one owner,
    * one spelling, and the scoped-dispatch invariant can pin it.

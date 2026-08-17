@@ -11,13 +11,13 @@ import z from '@deepseek-ai/schemastery'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import SessionStore from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRegistry from '@deepseek-ai/dsh-tools'
-import UserInteractionService from '@deepseek-ai/dsh-user-interaction'
-import LlmService, { LlmAdapter } from '@deepseek-ai/dsh-llm'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import UserQuestionService from '@deepseek-ai/dsh-user-questions'
+import LlmRuntime, { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmProviderInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { Settings, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SettingsProvider, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import { Credentials } from '@deepseek-ai/dsh-credentials'
+import { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { CredentialInfo, CredentialRef, ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 import type { HostFrame } from '../src/api/index.ts'
 import type { RpcRequest, RpcResponse } from '../src/api/rpc.ts'
@@ -45,10 +45,10 @@ function expectErr<T>(response: RpcResponse<T>): { code: string; message: string
 }
 
 /** In-memory settings provider: the Service Definition base class owns all tested behavior. */
-class MemorySettings extends Settings {
+class MemorySettings extends SettingsProvider {
   doc: Record<string, unknown>
 
-  constructor(ctx: ConstructorParameters<typeof Settings>[0], options?: {
+  constructor(ctx: ConstructorParameters<typeof SettingsProvider>[0], options?: {
     doc?: Record<string, unknown>
     readOnly?: boolean
     documentPath?: string
@@ -88,10 +88,10 @@ class MemorySettings extends Settings {
 }
 
 /** In-memory credential provider with an env-shadow double for the rejection path. */
-class MemoryCredentials extends Credentials {
+class MemoryCredentials extends CredentialProvider {
   private readonly values = new Map<string, string>()
 
-  constructor(ctx: ConstructorParameters<typeof Credentials>[0], options?: { shadowed?: string[] }) {
+  constructor(ctx: ConstructorParameters<typeof CredentialProvider>[0], options?: { shadowed?: string[] }) {
     super(ctx)
     this.shadowed = new Set(options?.shadowed ?? [])
   }
@@ -177,10 +177,10 @@ async function harness(options?: {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt, { persona: '' })
-  await ctx.plugin(ToolRegistry)
-  await ctx.plugin(UserInteractionService)
+  await ctx.plugin(ToolRuntime)
+  await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
-  await ctx.plugin(LlmService)
+  await ctx.plugin(LlmRuntime)
   if (options?.settings !== false) await ctx.plugin(MemorySettings, options?.settings)
   if (options?.credentials !== false) await ctx.plugin(MemoryCredentials, options?.credentials)
   // Model-provider namespaces plus the explicit Web preference and product
@@ -192,7 +192,7 @@ async function harness(options?: {
   }
   // Host-stream opener reads the committed-workspace baseline; the stub
   // suffices — the real workspace composition is api-proxy-workspace.spec's.
-  ctx.provide('workspace', { list: () => [] } as never)
+  ctx.provide('workspaceRegistry', { list: () => [] } as never)
   return ctx
 }
 
@@ -240,7 +240,7 @@ describe('settings domain', () => {
     const api = createApiProxy(ctx, DEFAULTS)
     const error = expectErr(await api.settings.describe(request({})))
     expect(error.code).toBe('internal')
-    expect(error.message).toContain('dsh-settings-local')
+    expect(error.message).toContain('dsh-settings-file')
   })
 
   it('describes layered redacted namespaces with their secret slots', async () => {
@@ -321,12 +321,11 @@ describe('settings domain', () => {
     expect(opened).toEqual([])
   })
 
-  it('serves model-provider and explicitly allowlisted Web namespaces only', async () => {
-    // The settings seam is general: any plugin may register a namespace for
-    // its own configuration. The Web configuration plane remains opt-in, so a
-    // future internal plugin cannot become remotely configurable just by
-    // registering; locale, permission, conversation, theme, and the product
-    // onboarding namespace are intentionally admitted by this surface.
+  it('serves every registered namespace, including one this repository never named', async () => {
+    // Registering IS the exposure: a plugin distributed outside this
+    // repository configures itself from the browser without a change here.
+    // The plane stays loopback-only and secret-redacted, and which surface
+    // renders a namespace is the browser's decision, not this proxy's.
     const ctx = await harness()
     ctx.settings.register(NS, AdapterConfig)
     ctx.settings.register(settingsNamespace('some-other-plugin'), z.object({ secretPath: z.string() }))
@@ -344,7 +343,7 @@ describe('settings domain', () => {
     ctx.settings.register(settingsNamespace('ui-conversation'), z.object({
       busyEnter: z.union(['queue', 'steer']).default('queue'),
     }))
-    ctx.settings.register(settingsNamespace('bash'), z.object({
+    ctx.settings.register(settingsNamespace('shell'), z.object({
       timeoutMs: z.number().default(120_000),
     }))
     ctx.settings.register(settingsNamespace('agent-loop'), z.object({
@@ -357,8 +356,8 @@ describe('settings domain', () => {
 
     const value = expectOk(await api.settings.describe(request({})))
     expect(value.namespaces.map(view => view.ns)).toEqual([
-      'llm-deepseek', 'permission', 'ui-theme', 'locale', 'ui-conversation',
-      'bash', 'agent-loop', 'web-search-deepseek',
+      'llm-deepseek', 'some-other-plugin', 'permission', 'ui-theme', 'locale',
+      'ui-conversation', 'shell', 'agent-loop', 'web-search-deepseek',
     ])
     const permission = expectOk(await api.settings.mutate(request({
       ns: 'permission',
@@ -381,7 +380,7 @@ describe('settings domain', () => {
     })))
     expect(conversation.value).toEqual({ busyEnter: 'steer' })
     const bash = expectOk(await api.settings.mutate(request({
-      ns: 'bash',
+      ns: 'shell',
       ops: [{ op: 'set', path: ['timeoutMs'], value: 5_000 }],
     })))
     expect(bash.value).toEqual({ timeoutMs: 5_000 })
@@ -396,16 +395,13 @@ describe('settings domain', () => {
     })))
     expect(webSearch.value).toEqual({ baseURL: 'https://search.test/v1' })
 
-    for (const response of [
-      await api.settings.update(request({ ns: 'some-other-plugin', patch: { secretPath: '/etc/shadow' } })),
-      await api.settings.replace(request({ ns: 'some-other-plugin', section: {} })),
-    ]) {
-      const error = expectErr(response)
-      expect(error.code).toBe('settings-not-exposed')
-      expect(error.details).toEqual({ ns: 'some-other-plugin' })
-    }
-    // The write never reached the seam.
-    expect(ctx.settings.describe().find(d => String(d.ns) === 'some-other-plugin')?.value).toEqual({})
+    const other = expectOk(await api.settings.update(request({
+      ns: 'some-other-plugin',
+      patch: { secretPath: '/etc/shadow' },
+    })))
+    expect(other.value).toEqual({ secretPath: '/etc/shadow' })
+    expect(ctx.settings.describe().find(d => String(d.ns) === 'some-other-plugin')?.value)
+      .toEqual({ secretPath: '/etc/shadow' })
   })
 
   it('serves product preference namespaces without invalidating the model catalog', async () => {
@@ -445,13 +441,17 @@ describe('settings domain', () => {
       .toEqual({ default: 'minimal' })
   })
 
-  it('refuses even a model-provider namespace once its directory entry is gone', async () => {
+  it('keeps serving a provider namespace whose directory entry is gone', async () => {
+    // The configurable-provider directory says what the Models page can offer,
+    // not what a user may configure: a dormant route's stored section is still
+    // theirs to edit, and losing the entry must not strand it.
     const ctx = await harness({ configurableProviders: false })
     ctx.settings.register(NS, AdapterConfig)
     const api = createApiProxy(ctx, DEFAULTS)
-    expect(expectOk(await api.settings.describe(request({}))).namespaces).toEqual([])
-    expect(expectErr(await api.settings.update(request({ ns: 'llm-deepseek', patch: { baseURL: 'https://x' } }))).code)
-      .toBe('settings-not-exposed')
+    expect(expectOk(await api.settings.describe(request({}))).namespaces.map(view => view.ns))
+      .toEqual(['llm-deepseek'])
+    expect(expectOk(await api.settings.update(request({ ns: 'llm-deepseek', patch: { baseURL: 'https://x' } }))).value)
+      .toMatchObject({ baseURL: 'https://x' })
   })
 
   it('forwards a provider settings change for model-catalog consumers', async () => {
@@ -551,19 +551,18 @@ describe('settings domain', () => {
     expect(error.details).toEqual({ ns })
   })
 
-  it('answers an unregistered namespace exactly like an unexposed one', async () => {
-    // Deliberately indistinguishable: separating "does not exist" from
-    // "exists but is not yours to configure" would let a caller enumerate the
-    // registered namespaces one probe at a time.
+  it('answers an unregistered namespace as the seam does, and a malformed one alike', async () => {
+    // A name no registration answers and a name no registration could answer
+    // fold into the same rejection: the proxy adds no boundary of its own, so
+    // the seam's own refusal is the whole answer.
     const ctx = await harness()
     ctx.settings.register(NS, AdapterConfig)
-    ctx.settings.register(settingsNamespace('some-other-plugin'), z.object({ secretPath: z.string() }))
     const api = createApiProxy(ctx, DEFAULTS)
     const unknown = expectErr(await api.settings.update(request({ ns: 'unknown-ns', patch: {} })))
-    const unexposed = expectErr(await api.settings.update(request({ ns: 'some-other-plugin', patch: {} })))
-    expect(unknown.code).toBe('settings-not-exposed')
-    expect(unexposed.code).toBe(unknown.code)
-    expect(unexposed.message.replace('some-other-plugin', 'unknown-ns')).toBe(unknown.message)
+    const malformed = expectErr(await api.settings.update(request({ ns: 'Not A Namespace', patch: {} })))
+    expect(unknown.code).toBe('settings-rejected')
+    expect(unknown.message).toContain('is not registered')
+    expect(malformed.code).toBe(unknown.code)
   })
 
   it('maps a read-only provider refusal onto the same rejection', async () => {

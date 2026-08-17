@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-[`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam 的 CPython 子进程实现。与 [`@deepseek-ai/dsh-code-runtime-worker`](../code-runtime-worker/README.md) 配套；以全新的 `python3` 子进程取代 Node worker 线程，让模型代码从 TypeScript 换成 Python。
+[`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam 的 CPython 子进程实现。与 [`@deepseek-ai/dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.md) 配套；以全新的 `python3` 子进程取代 Node worker 线程，让模型代码从 TypeScript 换成 Python。
 
 本包分多个 code-runtime-python PR 逐层搭建。本层交付 wire protocol；在其之上驱动 `python3 -I` 进程的 `PythonCodeRuntime` 实现随后落地。
 

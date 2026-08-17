@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-CPython-subprocess implementation of the [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam. Companion to [`@deepseek-ai/dsh-code-runtime-worker`](../code-runtime-worker/README.md); trades the Node worker thread for a fresh `python3` subprocess so model code is Python instead of TypeScript.
+CPython-subprocess implementation of the [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam. Companion to [`@deepseek-ai/dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.md); trades the Node worker thread for a fresh `python3` subprocess so model code is Python instead of TypeScript.
 
 This package is built up across the code-runtime-python PR stack. This layer ships the wire protocol; the `PythonCodeRuntime` implementation that drives a `python3 -I` process over it lands on top of it.
 

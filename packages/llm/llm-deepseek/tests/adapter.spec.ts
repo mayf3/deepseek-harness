@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { createEnvironmentSnapshot } from '@deepseek-ai/dsh-environment'
-import LlmService, { createUserMessage,
+import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import LlmRuntime, { createUserMessage,
   CONTEXT_WINDOW_EXCEEDED_CODE,
   ProviderRequestId,
   QUOTA_EXCEEDED_CODE,
@@ -12,7 +12,7 @@ import LlmService, { createUserMessage,
   userAgent,
 } from '@deepseek-ai/dsh-llm'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-user-id'
+import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
@@ -41,7 +41,7 @@ async function harness(baseURL: string, config: object = {}) {
   // environment, which is the whole credential plane without a mounted seam.
   vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
   const ctx = new Context()
-  await ctx.plugin(LlmService)
+  await ctx.plugin(LlmRuntime)
   await ctx.plugin(LlmDeepSeek, { baseURL, ...config })
   return ctx
 }
@@ -141,13 +141,13 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(server.headers[0]?.['x-deepseek-harness-compact']).toBe('1')
   })
 
-  it('switches dynamically from the configured high default through off to max', async () => {
+  it('switches dynamically from the configured low default through off to max', async () => {
     const server = await mockServer([
       { kind: 'sse', events: textEvents },
       { kind: 'sse', events: textEvents },
       { kind: 'sse', events: textEvents },
     ])
-    const ctx = await harness(server.url, { thinking: 'enabled', reasoningEffort: 'high' })
+    const ctx = await harness(server.url, { thinking: 'enabled', reasoningEffort: 'low' })
 
     await assemble(ctx,{
       model: 'deepseek-v4-flash',
@@ -174,7 +174,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     })
     expect(server.requests[0]).toMatchObject({
       thinking: { type: 'enabled' },
-      reasoning_effort: 'high',
+      reasoning_effort: 'low',
     })
     expect(server.requests[1]).toMatchObject({
       thinking: { type: 'disabled' },
@@ -617,7 +617,7 @@ describe('plugin registration and config', () => {
   it('registers the deepseek provider and unregisters on dispose (HMR safety)', async () => {
     const server = await mockServer([])
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     const fiber = await ctx.plugin(LlmDeepSeek, {
       baseURL: server.url,
     })
@@ -635,7 +635,7 @@ describe('plugin registration and config', () => {
 
   it('registers retryPolicy from the provider config', async () => {
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {
       baseURL: 'http://127.0.0.1:1',
       retryPolicy: {
@@ -654,7 +654,7 @@ describe('plugin registration and config', () => {
 
   it('owns the deepseek provider and advertises the default models', async () => {
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, { baseURL: 'http://127.0.0.1:1' })
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
@@ -671,6 +671,7 @@ describe('plugin registration and config', () => {
         reasoning: {
           efforts: [
             { id: ReasoningEffortId('off'), name: 'Off' },
+            { id: ReasoningEffortId('low'), name: 'Low' },
             { id: ReasoningEffortId('high'), name: 'High' },
             { id: ReasoningEffortId('max'), name: 'Max' },
           ],
@@ -679,9 +680,9 @@ describe('plugin registration and config', () => {
       })
   })
 
-  it.each(['off', 'max'] as const)('uses the configured %s reasoning default', async (effort) => {
+  it.each(['off', 'low', 'max'] as const)('uses the configured %s reasoning default', async (effort) => {
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {
       baseURL: 'http://127.0.0.1:1',
       reasoningEffort: effort,
@@ -691,6 +692,7 @@ describe('plugin registration and config', () => {
         reasoning: {
           efforts: [
             { id: ReasoningEffortId('off'), name: 'Off' },
+            { id: ReasoningEffortId('low'), name: 'Low' },
             { id: ReasoningEffortId('high'), name: 'High' },
             { id: ReasoningEffortId('max'), name: 'Max' },
           ],
@@ -701,7 +703,7 @@ describe('plugin registration and config', () => {
 
   it('accepts off as the default when thinking is deployment-disabled', async () => {
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {
       baseURL: 'http://127.0.0.1:1',
       thinking: 'disabled',
@@ -716,11 +718,11 @@ describe('plugin registration and config', () => {
       })
   })
 
-  it.each(['high', 'max'] as const)(
+  it.each(['low', 'high', 'max'] as const)(
     'rejects configured reasoning effort %s when thinking is disabled',
     async (reasoningEffort) => {
       const ctx = new Context()
-      await ctx.plugin(LlmService)
+      await ctx.plugin(LlmRuntime)
       await expect(ctx.plugin(LlmDeepSeek, {
         baseURL: 'http://127.0.0.1:1',
         thinking: 'disabled',
@@ -730,7 +732,7 @@ describe('plugin registration and config', () => {
     },
   )
 
-  it.each(['high', 'max'] as const)(
+  it.each(['low', 'high', 'max'] as const)(
     'rejects disabled-thinking effort %s at the resolver boundary',
     (reasoningEffort) => {
       expect(() => resolveAdapterOptions({ thinking: 'disabled', reasoningEffort }))
@@ -750,7 +752,7 @@ describe('plugin registration and config', () => {
 
   it('uses the default model catalog when apply is called directly', async () => {
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     LlmDeepSeek.apply(ctx, { baseURL: 'http://127.0.0.1:1' })
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
       { provider: 'deepseek-official', id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', inputModalities: ['text'] },
@@ -760,7 +762,7 @@ describe('plugin registration and config', () => {
 
   it('advertises configured models without restricting arbitrary request ids', async () => {
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {
       baseURL: 'http://127.0.0.1:1',
       models: [
@@ -793,7 +795,7 @@ describe('plugin registration and config', () => {
 
   it('uses exact model capacity before the adapter-wide default', async () => {
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {
       baseURL: 'http://127.0.0.1:1',
       defaultContextWindow: 256_000,
@@ -813,7 +815,7 @@ describe('plugin registration and config', () => {
 
   it('allows an explicit empty model catalog', async () => {
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {
       baseURL: 'http://127.0.0.1:1',
       models: [],
@@ -829,7 +831,7 @@ describe('plugin registration and config', () => {
     [[{ id: 'm' }, { id: 'm' }], /duplicate catalog model/],
   ] as const)('rejects invalid advisory model config', async (models, message) => {
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await expect(ctx.plugin(LlmDeepSeek, {
       baseURL: 'http://127.0.0.1:1',
       models: [...models],
@@ -859,7 +861,7 @@ describe('plugin registration and config', () => {
 
   it('rejects invalid context capacity when apply is called directly', async () => {
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     expect(() => {
       LlmDeepSeek.apply(ctx, {
         baseURL: 'http://127.0.0.1:1',
@@ -876,7 +878,7 @@ describe('plugin registration and config', () => {
         .toThrow(/defaultContextWindow must be a positive integer/)
 
       const ctx = new Context()
-      await ctx.plugin(LlmService)
+      await ctx.plugin(LlmRuntime)
       await expect(ctx.plugin(LlmDeepSeek, {
         baseURL: 'http://127.0.0.1:1',
         defaultContextWindow,
@@ -892,7 +894,7 @@ describe('plugin registration and config', () => {
         .toThrow(/maxTokens must be a positive safe integer/)
 
       const ctx = new Context()
-      await ctx.plugin(LlmService)
+      await ctx.plugin(LlmRuntime)
       await expect(ctx.plugin(LlmDeepSeek, {
         baseURL: 'http://127.0.0.1:1',
         maxTokens,
@@ -905,7 +907,7 @@ describe('plugin registration and config', () => {
     vi.stubEnv('DEEPSEEK_API_KEY', 'env-key')
     vi.stubEnv('DEEPSEEK_BASE_URL', 'http://127.0.0.1:1')
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {})
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
   })
@@ -913,7 +915,7 @@ describe('plugin registration and config', () => {
   it('loads keyless, keeps the catalog browsable, and fails the request actionably', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, { baseURL: 'http://127.0.0.1:1' })
     // First-boot onboarding: the route registers so models stay discoverable;
     // only the request itself needs a key.
@@ -937,7 +939,7 @@ describe('plugin registration and config', () => {
     vi.stubEnv('DEEPSEEK_API_KEY', 'ambient-key')
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, { baseURL: server.url })
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(server.headers[0]?.authorization).toBe('Bearer ambient-key')
@@ -946,7 +948,7 @@ describe('plugin registration and config', () => {
   it('treats an empty ambient variable as no key when no credentials seam is mounted', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, { baseURL: 'http://127.0.0.1:1' })
     const result = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
@@ -966,7 +968,7 @@ describe('plugin registration and config', () => {
     vi.stubEnv('DEEPSEEK_BASE_URL', server.url)
     vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {})
     await assemble(ctx,{ model: 'deepseek-v4-flash', messages: [] })
     expect(server.requests).toHaveLength(1)
@@ -974,19 +976,19 @@ describe('plugin registration and config', () => {
 
 
   it('takes DEEPSEEK_BASE_URL from any environment layer, with explicit config still on top', () => {
-    const trusted = createEnvironmentSnapshot([
+    const trusted = createLaunchEnvironmentSnapshot([
       { source: 'user-env', path: '/home/.dsh/.env', values: { DEEPSEEK_BASE_URL: 'https://user.example' } },
     ])
     expect(resolveAdapterOptions({}, trusted).baseURL).toBe('https://user.example')
     // The product trusts the project it is launched in, so a checkout can
     // point its own agent at the gateway that checkout is meant to use.
-    const project = createEnvironmentSnapshot([
+    const project = createLaunchEnvironmentSnapshot([
       { source: 'project-env', path: '/work/.env', values: { DEEPSEEK_BASE_URL: 'https://project.example' } },
     ])
     expect(resolveAdapterOptions({}, project).baseURL).toBe('https://project.example')
     // An explicitly configured endpoint outranks every environment layer, so a
     // stale shell value cannot rewrite a deployment's own gateway.
-    const shell = createEnvironmentSnapshot([
+    const shell = createLaunchEnvironmentSnapshot([
       { source: 'process', values: { DEEPSEEK_BASE_URL: 'https://stale.example' } },
     ])
     expect(resolveAdapterOptions({ baseURL: 'https://gateway.internal' }, shell).baseURL).toBe('https://gateway.internal')
@@ -995,7 +997,7 @@ describe('plugin registration and config', () => {
     vi.stubEnv('DEEPSEEK_API_KEY', 'k')
     vi.stubEnv('DEEPSEEK_BASE_URL', undefined)
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     // Registration succeeds; no call is made (would hit api.deepseek.com).
     await ctx.plugin(LlmDeepSeek, {})
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
@@ -1031,7 +1033,7 @@ describe('plugin registration and config', () => {
       .toThrow(/streamIdleTimeoutMs.*no greater/)
 
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await expect(ctx.plugin(LlmDeepSeek, {
       baseURL: 'http://127.0.0.1:1',
       streamIdleTimeoutMs: 0,
@@ -1044,7 +1046,7 @@ describe('plugin registration and config', () => {
 
   it('rejects invalid nested retryPolicy before registering the provider', async () => {
     const ctx = new Context()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
 
     await expect(ctx.plugin(LlmDeepSeek, {
       baseURL: 'http://127.0.0.1:1',

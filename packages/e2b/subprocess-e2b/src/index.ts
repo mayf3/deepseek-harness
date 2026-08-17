@@ -1,5 +1,5 @@
 /**
- * E2B Service provider for the subprocess capability seam. Each handle starts through the
+ * E2B Service Provider for the subprocess capability seam. Each handle starts through the
  * shared sandbox and retains command output/status paths in that remote world.
  * @module @deepseek-ai/dsh-subprocess-e2b
  */
@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SubprocessService } from '@deepseek-ai/dsh-subprocess'
+import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type {
   SubprocessHandle,
@@ -49,7 +49,7 @@ function requireRepresentableGrace(graceMs: number): void {
 }
 
 /** E2B command manager registered as `ctx.subprocess`. */
-export class E2BSubprocessService extends SubprocessService {
+export class E2BSubprocessRuntime extends SubprocessRuntime {
   static inject = ['e2b']
 
   static Config: z<Config> = z.object({
@@ -205,4 +205,4 @@ export class E2BSubprocessService extends SubprocessService {
   }
 }
 
-export default E2BSubprocessService
+export default E2BSubprocessRuntime

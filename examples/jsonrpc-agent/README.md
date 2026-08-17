@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-The unattended coding-agent composition for the Python SDK's bundled JSON-RPC runtime. It intentionally loads no terminal UI, console logger, approval UI, or user-interaction tool because stdout belongs to the SDK protocol and turns are driven by the SDK.
+The unattended coding-agent composition for the Python SDK's bundled JSON-RPC runtime. It intentionally loads no terminal UI, console logger, approval UI, or user-questions tool because stdout belongs to the SDK protocol and turns are driven by the SDK.
 
 The model-facing tools are:
 
@@ -30,7 +30,7 @@ Pass the config path through the Python SDK's `cordis` option or `DSH_CORDIS_CON
 
 ## Minimal variant
 
-[`minimal.cordis.yml`](minimal.cordis.yml) is the complete standalone counterpart of the Web `minimal` preset. `DSH_SYSTEM_PROMPT` selects its system prompt, with `You are a helpful software engineer assistant.` as the fallback, and no context-compaction plugin is mounted. Its model-facing tools are exactly:
+[`minimal.cordis.yml`](minimal.cordis.yml) is the complete standalone counterpart of the Web `minimal` preset. `DSH_SYSTEM_PROMPT` selects its system prompt, with `You are a helpful software engineer assistant.` as the fallback. It suppresses every system-prompt runtime-context contribution for fresh sessions and mounts no context-compaction plugin. Its model-facing tools are exactly:
 
 - owner-scoped persistent `bash`
 - `str_replace_editor` with `view`, `create`, `str_replace`, and `insert`

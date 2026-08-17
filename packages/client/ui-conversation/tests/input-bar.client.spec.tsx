@@ -123,9 +123,9 @@ function bench(over?: BenchOptions) {
     // never reached — these benches drive plain-draft flows only).
     ...(lex !== undefined
       ? {
-        slash: (() => ({
+        inputTriggers: (() => ({
           lexicon: { getSnapshot: () => lex, subscribe: () => () => {} },
-        })) as unknown as NonNullable<ShellDeps['slash']>,
+        })) as unknown as NonNullable<ShellDeps['inputTriggers']>,
       }
       : {}),
   })
@@ -147,7 +147,7 @@ function bench(over?: BenchOptions) {
     useSession: bindSnapshotSelector(session),
     useSessions: bindSnapshotSelector(createSnapshotStore({
       ids: [], byId: {}, current: undefined, phase: 'ready',
-      subagentsByParent: {}, tasksBySession: {}, currentAddress: undefined,
+      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
     })),
     useWorkspaces: bindSnapshotSelector(createSnapshotStore({
       items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
@@ -822,6 +822,116 @@ describe('running and lock semantics', () => {
     // The glyph layer carries the draft and nothing else — no height padding
     // to a second box's scroll extent.
     expect(backdrop.textContent).toBe('line\n'.repeat(40))
+  })
+
+  it('repairs Safari native overflow after the mirror shrinks the draft', () => {
+    const vendor = vi.spyOn(window.navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.')
+    const userAgent = vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15',
+    )
+    onTestFinished(() => {
+      vendor.mockRestore()
+      userAgent.mockRestore()
+    })
+    const { textarea } = bench({ draft: 'two wrapped lines' })
+    const scrollport = textarea.closest<HTMLElement>('[data-input-scroll]')!
+    let inputRepaired = false
+    let scrollportRepaired = false
+    const inputLayouts: string[] = []
+    const scrollportLayouts: string[] = []
+    Object.defineProperty(textarea, 'clientHeight', {
+      configurable: true,
+      get: () => textarea.style.height === '29px' ? 29 : 28,
+    })
+    Object.defineProperty(textarea, 'scrollHeight', {
+      configurable: true,
+      get: () => inputRepaired ? 28 : 52,
+    })
+    Object.defineProperty(textarea, 'offsetHeight', {
+      configurable: true,
+      get: () => {
+        inputLayouts.push(textarea.style.height)
+        if (textarea.style.height === '') inputRepaired = true
+        return textarea.clientHeight
+      },
+    })
+    Object.defineProperty(scrollport, 'clientHeight', {
+      configurable: true,
+      get: () => {
+        if (scrollport.style.height === '53px') return 53
+        if (inputRepaired && !scrollportRepaired) return 52
+        return 28
+      },
+    })
+    Object.defineProperty(scrollport, 'offsetHeight', {
+      configurable: true,
+      get: () => {
+        scrollportLayouts.push(scrollport.style.height)
+        if (scrollport.style.height === '') scrollportRepaired = true
+        return scrollport.clientHeight
+      },
+    })
+    textarea.setSelectionRange(5, 5)
+
+    fireEvent.change(textarea, { target: { value: 'one line' } })
+
+    expect(inputLayouts).toEqual(['29px', ''])
+    expect(scrollportLayouts).toEqual(['53px', ''])
+    expect(textarea.style.height).toBe('')
+    expect(scrollport.style.height).toBe('')
+    expect(textarea.scrollHeight).toBe(textarea.clientHeight)
+    expect(scrollport.clientHeight).toBe(28)
+  })
+
+  it('does not force the Safari recovery for another iOS browser', () => {
+    const vendor = vi.spyOn(window.navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.')
+    const userAgent = vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (iPhone) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/140.0.0.0 Mobile/15E148 Safari/604.1',
+    )
+    onTestFinished(() => {
+      vendor.mockRestore()
+      userAgent.mockRestore()
+    })
+    const { textarea } = bench({ draft: 'two wrapped lines' })
+    const scrollport = textarea.closest<HTMLElement>('[data-input-scroll]')!
+    Object.defineProperty(textarea, 'clientHeight', { configurable: true, value: 28 })
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 52 })
+    Object.defineProperty(textarea, 'offsetHeight', {
+      configurable: true,
+      get: () => { throw new Error('non-Safari browser must not force textarea layout') },
+    })
+    Object.defineProperty(scrollport, 'offsetHeight', {
+      configurable: true,
+      get: () => { throw new Error('non-Safari browser must not force scrollport layout') },
+    })
+
+    fireEvent.change(textarea, { target: { value: 'one line' } })
+
+    expect(scrollport.style.height).toBe('')
+  })
+
+  it('does not read Safari layout while a native edit grows the draft', () => {
+    const vendor = vi.spyOn(window.navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.')
+    const userAgent = vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15',
+    )
+    onTestFinished(() => {
+      vendor.mockRestore()
+      userAgent.mockRestore()
+    })
+    const { textarea, shell } = bench({ draft: 'one line' })
+    Object.defineProperty(textarea, 'clientHeight', {
+      configurable: true,
+      get: () => { throw new Error('growing Safari input must not read layout') },
+    })
+    Object.defineProperty(textarea, 'scrollHeight', {
+      configurable: true,
+      get: () => { throw new Error('growing Safari input must not read layout') },
+    })
+
+    fireEvent.change(textarea, { target: { value: 'one line grows' } })
+
+    expect(shell.snapshot.draft).toBe('one line grows')
   })
 
   it('an edit the composer performs itself scrolls the caret back into view', async () => {

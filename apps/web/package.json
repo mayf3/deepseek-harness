@@ -1,9 +1,9 @@
 {
-  "name": "@deepseek-ai/dsh-frontend",
+  "name": "@deepseek-ai/dsh-web-frontend",
   "description": "Web application entry: vite build over the @deepseek-ai/dsh-client-web shell library; dist/ served by apps/cli's dsh web",
-  "version": "0.0.1-rc.2",
+  "version": "0.1.0-rc.6",
   "publishConfig": {
-    "access": "restricted"
+    "access": "public"
   },
   "repository": {
     "type": "git",
@@ -24,7 +24,7 @@
     "dev": "vite",
     "watch": "vite build --watch"
   },
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "dependencies": {
     "@deepseek-ai/dsh-client-web": "workspace:^",
     "react": "^18.2.0",

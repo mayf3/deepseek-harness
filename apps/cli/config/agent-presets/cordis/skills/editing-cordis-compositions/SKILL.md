@@ -88,8 +88,8 @@ When a preset genuinely owns a service, wrap the provider **and every consumer t
   isolate:
     workflows: true
   config:
-    - id: workflow-workerthread
-      name: '@deepseek-ai/dsh-workflow-workerthread'
+    - id: workflow-worker-thread
+      name: '@deepseek-ai/dsh-workflow-worker-thread'
       config:
         provider: spawn
     - id: tool-workflow
@@ -100,7 +100,7 @@ When a preset genuinely owns a service, wrap the provider **and every consumer t
 
 A consumer left outside the group resolves the host's registry, which the preset did not populate, and then contributes nothing. Mount-validation catches that as a row that never activated.
 
-Realms are for services a preset owns, not for every group. A host capability the preset only consumes must stay outside a realm, or the row cannot resolve it: `tool-bash`, `tool-tasks`, and `tool-goal` publish nothing and sit loose in `standard`, which explains in comments which host instance each one resolves and why a realm would break it. Wrapping a consumer row in a realm of its own is the same error as leaving one outside its provider's realm.
+Realms are for services a preset owns, not for every group. A host capability the preset only consumes must stay outside a realm, or the row cannot resolve it: `tool-bash`, `tool-jobs`, and `tool-goal` publish nothing and sit loose in `standard`, which explains in comments which host instance each one resolves and why a realm would break it. Wrapping a consumer row in a realm of its own is the same error as leaving one outside its provider's realm.
 
 ## Verifying a change
 
@@ -123,7 +123,7 @@ After a clean mount-validation, ask the user to start a session on the new prese
 
 ## Native product subagents
 
-Codex and Claude Code providers already live in the host composition. A preset chooses either product by contributing the same ordinary delegation-tool row used for spawn and fork; never move a product provider into the preset and never add a product-specific settings field.
+Codex and Claude Code providers belong on the host plane but are not installed by production `dsh`. The active Profile must install and mount the selected provider before a preset can expose its ordinary delegation-tool row; never move a product provider into the preset and never add a product-specific settings field.
 
 Copy these disabled templates from a shipped full preset and remove `disabled` only for the products the user requested:
 
@@ -134,7 +134,7 @@ Copy these disabled templates from a shipped full preset and remove `disabled` o
   config:
     provider: codex
     toolName: subagent_codex
-    enableRunInBackground: false
+    backgroundMode: one-shot
     maxDepth: provider-managed
 
 - id: tool-subagent-claude-code
@@ -143,11 +143,11 @@ Copy these disabled templates from a shipped full preset and remove `disabled` o
   config:
     provider: claude-code
     toolName: subagent_claude_code
-    enableRunInBackground: false
+    backgroundMode: one-shot
     maxDepth: provider-managed
 ```
 
-The two rows are independent. Leaving both disabled preserves the copied preset, enabling one exposes only that product tool, and enabling both exposes both. The host must provide `codex` or `claude` on `PATH`; the preset does not install, authenticate, select a model for, or probe either product.
+The two rows are independent. Leaving both disabled preserves the copied preset, enabling one exposes only that product tool, and enabling both exposes both. Production `dsh` does not install or mount either optional provider: before enabling a row, the Profile must install the matching `@deepseek-ai/dsh-subagent-codex` or `@deepseek-ai/dsh-subagent-claude-code` package and mount it once on the host plane. A preset cannot provide that host dependency. `backgroundMode: one-shot` keeps omitted or `false` calls in the foreground and lets explicit `run_in_background: true` return a generic Job id. Full presets already carry `tool-jobs`, while the base host carries the job registry; retain both so `job_output`, `job_list`, `job_kill`, cancellation, and completion notices stay available. The host must also provide `codex` or `claude` on `PATH`; the preset does not install, authenticate, select a model for, or probe either product.
 
 ## What not to move into a preset
 
