@@ -314,7 +314,7 @@ describe('session reference discovery and preparation', () => {
       content: [{
         type: 'text',
         text: `compare ${formatSessionReferenceMention({ sessionId: source.id, label: 'Research' })} now`,
-      }],
+      }, { type: 'reasoning', text: 'preserve this non-text block' }],
       source: { kind: 'user' },
     })
     const ordinary = createUserMessage({
@@ -342,7 +342,10 @@ describe('session reference discovery and preparation', () => {
     })
     expect(decision.messages[1]).toMatchObject({
       id: direct.id,
-      content: [{ type: 'text', text: 'compare @Research now' }],
+      content: [
+        { type: 'text', text: 'compare @Research now' },
+        { type: 'reasoning', text: 'preserve this non-text block' },
+      ],
     })
     expect(decision.messages[1]).not.toBe(direct)
     expect(decision.messages[2]).toBe(ordinary)
