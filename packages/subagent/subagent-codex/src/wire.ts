@@ -416,6 +416,11 @@ export class CodexAppServerWire {
     }
   }
 
+  /**
+   * Validate the request's thread and turn association.
+   * @returns `true` when the matching turn is still provisional, so the caller
+   * defers its diagnostic until `commitTurnId()`.
+   */
   private validateRunIds(
     params: JsonObject,
     nullableTurn = false,

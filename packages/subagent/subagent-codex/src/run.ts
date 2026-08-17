@@ -31,7 +31,7 @@ export type CodexPermissionMode =
   | 'approve-for-me'
   | 'dangerously-bypass-approvals-and-sandbox'
 
-/** Codex CLI permission modes that cannot wait for a human response. */
+/** Native non-interactive Codex modes mapped to official `thread/start` fields. */
 export const CODEX_PERMISSION_MODES = [
   'never',
   'approve-for-me',
@@ -158,6 +158,8 @@ export async function startCodexRun(
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
     wire.observeStderr(bytes.toString())
     try {
+      // Synchronous fd forwarding preserves byte order without owning a
+      // backpressure queue. A slow host sink can block this event-loop turn.
       writeFileSync(process.stderr.fd, bytes)
     } catch {
       // Host stderr is an observation sink, not a child-run failure authority.
@@ -227,6 +229,8 @@ export async function startCodexRun(
           processFailure,
         ])
       } catch (error: unknown) {
+        // Give stderr data already queued in Node one turn to reach the wire
+        // before settlement snapshots the diagnostic; later OS data is best-effort.
         await new Promise<void>((resolve) => { setImmediate(resolve) })
         throw error
       }
