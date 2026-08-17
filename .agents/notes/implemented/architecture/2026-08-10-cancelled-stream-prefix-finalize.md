@@ -30,7 +30,7 @@ Chat and Trajectory Conversation Definitions read `interrupted` from the durable
 
 ## Consequences
 
-Post-cancel follow-ups and forks include the delivered prefix. The ACP bridge may forward its final `agent_message_chunk` update after the cancelled stop reason because prompt settlement does not wait for loop teardown.
+Post-cancel follow-ups and forks include the delivered prefix. The ACP bridge drains ordered assistant output before settling the prompt, so the final `agent_message_chunk` update precedes the cancelled stop reason.
 
 Terminal provider errors still discard their streamed prefix. That asymmetry remains because an error turn ends without the user's cancellation decision and requires its own retention policy.
 

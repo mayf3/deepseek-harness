@@ -30,7 +30,7 @@ Chat 和 Trajectory Conversation Definition 从持久消息读取 `interrupted`�
 
 ## Consequences
 
-取消后的追问和分支会包含已送达前缀。prompt 结算不等待循环收尾，因此 ACP 桥可能在 cancelled stop reason 之后才转发最后一条 `agent_message_chunk` 更新。
+取消后的追问和分支会包含已送达前缀。ACP 桥会在结算 prompt 前排空按序传送的 assistant 输出，因此最后一条 `agent_message_chunk` 更新先于 cancelled stop reason。
 
 终局提供方错误仍会丢弃已流出前缀。该不对称保留，因为 error 轮次的结束不来自用户的取消决定，需要独立的保留策略。
 
