@@ -10,7 +10,7 @@
 
 | 工具 | 参数 | 行为 |
 |---|---|---|
-| `web_search` | `query`（string） | 用于发现信息。返回可选答案与来源 URL。`max_results` **不**面向模型：工具设置上限（`searchMaxResults` 配置，默认 8）并传给 seam。 |
+| `web_search` | `query`（string）或 `queries`（string[]） | 用于发现信息。返回可选答案与来源 URL。`queries` 会并发执行至多 `searchMaxQueries` 次搜索，按轮询顺序合并来源，再应用组合后的 `searchMaxResults` 上限。两个上限都不面向模型。 |
 | `web_fetch` | `url`（string） | 获取特定 URL。HTML 主体渲染为 markdown（turndown，带 GFM 表格／删除线）；文本主体原样通过。非 2xx 状态会报告，而非报错。工具调用超时是部署策略（`dsh-tool-call-timeout-policy`），不是模型参数。 |
 
 两个工具都选择并发调度，因为提供方读取会返回内容，不会修改父 agent（智能体）的状态。
@@ -23,12 +23,13 @@
 |---|---|---|
 | `search` | `true` | 注册 `web_search`。 |
 | `fetch` | `true` | 注册 `web_fetch`。 |
-| `searchMaxResults` | `8` | 一次 `web_search` 调用返回的来源数量上限（seam 截断更长的提供方列表并标记）。 |
+| `searchMaxResults` | `8` | 一次 `web_search` 调用返回的来源数量上限（seam 截断各提供方列表；工具还会限制多查询组合列表）。 |
+| `searchMaxQueries` | `4` | 一次 `web_search` 调用接受的查询数量上限。配置值会出现在提示词指引与 schema 描述中。 |
 | `fetchTimeoutMs` | `30000` | `web_fetch` 的协作式工具调用超时预算（ms）。 |
 | `searchTimeoutMs` | `30000` | `web_search` 的协作式工具调用超时预算（ms）。 |
 | `fetchMaxOutputChars` | `200000` | 同步转换的源字符数与单次完整 `web_fetch` 输出的上限（状态头、渲染后的主体与页脚合并计算）；主体被截断时，在能容纳的情况下附带截断提示。 |
 
-`fetchTimeoutMs`／`searchTimeoutMs` 声明每个工具的协作式超时预算（附加为 `ToolDefinition.timeoutMs`），由 [`@deepseek-ai/dsh-tool-call-timeout-policy`](../../guard/timeout-policy/README.md) 强制执行；面向模型的 schema 不公开超时参数。`fetchMaxOutputChars` 同时限制同步转换工作量和完整渲染结果：只转换至多该数量的源字符，随后对状态头、转换后的前缀和截断提示合并设限。默认值为本地提供方的 100,000 字符主体上限留出余量，但渲染膨胀仍可能使最终上限截断结果。
+`searchMaxQueries` 限制提供方请求扇出与组合后的提供方答案增长；校验会在任何搜索开始前拒绝超限数组。`fetchTimeoutMs`／`searchTimeoutMs` 声明每个工具的协作式超时预算（附加为 `ToolDefinition.timeoutMs`），由 [`@deepseek-ai/dsh-tool-call-timeout-policy`](../../guard/timeout-policy/README.md) 强制执行；面向模型的 schema 不公开超时参数。`fetchMaxOutputChars` 同时限制同步转换工作量和完整渲染结果：只转换至多该数量的源字符，随后对状态头、转换后的前缀和截断提示合并设限。默认值为本地提供方的 100,000 字符主体上限留出余量，但渲染膨胀仍可能使最终上限截断结果。
 
 ```yaml
 - id: tool-web
@@ -52,13 +53,13 @@
 ##### 启用抓取时的 Web 搜索指引
 
 ```markdown
-Use the web_search tool to discover current information on the web. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.
+Use the web_search tool to discover current information on the web. You can pass up to 4 queries in one call via the queries parameter when you need several distinct searches. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.
 ```
 
 ##### 仅搜索时的 Web 搜索指引
 
 ```markdown
-Use the web_search tool to discover current information on the web. It returns an optional answer plus a list of source URLs. Use the returned source snippets when available, and cite the relevant URLs as markdown links.
+Use the web_search tool to discover current information on the web. You can pass up to 4 queries in one call via the queries parameter when you need several distinct searches. It returns an optional answer plus a list of source URLs. Use the returned source snippets when available, and cite the relevant URLs as markdown links.
 ```
 
 ##### Web 抓取指引
@@ -69,11 +70,11 @@ Use the web_fetch tool to retrieve the content of a specific HTTP(S) URL (for ex
 
 #### Token 影响
 
-每个通过配置启用的工具都会为每次请求增加固定的指引 token 开销，即使限制隐藏了其 schema。切换抓取状态不仅会注册或移除抓取区段，也会更改搜索指引。
+每个通过配置启用的工具都会为每次请求增加固定的指引 token 开销，即使限制隐藏了其 schema。切换抓取状态或更改 `searchMaxQueries` 会改变搜索指引；切换抓取状态还会注册或移除抓取区段。
 
 #### KV Cache 影响
 
-只要启用工具、scope 与指引文本不变，前缀就保持稳定。配置启用状态（包括因切换抓取状态而改变搜索指引分支）或插件生命周期可能使从第一个变化的提示词区段起的复用失效；scope schema 限制不会移除该区段。
+只要启用工具、scope 与指引文本不变，前缀就保持稳定。配置启用状态（包括因切换抓取状态而改变搜索指引分支）、更改 `searchMaxQueries` 或插件生命周期可能使从第一个变化的提示词区段起的复用失效；scope schema 限制不会移除该区段。
 
 ### 工具 schema
 
@@ -83,21 +84,21 @@ Use the web_fetch tool to retrieve the content of a specific HTTP(S) URL (for ex
 
 #### Token 影响
 
-每次请求都会产生固定的 schema token 开销；通过配置禁用会同时移除 schema 与指引，scope 限制只移除 schema。
+对于已解析的 `searchMaxQueries`，每次请求都会产生固定的 schema token 开销；通过配置禁用会同时移除 schema 与指引，scope 限制只移除 schema。
 
 #### KV Cache 影响
 
-只要定义与可见性不变，前缀就保持稳定。配置启用状态、插件生命周期或 scope 限制可能使从第一个变化的 schema token 起的复用失效。
+只要定义、已解析查询上限与可见性不变，前缀就保持稳定。配置启用状态、更改 `searchMaxQueries`、插件生命周期或 scope 限制可能使从第一个变化的 schema token 起的复用失效。
 
 ### 搜索结果
 
 #### 模型看到的内容
 
-可选的提供方答案之后是 `Sources:`，再跟随内容取决于数据且格式严格为 `- [<title-or-url>](<url>)` 的行，并可添加后缀 ` — <snippet> (<publishedAt>)`。既无答案也无来源时，结果显示 `No results found.`。列表被截断至上限时会添加 `(Showing the first <count> sources. Refine the query for more.)`；每个结果都以 `Cite the relevant URLs above as markdown links in your answer.` 结尾。
+可选的提供方答案之后是 `Sources:`，再跟随内容取决于数据且格式严格为 `- [<title-or-url>](<url>)` 的行，并可添加后缀 ` — <snippet> (<publishedAt>)`。多查询调用会用来源查询作为 markdown 标题标注每个提供方答案，按 URL 对来源去重，并从每个查询取得同一排名的一条来源后再推进至下一排名。既无答案也无来源时，结果显示 `No results found.`。列表被截断至上限时会添加 `(Showing the first <count> sources. Refine the query for more.)`；每个结果都以 `Cite the relevant URLs above as markdown links in your answer.` 结尾。
 
 #### Token 影响
 
-数据相关结果会重复发送直到压缩（compaction），来源数量由 `searchMaxResults` 限制。
+数据相关结果会重复发送直到压缩（compaction）；查询请求扇出由 `searchMaxQueries` 限制，来源数量由 `searchMaxResults` 限制。
 
 #### KV Cache 影响
 
@@ -121,7 +122,7 @@ Use the web_fetch tool to retrieve the content of a specific HTTP(S) URL (for ex
 
 #### 模型看到的内容
 
-空输入精确地变为 `Error: query must be a non-empty string` 或 `Error: url must be a non-empty string`。
+无效输入精确地变为 `Error: provide either query or queries`、`Error: provide either query or queries, not both`、`Error: query must be a non-empty string`、`Error: queries must contain at least one query`、`Error: queries must contain at most <count> queries`、`Error: each query must be a non-empty string` 或 `Error: url must be a non-empty string`。
 
 #### Token 影响
 
@@ -133,6 +134,7 @@ Use the web_fetch tool to retrieve the content of a specific HTTP(S) URL (for ex
 
 ## 已知限制与暂缓事项
 
+- **查询上限不是原生搜索总预算**：`searchMaxQueries` 限制 `ctx.web.search` 调用数，但提供方可以在每次调用内执行多次原生搜索。例如，配置了 `maxUses` 的模型型提供方最多可以执行 `searchMaxQueries × maxUses` 次原生搜索；`searchMaxResults` 只限制返回给调用方的组合来源。
 - **HTML→markdown 转换会在 GFM 无法安全表示的输入上降级**：[turndown](https://github.com/mixmark-io/turndown)（带 GFM 表格／删除线）通过真实 DOM 转换至多 `fetchMaxOutputChars` 个源字符。保守的 512 层词法守卫会将深层或嵌套有歧义的主体作为原始 HTML 直接透传，转换异常也会如此处理；表格的 `colspan` 会被忽略，因为 GFM 无法表示跨列单元格。这些限制可避免阻塞事件循环，也避免不受信任的数值属性使输出膨胀（[已归档的依赖决策](../../../.agents/notes/archived/simplification/2026-07-26-turndown-for-tool-web-html-markdown.md)）。
 - **面向模型的接口有意保持精简，后续扩展暂缓**：`max_results` 保持为配置上限（不是模型参数），`web_fetch` 只接受 `url`（没有 `format`／`prompt`／LLM（大语言模型）摘要模式）；两项都列为 [seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md) 中的后续步骤。
 - **没有 web 专用权限策略**：两个工具都不会请求 `ctx.approval` 就直接执行；需要确认的部署必须添加 `tools/pre-execute` 策略，该包不定义持久化的 URL／域名授权。

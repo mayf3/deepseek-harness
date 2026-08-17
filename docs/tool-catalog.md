@@ -2168,7 +2168,7 @@ Source: [`packages/web/tool-web/src/index.ts`](../packages/web/tool-web/src/inde
 
 ### `web_search`
 
-Search the web for current information. Returns an optional summary answer and a list of source URLs.
+Search the web for current information. Pass one query or up to 4 queries to search several topics at once. Returns an optional summary answer and a list of source URLs.
 
 ```json
 {
@@ -2176,12 +2176,16 @@ Search the web for current information. Returns an optional summary answer and a
   "properties": {
     "query": {
       "type": "string",
-      "description": "The search query."
+      "description": "The search query. Provide either this or queries."
+    },
+    "queries": {
+      "type": "array",
+      "description": "Up to 4 search queries to run concurrently and merge into one result. Provide either this or query.",
+      "items": {
+        "type": "string"
+      }
     }
-  },
-  "required": [
-    "query"
-  ]
+  }
 }
 ```
 

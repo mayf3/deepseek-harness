@@ -2172,7 +2172,7 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ### `web_search`
 
-在 Web 上搜索最新信息。返回可选的摘要答案和源 URL 列表。
+在 Web 上搜索最新信息。可传入一个查询或至多 4 个查询，同时搜索多个主题。返回可选的摘要答案和源 URL 列表。
 
 ```json
 {
@@ -2180,12 +2180,16 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
   "properties": {
     "query": {
       "type": "string",
-      "description": "The search query."
+      "description": "The search query. Provide either this or queries."
+    },
+    "queries": {
+      "type": "array",
+      "description": "Up to 4 search queries to run concurrently and merge into one result. Provide either this or query.",
+      "items": {
+        "type": "string"
+      }
     }
-  },
-  "required": [
-    "query"
-  ]
+  }
 }
 ```
 

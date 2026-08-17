@@ -1,0 +1,33 @@
+# Agent Note: web_search accepts multiple queries in one call
+
+Status: implemented
+
+English | [中文](2026-08-17-web-search-multiple-queries.zh.md)
+
+## Problem
+
+The model-facing `web_search` tool accepted only one `query`. In deployments where an internal search backend was also exposed as MCP, models preferred the MCP search tool because it could take multiple keywords in one call, and they often followed a native `web_search` with a second MCP search when the first result felt insufficient.
+
+## Decision
+
+`web_search` accepts either the existing `query` string or a `queries` string array, but not both. `searchMaxQueries` bounds the array and provider fan-out, defaults to four, and appears in the system-prompt guidance and tool descriptions. Validation rejects an oversized array before any provider call starts.
+
+When `queries` has multiple entries, `dsh-tool-web` runs them concurrently through `ctx.web.search`, labels provider answers with their originating query, and deduplicates sources by URL. It takes one source at each rank from every query before advancing to the next rank, then caps the combined list to `searchMaxResults`; this prevents one query's lower-ranked sources from displacing every source from later queries. The single-query path remains unchanged.
+
+The multi-query orchestration lives in the tool consumer, not in the web seam or providers, because `WebSearchProvider.search` remains a single-query contract and the seam stays provider-neutral.
+
+## Alternatives considered
+
+**Rely on the existing parallel tool-call support.** Rejected: the model still sees a one-query schema and must decide to emit multiple `web_search` calls, which is exactly the friction that pushed it toward the MCP interface.
+
+**Add a multi-query request type to `WebSearchRequest`.** Rejected: providers are single-query backends, and changing the shared seam would force every provider to implement a feature only the model-facing consumer needs.
+
+**Accept an unbounded `queries` array.** Rejected: one model action could start an arbitrary number of provider requests and concatenate an arbitrary number of provider answers. A deployment-owned bound keeps the model schema focused on search input while controlling cost and output growth.
+
+## Consequences
+
+Models can batch several distinct searches into one native `web_search` call, reducing the incentive to switch to MCP search. The default query cap of four matches Codex `web.run`'s model-facing batch size while bounding concurrent provider calls; deployments can choose another positive integer independently of the source cap. Combined sources remain bounded by `searchMaxResults` and preserve each query's result ranking through round-robin merge. Provider answers in a multi-query result are prefixed with `### <query>` headings so the model can tell which answer came from which search. The schema no longer marks `query` as required; runtime validation requires exactly one of `query` or `queries`.
+
+`searchMaxQueries` is not a total native-search budget. A provider may perform several native searches inside one `ctx.web.search` call, so a model-backed provider with its own `maxUses` can permit up to `searchMaxQueries × maxUses` native searches. `searchMaxResults` bounds only the combined sources returned to the caller. Issue #2602 records the decision still required before this implementation is ready for review: whether independently configurable bounds are sufficient or the provider contract needs an overall budget.
+
+The real Web composition snapshot issues one `queries` call through the DeepSeek search provider, observes two auxiliary provider requests, and pins the round-robin combined result, durable metadata, and joined search-card title. Package tests separately prove overlap before the first provider promise settles, query-cap rejection before provider dispatch, deduplication, truncation, and cancellation propagation.

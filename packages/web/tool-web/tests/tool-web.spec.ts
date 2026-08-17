@@ -20,6 +20,7 @@ import {
   searchMetaFromResult,
   fetchMetaFromValue,
   fetchMetaFromResult,
+  WEB_SEARCH_MAX_QUERIES,
   WEB_SEARCH_MAX_RESULTS,
 } from '@deepseek-ai/dsh-tool-web'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -89,6 +90,15 @@ describe('search formatting', () => {
     expect(parseSearchArgs({ query: 'hi' })).toEqual({ query: 'hi' })
   })
 
+  it('validates multiple queries', () => {
+    expect(parseSearchArgs({ queries: ['one', ' two '] })).toEqual({ queries: ['one', ' two '] })
+    expect(() => parseSearchArgs({})).toThrow('provide either query or queries')
+    expect(() => parseSearchArgs({ queries: [] })).toThrow('at least one query')
+    expect(() => parseSearchArgs({ queries: ['one', 'two', 'three'] }, 2)).toThrow('at most 2 queries')
+    expect(() => parseSearchArgs({ queries: ['ok', ' '] })).toThrow('each query must be a non-empty string')
+    expect(() => parseSearchArgs({ query: 'one', queries: ['two'] })).toThrow('not both')
+  })
+
   it('falls back to the raw URL as a source label when the URL is unparseable', () => {
     const out = formatSearchOutput({ truncated: false, sources: [{ url: 'not a url' }] })
     expect(out).toContain('[not a url](not a url)')
@@ -96,6 +106,10 @@ describe('search formatting', () => {
 
   it('presents a search call as a search-kind card titled by the query', () => {
     expect(presentSearchCall({ query: 'find me' })).toEqual({ card: 'generic', title: 'find me', kind: 'search', rawInput: 'find me' })
+  })
+
+  it('presents a multi-query search call with a joined title', () => {
+    expect(presentSearchCall({ queries: ['one', 'two'] })).toEqual({ card: 'generic', title: 'one, two', kind: 'search', rawInput: 'one, two' })
   })
 })
 
@@ -483,7 +497,7 @@ describe('tool-web registration', () => {
     const { fiber, ctx } = await mountTools()
     const prompt = await ctx.systemPrompt.assemble()
     const text = prompt.sections.map(s => s.text).join('\n')
-    expect(text).toContain('Use the web_search tool to discover current information on the web. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.')
+    expect(text).toContain(`Use the web_search tool to discover current information on the web. You can pass up to ${WEB_SEARCH_MAX_QUERIES} queries in one call via the queries parameter when you need several distinct searches. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.`)
     expect(text).toContain('Use the web_fetch tool to retrieve the content of a specific HTTP(S) URL')
     await fiber.dispose()
   })
@@ -509,6 +523,82 @@ describe('tool-web execution through the real registry', () => {
     expect(out.isError).toBe(false)
     expect(out.value).toEqual(result)
     expect(out.content.map(b => b.type === 'text' ? b.text : '').join('')).toContain('[A](https://a.test)')
+    await fiber.dispose()
+  })
+
+  it('executes web_search with multiple queries concurrently and merges results', async () => {
+    const seen: string[] = []
+    let releaseFirst: (() => void) | undefined
+    const firstResult = new Promise<WebSearchResult>((resolve) => {
+      releaseFirst = () => {
+        resolve({
+          content: 'answer one', truncated: false,
+          sources: [
+            { url: 'https://a.test', title: 'A' },
+            { url: 'https://shared.test' },
+          ],
+        })
+      }
+    })
+    const provider: WebSearchProvider = {
+      id: 'stub-search',
+      available: () => available,
+      search: (request) => {
+        seen.push(request.query)
+        if (request.query === 'one') return firstResult
+        return Promise.resolve({
+          content: 'answer two', truncated: false,
+          sources: [
+            { url: 'https://b.test', title: 'B' },
+            { url: 'https://shared.test' },
+          ],
+        })
+      },
+    }
+    const { fiber, call } = await mountTools({ webConfig: { searchProvider: 'stub-search' }, search: provider })
+    const pending = call('web_search', { queries: ['one', 'two'] })
+    try {
+      await vi.waitFor(() => { expect(seen).toEqual(['one', 'two']) })
+    } finally {
+      releaseFirst?.()
+    }
+    const out = await pending
+    expect(out.isError).toBe(false)
+    expect(out.value).toEqual({
+      content: '### one\n\nanswer one\n\n### two\n\nanswer two',
+      sources: [
+        { url: 'https://a.test', title: 'A' },
+        { url: 'https://b.test', title: 'B' },
+        { url: 'https://shared.test' },
+      ],
+      truncated: false,
+    })
+    const body = out.content.map(b => b.type === 'text' ? b.text : '').join('')
+    expect(body).toContain('### one')
+    expect(body).toContain('### two')
+    await fiber.dispose()
+  })
+
+  it('caps combined multi-query results to searchMaxResults', async () => {
+    const provider: WebSearchProvider = {
+      id: 'stub-search',
+      available: () => available,
+      search: request => Promise.resolve({
+        sources: request.query === 'one'
+          ? [{ url: 'https://a.test' }, { url: 'https://b.test' }]
+          : [{ url: 'https://c.test' }, { url: 'https://d.test' }],
+        truncated: false,
+      }),
+    }
+    const { fiber, call } = await mountTools({ config: { searchMaxResults: 2 }, webConfig: { searchProvider: 'stub-search' }, search: provider })
+    const out = await call('web_search', { queries: ['one', 'two'] })
+    expect(out.isError).toBe(false)
+    expect(out.value).toEqual({
+      sources: [{ url: 'https://a.test' }, { url: 'https://c.test' }],
+      truncated: true,
+    })
+    const body = out.content.map(b => b.type === 'text' ? b.text : '').join('')
+    expect(body).toContain('Showing the first 2 sources.')
     await fiber.dispose()
   })
 
@@ -639,6 +729,23 @@ describe('tool-web execution through the real registry', () => {
     expect(seen.signal).toBe(controller.signal)
     await fiber.dispose()
   })
+
+  it('forwards the abort signal to every multi-query search', async () => {
+    const signals: (AbortSignal | undefined)[] = []
+    const provider: WebSearchProvider = {
+      id: 'stub-search',
+      available: () => available,
+      search: (_request, signal) => {
+        signals.push(signal)
+        return Promise.resolve({ sources: [], truncated: false })
+      },
+    }
+    const { ctx, fiber } = await mountTools({ webConfig: { searchProvider: 'stub-search' }, search: provider })
+    const controller = new AbortController()
+    await ctx.tools.execute({ callId: CallId('search-multi-1'), name: 'web_search', arguments: { queries: ['one', 'two'] }, signal: controller.signal })
+    expect(signals).toEqual([controller.signal, controller.signal])
+    await fiber.dispose()
+  })
 })
 
 describe('searchMaxResults is plugin config', () => {
@@ -683,6 +790,43 @@ describe('searchMaxResults is plugin config', () => {
     await ctx.plugin(WebRuntime, {})
     await expect(ctx.plugin(ToolWeb, { searchMaxResults: value }))
       .rejects.toThrow(/tool-web: searchMaxResults must be a positive integer/)
+  })
+})
+
+describe('searchMaxQueries is plugin config', () => {
+  it('exposes the configured cap to the model and enforces it before provider calls', async () => {
+    const seen: string[] = []
+    const provider: WebSearchProvider = {
+      id: 'stub-search',
+      available: () => available,
+      search: (request) => {
+        seen.push(request.query)
+        return Promise.resolve({ sources: [], truncated: false })
+      },
+    }
+    const { fiber, ctx, call } = await mountTools({
+      config: { searchMaxQueries: 2 },
+      webConfig: { searchProvider: 'stub-search' },
+      search: provider,
+    })
+    const schema = ctx.tools.schemas().find(item => item.name === 'web_search')
+    expect(schema?.description).toContain('up to 2 queries')
+    const prompt = await ctx.systemPrompt.assemble()
+    expect(prompt.sections.map(section => section.text).join('\n')).toContain('pass up to 2 queries')
+    const out = await call('web_search', { queries: ['one', 'two', 'three'] })
+    expect(out.isError).toBe(true)
+    expect(out.content).toEqual([{ type: 'text', text: 'Error: queries must contain at most 2 queries' }])
+    expect(seen).toEqual([])
+    await fiber.dispose()
+  })
+
+  it.each([0, -1, 1.5])('rejects an invalid searchMaxQueries value %s at load', async (value) => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(WebRuntime, {})
+    await expect(ctx.plugin(ToolWeb, { searchMaxQueries: value }))
+      .rejects.toThrow(/tool-web: searchMaxQueries must be a positive integer/)
   })
 })
 

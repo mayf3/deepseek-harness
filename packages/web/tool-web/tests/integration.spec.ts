@@ -110,7 +110,7 @@ describe('tool-call timeout policy over the migrated web tools', () => {
     const searchParams = byName.get('web_search')!.parameters as { properties: Record<string, unknown> }
     expect(Object.keys(fetchParams.properties)).toEqual(['url'])
     expect('timeout_ms' in fetchParams.properties).toBe(false)
-    expect(Object.keys(searchParams.properties)).toEqual(['query'])
+    expect(Object.keys(searchParams.properties)).toEqual(['query', 'queries'])
   })
 })
 
