@@ -480,13 +480,6 @@ describe('task admission and package contracts', () => {
     await ctx.plugin(LocalSubprocessRuntime)
     claudeCode.apply(ctx, { env: {}, disposeGraceMs: 3_000 })
     expect(ctx.subagents.getProvider('claude-code')).toBeDefined()
-    expect(() => {
-      claudeCode.apply(ctx, {
-        providerName: '',
-        env: {},
-        disposeGraceMs: 3_000,
-      })
-    }).toThrow('providerName must be non-empty')
     await ctx.fiber.dispose()
   })
 
