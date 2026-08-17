@@ -76,6 +76,12 @@ async function nextTask(): Promise<void> {
   await new Promise<void>((resolve) => { setImmediate(resolve) })
 }
 
+function errorCause(value: unknown): Error | undefined {
+  return value instanceof Error && value.cause instanceof Error
+    ? value.cause
+    : undefined
+}
+
 interface FakeChildOptions {
   readonly pid?: number
   readonly exitOnTerminate?: boolean
@@ -423,9 +429,8 @@ describe('task admission and package contracts', () => {
       'subagent-claude-code: child start failed: %o',
       expect.any(Error),
     )
-    expect(warn.mock.calls[0]?.[1]).toMatchObject({
-      cause: expect.objectContaining({ message: 'claude missing from PATH' }),
-    })
+    expect(errorCause(warn.mock.calls[0]?.[1] as unknown)?.message)
+      .toBe('claude missing from PATH')
     expect(queryMock).not.toHaveBeenCalled()
 
     const resolutionAbort = new AbortController()
@@ -1165,7 +1170,9 @@ describe('run publication, cancellation, and settlement', () => {
     queryMock.mockImplementationOnce(() => {
       throw new Error('query failed before resource creation')
     })
-    const queryFailureOnError = vi.fn()
+    const queryFailureOnError = vi.fn<
+      NonNullable<ClaudeCodeRunSpec['onError']>
+    >()
     const queryFailure = startClaudeCodeRun(request(), {
       ...unused.spec,
       onError: queryFailureOnError,
@@ -1179,11 +1186,8 @@ describe('run publication, cancellation, and settlement', () => {
       expect.any(Error),
       'error',
     )
-    expect(queryFailureOnError.mock.calls[0]?.[0]).toMatchObject({
-      cause: expect.objectContaining({
-        message: 'query failed before resource creation',
-      }),
-    })
+    expect(errorCause(queryFailureOnError.mock.calls[0]?.[0])?.message)
+      .toBe('query failed before resource creation')
 
     const spawned = fakeChild()
     const spawnSpecs: SubprocessSpawnSpec[] = []
@@ -1262,7 +1266,7 @@ describe('query and process disposal', () => {
 
   it('reports a published teardown failure to the Host diagnostic sink', async () => {
     const fixture = fakeRun([success('exact answer')])
-    const onError = vi.fn()
+    const onError = vi.fn<NonNullable<ClaudeCodeRunSpec['onError']>>()
     const run = await startClaudeCodeRun(request(), {
       ...fixture.spec,
       onError,
@@ -1278,9 +1282,8 @@ describe('query and process disposal', () => {
       }),
     )
     expect(onError).toHaveBeenCalledWith(expect.any(Error), 'error')
-    expect(onError.mock.calls[0]?.[0]).toMatchObject({
-      cause: expect.objectContaining({ message: 'SECRET_TOKEN close failure' }),
-    })
+    expect(errorCause(onError.mock.calls[0]?.[0])?.message)
+      .toBe('SECRET_TOKEN close failure')
   })
 
   it('does not finish disposal before the managed tree exits', async () => {
