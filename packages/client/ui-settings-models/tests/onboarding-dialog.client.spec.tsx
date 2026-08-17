@@ -138,6 +138,7 @@ function harness(options: {
     controller,
     useModels: bindSnapshotSelector(controller.store),
     api: face as never,
+    schema: settingsSchema,
     t: key => en[key],
   }
   return {

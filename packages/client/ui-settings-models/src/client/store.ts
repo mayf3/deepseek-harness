@@ -11,7 +11,7 @@ import type {
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SettingsSchemaService } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SettingsSchemaOperations } from './schema-operations.ts'
 
 /**
  * Any route key walks a dict schema to the same profile node, so the lookup
@@ -81,7 +81,7 @@ export function deriveKeyRef(provider: string): string {
  */
 export function protocolChoices(
   namespace: SettingsNamespaceView | undefined,
-  schema: SettingsSchemaService,
+  schema: SettingsSchemaOperations,
 ): string[] {
   if (namespace === undefined) return []
   const node = schema.nodeAtPath(schema.rehydrate(namespace.schema), ['providers', PROBE_ROUTE, 'api'])
@@ -94,7 +94,7 @@ export function protocolChoices(
 function apiKeyEnvOf(
   namespace: SettingsNamespaceView | undefined,
   path: readonly string[],
-  schema: SettingsSchemaService,
+  schema: SettingsSchemaOperations,
 ): string | undefined {
   if (namespace === undefined) return undefined
   const profile = schema.getPath(namespace.value, path)
@@ -118,7 +118,7 @@ export class ModelsSettingsStore {
    */
   constructor(
     private readonly api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>,
-    readonly schema: SettingsSchemaService,
+    private readonly schema: SettingsSchemaOperations,
   ) {}
 
   /**

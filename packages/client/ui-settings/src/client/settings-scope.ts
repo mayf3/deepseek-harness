@@ -21,7 +21,7 @@ import {
 // Client half declares `ctx.remote` with no generated import, and the
 // allowlist's `types` subpath is a pure-type source file, so the pair supplies
 // `$on` and its key face without dragging a build artifact in. The runtime
-// `remote` injection belongs to whoever calls bindSettingsScope: the
+// `remote` injection belongs to whoever calls `ctx.settingsScope.bind(spec)`: the
 // subscription is registered on the caller's own context.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/types'
@@ -50,12 +50,13 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
    * @param api - settings wire face.
    * @param spec - namespace identity and optional narrowing decoder.
    * @param persistence - remote browsers remain process-local because settings RPCs are loopback-only.
+   * @param schema - settings-owned schema operations.
    */
   constructor(
     private readonly api: SettingsFace,
     private readonly spec: SettingsScopeSpec<T>,
     private readonly persistence: 'host' | 'memory' = 'host',
-    private readonly schema?: SettingsSchemaService,
+    private readonly schema: SettingsSchemaService,
   ) {
     this.store = createSnapshotStore<SettingsScopeSnapshot<T>>({
       status: persistence === 'host' ? 'loading' : 'unavailable',
@@ -202,7 +203,6 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
     if (typeof view.value !== 'object' || view.value === null || Array.isArray(view.value)) return undefined
     let failure: string | undefined
     try {
-      if (this.schema === undefined) throw new Error('ui-settings: schema service unavailable')
       failure = this.schema.validate(this.schema.rehydrate(view.schema), view.value)
     } catch (_malformedSchemaEnvelope) {
       // A schema envelope this client cannot rehydrate vouches for no section;

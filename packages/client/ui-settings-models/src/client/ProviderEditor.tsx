@@ -24,7 +24,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { CredentialView, IApiClient, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SettingsSchemaService } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
 } from './DeepSeekModelsEditor.tsx'
@@ -32,6 +31,7 @@ import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
 import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
+import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -60,7 +60,7 @@ export interface ProviderEditorProps {
   /** The owning namespace view (schema, layers, secrets). */
   namespace: SettingsNamespaceView
   /** Settings-owned synchronous schema and immutable path operations. */
-  schema: SettingsSchemaService
+  schema: SettingsSchemaOperations
   /** Path from the section root to this provider's profile. */
   settingsPath: readonly string[]
   /** Wire faces for writes and for interrogating a provider endpoint. */
@@ -87,7 +87,7 @@ export interface ProviderEditorProps {
 
 /** A user-section subtree as a plain draft object (absent → empty). */
 function draftAt(
-  schema: SettingsSchemaService,
+  schema: SettingsSchemaOperations,
   namespace: SettingsNamespaceView,
   path: readonly string[],
 ): Record<string, unknown> {
@@ -134,7 +134,7 @@ function layoutOf(ns: string): EditorLayout {
 
 /** The credential reference this profile resolves keys through. */
 function refFor(
-  schema: SettingsSchemaService,
+  schema: SettingsSchemaOperations,
   namespace: SettingsNamespaceView,
   path: readonly string[],
   provider: string,

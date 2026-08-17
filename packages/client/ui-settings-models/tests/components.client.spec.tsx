@@ -192,6 +192,7 @@ async function mountFace(scripted: ReturnType<typeof scriptedFace>) {
     controller,
     useSnapshot: bindSnapshotSelector(controller.store),
     api: face as never,
+    schema: settingsSchema,
     t,
   }
   const view = render(<ModelsSection {...injected} />)
@@ -272,6 +273,7 @@ describe('ModelsSection', () => {
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
       api={face as never}
+      schema={settingsSchema}
       t={t}
     />)
 
@@ -295,6 +297,7 @@ describe('ModelsSection', () => {
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
       api={face as never}
+      schema={settingsSchema}
       t={t}
     />)
     // Now a row with an Edit button, not an open card.
@@ -1017,6 +1020,7 @@ describe('ModelsSection', () => {
         controller={controller}
         useSnapshot={bindSnapshotSelector(controller.store)}
         api={face as never}
+        schema={settingsSchema}
         t={t}
       />)
       const key = await screen.findByLabelText<HTMLInputElement>(en.keyInput)
@@ -1154,6 +1158,7 @@ describe('ModelsSection', () => {
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
       api={face.face as never}
+      schema={settingsSchema}
       t={t}
     />)
     expect(screen.getByText(/directory down/)).toBeTruthy()
@@ -1175,6 +1180,7 @@ describe('ModelsSection', () => {
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
       api={face as never}
+      schema={settingsSchema}
       t={t}
     />)
     expect(screen.getByText(en.readOnly)).toBeTruthy()
@@ -1235,6 +1241,7 @@ describe('ModelsSection', () => {
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
       api={face as never}
+      schema={settingsSchema}
       t={t}
     />)
     await screen.findByText('DeepSeek')

@@ -125,16 +125,6 @@ describe('SettingsScopeController', () => {
     expect(scope.getSnapshot()).toMatchObject({ status: 'loading', value: undefined, revision: 2 })
   })
 
-  it('rejects host values when no schema service is available', async () => {
-    const describeCall = vi.fn().mockResolvedValueOnce(described({ preference: 'dark' }, 2))
-    const scope = new ProductionSettingsScopeController<UiTestSettings>(
-      { settings: { describe: describeCall } } as never,
-      { namespace: 'ui-test' },
-    )
-    await scope.load()
-    expect(scope.getSnapshot()).toMatchObject({ status: 'loading', value: undefined, revision: 2 })
-  })
-
   it('suppresses a superseded read of an unexposed namespace', async () => {
     const describeCall = vi.fn()
       .mockResolvedValueOnce(ok({ writable: true, hasDocument: true, namespaces: [] }))

@@ -146,6 +146,7 @@ async function mountSection(options: Parameters<typeof scriptedFace>[0] = {}) {
     controller,
     useSnapshot: bindSnapshotSelector(controller.store),
     api: scripted.face as never,
+    schema: settingsSchema,
     t,
   }
   render(<ModelsSection {...injected} />)
@@ -644,6 +645,7 @@ describe('provider rows', () => {
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
       api={scripted.face as never}
+      schema={settingsSchema}
       t={t}
     />)
 

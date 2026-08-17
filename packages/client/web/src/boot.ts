@@ -81,9 +81,7 @@ export class AppWebEntry {
   /** Mount through a dependency fiber so replacing uiRenderer remounts the application. */
   private async mountApp(ctx: Context): Promise<void> {
     const mounted = ctx.inject(['uiRenderer'], (scope) => {
-      const renderer = scope.get('uiRenderer')
-      if (renderer === undefined) throw new Error('web boot: uiRenderer service missing after settled')
-      scope.effect(() => renderer.mount(this.container), 'web boot: application mount')
+      scope.effect(() => scope.uiRenderer.mount(this.container), 'web boot: application mount')
       this.page.dispose()
     })
     await mounted
