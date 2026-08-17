@@ -1,12 +1,12 @@
 /* The framework-free boot page cannot depend on theme delivery succeeding. */
 
 .boot {
-  --dsh-boot-bg: #f9fafb;
+  --dsh-boot-bg: #fff;
   --dsh-boot-label-primary: #0f1115;
   --dsh-boot-label-secondary: #61666b;
   --dsh-boot-label-tertiary: #81858c;
   --dsh-boot-border: rgb(0 0 0 / 10%);
-  --dsh-boot-brand: #3964fe;
+  --dsh-boot-brand: #0f1115;
 
   height: 100%;
   display: grid;
@@ -72,7 +72,18 @@
 }
 
 .failedItem {
-  font-family: var(--ds-font-family-code, ui-monospace, 'SF Mono', Menlo, Consolas, 'Courier New');
+  font-family: var(
+    --ds-font-family-code,
+    'SF Mono',
+    'JetBrains Mono',
+    'Fira Code',
+    Consolas,
+    'Liberation Mono',
+    Menlo,
+    Courier,
+    'PingFang SC',
+    'Microsoft YaHei'
+  );
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-secondary, var(--dsh-boot-label-secondary));

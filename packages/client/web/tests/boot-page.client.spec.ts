@@ -13,6 +13,7 @@ function mount() {
 describe('BootPage', () => {
   it('draws the loading skeleton before any plugin state arrives', () => {
     const { el } = mount()
+    expect(el.firstElementChild?.getAttribute('data-dsh-boot')).toBe('')
     expect(el.textContent).toContain('HARNESS')
     expect(el.textContent).toContain('Loading plugins…')
   })

@@ -82,7 +82,6 @@ export class AppWebEntry {
   private async mountApp(ctx: Context): Promise<void> {
     const mounted = ctx.inject(['uiRenderer'], (scope) => {
       scope.effect(() => scope.uiRenderer.mount(this.container), 'web boot: application mount')
-      this.page.dispose()
     })
     await mounted
   }

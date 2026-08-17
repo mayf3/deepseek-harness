@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
@@ -12,6 +12,7 @@ const mounted: (() => void)[] = []
 
 afterEach(() => {
   act(() => { for (const unmount of mounted.splice(0)) unmount() })
+  vi.restoreAllMocks()
   cleanup()
   document.body.innerHTML = ''
 })
@@ -48,6 +49,26 @@ describe('UI renderer plugin', () => {
     const el = container()
     act(() => { mounted.push(renderer!.mount(el)) })
     expect(el.querySelector('[data-testid="root-probe"]')).toBeTruthy()
+  })
+
+  it('hydrates the boot page before switching to the assembled application', async () => {
+    const { ctx, slots } = await bench()
+    slots.register({ name: 'root' }, () => <div data-testid="root-probe" />)
+    const el = container()
+    el.innerHTML = '<div class="boot" data-dsh-boot=""><div><div class="spinner"></div><div>Loading plugins…</div></div></div>'
+    const boot = el.firstElementChild
+    const observer = new MutationObserver(() => {})
+    observer.observe(el, { childList: true, subtree: true })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    act(() => { mounted.push(ctx.get('uiRenderer')!.mount(el)) })
+
+    const records = observer.takeRecords()
+    observer.disconnect()
+    expect(error).not.toHaveBeenCalled()
+    error.mockRestore()
+    expect(el.querySelector('[data-testid="root-probe"]')).toBeTruthy()
+    expect(records.some(record => record.target === boot)).toBe(false)
   })
 
   it('returns an unmount disposer', async () => {

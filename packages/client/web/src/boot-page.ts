@@ -27,6 +27,7 @@ export class BootPage {
    */
   constructor(container: HTMLElement) {
     this.root = div(css.boot)
+    this.root.dataset.dshBoot = ''
     this.card = div(css.card)
     this.card.append(div(css.wordmark, 'HARNESS'))
     this.root.append(this.card)
