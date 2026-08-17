@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 CPython-subprocess implementation of the [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam. Companion to [`@deepseek-ai/dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.md); trades the Node worker thread for a fresh `python3` subprocess so model code is Python instead of TypeScript.
 
-This package is built up across the code-runtime-python PR stack. This layer ships the wire protocol; the `PythonCodeRuntime` implementation that drives a `python3 -I` process over it lands on top of it.
+The package owns the wire protocol for that seam: the host-side frame codec and the Python-side mirror of the same message vocabulary.
 
 ## Wire protocol
 
@@ -26,4 +26,4 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 ## Known Limitations and Deferred Work
 
 - **The cross-language guard covers the runtime-executed surfaces and the frame field shapes** — `tests/protocol-mirror.e2e.ts` spawns a real `python3` and asserts, against `src/protocol.ts`, both `PROTOCOL_FD` / the log truncation marker text AND each `TypedDict`'s required/optional wire field set in `py/protocol.py`. What it does not compare is the field *types* (e.g. that `cpuSeconds` is an `int` on both sides): comparing type declarations across TypeScript and Python has no mechanical equivalent here, so a type-level drift is still caught by review plus the backend's real-subprocess suite rather than this package's tests.
-- **The `PythonCodeRuntime` implementation and its Python-side JSON codec are not in this layer** — they ship in the backend-core PR on top of this branch; `src/index.ts` re-exports only the protocol vocabulary until then.
+- **`src/index.ts` exports the protocol vocabulary only** — the package carries no subprocess execution path and no Python-side JSON codec, so nothing here spawns `python3` outside the mirror test.
