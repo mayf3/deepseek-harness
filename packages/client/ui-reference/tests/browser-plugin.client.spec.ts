@@ -13,6 +13,7 @@ import type {
 import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
 import type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-reference/types'
 import { apply, inject } from '../src/client/index.ts'
+import { apply as nodeApply } from '../src/index.ts'
 
 const sid = (value: string): SessionId => value as SessionId
 const session: ClientSessionContext = { sessionId: sid('target') }
@@ -110,6 +111,10 @@ describe('apply', () => {
     await ownFiber.dispose()
     expect(registered).toBeUndefined()
     await fiber.dispose()
+  })
+
+  it('the node half applies without host-side behavior', () => {
+    expect(() => { nodeApply() }).not.toThrow()
   })
 })
 
