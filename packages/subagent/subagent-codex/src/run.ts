@@ -71,13 +71,12 @@ function failureDiagnostic(facts: CodexFailureFacts): string {
   if (facts.httpStatus !== undefined) {
     fields.push(`HTTP status: ${facts.httpStatus}`)
   }
-  const exitCode = facts.outcome?.exitCode
-  if (exitCode !== null && exitCode !== undefined) {
-    fields.push(`exit code: ${exitCode}`)
-  }
-  const signal = facts.outcome?.signal
-  if (signal !== null && signal !== undefined) {
-    fields.push(`signal: ${signal}`)
+  const processFields = [
+    ['exit code', facts.outcome?.exitCode],
+    ['signal', facts.outcome?.signal],
+  ] as const
+  for (const [label, value] of processFields) {
+    if (value !== null && value !== undefined) fields.push(`${label}: ${value}`)
   }
   return `Product subagent failure (${fields.join('; ')})`
 }
