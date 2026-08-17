@@ -125,8 +125,13 @@ export class SessionInputShell implements SessionInput {
     return true
   }
 
-  /** Remove one image id from this draft. */
+  /**
+   * Remove one image id from this draft. Busy admission phases refuse, like
+   * {@link addImages}: a removal landing while a command submit serializes
+   * would otherwise vanish from the rail yet still ride the in-flight send.
+   */
   removeImage(id: DraftAttachmentId): void {
+    if (this.snapshot.phase === 'adjudicating' || this.snapshot.phase === 'submitting') return
     const next = this.imageIds.filter(candidate => candidate !== id)
     if (next.length === this.imageIds.length) return
     this.imageIds = next
@@ -497,11 +502,16 @@ export class SessionInputShell implements SessionInput {
   private beginSubmit(attempt: SubmitAttempt, claim: CommandClaim, args: string): void {
     const imageIds = claim.images === true ? [...this.imageIds] : []
     Promise.resolve()
-      .then(() => imageIds.length > 0 ? this.deps.commandImages.serialize(imageIds) : [])
-      .then(images => claim.submit(args, this.deps.actx, images))
+      .then(async () => {
+        const images = imageIds.length > 0 ? await this.deps.commandImages.serialize(imageIds) : []
+        // Serialization may outlive the attempt (large files, session
+        // teardown); a dead attempt must not reach the Host executor.
+        if (this.dead(attempt)) return undefined
+        return claim.submit(args, this.deps.actx, images)
+      })
       .then(
         (outcome) => {
-          if (this.dead(attempt)) return
+          if (outcome === undefined || this.dead(attempt)) return
           if (outcome.kind === 'success' && imageIds.length > 0) {
             const submitted = new Set(imageIds)
             this.imageIds = this.imageIds.filter(id => !submitted.has(id))

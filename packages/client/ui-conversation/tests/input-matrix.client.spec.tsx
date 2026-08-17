@@ -212,6 +212,35 @@ describe('matrix row: claimed with images', () => {
     expect(release).not.toHaveBeenCalled()
     expect(shell.snapshot.phase).toBe('claimed')
   })
+
+  it('a disposed shell never lets a pending serialization reach claim.submit', async () => {
+    const submit = vi.fn(() => Promise.resolve({ kind: 'success' as const }))
+    let resolveSerialize!: (images: readonly SubmitImageAttachment[]) => void
+    const { shell, textarea, claim } = bench({
+      submit,
+      serialize: () => new Promise((resolve) => { resolveSerialize = resolve }),
+    })
+    claim('/goal ', '目标', true)
+    act(() => { shell.addImages([img]) })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await vi.waitFor(() => { expect(resolveSerialize).toBeDefined() })
+    shell.dispose()
+    resolveSerialize([{ mediaType: 'image/png', data: 'AA==' }])
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(submit).not.toHaveBeenCalled()
+  })
+
+  it('image removal is refused while a command submit is in flight', async () => {
+    const submit = vi.fn(() => new Promise<SubmitOutcome>(() => {})) // never settles
+    const { shell, textarea, claim } = bench({ submit, serialize: () => Promise.resolve([]) })
+    claim('/goal ', '目标', true)
+    act(() => { shell.addImages([img]) })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    expect(shell.snapshot.phase).toBe('submitting')
+    act(() => { shell.removeImage(img) })
+    expect(shell.snapshot.imageIds).toEqual([img])
+  })
 })
 
 describe('matrix row: submitting', () => {

@@ -1747,16 +1747,28 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const match = /^\/(\S+)((?:\s.*)?)$/.exec(line.trim())
       const name = match?.[1]
       const args = match?.[2] ?? ''
-      // Mirror the Host executor's declaration enforcement: only the
-      // descriptors listed with `input.images` accept an image-carrying
-      // submission; the fixture stores no bytes, so accepted images are
-      // acknowledged and dropped.
-      if (images.length > 0 && name !== 'goal' && name !== 'plan') {
-        const commandId = `fx-cmd-${logOf(id).length}` as CommandId
-        append(id, { type: 'command/run', data: { commandId, name: name ?? '', args, source: { kind: 'user' } } })
-        const result: CommandResult = { kind: 'error', text: `/${name} does not accept image attachments` }
-        append(id, { type: 'command/done', data: { commandId, ...result } })
-        return { ok: true, value: { commandId, result } }
+      // Mirror the Host image policy AFTER command resolution, matching the
+      // executor's order (an unknown name answers undefined and logs no
+      // lifecycle): the declaration rejection covers every known command
+      // without `input.images`, and the two producer grammar rejections cover
+      // the declaring commands' carrier-less lines. The fixture stores no
+      // bytes, so an accepted batch is acknowledged and dropped.
+      const known = ['permission', 'goal', 'compact', 'echo', 'plan']
+      if (images.length > 0 && name !== undefined && known.includes(name)) {
+        const rejection = name !== 'goal' && name !== 'plan'
+          ? `/${name} does not accept image attachments`
+          : name === 'goal' && args.trim() === ''
+            ? 'Image attachments only accompany a goal objective: /goal <objective> or /goal edit <objective>.'
+            : name === 'plan' && (args.trim() === '' || args.trim() === 'off')
+              ? 'Image attachments require a plan message: /plan <message>.'
+              : undefined
+        if (rejection !== undefined) {
+          const commandId = `fx-cmd-${logOf(id).length}` as CommandId
+          append(id, { type: 'command/run', data: { commandId, name, args, source: { kind: 'user' } } })
+          const result: CommandResult = { kind: 'error', text: rejection }
+          append(id, { type: 'command/done', data: { commandId, ...result } })
+          return { ok: true, value: { commandId, result } }
+        }
       }
       if (name === 'permission') {
         const preset = args.trim()

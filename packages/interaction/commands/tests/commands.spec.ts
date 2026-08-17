@@ -574,6 +574,28 @@ describe('image attachments', () => {
     expect(lifecycleOf(agent).at(-1)).toMatchObject({ type: 'command/done', data: { kind: 'error' } })
   })
 
+  it('honors a cancellation that lands during admission before entering the handler', async () => {
+    const ctx = await mount()
+    const controller = new AbortController()
+    const store = storeOf()
+    store.saveImage.mockImplementationOnce((input: { mediaType: string }) => {
+      controller.abort('operator cancelled during admission')
+      return Promise.resolve({ attachmentId: 'att-late', mediaType: input.mediaType, bytes: 3, width: 1, height: 1 })
+    })
+    ctx.provide('attachments', store)
+    const { agent } = await mintAgentScope(ctx, 'a')
+    const handler = vi.fn(() => ({ kind: 'success' as const }))
+    ctx.commands.register(accepting(handler))
+    await expect(ctx.commands.execute(
+      agent, '/vision x', [{ mediaType: 'image/png', data: PNG }], controller.signal,
+    )).rejects.toThrow('operator cancelled during admission')
+    expect(handler).not.toHaveBeenCalled()
+    expect(lifecycleOf(agent).at(-1)).toMatchObject({
+      type: 'command/done',
+      data: { kind: 'error', text: 'operator cancelled during admission' },
+    })
+  })
+
   it('logs and rethrows a non-attachment admission failure', async () => {
     const ctx = await mount()
     const store = storeOf()

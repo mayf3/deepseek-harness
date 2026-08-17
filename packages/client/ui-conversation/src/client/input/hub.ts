@@ -80,6 +80,10 @@ export class InputHub implements SessionInputResolver {
       steerQueue: () => { void this.steerQueue(session, shell) },
       commandImages: {
         serialize: ids => this.conversation().serializeDraftImages(ids),
+        // Asymmetric with serialize on purpose: release settles AFTER the
+        // submit RPC, where session teardown may already have unloaded the
+        // conversation service (the same tolerance as the scope disposer
+        // above); leaked preview URLs then die with the document.
         release: (ids) => {
           const conversation = this.rootCtx.get('conversation') as ConversationAttachmentFace | undefined
           for (const imageId of ids) conversation?.releaseDraftImage(imageId)

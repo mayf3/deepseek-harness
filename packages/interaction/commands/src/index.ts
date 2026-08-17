@@ -128,6 +128,11 @@ function abortError(signal: AbortSignal): Error {
   return new Error(typeof signal.reason === 'string' ? signal.reason : 'command aborted')
 }
 
+/** The signal's normalized abort error when it is already aborted. */
+function cancellationOf(signal: AbortSignal): Error | undefined {
+  return signal.aborted ? abortError(signal) : undefined
+}
+
 /** Render arbitrary thrown values without trusting their string coercion. */
 function renderThrown(value: unknown): string {
   try {
@@ -367,6 +372,15 @@ export class CommandRuntime extends TypertRemoteService {
         }
         this.settleThrown(agent.session, parsed.name, commandId, error)
         throw error
+      }
+      // Cancellation must be honored BEFORE the handler runs: admission may
+      // await slow storage, and a handler entered after the caller cancelled
+      // would mutate state the retrying caller then duplicates. (The committed
+      // image objects stay unreferenced and are deferred-GC territory.)
+      const cancelledDuringAdmission = cancellationOf(signal)
+      if (cancelledDuringAdmission !== undefined) {
+        this.settleThrown(agent.session, parsed.name, commandId, cancelledDuringAdmission)
+        throw cancelledDuringAdmission
       }
     }
     const invocation = Object.freeze({ commandId, agent, rawInput: parsed.rawInput, attachments, signal })
