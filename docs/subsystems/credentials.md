@@ -104,17 +104,19 @@ cancel(key: CredentialKey): void
  * and the second would answer questions the first was asked.
  *
  * @param request - the key, the method, the surface, and the cancel signal.
- * @returns `authorized` once the flow's record is committed and observed,
- *   or `cancelled` when the human or the caller withdrew.
+ * @returns `authorized` once the flow's record is committed during this
+ *   attempt and observed, or `cancelled` when the human declined or the
+ *   caller withdrew.
  * @throws {AuthorizationError} code `NO_FLOW` when nothing claims the key,
  *   `UNKNOWN_METHOD` when the named method is not one the flow offers,
  *   `ALREADY_IN_FLIGHT` when an attempt is already running for the key, or
- *   `NOT_COMMITTED` when the flow resolved without leaving a record behind.
+ *   `NOT_COMMITTED` when the flow resolved without committing a record
+ *   during the attempt.
  */
 async begin(request: AuthorizationRequest): Promise<AuthorizationOutcome>
 ```
 
-Source: [`packages/credentials/authorization/src/index.ts:163`](../../packages/credentials/authorization/src/index.ts)
+Source: [`packages/credentials/authorization/src/index.ts:182`](../../packages/credentials/authorization/src/index.ts)
 
 <a id="ctxcredentials--credentialprovider-abstract-seam"></a>
 
@@ -208,7 +210,7 @@ abstract modifyRecord( key: CredentialKey, mutate: (current: CredentialRecord | 
 abstract deleteRecord(key: CredentialKey): Promise<void>
 ```
 
-Source: [`packages/credentials/credentials/src/index.ts:164`](../../packages/credentials/credentials/src/index.ts)
+Source: [`packages/credentials/credentials/src/index.ts:177`](../../packages/credentials/credentials/src/index.ts)
 
 <a id="authorization-events"></a>
 

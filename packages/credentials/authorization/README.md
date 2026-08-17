@@ -6,7 +6,7 @@ Authorization Service Definition (`ctx.authorization`). Some credentials cannot 
 
 **A flow is a plugin's knowledge of how to get its own credential.** It is registered under the [`CredentialKey`](../credentials/README.md#two-key-spaces-two-questions) it writes, so a flow says which record it produces and, through that key's scope, which plugin answers for the format inside it. A second authorization protocol arrives as another flow, not as another seam.
 
-**The flow owns the write.** `run()` resolving means the record is already committed through `ctx.credentials`; the seam confirms it and refuses a flow that resolved without one. Committing inside the flow is what lets a library that persists through its own store adapter stay the single writer instead of being copied back out and written twice.
+**The flow owns the write.** `run()` resolving means the record is already committed through `ctx.credentials`; the seam confirms a commit it observed during the attempt — presence alone would let a re-authorization pass a stale record off as fresh — and refuses a flow that resolved without one. Committing inside the flow is what lets a library that persists through its own store adapter stay the single writer instead of being copied back out and written twice.
 
 **The interaction travels with the request, not a registry.** Whoever starts an authorization is the one who can talk to the human about it, so prompts reach exactly the surface that asked and a headless caller supplies an interaction that declines. There is no ambient provider to be absent, and no question about which of two open pages a prompt belongs to.
 
@@ -14,7 +14,7 @@ Authorization Service Definition (`ctx.authorization`). Some credentials cannot 
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
-import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
+import { AuthorizationDeclinedError, type AuthorizationSession } from '@deepseek-ai/dsh-authorization'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 
 declare const ctx: Context
@@ -39,7 +39,7 @@ ctx.authorization.list()                    // [{ key, label, methods, inFlight 
 ctx.authorization.describe(key)             // the same entry, or undefined
 await ctx.authorization.begin({             // { status: 'authorized' | 'cancelled' }
   key,
-  interaction: { notify: () => {}, prompt: () => Promise.reject(new Error('headless')) },
+  interaction: { notify: () => {}, prompt: () => Promise.reject(new AuthorizationDeclinedError()) },
 })
 ctx.authorization.cancel(key)               // withdraw whatever is running for the key
 dispose()
@@ -51,7 +51,9 @@ One attempt per key at a time. A second caller is refused with `ALREADY_IN_FLIGH
 
 An attempt whose caller has already withdrawn never claims the key and never starts the flow — relying on each flow to check its signal before the first await would let one that does not hang holding the key. Validation still runs first, so a caller naming a key or method that does not exist hears about it whether or not it also gave up.
 
-`authorization/settled (key, settlement)` fires after the key is released, for every terminal outcome. `settlement` adds `failed` to the two statuses `begin()` can return: a failure reaches its own caller as a thrown error, so the event stream is the only place a watcher that did not start the attempt can tell a refusal from a breakage.
+A human's "no" is an outcome, not a breakage. An interaction that declines rejects its prompt with `AuthorizationDeclinedError`, and an attempt that fails after a declined prompt settles as `cancelled`, exactly as a withdrawn signal does; any other prompt rejection stays a flow failure that reaches the caller. A notice is fire-and-forget on the same principle, held at the seam: a surface that cannot render one loses the notice, never the attempt.
+
+`authorization/settled (key, settlement)` fires after the key is released, for every terminal outcome. `settlement` adds `failed` to the two statuses `begin()` can return: a failure reaches its own caller as a thrown error, so the event stream is the only place a watcher that did not start the attempt can tell a refusal from a breakage. Listener failures are contained: every listener runs, a throw or rejection is logged without changing the finished attempt's outcome, and only an `INVARIANT`-coded failure rethrows after the rest ran.
 
 ## The interaction vocabulary
 

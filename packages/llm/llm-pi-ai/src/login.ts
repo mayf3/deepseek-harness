@@ -11,6 +11,7 @@ import { createModels } from '@earendil-works/pi-ai'
 import type { AuthEvent, AuthPrompt, AuthType, Provider } from '@earendil-works/pi-ai'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AuthorizationMethod, AuthorizationPrompt, AuthorizationSession } from '@deepseek-ai/dsh-authorization'
+import { isCredentialKeySegment } from '@deepseek-ai/dsh-credentials'
 import { catalogProvider, catalogProviderIds } from './catalog.ts'
 import { recordKeyFor } from './auth.ts'
 import type { PiAiAuthInjection } from './adapter.ts'
@@ -124,6 +125,16 @@ export function registerPiAiFlows(ctx: Context, auth: PiAiAuthInjection): void {
        installed provider ships a login, so nothing is skipped today; the guard
        is what keeps that from becoming a crash if either stops being true. */
     if (provider === undefined || first === undefined) continue
+    /* v8 ignore next 7 -- every installed catalog id today is a lowercase
+       hyphenated identifier; the guard keeps a future upstream id outside the
+       record grammar (dotted or uppercase, as vendor ids elsewhere already
+       are) from throwing in `recordKeyFor` and failing the whole mount. */
+    if (!isCredentialKeySegment(providerId)) {
+      ctx.logger.warn(
+        'llm-pi-ai: catalog provider "%s" cannot address a credential record; its sign-in is not offered',
+        providerId)
+      continue
+    }
     ctx.authorization.registerFlow({
       key: recordKeyFor(providerId),
       label: provider.name,

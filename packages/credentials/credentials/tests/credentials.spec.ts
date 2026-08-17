@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { credentialRef } from '../src/index.ts'
+import { credentialRef, isCredentialKeySegment } from '../src/index.ts'
 import type { CredentialRef } from '../src/index.ts'
 import { MemoryCredentials } from './memory.ts'
 
@@ -22,6 +22,19 @@ describe('credentialRef', () => {
   it('rejects every other shape', () => {
     for (const invalid of ['', '9LEADING', 'WITH-DASH', 'WITH SPACE', 'ns:key']) {
       expect(() => credentialRef(invalid)).toThrow(TypeError)
+    }
+  })
+})
+
+describe('isCredentialKeySegment', () => {
+  it('answers whether credentialKey would accept the segment', () => {
+    for (const valid of ['llm-pi-ai', 'openai-codex', 'a', 'z9']) {
+      expect(isCredentialKeySegment(valid)).toBe(true)
+    }
+    // The shapes an arbitrary settings dict key can take that a record id
+    // cannot: a consumer asks here instead of learning it from a throw.
+    for (const invalid of ['', 'My_Proxy', 'z.ai', 'UPPER', '9leading', 'a/b']) {
+      expect(isCredentialKeySegment(invalid)).toBe(false)
     }
   })
 })

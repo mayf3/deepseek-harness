@@ -44,6 +44,19 @@ export function isCredentialRefName(value: string): boolean {
 }
 
 /**
+ * Whether a raw string could be a {@link credentialKey} segment at all.
+ * Consumers whose addressing units come from somewhere else — a settings dict
+ * key, a library's own provider id — ask this before building a key, because a
+ * unit outside the grammar can never have stored a record and should read as
+ * "nothing stored" rather than as a thrown error.
+ * @param value - candidate segment.
+ * @returns true when {@link credentialKey} would accept it as either segment.
+ */
+export function isCredentialKeySegment(value: string): boolean {
+  return KEY_SEGMENT_PATTERN.test(value)
+}
+
+/**
  * Brand a scope and an id as a {@link CredentialKey}.
  * @param scope - the owning plugin's registered name, such as `llm-pi-ai`.
  * @param id - that plugin's own addressing unit, such as a provider route key.

@@ -6,7 +6,7 @@
 
 **flow 是某个插件"如何取得自己那份凭据"的知识。** 它以自己写入的 [`CredentialKey`](../credentials/README.md#two-key-spaces-two-questions) 注册，因此 flow 声明了自己产出哪条记录，并通过该键的 scope 声明由哪个插件为记录内部的格式负责。第二种授权协议以另一个 flow 的形式到来，而不是另一个 seam。
 
-**写入由 flow 拥有。** `run()` 返回即表示记录已经通过 `ctx.credentials` 提交；seam 随后核实，并拒绝那些返回时没留下记录的 flow。让提交发生在 flow 内部，才能使一个通过自有 store 适配器持久化的库保持为唯一写入方，而不是把凭据复制出来再写第二遍。
+**写入由 flow 拥有。** `run()` 返回即表示记录已经通过 `ctx.credentials` 提交；seam 核实的是它在本次尝试期间观察到的提交——只看记录存在与否，会让重新授权把陈旧记录冒充成新鲜的——并拒绝那些返回时没提交记录的 flow。让提交发生在 flow 内部，才能使一个通过自有 store 适配器持久化的库保持为唯一写入方，而不是把凭据复制出来再写第二遍。
 
 **交互随请求传入，而非注册表。** 发起授权的一方才是能与人对话的一方，因此提示恰好抵达发问的那个界面，无头调用方则传入一个直接拒绝的交互实现。这样既不存在"环境提供方缺席"的问题，也不会出现某个提示该归两个已打开页面中哪一个的疑问。
 
@@ -14,7 +14,7 @@
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
-import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
+import { AuthorizationDeclinedError, type AuthorizationSession } from '@deepseek-ai/dsh-authorization'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 
 declare const ctx: Context
@@ -39,7 +39,7 @@ ctx.authorization.list()                    // [{ key, label, methods, inFlight 
 ctx.authorization.describe(key)             // the same entry, or undefined
 await ctx.authorization.begin({             // { status: 'authorized' | 'cancelled' }
   key,
-  interaction: { notify: () => {}, prompt: () => Promise.reject(new Error('headless')) },
+  interaction: { notify: () => {}, prompt: () => Promise.reject(new AuthorizationDeclinedError()) },
 })
 ctx.authorization.cancel(key)               // withdraw whatever is running for the key
 dispose()
@@ -51,7 +51,9 @@ dispose()
 
 调用方在发起前就已撤销的尝试，既不占用该键也不启动 flow——若指望每个 flow 都在首个 await 之前检查自己的 signal，那么没有检查的那个就会占着键一直挂起。校验仍然先执行，因此调用方给出的键或方法不存在时，无论它是否已经放弃都会收到报错。
 
-`authorization/settled (key, settlement)` 在键释放之后触发，覆盖每一种终态。`settlement` 在 `begin()` 能返回的两种状态之外增加了 `failed`：失败以抛出的错误抵达其调用方，因此事件流是未发起该尝试的旁观者唯一能区分"被拒绝"与"出故障"的地方。
+人的"不"是一种结果，不是故障。选择拒绝的交互实现让 prompt 以 `AuthorizationDeclinedError` 拒绝，在提示被拒之后才失败的尝试以 `cancelled` 结算，与 signal 撤销完全一致；其余任何 prompt 拒绝仍是抵达调用方的 flow 故障。notice 依同一原则即发即忘，并由 seam 兜底：渲染不了 notice 的界面丢掉的是那条 notice，而不是整次尝试。
+
+`authorization/settled (key, settlement)` 在键释放之后触发，覆盖每一种终态。`settlement` 在 `begin()` 能返回的两种状态之外增加了 `failed`：失败以抛出的错误抵达其调用方，因此事件流是未发起该尝试的旁观者唯一能区分"被拒绝"与"出故障"的地方。监听器故障被就地遏制：每个监听器都会执行，抛错或拒绝只记录日志、不改变已结束尝试的结果，仅 `INVARIANT` 编码的故障在其余监听器执行完后重抛。
 
 ## 交互词汇
 

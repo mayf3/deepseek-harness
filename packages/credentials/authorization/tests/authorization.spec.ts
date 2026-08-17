@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import AuthorizationService, {
+  AuthorizationDeclinedError,
   type AuthorizationFlow,
   type AuthorizationInteraction,
   type AuthorizationSession,
@@ -302,5 +303,163 @@ describe('AuthorizationService.begin', () => {
 
     await expect(ctx.authorization.begin({ key: KEY, interaction: surface() }))
       .rejects.toThrow(/resolved without committing a credential record/)
+  })
+})
+
+describe('commit confirmation', () => {
+  it('refuses a re-auth that left only the record of an earlier attempt', async () => {
+    const ctx = await harness()
+    await ctx.credentials.modifyRecord(KEY, () =>
+      Promise.resolve({ kind: 'grant', payload: { token: 'stale' } }))
+    ctx.authorization.registerFlow({
+      key: KEY,
+      label: 'Forgetful',
+      methods: [{ id: 'oauth', label: 'Sign in' }],
+      // A commit for another key is not this flow's commit either.
+      async run() {
+        await ctx.credentials.modifyRecord(OTHER, () =>
+          Promise.resolve({ kind: 'grant', payload: { token: 'other' } }))
+      },
+    })
+
+    await expect(ctx.authorization.begin({ key: KEY, interaction: surface() }))
+      .rejects.toThrow(/without committing a credential record in this attempt/)
+    // Refused, not cleaned up: the stale record still belongs to its owner.
+    expect(await ctx.credentials.readRecord(KEY)).toEqual({ kind: 'grant', payload: { token: 'stale' } })
+  })
+
+  it('refuses a flow that deleted its record instead of committing one', async () => {
+    const ctx = await harness()
+    await ctx.credentials.modifyRecord(KEY, () =>
+      Promise.resolve({ kind: 'grant', payload: { token: 'stale' } }))
+    ctx.authorization.registerFlow({
+      key: KEY,
+      label: 'Destructive',
+      methods: [{ id: 'oauth', label: 'Sign in' }],
+      run: () => ctx.credentials.deleteRecord(KEY),
+    })
+
+    await expect(ctx.authorization.begin({ key: KEY, interaction: surface() }))
+      .rejects.toThrow(/deleted its credential record/)
+  })
+})
+
+describe('declined prompts', () => {
+  it('reports an attempt whose prompt the human declined as cancelled, not failed', async () => {
+    const ctx = await harness()
+    ctx.authorization.registerFlow(committingFlow(ctx, KEY, async (session) => {
+      await session.prompt({ kind: 'text', message: 'Paste the code' })
+    }))
+    const settled = vi.fn()
+    ctx.on('authorization/settled', settled)
+    const declining: AuthorizationInteraction = {
+      notify: () => undefined,
+      prompt: () => Promise.reject(new AuthorizationDeclinedError()),
+    }
+
+    await expect(ctx.authorization.begin({ key: KEY, interaction: declining }))
+      .resolves.toEqual({ status: 'cancelled' })
+
+    expect(settled).toHaveBeenCalledWith(KEY, 'cancelled')
+  })
+
+  it('reads a decline through a flow that rewraps the rejection on its way out', async () => {
+    const ctx = await harness()
+    ctx.authorization.registerFlow(committingFlow(ctx, KEY, session =>
+      session.prompt({ kind: 'text', message: 'Paste the code' }).then(
+        () => undefined,
+        () => {
+          throw new Error('sign-in aborted')
+        })))
+    const declining: AuthorizationInteraction = {
+      notify: () => undefined,
+      prompt: () => Promise.reject(new AuthorizationDeclinedError()),
+    }
+
+    await expect(ctx.authorization.begin({ key: KEY, interaction: declining }))
+      .resolves.toEqual({ status: 'cancelled' })
+  })
+
+  it('keeps a prompt failure that is not a decline a flow failure', async () => {
+    const ctx = await harness()
+    ctx.authorization.registerFlow(committingFlow(ctx, KEY, async (session) => {
+      await session.prompt({ kind: 'text', message: 'Paste the code' })
+    }))
+    const settled = vi.fn()
+    ctx.on('authorization/settled', settled)
+    const broken: AuthorizationInteraction = {
+      notify: () => undefined,
+      prompt: () => Promise.reject(new Error('the transport dropped')),
+    }
+
+    await expect(ctx.authorization.begin({ key: KEY, interaction: broken }))
+      .rejects.toThrow('the transport dropped')
+
+    expect(settled).toHaveBeenCalledWith(KEY, 'failed')
+  })
+})
+
+describe('notice containment', () => {
+  it('loses the notice, never the attempt, when the surface cannot render it', async () => {
+    const ctx = await harness()
+    ctx.authorization.registerFlow(committingFlow(ctx, KEY, (session) => {
+      session.notify({ message: 'Continue in your browser' })
+      return Promise.resolve()
+    }))
+    const broken: AuthorizationInteraction = {
+      notify: () => {
+        throw new Error('page connection closed')
+      },
+      prompt: () => Promise.resolve('unused'),
+    }
+
+    await expect(ctx.authorization.begin({ key: KEY, interaction: broken }))
+      .resolves.toEqual({ status: 'authorized' })
+  })
+})
+
+describe('the settled fan-out', () => {
+  it('keeps a throwing listener from changing a finished attempt, and later listeners still run', async () => {
+    const ctx = await harness()
+    ctx.authorization.registerFlow(committingFlow(ctx))
+    ctx.on('authorization/settled', () => {
+      throw new Error('watcher boom')
+    })
+    const second = vi.fn()
+    ctx.on('authorization/settled', second)
+
+    await expect(ctx.authorization.begin({ key: KEY, interaction: surface() }))
+      .resolves.toEqual({ status: 'authorized' })
+
+    expect(second).toHaveBeenCalledWith(KEY, 'authorized')
+  })
+
+  it('contains an async listener rejection', async () => {
+    const ctx = await harness()
+    ctx.authorization.registerFlow(committingFlow(ctx))
+    // An unknown-returning function keeps the typed surface legal while the
+    // runtime value is still the rejected promise the containment must handle.
+    const boom = (): unknown => Promise.reject(new Error('async watcher boom'))
+    ctx.on('authorization/settled', boom)
+
+    await expect(ctx.authorization.begin({ key: KEY, interaction: surface() }))
+      .resolves.toEqual({ status: 'authorized' })
+    await new Promise(resolve => setTimeout(resolve, 10))
+  })
+
+  it('rethrows an invariant-coded listener failure after the remaining listeners', async () => {
+    const ctx = await harness()
+    ctx.authorization.registerFlow(committingFlow(ctx))
+    ctx.on('authorization/settled', () => {
+      throw Object.assign(new Error('forged relation'), { code: 'INVARIANT' })
+    })
+    const second = vi.fn()
+    ctx.on('authorization/settled', second)
+
+    await expect(ctx.authorization.begin({ key: KEY, interaction: surface() }))
+      .rejects.toThrow(/forged relation/)
+    // Harness-fatal by design — but the record itself committed first.
+    expect(second).toHaveBeenCalledWith(KEY, 'authorized')
+    expect(await ctx.credentials.readRecord(KEY)).toEqual({ kind: 'grant', payload: { token: 'granted' } })
   })
 })

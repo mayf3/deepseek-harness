@@ -14,7 +14,7 @@ import { resolve as resolvePath } from 'node:path'
 import type { AuthContext, Credential, CredentialInfo, CredentialStore } from '@earendil-works/pi-ai'
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  credentialKey, credentialKeyId, credentialKeyScope, credentialRef, isCredentialRefName,
+  credentialKey, credentialKeyId, credentialKeyScope, credentialRef, isCredentialKeySegment, isCredentialRefName,
 } from '@deepseek-ai/dsh-credentials'
 import type { CredentialKey, CredentialProvider, CredentialRecord } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
@@ -104,6 +104,13 @@ function writableStore(ctx: Context): CredentialProvider {
  * to cover a network round trip rather than a file rename — which is why the
  * record write path takes a wait limit of its own rather than the short one a
  * local write would need.
+ *
+ * pi-ai asks this store about every provider in the collection, hand-declared
+ * routes included, and a route key is an arbitrary settings dict key while a
+ * record id is not. An id outside the record grammar can never have stored a
+ * record, so reads answer "nothing stored" and a delete has nothing to remove;
+ * only `modify` refuses it, because a write that cannot land must not report
+ * that it did.
  * @param ctx - the plugin context carrying the optional `ctx.credentials`.
  * @returns the store to hand `createModels()`.
  */
@@ -112,6 +119,7 @@ export function credentialStoreFrom(ctx: Context): CredentialStore {
     async read(providerId) {
       const credentials = ctx.get('credentials')
       if (credentials === undefined) return undefined
+      if (!isCredentialKeySegment(providerId)) return undefined
       return toPiCredential(await credentials.readRecord(recordKeyFor(providerId)))
     },
     async list(): Promise<readonly CredentialInfo[]> {
@@ -129,6 +137,14 @@ export function credentialStoreFrom(ctx: Context): CredentialStore {
       return mine
     },
     async modify(providerId, mutate) {
+      if (!isCredentialKeySegment(providerId)) {
+        throw new LlmError(
+          `llm-pi-ai: provider id "${providerId}" cannot address a stored credential record (a record id is a`
+          + ' lowercase hyphenated identifier); authenticate this route through apiKeyEnv instead of a stored'
+          + ' credential',
+          'UNSTORABLE_PROVIDER_ID',
+        )
+      }
       const stored = await writableStore(ctx).modifyRecord(recordKeyFor(providerId), async (current) => {
         const next = await mutate(toPiCredential(current))
         return next === undefined ? undefined : toRecord(next)
@@ -139,6 +155,7 @@ export function credentialStoreFrom(ctx: Context): CredentialStore {
     // store contract is promise-returning, and a synchronous throw would
     // escape the `ModelsError` wrapper every other storage failure gets.
     async delete(providerId) {
+      if (!isCredentialKeySegment(providerId)) return
       await writableStore(ctx).deleteRecord(recordKeyFor(providerId))
     },
   }

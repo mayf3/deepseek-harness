@@ -316,6 +316,24 @@ describe('record mutation', () => {
     await expect(readFile(path, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
+  it('refuses an api-key record this document could not read back', async () => {
+    const dir = await tempDir()
+    const path = join(dir, '.credentials.yaml')
+    const ctx = await boot({ path, watch: false })
+
+    // The same admission rule as the read path: an api-key record parseRecord
+    // would reject at the next boot is refused before it is rendered, so the
+    // current process can never report a success the next one refuses to load.
+    await expect(put(ctx, CODEX, { kind: 'api-key', key: '' }))
+      .rejects.toThrow(/empty key/)
+    await expect(put(ctx, CODEX, { kind: 'api-key', env: { 'not a name': 'value' } }))
+      .rejects.toThrow(/must match/)
+    await expect(put(ctx, CODEX, { kind: 'api-key', env: { AWS_REGION: '' } }))
+      .rejects.toThrow(/non-empty string/)
+    expect(await ctx.credentials.readRecord(CODEX)).toBeUndefined()
+    await expect(readFile(path, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('refuses record writes once disposed', async () => {
     const dir = await tempDir()
     const ctx = new Context()

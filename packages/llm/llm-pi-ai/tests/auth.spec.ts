@@ -116,6 +116,20 @@ describe('pi-ai credential store over harness records', () => {
       .rejects.toThrow(/mounts no credentials service/)
     await expect(store.delete('openai-codex')).rejects.toThrow(/mounts no credentials service/)
   })
+
+  it('treats a provider id outside the record grammar as holding nothing', async () => {
+    const store = credentialStoreFrom(await stored())
+
+    // A hand-declared route key is an arbitrary settings dict key, and pi-ai
+    // reads it during auth resolution: the answer is "not signed in", never a
+    // thrown address error…
+    await expect(store.read('My_Proxy')).resolves.toBeUndefined()
+    // …nothing can ever be stored under it, so a logout has nothing to remove…
+    await expect(store.delete('My_Proxy')).resolves.toBeUndefined()
+    // …while a write that cannot land must refuse rather than report success.
+    await expect(store.modify('My_Proxy', () => Promise.resolve({ type: 'api_key', key: 'k' })))
+      .rejects.toThrow(/cannot address a stored credential record/)
+  })
 })
 
 describe('pi-ai ambient auth context', () => {

@@ -46,6 +46,7 @@ import { canonicalizeWatchPath, resolveDshHome } from '@deepseek-ai/dsh-home-pat
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { CredentialProvider, credentialRef, parseCredentialKey } from '@deepseek-ai/dsh-credentials'
 import type {
+  ApiKeyRecord,
   CredentialInfo,
   CredentialKey,
   CredentialRecord,
@@ -100,12 +101,15 @@ const GROUP_OTHER_BITS = 0o077
  * mutation runs its caller's decision while holding the lock, and for the
  * operation this half exists to serve — an owner refreshing an expired token —
  * that decision includes a network round trip. The file-work default would
- * fail every other writer of this document for its duration. Like the retry
- * cadence in `dsh-atomic-write`, this is a robustness bound of the write
- * protocol rather than a deployment choice: it is sized by what a provider
- * request costs, which no deployment varies.
+ * fail every other writer of this document for its duration. A contender's
+ * wait is sized by the longest holder it can meet, and refs and records share
+ * one file and one lock, so every writer of this document — reference writes
+ * and record deletes included — waits this long, not only the mutation that
+ * holds it. Like the retry cadence in `dsh-atomic-write`, this is a
+ * robustness bound of the write protocol rather than a deployment choice: it
+ * is sized by what a provider request costs, which no deployment varies.
  */
-const RECORD_LOCK_WAIT_MS = 30_000
+const DOCUMENT_LOCK_WAIT_MS = 30_000
 
 /**
  * Reject a credentials document other OS users can read, before its contents
@@ -251,6 +255,26 @@ function parseRecords(section: unknown, filename: string): Map<string, Credentia
     entries.set(key, parseRecord(key, value, filename))
   }
   return entries
+}
+
+/**
+ * Refuse an api-key record the read path could not admit, before it is
+ * rendered: an empty key, an env name outside the reference grammar, or an
+ * empty env value would persist a document `parseRecord` rejects at the next
+ * boot — a durable-boundary write is validated where it is written.
+ * @param key - the record's credential key, for the failure message.
+ * @param record - the api-key record a mutation returned.
+ */
+function assertStorableApiKey(key: CredentialKey, record: ApiKeyRecord): void {
+  if (record.key !== undefined && record.key.length === 0) {
+    throw new TypeError(`credentials-local: record "${key}" has an empty key; omit the field instead`)
+  }
+  for (const [name, value] of Object.entries(record.env ?? {})) {
+    credentialRef(name)
+    if (value.length === 0) {
+      throw new TypeError(`credentials-local: record "${key}" env "${name}" must be a non-empty string`)
+    }
+  }
 }
 
 /** One section of the document as a plain mapping; absent and null both mean empty. */
@@ -626,10 +650,11 @@ export class LocalCredentialProvider extends CredentialProvider {
         const current = this.records.get(key)
         const next = await mutate(current)
         if (next === undefined) return current
-        // Admitted before it is rendered: the promise that a payload comes
-        // back exactly as written is only keepable for values this document
-        // can spell, and a value rejected here has not been stored.
+        // Admitted before it is rendered: what the read path would refuse is
+        // refused here first, so a caller can never persist a document the
+        // next boot rejects, and a value refused here has not been stored.
         if (next.kind === 'grant') assertJsonValue(`record "${key}" payload`, next.payload, new Set())
+        else assertStorableApiKey(key, next)
         const nextText = renderRecord(this.text, key, next)
         // 0600: a document holding secrets is never world-readable.
         await writeFileAtomic(this.spec.filename, nextText, { mode: 0o600, dirMode: 0o700 })
@@ -638,7 +663,7 @@ export class LocalCredentialProvider extends CredentialProvider {
         // After the commit, on the same terms as a reference write.
         this.notifyRecordUpdated(key)
         return next
-      }, { waitMs: RECORD_LOCK_WAIT_MS })
+      }, { waitMs: DOCUMENT_LOCK_WAIT_MS })
     })
   }
 
@@ -657,7 +682,7 @@ export class LocalCredentialProvider extends CredentialProvider {
         this.text = nextText
         this.records.delete(key)
         this.notifyRecordUpdated(key)
-      })
+      }, { waitMs: DOCUMENT_LOCK_WAIT_MS })
     })
   }
 
@@ -718,7 +743,7 @@ export class LocalCredentialProvider extends CredentialProvider {
         // After the commit: a broken observer must never make the durable
         // write look failed (an INVARIANT failure still rethrows).
         this.notifyUpdated(ref)
-      })
+      }, { waitMs: DOCUMENT_LOCK_WAIT_MS })
     })
   }
 

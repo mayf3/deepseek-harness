@@ -7,7 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { credentialKey, credentialRef } from '@deepseek-ai/dsh-credentials'
 import { LocalCredentialProvider } from '../src/index.ts'
 
 /** Credential documents are seeded owner-only, exactly as the provider creates them. */
@@ -79,6 +79,37 @@ describe('read-modify-write', () => {
     const ctx = await boot({ path: join(home, '.credentials.yaml'), watch: false })
     await ctx.credentials.set(ALPHA, 'one')
     if (process.platform !== 'win32') expect((await stat(home)).mode & 0o777).toBe(0o700)
+  })
+
+  it('holds every writer of the document to the record-mutation lock wait', async () => {
+    const dir = await tempDir()
+    const path = join(dir, '.credentials.yaml')
+    const holder = await boot({ path, watch: false })
+    const contender = await boot({ path, watch: false })
+    const doomed = credentialKey('llm-pi-ai', 'doomed')
+    const slowKey = credentialKey('llm-pi-ai', 'slow')
+    await holder.credentials.modifyRecord(doomed, () => Promise.resolve({ kind: 'api-key', key: 'x' }))
+    const entered = Promise.withResolvers<undefined>()
+    // The mutation holds the cross-process writer lock across a stand-in for
+    // an OAuth refresh round trip — longer than withFileLock's 2s default.
+    const slow = holder.credentials.modifyRecord(slowKey, async () => {
+      entered.resolve(undefined)
+      await new Promise(resolve => setTimeout(resolve, 2_400))
+      return { kind: 'api-key', key: 'slow' }
+    })
+    await entered.promise
+    // The other two writer paths — a reference write and a record delete —
+    // share that file and that lock, so they must wait the refresh out rather
+    // than fail at the file-work default.
+    await Promise.all([
+      contender.credentials.set(ALPHA, 'waited'),
+      contender.credentials.deleteRecord(doomed),
+    ])
+    await slow
+    const reread = await boot({ path, watch: false })
+    expect(await reread.credentials.resolve(ALPHA)).toEqual({ value: 'waited', source: 'file' })
+    expect(await reread.credentials.readRecord(doomed)).toBeUndefined()
+    expect(await reread.credentials.readRecord(slowKey)).toEqual({ kind: 'api-key', key: 'slow' })
   })
 })
 

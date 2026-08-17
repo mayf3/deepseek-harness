@@ -16,7 +16,7 @@ A `CredentialRef` answers *what is behind this environment-variable name*, layer
 
 A `CredentialKey` answers *what credential does this plugin hold for this id*. Nothing can layer here — an authorization grant has no environment to be read from — so presence of the record is the whole fact, and the empty-value rule does not apply: an `api-key` record carrying neither a key nor environment values states that its owner confirmed ambient authentication, which is configured.
 
-The key is `<scope>/<id>`, where `scope` is the **owning plugin's registered name**. The scope is the owner rather than the domain because a `grant` payload is written in its owner's format: two plugins serving the same provider name would otherwise read each other's payload, and a record left behind by an uninstalled plugin could not be told apart from a live one. The `/` also keeps the two grammars disjoint, so the key spaces can never collide.
+The key is `<scope>/<id>`, where `scope` is the **owning plugin's registered name**. The scope is the owner rather than the domain because a `grant` payload is written in its owner's format: two plugins serving the same provider name would otherwise read each other's payload, and a record left behind by an uninstalled plugin could not be told apart from a live one. The `/` also keeps the two grammars disjoint, so the key spaces can never collide. A consumer whose id arrives from somewhere else — a settings dict key, a library's own provider id — asks `isCredentialKeySegment` before building a key, because an id outside the grammar can never have stored a record and should read as "nothing stored" rather than throw on the address.
 
 ## Surface
 

@@ -26,7 +26,7 @@ harness 的凭据平面只能表达一种机密：藏在某个环境变量名之
 
 两个选择承担了主要分量：
 
-- **写入由 flow 拥有。** `run()` 返回即表示记录已通过 `ctx.credentials` 提交；seam 随后核实，并拒绝返回时没留下记录的 flow。正是这一点让 `Models.login()`——它把持久化当作登录的一部分，经由 store 适配器完成——保持为唯一写入方，而不是把凭据复制出来再写第二遍。
+- **写入由 flow 拥有。** `run()` 返回即表示记录已通过 `ctx.credentials` 提交；seam 核实的是本次尝试期间观察到的提交——只看记录存在与否，会让重新授权把陈旧记录冒充成新鲜的——并拒绝返回时没提交记录的 flow。正是这一点让 `Models.login()`——它把持久化当作登录的一部分，经由 store 适配器完成——保持为唯一写入方，而不是把凭据复制出来再写第二遍。
 - **交互随请求传入，而非注册表。** 发起授权的一方才是能与人对话的一方，因此提示恰好抵达发问的那个页面，无头调用方传入一个直接拒绝的交互实现，也不存在"环境提供方缺席"或"该归两个已打开标签页中哪一个"的问题。
 
 **三处翻译全都留在 `llm-pi-ai`。** `credentialStoreFrom` 把 pi-ai 的 `CredentialStore` 映射到记录；`authContextFrom` 先查凭据 seam 再查启动环境来回答 pi-ai 的环境提问，文件存在性则按宿主进程的文件系统判断；`registerPiAiFlows` 把 pi-ai 的 `AuthEvent`/`AuthPrompt` 重述为中立词汇并运行 `Models.login()`。每个集合都用前两者构造，正是这一点让已登录的提供方在配置变更导致集合重建之后仍然处于登录状态。有了行得通的姿态之后，目录不再扣留仅 OAuth 的路由，`openai-codex` 重新被提供。
@@ -35,7 +35,9 @@ harness 的凭据平面只能表达一种机密：藏在某个环境变量名之
 
 ### seam 底下需要的两处机制
 
-`withFileLock` 接受按调用声明的等待上限。pi-ai 在 `credentials.modify()` **内部**执行 OAuth 刷新，因此记录写入路径要跨越一次网络往返持锁；2 秒的默认值是按"渲染并 rename"的量级选的，会让该文档的每一个其他写入方失败。重试节奏保持固定——那是协议常量——而"等多久"成为持锁操作自身的属性。
+`withFileLock` 接受按调用声明的等待上限。pi-ai 在 `credentials.modify()` **内部**执行 OAuth 刷新，因此记录写入路径要跨越一次网络往返持锁；2 秒的默认值是按"渲染并 rename"的量级选的，会让该文档的每一个其他写入方失败。重试节奏保持固定——那是协议常量——而等待时长按争用方可能遇到的最长持锁方来定：refs 与 records 共享同一份文件、同一把锁，因此该文档的每一个写入方（`DOCUMENT_LOCK_WAIT_MS`，含引用写入与记录删除）都要等得起一次 OAuth 刷新，而不只是执行刷新的那个 mutation。
+
+seam 的边缘与写入路径同一纪律。prompt 被拒是结果而非故障——交互实现以 `AuthorizationDeclinedError` 拒绝，尝试以 `cancelled` 结算；渲染不了 notice 的界面只丢那条 notice、绝不拖垮 flow；`authorization/settled` 按 credentials seam 的条款以遏制方式分发监听器故障。存储侧，api-key 记录在渲染前先行准入（`parseRecord` 下次启动会拒绝的，写入时就拒绝），`llm-pi-ai` 在寻址记录前先问 `isCredentialKeySegment`，任意手写路由键读作「没有存储任何东西」，而不是在解析途中抛错。
 
 撤销会结算一次尝试，无论其 flow 是否响应信号。flow 本应在信号触发时停止，但不停止的那个会把键占到进程结束，而被卡住的键从外部看与忙碌中的键无法区分。被遗弃的执行体听任其自行结束。
 

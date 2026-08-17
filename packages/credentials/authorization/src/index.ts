@@ -67,6 +67,23 @@ export class AuthorizationError extends HarnessError {
 }
 
 /**
+ * The rejection an {@link AuthorizationInteraction.prompt} uses to say the
+ * human declined — dismissed the question, chose not to answer — rather than
+ * that the surface broke. An attempt whose flow fails after a prompt was
+ * declined settles as `cancelled`, the same outcome as a withdrawn signal,
+ * because the human saying no is a refusal, not a breakage. Only a human's
+ * "no" may reject with this class: a prompt withdrawn by its own `signal` (a
+ * flow retiring the losing question of a race) must reject with something
+ * else, or a later genuine failure would be misread as a decline.
+ */
+export class AuthorizationDeclinedError extends AuthorizationError {
+  constructor(message = 'the authorization prompt was declined') {
+    super(message, 'DECLINED')
+    this.name = 'AuthorizationDeclinedError'
+  }
+}
+
+/**
  * What a running flow is given to talk to the human. Every member is scoped to
  * one attempt: the flow neither knows nor chooses which surface is listening.
  */
@@ -93,10 +110,11 @@ export interface AuthorizationSession {
 /**
  * A plugin's knowledge of how to obtain one credential. The flow owns the
  * write: `run()` resolving means the record for `key` is committed through
- * `ctx.credentials`, which the seam then confirms before reporting success.
- * Committing inside the flow is what lets a library that persists through its
- * own store adapter (pi-ai's `Models.login()`) stay the single writer instead
- * of being copied back out and written twice.
+ * `ctx.credentials` during that run, which the seam confirms — a commit
+ * observed within the attempt, still present after it — before reporting
+ * success. Committing inside the flow is what lets a library that persists
+ * through its own store adapter (pi-ai's `Models.login()`) stay the single
+ * writer instead of being copied back out and written twice.
  */
 export interface AuthorizationFlow {
   /** The credential record this flow writes. Its scope names the owning plugin. */
@@ -134,7 +152,8 @@ export interface AuthorizationInteraction {
    * Put a question to the human and wait.
    * @param prompt - what to ask, and how it should be presented.
    * @returns the typed text, or the chosen option's id.
-   * @throws when the human declines or the prompt is withdrawn.
+   * @throws {AuthorizationDeclinedError} when the human declines; any other
+   *   rejection reads as the surface failing, not as an answer.
    */
   prompt(prompt: AuthorizationPrompt): Promise<string>
 }
@@ -244,12 +263,14 @@ export class AuthorizationService extends Service {
    * and the second would answer questions the first was asked.
    *
    * @param request - the key, the method, the surface, and the cancel signal.
-   * @returns `authorized` once the flow's record is committed and observed,
-   *   or `cancelled` when the human or the caller withdrew.
+   * @returns `authorized` once the flow's record is committed during this
+   *   attempt and observed, or `cancelled` when the human declined or the
+   *   caller withdrew.
    * @throws {AuthorizationError} code `NO_FLOW` when nothing claims the key,
    *   `UNKNOWN_METHOD` when the named method is not one the flow offers,
    *   `ALREADY_IN_FLIGHT` when an attempt is already running for the key, or
-   *   `NOT_COMMITTED` when the flow resolved without leaving a record behind.
+   *   `NOT_COMMITTED` when the flow resolved without committing a record
+   *   during the attempt.
    */
   async begin(request: AuthorizationRequest): Promise<AuthorizationOutcome> {
     const { key } = request
@@ -286,8 +307,50 @@ export class AuthorizationService extends Service {
       this.running.delete(key)
       // After the slot is released, so a listener that reacts by starting the
       // next attempt is not refused by the one that just finished.
-      this.ctx.emit('authorization/settled', key, settlement)
+      this.settle(key, settlement)
     }
+  }
+
+  /* jscpd:ignore-start -- deliberate symmetry with the credentials seam's
+     commit fan-out (`CredentialProvider`): the contained-dispatch shape is the
+     reviewed listener-lifecycle contract, and extracting it would couple the
+     two seams' event semantics. */
+  /**
+   * Fan `authorization/settled` out with contained listener failures: every
+   * listener runs, and a sync throw or async rejection is logged without
+   * changing the finished attempt's own outcome — except `INVARIANT`-coded
+   * failures, which rethrow after every listener ran. The attempt is already
+   * over and its key released when this fires, so a broken watcher (that
+   * second browser tab) can never turn the caller's settled result into a
+   * failure of its own.
+   */
+  private settle(key: CredentialKey, settlement: AuthorizationSettlement): void {
+    let invariantFailure: unknown
+    const args = ['authorization/settled', key, settlement]
+    for (const listener of this.ctx.events.dispatch('emit', args) as Array<(...listenerArgs: unknown[]) => unknown>) {
+      try {
+        const returned = listener(key, settlement)
+        if (returned != null && typeof (returned as PromiseLike<unknown>).then === 'function') {
+          void Promise.resolve(returned as PromiseLike<unknown>).then(undefined, (error: unknown) => {
+            this.warnSettledListenerFailure(key, error)
+          })
+        }
+      } catch (error) {
+        if ((error as { code?: unknown } | null)?.code === 'INVARIANT') {
+          invariantFailure ??= error
+          continue
+        }
+        this.warnSettledListenerFailure(key, error)
+      }
+    }
+    if (invariantFailure !== undefined) throw invariantFailure as Error
+  }
+  /* jscpd:ignore-end */
+
+  /** Contained-listener diagnostic shared by the sync and async failure paths. */
+  private warnSettledListenerFailure(key: CredentialKey, error: unknown): void {
+    this.ctx.logger.warn('authorization: an authorization/settled listener for "%s" failed', key)
+    this.ctx.logger.warn(error)
   }
 
   /** Run the flow, then hold it to its half of the commit contract. */
@@ -308,30 +371,63 @@ export class AuthorizationService extends Service {
       // withdrawn, so this signal cannot already be aborted here.
       signal.addEventListener('abort', () => { resolve('withdrawn') }, { once: true })
     })
-    const running = flow.run({
-      method,
-      signal,
-      notify: (notice) => { interaction.notify(notice) },
-      prompt: prompt => interaction.prompt(prompt),
+    // What the seam itself witnessed during the run, held as properties
+    // because closure writes do not narrow locals across awaits: the prompt
+    // wrapper sees a decline first-hand (a flow that rewraps the rejection on
+    // its way out cannot hide it), and confirming the commit means confirming
+    // it happened *now* — on a re-auth the record already exists, so presence
+    // alone would let a flow that wrote nothing report the stale credential
+    // as freshly authorized.
+    const observed = { declined: false, committed: false }
+    const unwatch = this.ctx.on('credentials/record-updated', (key: CredentialKey) => {
+      if (key === flow.key) observed.committed = true
     })
     try {
-      if (await Promise.race([running.then(() => 'ran' as const), withdrawn]) === 'withdrawn') {
-        // Nothing awaits the orphan any more, so its eventual failure has to be
-        // marked handled or it would take down the process.
-        void running.catch(() => { this.ctx.logger.debug('authorization: withdrawn flow failed after the fact') })
-        return { status: 'cancelled' }
+      const running = flow.run({
+        method,
+        signal,
+        notify: (notice) => {
+          try {
+            interaction.notify(notice)
+          } catch (error) {
+            // Fire-and-forget is held at the seam: a surface that cannot
+            // render a notice (a page whose connection just closed) loses the
+            // notice, never the attempt.
+            this.ctx.logger.warn('authorization: the interaction surface failed to render a notice')
+            this.ctx.logger.warn(error)
+          }
+        },
+        prompt: prompt => interaction.prompt(prompt).catch((error: unknown) => {
+          if (error instanceof AuthorizationDeclinedError) observed.declined = true
+          throw error
+        }),
+      })
+      try {
+        if (await Promise.race([running.then(() => 'ran' as const), withdrawn]) === 'withdrawn') {
+          // Nothing awaits the orphan any more, so its eventual failure has to be
+          // marked handled or it would take down the process.
+          void running.catch(() => { this.ctx.logger.debug('authorization: withdrawn flow failed after the fact') })
+          return { status: 'cancelled' }
+        }
+      } catch (error) {
+        // A withdrawn attempt and a declined prompt are outcomes, not
+        // failures: the human said no, or closed the page. Anything else is
+        // the flow failing and belongs to the caller, cause chain intact.
+        if (signal.aborted || observed.declined) return { status: 'cancelled' }
+        throw error
       }
-    } catch (error) {
-      // A withdrawn attempt is an outcome, not a failure: the human said no, or
-      // closed the page. Anything else is the flow failing and belongs to the
-      // caller, cause chain intact.
-      if (signal.aborted) return { status: 'cancelled' }
-      throw error
+    } finally {
+      unwatch()
+    }
+    if (!observed.committed) {
+      throw new AuthorizationError(
+        `authorization flow for "${flow.key}" resolved without committing a credential record in this attempt`,
+        'NOT_COMMITTED')
     }
     const stored = await this.ctx.credentials.describeRecord(flow.key)
     if (!stored.configured) {
       throw new AuthorizationError(
-        `authorization flow for "${flow.key}" resolved without committing a credential record`,
+        `authorization flow for "${flow.key}" deleted its credential record instead of committing one`,
         'NOT_COMMITTED')
     }
     return { status: 'authorized' }
