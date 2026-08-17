@@ -553,6 +553,7 @@ describe('official spawn projection', () => {
     expect(process.killed).toBe(false)
     expect(process.exitCode).toBeNull()
     expect(process.signalCode).toBeNull()
+    expect(process.outcome).toBeUndefined()
 
     const exit = vi.fn()
     const once = vi.fn()
@@ -572,6 +573,7 @@ describe('official spawn projection', () => {
     expect(once).toHaveBeenCalledOnce()
     expect(removed).not.toHaveBeenCalled()
     expect(process.signalCode).toBe('SIGTERM')
+    expect(process.outcome).toEqual({ exitCode: null, signal: 'SIGTERM' })
     expect(process.kill('SIGTERM')).toBe(false)
   })
 
@@ -598,6 +600,7 @@ describe('official spawn projection', () => {
     await nextTask()
     expect(process.exitCode).toBe(7)
     expect(process.signalCode).toBeNull()
+    expect(process.outcome).toEqual({ exitCode: 7, signal: null })
     expect(process.kill('SIGTERM')).toBe(false)
   })
 })
@@ -1084,6 +1087,9 @@ describe('run publication, cancellation, and settlement', () => {
     })
     await expect(noChild)
       .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
+    await expect(noChild).rejects.toThrow(
+      `${expectedFailureDiagnostic('query-start', 'unknown')}; subagent-claude-code: ${expectedFailureDiagnostic('teardown', 'unknown')}`,
+    )
     await expect(noChild).rejects.toBeInstanceOf(AggregateError)
 
     const startupAbort = new AbortController()
@@ -1126,6 +1132,9 @@ describe('run publication, cancellation, and settlement', () => {
       .rejects.toBeInstanceOf(AggregateError)
     await expect(cancelledCleanupFailure)
       .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
+    await expect(cancelledCleanupFailure).rejects.toThrow(
+      `${expectedFailureDiagnostic('query-start', 'unknown')}; subagent-claude-code: ${expectedFailureDiagnostic('teardown', 'unknown', { exitCode: 0, signal: null })}`,
+    )
     await expect(cancelledCleanupFailure)
       .rejects.not.toThrow('SECRET_TOKEN')
 
@@ -1167,6 +1176,24 @@ describe('run publication, cancellation, and settlement', () => {
     expect(factoryController?.signal.aborted).toBe(true)
     expect(spawned.terminate).toHaveBeenCalledOnce()
 
+    const cleanupRaceAbort = new AbortController()
+    const cleanupRaceChild = fakeChild({ exitOnTerminate: false })
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      throw new Error('query failed before cleanup wait')
+    })
+    const cleanupRace = startClaudeCodeRun(
+      request(undefined, cleanupRaceAbort.signal),
+      {
+        ...unused.spec,
+        spawn: () => cleanupRaceChild.handle,
+      },
+    )
+    await nextTask()
+    cleanupRaceAbort.abort(new Error('cancelled during cleanup'))
+    cleanupRaceChild.settle()
+    await expect(cleanupRace).rejects.toThrow('aborted before SDK startup')
+
     const failedSpawn = fakeChild({
       pid: -1,
       doneError: new Error('spawn failed'),
@@ -1175,6 +1202,9 @@ describe('run publication, cancellation, and settlement', () => {
     const failedStartup = startClaudeCodeRun(request(), failed.spec)
     await expect(failedStartup)
       .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
+    await expect(failedStartup).rejects.toThrow(
+      `${expectedFailureDiagnostic('query-start', 'unknown')}; subagent-claude-code: ${expectedFailureDiagnostic('teardown', 'unknown')}`,
+    )
     await expect(failedStartup).rejects.toBeInstanceOf(AggregateError)
     expect(failed.close).toHaveBeenCalledOnce()
   })
