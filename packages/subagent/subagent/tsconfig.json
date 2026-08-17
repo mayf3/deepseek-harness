@@ -27,6 +27,18 @@
       "path": "../../core/scope"
     },
     {
+      "path": "../../interaction/user-approval"
+    },
+    {
+      "path": "../../preset/agent-presets"
+    },
+    {
+      "path": "../../sandbox/sandbox"
+    },
+    {
+      "path": "../../sandbox/sandbox-policy"
+    },
+    {
       "path": "../../session/session-persistence"
     },
     {
@@ -36,10 +48,10 @@
       "path": "../../session/session-projection-cache"
     },
     {
-      "path": "../../tasks/tasks"
+      "path": "../../jobs/jobs"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

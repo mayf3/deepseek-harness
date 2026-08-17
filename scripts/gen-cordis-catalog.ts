@@ -2,12 +2,19 @@
  * Generate the per-subsystem Cordis service/event reference regions from the
  * Typert catalog projection. Every harness `ctx.<key>` service and event scope
  * maps to exactly one `docs/subsystems/` page through the curated tables below;
- * the generator injects each page's surface between its GENERATED markers —
+ * the generator injects each page's Cordis API reference between its GENERATED markers —
  * byte-identically into both language sides of the pair — and re-records a
  * pair's `.i18n.yaml` only when nothing outside the region changed. The
  * projection enforces event modes, JSDoc parameter/return completeness, and
  * signature type-link coverage; the inherited (vendor) tier renders to
  * `docs/cordis-api/inherited.md`. `--check` verifies every generated artifact.
+ *
+ * Generated regions embed `file:line` source pointers, so inserting lines ABOVE a
+ * recorded symbol makes the committed output stale even though nothing about the
+ * symbol changed. Regenerate after editing any file this projection records — the
+ * failure otherwise surfaces as the "reproduces every committed catalog artifact
+ * byte for byte" test failing, which reads like a snapshot regression rather than
+ * a missing regeneration.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -32,7 +39,7 @@ import {
 const root = resolve(import.meta.dirname, '..')
 const SUBSYSTEMS_DIR = 'docs/subsystems'
 const OUT_INHERITED = 'docs/cordis-api/inherited.md'
-const OUT_RUNTIME_API = 'packages/self-modification/tool-cordis/src/api-catalog.ts'
+const OUT_RUNTIME_API = 'packages/extensions/tool-cordis/src/api-catalog.ts'
 
 export { REGION_BEGIN, REGION_END }
 
@@ -40,36 +47,42 @@ export { REGION_BEGIN, REGION_END }
  * The owning subsystems page for every harness `ctx.<key>` service the
  * projection discovers. Fail-closed both ways: a discovered key absent here
  * and an entry whose key the projection no longer discovers are both hard
- * errors, so the partition can never silently drift from the service surface.
+ * errors, so the partition can never silently drift from the service API.
  */
 export const SERVICE_PAGE: Record<string, string> = {
   agentLoop: 'core.md',
   agentDefaultModel: 'core.md',
   agentPresets: 'core.md',
   agents: 'core.md',
+  apiProxy: 'typert.md',
   approval: 'approval.md',
-  bash: 'bash.md',
-  bashEnv: 'bash.md',
-  clientModuleHost: 'client-modules.md',
+  attachments: 'attachment.md',
+  shell: 'shell.md',
+  shellEnv: 'shell.md',
+  clientModules: 'client-modules.md',
   codeRuntime: 'code-runtime.md',
   commands: 'commands.md',
-  compact: 'compaction.md',
+  compaction: 'compaction.md',
+  cordisInspect: 'extensions.md',
   credentials: 'credentials.md',
   directoryPicker: 'workspace.md',
+  dynamicCordisRunner: 'extensions.md',
   e2b: 'subprocess.md',
   fs: 'filesystem.md',
   goals: 'goal.md',
-  httpServer: 'http-server.md',
+  webServer: 'web-server.md',
   invariants: 'invariants.md',
   llm: 'llm-streaming.md',
-  permission: 'permission.md',
+  lsp: 'lsp.md',
+  messageFeedback: 'feedback.md',
+  permissionPresets: 'permission-presets.md',
   planMode: 'plan.md',
-  pty: 'pty.md',
+  terminals: 'terminal.md',
   sandbox: 'sandbox.md',
   sandboxPolicy: 'sandbox.md',
   sessionPersistence: 'persistence.md',
   sessionQuery: 'session-query.md',
-  sessionReferences: 'session-reference.md',
+  sessionReferenceResolver: 'session-reference.md',
   sessionProjectionCache: 'session-projection.md',
   sessionProjections: 'session-projection.md',
   sessions: 'session.md',
@@ -82,58 +95,64 @@ export const SERVICE_PAGE: Record<string, string> = {
   subagents: 'subagent.md',
   subprocess: 'subprocess.md',
   systemPrompt: 'system-prompt.md',
-  tasks: 'tasks.md',
-  telemetry: 'telemetry.md',
+  jobs: 'jobs.md',
+  sessionTelemetry: 'session-telemetry.md',
   tokenMeter: 'token-meter.md',
-  toolResultPrune: 'compaction.md',
+  toolResultPruner: 'compaction.md',
   tools: 'tools.md',
   typert: 'typert.md',
   typertGateway: 'typert.md',
-  userInteraction: 'user-interaction.md',
+  userQuestions: 'user-questions.md',
   web: 'web.md',
-  workflows: 'workflow.md',
-  workspace: 'workspace.md',
+  workflowEngine: 'workflow.md',
+  workspaceRegistry: 'workspace.md',
 }
 
 /**
  * Context keys declared in `interface Context` merges that the rendering
  * projection cannot see, each with the reason and its documentation owner.
- * The scan that enforces this list reads EVERY `declare module 'cordis'`
+ * The scan that enforces this list reads EVERY `declare module '@deepseek-ai/cordis'`
  * Context merge under `packages/x/x/src/**` — any depth, not only root
  * `index.ts` files with a same-named service class — so a new service can
  * never silently join this blind spot: it either enters {@link SERVICE_PAGE}
  * or names itself here. Client-face keys (the projection analyzes the host
  * face only) name the package README that owns their surface.
- * TODO(cordis-catalog-interface-services): the interface-typed and
- * non-index-declared entries would all render once the projection resolves a
- * Context key through its declaring file's imports to the class declaration.
+ *
+ * Two categories remain, and neither is a projection gap a scanning rule could
+ * close. An OPTIONAL key (`key?: X`) is a value the launcher or boot code
+ * installs before the tree mounts, which the analyzer skips by rule because no
+ * plugin provides it and `inject` cannot reach it. A client-face key belongs to
+ * the browser Context, which this host-face program never sees; the browser
+ * surface has its own generated catalog (`scripts/gen-client-catalog.ts`, served
+ * to a model as `cordis_runtime_inspect what:"client"`).
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   agent: 'not a service: the DX accessor field on Agent.ctx (root accessor defaulting to undefined) — docs/subsystems/core.md owns the Agent handle',
-  configuredAgentIdentities: 'not a service: launcher-provided boot-context value (ConfiguredAgentIdentities | undefined) — packages/core/agent-loop/README.md owns the launcher contract',
-  launcherSessionQueryPath: 'not a service: launcher-provided boot-context value (string | undefined) — packages/session-query/session-query-sqlite/README.md owns the launcher contract',
+  appExit: 'not a service: launcher-provided bounded process-exit callback — packages/boot/cmdline/README.md owns the launcher contract',
+  cmdlineArgs: 'not a service: launcher-provided immutable app argument accessor — packages/boot/cmdline/README.md owns the launcher contract',
+  configuredAgentIdentities: 'not a service: launcher-provided boot-context value (ConfiguredAgentIdentities | undefined) — packages/core/agent-loop/README.md owns this launcher contract',
+  launcherSessionQueryPath: 'not a service: launcher-provided boot-context value (string | undefined) — packages/session-query/session-query-sqlite/README.md owns this launcher contract',
   dshHomePath: 'not a service: boot-provided root accessor function (typeof dshHomePath | undefined) for Loader !!js config expressions — packages/boot/app-boot/README.md owns the boot contract',
-  headlessIo: 'not a service: launcher-provided root accessor value (HeadlessIo | undefined) for the headless bundle runner — packages/bundle/headless/README.md owns the launcher contract',
-  launcherEnvironment: 'not a service: launcher-provided root accessor value (EnvironmentSnapshot | undefined) — packages/util/environment/README.md owns the launcher contract',
-  lsp: 'interface-typed (LspService); implementing class Lsp is not the declared type name — packages/lsp/lsp/README.md owns the surface',
-  apiProxy: 'interface-typed (ApiProxy) with the class in api-proxy.ts, not index.ts — packages/host/apiproxy/README.md owns the surface',
-  appShell: 'client-side interface-typed browser service — packages/client/web/README.md owns the surface',
-  connection: 'client-side interface-typed browser service — packages/client/connection/README.md owns the surface',
-  chatFileMentions: 'client-side slot-contract accessor (ChatFileMentions) — packages/client/ui-conversation/README.md owns the surface',
-  command: 'client-side interface-typed browser service — packages/client/ui-command/README.md owns the surface',
-  conversation: 'client-side interface-typed browser service — packages/client/ui-conversation/README.md owns the surface',
-  conversationEvents: 'client-side interface-typed registry — packages/client/runtime/README.md owns the surface',
-  conversationViews: 'client-side interface-typed registry — packages/client/runtime/README.md owns the surface',
-  layout: 'client-side interface-typed browser service — packages/client/ui-layout/README.md owns the surface',
-  locale: 'client-side interface-typed browser service — packages/client/locale/README.md owns the surface',
-  models: 'client-side interface-typed browser service — packages/client/ui-model/README.md owns the surface',
-  modules: 'client-side interface-typed browser service — packages/client/modules/README.md owns the surface',
-  remote: 'client-side interface-typed gateway accessor (ClientRemote) — packages/api/gateway/README.md owns the surface',
-  sessionHistory: 'client-side interface-typed browser service — packages/client/runtime/README.md owns the surface',
-  slash: 'client-side interface-typed browser service — packages/client/ui-slash/README.md owns the surface',
-  slots: 'client-side interface-typed browser service — packages/client/runtime/README.md owns the surface',
-  theme: 'client-side interface-typed browser service — packages/client/ui-theme/README.md owns the surface',
-  workspaces: 'client-side interface-typed browser service — packages/client/runtime/README.md owns the surface',
+  launchEnvironment: 'not a service: launcher-provided root accessor value (LaunchEnvironmentSnapshot | undefined) — packages/util/launch-environment/README.md owns this launcher contract',
+  connection: 'interface-typed (HostConnectionHandle); implementing class HostConnectionService is declared in rpc-host.ts — packages/client/connection/README.md owns the API',
+  appShell: 'client-side interface-typed browser service — packages/client/web/README.md owns the API',
+  settingsScope: 'client-side settings-namespace transport service — packages/client/ui-settings/README.md owns the API',
+  chatFileMentions: 'client-side slot-contract accessor (ChatFileMentions) — packages/client/ui-conversation/README.md owns the API',
+  commandUi: 'client-side interface-typed browser service — packages/client/ui-commands/README.md owns the API',
+  conversation: 'client-side interface-typed browser service — packages/client/ui-conversation/README.md owns the API',
+  conversationEvents: 'client-side interface-typed registry — packages/client/runtime/README.md owns the API',
+  conversationViews: 'client-side interface-typed registry — packages/client/runtime/README.md owns the API',
+  layout: 'client-side interface-typed browser service — packages/client/ui-layout/README.md owns the API',
+  locale: 'client-side interface-typed browser service — packages/client/locale/README.md owns the API',
+  modelDirectories: 'client-side interface-typed browser service — packages/client/ui-model-selection/README.md owns the API',
+  modules: 'client-side interface-typed browser service — packages/client/modules/README.md owns the API',
+  remote: 'client-side interface-typed gateway accessor (ClientRemote) — packages/api/gateway/README.md owns the API',
+  sessionLogDownload: 'client-side browser download controller — packages/session-query/session-log-export/README.md owns the API',
+  inputTriggers: 'client-side interface-typed browser service — packages/client/ui-input-trigger/README.md owns the API',
+  timer: 'client-side dynamic-package timer service — packages/extensions/cordis-client-runner/README.md owns the API',
+  slots: 'client-side interface-typed browser service — packages/client/runtime/README.md owns the API',
+  theme: 'client-side interface-typed browser service — packages/client/ui-theme/README.md owns the API',
+  workspaces: 'client-side interface-typed browser service — packages/client/runtime/README.md owns the API',
 }
 
 /**
@@ -146,8 +165,10 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
 export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'agent': 'core.md',
   'agent-loop': 'core.md',
+  'agent-preset': 'core.md',
   'approval': 'approval.md',
   'commands': 'commands.md',
+  'cordis': 'extensions.md',
   'credentials': 'credentials.md',
   'domain': 'storage.md',
   'fs': 'filesystem.md',
@@ -158,7 +179,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'skills': 'skills.md',
   'subagent': 'subagent.md',
   'system-prompt': 'system-prompt.md',
-  'telemetry': 'telemetry.md',
+  'session-telemetry': 'session-telemetry.md',
   'tools': 'tools.md',
   'workflow': 'workflow.md',
 }
@@ -167,26 +188,22 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
  * Event names declared in `interface Events` merges that the rendering
  * projection cannot see, each with the reason and its documentation owner.
  * The mirror of {@link SERVICE_WALK_EXEMPTIONS} for events: an independent
- * scan reads EVERY `declare module 'cordis'` Events merge under
+ * scan reads EVERY `declare module '@deepseek-ai/cordis'` Events merge under
  * `packages/x/x/src/**`, so a declared event either renders onto a subsystems
  * page (via {@link EVENT_SCOPE_PAGE}) or names itself here — never vanishes
- * silently. Keys are full event names, not scopes: client-face events share
- * scopes with rendered host events (`commands/changed` beside `commands/*`),
- * so a scope-level exemption would mask a host-face regression.
+ * silently. Keys are full event names rather than scopes, so a scope-level
+ * exemption cannot mask another declaration in that scope.
  */
 export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
-  'commands/changed': 'client-face registry invalidation signal — packages/client/runtime/README.md owns the surface',
-  'connection/reset': 'client-face transport signal — packages/client/runtime/README.md owns the surface',
-  'credentials/changed': 'client-face registry invalidation signal — packages/client/runtime/README.md owns the surface',
-  'locale/change': 'client-face locale switch signal — packages/client/locale/README.md owns the surface',
-  'models/changed': 'client-face registry invalidation signal — packages/client/runtime/README.md owns the surface',
-  'settings/changed': 'client-face registry invalidation signal — packages/client/runtime/README.md owns the surface',
-  'slash/input-begin-command': 'client-face slash-input protocol — packages/client/ui-slash/README.md owns the surface',
-  'slash/input-consume-token': 'client-face slash-input protocol — packages/client/ui-slash/README.md owns the surface',
-  'slash/input-insert-reference': 'client-face slash-input protocol — packages/client/ui-slash/README.md owns the surface',
-  'slash/input-insert-text': 'client-face slash-input protocol — packages/client/ui-slash/README.md owns the surface',
-  'slots/changed': 'client-face slot invalidation signal — packages/client/runtime/README.md owns the surface',
-  'theme/change': 'client-face theme switch signal — packages/client/ui-theme/README.md owns the surface',
+  'command/executed': 'client-face local command acknowledgment — packages/client/ui-commands/README.md owns the API',
+  'connection/reset': 'client-face transport signal — packages/client/runtime/README.md owns the API',
+  'locale/change': 'client-face locale switch signal — packages/client/locale/README.md owns the API',
+  'slash/input-begin-command': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
+  'slash/input-consume-token': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
+  'slash/input-insert-reference': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
+  'slash/input-insert-text': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
+  'slots/changed': 'client-face slot invalidation signal — packages/client/runtime/README.md owns the API',
+  'theme/change': 'client-face theme switch signal — packages/client/ui-theme/README.md owns the API',
 }
 
 /**
@@ -226,6 +243,25 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ResolvedRetryPolicy: 'llm-streaming.md',
   Message: 'llm-streaming.md',
   MessageSource: 'llm-streaming.md',
+  MessageFeedbackDeleteRequest: 'feedback.md',
+  MessageFeedbackDeleteResult: 'feedback.md',
+  MessageFeedbackDeleteValue: 'feedback.md',
+  MessageFeedbackFailure: 'feedback.md',
+  MessageFeedbackItem: 'feedback.md',
+  MessageFeedbackListRequest: 'feedback.md',
+  MessageFeedbackListResult: 'feedback.md',
+  MessageFeedbackListValue: 'feedback.md',
+  MessageFeedbackNoteBlank: 'feedback.md',
+  MessageFeedbackNoteTooLarge: 'feedback.md',
+  MessageFeedbackPutRequest: 'feedback.md',
+  MessageFeedbackPutResult: 'feedback.md',
+  MessageFeedbackRating: 'feedback.md',
+  MessageFeedbackRejected: 'feedback.md',
+  MessageFeedbackSessionNotFound: 'feedback.md',
+  MessageFeedbackSuccess: 'feedback.md',
+  MessageFeedbackTargetNotFound: 'feedback.md',
+  MessageFeedbackVersion: 'feedback.md',
+  MessageFeedbackVersionConflict: 'feedback.md',
   UserMessage: 'session.md',
   PreStepDecision: 'core.md',
   PreStepContext: 'core.md',
@@ -243,10 +279,13 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ApprovalPolicy: 'approval.md',
   ApprovalRequest: 'approval.md',
   ApprovalService: 'approval.md',
-  BashExecRequest: 'bash.md',
-  BashExecSpec: 'bash.md',
-  BashProcess: 'bash.md',
-  BashRunResult: 'bash.md',
+  ImageAttachmentRef: 'attachment.md',
+  SaveImageAttachment: 'attachment.md',
+  StoredImageAttachment: 'attachment.md',
+  ShellExecRequest: 'shell.md',
+  ShellExecSpec: 'shell.md',
+  ShellProcess: 'shell.md',
+  ShellRunResult: 'shell.md',
   DshEnvironment: 'subprocess.md',
   SubprocessHandle: 'subprocess.md',
   SubprocessOutcome: 'subprocess.md',
@@ -267,7 +306,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   FsInfo: 'filesystem.md',
   FsObservation: 'filesystem.md',
   FsPathInfo: 'filesystem.md',
-  FsPolicyExec: 'filesystem.md',
+  FsObservationActor: 'filesystem.md',
   FsTarget: 'filesystem.md',
   FsVersion: 'filesystem.md',
   FsWriteIntent: 'filesystem.md',
@@ -284,9 +323,12 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   CommandId: 'commands.md',
   CommandResult: 'commands.md',
   CommandSurface: 'commands.md',
+  LspProvider: 'lsp.md',
+  LspQueryRequest: 'lsp.md',
+  LspQueryResult: 'lsp.md',
   LlmAdapter: 'llm-streaming.md',
   PreparedLlmCall: 'llm-streaming.md',
-  LlmService: 'llm-streaming.md',
+  LlmRuntime: 'llm-streaming.md',
   StreamChunk: 'llm-streaming.md',
   SkillProviderControl: 'skills.md',
   CreateSessionOptions: 'persistence.md',
@@ -296,21 +338,22 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SessionLocation: 'persistence.md',
   SessionPreparation: 'persistence.md',
   SessionPersistenceSnapshot: 'persistence.md',
+  SessionRawArtifact: 'persistence.md',
   ConfinedArgv: 'sandbox.md',
   SandboxExecutionPolicy: 'sandbox.md',
   SandboxMode: 'sandbox.md',
   SandboxPolicy: 'sandbox.md',
-  PtyBackend: 'pty.md',
-  PtyReadRequest: 'pty.md',
-  PtyReadResult: 'pty.md',
-  PtySendOperation: 'pty.md',
-  PtySendRequest: 'pty.md',
-  PtySessionId: 'pty.md',
-  PtySessionSnapshot: 'pty.md',
-  PtySignal: 'pty.md',
-  PtySignalResult: 'pty.md',
-  PtySpawnRequest: 'pty.md',
-  PtySpawnResult: 'pty.md',
+  TerminalBackend: 'terminal.md',
+  TerminalReadRequest: 'terminal.md',
+  TerminalReadResult: 'terminal.md',
+  TerminalSendOperation: 'terminal.md',
+  TerminalSendRequest: 'terminal.md',
+  TerminalSessionId: 'terminal.md',
+  TerminalSessionSnapshot: 'terminal.md',
+  TerminalSignal: 'terminal.md',
+  TerminalSignalResult: 'terminal.md',
+  TerminalSpawnRequest: 'terminal.md',
+  TerminalSpawnResult: 'terminal.md',
   SandboxPolicyRequest: 'sandbox.md',
   ScopeKey: 'scope.md',
   Scoped: 'scope.md',
@@ -366,18 +409,19 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SubagentReportMessageSource: 'subagent.md',
   SubagentReportOptions: 'subagent.md',
   SubagentRun: 'subagent.md',
-  SubagentService: 'subagent.md',
+  SubagentRuntime: 'subagent.md',
   SubagentStartRequest: 'subagent.md',
   AssembleContext: 'system-prompt.md',
   PromptContext: 'system-prompt.md',
   PromptSection: 'system-prompt.md',
   SystemPrompt: 'system-prompt.md',
   ToolProviderResult: 'system-prompt.md',
-  TaskDoneListener: 'tasks.md',
-  TaskId: 'tasks.md',
-  TaskRead: 'tasks.md',
-  TaskSnapshot: 'tasks.md',
-  TaskStart: 'tasks.md',
+  JobDoneListener: 'jobs.md',
+  JobId: 'jobs.md',
+  JobRead: 'jobs.md',
+  JobSnapshot: 'jobs.md',
+  JobStart: 'jobs.md',
+  JobsChangedListener: 'jobs.md',
   TokenMeasurement: 'token-meter.md',
   CodeDispatchLog: 'tools.md',
   PostToolDecision: 'tools.md',
@@ -391,7 +435,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ToolExecutionToken: 'tools.md',
   ToolGuard: 'tools.md',
   ToolPresentationMode: 'tools.md',
-  ToolRegistry: 'tools.md',
+  ToolRuntime: 'tools.md',
   ToolRestriction: 'tools.md',
   ToolSchema: 'tools.md',
   SettingsNamespace: 'settings.md',
@@ -404,9 +448,9 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   CredentialRef: 'credentials.md',
   CredentialInfo: 'credentials.md',
   ResolvedCredential: 'credentials.md',
-  AskUserQuestionAnswer: 'user-interaction.md',
-  AskUserQuestionRequest: 'user-interaction.md',
-  UserInteractionProvider: 'user-interaction.md',
+  AskUserQuestionAnswer: 'user-questions.md',
+  AskUserQuestionRequest: 'user-questions.md',
+  UserQuestionProvider: 'user-questions.md',
   WebFetchProvider: 'web.md',
   WebFetchRequest: 'web.md',
   WebFetchResult: 'web.md',
@@ -414,10 +458,10 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   WebSearchRequest: 'web.md',
   WebSearchResult: 'web.md',
   WorkflowRun: 'workflow.md',
-  PresetOption: 'permission.md',
-  PresetSpec: 'permission.md',
+  PresetOption: 'permission-presets.md',
+  PresetSpec: 'permission-presets.md',
   InvariantInstaller: 'invariants.md',
-  WebRoute: 'http-server.md',
+  WebRoute: 'web-server.md',
   StorageBackend: 'storage.md',
   StorageForms: 'storage.md',
   Domain: 'storage.md',
@@ -427,7 +471,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   Workspace: 'workspace.md',
   WorkspaceId: 'workspace.md',
   WebBootGraph: 'client-modules.md',
-  TelemetryRecord: 'telemetry.md',
+  SessionTelemetryRecord: 'session-telemetry.md',
   WorkflowRunInfo: 'workflow.md',
   WorkflowStartRequest: 'workflow.md',
   ProjectionDefinition: 'session-projection.md',
@@ -456,37 +500,77 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
   'Promise',
   'Record',
   'Readonly',
+  'Uint8Array',
 ])
 
 /** Project types deliberately documented outside the subsystems catalog. */
 export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   z: 'schemastery schema constructor is owned by vendor/schemastery (vendored upstream)',
-  BeginCommandRequest: 'event-local request contract is owned by packages/client/ui-slash/src/types.ts',
-  InsertReferenceRequest: 'event-local request contract is owned by packages/client/ui-slash/src/types.ts',
-  ConsumeTokenRequest: 'event-local request contract is owned by packages/client/ui-slash/src/types.ts',
-  InsertTextRequest: 'event-local request contract is owned by packages/client/ui-slash/src/types.ts',
+  BeginCommandRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
+  InsertReferenceRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
+  ConsumeTokenRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
+  InsertTextRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
   AgentHandle: 'agent ownership handle is owned by packages/core/agent/README.md',
   AgentPreset: 'discovered preset record is owned by packages/preset/agent-presets/README.md',
   PresetMetadata: 'preset display text is owned by packages/preset/agent-presets/README.md',
-  BashEnvContributor: 'service-local extension type is owned by packages/bash/tool-bash/src/index.ts',
-  BashEnvVariableInfo: 'service-local metadata type is owned by packages/bash/tool-bash/src/index.ts',
-  CompactAgentContext: 'compaction service input is owned by packages/compact/compact/src/index.ts',
-  ManualCompactAgentContext: 'manual compaction service input is owned by packages/compact/compact/src/index.ts',
+  BashEnvContributor: 'service-local extension type is owned by packages/shell/tool-bash/src/index.ts',
+  BashEnvVariableInfo: 'service-local metadata type is owned by packages/shell/tool-bash/src/index.ts',
+  CompactionAgentContext: 'compaction service input is owned by packages/compaction/compaction/src/index.ts',
+  ManualCompactAgentContext: 'manual compaction service input is owned by packages/compaction/compaction/src/index.ts',
+  ClientResponse: 'wire response message is owned by packages/host/apiproxy/src/api/rpc.ts',
+  ApprovalRequestId: 'dynamic Plugin approval identity is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  CordisErrorDetails: 'Cordis runtime error payload is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  CordisInspectPlatform: 'Cordis inspect platform identity is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  CordisInspectProviderManifest: 'Cordis inspect provider manifest is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  CordisInspectProviderView: 'Cordis inspect provider view is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  CordisInspectQueryRequest: 'Cordis inspect transport payload is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  CordisInspectQueryResolution: 'Cordis inspect query result is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  CordisInspectQueryResolved: 'Cordis inspect transport payload is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  CordisInspectRequestId: 'Cordis inspect request identity is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  CordisInspectResolveAck: 'Cordis inspect resolution acknowledgement is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  CordisDynamicPackageId: 'dynamic Package identity is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  CordisDynamicPluginId: 'dynamic Plugin identity is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  CordisDynamicPluginRunId: 'dynamic Plugin run identity is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  CordisDynamicRunMode: 'dynamic Plugin activation mode is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisClientSource: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisDefineReceipt: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisDefineRequest: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisHostHalfResult: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisInventoryRow: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisInvokeResult: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisPackageInspection: 'dynamic Package source inspection is owned by packages/extensions/cordis-host-runner/src/registry.ts',
+  DynamicCordisPluginInspection: 'dynamic Plugin inspection is owned by packages/extensions/cordis-host-runner/src/registry.ts',
+  DynamicCordisRequestResolved: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisRetracted: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisRunRequest: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisPackage: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisReference: 'dynamic Plugin reference is owned by packages/extensions/cordis-host-runner/src/registry.ts',
+  DynamicCordisRenderFailure: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisResolveAck: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisRunResolution: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisRunResponse: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisSnapshotRow: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisStopResponse: 'dynamic Plugin stop result is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  DynamicCordisUndefineReceipt: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  HostCordisInspectProviderRegistration: 'Host inspect provider registration is owned by packages/extensions/cordis-host-runner/src/inspect-registry.ts',
   DomainImpl: 'domain implementation contract is owned by packages/storage/storage-domain/README.md',
   CommandExecution: 'executor return contract is owned by packages/interaction/commands/src/index.ts',
   'z.core.JSONSchema.BaseSchema': 'zod projection output is owned by the zod v4 API',
   'z.core.ToJSONSchemaParams': 'zod projection parameters are owned by the zod v4 API',
-  TypeRTDisposer: 'TypeRT lifecycle contract is owned by packages/typert/type-meta/README.md',
+  TypertDisposer: 'Typert lifecycle contract is owned by packages/typert/protocol/README.md',
   InvokeRemoteRequest: 'gateway invocation contract is owned by packages/api/gateway/README.md',
-  LocaleDict: 'service-local dictionary shape is owned by packages/client/i18n/src/index.ts',
+  LocaleDict: 'service-local dictionary fields are owned by packages/client/i18n/src/index.ts',
   ThemeTokens: 'service-local token dictionary is owned by packages/client/ui-theme/src/index.ts',
   Translate: 'service-local bound translator is owned by packages/client/i18n/src/index.ts',
   WebUpgradeRoute:
     'upgrade route registration contract is owned by packages/host/webserver/src/index.ts',
-  InvariantRegistration: 'service-local lifecycle handle is owned by packages/support/invariants/README.md',
-  KnobState: 'projection unit state shape is owned by packages/interaction/permission/README.md',
-  PermissionSelect: 'permissions projection payload is owned by packages/interaction/permission/src/types.ts',
+  InvariantRegistration: 'service-local lifecycle handle is owned by packages/runtime-diagnostics/invariants/README.md',
+  JsonValue: 'JSON value union is owned by packages/core/session/src/json.ts',
+  KnobState: 'projection unit state fields are owned by packages/interaction/permission-presets/README.md',
+  PermissionSelect: 'permissions projection payload is owned by packages/interaction/permission-presets/src/types.ts',
   PromptAssembly: 'assembly result is owned by packages/core/system-prompt/README.md',
+  RequestRunId: 'dynamic-package payload contract is owned by packages/extensions/cordis-host-runner/src/types.ts',
+  RpcReceipt: 'carrier-layer receipt is owned by packages/host/apiproxy/src/api/rpc.ts',
   Sandbox: 'external E2B SDK handle is owned by packages/e2b/e2b/README.md',
   SessionForkSource: 'service-local fork input is owned by packages/core/session/src/index.ts',
   SubagentRunEndInfo: 'event payload contract is owned by packages/subagent/subagent/src/types.ts',
@@ -501,6 +585,40 @@ export const CORDIS_CATALOG_POLICY: CordisCatalogPolicy = {
   linkedTypePages: LINK_MAP,
   foundationTypeNames: FOUNDATION_TYPE_NAMES,
   typeLinkExemptions: TYPE_LINK_EXEMPTIONS,
+  runtimeServiceExclusions: new Set(['cordisInspect', 'dynamicCordisRunner']),
+  runtimeServices: [{
+    key: 'timer',
+    type: 'TimerService',
+    abstract: false,
+    doc: 'Disposable timer helpers mixed into Cordis contexts.',
+    source: 'vendor/timer/src/index.ts:12',
+    methods: [
+      {
+        signature: 'timeout(callback: () => void, delay: number): () => void',
+        jsDoc: '/** Run a callback once and return its disposer. */',
+      },
+      {
+        signature: 'timeout(delay: number): Promise<void>',
+        jsDoc: '/** Resolve after a delay; disposal rejects the pending promise. */',
+      },
+      {
+        signature: 'interval(callback: () => void, delay: number): () => void',
+        jsDoc: '/** Run a callback repeatedly and return its disposer. */',
+      },
+      {
+        signature: 'interval<R = any>(delay: number): AsyncIterableIterator<void, R, void>',
+        jsDoc: '/** Return an async iterator of timer ticks. */',
+      },
+      {
+        signature: 'throttle<F extends (...args: any[]) => void>(callback: F, delay: number, noTrailing?: boolean): F & { dispose: () => void }',
+        jsDoc: '/** Return a throttled function whose timer is disposed with the current fiber. */',
+      },
+      {
+        signature: 'debounce<F extends (...args: any[]) => void>(callback: F, delay: number): F & { dispose: () => void }',
+        jsDoc: '/** Return a debounced function whose timer is disposed with the current fiber. */',
+      },
+    ],
+  }],
   inheritedEvents: [
     { name: 'internal/plugin', summary: 'A plugin fiber was created.', source: 'vendor/cordis/src/events.ts:328' },
     { name: 'internal/status', summary: 'A fiber changed lifecycle state.', source: 'vendor/cordis/src/events.ts:330' },
@@ -526,7 +644,7 @@ export const CORDIS_CATALOG_POLICY: CordisCatalogPolicy = {
     { name: 'ctx.get / ctx.set / ctx.provide / ctx.accessor / ctx.mixin', summary: 'Low-level service-store access and binding.', source: 'vendor/cordis/src/reflect.ts:7' },
     { name: 'ctx.extend / ctx.isolate / ctx.intercept', summary: 'Derive a child context (scoped services / isolation / interception).', source: 'vendor/cordis/src/context.ts:42' },
     { name: 'ctx.root / ctx.scope / ctx.fiber / ctx.registry / ctx.reflect / ctx.events / ctx.logger', summary: 'Ambient handles onto the running context graph.', source: 'vendor/cordis/src/context.ts:16' },
-    { name: 'ctx.timer (+ interval / timeout / throttle / debounce / setTimeout / setInterval)', summary: 'Disposable timer helpers. The `timer` key is provided at runtime; the six helpers are mixed onto ctx directly (declared via Pick).', source: 'vendor/timer/src/index.ts:4' },
+    { name: 'ctx.timer (+ interval / timeout / throttle / debounce)', summary: 'Disposable timer helpers. The `timer` key is provided at runtime; the four supported helpers are mixed onto ctx directly (declared via Pick).', source: 'vendor/timer/src/index.ts:4' },
     { name: 'ctx.loader', summary: 'The config Loader that booted the app (present under the loader).', source: 'vendor/loader/src/index.ts:30' },
     { name: 'ctx.hmr', summary: 'The hot-module-reload watcher (present under the hmr plugin).', source: 'vendor/hmr/src/index.ts:15' },
   ],
@@ -534,8 +652,8 @@ export const CORDIS_CATALOG_POLICY: CordisCatalogPolicy = {
 
 
 /**
- * Splice a page's generated cordis-surface region into its Markdown content.
- * The page must contain exactly one cordis-surface region (the markers are
+ * Splice a page's generated Cordis API region into its Markdown content.
+ * The page must contain exactly one `cordis-surface` marker region (the markers are
  * part of the hand-owned page skeleton once, then owned by the generator);
  * zero or several is a partition error the caller reports with the page path.
  * The match is on THIS generator's exact markers, not the generic region
@@ -581,7 +699,7 @@ export interface WalkPartitionMaps {
 }
 
 /**
- * Judge the rendered surface and the independent AST scan against the curated
+ * Judge the rendered API and the independent AST scan against the curated
  * partition maps, fail-closed in both directions for services AND events: a
  * rendered key/scope must be mapped to a page, a mapped key/scope must still
  * render, and — the backstop — a DECLARED key/event the projection cannot see
@@ -589,7 +707,7 @@ export interface WalkPartitionMaps {
  * direction guards the scan itself: everything rendered must also be declared
  * to the scan, so a scan blind spot cannot decay silently. Pure so the
  * acceptance paths are provable without running the projection.
- * @param input - rendered surface plus the declared-key/event scans.
+ * @param input - rendered API plus the declared-key/event scans.
  * @param maps - the curated page maps and walk exemptions.
  * @returns one message per violation, empty when the partition holds.
  */
@@ -640,7 +758,7 @@ export function walkPartitionProblems(input: WalkPartitionInput, maps: WalkParti
   // in a Context/Events merge the scan must also reach, so a rendered key or
   // event the scan cannot see means the SCAN regressed (glob, prefilter, or
   // block walk) — a partial blind spot that exemption staleness alone would
-  // never surface.
+  // never appear.
   for (const key of input.renderedKeys.keys()) {
     if (!input.declaredKeys.has(key)) problems.push(`ctx.${key} is rendered by the projection but the independent scan finds no Context merge declaring it; the scan has a blind spot (glob, prefilter, or module-block walk) — fix the scan, not the maps.`)
   }
@@ -747,7 +865,7 @@ export function maybeRecordPair(pageRel: string, before: Map<string, Buffer>, sc
     // after review, never silently by regeneration.
     return false
   }
-  // The record must be exactly the well-formed two-entry shape for THIS pair;
+  // The record must contain exactly the two valid entries for THIS pair;
   // a malformed or renamed-key sidecar is the pairing gate's problem to
   // report, never something regeneration silently repairs into validity.
   const recorded = parsePairMeta(meta)

@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import tsconfigPaths from 'vite-tsconfig-paths'
-import { resolvePwshPath } from './packages/bash/pwsh-local/src/resolve.ts'
+import { resolvePwshPath } from './packages/shell/pwsh-local/src/resolve.ts'
 import { defineConfig } from 'vitest/config'
 import { standardDecoratorPlugin, vitestExecArgv } from './vitest.shared.ts'
 import { COVERAGE_EXEMPT_ENV, coverageExemptHeavySuites } from './scripts/coverage-exempt.ts'
@@ -23,18 +23,49 @@ const windowsUnsupportedPackages = process.platform === 'win32'
       // Bash-requiring suites (a real POSIX shell is unavailable on Windows).
       // The pwsh-requiring suites (pwsh-local, tool-pwsh) deliberately stay
       // INCLUDED: PowerShell ships with Windows, so they run natively here.
-      // This explicit list (not a 'packages/bash/*' glob) keeps
-      // packages/bash/bash — the Service Definition package — running on Windows.
-      'packages/bash/bash-local',
-      'packages/bash/bash-sandbox',
-      'packages/bash/tool-bash',
+      // This explicit list (not a 'packages/shell/*' glob) keeps
+      // packages/shell/shell — the Service Definition package — running on Windows.
+      'packages/shell/bash-local',
+      'packages/shell/bash-sandbox',
+      'packages/shell/tool-bash',
       'packages/hooks/*',
-      'packages/subprocess/*',
-      'packages/pty/pty-local',
+      'packages/terminal/terminal-bash',
       'packages/sandbox/sandbox-local',
-      'packages/scaffold/create-sdk',
-      'packages/scaffold/helper',
     ]
+  : []
+
+const windowsUnsupportedTests = process.platform === 'win32'
+  ? [
+      ...windowsUnsupportedPackages.map(path => `${path}/tests/**/*.spec.ts`),
+      'packages/subprocess/subprocess/tests/**/*.spec.ts',
+      'packages/subprocess/subprocess-local/tests/local.spec.ts',
+      'packages/subprocess/subprocess-local/tests/process-inspector.spec.ts',
+      'packages/subprocess/subprocess-local/tests/spawn.spec.ts',
+      'packages/subprocess/subprocess-local/tests/terminal.spec.ts',
+    ]
+  : []
+
+const windowsUnsupportedCoveragePackages = process.platform === 'win32'
+  ? [...windowsUnsupportedPackages, 'packages/subprocess/*']
+  : []
+
+// Windows-only packages: their sources execute exclusively on win32 (koffi
+// loads Win32 libraries), so the Linux coverage lane can never cover them.
+// The Windows dev/CI lane exercises them through the probe/runner suites; the
+// per-file 100% gate must not fail on their Linux-uncovered paths.
+const windowsOnlyCoverageExclusions = process.platform !== 'win32'
+  ? [
+      'packages/sandbox/sandbox-windows-acl/src/**/*.ts',
+    ]
+  : []
+
+// The confinement runner entry executes exclusively as a spawned child
+// process (the sandbox seam's argv-prefix wrapper): its module-level main()
+// would run the confinement in-process if imported, and vitest's v8 coverage
+// never measures child processes. Its behavior is pinned end-to-end by
+// tests/runner.spec.ts, which spawns the real entry through tsx.
+const windowsRunnerCoverageExclusions = process.platform === 'win32'
+  ? ['packages/sandbox/sandbox-windows-acl/src/runner.ts']
   : []
 
 // pwsh-local's run/start/lifecycle suites self-skip without a real pwsh
@@ -46,7 +77,10 @@ const windowsUnsupportedPackages = process.platform === 'win32'
 // narrower probe could exempt the file on hosts whose suites actually run.
 const pwshCoverageExclusions = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
   ? []
-  : ['packages/bash/pwsh-local/src/index.ts']
+  : [
+      'packages/shell/pwsh-local/src/index.ts',
+      'packages/shell/pwsh-sandbox/src/**/*.ts',
+    ]
 
 const testIncludes = [
   'packages/*/*/tests/**/*.spec.{ts,tsx}',
@@ -72,11 +106,12 @@ const coverageExemptExcludes = coverageExemptRaw === '1'
 const processBoundTests = [
   'packages/session/session-persistence-jsonl/tests/jsonl.spec.ts',
   'packages/subagent/subagent-acp/tests/subagent-acp.spec.ts',
+  'packages/subprocess/subprocess-local/tests/process-exit.spec.ts',
   'packages/subprocess/subprocess-local/tests/spawn.spec.ts',
   'packages/context/time-context/tests/time-context.spec.ts',
   'packages/llm/llm-pi-ai/tests/adapter.spec.ts',
   'packages/boot/app-boot/tests/app-boot.spec.ts',
-  'packages/workflow/workflow-workerthread/tests/session.spec.ts',
+  'packages/workflow/workflow-worker-thread/tests/session.spec.ts',
 ]
 
 export default defineConfig({
@@ -85,7 +120,7 @@ export default defineConfig({
     setupFiles: ['./scripts/test-invariants.ts'],
     // .tsx: client component specs (jsdom via per-file @vitest-environment pragma).
     include: testIncludes,
-    exclude: windowsUnsupportedPackages.map(path => `${path}/tests/**/*.spec.ts`),
+    exclude: windowsUnsupportedTests,
     // One coverage invocation aggregates both projects. Every suite forks for
     // Node stability; process-bound suites stay separate for inventory control.
     projects: [
@@ -101,7 +136,7 @@ export default defineConfig({
           setupFiles: ['./scripts/test-invariants.ts'],
           include: testIncludes,
           exclude: [
-            ...windowsUnsupportedPackages.map(path => `${path}/tests/**/*.spec.ts`),
+            ...windowsUnsupportedTests,
             ...processBoundTests,
             ...coverageExemptExcludes,
           ],
@@ -116,7 +151,7 @@ export default defineConfig({
           setupFiles: ['./scripts/test-invariants.ts'],
           include: processBoundTests,
           exclude: [
-            ...windowsUnsupportedPackages.map(path => `${path}/tests/**/*.spec.ts`),
+            ...windowsUnsupportedTests,
             ...coverageExemptExcludes,
           ],
         },
@@ -135,6 +170,9 @@ export default defineConfig({
         'packages/*/*/src/types.ts',
         'packages/*/*/src/bin.ts',
         'packages/*/*/src/worker.ts',
+        // Dynamic Host/Client composition is covered by its focused lifecycle
+        // tests and assembled application checks rather than per-file coverage.
+        'packages/self-modification/*/src/**/*.{ts,tsx}',
         // A killed executable lint-contract test can leave a non-product source probe behind.
         'packages/*/*/src/oxlint-contract-*.ts',
         // Client/web UI files whose remaining branches need a browser-grade
@@ -143,14 +181,19 @@ export default defineConfig({
         'packages/client/ui-trajectory/src/*',
         // Trajectory's compact Markdown projection retains deferred branch coverage.
         'packages/client/ui-primitives/src/markdown/plain-text.ts',
-        'packages/client/ui-question/src/client/QuestionComposer.tsx',
+        'packages/client/ui-user-questions/src/client/QuestionComposer.tsx',
         'packages/client/ui-primitives/src/Menu.tsx',
         'packages/client/ui-primitives/src/RiskConfirmation.tsx',
         'packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx',
         'packages/client/ui-workspace/src/client/WorkspacePicker.tsx',
         'packages/client/web-react/src/*',
-        'packages/client/runtime/src/*',
-        'packages/client/ui-conversation/src/*',
+        // This isolated settings-scope lifecycle has complete unit coverage;
+        // keep it out of the broader client-runtime GUI debt exemption.
+        'packages/client/runtime/src/**/!(settings-scope).ts',
+        // Keep the browser conversation tree under its existing GUI debt
+        // exemption while gating the newly stateful Host half and vocabulary.
+        'packages/client/ui-conversation/src/client/*',
+        'packages/client/ui-conversation/src/invariant.ts',
         'packages/client/ui-primitives/src/DisclosureRow.tsx',
         'packages/client/ui-tool/src/*',
         'packages/client/ui-slots/src/*',
@@ -177,29 +220,33 @@ export default defineConfig({
         // Slash/command/input round: per-file gaps deferred with the same
         // client-lane debt. TODO(gui): cover and remove with the lane above.
         'packages/client/connection/src/client/fixture.ts',
-        'packages/client/ui-command/src/index.ts',
+        'packages/client/ui-commands/src/index.ts',
         'packages/client/ui-skill/src/index.ts',
-        'packages/client/ui-slash/src/index.ts',
+        'packages/client/ui-input-trigger/src/index.ts',
         'packages/client/ui-subagent/src/index.ts',
-        'packages/client/ui-command/src/client/popup.ts',
-        'packages/client/ui-command/src/client/directory.ts',
-        'packages/client/ui-command/src/client/service.ts',
-        'packages/client/ui-command/src/client/PopupSelectView.tsx',
-        'packages/client/ui-model/src/index.ts',
-        'packages/client/ui-permission/src/index.ts',
-        'packages/client/ui-model/src/client/ModelSelect.tsx',
-        'packages/client/ui-model/src/client/directory.ts',
-        'packages/client/ui-model/src/client/index.ts',
-        'packages/client/ui-model/src/client/service.ts',
-        'packages/client/ui-slash/src/client/controller.ts',
-        'packages/client/ui-slash/src/client/service.ts',
-        'packages/client/ui-slash/src/core/menu.ts',
-        'packages/client/ui-slash/src/core/detect.ts',
+        'packages/client/ui-commands/src/client/popup.ts',
+        'packages/client/ui-commands/src/client/directory.ts',
+        'packages/client/ui-commands/src/client/service.ts',
+        'packages/client/ui-commands/src/client/PopupSelectView.tsx',
+        'packages/client/ui-model-selection/src/index.ts',
+        'packages/client/ui-permission-presets/src/index.ts',
+        'packages/client/ui-model-selection/src/client/ModelSelect.tsx',
+        'packages/client/ui-model-selection/src/client/directory.ts',
+        'packages/client/ui-model-selection/src/client/index.ts',
+        'packages/client/ui-model-selection/src/client/service.ts',
+        'packages/client/ui-input-trigger/src/client/controller.ts',
+        'packages/client/ui-input-trigger/src/client/service.ts',
+        'packages/client/ui-input-trigger/src/core/menu.ts',
+        'packages/client/ui-input-trigger/src/core/detect.ts',
         'packages/client/ui-sidebar/src/client/index.ts',
         'packages/client/ui-skill/src/client/index.ts',
         'packages/client/ui-workspace/src/client/index.ts',
-        'packages/client/test-runtime/src/translate.ts',
+        'packages/test-support/client-runtime/src/translate.ts',
         'packages/client/ui-primitives/src/JsonTree.tsx',
+        'packages/client/ui-settings-models/src/client/DeepSeekOnboardingDialog.tsx',
+        'packages/client/ui-settings-models/src/client/welcome-store.ts',
+        'packages/extensions/*/src/**/*.ts',
+        'packages/extensions/*/src/**/*.tsx',
         // Typert generator: correctness is pinned by its fixture suites and
         // the byte-for-byte catalog reproduction test; per-file coverage
         // would put whole-workspace compiler analysis under v8
@@ -214,7 +261,9 @@ export default defineConfig({
         'packages/interaction/commands/src/index.ts',
         'packages/interaction/commands/src/invariant.ts',
         'packages/session/session-projection/src/index.ts',
-        ...windowsUnsupportedPackages.map(path => `${path}/src/**/*.ts`),
+        ...windowsUnsupportedCoveragePackages.map(path => `${path}/src/**/*.ts`),
+        ...windowsOnlyCoverageExclusions,
+        ...windowsRunnerCoverageExclusions,
         ...pwshCoverageExclusions,
       ],
       // 100% or it doesn't merge (docs/testing.md: excessive tests are welcome).

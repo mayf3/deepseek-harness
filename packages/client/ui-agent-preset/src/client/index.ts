@@ -11,9 +11,12 @@
  * before-the-fact, while the header only reports what a session already runs.
  */
 
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+// Type-only: pulls the ctx.remote merge and the forwarded-event key face
+// (the settings invalidation rides the allowlist) into this program.
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the settings shell's SlotMap merge (the 'settings.section' entry).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
@@ -43,7 +46,7 @@ export type { AgentPresetOption, AgentPresetSettingsState } from './settings-sto
 export { AGENT_PRESET_SETTINGS_NS, writeDefaultPreset } from './settings-store.ts'
 
 /** Required services (cordis fiber inject). */
-export const inject = ['slots', 'locale', 'connection']
+export const inject = ['slots', 'locale', 'connection', 'remote']
 
 /**
  * Mount the General-settings row.
@@ -71,15 +74,17 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => {
     // The roster is a live directory and the default is a settings field, so
     // both an external settings edit and a reconnect can move this row.
-    const refresh = (ns?: string): void => {
-      if (ns !== undefined && ns !== AGENT_PRESET_SETTINGS_NS) return
+    const refresh = (): void => {
       void controller.load()
       // The section reads the same roster and marks the same default, so a
       // change made from either surface converges both.
       if (section.store.getSnapshot().status !== 'idle') void section.load()
     }
     const disposers = [
-      ctx.on('settings/changed', refresh),
+      ctx.remote.$on('settings/document-updated', (ns) => {
+        if (ns !== AGENT_PRESET_SETTINGS_NS) return
+        refresh()
+      }),
       ctx.on('connection/reset', () => { refresh() }),
     ]
     return () => { for (const dispose of disposers) dispose() }
@@ -114,6 +119,7 @@ export function apply(ctx: ClientContext): void {
       hooks: { agentPresetSeat: seat.store },
       load: () => seat.load(),
       select: (id: string) => seat.select(id),
+      introduced: () => { seat.introduced() },
     })
 
     const labelInjected = (): AgentPresetLabelInjected => ({
@@ -131,9 +137,14 @@ export function apply(ctx: ClientContext): void {
       // the next session keeps offering the previous default until a reload,
       // which is exactly the session the setting claims to govern. A staged
       // pick survives: `load()` prefers it over the refreshed fallback.
-      const settingsMoved = scope.on('settings/changed', (ns?: string) => {
-        if (ns !== undefined && ns !== AGENT_PRESET_SETTINGS_NS) return
+      const settingsMoved = scope.remote.$on('settings/document-updated', (ns) => {
+        if (ns !== AGENT_PRESET_SETTINGS_NS) return
         void seat.load()
+      })
+      // Every tab folds the committed preset into the shared session row; the
+      // initiating tab may already have applied the RPC echo, which is idempotent.
+      const presetSelected = scope.remote.$on('agent-preset/selected', (sessionId, agentPreset) => {
+        scope.sessions.noteAgentPreset(sessionId, agentPreset)
       })
       // Authoring writes a FILE, not a setting, so nothing on the wire
       // announces it — without this the screen that starts the next session
@@ -146,7 +157,9 @@ export function apply(ctx: ClientContext): void {
       // on: the chip's list-change applier composes the blank session the
       // workspace connect produces or reuses.
       creatorDraft = () => {
-        seat.stage('cordis')
+        // The introduce cue makes the chip announce the pick the user never
+        // made on this screen — the stage happened back in settings.
+        seat.stage('cordis', true)
         scope.workspaces.startSession()
       }
       const chip = scope.slots.register({
@@ -157,13 +170,15 @@ export function apply(ctx: ClientContext): void {
       const label = scope.slots.register({
         name: 'conversation.session.header.actions',
         id: 'agent-preset',
-        order: 20,
+        // Static session context occupies the header's leading negative-order band.
+        order: -10,
         locale: 'settings.agentPreset',
         inject: labelInjected,
       }, AgentPresetLabel)
       return () => {
         stop()
         settingsMoved()
+        presetSelected()
         rosterReaders.delete(readRoster)
         creatorDraft = undefined
         chip()

@@ -1,4 +1,4 @@
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type {
   ChatConversationViewNode, ChatLocationNodeIndex, ChatNodeStore, ChatSnapshot,
   ConversationLocation, ConversationNode, ConversationTimelineSnapshot,
@@ -165,6 +165,7 @@ function legacyContribution(raw: ChatConversationViewNode): LegacyContribution {
     case 'command':
     case 'compaction':
     case 'turn-error':
+    case 'turn-max-tokens':
     case 'unknown':
       return { anchorSeq: node.anchorSeq, nodes: [node.data], partial: null, running: null }
     case 'assistant-step': {

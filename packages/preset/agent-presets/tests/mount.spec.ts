@@ -1,24 +1,25 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { Context } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
-import Include from '@cordisjs/plugin-include'
-import LlmService from '@deepseek-ai/dsh-llm'
+import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
+import Include from '@deepseek-ai/cordis-plugin-include'
+import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRegistry from '@deepseek-ai/dsh-tools'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
 import AgentRegistry, { assembleContextFor, type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AgentPresets, {
   COMPOSITION_FILE, leakedServices, livePresetMounts, mountPreset, PresetMountError, serviceForAgent,
 } from '@deepseek-ai/dsh-agent-presets'
 import type { Config } from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Published by the `isolated` fixture preset behind an entry-local realm. */
     fixtureIsolatedSvc: { label: string }
@@ -37,15 +38,15 @@ const ROOTS = [
  * @param roster - roster config, defaulting to the fixture roots.
  * @returns the booted context.
  */
-async function harness(roster: Config = { default: 'standard', roots: ROOTS }): Promise<Context> {
+async function harness(roster: Config = { default: 'standard', roots: ROOTS, includeUserRoot: false }): Promise<Context> {
   const ctx = new Context()
   ctx.baseUrl = pathToFileURL(FIXTURES).href + '/'
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
-  await ctx.plugin(LlmService)
+  await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt, { persona: '' })
-  await ctx.plugin(ToolRegistry)
+  await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(AgentPresets, roster)
@@ -84,6 +85,23 @@ beforeEach(async () => {
 })
 
 describe('composing an agent from a preset', () => {
+  it('hands an absolute plugin path to Node as a file URL', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-preset-absolute-plugin-'))
+    const presetDir = join(root, 'absolute')
+    const plugin = join(FIXTURES, 'plugins', 'contribute.js')
+    await mkdir(presetDir)
+    await writeFile(
+      join(presetDir, COMPOSITION_FILE),
+      `- id: only\n  name: ${plugin}\n  config:\n    tool: absolute\n`,
+    )
+    const scoped = await harness({ default: 'absolute', roots: [{ path: root, trust: 'user' }], includeUserRoot: false })
+    const imported = vi.spyOn(scoped.loader.internal!, 'import')
+
+    await agentOn(scoped, 'sess-absolute-plugin')
+
+    expect(imported).toHaveBeenCalledWith(pathToFileURL(plugin).href, expect.any(String), {})
+  })
+
   it('gives each session only its own preset\'s tools', async () => {
     const alpha = await agentOn(ctx, 'sess-alpha', 'standard')
     const beta = await agentOn(ctx, 'sess-beta', 'minimal')
@@ -133,6 +151,79 @@ describe('composing an agent from a preset', () => {
     expect(ctx.agents.get(SessionId('sess-gone'))).toBeUndefined()
     expect(toolNames(ctx, survivor)).toEqual(['beta'])
     expect(toolNames(ctx)).toEqual([])
+  })
+})
+
+describe('composing a child agent from its parent', () => {
+  /** Create one agent joined to `parent`'s composition, as a child creation window does. */
+  async function childOf(ctx: Context, id: string, parent: Agent): Promise<Agent> {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId(id),
+      setup: (childCtx: Context) => void ctx.agentPresets.composeFrom(childCtx, parent.ctx),
+    })
+    return handle.agent
+  }
+
+  it('gives the child its parent\'s tools and prompt sections', async () => {
+    const parent = await agentOn(ctx, 'sess-parent', 'standard')
+
+    const child = await childOf(ctx, 'sess-child', parent)
+
+    expect(toolNames(ctx, child)).toEqual(['alpha'])
+    const prompt = await ctx.systemPrompt.assemble(assembleContextFor(child))
+    expect(prompt.sections.map(section => section.name)).toContain('preset:alpha')
+  })
+
+  it('joins the parent\'s own generation rather than remounting its preset', async () => {
+    const parent = await agentOn(ctx, 'sess-shared', 'standard')
+    const before = livePresetMounts().length
+
+    await childOf(ctx, 'sess-shared-child', parent)
+
+    // A remount would compose a second copy of every row in the preset; the
+    // child must run on the plugin instances its parent already runs on.
+    expect(livePresetMounts()).toHaveLength(before)
+  })
+
+  it('keeps the child composed after its parent is disposed', async () => {
+    const parentHandle = await ctx.agents.create({
+      sessionId: SessionId('sess-dying-parent'),
+      setup: async (agentCtx: Context) => void await ctx.agentPresets.mount(agentCtx, 'standard'),
+    })
+    const child = await childOf(ctx, 'sess-orphan', parentHandle.agent)
+
+    await parentHandle.dispose()
+
+    // Standing mounts outlive the agents that joined them, so a child outliving
+    // its parent — a background subagent — keeps the composition it started on.
+    expect(toolNames(ctx, child)).toEqual(['alpha'])
+  })
+
+  it('reports the preset id the child joined, for the durable header', async () => {
+    const parent = await agentOn(ctx, 'sess-named', 'minimal')
+
+    const child = await childOf(ctx, 'sess-named-child', parent)
+
+    expect(ctx.agentPresets.composedPreset(parent.ctx)).toBe('minimal')
+    expect(ctx.agentPresets.composedPreset(child.ctx)).toBe('minimal')
+  })
+
+  it('composes nothing when the parent joined no preset', async () => {
+    // The rosterless deployment: model-facing rows sit in the host composition
+    // and the child already resolves them through the registry's global layer.
+    const bare = (await ctx.agents.create({ sessionId: SessionId('sess-bare-parent') })).agent
+
+    const child = await childOf(ctx, 'sess-bare-child', bare)
+
+    expect(ctx.agentPresets.composedPreset(bare.ctx)).toBeUndefined()
+    expect(ctx.agentPresets.composeFrom(child.ctx, bare.ctx)).toBeUndefined()
+    expect(toolNames(ctx, child)).toEqual([])
+  })
+
+  it('refuses to compose an unscoped context', async () => {
+    const parent = await agentOn(ctx, 'sess-unscoped-parent', 'standard')
+
+    expect(() => ctx.agentPresets.composeFrom(ctx, parent.ctx)).toThrow(/unscoped context/)
   })
 })
 
@@ -256,7 +347,7 @@ describe('composing from a broken preset', () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-preset-broken-'))
     await mkdir(join(root, 'damaged'))
     await writeFile(join(root, 'damaged', COMPOSITION_FILE), composition)
-    return await harness({ default: 'damaged', roots: [{ path: root, trust: 'user' as const }] })
+    return await harness({ default: 'damaged', roots: [{ path: root, trust: 'user' as const }], includeUserRoot: false })
   }
 
   it('refuses the mount up front with the discovery-reported reason', async () => {
@@ -289,7 +380,7 @@ describe('a roster with nothing in it', () => {
   it('says so instead of naming an empty list of candidates', async () => {
     const bare = new Context()
     await bare.plugin(Loader)
-    await bare.plugin(AgentPresets, { default: 'standard', roots: [] })
+    await bare.plugin(AgentPresets, { default: 'standard', roots: [], includeUserRoot: false })
 
     await expect(bare.agentPresets.resolve())
       .rejects.toThrow(/preset "standard" not found \(available: none\)/)
@@ -321,13 +412,13 @@ describe('the preset file is an input, never a persistence target', () => {
     scoped.baseUrl = pathToFileURL(FIXTURES).href + '/'
     await scoped.plugin(Loader)
     scoped.loader.builtins.include = Include
-    await scoped.plugin(LlmService)
+    await scoped.plugin(LlmRuntime)
     await scoped.plugin(SessionStore)
     await scoped.plugin(SystemPrompt, { persona: '' })
-    await scoped.plugin(ToolRegistry)
+    await scoped.plugin(ToolRuntime)
     await scoped.plugin(AgentRegistry)
     await scoped.plugin(AgentLoop, { agents: [] })
-    await scoped.plugin(AgentPresets, { default: 'self-disposing', roots: [{ path: root, trust: 'user' as const }] })
+    await scoped.plugin(AgentPresets, { default: 'self-disposing', roots: [{ path: root, trust: 'user' as const }], includeUserRoot: false })
 
     await scoped.agents.create({
       sessionId: SessionId('sess-self-dispose'),
@@ -367,6 +458,18 @@ describe('attributing a service to a subtree', () => {
 })
 
 describe('replacing a composition', () => {
+  it('publishes a committed preset selection for remote consumers', async () => {
+    const agent = await agentOn(ctx, 'sess-selected', 'standard')
+    const selected: Array<[SessionId, string]> = []
+    ctx.on('agent-preset/selected', (sessionId, agentPreset) => {
+      selected.push([sessionId, agentPreset])
+    })
+
+    agent.session.append('agent-preset/selected', { agentPreset: 'minimal' })
+
+    expect(selected).toEqual([[SessionId('sess-selected'), 'minimal']])
+  })
+
   it('swaps the agent\'s tools without touching another session', async () => {
     const keeper = await agentOn(ctx, 'sess-keeper', 'standard')
     const handle = await ctx.agents.create({
@@ -409,6 +512,37 @@ describe('replacing a composition', () => {
     expect(toolNames(ctx, handle.agent)).toEqual(['alpha'])
   })
 
+  it('names an agent that was published without joining any preset', async () => {
+    const ctx = await harness()
+    const warnings: string[] = []
+    ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
+
+    await ctx.agents.create({ sessionId: SessionId('sess-unjoined-warn') })
+    // Advisory, not fatal: a synchronous `agent/created` throw would veto
+    // publication, and creating an agent outside the roster stays legal.
+    expect(warnings.filter(line => line.includes('sess-unjoined-warn'))).toHaveLength(1)
+    expect(warnings.at(-1)).toMatch(/without joining an agent preset/)
+
+    warnings.length = 0
+    await agentOn(ctx, 'sess-joined-quiet', 'minimal')
+    expect(warnings).toEqual([])
+  })
+
+  it('says nothing when the composition opts out of every root', async () => {
+    // Presets are optional: every surface except the Web bundle keeps its
+    // model-facing rows in the host plane, so an agent with a chain of one is
+    // exactly right there and the diagnostic must stay silent. Opting out is
+    // what makes this rosterless — empty `roots` alone would still derive the
+    // harness-home root, which is a roster like any other.
+    const rosterless = await harness({ default: 'standard', roots: [], includeUserRoot: false })
+    const warnings: string[] = []
+    rosterless.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof rosterless.logger.warn
+
+    await rosterless.agents.create({ sessionId: SessionId('sess-no-roster') })
+
+    expect(warnings).toEqual([])
+  })
+
   it('composes an agent that had nothing installed', async () => {
     // An agent created without a preset has no binding to re-link, so the
     // switch is its first bind — exactly a mount — and once bound only the
@@ -443,13 +577,13 @@ describe('replacing a composition', () => {
     scoped.baseUrl = pathToFileURL(FIXTURES).href + '/'
     await scoped.plugin(Loader)
     scoped.loader.builtins.include = Include
-    await scoped.plugin(LlmService)
+    await scoped.plugin(LlmRuntime)
     await scoped.plugin(SessionStore)
     await scoped.plugin(SystemPrompt, { persona: '' })
-    await scoped.plugin(ToolRegistry)
+    await scoped.plugin(ToolRuntime)
     await scoped.plugin(AgentRegistry)
     await scoped.plugin(AgentLoop, { agents: [] })
-    await scoped.plugin(AgentPresets, { default: 'first', roots: [{ path: root, trust: 'user' as const }] })
+    await scoped.plugin(AgentPresets, { default: 'first', roots: [{ path: root, trust: 'user' as const }], includeUserRoot: false })
     const handle = await scoped.agents.create({
       sessionId: SessionId('sess-restore-gone'),
       setup: async (agentCtx: Context) => void await scoped.agentPresets.mount(agentCtx, 'first'),
@@ -489,7 +623,7 @@ describe('editing a composition file', () => {
     await mkdir(join(root, id))
     const path = join(root, id, COMPOSITION_FILE)
     await writeFile(path, rowFor('before'))
-    const scoped = await harness({ default: id, roots: [{ path: root, trust: 'user' as const }] })
+    const scoped = await harness({ default: id, roots: [{ path: root, trust: 'user' as const }], includeUserRoot: false })
     return { scoped, path }
   }
 
@@ -523,6 +657,34 @@ describe('editing a composition file', () => {
     expect(toolNames(scoped, left)).toEqual(['afterwards'])
     expect(toolNames(scoped, right)).toEqual(['afterwards'])
     expect(livePresetMounts().filter(mount => mount.presetId === 'raced')).toHaveLength(2)
+  })
+
+  it('keeps a newer generation pointer when a stale refresh loses the swap race', async () => {
+    const { scoped, path } = await editable('guarded-refresh')
+    const preset = await scoped.agentPresets.resolve('guarded-refresh')
+    await agentOn(scoped, 'sess-guarded-refresh-seed', 'guarded-refresh')
+    const service = scoped.agentPresets as unknown as {
+      standing: Map<string, Promise<{
+        key: unknown
+        scope: unknown
+        stamp: { mtimeMs: number; size: number }
+      }>>
+      ensureStanding(current: typeof preset): Promise<unknown>
+    }
+    const stalePromise = service.standing.get(preset.id)!
+    const stale = await stalePromise
+    await writeFile(path, rowFor('afterwards'))
+    const { mtimeMs, size } = await stat(path)
+    const newer = { ...stale, stamp: { mtimeMs, size } }
+    const newerPromise = Promise.resolve(newer)
+
+    // `await pending` yields before the guarded delete, letting the winning
+    // refresher replace the pointer deterministically instead of by timing.
+    const refresh = service.ensureStanding(preset)
+    service.standing.set(preset.id, newerPromise)
+
+    expect(await refresh).toBe(newer)
+    expect(service.standing.get(preset.id)).toBe(newerPromise)
   })
 
   it('hands a host reader the standing key without starting an agent', async () => {

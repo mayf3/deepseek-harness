@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { dirname, posix } from 'node:path'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import {
   CommandExitError,
   FileNotFoundError,
@@ -8,11 +8,11 @@ import {
   type EntryInfo,
   type Sandbox,
 } from '@deepseek-ai/dsh-e2b'
-import type E2BSandboxService from '@deepseek-ai/dsh-e2b'
+import type E2BRuntime from '@deepseek-ai/dsh-e2b'
 import { FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
 import E2BFileSystem from '@deepseek-ai/dsh-fs-e2b'
 import * as E2BFsInvariant from '../src/invariant.ts'
-import InvariantService from '@deepseek-ai/dsh-invariants'
+import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { describe, expect, it, vi } from 'vitest'
 
 interface RemoteNode {
@@ -40,6 +40,7 @@ class FakeRemote {
   readonly links: Array<{ from: string; to: string }> = []
   readonly removals: string[] = []
   readonly commands: string[] = []
+  readonly reads: Array<{ path: string; format: 'bytes' | 'stream' }> = []
   streamChunks: Uint8Array[] | undefined
   streamKeepOpen = false
   readonly streamCancel = vi.fn()
@@ -157,6 +158,7 @@ class FakeRemote {
       },
       read: async (path: string, options: { format: 'bytes' | 'stream'; signal?: AbortSignal }): Promise<Uint8Array | ReadableStream<Uint8Array> | string> => {
         this.checkAbort(options)
+        this.reads.push({ path, format: options.format })
         if (this.nextReadError !== undefined) {
           const error = this.nextReadError
           this.nextReadError = undefined
@@ -307,7 +309,7 @@ async function setup(remote = new FakeRemote()): Promise<{ ctx: Context; fs: E2B
     cwd: '/workspace',
     runtimeRoot: '/workspace/.dsh-e2b',
     getSandbox: async () => remote.sandbox,
-  } as unknown as E2BSandboxService
+  } as unknown as E2BRuntime
   ctx.provide('e2b', runtime)
   await ctx.plugin(E2BFileSystem)
   return { ctx, fs: ctx.fs as E2BFileSystem, remote }
@@ -469,6 +471,42 @@ describe('E2BFileSystem identity, metadata, and reads', () => {
     const raced = await fs.resolve('invalid')
     remote.nextReadError = new FileNotFoundError('gone after stat')
     await expectCode(fs.streamText(raced), 'FS_NOT_FOUND')
+  })
+
+  it('readBytes returns raw content, enforces the byte cap, and maps failures', async () => {
+    const remote = new FakeRemote()
+    remote.file('/workspace/img.bin', [0x89, 0, 0xff, 0x47])
+    remote.dir('/workspace/directory')
+    const { fs } = await setup(remote)
+    const target = await fs.resolve('img.bin')
+    expect(Array.from(await fs.readBytes(target, undefined, 4))).toEqual([0x89, 0, 0xff, 0x47])
+    expect(remote.reads).toEqual([{ path: '/workspace/img.bin', format: 'stream' }])
+    remote.reads.length = 0
+    await expectCode(fs.readBytes(target, undefined, 3), 'FS_TOO_LARGE')
+    expect(remote.reads).toEqual([])
+    await expectCode(fs.readBytes(await fs.resolve('missing'), undefined, 4), 'FS_NOT_FOUND')
+    await expectCode(fs.readBytes(await fs.resolve('directory'), undefined, 4), 'FS_NOT_REGULAR_FILE')
+
+    const live = new AbortController()
+    expect((await fs.readBytes(target, live.signal, 4)).byteLength).toBe(4)
+    remote.nextReadError = new DOMException('aborted', 'AbortError')
+    await expectCode(fs.readBytes(target, undefined, 4), 'FS_ABORTED')
+  })
+
+  it('readBytes bounds a post-stat grower mid-stream and reads an empty file through the SDK quirk', async () => {
+    const remote = new FakeRemote()
+    remote.file('/workspace/grow.bin', [1, 1, 1, 1])
+    remote.file('/workspace/empty.bin', '')
+    const { fs } = await setup(remote)
+
+    remote.streamChunks = [bytes([1, 1, 1]), bytes([1, 2, 2])]
+    remote.streamKeepOpen = true
+    await expectCode(fs.readBytes(await fs.resolve('grow.bin'), undefined, 4), 'FS_TOO_LARGE')
+    expect(remote.streamCancel).toHaveBeenCalledOnce()
+
+    remote.streamChunks = undefined
+    remote.streamKeepOpen = false
+    expect((await fs.readBytes(await fs.resolve('empty.bin'), undefined, 4)).byteLength).toBe(0)
   })
 
   it('honors aborts before and during remote reads', async () => {
@@ -761,7 +799,7 @@ describe('E2B filesystem adapter integration edges', () => {
 
   it('registers the package-owned empty invariant installer', async () => {
     const ctx = new Context()
-    await ctx.plugin(InvariantService, { enabled: true })
+    await ctx.plugin(InvariantRegistry, { enabled: true })
     const fiber = await ctx.plugin(E2BFsInvariant).await()
     await fiber.dispose()
   })

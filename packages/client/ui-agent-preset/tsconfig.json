@@ -9,9 +9,6 @@
   ],
   "references": [
     {
-      "path": "../connection"
-    },
-    {
       "path": "../locale"
     },
     {
@@ -21,7 +18,7 @@
       "path": "../runtime"
     },
     {
-      "path": "../test-runtime"
+      "path": "../../test-support/client-runtime"
     },
     {
       "path": "../ui-conversation"
@@ -39,7 +36,10 @@
       "path": "../web-react"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../../api/remotes/tsconfig.client.json"
     }
   ]
 }

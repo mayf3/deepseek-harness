@@ -1,4 +1,4 @@
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import { registerAssistantConversationNode } from './assistant.ts'
 import { registerChatConversationView } from './chat-snapshot-builder.ts'
 import { registerCommandConversationNode } from './command.ts'
@@ -9,6 +9,7 @@ import { registerMessageConversationNode } from './message.ts'
 import { registerRetryConversationNode } from './retry.ts'
 import { registerToolConversationNode } from './tool.ts'
 import { registerTurnErrorConversationNode } from './turn-error.ts'
+import { registerTurnMaxTokensConversationNode } from './turn-max-tokens.ts'
 import { registerTurnTailConversationNode } from './turn-tail.ts'
 
 /**
@@ -24,6 +25,7 @@ export function registerConversationNodes(ctx: Context): void {
   registerCompactionConversationNode(ctx)
   registerRetryConversationNode(ctx)
   registerTurnErrorConversationNode(ctx)
+  registerTurnMaxTokensConversationNode(ctx)
   registerTurnTailConversationNode(ctx)
   registerUnknownConversationFallback(ctx)
   registerChatConversationView(ctx)

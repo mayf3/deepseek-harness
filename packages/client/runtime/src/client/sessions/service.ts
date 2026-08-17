@@ -1,5 +1,5 @@
 /**
- * SessionsService: root sessions service — list snapshot store (manager
+ * SessionRuntime: root sessions service — list snapshot store (manager
  * projection; carries `current`, the persisted selection every
  * session-scoped surface keys off), Agent scope tree (mintScope pattern: no-op plugin
  * Fiber + ctx.extend scope tag; one scope per session, agent id === session
@@ -14,10 +14,10 @@
  * tears its scope down immediately unless it is the staged one, whose scope
  * survives frozen (read-only view) until the stage moves on.
  */
-import type { Context, Fiber } from 'cordis'
+import type { Context, Fiber } from '@deepseek-ai/cordis'
 import type {
-  IApiClient, RpcError, RpcResult, SessionId, SubagentAddress, WorkspaceId,
-} from '@deepseek-ai/dsh-client-connection/client'
+  IApiClient, RpcError, RpcResult, SessionId, SubagentAddress, JobView, WorkspaceId,
+} from '@deepseek-ai/dsh-api-remotes/client'
 // Value import from the inline-safe wire layer (not the connection plugin):
 // plugin-to-plugin value imports are a bundle purity error.
 import { SESSION_SEARCH_RESULT_LIMIT } from '@deepseek-ai/dsh-host-apiproxy/api'
@@ -32,6 +32,7 @@ import type { AgentContext, ISessions } from '../contract/sessions.ts'
 import { createScope, scopeOf as scopeTagOf } from '../agents/scope.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
 import { SessionManager } from './manager.ts'
+import type { SessionRemotes } from './remotes.ts'
 import type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from './manager.ts'
 import type { PendingInteractionStatus } from './pending.ts'
 import { SessionProvideChannel } from './provide.ts'
@@ -86,6 +87,12 @@ export interface SessionListState {
   phase: SessionListPhase
   /** Direct durable catalogs keyed by their selected parent address. */
   subagentsByParent: Readonly<Record<SessionId, SubagentCatalogSnapshot>>
+  /**
+   * Background jobs each session can see, mirrored last-wins from
+   * `session/jobs`. A missing key is an empty set — the Host sends no baseline
+   * for a session without tasks — so consumers read absence, never a sentinel.
+   */
+  jobsBySession: Readonly<Record<SessionId, readonly JobView[]>>
   /** Current session's catalog-derived address, absent on ordinary navigation. */
   currentAddress: SubagentAddress | undefined
 }
@@ -196,7 +203,7 @@ interface ScopeRecord {
   provideInfo: SessionProvideInfo
 }
 
-/** One plugin's per-session standard-props contribution (see {@link SessionsService.provide}). */
+/** One plugin's per-session standard-props contribution (see {@link SessionRuntime.provide}). */
 export interface SessionProvideContribution {
   /** Bare observable sources, keyed by hook base name ('input' → useInput). */
   hooks?: Record<string, HostObservable<unknown>>
@@ -219,7 +226,7 @@ export interface SessionProvideDescriptor {
 }
 
 /** Root sessions service: list store, current selection, object-layer manager, scope tree, bindings, and breadcrumb routes. */
-export class SessionsService implements ISessions {
+export class SessionRuntime implements ISessions {
   /**
    * The wire schema's own result bound, re-exposed for presentation plugins as
    * injected data. Not per-connection state: the `session.search` response
@@ -242,7 +249,7 @@ export class SessionsService implements ISessions {
   /**
    * Persisted selection cell (the durable half of `list.current`). Private on
    * purpose: reads go through the list snapshot; writes through {@link
-   * SessionsService.open} / {@link SessionsService.clear}. Projection
+   * SessionRuntime.open} / {@link SessionRuntime.clear}. Projection
    * validates it against the live list instead of destructively pruning, so a
    * selection survives transient list states (reconnect re-pull) and
    * resurfaces when its session returns.
@@ -265,11 +272,13 @@ export class SessionsService implements ISessions {
   /**
    * @param ctx - client root context (scope fibers mount under it).
    * @param api - wire client shared with every Session.
+   * @param remote - generated Remote namespaces shared with every Session.
    * @param conversationRuntime - same-pass registry instances, when runtime apply owns them.
    */
   constructor(
     private readonly rootCtx: Context,
     api: IApiClient,
+    remote: SessionRemotes,
     conversationRuntime?: ConversationRuntime,
   ) {
     this.selection = createSnapshotStore<SessionSelection>(
@@ -285,13 +294,14 @@ export class SessionsService implements ISessions {
     )
     this.manager = new SessionManager(
       api,
+      remote,
       restored.sessionId,
       restored.subagentAddress,
       conversation,
     )
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'pending',
-      subagentsByParent: {}, currentAddress: undefined,
+      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
     })
     // The manager owns wire truth; the store is its projection. Manager
     // notifications are already microtask-batched.
@@ -464,7 +474,7 @@ export class SessionsService implements ISessions {
   /**
    * Create a session on the host. Resolution guarantee: by the time the
    * promise resolves, the created session is in the list store and
-   * {@link SessionsService.binding} resolves it — callers (New Session
+   * {@link SessionRuntime.binding} resolves it — callers (New Session
    * draft hand-off) may address the scope synchronously, without waiting a
    * notifier flush. The synchronous projection below makes this structural
    * rather than an accident of microtask ordering.
@@ -481,7 +491,7 @@ export class SessionsService implements ISessions {
 
   /**
    * Fork a session from a completed-turn prefix of the source (same
-   * synchronous-addressability guarantee as {@link SessionsService.create}:
+   * synchronous-addressability guarantee as {@link SessionRuntime.create}:
    * on resolution the child is in the list store and open() can target it).
    * @param opts - source session id, the optional event seq anchoring the
    *   cut (the boundary is the first turn/end at or after it; an in-log
@@ -547,7 +557,7 @@ export class SessionsService implements ISessions {
    * hop every scoped consumer (event listeners, per-session controllers)
    * takes from ctx-space into object-space (the client mirror of host
    * `agent.session`). Same service-method boundary as
-   * {@link SessionsService.scopeOf}.
+   * {@link SessionRuntime.scopeOf}.
    * @param ctx - an Agent-scoped context.
    * @returns the session face, or undefined when the ctx is untagged or its scope was pruned.
    */
@@ -570,7 +580,7 @@ export class SessionsService implements ISessions {
   /**
    * Resolve one session's render-layer standard-props bundle (ctx never
    * enters the render layer; the renderer subscribes to
-   * {@link SessionsService.currentProvideInfo}). Pure resolution — render-safe:
+   * {@link SessionRuntime.currentProvideInfo}). Pure resolution — render-safe:
    * no staging, no window side effects (StrictMode double-invokes and
    * concurrent discarded passes must stay free).
    */
@@ -649,7 +659,7 @@ export class SessionsService implements ISessions {
   /** Project the manager's list snapshot into the store (title derivation is display-only). */
   private projectList(): void {
     const {
-      items, current, phase, subagentsByParent, currentAddress,
+      items, current, phase, subagentsByParent, jobsBySession, currentAddress,
     } = this.manager.getListSnapshot()
     const ids: SessionId[] = []
     const byId: Record<SessionId, SessionSummary> = {}
@@ -719,7 +729,7 @@ export class SessionsService implements ISessions {
         ...(currentAddress === undefined ? {} : { subagentAddress: currentAddress }),
       })
     }
-    this.list.set({ ids, byId, current, phase, subagentsByParent, currentAddress })
+    this.list.set({ ids, byId, current, phase, subagentsByParent, jobsBySession, currentAddress })
     this.pruneScopes()
   }
 

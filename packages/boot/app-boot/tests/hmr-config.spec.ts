@@ -3,10 +3,10 @@ import { realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { Context } from 'cordis'
-import Hmr from '@cordisjs/plugin-hmr'
-import Loader from '@cordisjs/plugin-loader'
-import Timer from '@cordisjs/plugin-timer'
+import { Context } from '@deepseek-ai/cordis'
+import Hmr from '@deepseek-ai/cordis-plugin-hmr'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
+import Timer from '@deepseek-ai/cordis-plugin-timer'
 import { describe, expect, it, vi } from 'vitest'
 
 async function bootHmr(dir: string, root: string[] = [], usePolling?: boolean): Promise<Context> {
@@ -62,7 +62,7 @@ describe('HMR exact config paths', () => {
       expect(cacheHas).toHaveBeenCalledWith(expected)
     } finally {
       await ctx.fiber.dispose()
-      rmSync(alias, { force: true })
+      unlinkSync(alias)
       rmSync(target, { recursive: true, force: true })
     }
   })
@@ -78,7 +78,7 @@ describe('HMR exact config paths', () => {
         .rejects.toThrow('config path already registered')
     } finally {
       await ctx.fiber.dispose()
-      rmSync(alias, { force: true })
+      unlinkSync(alias)
       rmSync(target, { recursive: true, force: true })
     }
   })

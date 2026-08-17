@@ -3,59 +3,37 @@
  * @module @deepseek-ai/dsh-commands
  */
 
-import { Context, Service } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { NamedEntries, ScopedLayers } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer } from '@deepseek-ai/dsh-scope'
 import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
+import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { CommandId } from './brand.ts'
+import type {
+  CommandDescriptor,
+  CommandExecution,
+  CommandInputDescriptor,
+  CommandResult,
+} from './types.ts'
 
 export { CommandId } from './brand.ts'
-export type { CommandSource, CommandSourceMap } from './types.ts'
+export type * from './types.ts'
 
 export const name = 'commands'
 
 const COMMAND_NAME = /^[a-z][a-z0-9_-]*$/u
 
-/** Immutable metadata for a command's optional unstructured input. */
-export interface CommandInputDescriptor {
-  /** Placeholder shown before the user supplies free-form input. */
-  readonly hint: string
-}
-
 /** Invocation passed to one registered command handler. */
 export interface CommandInvocation {
   /** Pairing id already written to this invocation's `command/run` event. */
   readonly commandId: CommandId
-  /** Exact agent whose human-facing surface received the command. */
+  /** Exact agent whose UI received the command. */
   readonly agent: Agent
   /** Exact text following the registered command name, including separator whitespace. */
   readonly rawInput: string
   /** Cancellation signal owned by the dispatching UI request. */
   readonly signal: AbortSignal
-}
-
-/** Expected command outcome rendered directly by the dispatching UI. */
-export type CommandResult =
-  | {
-    readonly kind: 'success'
-    readonly text?: string
-    /** Earlier authoritative domain event that owns a richer presentation. */
-    readonly sourceEventSeq?: number
-  }
-  | { readonly kind: 'error'; readonly text: string }
-
-/**
- * One settled command execution: the handler's normalized result plus the
- * lifecycle pairing id minted for its `command/run`/`command/done` records,
- * so a dispatching surface can correlate the RPC-level acknowledgment with
- * the flow node those events produce.
- */
-export interface CommandExecution {
-  /** Pairing id carried by this execution's lifecycle events. */
-  readonly commandId: CommandId
-  /** The handler's normalized outcome. */
-  readonly result: CommandResult
 }
 
 /** Plugin-owned command registration. */
@@ -74,16 +52,6 @@ export interface CommandDefinition {
   readonly recordInput?: boolean
   /** Execute against the receiving agent without sending the command to the model. */
   readonly handler: (invocation: CommandInvocation) => CommandResult | Promise<CommandResult>
-}
-
-/** Handler-free immutable command view returned to UI adapters. */
-export interface CommandDescriptor {
-  /** Lowercase command name without the leading slash. */
-  readonly name: string
-  /** Human-readable summary used in discovery UI. */
-  readonly description: string
-  /** Optional free-form input hint advertised to capable clients. */
-  readonly input?: CommandInputDescriptor
 }
 
 /** Syntactically valid slash command before registry resolution. */
@@ -119,19 +87,9 @@ class CommandLayer implements ScopeLayer {
   }
 }
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
-    commands: CommandService
-  }
-
-  interface Events {
-    /**
-     * A command was registered or unregistered. This is an unfiltered registry
-     * notification because a global or scoped change may affect any UI view.
-     * Observer failures are contained and cannot veto the registry mutation.
-     * @mode emit
-     */
-    'commands/change'(): void
+    commands: CommandRuntime
   }
 }
 
@@ -264,7 +222,7 @@ function normalizeResult(command: string, value: unknown): CommandResult {
  * registered through a command-injected child of an agent context shadow
  * globals for that agent.
  */
-export class CommandService extends Service {
+export class CommandRuntime extends TypertRemoteService {
   private readonly layers = new ScopedLayers(
     scope => new CommandLayer(scope),
     () => { this.notifyChange() },
@@ -298,6 +256,7 @@ export class CommandService extends Service {
    * @param agent - exact receiving agent and scoped-layer key.
    * @returns name-sorted descriptors after scoped shadowing.
    */
+  @Remote
   list(agent: Agent): readonly CommandDescriptor[] {
     return Object.freeze([...this.view(agent).values()]
       .map(command => command.descriptor)
@@ -334,6 +293,7 @@ export class CommandService extends Service {
    * @returns the settled execution (result + lifecycle pairing id), or
    *   `undefined` when syntax or name does not resolve.
    */
+  @Remote
   async execute(
     agent: Agent,
     line: string,
@@ -424,4 +384,4 @@ export class CommandService extends Service {
   }
 }
 
-export default CommandService
+export default CommandRuntime

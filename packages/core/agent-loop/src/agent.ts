@@ -31,7 +31,7 @@ import type { EpochHeader, RequestContext, Session, SessionId, TurnEndReason, Us
 import { canonicalHeader, headerEquals } from '@deepseek-ai/dsh-session'
 import { joinContextSections, renderContextSections, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import { RuntimeContextProjection } from './runtime-context.ts'
 import { executeToolCalls } from './tool-calls.ts'
 
@@ -147,7 +147,7 @@ export class ReactLoopAgent implements Agent {
     if (this.phase.kind !== 'idle') this.phase.abort.abort(cause)
   }
 
-  runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  runMaintenance<T>(job: (signal: AbortSignal) => Promise<T>): Promise<T> {
     if (this.phase.kind !== 'idle') throw new Error(`agent "${this.id}" already has active work`)
     const done = Promise.withResolvers<void>()
     const maintenance: Phase = {
@@ -160,7 +160,7 @@ export class ReactLoopAgent implements Agent {
     this.activityDone = done.promise
     return (async () => {
       try {
-        return await task(maintenance.abort.signal)
+        return await job(maintenance.abort.signal)
       } finally {
         this.setPhase({ kind: 'idle', lastTurn: maintenance.lastTurn })
         if (maintenance.wakeRequested && this.inbox.hasPending) this.wakeDriver()
@@ -290,8 +290,6 @@ export class ReactLoopAgent implements Agent {
           for (const message of decision.messages) {
             this.session.append('user/message', message, { surfaceOp: 'append' })
           }
-          // max-tokens is sticky: once any step hits the ceiling, later steps
-          // that complete normally must not downgrade the turn outcome.
           const stepEnd = await this.step(decision.assembly)
           // max-tokens stays sticky: a later completed step must not
           // downgrade the turn outcome.
@@ -344,10 +342,8 @@ export class ReactLoopAgent implements Agent {
     signal.throwIfAborted()
     const system = renderPrompt(assembly)
 
-    // The streaming attempt an abort may still finalize: chunks already logged
-    // reached the user, so cancellation commits their assemblable prefix to the
-    // surface instead of dropping it (see appendInterruptedAssistant). Cleared
-    // once the attempt commits normally or a retry resets the visible stream.
+    // Keep the active attempt until it commits or fails so cancellation can
+    // preserve the same streamed prefix in durable message history.
     let attempt: InterruptedAttempt | undefined
     try {
       while (true) {
@@ -367,10 +363,9 @@ export class ReactLoopAgent implements Agent {
         signal.throwIfAborted()
         const finish = assembler.finish
         if (finish.kind === 'error' || finish.kind === 'aborted') {
-          // A failed attempt is never finalizable: provider failures commit
-          // nothing, and a cancel landing during recovery (typically the
-          // llm/retry backoff, after clients reset the streamed rendering)
-          // must not resurrect the failed stream's prefix.
+          // Provider failures commit no assistant content. Clearing before the
+          // recovery waterfall also prevents a cancellation during retry delay
+          // from restoring the failed attempt after clients reset its stream.
           attempt = undefined
           const action = await this.dispatch.waterfall(
             'agent/request-error', {
@@ -428,12 +423,9 @@ export class ReactLoopAgent implements Agent {
   }
 
   /**
-   * Finalize a cancelled streaming attempt's user-visible prefix onto the
-   * surface: everything already logged as `assistant/chunk` events was
-   * delivered to the user, and the next request must contain what the user saw.
-   * Keeps the assembler's interrupted-safe blocks (text/reasoning; tool calls
-   * were never dispatched and are dropped); appends nothing when no visible
-   * content streamed before the interruption.
+   * Append a cancelled attempt's delivered text and reasoning as an interrupted
+   * assistant message. Undispatched tool calls and empty content are omitted;
+   * the resulting durable history matches the prefix clients rendered.
    */
   private appendInterruptedAssistant(turn: number, step: number, attempt: InterruptedAttempt): void {
     const content = attempt.assembler.interruptedBlocks()

@@ -6,24 +6,24 @@ This page has two parts: a concept reference for the three-role capability patte
 
 ## Concept reference
 
-When a capability is general enough to need replaceable providers, such as Bash execution, Harness separates three roles: a **Service Definition**, a **Service provider**, and a **Consumer**. Put the roles in separate packages when they need to evolve or be replaced independently; a package may otherwise own more than one role. The complete capability is its seam. No individual role is a seam.
+When a capability is general enough to need replaceable providers, such as Bash execution, Harness separates three roles: a **Service Definition**, a **Service Provider**, and a **Consumer**. Put the roles in separate packages when they need to evolve or be replaced independently; a package may otherwise own more than one role. The complete capability is its seam. No individual role is a seam.
 
 ## Bash example
 
 The Bash execution capability consists of:
 
-- **Service Definition** (`dsh-bash`) — defines the Cordis service and Bash request/result vocabulary
-- **Service provider** (`dsh-bash-local`) — supplies local command execution
+- **Service Definition** (`dsh-shell`) — defines the Cordis service and Bash request and result types
+- **Service Provider** (`dsh-bash-local`) — executes commands on the local machine
 - **Consumer** (`dsh-tool-bash`) — exposes the capability as a model-callable tool
 
 ```
 ┌─────────────┐     ┌──────────────────┐     ┌──────────────┐
-│  dsh-bash   │────▶│  dsh-bash-local  │     │ dsh-tool-bash│
+│  dsh-shell   │────▶│  dsh-bash-local  │     │ dsh-tool-bash│
 │(definition) │     │    (provider)     │     │(consumer/tool)│
 └─────────────┘     └──────────────────┘     └──────────────┘
        ▲                                            │
        └────────────────────────────────────────────┘
-                    inject: ['bash']
+                    inject: ['shell']
 ```
 
 ## Benefits of the split
@@ -43,15 +43,15 @@ The Service Definition and tool remain unchanged while the provider changes.
 
 ### Evolve independently
 
-- The Service Definition changes rarely after its contract stabilizes.
-- Service providers can improve performance and security independently.
+- The Service Definition changes rarely after callers depend on its contract.
+- Service Providers can improve performance and security independently.
 - Consumers can change how they present the capability to the model.
 
 ### Decouple dependencies
 
-- The Service provider depends on the Service Definition.
+- The Service Provider depends on the Service Definition.
 - The Consumer depends on the Service Definition.
-- The Service provider and Consumer **do not depend on each other**.
+- The Service Provider and Consumer **do not depend on each other**.
 
 The [capability-seam reference](../../../capability-seams.md) owns the current built-in families and package links.
 
@@ -61,9 +61,9 @@ The [capability-seam reference](../../../capability-seams.md) owns the current b
 
 ```ts ignore-check
 // packages/my-cap/my-cap/src/index.ts
-import { Service, type Context } from 'cordis'
+import { Service, type Context } from '@deepseek-ai/cordis'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     myCap: MyCapService
   }
@@ -87,11 +87,11 @@ export interface MyCapResult {
 }
 ```
 
-### Step 2: write a Service provider
+### Step 2: write a Service Provider
 
 ```ts ignore-check
 // packages/my-cap/my-cap-local/src/index.ts
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import { MyCapService, type MyCapRequest, type MyCapResult } from '@deepseek-ai/dsh-my-cap'
 
 class MyCapLocal extends MyCapService {
@@ -112,7 +112,7 @@ export function apply(ctx: Context) {
 
 ```ts ignore-check
 // packages/my-cap/tool-my-cap/src/index.ts
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export const name = 'tool-my-cap'
@@ -147,7 +147,7 @@ export function apply(ctx: Context) {
 ## Design points
 
 - **Do not split preemptively** — use separate packages only when the roles need to evolve independently. A simple tool plugin does not.
-- **The Service Definition owns Request/Result types** — Service providers and Consumers depend only on the Service Definition package.
+- **The Service Definition owns Request/Result types** — Service Providers and Consumers depend only on the Service Definition package.
 - **Explicit > implicit** — resolve defaults in an explicit `resolve(request): Spec` step rather than hiding `?? default` expressions inside `run()`.
 
 ## Next steps

@@ -1,30 +1,41 @@
 // MessageItem: simple chat nodes — user and consumed-steering bubbles
-// (right-aligned, with clock + copy IconActions; steering adds the
-// interjection caption that names it; branch lives only under assistant
-// answers), pending steering (caption + copy only), context injection,
+// (right-aligned, with clock + copy IconActions; branch lives only under
+// assistant answers), pending steering (copy only), context injection,
 // compaction marker, retry disclosure, and unknown-surface JSON rows.
 
 import { memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
-  ModelRetryNode, TurnErrorNode,
+  ModelRetryNode, TurnErrorNode, UserMessageNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { JsonBlock, MessageText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
+import { ImageGallery, type ImageLoader } from '@deepseek-ai/dsh-client-ui-attachment'
+import { messageImageLabels } from '../image-labels.ts'
 import { CompactionItem } from './CompactionItem.tsx'
 import { ContextInjectionRow } from './ContextInjectionRow.tsx'
 import { MessageIconActions } from './MessageIconActions.tsx'
 import css from './MessageItem.module.css'
 
-function contentText(content: readonly unknown[]): { text: string; rest: unknown[] } {
+type UserImage = Extract<UserMessageNode['content'][number], { type: 'image' }>
+
+function contentParts(content: readonly unknown[]): {
+  text: string
+  images: { attachment: UserImage['attachment'] }[]
+  rest: unknown[]
+} {
   const texts: string[] = []
+  const images: { attachment: UserImage['attachment'] }[] = []
   const rest: unknown[] = []
   for (const block of content) {
-    const b = block as { type?: string; text?: string }
+    const b = block as { type?: string; text?: string; attachment?: unknown }
     if (b.type === 'text' && typeof b.text === 'string') texts.push(b.text)
+    else if (b.type === 'image' && b.attachment !== undefined) {
+      images.push({ attachment: (b as UserImage).attachment })
+    }
     else rest.push(block)
   }
-  return { text: texts.join(''), rest }
+  return { text: texts.join(''), images, rest }
 }
 
 function retrySeconds(milliseconds: number): number {
@@ -119,6 +130,21 @@ function TurnErrorItem({ node, t }: {
   )
 }
 
+/** Persistent, turn-positioned notice for a turn ended at the output-token cap. */
+function TurnMaxTokensItem({ t }: {
+  t: ChatViewSlotProps['t']
+}) {
+  return (
+    <div className={css.turnErrorRow} role="status">
+      <StateDot state="warning" className={css.turnErrorDot} />
+      <div className={css.turnErrorCopy}>
+        <span className={css.maxTokensTitle}>{t('message.maxTokens')}</span>
+        <span className={css.turnErrorMessage}>{t('message.maxTokens.hint')}</span>
+      </div>
+    </div>
+  )
+}
+
 /**
  * Display projection of reference forms in a user bubble (free geometry — no
  * textarea alignment constraint here); everything else stays plain text. The
@@ -151,25 +177,27 @@ function projectUserText(text: string): ReactNode {
 
 /** Right-aligned bubble shared by user and steering rows. */
 function UserStyleBubble({
-  content, actions, pending = false, steering = false, t,
+  content, imageLoader, actions, pending = false, t,
 }: {
   content: readonly unknown[]
+  imageLoader: ImageLoader
   /** Optional IconActions (or similar) below the bubble; receives the joined text. */
   actions?: (text: string) => ReactNode
   /** Whether this is the Host-authoritative pre-admission steering projection. */
   pending?: boolean
-  /** Marks the bubble as mid-turn steering rather than a turn-opening prompt. */
-  steering?: boolean
   t: ChatViewSlotProps['t']
 }): ReactNode {
-  const { text, rest } = contentText(content)
+  const { text, images, rest } = contentParts(content)
   const truncated = (total: number): string => t('json.truncated', { total })
+  const showBubble = text !== '' || rest.length > 0
   return (
     <div className={css.userRow} data-pending-steering={pending || undefined} data-time-hover-root>
-      {steering && <span className={css.steeringMark} data-steering-mark>{t('message.steering')}</span>}
-      <div className={css.bubble}>
-        {projectUserText(text)}
-        {rest.map((block, i) => <JsonBlock key={i} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />)}
+      <div className={css.userStack}>
+        <ImageGallery images={images} load={imageLoader} align="end" labels={messageImageLabels(t)} />
+        {showBubble && <div className={css.bubble}>
+          {projectUserText(text)}
+          {rest.map((block, i) => <JsonBlock key={i} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />)}
+        </div>}
       </div>
       {actions?.(text)}
     </div>
@@ -182,15 +210,17 @@ function UserStyleBubble({
  * @param props - Pending message content and conversation translator.
  * @returns the pending steering bubble.
  */
-export function PendingSteeringBubble({ content, t }: {
+export function PendingSteeringBubble({ content, loadImage, t }: {
   content: readonly unknown[]
+  loadImage?: ImageLoader
   t: ChatViewSlotProps['t']
 }): ReactNode {
+  const imageLoader = loadImage ?? (() => Promise.reject(new Error(t('image.serviceUnavailable'))))
   return (
     <UserStyleBubble
       content={content}
+      imageLoader={imageLoader}
       pending
-      steering
       t={t}
       actions={text => (
         <MessageIconActions
@@ -206,13 +236,13 @@ export function PendingSteeringBubble({ content, t }: {
 
 /** User and admitted-steering keyed Chat renderer. */
 export const UserMessageNodeView = memo(function UserMessageNodeView({
-  node, t,
+  node, loadImage, t,
 }: ChatNodeViewProps<'user' | 'steering'>) {
   const data = node.data
   return (
     <UserStyleBubble
       content={data.content}
-      steering={data.kind === 'steering'}
+      imageLoader={loadImage}
       t={t}
       actions={text => (
         <MessageIconActions
@@ -255,6 +285,11 @@ export const RetryNodeView = memo(function RetryNodeView({ node, t }: ChatNodeVi
 /** Terminal turn-error keyed Chat renderer. */
 export const TurnErrorNodeView = memo(function TurnErrorNodeView({ node, t }: ChatNodeViewProps<'turn-error'>) {
   return <TurnErrorItem node={node.data} t={t} />
+})
+
+/** Max-tokens turn-end notice keyed Chat renderer. */
+export const TurnMaxTokensNodeView = memo(function TurnMaxTokensNodeView({ t }: ChatNodeViewProps<'turn-max-tokens'>) {
+  return <TurnMaxTokensItem t={t} />
 })
 
 /** Explicit unknown-surface keyed Chat renderer. */

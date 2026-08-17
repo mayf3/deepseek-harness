@@ -7,7 +7,7 @@ Every event type that can appear in a session's durable event log: the complete 
 
 This file is GENERATED from source (`scripts/gen-persistence-catalog.ts`) and verified fresh by `pnpm run verify-persistence-catalog` (part of `doc-sync`) — do not edit it by hand. Declaration blocks retain the source declaration and nested property JSDoc, removing only the indentation imposed by a containing interface/module, and use a `ts persistence-catalog` fence (skipped by doc-typecheck because declarations reference types from their owning modules). Type names in a payload link to the page that documents them. See [the persistence-log-catalog Agent Note](../.agents/notes/archived/process/2026-07-04-persistence-log-catalog.md).
 
-The envelope declarations below compose each event's `type`, monotonic `seq`, epoch-ms `time`, `data`, and the conditional `surfaceOp`/`sourceEventSeqs` fields. **surface** marks a `SurfaceEventType` member: it produces an LLM message and declares how it joins the surface list. **log-only** marks everything else: a durable, replayable record with no derived-history contribution. Every payload is JSON-serializable (enforced at `Session.append`), and the whole format is pinned at `SESSION_FORMAT_VERSION = 0` — pre-release, no compatibility implied ([the version stance](subsystems/persistence.md)). Scope: the packages in this repo; a downstream plugin can merge further event types, which are outside this catalog by construction.
+The envelope declarations below compose each event's `type`, monotonic `seq`, epoch-ms `time`, `data`, the optional `ignorable` unknown-type skip marker, and the conditional `surfaceOp`/`sourceEventSeqs` fields. **surface** marks a `SurfaceEventType` member: it produces an LLM message and declares how it joins the surface list. **log-only** marks everything else: a durable, replayable record with no derived-history contribution. Every payload is JSON-serializable (enforced at `Session.append`), and the whole format is pinned at `SESSION_FORMAT_VERSION = 0` — pre-release, no compatibility implied ([the version stance](subsystems/persistence.md)). Scope: the packages in this repo; a downstream plugin can merge further event types, which are outside this catalog by construction.
 
 ## Event envelope
 
@@ -63,6 +63,17 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
     /** Unix epoch milliseconds. */
     time: number
     data: SessionEventMap[K]
+    /**
+     * Marks an event a reader may safely skip when it does not recognize
+     * `type`. Absent means required: a reader meeting an unrecognized type
+     * without this marker MUST refuse to reconstruct the session instead of
+     * silently dropping the event, because an unrecognized required event may
+     * change how the rest of the log is interpreted. A writer sets `true` only
+     * on purely informational records whose loss cannot affect reconstruction;
+     * defaulting to required means a forgotten marker over-refuses (an
+     * inconvenience) rather than silently resuming a gutted session.
+     */
+    ignorable?: true
   } & (K extends SurfaceEventType ? {
     /**
      * Seq numbers of earlier events that this event cites as sources
@@ -79,11 +90,13 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:320`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:327`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:356`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:388`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:340`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:347`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:376`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:408`](../packages/core/session/src/types.ts)
 
 ## Events
 
 ### `agent/*`
+
+<a id="agentinboxspliced--log-only"></a>
 
 #### `agent/inbox/spliced` — log-only
 
@@ -106,6 +119,8 @@ Source: [`packages/core/agent/src/types.ts:19`](../packages/core/agent/src/types
 
 ### `agent-preset/*`
 
+<a id="agent-presetselected--log-only"></a>
+
 #### `agent-preset/selected` — log-only
 
 ```ts persistence-catalog
@@ -121,6 +136,8 @@ Source: [`packages/core/agent/src/types.ts:19`](../packages/core/agent/src/types
 Source: [`packages/preset/agent-presets/src/session.ts:26`](../packages/preset/agent-presets/src/session.ts)
 
 ### `approval/*`
+
+<a id="approvalasked--log-only"></a>
 
 #### `approval/asked` — log-only
 
@@ -145,6 +162,8 @@ Types: [CallId](subsystems/core.md)
 
 Source: [`packages/interaction/user-approval/src/index.ts:44`](../packages/interaction/user-approval/src/index.ts)
 
+<a id="approvaldecided--log-only"></a>
+
 #### `approval/decided` — log-only
 
 ```ts persistence-catalog
@@ -160,6 +179,8 @@ Source: [`packages/interaction/user-approval/src/index.ts:44`](../packages/inter
 ```
 
 Source: [`packages/interaction/user-approval/src/index.ts:55`](../packages/interaction/user-approval/src/index.ts)
+
+<a id="approvalpolicy--log-only"></a>
 
 #### `approval/policy` — log-only
 
@@ -183,6 +204,8 @@ Source: [`packages/interaction/user-approval/src/index.ts:67`](../packages/inter
 
 ### `assistant/*`
 
+<a id="assistantchunk--log-only"></a>
+
 #### `assistant/chunk` — log-only
 
 ```ts persistence-catalog
@@ -192,7 +215,9 @@ Source: [`packages/interaction/user-approval/src/index.ts:67`](../packages/inter
 
 Types: [StreamChunk](subsystems/llm-streaming.md)
 
-Source: [`packages/core/session/src/types.ts:246`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:266`](../packages/core/session/src/types.ts)
+
+<a id="assistantmessage--surface"></a>
 
 #### `assistant/message` — surface
 
@@ -203,18 +228,20 @@ Source: [`packages/core/session/src/types.ts:246`](../packages/core/session/src/
  * the model output and its accounting travel together (there is no separate
  * usage record). `usage` is absent when the adapter reported none. A turn
  * cancelled mid-stream finalizes its delivered text/reasoning prefix as this
- * event with `interrupted: true` (undispatched tool calls are absent), so
- * consumers classify the truncation without re-deriving it from turn
- * boundaries; an aborted turn with no such event streamed no visible content.
+ * event with `interrupted: true`; undispatched tool calls are absent. The
+ * marker distinguishes that prefix without re-deriving interruption from turn
+ * boundaries. An aborted turn with no such event streamed no visible content.
  */
 'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true }
 ```
 
 Types: [TokenUsage](subsystems/llm-streaming.md)
 
-Source: [`packages/core/session/src/types.ts:257`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:277`](../packages/core/session/src/types.ts)
 
 ### `command/*`
+
+<a id="commanddone--log-only"></a>
 
 #### `command/done` — log-only
 
@@ -233,7 +260,9 @@ Source: [`packages/core/session/src/types.ts:257`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/interaction/commands/src/types.ts:41`](../packages/interaction/commands/src/types.ts)
+Source: [`packages/interaction/commands/src/types.ts:95`](../packages/interaction/commands/src/types.ts)
+
+<a id="commandrun--log-only"></a>
 
 #### `command/run` — log-only
 
@@ -251,35 +280,39 @@ Source: [`packages/interaction/commands/src/types.ts:41`](../packages/interactio
 'command/run': { commandId: CommandId; name: string; args?: string; source: CommandSource }
 ```
 
-Source: [`packages/interaction/commands/src/types.ts:34`](../packages/interaction/commands/src/types.ts)
+Source: [`packages/interaction/commands/src/types.ts:88`](../packages/interaction/commands/src/types.ts)
 
-### `compact/*`
+### `compaction/*`
 
-#### `compact/end` — log-only
+<a id="compactionend--log-only"></a>
+
+#### `compaction/end` — log-only
 
 ```ts persistence-catalog
 /**
  * Marks the end of a compaction — log-only, releases the lock. Its owner
- * matches `compact/start`; `error` records an unsuccessful attempt.
+ * matches `compaction/start`; `error` records an unsuccessful attempt.
  */
-'compact/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string }
+'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string }
 ```
 
-Source: [`packages/compact/compact/src/types.ts:71`](../packages/compact/compact/src/types.ts)
+Source: [`packages/compaction/compaction/src/types.ts:71`](../packages/compaction/compaction/src/types.ts)
 
-#### `compact/prune` — log-only
+<a id="compactionprune--log-only"></a>
+
+#### `compaction/prune` — log-only
 
 ```ts persistence-catalog
 /**
  * Shadow price of one model-free prune replacement — log-only, no
  * surfaceOp. The shared shadow-price protocol: a surface `replace` event
- * is priced by the metering event immediately before it (`compact/summary`
+ * is priced by the metering event immediately before it (`compaction/summary`
  * for a summarizing compaction, this event for a prune), which states the
  * heuristic token price of the exact replaced range so a pure consumer
  * can subtract it without retaining per-node prices. The replacement MUST
  * be appended synchronously right after this event.
  */
-'compact/prune': {
+'compaction/prune': {
   /** The replaced range's first and last surface-node seqs (a surface-position span, like {@link CompactionResult.shadowedRange}). */
   shadowedRange: { start: number; end: number }
   /** The seqs of all shadowed surface nodes, in surface order. */
@@ -289,22 +322,26 @@ Source: [`packages/compact/compact/src/types.ts:71`](../packages/compact/compact
 }
 ```
 
-Source: [`packages/compact/compact/src/types.ts:81`](../packages/compact/compact/src/types.ts)
+Source: [`packages/compaction/compaction/src/types.ts:81`](../packages/compaction/compaction/src/types.ts)
 
-#### `compact/start` — log-only
+<a id="compactionstart--log-only"></a>
+
+#### `compaction/start` — log-only
 
 ```ts persistence-catalog
 /**
  * Marks the start of a compaction — log-only, holds the lock until
- * `compact/end`. A numbered owner is strictly enclosed by that open turn;
+ * `compaction/end`. A numbered owner is strictly enclosed by that open turn;
  * `null` identifies a standalone manual transaction between turns.
  */
-'compact/start': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null }
+'compaction/start': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null }
 ```
 
-Source: [`packages/compact/compact/src/types.ts:23`](../packages/compact/compact/src/types.ts)
+Source: [`packages/compaction/compaction/src/types.ts:23`](../packages/compaction/compaction/src/types.ts)
 
-#### `compact/summary` — log-only
+<a id="compactionsummary--log-only"></a>
+
+#### `compaction/summary` — log-only
 
 ```ts persistence-catalog
 /**
@@ -314,9 +351,9 @@ Source: [`packages/compact/compact/src/types.ts:23`](../packages/compact/compact
  * shadows the compacted range. That adjacency is contractual — the
  * shadowed pricing fields are the replacement's shadow price, so a
  * consumer may pair a replacement with the metering event directly
- * before it (`compact/prune` documents the shared protocol).
+ * before it (`compaction/prune` documents the shared protocol).
  */
-'compact/summary': {
+'compaction/summary': {
   compactionId: CompactionId
   sourceCommandId?: CommandId
   summary: ContentBlock[]
@@ -354,23 +391,27 @@ Source: [`packages/compact/compact/src/types.ts:23`](../packages/compact/compact
 
 Types: [ContentBlock](subsystems/core.md) · [TokenUsage](subsystems/llm-streaming.md)
 
-Source: [`packages/compact/compact/src/types.ts:33`](../packages/compact/compact/src/types.ts)
+Source: [`packages/compaction/compaction/src/types.ts:33`](../packages/compaction/compaction/src/types.ts)
 
 ### `feedback/*`
+
+<a id="feedbackrecord--log-only"></a>
 
 #### `feedback/record` — log-only
 
 ```ts persistence-catalog
 /**
  * One recorded human remark about this session. Log-only and independent
- * of its trigger; it never enters the model surface or derived history.
+ * of its trigger; it never enters model context or derived history.
  */
 'feedback/record': { text: string }
 ```
 
-Source: [`packages/feedback/command-feedback/src/index.ts:24`](../packages/feedback/command-feedback/src/index.ts)
+Source: [`packages/feedback/command-feedback/src/index.ts:62`](../packages/feedback/command-feedback/src/index.ts)
 
 ### `goal/*`
+
+<a id="goalchange--log-only"></a>
 
 #### `goal/change` — log-only
 
@@ -385,12 +426,14 @@ Source: [`packages/goal/goal/src/domain.ts:66`](../packages/goal/goal/src/domain
 
 ### `hook/*`
 
+<a id="hookinvoked--log-only"></a>
+
 #### `hook/invoked` — log-only
 
 ```ts persistence-catalog
 /**
  * A hook command was invoked at a hook point — a log-only record (like
- * `compact/*`; NOT a {@link SurfaceEventType}, carries no `surfaceOp`).
+ * `compaction/*`; NOT a {@link SurfaceEventType}, carries no `surfaceOp`).
  * `dialect` is the bridge that ran it (`claude`/`codex`), `point`
  * the hook point (`PreToolUse`, `Stop`, …), `matcher` the matcher-group
  * pattern that selected it (absent for match-all), `handlerId` a stable id
@@ -407,6 +450,8 @@ Source: [`packages/goal/goal/src/domain.ts:66`](../packages/goal/goal/src/domain
 ```
 
 Source: [`packages/hooks/hook-protocol/src/types.ts:19`](../packages/hooks/hook-protocol/src/types.ts)
+
+<a id="hookresult--log-only"></a>
 
 #### `hook/result` — log-only
 
@@ -431,6 +476,8 @@ Source: [`packages/hooks/hook-protocol/src/types.ts:31`](../packages/hooks/hook-
 
 ### `llm/*`
 
+<a id="llmretry--log-only"></a>
+
 #### `llm/retry` — log-only
 
 ```ts persistence-catalog
@@ -439,6 +486,8 @@ Source: [`packages/hooks/hook-protocol/src/types.ts:31`](../packages/hooks/hook-
 ```
 
 Source: [`packages/llm/llm-retry/src/types.ts:9`](../packages/llm/llm-retry/src/types.ts)
+
+<a id="llmretry-started--log-only"></a>
 
 #### `llm/retry-started` — log-only
 
@@ -450,6 +499,8 @@ Source: [`packages/llm/llm-retry/src/types.ts:9`](../packages/llm/llm-retry/src/
 Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src/types.ts)
 
 ### `permission/*`
+
+<a id="permissionpreset--log-only"></a>
 
 #### `permission/preset` — log-only
 
@@ -463,9 +514,11 @@ Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src
 'permission/preset': { preset: string }
 ```
 
-Source: [`packages/interaction/permission/src/index.ts:50`](../packages/interaction/permission/src/index.ts)
+Source: [`packages/interaction/permission-presets/src/index.ts:50`](../packages/interaction/permission-presets/src/index.ts)
 
 ### `plan/*`
+
+<a id="planmode--log-only"></a>
 
 #### `plan/mode` — log-only
 
@@ -478,9 +531,11 @@ Source: [`packages/interaction/permission/src/index.ts:50`](../packages/interact
 'plan/mode': { active: boolean }
 ```
 
-Source: [`packages/plan/plan-mode/src/index.ts:52`](../packages/plan/plan-mode/src/index.ts)
+Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/src/index.ts)
 
 ### `request/*`
+
+<a id="requestcontext--log-only"></a>
 
 #### `request/context` — log-only
 
@@ -492,7 +547,9 @@ Source: [`packages/plan/plan-mode/src/index.ts:52`](../packages/plan/plan-mode/s
 'request/context': RequestContext
 ```
 
-Source: [`packages/core/session/src/types.ts:293`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:313`](../packages/core/session/src/types.ts)
+
+<a id="requestheader--log-only"></a>
 
 #### `request/header` — log-only
 
@@ -504,9 +561,11 @@ Source: [`packages/core/session/src/types.ts:293`](../packages/core/session/src/
 'request/header': { header: EpochHeader; reason: RequestHeaderReason }
 ```
 
-Source: [`packages/core/session/src/types.ts:288`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:308`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
+
+<a id="sandboxmode--log-only"></a>
 
 #### `sandbox/mode` — log-only
 
@@ -527,7 +586,27 @@ Source: [`packages/core/session/src/types.ts:288`](../packages/core/session/src/
 
 Source: [`packages/sandbox/sandbox-policy/src/session-mode.ts:33`](../packages/sandbox/sandbox-policy/src/session-mode.ts)
 
+### `schedule/*`
+
+<a id="schedulechange--log-only"></a>
+
+#### `schedule/change` — log-only
+
+```ts persistence-catalog
+/**
+ * Versioned Schedule mutation. The owning package validates the complete
+ * session-local transition stream before accepting a candidate event.
+ */
+'schedule/change': ScheduleChange
+```
+
+Types: [ScheduleChange](subsystems/schedule.md)
+
+Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/schedule/src/types.ts)
+
 ### `session/*`
+
+<a id="sessionend-seed--log-only"></a>
 
 #### `session/end-seed` — log-only
 
@@ -547,8 +626,8 @@ Source: [`packages/sandbox/sandbox-policy/src/session-mode.ts:33`](../packages/s
  * companion deliberately constrains nothing here, so a plugin appending one
  * would silently classify every live bracket before it as seed history.
  *
- * An owner of a standalone open/close bracket (`compact/start` …
- * `compact/end`) reads it because seed history and live work are otherwise
+ * An owner of a standalone open/close bracket (`compaction/start` …
+ * `compaction/end`) reads it because seed history and live work are otherwise
  * byte-identical: an unmatched opening marker before this event belongs to
  * an ended lifecycle, whatever ended it. NOT a liveness signal about other
  * writers — a concurrently live session holds its own boundary elsewhere,
@@ -557,7 +636,9 @@ Source: [`packages/sandbox/sandbox-policy/src/session-mode.ts:33`](../packages/s
 'session/end-seed': Record<string, never>
 ```
 
-Source: [`packages/core/session/src/types.ts:316`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:336`](../packages/core/session/src/types.ts)
+
+<a id="sessiontitle--log-only"></a>
 
 #### `session/title` — log-only
 
@@ -573,6 +654,8 @@ Types: [SessionTitleEventData](subsystems/session-title.md)
 
 Source: [`packages/session/session-title/src/index.ts:100`](../packages/session/session-title/src/index.ts)
 
+<a id="sessiontitle-llm-request--log-only"></a>
+
 #### `session/title-llm-request` — log-only
 
 ```ts persistence-catalog
@@ -586,6 +669,8 @@ Source: [`packages/session/session-title-llm/src/index.ts:43`](../packages/sessi
 
 ### `step/*`
 
+<a id="stepend--log-only"></a>
+
 #### `step/end` — log-only
 
 ```ts persistence-catalog
@@ -593,7 +678,9 @@ Source: [`packages/session/session-title-llm/src/index.ts:43`](../packages/sessi
 'step/end': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:236`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:256`](../packages/core/session/src/types.ts)
+
+<a id="stepstart--log-only"></a>
 
 #### `step/start` — log-only
 
@@ -602,9 +689,11 @@ Source: [`packages/core/session/src/types.ts:236`](../packages/core/session/src/
 'step/start': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:234`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:254`](../packages/core/session/src/types.ts)
 
 ### `subagent/*`
+
+<a id="subagentdescriptor--log-only"></a>
 
 #### `subagent/descriptor` — log-only
 
@@ -623,6 +712,8 @@ Source: [`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent
 
 ### `todo/*`
 
+<a id="todowrite--log-only"></a>
+
 #### `todo/write` — log-only
 
 ```ts persistence-catalog
@@ -632,9 +723,11 @@ Source: [`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent
 
 Types: [TodoItem](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:283`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:303`](../packages/core/session/src/types.ts)
 
 ### `tool/*`
+
+<a id="toolcall--log-only"></a>
 
 #### `tool/call` — log-only
 
@@ -649,7 +742,9 @@ Source: [`packages/core/session/src/types.ts:283`](../packages/core/session/src/
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:263`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:283`](../packages/core/session/src/types.ts)
+
+<a id="toolcode-dispatch--log-only"></a>
 
 #### `tool/code-dispatch` — log-only
 
@@ -674,6 +769,8 @@ Source: [`packages/core/session/src/types.ts:263`](../packages/core/session/src/
 
 Source: [`packages/core/tools/src/types.ts:56`](../packages/core/tools/src/types.ts)
 
+<a id="toolcode-dispatch-start--log-only"></a>
+
 #### `tool/code-dispatch-start` — log-only
 
 ```ts persistence-catalog
@@ -694,6 +791,8 @@ Source: [`packages/core/tools/src/types.ts:56`](../packages/core/tools/src/types
 ```
 
 Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types.ts)
+
+<a id="toolresult--surface"></a>
 
 #### `tool/result` — surface
 
@@ -718,9 +817,69 @@ Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:275`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:295`](../packages/core/session/src/types.ts)
+
+### `tool-workflow/*`
+
+<a id="tool-workflowagent-end--log-only"></a>
+
+#### `tool-workflow/agent-end` — log-only
+
+```ts persistence-catalog
+/**
+ * Records one member settlement.
+ * @param data - run identity, paired member sequence, and outcome.
+ */
+'tool-workflow/agent-end': ToolWorkflowAgentEndData
+```
+
+Source: [`packages/workflow/tool-workflow/src/types.ts:57`](../packages/workflow/tool-workflow/src/types.ts)
+
+<a id="tool-workflowagent-start--log-only"></a>
+
+#### `tool-workflow/agent-start` — log-only
+
+```ts persistence-catalog
+/**
+ * Records one published workflow member.
+ * @param data - run identity, member sequence, display identity, and child Session.
+ */
+'tool-workflow/agent-start': ToolWorkflowAgentStartData
+```
+
+Source: [`packages/workflow/tool-workflow/src/types.ts:52`](../packages/workflow/tool-workflow/src/types.ts)
+
+<a id="tool-workflowrun-end--log-only"></a>
+
+#### `tool-workflow/run-end` — log-only
+
+```ts persistence-catalog
+/**
+ * Closes one workflow record after cleanup.
+ * @param data - stable run identity and terminal reason.
+ */
+'tool-workflow/run-end': ToolWorkflowRunEndData
+```
+
+Source: [`packages/workflow/tool-workflow/src/types.ts:62`](../packages/workflow/tool-workflow/src/types.ts)
+
+<a id="tool-workflowrun-start--log-only"></a>
+
+#### `tool-workflow/run-start` — log-only
+
+```ts persistence-catalog
+/**
+ * Opens one top-level workflow record.
+ * @param data - stable run identity and display name.
+ */
+'tool-workflow/run-start': ToolWorkflowRunStartData
+```
+
+Source: [`packages/workflow/tool-workflow/src/types.ts:47`](../packages/workflow/tool-workflow/src/types.ts)
 
 ### `turn/*`
+
+<a id="turnend--log-only"></a>
 
 #### `turn/end` — log-only
 
@@ -738,7 +897,9 @@ Source: [`packages/core/session/src/types.ts:275`](../packages/core/session/src/
 
 Types: [TurnEndReason](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:232`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:252`](../packages/core/session/src/types.ts)
+
+<a id="turnstart--log-only"></a>
 
 #### `turn/start` — log-only
 
@@ -752,9 +913,11 @@ Source: [`packages/core/session/src/types.ts:232`](../packages/core/session/src/
 'turn/start': { turn: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:223`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:243`](../packages/core/session/src/types.ts)
 
 ### `user/*`
+
+<a id="usermessage--surface"></a>
 
 #### `user/message` — surface
 
@@ -769,9 +932,11 @@ Source: [`packages/core/session/src/types.ts:223`](../packages/core/session/src/
 'user/message': UserMessage
 ```
 
-Source: [`packages/core/session/src/types.ts:244`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:264`](../packages/core/session/src/types.ts)
 
 ### `web/*`
+
+<a id="webdeepseek-search-llm-request--log-only"></a>
 
 #### `web/deepseek-search-llm-request` — log-only
 

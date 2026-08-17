@@ -28,10 +28,10 @@
       "path": "../fs"
     },
     {
-      "path": "../fs-policy"
+      "path": "../fs-observation-policy"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../runtime-diagnostics/invariants"
     },
     {
       "path": "../../sandbox/sandbox"
@@ -41,6 +41,9 @@
     },
     {
       "path": "../../interaction/user-approval"
+    },
+    {
+      "path": "../../attachment/attachment"
     }
   ]
 }

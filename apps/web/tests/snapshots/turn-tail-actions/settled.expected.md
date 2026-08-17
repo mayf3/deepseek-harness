@@ -2,7 +2,10 @@
   - navigation "Session hierarchy":
     - button "Begin your reply with the" [disabled]
   - img
-  - text: 标准模式
+  - text: Standard mode
+  - button "Session log":
+    - text: Session log
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -27,6 +30,10 @@
 - button "Copy":
   - img
 - tooltip "Copy"
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
 - button "Branch into a new conversation":
   - img
 - text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s

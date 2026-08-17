@@ -107,6 +107,8 @@ export interface RemoteBoundaryModel {
   readonly type: TypeNodeId
   /** Checker-resolved projection used only to emit the runtime codec. */
   readonly codecType: TypeNodeId
+  /** Whether the authored top-level boundary explicitly accepts `undefined`. */
+  readonly acceptsUndefined: boolean
   readonly typeSymbol: string
   readonly imports: readonly RemoteTypeImportModel[]
 }
@@ -117,10 +119,12 @@ export interface InvocationParameterModel {
   readonly wire: string
   readonly source: 'json' | 'lookup'
   readonly lookup?: string
+  /** Authored as an optional parameter, so consumers may omit the wire field. */
+  readonly optional?: true
   readonly boundary: RemoteBoundaryModel
 }
 
-/** One strictly analyzed Host method exported through TypeRT Gateway. */
+/** One strictly analyzed Host method exported through Typert Gateway. */
 export interface InvocationModel {
   readonly id: string
   readonly service: string

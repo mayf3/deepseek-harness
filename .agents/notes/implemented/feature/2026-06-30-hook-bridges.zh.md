@@ -1,4 +1,4 @@
-# Agent Note: dsh-hooks-claude + dsh-hooks-codex —— Claude Code / Codex 钩子桥接插件
+# Agent Note: dsh-hooks-claude-code + dsh-hooks-codex —— Claude Code / Codex 钩子桥接插件
 
 Status: implemented
 
@@ -8,13 +8,13 @@ Status: implemented
 
 harness 的扩展面是其类型化拦截点（见[拦截扩展点 Agent Note](2026-06-30-interception-extension-points.md)）：所谓「原生钩子」不过是一个普通的 Cordis 插件，订阅 `agent/session-start`、`agent/pre-step`、`tools/pre-execute`、`tools/post-execute`、`agent/turn-stopping`、`subagent/start` 或 `subagent/end`。但用户带着**既有的** Claude Code（CC）和 Codex 钩子配置到来，一个 `hooks.json`（或 settings 文件中的 `hooks` 键）里满是 shell 命令钩子，并希望它们原样运行。本 Agent Note 引入两个**桥接插件**，将外部 shell 钩子协议翻译到类型化扩展点上，构建于共享的协议格式（wire format）库之上（见 [hook-protocol-lib Agent Note](2026-06-30-hook-protocol-lib.md)）。
 
-贯穿整个设计的定位：**桥接是兼容性适配器，不是高级工具。** 桥接能做的事（阻止工具、注入上下文、强制继续、观察 subagent），原生 Cordis 插件都能做得更强——类型化返回值、完整 `ctx`、无序列化边界。桥接存在的理由是运行外部 CC/Codex 命令钩子中被明确支持的子集。这使每个桥接保持精简：解析配置、选择匹配模式、构建每事件的 payload、调用共享库的 `runHook` + `mergeHookOutputs`，再将中性结果映射为类型化 Decision。各包的 README 维护着当前不支持的事件和部分字段的完整清单，以官方协议为参照。
+核心规则是：**桥接是兼容性适配器，不是高级工具。** 桥接能做的事（阻止工具、注入上下文、强制继续、观察 subagent），原生 Cordis 插件都能做得更强——类型化返回值、完整 `ctx`、无序列化边界。桥接存在的理由是运行外部 CC/Codex 命令钩子中被明确支持的子集。这使每个桥接保持精简：解析配置、选择匹配模式、构建每事件的 payload、调用共享库的 `runHook` + `mergeHookOutputs`，再将中性结果映射为类型化 Decision。各包的 README 维护着当前不支持的事件和部分支持的字段的完整清单，以官方协议为参照。
 
 ## 决策
 
 `packages/hooks/` 组下两个独立插件，各为 function/namespace 插件（`name`/`inject`/`Config`/`apply`，无 default export——见[事故复盘（postmortem）0001](../../../../docs/postmortem/0001-acp-default-export-drops-inject.md)），仅注入 `bash`：
 
-- **`dsh-hooks-claude`**——CC 方言。Claude Code 当前钩子点中的七个：`SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`Stop`、`SubagentStart` 和 `SubagentStop`。负责构建 CC 形态的逐事件 stdin payload（基础字段 `session_id`/`transcript_path`/`cwd`/`hook_event_name` 加每事件字段）、`CLAUDE_PROJECT_DIR` 环境变量加 `${CLAUDE_PLUGIN_ROOT}`/`${CLAUDE_PROJECT_DIR}` 替换，以及字面量或正则的匹配模式。`transcript_path` 是持久化定位器结果或 `''`；stdin 带有**尾部换行**。
+- **`dsh-hooks-claude-code`**——CC 方言。Claude Code 当前钩子点中的七个：`SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`Stop`、`SubagentStart` 和 `SubagentStop`。负责构建 CC 形态的逐事件 stdin payload（基础字段 `session_id`/`transcript_path`/`cwd`/`hook_event_name` 加每事件字段）、`CLAUDE_PROJECT_DIR` 环境变量加 `${CLAUDE_PLUGIN_ROOT}`/`${CLAUDE_PROJECT_DIR}` 替换，以及字面量或正则的匹配模式。`transcript_path` 是持久化定位器结果或 `''`；stdin 带有**尾部换行**。
 - **`dsh-hooks-codex`**——Codex 当前钩子点中的五个：`PreToolUse`、`PostToolUse`、`SessionStart`、`UserPromptSubmit` 和 `Stop`。它使用始终按正则解释的 matcher，输出 Codex 形态的 snake_case payload（含 `turn_id`/`model`/`permission_mode` 额外字段）且写入时不带尾部换行，不注入 Codex 插件环境变量，不做配置时占位符替换，也没有 pre-tool 审批或重写路径。`transcript_path` 是同一定位器结果或 `null`；工具 payload 在精简后的 `tool_input: { command }` 形态中携带真实的 `tool_name`。
 
 ### Outcome → Decision 映射
@@ -26,7 +26,7 @@ harness 的扩展面是其类型化拦截点（见[拦截扩展点 Agent Note](2
 | `agent/session-start`（emit） | additionalContext → `agent.inject()` | 纯 stdout 输出 → additionalContext → `agent.inject()` |
 | `agent/pre-step` | `deny`→`reject`；仅上下文→委托并折叠到 `enter` | `block`→`reject`；仅上下文→委托并折叠到 `enter` |
 | `tools/pre-execute` | `deny`→`deny`；`ask`→`ask` | `block`→`deny`（无 allow/ask） |
-| `tools/post-execute` | `deny`→`block`+feedback；仅上下文→delegate+fold | 同上 |
+| `tools/post-execute` | `deny`→`block`+反馈；仅上下文→委托并折叠 | 同上 |
 | `agent/turn-stopping` | 阻塞的 Stop → 下一步 steering（中途引导） | 同上 |
 | `subagent/start`（emit） | additionalContext → 注入到存活的进程内 subagent；远程 subagent 无本地注入目标 | 本桥接不支持 |
 | `subagent/end`（emit） | 仅观察 | 本桥接不支持 |
@@ -35,13 +35,13 @@ CC 桥接的 `ask` 结果是一条真正的权限路径，而非终态桥接决�
 
 ### 上下文来源始终是插件（误标签防护）
 
-每个桥接的 `inject()` 和 additional-context 输入都显式传入 `{ kind: 'plugin', plugin: 'hooks-claude' | 'hooks-codex' }`。单元测试固定验证结果中的 `user/message.source` 为插件而非用户。
+每个桥接的 `inject()` 和 additional-context 输入都显式传入 `{ kind: 'plugin', plugin: 'hooks-claude-code' | 'hooks-codex' }`。单元测试固定验证结果中的 `user/message.source` 为插件而非用户。
 
 `UserPromptSubmit` 在 `turn/start` 之后的 pre-step 运行，因此每次调用都会写入轮次范围的 `hook/invoked` / `hook/result` 对。拒绝会使已领取的输入维持移除状态，将轮次关闭为已阻止状态且不包含步骤，并保留该钩子对作为持久决策证据。Codex payload 会收到这个已打开轮次的 `turn_id`。
 
 ### 添加上下文不是否决——先 delegate，再 prepend
 
-仅附加 `additionalContext`（没有 block/deny）的钩子并不是桥接可以独自返回的决策：在 waterfall 监听器中不调用 `next()` 就返回 `enter`，会短路其后的每个 `agent/pre-step` / `tools/post-execute` 监听器，使注册在桥接之后的策略/沙箱插件看不到该提示词。因此，每个桥接都会先通过 `next()` 委托，再将自身上下文加入下游 enter 决策。桥接会保留所有下游消息；下游 pre-step reject 会丢弃整个已领取批次，因为步骤从未打开。工具后决策仍保留独立的有序 `additionalContexts` 语义，包括 Code Mode 通过外层 `run_code` 结果延迟上下文。只有钩子本身真正返回 `deny`/`block` 才会短路。测试断言：仅上下文钩子之后，较晚的监听器仍能 reject 提示词，且保留的提示词和工具后上下文仍彼此分离。
+仅附加 `additionalContext`（没有 block/deny）的钩子并不是桥接可以独自返回的决策：在 waterfall（瀑布式事件）监听器中不调用 `next()` 就返回 `enter`，会短路其后的每个 `agent/pre-step` / `tools/post-execute` 监听器，使注册在桥接之后的策略/沙箱插件看不到该提示词。因此，每个桥接都会先通过 `next()` 委托，再将自身上下文加入下游 enter 决策。桥接会保留所有下游消息；下游 pre-step reject 会丢弃整个已领取批次，因为步骤从未打开。工具后决策仍保留独立的有序 `additionalContexts` 语义，包括 Code Mode 通过外层 `run_code` 结果延迟上下文。只有钩子本身真正返回 `deny`/`block` 才会短路。测试断言：仅上下文钩子之后，较晚的监听器仍能 reject 提示词，且保留的提示词和工具后上下文仍彼此分离。
 
 ### CLAUDE_PROJECT_DIR 默认为会话工作区
 

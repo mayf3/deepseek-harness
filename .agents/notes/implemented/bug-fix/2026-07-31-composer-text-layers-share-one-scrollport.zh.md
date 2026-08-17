@@ -24,6 +24,8 @@ composer 的文本由两层叠放绘制（见 [InputBar](../../../../packages/cl
 
 于是浏览器在同一帧、同一个合成器上，把同一个偏移施加给两层。光标与字形的绑定来自结构本身，而不是来自持续维护：没有代码要跑，没有事件要等，也没有任何状态可能落后一帧。滚轮接力处理器保留，只是从 textarea 改挂到滚动容器上，并且仍是这个盒子上唯一的监听。
 
+Safari 的原生文本控件存在一个引擎例外：跨过软换行阈值的删除可能在镜像层收缩后仍保留原先的行布局。[Safari 软换行恢复](2026-08-13-safari-textarea-soft-wrap-reflow.md)会在绘制前恢复零溢出不变量，而不改变单滚动容器设计。
+
 上一版机制所需要的两样东西随它一起消失：
 
 **backdrop 的尾行哨兵。** 它的存在只是为了让两个盒子的滚动范围相等——textarea 会在末尾换行之后为光标保留一个行盒，而 `white-space: pre-wrap` 会折叠文本节点的尾随换行，因此以换行结尾的草稿会让 backdrop 少一行，把镜像偏移钳制在光标上方一行。改为单一滚动容器后，backdrop 自身的范围不再决定任何事：镜像层为两层统一定高，两层顶端对齐，内容更早结束的那一层只是在最后一行什么都不画。值得记住的是这类草稿形状而不是那套机制：正是它在「两个盒子必须就高度达成一致」的时代量出了 628 对 652。
@@ -71,7 +73,7 @@ composer 的文本由两层叠放绘制（见 [InputBar](../../../../packages/cl
 
 ## 测试
 
-[input-bar.spec.tsx](../../../../packages/client/ui-conversation/tests/input-bar.spec.tsx) 中的单元用例断言 jsdom 能看见的部分：同一个滚动盒同时包含 textarea 与 backdrop，backdrop 的文本现在就是草稿本身、不多不少，且渲染后才到达的持久化草稿会回视其光标，同时不从其他控件夺走焦点。jsdom 对任何元素都报告 `scrollHeight === clientHeight` 且从不滚动，因此几何属于浏览器场景；滚轮接力用例改为桩接滚动容器的度量，而非 textarea 的。
+[input-bar.spec.tsx](../../../../packages/client/ui-conversation/tests/input-bar.client.spec.tsx) 中的单元用例断言 jsdom 能看见的部分：同一个滚动盒同时包含 textarea 与 backdrop，backdrop 的文本现在就是草稿本身、不多不少，且渲染后才到达的持久化草稿会回视其光标，同时不从其他控件夺走焦点。jsdom 对任何元素都报告 `scrollHeight === clientHeight` 且从不滚动，因此几何属于浏览器场景；滚轮接力用例改为桩接滚动容器的度量，而非 textarea 的。
 
 [composer-draft-scroll.e2e.ts](../../../../apps/web/tests/composer-draft-scroll.e2e.ts) 在 chromium 中针对构建产物度量其余部分：全新工作区的空白 composer 中一份 40 行草稿，零模型调用。每个度量都在光标自己的坐标系里读取——即 textarea 把第 n 行放在哪，含其自身偏移——再与 backdrop 同一行文本上的 DOM Range 相比，因为这个差值正是用户看到的东西。决定性的用例改变偏移，并**在本任务结束之前**重新读取该差值，也就是在任何 `scroll` 监听可能运行之前：单一滚动容器下为 0，镜像方案下则是整个增量。空洞性保护先断言草稿确实超过了带上限的盒子；其余用例分别覆盖高度上限、三层同一折行宽度、滚轮手势、以换行结尾的草稿，以及过去由 textarea 自身滚动承担的光标回视路径——滚离光标后输入，必须把滚动容器带回光标处。
 

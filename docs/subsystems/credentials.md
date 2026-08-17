@@ -8,7 +8,7 @@ Source: [`packages/credentials/credentials/src/index.ts`](../../packages/credent
 
 ## Identity
 
-A reference names one credential as a POSIX-style environment-variable name. The brand keeps references from mixing with other cross-boundary strings; construction validates the shell-identifier shape.
+A reference names one credential as a POSIX-style environment-variable name. The brand prevents callers from mixing credential references with other strings passed between packages or processes; construction validates the shell-identifier syntax.
 
 ```ts type-equiv
 /** Nominal reference to one credential: a POSIX-style environment-variable name. */
@@ -36,11 +36,11 @@ interface ResolvedCredential {
 ```ts type-equiv
 /** Source and writability facts for one reference, safe for configuration UIs — never the value. */
 interface CredentialInfo {
-  /** Whether {@link Credentials.resolve} would currently return a value. */
+  /** Whether {@link CredentialProvider.resolve} would currently return a value. */
   configured: boolean
   /** Source layer currently supplying the value; absent while unconfigured. */
   source?: string
-  /** Whether {@link Credentials.set} would currently succeed for this reference. */
+  /** Whether {@link CredentialProvider.set} would currently succeed for this reference. */
   writable: boolean
 }
 ```
@@ -53,13 +53,13 @@ interface CredentialInfo {
 
 <a id="cordis-surface"></a>
 
-## Cordis surface
+## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` surface lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
-<a id="ctxcredentials--credentials-abstract-seam"></a>
+<a id="ctxcredentials--credentialprovider-abstract-seam"></a>
 
-### `ctx.credentials` — `Credentials` (abstract seam)
+### `ctx.credentials` — `CredentialProvider` (abstract seam)
 
 Abstract credential service. Providers implement the four operations over their source layers; one seam-wide rule binds them all: an empty stored value is absent everywhere — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.
 
@@ -101,7 +101,7 @@ abstract set(ref: CredentialRef, value: string): Promise<void>
 abstract unset(ref: CredentialRef): Promise<void>
 ```
 
-Source: [`packages/credentials/credentials/src/index.ts:77`](../../packages/credentials/credentials/src/index.ts)
+Source: [`packages/credentials/credentials/src/index.ts:60`](../../packages/credentials/credentials/src/index.ts)
 
 <a id="credentials-events"></a>
 
@@ -129,5 +129,5 @@ Committed change to a provider-managed credential source: a `set`, an `unset`, o
 'credentials/updated'(ref: CredentialRef): void
 ```
 
-Source: [`packages/credentials/credentials/src/index.ts:67`](../../packages/credentials/credentials/src/index.ts)
+Source: [`packages/credentials/credentials/src/types.ts:29`](../../packages/credentials/credentials/src/types.ts)
 <!-- END GENERATED cordis-surface -->

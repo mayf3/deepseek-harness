@@ -258,7 +258,7 @@ type SessionLineageTrace = {
 
 ## 有界事件读取
 
-请求指定一个原始 seq 及可选的邻近数量。结果携带 `SessionHeader` 而非可用性标志，使已知的实时目标可以独立于持久化健康状态。
+请求指定一个原始 seq 及可选的邻近数量。结果携带 `SessionHeader` 而非可用性标志，使已知的 live 目标可以独立于持久化健康状态。
 
 ```ts type-equiv
 /** Request for one event plus raw neighboring log context. */
@@ -332,7 +332,7 @@ interface SessionEventTraceObservation extends SessionEventTrace {
 
 ## 错误
 
-封闭的 code 联合类型区分请求校验、目标缺失、surface 日志格式错误、可选后端故障与矛盾的源元数据。
+封闭的 code 联合类型区分请求校验、目标缺失、surface 日志格式错误、可选后端故障、部署关闭搜索与矛盾的源元数据。
 
 ```ts type-equiv
 /** Stable machine-routable failure taxonomy for session reads, traces, and search. */
@@ -350,6 +350,7 @@ type SessionQueryErrorCode =
   | 'SESSION_QUERY_INVALID_SURFACE'
   | 'SESSION_QUERY_INVALID_WINDOW'
   | 'SESSION_QUERY_PERSISTENCE_FAILED'
+  | 'SESSION_QUERY_SEARCH_DISABLED'
   | 'SESSION_QUERY_SESSION_NOT_FOUND'
   | 'SESSION_QUERY_STALE_CURSOR'
   | 'SESSION_QUERY_SOURCE_CONFLICT'
@@ -359,13 +360,13 @@ type SessionQueryErrorCode =
 
 <a id="cordis-surface"></a>
 
-## Cordis surface
+## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` surface lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
-<a id="ctxsessionquery--sessionqueryservice-abstract-seam"></a>
+<a id="ctxsessionquery--sessionqueryengine-abstract-seam"></a>
 
-### `ctx.sessionQuery` — `SessionQueryService` (abstract seam)
+### `ctx.sessionQuery` — `SessionQueryEngine` (abstract seam)
 
 Unified live-preferred session query service.
 
@@ -456,7 +457,7 @@ async filterEvents( sessionId: SessionId, filters: readonly SessionEventResultFi
 /**
  * Read one session's complete current model surface from one corpus observation.
  * @param sessionId - live-preferred session id to read.
- * @returns cloned header, current surface, and raw-log capture boundary.
+ * @returns cloned header, current surface, and the last sequence number included in the raw-log capture.
  * @throws when source resolution fails or the session surface is invalid.
  */
 async readSurface(sessionId: SessionId): Promise<SessionSurfaceSnapshot>
@@ -465,7 +466,7 @@ async readSurface(sessionId: SessionId): Promise<SessionSurfaceSnapshot>
  * Trace known ancestry and descendants from one corpus observation.
  * @param sessionId - logical session id to trace.
  * @param signal - optional cancellation for persistence listing.
- * @returns a complete lineage or an explicit unresolved parent boundary.
+ * @returns a complete lineage or the first parent that could not be resolved.
  * @throws when corpus resolution fails, the target is absent, or its known ancestry cycles.
  */
 async traceSession(sessionId: SessionId, signal?: AbortSignal): Promise<SessionLineageTrace>

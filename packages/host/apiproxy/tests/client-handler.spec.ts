@@ -21,7 +21,6 @@ function scriptedApi(overrides: {
   sessions?: Partial<ApiProxy['sessions']>
   subagents?: Partial<ApiProxy['subagents']>
   host?: Partial<ApiProxy['host']>
-  commands?: Partial<ApiProxy['commands']>
   skills?: Partial<ApiProxy['skills']>
   agentPresets?: Partial<ApiProxy['agentPresets']>
   events?: Partial<ApiProxy['events']>
@@ -56,6 +55,10 @@ function scriptedApi(overrides: {
       rename: r => ok(r, { title: 'renamed', seq: 0 }),
       fork: r => ok(r, { sessionId: sid('s-fork') }),
       prompt: r => ok(r, { accepted: true as const }),
+      attachment: r => ok(r, {
+        attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 },
+        data: 'AA==',
+      }),
       updateQueue: r => ok(r, { accepted: true as const }),
       cancel: r => ok(r, { accepted: true as const }),
       ...overrides.sessions,
@@ -68,7 +71,9 @@ function scriptedApi(overrides: {
       ...overrides.subagents,
     },
     host: {
-      describe: r => ok(r, { version: '0-test', cwd: '/t', attachedSessions: 0 }),
+      describe: r => ok(r, {
+        version: '0-test', cwd: '/t', attachedSessions: 0, canOpenPath: true,
+      }),
       pickDirectory: r => ok(r, { path: null }),
       listDirectory: r => ok(r, { path: '/t', home: '/t', crumbs: [], entries: [], truncated: false }),
       createDirectory: r => ok(r, { path: '/t/new' }),
@@ -80,13 +85,9 @@ function scriptedApi(overrides: {
       create: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' }, created: true }),
       rename: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),
       delete: r => ok(r, { deleted: true as const }),
+      insertBefore: r => ok(r, { workspaceIds: [r.payload.workspaceId] }),
       insertSessionBefore: r => ok(r, { workspace: { workspaceId: 'w1' as never, path: '/t', title: 't', sessionIds: [], createdAt: '0', updatedAt: '0' } }),
       archiveSession: r => ok(r, { archivedSessionIds: [r.payload.sessionId] }),
-    },
-    commands: {
-      list: r => ok(r, { commands: [] }),
-      execute: r => ok(r, { matched: false }),
-      ...overrides.commands,
     },
     skills: { list: r => ok(r, { skills: [] }), ...overrides.skills },
     agentPresets: {
@@ -129,6 +130,7 @@ function scriptedApi(overrides: {
     },
     events: { mux: () => empty<MuxFrame>(), host: () => empty<HostFrame>(), ...overrides.events },
     respond: overrides.respond ?? (() => Promise.resolve({ accepted: false as const, reason: 'not-pending' as const })),
+    downloads: { sessionLog: async () => new Response('stub', { status: 404 }) },
   }
 }
 
@@ -217,7 +219,7 @@ describe('unary round trip', () => {
     expect(response.result).toEqual({ ok: true, value: { sessionId: 's-child' } })
   })
 
-  it('routes workspace rename, delete, and insertSessionBefore through the wire', async () => {
+  it('routes workspace rename, delete, and ordering through the wire', async () => {
     const api = scriptedApi()
     const c = client(api)
     const renamed = await c.workspace.rename({ workspaceId: 'w1' as never, title: 'next' })
@@ -226,6 +228,11 @@ describe('unary round trip', () => {
     expect(blankTitle.result).toMatchObject({ ok: false, error: { code: 'bad-request' } })
     const deleted = await c.workspace.delete({ workspaceId: 'w1' as never })
     expect(deleted.result).toEqual({ ok: true, value: { deleted: true } })
+    const workspaceOrder = await c.workspace.insertBefore({
+      workspaceId: 'w1' as never,
+      beforeWorkspaceId: 'w2' as never,
+    })
+    expect(workspaceOrder.result).toEqual({ ok: true, value: { workspaceIds: ['w1'] } })
     const anchored = await c.workspace.insertSessionBefore({ workspaceId: 'w1' as never, sessionId: sid('s1'), beforeSessionId: sid('s2') })
     expect(anchored.result.ok).toBe(true)
     const appended = await c.workspace.insertSessionBefore({ workspaceId: 'w1' as never, sessionId: sid('s1') })
@@ -428,8 +435,8 @@ describe('workspace domain round trip', () => {
     expect(archivedResponse.result).toEqual({ ok: true, value: { archivedSessionIds: ['s-arch'] } })
   })
 
-  it('rejects a create payload violating the exactly-one refine at the handler', async () => {
-    const response = await client(scriptedApi()).workspace.create({})
+  it('rejects a pathless create payload at the handler schema', async () => {
+    const response = await client(scriptedApi()).workspace.create({} as never)
     expect(response.result.ok).toBe(false)
     if (!response.result.ok) expect(response.result.error.code).toBe('bad-request')
   })

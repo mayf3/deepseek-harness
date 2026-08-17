@@ -2,7 +2,10 @@
   - navigation "Session hierarchy":
     - button "Use the ask_user_question tool to" [disabled]
   - img
-  - text: 标准模式
+  - text: Standard mode
+  - button "Session log":
+    - text: Session log
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -21,7 +24,7 @@
   - img
   - img
   - text: Ask question 1/1 answered
-- text: "Interjection Interjection: include the word BANANA in your final reply. {{clock}}"
+- text: "Interjection: include the word BANANA in your final reply. {{clock}}"
 - button "Copy":
   - img
 - button "Think The user selected \"Yes\" and wants me to include the word \"BANANA\" in my final reply. Let me acknowledge their answer.":
@@ -30,6 +33,10 @@
   - text: Think The user selected "Yes" and wants me to include the word "BANANA" in my final reply. Let me acknowledge their answer.
 - paragraph: Great, let's move forward. BANANA!
 - button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
   - img
 - button "Branch into a new conversation":
   - img

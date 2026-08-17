@@ -582,9 +582,28 @@ describe('stdio dispositions', () => {
 })
 
 describe('windows tree semantics (injected platform)', () => {
+  it('host-exit termination routes through taskkill immediately', async () => {
+    const killed: number[] = []
+    const running = spawnSubprocess(spec('exec sleep 60', { graceMs: 60_000 }), {
+      spillDir,
+      platform: 'win32',
+      taskkill: (pid) => {
+        killed.push(pid)
+        try {
+          process.kill(pid, 'SIGKILL')
+        } catch {
+          // Already gone — matches taskkill's tolerated not-found status.
+        }
+      },
+    })
+    running.terminateForHostExit()
+    await running.done
+    expect(killed).toEqual([running.pid])
+  })
+
   it('terminate routes through taskkill by root pid', async () => {
     const killed: number[] = []
-    const running = spawnSubprocess(spec('sleep 60', { graceMs: 100 }), {
+    const running = spawnSubprocess(spec('exec sleep 60', { graceMs: 100 }), {
       spillDir,
       platform: 'win32',
       taskkill: (pid) => {
@@ -631,6 +650,23 @@ describe('waitForExit', () => {
   })
 })
 
+describe('synchronous host-exit termination', () => {
+  it('force-kills the current process tree without waiting for the normal grace', async () => {
+    const running = spawnSubprocess(spec('trap "" TERM; sleep 60', { graceMs: 60_000 }))
+    running.terminateForHostExit()
+    await expect(running.done).resolves.toMatchObject({ exitCode: null, signal: 'SIGKILL' })
+    await expect(running.waitForExit()).resolves.toBe(true)
+
+    const kill = vi.spyOn(process, 'kill')
+    try {
+      running.terminateForHostExit()
+      expect(kill).not.toHaveBeenCalled()
+    } finally {
+      kill.mockRestore()
+    }
+  })
+})
+
 describe('tree-survivor escalation (terminate and bounded waits reach helpers the leader left behind)', () => {
   it('terminate() SIGKILLs a TERM-trapping descendant after the direct child settles', async () => {
     // The leader spawns a TERM-trapping helper with all stdio detached from
@@ -669,11 +705,11 @@ describe('tree-survivor escalation (terminate and bounded waits reach helpers th
   })
 
   it('service teardown awaits tree survivors, not just handle settlement', async () => {
-    const { Context } = await import('cordis')
-    const { default: LocalSubprocessService } = await import('@deepseek-ai/dsh-subprocess-local')
+    const { Context } = await import('@deepseek-ai/cordis')
+    const { default: LocalSubprocessRuntime } = await import('@deepseek-ai/dsh-subprocess-local')
     const ctx = new Context()
-    const fiber = await ctx.plugin(LocalSubprocessService)
-    ;(ctx.subprocess as InstanceType<typeof LocalSubprocessService>).internals = { spillDir }
+    const fiber = await ctx.plugin(LocalSubprocessRuntime)
+    ;(ctx.subprocess as InstanceType<typeof LocalSubprocessRuntime>).internals = { spillDir }
     const pidFile = join(spillDir, `survivor-svc-${Date.now()}.pid`)
     const running = ctx.subprocess.spawn(spec(
       `bash -c 'trap "" TERM; echo $$ > ${pidFile}; sleep 60' >/dev/null 2>&1 & disown; exit 0`,

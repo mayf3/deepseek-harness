@@ -18,7 +18,7 @@ Two independent changes, one per gap.
 
 ### One global storage root (shipped, amended form); resolved once at construction (still open)
 
-- **Shipped**: the Web overlay anchors `storage-json.root` to `$DSH_HOME/storages` directly in the row through the app-boot-provided `dshHomePath('storages')` (`~/.dsh/storages` by default, beside `~/.dsh/sessions`; no leading dot — the home is already a hidden tree). The helper delegates to the canonical `dsh-paths` resolver, and the session root uses the same function without duplicating its fallback and tilde rules. The per-row form was chosen (user decision) over a launcher patch + `storageRoot` profile key (see Alternatives); per-row overrides ride the personal `~/.dsh/config.yaml` patch layer. The web e2e scaffold already patches the row to an absolute temp root, so tests never touch the user's home.
+- **Shipped**: the Web overlay anchors `storage-json.root` to `$DSH_HOME/storages` directly in the row through the app-boot-provided `dshHomePath('storages')` (`~/.dsh/storages` by default, beside `~/.dsh/sessions`; no leading dot — the home is already a hidden tree). The helper delegates to the canonical `dsh-home-paths` resolver, and the session root uses the same function without duplicating its fallback and tilde rules. The per-row form was chosen (user decision) over a launcher patch + `storageRoot` profile key (see Alternatives); per-row overrides ride the personal `~/.dsh/config.yaml` patch layer. The web e2e scaffold already patches the row to an absolute temp root, so tests never touch the user's home.
 - **Still open**: `JsonStorageBackend` resolves its configured root once at construction (`resolve(config.root)`), adopting the JSONL backend's recorded rationale verbatim: a later `process.cwd()` change must not split one backend across roots. The SQLite storage backend already resolves its path.
 - Pre-release stance applies (and was executed): no migration shim. A deployment that cached under `<cwd>/.storages` re-derives everything (workspace re-bootstraps from the header index; the projection cache refolds lazily) or moves the two json files by hand once.
 
@@ -35,7 +35,7 @@ Two independent changes, one per gap.
 
 **Launcher patch + a `storageRoot` profile key** — not taken: one `!!js` yml expression reaches the global root with the same layering the session root already has; a launcher patch adds a second rewrite point, and the profile key is an empty seat until a real consumer exists (per-row overrides already have the personal config.yaml patch layer).
 
-**Patch only the projection cache's route to a global root, leave `workspace.json` per-cwd** — rejected: the workspace registry has the identical global-vs-cwd mismatch, and the user decision that shaped the cache placed it deliberately beside `workspace.json` — one hub root keeps the media co-located and the mental model single.
+**Patch only the projection cache's route to a global root, leave `workspace.json` per-cwd** — rejected: the workspace registry has the identical global-vs-cwd mismatch, and the user chose to place the cache beside `workspace.json` — one hub root keeps the media co-located and the mental model single.
 
 **Cache-plugin-local recovery (catch damage errors in `SessionProjectionCache[Service.init]`, delete the file, reopen)** — rejected: the plugin cannot name the medium path without reaching around the backend abstraction, and every future derived domain would re-implement the same catch; the facility is the one place that already classifies open failures.
 

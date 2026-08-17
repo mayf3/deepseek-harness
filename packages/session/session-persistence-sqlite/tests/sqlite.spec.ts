@@ -1,6 +1,6 @@
 import { createUserMessage, createMessage } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { existsSync } from 'node:fs'
 import { chmod, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SurfaceEvent, SurfaceEventType } from '@deepseek-ai/dsh-session'
-import SessionPersistenceSqlite, { SCHEMA_VERSION } from '@deepseek-ai/dsh-session-persistence-sqlite'
+import SqliteSessionPersistence, { SCHEMA_VERSION } from '@deepseek-ai/dsh-session-persistence-sqlite'
 import {
   openDatabase,
   rowToEvent,
@@ -44,7 +44,7 @@ async function freshDbPath(): Promise<string> {
 async function backend(path = ':memory:'): Promise<{ ctx: Context; dispose: () => Promise<void> }> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
-  const fiber = await ctx.plugin(SessionPersistenceSqlite, { path })
+  const fiber = await ctx.plugin(SqliteSessionPersistence, { path })
   return { ctx, dispose: () => fiber.dispose() }
 }
 
@@ -52,7 +52,7 @@ async function backend(path = ':memory:'): Promise<{ ctx: Context; dispose: () =
 runPersistenceContract('sqlite', async () => {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
-  const fiber = await ctx.plugin(SessionPersistenceSqlite, { path: ':memory:' })
+  const fiber = await ctx.plugin(SqliteSessionPersistence, { path: ':memory:' })
   return {
     persistence: ctx.sessionPersistence,
     dispose: async () => { await fiber.dispose() },
@@ -65,7 +65,7 @@ runCoordinatorContract('sqlite', async (): Promise<CoordinatorFixture> => {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-sqlite-coord-'))
   const path = join(dir, 'sessions.db')
   return {
-    mount: async ctx => ctx.plugin(SessionPersistenceSqlite, { path }),
+    mount: async ctx => ctx.plugin(SqliteSessionPersistence, { path }),
     corruptTail: async (id) => {
       // A row past the committed region whose `data` does not parse: scanRows
       // bounds the preserved prefix at it and returns its seq as tornFrom, which
@@ -92,6 +92,7 @@ describe('scanRows', () => {
         seq: e.seq, type: e.type, time: e.time, data: JSON.stringify(e.data),
         source_event_seqs: se.sourceEventSeqs !== undefined ? JSON.stringify(se.sourceEventSeqs) : null,
         surface_op: se.surfaceOp !== undefined ? JSON.stringify(se.surfaceOp) : null,
+        ignorable: e.ignorable === true ? 1 : null,
       }
     })
 
@@ -142,8 +143,8 @@ describe('scanRows', () => {
 
   it('throws on an unparsable row inside the committed region', () => {
     const withCorruptCommitted: EventRow[] = [
-      { seq: 0, type: 'turn/start', time: 1, data: '{not json', source_event_seqs: null, surface_op: null }, // corrupt, sits before a turn/end
-      { seq: 1, type: 'turn/end', time: 2, data: JSON.stringify({ turn: 1, reason: { kind: 'completed' } }), source_event_seqs: null, surface_op: null },
+      { seq: 0, type: 'turn/start', time: 1, data: '{not json', source_event_seqs: null, surface_op: null, ignorable: null }, // corrupt, sits before a turn/end
+      { seq: 1, type: 'turn/end', time: 2, data: JSON.stringify({ turn: 1, reason: { kind: 'completed' } }), source_event_seqs: null, surface_op: null, ignorable: null },
     ]
     expect(() => scanRows(withCorruptCommitted)).toThrow(/unparsable committed event/)
   })
@@ -151,7 +152,7 @@ describe('scanRows', () => {
   it('tolerates an unparsable torn-tail row after the last turn/end', () => {
     const withCorruptTail: EventRow[] = [
       ...rows(oneTurnLog()),
-      { seq: 6, type: 'turn/start', time: 7, data: '{not json', source_event_seqs: null, surface_op: null }, // torn fragment, no committed turn/end after
+      { seq: 6, type: 'turn/start', time: 7, data: '{not json', source_event_seqs: null, surface_op: null, ignorable: null }, // torn fragment, no committed turn/end after
     ]
     const { preserved, tornFrom } = scanRows(withCorruptTail)
     expect(preserved).toEqual(oneTurnLog())
@@ -211,7 +212,7 @@ describe('rowToMeta', () => {
   })
 })
 
-describe('SessionPersistenceSqlite: durability and crash semantics', () => {
+describe('SqliteSessionPersistence: durability and crash semantics', () => {
   it('rejects a stored v0 log containing a legacy request/header-delta event', async () => {
     const path = await freshDbPath()
     const m = meta('legacy-header-delta', '/legacy')
@@ -260,7 +261,7 @@ describe('SessionPersistenceSqlite: durability and crash semantics', () => {
     // Run 1: persist a complete turn, then a half-written second turn (no turn/end).
     const ctx1 = new Context()
     await ctx1.plugin(SessionStore)
-    const fiber1 = await ctx1.plugin(SessionPersistenceSqlite, { path })
+    const fiber1 = await ctx1.plugin(SqliteSessionPersistence, { path })
     await ctx1.sessionPersistence.create(m)
     await ctx1.sessionPersistence.append(m.id, oneTurnLog())
     await ctx1.sessionPersistence.append(m.id, [
@@ -274,7 +275,7 @@ describe('SessionPersistenceSqlite: durability and crash semantics', () => {
     // events: step/end (the step was open) then turn/end {interrupted}.
     const ctx2 = new Context()
     await ctx2.plugin(SessionStore)
-    const fiber2 = await ctx2.plugin(SessionPersistenceSqlite, { path })
+    const fiber2 = await ctx2.plugin(SqliteSessionPersistence, { path })
     const loaded = await ctx2.sessionPersistence.load(m.id)
     expect(loaded.events.map(e => e.type)).toEqual([
       'turn/start', 'user/message', 'step/start', 'assistant/message', 'step/end', 'turn/end', // turn 1
@@ -524,7 +525,7 @@ describe('SessionPersistenceSqlite: durability and crash semantics', () => {
   it('append rolls back the whole batch on a mid-batch seq collision (transaction)', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin(SessionPersistenceSqlite, { path: ':memory:' })
+    const fiber = await ctx.plugin(SqliteSessionPersistence, { path: ':memory:' })
     const m = meta('rollback')
     await ctx.sessionPersistence.create(m)
     await ctx.sessionPersistence.append(m.id, oneTurnLog()) // seqs 0..5
@@ -543,14 +544,14 @@ describe('SessionPersistenceSqlite: durability and crash semantics', () => {
     const m = meta('persist', '/proj')
     const ctx1 = new Context()
     await ctx1.plugin(SessionStore)
-    const fiber1 = await ctx1.plugin(SessionPersistenceSqlite, { path })
+    const fiber1 = await ctx1.plugin(SqliteSessionPersistence, { path })
     await ctx1.sessionPersistence.create(m)
     await ctx1.sessionPersistence.append(m.id, oneTurnLog())
     await fiber1.dispose()
 
     const ctx2 = new Context()
     await ctx2.plugin(SessionStore)
-    const fiber2 = await ctx2.plugin(SessionPersistenceSqlite, { path })
+    const fiber2 = await ctx2.plugin(SqliteSessionPersistence, { path })
     expect((await ctx2.sessionPersistence.list()).map(x => x.id)).toContain(m.id)
     const loaded = await ctx2.sessionPersistence.load(m.id)
     expect(loaded.meta).toMatchObject({ id: m.id, cwd: '/proj' })
@@ -601,7 +602,7 @@ describe('SessionPersistenceSqlite: durability and crash semantics', () => {
     const m = meta('stored-prefix-revision')
     await b.ctx.sessionPersistence.create(m)
     await b.ctx.sessionPersistence.append(m.id, oneTurnLog())
-    const persistence = b.ctx.sessionPersistence as SessionPersistenceSqlite
+    const persistence = b.ctx.sessionPersistence as SqliteSessionPersistence
 
     const stored = await persistence.loadStored(m.id)
     expect(stored?.revision).toBe(await persistence.readStoredRevision(m.id))
@@ -658,7 +659,7 @@ describe('SessionPersistenceSqlite: durability and crash semantics', () => {
   })
 
   it('exposes the schema version constant', () => {
-    expect(SCHEMA_VERSION).toBe(14)
+    expect(SCHEMA_VERSION).toBe(15)
   })
 
   it('keeps the revision stable for an empty repair hook', async () => {
@@ -667,19 +668,19 @@ describe('SessionPersistenceSqlite: durability and crash semantics', () => {
     await b.ctx.sessionPersistence.create(m)
     await b.ctx.sessionPersistence.append(m.id, oneTurnLog())
     const before = await b.ctx.sessionPersistence.listSnapshots()
-    await (b.ctx.sessionPersistence as SessionPersistenceSqlite).commitRepair(m, undefined, [])
+    await (b.ctx.sessionPersistence as SqliteSessionPersistence).commitRepair(m, undefined, [])
     expect(await b.ctx.sessionPersistence.listSnapshots()).toEqual(before)
     await b.dispose()
   })
 })
 
-describe('SessionPersistenceSqlite: edge cases', () => {
+describe('SqliteSessionPersistence: edge cases', () => {
   it('resolves the preparation-cache default without schema normalization', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    let persistence!: SessionPersistenceSqlite
+    let persistence!: SqliteSessionPersistence
     await ctx.plugin(Object.assign((inner: Context) => {
-      persistence = new SessionPersistenceSqlite(inner, {
+      persistence = new SqliteSessionPersistence(inner, {
         path: ':memory:',
         journalMode: 'wal',
       })
@@ -692,7 +693,7 @@ describe('SessionPersistenceSqlite: edge cases', () => {
   it('uses the configured preparation cache through the public service', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin(SessionPersistenceSqlite, {
+    const fiber = await ctx.plugin(SqliteSessionPersistence, {
       path: ':memory:',
       preparedSessionCacheSize: 1,
       writeBatchMaxDelayMs: 1,
@@ -739,7 +740,7 @@ describe('SessionPersistenceSqlite: edge cases', () => {
     const path = await freshDbPath()
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin(SessionPersistenceSqlite, { path, journalMode: 'persist' })
+    const fiber = await ctx.plugin(SqliteSessionPersistence, { path, journalMode: 'persist' })
     const m = meta('persist-permissions')
 
     await ctx.sessionPersistence.create(m)
@@ -758,7 +759,7 @@ describe('SessionPersistenceSqlite: edge cases', () => {
 
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin(SessionPersistenceSqlite, { path, journalMode: 'delete' })
+    const fiber = await ctx.plugin(SqliteSessionPersistence, { path, journalMode: 'delete' })
     await ctx.sessionPersistence.list()
 
     expect((await stat(path)).mode & 0o777).toBe(0o644)
@@ -814,7 +815,7 @@ describe('SessionPersistenceSqlite: edge cases', () => {
     const deletePath = await freshDbPath()
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin(SessionPersistenceSqlite, { path: deletePath, journalMode: 'delete' })
+    const fiber = await ctx.plugin(SqliteSessionPersistence, { path: deletePath, journalMode: 'delete' })
     await ctx.sessionPersistence.create(meta('jm-delete'))
     // Probe through a second connection: journal_mode=delete is a per-database
     // property only insofar as no WAL files exist — assert the world, not the
@@ -844,7 +845,7 @@ describe('SessionPersistenceSqlite: edge cases', () => {
       session = inner.sessions.create(SessionId('hmr-collide'))
     }, { inject: ['sessions'] }))
     session.append('turn/start', { turn: 1 })
-    await ctx.plugin(SessionPersistenceSqlite, { path })
+    await ctx.plugin(SqliteSessionPersistence, { path })
     await expectFlushError(ctx.sessions.flush(session), /id collision/)
     await ctx.fiber.dispose()
   })
@@ -857,6 +858,7 @@ describe('surface field round-trip', () => {
       data: JSON.stringify({ turn: 1, step: 1, content: [] }),
       source_event_seqs: JSON.stringify([3, 5]),
       surface_op: JSON.stringify('append'),
+      ignorable: null,
     }
     const event = rowToEvent(row)
     expect((event as SurfaceEvent).sourceEventSeqs).toEqual([3, 5])
@@ -869,6 +871,7 @@ describe('surface field round-trip', () => {
       data: JSON.stringify({ turn: 1, step: 1, content: [] }),
       source_event_seqs: JSON.stringify([0, 1]),
       surface_op: JSON.stringify({ op: 'replace', start: 0, end: 1 }),
+      ignorable: null,
     }
     const event = rowToEvent(row)
     expect((event as SurfaceEvent).sourceEventSeqs).toEqual([0, 1])
@@ -879,10 +882,10 @@ describe('surface field round-trip', () => {
     const rows: EventRow[] = [
       { seq: 0, type: 'user/message', time: 1,
         data: JSON.stringify({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } }),
-        source_event_seqs: null, surface_op: '{"op":"replace","start":0,"end":0}' },
+        source_event_seqs: null, surface_op: '{"op":"replace","start":0,"end":0}', ignorable: null },
       { seq: 1, type: 'turn/end', time: 2,
         data: JSON.stringify({ turn: 1, reason: { kind: 'completed' } }),
-        source_event_seqs: null, surface_op: null },
+        source_event_seqs: null, surface_op: null, ignorable: 1 },
     ]
     const { preserved } = scanRows(rows)
     expect(preserved).toHaveLength(2)
@@ -894,7 +897,7 @@ describe('surface field round-trip', () => {
   it('append and load round-trips surface fields through SQLite', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin(SessionPersistenceSqlite, { path: ':memory:' })
+    const fiber = await ctx.plugin(SqliteSessionPersistence, { path: ':memory:' })
     const session = ctx.sessions.create(SessionId('roundtrip-surface'))
     session.append('turn/start', { turn: 1 })
     session.append('step/start', { turn: 1, step: 1 })
@@ -929,7 +932,7 @@ describe('surface field round-trip', () => {
   it('persists events with surfaceOp but no sourceEventSeqs (covers null branch in surfaceBindings)', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin(SessionPersistenceSqlite, { path: ':memory:' })
+    const fiber = await ctx.plugin(SqliteSessionPersistence, { path: ':memory:' })
     const session = ctx.sessions.create(SessionId('surface-noseq'))
     session.append('turn/start', { turn: 1 })
     session.append('user/message', createUserMessage({

@@ -1,7 +1,7 @@
 // Web e2e scenario: startup auto-selection keeps the hero on screen.
 //
 // A page load with a workspace already registered runs
-// `WorkspacesService.startInitialSelection`: it connects the most recent
+// `WorkspaceRuntime.startInitialSelection`: it connects the most recent
 // workspace and opens its blank session. `openState` flips to `loading` the
 // moment `open()` lands; driving `data-phase=settling` on the conversation
 // root from that flip would hide the composer seat and the header
@@ -17,11 +17,10 @@
 // replacing those nodes.
 //
 // The round-trip against a loopback host is far too fast to observe, so this
-// scenario HOLDS the `session.history` response open at the browser's network
-// boundary and asserts the visible frame while it is in flight. That gate is
-// what makes the assertions non-vacuous: without the phase exemption, the
-// held window is exactly when `settling` would be painted and the composer
-// hidden.
+// scenario HOLDS the `session.history` response open in the browser's network
+// handler and asserts the visible frame while it is in flight. That wait is
+// what makes the assertions non-vacuous: without the phase exemption, the held
+// window is exactly when `settling` would be painted and the composer hidden.
 //
 // Zero model calls: registering a workspace and opening its blank session are
 // host RPCs with no model involvement. A stray stream would fail loud with
@@ -69,6 +68,13 @@ describe('web e2e: startup auto-selection', () => {
   it('keeps the resident Hero and composer nodes when the first Workspace session appears', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-first-workspace-stable-tree'))
     await page.locator(`${ROOT_PHASE}[data-phase="hero"]`).waitFor({ timeout: 15_000 })
+    const headline = page.getByText('Into the Unknown', { exact: true })
+    const fish = headline.locator('xpath=preceding-sibling::span[1]/*[name()="svg"]')
+    const fishHitbox = fish.locator('..')
+    expect(await fish.evaluate(node => getComputedStyle(node).color))
+      .toBe(await headline.evaluate(node => getComputedStyle(node).color))
+    await fishHitbox.hover()
+    expect(await fish.evaluate(node => getComputedStyle(node).animationName)).not.toBe('none')
     await page.evaluate(() => {
       const refs = {
         root: document.querySelector('div[data-phase="hero"]'),

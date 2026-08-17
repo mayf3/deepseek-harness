@@ -30,13 +30,10 @@
       "path": "../session-telemetry"
     },
     {
-      "path": "../../util/brand"
+      "path": "../../identity/anonymous-user-id"
     },
     {
-      "path": "../../util/paths"
-    },
-    {
-      "path": "../../support/invariants"
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

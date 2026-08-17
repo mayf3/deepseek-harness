@@ -80,7 +80,7 @@ const PAIR_META_LINE = /^([^:#]+\.md): ([0-9a-f]{40})$/
 /**
  * Parse a `foo.i18n.yaml` consistency record into basename → recorded blob
  * hash, or undefined when any non-comment line deviates from the exact
- * `<basename>.md: <40-hex>` shape or repeats a key. Consumers must
+ * `<basename>.md: <40-hex>` format or repeats a key. Consumers must
  * additionally require exactly the two expected basenames — a renamed key is
  * a malformed record, never a silently-missing entry.
  * @param content - Sidecar file text.
@@ -118,13 +118,14 @@ export function renderPairMeta(source: string, sourceHash: string, zh: string, z
   ].join('\n')
 }
 
-/** Validated shape of `scripts/translation-pairing.manifest.json`. */
+/** Validated fields of `scripts/translation-pairing.manifest.json`. */
 export interface TranslationPairingManifest {
   /** Source documents exempt from pairing because they are generated, instructional, or bilingual by construction. */
   excluded: string[]
 }
 
 const README_ARTIFACT = /(?:^|\/)readme(?:\.md|\.zh\.md|\.i18n\.yaml)$/i
+const ROOT_CONTRIBUTING_ARTIFACT = /^contributing(?:\.md|\.zh\.md|\.i18n\.yaml)$/i
 const NON_SOURCE_DIRECTORIES = new Set([
   'node_modules',
   'lib',
@@ -179,6 +180,7 @@ function isTranslationSourceExcluded(file: string): boolean {
 export function isTranslationScopeFile(file: string): boolean {
   return !file.startsWith('.agents/notes/archived/')
     && !isTranslationSourceExcluded(file) && (README_ARTIFACT.test(file)
+    || ROOT_CONTRIBUTING_ARTIFACT.test(file)
     || file.startsWith('.agents/notes/')
     || file.startsWith('docs/')
     || file.startsWith('python/'))
@@ -281,7 +283,7 @@ export function parseTranslationPairingCliArgs(argv: string[]): TranslationPairi
   }
 }
 
-/** The structural surface compared between the two sides of a pair. */
+/** The structural signature compared between the two sides of a pair. */
 export interface TranslationStructureSignature {
   /** Heading depths in document order (h2 -> 2). */
   headings: number[]
@@ -300,11 +302,19 @@ export function parseTranslationMarkdown(content: string): Nodes {
   return fromMarkdown(content, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] })
 }
 
-/** Whether the tree contains a link to exactly `target`. */
-export function linksTo(tree: Nodes, target: string): boolean {
+const PUBLIC_REPOSITORY_BLOB_ROOT = 'https://github.com/deepseek-ai/deepseek-harness/blob/master/'
+
+/** Return the accepted relative and public-repository links to one counterpart. */
+export function languageSwitcherTargets(counterpart: string): string[] {
+  return [basename(counterpart), `${PUBLIC_REPOSITORY_BLOB_ROOT}${counterpart}`]
+}
+
+/** Whether the tree contains a link to any accepted target. */
+export function linksTo(tree: Nodes, targets: string | readonly string[]): boolean {
+  const accepted = new Set(typeof targets === 'string' ? [targets] : targets)
   let found = false
   const visit = (node: Nodes): void => {
-    if (node.type === 'link' && node.url === target) found = true
+    if (node.type === 'link' && accepted.has(node.url)) found = true
     if ('children' in node) for (const child of node.children) visit(child)
   }
   visit(tree)
@@ -333,8 +343,14 @@ export function requiresSourceLanguageSwitcher(source: string): boolean {
   ].includes(source)
 }
 
-/** Collect the ordered structural signature, skipping one switcher target. */
-export function translationStructureSignature(tree: Nodes, switcherTarget: string): TranslationStructureSignature {
+/** Collect the ordered structural signature, skipping accepted switcher targets. */
+export function translationStructureSignature(
+  tree: Nodes,
+  switcherTargets: string | readonly string[],
+): TranslationStructureSignature {
+  const acceptedSwitchers = new Set(
+    typeof switcherTargets === 'string' ? [switcherTargets] : switcherTargets,
+  )
   const sig: TranslationStructureSignature = { headings: [], code: [], tables: [], lists: [], links: [] }
   const visit = (node: Nodes): void => {
     switch (node.type) {
@@ -353,7 +369,7 @@ export function translationStructureSignature(tree: Nodes, switcherTarget: strin
           : `bullet:items=${node.children.length}`)
         break
       case 'link':
-        if (node.url !== switcherTarget) sig.links.push(node.url)
+        if (!acceptedSwitchers.has(node.url)) sig.links.push(node.url)
         break
       default:
         // Every other node kind is prose or a container, not part of the signature.

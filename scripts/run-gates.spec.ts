@@ -83,6 +83,15 @@ describe('gate graph validation', () => {
     expect(ids).toContain('public-repository-links')
   })
 
+  it.each(['ci-primary', 'ci-static', 'check-all'] as const)(
+    'keeps the DSH package license policy in %s',
+    (mode) => {
+      const ids = withPnpmEntrypoint(() => gatesForMode(mode).map(subject => subject.id))
+
+      expect(ids).toContain('dsh-package-licenses')
+    },
+  )
+
   it('keeps native Windows coverage blocking while portability inventory remains observational', () => {
     const gates = withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))
     const byId = new Map(gates.map(subject => [subject.id, subject]))
@@ -150,7 +159,7 @@ describe('Oxlint gate', () => {
   })
 })
 
-describe('TypeRT contract preparation', () => {
+describe('Typert contract preparation', () => {
   it('prepares primary source consumers once before they run', () => {
     const subject = withEnv('DSH_OXLINT_THREADS', undefined, () =>
       withPnpmEntrypoint(() => gatesForMode('ci-primary')))
@@ -227,7 +236,7 @@ describe('Node 24 lane ownership', () => {
     const subject = withPnpmEntrypoint(() => gatesForMode('ci-consumers'))
 
     expect(defaultConcurrency('ci-consumers', subject.length, 4)).toEqual({
-      workers: 11,
+      workers: 10,
       source: 'ci-consumers gate count',
     })
     expect(subject.map(item => item.id)).toEqual([
@@ -241,7 +250,6 @@ describe('Node 24 lane ownership', () => {
       'doc-typecheck',
       'node-next-types',
       'built-bin-smoke',
-      'github-repository-plugin-e2e',
     ])
     expect(subject.find(item => item.id === 'publint')?.needs).toEqual(['build'])
     expect(subject.find(item => item.id === 'built-package-invariants')?.needs).toEqual(['publint'])
@@ -252,7 +260,6 @@ describe('Node 24 lane ownership', () => {
       'doc-typecheck',
       'node-next-types',
       'built-bin-smoke',
-      'github-repository-plugin-e2e',
     ]) {
       expect(subject.find(item => item.id === id)?.needs).toEqual(['built-package-invariants'])
     }
@@ -265,16 +272,6 @@ describe('Node 24 lane ownership', () => {
         'packages/subagent/subagent-codex/tests/loader-composition.e2e.ts',
         'packages/subagent/subagent-claude-code/tests/loader-composition.e2e.ts',
       ]),
-    )
-    const githubRepositoryPlugin = subject.find(item => item.id === 'github-repository-plugin-e2e')
-    expect(githubRepositoryPlugin).toMatchObject({
-      label: 'GitHub repository Plugin dsh run',
-      env: {
-        DSH_REQUIRE_GITHUB_REPOSITORY_PLUGIN_E2E: '1',
-      },
-    })
-    expect(githubRepositoryPlugin?.args).toEqual(
-      expect.arrayContaining(['apps/cli/tests/github-repository-plugin.built.e2e.ts']),
     )
     expect(subject.find(item => item.id === 'web-snapshot')).toMatchObject({
       displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',

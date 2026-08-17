@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import { SubagentError } from '@deepseek-ai/dsh-subagent'
 import { RpcId } from '../src/api/rpc.ts'
@@ -50,7 +50,10 @@ function bench(options: {
     _parent: unknown,
     _childId: SessionId,
     _content: unknown,
-    _delivery: { source: { kind: string; rpcId: RpcId }; signal: AbortSignal },
+    _delivery: {
+      source: { kind: string; rpcId: RpcId; clientTimeZone?: string }
+      signal: AbortSignal
+    },
   ) => options.followupError === undefined
     ? Promise.resolve('message-1')
     : Promise.reject(options.followupError))
@@ -92,10 +95,15 @@ function bench(options: {
   })
   // The gateway's own projection push feed subscribes at construction; the
   // no-op disposer keeps that feed quiet while these tests pin history reads.
-  ctx.provide('sessionProjections', { snapshot, restore, onChanged: () => () => {} })
-  ctx.provide('userInteraction', { registerProvider: () => () => {} })
+  ctx.provide('sessionProjections', {
+    snapshot,
+    restore,
+    onChanged: () => () => {},
+    register: () => () => {},
+  })
+  ctx.provide('userQuestions', { registerProvider: () => () => {} })
   const api = createApiProxy(ctx, {
-    defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp', workspaceRoot: '/tmp',
+    defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp',
   })
   return { api, getAgent, listChildren, inspect, snapshot, restore, followup, interrupt, parent }
 }
@@ -268,6 +276,43 @@ describe('subagent gateway', () => {
       content,
       { source: { kind: 'user', rpcId: RpcId('subagent-rpc') }, signal },
     )
+  })
+
+  it('canonicalizes browser-zone provenance before delivering a child prompt', async () => {
+    const { api, parent, followup } = bench()
+    const alias = 'US/Pacific'
+    const canonical = new Intl.DateTimeFormat('en-US', { timeZone: alias })
+      .resolvedOptions().timeZone
+    const content = [{ type: 'text' as const, text: 'continue locally' }]
+    const signal = new AbortController().signal
+    await expect(api.subagents.prompt(request({
+      parentSessionId: PARENT,
+      childSessionId: CHILD,
+      mode: 'continuable',
+      content,
+      clientTimeZone: alias,
+    }), signal)).resolves.toMatchObject({ result: { ok: true } })
+    expect(followup).toHaveBeenCalledWith(parent, CHILD, content, {
+      source: { kind: 'user', rpcId: RpcId('subagent-rpc'), clientTimeZone: canonical },
+      signal,
+    })
+
+    const invalid = await api.subagents.prompt(request({
+      parentSessionId: PARENT,
+      childSessionId: CHILD,
+      mode: 'continuable',
+      content,
+      clientTimeZone: 'Not/A_Real_Zone',
+    }), signal)
+    expect(invalid.result).toEqual({
+      ok: false,
+      error: {
+        code: 'invalid-time-zone',
+        message: 'clientTimeZone must be UTC or a valid IANA Area/Location name',
+        details: { value: 'Not/A_Real_Zone' },
+      },
+    })
+    expect(followup).toHaveBeenCalledOnce()
   })
 
   it('fails before delivery when the parent is absent and maps continuation failures', async () => {

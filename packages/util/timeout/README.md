@@ -8,7 +8,7 @@ It owns **no termination**. The signal it hands out only *notifies*; actually st
 
 It is a **library, not a service or plugin**: no `ctx`, registers nothing, holds no state, emits no events. A "timeout service" would have to understand how to stop every capability's work — exactly the knowledge a microkernel keeps out of shared layers.
 
-## Surface
+## API
 
 ```ts
 import { clampTimeout, deadline, idleWatchdog, MAX_TIMER_DELAY_MS, timeoutOf, TimeoutReason } from '@deepseek-ai/dsh-timeout'
@@ -56,7 +56,7 @@ Local file `read`/`write`/`edit` take no `timeoutMs`: file IO runs untimed becau
 
 ## Model Experience
 
-Indirectly, through consumers such as `dsh-timeout-policy`, which may replace a provider result with a retained timeout error or suppress a late result.
+Indirectly, through consumers such as `dsh-tool-call-timeout-policy`, which may replace a provider result with a retained timeout error or suppress a late result.
 
 #### KV Cache effect
 

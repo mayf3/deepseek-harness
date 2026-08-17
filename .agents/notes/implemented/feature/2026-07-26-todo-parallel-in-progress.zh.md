@@ -19,7 +19,7 @@ Status: implemented
 
 ## 为何用指引而非感知并行的不变式
 
-编码的不变式只能看到列表，看不到运行时：两个 `in_progress` 条目是否合理，取决于工作是否真的在并发运行，而这一点工具无法观测。因此，恰恰在并行让上限变得重要的场景里，强制上限反而是错的；任何替代方案（例如把活跃条目数限制为在线 subagent 的数量）都会把工具耦合到它有意一无所知的运行时上。把 `in_progress` 标记与真正并发的工作对应起来这一纪律，转移到工具描述中，也就是排序与列表新鲜度已经所在的地方。
+编码的不变式只能看到列表，看不到运行时：两个 `in_progress` 条目是否合理，取决于工作是否真的在并发运行，而这一点工具无法观测。因此，恰恰在并行让上限变得重要的场景里，强制上限反而是错的；任何替代方案（例如把活跃条目数限制为当前运行中的 subagent 数量）都会把工具耦合到它有意一无所知的运行时上。把 `in_progress` 标记与真正并发的工作对应起来这一纪律，转移到工具描述中，也就是排序与列表新鲜度已经所在的地方。
 
 ## 该策略是部署层的选择
 
@@ -51,4 +51,4 @@ Status: implemented
 
 ## 后果
 
-现在 todo 列表可以忠实反映并行执行，并且每个展示面都能一次渲染多个活跃标记：计划横条的表头会计数活跃条目，工具行则需要上述推导。设置 `allowParallelInProgress: true` 的组合不再拒绝一种此前无效的快照形状；设置为 `false` 的组合仍保留旧的拒绝行为，而持久日志不变式两者都接受。面向模型的描述发生了变化，这重新记录了 tool-catalog 页面以及每个带有 todo schema 的快照伴随文件。此处不记录数量：该集合会随每个新落地的 pin 场景增长。有效规则是：改动工具描述的分支必须刷新它分叉之后落地的那些伴随文件——包括固定 subagent 类工具的编号文件 `tool-schemas.<n>.expected.json`，其 schema 不被父场景覆盖——`pnpm run test:snapshot:refresh` 可以无 key 地对整个语料完成刷新。web fixture（测试前置数据）的 todo 样本现在有两个条目处于 `in_progress`，因此两个由 fixture 驱动的展示面渲染的都是并行计划。`packages/client/ui-conversation/tests/todo-panel.spec.tsx` 在 src 上固定工具行摘要与计划横条，ACP（Agent Client Protocol）`todo-write` 场景录制的是三条目、两个活跃的计划，而 `apps/web/tests/todo-row.snapshot.ts` 在组装后的应用中固定这两个面——它从构建产物 `packages/client/*/lib/client.js` 启动，因此是唯一覆盖 keyed 注册与打包接线的地方。该文件把 `summary`、`suffix` 与横条表头记录为独立字段，因此即便拼接后的文本读起来一样，把 `+N` 计数折回摘要字符串也会改变预期输出。
+现在 todo 列表可以忠实反映并行执行，并且每个展示面都能一次渲染多个活跃标记：计划横条的表头会计数活跃条目，工具行则需要上述推导。设置 `allowParallelInProgress: true` 的组合不再拒绝一种此前无效的快照形状；设置为 `false` 的组合仍保留旧的拒绝行为，而持久日志不变式两者都接受。面向模型的描述发生了变化，这重新记录了 tool-catalog 页面以及每个带有 todo schema 的快照伴随文件。此处不记录数量：该集合会随每个新落地的 pin 场景增长。有效规则是：改动工具描述的分支必须刷新它分叉之后落地的那些伴随文件——包括固定 subagent 类工具的编号文件 `tool-schemas.<n>.expected.json`，其 schema 不被父场景覆盖——`pnpm run test:snapshot:refresh` 可以无 key 地对整个语料完成刷新。web fixture（测试前置数据）的 todo 样本现在有两个条目处于 `in_progress`，因此两个由 fixture 驱动的展示面渲染的都是并行计划。`packages/client/ui-conversation/tests/todo-panel.client.spec.tsx` 在 src 上固定工具行摘要与计划横条，ACP（Agent Client Protocol）`todo-write` 场景录制的是三条目、两个活跃的计划，而 `apps/web/tests/todo-row.snapshot.ts` 在组装后的应用中固定这两个面——它从构建产物 `packages/client/*/lib/client.js` 启动，因此是唯一覆盖 keyed 注册与打包接线的地方。该文件把 `summary`、`suffix` 与横条表头记录为独立字段，因此即便拼接后的文本读起来一样，把 `+N` 计数折回摘要字符串也会改变预期输出。

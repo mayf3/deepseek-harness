@@ -27,22 +27,22 @@
       "path": "../../core/session"
     },
     {
-      "path": "../../scaffold/client"
+      "path": "../../sdk/client"
     },
     {
-      "path": "../../scaffold/protocol"
+      "path": "../../sdk/protocol"
     },
     {
       "path": "../subagent"
     },
     {
-      "path": "../../support/loader-smoke"
+      "path": "../../test-support/loader-smoke"
     },
     {
       "path": "../../subprocess/subprocess"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

@@ -19,6 +19,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { serializeRequest } from './serialize.ts'
 import type { RequestDefaults } from './serialize.ts'
 import { parseSse } from './sse.ts'
@@ -69,7 +70,7 @@ export interface DeepSeekConnectionOptions {
   retryPolicy: ResolvedRetryPolicy
 }
 
-/** Constructor options for {@link DeepSeekAdapter}: the two resolution hooks the plugin owns. */
+/** Constructor options for {@link DeepSeekAdapter}: the operation-local resolution hooks the plugin owns. */
 export interface DeepSeekAdapterOptions {
   /** Current validated connection facts; called once per operation. */
   options: () => DeepSeekConnectionOptions
@@ -80,6 +81,8 @@ export interface DeepSeekAdapterOptions {
    * `MISSING_CREDENTIAL` when no key is available anywhere.
    */
   resolveApiKey: (connection: DeepSeekConnectionOptions) => Promise<string>
+  /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
+  resolveUserId: () => AnonymousUserId
 }
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
@@ -90,10 +93,12 @@ export const DEFAULT_CONTEXT_WINDOW = 1_000_000
 export const DEFAULT_MAX_TOKENS = 256_000
 const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
 const OFF_REASONING_EFFORT = ReasoningEffortId('off')
+const LOW_REASONING_EFFORT = ReasoningEffortId('low')
 const HIGH_REASONING_EFFORT = ReasoningEffortId('high')
 const MAX_REASONING_EFFORT = ReasoningEffortId('max')
 const REASONING_EFFORTS = [
   { id: OFF_REASONING_EFFORT, name: 'Off' },
+  { id: LOW_REASONING_EFFORT, name: 'Low' },
   { id: HIGH_REASONING_EFFORT, name: 'High' },
   { id: MAX_REASONING_EFFORT, name: 'Max' },
 ] as const
@@ -107,6 +112,7 @@ function modelInfo(provider: string, model: DeepSeekCatalogModel): LlmModelInfo 
     id: model.id,
     name: model.name ?? model.id,
     ...model.description === undefined ? {} : { description: model.description },
+    inputModalities: ['text'],
   }
 }
 
@@ -178,8 +184,12 @@ export class DeepSeekAdapter extends LlmAdapter {
     const contextWindow = configured?.contextWindow
       ?? connection.defaultContextWindow
     return Promise.resolve({
+      // The chat-completions wire route is text-only regardless of catalog
+      // membership, so the uncatalogued fallback declares the same negative
+      // capability — "unknown" here would let the host accept and persist
+      // images the serializer must then reject.
       ...configured === undefined
-        ? { provider, id: model, name: model }
+        ? { provider, id: model, name: model, inputModalities: ['text' as const] }
         : modelInfo(provider, configured),
       context: { contextWindow },
       defaultMaxTokens: configured?.maxTokens ?? connection.maxTokens,
@@ -195,9 +205,11 @@ export class DeepSeekAdapter extends LlmAdapter {
             efforts: REASONING_EFFORTS,
             defaultEffort: connection.defaults.reasoningEffort === 'off'
               ? OFF_REASONING_EFFORT
-              : connection.defaults.reasoningEffort === 'max'
-                ? MAX_REASONING_EFFORT
-                : HIGH_REASONING_EFFORT,
+              : connection.defaults.reasoningEffort === 'low'
+                ? LOW_REASONING_EFFORT
+                : connection.defaults.reasoningEffort === 'max'
+                  ? MAX_REASONING_EFFORT
+                  : HIGH_REASONING_EFFORT,
           },
         },
     })
@@ -211,6 +223,7 @@ export class DeepSeekAdapter extends LlmAdapter {
     // sent to it can never come from different configuration generations.
     const connection = this.config.options()
     const apiKey = await this.config.resolveApiKey(connection)
+    const userId = this.config.resolveUserId()
     const consumer = new AbortController()
     const upstream = options.signal === undefined
       ? consumer.signal
@@ -221,6 +234,7 @@ export class DeepSeekAdapter extends LlmAdapter {
       watchdog.signal,
       connection,
       apiKey,
+      userId,
       () => { watchdog.pulse() },
     )[Symbol.asyncIterator]()
     let exhausted = false
@@ -263,6 +277,7 @@ export class DeepSeekAdapter extends LlmAdapter {
     signal: AbortSignal,
     connection: DeepSeekConnectionOptions,
     apiKey: string,
+    userId: AnonymousUserId,
     onComment: () => void,
   ): AsyncIterable<StreamChunk> {
     const body = serializeRequest(options, connection.defaults)
@@ -274,6 +289,7 @@ export class DeepSeekAdapter extends LlmAdapter {
       'content-type': 'application/json',
       'accept': 'text/event-stream',
       ...attributionHeaders(),
+      'x-deepseek-harness-user-id': String(userId),
       ...options.sessionId !== undefined
         ? { 'x-deepseek-harness-session-id': String(options.sessionId) }
         : {},

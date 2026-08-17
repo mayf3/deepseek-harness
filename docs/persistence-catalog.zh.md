@@ -5,11 +5,11 @@
 
 [English](persistence-catalog.md) | 中文
 
-会话持久事件日志中可能出现的所有事件类型：完整持久化的 `SessionEvent` 信封，以及可通过合并扩展的 `SessionEventMap` 中的每个成员，包括 `@deepseek-ai/dsh-session` 所属的词汇和本仓库中每个插件对 `@deepseek-ai/dsh-session/types` 的声明合并，并附有源 JSDoc、完整 payload 声明、surface 标记和声明位置。本文档是 [session.md](subsystems/session.md)（surface 排序与 `deriveMessages()` 投影）、[persistence.md](subsystems/persistence.md)（如何让日志持久化）和 [session.md](subsystems/session.md#cordis-surface) 中生成区域（实时总线接线；日志事件**不是** cordis 事件，它通过唯一一次 `session/event` emit 到达监听器）的补充。
+会话持久事件日志中可能出现的所有事件类型：完整持久化的 `SessionEvent` 信封，以及可通过合并扩展的 `SessionEventMap` 中的每个成员，包括 `@deepseek-ai/dsh-session` 所属的词汇和本仓库中每个插件对 `@deepseek-ai/dsh-session/types` 的声明合并，并附有源 JSDoc、完整 payload 声明、surface 标记和声明位置。本文档是 [session.md](subsystems/session.md)（surface 排序与 `deriveMessages()` 投影）、[persistence.md](subsystems/persistence.md)（如何让日志持久化）和 [session.md](subsystems/session.md#cordis-surface) 中生成区域（实时总线接线；日志事件**不是** cordis 事件，它通过唯一的 `session/event` emit 到达监听器）的补充。
 
 英文源文件根据源码生成（`scripts/gen-persistence-catalog.ts`），并由 `pnpm run verify-persistence-catalog`（`doc-sync`（文档同步门禁）的一部分）验证新鲜度；本中文文件作为经评审对侧通过双语配对维护。声明块保留源码声明和嵌套属性的 JSDoc，只移除其所在接口／模块带来的缩进，并使用 `ts persistence-catalog` 围栏（doc-typecheck 会跳过这些围栏，因为声明引用了其所属模块中的类型）。payload 中的类型名称会链接到记录该类型的页面。参见 [persistence-log-catalog Agent Note](../.agents/notes/archived/process/2026-07-04-persistence-log-catalog.md)。
 
-以下信封声明组合了每个事件的 `type`、单调递增的 `seq`、以 epoch 毫秒表示的 `time`、`data`，以及条件字段 `surfaceOp`／`sourceEventSeqs`。**surface** 表示 `SurfaceEventType` 成员：它会生成一条 LLM（大语言模型）消息，并声明该事件如何加入 surface 列表。**log-only** 表示其他所有事件：这类记录可持久化、可回放，但不参与派生历史。每个 payload 均可进行 JSON 序列化（在 `Session.append` 处强制执行），整个格式固定为 `SESSION_FORMAT_VERSION = 0`：这是预发布格式，不暗示任何兼容性（参见[版本立场](subsystems/persistence.md)）。范围仅限本仓库中的包；下游插件可以继续合并其他事件类型，而这些类型按设计不属于本目录。
+以下信封声明组合了每个事件的 `type`、单调递增的 `seq`、以 epoch 毫秒表示的 `time`、`data`、可选的未知类型跳过标记 `ignorable`，以及条件字段 `surfaceOp`／`sourceEventSeqs`。**surface** 表示 `SurfaceEventType` 成员：它会生成一条 LLM（大语言模型）消息，并声明该事件如何加入 surface 列表。**log-only** 表示其他所有事件：这类记录可持久化、可回放，但不参与派生历史。每个 payload 均可进行 JSON 序列化（在 `Session.append` 处强制执行），整个格式固定为 `SESSION_FORMAT_VERSION = 0`：这是预发布格式，不暗示任何兼容性（参见[版本立场](subsystems/persistence.md)）。范围仅限本仓库中的包；下游插件可以继续合并其他事件类型，而这些类型按设计不属于本目录。
 
 ## 事件信封
 
@@ -65,6 +65,17 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
     /** Unix epoch milliseconds. */
     time: number
     data: SessionEventMap[K]
+    /**
+     * Marks an event a reader may safely skip when it does not recognize
+     * `type`. Absent means required: a reader meeting an unrecognized type
+     * without this marker MUST refuse to reconstruct the session instead of
+     * silently dropping the event, because an unrecognized required event may
+     * change how the rest of the log is interpreted. A writer sets `true` only
+     * on purely informational records whose loss cannot affect reconstruction;
+     * defaulting to required means a forgotten marker over-refuses (an
+     * inconvenience) rather than silently resuming a gutted session.
+     */
+    ignorable?: true
   } & (K extends SurfaceEventType ? {
     /**
      * Seq numbers of earlier events that this event cites as sources
@@ -81,11 +92,13 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-来源：[`packages/core/session/src/types.ts:320`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:327`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:356`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:388`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:340`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:347`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:376`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:408`](../packages/core/session/src/types.ts)
 
 ## 事件
 
 ### `agent/*`
+
+<a id="agentinboxspliced--log-only"></a>
 
 #### `agent/inbox/spliced` — log-only
 
@@ -108,6 +121,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `agent-preset/*`
 
+<a id="agent-presetselected--log-only"></a>
+
 #### `agent-preset/selected` — log-only
 
 ```ts persistence-catalog
@@ -123,6 +138,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 来源：[`packages/preset/agent-presets/src/session.ts:26`](../packages/preset/agent-presets/src/session.ts)
 
 ### `approval/*`
+
+<a id="approvalasked--log-only"></a>
 
 #### `approval/asked` — log-only
 
@@ -147,6 +164,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/interaction/user-approval/src/index.ts:44`](../packages/interaction/user-approval/src/index.ts)
 
+<a id="approvaldecided--log-only"></a>
+
 #### `approval/decided` — log-only
 
 ```ts persistence-catalog
@@ -162,6 +181,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```
 
 来源：[`packages/interaction/user-approval/src/index.ts:55`](../packages/interaction/user-approval/src/index.ts)
+
+<a id="approvalpolicy--log-only"></a>
 
 #### `approval/policy` — log-only
 
@@ -185,6 +206,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `assistant/*`
 
+<a id="assistantchunk--log-only"></a>
+
 #### `assistant/chunk` — log-only
 
 ```ts persistence-catalog
@@ -194,7 +217,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[StreamChunk](subsystems/llm-streaming.md)
 
-来源：[`packages/core/session/src/types.ts:246`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:266`](../packages/core/session/src/types.ts)
+
+<a id="assistantmessage--surface"></a>
 
 #### `assistant/message` — surface
 
@@ -205,18 +230,20 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * the model output and its accounting travel together (there is no separate
  * usage record). `usage` is absent when the adapter reported none. A turn
  * cancelled mid-stream finalizes its delivered text/reasoning prefix as this
- * event with `interrupted: true` (undispatched tool calls are absent), so
- * consumers classify the truncation without re-deriving it from turn
- * boundaries; an aborted turn with no such event streamed no visible content.
+ * event with `interrupted: true`; undispatched tool calls are absent. The
+ * marker distinguishes that prefix without re-deriving interruption from turn
+ * boundaries. An aborted turn with no such event streamed no visible content.
  */
 'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true }
 ```
 
 类型：[TokenUsage](subsystems/llm-streaming.md)
 
-来源：[`packages/core/session/src/types.ts:257`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:277`](../packages/core/session/src/types.ts)
 
 ### `command/*`
+
+<a id="commanddone--log-only"></a>
 
 #### `command/done` — log-only
 
@@ -235,7 +262,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/interaction/commands/src/types.ts:41`](../packages/interaction/commands/src/types.ts)
+来源：[`packages/interaction/commands/src/types.ts:95`](../packages/interaction/commands/src/types.ts)
+
+<a id="commandrun--log-only"></a>
 
 #### `command/run` — log-only
 
@@ -253,35 +282,39 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'command/run': { commandId: CommandId; name: string; args?: string; source: CommandSource }
 ```
 
-来源：[`packages/interaction/commands/src/types.ts:34`](../packages/interaction/commands/src/types.ts)
+来源：[`packages/interaction/commands/src/types.ts:88`](../packages/interaction/commands/src/types.ts)
 
-### `compact/*`
+### `compaction/*`
 
-#### `compact/end` — log-only
+<a id="compactionend--log-only"></a>
+
+#### `compaction/end` — log-only
 
 ```ts persistence-catalog
 /**
  * Marks the end of a compaction — log-only, releases the lock. Its owner
- * matches `compact/start`; `error` records an unsuccessful attempt.
+ * matches `compaction/start`; `error` records an unsuccessful attempt.
  */
-'compact/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string }
+'compaction/end': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null; error?: string }
 ```
 
-来源：[`packages/compact/compact/src/types.ts:71`](../packages/compact/compact/src/types.ts)
+来源：[`packages/compaction/compaction/src/types.ts:71`](../packages/compaction/compaction/src/types.ts)
 
-#### `compact/prune` — log-only
+<a id="compactionprune--log-only"></a>
+
+#### `compaction/prune` — log-only
 
 ```ts persistence-catalog
 /**
  * Shadow price of one model-free prune replacement — log-only, no
  * surfaceOp. The shared shadow-price protocol: a surface `replace` event
- * is priced by the metering event immediately before it (`compact/summary`
+ * is priced by the metering event immediately before it (`compaction/summary`
  * for a summarizing compaction, this event for a prune), which states the
  * heuristic token price of the exact replaced range so a pure consumer
  * can subtract it without retaining per-node prices. The replacement MUST
  * be appended synchronously right after this event.
  */
-'compact/prune': {
+'compaction/prune': {
   /** The replaced range's first and last surface-node seqs (a surface-position span, like {@link CompactionResult.shadowedRange}). */
   shadowedRange: { start: number; end: number }
   /** The seqs of all shadowed surface nodes, in surface order. */
@@ -291,22 +324,26 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/compact/compact/src/types.ts:81`](../packages/compact/compact/src/types.ts)
+来源：[`packages/compaction/compaction/src/types.ts:81`](../packages/compaction/compaction/src/types.ts)
 
-#### `compact/start` — log-only
+<a id="compactionstart--log-only"></a>
+
+#### `compaction/start` — log-only
 
 ```ts persistence-catalog
 /**
  * Marks the start of a compaction — log-only, holds the lock until
- * `compact/end`. A numbered owner is strictly enclosed by that open turn;
+ * `compaction/end`. A numbered owner is strictly enclosed by that open turn;
  * `null` identifies a standalone manual transaction between turns.
  */
-'compact/start': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null }
+'compaction/start': { compactionId: CompactionId; sourceCommandId?: CommandId; turn: number | null }
 ```
 
-来源：[`packages/compact/compact/src/types.ts:23`](../packages/compact/compact/src/types.ts)
+来源：[`packages/compaction/compaction/src/types.ts:23`](../packages/compaction/compaction/src/types.ts)
 
-#### `compact/summary` — log-only
+<a id="compactionsummary--log-only"></a>
+
+#### `compaction/summary` — log-only
 
 ```ts persistence-catalog
 /**
@@ -316,9 +353,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * shadows the compacted range. That adjacency is contractual — the
  * shadowed pricing fields are the replacement's shadow price, so a
  * consumer may pair a replacement with the metering event directly
- * before it (`compact/prune` documents the shared protocol).
+ * before it (`compaction/prune` documents the shared protocol).
  */
-'compact/summary': {
+'compaction/summary': {
   compactionId: CompactionId
   sourceCommandId?: CommandId
   summary: ContentBlock[]
@@ -356,23 +393,27 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[ContentBlock](subsystems/core.md) · [TokenUsage](subsystems/llm-streaming.md)
 
-来源：[`packages/compact/compact/src/types.ts:33`](../packages/compact/compact/src/types.ts)
+来源：[`packages/compaction/compaction/src/types.ts:33`](../packages/compaction/compaction/src/types.ts)
 
 ### `feedback/*`
+
+<a id="feedbackrecord--log-only"></a>
 
 #### `feedback/record` — log-only
 
 ```ts persistence-catalog
 /**
  * One recorded human remark about this session. Log-only and independent
- * of its trigger; it never enters the model surface or derived history.
+ * of its trigger; it never enters model context or derived history.
  */
 'feedback/record': { text: string }
 ```
 
-来源：[`packages/feedback/command-feedback/src/index.ts:24`](../packages/feedback/command-feedback/src/index.ts)
+来源：[`packages/feedback/command-feedback/src/index.ts:62`](../packages/feedback/command-feedback/src/index.ts)
 
 ### `goal/*`
+
+<a id="goalchange--log-only"></a>
 
 #### `goal/change` — log-only
 
@@ -387,12 +428,14 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `hook/*`
 
+<a id="hookinvoked--log-only"></a>
+
 #### `hook/invoked` — log-only
 
 ```ts persistence-catalog
 /**
  * A hook command was invoked at a hook point — a log-only record (like
- * `compact/*`; NOT a {@link SurfaceEventType}, carries no `surfaceOp`).
+ * `compaction/*`; NOT a {@link SurfaceEventType}, carries no `surfaceOp`).
  * `dialect` is the bridge that ran it (`claude`/`codex`), `point`
  * the hook point (`PreToolUse`, `Stop`, …), `matcher` the matcher-group
  * pattern that selected it (absent for match-all), `handlerId` a stable id
@@ -409,6 +452,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```
 
 来源：[`packages/hooks/hook-protocol/src/types.ts:19`](../packages/hooks/hook-protocol/src/types.ts)
+
+<a id="hookresult--log-only"></a>
 
 #### `hook/result` — log-only
 
@@ -433,6 +478,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `llm/*`
 
+<a id="llmretry--log-only"></a>
+
 #### `llm/retry` — log-only
 
 ```ts persistence-catalog
@@ -441,6 +488,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```
 
 来源：[`packages/llm/llm-retry/src/types.ts:9`](../packages/llm/llm-retry/src/types.ts)
+
+<a id="llmretry-started--log-only"></a>
 
 #### `llm/retry-started` — log-only
 
@@ -452,6 +501,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 来源：[`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src/types.ts)
 
 ### `permission/*`
+
+<a id="permissionpreset--log-only"></a>
 
 #### `permission/preset` — log-only
 
@@ -465,9 +516,11 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'permission/preset': { preset: string }
 ```
 
-来源：[`packages/interaction/permission/src/index.ts:50`](../packages/interaction/permission/src/index.ts)
+来源：[`packages/interaction/permission-presets/src/index.ts:50`](../packages/interaction/permission-presets/src/index.ts)
 
 ### `plan/*`
+
+<a id="planmode--log-only"></a>
 
 #### `plan/mode` — log-only
 
@@ -480,9 +533,11 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'plan/mode': { active: boolean }
 ```
 
-来源：[`packages/plan/plan-mode/src/index.ts:52`](../packages/plan/plan-mode/src/index.ts)
+来源：[`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/src/index.ts)
 
 ### `request/*`
+
+<a id="requestcontext--log-only"></a>
 
 #### `request/context` — log-only
 
@@ -494,7 +549,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'request/context': RequestContext
 ```
 
-来源：[`packages/core/session/src/types.ts:293`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:313`](../packages/core/session/src/types.ts)
+
+<a id="requestheader--log-only"></a>
 
 #### `request/header` — log-only
 
@@ -506,9 +563,11 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'request/header': { header: EpochHeader; reason: RequestHeaderReason }
 ```
 
-来源：[`packages/core/session/src/types.ts:288`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:308`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
+
+<a id="sandboxmode--log-only"></a>
 
 #### `sandbox/mode` — log-only
 
@@ -529,7 +588,27 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/sandbox/sandbox-policy/src/session-mode.ts:33`](../packages/sandbox/sandbox-policy/src/session-mode.ts)
 
+### `schedule/*`
+
+<a id="schedulechange--log-only"></a>
+
+#### `schedule/change` — log-only
+
+```ts persistence-catalog
+/**
+ * Versioned Schedule mutation. The owning package validates the complete
+ * session-local transition stream before accepting a candidate event.
+ */
+'schedule/change': ScheduleChange
+```
+
+类型：[ScheduleChange](subsystems/schedule.md)
+
+来源：[`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/schedule/src/types.ts)
+
 ### `session/*`
+
+<a id="sessionend-seed--log-only"></a>
 
 #### `session/end-seed` — log-only
 
@@ -549,8 +628,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * companion deliberately constrains nothing here, so a plugin appending one
  * would silently classify every live bracket before it as seed history.
  *
- * An owner of a standalone open/close bracket (`compact/start` …
- * `compact/end`) reads it because seed history and live work are otherwise
+ * An owner of a standalone open/close bracket (`compaction/start` …
+ * `compaction/end`) reads it because seed history and live work are otherwise
  * byte-identical: an unmatched opening marker before this event belongs to
  * an ended lifecycle, whatever ended it. NOT a liveness signal about other
  * writers — a concurrently live session holds its own boundary elsewhere,
@@ -559,7 +638,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'session/end-seed': Record<string, never>
 ```
 
-来源：[`packages/core/session/src/types.ts:316`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:336`](../packages/core/session/src/types.ts)
+
+<a id="sessiontitle--log-only"></a>
 
 #### `session/title` — log-only
 
@@ -575,6 +656,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/session/session-title/src/index.ts:100`](../packages/session/session-title/src/index.ts)
 
+<a id="sessiontitle-llm-request--log-only"></a>
+
 #### `session/title-llm-request` — log-only
 
 ```ts persistence-catalog
@@ -588,6 +671,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `step/*`
 
+<a id="stepend--log-only"></a>
+
 #### `step/end` — log-only
 
 ```ts persistence-catalog
@@ -595,7 +680,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'step/end': { turn: number; step: number }
 ```
 
-来源：[`packages/core/session/src/types.ts:236`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:256`](../packages/core/session/src/types.ts)
+
+<a id="stepstart--log-only"></a>
 
 #### `step/start` — log-only
 
@@ -604,9 +691,11 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'step/start': { turn: number; step: number }
 ```
 
-来源：[`packages/core/session/src/types.ts:234`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:254`](../packages/core/session/src/types.ts)
 
 ### `subagent/*`
+
+<a id="subagentdescriptor--log-only"></a>
 
 #### `subagent/descriptor` — log-only
 
@@ -625,6 +714,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `todo/*`
 
+<a id="todowrite--log-only"></a>
+
 #### `todo/write` — log-only
 
 ```ts persistence-catalog
@@ -634,9 +725,11 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[TodoItem](subsystems/session.md)
 
-来源：[`packages/core/session/src/types.ts:283`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:303`](../packages/core/session/src/types.ts)
 
 ### `tool/*`
+
+<a id="toolcall--log-only"></a>
 
 #### `tool/call` — log-only
 
@@ -651,7 +744,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[CallId](subsystems/core.md)
 
-来源：[`packages/core/session/src/types.ts:263`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:283`](../packages/core/session/src/types.ts)
+
+<a id="toolcode-dispatch--log-only"></a>
 
 #### `tool/code-dispatch` — log-only
 
@@ -676,6 +771,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/core/tools/src/types.ts:56`](../packages/core/tools/src/types.ts)
 
+<a id="toolcode-dispatch-start--log-only"></a>
+
 #### `tool/code-dispatch-start` — log-only
 
 ```ts persistence-catalog
@@ -696,6 +793,8 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```
 
 来源：[`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types.ts)
+
+<a id="toolresult--surface"></a>
 
 #### `tool/result` — surface
 
@@ -720,9 +819,69 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/core/session/src/types.ts:275`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:295`](../packages/core/session/src/types.ts)
+
+### `tool-workflow/*`
+
+<a id="tool-workflowagent-end--log-only"></a>
+
+#### `tool-workflow/agent-end` — log-only
+
+```ts persistence-catalog
+/**
+ * Records one member settlement.
+ * @param data - run identity, paired member sequence, and outcome.
+ */
+'tool-workflow/agent-end': ToolWorkflowAgentEndData
+```
+
+来源：[`packages/workflow/tool-workflow/src/types.ts:57`](../packages/workflow/tool-workflow/src/types.ts)
+
+<a id="tool-workflowagent-start--log-only"></a>
+
+#### `tool-workflow/agent-start` — log-only
+
+```ts persistence-catalog
+/**
+ * Records one published workflow member.
+ * @param data - run identity, member sequence, display identity, and child Session.
+ */
+'tool-workflow/agent-start': ToolWorkflowAgentStartData
+```
+
+来源：[`packages/workflow/tool-workflow/src/types.ts:52`](../packages/workflow/tool-workflow/src/types.ts)
+
+<a id="tool-workflowrun-end--log-only"></a>
+
+#### `tool-workflow/run-end` — log-only
+
+```ts persistence-catalog
+/**
+ * Closes one workflow record after cleanup.
+ * @param data - stable run identity and terminal reason.
+ */
+'tool-workflow/run-end': ToolWorkflowRunEndData
+```
+
+来源：[`packages/workflow/tool-workflow/src/types.ts:62`](../packages/workflow/tool-workflow/src/types.ts)
+
+<a id="tool-workflowrun-start--log-only"></a>
+
+#### `tool-workflow/run-start` — log-only
+
+```ts persistence-catalog
+/**
+ * Opens one top-level workflow record.
+ * @param data - stable run identity and display name.
+ */
+'tool-workflow/run-start': ToolWorkflowRunStartData
+```
+
+来源：[`packages/workflow/tool-workflow/src/types.ts:47`](../packages/workflow/tool-workflow/src/types.ts)
 
 ### `turn/*`
+
+<a id="turnend--log-only"></a>
 
 #### `turn/end` — log-only
 
@@ -740,7 +899,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[TurnEndReason](subsystems/session.md)
 
-来源：[`packages/core/session/src/types.ts:232`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:252`](../packages/core/session/src/types.ts)
+
+<a id="turnstart--log-only"></a>
 
 #### `turn/start` — log-only
 
@@ -754,9 +915,11 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'turn/start': { turn: number }
 ```
 
-来源：[`packages/core/session/src/types.ts:223`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:243`](../packages/core/session/src/types.ts)
 
 ### `user/*`
+
+<a id="usermessage--surface"></a>
 
 #### `user/message` — surface
 
@@ -771,9 +934,11 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'user/message': UserMessage
 ```
 
-来源：[`packages/core/session/src/types.ts:244`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:264`](../packages/core/session/src/types.ts)
 
 ### `web/*`
+
+<a id="webdeepseek-search-llm-request--log-only"></a>
 
 #### `web/deepseek-search-llm-request` — log-only
 

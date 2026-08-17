@@ -10,9 +10,9 @@ Status: implemented
 
 ## 决策
 
-交付的 TUI、Web 与无头 surface 不再挂载 `@deepseek-ai/dsh-tool-session-query`：该行从共享的 `cordis.patch.yml` 移除，opt-in 的 [`core-web.cordis.yml`](../../../../apps/cli/config/core-web.cordis.yml) profile 中那条已悬空的 `disabled` patch 也随之删除，workspace 依赖也从 `apps/cli/package.json` 中移除。该消费方仍保持 opt-in，与面向模型的会话查询工具决策所述完全一致：ACP（Agent Client Protocol）示例的 [`session-query.cordis.yml`](../../../../examples/acp-agent/session-query.cordis.yml) 及其快照对侧文件仍是挂载参考，自定义组合也可以连同超时与 spill 策略一起挂载该包。
+交付的 TUI、Web 与无头 surface 均不挂载 `@deepseek-ai/dsh-tool-session-query`，交付的 agent preset 也都不包含它。该消费方仍保持 opt-in，与面向模型的会话查询工具决策所述完全一致：ACP（Agent Client Protocol）示例的 [`session-query.cordis.yml`](../../../../examples/acp-agent/session-query.cordis.yml) 及其快照对侧文件仍是挂载参考，自定义组合也可以连同超时与 spill 策略一起挂载该包。
 
-`ctx.sessionQuery` 服务本身保持挂载。`session-query-sqlite` 仍是 base 的一行，TUI 的 `session-reference` 消费它来实现 `/resume`，Web overlay 也继续把它 patch 成内存索引，供浏览器内容搜索使用。被移除的只有面向模型的消费方。
+`ctx.sessionQuery` 服务本身保持挂载。`session-query-sqlite` 仍是 base 的一行，TUI 的 `session-reference` 消费它来实现 `/resume`；其全文索引默认关闭（`openAt: never`，见[内容搜索 opt-in 决策](../architecture/2026-08-13-session-content-search-opt-in.md)），Web overlay 保留内存索引取值，供启用内容搜索的部署使用。被移除的只有面向模型的消费方。
 
 ## 曾考虑的替代方案
 
