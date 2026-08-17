@@ -130,6 +130,16 @@ function foldKnobs(events: readonly SessionEvent[]): KnobState {
   return state
 }
 
+/**
+ * Whether a live session is still a fresh Web New Session placeholder. This
+ * mirrors the host blank rule (no `turn/start`) but excludes constructor
+ * seeds, which preserve their effective permissions instead of following
+ * later defaults.
+ */
+function isUnseededBlankSession(events: readonly SessionEvent[]): boolean {
+  return !events.some(event => event.type === 'turn/start' || event.type === 'session/end-seed')
+}
+
 /** User setting resolved when a new session receives its initial permission. */
 export interface PermissionSettings {
   /** Preset pinned into a newly created session. */
@@ -181,6 +191,7 @@ export class PermissionPresetService extends Service {
 
   private readonly presets: Record<string, PresetSpec>
   private defaultSettings: () => PermissionSettings
+  private activeDefaultPreset: string
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'permissionPresets')
@@ -200,6 +211,7 @@ export class PermissionPresetService extends Service {
     this.resolve(defaultPreset)
     const baseSettings: PermissionSettings = { defaultPreset }
     this.defaultSettings = () => baseSettings
+    this.activeDefaultPreset = defaultPreset
     const presetChoices = this.names.map((name) => {
       const choice = z.const(name)
       const label = this.presets[name]?.name
@@ -212,9 +224,7 @@ export class PermissionPresetService extends Service {
       setSource: (current) => {
         this.defaultSettings = current
       },
-      // The source thunk reads the latest scope snapshot at session creation;
-      // no process-level registration needs replacement on change.
-      onChange: () => {},
+      onChange: () => { this.syncBlankSessionsToDefault() },
     })
 
     ctx.on('session/created', (session) => {
@@ -388,6 +398,20 @@ export class PermissionPresetService extends Service {
     }
     if (spec.approval !== (effectiveApprovalPolicy(events) ?? this.ctx.approval.config.policy ?? 'ask')) {
       setApproval(spec.approval)
+    }
+  }
+
+  /** Advance reusable blank sessions that still carry the previous default. */
+  private syncBlankSessionsToDefault(): void {
+    const previous = this.activeDefaultPreset
+    const next = this.defaultPreset
+    this.activeDefaultPreset = next
+    if (next === previous) return
+    this.resolve(next)
+    for (const session of this.ctx.sessions.list()) {
+      if (!isUnseededBlankSession(session.events)) continue
+      if (this.current(session.events) !== previous) continue
+      this.set(session, next)
     }
   }
 

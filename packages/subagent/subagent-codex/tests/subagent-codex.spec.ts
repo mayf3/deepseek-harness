@@ -1632,7 +1632,7 @@ describe('run lifecycle and quiescence', () => {
       stopReason: 'error',
     })
     expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
-      argv: ['codex', 'app-server', '--stdio'],
+      argv: codexAppServerArgv(),
       env: { OPENAI_API_KEY: 'fake' },
       graceMs: 25,
       cwd: process.cwd(),

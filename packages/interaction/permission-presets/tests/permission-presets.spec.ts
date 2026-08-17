@@ -201,6 +201,7 @@ describe('new-session default', () => {
       ['sandbox/mode', { mode: 'workspace-write' }],
       ['approval/policy', { policy: 'ask' }],
     ])
+    first.append('turn/start', { turn: 1 })
 
     await ctx.settings.update(PERMISSION_SETTINGS_NAMESPACE, {
       defaultPreset: 'danger-full-access',
@@ -212,6 +213,44 @@ describe('new-session default', () => {
     expect(second.events.map(event => event.type)).toEqual([
       'permission/preset', 'sandbox/mode', 'approval/policy',
     ])
+  })
+
+  it('advances reusable blank sessions that still carry the previous default', async () => {
+    const ctx = await mountedStore()
+    const blank = ctx.sessions.create(SessionId('blank-placeholder'))
+    expect(ctx.permissionPresets.current(blank.events)).toBe('workspace-write')
+
+    await ctx.settings.update(PERMISSION_SETTINGS_NAMESPACE, {
+      defaultPreset: 'danger-full-access',
+    })
+
+    expect(ctx.permissionPresets.current(blank.events)).toBe('danger-full-access')
+    expect(blank.events.map(event => [event.type, event.data])).toEqual([
+      ['permission/preset', { preset: 'workspace-write' }],
+      ['sandbox/mode', { mode: 'workspace-write' }],
+      ['approval/policy', { policy: 'ask' }],
+      ['permission/preset', { preset: 'danger-full-access' }],
+      ['sandbox/mode', { mode: 'danger-full-access' }],
+      ['approval/policy', { policy: 'never' }],
+    ])
+  })
+
+  it('leaves blank sessions with an explicit pick or a constructor seed unchanged', async () => {
+    const ctx = await mountedStore()
+    const picked = ctx.sessions.create(SessionId('blank-explicit-pick'))
+    ctx.permissionPresets.set(picked, 'danger-full-access')
+    const pickedEvents = [...picked.events]
+
+    const restored = ctx.sessions.create(SessionId('blank-restored'), { seed: [] })
+    expect(ctx.permissionPresets.current(restored.events)).toBe('workspace-write')
+    const restoredEvents = [...restored.events]
+
+    await ctx.settings.update(PERMISSION_SETTINGS_NAMESPACE, {
+      defaultPreset: 'danger-full-access',
+    })
+
+    expect(picked.events).toEqual(pickedEvents)
+    expect(restored.events).toEqual(restoredEvents)
   })
 
   it('preserves a seeded legacy session instead of applying the latest user default', async () => {
