@@ -7,7 +7,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import type {
-  BootManifest, ClientModuleSystem, ClientModuleSystemOptions, DshWindow,
+  BootManifest, ClientModuleCreateOptions, ClientModuleSystem, DshWindow,
 } from '@deepseek-ai/dsh-client-modules/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { BootPage } from './boot-page.ts'
@@ -16,46 +16,7 @@ import { STATE_LABELS } from './loader-status.ts'
 import './base.css'
 
 /** Module transport hook replaced by jsdom tests. */
-export type BootSeams = Pick<ClientModuleSystemOptions, 'loadBundle'>
-
-/** Runtime exports materialized from the parser-preloaded modules bundle. */
-type ModulesClientExports = typeof import('@deepseek-ai/dsh-client-modules/client')
-
-/** Statically adopted bootstrap package that constructs the client module system. */
-const MODULES_ID = '@deepseek-ai/dsh-client-modules'
-
-/**
- * Claim and materialize the modules handoff before the module system exists.
- * The bootstrap bundle must be self-contained because no module table can
- * answer a runtime external yet.
- * @param win - Browser boot globals populated by the host HTML transform.
- * @returns The modules package's browser exports.
- */
-function claimModulesClient(win: DshWindow): ModulesClientExports {
-  const queue = win.__ModuleLoader__
-  if (queue === undefined || queue.mode !== 'queue') {
-    throw new Error('web boot: window.__ModuleLoader__ bootstrap queue is missing')
-  }
-  const index = queue.handoffs.findIndex(handoff => handoff.id === MODULES_ID)
-  const handoff = queue.handoffs[index]
-  if (handoff === undefined) {
-    throw new Error(`web boot: HTML did not preload ${MODULES_ID}/client.js`)
-  }
-  queue.handoffs.splice(index, 1)
-  const exports = handoff.factory((specifier) => {
-    throw new Error(
-      `web boot: ${MODULES_ID}/client.js requested external "${specifier}" before the module system existed`,
-    )
-  })
-  if (
-    typeof exports.ClientModuleSystem !== 'function'
-    || typeof exports.parseBootManifest !== 'function'
-    || typeof exports.apply !== 'function'
-  ) {
-    throw new Error(`web boot: ${MODULES_ID}/client.js did not export the bootstrap module face`)
-  }
-  return exports as unknown as ModulesClientExports
-}
+export type BootSeams = Pick<ClientModuleCreateOptions, 'loadBundle'>
 
 /** Browser boot entry consumed by `apps/web`. */
 export class AppWebEntry {
@@ -85,15 +46,16 @@ export class AppWebEntry {
   async run(): Promise<void> {
     try {
       const win = globalThis as DshWindow
-      const modulesClient = claimModulesClient(win)
-      this.manifest = modulesClient.parseBootManifest(win.__DSH_BOOT__)
-      this.modules = new modulesClient.ClientModuleSystem({
-        modules: this.manifest.modules,
+      const moduleLoader = win.__ModuleLoader__
+      if (moduleLoader === undefined) {
+        throw new Error('web boot: window.__ModuleLoader__ bootstrap facade is missing')
+      }
+      this.modules = moduleLoader.create({
+        boot: win.__DSH_BOOT__,
         staticModules: getStaticModules(),
         ...this.seams,
       })
-      this.modules.registerStatic(MODULES_ID, modulesClient)
-      win.__DSH_MODULES__ = this.modules
+      this.manifest = this.modules.manifest
 
       const prefetching = this.prefetchImmediateTier()
       const ctx = new Context()
@@ -143,7 +105,7 @@ export class AppWebEntry {
       this.page.setState(entry.options.name, STATE_LABELS[entry.fiber.state])
     })
 
-    const rows = [MODULES_ID, ...this.manifest.plugins.map(row => row.id).filter(id => id !== MODULES_ID)]
+    const rows = this.manifest.plugins.map(row => row.id)
     this.page.setTotal(rows.length)
     await prefetching
     await Promise.all(rows.map(async (name) => {

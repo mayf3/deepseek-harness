@@ -45,13 +45,13 @@ There is no general `dsh.client.provide` alias mechanism. Dynamic rows and stati
 
 The modules Node half injects the startup protocol into the served HTML in this order:
 
-1. Create the `window.__ModuleLoader__` handoff queue.
+1. Install `window.__ModuleLoader__` in queue mode with `pendingQueue`, `load()`, and `create()`.
 2. Execute the modules graph row's ordinary `lib/client.js` as a blocking classic script.
 3. Execute runtime's ordinary `lib/client.js` the same way.
 4. Assign `window.__DSH_BOOT__`.
 5. Execute the Vite main module.
 
-Both early scripts only register factories. The startup kernel claims the modules handoff and materializes it with a `require` function that rejects every external, constructs `ClientModuleSystem` from those exports, registers the same exports for the modules row, and lets the system drain runtime's queued factory. The modules client face consequently has a zero-runtime-external bootstrap requirement.
+Both early scripts only register factories. The startup kernel passes the raw graph and shell seeds to `__ModuleLoader__.create()`. The facade removes the modules registration, materializes it with a `require` function that rejects every external, and invokes its `createClientModuleSystem` export. The modules bundle parses the graph, constructs `ClientModuleSystem`, caches its own exports as the modules row, and retains the system in a module closure. Construction switches the same facade to live mode before draining runtime's pending factory. The modules client face consequently has a zero-runtime-external bootstrap requirement.
 
 After the `immediately` tier has registered its factories, the kernel creates all Loader entries, awaits Cordis quiescence, and requires every fiber to be ACTIVE. It then calls `ctx.uiRenderer.mount(container)`. The dynamic `ui-renderer` package owns React, slot rendering, hydration of the existing boot DOM, and the React root lifecycle; the startup kernel and failure page remain React-free.
 
@@ -79,7 +79,7 @@ Ordinary installed libraries remain `dependencies`: a dynamic build may bundle a
 
 Bundle contents stay stable when an npm dependency moves between peer and development sections, because each build face declares externality directly. Static libraries remain host-assembled, while dynamic packages retain uniform artifacts and lifecycle governance.
 
-The startup protocol depends on the modules and runtime package ids, and modules must remain self-contained at runtime. Missing bootstrap handoffs fail before Cordis starts; later plugin import, apply, and service-wait failures remain visible through the boot page's ACTIVE scan.
+The startup protocol depends on the modules and runtime package ids, and modules must remain self-contained at runtime. A missing bootstrap registration fails before Cordis starts; later plugin import, apply, and service-wait failures remain visible through the boot page's ACTIVE scan.
 
 The shell consumes built `lib/` products, so source and browser artifacts can drift until the relevant build or watcher runs. Typechecking source alone does not prove the served application uses the same code.
 

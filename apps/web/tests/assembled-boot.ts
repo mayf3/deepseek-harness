@@ -11,9 +11,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { act, cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
-import type {
-  ClientModuleHandoffTarget, ClientPluginHandoff, WebBootEntry,
-} from '@deepseek-ai/dsh-client-modules/client'
+import { injectBootManifest } from '@deepseek-ai/dsh-client-modules'
+import type { ClientModuleLoaderTarget, WebBootEntry } from '@deepseek-ai/dsh-client-modules/client'
 import { AppWebEntry } from '@deepseek-ai/dsh-client-web'
 
 /** Boot entries for the minimal assembled graph, each carrying the workspace bundle it loads. */
@@ -59,7 +58,7 @@ const bundles = new Map(PLUGINS.map(plugin => [
 
 interface FixtureWindow extends Window {
   __DSH_BOOT__?: { rev: string; entries: WebBootEntry[] }
-  __ModuleLoader__?: ClientModuleHandoffTarget
+  __ModuleLoader__?: ClientModuleLoaderTarget
 }
 
 class ResizeObserverStub {
@@ -123,14 +122,11 @@ export function mountAssembledApp(): void {
   root.id = 'root'
   document.body.appendChild(root)
   win.__DSH_BOOT__ = { rev: 'fx', entries: PLUGINS.map(({ bundlePath: _bundlePath, ...plugin }) => plugin) }
-  const handoffs: ClientPluginHandoff[] = []
-  win.__ModuleLoader__ = {
-    mode: 'queue',
-    handoffs,
-    load(handoff) { handoffs.push(handoff) },
-  }
-  // Mirror the blocking Host-injected scripts: the kernel claims modules,
-  // then the resulting module system adopts runtime from the same queue.
+  const html = injectBootManifest('<head></head>', win.__DSH_BOOT__)
+  const facadeSource = /<head><script>([\s\S]*?)<\/script>/.exec(html)?.[1]
+  if (facadeSource === undefined) throw new Error('missing injected ModuleLoader facade')
+  ;(0, eval)(facadeSource)
+  // Mirror the blocking Host-injected scripts before the Vite entry calls create().
   for (const id of ['@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-client-runtime']) {
     const plugin = PLUGINS.find(candidate => candidate.id === id)
     if (plugin === undefined) throw new Error(`missing parser-preloaded fixture row ${id}`)

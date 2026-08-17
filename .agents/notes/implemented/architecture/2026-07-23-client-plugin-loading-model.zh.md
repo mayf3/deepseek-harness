@@ -28,13 +28,13 @@ host 侧，cordis 插件装载站在 Node 的模块机制之上——require cac
 
 [Client 外壳分层 Note](2026-08-15-client-shells-and-dynamic-packages.md)定义当前的静态、动态包集合及其 import 规则。装载机件把每个 `dsh.client` 包视为一个 host graph row，且每个包只有一个普通 `lib/client.js` factory bundle。包声明携带 Cordis `inject` 边、同步模块表 `external` 请求，以及可选的 `immediately` 预取标记；负责组合的 app 只拥有挂载名册。
 
-Web 内核保持不依赖框架，也不 import 任何动态包实体。Modules 本身是动态图 row，但 host parser 会在 Vite 主模块前送达其普通 factory，让内核得以构造模块系统。Runtime 经同一 queue 到达；React、Cordis 与静态 UI 库的身份由外壳 seed 提供。
+Web 内核保持不依赖框架，也不 import 任何动态包实体。Modules 本身是动态图 row，但 host parser 会在 Vite 主模块前送达其普通 factory。内核调用 `create()` 时，由 HTML 安装的 `__ModuleLoader__` facade 使用该 factory 构造模块系统。Runtime 经同一个 pending queue 到达；React、Cordis 与静态 UI 库的身份由外壳 seed 提供。
 
 ### 一套模块系统，一个插件治理器
 
 浏览器复刻 host 侧的分工。`dsh-client-modules`（`ClientModuleSystem`）坐上 host 侧由 Node 内部 ESM loader 占据的模块系统席位；同一份 vendored `@cordisjs/plugin-loader` 在两侧都坐治理席。二者的分界线一句话说尽：**模块系统拥有模块身份与字节——代码怎么到达、怎么登记、怎么变成导出内容；Loader 拥有插件生命周期——插件何时挂载、等待什么、如何拆除。**
 
-`ClientModuleSystem` 是一张 lazy CJS 表。执行 bundle 只**登记**其 factory——bundle 调用 `window.__ModuleLoader__.load({ id, factory })`，此外什么都不发生。模块体的一切副作用（包括 CSS 注入）都住在 factory 闭包里，在物化时运行：物化即该 id 的首次 `require`/import，此后记忆化。Import 和 prefetch 会先递归登记已声明的动态请求，再登记消费者；随后 factory 会同步物化任何已登记但尚未物化的请求。模块表按固定分支顺序解析：seed word → 记忆化记录 → 静态登记（已接纳的 modules bootstrap）→ 已登记 factory → graph row 外部 classic script 加载 → 大声抛错。最后这一抛是构建期纯度门禁在运行时的镜像。系统还保管逐模块簿记——名下 `<style data-plugin>` 标签 id、观测到的 require 边——并暴露 HMR（热模块替换）需要的两个动词：`prefetch(id)`（登记所请求的动态 factory 和本 row 自身的 factory；并发到达共享一个任务）与 `invalidate(id)`（丢弃 factory 与记录，下次到达即重新加载）。
+`ClientModuleSystem` 是一张 lazy CJS 表。执行 bundle 只**登记**其 factory——bundle 调用 `window.__ModuleLoader__.load({ id, factory })`，此外什么都不发生。模块体的一切副作用（包括 CSS 注入）都住在 factory 闭包里，在物化时运行：物化即该 id 的首次 `require`/import，此后记忆化。Import 和 prefetch 会先递归登记已声明的动态请求，再登记消费者；随后 factory 会同步物化任何已登记但尚未物化的请求。模块表按固定分支顺序解析：seed word → 记忆化记录 → graph row classic-script 登记 → 已登记 factory 物化 → 大声抛错。Modules factory 是自举例外：HTML facade 先物化它，构造过程再把同一 exports 直接写入记忆化表。最后这一抛是构建期纯度门禁在运行时的镜像。系统还保管逐模块簿记——名下 `<style data-plugin>` 标签 id、观测到的 require 边——并暴露 HMR（热模块替换）需要的两个动词：`prefetch(id)`（登记所请求的动态 factory 和本 row 自身的 factory；并发到达共享一个任务）与 `invalidate(id)`（丢弃非 bootstrap factory 与记录，下次到达即重新加载）。
 
 vendored Loader 经其 `internal` 约定消费模块系统——唯一调用点是 `tree.import`——并拥有一切 entry 形状的事务：entry 创建、fiber 经 cordis 服务等待的激活（注入的服务未就位即保持 PENDING，服务 provide 时级联激活）、update/refresh、拆除。治理代码按 vendor 政策与 host 侧逐字节相同。浏览器化是壳 vite 配置里的编译期映射：一个 `node:module` stub 别名加若干 `process.*` define，使 `ModuleLoader.fromInternal()` 返回 undefined——这正是留给壳来填的空槽。模块系统挂载为 `ctx.modules`。
 
@@ -44,11 +44,11 @@ vendored Loader 经其 `internal` 约定消费模块系统——唯一调用点�
 
 共享 tsdown 预设为每个插件产出 `client.js.map`，并把第一方源码路径重写成浏览器可识别的仓库形状 `/packages/<group>/<package>/src/...`。内联进 bundle 的其他 workspace 源码同样回到其 `packages/` 归属，依赖包路径保持原样；`sourcesContent` 承载源码，因此 host 只需在 `/plugins/<id>/client.js.map` 供给 map，无需开放源码路由。Vite 壳也产出 sourcemap，使壳代码与图外插件都能从 stack 和性能 profile 回到 TypeScript/TSX。
 
-`rev` 继续作为脚本 URL 的查询参数和内容一致性锚点，bundle 与 map 都以 `no-cache` 供给。外部脚本的 `error` 事件不给响应状态与正文，因此失败诊断只报告 URL；同源 host 供给与构建期写入的 handoff id 是身份边界，`load` 后的工厂存在性检查负责拒绝未登记预期 id 的产物。
+`rev` 继续作为脚本 URL 的查询参数和内容一致性锚点，bundle 与 map 都以 `no-cache` 供给。外部脚本的 `error` 事件不给响应状态与正文，因此失败诊断只报告 URL；同源 host 供给与构建期写入的 registration id 是身份边界，`load` 后的工厂存在性检查负责拒绝未登记预期 id 的产物。
 
 ### 装载流程，端到端
 
-从 `dsh web` 启动到 UI 出现之间发生了什么？三个阶段：host 组合 graph 并由 parser 预载 bootstrap factory，外壳认领模块系统并预取，然后 Cordis 编排。
+从 `dsh web` 启动到 UI 出现之间发生了什么？三个阶段：host 组合 graph 并由 parser 预载 bootstrap factory，HTML facade 创建模块系统且外壳执行预取，然后 Cordis 编排。
 
 **host 侧——组合这张图。**
 
@@ -58,12 +58,12 @@ vendored Loader 经其 `internal` 约定消费模块系统——唯一调用点�
 
 为什么名册是 yml 行而不是扫描？因为哪些插件组合进一次部署是组合决策，不是包属性——一个在仓库中声明了 dsh.client 的包，不代表这次部署要挂载它，扫描发现无从替人做这个决定；node 半只扫描配置树实际挂载了的东西。
 
-**第一阶段——模块面。**注入的 HTML 建立 handoff queue，以阻塞式 classic script 执行 modules 与 runtime graph row，赋值 `window.__DSH_BOOT__`，然后启动 Vite 主模块。内核用一个拒绝所有 external 的 bootstrap `require` 认领并物化 modules，构造 `ClientModuleSystem`，把同一 exports 登记给 modules row，再让系统接纳 queue 中的 runtime factory。随后它并行预取每个 `immediately` row；prefetch 会递归登记已声明的动态请求和 row 自身，但不物化任一项。单行预取失败在这里被吞下，因为第二阶段 import 会重试并拥有那次大声失败。`immediately` 仍是到达标记，不是生命周期屏障或包身份。
+**第一阶段——模块面。**注入的 HTML 以 queue 模式安装 `window.__ModuleLoader__`，以阻塞式 classic script 执行 modules 与 runtime graph row，赋值 `window.__DSH_BOOT__`，然后启动 Vite 主模块。内核把原始图和外壳 seed 传给 facade 的 `create()`。Facade 移除 modules registration，用拒绝全部 external 的 bootstrap `require` 将其物化，再调用其 `createClientModuleSystem` 导出。Modules bundle 解析图、构造系统、记忆化自身 exports，并在模块闭包中保留该实例；构造过程先把同一 facade 切换到 live registration，再排空 runtime 的 pending factory。随后内核并行预取每个 `immediately` row；prefetch 会递归登记已声明的动态请求和 row 自身，但不物化任一项。单行预取失败在这里被吞下，因为第二阶段 import 会重试并拥有那次大声失败。`immediately` 仍是到达标记，不是生命周期屏障或包身份。
 
 **第二阶段——插件面。**
 
 1. 内核挂载 vendored Loader，在任何 entry 存在之前就把模块系统注入为 `internal`。顺序有讲究：`tree.import` 的裸 import 兜底分支在浏览器里绝不能跑到。
-2. 它基于已接纳的 bootstrap exports 创建 modules entry，并为其余 graph row 各创建一个 entry。渲染组装是由 `dsh-client-ui-renderer` 提供的普通 host graph row；内核不追加组装伪 entry。
+2. 它统一创建每个 graph row。Import modules row 会返回记忆化的 bootstrap exports，其 `apply()` 把闭包中的系统提供为 `ctx.modules`；需要该 service 的 row 会保持 PENDING 直至此时，因此 modules row 无需特殊创建位置。渲染组装是由 `dsh-client-ui-renderer` 提供的普通 host graph row；内核不追加组装伪 entry。
 3. Graph 顺序治理同步 factory 可用性；Cordis 激活与之独立，仍经服务等待推进。
 4. `settled` = 每个 entry 已创建 + `loader.await()` 完全停稳 + 一次全 ACTIVE 扫描。扫描列出每个 import 失败、FAILED 或 PENDING 的 fiber 及其缺失的服务。它存在的理由：cordis 的 inject 等待没有超时——这次扫描就是大声失败的兜底线。
 5. 不依赖框架的 loading 页经 `internal/status` 投影真实 fiber 状态。检查完成后，内核调用 `ctx.uiRenderer.mount(container)`，一次切换到真实 UI。

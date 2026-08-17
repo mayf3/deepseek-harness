@@ -16,10 +16,9 @@
  * so load order needs no external sequencing.
  *
  * Resolution branch order (import): seed word → shell instance; memoized
- * record → exports; static registry (pre-materialized bootstrap modules) →
- * module; registered factory → materialize; graph row → load + materialize;
- * anything else → throw (loud — the runtime mirror of the build-time bundle
- * purity gate).
+ * record → exports; graph row → register its dependency factories and own
+ * factory; registered factory → materialize; anything else → throw (loud —
+ * the runtime mirror of the build-time bundle purity gate).
  * The synchronous `require` handed to factories walks the same order minus
  * the load branch. Loading is async, so a requested dynamic package must have
  * registered its factory before a consumer materializes.
@@ -188,8 +187,8 @@ export function parseBootManifest(wire: unknown): BootManifest {
   return { rev: graph.rev, modules, plugins }
 }
 
-/** The shape a client bundle hands to `window.__ModuleLoader__.load` (registration handoff). */
-export interface ClientPluginHandoff {
+/** One client bundle's factory registration submitted through `window.__ModuleLoader__.load`. */
+export interface ClientBundleRegistration {
   /** Plugin id (package name) — the registration key; must match the graph row being executed. */
   id: string
   /**
@@ -200,43 +199,42 @@ export interface ClientPluginHandoff {
   factory: (require: (spec: string) => unknown) => Record<string, unknown>
 }
 
-/** Inline HTML queue installed before a preloaded client bundle executes. */
-export interface ClientModuleHandoffQueue {
-  /** Discriminant that lets the module system distinguish the bootstrap queue from a live sink. */
-  mode: 'queue'
-  /**
-   * Handoffs received before {@link ClientModuleSystem} exists; the kernel
-   * claims modules before the rest drain.
-   */
-  handoffs: ClientPluginHandoff[]
-  /** Append one preloaded bundle handoff for later adoption. */
-  load(handoff: ClientPluginHandoff): void
+/** Inputs passed by the web entry when it creates the client module system. */
+export interface ClientModuleCreateOptions {
+  /** Raw Host-injected boot graph; the modules bundle owns validation and projection. */
+  boot: unknown
+  /** Module-table seed: platform-singleton specifier → shell instance. */
+  staticModules: Record<string, unknown>
+  /** Bundle-load hook. Defaults to a same-origin classic `<script src>` element. */
+  loadBundle?: (url: string) => Promise<void>
 }
 
-/** Live registration sink installed by {@link ClientModuleSystem}. */
-export interface ClientModuleHandoffSink {
-  /** Discriminant used to reject a second module-system boot. */
-  mode: 'live'
-  /** Register one bundle factory immediately. */
-  load(handoff: ClientPluginHandoff): void
+/** The modules bundle after its factory has been materialized by the HTML bootstrap facade. */
+export interface ClientBootstrapModule {
+  /** Graph/module id carried by the modules bundle registration. */
+  id: string
+  /** Materialized exports reused when Cordis later activates the modules entry. */
+  exports: Record<string, unknown>
 }
 
-/** Bootstrap queue before module-system construction, then the live registration sink. */
-export type ClientModuleHandoffTarget = ClientModuleHandoffQueue | ClientModuleHandoffSink
+/** Stable page-global facade: queues early bundle registrations, then registers them live. */
+export interface ClientModuleLoaderTarget {
+  /** Queue before {@link create}; live registration after it returns. */
+  mode: 'queue' | 'live'
+  /** Registrations submitted by parser-preloaded scripts before the module system exists. */
+  pendingQueue: ClientBundleRegistration[]
+  /** Queue or immediately register one bundle factory according to {@link mode}. */
+  load(registration: ClientBundleRegistration): void
+  /** Create the module system exactly once from the parser-preloaded modules bundle. */
+  create(options: ClientModuleCreateOptions): ClientModuleSystem
+}
 
-/** Window API of the web boot protocol: the host-injected graph, registration sink, and kernel handoff slot. */
+/** Window API of the web boot protocol: the host-injected graph and registration facade. */
 export interface DshWindow {
   /** Host-composed entry graph, injected before the shell bundle runs; wire-boundary raw until {@link parseBootManifest}. */
   __DSH_BOOT__?: unknown
-  /** Bundle handoff target: an HTML bootstrap queue, then the live module-system sink. */
-  __ModuleLoader__?: ClientModuleHandoffTarget
-  /**
-   * Kernel handoff slot: the shell kernel stores the instance here right
-   * after construction (before cordis exists) so the `./client` wrapper
-   * plugin can provide it as `ctx.modules`. Missing slot at wrapper apply
-   * time = kernel sequencing bug, thrown loud.
-   */
-  __DSH_MODULES__?: ClientModuleSystem
+  /** HTML-installed facade: a pending registration queue, then the live module-system target. */
+  __ModuleLoader__?: ClientModuleLoaderTarget
 }
 
 /** Per-module bookkeeping in {@link ClientModuleLoader.loadCache} (module-graph boundary, flat today). */
@@ -259,6 +257,8 @@ export interface ClientModuleRecord {
 export interface ClientModuleLoader {
   /** Discriminant against Node's internal loader shapes ('v1'/'v2'). */
   version: 'client'
+  /** Parsed Host boot graph shared with the web entry after module-system creation. */
+  manifest: BootManifest
   /** Materialized-module registry: id → record. The governance-side read API for entry exports. */
   loadCache: Map<string, ClientModuleRecord>
   /**
@@ -272,36 +272,35 @@ export interface ClientModuleLoader {
    */
   import(specifier: string, parentURL: string, attrs: Record<string, unknown>): Promise<unknown>
   /**
-   * Register an already-materialized bootstrap module whose handoff was
-   * removed from the HTML queue before this system was constructed.
-   * @param id - graph entry name.
-   * @param module - the materialized module exports.
-   */
-  registerStatic(id: string, module: unknown): void
-  /**
    * Stage-one arrival: load the entry's declared dynamic requests, then its
    * own script, to register their factories (no materialization — module side
    * effects wait for import).
-   * No-op for bootstrap-registered ids and ids whose factory is already
-   * registered; concurrent calls share one in-flight task. To force a fresh
-   * load (HMR), {@link invalidate} first.
+   * No-op for materialized bootstrap ids. A registered graph row still
+   * registers any unresolved declared requests before skipping its own script;
+   * concurrent arrivals share one in-flight task. To force a fresh load (HMR),
+   * {@link invalidate} first.
    * @param id - graph entry name.
    */
   prefetch(id: string): Promise<void>
   /**
-   * Full reset of one module: drop its registered factory and materialized
-   * record so the next prefetch/import reloads it (the HMR invalidation hook).
+   * Full reset of one non-bootstrap module: drop its registered factory and
+   * materialized record so the next prefetch/import reloads it (the HMR
+   * invalidation hook). The bootstrap module remains materialized.
    * @param id - entry name to invalidate.
    */
   invalidate(id: string): void
 }
 
-/** Options for {@link ClientModuleSystem} (assembled by the web shell kernel at boot). */
+/** Internal construction inputs assembled by the modules bundle's bootstrap export. */
 export interface ClientModuleSystemOptions {
-  /** Boot rows in the module-table view (from {@link parseBootManifest}). */
-  modules: BootModuleRow[]
+  /** Parsed boot graph owned by the resulting module system. */
+  manifest: BootManifest
   /** Module-table seed: platform-singleton specifier → shell instance. */
   staticModules: Record<string, unknown>
+  /** Stable HTML-installed registration facade to switch from queue to live mode. */
+  registrationTarget: ClientModuleLoaderTarget
+  /** Already-materialized modules bundle consumed while creating the system. */
+  bootstrapModule: ClientBootstrapModule
   /** Bundle-load hook. Defaults to a same-origin classic `<script src>` element. */
   loadBundle?: (url: string) => Promise<void>
 }

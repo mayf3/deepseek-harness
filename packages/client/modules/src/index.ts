@@ -238,19 +238,42 @@ function escapeHtmlAttribute(value: string): string {
 }
 
 /**
- * Inject the boot protocol into index.html. The inline handoff queue precedes
+ * Inject the boot protocol into index.html. The inline registration queue precedes
  * blocking classic scripts for modules' and runtime's ordinary
- * `lib/client.js` artifacts. The shell claims the modules handoff to construct
- * the module system, which then adopts the remaining queued registrations.
- * The graph script follows before the shell reads it. `<` is escaped in JSON
- * so a plugin-controlled string cannot break out of the script element.
+ * `lib/client.js` artifacts. Its `create()` method materializes the modules
+ * bundle, delegates construction to that bundle, and leaves the same facade
+ * in live-registration mode. The graph script follows before the shell reads
+ * it. `<` is escaped in JSON so a plugin-controlled string cannot break out
+ * of the script element.
  * @param html - the index.html source.
  * @param graph - the composed entry graph.
  * @returns the html with the graph script injected.
  */
 export function injectBootManifest(html: string, graph: WebBootGraph): string {
   const json = JSON.stringify(graph).replaceAll('<', '\\u003c')
-  const queue = '<script>(()=>{const handoffs=[];window.__ModuleLoader__={mode:"queue",handoffs,load(handoff){handoffs.push(handoff)}}})()</script>'
+  const bootstrapId = JSON.stringify(CLIENT_MODULES_ID)
+  const queue = `<script>(()=>{
+const pendingQueue=[]
+window.__ModuleLoader__={
+  mode:"queue",
+  pendingQueue,
+  load(registration){pendingQueue.push(registration)},
+  create(options){
+    if(this.mode!=="queue")throw new Error("client-modules: window.__ModuleLoader__.create called after module-system boot")
+    const index=pendingQueue.findIndex(registration=>registration.id===${bootstrapId})
+    const registration=pendingQueue[index]
+    if(registration===undefined)throw new Error("client-modules: HTML did not preload ${CLIENT_MODULES_ID}/client.js")
+    pendingQueue.splice(index,1)
+    const exports=registration.factory(specifier=>{
+      throw new Error('client-modules: ${CLIENT_MODULES_ID}/client.js requested external "'+specifier+'" before the module system existed')
+    })
+    if(typeof exports!=="object"||exports===null||typeof exports.createClientModuleSystem!=="function"||typeof exports.apply!=="function"){
+      throw new Error("client-modules: ${CLIENT_MODULES_ID}/client.js did not export the bootstrap module face")
+    }
+    return exports.createClientModuleSystem(this,{id:registration.id,exports},options)
+  }
+}
+})()</script>`
   const preload = PARSER_PRELOAD_IDS.map(id => graph.entries.find(entry => entry.id === id))
     .filter((entry): entry is WebBootEntry => entry !== undefined)
     .map(entry => `<script src="${escapeHtmlAttribute(entry.url)}"></script>`)
