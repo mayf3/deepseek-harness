@@ -1,7 +1,7 @@
 import { clientOnly } from '../tsdown.client.ts'
 
 /**
- * Root-shape lib build plus a css stub: the shell's components import
+ * Root-shape lib build plus a CSS stub: the boot page imports
  * .module.css/.css assets that tsc passes through untouched, so the JS under
  * lib/types references css files that do not exist there. The browser
  * consumer (apps/web) compiles src directly through vite where css is real;

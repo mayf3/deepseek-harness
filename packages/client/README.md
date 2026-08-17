@@ -7,18 +7,18 @@ The browser side of the dsh web GUI: shell boot, browser-host communication, sha
 | Package | Purpose |
 |---|---|
 | [`web/`](web/README.md) | Boots the browser shell from the client entry graph. |
+| [`render-service/`](render-service/README.md) | Mounts the assembled React application after client boot settles. |
 | [`modules/`](modules/README.md) | Loads browser-side client modules. |
 | [`web-react/`](web-react/README.md) | Connects the shell runtime to React rendering. |
 | [`connection/`](connection/README.md) | Maintains browser-host RPC communication and event delivery. |
 | [`runtime/`](runtime/README.md) | Provides shared client services for sessions, workspaces, and UI composition. |
 | [`hmr/`](hmr/README.md) | Refreshes client plugins during development. |
 | [`locale/`](locale/README.md) | Provides localization preferences and message dictionaries. |
-| [`schema-form/`](schema-form/README.md) | Provides schema-backed draft handling for settings editors. |
 | [`test-runtime/`](../test-support/client-runtime/README.md) | Provides shared repository test support for client feature packages. |
 | [`ui-slots/`](ui-slots/README.md) | Defines how UI features register and compose extension slots. |
 | [`ui-theme/`](ui-theme/README.md) | Applies the selected color theme. |
 | [`ui-primitives/`](ui-primitives/README.md) | Provides shared React controls, icons, and content renderers. |
-| [`ui-attachment/`](ui-attachment/README.md) | Provides attachment display atoms: draft-image rail, message gallery, and lightbox. |
+| [`ui-attachment/`](ui-attachment/README.md) | Registers composer and message-image attachment presentation. |
 | [`ui-layout/`](ui-layout/README.md) | Arranges the main application regions. |
 | [`ui-sidebar/`](ui-sidebar/README.md) | Presents workspace and session navigation. |
 | [`ui-workspace/`](ui-workspace/README.md) | Provides workspace selection and creation surfaces. |

@@ -21,7 +21,7 @@ After the typed locale standard seat landed (`locale:` on register → framework
 - **Error/failure strings stay English**: client-authored fallbacks (`command failed`, plan-toggle failures), RpcError messages, and wire `error.message (code)` pass-throughs render verbatim.
 - **Design literals stay out of the dictionaries**: tool-row variant titles (Think/Bash/…), SYSTEM/USER-style kind badges, the Plan chip wordmark, the whole StatsLine — identical in both languages.
 - **ui-trajectory is deferred wholesale** (a developer inspection surface, terminology-dense, ruled separately).
-- **Boot copy stays hardcoded** (AppRoot renders before the locale service exists).
+- **Boot copy stays hardcoded** (the framework-free boot page runs before the locale service exists).
 
 **Derivation layers stay pure; localization happens at render.** ui-workspace's `relativeTime` returns structured `{unit, n}` composed with dictionary templates by the renderer; blank sessions and the Ungrouped bucket keep their stored titles, with the renderer substituting localized copy off the `blank` flag / absent `workspaceId`; **blank rows are excluded from search entirely** (a bilingual display title cannot match a single-language query stably). Dates use no Intl: format templates live in the dictionaries (message clock `clock.md`/`clock.ymd`, workspace hover `date.ymd`) and the formatters take `t` as a parameter, staying pure.
 

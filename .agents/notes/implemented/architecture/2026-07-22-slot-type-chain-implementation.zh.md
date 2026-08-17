@@ -12,11 +12,11 @@ Status: implemented
 
 ## 决策
 
-一句话：**壳只渲染 `'root'`；插件用单独一次 `register` 调用组合 UI——这一次调用同时占用 slot、声明并授权子 slot、声明 store、注入业务面；组件是纯函数，props 分四份额到达，每一份额都从各自唯一的真源自动推导。**
+一句话：**render-service 只渲染 `'root'`；插件用单独一次 `register` 调用组合 UI——这一次调用同时占用 slot、声明并授权子 slot、声明 store、注入业务面；组件是纯函数，props 分四份额到达，每一份额都从各自唯一的真源自动推导。**
 
 ### 'root' 是唯一的先验 slot
 
-`SlotRegistry`（client 运行时）在构造时声明 `'root'`——single/root、`owner: {}`——其 `SlotMap` 合并声明位于运行时包。壳的全部装配就是 `ctx.slots.renderSlot('root', {})`：唯一的 ctx 级渲染入口；传任何其他键、渲染器未安装、root 无人注册，一律大声失败（无 fallback）。
+`SlotRegistry`（client 运行时）在构造时声明 `'root'`——single/root、`owner: {}`——其 `SlotMap` 合并声明位于运行时包。render-service 的全部装配就是 `ctx.slots.renderSlot('root', {})`：唯一的 ctx 级渲染入口；传任何其他键、渲染器未安装、root 无人注册，一律大声失败（无 fallback）。
 
 ### register 是唯一 API；children = 声明+授权+运行时 spec
 

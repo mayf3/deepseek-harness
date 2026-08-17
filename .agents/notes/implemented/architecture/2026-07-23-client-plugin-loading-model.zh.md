@@ -29,7 +29,7 @@ host 侧，cordis 插件装载站在 Node 的模块机制之上——require cac
 什么让一个包成为插件？只有一条规则：**一个包的消费方式一旦是 cordis 依赖注入，它就是插件包；在此之前它是普通包。**代码怎么到达页面不属于分类体系——到达方式由包的类别推得，而不是反过来定义类别。
 
 - **普通包**是模块系统自身所需的绝对基座，加上尚未转成 DI 的库：react 家族、cordis、`@deepseek-ai/dsh-client-modules`（模块系统本身——它永远不可能是插件，因为模块先于一切模块）、web 壳内核，以及——暂时——ui-slots、web-react、ui-primitives。普通包打进壳 bundle、播种进模块表、对 host 图不可见。
-- **插件包**是其余一切。每个都携带 `dsh.client` manifest（元数据清单）声明（`{ platform, inject, immediately? }`）和同一种统一形态：共享 tsdown 预设产出 `lib/client.js`，`exports["./client"]` 指向该 bundle。每个都是 host 编写的图里受治理的 entry。当前包括：connection、runtime、ui-theme、i18n、hmr（仅进 dev 图）、ui-layout、ui-sidebar、ui-conversation、ui-model-selector、ui-user-questions、ui-trajectory。
+- **插件包**是其余一切。每个都携带 `dsh.client` manifest（元数据清单）声明（`{ platform, inject, immediately? }`）和同一种统一形态：共享 tsdown 预设产出 `lib/client.js`，`exports["./client"]` 指向该 bundle。每个都是 host 编写的图里受治理的 entry，包括 connection、runtime、ui-theme、i18n、hmr、render-service 等基础设施，也包括 ui-layout、ui-conversation、ui-attachment 等功能包。
 
 manifest 拥有包的装载约定：它的 `inject` 依赖边，加可选的 `immediately` 预取标记（缺省即 lazy）。负责组合的 app 只拥有名册。
 
@@ -42,13 +42,13 @@ manifest 拥有包的装载约定：它的 `inject` 依赖边，加可选的 `im
 - **插件 ↔ 插件的值 import 是构建错误。**与两侧的 `immediately` 声明无关——规则不得依赖一个人人可翻转的标记。协作走 cordis inject/服务。`import type` 豁免；类型链分毫未动。这条规则正是 `scopeOf` 是 `SessionRuntime` 方法、`transportError` 住在 `dsh-host-apiproxy` wire 层（它的 `RpcResult` 老家，内联安全）的原因。
 - **插件 → 普通包的值 import 外置为 external**，按平台清单判定。清单是壳里的一个常量（`platform.ts`：react 家族、cordis、ui-slots、web-react、ui-primitives），tsdown 预设（external 判定）与 `seed.ts`（模块表预热）都 import 它。一个常量、两个消费方——人肉同步这一漂移缺陷类死透。
 - **纯度门禁覆盖每个插件包。**它的三条分支：平台 import 外置为 external；INLINE_SAFE wire 层内联；其余任何 workspace 泄漏即构建错误。正是统一的 bundle 形态让这一覆盖不留死角——每个插件都经同一预设构建，没有包能坐在门禁之外。
-- **壳自足。**内核（boot + loading 页）对任何插件包零值 import；其状态 store 为手写。大声失败的呈现不得依赖它所报告失败的那个系统。
+- **壳自足。**除了静态接纳负责构造模块系统自身的 modules 包，内核不对任何插件包执行值 import。加载与失败页面只使用原生 DOM、本地状态和本地 CSS 回退，因此大声失败的呈现不依赖它可能报告其失败的渲染服务。
 
 ### 一套模块系统，一个插件治理器
 
 浏览器复刻 host 侧的分工。`dsh-client-modules`（`ClientModuleSystem`）坐上 host 侧由 Node 内部 ESM loader 占据的模块系统席位；同一份 vendored `@cordisjs/plugin-loader` 在两侧都坐治理席。二者的分界线一句话说尽：**模块系统拥有模块身份与字节——代码怎么到达、怎么登记、怎么变成导出内容；Loader 拥有插件生命周期——插件何时挂载、等待什么、如何拆除。**
 
-`ClientModuleSystem` 是一张 lazy CJS 表。执行 bundle 只**登记**其工厂——bundle 调用 `window.__ModuleLoader__.load({ id, factory })`，此外什么都不发生。模块体的一切副作用（包括 CSS 注入）都住在工厂闭包里，在物化时运行：物化即该 id 的首次 `require`/import，此后记忆化。工厂若 require 一个已登记未物化的同伴，就递归物化它，因此任何地方都不存在排序。被要求 import 一个 id 时，表按固定分支顺序解析：种子词条 → 记忆化的记录 → 静态登记（壳自有模块，如 app-shell）→ 已登记的工厂 → 图行外部 classic script 加载 → 大声抛错。最后这一抛是构建期纯度门禁在运行时的镜像。系统还保管逐模块的簿记——名下 `<style data-plugin>` 标签 id、观测到的 require 边——并暴露 HMR（热模块替换）需要的两个动词：`prefetch(id)`（加载脚本、只登记工厂；并发调用共享同一在途任务）与 `invalidate(id)`（丢弃工厂与记录，下次到达即重新加载）。
+`ClientModuleSystem` 是一张 lazy CJS 表。执行 bundle 只**登记**其工厂——bundle 调用 `window.__ModuleLoader__.load({ id, factory })`，此外什么都不发生。模块体的一切副作用（包括 CSS 注入）都住在工厂闭包里，在物化时运行：物化即该 id 的首次 `require`/import，此后记忆化。工厂若 require 一个已登记未物化的同伴，就递归物化它，因此任何地方都不存在排序。被要求 import 一个 id 时，表按固定分支顺序解析：种子词条 → 记忆化的记录 → 静态登记（外壳接纳的 modules 包）→ 已登记的工厂 → 图行外部 classic script 加载 → 大声抛错。最后这一抛是构建期纯度门禁在运行时的镜像。系统还保管逐模块的簿记——名下 `<style data-plugin>` 标签 id、观测到的 require 边——并暴露 HMR（热模块替换）需要的两个动词：`prefetch(id)`（加载脚本、只登记工厂；并发调用共享同一在途任务）与 `invalidate(id)`（丢弃工厂与记录，下次到达即重新加载）。
 
 vendored Loader 经其 `internal` 约定消费模块系统——唯一调用点是 `tree.import`——并拥有一切 entry 形状的事务：entry 创建、fiber 经 cordis 服务等待的激活（注入的服务未就位即保持 PENDING，服务 provide 时级联激活）、update/refresh、拆除。治理代码按 vendor 政策与 host 侧逐字节相同。浏览器化是壳 vite 配置里的编译期映射：一个 `node:module` stub 别名加若干 `process.*` define，使 `ModuleLoader.fromInternal()` 返回 undefined——这正是留给壳来填的空槽。模块系统挂载为 `ctx.modules`。
 
@@ -72,15 +72,15 @@ vendored Loader 经其 `internal` 约定消费模块系统——唯一调用点�
 
 为什么名册是 yml 行而不是扫描？因为哪些插件组合进一次部署是组合决策，不是包属性——一个在仓库中声明了 dsh.client 的包，不代表这次部署要挂载它，扫描发现无从替人做这个决定；node 半只扫描配置树实际挂载了的东西。
 
-**第一阶段——模块面。**壳在图之上建起模块系统，然后并行预取每个 `immediately` 行。预取即加载外部脚本，只登记工厂。单行预取失败在这里被吞下：第二阶段 import 时会重试加载并拥有那次大声失败，因此一个坏行藏不住其他行。`immediately` 是预取标记——不是屏障，不是身份。包声明它，注册表把它带进图行。基础设施插件（connection、runtime、ui-theme、i18n，外加 hmr）声明它；UI 插件则径直按需到达。
+**第一阶段——模块面。**壳在图之上建起模块系统，然后并行预取每个 `immediately` 行。预取即加载外部脚本，只登记工厂。单行预取失败在这里被吞下：第二阶段 import 时会重试加载并拥有那次大声失败，因此一个坏行藏不住其他行。`immediately` 是预取标记——不是屏障，不是身份。包声明它，注册表把它带进图行。connection、runtime、ui-theme、i18n、render-service、hmr 等基础设施插件声明它；其余 UI 插件则按需到达。
 
 **第二阶段——插件面。**
 
 1. 内核挂载 vendored Loader，在任何 entry 存在之前就把模块系统注入为 `internal`。顺序有讲究：`tree.import` 的裸 import 兜底分支在浏览器里绝不能跑到。
-2. 它为图中每一行创建 entry，外加 app-shell 伪行。装配 entry 是内核自己追加的壳自有代码——向模块系统静态登记，绝不进 host 图——因此与其余一切共乘同一套 entry 生命周期与状态覆盖。
+2. 它创建静态接纳的 modules 启动 entry，并为图中每一行创建 entry。渲染组装是由 `dsh-client-render-service` 提供的普通 host 图行；内核不追加组装伪 entry。
 3. 创建顺序不携带任何语义；fiber 经服务等待激活。
 4. `settled` = 每个 entry 已创建 + `loader.await()` 完全停稳 + 一次全 ACTIVE 扫描。扫描列出每个 import 失败、FAILED 或 PENDING 的 fiber 及其缺失的服务。它存在的理由：cordis 的 inject 等待没有超时——这次扫描就是大声失败的兜底线。
-5. loading 页的启动状态是经 `internal/status` 对真实 fiber 状态的投影。settled 翻转即一次性切换到真实 UI。
+5. 不依赖框架的 loading 页经 `internal/status` 投影真实 fiber 状态。检查完成后，内核调用 `ctx.appShell.mount(container)`，一次切换到真实 UI。
 
 ### 热重载：一个驱动插件，自行监视的 bundle
 
@@ -109,13 +109,14 @@ vendored Loader 经其 `internal` 约定消费模块系统——唯一调用点�
 | react 家族 / cordis | 平台单例 | 打进壳，已播种 | 永为普通包（绝对基座） |
 | vendored `@cordisjs/plugin-loader` | entry 治理（两侧同一份代码） | 编译期浏览器化，内核挂载 | 不动（vendor 政策） |
 | `dsh-client-modules` | client 模块系统 | lazy CJS 模块表；双阶段 boot | 永为普通包（模块先于模块） |
-| `dsh-client-web` | 壳内核 + AppRoot + app-shell 装配 | 自足（手写状态 store，零插件值 import） | 持续缩小 |
+| `dsh-client-web` | 模块／Loader 内核 + 不依赖框架的启动页 | 除静态接纳 modules 启动项外保持自足 | 持续缩小 |
+| `dsh-client-render-service` | React 根 + slot 渲染器组装 | 动态插件，声明 `immediately` | 持有应用挂载生命周期 |
 | `dsh-client-ui-slots` | slot 注册表核心 | 普通包，已播种 | 升格为插件；接收 runtime 的 slots 机件 |
-| `dsh-client-web-react` | ctx↔React 胶水 | 普通包，已播种 | 升格为插件；渲染器安装移入其 apply |
+| `dsh-client-web-react` | ctx↔React 渲染适配器 | 普通包，已播种；由 render-service 安装 | 消费方改用 DI 时再升格 |
 | `dsh-client-ui-primitives` | 基础组件 | 普通包，已播种 | 升格为插件（组件经 slot/服务供给） |
 | `dsh-client-connection` | wire 层 | 插件（dsh.client + bundle），声明 `immediately` | 传输替换（Electron IPC 载体） |
 | `dsh-client-runtime` | 会话对象层 + slots 服务 + store 引擎 | 插件，声明 `immediately` | 持续缩向纯会话对象层 |
-| `dsh-client-ui-theme` | 主题 token/服务 | 插件，声明 `immediately`，外加 `./styles/*` 源码通道 | Theme Registry（另行裁定） |
+| `dsh-client-ui-theme` | 主题 token/服务 | 插件，声明 `immediately`；全局 CSS 位于其客户端 bundle | Theme Registry（另行裁定） |
 | `dsh-client-i18n` | I18nService | 插件，声明 `immediately` | 按部署组合语言包 |
 | `dsh-client-hmr` | 热重载驱动 | 插件，声明 `immediately` | 回滚；重连握手 |
 | ui-layout / ui-sidebar / ui-conversation / ui-trajectory | UI 功能 | 插件，按需到达 | conversation 域拆分；trajectory 真实现 |

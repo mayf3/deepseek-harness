@@ -2,11 +2,11 @@
  * Shared tsdown preset for UI plugin client bundles. Emits a closure-factory
  * artifact: the bundle calls window.__ModuleLoader__.load({id, factory})
  * and resolves externals through the injected require (loader module table —
- * cordis DI entities, no globals, no import map). CSS Modules are compiled by
- * lightningcss inside the bundle: importing `x.module.css` yields the
- * hashed class map, and the css text auto-injects a <style data-plugin="<id>">
- * tag at factory execution (the loader removes plugin-owned tags on unload).
- * The virtual loader registers each real stylesheet as a watch dependency.
+ * cordis DI entities, no globals, no import map). CSS is compiled by
+ * lightningcss inside the bundle: `x.module.css` yields its hashed class map
+ * and injects a tagged style at factory execution, while `x.css?inline`
+ * exports compiled text for a plugin-owned lifecycle effect. The virtual
+ * loaders register each real stylesheet as a watch dependency.
  */
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -22,7 +22,32 @@ import { PLATFORM_MODULES } from './web/src/platform.ts'
  * ending in `.css`, so the virtual id must not.
  */
 const CSS_VIRTUAL_PREFIX = '\0dsh-css:'
+const GLOBAL_CSS_VIRTUAL_PREFIX = '\0dsh-global-css:'
+const INLINE_CSS_VIRTUAL_PREFIX = '\0dsh-inline-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
+const INLINE_CSS_QUERY = '?inline'
+
+/** Emit one plugin-owned style injector and an optional CSS Modules export. */
+function styleInjectionModule(
+  id: string,
+  fileId: string,
+  css: string,
+  classMap?: Readonly<Record<string, string>>,
+): string {
+  const source = [
+    `const css = ${JSON.stringify(css)};`,
+    `const tagId = ${JSON.stringify(`${id}/${basename(fileId)}`)};`,
+    'if (typeof document !== \'undefined\' && document.querySelector(\'style[data-plugin-css=\' + JSON.stringify(tagId) + \']\') === null) {',
+    '  const tag = document.createElement(\'style\');',
+    `  tag.dataset.plugin = ${JSON.stringify(id)};`,
+    '  tag.dataset.pluginCss = tagId;',
+    '  tag.textContent = css;',
+    '  document.head.appendChild(tag);',
+    '}',
+  ]
+  source.push(classMap === undefined ? 'export {};' : `export default ${JSON.stringify(classMap)};`)
+  return source.join('\n')
+}
 
 /**
  * Wire/type layers a client bundle may inline: browser-safe contracts
@@ -244,19 +269,38 @@ function clientConfig(id: string, entry: string): UserConfig {
         })
         const classMap: Record<string, string> = {}
         for (const [local, exp] of Object.entries(cssExports ?? {})) classMap[local] = exp.name
-        // One <style data-plugin> per module file; idempotent under re-evaluation.
-        return [
-          `const css = ${JSON.stringify(code.toString())};`,
-          `const tagId = ${JSON.stringify(`${id}/${basename(fileId)}`)};`,
-          'if (typeof document !== \'undefined\' && document.querySelector(\'style[data-plugin-css=\' + JSON.stringify(tagId) + \']\') === null) {',
-          '  const tag = document.createElement(\'style\');',
-          `  tag.dataset.plugin = ${JSON.stringify(id)};`,
-          '  tag.dataset.pluginCss = tagId;',
-          '  tag.textContent = css;',
-          '  document.head.appendChild(tag);',
-          '}',
-          `export default ${JSON.stringify(classMap)};`,
-        ].join('\n')
+        return styleInjectionModule(id, fileId, code.toString(), classMap)
+      },
+    }, {
+      name: 'dsh-css-text-inline',
+      resolveId(source: string, importer: string | undefined) {
+        if (!source.endsWith(`.css${INLINE_CSS_QUERY}`)) return null
+        const stylesheet = source.slice(0, -INLINE_CSS_QUERY.length)
+        const abs = importer !== undefined ? sourceAssetPath(stylesheet, importer) : stylesheet
+        return INLINE_CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+      },
+      async load(virtualId: string) {
+        if (!virtualId.startsWith(INLINE_CSS_VIRTUAL_PREFIX)) return null
+        const fileId = virtualId.slice(INLINE_CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+        this.addWatchFile(fileId)
+        const source = await readFile(fileId)
+        const { code } = transform({ filename: fileId, code: source, minify: true })
+        return `export default ${JSON.stringify(code.toString())};`
+      },
+    }, {
+      name: 'dsh-css-global-inline',
+      resolveId(source: string, importer: string | undefined) {
+        if (!source.endsWith('.css') || source.endsWith('.module.css')) return null
+        const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
+        return GLOBAL_CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+      },
+      async load(virtualId: string) {
+        if (!virtualId.startsWith(GLOBAL_CSS_VIRTUAL_PREFIX)) return null
+        const fileId = virtualId.slice(GLOBAL_CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+        this.addWatchFile(fileId)
+        const source = await readFile(fileId)
+        const { code } = transform({ filename: fileId, code: source, minify: true })
+        return styleInjectionModule(id, fileId, code.toString())
       },
     }],
     outputOptions: {

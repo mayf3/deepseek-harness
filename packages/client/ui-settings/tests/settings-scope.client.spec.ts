@@ -1,11 +1,13 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { describe, expect, it, vi } from 'vitest'
-import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { IApiClient, RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScope, SettingsScopeSpec } from '@deepseek-ai/dsh-client-runtime/client'
 import { SettingsSchemaService } from '../src/client/schema.ts'
-import { SettingsScopeController, SettingsScopeBinder } from '../src/client/settings-scope.ts'
+import {
+  SettingsScopeBinder, SettingsScopeController as ProductionSettingsScopeController,
+} from '../src/client/settings-scope.ts'
 
 interface UiTestSettings {
   preference: 'light' | 'dark' | 'system'
@@ -14,6 +16,17 @@ interface UiTestSettings {
 const ENVELOPE = z.object({
   preference: z.union(['light', 'dark', 'system']).default('system'),
 }).toJSON()
+
+const settingsSchema = new SettingsSchemaService(new Context())
+const SettingsScopeController = class<T> extends ProductionSettingsScopeController<T> {
+  constructor(
+    api: Pick<IApiClient, 'settings'>,
+    spec: SettingsScopeSpec<T>,
+    persistence: 'host' | 'memory' = 'host',
+  ) {
+    super(api, spec, persistence, settingsSchema)
+  }
+}
 
 let rpc = 0
 
@@ -105,6 +118,16 @@ describe('SettingsScopeController', () => {
     const describeCall = vi.fn()
       .mockResolvedValueOnce(ok({ writable: true, hasDocument: true, namespaces: [broken] }))
     const scope = new SettingsScopeController<UiTestSettings>(
+      { settings: { describe: describeCall } } as never,
+      { namespace: 'ui-test' },
+    )
+    await scope.load()
+    expect(scope.getSnapshot()).toMatchObject({ status: 'loading', value: undefined, revision: 2 })
+  })
+
+  it('rejects host values when no schema service is available', async () => {
+    const describeCall = vi.fn().mockResolvedValueOnce(described({ preference: 'dark' }, 2))
+    const scope = new ProductionSettingsScopeController<UiTestSettings>(
       { settings: { describe: describeCall } } as never,
       { namespace: 'ui-test' },
     )

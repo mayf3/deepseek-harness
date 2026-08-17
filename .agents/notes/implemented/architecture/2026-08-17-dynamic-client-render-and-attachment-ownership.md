@@ -1,0 +1,43 @@
+# Agent Note: Dynamic client render and attachment ownership
+
+Status: implemented
+
+English | [中文](2026-08-17-dynamic-client-render-and-attachment-ownership.zh.md)
+
+## Problem
+
+The host-authored client graph governs browser plugins, but three presentation paths sat outside that lifecycle. The web kernel created the React root and a shell-owned assembly pseudo-entry, `ui-conversation` imported attachment components as package values, and the shell imported ui-theme's global styles. Disabling, failing, or reloading a plugin therefore did not govern all of the rendering and CSS that belonged to it.
+
+The loading and failure page has the opposite requirement: it must remain usable when any dynamic plugin, including the renderer, fails to activate. It cannot depend on the React tree whose failure it reports.
+
+## Decision
+
+`@deepseek-ai/dsh-client-web` is a framework-free boot kernel. It draws its loading and failure page with DOM operations and local CSS fallbacks, constructs the client module system and Cordis Loader, creates the statically adopted modules bootstrap entry plus every host-graph entry, and waits until every fiber is ACTIVE. It then resolves `ctx.appShell` and hands the existing container to `mount()`.
+
+`@deepseek-ai/dsh-client-render-service` is an `immediately` dynamic client plugin. After `slots`, `sessions`, and `layout` activate, it installs the slot renderer, provides `ctx.appShell`, creates the React root on `mount()`, projects the selected session title, and performs the sole context-level `renderSlot('root')` call. Its service, renderer installation, and React root all dispose with their owners.
+
+`ui-conversation` declares `conversation.input.attachments` and `conversation.message.images` and supplies attachment data, callbacks, authorized image loading, and its locale seat. `ui-attachment` waits on those declarations through `ctx.slots.inject()` and registers the draft rail/drop target and historical image gallery/lightbox. The React implementations remain internal package values; cross-plugin composition uses slots. This package integration supersedes the direct-import ruling in the [attachment display note](../feature/2026-08-11-web-attachment-display-alignment.md) without changing that note's visual and interaction decisions.
+
+ui-theme imports its five global stylesheets from its client entry. The shared client-bundle preset compiles ordinary CSS as well as CSS Modules and injects plugin-owned style tags at bundle materialization, so unloading or reloading ui-theme removes or replaces its global CSS with the same lifecycle as its service. The web kernel retains only mount defaults and the self-contained boot-page palette.
+
+React, React DOM, Cordis, ui-slots, ui-primitives, and web-react remain static platform modules with one browser identity. Dynamic ownership determines which graph entry creates rendering effects; it does not duplicate these platform runtimes.
+
+## Verification
+
+Component tests pin the boot page, document title, application tree, attachment entries, and disposal. The assembled built-bundle boot exercises the real module table and dynamic entries, while the client-bundle CSS tests prove global styles compile into watched plugin-owned injectors. The browser replay lane covers the complete handoff from the framework-free page to the rendered application.
+
+## Alternatives considered
+
+**Keep the shell-owned app assembly pseudo-entry.** Rejected because it remains invisible to the host graph and makes render ownership a special Loader path even though the assembly has ordinary service dependencies and lifecycle effects.
+
+**Keep exported attachment atoms and import them from ui-conversation.** Rejected because a direct component import bypasses independent plugin composition and reload ownership. Owner data still travels directly through typed slot props; only presentation selection is dynamic.
+
+**Keep ui-theme styles in the shell's base stylesheet.** Rejected because theme CSS would remain active when the theme plugin is absent or failed and would not participate in plugin reload cleanup.
+
+**Render the failure page with React.** Rejected because a render-service or React-tree failure must not remove the only diagnostic available in the browser.
+
+## Consequences
+
+The host graph contains every dynamic rendering owner, and HMR replaces attachment presentation, render assembly, and theme CSS through plugin lifecycle. A render-service failure leaves a readable DOM failure page instead of a blank React mount. Omitting ui-attachment deliberately leaves its optional slots empty; the shipped web composition includes it, and a configured entry that fails activation prevents the full-application handoff.
+
+The application still waits for the complete client roster before its first React frame. The shell still statically bundles the platform module identities, and the boot page maintains a small private light/dark palette because ui-theme CSS is unavailable until that plugin materializes.

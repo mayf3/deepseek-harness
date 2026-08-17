@@ -43,6 +43,7 @@ interface ConstChoice {
 /**
  * Read the dynamic preset enum encoded by the host's `defaultPreset` schema.
  * @param view - permission namespace descriptor.
+ * @param schema - settings schema operations.
  * @returns current value and selectable options.
  */
 export function permissionDefaultOf(view: SettingsNamespaceView, schema: SettingsSchemaService): {

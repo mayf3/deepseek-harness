@@ -14,6 +14,7 @@ import { SlotRegistry, type SessionId } from '@deepseek-ai/dsh-client-runtime/cl
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import type { CommandDecoration } from '@deepseek-ai/dsh-client-ui-commands/client'
+import { SettingsSchemaService } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { PermissionSelect } from '@deepseek-ai/dsh-permission-presets/client'
 import {
   PermissionRow, type PermissionRowInjected,
@@ -41,6 +42,7 @@ async function bench() {
   // The plugin injects `remote`; forwarded events reach it through the same
   // `$dispatch` handoff the connection sink makes.
   new TestRemote(ctx)
+  new SettingsSchemaService(ctx)
   ctx.slots.register({
     name: 'root',
     children: {

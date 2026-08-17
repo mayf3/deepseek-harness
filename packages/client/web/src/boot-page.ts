@@ -1,0 +1,75 @@
+/**
+ * Framework-free boot page and failure report. It remains available when a
+ * client plugin fails because React arrives only with the render service.
+ * @module @deepseek-ai/dsh-client-web/src/boot-page
+ */
+import type { LoaderEntryState } from './loader-status.ts'
+import css from './boot-page.module.css'
+
+/** Create a div with one module class and optional text. */
+function div(className: string | undefined, text?: string): HTMLDivElement {
+  const el = document.createElement('div')
+  el.className = className ?? ''
+  if (text !== undefined) el.textContent = text
+  return el
+}
+
+/** Kernel-owned page mounted below the application's root element. */
+export class BootPage {
+  private readonly root: HTMLDivElement
+  private readonly card: HTMLDivElement
+  private readonly states = new Map<string, LoaderEntryState>()
+  private failure: string | undefined
+
+  /**
+   * Build and attach the boot page.
+   * @param container - Application mount point.
+   */
+  constructor(container: HTMLElement) {
+    this.root = div(css.boot)
+    this.card = div(css.card)
+    this.card.append(div(css.wordmark, 'HARNESS'))
+    this.root.append(this.card)
+    container.append(this.root)
+    this.render()
+  }
+
+  /**
+   * Project one loader entry's fiber state.
+   * @param id - Loader entry name.
+   * @param state - Projected fiber state.
+   */
+  setState(id: string, state: LoaderEntryState): void {
+    this.states.set(id, state)
+    this.render()
+  }
+
+  /**
+   * Display the boot failure report.
+   * @param message - Failure report text.
+   */
+  fail(message: string): void {
+    this.failure = message
+    this.render()
+  }
+
+  /** Detach the page before or after the render service takes the mount point. */
+  dispose(): void {
+    this.root.remove()
+  }
+
+  /** Redraw the state-dependent content below the wordmark. */
+  private render(): void {
+    while (this.card.childNodes.length > 1) this.card.lastChild?.remove()
+    const failed = [...this.states].filter(([, state]) => state === 'failed').map(([id]) => id)
+    if (this.failure === undefined && failed.length === 0) {
+      this.card.append(div(css.spinner), div(css.hint, 'Loading plugins…'))
+      return
+    }
+    const report = div(css.failed)
+    report.append(div(css.failedTitle, 'Failed to load plugins'))
+    for (const id of failed) report.append(div(css.failedItem, id))
+    if (this.failure !== undefined) report.append(div(css.failedItem, this.failure))
+    this.card.append(report)
+  }
+}

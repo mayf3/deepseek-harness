@@ -28,25 +28,29 @@ export function ComposerAttachments({
   }, [attachments, preview])
 
   useEffect(() => {
-    const hasFiles = (event: globalThis.DragEvent): boolean =>
-      event.dataTransfer?.types.includes('Files') ?? false
+    const fileTransfer = (event: globalThis.DragEvent): DataTransfer | null => {
+      const dataTransfer = event.dataTransfer
+      if (dataTransfer === null || !dataTransfer.types.includes('Files')) return null
+      return dataTransfer
+    }
     const reset = (): void => {
       dragDepth.current = 0
       setDragActive(false)
     }
     const onDragEnter = (event: globalThis.DragEvent): void => {
-      if (!hasFiles(event)) return
+      if (fileTransfer(event) === null) return
       event.preventDefault()
       dragDepth.current += 1
       setDragActive(true)
     }
     const onDragOver = (event: globalThis.DragEvent): void => {
-      if (!hasFiles(event) || event.dataTransfer === null) return
+      const dataTransfer = fileTransfer(event)
+      if (dataTransfer === null) return
       event.preventDefault()
-      event.dataTransfer.dropEffect = canAcceptDrop ? 'copy' : 'none'
+      dataTransfer.dropEffect = canAcceptDrop ? 'copy' : 'none'
     }
     const onDragLeave = (event: globalThis.DragEvent): void => {
-      if (!hasFiles(event)) return
+      if (fileTransfer(event) === null) return
       dragDepth.current = Math.max(0, dragDepth.current - 1)
       if (dragDepth.current === 0) setDragActive(false)
       const leftViewport = event.clientX <= 0 || event.clientY <= 0
@@ -54,10 +58,11 @@ export function ComposerAttachments({
       if ((event.target === document.documentElement || event.target === document.body) && leftViewport) reset()
     }
     const onDrop = (event: globalThis.DragEvent): void => {
-      if (!hasFiles(event)) return
+      const dataTransfer = fileTransfer(event)
+      if (dataTransfer === null) return
       event.preventDefault()
       reset()
-      if (canAcceptDrop) onAddImages([...(event.dataTransfer?.files ?? [])])
+      if (canAcceptDrop) onAddImages([...dataTransfer.files])
     }
     document.addEventListener('dragenter', onDragEnter)
     document.addEventListener('dragover', onDragOver)

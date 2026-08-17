@@ -12,11 +12,11 @@ The page is composed at runtime from independently loaded plugins, so the UI nee
 
 ## Decision
 
-One sentence: **the shell renders only `'root'`; a plugin composes UI through a single `register` call that simultaneously occupies a slot, declares+authorizes its child slots, declares its store, and injects its business face; components are pure functions whose props arrive in four shares, each auto-derived from its single source of truth.**
+One sentence: **the render-service renders only `'root'`; a plugin composes UI through a single `register` call that simultaneously occupies a slot, declares+authorizes its child slots, declares its store, and injects its business face; components are pure functions whose props arrive in four shares, each auto-derived from its single source of truth.**
 
 ### 'root' is the only a-priori slot
 
-`SlotRegistry` (client runtime) declares `'root'` at construction — single/root, `owner: {}` — and its `SlotMap` merge lives in the runtime package. The shell's entire assembly is `ctx.slots.renderSlot('root', {})`: the only ctx-level render entry; any other key, a missing renderer, or an unregistered root fails loud (no fallback).
+`SlotRegistry` (client runtime) declares `'root'` at construction — single/root, `owner: {}` — and its `SlotMap` merge lives in the runtime package. The render-service's entire assembly is `ctx.slots.renderSlot('root', {})`: the only ctx-level render entry; any other key, a missing renderer, or an unregistered root fails loud (no fallback).
 
 ### register is the single API; children = declaration + authorization + runtime spec
 

@@ -76,6 +76,7 @@ export function deriveKeyRef(provider: string): string {
  * the choices the page offers cannot drift from the ones the adapter accepts:
  * both come from the same `Config`.
  * @param namespace - the namespace view whose schema declares the profile shape.
+ * @param schema - settings schema operations.
  * @returns the protocol identifiers, or an empty list when the schema has none.
  */
 export function protocolChoices(
