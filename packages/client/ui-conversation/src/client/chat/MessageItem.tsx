@@ -217,7 +217,7 @@ function UserStyleBubble({
         </div>}
         {referenceLabels.length > 0 && (
           <div className={css.referenceSummary}>
-            {t('message.referenceSummary', { labels: referenceLabels.join('、') })}
+            {t('message.referenceSummary', { labels: referenceLabels.join(t('message.referenceSeparator')) })}
           </div>
         )}
       </div>

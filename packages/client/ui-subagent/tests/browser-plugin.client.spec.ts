@@ -8,7 +8,9 @@ import {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
-import type { SubagentCatalogInjected } from '../src/client/SubagentCatalogAction.tsx'
+import {
+  SubagentCatalogAction, type SubagentCatalogInjected,
+} from '../src/client/SubagentCatalogAction.tsx'
 import {
   SubagentReadOnlyComposer, type SubagentReadOnlyMatch,
 } from '../src/client/SubagentReadOnlyComposer.tsx'
@@ -93,7 +95,7 @@ describe('apply', () => {
   it('registers catalog actions and selects read-only subagent composers from session facts', async () => {
     const { ctx, face } = await fullBench(FAMILY)
     const catalogEntry = ctx.slots.entries('conversation.session.header.actions')
-      .find(entry => entry.options.id === 'subagent-catalog')!
+      .find(entry => entry.component === SubagentCatalogAction)!
     const actions = (catalogEntry.inject as unknown as (id: SessionId) => SubagentCatalogInjected)(sid('parent'))
     const address: SubagentAddress = {
       parentSessionId: sid('parent'),

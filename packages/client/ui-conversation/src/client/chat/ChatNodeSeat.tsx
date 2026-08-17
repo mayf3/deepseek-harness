@@ -1,4 +1,5 @@
 import { memo, useMemo } from 'react'
+import { sessionRecallLabels } from '@deepseek-ai/dsh-client-runtime/client'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
@@ -27,13 +28,8 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     const previousKey = snapshot.chat.order[index - 1]
     const previous = previousKey === undefined ? undefined : snapshot.chat.nodes.get(previousKey)
     if (previous?.kind !== 'context') return ''
-    const source = (previous as ChatNode<'context'>).data.source as {
-      kind?: string
-      form?: string
-      references?: readonly { label: string }[]
-    }
-    if (source.kind !== 'session-reference' || source.form !== 'recall' || source.references === undefined) return ''
-    return JSON.stringify(source.references.map(reference => reference.label))
+    const labels = sessionRecallLabels((previous as ChatNode<'context'>).data.source)
+    return labels.length === 0 ? '' : JSON.stringify(labels)
   })
   const referenceLabels = useMemo<readonly string[]>(
     () => referenceLabelsJson === '' ? [] : JSON.parse(referenceLabelsJson) as string[],

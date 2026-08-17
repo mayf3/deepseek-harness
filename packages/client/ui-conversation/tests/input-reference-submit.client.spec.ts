@@ -120,3 +120,44 @@ describe('reference submission', () => {
     expect(shell.snapshot.draft).toBe('send this')
   })
 })
+
+describe('submit transaction hardening', () => {
+  it('sends one image-only prompt per settlement, ignoring Enter during the round-trip', async () => {
+    let settle!: (outcome: SubmitOutcome) => void
+    const sink = vi.fn(() => new Promise<SubmitOutcome>((resolve) => { settle = resolve }))
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext,
+      defaultSink: sink,
+    })
+    expect(shell.addImages(['img-1' as DraftAttachmentId])).toBe(true)
+    shell.submit('queue')
+    shell.submit('queue')
+    expect(sink).toHaveBeenCalledTimes(1)
+    settle({ kind: 'success' })
+    await vi.waitFor(() => {
+      expect(shell.snapshot.imageIds).toEqual([])
+    })
+
+    expect(shell.addImages(['img-2' as DraftAttachmentId])).toBe(true)
+    shell.submit('queue')
+    expect(sink).toHaveBeenCalledTimes(2)
+  })
+
+  it('re-tracks at the caret when a continuing insert-text splice lands (directory descent)', () => {
+    const track = vi.fn()
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext,
+      inputTriggers: () => ({ track } as unknown as InputTriggerController),
+      defaultSink: vi.fn(),
+    })
+    shell.setDraft('@sr')
+    const applied = shell.insertText('@src/', { start: 0, end: 3, draftRev: shell.snapshot.draftRev }, true)
+    expect(applied).toBe(true)
+    expect(shell.snapshot.draft).toBe('@src/')
+    expect(track).toHaveBeenCalledWith('@src/', 5, { tier: 'plain' }, shell.snapshot.draftRev)
+
+    track.mockClear()
+    shell.insertText(' plain ', { start: 0, end: 0, draftRev: shell.snapshot.draftRev })
+    expect(track).not.toHaveBeenCalled()
+  })
+})

@@ -224,6 +224,8 @@ export interface InsertTextRequest {
   /** Literal replacement for the trigger token span (e.g. `/name `). */
   readonly text: string
   readonly span: TokenSpan
+  /** Keep completion open after the splice (directory descent): the input re-tracks at the caret. */
+  readonly continue?: boolean
 }
 
 declare module '@deepseek-ai/cordis' {

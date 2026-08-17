@@ -523,7 +523,13 @@ export class InputMachine {
       this.phase = 'plain'
       this.claim = undefined
       this.occurrences = []
-      this.adopt('')
+      // Text appended after the sent snapshot during the Host round-trip
+      // survives the commit; edits interleaved with committed content cannot
+      // be separated from it, so only a pure suffix is retained.
+      const snapshot = flight.attempt.draftSnapshot
+      this.adopt(this.draft !== snapshot && this.draft.startsWith(snapshot)
+        ? this.draft.slice(snapshot.length)
+        : '')
       // Committed content is gone for good: undo must not resurrect a sent draft.
       this.log = []
       this.redoStack = []

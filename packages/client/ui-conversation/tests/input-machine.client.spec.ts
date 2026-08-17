@@ -72,8 +72,8 @@ describe('input-machine: plain × enter', () => {
   it('non-command text falls to the default sink', () => {
     const m = new InputMachine()
     m.dispatch({ type: 'draft-changed', draft: 'hello world' })
-    const effect = effectAt(m.dispatch({ type: 'enter', mode: 'steer' }), 0, 'default-sink')
-    expect(effect).toMatchObject({ draft: 'hello world', mode: 'steer' })
+    const effect = effectAt(m.dispatch({ type: 'enter', mode: 'queue' }), 0, 'default-sink')
+    expect(effect).toMatchObject({ draft: 'hello world', mode: 'queue' })
     expect(effect.attempt.draftSnapshot).toBe('hello world')
     expect(m.state.phase).toBe('submitting')
   })
@@ -487,6 +487,22 @@ describe('input-machine: undo / redo', () => {
     expect(m.state.draft).toBe('')
     expect(m.dispatch({ type: 'undo' })).toEqual([])
     expect(m.state.draft).toBe('')
+  })
+
+  it('keeps a suffix typed during the round-trip and drops interleaved edits with the commit', () => {
+    const m = new InputMachine()
+    m.dispatch({ type: 'draft-changed', draft: 'hello' })
+    const effect = effectAt(m.dispatch({ type: 'enter', mode: 'queue' }), 0, 'default-sink')
+    m.dispatch({ type: 'draft-changed', draft: 'hello world' })
+    m.dispatch({ type: 'submit-settled', attempt: effect.attempt, ok: true })
+    expect(m.state.draft).toBe(' world')
+
+    const n = new InputMachine()
+    n.dispatch({ type: 'draft-changed', draft: 'hello' })
+    const second = effectAt(n.dispatch({ type: 'enter', mode: 'queue' }), 0, 'default-sink')
+    n.dispatch({ type: 'draft-changed', draft: 'hXello' })
+    n.dispatch({ type: 'submit-settled', attempt: second.attempt, ok: true })
+    expect(n.state.draft).toBe('')
   })
 })
 

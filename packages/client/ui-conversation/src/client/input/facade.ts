@@ -91,6 +91,8 @@ export class SessionInputShell implements SessionInput {
   private noticeSeq = 0
   private lastDraft = ''
   private imageIds: readonly DraftAttachmentId[] = []
+  /** One image-only send at a time: Enter during the Host round-trip is a no-op. */
+  private imageSendInFlight = false
   private disposed = false
   /** Draft persistence mirror (chat store write; receives the clipboard projection, never raw placeholders). */
   private mirrorFn: ((text: string) => void) | undefined
@@ -138,16 +140,6 @@ export class SessionInputShell implements SessionInput {
     const next = this.imageIds.filter(id => keep.has(id))
     if (next.length === this.imageIds.length) return
     this.imageIds = next
-    this.publish()
-  }
-
-  /**
-   * Restore a failed attempt before any images added after its admission.
-   * @param ids - failed attempt image ids.
-   */
-  restoreImages(ids: readonly DraftAttachmentId[]): void {
-    const current = new Set(this.imageIds)
-    this.imageIds = [...ids.filter(id => !current.has(id)), ...this.imageIds]
     this.publish()
   }
 
@@ -202,13 +194,16 @@ export class SessionInputShell implements SessionInput {
    */
   submit(mode: InputSubmitMode = 'queue'): void {
     if (this.snapshot.draft.trim() === '' && this.imageIds.length > 0) {
-      if (this.snapshot.phase === 'plain') {
+      if (this.snapshot.phase === 'plain' && !this.imageSendInFlight) {
         const imageIds = [...this.imageIds]
+        this.imageSendInFlight = true
         void this.deps.defaultSink('', imageIds, mode, new AbortController().signal).then((outcome) => {
+          this.imageSendInFlight = false
           if (this.disposed) return
           if (outcome.kind === 'success') this.commitSend(imageIds)
           else this.notify('error', outcome.text ?? 'prompt failed')
         }, (error: unknown) => {
+          this.imageSendInFlight = false
           if (!this.disposed) this.notify('error', error instanceof Error ? error.message : String(error))
         })
       }
@@ -341,13 +336,21 @@ export class SessionInputShell implements SessionInput {
    * a scan-derived decoration, never state.
    * @param text - the plain reference text to splice in (e.g. `/name `).
    * @param span - pick-time span snapshot (draftRev CAS).
+   * @param keepCompleting - re-track at the caret after the splice so an open
+   * token (a directory pick's trailing slash) reopens the menu.
    * @returns whether the text was applied.
    */
-  insertText(text: string, span: TokenSpan): boolean {
+  insertText(text: string, span: TokenSpan, keepCompleting = false): boolean {
     const snapshot = this.core.state
     if (span.draftRev !== snapshot.draftRev) return false
     const draft = snapshot.draft
     this.setDraft(draft.slice(0, span.start) + text + draft.slice(span.end))
+    if (keepCompleting) {
+      // Machine-driven draft replacement never passes through onChange, so
+      // re-track at the caret inside the still-open token (see space()).
+      const next = this.snapshot
+      this.deps.inputTriggers?.()?.track(next.draft, span.start + text.length, { tier: guardOf(next.phase) }, next.draftRev)
+    }
     return true
   }
 
