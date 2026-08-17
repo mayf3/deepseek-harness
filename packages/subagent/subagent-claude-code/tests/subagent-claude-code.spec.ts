@@ -192,6 +192,25 @@ function failure(
   } as SDKResultMessage
 }
 
+function expectedFailureDiagnostic(
+  stage: 'query-start' | 'query-run' | 'process' | 'teardown',
+  category: string,
+  outcome?: Partial<SubprocessOutcome>,
+): string {
+  const fields = [
+    'product: Claude Code',
+    `stage: ${stage}`,
+    `category: ${category}`,
+  ]
+  if (outcome?.exitCode !== null && outcome?.exitCode !== undefined) {
+    fields.push(`exit code: ${outcome.exitCode}`)
+  }
+  if (outcome?.signal !== null && outcome?.signal !== undefined) {
+    fields.push(`signal: ${outcome.signal}`)
+  }
+  return `Product subagent failure (${fields.join('; ')})`
+}
+
 function permissionDenied(): SDKPermissionDeniedMessage {
   return {
     type: 'system',
@@ -397,7 +416,18 @@ describe('task admission and package contracts', () => {
 
     resolveExecutable.mockRejectedValueOnce(new Error('claude missing from PATH'))
     await expect(ctx.subagents.start('claude-code', request()))
-      .rejects.toThrow('claude missing from PATH')
+      .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
+    expect(queryMock).not.toHaveBeenCalled()
+
+    const resolutionAbort = new AbortController()
+    resolveExecutable.mockImplementationOnce(async () => {
+      resolutionAbort.abort(new Error('parent cancelled executable resolution'))
+      throw new Error('SECRET_TOKEN from executable resolution')
+    })
+    await expect(ctx.subagents.start(
+      'claude-code',
+      request(undefined, resolutionAbort.signal),
+    )).rejects.toThrow('aborted before SDK startup')
     expect(queryMock).not.toHaveBeenCalled()
 
     const run = await ctx.subagents.start('claude-code', request())
@@ -405,11 +435,13 @@ describe('task admission and package contracts', () => {
     child.stdout.end()
     await expect(run.result).resolves.toEqual({
       output: [],
+      diagnostic: expectedFailureDiagnostic('query-run', 'missing-result'),
       stopReason: 'error',
     })
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining(
-      'subagent-claude-code: child run failed (error):',
-    ))
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('subagent-claude-code: child run failed (error):'),
+      expect.any(Error),
+    )
     expect(resolveExecutable).toHaveBeenCalledWith(
       'claude',
       expect.objectContaining({ ANTHROPIC_API_KEY: 'provider-fake-key' }),
@@ -711,17 +743,34 @@ describe('query options and result mapping', () => {
   it('accepts only a non-error success with a non-blank final result', () => {
     expect(successfulResult(success('exact final'))).toBe('exact final')
     expect(() => successfulResult(success('answer', true)))
-      .toThrow('marked as an error')
+      .toThrow(expectedFailureDiagnostic('query-run', 'invalid-success'))
     expect(() => successfulResult(success(' \n ')))
-      .toThrow('contained no answer')
-    expect(() => successfulResult(failure(
+      .toThrow(expectedFailureDiagnostic('query-run', 'invalid-success'))
+    const sdkFailure = () => successfulResult(failure(
       'error_during_execution',
-      ['first', 'second'],
-    ))).toThrow('first; second')
+      ['SECRET_TOKEN', '/private/secret.txt'],
+    ))
+    expect(sdkFailure).toThrow(expectedFailureDiagnostic(
+      'query-run',
+      'error_during_execution',
+    ))
+    expect(sdkFailure).not.toThrow('SECRET_TOKEN')
+    expect(sdkFailure).not.toThrow('/private/secret.txt')
     expect(() => successfulResult(failure(
       'error_max_turns',
       [],
-    ))).toThrow('error_max_turns')
+    ))).toThrow(expectedFailureDiagnostic('query-run', 'error_max_turns'))
+
+    const unknown = {
+      type: 'result',
+      subtype: 'future_failure',
+      is_error: true,
+      errors: ['SECRET_TOKEN'],
+    } as unknown as SDKResultMessage
+    expect(() => successfulResult(unknown))
+      .toThrow(expectedFailureDiagnostic('query-run', 'unknown'))
+    expect(() => successfulResult(unknown)).not.toThrow('future_failure')
+    expect(() => successfulResult(unknown)).not.toThrow('SECRET_TOKEN')
   })
 
   it('consumes the complete stream and keeps the latest strict success', async () => {
@@ -736,7 +785,7 @@ describe('query options and result mapping', () => {
     })
     await expect(consumeClaudeQuery(
       queryFrom([{ type: 'system', subtype: 'init' } as SDKMessage]),
-    )).rejects.toThrow('ended without a result')
+    )).rejects.toThrow(expectedFailureDiagnostic('query-run', 'missing-result'))
 
     const onPermissionDenied = vi.fn()
     await expect(consumeClaudeQuery(queryFrom([
@@ -790,6 +839,7 @@ describe('run publication, cancellation, and settlement', () => {
       )
       await expect(run.result).resolves.toEqual({
         output: [],
+        diagnostic: expectedFailureDiagnostic('query-run', subtype),
         stopReason: 'error',
       })
       expect(onError).toHaveBeenCalledWith(
@@ -809,7 +859,7 @@ describe('run publication, cancellation, and settlement', () => {
     const result = await run.result
     expect(result).toEqual({
       output: [],
-      diagnostic: 'Claude Code unattended decision (mode: dontAsk; request: tool permission; decision: denied): Claude Code denied the request before an interactive prompt',
+      diagnostic: `${expectedFailureDiagnostic('query-run', 'error_during_execution')}\nClaude Code unattended decision (mode: dontAsk; request: tool permission; decision: denied): Claude Code denied the request before an interactive prompt`,
       stopReason: 'error',
     })
     expect(result.diagnostic).not.toContain('SECRET_TOKEN')
@@ -851,6 +901,10 @@ describe('run publication, cancellation, and settlement', () => {
     })
     await expect(failed.result).resolves.toEqual({
       output: [],
+      diagnostic: expectedFailureDiagnostic(
+        'query-run',
+        'error_during_execution',
+      ),
       stopReason: 'error',
     })
     await Promise.all([completed.dispose(), failed.dispose()])
@@ -864,22 +918,66 @@ describe('run publication, cancellation, and settlement', () => {
     const run = await startClaudeCodeRun(request(), fixture.spec)
     await expect(run.result).resolves.toEqual({
       output: [],
+      diagnostic: expectedFailureDiagnostic('query-run', 'unknown'),
       stopReason: 'error',
     })
     await run.dispose()
   })
 
-  it('maps invalid success and missing result to error', async () => {
-    for (const messages of [
-      [success('answer', true)],
-      [success('')],
-      [{ type: 'system', subtype: 'init' } as SDKMessage],
-    ]) {
+  it('maps invalid success and missing result to fixed query-run facts', async () => {
+    for (const [messages, category] of [
+      [[success('answer', true)], 'invalid-success'],
+      [[success('')], 'invalid-success'],
+      [[{ type: 'system', subtype: 'init' } as SDKMessage], 'missing-result'],
+    ] as const) {
       const fixture = fakeRun(messages)
       const run = await startClaudeCodeRun(request(), fixture.spec)
-      await expect(run.result).resolves.toMatchObject({
+      await expect(run.result).resolves.toEqual({
+        output: [],
+        diagnostic: expectedFailureDiagnostic('query-run', category),
         stopReason: 'error',
       })
+      await run.dispose()
+    }
+  })
+
+  it('reports an early process exit with independent code and signal facts', async () => {
+    const outcomes: SubprocessOutcome[] = [
+      { exitCode: 23, signal: null },
+      { exitCode: null, signal: 'SIGABRT' },
+      { exitCode: 23, signal: 'SIGABRT' },
+      { exitCode: null, signal: null },
+    ]
+    for (const outcome of outcomes) {
+      const child = fakeChild()
+      async function* stream(): AsyncGenerator<SDKMessage, void> {
+        child.settle(outcome)
+        await Promise.resolve()
+        throw new Error('SECRET_TOKEN from process transport')
+      }
+      queryMock.mockImplementation(({ options }) => {
+        options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+        return Object.assign(stream(), { close: vi.fn() }) as unknown as Query
+      })
+      const run = await startClaudeCodeRun(request(), {
+        cwd: '/workspace',
+        executable: '/native/claude',
+        permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
+        env: {},
+        disposeGraceMs: 5,
+        spawn: () => child.handle,
+      })
+      const result = await run.result
+      expect(result).toEqual({
+        output: [],
+        diagnostic: expectedFailureDiagnostic(
+          'process',
+          'process-exit',
+          outcome,
+        ),
+        stopReason: 'error',
+      })
+      expect(result.diagnostic).not.toContain('SECRET_TOKEN')
       await run.dispose()
     }
   })
@@ -974,7 +1072,7 @@ describe('run publication, cancellation, and settlement', () => {
     )
     await expect(startClaudeCodeRun(request(), {
       ...unused.spec,
-    })).rejects.toThrow('did not publish a controllable')
+    })).rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
     expect(noChildClose).toHaveBeenCalledOnce()
 
     const closeFailure = vi.fn(() => { throw new Error('close boom') })
@@ -984,6 +1082,8 @@ describe('run publication, cancellation, and settlement', () => {
     const noChild = startClaudeCodeRun(request(), {
       ...unused.spec,
     })
+    await expect(noChild)
+      .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
     await expect(noChild).rejects.toBeInstanceOf(AggregateError)
 
     const startupAbort = new AbortController()
@@ -1006,12 +1106,40 @@ describe('run publication, cancellation, and settlement', () => {
     expect(abortedClose).toHaveBeenCalledOnce()
     expect(abortedChild.terminate).toHaveBeenCalledOnce()
 
+    const cleanupAbort = new AbortController()
+    const cleanupFailedChild = fakeChild({
+      waitForExitError: new Error('SECRET_TOKEN cleanup wait failure'),
+    })
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      cleanupAbort.abort(new Error('startup cancelled'))
+      return queryFrom([])
+    })
+    const cancelledCleanupFailure = startClaudeCodeRun(
+      request(undefined, cleanupAbort.signal),
+      {
+        ...unused.spec,
+        spawn: () => cleanupFailedChild.handle,
+      },
+    )
+    await expect(cancelledCleanupFailure)
+      .rejects.toBeInstanceOf(AggregateError)
+    await expect(cancelledCleanupFailure)
+      .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
+    await expect(cancelledCleanupFailure)
+      .rejects.not.toThrow('SECRET_TOKEN')
+
     queryMock.mockImplementationOnce(() => {
       throw new Error('query failed before resource creation')
     })
-    await expect(startClaudeCodeRun(request(), {
+    const queryFailure = startClaudeCodeRun(request(), {
       ...unused.spec,
-    })).rejects.toThrow('query failed before resource creation')
+    })
+    await expect(queryFailure)
+      .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
+    await expect(queryFailure).rejects.not.toThrow(
+      'query failed before resource creation',
+    )
 
     const spawned = fakeChild()
     const spawnSpecs: SubprocessSpawnSpec[] = []
@@ -1019,6 +1147,7 @@ describe('run publication, cancellation, and settlement', () => {
     queryMock.mockImplementationOnce(({ options }) => {
       factoryController = options.abortController
       options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      spawned.settle({ exitCode: 17, signal: 'SIGABRT' })
       throw new Error('query construction failed')
     })
     const factoryFailure = startClaudeCodeRun(request(), {
@@ -1028,7 +1157,12 @@ describe('run publication, cancellation, and settlement', () => {
         return spawned.handle
       },
     })
-    await expect(factoryFailure).rejects.toThrow('query construction failed')
+    await expect(factoryFailure).rejects.toThrow(expectedFailureDiagnostic(
+      'query-start',
+      'unknown',
+      { exitCode: 17, signal: 'SIGABRT' },
+    ))
+    await expect(factoryFailure).rejects.not.toThrow('query construction failed')
     expect(spawnSpecs).toHaveLength(1)
     expect(factoryController?.signal.aborted).toBe(true)
     expect(spawned.terminate).toHaveBeenCalledOnce()
@@ -1038,8 +1172,10 @@ describe('run publication, cancellation, and settlement', () => {
       doneError: new Error('spawn failed'),
     })
     const failed = fakeRun([], undefined, failedSpawn)
-    await expect(startClaudeCodeRun(request(), failed.spec))
-      .rejects.toBeInstanceOf(AggregateError)
+    const failedStartup = startClaudeCodeRun(request(), failed.spec)
+    await expect(failedStartup)
+      .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
+    await expect(failedStartup).rejects.toBeInstanceOf(AggregateError)
     expect(failed.close).toHaveBeenCalledOnce()
   })
 })
@@ -1080,10 +1216,16 @@ describe('query and process disposal', () => {
       waitForExitError: new Error('wait boom'),
     })
     const closeFailure = vi.fn(() => { throw new Error('close boom') })
-    await expect(disposeClaudeCodeChild(
+    const waitAndClose = disposeClaudeCodeChild(
       { close: closeFailure },
       waitFailure.handle,
-    )).rejects.toBeInstanceOf(AggregateError)
+    )
+    await expect(waitAndClose).rejects.toThrow(expectedFailureDiagnostic(
+      'teardown',
+      'unknown',
+      { exitCode: 0, signal: null },
+    ))
+    await expect(waitAndClose).rejects.toBeInstanceOf(AggregateError)
     expect(waitFailure.terminate).toHaveBeenCalledOnce()
 
     const doneFailure = fakeChild({
@@ -1093,15 +1235,18 @@ describe('query and process disposal', () => {
     await expect(disposeClaudeCodeChild(
       { close: vi.fn() },
       doneFailure.handle,
-    )).rejects.toThrow('spawn boom')
+    )).rejects.toThrow(expectedFailureDiagnostic('teardown', 'unknown'))
 
     const both = fakeChild({
       pid: -1,
       doneError: new Error('spawn boom'),
     })
-    await expect(disposeClaudeCodeChild(
+    const bothFailures = disposeClaudeCodeChild(
       { close: () => { throw new Error('close boom') } },
       both.handle,
-    )).rejects.toBeInstanceOf(AggregateError)
+    )
+    await expect(bothFailures)
+      .rejects.toThrow(expectedFailureDiagnostic('teardown', 'unknown'))
+    await expect(bothFailures).rejects.toBeInstanceOf(AggregateError)
   })
 })

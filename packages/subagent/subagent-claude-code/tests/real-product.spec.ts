@@ -21,7 +21,11 @@ import { Context } from '@deepseek-ai/cordis'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import type {
+  SubprocessHandle,
+  SubprocessOutcome,
+  SubprocessSpawnSpec,
+} from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as claudeCode from '../src/index.ts'
 import type { ClaudeCodePermissionMode } from '../src/run.ts'
@@ -32,6 +36,7 @@ import {
 } from './messages-fixture.ts'
 
 const observedSdkMessages = vi.hoisted((): SDKMessage[] => [])
+const sdkTestOverrides = vi.hoisted((): { maxTurns?: number } => ({}))
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
   const actual = await importOriginal<
@@ -39,8 +44,13 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
   >()
   return {
     ...actual,
-    query(options: Parameters<typeof actual.query>[0]): Query {
-      const query = actual.query(options)
+    query(params: Parameters<typeof actual.query>[0]): Query {
+      const query = actual.query(sdkTestOverrides.maxTurns === undefined
+        ? params
+        : {
+          ...params,
+          options: { ...params.options, maxTurns: sdkTestOverrides.maxTurns },
+        })
       // Observe the real SDK stream without replacing its protocol or CLI.
       return new Proxy(query, {
         get(target, property) {
@@ -112,6 +122,7 @@ afterEach(async () => {
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
   observedSdkMessages.length = 0
+  delete sdkTestOverrides.maxTurns
 })
 
 interface RealHarness {
@@ -216,6 +227,17 @@ async function expectQuiescent(
   }
 }
 
+function expectedProcessFailure(outcome: SubprocessOutcome): string {
+  const fields = [
+    'product: Claude Code',
+    'stage: process',
+    'category: process-exit',
+  ]
+  if (outcome.exitCode !== null) fields.push(`exit code: ${outcome.exitCode}`)
+  if (outcome.signal !== null) fields.push(`signal: ${outcome.signal}`)
+  return `Product subagent failure (${fields.join('; ')})`
+}
+
 function startRequest(
   harness: RealHarness,
   prompt: string,
@@ -294,14 +316,49 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
     await expectQuiescent(harness.handles)
   })
 
-  it('maps a real CLI process failure to error', async () => {
+  it('maps a real SDK max-turns result to safe query-run facts', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-claude-code-max-turns-'))
+    roots.push(root)
+    const target = join(root, 'max-turns.txt')
+    sdkTestOverrides.maxTurns = 1
+    const { harness, fixture } = await realHarness({
+      kind: 'tool-use',
+      toolName: 'Write',
+      input: {
+        file_path: target,
+        content: 'real-sdk-max-turns',
+      },
+    }, 'bypassPermissions')
+    const run = await startRequest(harness, 'Exercise the SDK max-turns result.')
+    const result = await run.result
+    expect(observedSdkMessages
+      .filter(message => message.type === 'result')
+      .map(message => message.subtype)).toEqual(['error_max_turns'])
+    expect(result).toMatchObject({
+      output: [],
+      stopReason: 'error',
+    })
+    expect(result.diagnostic).toContain(
+      'product: Claude Code; stage: query-run; category: error_max_turns',
+    )
+    expect(readFileSync(target, 'utf8')).toBe('real-sdk-max-turns')
+    expect(result.diagnostic).not.toContain(target)
+    expect(result.diagnostic).not.toContain('real-sdk-max-turns')
+    await run.dispose()
+    expect(fixture.requests).toHaveLength(1)
+    await expectQuiescent(harness.handles)
+  })
+
+  it('maps a real CLI process failure to its exit outcome', async () => {
     const { harness, fixture } = await realHarness({ kind: 'hold' })
     const run = await startRequest(harness, 'Exercise the failure path.')
     await fixture.requestStarted
     expect(harness.handles).toHaveLength(1)
     harness.handles[0]!.terminate()
+    const outcome = await harness.handles[0]!.done
     await expect(run.result).resolves.toEqual({
       output: [],
+      diagnostic: expectedProcessFailure(outcome),
       stopReason: 'error',
     })
     await run.dispose()
@@ -330,10 +387,11 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
     }, { timeout: 30_000 })
     expect(existsSync(target)).toBe(false)
     harness.handles[0]!.terminate()
+    const outcome = await harness.handles[0]!.done
     const result = await run.result
     expect(result).toEqual({
       output: [],
-      diagnostic: 'Claude Code unattended decision (mode: dontAsk; request: tool permission; decision: denied): Claude Code denied the request before an interactive prompt',
+      diagnostic: `${expectedProcessFailure(outcome)}\nClaude Code unattended decision (mode: dontAsk; request: tool permission; decision: denied): Claude Code denied the request before an interactive prompt`,
       stopReason: 'error',
     })
     expect(result.diagnostic).not.toContain(target)

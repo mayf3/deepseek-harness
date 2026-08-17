@@ -21,6 +21,7 @@ import {
   CLAUDE_CODE_PERMISSION_MODES,
   DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
   DEFAULT_DISPOSE_GRACE_MS,
+  claudeCodeStartupFailure,
   startClaudeCodeRun,
   type ClaudeCodePermissionMode,
   type ClaudeCodeRunSpec,
@@ -78,17 +79,29 @@ class ClaudeCodeProvider implements SubagentProvider {
         'subagent-claude-code: no working directory for the child — delegate from a parent session that has one',
       )
     }
-    const executable = await this.ctx.subprocess.resolveExecutable(
-      'claude',
-      this.config.env,
-      request.signal,
-    )
-    const spec: ClaudeCodeRunSpec = {
-      cwd: resolveChildCwd(
+    let cwd: string
+    let executable: string
+    try {
+      cwd = resolveChildCwd(
         'subagent-claude-code',
         undefined,
         parentCwd,
-      ),
+      )
+      executable = await this.ctx.subprocess.resolveExecutable(
+        'claude',
+        this.config.env,
+        request.signal,
+      )
+    } catch (error: unknown) {
+      if (request.signal.aborted) {
+        throw new Error(
+          'subagent-claude-code: request was aborted before SDK startup',
+        )
+      }
+      throw claudeCodeStartupFailure(error)
+    }
+    const spec: ClaudeCodeRunSpec = {
+      cwd,
       executable,
       permissionMode: this.config.permissionMode,
       env: this.config.env,
@@ -96,7 +109,8 @@ class ClaudeCodeProvider implements SubagentProvider {
       spawn: spawnSpec => this.ctx.subprocess.spawn(spawnSpec),
       onError: (error, stopReason) => {
         this.ctx.logger.warn(
-          `subagent-claude-code: child run failed (${stopReason}): ${error.message}`,
+          `subagent-claude-code: child run failed (${stopReason}): %o`,
+          error,
         )
       },
     }

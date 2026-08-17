@@ -11,7 +11,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 export const name = 'subagent-result-diagnostic'
 export const inject = ['subagents']
 
-const DIAGNOSTIC = 'Claude Code unattended decision (mode: dontAsk; request: tool permission; decision: denied): Claude Code denied the request before an interactive prompt'
+const DIAGNOSTIC = 'Product subagent failure (product: Claude Code; stage: query-run; category: error_max_budget_usd)'
 
 class DiagnosticProvider implements SubagentProvider {
   readonly name = 'snapshot-diagnostic'

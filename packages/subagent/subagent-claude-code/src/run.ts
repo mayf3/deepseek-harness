@@ -28,6 +28,7 @@ import {
 import {
   scrubbedParentEnv,
   type SubprocessHandle,
+  type SubprocessOutcome,
   type SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import {
@@ -56,6 +57,83 @@ export const DEFAULT_CLAUDE_CODE_PERMISSION_MODE: ClaudeCodePermissionMode = 'do
 const SUPPORTED_UNATTENDED_DIALOG_KINDS = [
   'refusal_fallback_prompt',
 ] satisfies NonNullable<Options['supportedDialogKinds']>
+
+type ClaudeCodeErrorSubtype = Exclude<SDKResultMessage['subtype'], 'success'>
+
+type ClaudeCodeFailureStage =
+  | 'query-start'
+  | 'query-run'
+  | 'process'
+  | 'teardown'
+
+type ClaudeCodeFailureCategory =
+  | ClaudeCodeErrorSubtype
+  | 'invalid-success'
+  | 'missing-result'
+  | 'process-exit'
+  | 'unknown'
+
+interface ClaudeCodeFailureFacts {
+  readonly stage: ClaudeCodeFailureStage
+  readonly category: ClaudeCodeFailureCategory
+  readonly outcome?: SubprocessOutcome | undefined
+}
+
+function failureDiagnostic(facts: ClaudeCodeFailureFacts): string {
+  const fields = [
+    'product: Claude Code',
+    `stage: ${facts.stage}`,
+    `category: ${facts.category}`,
+  ]
+  const exitCode = facts.outcome?.exitCode
+  if (exitCode !== null && exitCode !== undefined) {
+    fields.push(`exit code: ${exitCode}`)
+  }
+  const signal = facts.outcome?.signal
+  if (signal !== null && signal !== undefined) {
+    fields.push(`signal: ${signal}`)
+  }
+  return `Product subagent failure (${fields.join('; ')})`
+}
+
+class ClaudeCodeFailure extends Error {
+  constructor(
+    readonly facts: ClaudeCodeFailureFacts,
+    cause?: unknown,
+  ) {
+    super(
+      `subagent-claude-code: ${failureDiagnostic(facts)}`,
+      cause === undefined ? undefined : { cause },
+    )
+    this.name = 'ClaudeCodeFailure'
+  }
+}
+
+function sdkFailureCategory(
+  subtype: string,
+): ClaudeCodeErrorSubtype | 'unknown' {
+  switch (subtype) {
+    case 'error_during_execution':
+    case 'error_max_turns':
+    case 'error_max_budget_usd':
+    case 'error_max_structured_output_retries':
+      return subtype
+    default:
+      return 'unknown'
+  }
+}
+
+/**
+ * Hide an unpublished product startup failure behind fixed safe facts.
+ * @param cause - original host-side failure retained only on the Error cause chain.
+ * @returns a rejection safe to expose through the subagent start boundary.
+ */
+export function claudeCodeStartupFailure(cause: unknown): Error {
+  return new ClaudeCodeFailure({
+    stage: 'query-start',
+    category: 'unknown',
+  }, cause)
+}
 
 function unattendedDiagnostic(
   mode: ClaudeCodePermissionMode,
@@ -90,6 +168,10 @@ function thrown(value: unknown): Error {
   /* v8 ignore next -- typed SDK and subprocess failures reject with Error. */
   return value instanceof Error ? value : new Error(String(value))
 }
+
+function isAborted(signal: AbortSignal): boolean {
+  return signal.aborted
+}
 /* jscpd:ignore-end */
 
 /**
@@ -120,15 +202,23 @@ export function textTask(prompt: readonly ContentBlock[]): string {
  * @returns exact final text for a successful, non-error result.
  */
 export function successfulResult(message: SDKResultMessage): string {
-  if (
-    message.subtype !== 'success'
-    || message.is_error
-    || message.result.trim().length === 0
-  ) {
-    const detail = message.subtype === 'success'
-      ? 'success result was marked as an error or contained no answer'
-      : message.errors.join('; ') || message.subtype
-    throw new Error(`subagent-claude-code: Claude Code failed: ${detail}`)
+  if (message.subtype !== 'success') {
+    const category = sdkFailureCategory(message.subtype)
+    const detail = category === 'unknown'
+      ? undefined
+      : message.errors.join('; ')
+    throw new ClaudeCodeFailure(
+      { stage: 'query-run', category },
+      detail === undefined || detail.length === 0
+        ? undefined
+        : new Error(detail),
+    )
+  }
+  if (message.is_error || message.result.trim().length === 0) {
+    throw new ClaudeCodeFailure({
+      stage: 'query-run',
+      category: 'invalid-success',
+    })
   }
   return message.result
 }
@@ -154,7 +244,10 @@ export async function consumeClaudeQuery(
     answer = successfulResult(message)
   }
   if (answer === undefined) {
-    throw new Error('subagent-claude-code: Claude Code ended without a result')
+    throw new ClaudeCodeFailure({
+      stage: 'query-run',
+      category: 'missing-result',
+    })
   }
   return {
     output: [{ type: 'text', text: answer }],
@@ -173,6 +266,7 @@ export async function disposeClaudeCodeChild(
   child: SubprocessHandle,
 ): Promise<void> {
   const failures: Error[] = []
+  let outcome: SubprocessOutcome | undefined
   try {
     query?.close()
   } catch (error: unknown) {
@@ -188,17 +282,24 @@ export async function disposeClaudeCodeChild(
     }
   }
   try {
-    await child.done
+    outcome = await child.done
   } catch (error: unknown) {
     failures.push(thrown(error))
   }
 
   const firstFailure = failures[0]
-  if (failures.length === 1 && firstFailure !== undefined) throw firstFailure
-  if (failures.length > 1) {
+  if (firstFailure !== undefined) {
+    const facts = {
+      stage: 'teardown',
+      category: 'unknown',
+      outcome,
+    } as const
+    if (failures.length === 1) {
+      throw new ClaudeCodeFailure(facts, firstFailure)
+    }
     throw new AggregateError(
-      failures,
-      'subagent-claude-code: query and process cleanup failed',
+      failures.map(failure => new ClaudeCodeFailure(facts, failure)),
+      `subagent-claude-code: ${failureDiagnostic(facts)}`,
     )
   }
 }
@@ -296,9 +397,21 @@ export async function startClaudeCodeRun(
 
   let child: SubprocessHandle | undefined
   let query: Query | undefined
-  let diagnostic: string | undefined
-  const captureDiagnostic = (value: string): void => {
-    diagnostic = value
+  let processOutcome: SubprocessOutcome | undefined
+  let failureDetail: string | undefined
+  let permissionDetail: string | undefined
+  const capturePermissionDiagnostic = (value: string): void => {
+    permissionDetail = value
+  }
+  const collectDiagnostic = (): string => [failureDetail, permissionDetail]
+    .filter((value): value is string => value !== undefined)
+    .join('\n')
+  const captureChild = (captured: SubprocessHandle): void => {
+    child = captured
+    void captured.done.then(
+      (outcome: SubprocessOutcome) => { processOutcome = outcome },
+      () => undefined,
+    )
   }
   try {
     query = officialQuery({
@@ -306,10 +419,8 @@ export async function startClaudeCodeRun(
       options: claudeQueryOptions(
         spec,
         controller,
-        (captured) => {
-          child = captured
-        },
-        captureDiagnostic,
+        captureChild,
+        capturePermissionDiagnostic,
       ),
     })
     if (child === undefined || child.pid <= 0) {
@@ -323,46 +434,83 @@ export async function startClaudeCodeRun(
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
     const cancelledBeforeCleanup = controller.signal.aborted
+    await Promise.resolve()
+    const startupOutcome = processOutcome
+    const startupFacts = {
+      stage: 'query-start',
+      category: 'unknown',
+      outcome: startupOutcome,
+    } as const
+    const startupFailure = (): ClaudeCodeFailure => new ClaudeCodeFailure(
+      startupFacts,
+      thrown(error),
+    )
     requestCancel()
     if (child !== undefined) {
       try {
         await disposeClaudeCodeChild(query, child)
       } catch (disposeError: unknown) {
+        const failure = startupFailure()
         throw new AggregateError(
-          [thrown(error), thrown(disposeError)],
-          'subagent-claude-code: startup failed and CLI cleanup also failed',
+          [failure, thrown(disposeError)],
+          `${failure.message}; startup cleanup also failed`,
         )
       }
     } else if (query !== undefined) {
       try {
         query.close()
       } catch (disposeError: unknown) {
+        const failure = startupFailure()
         throw new AggregateError(
-          [thrown(error), thrown(disposeError)],
-          'subagent-claude-code: startup failed and query cleanup also failed',
+          [
+            failure,
+            new ClaudeCodeFailure({
+              stage: 'teardown',
+              category: 'unknown',
+            }, thrown(disposeError)),
+          ],
+          `${failure.message}; startup cleanup also failed`,
         )
       }
     }
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- the request can abort while process cleanup is awaited.
-    if (cancelledBeforeCleanup || request.signal.aborted) {
+    if (cancelledBeforeCleanup || isAborted(request.signal)) {
       throw new Error('subagent-claude-code: request was aborted before SDK startup')
     }
-    throw thrown(error)
+    throw startupFailure()
   }
 
   const publishedQuery = query
   const publishedChild = child
   const result = settleRunResult({
-    attempt: () => consumeClaudeQuery(publishedQuery, () => {
-      captureDiagnostic(unattendedDiagnostic(
-        spec.permissionMode,
-        'tool permission',
-        'denied',
-        'Claude Code denied the request before an interactive prompt',
-      ))
-    }),
+    attempt: async () => {
+      try {
+        return await consumeClaudeQuery(publishedQuery, () => {
+          capturePermissionDiagnostic(unattendedDiagnostic(
+            spec.permissionMode,
+            'tool permission',
+            'denied',
+            'Claude Code denied the request before an interactive prompt',
+          ))
+        })
+      } catch (error: unknown) {
+        await Promise.resolve()
+        const facts = error instanceof ClaudeCodeFailure
+          ? { ...error.facts, outcome: processOutcome }
+          : processOutcome === undefined
+            ? { stage: 'query-run', category: 'unknown' } as const
+            : {
+              stage: 'process',
+              category: 'process-exit',
+              outcome: processOutcome,
+            } as const
+        failureDetail = failureDiagnostic(facts)
+        throw error instanceof ClaudeCodeFailure
+          ? error
+          : new ClaudeCodeFailure(facts, thrown(error))
+      }
+    },
     collectOutput: () => [],
-    collectDiagnostic: () => diagnostic,
+    collectDiagnostic,
     cancelled: () => controller.signal.aborted,
     onError: spec.onError,
     signal: request.signal,
