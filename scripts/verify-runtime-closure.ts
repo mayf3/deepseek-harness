@@ -30,62 +30,87 @@ interface RuntimePlatform {
 
 type RuntimePlatformManifest = Record<string, RuntimePlatform>
 
-const root = resolve(import.meta.dirname, '..')
-const { values } = parseArgs({
-  args: process.argv.slice(2),
-  options: { manifest: { type: 'string' } },
-})
-const runtimeManifestPath = resolve(root, values.manifest ?? 'python/sdk-runtime/package.json')
-const runtimeManifest = await loadManifest(runtimeManifestPath)
-const runtimeName = runtimeManifest.name ?? 'python/sdk-runtime'
-const workspace = await loadWorkspacePackages()
-const runtimeDependencies = runtimeManifest.dependencies ?? {}
-const platforms = await loadJson<RuntimePlatformManifest>(resolve(root, 'python/sdk-runtime/platforms.json'))
-const parents = new Map<string, string | undefined>()
-const queue: string[] = []
-
-for (const dependency of Object.keys(runtimeDependencies).sort()) {
-  if (!workspace.has(dependency)) continue
-  parents.set(dependency, undefined)
-  queue.push(dependency)
+export interface RuntimeClosureResult {
+  failures: string[]
+  presetCount: number
+  workspacePackageCount: number
 }
 
-const failures = await missingPresetPlugins(runtimeDependencies, platforms)
-for (let index = 0; index < queue.length; index += 1) {
-  const packageName = queue[index]
-  if (packageName === undefined) continue
-  const current = workspace.get(packageName)
-  if (current === undefined) continue
-  const peers = current.manifest.peerDependencies ?? {}
-  const peerMeta = current.manifest.peerDependenciesMeta ?? {}
-  for (const peer of Object.keys(peers).sort()) {
-    if (!workspace.has(peer) || peerMeta[peer]?.optional === true) continue
-    if (runtimeDependencies[peer]?.startsWith('workspace:') === true) continue
-    failures.push(`${formatChain(runtimeName, packageName, parents)} -> ${peer}`)
-  }
-  const dependencies = {
-    ...current.manifest.dependencies,
-    ...current.manifest.optionalDependencies,
-  }
-  for (const dependency of Object.keys(dependencies).sort()) {
-    if (!workspace.has(dependency) || parents.has(dependency)) continue
-    parents.set(dependency, packageName)
+/**
+ * Check that the runtime manifest contains every shipped-preset plugin and workspace peer.
+ * @param root repository root containing the runtime manifest and shipped presets.
+ * @param manifestPath runtime manifest path relative to {@link root}.
+ * @returns the discovered preset count, reachable workspace package count, and violations.
+ */
+export async function verifyRuntimeClosure(
+  root: string,
+  manifestPath = 'python/sdk-runtime/package.json',
+): Promise<RuntimeClosureResult> {
+  const runtimeManifest = await loadManifest(resolve(root, manifestPath))
+  const runtimeName = runtimeManifest.name ?? manifestPath
+  const workspace = await loadWorkspacePackages(root)
+  const runtimeDependencies = runtimeManifest.dependencies ?? {}
+  const platforms = await loadJson<RuntimePlatformManifest>(resolve(root, 'python/sdk-runtime/platforms.json'))
+  const parents = new Map<string, string | undefined>()
+  const queue: string[] = []
+
+  for (const dependency of Object.keys(runtimeDependencies).sort()) {
+    if (!workspace.has(dependency)) continue
+    parents.set(dependency, undefined)
     queue.push(dependency)
   }
+
+  const failures = await missingPresetPlugins(root, runtimeDependencies, platforms)
+  for (let index = 0; index < queue.length; index += 1) {
+    const packageName = queue[index]
+    if (packageName === undefined) continue
+    const current = workspace.get(packageName)
+    if (current === undefined) continue
+    const peers = current.manifest.peerDependencies ?? {}
+    const peerMeta = current.manifest.peerDependenciesMeta ?? {}
+    for (const peer of Object.keys(peers).sort()) {
+      if (!workspace.has(peer) || peerMeta[peer]?.optional === true) continue
+      if (runtimeDependencies[peer]?.startsWith('workspace:') === true) continue
+      failures.push(`${formatChain(runtimeName, packageName, parents)} -> ${peer}`)
+    }
+    const dependencies = {
+      ...current.manifest.dependencies,
+      ...current.manifest.optionalDependencies,
+    }
+    for (const dependency of Object.keys(dependencies).sort()) {
+      if (!workspace.has(dependency) || parents.has(dependency)) continue
+      parents.set(dependency, packageName)
+      queue.push(dependency)
+    }
+  }
+
+  return {
+    failures,
+    presetCount: globSync('apps/cli/config/agent-presets/*/agent.cordis.yml', { cwd: root }).length,
+    workspacePackageCount: queue.length,
+  }
 }
 
-if (failures.length > 0) {
-  console.error('verify-runtime-closure: preset plugins or required workspace peers are missing from python/sdk-runtime dependencies:')
-  for (const failure of failures) console.error(`  ${failure}`)
-  process.exit(1)
+if (import.meta.main) {
+  const root = resolve(import.meta.dirname, '..')
+  const { values } = parseArgs({
+    args: process.argv.slice(2),
+    options: { manifest: { type: 'string' } },
+  })
+  const result = await verifyRuntimeClosure(root, values.manifest)
+  if (result.failures.length > 0) {
+    console.error('verify-runtime-closure: preset plugins or required workspace peers are missing from python/sdk-runtime dependencies:')
+    for (const failure of result.failures) console.error(`  ${failure}`)
+    process.exitCode = 1
+  } else {
+    console.log(
+      `verify-runtime-closure: ${result.presetCount} agent presets and ${result.workspacePackageCount} workspace packages form a closed runtime dependency graph.`,
+    )
+  }
 }
-
-const presetCount = globSync('apps/cli/config/agent-presets/*/agent.cordis.yml', { cwd: root }).length
-console.log(
-  `verify-runtime-closure: ${presetCount} agent presets and ${queue.length} workspace packages form a closed runtime dependency graph.`,
-)
 
 async function missingPresetPlugins(
+  root: string,
   runtimeDependencies: Readonly<Record<string, string>>,
   platforms: RuntimePlatformManifest,
 ): Promise<string[]> {
@@ -161,7 +186,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-async function loadWorkspacePackages(): Promise<Map<string, WorkspacePackage>> {
+async function loadWorkspacePackages(root: string): Promise<Map<string, WorkspacePackage>> {
   const paths = globSync(['packages/*/*/package.json', 'vendor/*/package.json'], { cwd: root })
     .sort()
     .map(relative => resolve(root, relative))
