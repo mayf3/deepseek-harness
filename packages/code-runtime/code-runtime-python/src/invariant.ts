@@ -15,8 +15,9 @@ export const name = 'code-runtime-python-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: this process-boundary implementation exposes no same-process event relation;
- * the fd-3 protocol and real-subprocess integration tests cover it.
+ * No runtime invariant: this package ships only the fd-3 wire-protocol codec and its Python mirror,
+ * exposing no runtime event sequence or mutable data relation; `protocol.spec.ts` and
+ * `protocol-mirror.e2e.ts` cover the protocol's behavior.
  */
 const install: InvariantInstaller = () => {}
 
