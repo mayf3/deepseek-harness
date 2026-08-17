@@ -6,7 +6,7 @@ import type { Scope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
-import ToolRegistry, { CodeRunFailedError, RUN_CODE_NAME, TOOL_ABORTED_BEFORE_DISPATCH, defineContentToolFixture, defineTool } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { CodeRunFailedError, RUN_CODE_NAME, TOOL_ABORTED_BEFORE_DISPATCH, defineContentToolFixture, defineTool } from '@deepseek-ai/dsh-tools'
 import type { Config, JsonSchemaNode, PostToolDecision, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -19,7 +19,7 @@ const testToolSignal = new AbortController().signal
  * misconfiguration rejections, the run_code dispatch bridge (serialization,
  * abort, JSON normalization, error mapping, events, quiescence), and HMR
  * safety — all against an in-repo fake runtime, exactly the
- * Service Definition / Service provider / Consumer roles the seam promises.
+ * Service Definition / Service Provider / Consumer roles the seam promises.
  */
 
 /** A scriptable in-repo CodeRuntime: each test sets `behavior` to drive the bindings however it needs. */
@@ -50,7 +50,7 @@ interface SetupOptions {
 async function setup(options: SetupOptions = {}) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt, { ...options.toolOrder ? { toolOrder: options.toolOrder } : {} })
-  await ctx.plugin(ToolRegistry, { mode: options.mode ?? 'code', ...options.maxParallelSubCalls !== undefined ? { maxParallelSubCalls: options.maxParallelSubCalls } : {} })
+  await ctx.plugin(ToolRuntime, { mode: options.mode ?? 'code', ...options.maxParallelSubCalls !== undefined ? { maxParallelSubCalls: options.maxParallelSubCalls } : {} })
   let runtime: FakeRuntime | undefined
   if (options.runtime !== false) {
     await ctx.plugin(FakeRuntime, options.runtime ?? {})
@@ -399,6 +399,10 @@ describe('mode-aware wire contribution', () => {
     const runCodeSchema = assembly.tools.find(tool => tool.name === RUN_CODE_NAME)
     expect(runCodeSchema?.description).toContain('Execute a TypeScript program')
     expect(runCodeSchema?.description).toContain('BODY of an')
+    // Both required arguments are named here, not only in the parameter
+    // schema: prose that describes the call as "pass the program" is what
+    // leads a model to emit `{code}` alone and fail INVALID_ARGS.
+    expect(runCodeSchema?.description).toContain('`description`')
     const codeParam = (runCodeSchema?.parameters as { properties: { code: { description: string } } }).properties.code
     expect(codeParam.description).toBe('The program: the body of an async TypeScript function.')
   })
@@ -410,6 +414,7 @@ describe('mode-aware wire contribution', () => {
     const runCodeSchema = assembly.tools.find(tool => tool.name === RUN_CODE_NAME)
     expect(runCodeSchema?.description).toContain('Execute a Python program')
     expect(runCodeSchema?.description).toContain('`return <value>`')
+    expect(runCodeSchema?.description).toContain('`description`')
     expect(runCodeSchema?.description).not.toContain('TypeScript')
     const codeParam = (runCodeSchema?.parameters as { properties: { code: { description: string } } }).properties.code
     expect(codeParam.description).toBe('The program: the body of an async Python function.')
@@ -456,7 +461,7 @@ describe('mode-aware wire contribution', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})
     await ctx.plugin(FakeRuntime, {})
-    const fiber = await ctx.plugin(ToolRegistry, { mode: 'code' })
+    const fiber = await ctx.plugin(ToolRuntime, { mode: 'code' })
     expect(ctx.tools.get(RUN_CODE_NAME)).toBeDefined()
     await fiber.dispose()
     const assembly = await ctx.systemPrompt.assemble()
@@ -1283,7 +1288,7 @@ describe('the run_code dispatch bridge', () => {
   it('executing run_code under a missing runtime is a structured isError, not a crash', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})
-    await ctx.plugin(ToolRegistry, { mode: 'code' })
+    await ctx.plugin(ToolRuntime, { mode: 'code' })
     const result = await runCode(ctx, 'program')
     expect(result.isError).toBe(true)
     expect((result.content[0] as { text: string }).text).toContain('requires a code runtime')
@@ -1635,21 +1640,21 @@ describe('the run_code dispatch bridge', () => {
   it('direct construction rejects a non-positive parallel sub-call cap at load', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})
-    expect(() => new ToolRegistry(ctx, { mode: 'code', maxParallelSubCalls: 0 }))
+    expect(() => new ToolRuntime(ctx, { mode: 'code', maxParallelSubCalls: 0 }))
       .toThrow('maxParallelSubCalls must be a positive integer')
   })
 
   it('direct construction in code mode defaults the parallel sub-call cap', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})
-    const registry = new ToolRegistry(ctx, { mode: 'code' })
+    const registry = new ToolRuntime(ctx, { mode: 'code' })
     expect(registry.get(RUN_CODE_NAME)).toBeDefined()
   })
 
   it('defaults to native mode under direct construction with no config', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})
-    const registry = new ToolRegistry(ctx)
+    const registry = new ToolRuntime(ctx)
     expect(registry.get(RUN_CODE_NAME)).toBeUndefined()
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.sections.some(section => section.name === 'tools:sdk')).toBe(false)
@@ -1657,7 +1662,7 @@ describe('the run_code dispatch bridge', () => {
   it('denies a model-direct native-tool call under code mode as UNKNOWN_TOOL', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})
-    const registry = new ToolRegistry(ctx, { mode: 'code' })
+    const registry = new ToolRuntime(ctx, { mode: 'code' })
     registerEcho(ctx, 'write')
     const result = await registry.execute({
       signal: testToolSignal,
@@ -1677,7 +1682,7 @@ describe('the run_code dispatch bridge', () => {
   it('routes a pre-aborted collapsed call through ABORTED_BEFORE_DISPATCH', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})
-    const registry = new ToolRegistry(ctx, { mode: 'code' })
+    const registry = new ToolRuntime(ctx, { mode: 'code' })
     registerEcho(ctx, 'write')
     const aborted = new AbortController()
     aborted.abort()
@@ -1748,7 +1753,7 @@ describe('per-agent presentation', () => {
     // `native` here, so a collapse predicate reading it instead of this
     // scope's effective mode would announce [run_code] and still execute the
     // native call — the bypass, reopened for exactly the preset composition
-    // `dsh-agent-tool-mode` produces.
+    // `dsh-agent-tool-presentation` produces.
     expect(ctx.tools.executionMode({
       signal: testToolSignal,
       callId: CallId('preset-coded-schedule'),

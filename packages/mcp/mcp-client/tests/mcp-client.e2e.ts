@@ -21,8 +21,8 @@ import { z } from 'zod'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRegistry from '@deepseek-ai/dsh-tools'
-import { CallId, LlmAdapter, LlmService } from '@deepseek-ai/dsh-llm'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import { CallId, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { apply } from '@deepseek-ai/dsh-mcp-client/src/index.ts'
 import { publicToolName } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
@@ -41,7 +41,7 @@ const localBin = join(packageDir, 'node_modules', '.bin')
 async function mountRegistry(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRegistry)
+  await ctx.plugin(ToolRuntime)
   return ctx
 }
 
@@ -59,7 +59,7 @@ class ImageAdapter extends LlmAdapter {
 async function mountImageRegistry(dshHome: string): Promise<Context> {
   const ctx = await mountRegistry()
   await ctx.plugin(LocalAttachmentStore, { dshHome })
-  await ctx.plugin(LlmService)
+  await ctx.plugin(LlmRuntime)
   ctx.llm.registerAdapter(['visual'], new ImageAdapter())
   return ctx
 }

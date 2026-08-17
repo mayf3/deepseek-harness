@@ -1,5 +1,5 @@
 /**
- * Tool bridge: discovers MCP tools, registers them on the harness ToolRegistry
+ * Tool bridge: discovers MCP tools, registers them on the harness ToolRuntime
  * under deterministic server-qualified public names, and handles re-sync when
  * the server's tool list changes.
  *
@@ -106,7 +106,7 @@ function callToolUncached(
  *
  * @param serverName - Stable local namespace from plugin config.
  * @param rawName - The MCP server's own tool name.
- * @returns The globally unique, model-facing ToolRegistry name.
+ * @returns The globally unique, model-facing ToolRuntime name.
  */
 export function publicToolName(serverName: string, rawName: string): string {
   const joined = `mcp__${serverName}__${rawName}`
@@ -117,7 +117,7 @@ export function publicToolName(serverName: string, rawName: string): string {
 }
 
 /**
- * Sync the MCP server's tool list into the harness ToolRegistry.
+ * Sync the MCP server's tool list into the harness ToolRuntime.
  *
  * Two phases keep the swap safe:
  *
@@ -207,7 +207,7 @@ interface McpContentBlock {
   uri?: string
 }
 
-/** Async rich projection staged for one exact ToolRegistry execution. */
+/** Async rich projection staged for one exact ToolRuntime execution. */
 interface PreparedProjection {
   /** Canonical MCP value returned by execute before registry materialization. */
   value: McpResult
@@ -239,7 +239,7 @@ function supportedOutputSchema(candidate: unknown): JsonSchemaNode | undefined {
  * @param structuredSchema - supported structured-output schema, when advertised.
  * @param taskRequired - whether this MCP tool requires unsupported task execution.
  * @param opts - bridge timeout and namespace options.
- * @returns a complete ToolRegistry definition.
+ * @returns a complete ToolRuntime definition.
  */
 function createDefinition(
   client: Client,
@@ -298,7 +298,7 @@ function createOutput(rawName: string, structuredSchema: JsonSchemaNode | undefi
  * per-page schema cache from pre-validating a different contract.
  *
  * When the MCP server returns `isError: true`, the executor throws so that
- * the ToolRegistry's catch path produces an `isError` result for the model.
+ * the ToolRuntime's catch path produces an `isError` result for the model.
  */
 function createExecutor(
   client: Client,
@@ -340,7 +340,7 @@ function createExecutor(
     const content = result.content as unknown as JsonValue[]
     const text = extractText(content, rawName)
 
-    // MCP isError → throw so ToolRegistry produces an isError result for the model.
+    // MCP isError → throw so ToolRuntime produces an isError result for the model.
     if (result.isError === true) {
       throw new Error(text)
     }

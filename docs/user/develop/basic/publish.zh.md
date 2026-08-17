@@ -2,7 +2,9 @@
 
 [English](publish.md) | 中文
 
-前几篇教程通过 `--patch` overlay 加载本地插件。本教程把它打包成可安装的**组合包**（bundle），用 `dsh plugin add` 安装进一个 **profile**，并解释决定组合后配置的层顺序。请先完成[插件配置](./config.md)。
+前几篇教程通过 `--patch` overlay 加载本地插件。本教程把它打包成可安装的**组合包**（bundle），用 `dsh plugin add` 安装进一个 **profile**，并解释决定组合后配置的层顺序。本文假设 `dsh` CLI 已安装。请先完成[插件配置](./config.md)。
+
+如果改用全新的源码 checkout，请先按照[从源码运行章节](../../../../README.md#run-from-source)完成准备，将本教程的 `hello-plugin` 目录放在仓库根目录，并从该目录把下文的 `dsh ...` 命令改为 `pnpm dsh ...`。构建与启动器行为见[源码执行](../../../../apps/cli/reference/README.md#source-execution)。
 
 ## 两个概念，两种 manifest
 
@@ -15,12 +17,20 @@
 
 ### 组合包 manifest
 
+创建包目录：
+
+```sh
+mkdir -p hello-plugin
+```
+
 ```
 hello-plugin/
 ├── package.json       # declares dsh.bundle
 ├── cordis.patch.yml   # the layer applied when a profile lists this bundle
 └── index.js           # plugin modules the patch rows reference
 ```
+
+创建 `hello-plugin/package.json`：
 
 ```json
 {
@@ -33,7 +43,17 @@ hello-plugin/
 }
 ```
 
-patch 文件与一直在写的 `--patch` overlay 一样，是一个 patch 条目的 YAML 数组；区别是插件行按包名而不是相对源码路径引用这个包，这样 Node 的模块解析才能找到已安装的代码：
+创建 `hello-plugin/index.js`，写入插件入口：
+
+```js
+export const name = 'hello-plugin'
+
+export function apply() {
+  console.log('[hello-plugin] plugin loaded!')
+}
+```
+
+创建 `hello-plugin/cordis.patch.yml`。这个 patch 与一直在写的 `--patch` overlay 一样，是一个 patch 条目的 YAML 数组；区别是插件行按包名而不是相对源码路径引用这个包，这样 Node 的模块解析才能找到已安装的代码：
 
 ```yaml
 - insert:
@@ -54,11 +74,10 @@ profile manifest 从不需要手写：`dsh plugin` 负责创建和维护它。�
 
 ## 安装进 profile
 
-`dsh plugin --profile <name> <args...>` 在 profile 目录内转发给 pnpm，因此所有 pnpm 子命令都可用。从 checkout 安装你的包：
+`dsh plugin --profile <name> <args...>` 在 profile 目录内转发给 pnpm，因此所有 pnpm 子命令都可用。在包含 `hello-plugin` 的目录中安装该包的 checkout：
 
 ```sh
-cd hello-plugin
-dsh plugin --profile demo add .
+dsh plugin --profile demo add ./hello-plugin
 ```
 
 首次使用会初始化 profile（`@deepseek-ai/dsh-base` 作为它的第一个组合包），pnpm 链接该 checkout，而 `dsh` 因为这个包声明了 `dsh.bundle`，把它追加进 `dsh.profile.bundles`：

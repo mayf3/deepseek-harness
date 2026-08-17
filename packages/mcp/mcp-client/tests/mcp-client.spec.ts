@@ -4,11 +4,11 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { Context } from '@deepseek-ai/cordis'
 import AttachmentStore, { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
-import { CallId, LlmAdapter, LlmService } from '@deepseek-ai/dsh-llm'
+import { CallId, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRegistry, { type JsonValue } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { type JsonValue } from '@deepseek-ai/dsh-tools'
 import type { PostToolDecision } from '@deepseek-ai/dsh-tools'
 import { publicToolName, syncTools, type ToolBridgeOptions } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
 import { createTransport } from '@deepseek-ai/dsh-mcp-client/src/transport.ts'
@@ -64,7 +64,7 @@ function createMockClient(tools: MockTool[], callResult: MockCallResult = { cont
 async function mountRegistry(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRegistry)
+  await ctx.plugin(ToolRuntime)
   return ctx
 }
 
@@ -121,7 +121,7 @@ class ImageCatalogAdapter extends LlmAdapter {
 async function mountRichRegistry(): Promise<{ ctx: Context; attachments: RecordingAttachmentStore }> {
   const ctx = await mountRegistry()
   await ctx.plugin(RecordingAttachmentStore)
-  await ctx.plugin(LlmService)
+  await ctx.plugin(LlmRuntime)
   ctx.llm.registerAdapter(['visual'], new ImageCatalogAdapter())
   return { ctx, attachments: ctx.attachments as RecordingAttachmentStore }
 }

@@ -2,13 +2,15 @@
 
 [English](index.md) | 中文
 
-Cordis 是 DeepSeek Harness SDK 底层的插件框架：它是一个小型运行时，其中的每项能力，包括工具、LLM（大语言模型）适配器、文件访问乃至 agent loop（智能体循环）本身，都是挂载到共享上下文中的插件。本教程通过动手实践讲解 Cordis：每一章都是一个可以运行的示例，你将在本仓库内的临时目录中逐步构建它，最后把一个插件接入真实的 harness 服务。
+Cordis 是 DeepSeek Harness 底层的插件框架：它是一个小型运行时，其中的每项能力，包括工具、LLM（大语言模型）适配器、文件访问乃至 agent loop（智能体循环）本身，都是挂载到共享上下文中的插件。本教程通过动手实践讲解 Cordis：每一章都是一个可以运行的示例，你将在本仓库内的临时目录中逐步构建它，最后把一个插件接入真实的 harness 服务。
 
 本教程面向 agent 开发者。你不需要深入掌握 TypeScript；下文的 [TypeScript 说明](#typescript-notes)会解释可能陌生的语法，并且每一章都会给出确切命令和预期输出。
 
 如果你想阅读精简的概念参考，而不是逐步实践，请参阅 [Cordis 入门](../cordis-primer.md)。详尽的 API 参考见[子系统页面](../subsystems/core.md)上生成的 `cordis-surface` 区块，以及 [Cordis 核心 API](../cordis-api/context.md) 页面。
 
 如果你要为 harness 本身编写插件——由 `cordis.yml` 加载、在 Web UI 中驱动，而不是下面这个启动器——请从[第一个 Harness 插件](../user/develop/basic/index.md)开始。
+
+<a id="setup"></a>
 
 ## 准备工作
 

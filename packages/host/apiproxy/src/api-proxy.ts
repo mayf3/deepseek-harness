@@ -15,7 +15,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { contentHasImage, createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
-import { isAppendSurfaceEvent, isJsonValue, lastActivityTime } from '@deepseek-ai/dsh-session'
+import { isAppendSurfaceEvent, isJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionSearchCursor } from '@deepseek-ai/dsh-session-query'
@@ -38,8 +38,8 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
-  ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, SessionProjectionsBlock, SessionSearchItem,
-  QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, TaskView, ToolEventView,
+  ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
+  QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
   WorkspaceId, WorkspaceView,
 } from './api/index.ts'
 import {
@@ -59,9 +59,9 @@ import {
 } from './api/session-search.ts'
 // Type-only: resolves `ctx.get('sessionProjections')` to the projection registry.
 import type {} from '@deepseek-ai/dsh-session-projection'
-// Type-only: resolves `ctx.get('tasks')` to the background task registry.
-import type {} from '@deepseek-ai/dsh-tasks'
-import type { TaskSnapshot } from '@deepseek-ai/dsh-tasks'
+// Type-only: resolves `ctx.get('tasks')` to the background job registry.
+import type {} from '@deepseek-ai/dsh-jobs'
+import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
 // Type-only: resolves `ctx.get('sessionProjectionCache')` (the cold listing column).
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
 // GoalError narrows domain rejections to their stable codes at the wire boundary.
@@ -69,6 +69,11 @@ import { GoalError } from '@deepseek-ai/dsh-goal'
 import type { GoalRef as CoreGoalRef } from '@deepseek-ai/dsh-goal'
 // Type-only edges: resolve the command-change stream and `ctx.get('skills')`.
 import type {} from '@deepseek-ai/dsh-commands'
+// Type-only: the dynamic-package runner's forwarded-event declarations. Its
+// client-safe `./types` subpath deliberately, not the package root — the root
+// merges `ctx.dynamicCordisRunner`, and a dependency on that package would
+// rebuild the api-remotes cycle this direction exists to avoid.
+import type {} from '@deepseek-ai/dsh-cordis-host-runner/types'
 import type {} from '@deepseek-ai/dsh-skill'
 // The settings/credentials seams: brand guards run at this wire boundary; the
 // service reads stay optional (`ctx.get`) so a composition without either
@@ -85,14 +90,14 @@ import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-a
 // `ctx.get('approval')` without a value dependency on the seam (optional composition).
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { approvalResponsePayloadSchema } from './api/approvals.schema.ts'
-import { imageLimitsProjectionSchema } from './api/sessions.schema.ts'
+import { imageLimitsProjectionSchema, sessionListMetadataProjectionSchema } from './api/sessions.schema.ts'
 import { questionResponsePayloadSchema } from './api/questions.schema.ts'
 import type { ClientResponse, RpcError, RpcReceipt, RpcRequest, RpcResponse } from './api/rpc.ts'
 import { RpcId } from './api/rpc.ts'
 import type {
   AskUserQuestionAnswer, AskUserQuestionItem, AskUserQuestionRequest,
-} from '@deepseek-ai/dsh-user-interaction'
-import { UserInteractionError } from '@deepseek-ai/dsh-user-interaction'
+} from '@deepseek-ai/dsh-user-questions'
+import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
 import { DirectoryPickerError } from '@deepseek-ai/dsh-host-directory-picker'
 import {
   ApiRemoteSessionNotFound as SessionNotFound,
@@ -119,7 +124,7 @@ const DEFAULT_MAX_MESSAGES = 50
  * is deferred work.
  */
 const WEB_SETTINGS_NAMESPACES = [
-  'agent-loop', 'bash', 'locale', 'permission', 'ui-conversation', 'ui-theme', 'web-search-deepseek',
+  'agent-loop', 'shell', 'locale', 'permission', 'ui-conversation', 'ui-theme', 'web-search-deepseek',
 ] as const
 
 /** Provider work budget: at most 100 calls and 2,000 inspected hits. */
@@ -127,6 +132,8 @@ const SESSION_SEARCH_PROVIDER_CALL_LIMIT = 100
 
 /** Bound cold-log stat fan-out and settle each started batch before cancellation returns. */
 const COLD_SUMMARY_BATCH_SIZE = 16
+/** Default maximum artifact size eligible for one cold blankness read. */
+export const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 1024
 
 /** Conversation message event types (the pagination counting unit). */
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
@@ -266,7 +273,7 @@ function isAborted(signal: AbortSignal): boolean {
  * backwards from the window tail. Replacement copies never entered the
  * conversation a reader sees — they restate a shadowed range for the model
  * alone — so they consume no quota; the page stays one contiguous raw range,
- * which keeps a compaction's log-only `compact/summary` record on the same page as its
+ * which keeps a compaction's log-only `compaction/summary` record on the same page as its
  * replacement. The cut is the starting seq of the oldest message group (chunks
  * group via sourceEventSeqs — never cut mid-message). The tail page naturally
  * includes the in-progress partial.
@@ -465,17 +472,17 @@ function subscribeSession(queue: FrameQueue<RpcRequest<MuxFrame>>, session: Sess
 
 /**
  * Project registry snapshots onto the wire view, dropping the three internal
- * fields {@link TaskView} documents as absent.
+ * fields {@link JobView} documents as absent.
  */
-function taskViews(snapshots: readonly TaskSnapshot[]): TaskView[] {
-  return snapshots.map(task => ({
-    id: task.id,
-    kind: task.kind,
-    label: task.label,
-    status: task.status,
-    ...task.detail === undefined ? {} : { detail: task.detail },
-    startedAt: task.startedAt,
-    ...task.finishedAt === undefined ? {} : { finishedAt: task.finishedAt },
+function jobViews(snapshots: readonly JobSnapshot[]): JobView[] {
+  return snapshots.map(job => ({
+    id: job.id,
+    kind: job.kind,
+    label: job.label,
+    status: job.status,
+    ...job.detail === undefined ? {} : { detail: job.detail },
+    startedAt: job.startedAt,
+    ...job.finishedAt === undefined ? {} : { finishedAt: job.finishedAt },
   }))
 }
 
@@ -488,6 +495,29 @@ function taskViews(snapshots: readonly TaskSnapshot[]): TaskView[] {
  */
 function sessionBlank(session: Session): boolean {
   return !session.events.some(event => event.type === 'turn/start')
+}
+
+/** Advance the Session-list hint projection by one committed event. */
+function applySessionListMetadata(state: SessionListMetadata, event: SessionEvent): SessionListMetadata {
+  const blank = state.blank && event.type !== 'turn/start'
+  const lastPromptAt = event.type === 'user/message' && event.data.source.kind === 'user'
+    ? event.time
+    : state.lastPromptAt
+  return blank === state.blank && lastPromptAt === state.lastPromptAt
+    ? state
+    : { blank, lastPromptAt }
+}
+
+/** Fold exact list metadata for an attached Session. */
+function sessionListMetadata(events: readonly SessionEvent[]): SessionListMetadata {
+  let state: SessionListMetadata = { blank: true, lastPromptAt: null }
+  for (const event of events) state = applySessionListMetadata(state, event)
+  return state
+}
+
+/** Sort by creation or latest human prompt, whichever is newer. */
+function sessionListUpdatedAt(header: SessionHeader, metadata: SessionListMetadata | undefined): number {
+  return Math.max(header.createdAt, metadata?.lastPromptAt ?? 0)
 }
 
 /** Shared Session-header projection for list baselines and creation frames. */
@@ -511,47 +541,71 @@ function sessionListFields(header: SessionHeader, events: readonly SessionEvent[
 
 /** SessionSummary projection for attached (in-memory) sessions. */
 function summarize(session: Session, running: boolean): SessionSummary {
+  const metadata = sessionListMetadata(session.events)
   return {
     sessionId: session.id,
-    // Excludes end-seed: a resumed-but-untouched session
-    // must not sort as freshly worked in.
-    updatedAt: lastActivityTime(session.events) ?? session.header.createdAt,
+    updatedAt: sessionListUpdatedAt(session.header, metadata),
     running,
-    blank: sessionBlank(session),
+    blank: metadata.blank,
     ...sessionListFields(session.header, session.events),
   }
 }
 
 /**
- * SessionSummary projection for cold (persisted, unattached) sessions.
- * updatedAt is the log file's mtime; backends without a per-session file
- * (locate() undefined) fall back to the header's createdAt.
+ * Verify a possibly blank cold Session only when its physical artifact passes
+ * the configured per-Session size check. A stale `blank: true`, an
+ * absent cache row, a large or location-less artifact, and read failures all
+ * resolve to visible (`false`); listing must never hide a conversation on a
+ * cache hint or an unavailable optimization.
  */
-async function summarizeCold(
+async function probeColdSessionMetadata(
+  ctx: Context,
   persistence: SessionPersistence,
   meta: SessionHeader,
+  maxBytes: number,
+  signal?: AbortSignal,
+): Promise<SessionListMetadata | undefined> {
+  if (maxBytes === 0) return undefined
+  signal?.throwIfAborted()
+  const location = persistence.locate(meta)
+  if (location === undefined) return undefined
+  signal?.throwIfAborted()
+  let size: number
+  try {
+    size = (await stat(location.path)).size
+  } catch {
+    signal?.throwIfAborted()
+    return undefined
+  }
+  if (size > maxBytes) return undefined
+  try {
+    const { events } = await persistence.readFrom(meta.id, 0, signal)
+    signal?.throwIfAborted()
+    return sessionListMetadata(events)
+  } catch (error) {
+    signal?.throwIfAborted()
+    ctx.logger.warn(`session.list: blank probe for "${meta.id}" failed (serving it as visible): ${String(error)}`)
+    return undefined
+  }
+}
+
+/** SessionSummary projection for a cold persisted Session. */
+async function summarizeCold(
+  ctx: Context,
+  persistence: SessionPersistence,
+  meta: SessionHeader,
+  metadata: SessionListMetadata | undefined,
+  blankProbeMaxBytes: number,
   signal?: AbortSignal,
 ): Promise<SessionSummary> {
-  signal?.throwIfAborted()
-  let updatedAt = meta.createdAt
-  const location = persistence.locate(meta)
-  signal?.throwIfAborted()
-  if (location !== undefined) {
-    try {
-      updatedAt = (await stat(location.path)).mtimeMs
-    } catch {
-      // The log vanished between list() and stat() (concurrent cleanup); createdAt stands in.
-    }
-    signal?.throwIfAborted()
-  }
+  const probed = metadata?.blank === false
+    ? undefined
+    : await probeColdSessionMetadata(ctx, persistence, meta, blankProbeMaxBytes, signal)
   return {
     sessionId: meta.id,
-    updatedAt,
+    updatedAt: sessionListUpdatedAt(meta, probed ?? metadata),
     running: false,
-    // Lazy persistence keeps never-appended sessions out of list(); reading
-    // a cold log to check for turns would defeat the index read, so a listed
-    // cold session is served as not-blank (its log holds its conversation).
-    blank: false,
+    blank: metadata?.blank === false ? false : probed?.blank ?? false,
     // Header-only: reading the log for a blank-window preset switch would
     // defeat the same index read, and attaching the session replaces this row
     // with `summarize()`, which resolves the switch from the events.
@@ -592,6 +646,8 @@ export interface ApiProxyDefaults {
   openTextFile?: (path: string, signal: AbortSignal) => Promise<void>
   /** Validated DEFLATE level for session-log ZIP entries; defaults to 6. */
   sessionExportCompressionLevel?: SessionLogCompressionLevel
+  /** Maximum artifact size eligible for one cold blankness read. */
+  coldBlankProbeMaxBytes?: number
   /**
    * Whether handing a path to the native opener can work at all — the
    * `hasDocument` capability the preset roster reports, and the switch
@@ -640,7 +696,7 @@ interface PendingQuestion {
   sessionId: SessionId
   questions: AskUserQuestionItem[]
   resolve: (answer: AskUserQuestionAnswer) => void
-  reject: (error: UserInteractionError) => void
+  reject: (error: UserQuestionError) => void
   signal?: AbortSignal
   onAbort?: () => void
 }
@@ -1033,12 +1089,14 @@ function changedWorkspaceView(workspaceId: string, value: unknown): WorkspaceVie
 /**
  * Implement ApiProxy over a composed host context.
  * @param ctx - a context with the Host spine and Workspace registry mounted.
- * @param defaults - Agent model and project-directory defaults.
+ * @param defaults - host routing and project-directory defaults.
  * @returns the ApiProxy implementation.
  */
 export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiProxy {
   const sessionExportCompressionLevel = defaults.sessionExportCompressionLevel
     ?? DEFAULT_SESSION_LOG_COMPRESSION_LEVEL
+  const coldBlankProbeMaxBytes = defaults.coldBlankProbeMaxBytes
+    ?? DEFAULT_COLD_BLANK_PROBE_MAX_BYTES
   /** The seed model each create/resume declares; re-read so it never goes stale. */
   const agentOptions = (): AgentOptions => {
     const { provider, model } = defaults.defaultModelSelection()
@@ -1217,6 +1275,19 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     })
   })
 
+  // The cache supplies recency and a monotonic non-blank hint. A cached
+  // `blank: true` remains only a prefix fact and is verified on the cold path.
+  ctx.inject(['sessionProjections'], (projectionCtx) => {
+    projectionCtx.sessionProjections.register<'sessionListMetadata', SessionListMetadata>({
+      key: 'sessionListMetadata',
+      schema: sessionListMetadataProjectionSchema,
+      init: () => ({ blank: true, lastPromptAt: null }),
+      apply: applySessionListMetadata,
+      view: state => state,
+      stateVersion: 1,
+    })
+  })
+
   // The imageLimits projection unit: the attachments config this proxy
   // enforces at prompt admission, constant per host boot. `apply` keeps the
   // same state reference for every event, so no change frames are ever
@@ -1284,11 +1355,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     })
   }
 
-  const disposeProvider = ctx.userInteraction.registerProvider({
+  const disposeProvider = ctx.userQuestions.registerProvider({
     ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> {
       const sessionId = request.agent?.id
       if (sessionId === undefined) {
-        return Promise.reject(new UserInteractionError(
+        return Promise.reject(new UserQuestionError(
           'web user interaction requires an agent-owned session', 'ASK_MISSING_AGENT'))
       }
       return new Promise<AskUserQuestionAnswer>((resolve, reject) => {
@@ -1299,7 +1370,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
         const onAbort = (): void => {
           claimQuestion(pending, 'cancelled')
-          reject(new UserInteractionError(
+          reject(new UserQuestionError(
             'ask_user_question was aborted before the user answered', 'ASK_ABORTED'))
         }
         pending.onAbort = onAbort
@@ -1317,10 +1388,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     disposeProvider()
     for (const pending of [...pendingQuestions.values()]) {
       claimQuestion(pending, 'cancelled')
-      pending.reject(new UserInteractionError(
-        'web user-interaction provider was disposed', 'ASK_ABORTED'))
+      pending.reject(new UserQuestionError(
+        'web user-questions provider was disposed', 'ASK_ABORTED'))
     }
-  }, 'api-proxy: user-interaction provider')
+  }, 'api-proxy: user-questions provider')
 
   // --- Approval pending registry ------------------------------------------
   // The proxy is the approval channel for every agent this host owns: an ask
@@ -1428,7 +1499,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
   /** Resolve the Workspace inherited by a fork without making ordinary loose lineage grouped. */
   async function forkWorkspace(source: Pick<Session, 'id' | 'header'>): Promise<Workspace | undefined> {
-    const workspaces = ctx.workspace.list()
+    const workspaces = ctx.workspaceRegistry.list()
     const direct = workspaces.find(workspace => workspace.sessionIds.includes(source.id))
     if (direct !== undefined || source.header.origin !== 'subagent') return direct
 
@@ -1627,9 +1698,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   /** Resolve or create one path while holding the Host's workspace-create chain. */
   function ensureWorkspace(path: string): Promise<{ workspace: Workspace; created: boolean }> {
     const operation = workspaceCreationChain.then(async () => {
-      const existing = await ctx.workspace.resolveByPath(path)
+      const existing = await ctx.workspaceRegistry.resolveByPath(path)
       if (existing !== undefined) return { workspace: existing, created: false }
-      return { workspace: await ctx.workspace.create(path), created: true }
+      return { workspace: await ctx.workspaceRegistry.create(path), created: true }
     })
     workspaceCreationChain = operation.then(() => undefined, () => undefined)
     return operation
@@ -1642,14 +1713,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
    */
   async function listVisibleSessionSummaries(signal?: AbortSignal): Promise<SessionSummary[]> {
     signal?.throwIfAborted()
-    const items = ctx.sessions.list().map((session) => {
+    const summarizeAttached = (session: Session): SessionSummary => {
       const agent = ctx.agents.get(session.id)
       const projections = listProjectionsFor(ctx, session.header, session)
       return {
         ...summarize(session, agent?.status === 'running'),
         ...projections === undefined ? {} : { projections },
       }
-    })
+    }
+    const items = ctx.sessions.list().map(summarizeAttached)
     signal?.throwIfAborted()
     const attached = new Set(items.map(item => item.sessionId))
     const persistence = ctx.get('sessionPersistence')
@@ -1662,11 +1734,21 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const batch = cold.slice(offset, offset + COLD_SUMMARY_BATCH_SIZE)
         const settled = await Promise.allSettled(
           batch.map(async (meta) => {
-            // Cold rows read the persisted projection cache only — never a
-            // log load; a session without a cache row simply has no column.
+            // Projection hints remain optional. Blank verification may read
+            // this Session's artifact only when it passes the configured size check.
             const projections = listProjectionsFor(ctx, meta, undefined)
+            const summary = await summarizeCold(
+              ctx,
+              persistence,
+              meta,
+              projections?.values.sessionListMetadata,
+              coldBlankProbeMaxBytes,
+              signal,
+            )
+            const attachedSession = ctx.sessions.get(meta.id)
+            if (attachedSession !== undefined) return summarizeAttached(attachedSession)
             return {
-              ...await summarizeCold(persistence, meta, signal),
+              ...summary,
               ...projections === undefined ? {} : { projections },
             }
           }),
@@ -1775,7 +1857,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
   /** Missing-service report shared by the settings domain (skills-domain stance). */
   function settingsAbsent(): RpcError {
-    return { code: 'internal', message: 'settings service is absent: this deployment does not mount a settings provider (e.g. @deepseek-ai/dsh-settings-local) in its composition', details: {} }
+    return { code: 'internal', message: 'settings service is absent: this deployment does not mount a settings provider (e.g. @deepseek-ai/dsh-settings-file) in its composition', details: {} }
   }
 
   /** Open one Host-resolved target and map native failures onto the wire vocabulary. */
@@ -2075,7 +2157,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const sessionId = request.payload.sessionId ?? `session-${randomUUID()}` as SessionId
         let workspace: Workspace | undefined
         if (request.payload.workspaceId !== undefined) {
-          workspace = ctx.workspace.get(brandWorkspaceId(request.payload.workspaceId))
+          workspace = ctx.workspaceRegistry.get(brandWorkspaceId(request.payload.workspaceId))
           if (workspace === undefined) {
             return err(request, {
               code: 'workspace-not-found',
@@ -2709,8 +2791,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     workspace: {
       list(request) {
         return Promise.resolve(ok(request, {
-          items: ctx.workspace.list().map(workspaceView),
-          archivedSessionIds: [...ctx.workspace.archivedSessionIds],
+          items: ctx.workspaceRegistry.list().map(workspaceView),
+          archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds],
         }))
       },
 
@@ -2733,7 +2815,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async rename(request) {
         const { payload } = request
-        const workspace = ctx.workspace.get(brandWorkspaceId(payload.workspaceId))
+        const workspace = ctx.workspaceRegistry.get(brandWorkspaceId(payload.workspaceId))
         if (workspace === undefined) return workspaceNotFound(request, payload.workspaceId)
         const title = payload.title.trim()
         // Uniqueness AND the same-title no-op both ride the create chain so
@@ -2742,7 +2824,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // still lands afterwards.
         const operation = workspaceCreationChain.then(async () => {
           if (title === workspace.title) return
-          if (ctx.workspace.list().some(other => other.id !== workspace.id && other.title === title)) {
+          if (ctx.workspaceRegistry.list().some(other => other.id !== workspace.id && other.title === title)) {
             throw new WorkspaceNameConflictError(title)
           }
           await workspace.setTitle(title)
@@ -2766,7 +2848,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       async delete(request) {
         const { workspaceId } = request.payload
         const operation = workspaceCreationChain.then(() =>
-          ctx.workspace.delete(brandWorkspaceId(workspaceId)))
+          ctx.workspaceRegistry.delete(brandWorkspaceId(workspaceId)))
         workspaceCreationChain = operation.then(() => undefined, () => undefined)
         if (!await operation) return workspaceNotFound(request, workspaceId)
         return ok(request, { deleted: true as const })
@@ -2775,7 +2857,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       async insertBefore(request) {
         const { workspaceId, beforeWorkspaceId } = request.payload
         try {
-          const workspaceIds = await ctx.workspace.insertBefore(
+          const workspaceIds = await ctx.workspaceRegistry.insertBefore(
             brandWorkspaceId(workspaceId),
             beforeWorkspaceId === undefined ? undefined : brandWorkspaceId(beforeWorkspaceId),
           )
@@ -2788,7 +2870,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async insertSessionBefore(request) {
         const { payload } = request
-        const workspace = ctx.workspace.get(brandWorkspaceId(payload.workspaceId))
+        const workspace = ctx.workspaceRegistry.get(brandWorkspaceId(payload.workspaceId))
         if (workspace === undefined) return workspaceNotFound(request, payload.workspaceId)
         try {
           await workspace.insertSessionBefore(payload.sessionId, payload.beforeSessionId)
@@ -2812,7 +2894,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       async archiveSession(request) {
         const { sessionId } = request.payload
         try {
-          await ctx.workspace.archiveSession(sessionId)
+          await ctx.workspaceRegistry.archiveSession(sessionId)
         } catch (error: unknown) {
           // Only the registry's unknown-session rejection is the business
           // code; storage/durability failures propagate as internal errors.
@@ -2823,7 +2905,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: { sessionId },
           })
         }
-        return ok(request, { archivedSessionIds: [...ctx.workspace.archivedSessionIds] })
+        return ok(request, { archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds] })
       },
     },
 
@@ -3365,12 +3447,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // a session with no live Agent owns no tasks, so it correctly sees only
         // the unowned ones, and listing never revives a cold session. An empty
         // set sends nothing — absence is how the client reads "no tasks".
-        const tasks = ctx.get('tasks')
-        if (tasks !== undefined) {
+        const jobs = ctx.get('jobs')
+        if (jobs !== undefined) {
           for (const session of ctx.sessions.list()) {
-            const views = taskViews(tasks.list(ctx.agents.get(session.id)))
+            const views = jobViews(jobs.list(ctx.agents.get(session.id)))
             if (views.length > 0) {
-              queue.push(frame({ type: 'session/tasks', sessionId: session.id, tasks: views }))
+              queue.push(frame({ type: 'session/jobs', sessionId: session.id, jobs: views }))
             }
           }
         }
@@ -3405,29 +3487,29 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             // session born after the stream opened missed the baseline loop.
             // Unowned tasks are visible to it from birth, so without this it
             // would show none until the next registry change.
-            const views = tasks === undefined ? [] : taskViews(tasks.list(ctx.agents.get(session.id)))
+            const views = jobs === undefined ? [] : jobViews(jobs.list(ctx.agents.get(session.id)))
             if (views.length > 0) {
-              queue.push(frame({ type: 'session/tasks', sessionId: session.id, tasks: views }))
+              queue.push(frame({ type: 'session/jobs', sessionId: session.id, jobs: views }))
             }
           }),
           ctx.on('session/disposed', (session: Session) => {
             openCalls.delete(session.id)
           }),
-          ...tasks === undefined ? [] : [tasks.onTasksChanged((owner) => {
+          ...jobs === undefined ? [] : [jobs.onJobsChanged((owner) => {
             if (owner !== undefined) {
               // The exact owner instance the fence compares against, so the
               // push stays correct even while that Agent's scope is tearing
               // down and a lookup by id would already miss.
-              queue.push(frame({ type: 'session/tasks', sessionId: owner.id, tasks: taskViews(tasks.list(owner)) }))
+              queue.push(frame({ type: 'session/jobs', sessionId: owner.id, jobs: jobViews(jobs.list(owner)) }))
               return
             }
             // An unowned task is visible to every caller, so every subscribed
             // session's set changed with it.
             for (const session of ctx.sessions.list()) {
               queue.push(frame({
-                type: 'session/tasks',
+                type: 'session/jobs',
                 sessionId: session.id,
-                tasks: taskViews(tasks.list(ctx.agents.get(session.id))),
+                jobs: jobViews(jobs.list(ctx.agents.get(session.id))),
               }))
             }
           })],
@@ -3440,7 +3522,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       host(_request, signal) {
         const queue = new FrameQueue<RpcRequest<HostFrame>>()
-        const committedWorkspaces = ctx.workspace.list()
+        const committedWorkspaces = ctx.workspaceRegistry.list()
         const committedWorkspaceIds = new Set(
           committedWorkspaces.map(workspace => String(workspace.id)),
         )
@@ -3448,7 +3530,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // Frame-dedup baseline, same posture as committedWorkspaceIds: the
         // stream opens against the current set; workspace.list re-baselines
         // reconnecting clients, so only later changes need frames.
-        let archivedSessionIds = ctx.workspace.archivedSessionIds
+        let archivedSessionIds = ctx.workspaceRegistry.archivedSessionIds
         const disposers = [
           ctx.on('session/created', (session: Session) => {
             queue.push(frame({
@@ -3480,7 +3562,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                 && state.workspaceIds.some((workspaceId, index) => workspaceId !== committedWorkspaceOrder[index])
               for (const workspaceId of state.workspaceIds) {
                 if (committedWorkspaceIds.has(workspaceId)) continue
-                const workspace = ctx.workspace.get(workspaceId)
+                const workspace = ctx.workspaceRegistry.get(workspaceId)
                 if (workspace === undefined) {
                   throw new Error(`committed workspace registry references missing workspace "${workspaceId}"`)
                 }
@@ -3622,7 +3704,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           return Promise.resolve({ accepted: false, reason: 'bad-response' })
         }
         claimQuestion(pending, 'cancelled')
-        pending.reject(new UserInteractionError(
+        pending.reject(new UserQuestionError(
           'the user cancelled ask_user_question', 'ASK_CANCELLED'))
         return Promise.resolve({ accepted: true })
       }

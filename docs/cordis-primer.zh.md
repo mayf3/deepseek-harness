@@ -2,7 +2,7 @@
 
 [English](cordis-primer.md) | 中文
 
-Cordis 是 DeepSeek Harness SDK 底层以 vendor 方式引入的插件框架。本文介绍 harness 插件作者在阅读[子系统页面](subsystems/core.md)上生成的服务/事件参考之前需要了解的 Cordis 核心概念；[Cordis 教程](cordis-tutorial/index.md)则通过实践逐一讲解这些概念。vendor 源码与同步流程见 [vendor/README.md](../vendor/README.md)。
+Cordis 是 DeepSeek Harness 底层以 vendor 方式引入的插件框架。本文介绍 harness 插件作者在阅读[子系统页面](subsystems/core.md)上生成的服务/事件参考之前需要了解的 Cordis 核心概念；[Cordis 教程](cordis-tutorial/index.md)则通过实践逐一讲解这些概念。vendor 源码与同步流程见 [vendor/README.md](../vendor/README.md)。
 
 ## 五个核心概念
 
@@ -11,6 +11,8 @@ Cordis 是 DeepSeek Harness SDK 底层以 vendor 方式引入的插件框架。�
 - **通过 `inject` 声明服务依赖。** 插件声明所需的服务后，会等待这些服务就绪才启动；加载顺序通过服务依赖表达，而非手动编排启动序列。
 - **类型化事件用于通信。** 服务通过 TypeScript 声明合并注册事件名，然后以 `emit`、`waterfall`（瀑布式事件）、`parallel` 或 `serial` 方式分发，分别对应监听者观察、包装、并行扇出或按序执行。
 - **注册是可逆的副作用。** 提示词片段、工具 schema、适配器、提供方和监听器通过 `ctx.effect()` 或 `ctx.on()` 安装，reload 和 teardown 时会按预期撤销。
+
+<a id="dispatch-modes"></a>
 
 ## 分发模式
 

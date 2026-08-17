@@ -26,4 +26,4 @@
           - id: attachment-local
             name: '@deepseek-ai/dsh-attachment-local'
           - id: code-runtime
-            name: '@deepseek-ai/dsh-code-runtime-worker'
+            name: '@deepseek-ai/dsh-code-runtime-worker-thread'

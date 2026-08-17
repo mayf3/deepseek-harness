@@ -12,8 +12,8 @@ import type { CodeBindingFunction, CodeRunResult, CodeRuntime } from '@deepseek-
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import { defineTool, parameterSchemaSpecToJsonSchema } from './schema.ts'
-import { TOOL_REGISTRY_SCHEDULER } from './index.ts'
-import type { CodeDispatchLog, ToolDefinition, ToolExecutionResult, ToolRegistry, ToolRunContext } from './index.ts'
+import { TOOL_RUNTIME_SCHEDULER } from './index.ts'
+import type { CodeDispatchLog, ToolDefinition, ToolExecutionResult, ToolRuntime, ToolRunContext } from './index.ts'
 import type {} from './types.ts'
 
 /** The model-facing name of the Code Mode tool. */
@@ -45,10 +45,12 @@ interface RunCodeFlavor {
  */
 const TYPESCRIPT_FLAVOR: RunCodeFlavor = {
   description:
-    'Execute a TypeScript program against the available tools. Write the BODY of an '
-    + 'async function (erasable syntax only; top-level `await` and `return` work) and '
-    + 'call tools as `await tools.name(args)` per the declarations in the system prompt. '
-    + 'Only what you print or return is program output; image-bearing subtool results are attached after the run.',
+    'Execute a TypeScript program against the available tools. Takes two required '
+    + 'arguments: `code`, the BODY of an async function (erasable syntax only; top-level '
+    + '`await` and `return` work), and `description`, a short summary of what the program '
+    + 'does. Call tools as `await tools.name(args)` per the declarations in the system '
+    + 'prompt. Only what you print or return is program output — curate it. Image-bearing '
+    + 'subtool results are attached after the run.',
   codeDescription: 'The program: the body of an async TypeScript function.',
 }
 
@@ -59,11 +61,12 @@ const TYPESCRIPT_FLAVOR: RunCodeFlavor = {
  */
 const PYTHON_FLAVOR: RunCodeFlavor = {
   description:
-    'Execute a Python program against the available tools. Write the BODY of an '
-    + 'async function (top-level `await` and `return` work) and call tools as '
+    'Execute a Python program against the available tools. Takes two required '
+    + 'arguments: `code`, the BODY of an async function (top-level `await` and `return` '
+    + 'work), and `description`, a short summary of what the program does. Call tools as '
     + '`await tools.name(args)` per the declarations in the system prompt. Use '
-    + '`print(...)` and/or `return <value>` for program output; image-bearing '
-    + 'subtool results attach after the run.',
+    + '`print(...)` and/or `return <value>` for program output — curate it. Image-bearing '
+    + 'subtool results are attached after the run.',
   codeDescription: 'The program: the body of an async Python function.',
 }
 
@@ -290,7 +293,7 @@ export interface RunCodeBridgeOptions {
  * @param options - the registry-private capabilities described above.
  * @returns the registry-ready definition.
  */
-export function createRunCodeTool(registry: ToolRegistry, options: RunCodeBridgeOptions): ToolDefinition {
+export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeOptions): ToolDefinition {
   const { requireRuntime, peekRuntime, maxParallel, shapeDispatchLog } = options
   const definition = defineTool({
     name: RUN_CODE_NAME,
@@ -477,7 +480,7 @@ export function createRunCodeTool(registry: ToolRegistry, options: RunCodeBridge
           signal: runController.signal,
         }
         type DispatchOutcome = { isError: true; message: string } | { isError: false; value: JsonValue }
-        const scheduler = registry[TOOL_REGISTRY_SCHEDULER]
+        const scheduler = registry[TOOL_RUNTIME_SCHEDULER]
         const outcome = await new Promise<DispatchOutcome>((resolve, reject) => {
           // Set by the dispatch stage (or start() for a pre-settled result): what commit() finalizes in submission order.
           let parked:
