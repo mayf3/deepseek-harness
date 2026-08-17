@@ -435,7 +435,6 @@ export async function startClaudeCodeRun(
     }
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
-    const cancelledBeforeCleanup = controller.signal.aborted
     await Promise.resolve()
     const startupOutcome = managedProcess?.outcome
     const startupFacts = {
@@ -473,9 +472,6 @@ export async function startClaudeCodeRun(
           `${failure.message}; ${cleanupFailure.message}`,
         )
       }
-    }
-    if (cancelledBeforeCleanup) {
-      throw new Error('subagent-claude-code: request was aborted before SDK startup')
     }
     try {
       request.signal.throwIfAborted()

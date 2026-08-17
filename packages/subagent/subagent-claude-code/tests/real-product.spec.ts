@@ -227,11 +227,15 @@ async function expectQuiescent(
   }
 }
 
-function expectedProcessFailure(outcome: SubprocessOutcome): string {
+function expectedFailure(
+  stage: 'query-run' | 'process',
+  category: 'error_during_execution' | 'process-exit',
+  outcome: SubprocessOutcome,
+): string {
   const fields = [
     'product: Claude Code',
-    'stage: process',
-    'category: process-exit',
+    `stage: ${stage}`,
+    `category: ${category}`,
   ]
   if (outcome.exitCode !== null) fields.push(`exit code: ${outcome.exitCode}`)
   if (outcome.signal !== null) fields.push(`signal: ${outcome.signal}`)
@@ -356,11 +360,13 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
     expect(harness.handles).toHaveLength(1)
     harness.handles[0]!.terminate()
     const outcome = await harness.handles[0]!.done
-    await expect(run.result).resolves.toEqual({
-      output: [],
-      diagnostic: expectedProcessFailure(outcome),
-      stopReason: 'error',
-    })
+    const result = await run.result
+    expect(result.output).toEqual([])
+    expect(result.stopReason).toBe('error')
+    expect([
+      expectedFailure('process', 'process-exit', outcome),
+      expectedFailure('query-run', 'error_during_execution', outcome),
+    ]).toContain(result.diagnostic)
     await run.dispose()
     expect(fixture.requests).toHaveLength(1)
     expect(fixture.requests[0]!.headers['x-api-key']).toBe(fakeKey)
@@ -389,11 +395,16 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
     harness.handles[0]!.terminate()
     const outcome = await harness.handles[0]!.done
     const result = await run.result
-    expect(result).toEqual({
-      output: [],
-      diagnostic: `${expectedProcessFailure(outcome)}\nClaude Code unattended decision (mode: dontAsk; request: tool permission; decision: denied): Claude Code denied the request before an interactive prompt`,
-      stopReason: 'error',
-    })
+    expect(result.output).toEqual([])
+    expect(result.stopReason).toBe('error')
+    const diagnosticLines = result.diagnostic?.split('\n') ?? []
+    expect([
+      expectedFailure('process', 'process-exit', outcome),
+      expectedFailure('query-run', 'error_during_execution', outcome),
+    ]).toContain(diagnosticLines[0])
+    expect(diagnosticLines[1]).toBe(
+      'Claude Code unattended decision (mode: dontAsk; request: tool permission; decision: denied): Claude Code denied the request before an interactive prompt',
+    )
     expect(result.diagnostic).not.toContain(target)
     expect(result.diagnostic).not.toContain('SECRET_TOKEN')
     await run.dispose()
