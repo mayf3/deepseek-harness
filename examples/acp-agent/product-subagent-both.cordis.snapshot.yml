@@ -1,4 +1,4 @@
-# Keyless twin of product-subagent-both.cordis.yml: preserve both product
+# Keyless twin of product-subagent-both.cordis.yml: preserve all named product
 # tools while replacing only the external model adapter.
 - id: base
   name: '@deepseek-ai/cordis-plugin-include'
@@ -22,10 +22,20 @@
             name: '@deepseek-ai/dsh-subagent-codex'
             config:
               permissionMode: approve-for-me
-          - id: subagent-claude-code
+          - id: subagent-claude-safe
             name: '@deepseek-ai/dsh-subagent-claude-code'
             config:
-              permissionMode: acceptEdits
+              providerName: claude-safe
+              permissionMode: dontAsk
+              env:
+                DSH_CLAUDE_INSTANCE: safe
+          - id: subagent-claude-bypass
+            name: '@deepseek-ai/dsh-subagent-claude-code'
+            config:
+              providerName: claude-bypass
+              permissionMode: bypassPermissions
+              env:
+                DSH_CLAUDE_INSTANCE: bypass
           - id: tool-subagent-codex
             name: '@deepseek-ai/dsh-tool-subagent'
             config:
@@ -33,10 +43,17 @@
               toolName: subagent_codex
               backgroundMode: one-shot
               maxDepth: provider-managed
-          - id: tool-subagent-claude-code
+          - id: tool-subagent-claude-safe
             name: '@deepseek-ai/dsh-tool-subagent'
             config:
-              provider: claude-code
-              toolName: subagent_claude_code
+              provider: claude-safe
+              toolName: subagent_claude_safe
+              backgroundMode: one-shot
+              maxDepth: provider-managed
+          - id: tool-subagent-claude-bypass
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: claude-bypass
+              toolName: subagent_claude_bypass
               backgroundMode: one-shot
               maxDepth: provider-managed

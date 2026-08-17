@@ -15,7 +15,7 @@ const configPath = join(fixtureDir, 'cordis.yml')
 const repoTsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
 
 describe('product-provider public Loader composition', () => {
-  it('loads both opt-in packages, one-shot task tools, and job controls without starting either product', async () => {
+  it('loads two named Claude instances, their tools, and Codex without starting either product', async () => {
     const { stdout, stderr } = await runLoaderSmoke({
       label: 'product-provider Loader composition',
       tempDirPrefix: 'dsh-product-provider-loader-',
@@ -31,7 +31,7 @@ describe('product-provider public Loader composition', () => {
 
     expect(stderr).toBe('')
     expect(JSON.parse(stdout)).toEqual({
-      registeredProviders: ['codex', 'claude-code'],
+      registeredProviders: ['codex', 'claude-safe', 'claude-bypass'],
       providers: [
         {
           name: 'codex',
@@ -44,7 +44,17 @@ describe('product-provider public Loader composition', () => {
           inheritsParentContext: false,
         },
         {
-          name: 'claude-code',
+          name: 'claude-safe',
+          capabilities: {
+            outputSchema: false,
+            depthLimit: false,
+            toolFilter: false,
+            persona: false,
+          },
+          inheritsParentContext: false,
+        },
+        {
+          name: 'claude-bypass',
           capabilities: {
             outputSchema: false,
             depthLimit: false,
@@ -61,7 +71,12 @@ describe('product-provider public Loader composition', () => {
           required: ['description', 'prompt'],
         },
         {
-          name: 'subagent_claude_code',
+          name: 'subagent_claude_safe',
+          parameterNames: ['description', 'prompt', 'run_in_background'],
+          required: ['description', 'prompt'],
+        },
+        {
+          name: 'subagent_claude_bypass',
           parameterNames: ['description', 'prompt', 'run_in_background'],
           required: ['description', 'prompt'],
         },
