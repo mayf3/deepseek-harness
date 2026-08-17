@@ -62,6 +62,7 @@ interface BenchOptions {
     maxImagesPerMessage: number
     maxMessageImageBytes: number
     maxImagePixels: number
+    maxImageDimension: number
     mediaTypes: readonly ('image/png' | 'image/jpeg' | 'image/webp' | 'image/gif')[]
   }
   draft?: string
@@ -263,6 +264,7 @@ describe('image draft rail', () => {
       maxImagesPerMessage: 2,
       maxMessageImageBytes: 2 * 1024 * 1024,
       maxImagePixels: 40_000_000,
+      maxImageDimension: 2000,
       mediaTypes: ['image/png'] as const,
     }
     const png = (bytes: number, name: string) => new File([new ArrayBuffer(bytes)], name, { type: 'image/png' })
@@ -306,6 +308,7 @@ describe('image draft rail', () => {
         maxImagesPerMessage: 1,
         maxMessageImageBytes: 8,
         maxImagePixels: 40_000_000,
+        maxImageDimension: 2000,
         mediaTypes: ['image/png'] as const,
       },
     })
@@ -327,6 +330,7 @@ describe('image draft rail', () => {
         maxImagesPerMessage: 20,
         maxMessageImageBytes: 100 * 1024 * 1024,
         maxImagePixels: 40_000_000,
+        maxImageDimension: 2000,
         mediaTypes: ['image/png'] as const,
       },
     })

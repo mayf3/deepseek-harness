@@ -173,6 +173,7 @@ describe('createFixtureApi', () => {
           maxImagesPerMessage: 20,
           maxMessageImageBytes: 100 * 1024 * 1024,
           maxImagePixels: 40_000_000,
+          maxImageDimension: 2000,
           mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
         },
       } },
