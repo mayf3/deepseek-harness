@@ -160,6 +160,49 @@ describe('real @openai/codex 0.147.0 product', () => {
       env: { ...process.env, ...harness.env },
     })
     expect(version.stdout.trim()).toBe('codex-cli 0.147.0')
+    const schemaRoot = mkdtempSync(join(tmpdir(), 'dsh-codex-schema-'))
+    roots.push(schemaRoot)
+    await execFileAsync(process.execPath, [
+      codexEntry,
+      'app-server',
+      'generate-json-schema',
+      '--out',
+      schemaRoot,
+    ], { env: { ...process.env, ...harness.env } })
+    const schema = JSON.parse(readFileSync(
+      join(schemaRoot, 'ServerNotification.json'),
+      'utf8',
+    )) as {
+      definitions: {
+        CodexErrorInfo: {
+          oneOf: Array<{
+            enum?: string[]
+            properties?: Record<string, unknown>
+          }>
+        }
+      }
+    }
+    expect(schema.definitions.CodexErrorInfo.oneOf[0]?.enum).toEqual([
+      'contextWindowExceeded',
+      'sessionBudgetExceeded',
+      'usageLimitExceeded',
+      'serverOverloaded',
+      'cyberPolicy',
+      'internalServerError',
+      'unauthorized',
+      'badRequest',
+      'threadRollbackFailed',
+      'sandboxError',
+      'other',
+    ])
+    expect(schema.definitions.CodexErrorInfo.oneOf.slice(1).map(variant =>
+      Object.keys(variant.properties ?? {})[0])).toEqual([
+      'httpConnectionFailed',
+      'responseStreamConnectionFailed',
+      'responseStreamDisconnected',
+      'responseTooManyFailedAttempts',
+      'activeTurnNotSteerable',
+    ])
 
     const run = await harness.ctx.subagents.start('codex', {
       prompt: [{ type: 'text', text: task }],
@@ -223,11 +266,15 @@ describe('real @openai/codex 0.147.0 product', () => {
     const result = await run.result
     expect(result.output).toEqual([])
     expect(result.stopReason).toBe('error')
+    const diagnosticLines = result.diagnostic?.split('\n') ?? []
+    expect(diagnosticLines[0]).toBe(
+      'Product subagent failure (product: Codex; stage: turn; category: other)',
+    )
     expect([
       'Codex unattended decision (mode: never; request: command approval; decision: cancelled): the provider does not grant interactive approval',
       'Codex unattended decision (mode: never; request: sandbox execution; decision: failed): Codex reported a sandbox failure',
       'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
-    ]).toContain(result.diagnostic)
+    ]).toContain(diagnosticLines[1])
     expect(result.diagnostic).not.toContain(command)
     expect(result.diagnostic).not.toContain(harness.workspace)
     await run.dispose()
@@ -242,6 +289,49 @@ describe('real @openai/codex 0.147.0 product', () => {
       requestEntry.headers.authorization === 'Bearer dsh-fake-openai-key',
     )).toBe(true)
     await expectQuiescent(harness.handles)
+  }, 60_000)
+
+  it('reports a real service failure and an early app-server exit safely', async () => {
+    {
+      const { harness } = await realHarness([{
+        kind: 'error',
+        status: 503,
+        message: 'SECRET_TOKEN in /private/secret.txt',
+      }])
+      const run = await harness.ctx.subagents.start('codex', {
+        prompt: [{ type: 'text', text: 'Exercise the service failure path.' }],
+        parent: harness.parent,
+        signal: new AbortController().signal,
+      })
+      const result = await run.result
+      expect(result).toMatchObject({ output: [], stopReason: 'error' })
+      expect(result.diagnostic).toBe(
+        'Product subagent failure (product: Codex; stage: turn; category: internalServerError)',
+      )
+      expect(result.diagnostic).not.toContain('SECRET_TOKEN')
+      expect(result.diagnostic).not.toContain('/private/secret.txt')
+      await run.dispose()
+      await expectQuiescent(harness.handles)
+    }
+    {
+      const { harness, fixture } = await realHarness([{ kind: 'hold' }])
+      const run = await harness.ctx.subagents.start('codex', {
+        prompt: [{ type: 'text', text: 'Exercise the process failure path.' }],
+        parent: harness.parent,
+        signal: new AbortController().signal,
+      })
+      await fixture.requestStarted
+      expect(harness.handles).toHaveLength(1)
+      harness.handles[0]!.terminate()
+      await harness.handles[0]!.done
+      await expect(run.result).resolves.toEqual({
+        output: [],
+        diagnostic: 'Product subagent failure (product: Codex; stage: turn; category: unknown)',
+        stopReason: 'error',
+      })
+      await run.dispose()
+      await expectQuiescent(harness.handles)
+    }
   }, 60_000)
 
   it('executes an explicitly selected dangerous bypass write in the isolated workspace', async () => {

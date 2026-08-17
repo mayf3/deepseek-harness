@@ -6,13 +6,15 @@
 
 ## 启动与所有权
 
-`start(request)` 只接受非空的文本块序列，并根据父会话确定子级 cwd。随后，它通过 [`dsh-subprocess`](../../subprocess/subprocess/README.md) spawn 固定命令，依次执行 `initialize` → `initialized`，把 Profile 选择的模式映射为官方 `thread/start` approval／reviewer／sandbox 字段并与 `{ cwd, ephemeral: true }` 一起发送，且仅在 Codex 返回有效的临时线程后才发布此次运行。若在发布前发生失败或取消，它会关闭通信链路、终止受管进程树并等待其退出，然后拒绝 `start()` 调用。
+`start(request)` 只接受非空的文本块序列，并根据父会话确定子级 cwd。随后，它通过 [`dsh-subprocess`](../../subprocess/subprocess/README.md) spawn 固定命令，依次执行 `initialize` → `initialized`，把 Profile 选择的模式映射为官方 `thread/start` approval／reviewer／sandbox 字段并与 `{ cwd, ephemeral: true }` 一起发送，且仅在 Codex 返回有效的临时线程后才发布此次运行。若在发布前发生失败或取消，它会关闭通信链路、终止受管进程树并等待其退出，然后拒绝 `start()` 调用。非取消拒绝只公开固定的 `initialize` 或 `thread-start` 阶段及已经观测到的进程结果；原始产品与 Host 错误只保留在内部 cause 链中。
 
 已发布的 `run.result` 恰好启动一个轮次。它只接受与此次运行的线程和轮次匹配的通知，随后等待权威的终止通知 `turn/completed`。以最后一条 `phase: "final_answer"` 的 `agentMessage` 为准；若 Codex 没有发出明确的最终阶段，则以最后一条 `phase: null` 的消息作为兼容性回退。过程说明绝不会取代上述任一答案；成功完成的轮次若没有非空白答案，结果也会判为错误。
 
 对于命令与文件审批，无人值守的提供方会从请求给出的决策选项中选择一项不予批准的决策，并优先选择 `cancel`；稳定的 0.147.0 请求形态没有决策选项列表，因此回退到 `decline`。它对权限请求返回作用域限于当前轮次的空权限集，不向用户输入请求提供任何答案，并拒绝 MCP elicitation。若请求在无人值守模式下没有合法响应，或是未知服务器请求，此次运行就会失败。wire 只记录有效模式、请求类别、决定与固定的安全原因，也会识别被拒绝的命令／文件 item 和 `sandboxError` 终态。Codex 0.147.0 的部分早期 `never` 拒绝和 sandbox violation 只写入结构化 stderr，因此提供方会 pipe stderr、原样转发给 Host，并在每次运行的有界尾缓冲中匹配两个固定签名；原始 stderr 不会进入诊断。
 
-本地取消会在结果竞态中胜出并映射为 `aborted`。失败轮次的 `codexErrorInfo` 若为 `contextWindowExceeded`，则映射为 `max-tokens`；其他任何远端中断或失败轮次都映射为 `error`，且该提供方不会产生 `refusal`。权限相关错误可以额外携带有界、非 assistant 的 `SubagentResult.diagnostic`；成功和本地取消不会附带它。`dispose()`（资源释放）具有幂等性：如果当前的两个标识符均已知，它会尽力请求 `turn/interrupt`，关闭 JSON-RPC 通信链路，结束标准输入，调用共享的进程树逐级终止机制，等待整棵进程树退出，并移除 stderr observer。结果失败与独立的清理失败仍彼此分离。
+本地取消会在结果竞态中胜出并映射为 `aborted`。对于失败轮次，诊断会保留 Codex 0.147.0 `codexErrorInfo` 联合中的全部十一种字符串与五种对象 variant；四种连接／stream variant 会在上游提供时保留数值 `httpStatusCode`，而 `activeTurnNotSteerable` 不公开 `turnKind`。诊断还会注明 `turn-start`、`turn` 或 `process`，分别包含可用的退出码与信号，并对无法识别或格式错误的值使用 `unknown`，且不复制原始字段。`contextWindowExceeded` 仍映射为 `max-tokens`；其他任何远端中断或失败仍映射为 `error`，且该提供方不会产生 `refusal`。参与失败的权限决定会跟在结构化失败行之后。成功与本地取消都不附带这两类事实。
+
+`dispose()`（资源释放）具有幂等性：如果当前的两个标识符均已知，它会尽力请求 `turn/interrupt`，关闭 JSON-RPC 通信链路，结束标准输入，调用共享的进程树逐级终止机制，等待整棵进程树退出，并移除 stderr observer。独立清理拒绝使用固定的 `teardown` 阶段与可用进程结果。当启动与回滚同时失败时，顶层聚合消息会保留两条安全阶段说明，而原始失败仍只在内部可见。
 
 ## 能力与上下文
 
@@ -63,7 +65,7 @@
 
 ## 产品兼容性与证据
 
-生产环境的协议层有意只实现这一单次执行约定所需的 app-server 方法。开发证据锁定在 `@openai/codex@0.147.0` / `codex-cli 0.147.0`；该 NPM 包仅作为测试依赖，部署环境仍需通过 `PATH` 提供 `codex`。真实产品覆盖会证明线程级 `never` 覆盖环境中的 `on-request`，自动评审通过官方 app-server 启动，危险绕过只在测试拥有的临时存储中写入，安全诊断不包含原始命令与路径，而且所有 wrapper／native 进程都会退出。
+生产环境的协议层有意只实现这一单次执行约定所需的 app-server 方法。开发证据锁定在 `@openai/codex@0.147.0` / `codex-cli 0.147.0`；该 NPM 包仅作为测试依赖，部署环境仍需通过 `PATH` 提供 `codex`。生成的 schema 证据固定完整的当前错误联合与 HTTP status 所在位置。真实产品覆盖会证明线程级 `never` 覆盖环境中的 `on-request`，自动评审通过官方 app-server 启动，危险绕过只在测试拥有的临时存储中写入，真实服务失败成为 `internalServerError`，进程／协议失败保持安全并完全停稳，诊断不包含原始命令与路径，而且所有 wrapper／native 进程都会退出。
 
 ## 模型体验
 
@@ -85,7 +87,7 @@ Codex 子级会在一个全新的临时线程中，以单个轮次接收这些�
 
 #### 模型看到的内容
 
-通过 `dsh-tool-subagent`，前台调用会让父级模型看到选定的 Codex 最终答案；若结果未完成，错误中会包含终止原因和可选的安全诊断。后台调用会先返回 Job id；随后通用作业控制面会送达完成通知，通过 `job_output` 公开最终答案或失败状态 detail，并允许 `job_kill` 请求取消。Codex 的过程说明、推理（reasoning）、工具活动、原始 stderr、工作区差异、用量信息、产品标识符、命令、路径和协议载荷均不会复制到父会话。
+通过 `dsh-tool-subagent`，前台调用会让父级模型看到选定的 Codex 最终答案；若结果未完成，错误中会包含终止原因和可选的安全诊断。该诊断可以区分固定 error-info 类别、协议阶段、数值 HTTP status 和已观测的进程结果，而不复制产品正文。后台调用会先返回 Job id；随后通用作业控制面会送达完成通知，通过 `job_output` 公开同一最终答案或失败状态 detail，并允许 `job_kill` 请求取消。Codex 的过程说明、推理（reasoning）、工具活动、原始 stderr、工作区差异、用量信息、产品标识符、命令、路径和协议载荷均不会复制到父会话。
 
 #### 对 token 的影响
 
@@ -98,7 +100,7 @@ Codex 子级会在一个全新的临时线程中，以单个轮次接收这些�
 ## 已知限制与后续工作
 
 - **每次运行均新建一个进程、一个线程和一个轮次**：不支持续接、恢复、池化、进度流或产品会话持久化。
-- **产品安装和账户状态由宿主管理**：`codex` 缺失或不兼容、配置错误或身份验证失败，都会呈现为启动错误或运行错误；本插件不提供安装程序、登录流程或运行时版本门禁。
+- **产品安装和账户状态由宿主管理**：`codex` 缺失或不兼容、配置错误或身份验证失败会公开其生命周期阶段与安全的 `unknown` 回退，而不会增加单独的公开分类体系；本插件不提供安装程序、登录流程或运行时版本门禁。
 - **兼容性由开发证据锁定**：若要从已验证的 0.147.0 协议基线升级，必须重新生成上游 schema 证据，并重新运行握手、答案选择、审批、取消、无密钥真实产品以及带密钥的 DeepSeek 随机数测试。
 - **没有人工审批路径**：已知的无人值守审批请求会被拒绝，未知服务器请求会以默认拒绝方式使运行失败；三种 Profile 模式都不会创建 DSH 交互通道或逐次调用 allow 策略。
 - **assistant 载荷仅包含最终文本**：失败运行可以额外公开独立的安全诊断；推理、过程说明、中间消息、工具通信、用量信息、原始 stderr 和工作区差异不会进入父会话，通用 Job id、通知与状态来自共享作业运行时。

@@ -128,6 +128,7 @@ interface FakeChildOptions {
   readonly pid?: number
   readonly exitOnTerminate?: boolean
   readonly doneError?: Error
+  readonly waitForExitError?: Error
 }
 
 interface FakeChild {
@@ -171,6 +172,9 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
     if (options.exitOnTerminate !== false) settle()
   })
   const waitForExit = vi.fn(async (signal?: AbortSignal) => {
+    if (options.waitForExitError !== undefined) {
+      throw options.waitForExitError
+    }
     if (exited) return true
     if (signal === undefined) {
       await done.catch(() => {})
@@ -303,6 +307,37 @@ function turnCompleted(
       turn: { id: turnId, status, error },
     },
   }
+}
+
+function expectedFailureDiagnostic(
+  stage: 'initialize' | 'thread-start' | 'turn-start' | 'turn' | 'process' | 'teardown',
+  category: string,
+  options: {
+    readonly httpStatus?: number
+    readonly outcome?: Partial<SubprocessOutcome>
+  } = {},
+): string {
+  const fields = [
+    'product: Codex',
+    `stage: ${stage}`,
+    `category: ${category}`,
+  ]
+  if (options.httpStatus !== undefined) {
+    fields.push(`HTTP status: ${options.httpStatus}`)
+  }
+  if (
+    options.outcome?.exitCode !== null
+    && options.outcome?.exitCode !== undefined
+  ) {
+    fields.push(`exit code: ${options.outcome.exitCode}`)
+  }
+  if (
+    options.outcome?.signal !== null
+    && options.outcome?.signal !== undefined
+  ) {
+    fields.push(`signal: ${options.outcome.signal}`)
+  }
+  return `Product subagent failure (${fields.join('; ')})`
 }
 
 describe('task admission and package contracts', () => {
@@ -558,23 +593,103 @@ describe('CodexAppServerWire', () => {
     wire.close()
   })
 
-  it('maps only an explicit context-window failure to max-tokens', async () => {
-    const { child, wire } = await initializeWire()
-    const result = wire.runTurn(['task'], new AbortController().signal)
-    const turnStart = await child.peer.nextMethod('turn/start')
-    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
-    child.peer.send(
-      agentMessage('partial answer', null),
-      turnCompleted('failed', 'turn-1', 'thread-1', {
-        message: 'too much context',
-        codexErrorInfo: 'contextWindowExceeded',
-      }),
-    )
-    await expect(result).resolves.toEqual({
-      output: [{ type: 'text', text: 'partial answer' }],
-      stopReason: 'max-tokens',
-    })
-    wire.close()
+  it('maps the complete string error union without changing stop reasons', async () => {
+    const categories = [
+      'contextWindowExceeded',
+      'sessionBudgetExceeded',
+      'usageLimitExceeded',
+      'serverOverloaded',
+      'cyberPolicy',
+      'internalServerError',
+      'unauthorized',
+      'badRequest',
+      'threadRollbackFailed',
+      'sandboxError',
+      'other',
+    ] as const
+    for (const category of categories) {
+      const { child, wire } = await initializeWire()
+      const result = wire.runTurn(['task'], new AbortController().signal)
+      const turnStart = await child.peer.nextMethod('turn/start')
+      child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      child.peer.send(
+        agentMessage('partial answer', null),
+        turnCompleted('failed', 'turn-1', 'thread-1', {
+          message: 'SECRET_TOKEN in /private/secret.txt',
+          codexErrorInfo: category,
+        }),
+      )
+      if (category === 'contextWindowExceeded') {
+        await expect(result).resolves.toEqual({
+          output: [{ type: 'text', text: 'partial answer' }],
+          stopReason: 'max-tokens',
+        })
+      } else {
+        await expect(result).rejects.toThrow(`status failed: ${category}`)
+      }
+      expect(wire.collectFailure()).toEqual({
+        stage: 'turn',
+        category,
+      })
+      expect(JSON.stringify(wire.collectFailure())).not.toContain('SECRET_TOKEN')
+      expect(JSON.stringify(wire.collectFailure())).not.toContain('/private/secret.txt')
+      wire.close()
+    }
+  })
+
+  it('maps all object error variants and only numeric HTTP status', async () => {
+    const scenarios = [
+      ['httpConnectionFailed', { httpStatusCode: 503 }, 503],
+      ['responseStreamConnectionFailed', { httpStatusCode: null }, undefined],
+      ['responseStreamDisconnected', {}, undefined],
+      ['responseTooManyFailedAttempts', { httpStatusCode: '503' }, undefined],
+      ['activeTurnNotSteerable', { turnKind: 'review' }, undefined],
+    ] as const
+    for (const [category, detail, httpStatus] of scenarios) {
+      const { child, wire } = await initializeWire()
+      const result = wire.runTurn(['task'], new AbortController().signal)
+      const turnStart = await child.peer.nextMethod('turn/start')
+      child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+        message: 'SECRET_TOKEN in /private/secret.txt',
+        codexErrorInfo: { [category]: detail },
+      }))
+      await expect(result).rejects.toThrow(`status failed: ${category}`)
+      expect(wire.collectFailure()).toEqual({
+        stage: 'turn',
+        category,
+        ...(httpStatus === undefined ? {} : { httpStatus }),
+      })
+      expect(JSON.stringify(wire.collectFailure())).not.toContain('turnKind')
+      wire.close()
+    }
+  })
+
+  it('uses unknown for version-external or malformed error info', async () => {
+    for (const codexErrorInfo of [
+      'futureError',
+      { futureVariant: { message: 'SECRET_TOKEN' } },
+      {
+        httpConnectionFailed: { httpStatusCode: 503 },
+        otherVariant: {},
+      },
+      { httpConnectionFailed: null },
+    ]) {
+      const { child, wire } = await initializeWire()
+      const result = wire.runTurn(['task'], new AbortController().signal)
+      const turnStart = await child.peer.nextMethod('turn/start')
+      child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+        message: 'SECRET_TOKEN in /private/secret.txt',
+        codexErrorInfo,
+      }))
+      await expect(result).rejects.toThrow('status failed: unknown')
+      expect(wire.collectFailure()).toEqual({
+        stage: 'turn',
+        category: 'unknown',
+      })
+      wire.close()
+    }
   })
 
   it('rejects invalid handshake, thread, and turn response shapes', async () => {
@@ -604,6 +719,10 @@ describe('CodexAppServerWire', () => {
       const frame = await child.peer.nextMethod('turn/start')
       child.peer.respond(frame, { turn: { id: '' } })
       await expect(pending).rejects.toThrow('turn/start turn id')
+      expect(wire.collectFailure()).toEqual({
+        stage: 'turn-start',
+        category: 'unknown',
+      })
       wire.close()
     }
   })
@@ -638,6 +757,10 @@ describe('CodexAppServerWire', () => {
         message: 'status failed',
       },
       {
+        frames: [turnCompleted('failed', 'turn-1', 'thread-1', 'SECRET_TOKEN')],
+        message: 'status failed',
+      },
+      {
         frames: [turnCompleted('interrupted')],
         message: 'status interrupted',
       },
@@ -651,8 +774,13 @@ describe('CodexAppServerWire', () => {
       const result = wire.runTurn(['task'], new AbortController().signal)
       const turnStart = await child.peer.nextMethod('turn/start')
       child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      await nextTask()
       child.peer.send(...scenario.frames)
       await expect(result).rejects.toThrow(scenario.message)
+      expect(wire.collectFailure()).toEqual({
+        stage: 'turn',
+        category: 'unknown',
+      })
       wire.close()
     }
   })
@@ -1276,16 +1404,149 @@ describe('run lifecycle and quiescence', () => {
     await run.dispose()
   })
 
+  it('reports turn-start failures and omits captured facts after success', async () => {
+    {
+      const { child, run, turnStart } = await publishRun()
+      child.peer.respond(turnStart, { turn: { id: '' } })
+      await expect(run.result).resolves.toEqual({
+        output: [],
+        diagnostic: expectedFailureDiagnostic('turn-start', 'unknown'),
+        stopReason: 'error',
+      })
+      await run.dispose()
+    }
+    {
+      const { child, run, turnStart } = await publishRun()
+      child.peer.send({
+        id: 'successful-approval',
+        method: 'item/commandExecution/requestApproval',
+        params: {
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          availableDecisions: ['cancel'],
+        },
+      })
+      child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      await child.peer.nextResponse('successful-approval')
+      child.peer.send(
+        agentMessage('answer', 'final_answer'),
+        turnCompleted('completed'),
+      )
+      await expect(run.result).resolves.toEqual({
+        output: [{ type: 'text', text: 'answer' }],
+        stopReason: 'completed',
+      })
+      await run.dispose()
+    }
+  })
+
+  it('preserves representative terminal categories, HTTP status, and mapping', async () => {
+    const scenarios = [
+      ['contextWindowExceeded', 'max-tokens', undefined],
+      ['sessionBudgetExceeded', 'error', undefined],
+      [{ httpConnectionFailed: { httpStatusCode: 503 } }, 'error', 503],
+      [{ activeTurnNotSteerable: { turnKind: 'review' } }, 'error', undefined],
+      ['futureError', 'error', undefined],
+    ] as const
+    for (const [codexErrorInfo, stopReason, httpStatus] of scenarios) {
+      const { child, run, turnStart } = await publishRun()
+      child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      child.peer.send(
+        agentMessage('partial answer', null),
+        turnCompleted('failed', 'turn-1', 'thread-1', {
+          message: 'SECRET_TOKEN in /private/secret.txt',
+          codexErrorInfo,
+        }),
+      )
+      const category = typeof codexErrorInfo === 'string'
+        && codexErrorInfo !== 'futureError'
+        ? codexErrorInfo
+        : typeof codexErrorInfo === 'object'
+          ? Object.keys(codexErrorInfo)[0]!
+          : 'unknown'
+      const result = await run.result
+      expect(result).toEqual({
+        output: [{ type: 'text', text: 'partial answer' }],
+        diagnostic: expectedFailureDiagnostic('turn', category, {
+          ...(httpStatus === undefined ? {} : { httpStatus }),
+        }),
+        stopReason,
+      })
+      expect(result.diagnostic).not.toContain('SECRET_TOKEN')
+      expect(result.diagnostic).not.toContain('/private/secret.txt')
+      expect(result.diagnostic).not.toContain('turnKind')
+      await run.dispose()
+    }
+  })
+
+  it('uses safe unknown fallbacks when the wire supplies no failure fact', async () => {
+    {
+      const collectFailure = vi.spyOn(
+        CodexAppServerWire.prototype,
+        'collectFailure',
+      ).mockReturnValue(undefined)
+      const { child, run, turnStart } = await publishRun()
+      child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+        codexErrorInfo: 'contextWindowExceeded',
+      }))
+      await expect(run.result).resolves.toEqual({
+        output: [],
+        diagnostic: expectedFailureDiagnostic('turn', 'unknown'),
+        stopReason: 'max-tokens',
+      })
+      collectFailure.mockRestore()
+      await run.dispose()
+    }
+    {
+      const runTurn = vi.spyOn(CodexAppServerWire.prototype, 'runTurn')
+        .mockRejectedValueOnce(new Error('SECRET_TOKEN wire failure'))
+      const child = fakeChild()
+      const starting = startCodexRun(request(), runSpec(child))
+      const initialize = await child.peer.nextMethod('initialize')
+      child.peer.respond(initialize, { userAgent: 'codex-cli 0.147.0' })
+      await child.peer.nextMethod('initialized')
+      const threadStart = await child.peer.nextMethod('thread/start')
+      child.peer.respond(threadStart, {
+        thread: { id: 'thread-1', ephemeral: true },
+      })
+      const run = await starting
+      const result = await run.result
+      expect(result).toEqual({
+        output: [],
+        diagnostic: expectedFailureDiagnostic('turn', 'unknown'),
+        stopReason: 'error',
+      })
+      expect(result.diagnostic).not.toContain('SECRET_TOKEN')
+      runTurn.mockRestore()
+      await run.dispose()
+    }
+  })
+
   it('flattens child exit and protocol failures after publication', async () => {
     const errors: string[] = []
-    {
+    const outcomes: SubprocessOutcome[] = [
+      { exitCode: 9, signal: null },
+      { exitCode: null, signal: 'SIGABRT' },
+      { exitCode: 9, signal: 'SIGABRT' },
+      { exitCode: null, signal: null },
+    ]
+    for (const outcome of outcomes) {
       const child = fakeChild({ exitOnTerminate: false })
       const { run } = await publishRun(child, undefined, {
         onError: (error) => { errors.push(error.message) },
       })
-      child.settle({ exitCode: 9, signal: null })
-      await expect(run.result).resolves.toEqual({ output: [], stopReason: 'error' })
-      expect(errors.at(-1)).toContain('code 9')
+      child.settle(outcome)
+      await expect(run.result).resolves.toEqual({
+        output: [],
+        diagnostic: expectedFailureDiagnostic('process', 'process-exit', {
+          outcome,
+        }),
+        stopReason: 'error',
+      })
+      expect(errors.at(-1)).toBe(
+        `subagent-codex: ${expectedFailureDiagnostic('process', 'process-exit', { outcome })}`,
+      )
       await run.dispose().catch(() => {})
     }
     {
@@ -1295,7 +1556,11 @@ describe('run lifecycle and quiescence', () => {
       })
       child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
       child.fromChild.end()
-      await expect(run.result).resolves.toEqual({ output: [], stopReason: 'error' })
+      await expect(run.result).resolves.toEqual({
+        output: [],
+        diagnostic: expectedFailureDiagnostic('turn', 'unknown'),
+        stopReason: 'error',
+      })
       await run.dispose()
     }
     {
@@ -1336,7 +1601,7 @@ describe('run lifecycle and quiescence', () => {
     }))
     await expect(run.result).resolves.toEqual({
       output: [],
-      diagnostic: 'Codex unattended decision (mode: never; request: command approval; decision: cancelled): the provider does not grant interactive approval',
+      diagnostic: `${expectedFailureDiagnostic('turn', 'other')}\nCodex unattended decision (mode: never; request: command approval; decision: cancelled): the provider does not grant interactive approval`,
       stopReason: 'error',
     })
     await run.dispose()
@@ -1356,7 +1621,7 @@ describe('run lifecycle and quiescence', () => {
     })
     await expect(run.result).resolves.toEqual({
       output: [],
-      diagnostic: 'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
+      diagnostic: `${expectedFailureDiagnostic('turn', 'badRequest')}\nCodex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval`,
       stopReason: 'error',
     })
     await run.dispose()
@@ -1378,7 +1643,7 @@ describe('run lifecycle and quiescence', () => {
     }))
     await expect(run.result).resolves.toEqual({
       output: [],
-      diagnostic: 'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
+      diagnostic: `${expectedFailureDiagnostic('turn', 'badRequest')}\nCodex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval`,
       stopReason: 'error',
     })
     expect(Buffer.concat(hostStderrWrite.chunks).toString()).toContain('SECRET_TOKEN')
@@ -1401,7 +1666,7 @@ describe('run lifecycle and quiescence', () => {
     }))
     await expect(run.result).resolves.toEqual({
       output: [],
-      diagnostic: 'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
+      diagnostic: `${expectedFailureDiagnostic('turn', 'badRequest')}\nCodex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval`,
       stopReason: 'error',
     })
     await run.dispose()
@@ -1424,12 +1689,68 @@ describe('run lifecycle and quiescence', () => {
     )).rejects.toThrow('aborted before app-server startup')
     expect(spawn).not.toHaveBeenCalled()
 
+    const spawnFailure = startCodexRun(request(), {
+      cwd: process.cwd(),
+      permissionMode: DEFAULT_CODEX_PERMISSION_MODE,
+      env: {},
+      disposeGraceMs: 10,
+      spawn: () => { throw new Error('SECRET_TOKEN spawn failure') },
+    })
+    await expect(spawnFailure)
+      .rejects.toThrow(expectedFailureDiagnostic('initialize', 'unknown'))
+    await expect(spawnFailure).rejects.not.toThrow('SECRET_TOKEN')
+
     const child = fakeChild()
     const starting = startCodexRun(request(), runSpec(child))
     const initialize = await child.peer.nextMethod('initialize')
     child.peer.respond(initialize, null)
-    await expect(starting).rejects.toThrow('invalid initialize response')
+    await expect(starting)
+      .rejects.toThrow(expectedFailureDiagnostic('initialize', 'unknown'))
+    await expect(starting).rejects.not.toThrow('invalid initialize response')
     expect(child.terminate).toHaveBeenCalledTimes(1)
+
+    const cleanupRaceAbort = new AbortController()
+    const cleanupRaceChild = fakeChild({ exitOnTerminate: false })
+    const cleanupRace = startCodexRun(
+      request(undefined, cleanupRaceAbort.signal),
+      runSpec(cleanupRaceChild),
+    )
+    const cleanupRaceInitialize = await cleanupRaceChild.peer.nextMethod('initialize')
+    cleanupRaceChild.peer.respond(cleanupRaceInitialize, null)
+    await nextTask()
+    cleanupRaceAbort.abort(new Error('cancelled during cleanup'))
+    cleanupRaceChild.settle()
+    await expect(cleanupRace)
+      .rejects.toThrow('aborted before run publication')
+
+    const threadChild = fakeChild()
+    const threadStarting = startCodexRun(request(), runSpec(threadChild))
+    const threadInitialize = await threadChild.peer.nextMethod('initialize')
+    threadChild.peer.respond(threadInitialize, { userAgent: 'codex-cli 0.147.0' })
+    await threadChild.peer.nextMethod('initialized')
+    const invalidThread = await threadChild.peer.nextMethod('thread/start')
+    threadChild.peer.respond(invalidThread, { thread: { id: '', ephemeral: true } })
+    await expect(threadStarting)
+      .rejects.toThrow(expectedFailureDiagnostic('thread-start', 'unknown'))
+    await expect(threadStarting).rejects.not.toThrow('thread/start thread id')
+
+    const exitedThreadChild = fakeChild({ exitOnTerminate: false })
+    const exitedThreadStarting = startCodexRun(
+      request(),
+      runSpec(exitedThreadChild),
+    )
+    const exitedThreadInitialize = await exitedThreadChild.peer.nextMethod('initialize')
+    exitedThreadChild.peer.respond(exitedThreadInitialize, {
+      userAgent: 'codex-cli 0.147.0',
+    })
+    await exitedThreadChild.peer.nextMethod('initialized')
+    await exitedThreadChild.peer.nextMethod('thread/start')
+    exitedThreadChild.settle({ exitCode: 17, signal: 'SIGABRT' })
+    await expect(exitedThreadStarting).rejects.toThrow(expectedFailureDiagnostic(
+      'thread-start',
+      'unknown',
+      { outcome: { exitCode: 17, signal: 'SIGABRT' } },
+    ))
 
     const stderrChild = fakeChild()
     const stderrStarting = startCodexRun(request(), runSpec(stderrChild))
@@ -1486,8 +1807,12 @@ describe('run lifecycle and quiescence', () => {
       throw new Error('expected startup and rollback failures')
     }
     expect(error.errors).toEqual([
-      expect.objectContaining({ message: 'spawn observer failed' }),
-      expect.objectContaining({ message: 'spawn observer failed' }),
+      expect.objectContaining({
+        message: `subagent-codex: ${expectedFailureDiagnostic('initialize', 'unknown')}`,
+      }),
+      expect.objectContaining({
+        message: `subagent-codex: ${expectedFailureDiagnostic('teardown', 'unknown')}`,
+      }),
     ])
     expect(child.terminate).toHaveBeenCalledTimes(1)
   })
@@ -1564,12 +1889,12 @@ describe('run lifecycle and quiescence', () => {
     }))
     await expect(first.run.result).resolves.toEqual({
       output: [],
-      diagnostic: 'Codex unattended decision (mode: never; request: command approval; decision: cancelled): the provider does not grant interactive approval',
+      diagnostic: `${expectedFailureDiagnostic('turn', 'other')}\nCodex unattended decision (mode: never; request: command approval; decision: cancelled): the provider does not grant interactive approval`,
       stopReason: 'error',
     })
     await expect(second.run.result).resolves.toEqual({
       output: [],
-      diagnostic: 'Codex unattended decision (mode: dangerously-bypass-approvals-and-sandbox; request: MCP elicitation; decision: declined): the provider does not collect interactive MCP input',
+      diagnostic: `${expectedFailureDiagnostic('turn', 'other')}\nCodex unattended decision (mode: dangerously-bypass-approvals-and-sandbox; request: MCP elicitation; decision: declined): the provider does not collect interactive MCP input`,
       stopReason: 'error',
     })
     await Promise.all([first.run.dispose(), second.run.dispose()])
@@ -1628,7 +1953,7 @@ describe('run lifecycle and quiescence', () => {
     }))
     await expect(run.result).resolves.toEqual({
       output: [],
-      diagnostic: 'Codex unattended decision (mode: approve-for-me; request: command approval; decision: cancelled): the provider does not grant interactive approval',
+      diagnostic: `${expectedFailureDiagnostic('turn', 'other')}\nCodex unattended decision (mode: approve-for-me; request: command approval; decision: cancelled): the provider does not grant interactive approval`,
       stopReason: 'error',
     })
     expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
@@ -1638,7 +1963,7 @@ describe('run lifecycle and quiescence', () => {
       cwd: process.cwd(),
     }))
     expect(warnings).toEqual([
-      expect.stringContaining('subagent-codex: child run failed (error): subagent-codex: Codex turn ended with status failed: error'),
+      expect.stringContaining(`subagent-codex: child run failed (error): subagent-codex: ${expectedFailureDiagnostic('turn', 'other')}`),
     ])
     expect(warnings.join('\n')).not.toContain('SECRET_TOKEN')
     expect(warnings.join('\n')).not.toContain('/private/secret.txt')
@@ -1702,7 +2027,7 @@ describe('disposeCodexChild', () => {
       })
       const wire = defaultWire(child)
       await expect(disposeCodexChild(wire, child.handle))
-        .rejects.toThrow('close observer failed')
+        .rejects.toThrow(expectedFailureDiagnostic('teardown', 'unknown'))
     }
     {
       const child = fakeChild()
@@ -1710,5 +2035,24 @@ describe('disposeCodexChild', () => {
       const wire = defaultWire(child)
       await expect(disposeCodexChild(wire, handle)).resolves.toBeUndefined()
     }
+  })
+
+  it('aggregates wire-close and tree-wait failures with safe teardown facts', async () => {
+    const child = fakeChild({
+      waitForExitError: new Error('SECRET_TOKEN wait failure'),
+    })
+    const wire = defaultWire(child)
+    vi.spyOn(wire, 'close').mockImplementation(() => {
+      throw new Error('/private/secret.txt close failure')
+    })
+    const disposal = disposeCodexChild(wire, child.handle)
+    await expect(disposal).rejects.toBeInstanceOf(AggregateError)
+    await expect(disposal).rejects.toThrow(expectedFailureDiagnostic(
+      'teardown',
+      'unknown',
+      { outcome: { exitCode: 0, signal: null } },
+    ))
+    await expect(disposal).rejects.not.toThrow('SECRET_TOKEN')
+    await expect(disposal).rejects.not.toThrow('/private/secret.txt')
   })
 })

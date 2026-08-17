@@ -15,6 +15,13 @@ import type { CodexPermissionMode } from './run.ts'
 
 type JsonObject = Record<string, unknown>
 
+/** Product facts owned by the Codex wire after publication. */
+export interface CodexWireFailureFacts {
+  readonly stage: 'turn-start' | 'turn'
+  readonly category: string
+  readonly httpStatus?: number | undefined
+}
+
 const THREAD_PERMISSION_PARAMS: Readonly<Record<CodexPermissionMode, JsonObject>> = {
   never: { approvalPolicy: 'never' },
   'approve-for-me': {
@@ -86,22 +93,78 @@ function unattendedDecision(params: JsonObject): 'cancel' | 'decline' {
   throw new Error('subagent-codex: app-server offered no unattended approval decision')
 }
 
-function isContextWindowExceeded(turn: JsonObject): boolean {
-  if (turn.status !== 'failed') return false
-  const error = turn.error
-  return error !== null
-    && typeof error === 'object'
-    && !Array.isArray(error)
-    && (error as JsonObject).codexErrorInfo === 'contextWindowExceeded'
+function numericHttpStatus(value: unknown): number | undefined {
+  return typeof value === 'number'
+    && Number.isInteger(value)
+    && value >= 0
+    && value <= 65_535
+    ? value
+    : undefined
 }
 
-function isSandboxFailure(turn: JsonObject): boolean {
-  if (turn.status !== 'failed') return false
+function objectFailureInfo(value: JsonObject): {
+  readonly category: string
+  readonly httpStatus?: number | undefined
+} {
+  const keys = Object.keys(value)
+  const category = keys[0]
+  if (keys.length !== 1 || category === undefined) {
+    return { category: 'unknown' }
+  }
+  const detail = value[category]
+  if (detail === null || typeof detail !== 'object' || Array.isArray(detail)) {
+    return { category: 'unknown' }
+  }
+  const fields = detail as JsonObject
+  switch (category) {
+    case 'httpConnectionFailed':
+    case 'responseStreamConnectionFailed':
+    case 'responseStreamDisconnected':
+    case 'responseTooManyFailedAttempts':
+    {
+      const httpStatus = numericHttpStatus(fields.httpStatusCode)
+      return httpStatus === undefined
+        ? { category }
+        : { category, httpStatus }
+    }
+    case 'activeTurnNotSteerable':
+      return { category }
+    default:
+      return { category: 'unknown' }
+  }
+}
+
+function failureInfo(turn: JsonObject): {
+  readonly category: string
+  readonly httpStatus?: number | undefined
+} {
+  if (turn.status !== 'failed') return { category: 'unknown' }
   const error = turn.error
-  return error !== null
-    && typeof error === 'object'
-    && !Array.isArray(error)
-    && (error as JsonObject).codexErrorInfo === 'sandboxError'
+  if (error === null || typeof error !== 'object' || Array.isArray(error)) {
+    return { category: 'unknown' }
+  }
+  const info = (error as JsonObject).codexErrorInfo
+  if (typeof info === 'string') {
+    switch (info) {
+      case 'contextWindowExceeded':
+      case 'sessionBudgetExceeded':
+      case 'usageLimitExceeded':
+      case 'serverOverloaded':
+      case 'cyberPolicy':
+      case 'internalServerError':
+      case 'unauthorized':
+      case 'badRequest':
+      case 'threadRollbackFailed':
+      case 'sandboxError':
+      case 'other':
+        return { category: info }
+      default:
+        return { category: 'unknown' }
+    }
+  }
+  return info !== null && typeof info === 'object' && !Array.isArray(info)
+    ? objectFailureInfo(info as JsonObject)
+    : { category: 'unknown' }
 }
 
 function unattendedDiagnostic(
@@ -164,6 +227,7 @@ export class CodexAppServerWire {
   private lastFinalAnswer: string | undefined
   private lastUnphasedAnswer: string | undefined
   private diagnostic: string | undefined
+  private failure: CodexWireFailureFacts | undefined
   private diagnosticOrder = 0
   private observationOrder = 0
   private pendingDiagnostic: {
@@ -262,22 +326,41 @@ export class CodexAppServerWire {
     }>()
     this.turnCompleted = completion
     const threadId = this.threadId as string
-    const response = object(await this.guarded(this.transport.request('turn/start', {
-      threadId,
-      input: texts.map(text => ({ type: 'text', text, text_elements: [] })),
-    }, signal), signal), 'turn/start response')
-    const turn = object(response.turn, 'turn/start turn')
-    this.commitTurnId(string(turn.id, 'turn/start turn id'))
-
-    const completed = await this.guarded(completion.promise, signal)
-    const terminal = object(completed.params.turn, 'turn/completed turn')
-    const status = terminal.status
-    if (isContextWindowExceeded(terminal)) {
-      return { output: this.collectOutput(), stopReason: 'max-tokens' }
+    try {
+      const response = object(await this.guarded(this.transport.request('turn/start', {
+        threadId,
+        input: texts.map(text => ({ type: 'text', text, text_elements: [] })),
+      }, signal), signal), 'turn/start response')
+      const turn = object(response.turn, 'turn/start turn')
+      this.commitTurnId(string(turn.id, 'turn/start turn id'))
+    } catch (error: unknown) {
+      this.recordFailure({ stage: 'turn-start', category: 'unknown' })
+      throw error
     }
+
+    let completed: {
+      readonly params: JsonObject
+      readonly order: number
+    }
+    let terminal: JsonObject
+    try {
+      completed = await this.guarded(completion.promise, signal)
+      terminal = object(completed.params.turn, 'turn/completed turn')
+    } catch (error: unknown) {
+      this.recordFailure({ stage: 'turn', category: 'unknown' })
+      throw error
+    }
+    const status = terminal.status
     if (status !== 'completed') {
-      const sandboxFailure = isSandboxFailure(terminal)
-      if (sandboxFailure) {
+      const parsed = failureInfo(terminal)
+      this.recordFailure(parsed.httpStatus === undefined
+        ? { stage: 'turn', category: parsed.category }
+        : {
+          stage: 'turn',
+          category: parsed.category,
+          httpStatus: parsed.httpStatus,
+        })
+      if (parsed.category === 'sandboxError') {
         this.recordDiagnostic(
           'sandbox execution',
           'failed',
@@ -285,15 +368,15 @@ export class CodexAppServerWire {
           completed.order,
         )
       }
-      const detail = status === 'failed'
-        ? sandboxFailure
-          ? ': sandboxError'
-          : ': error'
-        : ''
+      if (parsed.category === 'contextWindowExceeded') {
+        return { output: this.collectOutput(), stopReason: 'max-tokens' }
+      }
+      const detail = status === 'failed' ? `: ${parsed.category}` : ''
       throw new Error(`subagent-codex: Codex turn ended with status ${String(status)}${detail}`)
     }
     const output = this.collectOutput()
     if (output.length === 0) {
+      this.recordFailure({ stage: 'turn', category: 'unknown' })
       throw new Error('subagent-codex: Codex completed without a final answer')
     }
     return { output, stopReason: 'completed' }
@@ -328,6 +411,14 @@ export class CodexAppServerWire {
    */
   collectDiagnostic(): string | undefined {
     return this.diagnostic
+  }
+
+  /**
+   * The structured failure fact observed for this published turn.
+   * @returns a fixed stage/category pair and optional HTTP status.
+   */
+  collectFailure(): CodexWireFailureFacts | undefined {
+    return this.failure
   }
 
   /**
@@ -473,6 +564,10 @@ export class CodexAppServerWire {
       decision,
       reason,
     )
+  }
+
+  private recordFailure(facts: CodexWireFailureFacts): void {
+    this.failure = facts
   }
 
   private nextObservationOrder(): number {

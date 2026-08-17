@@ -11,7 +11,28 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 export const name = 'subagent-result-diagnostic'
 export const inject = ['subagents']
 
-const DIAGNOSTIC = 'Product subagent failure (product: Claude Code; stage: query-run; category: error_max_budget_usd)'
+const RESULTS = [
+  {
+    id: '00000000-0000-4000-8000-0000000000d1',
+    diagnostic: 'Product subagent failure (product: Claude Code; stage: query-run; category: error_max_budget_usd)',
+    output: [{ type: 'text' as const, text: 'partial assistant text' }],
+  },
+  {
+    id: '00000000-0000-4000-8000-0000000000d2',
+    diagnostic: 'Product subagent failure (product: Claude Code; stage: query-run; category: error_max_budget_usd)',
+    output: [],
+  },
+  {
+    id: '00000000-0000-4000-8000-0000000000d3',
+    diagnostic: 'Product subagent failure (product: Codex; stage: turn; category: httpConnectionFailed; HTTP status: 503)',
+    output: [{ type: 'text' as const, text: 'partial assistant text' }],
+  },
+  {
+    id: '00000000-0000-4000-8000-0000000000d4',
+    diagnostic: 'Product subagent failure (product: Codex; stage: turn; category: httpConnectionFailed; HTTP status: 503)',
+    output: [],
+  },
+] as const
 
 class DiagnosticProvider implements SubagentProvider {
   readonly name = 'snapshot-diagnostic'
@@ -24,19 +45,16 @@ class DiagnosticProvider implements SubagentProvider {
       throw new Error('snapshot diagnostic provider start aborted')
     }
     const index = this.starts++
-    if (index > 1) {
-      throw new Error('snapshot diagnostic provider expected exactly two starts')
+    const fixture = RESULTS[index]
+    if (fixture === undefined) {
+      throw new Error('snapshot diagnostic provider expected exactly four starts')
     }
     return {
-      id: SessionId(index === 0
-        ? '00000000-0000-4000-8000-0000000000d1'
-        : '00000000-0000-4000-8000-0000000000d2'),
+      id: SessionId(fixture.id),
       localAgent: undefined,
       result: Promise.resolve({
-        output: index === 0
-          ? [{ type: 'text' as const, text: 'partial assistant text' }]
-          : [],
-        diagnostic: DIAGNOSTIC,
+        output: [...fixture.output],
+        diagnostic: fixture.diagnostic,
         stopReason: 'error' as const,
       }),
       dispose: async () => {},
