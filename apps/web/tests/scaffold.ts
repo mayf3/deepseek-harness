@@ -23,7 +23,7 @@
 // (the plugin-row path discards the ReplayHandle; the direct install keeps
 // assertConsumed for the teardown fixture-consumption check).
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -41,19 +41,6 @@ import {
   loadOverlayPatches,
 } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
-// Client packages must not be imported here: these e2e type-check in the Host
-// aggregate, so a Client import pulls that package's whole project — and every
-// project it references — into the Host build graph. Mirrored from
-// packages/client/ui-settings-general/src/onboarding-copy.ts; a drift makes the
-// pre-acknowledgement stop suppressing the notice, which fails loudly.
-// import {
-//   WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_SETTINGS_NAMESPACE, WELCOME_NOTICE_VERSION, WELCOME_NOTICE_COPY,
-// } from '@deepseek-ai/dsh-client-ui-settings-general'
-export const WELCOME_NOTICE_SETTINGS_NAMESPACE = 'ui-onboarding'
-export const WELCOME_NOTICE_ACK_FIELD = 'welcomeNoticeVersion'
-export const WELCOME_NOTICE_VERSION = '2026-08-11.1'
-export const WELCOME_NOTICE_COPY = { zh: { title: '内测声明', continueLabel: '继续' } } as const
-
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {
@@ -75,6 +62,25 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { REPO_ROOT, requireDist } from './support.ts'
+
+// Host-side web e2e cannot import a browser package: doing so would pull that
+// package's complete TS project into this graph. Mirrored from
+// packages/client/ui-settings-models/src/onboarding-copy.ts; drift makes the
+// default pre-acknowledgement stop suppressing the notice and fails loudly.
+// import {
+//   WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_SETTINGS_NAMESPACE,
+//   WELCOME_NOTICE_VERSION, WELCOME_NOTICE_COPY,
+// } from '@deepseek-ai/dsh-client-ui-settings-models'
+export const WELCOME_NOTICE_SETTINGS_NAMESPACE = 'ui-onboarding'
+export const WELCOME_NOTICE_ACK_FIELD = 'welcomeNoticeVersion'
+export const WELCOME_NOTICE_VERSION = '2026-08-13.1'
+export const WELCOME_NOTICE_COPY = {
+  zh: {
+    title: '内测声明',
+    body: 'DeepSeek Harness 目前的 0.1 版本仍处在面向 Harness 开发者进行测试的阶段，还有许多地方需要持续改进和打磨，希望听取广大开发者的反馈建议。预计 DeepSeek Harness 的核心插件以及基础 API 都会在接下来的一段时间内快速迭代、持续演化。\n\n我们期待与全球开发者一起，在开源、开放、可复用、可组合的基础设施之上，共同探索智能上限。欢迎全球 Harness 开发者加入 DSH 插件生态。',
+    continueLabel: '继续',
+  },
+} as const
 
 /** Snapshot mode for the lane, from $DSH_SNAPSHOT (same vocabulary as the other snapshot suites). */
 export type WebSnapshotMode = 'replay' | 'record' | 'refresh'
@@ -227,6 +233,8 @@ export interface LaunchOptions {
    * keyless first-run configuration lane; the default disables the adapter.
    */
   deepSeekMissingCredential?: boolean
+  /** Leave the current welcome notice pending; ordinary scenarios pre-acknowledge it before browser boot. */
+  welcomeNoticePending?: boolean
   /**
    * Patch the shipped DeepSeek search row to a deterministic endpoint and
    * credential reference. Browser search scenarios keep the real provider and
@@ -252,8 +260,6 @@ export interface LaunchOptions {
     /** The preset a session that names none is composed from. */
     default: string
   }
-  /** Leave the current welcome notice unacknowledged; ordinary scenarios publish it as complete before browser boot. */
-  welcomeNoticePending?: boolean
   /**
    * Mount the shipped telemetry row in FULL mode against this exporter URL
    * instead of disabling it. Used to pin a real backend disclosure in
@@ -391,6 +397,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       },
     },
     { id: 'session-persistence-jsonl', config: { root: persistenceRoot } },
+    // Content search is enabled here although the shipped bundles default it
+    // off (`openAt: never`, pinned by apps/cli/tests/lazy-search-startup):
+    // the seeded-session scenarios navigate by content search, and these e2e
+    // runs are the assembled coverage for the opt-in search path.
     { id: 'session-query-sqlite', config: { path: ':memory:', openAt: 'first-search' } },
     // storage-json's yml root is anchored to the real $DSH_HOME; pin the row
     // to an absolute temp root (removed with the workspace at close) so tests
@@ -720,6 +730,38 @@ export async function seedSession(
     delegationDepth: 0,
     ...agentPreset === undefined ? {} : { agentPreset },
   }
+  await persistSeedSession(scaffold, meta, events)
+  return meta.id
+}
+
+/** Seed one materialized cold Session whose log has no turn/start event. */
+export async function seedBlankSession(
+  scaffold: WebScaffold,
+  id: string,
+  cwd: string,
+): Promise<SessionId> {
+  const meta: SessionHeader = {
+    version: SESSION_FORMAT_VERSION,
+    id: SessionId(id),
+    createdAt: Date.now() - 60_000,
+    cwd,
+    delegationDepth: 0,
+  }
+  await persistSeedSession(scaffold, meta, [{
+    type: 'session/end-seed',
+    seq: 0,
+    time: meta.createdAt,
+    data: {},
+  }])
+  return meta.id
+}
+
+/** Materialize one detached Session fixture through the shipped JSONL provider. */
+async function persistSeedSession(
+  scaffold: WebScaffold,
+  meta: SessionHeader,
+  events: readonly SessionEvent[],
+): Promise<void> {
   const seeder = new Context()
   try {
     await seeder.plugin(SessionStore)
@@ -728,16 +770,9 @@ export async function seedSession(
     await seeder.plugin(JsonlSessionPersistence, { root: scaffold.persistenceRoot })
     await seeder.sessionPersistence.create(meta)
     await seeder.sessionPersistence.append(meta.id, events)
-    // Deterministic sidebar order: cold summaries take updatedAt from mtime.
-    const located = seeder.sessionPersistence.locate(meta)
-    if (located !== undefined) {
-      const backdated = new Date(meta.createdAt)
-      await utimes(located.path, backdated, backdated)
-    }
   } finally {
     await seeder.fiber.dispose()
   }
-  return meta.id
 }
 
 /**
