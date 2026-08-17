@@ -111,6 +111,10 @@ describe('search formatting', () => {
   it('presents a multi-query search call with a joined title', () => {
     expect(presentSearchCall({ queries: ['one', 'two'] })).toEqual({ card: 'generic', title: 'one, two', kind: 'search', rawInput: 'one, two' })
   })
+
+  it('presents malformed search arguments with an empty title', () => {
+    expect(presentSearchCall({})).toEqual({ card: 'generic', title: '', kind: 'search', rawInput: '' })
+  })
 })
 
 /** Build a completed non-error tool result with the given meta and text content. */
