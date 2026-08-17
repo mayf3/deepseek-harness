@@ -1,5 +1,5 @@
-# Keyless twin of product-subagent-codex.cordis.yml: keep the same product
-# provider/tool composition and replace only the external model adapter.
+# Keyless twin of product-subagent-codex.cordis.yml: keep both named product
+# providers and tools while replacing only the external model adapter.
 - id: base
   name: '@deepseek-ai/cordis-plugin-include'
   config:
@@ -18,14 +18,31 @@
                   models:
                     - id: deepseek-v4-flash
                     - id: deepseek-v4-pro
-          - id: subagent-codex
+          - id: subagent-codex-safe
             name: '@deepseek-ai/dsh-subagent-codex'
             config:
-              permissionMode: approve-for-me
-          - id: tool-subagent-codex
+              providerName: codex-safe
+              permissionMode: never
+              env:
+                DSH_CODEX_INSTANCE: safe
+          - id: subagent-codex-bypass
+            name: '@deepseek-ai/dsh-subagent-codex'
+            config:
+              providerName: codex-bypass
+              permissionMode: dangerously-bypass-approvals-and-sandbox
+              env:
+                DSH_CODEX_INSTANCE: bypass
+          - id: tool-subagent-codex-safe
             name: '@deepseek-ai/dsh-tool-subagent'
             config:
-              provider: codex
-              toolName: subagent_codex
+              provider: codex-safe
+              toolName: subagent_codex_safe
+              backgroundMode: one-shot
+              maxDepth: provider-managed
+          - id: tool-subagent-codex-bypass
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: codex-bypass
+              toolName: subagent_codex_bypass
               backgroundMode: one-shot
               maxDepth: provider-managed

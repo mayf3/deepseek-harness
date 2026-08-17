@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-harness 交付两个同级的一次性提供方包，其默认注册名称分别为 `codex` 与 `claude-code`。本说明负责它们的产品协议、结果映射和进程生命周期；[命名实例决策](2026-08-18-product-subagent-named-instances.md)负责 Profile 选择的提供方身份与静态工具绑定，[生产安装排除决策](../simplification/2026-08-12-production-dsh-excludes-product-subagent-providers.md)负责显式 Profile 安装与 host plane（宿主平面）放置，[产品一次性后台任务决策](2026-08-12-product-subagent-one-shot-background-tasks.md)负责模型可见的调度选择，[非交互权限决策](2026-08-15-product-subagent-noninteractive-permissions.md)则负责各产品提供方的 Profile 模式选择与诊断生产。Claude Code 接受多个命名实例；Codex 仍只注册单个默认名称。加载任一提供方都不会启动产品进程，而且每个工具只接受独立文本任务；产品选择仍属于部署配置。
+harness 交付两个同级的一次性提供方包，其默认注册名称分别为 `codex` 与 `claude-code`。本说明负责它们的产品协议、结果映射和进程生命周期；[命名实例决策](2026-08-18-product-subagent-named-instances.md)负责 Profile 选择的提供方身份与静态工具绑定，[生产安装排除决策](../simplification/2026-08-12-production-dsh-excludes-product-subagent-providers.md)负责显式 Profile 安装与 host plane（宿主平面）放置，[产品一次性后台任务决策](2026-08-12-product-subagent-one-shot-background-tasks.md)负责模型可见的调度选择，[非交互权限决策](2026-08-15-product-subagent-noninteractive-permissions.md)则负责各产品提供方的 Profile 模式选择与诊断生产。两个包都接受多个命名实例。加载任一提供方都不会启动产品进程，而且每个工具只接受独立文本任务；产品与实例选择仍属于部署配置。
 
 这两个提供方都报告 `inheritsParentContext: false`，不声明任何可选的启动能力，并传递父会话 cwd，但不会复制父级对话。文档所示的工具使用 `backgroundMode: 'one-shot'` 与 `maxDepth: 'provider-managed'`：消费方默认在前台收集结果，也可把同一次运行放入通用 Job 运行时，而递归策略仍由进程外产品负责。每次调用都会创建一个全新的产品进程和一次不可续接的产品对话。`ctx.subagents` 负责具名请求解析与成对生命周期事件；`dsh-tool-subagent` 负责模型可见的调度以及前台与 Job 适配；`ctx.jobs` 和 `dsh-tool-jobs` 负责 Job id、状态、输出、控制、通知与父级 owner 取消；各产品提供方负责原生结果映射，`dsh-subprocess` 则负责凭证清洗、进程树终止以及整棵进程树的退出观测。
 
@@ -34,7 +34,7 @@ configured tool -> dsh-tool-subagent -> ctx.subagents -> product provider -> pro
 
 ## Codex 提供方
 
-`@deepseek-ai/dsh-subagent-codex` 注册固定的 `codex` 提供方，并启动 `codex app-server --stdio`，该命令从 `PATH` 解析。其公开配置包含显式的 `env` 覆盖项、须为正有限值且不得大于仓库共享 `MAX_TIMER_DELAY_MS` 的 `disposeGraceMs`，以及默认使用 `never` 的三值原生 `permissionMode`。安装、登录、`CODEX_HOME`、模型选择、基础 URL 和产品会话设置仍由 Codex 原生机制或部署环境负责；所选模式只拥有非交互权限决策中描述的线程 approval／reviewer／sandbox 字段。
+`@deepseek-ai/dsh-subagent-codex` 注册由 Profile 选择、默认值为 `codex` 的提供方名称，并启动 `codex app-server --stdio`，该命令从 `PATH` 解析。其公开配置包含非空的 `providerName`、显式的 `env` 覆盖项、须为正有限值且不得大于仓库共享 `MAX_TIMER_DELAY_MS` 的 `disposeGraceMs`，以及默认使用 `never` 的三值原生 `permissionMode`。每个命名实例会为自己的运行保留这些已解析值。安装、登录、`CODEX_HOME`、模型选择、基础 URL 和产品会话设置仍由 Codex 原生机制或部署环境负责；所选模式只拥有非交互权限决策中描述的线程 approval／reviewer／sandbox 字段。
 
 发布前，提供方会验证非空的纯文本任务，在父级工作区中启动受管的 app-server，完成 `initialize` → `initialized` 握手，把已解析模式映射为官方 `thread/start` 字段，并创建一个 `ephemeral: true` 线程。固定 app-server argv 不包含模式或任务文本。已发布的运行只拥有一次 `turn/start`；其线程 ID 与轮次 ID 保持私有，绝不会持久化到父会话。
 
@@ -60,7 +60,7 @@ Codex 0.147.0 使用 Responses 协议，而 DeepSeek 的公开 OpenAI 兼容端�
 
 ## 分发与证据
 
-每个产品都负责覆盖所有分支的包测试、一项必跑的无密钥真实产品测试、一项 Loader 组合 e2e 和一项带密钥 DeepSeek e2e。无密钥产品层级使用被测的确切官方发行版、非空的伪产品密钥、隔离的临时工作区与产品主目录，以及能返回固定答案的回环模型。产品请求缺失、身份验证错误、任务文本被改动、答案不完全一致、真实产品被跳过或受管句柄仍存活，都会使这项必跑测试失败。Loader 层级会启动 README 所示的显式 Profile 配置，验证默认 Codex 实例与两个命名 Claude Code 实例会和通用 Job 控制工具一起公开彼此独立的一次性工具，而且不会启动任何产品进程。带密钥层级会使用仅在运行时提供的密钥启动同一生产提供方与真实产品，要求从固定的 DeepSeek 官方服务取得唯一随机数，并再次证明完全停稳；仅当本地操作者未提供密钥时才会自行跳过，而受信任的 CI 会预检该 secret。
+每个产品都负责覆盖所有分支的包测试、一项必跑的无密钥真实产品测试、一项 Loader 组合 e2e 和一项带密钥 DeepSeek e2e。无密钥产品层级使用被测的确切官方发行版、非空的伪产品密钥、隔离的临时工作区与产品主目录，以及能返回固定答案的回环模型。产品请求缺失、身份验证错误、任务文本被改动、答案不完全一致、真实产品被跳过或受管句柄仍存活，都会使这项必跑测试失败。Loader 层级会启动 README 所示的显式 Profile 配置，验证两个产品各自的两个命名实例会和通用 Job 控制工具一起公开四个彼此独立的一次性工具，而且不会启动任何产品进程。带密钥层级会使用仅在运行时提供的密钥启动同一生产提供方与真实产品，要求从固定的 DeepSeek 官方服务取得唯一随机数，并再次证明完全停稳；仅当本地操作者未提供密钥时才会自行跳过，而受信任的 CI 会预检该 secret。
 
 Codex 证据锁定 `@openai/codex@0.147.0` 与 `codex-cli 0.147.0`。其真实产品测试会观测确切的 Bearer 密钥、原始任务、逐字节完全一致的最终回答、线程级 `never` 对环境中 `on-request` 的覆盖、自动评审启动、带安全诊断且不产生文件副作用的无人值守命令拒绝、测试拥有临时存储中的显式危险绕过写入、本地取消以及整棵进程树退出。生产环境仍提供 `codex`，并通过 `PATH` 解析。
 

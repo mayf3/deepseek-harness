@@ -1,4 +1,4 @@
-# Test-only composition of the public opt-in provider and one-shot task tool.
+# Test-only composition of two named Codex instances and their one-shot tools.
 # The owning e2e boots this tree but never invokes the model or Codex.
 - id: fixture
   name: './fixture.ts'
@@ -9,16 +9,29 @@
 - id: subprocess
   name: '@deepseek-ai/dsh-subprocess-local'
 
-- id: subagent-codex
+- id: subagent-codex-primary
   name: '@deepseek-ai/dsh-subagent-codex'
   config:
-    permissionMode: approve-for-me
+    providerName: codex-primary
 
-- id: tool-subagent-codex
+- id: subagent-codex-secondary
+  name: '@deepseek-ai/dsh-subagent-codex'
+  config:
+    providerName: codex-secondary
+
+- id: tool-subagent-codex-primary
   name: '@deepseek-ai/dsh-tool-subagent'
   config:
-    provider: codex
-    toolName: subagent_codex
+    provider: codex-primary
+    toolName: subagent_codex_primary
+    backgroundMode: one-shot
+    maxDepth: 'provider-managed'
+
+- id: tool-subagent-codex-secondary
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: codex-secondary
+    toolName: subagent_codex_secondary
     backgroundMode: one-shot
     maxDepth: 'provider-managed'
 

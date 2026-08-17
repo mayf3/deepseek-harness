@@ -2116,6 +2116,8 @@ Requires: `subagents` · `subprocess`
 ```ts config-catalog
 /** Deployment-owned permission, environment, and process-release settings. */
 export interface Config {
+  /** Provider name on `ctx.subagents` (default `codex`). */
+  providerName?: string
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.
@@ -2134,7 +2136,7 @@ export type CodexPermissionMode =
   | 'dangerously-bypass-approvals-and-sandbox'
 ```
 
-Source: [`packages/subagent/subagent-codex/src/index.ts:33`](../packages/subagent/subagent-codex/src/index.ts)
+Source: [`packages/subagent/subagent-codex/src/index.ts:35`](../packages/subagent/subagent-codex/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-dsh-sdk"></a>
 
