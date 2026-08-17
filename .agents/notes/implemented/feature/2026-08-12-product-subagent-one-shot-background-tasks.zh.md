@@ -12,7 +12,7 @@ Codex 与 Claude Code 提供方已经能够运行一项自包含任务并返回�
 
 ## 决策
 
-生产 `dsh` 不安装可选产品提供方。选择启用产品集成的 Profile 会安装 `dsh-subagent-codex`、`dsh-subagent-claude-code` 或两者，并在 host plane（宿主平面）各挂载一次。`standard`、`code` 与 `cordis` Agent Preset 使用 `backgroundMode: one-shot` 配置相应的休眠工具行；删除某一行的 `disabled` 字段后，现有可选参数 `run_in_background` 会向由该 preset 组装的 agent 公开。省略该参数或传入 `false` 时会在前台等待；显式传入 `true` 时会在同步完成 Job 预检与登记后返回由父级拥有的 Job id，而不会等待提供方启动或完成。
+生产 `dsh` 不安装可选产品提供方。选择启用产品集成的 Profile 会安装所需的 `dsh-subagent-codex` 或 `dsh-subagent-claude-code` 包，并在 host plane（宿主平面）挂载所需的提供方实例。`standard`、`code` 与 `cordis` Agent Preset 使用 `backgroundMode: one-shot` 配置相应的休眠工具行；删除某一行的 `disabled` 字段后，现有可选参数 `run_in_background` 会向由该 preset 组装的 agent 公开。省略该参数或传入 `false` 时会在前台等待；显式传入 `true` 时会在同步完成 Job 预检与登记后返回由父级拥有的 Job id，而不会等待提供方启动或完成。
 
 [通用 one-shot 后台适配器](2026-07-08-background-subagent-tasks.md)负责后台登记与结算。它会启动同一个 [`SubagentRun`](2026-06-21-subagent-capability-seam.md)，让 Job 自有的取消信号覆盖提供方启动与执行，等待 `run.result` 和 `run.dispose()`，把终态结果与可选安全诊断映射进 Job，并由 `job_output`、`job_list`、`job_kill` 与现有完成通知公开该状态。[产品提供方决策](2026-08-04-claude-code-and-codex-subagent-backends.md)继续负责原生协议、答案选择、本地取消与进程树完全停稳；[非交互权限决策](2026-08-15-product-subagent-noninteractive-permissions.md)负责各产品提供方的 Profile 配置与诊断生产。
 
@@ -33,7 +33,7 @@ product tool call
 
 | 事实或资源 | 责任方 | 产品工具职责 | 可观察结果 |
 | --- | --- | --- | --- |
-| 产品提供方安装与登记 | 显式 Profile | 安装可选提供方包，并在 host plane 挂载一次 | 提供方名称可用，但不会让每次生产 `dsh` 安装都包含该包 |
+| 产品提供方安装与登记 | 显式 Profile | 安装可选提供方包，并在 host plane 挂载所需的命名实例 | 提供方名称可用，但不会让每次生产 `dsh` 安装都包含该包 |
 | 产品选择与公开 | Agent Preset | 把一个固定工具名绑定到一个固定提供方 | 启用一行只会公开对应产品工具 |
 | 前台或后台选择 | `dsh-tool-subagent` | 按 `one-shot` 策略解析 `run_in_background` | 省略参数时在前台运行；显式传入 `true` 时返回 Job id |
 | Job id、状态、输出、取消与通知 | `ctx.jobs` 与 `dsh-tool-jobs` | 登记并展示现有 one-shot 运行 | 通用作业工具为准确父级收集或停止运行 |
@@ -41,7 +41,7 @@ product tool call
 
 ## 发布组装
 
-生产 base 不让两个可选产品提供方进入依赖闭包。选择启用产品集成的 Profile 会在 host plane 安装并挂载任一或两个提供方。每个完整 preset 让两个产品工具行保持禁用，并把通用 Job 控制工具贡献到自身 agent 作用域；base host 负责共享 Job 注册表。Profile 提供方存在后，用户复制一个 preset，再从对应产品行删除 `disabled`；组装期间不会启动产品进程。
+生产 base 不让两个可选产品提供方进入依赖闭包。选择启用产品集成的 Profile 会安装所需包，并在 host plane 挂载所需的提供方实例。每个完整 preset 让两个产品工具行保持禁用，并把通用 Job 控制工具贡献到自身 agent 作用域；base host 负责共享 Job 注册表。Profile 提供方实例存在后，用户复制一个 preset，再从对应产品行删除 `disabled`；组装期间不会启动产品进程。
 
 独立自定义组装若启用 one-shot 后台执行，就必须同时提供产品提供方与完整通用 Job 能力：由 `dsh-jobs-local` 充当 Job 提供方，由 `dsh-tool-jobs` 充当面向模型的消费方。基于 `dsh-base` 的 Profile 已具备 Job 能力，只需在启用 preset 工具行前新增可选产品提供方。没有 Job 运行时的产品工具仍可在前台执行，但显式后台请求会在现有 Job 预检中失败，不会发布无法收集的 id。
 
