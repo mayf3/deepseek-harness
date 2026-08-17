@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决定
 
-`@deepseek-ai/dsh-client-web` 是不依赖框架的启动内核。它通过 DOM 操作与本地 CSS 回退绘制加载和失败页面，构造客户端模块系统与 Cordis Loader，创建静态接纳的 modules 启动 entry 和宿主图中的每个 entry，并等待所有 fiber 进入 ACTIVE。随后它解析 `ctx.uiRenderer`，把现有容器交给 `mount()`。
+`@deepseek-ai/dsh-client-web` 是不依赖框架的启动内核。它通过 DOM 操作与本地 CSS 回退绘制加载和失败页面，构造客户端模块系统与 Cordis Loader，创建静态接纳的 modules 启动 entry 和宿主图中的每个 entry，并等待所有 fiber 进入 ACTIVE。Loader 状态变化会保留同一个 spinner 节点，只在 entry 首次进入 active 时更新其 CSS 圆弧。圆弧从圆环的五分之一增长至五分之四，在旋转期间始终保留可见缺口。名册稳定后，内核解析 `ctx.uiRenderer`，把现有容器交给 `mount()`。
 
 `@deepseek-ai/dsh-client-ui-renderer` 是带 `immediately` 标记的动态客户端插件。它持有 React slot outlet、SessionProvider 与 observable 到 uSES 的绑定。`slots`、`sessions` 与 `layout` 激活后，它安装 slot 渲染器并提供 `ctx.uiRenderer`。`mount()` hydrate 内核生成的启动 DOM，再通过 layout effect 在浏览器绘制中间帧前将其替换为组装完成的应用。hydrate 后的 spinner 节点会保持动画相位。组装后的树投影当前会话标题，并执行唯一一次上下文级 `renderSlot('root')` 调用。服务、渲染器安装和 React 根都随各自持有方 dispose。
 
@@ -24,7 +24,7 @@ React、React DOM、Cordis、ui-slots 与 ui-primitives 仍是保持单一浏览
 
 ## 验证
 
-组件测试固定启动页、hydrate 不改变启动 DOM、文档标题、应用树、附件 entry 与 dispose 行为。组装后的构建 bundle 启动测试会运行真实模块表与动态 entry，客户端 bundle CSS 测试则证明全局样式会编译成受监视、由插件持有的注入器。浏览器回放测试覆盖从不依赖框架的页面到渲染应用的完整交接。
+组件测试固定持久进度 spinner、hydrate 不改变启动 DOM、文档标题、应用树、附件 entry 与 dispose 行为。组装后的构建 bundle 启动测试会运行真实模块表与动态 entry，客户端 bundle CSS 测试则证明全局样式会编译成受监视、由插件持有的注入器。浏览器回放测试覆盖从不依赖框架的页面到渲染应用的完整交接。
 
 ## 备选方案
 

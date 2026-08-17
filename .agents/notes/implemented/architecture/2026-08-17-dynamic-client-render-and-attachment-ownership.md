@@ -12,7 +12,7 @@ The loading and failure page has the opposite requirement: it must remain usable
 
 ## Decision
 
-`@deepseek-ai/dsh-client-web` is a framework-free boot kernel. It draws its loading and failure page with DOM operations and local CSS fallbacks, constructs the client module system and Cordis Loader, creates the statically adopted modules bootstrap entry plus every host-graph entry, and waits until every fiber is ACTIVE. It then resolves `ctx.uiRenderer` and hands the existing container to `mount()`.
+`@deepseek-ai/dsh-client-web` is a framework-free boot kernel. It draws its loading and failure page with DOM operations and local CSS fallbacks, constructs the client module system and Cordis Loader, creates the statically adopted modules bootstrap entry plus every host-graph entry, and waits until every fiber is ACTIVE. Loader state changes retain one spinner node and update only its CSS arc when an entry first becomes active. The arc grows from one fifth to four fifths of the ring, preserving a visible gap throughout rotation. After the roster settles, the kernel resolves `ctx.uiRenderer` and hands the existing container to `mount()`.
 
 `@deepseek-ai/dsh-client-ui-renderer` is an `immediately` dynamic client plugin. It owns the React slot outlets, SessionProvider, and observable-to-uSES binding. After `slots`, `sessions`, and `layout` activate, it installs the slot renderer and provides `ctx.uiRenderer`. `mount()` hydrates the kernel-authored boot DOM, then replaces it with the assembled application in a layout effect before the browser can paint an intermediate frame. The hydrated spinner node retains its animation phase. The assembled tree projects the selected session title and performs the sole context-level `renderSlot('root')` call. The service, renderer installation, and React root all dispose with their owners.
 
@@ -24,7 +24,7 @@ React, React DOM, Cordis, ui-slots, and ui-primitives remain static platform mod
 
 ## Verification
 
-Component tests pin the boot page, hydration without boot-DOM mutation, document title, application tree, attachment entries, and disposal. The assembled built-bundle boot exercises the real module table and dynamic entries, while the client-bundle CSS tests prove global styles compile into watched plugin-owned injectors. The browser replay lane covers the complete handoff from the framework-free page to the rendered application.
+Component tests pin the persistent progress spinner, hydration without boot-DOM mutation, document title, application tree, attachment entries, and disposal. The assembled built-bundle boot exercises the real module table and dynamic entries, while the client-bundle CSS tests prove global styles compile into watched plugin-owned injectors. The browser replay lane covers the complete handoff from the framework-free page to the rendered application.
 
 ## Alternatives considered
 

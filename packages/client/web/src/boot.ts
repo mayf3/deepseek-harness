@@ -107,8 +107,9 @@ export class AppWebEntry {
       this.page.setState(entry.options.name, STATE_LABELS[entry.fiber.state])
     })
 
-    await prefetching
     const rows = [MODULES_ID, ...this.manifest.plugins.map(row => row.id).filter(id => id !== MODULES_ID)]
+    this.page.setTotal(rows.length)
+    await prefetching
     await Promise.all(rows.map(async (name) => {
       this.page.setState(name, 'loading')
       const id = await loader.create({ name })
