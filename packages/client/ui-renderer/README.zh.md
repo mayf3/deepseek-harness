@@ -8,7 +8,7 @@ client entry 还持有 slot outlet、会话 provider 以及 observable 到 uSES 
 
 ## 模型体验
 
-无。UI 渲染器只组装浏览器 UI，不贡献模型可见输入。
+无，因为 UI 渲染器只组装浏览器 UI，不贡献模型可见输入。
 
 #### KV Cache 影响
 

@@ -5,6 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { TestSessions, TestWorkspaces } from '@deepseek-ai/dsh-client-test-runtime'
 import type { Stabilizer } from '@deepseek-ai/dsh-client-test-runtime'
+import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-renderer'
 import * as UiRenderer from '../src/client/index.ts'
 
 const mounted: (() => void)[] = []
@@ -35,6 +36,10 @@ function container(): HTMLElement {
 }
 
 describe('UI renderer plugin', () => {
+  it('provides no host-side behavior', () => {
+    expect(() => { nodeApply() }).not.toThrow()
+  })
+
   it('installs the renderer and mounts the assembled application', async () => {
     const { ctx, slots } = await bench()
     slots.register({ name: 'root' }, () => <div data-testid="root-probe" />)

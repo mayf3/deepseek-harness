@@ -18,7 +18,7 @@ Dynamic attachment presentation plugin for the conversation UI. It waits for the
 
 ## Model Experience
 
-None. The plugin renders attachment state supplied by the conversation UI and contributes no model-visible input.
+None, as the plugin only renders attachment state supplied by the conversation UI and contributes no model-visible input.
 
 #### KV Cache effect
 

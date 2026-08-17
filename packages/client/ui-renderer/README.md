@@ -8,7 +8,7 @@ The client entry also owns the React implementation of slot outlets, session pro
 
 ## Model Experience
 
-None. The UI renderer assembles browser UI and contributes no model-visible input.
+None, as the UI renderer only assembles browser UI and contributes no model-visible input.
 
 #### KV Cache effect
 
