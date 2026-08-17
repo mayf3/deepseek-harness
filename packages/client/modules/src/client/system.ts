@@ -88,7 +88,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
     // Replace first: a bundle that executes while queued handoffs are draining
     // must register against the live sink rather than append behind the drain.
     win.__ModuleLoader__ = sink
-    for (const handoff of queued?.handoffs ?? []) sink.load(handoff)
+    for (const handoff of queued?.handoffs.splice(0) ?? []) sink.load(handoff)
   }
 
   /** Register one bundle factory, rejecting a script that executes twice without invalidation. */

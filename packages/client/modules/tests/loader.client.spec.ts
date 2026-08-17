@@ -72,6 +72,7 @@ describe('lazy CJS arrival', () => {
     const b = bench([row('runtime')])
     const exports = await b.loader.import('runtime', '', {})
     expect((exports as { marker: string }).marker).toBe('preloaded')
+    expect(handoffs).toEqual([])
     expect(b.fetched).toEqual([])
     expect(win.__ModuleLoader__?.mode).toBe('live')
   })
