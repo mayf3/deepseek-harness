@@ -160,7 +160,7 @@ export interface ClaudeCodeRunSpec {
   readonly disposeGraceMs: number
   /** Shared subprocess service spawn operation. */
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
-  /** Diagnostic sink for a post-publication error flattened into a result. */
+  /** Host diagnostic sink for a product failure kept outside model-visible text. */
   readonly onError?: (error: Error, stopReason: SubagentStopReason) => void
 }
 
@@ -224,11 +224,13 @@ export function successfulResult(message: SDKResultMessage): string {
  * iterator completion.
  * @param query - published official SDK query.
  * @param onPermissionDenied - records a safe fact when the SDK reports native denial.
+ * @param onResult - records that the SDK supplied a terminal result message.
  * @returns the completed shared result.
  */
 export async function consumeClaudeQuery(
   query: AsyncIterable<SDKMessage>,
   onPermissionDenied?: () => void,
+  onResult?: () => void,
 ): Promise<SubagentResult> {
   let answer: string | undefined
   for await (const message of query) {
@@ -237,6 +239,7 @@ export async function consumeClaudeQuery(
       continue
     }
     if (message.type !== 'result') continue
+    onResult?.()
     answer = successfulResult(message)
   }
   if (answer === undefined) {
@@ -394,6 +397,13 @@ export async function startClaudeCodeRun(
   }
   const onAbort = (): void => { requestCancel() }
   request.signal.addEventListener('abort', onAbort, { once: true })
+  const reportFailure = (error: Error): void => {
+    try {
+      spec.onError?.(error, 'error')
+    } catch {
+      // Host diagnostic logging cannot replace the product failure.
+    }
+  }
 
   let child: SubprocessHandle | undefined
   let query: Query | undefined
@@ -435,6 +445,7 @@ export async function startClaudeCodeRun(
     }
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
+    // Let child.done publish a concurrently observed exit before classification.
     await Promise.resolve()
     const startupOutcome = managedProcess?.outcome
     const startupFacts = {
@@ -453,10 +464,12 @@ export async function startClaudeCodeRun(
       } catch (disposeError: unknown) {
         const failure = startupFailure()
         const cleanupFailure = thrown(disposeError)
-        throw new AggregateError(
+        const aggregate = new AggregateError(
           [failure, cleanupFailure],
           `${failure.message}; ${cleanupFailure.message}`,
         )
+        reportFailure(aggregate)
+        throw aggregate
       }
     } else if (query !== undefined) {
       try {
@@ -467,10 +480,12 @@ export async function startClaudeCodeRun(
           stage: 'teardown',
           category: 'unknown',
         }, thrown(disposeError))
-        throw new AggregateError(
+        const aggregate = new AggregateError(
           [failure, cleanupFailure],
           `${failure.message}; ${cleanupFailure.message}`,
         )
+        reportFailure(aggregate)
+        throw aggregate
       }
     }
     try {
@@ -478,11 +493,14 @@ export async function startClaudeCodeRun(
     } catch {
       throw new Error('subagent-claude-code: request was aborted before SDK startup')
     }
-    throw startupFailure()
+    const failure = startupFailure()
+    reportFailure(failure)
+    throw failure
   }
 
   const publishedQuery = query
   const publishedChild = child
+  let receivedResult = false
   const result = settleRunResult({
     attempt: async () => {
       try {
@@ -493,19 +511,29 @@ export async function startClaudeCodeRun(
             'denied',
             'Claude Code denied the request before an interactive prompt',
           ))
+        }, () => {
+          receivedResult = true
         })
       } catch (error: unknown) {
         const processOutcome = managedProcess?.outcome
-        const facts = error instanceof ClaudeCodeFailure
-          ? { ...error.facts, outcome: processOutcome }
-          : processOutcome === undefined
-            ? { stage: 'query-run', category: 'unknown' } as const
-            : {
-              stage: 'process',
-              category: 'process-exit',
-              outcome: processOutcome,
-            } as const
+        let facts: ClaudeCodeFailureFacts
+        if (error instanceof ClaudeCodeFailure) {
+          facts = { ...error.facts, outcome: processOutcome }
+        } else if (processOutcome !== undefined && !receivedResult) {
+          facts = {
+            stage: 'process',
+            category: 'process-exit',
+            outcome: processOutcome,
+          }
+        } else {
+          facts = {
+            stage: 'query-run',
+            category: 'unknown',
+            outcome: processOutcome,
+          }
+        }
         prependFailureDiagnostic(facts)
+        // Keep the SDK category and cause; the diagnostic adds later process facts.
         throw error instanceof ClaudeCodeFailure
           ? error
           : new ClaudeCodeFailure(facts, thrown(error))
@@ -525,9 +553,14 @@ export async function startClaudeCodeRun(
     signal: request.signal,
     onAbort,
     requestCancel,
-    teardown: () => disposeClaudeCodeChild(
-      publishedQuery,
-      publishedChild,
-    ),
+    teardown: async () => {
+      try {
+        await disposeClaudeCodeChild(publishedQuery, publishedChild)
+      } catch (error: unknown) {
+        const failure = thrown(error)
+        reportFailure(failure)
+        throw failure
+      }
+    },
   })
 }
