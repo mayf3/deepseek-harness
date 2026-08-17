@@ -14,6 +14,7 @@ import type {
 import {
   scrubbedParentEnv,
   type SubprocessHandle,
+  type SubprocessOutcome,
   type SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 
@@ -83,6 +84,7 @@ export class ManagedClaudeCodeProcess implements SpawnedProcess {
   private readonly events = new EventEmitter()
   private exitCodeValue: number | null = null
   private signalCodeValue: NodeJS.Signals | null = null
+  private outcomeValue: SubprocessOutcome | undefined
   private killRequested = false
 
   /**
@@ -98,6 +100,7 @@ export class ManagedClaudeCodeProcess implements SpawnedProcess {
     this.events.on('error', () => {})
     void child.done.then(
       (outcome) => {
+        this.outcomeValue = outcome
         this.exitCodeValue = outcome.exitCode
         this.signalCodeValue = outcome.signal
         this.events.emit('exit', outcome.exitCode, outcome.signal)
@@ -121,6 +124,11 @@ export class ManagedClaudeCodeProcess implements SpawnedProcess {
   /** Direct-child terminating signal, if any. */
   get signalCode(): NodeJS.Signals | null {
     return this.signalCodeValue
+  }
+
+  /** Exact managed-process outcome after exit, or undefined while running. */
+  get outcome(): SubprocessOutcome | undefined {
+    return this.outcomeValue
   }
 
   /**

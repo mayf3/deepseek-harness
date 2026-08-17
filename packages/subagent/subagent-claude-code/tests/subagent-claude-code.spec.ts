@@ -553,6 +553,7 @@ describe('official spawn projection', () => {
     expect(process.killed).toBe(false)
     expect(process.exitCode).toBeNull()
     expect(process.signalCode).toBeNull()
+    expect(process.outcome).toBeUndefined()
 
     const exit = vi.fn()
     const once = vi.fn()
@@ -572,6 +573,7 @@ describe('official spawn projection', () => {
     expect(once).toHaveBeenCalledOnce()
     expect(removed).not.toHaveBeenCalled()
     expect(process.signalCode).toBe('SIGTERM')
+    expect(process.outcome).toEqual({ exitCode: null, signal: 'SIGTERM' })
     expect(process.kill('SIGTERM')).toBe(false)
   })
 
@@ -598,6 +600,7 @@ describe('official spawn projection', () => {
     await nextTask()
     expect(process.exitCode).toBe(7)
     expect(process.signalCode).toBeNull()
+    expect(process.outcome).toEqual({ exitCode: 7, signal: null })
     expect(process.kill('SIGTERM')).toBe(false)
   })
 })
@@ -1166,6 +1169,24 @@ describe('run publication, cancellation, and settlement', () => {
     expect(spawnSpecs).toHaveLength(1)
     expect(factoryController?.signal.aborted).toBe(true)
     expect(spawned.terminate).toHaveBeenCalledOnce()
+
+    const cleanupRaceAbort = new AbortController()
+    const cleanupRaceChild = fakeChild({ exitOnTerminate: false })
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      throw new Error('query failed before cleanup wait')
+    })
+    const cleanupRace = startClaudeCodeRun(
+      request(undefined, cleanupRaceAbort.signal),
+      {
+        ...unused.spec,
+        spawn: () => cleanupRaceChild.handle,
+      },
+    )
+    await nextTask()
+    cleanupRaceAbort.abort(new Error('cancelled during cleanup'))
+    cleanupRaceChild.settle()
+    await expect(cleanupRace).rejects.toThrow('aborted before SDK startup')
 
     const failedSpawn = fakeChild({
       pid: -1,

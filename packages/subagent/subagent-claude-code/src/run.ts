@@ -168,10 +168,6 @@ function thrown(value: unknown): Error {
   /* v8 ignore next -- typed SDK and subprocess failures reject with Error. */
   return value instanceof Error ? value : new Error(String(value))
 }
-
-function isAborted(signal: AbortSignal): boolean {
-  return signal.aborted
-}
 /* jscpd:ignore-end */
 
 /**
@@ -308,14 +304,17 @@ export async function disposeClaudeCodeChild(
  * Build the fixed official SDK options for one one-shot provider run.
  * @param spec - Workspace, environment, process service, and disposal policy.
  * @param controller - per-run cancellation owner.
- * @param capture - receives the real managed child synchronously from the SDK hook.
+ * @param capture - receives the shared child and SDK-facing process synchronously.
  * @param captureDiagnostic - receives safe facts from unattended interaction callbacks.
  * @returns options that inherit native settings while disabling persistence and user questions.
  */
 export function claudeQueryOptions(
   spec: ClaudeCodeRunSpec,
   controller: AbortController,
-  capture: (child: SubprocessHandle) => void,
+  capture: (
+    child: SubprocessHandle,
+    process: ManagedClaudeCodeProcess,
+  ) => void,
   captureDiagnostic: (diagnostic: string) => void,
 ): Options {
   return {
@@ -365,8 +364,9 @@ export function claudeQueryOptions(
     supportedDialogKinds: SUPPORTED_UNATTENDED_DIALOG_KINDS,
     spawnClaudeCodeProcess: (options: SpawnOptions) => {
       const child = spec.spawn(claudeSpawnSpec(options, spec.disposeGraceMs))
-      capture(child)
-      return new ManagedClaudeCodeProcess(child)
+      const process = new ManagedClaudeCodeProcess(child)
+      capture(child, process)
+      return process
     },
   }
 }
@@ -397,21 +397,23 @@ export async function startClaudeCodeRun(
 
   let child: SubprocessHandle | undefined
   let query: Query | undefined
-  let processOutcome: SubprocessOutcome | undefined
-  let failureDetail: string | undefined
-  let permissionDetail: string | undefined
+  let managedProcess: ManagedClaudeCodeProcess | undefined
+  let diagnostic: string | undefined
   const capturePermissionDiagnostic = (value: string): void => {
-    permissionDetail = value
+    diagnostic = value
   }
-  const collectDiagnostic = (): string => [failureDetail, permissionDetail]
-    .filter((value): value is string => value !== undefined)
-    .join('\n')
-  const captureChild = (captured: SubprocessHandle): void => {
+  const prependFailureDiagnostic = (facts: ClaudeCodeFailureFacts): void => {
+    const failure = failureDiagnostic(facts)
+    diagnostic = diagnostic === undefined
+      ? failure
+      : `${failure}\n${diagnostic}`
+  }
+  const captureChild = (
+    captured: SubprocessHandle,
+    process: ManagedClaudeCodeProcess,
+  ): void => {
     child = captured
-    void captured.done.then(
-      (outcome: SubprocessOutcome) => { processOutcome = outcome },
-      () => undefined,
-    )
+    managedProcess = process
   }
   try {
     query = officialQuery({
@@ -435,7 +437,7 @@ export async function startClaudeCodeRun(
     request.signal.removeEventListener('abort', onAbort)
     const cancelledBeforeCleanup = controller.signal.aborted
     await Promise.resolve()
-    const startupOutcome = processOutcome
+    const startupOutcome = managedProcess?.outcome
     const startupFacts = {
       stage: 'query-start',
       category: 'unknown',
@@ -473,7 +475,12 @@ export async function startClaudeCodeRun(
         )
       }
     }
-    if (cancelledBeforeCleanup || isAborted(request.signal)) {
+    if (cancelledBeforeCleanup) {
+      throw new Error('subagent-claude-code: request was aborted before SDK startup')
+    }
+    try {
+      request.signal.throwIfAborted()
+    } catch {
       throw new Error('subagent-claude-code: request was aborted before SDK startup')
     }
     throw startupFailure()
@@ -493,7 +500,7 @@ export async function startClaudeCodeRun(
           ))
         })
       } catch (error: unknown) {
-        await Promise.resolve()
+        const processOutcome = managedProcess?.outcome
         const facts = error instanceof ClaudeCodeFailure
           ? { ...error.facts, outcome: processOutcome }
           : processOutcome === undefined
@@ -503,14 +510,14 @@ export async function startClaudeCodeRun(
               category: 'process-exit',
               outcome: processOutcome,
             } as const
-        failureDetail = failureDiagnostic(facts)
+        prependFailureDiagnostic(facts)
         throw error instanceof ClaudeCodeFailure
           ? error
           : new ClaudeCodeFailure(facts, thrown(error))
       }
     },
     collectOutput: () => [],
-    collectDiagnostic,
+    collectDiagnostic: () => diagnostic,
     cancelled: () => controller.signal.aborted,
     onError: spec.onError,
     signal: request.signal,
