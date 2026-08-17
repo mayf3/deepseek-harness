@@ -1087,6 +1087,9 @@ describe('run publication, cancellation, and settlement', () => {
     })
     await expect(noChild)
       .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
+    await expect(noChild).rejects.toThrow(
+      `${expectedFailureDiagnostic('query-start', 'unknown')}; subagent-claude-code: ${expectedFailureDiagnostic('teardown', 'unknown')}`,
+    )
     await expect(noChild).rejects.toBeInstanceOf(AggregateError)
 
     const startupAbort = new AbortController()
@@ -1129,6 +1132,9 @@ describe('run publication, cancellation, and settlement', () => {
       .rejects.toBeInstanceOf(AggregateError)
     await expect(cancelledCleanupFailure)
       .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
+    await expect(cancelledCleanupFailure).rejects.toThrow(
+      `${expectedFailureDiagnostic('query-start', 'unknown')}; subagent-claude-code: ${expectedFailureDiagnostic('teardown', 'unknown', { exitCode: 0, signal: null })}`,
+    )
     await expect(cancelledCleanupFailure)
       .rejects.not.toThrow('SECRET_TOKEN')
 
@@ -1196,6 +1202,9 @@ describe('run publication, cancellation, and settlement', () => {
     const failedStartup = startClaudeCodeRun(request(), failed.spec)
     await expect(failedStartup)
       .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
+    await expect(failedStartup).rejects.toThrow(
+      `${expectedFailureDiagnostic('query-start', 'unknown')}; subagent-claude-code: ${expectedFailureDiagnostic('teardown', 'unknown')}`,
+    )
     await expect(failedStartup).rejects.toBeInstanceOf(AggregateError)
     expect(failed.close).toHaveBeenCalledOnce()
   })

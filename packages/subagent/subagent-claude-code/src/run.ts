@@ -453,9 +453,10 @@ export async function startClaudeCodeRun(
         await disposeClaudeCodeChild(query, child)
       } catch (disposeError: unknown) {
         const failure = startupFailure()
+        const cleanupFailure = thrown(disposeError)
         throw new AggregateError(
-          [failure, thrown(disposeError)],
-          `${failure.message}; startup cleanup also failed`,
+          [failure, cleanupFailure],
+          `${failure.message}; ${cleanupFailure.message}`,
         )
       }
     } else if (query !== undefined) {
@@ -463,15 +464,13 @@ export async function startClaudeCodeRun(
         query.close()
       } catch (disposeError: unknown) {
         const failure = startupFailure()
+        const cleanupFailure = new ClaudeCodeFailure({
+          stage: 'teardown',
+          category: 'unknown',
+        }, thrown(disposeError))
         throw new AggregateError(
-          [
-            failure,
-            new ClaudeCodeFailure({
-              stage: 'teardown',
-              category: 'unknown',
-            }, thrown(disposeError)),
-          ],
-          `${failure.message}; startup cleanup also failed`,
+          [failure, cleanupFailure],
+          `${failure.message}; ${cleanupFailure.message}`,
         )
       }
     }
