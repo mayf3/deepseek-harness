@@ -250,6 +250,8 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
         if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 10_000 || timeoutMs > 3_600_000) {
           return await ctx.teams.waitForChange(caller, timeoutMs, exec.signal)
         }
+        // The active-peer read and waiter registration must remain one synchronous
+        // span; awaiting between them can lose the only peer-status edge.
         const hasActivePeer = ctx.teams.listMembers(caller).some(member =>
           member.id !== caller.id && ACTIVE_WAIT_STATUSES.has(member.status))
         if (!hasActivePeer) {

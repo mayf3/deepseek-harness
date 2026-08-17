@@ -27,6 +27,20 @@ export class TeamRuntimeLifecycle {
     return reason
   }
 
+  /** Whether a rejection is the runtime cancellation, directly or through an Error cause chain. */
+  private isCancellation(reason: unknown): boolean {
+    const seen = new Set<unknown>()
+    let current = reason
+    while (!seen.has(current)) {
+      if (this.disposed && current === this.reason) return true
+      if (this.disposed && current instanceof TeamError && current.code === 'TEAM_DISPOSED') return true
+      if (!(current instanceof Error)) return false
+      seen.add(current)
+      current = current.cause
+    }
+    return false
+  }
+
   /** Close Team runtime admission and cancel admitted interruptible work. */
   close(): void {
     this.controller.abort(new TeamError('Agent Teams service disposed', 'TEAM_DISPOSED'))
@@ -42,7 +56,7 @@ export class TeamRuntimeLifecycle {
     try {
       const outcomes = await this.withTimeout(Promise.allSettled(operations))
       for (const outcome of outcomes) {
-        if (outcome.status === 'rejected' && outcome.reason !== this.reason) failures.push(outcome.reason)
+        if (outcome.status === 'rejected' && !this.isCancellation(outcome.reason)) failures.push(outcome.reason)
       }
     } catch (error: unknown) {
       failures.push(error)

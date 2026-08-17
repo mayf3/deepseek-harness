@@ -202,6 +202,14 @@ describe('Agent Teams fold', () => {
     expect(state.nextTaskNumber).toBe(1)
   })
 
+  it('rejects a persisted numeric task id outside the safe integer range', () => {
+    expect(() => foldTeam(ROOT, [event('team/task', {
+      version: 1,
+      teamId: TEAM,
+      task: task({ id: TeamTaskId('task-9007199254740992') }),
+    }, 0)])).toThrow(/persisted Agent Teams team\/task payload is invalid/)
+  })
+
   it('enforces mailbox queue and acknowledgement relations', () => {
     const queued = event('team/message/queued', { version: 1, teamId: TEAM, message: message() }, 0)
     const delivered = event('team/message/delivered', {

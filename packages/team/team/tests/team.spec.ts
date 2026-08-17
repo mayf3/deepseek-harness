@@ -14,6 +14,7 @@ import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import TeamService, { foldTeam, TeamError, TeamId, TeamMessageId, TeamTaskId } from '../src/index.ts'
+import { TeamRuntimeLifecycle } from '../src/lifecycle.ts'
 import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '../src/index.ts'
 
 const SIGNAL = new AbortController().signal
@@ -509,6 +510,30 @@ describe('Team identity and provisioning', () => {
 })
 
 describe('Team shared task DAG', () => {
+  it('fails loudly when the durable numeric task id space is exhausted', async () => {
+    const { ctx, lead } = await setup([])
+    const id = TeamTaskId(`task-${Number.MAX_SAFE_INTEGER}`)
+    lead.session.append('team/task', {
+      version: 1,
+      teamId: TeamId(lead.id),
+      task: {
+        id,
+        revision: 1,
+        subject: 'last numeric task',
+        description: 'occupies the final safe numeric task id',
+        status: 'pending',
+        blockedBy: [],
+        writeScopes: [],
+      },
+    })
+    await ctx.sessions.flush(lead.session)
+
+    await expect(ctx.teams.createTask(lead, {
+      subject: 'cannot allocate',
+      description: 'no safe numeric task id remains',
+    })).rejects.toMatchObject({ code: 'TEAM_TASK_LIMIT' })
+  })
+
   it('bounds non-deleted tasks while retaining deleted task ids as tombstones', async () => {
     const { ctx, lead } = await setup([], { maxTasks: 1 })
     const first = await ctx.teams.createTask(lead, { subject: 'first', description: 'first task' })
@@ -811,28 +836,54 @@ describe('Team shared task DAG', () => {
 })
 
 describe('Team mailbox and waiting', () => {
-  it('delivers quiet and waking teammate messages to the Lead inbox', async () => {
-    const { ctx, lead } = await setup(['hang', textResponse('lead follow-up answer')])
+  it('acknowledges waking messages persisted by a busy Lead before model claim', async () => {
+    const { ctx, lead, teamFiber } = await setup(['hang', 'hang'], { maxPendingMessagesPerMember: 1 })
     const started = await spawn(ctx, lead, 'lead-reporter')
     const reporter = await waitRunning(ctx, started.member.id)
+    lead.followup(createUserMessage({ content: content('keep the Lead busy'), source: { kind: 'user' } }))
+    await waitRunning(ctx, lead.id)
 
-    const quiet = await ctx.teams.sendMessage(reporter, {
-      target: 'lead', content: content('quiet report'), delivery: 'quiet', signal: SIGNAL,
+    const first = await ctx.teams.sendMessage(reporter, {
+      target: 'lead', content: content('first wakeup report'), delivery: 'wakeup', signal: SIGNAL,
     })
-    expect(quiet.status).toBe('accepted')
-    expect(lead.status).toBe('idle')
+    const second = await ctx.teams.sendMessage(reporter, {
+      target: 'lead', content: content('second wakeup report'), delivery: 'wakeup', signal: SIGNAL,
+    })
+    expect([first.status, second.status]).toEqual(['accepted', 'accepted'])
+    expect(lead.status).toBe('running')
     expect(durable(lead).pendingMessages).toEqual([])
-    expect(lead.inbox.nextStep.some(message => message.source.kind === 'team-message'
-      && message.source.messageId === quiet.messageId)).toBe(true)
-    const waking = await ctx.teams.sendMessage(reporter, {
-      target: 'lead', content: content('wake the lead'), delivery: 'wakeup', signal: SIGNAL,
-    })
-    expect(waking.status).toBe('accepted')
-    await lead.whenIdle()
-    await vi.waitFor(() => { expect(durable(lead).pendingMessages).toEqual([]) })
 
-    ctx.teams.interrupt(lead, 'lead-reporter')
-    await waitNoAgent(ctx, reporter.id)
+    const messageIds = new Set([first.messageId, second.messageId])
+    const persisted = await ctx.sessionPersistence.inspect(lead.id)
+    const receiptOrder = persisted.events.flatMap((event) => {
+      if (event.type === 'agent/inbox/spliced' && event.data.inserted.some(message =>
+        message.source.kind === 'team-message' && messageIds.has(message.source.messageId))) {
+        return ['agent/inbox/spliced']
+      }
+      if (event.type === 'team/message/delivered' && messageIds.has(event.data.messageId)) {
+        return ['team/message/delivered']
+      }
+      return []
+    })
+    expect(receiptOrder).toEqual([
+      'agent/inbox/spliced',
+      'team/message/delivered',
+      'agent/inbox/spliced',
+      'team/message/delivered',
+    ])
+
+    const receiptCount = lead.session.events.filter(event => event.type === 'agent/inbox/spliced'
+      && event.data.inserted.some(message => message.source.kind === 'team-message'
+        && messageIds.has(message.source.messageId))).length
+    await teamFiber.dispose()
+    await ctx.plugin(TeamService, { maxPendingMessagesPerMember: 1 })
+    await vi.waitFor(() => { expect(durable(lead).pendingMessages).toEqual([]) })
+    expect(lead.session.events.filter(event => event.type === 'agent/inbox/spliced'
+      && event.data.inserted.some(message => message.source.kind === 'team-message'
+        && messageIds.has(message.source.messageId)))).toHaveLength(receiptCount)
+
+    lead.cancel({ kind: 'parent' })
+    await lead.whenIdle()
   })
 
   it('flushes a live pending receipt before acknowledgement without inserting a duplicate', async () => {
@@ -1324,6 +1375,28 @@ describe('Team mailbox and waiting', () => {
     internal.roster.inFlightCreations.add(rejected)
 
     await expect(internal.disposeRuntime()).rejects.toMatchObject({ errors: [cleanupFailure] })
+  })
+
+  it('recognizes wrapped and coded runtime cancellation during disposal settlement', async () => {
+    const open = new TeamRuntimeLifecycle(100)
+    const ordinaryFailure = new Error('ordinary failure before disposal')
+    const openFailures: unknown[] = []
+    await open.settle([Promise.reject(ordinaryFailure)], openFailures)
+    expect(openFailures).toEqual([ordinaryFailure])
+
+    const lifecycle = new TeamRuntimeLifecycle(100)
+    lifecycle.close()
+    const failures: unknown[] = []
+    await lifecycle.settle([
+      Promise.reject(new Error('wrapped cancellation', { cause: lifecycle.reason })),
+      Promise.reject(new TeamError('translated cancellation', 'TEAM_DISPOSED')),
+    ], failures)
+    expect(failures).toEqual([])
+
+    const cyclic = new Error('unrelated cyclic failure')
+    cyclic.cause = cyclic
+    await lifecycle.settle([Promise.reject(cyclic)], failures)
+    expect(failures).toEqual([cyclic])
   })
 
   it('disposes a live child even after its durable member edge becomes failed', async () => {

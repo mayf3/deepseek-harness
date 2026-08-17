@@ -242,7 +242,7 @@ export class TeamMailbox {
         const input = createUserMessage({ content, source })
         if (message.delivery === 'wakeup') {
           root.followup(input)
-          return true
+          return await this.checkpointDelivered(root, root.session, message.id)
         }
         root.inject(input)
         return await this.checkpointDelivered(root, root.session, message.id)

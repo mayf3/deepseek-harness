@@ -23,7 +23,11 @@ const nonNegativeSafeInteger = z.number().int().nonnegative().max(Number.MAX_SAF
 const positiveSafeInteger = nonNegativeSafeInteger.min(1)
 const sessionIdSchema = z.string().min(1).transform(value => SessionId(value))
 const teamIdSchema = z.string().min(1).transform(value => toTeamId(value))
-const teamTaskIdSchema = z.string().min(1).transform(value => toTeamTaskId(value))
+const numericTaskIdPattern = /^task-(\d+)$/u
+const teamTaskIdSchema = z.string().min(1).refine((value) => {
+  const match = numericTaskIdPattern.exec(value)
+  return match === null || Number.isSafeInteger(Number(match[1]))
+}, { message: 'numeric task id suffix must be a safe integer' }).transform(value => toTeamTaskId(value))
 const teamMessageIdSchema = z.string().min(1).transform(value => toTeamMessageId(value))
 
 const coreContentBlockTypes = new Set(['text', 'reasoning', 'image', 'tool-call', 'tool-result'])
@@ -243,8 +247,14 @@ export function applyTeamEvent(state: TeamFoldState, event: SessionEvent): void 
         throw new Error(`team task "${task.id}" revision is not contiguous`)
       }
       assertTaskGraphCandidate(state.tasks, task)
-      const match = /^task-(\d+)$/u.exec(task.id)
-      if (match !== null) state.nextTaskNumber = Math.max(state.nextTaskNumber, Number(match[1]) + 1)
+      const match = numericTaskIdPattern.exec(task.id)
+      if (match !== null) {
+        const number = Number(match[1])
+        state.nextTaskNumber = Math.max(
+          state.nextTaskNumber,
+          number === Number.MAX_SAFE_INTEGER ? number : number + 1,
+        )
+      }
       state.tasks.set(task.id, task)
       break
     }

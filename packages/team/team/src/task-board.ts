@@ -53,8 +53,12 @@ export class TeamTaskBoard {
       if (active >= this.maxTasks) {
         throw new TeamError(`Team task limit ${this.maxTasks} reached`, 'TEAM_TASK_LIMIT')
       }
+      const id = TeamTaskId(`task-${state.nextTaskNumber}`)
+      if (state.tasks.has(id)) {
+        throw new TeamError('Team task id space exhausted', 'TEAM_TASK_LIMIT')
+      }
       const task: TeamTaskSnapshot = {
-        id: TeamTaskId(`task-${state.nextTaskNumber}`),
+        id,
         revision: 1,
         subject: requiredText(request.subject, 'subject', 200),
         description: requiredText(request.description, 'description', 16_384),
