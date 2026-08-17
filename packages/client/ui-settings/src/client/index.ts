@@ -16,8 +16,8 @@ export type {
   SettingsGeneralItemOwnerProps, SettingsHeaderOwnerProps, SettingsOnboardingOwnerProps,
   SettingsPluginsTabOwnerProps, SettingsSectionOwnerProps, SettingsTriggerOwnerProps,
 } from './contract/slots.ts'
-export { SettingsScopeController, SettingsScopeBinder } from './settings-scope.ts'
-export { SettingsSchemaService } from './schema.ts'
+export type { SettingsScopeController, SettingsScopeBinder } from './settings-scope.ts'
+export type { SettingsSchemaService } from './schema.ts'
 export type { SchemaNode } from './schema.ts'
 
 /**

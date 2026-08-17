@@ -11,13 +11,16 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render } from '@testing-library/react'
 import { useEffect, useState, type ReactNode } from 'react'
-import type { ActionsDecl, SlotEntryDef, SlotSpec, StoreHandle, StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionMaybeProvideInfo } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  createSlotRenderer, SessionProvider, SlotOwnershipError, StaleAuthorizationError,
-  type RenderOpts, type SessionProvideInfo,
-  type SlotRendererHost, type StoreInstanceLike,
+  SlotOwnershipError, StaleAuthorizationError,
+  type ActionsDecl, type SlotEntryDef, type SlotSpec, type StoreHandle, type StoredEntry,
+} from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionMaybeProvideInfo } from '@deepseek-ai/dsh-client-ui-slots'
+import type {
+  RenderOpts, SessionProvideInfo, SlotRendererHost, StoreInstanceLike,
 } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { createSlotRenderer } from '../src/client/scoped-slots.tsx'
+import { SessionProvider } from '../src/client/session-provider.tsx'
 
 type AnyProps = Record<string, unknown>
 type RenderSlotFn = (key: string, owner: object, opts?: RenderOpts) => ReactNode

@@ -55,7 +55,7 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
   constructor(
     private readonly api: SettingsFace,
     private readonly spec: SettingsScopeSpec<T>,
-    private readonly persistence: 'host' | 'memory' = 'host',
+    private readonly persistence: 'host' | 'memory',
     private readonly schema: SettingsSchemaService,
   ) {
     this.store = createSnapshotStore<SettingsScopeSnapshot<T>>({

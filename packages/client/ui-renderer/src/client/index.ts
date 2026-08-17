@@ -11,8 +11,6 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { createSlotRenderer } from './scoped-slots.tsx'
 import { buildRenderApp } from './app.tsx'
 
-export { bindSnapshotSelector } from './bind.ts'
-
 /** Selector hook over a session's conversation snapshot. */
 export type UseSession<Snap extends object = object> = SnapshotSelectorHook<Snap>
 
@@ -20,9 +18,7 @@ export type {
   ChainRenderOpts, HostObservable, RenderOpts, SessionProvideInfo, SnapshotSelectorHook,
   SlotRenderer, SlotRendererHost, StoreInstanceLike,
 } from '@deepseek-ai/dsh-client-ui-slots'
-export { SlotOwnershipError, StaleAuthorizationError } from '@deepseek-ai/dsh-client-ui-slots'
-export { createSlotRenderer } from './scoped-slots.tsx'
-export { SessionProvider, SlotAssemblyError, type SessionProviderProps } from './session-provider.tsx'
+export type { SessionProviderProps } from './session-provider.tsx'
 
 /** Mount operation exposed to the framework-free boot kernel. */
 export interface UiRendererService {
