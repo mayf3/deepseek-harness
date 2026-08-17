@@ -242,6 +242,14 @@ function expectedFailure(
   return `Product subagent failure (${fields.join('; ')})`
 }
 
+function expectedObservedFailure(outcome: SubprocessOutcome): string {
+  return observedSdkMessages.some(message =>
+    message.type === 'result'
+    && message.subtype === 'error_during_execution')
+    ? expectedFailure('query-run', 'error_during_execution', outcome)
+    : expectedFailure('process', 'process-exit', outcome)
+}
+
 function startRequest(
   harness: RealHarness,
   prompt: string,
@@ -363,10 +371,7 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
     const result = await run.result
     expect(result.output).toEqual([])
     expect(result.stopReason).toBe('error')
-    expect([
-      expectedFailure('process', 'process-exit', outcome),
-      expectedFailure('query-run', 'error_during_execution', outcome),
-    ]).toContain(result.diagnostic)
+    expect(result.diagnostic).toBe(expectedObservedFailure(outcome))
     await run.dispose()
     expect(fixture.requests).toHaveLength(1)
     expect(fixture.requests[0]!.headers['x-api-key']).toBe(fakeKey)
@@ -398,10 +403,7 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
     expect(result.output).toEqual([])
     expect(result.stopReason).toBe('error')
     const diagnosticLines = result.diagnostic?.split('\n') ?? []
-    expect([
-      expectedFailure('process', 'process-exit', outcome),
-      expectedFailure('query-run', 'error_during_execution', outcome),
-    ]).toContain(diagnosticLines[0])
+    expect(diagnosticLines[0]).toBe(expectedObservedFailure(outcome))
     expect(diagnosticLines[1]).toBe(
       'Claude Code unattended decision (mode: dontAsk; request: tool permission; decision: denied): Claude Code denied the request before an interactive prompt',
     )
