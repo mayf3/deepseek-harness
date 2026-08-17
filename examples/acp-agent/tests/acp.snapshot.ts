@@ -165,7 +165,9 @@ const SCENARIOS: Scenario[] = [
     hasModelTurn: true,
     recorded: false,
     overridden: true,
-    headerClass: 'product-subagent-codex',
+    pinsHeader: true,
+    headerClass: 'product-subagent-result-diagnostic',
+    systemPromptSource: 'product-subagent-codex',
     configPath: PRODUCT_SUBAGENT_RESULT_DIAGNOSTIC_CONFIG,
   },
   {
