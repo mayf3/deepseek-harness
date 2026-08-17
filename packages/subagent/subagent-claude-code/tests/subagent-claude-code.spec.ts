@@ -415,8 +415,17 @@ describe('task admission and package contracts', () => {
     expect(queryMock).not.toHaveBeenCalled()
 
     resolveExecutable.mockRejectedValueOnce(new Error('claude missing from PATH'))
-    await expect(ctx.subagents.start('claude-code', request()))
+    const missingExecutable = ctx.subagents.start('claude-code', request())
+    await expect(missingExecutable)
       .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
+    await expect(missingExecutable).rejects.not.toThrow('claude missing from PATH')
+    expect(warn).toHaveBeenCalledWith(
+      'subagent-claude-code: child start failed: %o',
+      expect.any(Error),
+    )
+    expect(warn.mock.calls[0]?.[1]).toMatchObject({
+      cause: expect.objectContaining({ message: 'claude missing from PATH' }),
+    })
     expect(queryMock).not.toHaveBeenCalled()
 
     const resolutionAbort = new AbortController()
@@ -914,14 +923,29 @@ describe('run publication, cancellation, and settlement', () => {
   })
 
   it('fails closed when iteration rejects after a result', async () => {
-    const fixture = fakeRun(
-      [success('partial final')],
-      new Error('iterator boom'),
-    )
-    const run = await startClaudeCodeRun(request(), fixture.spec)
+    const child = fakeChild()
+    const outcome = { exitCode: 31, signal: null } as const
+    async function* stream(): AsyncGenerator<SDKMessage, void> {
+      yield success('partial final')
+      child.settle(outcome)
+      await Promise.resolve()
+      throw new Error('iterator boom')
+    }
+    queryMock.mockImplementation(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      return Object.assign(stream(), { close: vi.fn() }) as unknown as Query
+    })
+    const run = await startClaudeCodeRun(request(), {
+      cwd: '/workspace',
+      executable: '/native/claude',
+      permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
+      env: {},
+      disposeGraceMs: 5,
+      spawn: () => child.handle,
+    })
     await expect(run.result).resolves.toEqual({
       output: [],
-      diagnostic: expectedFailureDiagnostic('query-run', 'unknown'),
+      diagnostic: expectedFailureDiagnostic('query-run', 'unknown', outcome),
       stopReason: 'error',
     })
     await run.dispose()
@@ -1141,14 +1165,25 @@ describe('run publication, cancellation, and settlement', () => {
     queryMock.mockImplementationOnce(() => {
       throw new Error('query failed before resource creation')
     })
+    const queryFailureOnError = vi.fn()
     const queryFailure = startClaudeCodeRun(request(), {
       ...unused.spec,
+      onError: queryFailureOnError,
     })
     await expect(queryFailure)
       .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
     await expect(queryFailure).rejects.not.toThrow(
       'query failed before resource creation',
     )
+    expect(queryFailureOnError).toHaveBeenCalledWith(
+      expect.any(Error),
+      'error',
+    )
+    expect(queryFailureOnError.mock.calls[0]?.[0]).toMatchObject({
+      cause: expect.objectContaining({
+        message: 'query failed before resource creation',
+      }),
+    })
 
     const spawned = fakeChild()
     const spawnSpecs: SubprocessSpawnSpec[] = []
@@ -1222,6 +1257,29 @@ describe('query and process disposal', () => {
     await expect(child.handle.done).resolves.toEqual({
       exitCode: 0,
       signal: null,
+    })
+  })
+
+  it('reports a published teardown failure to the Host diagnostic sink', async () => {
+    const fixture = fakeRun([success('exact answer')])
+    const onError = vi.fn()
+    const run = await startClaudeCodeRun(request(), {
+      ...fixture.spec,
+      onError,
+    })
+    await expect(run.result).resolves.toMatchObject({ stopReason: 'completed' })
+    fixture.close.mockImplementationOnce(() => {
+      throw new Error('SECRET_TOKEN close failure')
+    })
+    await expect(run.dispose()).rejects.toThrow(
+      expectedFailureDiagnostic('teardown', 'unknown', {
+        exitCode: 0,
+        signal: null,
+      }),
+    )
+    expect(onError).toHaveBeenCalledWith(expect.any(Error), 'error')
+    expect(onError.mock.calls[0]?.[0]).toMatchObject({
+      cause: expect.objectContaining({ message: 'SECRET_TOKEN close failure' }),
     })
   })
 

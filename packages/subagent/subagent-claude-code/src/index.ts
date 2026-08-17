@@ -98,7 +98,12 @@ class ClaudeCodeProvider implements SubagentProvider {
           'subagent-claude-code: request was aborted before SDK startup',
         )
       }
-      throw claudeCodeStartupFailure(error)
+      const failure = claudeCodeStartupFailure(error)
+      this.ctx.logger.warn(
+        'subagent-claude-code: child start failed: %o',
+        failure,
+      )
+      throw failure
     }
     const spec: ClaudeCodeRunSpec = {
       cwd,
