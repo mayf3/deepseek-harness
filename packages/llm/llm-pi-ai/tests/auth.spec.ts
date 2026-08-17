@@ -158,7 +158,10 @@ describe('pi-ai ambient auth context', () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsh-pi-home-'))
     dirs.push(dir)
     await writeFile(join(dir, 'creds'), 'x')
+    // Both spellings of "home": os.homedir() reads HOME on POSIX and
+    // USERPROFILE on Windows, and the expansion under test goes through it.
     vi.stubEnv('HOME', dir)
+    vi.stubEnv('USERPROFILE', dir)
     const context = authContextFrom(await stored())
 
     await expect(context.fileExists('~/creds')).resolves.toBe(true)
