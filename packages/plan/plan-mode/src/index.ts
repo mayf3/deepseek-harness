@@ -270,9 +270,16 @@ export class PlanModeController extends Service {
       commandCtx.commands.register({
         name: 'plan',
         description: 'Enter or leave plan mode',
-        input: { hint: '[off|message]' },
-        handler: ({ agent, rawInput }) => {
+        input: { hint: '[off|message]', images: true },
+        handler: ({ agent, rawInput, attachments }) => {
           const message = rawInput.trim()
+          if (message === 'off' || message === '') {
+            // Attachments ride the steered message; without one they have no
+            // model-visible carrier, so the composer must keep them.
+            if (attachments.length > 0) {
+              return { kind: 'error', text: 'Image attachments require a plan message: /plan <message>.' }
+            }
+          }
           if (message === 'off') {
             switch (this.set(agent, false)) {
               case 'committed':
@@ -291,7 +298,12 @@ export class PlanModeController extends Service {
             }
           }
           const outcome = this.set(agent, true)
-          if (message !== '') agent.steer(createUserMessage({ content: [{ type: 'text', text: message }], source: { kind: 'user' } }))
+          if (message !== '') {
+            agent.steer(createUserMessage({
+              content: [...attachments, { type: 'text', text: message }],
+              source: { kind: 'user' },
+            }))
+          }
           return {
             kind: 'success',
             text: outcome === 'committed'

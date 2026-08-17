@@ -43,6 +43,11 @@ const PLUGINS: readonly (WebBootEntry & { bundlePath: string })[] = [
       '@deepseek-ai/dsh-client-ui-sidebar',
     ],
   },
+  // The '/' pipeline and its command surface, mirroring the shipped web-app
+  // composition so slash submissions exercise the command plane instead of
+  // silently falling to the default prompt sink.
+  { id: '@deepseek-ai/dsh-client-ui-input-trigger', bundlePath: 'packages/client/ui-input-trigger/lib/client.js', url: '/plugins/ui-input-trigger.js', rev: 'fx', inject: ['@deepseek-ai/dsh-client-runtime', '@deepseek-ai/dsh-client-locale'] },
+  { id: '@deepseek-ai/dsh-client-ui-commands', bundlePath: 'packages/client/ui-commands/lib/client.js', url: '/plugins/ui-commands.js', rev: 'fx', inject: ['@deepseek-ai/dsh-client-ui-input-trigger', '@deepseek-ai/dsh-client-runtime', '@deepseek-ai/dsh-api-remotes', '@deepseek-ai/dsh-client-locale', '@deepseek-ai/dsh-client-ui-conversation'] },
   { id: '@deepseek-ai/dsh-session-log-export', bundlePath: 'packages/session-query/session-log-export/lib/client.js', url: '/plugins/session-log-download.js', rev: 'fx', inject: ['@deepseek-ai/dsh-client-ui-commands', '@deepseek-ai/dsh-client-ui-conversation'] },
   { id: '@deepseek-ai/dsh-client-ui-trajectory', bundlePath: 'packages/client/ui-trajectory/lib/client.js', url: '/plugins/ui-trajectory.js', rev: 'fx', inject: ['@deepseek-ai/dsh-client-ui-conversation'] },
 ]

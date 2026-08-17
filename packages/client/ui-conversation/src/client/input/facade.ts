@@ -10,7 +10,7 @@ import type { ClientContext, ObservableSnapshot, SnapshotStore } from '@deepseek
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ArbitrateKey, ArbitrateOutcome, CommandClaim, ConsumeTokenRequest, PickOutcome,
-  ReferenceInsert, InputTriggerController, TokenSpan,
+  ReferenceInsert, InputTriggerController, SubmitImageAttachment, TokenSpan,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {
   DraftAttachmentId, EditRange, EditSelection, InputActions, InputEffect, InputNotice, InputState,
@@ -46,6 +46,15 @@ export interface SessionInputDeps {
   steerQueue?: (() => void) | undefined
   /** The plain-message sink (send choreography / materialize fork — the hub owns it). */
   defaultSink(text: string, imageIds: readonly DraftAttachmentId[], mode: InputSubmitMode): void
+  /** Command-plane image plumbing (the hub owns the conversation face and the copy). */
+  commandImages: {
+    /** Resolve ordered draft ids to wire payloads without sending them; rejects when an id no longer resolves. */
+    serialize(ids: readonly DraftAttachmentId[]): Promise<readonly SubmitImageAttachment[]>
+    /** Free consumed draft images after a successful command submit. */
+    release(ids: readonly DraftAttachmentId[]): void
+    /** Localized composer notice for a claimed command that does not accept images. */
+    unsupportedNotice(token: string): string
+  }
 }
 
 /** Guard tier from the machine phase. */
@@ -198,6 +207,15 @@ export class SessionInputShell implements SessionInput {
   submit(mode: InputSubmitMode = 'queue'): void {
     if (this.snapshot.draft.trim() === '' && this.imageIds.length > 0) {
       if (this.snapshot.phase === 'plain') this.deps.defaultSink('', [...this.imageIds], mode)
+      return
+    }
+    // Claimed pre-gate: a claim that does not declare image acceptance never
+    // submits while images are attached — one notice, everything retained.
+    // Enter-time adjudication applies the same policy for unclaimed lines
+    // inside the command source itself.
+    const before = this.snapshot
+    if (before.phase === 'claimed' && this.imageIds.length > 0 && before.claim?.images !== true) {
+      this.notify('error', this.deps.commandImages.unsupportedNotice(before.claim?.token ?? before.draft))
       return
     }
     this.run(this.core.dispatch({ type: 'enter', mode }))
@@ -456,7 +474,7 @@ export class SessionInputShell implements SessionInput {
       this.run(this.core.dispatch({ type: 'adjudicated', attempt, outcome: undefined }))
       return
     }
-    inputTriggers.adjudicate(draft.trim(), attempt.signal).then(
+    inputTriggers.adjudicate(draft.trim(), attempt.signal, { images: this.imageIds.length }).then(
       (outcome: PickOutcome) => {
         if (this.dead(attempt)) return
         this.run(this.core.dispatch({ type: 'adjudicated', attempt, outcome }))
@@ -469,13 +487,26 @@ export class SessionInputShell implements SessionInput {
     )
   }
 
-  /** The submit transaction: claim.submit against the session scope; ok maps from the outcome kind. */
+  /**
+   * The submit transaction: claim.submit against the session scope; ok maps
+   * from the outcome kind. An accepting claim receives the serialized draft
+   * images, which are cleared and released only on a success outcome; a
+   * failure (serialize, transport, or handler error) keeps draft and images
+   * for correction.
+   */
   private beginSubmit(attempt: SubmitAttempt, claim: CommandClaim, args: string): void {
+    const imageIds = claim.images === true ? [...this.imageIds] : []
     Promise.resolve()
-      .then(() => claim.submit(args, this.deps.actx))
+      .then(() => imageIds.length > 0 ? this.deps.commandImages.serialize(imageIds) : [])
+      .then(images => claim.submit(args, this.deps.actx, images))
       .then(
         (outcome) => {
           if (this.dead(attempt)) return
+          if (outcome.kind === 'success' && imageIds.length > 0) {
+            const submitted = new Set(imageIds)
+            this.imageIds = this.imageIds.filter(id => !submitted.has(id))
+            this.deps.commandImages.release(imageIds)
+          }
           this.run(this.core.dispatch({
             type: 'submit-settled', attempt, ok: outcome.kind === 'success', outcome,
           }))

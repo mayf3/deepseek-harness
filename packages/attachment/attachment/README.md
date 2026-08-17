@@ -6,6 +6,8 @@ The durable attachment seam. `ctx.attachments` validates and atomically commits 
 
 Unsent composer images remain browser-owned temporary drafts. `validateImage` runs the same admission policy without persisting; batch writers validate every member first so a malformed member cannot strand earlier members as unreferenced objects. `saveImage` commits each accepted image before any model-visible session event is published, and `readImage` verifies the content-addressed object against its logged metadata. Callers may cancel `readImage`; implementations observe cancellation around backend and verification work and preserve it instead of translating it into a storage failure.
 
+`admitEncodedImages(attachments, images)` is the shared wire-batch admission used by every RPC endpoint that accepts browser uploads (the session prompt endpoint and the command executor): it enforces canonical base64, the per-message count limit, and the aggregate byte limit from `imageLimits`, validates the whole batch, then commits every member and returns `ImageAttachmentRef`s in caller order; a rejected batch publishes no durable object. The base64 upload form is `EncodedImageAttachment`, exported from `@deepseek-ai/dsh-attachment/types` so wire contracts can reference it.
+
 ## Model Experience
 
 Indirectly, through the role-neutral core `ImageBlock` and provider adapters that resolve its durable reference.
