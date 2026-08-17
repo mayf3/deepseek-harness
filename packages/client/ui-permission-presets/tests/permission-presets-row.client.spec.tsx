@@ -5,7 +5,14 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import { PermissionRow, type PermissionRowProps } from '../src/client/PermissionRow.tsx'
 import { en } from '../src/client/locales.ts'
+import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { PermissionPresetSettingsController } from '../src/client/settings-store.ts'
+
+/** Controller over a real mirror derived from the same fake wire. */
+function derivedController(api: { settings: object }) {
+  const wire = api as never
+  return new PermissionPresetSettingsController(new SettingsDescribeMirror(wire), wire)
+}
 
 afterEach(cleanup)
 
@@ -58,7 +65,7 @@ function mount(controller: PermissionPresetSettingsController) {
 describe('PermissionRow', () => {
   it('loads the descriptor, opens the menu, and selects a new default', async () => {
     const mutate = vi.fn(() => Promise.resolve(ok(view('workspace-write', 1))))
-    const controller = new PermissionPresetSettingsController({
+    const controller = derivedController({
       settings: {
         describe: () => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [view('read-only')] })),
         mutate,
@@ -85,7 +92,7 @@ describe('PermissionRow', () => {
 
   it('requires explicit acknowledgement before saving Full access', async () => {
     const mutate = vi.fn(() => Promise.resolve(ok(view('danger-full-access', 1))))
-    const controller = new PermissionPresetSettingsController({
+    const controller = derivedController({
       settings: {
         describe: () => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [view('read-only')] })),
         mutate,
@@ -109,7 +116,7 @@ describe('PermissionRow', () => {
   })
 
   it('hides an unavailable namespace and disables a read-only provider', async () => {
-    const absent = new PermissionPresetSettingsController({
+    const absent = derivedController({
       settings: {
         describe: () => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [] })),
         mutate: vi.fn(),
@@ -119,7 +126,7 @@ describe('PermissionRow', () => {
     await waitFor(() => { expect(rendered.container.textContent).toBe('') })
     rendered.unmount()
 
-    const readonly = new PermissionPresetSettingsController({
+    const readonly = derivedController({
       settings: {
         describe: () => Promise.resolve(ok({ writable: false, hasDocument: false, namespaces: [view('read-only')] })),
         mutate: vi.fn(),
@@ -134,7 +141,7 @@ describe('PermissionRow', () => {
       writable: boolean
       namespaces: SettingsNamespaceView[]
     }>>>()
-    const controller = new PermissionPresetSettingsController({
+    const controller = derivedController({
       settings: {
         describe: () => describe.promise,
         mutate: () => Promise.resolve({

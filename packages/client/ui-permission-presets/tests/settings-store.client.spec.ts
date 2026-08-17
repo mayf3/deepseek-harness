@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
+import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
-  PermissionPresetSettingsController, permissionDefaultOf, refreshPermissionIfLoaded,
+  PermissionPresetSettingsController, permissionDefaultOf,
 } from '../src/client/settings-store.ts'
 
 const SCHEMA = {
@@ -28,6 +29,13 @@ function view(defaultPreset: string, revision = 0, schema: SettingsNamespaceView
 
 function ok<T>(value: T) {
   return { rpcId: 'test', result: { ok: true as const, value } }
+}
+
+/** The permission controller over a real mirror and one fake wire. */
+function permissionController(api: object) {
+  const wire = { settings: api } as never
+  const mirror = new SettingsDescribeMirror(wire)
+  return { mirror, controller: new PermissionPresetSettingsController(mirror, wire) }
 }
 
 describe('permission settings store', () => {
@@ -92,9 +100,7 @@ describe('permission settings store', () => {
       namespaces: [view('read-only', 4)],
     })))
     const mutate = vi.fn(() => Promise.resolve(ok(view('workspace-write', 5))))
-    const controller = new PermissionPresetSettingsController({
-      settings: { describe, mutate } as never,
-    })
+    const { controller } = permissionController({ describe, mutate })
     await controller.load()
     expect(controller.store.getSnapshot()).toMatchObject({
       status: 'ready',
@@ -113,126 +119,105 @@ describe('permission settings store', () => {
       currentValue: 'workspace-write',
       revision: 5,
     })
+    // The write answer folded into the mirror; no re-read followed.
+    expect(describe).toHaveBeenCalledTimes(1)
   })
 
   it('hides the row when the namespace is absent and contains write failures', async () => {
     const describe = vi.fn(() => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [] })))
-    const controller = new PermissionPresetSettingsController({
-      settings: { describe, mutate: vi.fn() } as never,
-    })
+    const { controller } = permissionController({ describe, mutate: vi.fn() })
     await controller.load()
     expect(controller.store.getSnapshot().status).toBe('unavailable')
 
-    const failing = new PermissionPresetSettingsController({
-      settings: {
-        describe: () => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [view('read-only')] })),
-        mutate: () => Promise.resolve({
-          rpcId: 'test',
-          result: {
-            ok: false as const,
-            error: { code: 'settings-conflict', message: 'stale', details: {} },
-          },
-        }),
-      } as never,
-    })
+    const failing = permissionController({
+      describe: () => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [view('read-only')] })),
+      mutate: () => Promise.resolve({
+        rpcId: 'test',
+        result: {
+          ok: false as const,
+          error: { code: 'settings-conflict', message: 'stale', details: {} },
+        },
+      }),
+    }).controller
     await failing.load()
     await failing.select('workspace-write')
     expect(failing.store.getSnapshot()).toMatchObject({ status: 'error', error: 'stale' })
   })
 
-  it('contains read failures, no-ops without a writable view, and ignores stale responses', async () => {
-    const first = Promise.withResolvers<ReturnType<typeof ok<{
-      writable: boolean
-      namespaces: SettingsNamespaceView[]
-    }>>>()
-    const describe = vi.fn()
-      .mockImplementationOnce(() => first.promise)
-      .mockResolvedValueOnce(ok({ writable: false, hasDocument: false, namespaces: [view('read-only', 2)] }))
+  it('contains read failures and no-ops without a writable view', async () => {
     const mutate = vi.fn()
-    const controller = new PermissionPresetSettingsController({
-      settings: { describe, mutate } as never,
-    })
-    const stale = controller.load()
-    await controller.load()
-    first.resolve(ok({ writable: true, hasDocument: false, namespaces: [view('workspace-write', 1)] }))
-    await stale
-    expect(controller.store.getSnapshot()).toMatchObject({
+    const readOnly = permissionController({
+      describe: () => Promise.resolve(ok({
+        writable: false, hasDocument: false, namespaces: [view('read-only', 2)],
+      })),
+      mutate,
+    }).controller
+    await readOnly.load()
+    expect(readOnly.store.getSnapshot()).toMatchObject({
       currentValue: 'read-only',
       writable: false,
       revision: 2,
     })
-    await controller.select('workspace-write')
+    await readOnly.select('workspace-write')
     expect(mutate).not.toHaveBeenCalled()
 
-    const rejected = new PermissionPresetSettingsController({
-      settings: {
-        describe: () => Promise.resolve({
-          rpcId: 'test',
-          result: { ok: false as const, error: { code: 'internal', message: 'offline', details: {} } },
-        }),
-        mutate,
-      } as never,
-    })
+    const rejected = permissionController({
+      describe: () => Promise.resolve({
+        rpcId: 'test',
+        result: { ok: false as const, error: { code: 'internal', message: 'offline', details: {} } },
+      }),
+      mutate,
+    }).controller
     await rejected.select('workspace-write')
     await rejected.load()
     expect(rejected.store.getSnapshot()).toMatchObject({ status: 'error', error: 'offline' })
+    expect(mutate).not.toHaveBeenCalled()
 
-    const thrown = new PermissionPresetSettingsController({
-      settings: {
-        // Promise consumers must contain unknown rejection values from a
-        // transport implementation, including non-Error legacy clients.
-        // oxlint-disable-next-line typescript/prefer-promise-reject-errors
-        describe: () => Promise.reject('disconnected'),
-        mutate,
-      } as never,
-    })
+    const thrown = permissionController({
+      // Promise consumers must contain unknown rejection values from a
+      // transport implementation, including non-Error legacy clients.
+      describe: () => Promise.reject('disconnected' as never),
+      mutate,
+    }).controller
     await thrown.load()
     expect(thrown.store.getSnapshot()).toMatchObject({ status: 'error', error: 'disconnected' })
   })
 
-  it('disposal suppresses in-flight reads and writes, and loaded invalidations refetch', async () => {
+  it('follows a mirror refresh without an own read once loaded', async () => {
+    const describe = vi.fn()
+      .mockResolvedValueOnce(ok({ writable: true, hasDocument: false, namespaces: [view('read-only', 1)] }))
+      .mockResolvedValueOnce(ok({ writable: true, hasDocument: false, namespaces: [view('workspace-write', 2)] }))
+    const { mirror, controller } = permissionController({ describe, mutate: vi.fn() })
+    await controller.load()
+    expect(controller.store.getSnapshot()).toMatchObject({ currentValue: 'read-only' })
+
+    await mirror.load()
+
+    expect(controller.store.getSnapshot()).toMatchObject({ currentValue: 'workspace-write', revision: 2 })
+  })
+
+  it('disposal stops deriving and suppresses in-flight writes', async () => {
     const read = Promise.withResolvers<ReturnType<typeof ok<{
       writable: boolean
       namespaces: SettingsNamespaceView[]
     }>>>()
-    const describe = vi.fn(() => read.promise)
-    const idle = new PermissionPresetSettingsController({ settings: { describe, mutate: vi.fn() } as never })
-    refreshPermissionIfLoaded(idle)
-    expect(describe).not.toHaveBeenCalled()
+    const { mirror, controller: idle } = permissionController({ describe: () => read.promise, mutate: vi.fn() })
     const loading = idle.load()
     idle.dispose()
     read.resolve(ok({ writable: true, hasDocument: false, namespaces: [view('read-only')] }))
-    await loading
+    await Promise.all([loading, mirror.load()])
     expect(idle.store.getSnapshot().status).toBe('loading')
 
-    const rejectedRead = Promise.withResolvers<ReturnType<typeof ok<{
-      writable: boolean
-      namespaces: SettingsNamespaceView[]
-    }>>>()
-    const disposedRead = new PermissionPresetSettingsController({
-      settings: { describe: () => rejectedRead.promise, mutate: vi.fn() } as never,
-    })
-    const reading = disposedRead.load()
-    disposedRead.dispose()
-    rejectedRead.reject(new Error('late read'))
-    await reading
-    expect(disposedRead.store.getSnapshot().status).toBe('loading')
-
     const mutation = Promise.withResolvers<ReturnType<typeof ok<SettingsNamespaceView>>>()
-    const activeDescribe = vi.fn(() => Promise.resolve(ok({
-      writable: true,
-      hasDocument: false,
-      namespaces: [view('read-only')],
-    })))
-    const active = new PermissionPresetSettingsController({
-      settings: {
-        describe: activeDescribe,
-        mutate: () => mutation.promise,
-      } as never,
+    const { controller: active } = permissionController({
+      describe: () => Promise.resolve(ok({
+        writable: true,
+        hasDocument: false,
+        namespaces: [view('read-only')],
+      })),
+      mutate: () => mutation.promise,
     })
     await active.load()
-    refreshPermissionIfLoaded(active)
-    await vi.waitFor(() => { expect(activeDescribe).toHaveBeenCalledTimes(2) })
     const saving = active.select('workspace-write')
     active.dispose()
     mutation.resolve(ok(view('workspace-write', 1)))
@@ -240,11 +225,9 @@ describe('permission settings store', () => {
     expect(active.store.getSnapshot().status).toBe('saving')
 
     const rejectedMutation = Promise.withResolvers<ReturnType<typeof ok<SettingsNamespaceView>>>()
-    const disposedWrite = new PermissionPresetSettingsController({
-      settings: {
-        describe: () => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [view('read-only')] })),
-        mutate: () => rejectedMutation.promise,
-      } as never,
+    const { controller: disposedWrite } = permissionController({
+      describe: () => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [view('read-only')] })),
+      mutate: () => rejectedMutation.promise,
     })
     await disposedWrite.load()
     const writing = disposedWrite.select('workspace-write')
