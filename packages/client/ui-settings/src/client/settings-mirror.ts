@@ -39,11 +39,39 @@ export interface SettingsMirrorSnapshot {
 }
 
 /**
+ * The mirror as cross-namespace surfaces consume it: current answer,
+ * subscription, first-use read, and the write-answer fold. `load` stays off
+ * this face — invalidation refreshes belong to the mirror's owning plugin.
+ */
+export interface SettingsDescribeFace {
+  /** @returns the current sync snapshot (stable reference until the next change). */
+  getSnapshot(): SettingsMirrorSnapshot
+  /**
+   * Observe snapshot replacements.
+   * @param listener - invoked after each snapshot change.
+   * @returns the disposer removing this listener.
+   */
+  subscribe(listener: () => void): () => void
+  /**
+   * Resolve once an answer is held (or the mirror is terminally unavailable),
+   * reading only from `idle`.
+   * @returns settlement of the current or newly started read, if any.
+   */
+  ensure(): Promise<void>
+  /**
+   * Fold one write answer's namespace view into the held view without a wire
+   * read.
+   * @param view - the namespace view a settings write answered with.
+   */
+  acceptView(view: SettingsNamespaceView): void
+}
+
+/**
  * Serializes every Host `settings.describe` read behind one snapshot store.
  * Concurrent {@link load} calls fold into the in-flight read plus one rerun,
  * so an invalidation arriving mid-read is never lost and never duplicated.
  */
-export class SettingsDescribeMirror {
+export class SettingsDescribeMirror implements SettingsDescribeFace {
   private readonly store: SnapshotStore<SettingsMirrorSnapshot>
   private inFlight: Promise<void> | undefined
   private rerun = false

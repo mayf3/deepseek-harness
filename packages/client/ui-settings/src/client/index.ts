@@ -27,7 +27,7 @@ export type {
 } from './contract/slots.ts'
 export { SettingsScopeController, SettingsScopeBinder } from './settings-scope.ts'
 export { SettingsDescribeMirror } from './settings-mirror.ts'
-export type { SettingsDescribeView, SettingsMirrorSnapshot } from './settings-mirror.ts'
+export type { SettingsDescribeFace, SettingsDescribeView, SettingsMirrorSnapshot } from './settings-mirror.ts'
 
 /**
  * Required services: the wire handle for the mirror's reads and the forwarded

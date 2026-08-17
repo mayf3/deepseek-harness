@@ -34,7 +34,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/types'
 // never — the owning package's client-safe, type-only subpath supplies the
 // cordis `Events` entry (and with it the branded `SettingsNamespace`).
 import type {} from '@deepseek-ai/dsh-settings/types'
-import { SettingsDescribeMirror } from './settings-mirror.ts'
+import { SettingsDescribeMirror, type SettingsDescribeFace } from './settings-mirror.ts'
 
 type SettingsFace = Pick<IApiClient, 'settings'>
 
@@ -256,6 +256,17 @@ export class SettingsScopeBinder extends Service {
    * @param spec - domain-owned namespace contract.
    * @returns the bound scope consumed by the domain's services and rows.
    */
+  /**
+   * The shared mirror's read-only face for cross-namespace surfaces (schema
+   * introspection, the served-namespace directory). Per-namespace consumers
+   * use {@link bind}; both derive from the same snapshot, so they can never
+   * disagree about the document.
+   * @returns the describe face over the shared mirror.
+   */
+  describe(): SettingsDescribeFace {
+    return this.mirror
+  }
+
   bind<T>(spec: SettingsScopeSpec<T>): SettingsScope<T> {
     const ctx = this.ctx
     const connection = ctx.get('connection') as ConnectionHandle
