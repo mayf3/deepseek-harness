@@ -752,6 +752,27 @@ describe('provider profile lifecycle', () => {
     expect(ctx.llm.listProviders()).toEqual([])
   })
 
+  it('inherits the adapter retry default unless a provider profile overrides it', () => {
+    const profiles = resolveProfiles({
+      openai: {},
+      anthropic: { retryPolicy: { mode: 'normal', maxRetries: 1 } },
+    }, { mode: 'normal', maxRetries: 5 })
+
+    expect(profiles.get('openai')?.retryPolicy).toMatchObject({ mode: 'normal', maxRetries: 5 })
+    expect(profiles.get('anthropic')?.retryPolicy).toMatchObject({ mode: 'normal', maxRetries: 1 })
+  })
+
+  it('rejects an invalid adapter retry default even while dormant', async () => {
+    const invalid = { mode: 'normal', maxRetries: -1 } as const
+    expect(() => resolveProfiles(undefined, invalid)).toThrow(/defaultRetryPolicy/)
+
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await expect(ctx.plugin(LlmPiAi, { defaultRetryPolicy: invalid }))
+      .rejects.toThrow(/defaultRetryPolicy|retryPolicy/)
+    expect(ctx.llm.listProviders()).toEqual([])
+  })
+
   it('constructs the adapter directly and rejects routes it does not own', async () => {
     const adapter = adapterOf({ openai: {} })
     await expect(adapter.listModels('anthropic')).rejects.toMatchObject({ code: 'NO_ADAPTER' })
