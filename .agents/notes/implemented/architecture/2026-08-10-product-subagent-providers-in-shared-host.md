@@ -26,7 +26,7 @@ The base bundle test proves production `dsh-base` contains neither product provi
 
 ## Alternatives considered
 
-**Keep product providers opt-in at the Profile layer.** This preserves a smaller default dependency closure but requires the user to edit both a Profile and a Preset. The production-install exclusion decision accepts that installation trade-off; this note retains the requirement that any selected provider is mounted once on the host plane rather than inside the preset.
+**Keep product providers opt-in at the Profile layer.** This preserves a smaller default dependency closure but requires the user to edit both a Profile and a Preset. The production-install exclusion decision accepts that installation trade-off; this note retains the requirement that selected provider instances are mounted on the host plane rather than inside the preset.
 
 **Store global or per-Profile product enable switches.** A process switch competes with the Preset as owner of model-visible tools and cannot express two sessions using different combinations. Availability and authentication are deployment facts, not another persisted product state.
 

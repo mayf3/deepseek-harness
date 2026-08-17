@@ -23,11 +23,11 @@ const ctx = await boot(
 )
 
 try {
-  const providerNames = ['codex', 'claude-safe', 'claude-bypass'] as const
+  const providerNames = ['codex', 'claude-primary', 'claude-secondary'] as const
   const toolNames = [
     'subagent_codex',
-    'subagent_claude_safe',
-    'subagent_claude_bypass',
+    'subagent_claude_primary',
+    'subagent_claude_secondary',
   ] as const
   const providers = providerNames.map((providerName) => {
     const provider = ctx.subagents.getProvider(providerName)

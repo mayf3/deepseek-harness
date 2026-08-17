@@ -131,9 +131,6 @@ export function apply(ctx: Context, config: Config): void {
       `subagent-claude-code: disposeGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`,
     )
   }
-  if (resolved.providerName.length === 0) {
-    throw new TypeError('subagent-claude-code providerName must be non-empty')
-  }
   ctx.subagents.registerProvider(new ClaudeCodeProvider(
     resolved.providerName,
     ctx,

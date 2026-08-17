@@ -31,7 +31,7 @@ describe('product-provider public Loader composition', () => {
 
     expect(stderr).toBe('')
     expect(JSON.parse(stdout)).toEqual({
-      registeredProviders: ['codex', 'claude-safe', 'claude-bypass'],
+      registeredProviders: ['codex', 'claude-primary', 'claude-secondary'],
       providers: [
         {
           name: 'codex',
@@ -44,7 +44,7 @@ describe('product-provider public Loader composition', () => {
           inheritsParentContext: false,
         },
         {
-          name: 'claude-safe',
+          name: 'claude-primary',
           capabilities: {
             outputSchema: false,
             depthLimit: false,
@@ -54,7 +54,7 @@ describe('product-provider public Loader composition', () => {
           inheritsParentContext: false,
         },
         {
-          name: 'claude-bypass',
+          name: 'claude-secondary',
           capabilities: {
             outputSchema: false,
             depthLimit: false,
@@ -71,12 +71,12 @@ describe('product-provider public Loader composition', () => {
           required: ['description', 'prompt'],
         },
         {
-          name: 'subagent_claude_safe',
+          name: 'subagent_claude_primary',
           parameterNames: ['description', 'prompt', 'run_in_background'],
           required: ['description', 'prompt'],
         },
         {
-          name: 'subagent_claude_bypass',
+          name: 'subagent_claude_secondary',
           parameterNames: ['description', 'prompt', 'run_in_background'],
           required: ['description', 'prompt'],
         },
