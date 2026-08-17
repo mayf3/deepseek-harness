@@ -12,14 +12,12 @@ import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts
 import { newEnglishPage } from './support.ts'
 
 /**
- * Itemized so the budget stays explainable. The mirror reads twice: once
- * eagerly at bind time over HTTP, and once on the first-connection reset —
- * that second read closes the window where a document commit lands between
- * the eager read and the SSE subscription and its invalidation is lost.
- * Beside it, the direct callers not yet migrated: models onboarding (1) +
- * agent-preset settings row on reset (1). Their migration tightens this to 2.
+ * Both reads are the mirror's: once eagerly at bind time over HTTP, and once
+ * on the first-connection reset — that second read closes the window where a
+ * document commit lands between the eager read and the SSE subscription and
+ * its invalidation is lost. Every settings consumer derives from these two.
  */
-const DESCRIBE_BUDGET = 4
+const DESCRIBE_BUDGET = 2
 
 let scaffold: WebScaffold
 let browser: Browser
