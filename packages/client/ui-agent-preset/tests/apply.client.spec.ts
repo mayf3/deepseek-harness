@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-agent-preset/client'
 import { AgentPresetLabel } from '../src/client/AgentPresetLabel.tsx'
 import type { AgentPresetLabelInjected } from '../src/client/AgentPresetLabel.tsx'
@@ -21,9 +21,6 @@ import type { AgentPresetSectionInjected } from '../src/client/AgentPresetSectio
 import { AgentPresetSeat } from '../src/client/AgentPresetSeat.tsx'
 import type { AgentPresetSeatInjected } from '../src/client/AgentPresetSeat.tsx'
 
-// The service reads its initial locale from the browser; these specs assert
-// the shipped Chinese copy, so they state the browser they assume.
-usePinnedBrowserLanguages('zh-CN')
 
 const ROSTER_ONE = {
   rpcId: 'r',
@@ -77,6 +74,10 @@ async function bench() {
   const moveDefault = (): void => { ROSTER = ROSTER_MOVED }
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
+  // These specs assert the shipped Chinese copy. There is no jsdom `window`
+  // in this lane, so browser-language detection never runs and the locale
+  // comes from FALLBACK_LOCALE (en): state the asserted locale explicitly.
+  locale.setLocale('zh')
   ctx.provide('locale', locale)
   // The plugins inject `remote`; forwarded events reach them through the
   // same `$dispatch` handoff the connection sink makes.

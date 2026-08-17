@@ -455,7 +455,9 @@ describe('web e2e: settings modal and General preferences', () => {
 
   it('opens an English browser in English without any stored preference', async () => {
     // A fresh Host home has no locale preference, so its surface follows the
-    // browser rather than the product fallback.
+    // browser. English is also FALLBACK_LOCALE, so this scenario alone cannot
+    // distinguish detection from the default — the zh scenarios above supply
+    // the discriminating half (a Chinese browser must NOT land on the default).
     const fresh = await launchWebScaffold({})
     const enPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'en-US' })
     const enTripwire = watchConsole(enPage)
@@ -474,6 +476,30 @@ describe('web e2e: settings modal and General preferences', () => {
       expect(enTripwire.warnings).toEqual([])
     } finally {
       await enPage.close()
+      await fresh.close()
+    }
+  }, 90_000)
+
+  it('opens a browser asking for no shipped language in English', async () => {
+    // The product default for "no usable signal": a French browser ships
+    // neither zh nor en, so resolution falls to FALLBACK_LOCALE (en) rather
+    // than to Chinese.
+    const fresh = await launchWebScaffold({})
+    const frPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'fr-FR' })
+    const frTripwire = watchConsole(frPage)
+    onTestFailed(() => saveFailureShot(frPage, 'web-e2e-settings-unshipped-language'))
+    try {
+      await frPage.goto(fresh.baseUrl, { waitUntil: 'load' })
+      await frPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      expect(await frPage.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
+      await frPage.getByRole('button', { name: 'Settings', exact: true }).click()
+      const dialog = frPage.getByRole('dialog', { name: 'Settings' })
+      await dialog.waitFor({ timeout: 10_000 })
+      await dialog.getByRole('button', { name: 'English' }).waitFor({ timeout: 10_000 })
+      expect(frTripwire.pageErrors).toEqual([])
+      expect(frTripwire.warnings).toEqual([])
+    } finally {
+      await frPage.close()
       await fresh.close()
     }
   }, 90_000)

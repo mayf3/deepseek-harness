@@ -86,8 +86,14 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Fallback locale consulted after the active locale misses (also the last-resort initial locale). */
-export const FALLBACK_LOCALE: LocaleId = 'zh'
+/**
+ * English is both the locale the UI opens in when the browser names no shipped
+ * language (and for non-browser runs), and the dictionary consulted after the
+ * active locale misses a key. One constant serves both because the shipped
+ * `zh`/`en` dictionaries carry identical key sets, so neither direction can
+ * leave a key unresolved; English is the source language of the copy.
+ */
+export const FALLBACK_LOCALE: LocaleId = 'en'
 
 /** Shared namespace for shell-level texts. */
 export const COMMON_NS = 'common'
@@ -103,8 +109,8 @@ const LOCALES: readonly LocaleDefinition[] = Object.freeze([
 
 /**
  * Dictionary registry plus locale preference. Lookup chain per key: the
- * entry's namespace in the active locale -> that namespace's zh fallback ->
- * the shared common namespace (active, then zh) -> the key itself (missing
+ * entry's namespace in the active locale -> that namespace's en fallback ->
+ * the shared common namespace (active, then en) -> the key itself (missing
  * text stays visible, fail loud in the UI rather than blank). Reads go
  * through {@link getLocale}; writes only through {@link setLocale};
  * continuous sync through the `locale/change` event, or through the

@@ -2,7 +2,7 @@
  * Language row registration, snapshot projection into the row store, and
  * recovery after an HMR collapse of the declaring entry. */
 import { Context } from '@deepseek-ai/cordis'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { SettingsScopeBinder } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
@@ -73,12 +73,10 @@ function faceOf(slots: SlotRegistry) {
 }
 
 describe('locale apply', () => {
-  // A fresh service opens in the browser's language, so these wiring specs
-  // pin one to keep their zh baseline independent of the test environment.
-  beforeEach(() => {
-    vi.stubGlobal('navigator', { languages: ['zh-CN'], language: 'zh-CN' })
-  })
-
+  // These are wiring specs, not default-language specs: each one that reads
+  // localized copy sets its locale explicitly via setLocale/Host preference
+  // rather than leaning on FALLBACK_LOCALE. This file has no jsdom environment,
+  // so there is no `window` and no browser-language detection to stub.
   afterEach(() => {
     vi.unstubAllGlobals()
   })
@@ -95,6 +93,9 @@ describe('locale apply', () => {
     // Base dictionaries are registered: the (ns, locale) seats are occupied.
     expect(() => locale.register('common', 'zh', {})).toThrow('already has locale')
     expect(() => locale.register('common', 'en', {})).toThrow('already has locale')
+    // Both dictionaries resolve; read each under its own active locale.
+    expect(locale.bind(SETTINGS_NS)('language.title')).toBe('Language')
+    locale.setLocale('zh')
     expect(locale.bind(SETTINGS_NS)('language.title')).toBe('语言')
     const entry = before.slots.entries(SLOT).find(e => e.component === LanguageRow)!
     expect(entry.options).toMatchObject({ id: 'language', order: 0 })
@@ -110,9 +111,14 @@ describe('locale apply', () => {
 
   it('projects service snapshots into the row store and routes face writes back', async () => {
     const b = await bench()
+    // Open at zh so the pre-inject switch to en below is a real change: with
+    // FALLBACK_LOCALE = en it would otherwise be a no-op and never exercise
+    // the unbound-actions arm or persist.
+    b.setHostPreference('zh')
     declareItems(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const locale = b.ctx.get('locale') as LocaleRuntime
+    await vi.waitFor(() => { expect(locale.getLocale().active).toBe('zh') })
     // An event ahead of any inject hits the unbound-actions arm.
     locale.setLocale('en')
 
@@ -133,17 +139,20 @@ describe('locale apply', () => {
 
   it('loads and refreshes the explicit Host preference after nonblocking activation', async () => {
     const b = await bench()
-    b.setHostPreference('en')
+    // Preference must differ from the provisional locale (FALLBACK_LOCALE = en
+    // with no window), or clearing it below would be unobservable.
+    b.setHostPreference('zh')
     declareItems(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const locale = b.ctx.get('locale') as LocaleRuntime
-    await vi.waitFor(() => { expect(locale.getLocale().active).toBe('en') })
+    await vi.waitFor(() => { expect(locale.getLocale().active).toBe('zh') })
+    // Cleared preference falls back to the provisional locale.
     b.setHostPreference(undefined)
     b.ctx.remote.$dispatch('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
-    await vi.waitFor(() => { expect(locale.getLocale().active).toBe('zh') })
-    b.setHostPreference('en')
-    b.ctx.remote.$dispatch('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
     await vi.waitFor(() => { expect(locale.getLocale().active).toBe('en') })
+    b.setHostPreference('zh')
+    b.ctx.remote.$dispatch('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
+    await vi.waitFor(() => { expect(locale.getLocale().active).toBe('zh') })
     expect(b.describe).toHaveBeenCalledTimes(3)
   })
 
