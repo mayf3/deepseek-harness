@@ -13,7 +13,7 @@ function rejected<T>(message: string): RpcResponse<T> {
     rpcId: `mirror-${rpc++}` as never,
     result: {
       ok: false,
-      error: { code: 'settings-rejected', message, details: {} },
+      error: { code: 'settings-rejected', message, details: { ns: 'theme' } },
     },
   }
 }
