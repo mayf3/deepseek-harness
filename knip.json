@@ -708,9 +708,6 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
-      ],
-      "ignoreDependencies": [
-        "@deepseek-ai/dsh-client-connection"
       ]
     },
     "apps/web": {
@@ -789,38 +786,6 @@
     "packages/bundle/web-app": {
       "ignoreDependencies": [
         "@deepseek-ai/.+"
-      ]
-    },
-    "packages/client/locale": {
-      "ignoreDependencies": [
-        "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-connection"
-      ]
-    },
-    "packages/client/ui-agent-preset": {
-      "ignoreDependencies": [
-        "@deepseek-ai/dsh-client-connection"
-      ]
-    },
-    "packages/client/ui-conversation": {
-      "ignoreDependencies": [
-        "@deepseek-ai/dsh-api-remotes"
-      ]
-    },
-    "packages/client/ui-permission-presets": {
-      "ignoreDependencies": [
-        "@deepseek-ai/dsh-client-connection"
-      ]
-    },
-    "packages/client/ui-settings-general": {
-      "ignoreDependencies": [
-        "@deepseek-ai/dsh-client-connection"
-      ]
-    },
-    "packages/client/ui-theme": {
-      "ignoreDependencies": [
-        "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-connection"
       ]
     }
   }
