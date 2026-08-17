@@ -7,6 +7,7 @@ import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-re
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 import { DeepSeekOnboardingDialog } from '../src/client/DeepSeekOnboardingDialog.tsx'
 import type { DeepSeekOnboardingDialogProps } from '../src/client/DeepSeekOnboardingDialog.tsx'
+import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { ModelsSettingsStore } from '../src/client/store.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -124,7 +125,7 @@ function harness(options: {
       set,
     },
   }
-  const controller = new ModelsSettingsStore(face as never)
+  const controller = new ModelsSettingsStore(face as never, new SettingsDescribeMirror(face as never))
   const openSection = vi.fn()
   const complete = vi.fn()
   const unusedHook = (() => { throw new Error('unused standard hook') }) as never

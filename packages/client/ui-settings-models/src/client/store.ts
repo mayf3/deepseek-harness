@@ -11,6 +11,7 @@ import type {
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { getPath, hasPath, nodeAtPath, rehydrateSchema } from '@deepseek-ai/dsh-client-schema-form'
 
 /**
@@ -106,14 +107,19 @@ export class ModelsSettingsStore {
   private generation = 0
 
   /**
-   * @param api - the wire face (settings/credentials/llm domains).
+   * @param api - the wire face (credentials/llm domains, and settings writes).
+   * @param describeFace - the shared mirror's read-only face (namespace views and writability).
    */
-  constructor(private readonly api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>) {}
+  constructor(
+    private readonly api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>,
+    private readonly describeFace: SettingsDescribeFace,
+  ) {}
 
   /**
-   * Refresh the whole page snapshot: directory and namespaces in parallel,
-   * then one batched credential describe over every referenced ref. A
-   * failure keeps the last good rows and surfaces the error.
+   * Refresh the whole page snapshot: the provider directory and the mirror's
+   * settings answer in parallel, then one batched credential describe over
+   * every referenced ref. A failure keeps the last good rows and surfaces the
+   * error.
    * @returns nothing; the snapshot carries the outcome.
    */
   async load(): Promise<void> {
@@ -121,17 +127,20 @@ export class ModelsSettingsStore {
     this.store.update((s) => { s.status = 'loading'; s.error = null })
     let providers: ConfigurableProviderView[]
     let writable: boolean
-    let views: SettingsNamespaceView[]
+    let views: readonly SettingsNamespaceView[]
     try {
-      const [providersResponse, settingsResponse] = await Promise.all([
+      const [providersResponse] = await Promise.all([
         this.api.llm.providers({}),
-        this.api.settings.describe({}),
+        this.describeFace.ensure(),
       ])
       if (!providersResponse.result.ok) throw new Error(providersResponse.result.error.message)
-      if (!settingsResponse.result.ok) throw new Error(settingsResponse.result.error.message)
+      const mirrored = this.describeFace.getSnapshot()
+      if (mirrored.view === undefined) {
+        throw new Error(mirrored.error ?? 'settings have not answered yet')
+      }
       providers = providersResponse.result.value.providers
-      writable = settingsResponse.result.value.writable
-      views = settingsResponse.result.value.namespaces
+      writable = mirrored.view.writable
+      views = mirrored.view.namespaces
     } catch (error) {
       if (generation !== this.generation) return
       this.store.update((s) => {

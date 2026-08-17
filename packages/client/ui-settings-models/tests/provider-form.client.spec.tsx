@@ -9,6 +9,7 @@ import { ModelsSection, providerCopy } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected } from '../src/client/ModelsSection.tsx'
 import { CustomProviderCard } from '../src/client/CustomProviderCard.tsx'
 import { formatCapacity, parseCapacity } from '../src/client/DeepSeekModelsEditor.tsx'
+import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { ModelsSettingsStore, deriveKeyRef, protocolChoices } from '../src/client/store.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -139,7 +140,7 @@ function firstMutate(mutate: ReturnType<typeof vi.fn>): MutateCall {
 
 async function mountSection(options: Parameters<typeof scriptedFace>[0] = {}) {
   const scripted = scriptedFace(options)
-  const controller = new ModelsSettingsStore(scripted.face as unknown as WireFace)
+  const controller = new ModelsSettingsStore(scripted.face as unknown as WireFace, new SettingsDescribeMirror(scripted.face as never))
   await controller.load()
   const injected: ModelsSectionInjected = {
     controller,
@@ -637,7 +638,7 @@ describe('provider rows', () => {
         active: true,
       }],
     }))) as never
-    const controller = new ModelsSettingsStore(scripted.face as unknown as WireFace)
+    const controller = new ModelsSettingsStore(scripted.face as unknown as WireFace, new SettingsDescribeMirror(scripted.face as never))
     await controller.load()
     render(<ModelsSection
       controller={controller}
