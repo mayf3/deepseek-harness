@@ -702,14 +702,14 @@ describe('WorkflowRunPanel', () => {
     const phaseHeader = screen.getByRole('button', { name: /未分阶段/ })
     const runHeader = screen.getByRole('button', { name: /^audit/ })
 
-    fireEvent.mouseDown(retained)
+    expect(fireEvent.mouseDown(retained)).toBe(true)
     expect(document.activeElement).toBe(retained)
-    fireEvent.mouseDown(phaseHeader)
+    expect(fireEvent.mouseDown(phaseHeader)).toBe(false)
     fireEvent.click(phaseHeader)
     expect(phaseHeader.getAttribute('aria-expanded')).toBe('false')
     expect(runHeader.getAttribute('aria-expanded')).toBe('true')
 
-    fireEvent.mouseDown(runHeader)
+    expect(fireEvent.mouseDown(runHeader)).toBe(false)
     fireEvent.click(runHeader)
     expect(runHeader.getAttribute('aria-expanded')).toBe('false')
   })
