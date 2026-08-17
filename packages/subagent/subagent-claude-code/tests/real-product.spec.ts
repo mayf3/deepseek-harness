@@ -119,7 +119,6 @@ interface RealHarness {
   readonly handles: SubprocessHandle[]
   readonly spawnSpecs: SubprocessSpawnSpec[]
   readonly parent: Agent
-  readonly providerName: string
   readonly workspace: string
   readonly env: Record<string, string>
   readonly executable: string
@@ -210,7 +209,6 @@ async function realHarness(
   behavior: MessagesBehavior,
   permissionMode?: ClaudeCodePermissionMode,
   nativeAllow: readonly string[] = [],
-  providerName = 'claude-code',
 ): Promise<{
   readonly harness: RealHarness
   readonly fixture: MessagesFixture
@@ -218,7 +216,6 @@ async function realHarness(
   const instance = await realInstanceFixture(behavior, nativeAllow)
   const { ctx, handles, spawnSpecs } = await realRuntime()
   await ctx.plugin(claudeCode, {
-    providerName,
     env: instance.env,
     ...permissionMode === undefined ? {} : { permissionMode },
     disposeGraceMs: 3_000,
@@ -233,7 +230,6 @@ async function realHarness(
       handles,
       spawnSpecs,
       parent,
-      providerName,
       workspace: instance.workspace,
       env: instance.env,
       executable: instance.executable,
@@ -259,7 +255,7 @@ function startRequest(
   prompt: string,
   signal = new AbortController().signal,
 ) {
-  return harness.ctx.subagents.start(harness.providerName, {
+  return harness.ctx.subagents.start('claude-code', {
     prompt: [{ type: 'text', text: prompt }],
     parent: harness.parent,
     signal,
