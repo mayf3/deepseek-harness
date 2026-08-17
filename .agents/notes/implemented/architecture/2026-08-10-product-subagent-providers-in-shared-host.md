@@ -22,7 +22,7 @@ Only a Profile that selects the Claude Code provider carries the Claude Agent SD
 
 ## Verification
 
-The base bundle test proves production `dsh-base` contains neither product provider dependency nor provider row. The Web composition explicitly mounts both optional providers and covers none, Codex-only, Claude-only, and both tool sets, including generation isolation after an authored preset changes. Package-owned Loader compositions prove two named instances of each product register without starting a product process. Keyless ACP snapshots pin each product's two-tool roster and the final four-tool combination, while provider tests separately prove native executable resolution, configuration isolation, failure, cancellation, and process-tree quiescence.
+The base bundle test proves production `dsh-base` contains neither product provider dependency nor provider row. The Web composition explicitly mounts both optional providers and covers none, Codex-only, Claude-only, and both tool sets, including generation isolation after an authored preset changes. Package-owned Loader compositions prove two named instances of each product register without starting a product process. Keyless ACP snapshots pin the Codex two-tool roster and the final four-tool combination, while provider tests separately prove native executable resolution, configuration isolation, failure, cancellation, and process-tree quiescence.
 
 ## Alternatives considered
 
