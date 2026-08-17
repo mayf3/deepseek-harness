@@ -18,59 +18,47 @@
                   models:
                     - id: deepseek-v4-flash
                     - id: deepseek-v4-pro
-          - id: subagent-codex-safe
+          - id: subagent-codex-primary
             name: '@deepseek-ai/dsh-subagent-codex'
             config:
-              providerName: codex-safe
-              permissionMode: never
-              env:
-                DSH_CODEX_INSTANCE: safe
-          - id: subagent-codex-bypass
+              providerName: codex-primary
+          - id: subagent-codex-secondary
             name: '@deepseek-ai/dsh-subagent-codex'
             config:
-              providerName: codex-bypass
-              permissionMode: dangerously-bypass-approvals-and-sandbox
-              env:
-                DSH_CODEX_INSTANCE: bypass
-          - id: subagent-claude-safe
+              providerName: codex-secondary
+          - id: subagent-claude-primary
             name: '@deepseek-ai/dsh-subagent-claude-code'
             config:
-              providerName: claude-safe
-              permissionMode: dontAsk
-              env:
-                DSH_CLAUDE_INSTANCE: safe
-          - id: subagent-claude-bypass
+              providerName: claude-primary
+          - id: subagent-claude-secondary
             name: '@deepseek-ai/dsh-subagent-claude-code'
             config:
-              providerName: claude-bypass
-              permissionMode: bypassPermissions
-              env:
-                DSH_CLAUDE_INSTANCE: bypass
-          - id: tool-subagent-codex-safe
+              providerName: claude-secondary
+          - id: tool-subagent-codex-primary
             name: '@deepseek-ai/dsh-tool-subagent'
             config:
-              provider: codex-safe
-              toolName: subagent_codex_safe
+              provider: codex-primary
+              toolName: subagent_codex_primary
               backgroundMode: one-shot
               maxDepth: provider-managed
-          - id: tool-subagent-codex-bypass
+          - id: tool-subagent-codex-secondary
             name: '@deepseek-ai/dsh-tool-subagent'
             config:
-              provider: codex-bypass
-              toolName: subagent_codex_bypass
+              provider: codex-secondary
+              toolName: subagent_codex_secondary
               backgroundMode: one-shot
               maxDepth: provider-managed
-          - id: tool-subagent-claude-safe
+          - id: tool-subagent-claude-primary
             name: '@deepseek-ai/dsh-tool-subagent'
             config:
-              provider: claude-safe
-              toolName: subagent_claude_safe
+              provider: claude-primary
+              toolName: subagent_claude_primary
               backgroundMode: one-shot
               maxDepth: provider-managed
-          - id: tool-subagent-claude-bypass
+          - id: tool-subagent-claude-secondary
             name: '@deepseek-ai/dsh-tool-subagent'
             config:
-              provider: claude-bypass
-              toolName: subagent_claude_bypass
+              provider: claude-secondary
+              toolName: subagent_claude_secondary
               backgroundMode: one-shot
               maxDepth: provider-managed

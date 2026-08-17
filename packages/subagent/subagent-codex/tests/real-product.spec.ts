@@ -53,7 +53,6 @@ interface RealHarness {
   readonly ctx: Context
   readonly handles: SubprocessHandle[]
   readonly parent: Agent
-  readonly providerName: string
   readonly env: Record<string, string>
   readonly workspace: string
 }
@@ -134,7 +133,6 @@ async function realRuntime(): Promise<RealRuntime> {
 async function realHarness(
   script: readonly ResponsesBehavior[],
   permissionMode?: CodexPermissionMode,
-  providerName = 'codex',
 ): Promise<{
   readonly harness: RealHarness
   readonly fixture: ResponsesFixture
@@ -142,7 +140,6 @@ async function realHarness(
   const instance = await realInstanceFixture(script)
   const { ctx, handles } = await realRuntime()
   await ctx.plugin(codex, {
-    providerName,
     env: instance.env,
     ...permissionMode === undefined ? {} : { permissionMode },
     disposeGraceMs: 2_000,
@@ -156,7 +153,6 @@ async function realHarness(
       ctx,
       handles,
       parent,
-      providerName,
       env: instance.env,
       workspace: instance.workspace,
     },
