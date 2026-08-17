@@ -125,6 +125,20 @@ describe('SettingsDescribeMirror', () => {
     expect(mirror.getSnapshot().view?.namespaces).toHaveLength(2)
   })
 
+  it('never loses a load landing between a run settling and its slot clearing', async () => {
+    // Regression: with the in-flight slot cleared by a promise .finally(),
+    // a load() in the one-microtask gap after the rerun check marked a rerun
+    // nobody read, and that refresh never reached the wire.
+    const describeCall = vi.fn().mockResolvedValue(described([view('theme', 1)]))
+    const mirror = new SettingsDescribeMirror({ settings: { describe: describeCall } } as never)
+    void mirror.load()
+    await vi.waitFor(() => { expect(describeCall).toHaveBeenCalledTimes(1) })
+    void mirror.load()
+    await vi.waitFor(() => { expect(describeCall).toHaveBeenCalledTimes(2) })
+    void mirror.load()
+    await vi.waitFor(() => { expect(describeCall).toHaveBeenCalledTimes(3) })
+  })
+
   it('suppresses a stale answer that lost to a newer generation', async () => {
     const slow = deferred<RpcResponse<SettingsDescribeView>>()
     const describeCall = vi.fn()

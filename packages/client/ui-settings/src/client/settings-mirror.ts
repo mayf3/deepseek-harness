@@ -89,7 +89,7 @@ export class SettingsDescribeMirror {
       this.rerun = true
       return this.inFlight
     }
-    const run = this.run().finally(() => { this.inFlight = undefined })
+    const run = this.run()
     this.inFlight = run
     return run
   }
@@ -132,33 +132,41 @@ export class SettingsDescribeMirror {
   }
 
   private async run(): Promise<void> {
-    do {
-      this.rerun = false
-      const generation = ++this.generation
-      const before = this.store.getSnapshot()
-      if (before.status === 'idle') this.store.set({ ...before, status: 'loading' })
-      let outcome: { view: SettingsDescribeView } | { failure: string }
-      try {
-        const response = await this.api.settings.describe({})
-        outcome = response.result.ok
-          ? { view: response.result.value }
-          : { failure: response.result.error.message }
-      } catch (error) {
-        outcome = { failure: error instanceof Error ? error.message : String(error) }
-      }
-      if (generation !== this.generation) continue
-      if ('view' in outcome) {
-        this.store.set({ status: 'ready', view: outcome.view, error: null })
-      } else {
-        const held = this.store.getSnapshot()
-        // No answer yet: fall back to idle so `ensure` retries; with one, the
-        // held view keeps serving and only the error field reports the miss.
-        this.store.set({
-          status: held.view === undefined ? 'idle' : 'ready',
-          view: held.view,
-          error: outcome.failure,
-        })
-      }
-    } while (this.rerun)
+    // The in-flight slot must clear in the same synchronous segment that
+    // observes `rerun` false (and on abrupt exit): a `.finally()` on the
+    // returned promise runs one microtask later, and a `load()` landing in
+    // that gap would mark a rerun nobody reads, losing the read.
+    try {
+      do {
+        this.rerun = false
+        const generation = ++this.generation
+        const before = this.store.getSnapshot()
+        if (before.status === 'idle') this.store.set({ ...before, status: 'loading' })
+        let outcome: { view: SettingsDescribeView } | { failure: string }
+        try {
+          const response = await this.api.settings.describe({})
+          outcome = response.result.ok
+            ? { view: response.result.value }
+            : { failure: response.result.error.message }
+        } catch (error) {
+          outcome = { failure: error instanceof Error ? error.message : String(error) }
+        }
+        if (generation !== this.generation) continue
+        if ('view' in outcome) {
+          this.store.set({ status: 'ready', view: outcome.view, error: null })
+        } else {
+          const held = this.store.getSnapshot()
+          // No answer yet: fall back to idle so `ensure` retries; with one, the
+          // held view keeps serving and only the error field reports the miss.
+          this.store.set({
+            status: held.view === undefined ? 'idle' : 'ready',
+            view: held.view,
+            error: outcome.failure,
+          })
+        }
+      } while (this.rerun)
+    } finally {
+      this.inFlight = undefined
+    }
   }
 }
