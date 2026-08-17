@@ -83,21 +83,21 @@ export class AppWebEntry {
    * @returns Resolves after application mount or failure rendering.
    */
   async run(): Promise<void> {
-    const win = globalThis as DshWindow
-    const modulesClient = claimModulesClient(win)
-    this.manifest = modulesClient.parseBootManifest(win.__DSH_BOOT__)
-    this.modules = new modulesClient.ClientModuleSystem({
-      modules: this.manifest.modules,
-      staticModules: getStaticModules(),
-      ...this.seams,
-    })
-    this.modules.registerStatic(MODULES_ID, modulesClient)
-    win.__DSH_MODULES__ = this.modules
-
-    const prefetching = this.prefetchImmediateTier()
-    const ctx = new Context()
-    this.ctx = ctx
     try {
+      const win = globalThis as DshWindow
+      const modulesClient = claimModulesClient(win)
+      this.manifest = modulesClient.parseBootManifest(win.__DSH_BOOT__)
+      this.modules = new modulesClient.ClientModuleSystem({
+        modules: this.manifest.modules,
+        staticModules: getStaticModules(),
+        ...this.seams,
+      })
+      this.modules.registerStatic(MODULES_ID, modulesClient)
+      win.__DSH_MODULES__ = this.modules
+
+      const prefetching = this.prefetchImmediateTier()
+      const ctx = new Context()
+      this.ctx = ctx
       await this.runPluginBoot(ctx, prefetching)
       await this.mountApp(ctx)
     } catch (reason) {

@@ -61,7 +61,7 @@ Every client package keeps Cordis in matching `peerDependencies` and `devDepende
 
 Ordinary installed libraries remain `dependencies`: a dynamic build may bundle a private implementation, while a `staticLinked` library retains its bare import for the final host. Each build face decides externality independently from npm sections. Published file lists cover every runtime entry, relative asset, and declaration file reached by the artifact.
 
-`verify-client-packages` enforces these classifications, build forms, shared-module requests, publication closure, and module-graph acyclicity. Its `--fix` mode repairs only unambiguous manifest and build-config drift.
+`verify-client-packages` enforces these classifications, dependency sections, build forms, parser-preload alignment, shared-module requests, and module-graph acyclicity. The repository publint pass enforces publication closure. The verifier's `--fix` mode repairs only unambiguous manifest drift.
 
 ## Alternatives considered
 

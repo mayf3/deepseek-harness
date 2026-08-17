@@ -61,7 +61,7 @@ Modules Node 半按以下顺序向实际返回的 HTML 注入启动协议：
 
 普通安装库仍放在 `dependencies`：动态构建可以内联私有实现，而 `staticLinked` 库会保留 bare import 交给最终宿主。各构建 face 独立决定 external，不由 npm 区段推导。发布文件列表覆盖产物实际可达的每个运行期入口、相对资产和声明文件。
 
-`verify-client-packages` 会检查这些分类、构建形态、共享模块请求、发布闭包和模块图无环性。其 `--fix` 模式只修复无歧义的 manifest 与构建配置漂移。
+`verify-client-packages` 会检查这些分类、依赖区段、构建形态、parser preload 对齐、共享模块请求和模块图无环性。仓库 publint pass 负责检查发布闭包。该验证器的 `--fix` 模式只修复无歧义的 manifest 漂移。
 
 ## Alternatives considered
 

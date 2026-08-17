@@ -218,6 +218,21 @@ describe('static registry', () => {
     expect(b.fetched).toEqual(['/plugins/a/client.js?rev=0'])
   })
 
+  it('satisfies a graph request from a bootstrap package without reloading its row', async () => {
+    const shell = { marker: 'app-shell' }
+    const b = bench([
+      row('consumer', { external: ['app-shell/client'] }),
+      row('app-shell'),
+    ], {
+      consumer: req => ({ dep: req('app-shell/client') }),
+    })
+    b.loader.registerStatic('app-shell', shell)
+    const exports = await b.loader.import('consumer', '', {}) as { dep: unknown }
+    expect(exports.dep).toBe(shell)
+    expect(await b.loader.import('app-shell/client', '', {})).toBe(shell)
+    expect(b.fetched).toEqual(['/plugins/consumer/client.js?rev=0'])
+  })
+
   it('duplicate static registration is loud', () => {
     const b = bench([])
     b.loader.registerStatic('app-shell', {})

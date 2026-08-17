@@ -14,9 +14,11 @@ const CLIENT_MANIFEST_GLOB = 'packages/client/*/package.json'
 const MANIFEST_GLOBS = ['packages/*/*/package.json', 'apps/*/package.json', 'vendor/*/package.json']
 const CONFIG_GLOB = 'packages/*/*/tsdown.config.ts'
 const PLATFORM_SOURCE = 'packages/client/web/src/platform.ts'
+const PARSER_PRELOAD_SOURCE = 'packages/client/modules/src/index.ts'
 const STATIC_PRESET_SOURCE = 'packages/client/tsdown.client.ts'
 const CORDIS = '@deepseek-ai/cordis'
 const DSH_PREFIX = '@deepseek-ai/dsh-'
+const CLIENT_WEB = '@deepseek-ai/dsh-client-web'
 
 /** One workspace package's browser-module declaration. */
 export interface ClientDeclaration {
@@ -38,6 +40,8 @@ export interface ClientPackage extends ClientDeclaration {
   readonly staticLinked: boolean
   /** Production source locations grouped by imported package name. */
   readonly sourceUses: Readonly<Record<string, readonly string[]>>
+  /** Production source locations grouped by runtime-imported package name. */
+  readonly runtimeSourceUses: Readonly<Record<string, readonly string[]>>
   /** Installed implementation dependencies. */
   readonly dependencies: Readonly<Record<string, string>>
   /** Consumer-supplied dependencies. */
@@ -58,6 +62,8 @@ export interface ClientPackageFacts {
   readonly platformModules: readonly string[]
   /** Dynamic factories the HTML parser loads before shell boot. */
   readonly preloadedExternals: readonly string[]
+  /** Package rows whose bundles the HTML parser executes before shell boot. */
+  readonly parserPreloadIds: readonly string[]
   /** Manifest field errors found while reading declarations. */
   readonly malformed: readonly string[]
 }
@@ -78,10 +84,38 @@ export interface ClientDeclarations {
  */
 export function collectSourcePackageUses(path: string, source: string): Set<string> {
   const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
-  return collectSourceFilePackageUses(sourceFile)
+  return collectSourceFilePackageUses(sourceFile, false)
 }
 
-function collectSourceFilePackageUses(sourceFile: ts.SourceFile): Set<string> {
+/**
+ * Collect bare packages whose values one production source file reaches at runtime.
+ * @param path - File path used to select TypeScript's parser mode.
+ * @param source - Source text to inspect.
+ * @returns Bare package names retained by runtime imports, exports, requires, or JSX.
+ */
+export function collectRuntimeSourcePackageUses(path: string, source: string): Set<string> {
+  const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
+  return collectSourceFilePackageUses(sourceFile, true)
+}
+
+function importCarriesRuntimeValue(node: ts.ImportDeclaration): boolean {
+  const clause = node.importClause
+  if (clause === undefined) return true
+  if (clause.phaseModifier === ts.SyntaxKind.TypeKeyword) return false
+  if (clause.name !== undefined) return true
+  const bindings = clause.namedBindings
+  if (bindings === undefined || ts.isNamespaceImport(bindings)) return true
+  return bindings.elements.length === 0 || bindings.elements.some(element => !element.isTypeOnly)
+}
+
+function exportCarriesRuntimeValue(node: ts.ExportDeclaration): boolean {
+  if (node.isTypeOnly) return false
+  const clause = node.exportClause
+  if (clause === undefined || ts.isNamespaceExport(clause)) return true
+  return clause.elements.length === 0 || clause.elements.some(element => !element.isTypeOnly)
+}
+
+function collectSourceFilePackageUses(sourceFile: ts.SourceFile, runtimeOnly: boolean): Set<string> {
   const uses = new Set<string>()
 
   const add = (specifier: ts.Expression | undefined): void => {
@@ -89,17 +123,19 @@ function collectSourceFilePackageUses(sourceFile: ts.SourceFile): Set<string> {
     uses.add(packageNameOf(specifier.text))
   }
   const visit = (node: ts.Node): void => {
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      add(node.moduleSpecifier)
+    if (ts.isImportDeclaration(node)) {
+      if (!runtimeOnly || importCarriesRuntimeValue(node)) add(node.moduleSpecifier)
+    } else if (ts.isExportDeclaration(node)) {
+      if (!runtimeOnly || exportCarriesRuntimeValue(node)) add(node.moduleSpecifier)
     } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
-      add(node.moduleReference.expression)
-    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+      if (!runtimeOnly || !node.isTypeOnly) add(node.moduleReference.expression)
+    } else if (!runtimeOnly && ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
       add(node.argument.literal)
     } else if (ts.isCallExpression(node)
       && (node.expression.kind === ts.SyntaxKind.ImportKeyword
         || ts.isIdentifier(node.expression) && node.expression.text === 'require')) {
       add(node.arguments[0])
-    } else if (ts.isModuleDeclaration(node) && ts.isStringLiteral(node.name)) {
+    } else if (!runtimeOnly && ts.isModuleDeclaration(node) && ts.isStringLiteral(node.name)) {
       add(node.name)
     } else if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) {
       uses.add('react')
@@ -193,9 +229,11 @@ export function fixClientPackageManifests(root: string, facts: ClientPackageFact
     for (const [name, rule] of expected) {
       const range = preferredRange(target.manifest, name, rule.kind, inferredRanges)
       if (range === undefined) continue
-      target.changed = rule.kind === 'dev'
-        ? ensureDevOnly(target.manifest, name, range) || target.changed
-        : ensurePeerDev(target.manifest, name, range) || target.changed
+      target.changed = rule.kind === 'dependency'
+        ? ensureDependencyOnly(target.manifest, name, range) || target.changed
+        : rule.kind === 'dev'
+          ? ensureDevOnly(target.manifest, name, range) || target.changed
+          : ensurePeerDev(target.manifest, name, range) || target.changed
     }
 
     if (pkg.dynamic) {
@@ -263,6 +301,12 @@ function ensureDevOnly(manifest: Manifest, name: string, range: string): boolean
   return setDependency(manifest, 'devDependencies', name, range) || changed
 }
 
+function ensureDependencyOnly(manifest: Manifest, name: string, range: string): boolean {
+  let changed = deleteDependency(manifest, 'peerDependencies', name)
+  changed = deleteDependency(manifest, 'devDependencies', name) || changed
+  return setDependency(manifest, 'dependencies', name, range) || changed
+}
+
 function ensurePeerDev(manifest: Manifest, name: string, range: string): boolean {
   let changed = deleteDependency(manifest, 'dependencies', name)
   changed = setDependency(manifest, 'peerDependencies', name, range) || changed
@@ -301,9 +345,11 @@ function preferredRange(
   kind: ExpectedRule['kind'],
   inferred: ReadonlyMap<string, ReadonlySet<string>>,
 ): string | undefined {
-  const order: readonly DependencySection[] = kind === 'dev'
-    ? ['devDependencies', 'peerDependencies', 'dependencies']
-    : ['peerDependencies', 'devDependencies', 'dependencies']
+  const order: readonly DependencySection[] = kind === 'dependency'
+    ? ['dependencies', 'devDependencies', 'peerDependencies']
+    : kind === 'dev'
+      ? ['devDependencies', 'peerDependencies', 'dependencies']
+      : ['peerDependencies', 'devDependencies', 'dependencies']
   for (const field of order) {
     const range = section(manifest, field)[name]
     if (range !== undefined) return range
@@ -373,17 +419,24 @@ function collectModeViolations(facts: ClientPackageFacts): string[] {
 
   const rows = rowNames(facts.declarations)
   for (const specifier of facts.preloadedExternals) {
-    if (rowPackageOf(specifier, rows) !== undefined) continue
-    violations.push(
-      PLATFORM_SOURCE + ': parser-preloaded external ' + JSON.stringify(specifier)
-      + ' has no dynamic dsh.client row',
-    )
+    if (rowPackageOf(specifier, rows) === undefined) {
+      violations.push(
+        PLATFORM_SOURCE + ': parser-preloaded external ' + JSON.stringify(specifier)
+        + ' has no dynamic dsh.client row',
+      )
+    }
+    if (!facts.parserPreloadIds.includes(stripClientSuffix(specifier))) {
+      violations.push(
+        PLATFORM_SOURCE + ': parser-preloaded external ' + JSON.stringify(specifier)
+        + ' has no matching PARSER_PRELOAD_IDS row in ' + PARSER_PRELOAD_SOURCE,
+      )
+    }
   }
   return violations
 }
 
 interface ExpectedRule {
-  readonly kind: 'dev' | 'peer-dev'
+  readonly kind: 'dependency' | 'dev' | 'peer-dev'
   readonly origins: Set<string>
 }
 
@@ -399,6 +452,15 @@ function collectDependencyViolations(facts: ClientPackageFacts): string[] {
     const expected = expectedSections(pkg, staticInputs)
     for (const [name, rule] of [...expected].sort(([left], [right]) => left.localeCompare(right))) {
       const actual = declaredSections(pkg, name)
+      if (rule.kind === 'dependency') {
+        if (actual.length === 1 && actual[0] === 'dependencies') continue
+        violations.push(
+          pkg.manifest + ': ' + name + ' (' + describeOrigins(rule.origins) + ') is a runtime import'
+          + ' retained by a statically linked artifact; declare it only in dependencies, found '
+          + describeSections(actual),
+        )
+        continue
+      }
       if (rule.kind === 'dev') {
         if (actual.length === 1 && actual[0] === 'devDependencies') continue
         violations.push(
@@ -457,7 +519,14 @@ function expectedSections(pkg: ClientPackage, staticInputs: ReadonlySet<string>)
   const expected = new Map<string, ExpectedRule>([
     [CORDIS, { kind: 'peer-dev', origins: new Set(['client package baseline']) }],
   ])
-  if (!pkg.dynamic) return expected
+  if (!pkg.dynamic) {
+    if (pkg.name === CLIENT_WEB) return expected
+    for (const [name, locations] of Object.entries(pkg.runtimeSourceUses)) {
+      if (name === pkg.name || name === CORDIS || isInternalDsh(name)) continue
+      expected.set(name, { kind: 'dependency', origins: new Set(locations) })
+    }
+    return expected
+  }
 
   const add = (name: string, origin: string): void => {
     if (name === pkg.name) return
@@ -483,7 +552,6 @@ interface ModuleEdge {
 function collectModuleViolations(facts: ClientPackageFacts): string[] {
   const violations: string[] = []
   const baseline = new Set([...facts.platformModules, ...facts.preloadedExternals])
-  const staticModules = new Set(facts.platformModules)
   const rows = rowNames(facts.declarations)
   const byName = new Map(facts.declarations.map(entry => [entry.name, entry]))
   const edges: ModuleEdge[] = []
@@ -509,7 +577,6 @@ function collectModuleViolations(facts: ClientPackageFacts): string[] {
         )
         continue
       }
-      if (staticModules.has(specifier)) continue
       const supplier = rowPackageOf(specifier, rows)
       if (supplier === pkg.name) {
         violations.push(pkg.manifest + ': dsh.client.external names its own row ' + JSON.stringify(specifier))
@@ -657,28 +724,43 @@ async function readStaticLinkedRoster(root: string): Promise<Set<string>> {
   return roster
 }
 
-function readStringLiteralArray(root: string, name: string): string[] {
-  const path = resolve(root, PLATFORM_SOURCE)
+function unwrapExpression(expression: ts.Expression): ts.Expression {
+  let current = expression
+  while (ts.isAsExpression(current) || ts.isSatisfiesExpression(current) || ts.isParenthesizedExpression(current)) {
+    current = current.expression
+  }
+  return current
+}
+
+function readStringLiteralArray(root: string, sourcePath: string, name: string): string[] {
+  const path = resolve(root, sourcePath)
   const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, false, ts.ScriptKind.TS)
+  const constants = new Map<string, string>()
+  for (const statement of source.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || declaration.initializer === undefined) continue
+      const initializer = unwrapExpression(declaration.initializer)
+      if (ts.isStringLiteral(initializer)) constants.set(declaration.name.text, initializer.text)
+    }
+  }
   for (const statement of source.statements) {
     if (!ts.isVariableStatement(statement)) continue
     for (const declaration of statement.declarationList.declarations) {
       if (!ts.isIdentifier(declaration.name) || declaration.name.text !== name) continue
-      const expression = declaration.initializer !== undefined && ts.isAsExpression(declaration.initializer)
-        ? declaration.initializer.expression
-        : declaration.initializer
+      const expression = declaration.initializer === undefined ? undefined : unwrapExpression(declaration.initializer)
       if (expression === undefined || !ts.isArrayLiteralExpression(expression)) {
-        throw new Error(GATE + ': ' + name + ' in ' + PLATFORM_SOURCE + ' must be an array literal')
+        throw new Error(GATE + ': ' + name + ' in ' + sourcePath + ' must be an array literal')
       }
       return expression.elements.map((element) => {
-        if (!ts.isStringLiteral(element)) {
-          throw new Error(GATE + ': ' + name + ' in ' + PLATFORM_SOURCE + ' must contain only string literals')
-        }
-        return element.text
+        const value = unwrapExpression(element)
+        if (ts.isStringLiteral(value)) return value.text
+        if (ts.isIdentifier(value) && constants.has(value.text)) return constants.get(value.text) as string
+        throw new Error(GATE + ': ' + name + ' in ' + sourcePath + ' must contain only string constants')
       })
     }
   }
-  throw new Error(GATE + ': ' + PLATFORM_SOURCE + ' declares no ' + name)
+  throw new Error(GATE + ': ' + sourcePath + ' declares no ' + name)
 }
 
 async function readFacts(root: string): Promise<ClientPackageFacts> {
@@ -694,16 +776,22 @@ async function readFacts(root: string): Promise<ClientPackageFacts> {
     const manifest = JSON.parse(readFileSync(resolve(root, manifestPath), 'utf8')) as Manifest
     if (typeof manifest.name !== 'string') throw new Error(GATE + ': ' + manifestPath + ' has no package name')
     const sourceUses = new Map<string, Set<string>>()
+    const runtimeSourceUses = new Map<string, Set<string>>()
     const packageDirectory = dirname(manifestPath)
     const sourcePrefix = packageDirectory + '/src/'
     for (const sourceFile of project.sourceFiles()) {
       if (sourceFile.isDeclarationFile) continue
       const file = project.relativePath(sourceFile)
       if (!file.startsWith(sourcePrefix)) continue
-      for (const name of collectSourceFilePackageUses(sourceFile)) {
+      for (const name of collectSourceFilePackageUses(sourceFile, false)) {
         const locations = sourceUses.get(name) ?? new Set<string>()
         locations.add(file)
         sourceUses.set(name, locations)
+      }
+      for (const name of collectSourceFilePackageUses(sourceFile, true)) {
+        const locations = runtimeSourceUses.get(name) ?? new Set<string>()
+        locations.add(file)
+        runtimeSourceUses.set(name, locations)
       }
     }
     packages.push({
@@ -711,6 +799,10 @@ async function readFacts(root: string): Promise<ClientPackageFacts> {
       staticLinked: staticLinkedPackages.has(declaration.name),
       sourceUses: Object.fromEntries(
         [...sourceUses].sort(([left], [right]) => left.localeCompare(right))
+          .map(([name, locations]) => [name, [...locations].sort()]),
+      ),
+      runtimeSourceUses: Object.fromEntries(
+        [...runtimeSourceUses].sort(([left], [right]) => left.localeCompare(right))
           .map(([name, locations]) => [name, [...locations].sort()]),
       ),
       dependencies: manifest.dependencies ?? {},
@@ -723,8 +815,9 @@ async function readFacts(root: string): Promise<ClientPackageFacts> {
     packages,
     declarations,
     staticLinkedPackages,
-    platformModules: readStringLiteralArray(root, 'PLATFORM_MODULES'),
-    preloadedExternals: readStringLiteralArray(root, 'PRELOADED_CLIENT_EXTERNALS'),
+    platformModules: readStringLiteralArray(root, PLATFORM_SOURCE, 'PLATFORM_MODULES'),
+    preloadedExternals: readStringLiteralArray(root, PLATFORM_SOURCE, 'PRELOADED_CLIENT_EXTERNALS'),
+    parserPreloadIds: readStringLiteralArray(root, PARSER_PRELOAD_SOURCE, 'PARSER_PRELOAD_IDS'),
     malformed,
   }
 }

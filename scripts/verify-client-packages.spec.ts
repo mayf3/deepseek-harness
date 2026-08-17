@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   collectClientPackageViolations,
+  collectRuntimeSourcePackageUses,
   collectSourcePackageUses,
   fixClientPackageManifests,
   readClientDeclarations,
@@ -43,6 +44,7 @@ function pkg(
     ...declaration(short),
     staticLinked: false,
     sourceUses: {},
+    runtimeSourceUses: {},
     dependencies: {},
     peerDependencies: { [CORDIS]: 'workspace:^' },
     devDependencies: { [CORDIS]: 'workspace:^' },
@@ -62,6 +64,8 @@ function facts(
     ),
     platformModules: options.platformModules ?? [],
     preloadedExternals: options.preloadedExternals ?? [],
+    parserPreloadIds: options.parserPreloadIds
+      ?? (options.preloadedExternals ?? []).map(value => value.replace(/\/client$/, '')),
     malformed: options.malformed ?? [],
   }
 }
@@ -80,6 +84,15 @@ describe('source package uses', () => {
       '@deepseek-ai/dsh-a',
       '@deepseek-ai/dsh-b',
       '@deepseek-ai/dsh-client-ui-slots',
+      'react',
+    ])
+    expect([...collectRuntimeSourcePackageUses('feature.tsx', [
+      "import type { A } from '@deepseek-ai/dsh-a/subpath'",
+      "declare module '@deepseek-ai/dsh-client-ui-slots' {}",
+      "const load = () => import('@deepseek-ai/dsh-b')",
+      'export const view = <div />',
+    ].join('\n'))].sort()).toEqual([
+      '@deepseek-ai/dsh-b',
       'react',
     ])
   })
@@ -112,6 +125,19 @@ describe('package modes', () => {
     expect(found).toHaveLength(2)
     expect(found.join('\n')).toContain('does not use the staticLinked preset')
     expect(found.join('\n')).toContain('has no dynamic dsh.client row')
+  })
+
+  it('requires every preloaded external to have a parser preload row', () => {
+    const runtime = declaration('runtime')
+    expect(collectClientPackageViolations(facts([], {
+      declarations: [runtime],
+      preloadedExternals: [runtime.name + '/client'],
+      parserPreloadIds: [],
+    }))).toEqual([
+      'packages/client/web/src/platform.ts: parser-preloaded external '
+      + '"@deepseek-ai/dsh-client-runtime/client" has no matching PARSER_PRELOAD_IDS row in '
+      + 'packages/client/modules/src/index.ts',
+    ])
   })
 })
 
@@ -170,6 +196,39 @@ describe('dependency sections', () => {
       + ' is workspace:^, so devDependencies.@deepseek-ai/cordis-plugin-loader must use the same range;'
       + ' found no declaration',
     ])
+  })
+
+  it('requires statically linked third-party runtime imports in dependencies', () => {
+    const primitives = pkg('ui-primitives', {
+      dynamic: false,
+      staticLinked: true,
+      runtimeSourceUses: { shiki: ['packages/client/ui-primitives/src/highlight.ts'] },
+      devDependencies: { [CORDIS]: 'workspace:^', shiki: '^4.3.1' },
+    })
+    const found = collectClientPackageViolations(facts([primitives]))
+    expect(found).toHaveLength(1)
+    expect(found[0]).toContain('runtime import retained by a statically linked artifact')
+    expect(found[0]).toContain('declare it only in dependencies')
+
+    const valid = { ...primitives, dependencies: { shiki: '^4.3.1' }, devDependencies: { [CORDIS]: 'workspace:^' } }
+    expect(collectClientPackageViolations(facts([valid]))).toEqual([])
+  })
+
+  it('keeps the web shell runtime inputs development-only', () => {
+    const web = pkg('web', {
+      dynamic: false,
+      staticLinked: true,
+      runtimeSourceUses: {
+        '@deepseek-ai/cordis-plugin-loader': ['packages/client/web/src/boot.ts'],
+        react: ['packages/client/web/src/seed.ts'],
+      },
+      devDependencies: {
+        [CORDIS]: 'workspace:^',
+        '@deepseek-ai/cordis-plugin-loader': 'workspace:^',
+        react: '^18.2.0',
+      },
+    })
+    expect(collectClientPackageViolations(facts([web]))).toEqual([])
   })
 
   it('allows npm dependency cycles', () => {
@@ -313,5 +372,31 @@ describe('manifest declarations', () => {
       '@deepseek-ai/dsh-agent': 'workspace:*',
       '@deepseek-ai/cordis-plugin-loader': 'workspace:^',
     })
+  })
+
+  it('fixes a statically linked runtime import into dependencies', () => {
+    const root = mkdtempSync(join(tmpdir(), 'client-packages-static-fix-'))
+    roots.push(root)
+    const subject = pkg('ui-primitives', {
+      dynamic: false,
+      staticLinked: true,
+      runtimeSourceUses: { shiki: ['packages/client/ui-primitives/src/highlight.ts'] },
+      devDependencies: { [CORDIS]: 'workspace:^', shiki: '^4.3.1' },
+    })
+    mkdirSync(dirname(join(root, subject.manifest)), { recursive: true })
+    writeFileSync(join(root, subject.manifest), JSON.stringify({
+      name: subject.name,
+      peerDependencies: subject.peerDependencies,
+      devDependencies: subject.devDependencies,
+    }))
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ private: true }))
+
+    expect(fixClientPackageManifests(root, facts([subject]))).toEqual([subject.manifest])
+    const fixed = JSON.parse(readFileSync(join(root, subject.manifest), 'utf8')) as {
+      dependencies: Record<string, string>
+      devDependencies: Record<string, string>
+    }
+    expect(fixed.dependencies).toEqual({ shiki: '^4.3.1' })
+    expect(fixed.devDependencies).toEqual({ [CORDIS]: 'workspace:^' })
   })
 })

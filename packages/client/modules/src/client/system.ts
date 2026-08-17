@@ -114,7 +114,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
     return task
   }
 
-  /** Register every dynamic request before registering its consumer. */
+  /** Register each unresolved dynamic request before registering its consumer. */
   private async arriveGraphRow(row: BootModuleRow, open: readonly string[] = []): Promise<void> {
     const cycleStart = open.indexOf(row.id)
     if (cycleStart !== -1) {
@@ -125,6 +125,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
     }
     const next = [...open, row.id]
     for (const request of row.external) {
+      if (this.seed.has(request) || this.bootstrapModuleKey(request) !== undefined) continue
       const dependency = this.graphRows.get(stripClientSuffix(request))
       if (dependency !== undefined) await this.arriveGraphRow(dependency, next)
     }
@@ -163,7 +164,8 @@ export class ClientModuleSystem implements ClientModuleLoader {
     return (spec: string): unknown => {
       edges.add(spec)
       if (this.seed.has(spec)) return this.seed.get(spec)
-      if (this.statics.has(spec)) return this.statics.get(spec)
+      const bootstrapKey = this.bootstrapModuleKey(spec)
+      if (bootstrapKey !== undefined) return this.statics.get(bootstrapKey)
       const id = stripClientSuffix(spec)
       const record = this.loadCache.get(id)
       if (record !== undefined) return record.exports
@@ -179,8 +181,9 @@ export class ClientModuleSystem implements ClientModuleLoader {
     if (this.seed.has(specifier)) return this.seed.get(specifier)
     const existing = this.loadCache.get(specifier)
     if (existing !== undefined) return existing.exports
-    if (this.statics.has(specifier)) {
-      const exports = this.statics.get(specifier)
+    const bootstrapKey = this.bootstrapModuleKey(specifier)
+    if (bootstrapKey !== undefined) {
+      const exports = this.statics.get(bootstrapKey)
       this.loadCache.set(specifier, { id: specifier, exports, styles: [], edges: new Set() })
       return exports
     }
@@ -202,7 +205,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
   }
 
   async prefetch(id: string): Promise<void> {
-    if (this.statics.has(id)) return
+    if (this.bootstrapModuleKey(id) !== undefined) return
     const row = this.graphRows.get(id)
     if (row === undefined) throw new Error(`client-modules: prefetch("${id}") — not a graph entry`)
     await this.arriveGraphRow(row)
@@ -211,5 +214,12 @@ export class ClientModuleSystem implements ClientModuleLoader {
   invalidate(id: string): void {
     this.factories.delete(id)
     this.loadCache.delete(id)
+  }
+
+  /** Resolve a bootstrap package name or its client entrypoint onto the registered package row. */
+  private bootstrapModuleKey(specifier: string): string | undefined {
+    if (this.statics.has(specifier)) return specifier
+    const id = stripClientSuffix(specifier)
+    return id !== specifier && this.statics.has(id) ? id : undefined
   }
 }

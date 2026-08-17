@@ -506,10 +506,10 @@ export class ClientModuleRegistry extends Service {
     try {
       composed = this.compose()
     } catch (error) {
-      // An unorderable module graph (cycle, or one specifier claimed by two
-      // providers) is a property of the whole table, not of the arriving
-      // package, so it surfaces here: aggregated into the activation throw, or
-      // warned in steady state while the last orderable graph stays served.
+      // An unorderable module graph is a property of the whole table, not of
+      // the arriving package, so it surfaces here: aggregated into the
+      // activation throw, or warned in steady state while the last orderable
+      // graph stays served.
       onError(error as Error)
       return
     }
