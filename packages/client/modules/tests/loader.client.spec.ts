@@ -91,7 +91,7 @@ function bench(
 
 describe('Cordis plugin face', () => {
   it('rejects activation before the HTML facade creates the module system', () => {
-    expect(() => apply(new Context())).toThrow('createClientModuleSystem must run before plugin boot')
+    expect(() => { apply(new Context()) }).toThrow('createClientModuleSystem must run before plugin boot')
   })
 })
 

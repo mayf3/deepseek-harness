@@ -102,10 +102,12 @@ function importCarriesRuntimeValue(node: ts.ImportDeclaration): boolean {
   const clause = node.importClause
   if (clause === undefined) return true
   if (clause.phaseModifier === ts.SyntaxKind.TypeKeyword) return false
-  if (clause.name !== undefined) return true
   const bindings = clause.namedBindings
-  if (bindings === undefined || ts.isNamespaceImport(bindings)) return true
-  return bindings.elements.length === 0 || bindings.elements.some(element => !element.isTypeOnly)
+  return clause.name !== undefined
+    || bindings === undefined
+    || ts.isNamespaceImport(bindings)
+    || bindings.elements.length === 0
+    || bindings.elements.some(element => !element.isTypeOnly)
 }
 
 function exportCarriesRuntimeValue(node: ts.ExportDeclaration): boolean {
