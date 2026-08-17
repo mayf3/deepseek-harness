@@ -1,4 +1,4 @@
-/** Batch admission of base64-encoded image uploads. @module @deepseek-ai/dsh-attachment/admission */
+/** Wire-form admission of base64-encoded image uploads. @module @deepseek-ai/dsh-attachment/admission */
 
 import { Buffer } from 'node:buffer'
 import { AttachmentError } from './error.ts'
@@ -15,42 +15,27 @@ function decodeBase64(data: string): Uint8Array {
 }
 
 /** Store input for one decoded upload. */
-function saveInput(image: EncodedImageAttachment, data: Uint8Array): SaveImageAttachment {
+function saveInput(image: EncodedImageAttachment): SaveImageAttachment {
   return {
-    data,
+    data: decodeBase64(image.data),
     mediaType: image.mediaType,
     ...image.name === undefined ? {} : { name: image.name },
   }
 }
 
 /**
- * Validate one wire image batch against the per-message limits and durably
- * commit every member. The whole batch is validated before any member is
- * saved, so a rejected batch publishes no durable object.
- * @param attachments - the deployment attachment store enforcing per-image policy.
+ * Admit one wire image batch: enforce canonical base64 on every member, then
+ * delegate batch admission — count and aggregate-byte limits, media-type and
+ * per-image validation, ordered commit — to {@link AttachmentStore.saveImages}.
+ * The shared entry for every RPC endpoint accepting browser uploads.
+ * @param attachments - the deployment attachment store owning batch policy.
  * @param images - base64-encoded uploads in caller order.
  * @returns durable references in the same order as `images`.
- * @throws AttachmentError on a non-canonical payload or an exceeded batch limit.
+ * @throws AttachmentError on a non-canonical payload or a refused batch.
  */
 export async function admitEncodedImages(
   attachments: AttachmentStore,
   images: readonly EncodedImageAttachment[],
-): Promise<ImageAttachmentRef[]> {
-  const limits = attachments.imageLimits
-  if (images.length > limits.maxImagesPerMessage) {
-    throw new AttachmentError('Upload exceeds the configured image-count limit.', 'TOO_MANY_IMAGES')
-  }
-  const decoded = images.map(image => ({ image, data: decodeBase64(image.data) }))
-  const totalBytes = decoded.reduce((sum, item) => sum + item.data.byteLength, 0)
-  if (totalBytes > limits.maxMessageImageBytes) {
-    throw new AttachmentError('Upload exceeds the configured aggregate image-byte limit.', 'IMAGES_TOO_LARGE')
-  }
-  for (const item of decoded) {
-    await attachments.validateImage(saveInput(item.image, item.data))
-  }
-  const refs: ImageAttachmentRef[] = []
-  for (const item of decoded) {
-    refs.push(await attachments.saveImage(saveInput(item.image, item.data)))
-  }
-  return refs
+): Promise<readonly ImageAttachmentRef[]> {
+  return attachments.saveImages(images.map(saveInput))
 }

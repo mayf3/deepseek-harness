@@ -16,7 +16,7 @@ Web composer 的一次提交是一个信封——草稿文本、已附加图片�
 
 **声明。**`CommandDefinition.input.images: boolean`（缺省为 false）声明 composer 图片是否可以随调用提交。该标志随冻结的 `CommandDescriptor` 经 `commands/list` 到达每个客户端，进入铸造出的 `CommandClaim`（`images: true`），再进入输入状态机发布的 claim 快照。
 
-**执行器强制。**`CommandRuntime.execute(agent, line, images, signal)` 携带本次提交的 base64 图片（来自 `@deepseek-ai/dsh-attachment/types` 的 `EncodedImageAttachment`）。强制执行声明的是执行器而非 composer：把图片发给未声明的命令、附件存储缺失、批量超限，都会在处理器运行前以记录在案的 `command/done` 错误结算。准入复用 attachment 包的 `admitEncodedImages`——从 api-proxy 的 prompt 路径提取而来，使两个 wire 端点共享同一套限额、校验与提交序列，被拒绝的批量不会发布任何持久化对象。通过准入的批量以冻结的有序 `ImageBlock` 数组挂在 `invocation.attachments` 上交给处理器。
+**执行器强制。**`CommandRuntime.execute(agent, line, images, signal)` 携带本次提交的 base64 图片（来自 `@deepseek-ai/dsh-attachment/types` 的 `EncodedImageAttachment`）。强制执行声明的是执行器而非 composer：把图片发给未声明的命令、附件存储缺失、批量超限，都会在处理器运行前以记录在案的 `command/done` 错误结算。准入经由 attachment 包的 `admitEncodedImages`——共享 wire 入口，强制执行规范 base64 并把批量准入（限额、校验、有序提交）委托给 `AttachmentStore.saveImages`——使两个 wire 端点（prompt RPC 与命令执行器）共享同一序列，被拒绝的批量不会发布任何持久化对象。通过准入的批量以冻结的有序 `ImageBlock` 数组挂在 `invocation.attachments` 上交给处理器。
 
 **模型可见性由生产方负责。**注册表自身绝不调度这些图片。`/goal` 在 create 或 edit 成功后通过 `agent.followup` 提交一条用户消息——图片块加固定文本 `Reference images for the goal objective.`——后续 Goal Round 从普通会话历史读取图片，goal 领域不存储附件状态。`/plan` 把图片并入它本就要 steer 的消息。两个生产方都会拒绝语法上没有载体的子命令（`/goal pause`、不带参数的 `/plan`、`/plan off`），直接返回错误，composer 的图片原地保留。
 

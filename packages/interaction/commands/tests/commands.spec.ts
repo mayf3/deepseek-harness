@@ -5,6 +5,7 @@ import type { Scope } from '@deepseek-ai/dsh-scope'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import CommandRuntime, { parseCommand, type CommandDefinition } from '@deepseek-ai/dsh-commands'
+import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 
 function command(name: string, text = `ran:${name}`): CommandDefinition {
   return {
@@ -482,6 +483,10 @@ describe('image attachments', () => {
           ...input.name === undefined ? {} : { name: input.name },
         })
       }),
+      // The real base-class batch method over this double's limits and members.
+      saveImages(inputs: readonly unknown[]) {
+        return (AttachmentStore.prototype.saveImages as (this: unknown, batch: readonly unknown[]) => Promise<unknown[]>).call(this, inputs)
+      },
     }
     return store
   }
@@ -569,7 +574,7 @@ describe('image attachments', () => {
     ctx.commands.register(accepting(handler))
     const three = [1, 2, 3].map(() => ({ mediaType: 'image/png' as const, data: PNG }))
     const execution = await ctx.commands.execute(agent, '/vision x', three, new AbortController().signal)
-    expect(execution?.result).toEqual({ kind: 'error', text: 'Upload exceeds the configured image-count limit.' })
+    expect(execution?.result).toEqual({ kind: 'error', text: 'Image batch exceeds the configured image-count limit.' })
     expect(handler).not.toHaveBeenCalled()
     expect(lifecycleOf(agent).at(-1)).toMatchObject({ type: 'command/done', data: { kind: 'error' } })
   })

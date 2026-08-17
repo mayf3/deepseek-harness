@@ -650,17 +650,23 @@ describe('/plan', () => {
     await ctx.plugin(CommandRuntime)
     await new Promise(resolve => setImmediate(resolve))
     let saved = 0
+    const saveImage = (input: { mediaType: string }) => {
+      saved += 1
+      return Promise.resolve({
+        attachmentId: `att-${saved}`, mediaType: input.mediaType, bytes: 3, width: 1, height: 1,
+      })
+    }
     ctx.provide('attachments', {
       imageLimits: {
         maxImageBytes: 1024, maxImagesPerMessage: 4, maxMessageImageBytes: 1024,
         maxImagePixels: 1_000_000, mediaTypes: ['image/png'],
       },
       validateImage: () => Promise.resolve(),
-      saveImage: (input: { mediaType: string }) => {
-        saved += 1
-        return Promise.resolve({
-          attachmentId: `att-${saved}`, mediaType: input.mediaType, bytes: 3, width: 1, height: 1,
-        })
+      saveImage,
+      async saveImages(inputs: readonly { mediaType: string }[]) {
+        const refs = []
+        for (const input of inputs) refs.push(await saveImage(input))
+        return refs
       },
     })
     const signal = new AbortController().signal

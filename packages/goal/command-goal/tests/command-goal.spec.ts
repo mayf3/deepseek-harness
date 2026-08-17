@@ -240,18 +240,24 @@ describe('/goal image attachments', () => {
   /** Wire the fake store the executor admits through (once per harness). */
   function provideStore(test: Harness): void {
     let saved = 0
+    const saveImage = (input: { mediaType: string; name?: string }) => {
+      saved += 1
+      return Promise.resolve({
+        attachmentId: `att-${saved}`, mediaType: input.mediaType, bytes: 3, width: 1, height: 1,
+        ...input.name === undefined ? {} : { name: input.name },
+      })
+    }
     test.ctx.provide('attachments', {
       imageLimits: {
         maxImageBytes: 1024, maxImagesPerMessage: 4, maxMessageImageBytes: 1024,
         maxImagePixels: 1_000_000, mediaTypes: ['image/png'],
       },
       validateImage: () => Promise.resolve(),
-      saveImage: (input: { mediaType: string; name?: string }) => {
-        saved += 1
-        return Promise.resolve({
-          attachmentId: `att-${saved}`, mediaType: input.mediaType, bytes: 3, width: 1, height: 1,
-          ...input.name === undefined ? {} : { name: input.name },
-        })
+      saveImage,
+      async saveImages(inputs: readonly { mediaType: string; name?: string }[]) {
+        const refs = []
+        for (const input of inputs) refs.push(await saveImage(input))
+        return refs
       },
     })
   }
