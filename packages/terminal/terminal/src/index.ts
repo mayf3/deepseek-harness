@@ -42,9 +42,6 @@ export type {
 } from './types.ts'
 export { TerminalBackendCleanupError } from './types.ts'
 
-/** Printable prompt shared by terminal backends and persistent shell consumers. */
-export const CONTROLLED_PROMPT = 'dsh> '
-
 /** Opaque identity minted by {@link TerminalSessionService} for one live PTY session. */
 export type TerminalSessionId = TerminalSessionIdValue
 

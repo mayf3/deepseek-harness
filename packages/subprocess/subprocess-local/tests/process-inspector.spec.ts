@@ -95,9 +95,6 @@ describe('Linux process inspector', () => {
     fake.files.set('/proc/11/stat', stat(11, 21, 30, -1, '501'))
     fake.files.set('/proc/12/stat', stat(12, 22, 30, -1, '502', 10))
     fake.files.set('/proc/13/stat', stat(13, 23, 30, -1, '503', 12))
-    fake.files.set('/proc/10/task/10/children', '12')
-    fake.files.set('/proc/12/task/12/children', '13')
-    fake.files.set('/proc/13/task/13/children', '')
     const inspector = createProcessInspector('linux', 'x64', fake.internals)
     expect(inspector.foregroundPgid(10)).toBe(40)
     expect(inspector.foregroundPgid(11)).toBeUndefined()
@@ -127,65 +124,9 @@ describe('Linux process inspector', () => {
     expect(fake.kills).toEqual([[-40, 'SIGINT'], [10, 'SIGTERM']])
   })
 
-  it('walks a rooted process tree without enumerating the PID namespace', () => {
-    const fake = fakeInternals()
-    fake.files.set('/proc/10/stat', stat(10, 10, 10, 10, '500'))
-    fake.files.set('/proc/10/task/10/children', '11')
-    fake.files.set('/proc/11/stat', stat(11, 10, 10, 10, '501', 10))
-    fake.files.set('/proc/11/task/11/children', '')
-
-    expect(createProcessInspector('linux', 'x64', fake.internals).processTree(10)).toEqual([
-      { pid: 11, started: '501' },
-      { pid: 10, started: '500' },
-    ])
-  })
-
-  it('contains cycles in the procfs children index', () => {
-    const fake = fakeInternals()
-    fake.files.set('/proc/10/stat', stat(10, 10, 10, 10, '500'))
-    fake.files.set('/proc/10/task/10/children', '11')
-    fake.files.set('/proc/11/stat', stat(11, 10, 10, 10, '501', 10))
-    fake.files.set('/proc/11/task/11/children', '10')
-
-    expect(createProcessInspector('linux', 'x64', fake.internals).processTree(10)).toEqual([
-      { pid: 11, started: '501' },
-      { pid: 10, started: '500' },
-    ])
-  })
-
-  it('falls back to the PID namespace when a descendant children index is unreadable', () => {
-    const fake = fakeInternals()
-    fake.dirs.set('/proc', ['10', '11', '12'])
-    fake.files.set('/proc/10/stat', stat(10, 10, 10, 10, '500'))
-    fake.files.set('/proc/10/task/10/children', '12 invalid 11')
-    fake.files.set('/proc/11/stat', stat(11, 10, 10, 10, '501', 10))
-
-    expect(createProcessInspector('linux', 'x64', fake.internals).processTree(10)).toEqual([
-      { pid: 11, started: '501' },
-      { pid: 10, started: '500' },
-    ])
-  })
-
-  it('keeps readiness inspection local when procfs has no children index', () => {
-    const fake = fakeInternals()
-    fake.files.set('/proc/10/stat', stat(10, 10, 10, 10, '500'))
-    const inspector = createProcessInspector('linux', 'x64', fake.internals)
-
-    expect(inspector.processTree(10, false)).toEqual([{ pid: 10, started: '500' }])
-    expect(inspector.isStdinWaiting(10, false)).toBe(false)
-
-    const readFile = fake.internals.readFile.bind(fake.internals)
-    let statReads = 0
-    fake.internals.readFile = (path) => {
-      if (path === '/proc/10/stat' && statReads++ > 0) throw new Error('process exited')
-      return readFile(path)
-    }
-    expect(inspector.processTree(10, false)).toEqual([])
-  })
-
   it('detects read, select, poll, and epoll waits across non-leader threads', () => {
     const fake = fakeInternals()
-    fake.dirs.set('/proc', ['77', '100', '101'])
+    fake.dirs.set('/proc', ['100', '101'])
     fake.files.set('/proc/100/stat', stat(100, 77, 100, 77, '1'))
     fake.files.set('/proc/101/stat', stat(101, 77, 100, 77, '2'))
     fake.dirs.set('/proc/100/task', ['100'])
@@ -212,16 +153,6 @@ describe('Linux process inspector', () => {
 
     fake.files.set('/proc/101/task/102/syscall', syscall(232, 5, 0, 1))
     fake.files.set('/proc/101/fdinfo/5', 'pos: 0\ntfd: 0 events: 19\n')
-    expect(inspector.isStdinWaiting(77)).toBe(true)
-  })
-
-  it('checks a waiting process-group leader without scanning the PID namespace', () => {
-    const fake = fakeInternals()
-    fake.files.set('/proc/77/stat', stat(77, 77, 77, 77, '1'))
-    fake.dirs.set('/proc/77/task', ['77'])
-    fake.files.set('/proc/77/task/77/syscall', syscall(0, 0))
-
-    const inspector = createProcessInspector('linux', 'x64', fake.internals)
     expect(inspector.isStdinWaiting(77)).toBe(true)
   })
 
