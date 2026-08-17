@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-11-workflow-run-status-driven-disclosure.md
-2026-08-11-workflow-run-status-driven-disclosure.md: 2f452d25a8922bb6c275419af55e8af155dd2781
-2026-08-11-workflow-run-status-driven-disclosure.zh.md: 12cc106fea274a1681ee5615906ae6df266d567b
+2026-08-11-workflow-run-status-driven-disclosure.md: a783ede82442cfb28ed4c0a2fd394677728949d8
+2026-08-11-workflow-run-status-driven-disclosure.zh.md: 0d047bf7383f68ff7ec23d3602789e776c85d2cc

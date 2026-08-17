@@ -1,4 +1,7 @@
-import { useState, type ReactNode } from 'react'
+import {
+  useLayoutEffect, useMemo, useRef, useState,
+  type FocusEvent, type ReactNode,
+} from 'react'
 import {
   DisclosureRow, IconChevronRightOutline14, StateDot,
   type DisclosureRowProps, type StateDotState,
@@ -63,34 +66,85 @@ function memberCount(count: number, t: WorkflowRunPanelProps['t']): string {
   return t(count === 1 ? 'run.members.one' : 'run.members.other', { count })
 }
 
-function phaseRequiresExpansion(phase: WorkflowRunPhaseData): boolean {
-  return phase.members.some(member => member.status !== 'completed')
+type DisclosureMode = 'clean' | 'running' | 'abnormal'
+
+interface DisclosureFacts {
+  readonly mode: DisclosureMode
+  readonly activityCount: number
 }
 
-type StatusDisclosureProps = Omit<DisclosureRowProps, 'open' | 'expandable' | 'onToggle'>
-
-/* v8 ignore next -- DisclosureRow requires the callback but cannot invoke it when expandable is false. */
-const forcedOpenToggle = (): void => {}
-
-function ManualDisclosure(props: StatusDisclosureProps) {
-  const [open, setOpen] = useState(false)
-  return (
-    <DisclosureRow
-      {...props}
-      open={open}
-      expandable
-      onToggle={() => { setOpen(value => !value) }}
-    />
-  )
+interface DisclosureState extends DisclosureFacts {
+  readonly open: boolean
+  readonly pendingCleanCollapse: boolean
 }
 
-function StatusDisclosure({ cleanCycleKey, requiresExpansion, ...props }: StatusDisclosureProps & {
-  /** Remount a clean Phase when its append-only member count changes between batched renders. */
-  readonly cleanCycleKey?: number | undefined
-  readonly requiresExpansion: boolean
-}) {
-  if (!requiresExpansion) return <ManualDisclosure key={cleanCycleKey} {...props} />
-  return <DisclosureRow {...props} open expandable={false} onToggle={forcedOpenToggle} />
+interface WorkflowDisclosureState {
+  readonly run: DisclosureState
+  readonly phases: ReadonlyMap<string, DisclosureState>
+}
+
+type StatusDisclosureProps = Omit<DisclosureRowProps, 'expandable'>
+
+function StatusDisclosure(props: StatusDisclosureProps) {
+  return <DisclosureRow {...props} expandable />
+}
+
+function abnormal(status: WorkflowRunStatus): boolean {
+  return status === 'failed' || status === 'cancelled' || status === 'interrupted'
+}
+
+function phaseDisclosureFacts(phase: WorkflowRunPhaseData): DisclosureFacts {
+  const mode = phase.members.some(member => abnormal(member.status))
+    ? 'abnormal'
+    : phase.members.some(member => member.status === 'running') ? 'running' : 'clean'
+  return { mode, activityCount: phase.members.length }
+}
+
+function runDisclosureFacts(
+  status: WorkflowRunStatus,
+  phases: readonly (readonly [string, DisclosureFacts])[],
+): DisclosureFacts {
+  const mode = abnormal(status) || phases.some(([, facts]) => facts.mode === 'abnormal')
+    ? 'abnormal'
+    : status === 'running' || phases.some(([, facts]) => facts.mode === 'running')
+      ? 'running'
+      : 'clean'
+  const activityCount = phases.reduce((count, [, facts]) => count + facts.activityCount, 0)
+  return { mode, activityCount }
+}
+
+function initialDisclosureState(facts: DisclosureFacts): DisclosureState {
+  return { ...facts, open: facts.mode !== 'clean', pendingCleanCollapse: false }
+}
+
+function advanceDisclosureState(
+  current: DisclosureState,
+  facts: DisclosureFacts,
+  focusWithin: boolean,
+): DisclosureState {
+  const sameFacts = current.mode === facts.mode && current.activityCount === facts.activityCount
+  if (sameFacts) {
+    if (!current.pendingCleanCollapse || focusWithin) return current
+    return { ...current, open: false, pendingCleanCollapse: false }
+  }
+  if (facts.mode === 'clean') {
+    const deferCollapse = current.open && focusWithin
+    return { ...facts, open: deferCollapse, pendingCleanCollapse: deferCollapse }
+  }
+  if (current.mode === 'clean' || (facts.mode === 'abnormal' && current.mode !== 'abnormal')) {
+    return { ...facts, open: true, pendingCleanCollapse: false }
+  }
+  return { ...facts, open: current.open, pendingCleanCollapse: false }
+}
+
+function focusIsWithin(element: HTMLElement | null | undefined): boolean {
+  if (element === null || element === undefined) return false
+  return element.contains(element.ownerDocument.activeElement)
+}
+
+function collapsePending(state: DisclosureState): DisclosureState {
+  if (!state.pendingCleanCollapse) return state
+  return { ...state, open: false, pendingCleanCollapse: false }
 }
 
 function phaseStatusSummary(members: readonly WorkflowRunMemberData[], t: WorkflowRunPanelProps['t']): string {
@@ -128,11 +182,12 @@ function navigableMembers(
   return result
 }
 
-function RunHeader({ children, count, name, requiresExpansion, status, t }: {
+function RunHeader({ children, count, name, onToggle, open, status, t }: {
   readonly children: ReactNode
   readonly count: number
   readonly name: string
-  readonly requiresExpansion: boolean
+  readonly onToggle: () => void
+  readonly open: boolean
   readonly status: WorkflowRunStatus
   readonly t: WorkflowRunPanelProps['t']
 }) {
@@ -140,7 +195,8 @@ function RunHeader({ children, count, name, requiresExpansion, status, t }: {
     <StatusDisclosure
       icon={<IconChevronRightOutline14 />}
       title={t('run.title', { name })}
-      requiresExpansion={requiresExpansion}
+      open={open}
+      onToggle={onToggle}
       expandOnRowClick
       previewChevron={false}
       keepContentWhenOpen
@@ -170,6 +226,21 @@ function MemberRow({ member, navigable, openSession, t }: {
   readonly t: WorkflowRunPanelProps['t']
 }) {
   const name = readableMember(member.label, t)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const [keepFocusedButton, setKeepFocusedButton] = useState(navigable)
+  const renderButton = navigable || keepFocusedButton
+
+  useLayoutEffect(() => {
+    if (navigable) {
+      if (!keepFocusedButton) setKeepFocusedButton(true)
+      return
+    }
+    const button = buttonRef.current
+    if (button === null || button.ownerDocument.activeElement !== button) {
+      if (keepFocusedButton) setKeepFocusedButton(false)
+    }
+  }, [keepFocusedButton, navigable])
+
   const content = (
     <>
       <span className={css.dotSlot}><StateDot state={dotState(member.status)} /></span>
@@ -177,23 +248,33 @@ function MemberRow({ member, navigable, openSession, t }: {
       <span className={css.memberStatus} data-member-status-text>{t(STATUS_KEYS[member.status])}</span>
     </>
   )
-  if (!navigable) {
+  if (!renderButton) {
     return <div className={css.memberRow} data-member-status={member.status}>{content}</div>
   }
   return (
     <button
+      ref={buttonRef}
       type="button"
-      className={css.memberButton}
+      className={navigable ? css.memberButton : css.memberRow}
       data-member-status={member.status}
-      aria-label={t('member.open', { name })}
-      onClick={() => { openSession(member.childId) }}
+      aria-disabled={navigable ? undefined : true}
+      aria-label={navigable ? t('member.open', { name }) : name}
+      tabIndex={navigable ? undefined : -1}
+      onBlur={navigable ? undefined : () => { setKeepFocusedButton(false) }}
+      onClick={navigable ? () => { openSession(member.childId) } : undefined}
     >
       {content}
     </button>
   )
 }
 
-function PhaseSection({ phase, navigable, openSession, t }: {
+function PhaseSection({
+  contentRef, onContentBlur, onToggle, open, phase, navigable, openSession, t,
+}: {
+  readonly contentRef: (element: HTMLDivElement | null) => void
+  readonly onContentBlur: (event: FocusEvent<HTMLDivElement>) => void
+  readonly onToggle: () => void
+  readonly open: boolean
   readonly phase: WorkflowRunPhaseData
   readonly navigable: readonly SessionId[]
   readonly openSession: WorkflowRunInjected['openSession']
@@ -203,8 +284,8 @@ function PhaseSection({ phase, navigable, openSession, t }: {
     <StatusDisclosure
       icon={<IconChevronRightOutline14 />}
       title={readablePhase(phase.phase, t)}
-      cleanCycleKey={phase.members.length}
-      requiresExpansion={phaseRequiresExpansion(phase)}
+      open={open}
+      onToggle={onToggle}
       expandOnRowClick
       previewChevron={false}
       keepContentWhenOpen
@@ -220,7 +301,7 @@ function PhaseSection({ phase, navigable, openSession, t }: {
         </>
       )}
     >
-      <div className={css.members}>
+      <div ref={contentRef} className={css.members} onBlur={onContentBlur}>
         {phase.members.map(member => (
           <MemberRow
             key={member.seq}
@@ -237,34 +318,128 @@ function PhaseSection({ phase, navigable, openSession, t }: {
 
 /** Render one durable workflow run with status-driven run and phase disclosure. */
 export function WorkflowRunPanel({ node, sessionId, useSessions, openSession, t }: WorkflowRunPanelProps) {
-  const totalMembers = node.data.phases.reduce((count, phase) => count + phase.members.length, 0)
-  const requiresExpansion = node.data.status !== 'completed'
-    || node.data.phases.some(phaseRequiresExpansion)
+  const phaseFacts = useMemo(() => node.data.phases.map(phase => (
+    [phase.key, phaseDisclosureFacts(phase)] as const
+  )), [node.data.phases])
+  const runFacts = useMemo(
+    () => runDisclosureFacts(node.data.status, phaseFacts),
+    [node.data.status, phaseFacts],
+  )
+  const totalMembers = runFacts.activityCount
+  const [disclosures, setDisclosures] = useState<WorkflowDisclosureState>(() => ({
+    run: initialDisclosureState(runFacts),
+    phases: new Map(phaseFacts.map(([key, facts]) => [key, initialDisclosureState(facts)])),
+  }))
+  const runContentRef = useRef<HTMLDivElement>(null)
+  const phaseContentRefs = useRef(new Map<string, HTMLDivElement>())
   const navigable = useSessions(
     sessions => navigableMembers(sessions, node.data.phases, sessionId),
     shallowEqual,
   )
+
+  useLayoutEffect(() => {
+    setDisclosures((current) => {
+      const phases = new Map<string, DisclosureState>()
+      let phasesChanged = current.phases.size !== phaseFacts.length
+      let phaseBecameActive = false
+      for (const [key, facts] of phaseFacts) {
+        const previous = current.phases.get(key)
+        const next = previous === undefined
+          ? initialDisclosureState(facts)
+          : advanceDisclosureState(previous, facts, focusIsWithin(phaseContentRefs.current.get(key)))
+        phases.set(key, next)
+        if (next !== previous) phasesChanged = true
+        if (previous?.mode === 'clean' && facts.mode !== 'clean') phaseBecameActive = true
+      }
+      const advancedRun = advanceDisclosureState(
+        current.run,
+        runFacts,
+        focusIsWithin(runContentRef.current),
+      )
+      const run = phaseBecameActive && !advancedRun.open
+        ? { ...advancedRun, open: true, pendingCleanCollapse: false }
+        : advancedRun
+      return run !== current.run || phasesChanged ? { run, phases } : current
+    })
+  }, [disclosures.run.open, phaseFacts, runFacts])
+
+  const toggleRun = (): void => {
+    setDisclosures(current => ({
+      ...current,
+      run: {
+        ...current.run,
+        open: !current.run.open,
+        pendingCleanCollapse: false,
+      },
+    }))
+  }
+  const togglePhase = (key: string, facts: DisclosureFacts): void => {
+    setDisclosures((current) => {
+      const phases = new Map(current.phases)
+      /* v8 ignore next -- layout effects insert every rendered phase before user input can toggle it. */
+      const phase = phases.get(key) ?? initialDisclosureState(facts)
+      phases.set(key, {
+        ...phase,
+        open: !phase.open,
+        pendingCleanCollapse: false,
+      })
+      return { ...current, phases }
+    })
+  }
+  const settleRunBlur = (event: FocusEvent<HTMLDivElement>): void => {
+    if (event.currentTarget.contains(event.relatedTarget)) return
+    setDisclosures((current) => {
+      const run = collapsePending(current.run)
+      return run === current.run ? current : { ...current, run }
+    })
+  }
+  const settlePhaseBlur = (key: string, event: FocusEvent<HTMLDivElement>): void => {
+    if (event.currentTarget.contains(event.relatedTarget)) return
+    setDisclosures((current) => {
+      const phase = current.phases.get(key)
+      /* v8 ignore next -- the blur handler unmounts with the phase whose state it addresses. */
+      if (phase === undefined) return current
+      const next = collapsePending(phase)
+      if (next === phase) return current
+      const phases = new Map(current.phases)
+      phases.set(key, next)
+      return { ...current, phases }
+    })
+  }
+
   return (
     <section className={css.root} data-workflow-run data-run-status={node.data.status}>
       <RunHeader
         count={totalMembers}
         name={node.data.name}
-        requiresExpansion={requiresExpansion}
+        open={disclosures.run.open}
+        onToggle={toggleRun}
         status={node.data.status}
         t={t}
       >
-        <div className={css.phaseList}>
+        <div ref={runContentRef} className={css.phaseList} onBlur={settleRunBlur}>
           {node.data.phases.length === 0
             ? <span className={css.empty}>{t('run.empty')}</span>
-            : node.data.phases.map(phase => (
-              <PhaseSection
-                key={phase.key}
-                phase={phase}
-                navigable={navigable}
-                openSession={openSession}
-                t={t}
-              />
-            ))}
+            : node.data.phases.map((phase) => {
+              const facts = phaseDisclosureFacts(phase)
+              const disclosure = disclosures.phases.get(phase.key) ?? initialDisclosureState(facts)
+              return (
+                <PhaseSection
+                  key={phase.key}
+                  contentRef={(element) => {
+                    if (element === null) phaseContentRefs.current.delete(phase.key)
+                    else phaseContentRefs.current.set(phase.key, element)
+                  }}
+                  onContentBlur={(event) => { settlePhaseBlur(phase.key, event) }}
+                  onToggle={() => { togglePhase(phase.key, facts) }}
+                  open={disclosure.open}
+                  phase={phase}
+                  navigable={navigable}
+                  openSession={openSession}
+                  t={t}
+                />
+              )
+            })}
         </div>
       </RunHeader>
     </section>
