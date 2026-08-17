@@ -9,7 +9,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  ClientModuleSystem,
+  ClientModuleSystem, parseBootManifest,
   type BootModuleRow, type ClientModuleLoader, type ClientPluginHandoff, type DshWindow,
 } from '../src/client/index.ts'
 
@@ -23,7 +23,8 @@ afterEach(() => {
   for (const el of document.querySelectorAll('style, script')) el.remove()
 })
 
-const row = (id: string): BootModuleRow => ({ id, url: `/plugins/${id}/client.js?rev=0`, rev: '0' })
+const row = (id: string, fields: Partial<BootModuleRow> = {}): BootModuleRow =>
+  ({ id, url: `/plugins/${id}/client.js?rev=0`, rev: '0', external: [], ...fields })
 
 interface Bench {
   loader: ClientModuleLoader
@@ -61,6 +62,20 @@ function bench(
 }
 
 describe('lazy CJS arrival', () => {
+  it('adopts handoffs queued by parser-blocking preload scripts', async () => {
+    const handoffs: ClientPluginHandoff[] = [{ id: 'runtime', factory: () => ({ marker: 'preloaded' }) }]
+    win.__ModuleLoader__ = {
+      mode: 'queue',
+      handoffs,
+      load: (handoff) => { handoffs.push(handoff) },
+    }
+    const b = bench([row('runtime')])
+    const exports = await b.loader.import('runtime', '', {})
+    expect((exports as { marker: string }).marker).toBe('preloaded')
+    expect(b.fetched).toEqual([])
+    expect(win.__ModuleLoader__?.mode).toBe('live')
+  })
+
   it('prefetch loads and registers but does not run the factory', async () => {
     const ran: string[] = []
     const b = bench([row('a')], { a: () => { ran.push('a'); return {} } })
@@ -86,6 +101,26 @@ describe('lazy CJS arrival', () => {
     const exports = await b.loader.import('a', '', {})
     expect((exports as { marker: string }).marker).toBe('direct')
     expect(b.fetched).toHaveLength(1)
+  })
+
+  it('registers declared dynamic requests before materializing their consumer', async () => {
+    const b = bench([
+      row('consumer', { external: ['provider/client', 'react'] }),
+      row('provider'),
+    ], {
+      consumer: req => ({ provider: req('provider/client'), react: req('react') }),
+      provider: () => ({ marker: 'provider' }),
+    }, { seed: { react: { marker: 'react' } } })
+    const exports = await b.loader.import('consumer', '', {}) as {
+      provider: { marker: string }
+      react: { marker: string }
+    }
+    expect(b.fetched).toEqual([
+      '/plugins/provider/client.js?rev=0',
+      '/plugins/consumer/client.js?rev=0',
+    ])
+    expect(exports.provider.marker).toBe('provider')
+    expect(exports.react.marker).toBe('react')
   })
 
   it('concurrent callers share one in-flight arrival and materialize once', async () => {
@@ -216,10 +251,41 @@ describe('failure modes', () => {
     expect(() => bench([row('a'), row('a')])).toThrow('duplicate graph entry "a"')
   })
 
+  it('a module arrival cycle is loud even if a malformed host graph reaches the browser', async () => {
+    const b = bench([
+      row('a', { external: ['b'] }),
+      row('b', { external: ['a'] }),
+    ])
+    await expect(b.loader.prefetch('a')).rejects.toThrow('module arrival cycle a -> b -> a')
+  })
+
   it('double boot is loud', () => {
     bench([])
     expect(() => new ClientModuleSystem({ modules: [], staticModules: {} }))
       .toThrow('already installed (double boot?)')
+  })
+})
+
+describe('boot manifest wire', () => {
+  it('normalizes absent shared-module fields and carries the declared ones', () => {
+    const manifest = parseBootManifest({
+      rev: 'graph',
+      entries: [
+        { id: 'a', url: '/plugins/a/client.js', rev: '1' },
+        { id: 'b', url: '/plugins/b/client.js', rev: '2', external: ['react'] },
+      ],
+    })
+    expect(manifest.modules).toEqual([
+      { id: 'a', url: '/plugins/a/client.js', rev: '1', external: [] },
+      { id: 'b', url: '/plugins/b/client.js', rev: '2', external: ['react'] },
+    ])
+  })
+
+  it('rejects a non-array external', () => {
+    expect(() => parseBootManifest({
+      rev: 'graph',
+      entries: [{ id: 'a', url: '/a', rev: '1', external: 'react' }],
+    })).toThrow('client-modules: boot manifest entry "a" external must be a string array')
   })
 })
 

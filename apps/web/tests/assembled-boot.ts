@@ -11,11 +11,14 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { act, cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
-import type { WebBootEntry } from '@deepseek-ai/dsh-client-modules/client'
+import type {
+  ClientModuleHandoffTarget, ClientPluginHandoff, WebBootEntry,
+} from '@deepseek-ai/dsh-client-modules/client'
 import { AppWebEntry } from '@deepseek-ai/dsh-client-web'
 
 /** Boot entries for the minimal assembled graph, each carrying the workspace bundle it loads. */
 const PLUGINS: readonly (WebBootEntry & { bundlePath: string })[] = [
+  { id: '@deepseek-ai/dsh-client-modules', bundlePath: 'packages/client/modules/lib/client.js', url: '/plugins/modules.js', rev: 'fx', inject: [], immediately: true },
   { id: '@deepseek-ai/dsh-typert-registry', bundlePath: 'packages/typert/registry/lib/client.js', url: '/plugins/typert-registry.js', rev: 'fx', inject: [], immediately: true },
   { id: '@deepseek-ai/dsh-client-connection', bundlePath: 'packages/client/connection/lib/client.js', url: '/plugins/connection.js', rev: 'fx', inject: [], immediately: true },
   { id: '@deepseek-ai/dsh-api-gateway', bundlePath: 'packages/api/gateway/lib/client.js', url: '/plugins/api-gateway.js', rev: 'fx', inject: ['@deepseek-ai/dsh-typert-registry', '@deepseek-ai/dsh-client-connection'], immediately: true },
@@ -56,7 +59,7 @@ const bundles = new Map(PLUGINS.map(plugin => [
 
 interface FixtureWindow extends Window {
   __DSH_BOOT__?: { rev: string; entries: WebBootEntry[] }
-  __ModuleLoader__?: unknown
+  __ModuleLoader__?: ClientModuleHandoffTarget
 }
 
 class ResizeObserverStub {
@@ -120,6 +123,21 @@ export function mountAssembledApp(): void {
   root.id = 'root'
   document.body.appendChild(root)
   win.__DSH_BOOT__ = { rev: 'fx', entries: PLUGINS.map(({ bundlePath: _bundlePath, ...plugin }) => plugin) }
+  const handoffs: ClientPluginHandoff[] = []
+  win.__ModuleLoader__ = {
+    mode: 'queue',
+    handoffs,
+    load(handoff) { handoffs.push(handoff) },
+  }
+  // Mirror the blocking Host-injected scripts: the kernel claims modules,
+  // then the resulting module system adopts runtime from the same queue.
+  for (const id of ['@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-client-runtime']) {
+    const plugin = PLUGINS.find(candidate => candidate.id === id)
+    if (plugin === undefined) throw new Error(`missing parser-preloaded fixture row ${id}`)
+    const code = bundles.get(plugin.url)
+    if (code === undefined) throw new Error(`missing built bundle ${plugin.url}`)
+    ;(0, eval)(code)
+  }
   act(() => {
     const entry = new AppWebEntry(root, {
       loadBundle: async (url) => {

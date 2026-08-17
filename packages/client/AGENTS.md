@@ -88,7 +88,7 @@ Three declarations read like dependency edges and none is interchangeable: Cordi
 | Who may satisfy it | any plugin providing that service, replaceable | the single module identity, not replaceable |
 | Cycles | allowed | rejected |
 
-The seam is `loader.internal = modules`: cordis reaches plugin code through `EntryTree.import`, so every module request must be satisfiable before cordis can order activation above it. Script-tag order is therefore the module graph's topological order — providers before consumers — computed by the modules node half and injected by the host. The two orders can run opposite: a provider that injects services loads its script first and activates last.
+The seam is `loader.internal = modules`: cordis reaches plugin code through `EntryTree.import`, so every module request must be satisfiable before cordis can order activation above it. The modules node half emits rows in topological order, and `ClientModuleSystem.import`/`prefetch` recursively registers dynamic provider factories before their consumers materialize. This module order is independent from Cordis activation: a provider that injects services can register first and activate last.
 
 `packages/client/web` is not a Loader entry. Its static imports seed `PLATFORM_MODULES`; parser-preloaded dynamic rows remain ordinary Loader entries and ordinary `lib/client.js` artifacts.
 

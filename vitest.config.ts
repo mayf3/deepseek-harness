@@ -199,10 +199,6 @@ export default defineConfig({
         'packages/client/ui-slots/src/*',
         'packages/client/ui-layout/src/*',
         'packages/client/web/src/*',
-        // The render service's node half and invariant companion are the empty
-        // dual-face pair every client plugin carries; its browser half is
-        // covered by this package's specs.
-        'packages/client/render-service/src/*',
         'packages/host/webserver/src/*',
         'packages/client/modules/src/client/system.ts',
         'packages/client/hmr/src/client/index.ts',

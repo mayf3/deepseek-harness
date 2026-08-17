@@ -279,8 +279,9 @@ export interface ClientModuleLoader {
    */
   registerStatic(id: string, module: unknown): void
   /**
-   * Stage-one arrival: load the entry's script to register its factory (no
-   * materialization — module side effects wait for import).
+   * Stage-one arrival: load the entry's declared dynamic requests, then its
+   * own script, to register their factories (no materialization — module side
+   * effects wait for import).
    * No-op for bootstrap-registered ids and ids whose factory is already
    * registered; concurrent calls share one in-flight task. To force a fresh
    * load (HMR), {@link invalidate} first.

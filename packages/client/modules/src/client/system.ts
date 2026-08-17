@@ -114,6 +114,23 @@ export class ClientModuleSystem implements ClientModuleLoader {
     return task
   }
 
+  /** Register every dynamic request before registering its consumer. */
+  private async arriveGraphRow(row: BootModuleRow, open: readonly string[] = []): Promise<void> {
+    const cycleStart = open.indexOf(row.id)
+    if (cycleStart !== -1) {
+      throw new Error(
+        `client-modules: module arrival cycle ${[...open.slice(cycleStart), row.id].join(' -> ')} `
+        + '(the host must reject this graph before serving it)',
+      )
+    }
+    const next = [...open, row.id]
+    for (const request of row.external) {
+      const dependency = this.graphRows.get(stripClientSuffix(request))
+      if (dependency !== undefined) await this.arriveGraphRow(dependency, next)
+    }
+    await this.arrive(row)
+  }
+
   /** Materialize a registered factory (synchronous; memoized in loadCache). */
   private materialize(id: string): ClientModuleRecord {
     const existing = this.loadCache.get(id)
@@ -167,15 +184,14 @@ export class ClientModuleSystem implements ClientModuleLoader {
       this.loadCache.set(specifier, { id: specifier, exports, styles: [], edges: new Set() })
       return exports
     }
-    if (!this.factories.has(specifier)) {
-      const row = this.graphRows.get(specifier)
-      if (row === undefined) {
-        throw new Error(
-          `client-modules: cannot resolve "${specifier}" — not a seed word, not a bootstrap module, `
-          + 'and not a row in the boot graph (the runtime mirror of the bundle purity gate)',
-        )
-      }
-      await this.arrive(row)
+    const row = this.graphRows.get(specifier)
+    if (row !== undefined) {
+      await this.arriveGraphRow(row)
+    } else if (!this.factories.has(specifier)) {
+      throw new Error(
+        `client-modules: cannot resolve "${specifier}" — not a seed word, not a bootstrap module, `
+        + 'and not a row in the boot graph (the runtime mirror of the bundle purity gate)',
+      )
     }
     return this.materialize(specifier).exports
   }
@@ -189,7 +205,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
     if (this.statics.has(id)) return
     const row = this.graphRows.get(id)
     if (row === undefined) throw new Error(`client-modules: prefetch("${id}") — not a graph entry`)
-    await this.arrive(row)
+    await this.arriveGraphRow(row)
   }
 
   invalidate(id: string): void {

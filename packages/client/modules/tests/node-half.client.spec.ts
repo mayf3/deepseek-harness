@@ -8,7 +8,8 @@ import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { WebServer, WebRoute } from '@deepseek-ai/dsh-host-webserver'
-import { ClientModuleRegistry } from '../src/index.ts'
+import { ClientModuleRegistry, orderByModuleGraph } from '../src/index.ts'
+import type { WebBootEntry } from '../src/index.ts'
 
 let root: string | undefined
 
@@ -35,6 +36,13 @@ function writePackage(
     ...metadata,
   }))
   return clientPath
+}
+
+/** Create a built package with the supplied client declaration. */
+function writeBuiltPackage(packageName: string, client: Record<string, unknown>): void {
+  const clientPath = writePackage(packageName, { dsh: { client: { platform: 'web', ...client } } })
+  mkdirSync(dirname(clientPath), { recursive: true })
+  writeFileSync(clientPath, 'module.exports = {}\n')
 }
 
 /** Construct the node-half service and capture its plugin-bundle route. */
@@ -148,5 +156,97 @@ describe('client bundle activation', () => {
       'cache-control': 'no-cache',
     })
     expect(body).toBe(map)
+  })
+})
+
+describe('shared module declarations', () => {
+  it('accepts external requests and carries them onto the graph row', () => {
+    const packageName = '@fixture/shared-declared'
+    writeBuiltPackage(packageName, { external: ['react'] })
+    expect(construct([packageName]).graph().entries).toEqual([{
+      id: packageName,
+      url: expect.stringContaining(`/plugins/${packageName}/client.js?rev=`) as unknown as string,
+      rev: expect.any(String) as unknown as string,
+      external: ['react'],
+    }])
+  })
+
+  it('omits external when the package declares no requests', () => {
+    const packageName = '@fixture/shared-absent'
+    writeBuiltPackage(packageName, {})
+    const [row] = construct([packageName]).graph().entries
+    expect(row).not.toHaveProperty('external')
+  })
+
+  it('rejects a non-array external', () => {
+    const packageName = '@fixture/external-not-array'
+    writeBuiltPackage(packageName, { external: 'react' })
+    expect(() => construct([packageName]))
+      .toThrow(`client-modules: ${packageName} dsh.client.external must be a string array`)
+  })
+})
+
+describe('module graph order', () => {
+  const entry = (id: string, fields: Partial<WebBootEntry> = {}): WebBootEntry =>
+    ({ id, url: `/plugins/${id}/client.js?rev=0`, rev: '0', ...fields })
+  const ids = (entries: readonly WebBootEntry[]): string[] => entries.map(row => row.id)
+
+  it('places every requested package row before its consumers along a chain', () => {
+    expect(ids(orderByModuleGraph([
+      entry('ui', { external: ['slots'] }),
+      entry('slots', { external: ['render'] }),
+      entry('render'),
+    ]))).toEqual(['render', 'slots', 'ui'])
+  })
+
+  it('places a shared package row before both arms of a diamond', () => {
+    expect(ids(orderByModuleGraph([
+      entry('app', { external: ['left', 'right'] }),
+      entry('left', { external: ['vendor'] }),
+      entry('right', { external: ['vendor'] }),
+      entry('vendor'),
+    ]))).toEqual(['vendor', 'left', 'right', 'app'])
+  })
+
+  it('resolves a /client request onto the requested package row', () => {
+    expect(ids(orderByModuleGraph([
+      entry('ui', { external: ['runtime/client'] }),
+      entry('runtime'),
+    ]))).toEqual(['runtime', 'ui'])
+  })
+
+  it('leaves a request no row answers to the static assembly channel', () => {
+    expect(ids(orderByModuleGraph([
+      entry('consumer', { external: ['@deepseek-ai/cordis'] }),
+      entry('other'),
+    ]))).toEqual(['consumer', 'other'])
+  })
+
+  it('rejects a cycle and names the packages on it', () => {
+    expect(() => orderByModuleGraph([
+      entry('a', { external: ['b'] }),
+      entry('b', { external: ['a'] }),
+    ])).toThrow('client-modules: module graph cycle a -> b -> a')
+  })
+
+  it('rejects a row requesting its own package name', () => {
+    expect(() => orderByModuleGraph([entry('solo', { external: ['solo'] })]))
+      .toThrow('client-modules: "solo" requests module "solo" that it answers itself')
+  })
+
+  it('composes the served graph in module-graph order', () => {
+    const consumerName = '@fixture/order-consumer'
+    const dependencyName = '@fixture/order-dependency'
+    writeBuiltPackage(consumerName, { external: [dependencyName] })
+    writeBuiltPackage(dependencyName, {})
+    expect(ids(construct([consumerName, dependencyName]).graph().entries))
+      .toEqual([dependencyName, consumerName])
+  })
+
+  it('fails activation loud when scanned packages form a module cycle', () => {
+    writeBuiltPackage('@fixture/cycle-a', { external: ['@fixture/cycle-b'] })
+    writeBuiltPackage('@fixture/cycle-b', { external: ['@fixture/cycle-a'] })
+    expect(() => construct(['@fixture/cycle-a', '@fixture/cycle-b']))
+      .toThrow('module graph cycle @fixture/cycle-a -> @fixture/cycle-b -> @fixture/cycle-a')
   })
 })
