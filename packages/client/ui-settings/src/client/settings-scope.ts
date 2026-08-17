@@ -247,16 +247,6 @@ export class SettingsScopeBinder extends Service {
   }
 
   /**
-   * Bind one namespace scope on the CALLER's plugin lifecycle — the service
-   * proxy binds `this.ctx` to the caller at call time, so the scope's disposer
-   * belongs to the calling fiber. The scope derives from the shared mirror
-   * (whose invalidation subscriptions live with the providing plugin), so
-   * binding adds no wire read of its own and activation never blocks on the
-   * settings transport.
-   * @param spec - domain-owned namespace contract.
-   * @returns the bound scope consumed by the domain's services and rows.
-   */
-  /**
    * The shared mirror's read-only face for cross-namespace surfaces (schema
    * introspection, the served-namespace directory). Per-namespace consumers
    * use {@link bind}; both derive from the same snapshot, so they can never
@@ -267,6 +257,16 @@ export class SettingsScopeBinder extends Service {
     return this.mirror
   }
 
+  /**
+   * Bind one namespace scope on the CALLER's plugin lifecycle — the service
+   * proxy binds `this.ctx` to the caller at call time, so the scope's disposer
+   * belongs to the calling fiber. The scope derives from the shared mirror
+   * (whose invalidation subscriptions live with the providing plugin), so
+   * binding adds no wire read of its own and activation never blocks on the
+   * settings transport.
+   * @param spec - domain-owned namespace contract.
+   * @returns the bound scope consumed by the domain's services and rows.
+   */
   bind<T>(spec: SettingsScopeSpec<T>): SettingsScope<T> {
     const ctx = this.ctx
     const connection = ctx.get('connection') as ConnectionHandle
