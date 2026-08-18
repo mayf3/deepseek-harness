@@ -342,7 +342,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/attachment/attachment-local/src/index.ts:32`](../packages/attachment/attachment-local/src/index.ts)
+来源：[`packages/attachment/attachment-local/src/index.ts:31`](../packages/attachment/attachment-local/src/index.ts)
 
 <a id="deepseek-aidsh-bash-local"></a>
 
