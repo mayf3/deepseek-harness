@@ -149,6 +149,7 @@ MCP_SERVER_SCRIPT = """\
 import json
 import os
 import sys
+import time
 
 
 log_path = os.environ.get("MCP_SMOKE_LOG")
@@ -179,6 +180,10 @@ for line in sys.stdin:
             },
         })
     elif method == "tools/list":
+        # Keep discovery pending longer than the old smoke's 100 ms grace
+        # period. An SDK runtime that answers initialize too early will make
+        # its first model request without this tool and fail deterministically.
+        time.sleep(0.25)
         send({
             "jsonrpc": "2.0",
             "id": request_id,
@@ -253,20 +258,6 @@ def mcp_cordis(server_script: Path) -> str:
             },
         },
     ], indent=2)
-
-
-def wait_for_mcp_discovery(log_path: Path) -> None:
-    """Wait until the external server has answered initial tool discovery."""
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        if log_path.exists() and "tools/list" in log_path.read_text().splitlines():
-            # The server records the request before flushing its response; give the
-            # client one scheduler interval to register the returned generation.
-            time.sleep(0.1)
-            return
-        time.sleep(0.025)
-    observed = log_path.read_text() if log_path.exists() else "<no MCP requests>"
-    raise AssertionError(f"packaged MCP client did not complete tool discovery: {observed}")
 
 
 class MockModelHandler(BaseHTTPRequestHandler):
@@ -861,7 +852,6 @@ def smoke_sdk_mcp(base_url: str, executable: Path | None) -> None:
             base_url=base_url,
             request_timeout_seconds=60,
         ) as harness:
-            wait_for_mcp_discovery(discovery_log)
             result = harness.run(MCP_PROMPT, session_id="mcp-smoke")
 
         assert result.final_response == MCP_TEXT, result.final_response

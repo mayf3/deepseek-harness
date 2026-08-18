@@ -133,9 +133,13 @@ async function missingPresetPlugins(
     for (const target of targets) {
       const processPlatform = processPlatformForTarget(target)
       for (const plugin of activeBarePluginPackages(document, processPlatform)) {
-        if (runtimeDependencies[plugin] !== undefined) continue
+        const version = runtimeDependencies[plugin]
+        if (version?.startsWith('workspace:') === true) continue
         const preset = basename(dirname(presetPath))
-        const key = `${preset} preset -> ${plugin}`
+        const declaration = version === undefined
+          ? ''
+          : ` [runtime dependency is ${JSON.stringify(version)}; expected workspace:]`
+        const key = `${preset} preset -> ${plugin}${declaration}`
         const targets = missing.get(key) ?? new Set<string>()
         targets.add(target)
         missing.set(key, targets)

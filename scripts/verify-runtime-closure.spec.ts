@@ -99,6 +99,23 @@ describe('verifyRuntimeClosure', () => {
     expect(result.failures).toEqual([])
   })
 
+  it('requires preset plugins to be linked from the workspace', async () => {
+    const root = fixture({
+      'python/sdk-runtime/package.json': { name: 'runtime', dependencies: { '@scope/plugin': '1.2.3' } },
+      'python/sdk-runtime/platforms.json': platforms,
+      'apps/cli/config/agent-presets/standard/agent.cordis.yml': `
+- id: plugin
+  name: '@scope/plugin'
+`,
+    })
+
+    const result = await verifyRuntimeClosure(root)
+
+    expect(result.failures).toEqual([
+      'standard preset -> @scope/plugin [runtime dependency is "1.2.3"; expected workspace:] (linux-arm64, linux-x64, macos-arm64)',
+    ])
+  })
+
   it('fails when no shipped preset is discovered', async () => {
     const root = fixture({
       'python/sdk-runtime/package.json': { name: 'runtime', dependencies: {} },
