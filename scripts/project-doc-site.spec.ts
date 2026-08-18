@@ -310,6 +310,37 @@ describe('docsPages locale routes', () => {
     }
   })
 
+  it('projects the audited tutorial entry links from explicit locale index pages', () => {
+    const entries = [
+      ['docs/user/develop/basic/config.md', '../framework/index.md'],
+      ['docs/user/develop/basic/publish.md', '../framework/index.md'],
+      ['docs/user/develop/basic/tool.md', './index.md'],
+      ['docs/user/develop/basic/tool.md', '../practice/index.md'],
+      ['docs/user/develop/framework/events.md', '../practice/index.md'],
+      ['docs/user/develop/framework/service.md', '../practice/index.md'],
+      ['docs/user/develop/practice/index.md', '../basic/index.md'],
+      ['docs/user/guide/index.md', '../develop/basic/index.md'],
+    ] as const
+
+    for (const [englishSource, englishTarget] of entries) {
+      for (const locale of ['en', 'root'] as const) {
+        const source = locale === 'root' ? englishSource.replace(/\.md$/, '.zh.md') : englishSource
+        const target = locale === 'root' ? englishTarget.replace(/\.md$/, '.zh.md') : englishTarget
+        const page = docsPages.find(candidate => candidate.locale === locale && candidate.source === source)
+        expect(page, `${locale}:${source}`).toBeDefined()
+        expect(readFileSync(resolve(repositoryRoot, source), 'utf8')).toContain(`](${target})`)
+        expect(rewriteMarkdown(`[Entry](${target})\n`, {
+          locale,
+          sourcePath: source,
+          route: page!.route,
+          pages: docsPages,
+          repoRoot: repositoryRoot,
+          repositoryRef: 'abc123',
+        })).toBe(`[Entry](${englishTarget})\n`)
+      }
+    }
+  })
+
   it('indexes every subsystem page in both sides of the folder README', () => {
     const pages = globSync(join(repositoryRoot, 'docs/subsystems/*.md'))
       .map(page => basename(page))
