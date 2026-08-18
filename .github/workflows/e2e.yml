@@ -47,6 +47,7 @@ permissions:
   contents: read
 
 env:
+  DSH_CLIENT_BRAND: official
   # CI runs must never report to the production telemetry endpoint baked
   # into apps/cli/cordis.yml (AppCLIEntry disables the row when set).
   DSH_TELEMETRY_DISABLED: '1'

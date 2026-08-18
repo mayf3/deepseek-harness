@@ -29,6 +29,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  DSH_CLIENT_BRAND: official
   PRIMARY_NODE_VERSION: '24'
   DSH_TELEMETRY_DISABLED: '1'
 
