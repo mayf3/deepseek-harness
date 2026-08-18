@@ -114,6 +114,18 @@ class CodexRunFailure extends Error {
 }
 
 /**
+ * Hide an unpublished Host failure behind fixed safe startup facts.
+ * @param cause Original Host failure retained for internal diagnostics.
+ * @returns A startup failure whose message contains only fixed safe facts.
+ */
+export function codexStartupFailure(cause: unknown): Error {
+  return new CodexRunFailure({
+    stage: 'initialize',
+    category: 'unknown',
+  }, cause)
+}
+
+/**
  * Fixed package-local app-server command, independent of the host `PATH`.
  * @returns Node, the official wrapper, and the fixed app-server arguments.
  */
@@ -346,6 +358,9 @@ export async function startCodexRun(
       try {
         const terminal = await wire.runTurn(texts, runAbort.signal)
         if (terminal.stopReason === 'completed') return terminal
+        // Let stderr already queued with the terminal frame contribute its
+        // fixed permission fact before the non-completed result is snapshotted.
+        await new Promise<void>((resolve) => { setImmediate(resolve) })
         const facts = wire.collectFailure()
         return { ...terminal, diagnostic: recordFailureDiagnostic(facts) }
       } catch (error: unknown) {
@@ -360,7 +375,7 @@ export async function startCodexRun(
         ) {
           try {
             const exited = await child.waitForExit(
-              AbortSignal.timeout(spec.disposeGraceMs),
+              AbortSignal.timeout(Math.ceil(spec.disposeGraceMs)),
             )
             if (exited) await child.done
           } catch {

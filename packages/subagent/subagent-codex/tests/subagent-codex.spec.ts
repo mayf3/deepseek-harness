@@ -1656,6 +1656,26 @@ describe('run lifecycle and quiescence', () => {
     }
   })
 
+  it('includes a queued stderr permission fact in a max-token result', async () => {
+    const { child, run, turnStart } = await publishRun()
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    setImmediate(() => {
+      child.stderr.write('approval policy is Never; reject command')
+    })
+    child.peer.send(
+      agentMessage('partial answer', null),
+      turnCompleted('failed', 'turn-1', 'thread-1', {
+        codexErrorInfo: 'contextWindowExceeded',
+      }),
+    )
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'partial answer' }],
+      diagnostic: `${expectedFailureDiagnostic('turn', 'contextWindowExceeded')}\nCodex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval`,
+      stopReason: 'max-tokens',
+    })
+    await run.dispose()
+  })
+
   it('flattens child exit and protocol failures after publication', async () => {
     const errors: string[] = []
     const outcomes: SubprocessOutcome[] = [
@@ -1686,11 +1706,15 @@ describe('run lifecycle and quiescence', () => {
       const outcome = { exitCode: 17, signal: null } as const
       const child = fakeChild({ exitOnTerminate: false })
       const { run, turnStart } = await publishRun(child, undefined, {
-        disposeGraceMs: 100,
+        disposeGraceMs: 0.5,
       })
       child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      vi.spyOn(child.handle, 'waitForExit').mockImplementationOnce(async (signal?: AbortSignal) => {
+        expect(signal).toBeDefined()
+        child.settle(outcome)
+        return true
+      })
       child.fromChild.emit('end')
-      setTimeout(() => { child.settle(outcome) }, 5)
       await expect(run.result).resolves.toEqual({
         output: [],
         diagnostic: expectedFailureDiagnostic('process', 'process-exit', {
@@ -2117,6 +2141,41 @@ describe('run lifecycle and quiescence', () => {
       permissionMode: 'approve-for-me',
       disposeGraceMs: 25,
     })
+
+    const invalidCwdParent = {
+      id: 'parent-with-invalid-cwd',
+      session: { header: { cwd: 'relative/SECRET_TOKEN' } },
+    } as unknown as Agent
+    const invalidCwdError: unknown = await ctx.subagents.start('codex-diagnostic', {
+      prompt: [{ type: 'text', text: 'task' }],
+      parent: invalidCwdParent,
+      signal: new AbortController().signal,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    expect(invalidCwdError).toBeInstanceOf(Error)
+    if (!(invalidCwdError instanceof Error)) {
+      throw new Error('expected safe invalid-cwd failure')
+    }
+    expect(invalidCwdError.message).toContain(
+      expectedFailureDiagnostic('initialize', 'unknown'),
+    )
+    expect(invalidCwdError.message).not.toContain('relative/SECRET_TOKEN')
+    expect(invalidCwdError.cause).toBeInstanceOf(Error)
+    expect((invalidCwdError.cause as Error).message)
+      .toContain('relative/SECRET_TOKEN')
+    expect(spawn).not.toHaveBeenCalled()
+
+    const invalidCwdAbort = new AbortController()
+    invalidCwdAbort.abort(new Error('cancel invalid cwd startup'))
+    await expect(ctx.subagents.start('codex-diagnostic', {
+      prompt: [{ type: 'text', text: 'task' }],
+      parent: invalidCwdParent,
+      signal: invalidCwdAbort.signal,
+    })).rejects.toThrow('aborted before app-server startup')
+    expect(spawn).not.toHaveBeenCalled()
+
     const starting = ctx.subagents.start('codex-diagnostic', {
       prompt: [{ type: 'text', text: 'task' }],
       parent: fakeParent,
