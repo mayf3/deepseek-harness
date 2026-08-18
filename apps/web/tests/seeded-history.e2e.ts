@@ -440,6 +440,10 @@ describe('web e2e: seeded history renders through cold resume', () => {
         timeout: 5_000,
       }).toBe(0)
     } finally {
+      // Shared page: a leftover mask blocks later cases even when this one fails.
+      if (await page.getByRole('dialog', { name: 'Couldn’t open file' }).count() > 0) {
+        await page.keyboard.press('Escape')
+      }
       openPath.mockRestore()
     }
   })

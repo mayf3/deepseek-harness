@@ -348,7 +348,7 @@ describe('Chat node rendering', () => {
       resolve: (value) => {
         if (value !== 'report.html') return undefined
         return {
-          open: () => { h.openFile(`for-seq-${String(owner.seq)}/site/report.html`) },
+          open: () => { void h.openFile(`for-seq-${String(owner.seq)}/site/report.html`) },
           label: '打开 site/report.html',
           title: 'site/report.html',
         }
