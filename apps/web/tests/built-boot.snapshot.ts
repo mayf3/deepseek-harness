@@ -43,9 +43,12 @@ it('boots the built plugin graph and renders a fixture session end to end', asyn
   await waitFor(() => {
     expect(document.querySelector('[data-sample="bash"]')).not.toBeNull()
   }, { timeout: 10_000 })
-  // Resolve the resident approval so the ordinary composer bar (which owns
-  // ContextMeter) resumes without replacing the session shell. This minimal
-  // boot graph intentionally does not mount the separate question UI plugin.
+  // The generated bundle roster mounts the question UI before the approval UI.
+  // Skip the resident fixture's three questions, then resolve its approval so
+  // the ordinary composer bar (which owns ContextMeter) resumes.
+  for (let index = 0; index < 3; index += 1) {
+    fireEvent.click(await screen.findByRole('button', { name: 'Skip this question' }))
+  }
   fireEvent.click(await screen.findByRole('button', { name: 'Allow once' }))
 
   // The fixture mirrors all three token-meter projections, so the assembled

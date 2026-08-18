@@ -395,7 +395,7 @@ describe('image admission failures', () => {
     expect(text(result)).toContain('downscale the image and read the smaller copy')
   })
 
-  it('refuses a side above the per-side limit before anything enters durable history', async () => {
+  it('surfaces the per-side limit from attachment admission', async () => {
     await writeFile(join(dir, 'wide.png'), PNG_3X3)
     const ctx = await setup({ storeConfig: { maxImageDimension: 2 } })
     const result = await readImage(ctx, { file_path: 'wide.png' }, agentOn('vision-model'))
@@ -421,8 +421,8 @@ describe('image admission failures', () => {
         return Promise.resolve()
       }
 
-      saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
-        return Promise.reject(FailingStore.failure)
+      async saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+        throw FailingStore.failure
       }
 
       readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {

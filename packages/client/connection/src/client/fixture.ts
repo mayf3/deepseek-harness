@@ -2403,6 +2403,13 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           return err(request, { code: 'session-not-found', message: `no session ${id}`, details: { sessionId: id } })
         }
         if (options.rejectPrompt) {
+          if (content.some(block => block.type === 'image')) {
+            return err(request, {
+              code: 'attachment-error',
+              message: 'fixture: image side exceeds the deployment limit',
+              details: { reason: 'IMAGE_DIMENSION_TOO_LARGE' },
+            })
+          }
           return err(request, {
             code: 'agent-busy',
             message: 'fixture: prompt rejected before acceptance',

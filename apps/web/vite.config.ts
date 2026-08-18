@@ -127,25 +127,22 @@ export default defineConfig({
     },
   },
   resolve: {
-    // Workspace packages resolve to SOURCE: package.json exports point at lib
-    // for Node/type consumers, but the browser bundle must compile src directly
-    // so CSS rides vite's pipeline instead of the CSS-externalized lib bundle.
-    // Only the shell's normal package entry is aliased — plugin packages are
-    // NEVER bundled here (shell self-sufficiency — see
-    // packages/client/web/README.md); they arrive as runtime
-    // bundles through the client module system. Order matters — subpath
-    // aliases must win over bare-name prefixes.
+    // One instance per shared npm identity: a bare specifier otherwise resolves
+    // from the importer's directory, so a diverging range ships a second React
+    // and splits hook and element identity. Entries are package ids — they cover
+    // react/jsx-runtime and react-dom/client — and resolve from this package's
+    // node_modules, so react must stay a devDependency here and any watcher must
+    // run vite from this directory (scripts/dev-web.ts). Workspace packages need
+    // no entry: pnpm links each of them to a single directory.
+    dedupe: ['react', 'react-dom'],
+    // Workspace packages are consumed as built lib products: each resolves
+    // through its own package.json exports from the importer's directory, and
+    // CSS still rides Vite's pipeline because the client build preset emits it
+    // beside the bundle. Plugin packages never enter this graph; they arrive as
+    // runtime bundles through the client module system. The remaining alias
+    // browserizes the vendored Cordis Loader's only Node import.
     alias: [
-      // Browserization of the vendored cordis Loader: its only node-only
-      // import; the two process probes are mapped by `define` below.
       { find: /^node:module$/, replacement: src('./src/node-module-stub.ts') },
-      { find: /^@deepseek-ai\/dsh-client-web$/, replacement: src('../../packages/client/web/src/boot.tsx') },
-      { find: /^@deepseek-ai\/dsh-client-web-react$/, replacement: src('../../packages/client/web-react/src/index.ts') },
-      { find: /^@deepseek-ai\/dsh-client-ui-slots$/, replacement: src('../../packages/client/ui-slots/src/index.ts') },
-      { find: /^@deepseek-ai\/dsh-client-ui-primitives$/, replacement: src('../../packages/client/ui-primitives/src/index.ts') },
-      { find: /^@deepseek-ai\/dsh-client-ui-attachment$/, replacement: src('../../packages/client/ui-attachment/src/index.ts') },
-      { find: /^@deepseek-ai\/dsh-client-schema-form$/, replacement: src('../../packages/client/schema-form/src/index.ts') },
-      { find: /^@deepseek-ai\/dsh-client-modules\/client$/, replacement: src('../../packages/client/modules/src/client/index.ts') },
     ],
   },
   define: {

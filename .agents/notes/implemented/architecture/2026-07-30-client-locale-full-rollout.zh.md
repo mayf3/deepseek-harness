@@ -21,7 +21,7 @@ typed locale 标准席位（`locale:` 注册声明 → 框架注入强类型 `t`
 - **错误/失败类字符串一律英文**：client 自产的兜底串（`command failed`、plan 切换失败）、RpcError 消息、wire 透出的 `error.message (code)` 原样呈现。
 - **设计字面量不进字典**：工具行 variant 标题（Think/Bash/…）、SYSTEM/USER 类 kind 徽标、Plan chip 字标、整个 StatsLine——中英界面显示一致。
 - **ui-trajectory 整包缓做**（开发者检查面，术语密集，单独裁决）。
-- **boot 文案保持硬编码**（AppRoot 渲染早于 locale 服务可用）。
+- **boot 文案保持硬编码**（不依赖框架的启动页运行早于 locale 服务可用）。
 
 **派生层保持纯函数，本地化只在渲染层**：ui-workspace 的 `relativeTime` 返回结构化 `{unit, n}` 由渲染组合字典模板；blank 会话/未分组桶的存储标题不变，渲染按 `blank` 标志/`workspaceId` 缺席替换本地化文案；**搜索态 blank 行一律排除**（双语标题无法与单语查询稳定匹配）。日期不引 Intl：格式模板进字典（消息时钟 `clock.md`/`clock.ymd`，workspace hover `date.ymd`），格式化函数吃 `t` 参数保持纯。
 
