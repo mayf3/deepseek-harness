@@ -259,6 +259,27 @@ describe('SettingsScopeController', () => {
     expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'light' }, revision: 2 })
   })
 
+  it('keeps the write queue usable when a write publication listener throws', async () => {
+    const describeCall = vi.fn().mockResolvedValueOnce(described({ preference: 'system' }, 1))
+    const mutate = vi.fn()
+      .mockResolvedValueOnce(ok(view({ preference: 'dark' }, 2)))
+      .mockResolvedValueOnce(ok(view({ preference: 'light' }, 3)))
+    const { mirror, scope } = derivedScope({ describe: describeCall, mutate })
+    await mirror.load()
+    let shouldThrow = true
+    mirror.subscribe(() => {
+      if (!shouldThrow) return
+      shouldThrow = false
+      throw new Error('write subscriber failed')
+    })
+
+    await expect(scope.set('preference', 'dark')).rejects.toThrow('write subscriber failed')
+    await expect(scope.set('preference', 'light')).resolves.toBeUndefined()
+
+    expect(mutate).toHaveBeenCalledTimes(2)
+    expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'light' }, revision: 3 })
+  })
+
   it('cancels queued and post-dispose writes while draining the in-flight mutation', async () => {
     const first = deferred<RpcResponse<SettingsNamespaceView>>()
     const mutate = vi.fn().mockReturnValue(first.promise)
@@ -289,6 +310,38 @@ describe('SettingsScopeController', () => {
     expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'dark' } })
     await scope.dispose()
     await mirror.load()
+    expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'dark' }, revision: 1 })
+  })
+
+  it('ignores a mirror notification already queued when disposal starts', async () => {
+    let notify = (): void => {}
+    let snapshot = {
+      status: 'ready' as const,
+      view: {
+        writable: true, hasDocument: true,
+        namespaces: [view({ preference: 'dark' }, 1)],
+      },
+      error: null,
+    }
+    const mirror = {
+      getSnapshot: () => snapshot,
+      subscribe: (listener: () => void) => {
+        notify = listener
+        return () => {}
+      },
+    } as never
+    const wire = { settings: {} } as never
+    const scope = new SettingsScopeController<UiTestSettings>(
+      wire, { namespace: 'ui-test' }, mirror, 'host', settingsSchema)
+    expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'dark' }, revision: 1 })
+
+    await scope.dispose()
+    snapshot = {
+      ...snapshot,
+      view: { ...snapshot.view, namespaces: [view({ preference: 'light' }, 2)] },
+    }
+    notify()
+
     expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'dark' }, revision: 1 })
   })
 
@@ -380,6 +433,7 @@ describe('SettingsScopeBinder.bind', () => {
     let locale!: SettingsScope<UiTestSettings>
     new TestRemote(ctx)
     await ctx.plugin(SettingsScopeBinder, { mirror, schema: settingsSchema }).await()
+    expect(ctx.settingsScope.describe()).toBe(mirror)
     const fiber = ctx.plugin({
       inject: ['connection', 'remote', 'settingsScope'],
       apply: (plugin: Context) => {

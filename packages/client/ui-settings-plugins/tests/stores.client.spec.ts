@@ -8,7 +8,9 @@ import { stubSettingsScope, type StubSettingsScope } from '@deepseek-ai/dsh-clie
 import { CardForm, numberField, textField } from '../src/client/card-form.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-card-controller.ts'
-import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
+import {
+  SettingsDescribeMirror, type SettingsMirrorSnapshot,
+} from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { ConfigurablePluginsTabController } from '../src/client/tab-store.ts'
 import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
 
@@ -633,6 +635,44 @@ describe('ConfigurablePluginsTabController', () => {
     controller.refresh()
 
     expect(controller.inject().hooks.configurablePlugins.getSnapshot().namespaces).toEqual([])
+  })
+
+  it('ignores a mirror notification already queued when disposal starts', () => {
+    let notify = (): void => {}
+    let snapshot: SettingsMirrorSnapshot = {
+      status: 'ready' as const,
+      view: { writable: true, hasDocument: true, namespaces: [] },
+      error: null,
+    }
+    const describeFace = {
+      getSnapshot: () => snapshot,
+      subscribe: (listener: () => void) => {
+        notify = listener
+        return () => {}
+      },
+      ensure: () => Promise.resolve(),
+      acceptView: vi.fn(),
+    } as never
+    const controller = new ConfigurablePluginsTabController(describeFace, () => ledger('bash'))
+    expect(controller.inject().hooks.configurablePlugins.getSnapshot())
+      .toEqual({ loaded: true, namespaces: [] })
+
+    controller.dispose()
+    snapshot = {
+      status: 'ready',
+      view: {
+        writable: true,
+        hasDocument: true,
+        namespaces: [{
+          ns: 'bash', schema: {}, value: {}, applies: 'live', secrets: [], revision: 1,
+        }],
+      },
+      error: null,
+    }
+    notify()
+
+    expect(controller.inject().hooks.configurablePlugins.getSnapshot())
+      .toEqual({ loaded: true, namespaces: [] })
   })
 
   it('reports the Host answered even when it serves nothing this tab shows', async () => {

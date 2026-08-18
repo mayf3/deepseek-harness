@@ -187,6 +187,23 @@ describe('permission settings store', () => {
     }).controller
     await thrown.load()
     expect(thrown.store.getSnapshot()).toMatchObject({ status: 'error', error: 'disconnected' })
+
+    const wire = {
+      settings: {
+        describe: () => Promise.resolve(ok({
+          writable: true, hasDocument: false, namespaces: [view('read-only')],
+        })),
+        mutate,
+      },
+    } as never
+    const mirror = new SettingsDescribeMirror(wire)
+    const malformed = new PermissionPresetSettingsController(mirror, wire, {
+      rehydrate: () => { throw 'schema disconnected' },
+    } as never)
+    await malformed.load()
+    expect(malformed.store.getSnapshot()).toMatchObject({
+      status: 'error', error: 'schema disconnected',
+    })
   })
 
   it('hides the row in a remote browser instead of loading forever', async () => {
@@ -216,6 +233,13 @@ describe('permission settings store', () => {
   })
 
   it('disposal stops deriving and suppresses in-flight writes', async () => {
+    const neverRead = vi.fn()
+    const { controller: neverLoaded } = permissionController({ describe: neverRead, mutate: vi.fn() })
+    neverLoaded.dispose()
+    await neverLoaded.load()
+    expect(neverLoaded.store.getSnapshot().status).toBe('idle')
+    expect(neverRead).not.toHaveBeenCalled()
+
     const read = Promise.withResolvers<ReturnType<typeof ok<{
       writable: boolean
       namespaces: SettingsNamespaceView[]
