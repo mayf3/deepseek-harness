@@ -271,6 +271,44 @@ describe('translation pairing merge composition', { timeout: 15_000 }, () => {
     expect(result.zhHash).toBe(gitBlobHash(Buffer.from(mergedZh)))
   })
 
+  it('accepts locale-specific paths to the same paired document', () => {
+    const fixture = createFixture(false)
+    write(fixture.root, 'docs/reference.md', '# Overview\n')
+    write(fixture.root, 'docs/reference.zh.md', '# 概览\n')
+    const source = baseSource.replace('Alpha base.', '[Reference](reference.md#overview)')
+    const zh = baseZh.replace('甲基础。', '[参考](reference.zh.md#overview)')
+    const ancestor = record(fixture.root, 'docs/guide.md', source, zh)
+    const current = record(fixture.root, 'docs/guide.md', source, zh)
+    const other = record(fixture.root, 'docs/guide.md', source, zh)
+
+    expect(mergeTranslationPairingRecords(
+      fixture.root,
+      'docs/guide.i18n.yaml',
+      ancestor,
+      current,
+      other,
+    ).zhContent.toString('utf8')).toBe(zh)
+  })
+
+  it('rejects a clean merge whose Chinese link uses the English sibling', () => {
+    const fixture = createFixture(false)
+    write(fixture.root, 'docs/reference.md', '# Overview\n')
+    write(fixture.root, 'docs/reference.zh.md', '# 概览\n')
+    const source = baseSource.replace('Alpha base.', '[Reference](reference.md)')
+    const zh = baseZh.replace('甲基础。', '[参考](reference.md)')
+    const ancestor = record(fixture.root, 'docs/guide.md', source, zh)
+    const current = record(fixture.root, 'docs/guide.md', source, zh)
+    const other = record(fixture.root, 'docs/guide.md', source, zh)
+
+    expect(() => mergeTranslationPairingRecords(
+      fixture.root,
+      'docs/guide.i18n.yaml',
+      ancestor,
+      current,
+      other,
+    )).toThrow('docs/guide.zh.md:5 clean merge uses "reference.md"; expected "reference.zh.md"')
+  })
+
   it('merges a generated source without an English language switcher', () => {
     const fixture = createFixture(false)
     const ancestor = record(fixture.root, 'docs/module-graph.md', generatedBaseSource, generatedBaseZh)

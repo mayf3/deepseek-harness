@@ -1,11 +1,16 @@
 /** Regression tests for bilingual snapshots, corpus scope, and structure. */
 
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { gitBlobHash, readGitIndexBlob, storeGitBlob } from './translation-pairing-git.ts'
+import {
+  gitBlobHash,
+  gitIndexPaths,
+  readGitIndexBlob,
+  storeGitBlob,
+} from './translation-pairing-git.ts'
 import {
   parseTranslationPairingRecord,
   renderTranslationPairingRecord,
@@ -101,6 +106,26 @@ describe('translation pairing snapshots', () => {
       expect(indexed?.content.toString('utf8')).toBe('staged')
       expect(indexed?.objectId).toBe(gitBlobHash(Buffer.from('staged')))
       expect(readGitIndexBlob(root, 'absent.md')).toBeUndefined()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('lists exact index files without treating a directory prefix as one entry', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-translation-pairing-index-'))
+    try {
+      execFileSync('git', ['init', '--quiet', root], {
+        env: { ...process.env, GIT_DEFAULT_HASH: 'sha1' },
+      })
+      mkdirSync(join(root, 'docs'), { recursive: true })
+      writeFileSync(join(root, 'docs/reference.md'), '# Reference\n')
+      writeFileSync(join(root, 'docs/reference.zh.md'), '# 参考\n')
+      execFileSync('git', ['-C', root, 'add', 'docs'])
+
+      expect(gitIndexPaths(root)).toEqual(new Set([
+        'docs/reference.md',
+        'docs/reference.zh.md',
+      ]))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -230,6 +255,53 @@ describe('translation scope discovery', () => {
 })
 
 describe('translation structural signature', () => {
+  it('treats target-locale siblings as one semantic link target', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-translation-structure-'))
+    try {
+      writeFileSync(join(root, 'reference.md'), '# Reference\n')
+      writeFileSync(join(root, 'reference.zh.md'), '# 参考\n')
+      const sourceMarkdown = '[Reference](reference.md?view=full#section)\n'
+      const counterpartMarkdown = '[参考](reference.zh.md?view=full#section)\n'
+      const source = translationStructureSignature(
+        parseTranslationMarkdown(sourceMarkdown),
+        'guide.zh.md',
+        { repoRoot: root, sourcePath: 'guide.md', markdown: sourceMarkdown },
+      )
+      const counterpart = translationStructureSignature(
+        parseTranslationMarkdown(counterpartMarkdown),
+        'guide.md',
+        { repoRoot: root, sourcePath: 'guide.zh.md', markdown: counterpartMarkdown },
+      )
+      expect(translationStructureDiff(source, counterpart)).toEqual([])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('includes reference-style document links but excludes image-only definitions', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-translation-structure-'))
+    try {
+      writeFileSync(join(root, 'reference.md'), '# Reference\n')
+      writeFileSync(join(root, 'reference.zh.md'), '# 参考\n')
+      const markdown = [
+        '[Reference][doc]',
+        '',
+        '![Preview][asset]',
+        '',
+        '[doc]: reference.md',
+        '[asset]: reference.zh.md',
+        '',
+      ].join('\n')
+      expect(translationStructureSignature(
+        parseTranslationMarkdown(markdown),
+        'guide.zh.md',
+        { repoRoot: root, sourcePath: 'guide.md', markdown },
+      ).links).toEqual(['dsh-translation-target:reference.md'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('accepts matching list kinds, starts, and item counts', () => {
     const source = signature('3. One\n4. Two\n\n- A\n- B\n')
     const counterpart = signature('3. 一\n4. 二\n\n- 甲\n- 乙\n')

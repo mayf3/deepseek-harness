@@ -6,9 +6,9 @@
 
 | 包 | 职责 | ctx key |
 |---|---|---|
-| [`session-reference/`](session-reference/README.md) | 其他会话的有界快照 | `ctx.sessionReferenceResolver` |
-| [`time-context/`](time-context/README.md) | 当前时间与耗时上下文 | — |
-| [`tmux-context/`](tmux-context/README.md) | tmux 位置上下文 | — |
-| [`agent-instructions/`](agent-instructions/README.md) | 工作区指令上下文 | — |
+| [`session-reference/`](session-reference/README.zh.md) | 其他会话的有界快照 | `ctx.sessionReferenceResolver` |
+| [`time-context/`](time-context/README.zh.md) | 当前时间与耗时上下文 | — |
+| [`tmux-context/`](tmux-context/README.zh.md) | tmux 位置上下文 | — |
+| [`agent-instructions/`](agent-instructions/README.zh.md) | 工作区指令上下文 | — |
 
-会话引用见 [docs/subsystems/session-reference.md](../../docs/subsystems/session-reference.md)；[`agent-instructions` 决策记录](../../.agents/notes/implemented/feature/2026-06-24-workspace-context.md)规定了其按 agent（智能体）/会话隔离与生命周期拆分。
+会话引用见 [docs/subsystems/session-reference.md](../../docs/subsystems/session-reference.zh.md)；[`agent-instructions` 决策记录](../../.agents/notes/implemented/feature/2026-06-24-workspace-context.zh.md)规定了其按 agent（智能体）/会话隔离与生命周期拆分。

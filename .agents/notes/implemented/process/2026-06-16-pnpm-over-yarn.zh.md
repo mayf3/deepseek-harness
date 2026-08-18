@@ -8,14 +8,14 @@ Status: implemented
 
 本仓库最初使用 **Yarn 4** 搭配 `node-modules` 链接器。这是一个刻意保守的选择：行为类似 npm 的扁平布局，同时享有 Yarn 的 workspaces 和 `yarn constraints`。它能正常工作。但 Yarn 4 源自 Plug'n'Play 的血统，使得 `node-modules` 链接器成为非主流模式；而更广泛的 JS 生态——工具默认值、CI action、Corepack 示例、贡献者的熟悉度——正日益以 pnpm 为中心。对于一个主要由 agent（智能体）构建、偶尔有人类贡献者阅读的仓库而言，「大多数工具和人所期望的包管理器」具有实际价值：更少的意外、更成熟的故障路径、更多可直接复用的解答。
 
-切换成本目前处于最低点。本仓库尚无任何包发布（每个包都是 `private: true`）；开发流程、测试和源码模式 demo 都通过各自声明的 TypeScript 启动器运行，产物检查则会显式构建。因此，包管理器只需做到：（a）解析并链接 `node_modules`，（b）运行 workspace 脚本，（c）强制执行 workspace 约束。唯一的 Yarn 特有资产是 `yarn.config.cjs`（`@yarnpkg/types` 约束引擎），体量小且可机械地重新表达。这与 [tsdown 决策](../../archived/process/2026-06-11-tsdown-over-dumble.md)的逻辑一致：在爆炸半径尚小时，将承重工具换为生态更健康的选项。
+切换成本目前处于最低点。本仓库尚无任何包发布（每个包都是 `private: true`）；开发流程、测试和源码模式 demo 都通过各自声明的 TypeScript 启动器运行，产物检查则会显式构建。因此，包管理器只需做到：（a）解析并链接 `node_modules`，（b）运行 workspace 脚本，（c）强制执行 workspace 约束。唯一的 Yarn 特有资产是 `yarn.config.cjs`（`@yarnpkg/types` 约束引擎），体量小且可机械地重新表达。这与 [tsdown 决策](../../archived/process/2026-06-11-tsdown-over-dumble.zh.md)的逻辑一致：在爆炸半径尚小时，将承重工具换为生态更健康的选项。
 
 ## 决策
 
 采用 **pnpm 11.7.0**，通过 `packageManager` 字段固定版本，经 Corepack 安装（与 Yarn 使用的机制相同）：
 
 - **Workspaces** 从 `package.json` 的 `workspaces` 数组 + `.yarnrc.yml` 迁移到 `pnpm-workspace.yaml`（`vendor/*`、`packages/*`——同样的 glob；`examples/*` 保持非 workspace，与先前设置及 tsdown 的显式 glob 一致）。
-- **严格符号链接链接器**（pnpm 默认）取代 Yarn 的提升式 `node-modules` 链接器。我们刻意**不**添加 `node-linker=hoisted` / `shamefully-hoist` 逃生口：pnpm 的非扁平 `node_modules` 会使幻影依赖（引用未声明的传递依赖）明确报错，这对于一个以机械门禁为核心质量保障的仓库（见[机械质量门禁](2026-06-11-quality-gates.md)）是一项*优势*。门禁套件（类型检查、lint、test、build、knip）是证明不存在此类幻影导入的安全网。
+- **严格符号链接链接器**（pnpm 默认）取代 Yarn 的提升式 `node-modules` 链接器。我们刻意**不**添加 `node-linker=hoisted` / `shamefully-hoist` 逃生口：pnpm 的非扁平 `node_modules` 会使幻影依赖（引用未声明的传递依赖）明确报错，这对于一个以机械门禁为核心质量保障的仓库（见[机械质量门禁](2026-06-11-quality-gates.zh.md)）是一项*优势*。门禁套件（类型检查、lint、test、build、knip）是证明不存在此类幻影导入的安全网。
 - **构建脚本白名单。** pnpm 10+ 不运行依赖的生命周期脚本，除非将其加入白名单。`pnpm-workspace.yaml` 携带一份显式的 `allowBuilds` 映射（`esbuild`、`lefthook`、`@google/genai`、`protobufjs`）——与本仓库对模型/工具输出已有的供应链加固姿态一致，现在也应用于安装时的代码执行。`peerDependencyRules.allowedVersions.typescript: '>=5 <7'` 消除仓库内 TypeScript 的良性 peer 范围警告。
 - **约束变为包管理器无关。** `yarn.config.cjs`（导入 `@yarnpkg/types`，使用 `Yarn.workspaces()` / `workspace.set()`）被 `scripts/check-workspace-constraints.ts` 取代——一个纯 tsx 脚本，通过 `pnpm run constraints` 运行。它在相同的 `vendor` + `packages` 范围上强制执行完全相同的不变式：每个包 `private: true`；`@deepseek-ai/dsh-*` 包将 `cordis` 同时声明为对等依赖（peer dependency）和 dev 依赖且范围一致、使用根 `package.json` 的版本、设置 `type: module`；vendor 包仅检查是否为私有。
 - 所有 CI、lefthook 钩子、`package.json` 脚本和文档中的 `yarn …` 动词变为 `pnpm …` / `pnpm run …`。`yarn.lock` → `pnpm-lock.yaml`（lockfile v9）。`.gitignore` 将 `.yarn/` 换为 `.pnpm-store/`。vendor README（如 `vendor/cordis/README.md`）按 Vendoring Policy 保持其上游 `yarn` 示例不变。

@@ -223,10 +223,15 @@ describe('rewriteMarkdown', () => {
     )
   })
 
-  it('routes a pair switcher across locales while ordinary links stay in locale', () => {
+  it('routes switchers across locales and explicit locale siblings within their locale', () => {
     const { root, pages } = fixture()
     writeFileSync(join(root, 'docs/a.zh.md'), '# A\n')
-    const paired = pages.filter(page => page.source !== 'docs/a.md')
+    writeFileSync(join(root, 'docs/b.zh.md'), '# B\n')
+    const paired = pages.filter(page => page.source !== 'docs/a.md').map(page => (
+      page.locale === 'root' && page.source === 'docs/b.md'
+        ? { ...page, source: 'docs/b.zh.md', sourceAliases: ['docs/b.md'] }
+        : page
+    ))
     paired.push(
       {
         locale: 'root', contentLocale: 'zh-CN', source: 'docs/a.zh.md', sourceAliases: ['docs/a.md'],
@@ -237,7 +242,7 @@ describe('rewriteMarkdown', () => {
         route: 'en/guide/a.md', label: 'A', sidebar: 'en-guide', section: 'Test', order: 1,
       },
     )
-    expect(rewriteMarkdown('[English](a.md) [B](b.md)\n', {
+    expect(rewriteMarkdown('[English](a.md) [B](b.zh.md)\n', {
       locale: 'root',
       sourcePath: 'docs/a.zh.md',
       route: 'guide/a.md',
@@ -245,6 +250,14 @@ describe('rewriteMarkdown', () => {
       repoRoot: root,
       repositoryRef: 'abc123',
     })).toBe('[English](../en/guide/a.md) [B](../reference-root/b.md)\n')
+    expect(rewriteMarkdown('[中文](a.zh.md) [B](b.md)\n', {
+      locale: 'en',
+      sourcePath: 'docs/a.md',
+      route: 'en/guide/a.md',
+      pages: paired,
+      repoRoot: root,
+      repositoryRef: 'abc123',
+    })).toBe('[中文](../../guide/a.md) [B](../reference/b.md)\n')
   })
 
   it('fails loud when a relative target is missing', () => {
@@ -305,7 +318,10 @@ describe('docsPages locale routes', () => {
     expect(pages.length).toBeGreaterThan(0)
     for (const readme of ['README.md', 'README.zh.md']) {
       const rows = readFileSync(join(repositoryRoot, 'docs/subsystems', readme), 'utf8')
-      const missing = pages.filter(page => !rows.includes(`| [${page}](${page}) |`))
+      const missing = pages.filter((page) => {
+        const target = readme.endsWith('.zh.md') ? page.replace(/\.md$/, '.zh.md') : page
+        return !rows.includes(`| [${page}](${target}) |`)
+      })
       expect(missing, `${readme} must carry one table row per subsystem page`).toEqual([])
     }
   })

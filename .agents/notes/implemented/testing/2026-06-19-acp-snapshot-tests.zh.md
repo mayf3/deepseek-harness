@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-单元测试不会覆盖组装后的完整 agent（智能体）子进程及其 ACP（Agent Client Protocol）自动化协议格式，而真实 API 测试不具确定性且受密钥门控。因此，即使单元测试覆盖率检查通过，Loader 接线、后端行为和协议输出仍可能回归，[默认导出事故复盘（postmortem）](../../../../docs/postmortem/0001-acp-default-export-drops-inject.md)已经证明了这一点。
+单元测试不会覆盖组装后的完整 agent（智能体）子进程及其 ACP（Agent Client Protocol）自动化协议格式，而真实 API 测试不具确定性且受密钥门控。因此，即使单元测试覆盖率检查通过，Loader 接线、后端行为和协议输出仍可能回归，[默认导出事故复盘（postmortem）](../../../../docs/postmortem/0001-acp-default-export-drops-inject.zh.md)已经证明了这一点。
 
 完整 transcript（文本记录）测试的阻塞因素在于模型：agent 的输出由非确定性的 LLM（大语言模型）驱动，而每次运行都命中真实 API 的密钥门控测试既不确定也无法在 CI 中运行。该测试层级需要真实运行的保真度与 fixture（测试前置数据）的确定性兼得。
 
@@ -44,14 +44,14 @@ Status: implemented
 
 记录模式使用真实 `llm-deepseek` 适配器和配置为 `persistenceCompression: 'none'` 的 JSONL 持久化后端运行场景，再把生成的 `.jsonl` 复制到场景目录。显式 raw 模式让已提交回放 fixture 保持逐行可读，而普通部署使用后端的压缩默认值；符合条件的分片连续段仍使用默认的打包存储行。逐事件追加具有持久性，但 harness 会在采集前优雅关闭子进程（关闭 stdin → `await ctx.dispose()`），以确保最终事件已刷出。`llm-replay` 本身不执行记录——它只负责回放。
 
-回放使用 `cordis.snapshot.yml` overlay，以 `llm-replay` 替换真实适配器，同时保留实际组合。记录使用普通配置和由 harness 提供的持久化根目录。回放模式跳过 `.env` 加载，因此意外存在的 API 密钥不会触发真实调用。参见[单一来源配置 Agent Note](../../archived/testing/2026-07-04-single-source-acp-replay-config.md)。
+回放使用 `cordis.snapshot.yml` overlay，以 `llm-replay` 替换真实适配器，同时保留实际组合。记录使用普通配置和由 harness 提供的持久化根目录。回放模式跳过 `.env` 加载，因此意外存在的 API 密钥不会触发真实调用。参见[单一来源配置 Agent Note](../../archived/testing/2026-07-04-single-source-acp-replay-config.zh.md)。
 
 ### 两个表面：归一化后比对
 
 快照运行断言**两个**归一化后的表面，因为 harness 的外部表面是不同的：
 
 1. **stdout transcript**——自动化客户端收到的、分帧后的 ACP JSON-RPC 响应与已提交的消息更新。它捕获传输约定的回归，与已提交的 `stdout.expected.jsonl` 比较。
-2. **重新持久化的会话 JSONL**，经过规范化后与 `session.jsonl` 比较。同一 fixture 同时作为回放来源和预期日志。提示词与工具的主体内容会被清理；每种请求头类别由一个场景固定余下的请求头序列。该 pin 默认拥有可读的提示词与工具 schema 伴随文件；当完整的对应序列相同时，也可将另一个 pin 指定为其中任一来源，因此每个不同的伴随文件版本只提交一次。fixture 守卫会拒绝重复的伴随文件内容，录制/刷新会拒绝生成不同字节的共享引用方。最初的请求头固定理由保留在[请求头固定 Agent Note](../../archived/testing/2026-07-06-pin-request-header-content-in-one-scenario.md)中。Override 场景仅从其伴随文件派生模型行为。
+2. **重新持久化的会话 JSONL**，经过规范化后与 `session.jsonl` 比较。同一 fixture 同时作为回放来源和预期日志。提示词与工具的主体内容会被清理；每种请求头类别由一个场景固定余下的请求头序列。该 pin 默认拥有可读的提示词与工具 schema 伴随文件；当完整的对应序列相同时，也可将另一个 pin 指定为其中任一来源，因此每个不同的伴随文件版本只提交一次。fixture 守卫会拒绝重复的伴随文件内容，录制/刷新会拒绝生成不同字节的共享引用方。最初的请求头固定理由保留在[请求头固定 Agent Note](../../archived/testing/2026-07-06-pin-request-header-content-in-one-scenario.zh.md)中。Override 场景仅从其伴随文件派生模型行为。
 
 两个表面互补：stdout 覆盖精简的自动化协议格式，JSONL 覆盖协议格式有意省略的循环、工具和边界结构。
 
@@ -59,7 +59,7 @@ Status: implemented
 
 ### 隔离：当前靠归一化，后续可加沙箱
 
-工具确定性来自生成的 cwd、清理后的环境、全新的非登录 shell、受限命令和规范化。cwd 默认为平台临时目录；当临时目录是始终可写的策略根，而行为需要独立项目位置时，场景可以改为提供其父目录。并发回放运行各自拥有独立 cwd、持久化目录和定长且按场景键区分的 spill 根目录，因此一个场景的清理操作无法删除另一个场景仍在进行的完整输出恢复，同时真实路径预览预算保持稳定。该层不声称提供 OS 级隔离。如果需要更强层级，沙箱执行器可以通过现有[能力 seam](../architecture/2026-06-13-capability-seams.md)替换本地后端。
+工具确定性来自生成的 cwd、清理后的环境、全新的非登录 shell、受限命令和规范化。cwd 默认为平台临时目录；当临时目录是始终可写的策略根，而行为需要独立项目位置时，场景可以改为提供其父目录。并发回放运行各自拥有独立 cwd、持久化目录和定长且按场景键区分的 spill 根目录，因此一个场景的清理操作无法删除另一个场景仍在进行的完整输出恢复，同时真实路径预览预算保持稳定。该层不声称提供 OS 级隔离。如果需要更强层级，沙箱执行器可以通过现有[能力 seam](../architecture/2026-06-13-capability-seams.zh.md)替换本地后端。
 
 ### 回放插件是独立的包
 
@@ -79,6 +79,6 @@ Status: implemented
 
 ## 后果
 
-该测试层为每个场景增加经过评审的输入、会话、stdout、可选 override 和可选 workspace fixture，并为每个不同的已固定提示词序列、每个不同的已固定工具 schema 序列各增加一个文件。记录与回放都会把 workspace seed 复制到生成的 cwd。作为回报，该层通过真实 Loader 和工具组合提供确定性的无密钥覆盖，其中包括一个组装后的上下文溢出恢复场景，其带标记的压缩摘要提供辅助调用。保留下来的大多数场景测试的是组装后的后端而非 ACP；[仅面向自动化的 ACP 决策](../simplification/2026-07-23-acp-automation-only-protocol.md#snapshot-boundary)将该语料保留在此处，直至它能够在不损失覆盖的情况下迁移到传输无关的 headless 套件。
+该测试层为每个场景增加经过评审的输入、会话、stdout、可选 override 和可选 workspace fixture，并为每个不同的已固定提示词序列、每个不同的已固定工具 schema 序列各增加一个文件。记录与回放都会把 workspace seed 复制到生成的 cwd。作为回报，该层通过真实 Loader 和工具组合提供确定性的无密钥覆盖，其中包括一个组装后的上下文溢出恢复场景，其带标记的压缩摘要提供辅助调用。保留下来的大多数场景测试的是组装后的后端而非 ACP；[仅面向自动化的 ACP 决策](../simplification/2026-07-23-acp-automation-only-protocol.zh.md#snapshot-boundary)将该语料保留在此处，直至它能够在不损失覆盖的情况下迁移到传输无关的 headless 套件。
 
-本 Agent Note 与[拟议的确定性 Agent Note](../../proposed/testing/2026-06-11-deterministic-and-stress-testing.md)相关，但不取代它：该提案的「通用回放 fixture」在每次测试后重新派生会话*消息历史*（内部一致性不变量），而这些快照固定组装后的行为与外部自动化输出。在后端语料迁出 ACP 之前，两者相互补充。
+本 Agent Note 与[拟议的确定性 Agent Note](../../proposed/testing/2026-06-11-deterministic-and-stress-testing.zh.md)相关，但不取代它：该提案的「通用回放 fixture」在每次测试后重新派生会话*消息历史*（内部一致性不变量），而这些快照固定组装后的行为与外部自动化输出。在后端语料迁出 ACP 之前，两者相互补充。

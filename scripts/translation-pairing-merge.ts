@@ -20,6 +20,7 @@ import {
   translationStructureDiff,
   translationStructureSignature,
 } from './translation-pairing.ts'
+import { translationLinkLocaleViolations } from './translation-links.ts'
 import {
   parseTranslationPairingRecord,
   renderTranslationPairingRecord,
@@ -162,9 +163,11 @@ function loadRecordOwners(
   }
 }
 
-function assertMergedPairStructure(paths: TranslationPairPaths, source: Buffer, zh: Buffer): void {
-  const sourceTree = parseTranslationMarkdown(source.toString('utf8'))
-  const zhTree = parseTranslationMarkdown(zh.toString('utf8'))
+function assertMergedPairStructure(root: string, paths: TranslationPairPaths, source: Buffer, zh: Buffer): void {
+  const sourceText = source.toString('utf8')
+  const zhText = zh.toString('utf8')
+  const sourceTree = parseTranslationMarkdown(sourceText)
+  const zhTree = parseTranslationMarkdown(zhText)
   const sourceSwitcherTargets = languageSwitcherTargets(paths.source)
   const zhSwitcherTargets = languageSwitcherTargets(paths.zh)
   if (requiresSourceLanguageSwitcher(paths.source) && !linksTo(sourceTree, zhSwitcherTargets)) {
@@ -173,9 +176,32 @@ function assertMergedPairStructure(paths: TranslationPairPaths, source: Buffer, 
   if (!linksTo(zhTree, sourceSwitcherTargets)) {
     throw new Error(`${paths.zh} clean merge lost its language-switcher link to ${basename(paths.source)}`)
   }
+  const localeViolations = [
+    ...translationLinkLocaleViolations(sourceText, {
+      repoRoot: root,
+      sourcePath: paths.source,
+    }, zhSwitcherTargets),
+    ...translationLinkLocaleViolations(zhText, {
+      repoRoot: root,
+      sourcePath: paths.zh,
+    }, sourceSwitcherTargets),
+  ]
+  if (localeViolations.length > 0) {
+    const violation = localeViolations[0]
+    if (violation === undefined) throw new Error('translation locale violation disappeared')
+    throw new Error(`${violation.sourcePath}:${violation.line} clean merge uses ${JSON.stringify(violation.url)}; expected ${JSON.stringify(violation.expectedUrl)}`)
+  }
   const divergences = translationStructureDiff(
-    translationStructureSignature(sourceTree, zhSwitcherTargets),
-    translationStructureSignature(zhTree, sourceSwitcherTargets),
+    translationStructureSignature(sourceTree, zhSwitcherTargets, {
+      repoRoot: root,
+      sourcePath: paths.source,
+      markdown: sourceText,
+    }),
+    translationStructureSignature(zhTree, sourceSwitcherTargets, {
+      repoRoot: root,
+      sourcePath: paths.zh,
+      markdown: zhText,
+    }),
   )
   if (divergences.length > 0) {
     throw new Error(`${paths.source} and ${paths.zh} clean merges diverge structurally: ${divergences.join('; ')}`)
@@ -224,7 +250,7 @@ export function mergeTranslationPairingRecords(
   const other = loadRecordOwners(root, 'other', otherRecord, paths)
   const sourceContent = mergeBlobTriplet(root, paths.source, ancestor.source, current.source, other.source)
   const zhContent = mergeBlobTriplet(root, paths.zh, ancestor.zh, current.zh, other.zh)
-  assertMergedPairStructure(paths, sourceContent, zhContent)
+  assertMergedPairStructure(root, paths, sourceContent, zhContent)
   const sourceHash = storeGitBlob(root, sourceContent)
   const zhHash = storeGitBlob(root, zhContent)
   return {

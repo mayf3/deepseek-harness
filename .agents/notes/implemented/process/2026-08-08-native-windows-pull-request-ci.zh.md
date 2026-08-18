@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-[ci.yml](../../../../.github/workflows/ci.yml) 中必需的 `windows` 作业仍是在 `ubuntu-latest` 上运行的 `windows node 24 / wine blocking`。它保留经过校验和验证的 Windows Node、Wine apt 与 pnpm 缓存、仅限工作区快照的 hoisted 安装，以及运行工作区构建与生产网站的[共享 Wine 门禁脚本](../../../../scripts/wine-windows-gates.sh)。Node 分发文件传输采用有界重试；nodejs.org 的大文件传输停滞时，由支持范围请求的传输镜像续传相同字节，但版本和 SHA-256 权威仍属于 nodejs.org，归档通过该校验前绝不会投入使用。稳定的 `windows` 作业 ID 仍是 `all checks passed` 的依赖项。[已归档的 Wine 实验](../../archived/process/2026-07-27-wine-windows-gates-experiment.md)保留其实测取舍，而本文负责当前双通道拓扑。
+[ci.yml](../../../../.github/workflows/ci.yml) 中必需的 `windows` 作业仍是在 `ubuntu-latest` 上运行的 `windows node 24 / wine blocking`。它保留经过校验和验证的 Windows Node、Wine apt 与 pnpm 缓存、仅限工作区快照的 hoisted 安装，以及运行工作区构建与生产网站的[共享 Wine 门禁脚本](../../../../scripts/wine-windows-gates.sh)。Node 分发文件传输采用有界重试；nodejs.org 的大文件传输停滞时，由支持范围请求的传输镜像续传相同字节，但版本和 SHA-256 权威仍属于 nodejs.org，归档通过该校验前绝不会投入使用。稳定的 `windows` 作业 ID 仍是 `all checks passed` 的依赖项。[已归档的 Wine 实验](../../archived/process/2026-07-27-wine-windows-gates-experiment.zh.md)保留其实测取舍，而本文负责当前双通道拓扑。
 
 每个拉取请求还会在组织自有的 `dsh-windows-2025-16core` 运行器上启动一个常规且独立的 `windows-native` 作业，名称为 `windows node 24 / native complete`。该作业为工作区符号链接启用开发人员模式，通过 `pnpm/action-setup` 提供仓库固定版本的 pnpm，在不传输 store 归档的情况下执行不可变安装，并在原生 PowerShell 下运行 `pnpm run check:ci:windows-complete`。门禁卡住时，120 分钟超时会为其设定上限，同时不把实测性能目标当作正确性截止时间。
 
@@ -30,7 +30,7 @@ Status: implemented
 
 Windows 的持久 JSONL 路径会保留驱动器根目录的原生写法，并仅对后代路径与暂存路径应用扩展长度命名空间。ACP（Agent Client Protocol）拆卸阶梯使用真实 Node 子进程，以符合宿主语义的结果证明优雅终止与强制终止两个层级，并避免声称 Windows 会交付 POSIX 信号。产品接受裸命令时，可执行 fixture 会提供 `.cmd` 包装脚本与 `PATHEXT`。repository-cache 辅助包位于所选 Git 子路径内，因此它们声明的 `file:` 依赖会在 Windows 上以相同方式暴露命令包装脚本。随附的安装器会导出 pnpm 自有的 workspace-ignore 配置，保留 `PNPM_HOME` 作为 pnpm 数据配置，同时从生命周期 `PATH` 中移除该目录，并在 `PATHEXT` 中优先选择 `.CMD`；因此，嵌套 Git 包安装既不会重新加入外层 workspace，也不会让继承的 Windows pnpm 可执行文件抢在事务持有的 wrapper 之前。
 
-启动后，只有根 fiber 与 Loader 均处于活跃状态时，系统才会继续设置 profile watcher。只有当同一次调用所记录的信号已取得关闭流程所有权时，系统才会隔离并发设置错误；无关 HMR 故障仍会响亮失败。[进程关闭控制器](../bug-fix/2026-08-03-cli-signal-shutdown-escalation.md)会在根级 dispose 成功后让单次任务的正常完成流程排空 Node 剩余句柄，同时让拆卸失败、截止时间到期和信号升级继续强制退出。vendored Include 会串行化防抖写入，只对瞬时访问或忙碌故障执行有界退避重试，并确保每个由计时器触发的拒绝都得到观察。持久化最终失败后，该故障会保留在队列中，并重新抛给拆卸责任方；成功拆卸则会排空最新写入。
+启动后，只有根 fiber 与 Loader 均处于活跃状态时，系统才会继续设置 profile watcher。只有当同一次调用所记录的信号已取得关闭流程所有权时，系统才会隔离并发设置错误；无关 HMR 故障仍会响亮失败。[进程关闭控制器](../bug-fix/2026-08-03-cli-signal-shutdown-escalation.zh.md)会在根级 dispose 成功后让单次任务的正常完成流程排空 Node 剩余句柄，同时让拆卸失败、截止时间到期和信号升级继续强制退出。vendored Include 会串行化防抖写入，只对瞬时访问或忙碌故障执行有界退避重试，并确保每个由计时器触发的拒绝都得到观察。持久化最终失败后，该故障会保留在队列中，并重新抛给拆卸责任方；成功拆卸则会排空最新写入。
 
 Shiki 会禁用 TextMate 正则的延迟编译，并在用户内容进入保持不变的逐行 tokenization（词元化）预算前预热每种启动语法，从而避免调度器争用发布不完整的高亮流。Codex 真实产品 fixture 固定使用稳定版 0.147.0 schema，并选择实际提供的命令工具与对应参数形态；这样既保留由提供方负责的协议，也能在每种宿主上证明无人值守拒绝和整棵进程树退出。
 

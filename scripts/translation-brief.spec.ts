@@ -215,6 +215,7 @@ describe('brief rendering', () => {
     expect(brief).toContain('## First-occurrence notes')
     expect(brief).toContain('agent（智能体）')
     expect(brief).toContain('首次出现 annotations attach to the document-wide first occurrence only')
+    expect(brief).toContain('use an existing `.zh.md` sibling for Chinese')
     expect(brief).toContain('verify-translation-pairing --write docs/foo.md')
   })
 
@@ -266,6 +267,7 @@ describe('brief rendering', () => {
       scope: { kind: 'units', bundles: [bundle], firstOccurrenceNotes: [] },
     })
     expect(brief).toContain('exactly what the new Chinese states')
+    expect(brief).toContain('use the `.md` sibling for English when a pair exists')
     expect(brief).toContain('verify-translation-pairing --write docs/foo.md')
   })
 

@@ -215,12 +215,23 @@ function planScope(
 /** Validate a computed mechanical counterpart and write it. */
 function applyMechanical(counterpartPath: string, sourceCurrent: string, result: string): void {
   const counterpartBase = basename(counterpartPath)
+  const sourcePath = counterpartPath.endsWith('.zh.md')
+    ? counterpartPath.replace(/\.zh\.md$/, '.md')
+    : counterpartPath.replace(/\.md$/, '.zh.md')
   const sourceBase = counterpartBase.endsWith('.zh.md')
     ? counterpartBase.replace(/\.zh\.md$/, '.md')
     : counterpartBase.replace(/\.md$/, '.zh.md')
   const errors = translationStructureDiff(
-    translationStructureSignature(parseTranslationMarkdown(sourceCurrent), counterpartBase),
-    translationStructureSignature(parseTranslationMarkdown(result), sourceBase),
+    translationStructureSignature(
+      parseTranslationMarkdown(sourceCurrent),
+      counterpartBase,
+      { repoRoot: root, sourcePath, markdown: sourceCurrent },
+    ),
+    translationStructureSignature(
+      parseTranslationMarkdown(result),
+      sourceBase,
+      { repoRoot: root, sourcePath: counterpartPath, markdown: result },
+    ),
   )
   if (errors.length > 0) {
     throw new Error(`gen-translation-brief: computed mechanical update for ${counterpartPath} violates the pair structure: ${errors.join('; ')}`)

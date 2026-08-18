@@ -12,6 +12,10 @@ import { fromMarkdown } from 'mdast-util-from-markdown'
 import { gfmFromMarkdown } from 'mdast-util-gfm'
 import { gfm } from 'micromark-extension-gfm'
 import type { Nodes } from 'mdast'
+import {
+  semanticTranslationLinkNodeTarget,
+  type TranslationLinkContext,
+} from './translation-links.ts'
 
 /** Complete opening marker line: `<!-- BEGIN GENERATED <slug> … -->` (slug captured). */
 const GENERATED_REGION_BEGIN_LINE = /^<!-- BEGIN GENERATED (\S+)(?: [^>]*)? -->$/
@@ -347,11 +351,23 @@ export function requiresSourceLanguageSwitcher(source: string): boolean {
 export function translationStructureSignature(
   tree: Nodes,
   switcherTargets: string | readonly string[],
+  linkContext?: TranslationLinkContext & { markdown: string },
 ): TranslationStructureSignature {
   const acceptedSwitchers = new Set(
     typeof switcherTargets === 'string' ? [switcherTargets] : switcherTargets,
   )
   const sig: TranslationStructureSignature = { headings: [], code: [], tables: [], lists: [], links: [] }
+  const definitions = new Map<string, Extract<Nodes, { type: 'definition' }>>()
+  const collectDefinitions = (node: Nodes): void => {
+    if (node.type === 'definition') definitions.set(node.identifier, node)
+    if ('children' in node) for (const child of node.children) collectDefinitions(child)
+  }
+  collectDefinitions(tree)
+  const linkTarget = (node: Extract<Nodes, { type: 'link' | 'definition' }>): string => (
+    linkContext === undefined
+      ? node.url
+      : semanticTranslationLinkNodeTarget(node, linkContext.markdown, linkContext)
+  )
   const visit = (node: Nodes): void => {
     switch (node.type) {
       case 'heading':
@@ -369,8 +385,17 @@ export function translationStructureSignature(
           : `bullet:items=${node.children.length}`)
         break
       case 'link':
-        if (!acceptedSwitchers.has(node.url)) sig.links.push(node.url)
+        if (!acceptedSwitchers.has(node.url)) {
+          sig.links.push(linkTarget(node))
+        }
         break
+      case 'linkReference': {
+        const definition = definitions.get(node.identifier)
+        if (definition !== undefined && !acceptedSwitchers.has(definition.url)) {
+          sig.links.push(linkTarget(definition))
+        }
+        break
+      }
       default:
         // Every other node kind is prose or a container, not part of the signature.
         break

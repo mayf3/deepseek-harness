@@ -48,6 +48,16 @@ export interface GitIndexBlob {
   content: Buffer
 }
 
+/** Every stage-zero path currently present in the Git index. */
+export function gitIndexPaths(root: string): Set<string> {
+  return new Set(
+    runGit(root, ['ls-files', '-z'], 'listing Git index paths')
+      .toString('utf8')
+      .split('\0')
+      .filter(Boolean),
+  )
+}
+
 /**
  * Read one path from the Git index without consulting working-tree bytes.
  *
