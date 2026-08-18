@@ -136,7 +136,7 @@ async function loopbackTransfer(json: string): Promise<TransferTimings> {
     const headers = performance.now()
     const body = await response.text()
     const completed = performance.now()
-    if (body.length !== json.length) throw new Error('history transport benchmark received a truncated body')
+    if (body !== json) throw new Error('history transport benchmark received a changed body')
     return {
       headersMs: headers - started,
       bodyMs: completed - headers,
@@ -424,10 +424,10 @@ it('reports packed history transport and exact replay costs', async () => {
   const packedResponseMs = packed.ms + packedRecords.ms + packedJson.ms
   const rawClientMs = parsedRaw.ms + rawValidation.ms + rawPreparation.ms + rawFold.ms
   const packedClientMs = parsedPacked.ms + packedValidation.ms + packedPreparation.ms + packedFold.ms
-  const rawApiWaitMs = rawResponseMs + rawTransfer.totalMs + parsedRaw.ms + rawValidation.ms
-  const packedApiWaitMs = packedResponseMs + packedTransfer.totalMs + parsedPacked.ms + packedValidation.ms
-  const rawReadyMs = rawResponseMs + rawTransfer.totalMs + rawClientMs
-  const packedReadyMs = packedResponseMs + packedTransfer.totalMs + packedClientMs
+  const rawSyntheticApiWaitMs = rawResponseMs + rawTransfer.totalMs + parsedRaw.ms + rawValidation.ms
+  const packedSyntheticApiWaitMs = packedResponseMs + packedTransfer.totalMs + parsedPacked.ms + packedValidation.ms
+  const rawSyntheticReadyMs = rawResponseMs + rawTransfer.totalMs + rawClientMs
+  const packedSyntheticReadyMs = packedResponseMs + packedTransfer.totalMs + packedClientMs
   process.stdout.write(`HISTORY_TRANSPORT_PERF_RESULT ${JSON.stringify({
     fixture: {
       buildMs: rounded(fixture.ms),
@@ -510,12 +510,12 @@ it('reports packed history transport and exact replay costs', async () => {
       historyReductionPct: reduction(rawClientMs, packedClientMs),
     },
     combined: {
-      rawApiWaitMs: rounded(rawApiWaitMs),
-      packedApiWaitMs: rounded(packedApiWaitMs),
-      apiWaitReductionPct: reduction(rawApiWaitMs, packedApiWaitMs),
-      rawReadyMs: rounded(rawReadyMs),
-      packedReadyMs: rounded(packedReadyMs),
-      readyReductionPct: reduction(rawReadyMs, packedReadyMs),
+      rawSyntheticApiWaitMs: rounded(rawSyntheticApiWaitMs),
+      packedSyntheticApiWaitMs: rounded(packedSyntheticApiWaitMs),
+      syntheticApiWaitReductionPct: reduction(rawSyntheticApiWaitMs, packedSyntheticApiWaitMs),
+      rawSyntheticReadyMs: rounded(rawSyntheticReadyMs),
+      packedSyntheticReadyMs: rounded(packedSyntheticReadyMs),
+      syntheticReadyReductionPct: reduction(rawSyntheticReadyMs, packedSyntheticReadyMs),
     },
   })}\n`)
 }, 600_000)
