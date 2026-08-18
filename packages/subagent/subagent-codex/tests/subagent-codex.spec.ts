@@ -1677,7 +1677,7 @@ describe('run lifecycle and quiescence', () => {
   it('surfaces only the wrapper missing-payload diagnostic during startup', async () => {
     const child = fakeChild()
     child.setStderr([
-      'credential-like unrelated stderr',
+      `credential-like unrelated stderr ${'x'.repeat(16 * 1024)}`,
       'Error: Missing optional dependency @openai/codex-linux-x64. '
         + 'Reinstall Codex: pnpm add -g @openai/codex@latest',
     ].join('\n'))
