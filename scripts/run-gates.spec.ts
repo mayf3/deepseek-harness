@@ -101,13 +101,16 @@ describe('gate graph validation', () => {
     },
   )
 
-  it('keeps native Windows coverage blocking while portability inventory remains observational', () => {
-    const gates = withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))
-    const byId = new Map(gates.map(subject => [subject.id, subject]))
+  it('keeps native Windows coverage blocking while retaining the observational inventory', () => {
+    const complete = withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))
+    const observational = withPnpmEntrypoint(() => gatesForMode('ci-windows-observational'))
+      .filter(gate => gate.id !== 'build' && gate.id !== 'docs-site-build')
+    const byId = new Map(complete.map(subject => [subject.id, subject]))
 
     expect(byId.get('coverage')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage-exempt-heavy')?.allowFailure).not.toBe(true)
-    expect(byId.get('duplication')?.allowFailure).toBe(true)
+    expect(observational).not.toHaveLength(0)
+    for (const gate of observational) expect(byId.get(gate.id)?.allowFailure).toBe(true)
   })
 
   it('applies one configured test and polling timeout to both coverage gates', () => {
@@ -137,6 +140,23 @@ describe('gate graph validation', () => {
     expect(() => withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '0', () =>
       withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))))
       .toThrow('DSH_COVERAGE_TEST_TIMEOUT_MS must be a positive integer')
+  })
+
+  it('selects partitioned coverage only when explicitly configured', () => {
+    const coverage = withEnv('DSH_COVERAGE_PARTITIONS', '3', () =>
+      withPnpmEntrypoint(() => gatesForMode('ci-windows-complete').find(subject => subject.id === 'coverage')))
+
+    expect(coverage).toMatchObject({
+      displayCommand: 'DSH_COVERAGE_PARTITIONS=3 pnpm run test:coverage:partitioned',
+      args: ['/private/pnpm.cjs', 'run', 'test:coverage:partitioned'],
+      streamOutput: true,
+    })
+  })
+
+  it('rejects an invalid coverage partition count before starting a gate', () => {
+    expect(() => withEnv('DSH_COVERAGE_PARTITIONS', '1', () =>
+      withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))))
+      .toThrow('DSH_COVERAGE_PARTITIONS must be an integer greater than 1')
   })
 
   it.each([
@@ -290,7 +310,7 @@ describe('Node 24 lane ownership', () => {
       'built-bin-smoke',
     ])
     expect(subject.find(item => item.id === 'publint')?.needs).toEqual(['build'])
-    expect(subject.find(item => item.id === 'built-package-invariants')?.needs).toEqual(['publint'])
+    expect(subject.find(item => item.id === 'built-package-invariants')?.needs).toEqual(['build'])
     expect(subject.find(item => item.id === 'lint-and-duplication')?.needs).toEqual(['built-package-invariants'])
     for (const id of [
       'snapshot',
@@ -332,6 +352,22 @@ describe('Linux primary graph', () => {
 })
 
 describe('gate process outcomes', () => {
+  it('streams selected gate output without retaining it', async () => {
+    const write = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
+    try {
+      const result = await runGate(gate('streamed', {
+        args: ['-e', "process.stdout.write('live output')"],
+        streamOutput: true,
+      }))
+
+      expect(result.status).toBe('passed')
+      expect(result.output).toEqual([])
+      expect(write).toHaveBeenCalledWith('live output')
+    } finally {
+      write.mockRestore()
+    }
+  })
+
   it.skipIf(process.platform === 'win32')('reports signal termination independently from exit status', async () => {
     const result = await runGate(gate('terminated', {
       args: ['-e', "process.kill(process.pid, 'SIGTERM')"],

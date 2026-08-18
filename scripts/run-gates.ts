@@ -10,6 +10,12 @@ import { availableParallelism } from 'node:os'
 import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { COVERAGE_EXEMPT_ENV, coverageExemptHeavySuites } from './coverage-exempt.ts'
+import {
+  COVERAGE_PARTITIONS_ENV,
+  COVERAGE_TEST_TIMEOUT_ENV,
+  coverageTestTimeoutArgs,
+  parseCoveragePartitionCount,
+} from './coverage-partitions.ts'
 
 /** A named aggregate exposed by the gate runner. */
 export type Mode =
@@ -40,7 +46,10 @@ export interface Gate {
   args: string[]
   needs?: string[]
   env?: Record<string, string | undefined>
+  /** Keep a failure visible without failing the aggregate. */
   allowFailure?: boolean
+  /** Write child output as it arrives instead of buffering it until completion. */
+  streamOutput?: boolean
 }
 
 /** The observed outcome of one gate process. */
@@ -395,7 +404,7 @@ function ciConsumerGates(): Gate[] {
     pnpmScript('build', 'build'),
     pnpmScript('node-compat', 'check:node-compat', { label: 'Node compatibility' }),
     pnpmScript('publint', 'publint', { needs: builtTree }),
-    builtPackageInvariantsGate(['publint']),
+    builtPackageInvariantsGate(builtTree),
     pnpmScript('lint-and-duplication', 'check:ci:lint:contracts-ready', {
       label: 'lint and duplication',
       needs: validatedBuild,
@@ -415,6 +424,20 @@ function ciConsumerGates(): Gate[] {
 }
 
 function webSnapshotGate(needs: string[]): Gate {
+  const workerRaw = process.env.DSH_WEB_SNAPSHOT_WORKERS
+  if (workerRaw !== undefined && workerRaw !== '') {
+    const workers = Number.parseInt(workerRaw, 10)
+    if (!Number.isSafeInteger(workers) || workers < 2 || String(workers) !== workerRaw) {
+      throw new Error(`run-gates: DSH_WEB_SNAPSHOT_WORKERS must be an integer greater than 1, got ${JSON.stringify(workerRaw)}.`)
+    }
+    return pnpmScript('web-snapshot', 'test:web:ci', {
+      label: 'web browser snapshot',
+      displayCommand: `DSH_SNAPSHOT=replay DSH_WEB_SNAPSHOT_WORKERS=${workers} pnpm run test:web:ci`,
+      env: { DSH_SNAPSHOT: 'replay' },
+      needs,
+      streamOutput: true,
+    })
+  }
   return pnpmScript('web-snapshot', 'test:web:built', {
     label: 'web browser snapshot',
     displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
@@ -479,13 +502,14 @@ function lintGate(options: { needs?: string[] } = {}): Gate {
 // under v8 instrumentation while contributing nothing the thresholds need
 // (membership rules in scripts/coverage-exempt.ts).
 //
-// DSH_COVERAGE_MAX_WORKERS is the lane's worker budget, so the two parallel
-// gates split it instead of each claiming it whole (the failover pool's
-// 8 x 6-instance bound assumes one lane never exceeds its value). The exempt
+// DSH_COVERAGE_MAX_WORKERS is the ordinary lane's worker budget, so the two
+// parallel gates split it instead of each claiming it whole. When
+// DSH_COVERAGE_PARTITIONS is set, its single-worker processes replace the
+// instrumented share while this budget still sizes the exempt gate. The exempt
 // gate's wall clock is dominated by its longest single file, so it takes the
-// small share. A budget of 1 gives each gate 1 worker; lanes that need a
-// strict total of one (the serial reference jobs) also set
-// DSH_GATE_CONCURRENCY=1, which keeps the gates from overlapping at all.
+// small share. A budget of 1 gives each gate 1 worker; lanes that need a strict
+// total of one (the serial reference jobs) also set DSH_GATE_CONCURRENCY=1,
+// which keeps the gates from overlapping at all.
 // DSH_COVERAGE_TEST_TIMEOUT_MS raises Vitest's per-test and expect.poll
 // defaults together for instrumented lanes whose scheduling overhead exceeds
 // those defaults. Explicit fixture timeouts remain authoritative.
@@ -501,18 +525,12 @@ function coverageWorkerArgs(): { instrumented: string[]; exempt: string[] } {
   }
 }
 
-function coverageTimeoutArgs(): string[] {
-  return [
-    ...positiveIntArg('DSH_COVERAGE_TEST_TIMEOUT_MS', '--testTimeout'),
-    ...positiveIntArg('DSH_COVERAGE_TEST_TIMEOUT_MS', '--expect.poll.timeout'),
-  ]
-}
-
 function coverageGates(): Gate[] {
   const workers = coverageWorkerArgs()
-  const timeouts = coverageTimeoutArgs()
-  return [
-    pnpmExec('coverage', [
+  const timeouts = coverageTestTimeoutArgs(process.env[COVERAGE_TEST_TIMEOUT_ENV])
+  const partitions = parseCoveragePartitionCount(process.env[COVERAGE_PARTITIONS_ENV])
+  const instrumented = partitions === undefined
+    ? pnpmExec('coverage', [
       'vitest',
       'run',
       '--coverage',
@@ -521,7 +539,15 @@ function coverageGates(): Gate[] {
     ], {
       label: 'test:coverage',
       env: { [COVERAGE_EXEMPT_ENV]: '1' },
-    }),
+    })
+    : pnpmScript('coverage', 'test:coverage:partitioned', {
+      label: 'test:coverage',
+      displayCommand: `${COVERAGE_PARTITIONS_ENV}=${partitions} pnpm run test:coverage:partitioned`,
+      env: { [COVERAGE_EXEMPT_ENV]: '1' },
+      streamOutput: true,
+    })
+  return [
+    instrumented,
     pnpmExec('coverage-exempt-heavy', [
       'vitest',
       'run',
@@ -823,10 +849,12 @@ export async function runGate(gate: Gate): Promise<GateResult> {
     child.stdout.setEncoding('utf8')
     child.stderr.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => {
-      output.push({ stream: 'stdout', text: chunk })
+      if (gate.streamOutput === true) process.stdout.write(chunk)
+      else output.push({ stream: 'stdout', text: chunk })
     })
     child.stderr.on('data', (chunk: string) => {
-      output.push({ stream: 'stderr', text: chunk })
+      if (gate.streamOutput === true) process.stderr.write(chunk)
+      else output.push({ stream: 'stderr', text: chunk })
     })
     child.on('error', (error) => {
       spawnError = `failed to start command: ${error.message}`
@@ -880,7 +908,7 @@ function printResult(result: GateResult): void {
     console.error(`command: ${result.gate.displayCommand}`)
     console.error(`outcome: ${formatGateResultReason(result)}`)
   }
-  printOutput(result.output)
+  if (result.gate.streamOutput !== true) printOutput(result.output)
 }
 
 function printSummary(results: GateResult[], durationMs: number): void {
