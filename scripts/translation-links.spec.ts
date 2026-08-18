@@ -27,8 +27,6 @@ function fixture(): string {
   writeFileSync(join(root, 'docs/guide.zh.md'), '# 指南\n')
   writeFileSync(join(root, 'docs/reference.md'), '# Overview\n')
   writeFileSync(join(root, 'docs/reference.zh.md'), '# 概览\n')
-  writeFileSync(join(root, 'docs/a)#?b.md'), '# Reserved\n')
-  writeFileSync(join(root, 'docs/a)#?b.zh.md'), '# 保留字符\n')
   writeFileSync(join(root, 'docs/unpaired.md'), '# Only\n')
   writeFileSync(join(root, 'docs/section/index.md'), '# Section\n')
   writeFileSync(join(root, 'docs/section/index.zh.md'), '# 章节\n')
@@ -90,7 +88,11 @@ describe('translation link locale validation', () => {
   it('encodes each exact path segment with only RFC 3986 unreserved characters', () => {
     const root = fixture()
     const input = '[保留](a%29%23%3Fb%2Emd?view=full#section)\n'
-    expect(rewriteTranslationLinkLocales(input, linkContext(root, 'docs/guide.zh.md'))).toEqual({
+    const repositoryFiles = new Set(['docs/a)#?b.md', 'docs/a)#?b.zh.md'])
+    expect(rewriteTranslationLinkLocales(
+      input,
+      linkContext(root, 'docs/guide.zh.md', path => repositoryFiles.has(path)),
+    )).toEqual({
       content: '[保留](a%29%23%3Fb.zh.md?view=full#section)\n',
       rewritten: 1,
     })
