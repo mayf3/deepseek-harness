@@ -1079,6 +1079,28 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.error?.message).toContain('exceeded 64 bytes')
   })
 
+  it('meters a control-heavy completion value without materializing its escaped form', async () => {
+    // The child's lower bound admits a string by CHARACTER count, then the meter
+    // charged what `_dump_string(current).encode()` returned -- building the
+    // escaped copy plus its encode. Each NUL escapes to six bytes, so metering a
+    // value the budget then REJECTS allocated ~6x the original twice over:
+    // measured at 228.9 MiB of peak for a 20M-NUL string, against 19.1 MiB for
+    // the counting path that returns the identical 120,000,002 bytes. Past
+    // RLIMIT_AS the meter died as `exception: MemoryError`, inverting the
+    // `output-limit` this seam promises for an over-budget value.
+    //
+    // 8M NULs is 8,000,002 raw but 48,000,002 escaped: over the 16 MiB budget
+    // only when charged the escaped cost, so this also pins that the cheap
+    // character bound alone does not decide the verdict.
+    const { runtime } = await setup({ maxValueBytes: 16 * 1024 * 1024, maxWallMs: 60_000 })
+    const result = await runtime.run({
+      program: 'return "\\x00" * 8_000_000',
+      bindings: [],
+    })
+    expect(result.value).toBeUndefined()
+    expect(result.error?.kind).toBe('output-limit')
+  }, 90_000)
+
   it('rejects a wide completion as output-limit before materializing its traversal state', async () => {
     // `[0] * 2000000` sits far above maxValueBytes but well below the frame
     // ceiling. The folded checker must reject it via the pre-enqueue bound —
@@ -3713,6 +3735,57 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.error).toBeUndefined()
     expect(Array.isArray(result.value)).toBe(true)
     expect((result.value as number[]).length).toBe(6_000_000)
+  }, 90_000)
+
+  it('validates wide binding arguments in O(depth), not O(width)', async () => {
+    // The completion-value walks are budgeted; this one is not. `dispatch` runs
+    // `_lossless_json_violation` on the arguments the MODEL built, and no
+    // child-side byte budget bounds them first: the frame ceiling is the host's
+    // and applies only after this validation returns. A per-member traversal
+    // frame therefore turned a legitimate call into the program's own
+    // MemoryError. Measured with tracemalloc on the two walk shapes over this
+    // exact argument (JSON ~17 MB): the cursor peaks at 0.0 MiB of auxiliary
+    // state, the pre-fix `stack.extend` at 459.1 MiB -- past the 384 MiB
+    // configured below, so the discriminating failure is real. It is Linux-only:
+    // Darwin skips RLIMIT_AS, so this case round-trips there either way.
+    //
+    // The binding echoes its argument's length back, so the assertion proves the
+    // call actually round-tripped rather than merely avoiding a crash.
+    const { runtime } = await setup({ addressSpaceMb: 384, maxWallMs: 60_000 })
+    const result = await runtime.run({
+      program: 'return await tools.width([0] * 6_000_000)',
+      bindings: [{
+        global: 'tools',
+        functions: { width: async (items: unknown) => (items as number[]).length },
+      }],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(6_000_000)
+  }, 90_000)
+
+  it('decodes a multi-megabyte binding reply without regex backtracking state', async () => {
+    // The child parses every host reply with `_decode_json_plain`. Its scalar
+    // regex matched strings with a `(?:[^"\\]|\\.)*` repetition, which makes
+    // CPython's backtracking engine retain state proportional to the string's
+    // WIDTH -- measured at ~146 MiB of engine state for a 1 MiB string and
+    // ~558 MiB for 4 MiB. A legitimate multi-megabyte reply therefore raised
+    // MemoryError inside `_pump_replies`; because that pump is the only settler
+    // of the call's future, the run stranded until the wall clock reported a
+    // `timeout` instead of returning the value the binding produced.
+    //
+    // Strings now scan chunk-to-chunk over a character class (no backtracking
+    // state). Measured on this exact 4 MiB reply: the pre-fix regex peaks at
+    // 557.8 MiB, past the default 512 MiB address space, while the scanner peaks
+    // at the 4.0 MiB result itself. Linux-only, like the other RLIMIT_AS repros:
+    // Darwin does not apply the limit, so the spike is merely allocated there.
+    const reply = 'A'.repeat(4 * 1024 * 1024)
+    const { runtime } = await setup({ maxWallMs: 60_000 })
+    const result = await runtime.run({
+      program: 'value = await tools.big({})\nreturn len(value)',
+      bindings: [{ global: 'tools', functions: { big: async () => reply } }],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(reply.length)
   }, 90_000)
 
   it('bounds a flood of zero-byte log lines through the per-entry separator charge', async () => {

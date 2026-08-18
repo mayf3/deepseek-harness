@@ -991,9 +991,21 @@ async def _pump_replies(
             continue
 
 
+# Non-string scalars only. The string form is scanned by hand in
+# :func:`_decode_json_plain` because a ``(?:[^"\\]|\\.)*`` repetition makes
+# CPython's backtracking engine retain per-repetition state proportional to the
+# string's WIDTH: measured at ~146 MiB of engine state for a 1 MiB string and
+# ~558 MiB for 4 MiB, so a legitimate multi-megabyte binding reply raised
+# MemoryError out of ``_pump_replies``, leaving its future unsettled until the
+# wall clock reported a timeout.
 _SCALAR_RE = re.compile(
-    r'"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null'
+    r'-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null'
 )
+
+# A run of ordinary string body characters. The star applies to a CHARACTER
+# CLASS, which the engine matches in one linear pass with no backtracking state,
+# so the scanner's cost is the number of escapes, not the string's width.
+_STRING_CHUNK_RE = re.compile(r'[^"\\]*')
 
 
 def _decode_json_plain(text: str) -> Any:
@@ -1017,7 +1029,26 @@ def _decode_json_plain(text: str) -> Any:
             i += 1
         return i
 
+    def scan_string(i: int) -> int:
+        # Walk chunk by chunk: each match consumes every character up to the next
+        # quote or backslash, so an escape costs one extra step and a plain body
+        # costs one pass. Returns the offset just past the closing quote.
+        j = i + 1
+        while True:
+            j = _STRING_CHUNK_RE.match(text, j).end()
+            if j >= length:
+                raise ValueError(f"unterminated string at offset {i}")
+            char = text[j]
+            if char == '"':
+                return j + 1
+            # text[j] is a backslash: skip it and the character it escapes. A
+            # trailing backslash runs j past `length`, caught on the next pass.
+            j += 2
+
     def scalar(i: int):
+        if i < length and text[i] == '"':
+            end = scan_string(i)
+            return json.loads(text[i:end]), end
         match = _SCALAR_RE.match(text, i)
         if match is None:
             raise ValueError(f"invalid JSON at offset {i}")
@@ -1271,6 +1302,39 @@ for _escaped_byte, _surcharge in _JSON_ESCAPE_SURCHARGES:
     _JSON_BYTE_COST[_escaped_byte[0]] = 1 + _surcharge
 
 
+def _json_str_cost(text: str) -> int:
+    """Byte length of ``text``'s JSON string form, WITHOUT building that form.
+
+    The str-side twin of :func:`_json_string_cost`, for the completion-value
+    meter. Measuring by materializing ``_dump_string(text).encode()`` allocates
+    the escaped copy plus its encode -- for a NUL-heavy string that is ~6x the
+    original each, so metering a value the budget would have REJECTED could
+    itself breach ``RLIMIT_AS`` and report ``exception`` where the contract
+    promises ``output-limit``.
+
+    The common case encodes once (~1x, well inside the load gate's envelope) and
+    counts escapes with the same C-level passes :func:`_json_string_cost` uses.
+    A string carrying surrogate code units has no UTF-8 form at all, so it takes
+    the exact path :func:`_dump_string` defines: fold each spelled-out high-low
+    pair into its astral character first (the host meters that as its raw 4-byte
+    form), then charge six ASCII bytes for every surviving lone surrogate and
+    count the rest from its encodable remainder.
+    @param text: the string to measure.
+    @return: the byte length of its JSON string form, quotes included.
+    """
+
+    try:
+        return _json_string_cost(text.encode("utf-8"))
+    except UnicodeEncodeError:
+        pass
+    folded = _SURROGATE_PAIR.sub(_combine_surrogate_pair, text)
+    lone = len(_SURROGATE.findall(folded))
+    # Six ASCII bytes per lone surrogate; the remainder is ordinary text whose
+    # own quotes are dropped here because the outer call adds them once.
+    without = _SURROGATE.sub("", folded)
+    return _json_string_cost(without.encode("utf-8")) + lone * 6
+
+
 def _json_string_cost(raw: bytes) -> int:
     """UTF-8 byte length of one string's JSON form, WITHOUT building that form.
 
@@ -1435,7 +1499,9 @@ def _check_done_value(value: Any, max_bytes: int):
             # The same string lower bound, before escaping the key.
             if total + len(key) + 3 > max_bytes:
                 return over_budget
-            total += len(_dump_scalar(key).encode("utf-8")) + 1
+            # Same counting rule as the string branch: a control-heavy KEY
+            # expands just as far, and `_dump_scalar` on a str is `_dump_string`.
+            total += _json_str_cost(key) + 1
             if total > max_bytes:
                 return over_budget
             stack.append(frame)
@@ -1453,8 +1519,12 @@ def _check_done_value(value: Any, max_bytes: int):
                 return over_budget
             # A lone surrogate has no UTF-8 form but a lossless JSON one — the
             # ASCII ``\uXXXX`` escape :func:`_dump_string` emits — so it is
-            # metered, not rejected, matching the shared seam.
-            total += len(_dump_string(current).encode("utf-8"))
+            # metered, not rejected, matching the shared seam. Metered by
+            # COUNTING, not by building the escaped form: that copy plus its
+            # encode is ~6x the original for a control-heavy string, so measuring
+            # a value the budget rejects could breach RLIMIT_AS and surface as
+            # `exception` instead of the promised `output-limit`.
+            total += _json_str_cost(current)
         elif type(current) is int:
             # The canonical boundary accepts every JS-double-exact value: an int
             # outside +-2**53-1 is fine IFF the double round-trip is exact.
@@ -1539,13 +1609,41 @@ def _lossless_json_violation(value: Any) -> str | None:
     # ancestor (a cycle) is detected without rejecting a legitimately shared
     # acyclic subtree.
     on_path: set[int] = set()
-    # Each frame is (value, is_leave): a leave frame pops its container off the path.
-    stack: list[tuple[Any, bool]] = [(value, False)]
+    # O(DEPTH) auxiliary space, not O(width), for the reason
+    # :func:`_check_done_value` documents: this walk runs in ``dispatch`` on
+    # MODEL-CONSTRUCTED binding arguments, which no child-side byte budget
+    # bounds first (the frame ceiling is the host's, and it applies after this
+    # returns). Enqueueing one frame per member would let a legitimate
+    # ``[0] * 6_000_000`` argument -- ~17 MB of JSON -- allocate ~366 MB of
+    # traversal tuples and die as the program's own MemoryError instead of
+    # round-tripping. A container therefore pushes ONE cursor frame holding its
+    # iterator; children are pulled one at a time.
+    exhausted = object()
+    visit, container_cursor = 0, 1
+    # A visit frame is (visit, value); a cursor frame is (cursor, container, iterator).
+    stack: list[tuple[int, Any, Any]] = [(visit, value, None)]
     while stack:
-        current, is_leave = stack.pop()
-        if is_leave:
-            on_path.discard(id(current))
+        kind = stack[-1][0]
+        if kind == container_cursor:
+            _, container, iterator = stack[-1]
+            child = next(iterator, exhausted)
+            if child is exhausted:
+                # Leaving the container: it is no longer on the current path, so
+                # a legitimately shared acyclic subtree is not mistaken for a cycle.
+                on_path.discard(id(container))
+                stack.pop()
+                continue
+            if type(container) is dict:
+                # The dict cursor yields (key, value): check the key as it is
+                # pulled. Only an EXACT str key survives -- int, float, None, and
+                # tuple keys coerce or raise, and a str subclass can carry
+                # overrides the encoder does not honor.
+                key, child = child
+                if type(key) is not str:
+                    return f"non-string dict key ({type(key).__name__})"
+            stack.append((visit, child, None))
             continue
+        _, current, _unused = stack.pop()
         if current is None or type(current) is bool:
             continue
         if type(current) is str:
@@ -1579,17 +1677,14 @@ def _lossless_json_violation(value: Any) -> str | None:
             if id(current) in on_path:
                 return "circular reference"
             on_path.add(id(current))
-            stack.append((current, True))
             if type(current) is dict:
-                for key in current:
-                    # Only an EXACT str key survives: int, float, None, and
-                    # tuple keys coerce or raise, and a str subclass can carry
-                    # overrides the encoder does not honor.
-                    if type(key) is not str:
-                        return f"non-string dict key ({type(key).__name__})"
-                stack.extend((child, False) for child in current.values())
+                # Keys are checked as the cursor pulls each entry, not in a
+                # separate pass: ``current.values()`` would need a second walk,
+                # and materializing ``items()`` up front allocates one tuple per
+                # member -- the very spike the cursor removes.
+                stack.append((container_cursor, current, iter(current.items())))
             else:
-                stack.extend((child, False) for child in current)
+                stack.append((container_cursor, current, iter(current)))
             continue
         return f"unsupported type ({type(current).__name__})"
     return None
