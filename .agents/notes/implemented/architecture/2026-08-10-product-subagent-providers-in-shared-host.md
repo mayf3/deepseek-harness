@@ -36,4 +36,4 @@ The base bundle test proves production `dsh-base` contains neither product provi
 
 A user installs each selected product provider in a Profile, mounts the required named instances, and exposes their tools through the same Agent Preset authoring path as other plugins. Each new session receives exactly the tools its chosen preset contributes. Profiles that do not select a product provider carry no corresponding package or module-loading footprint; loading selected instances still starts no product process, login, model call, or product home.
 
-The Host registry remains the single provider authority, the Profile Bundle or explicit Host composition remains the deployment availability authority, and each Preset remains the model-tool authority. This explicit two-gate lifecycle avoids a global enable switch and keeps package removal independent from per-session authoring.
+The Host registry remains the single provider authority, each Bundle remains the deployment availability authority, and each Preset remains the model-tool authority. This explicit two-gate lifecycle avoids a global enable switch and keeps package removal independent from per-session authoring.

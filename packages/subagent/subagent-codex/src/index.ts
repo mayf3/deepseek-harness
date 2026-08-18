@@ -1,7 +1,7 @@
 /**
  * Profile-named Codex one-shot subagent provider. Every accepted run starts a
- * fresh official `codex app-server --stdio` process in the delegating
- * Session's workspace and publishes only after an ephemeral thread exists.
+ * fresh official package-local Codex wrapper with `app-server --stdio` in the
+ * delegating Session's workspace and publishes only after an ephemeral thread exists.
  *
  * @module @deepseek-ai/dsh-subagent-codex
  */
