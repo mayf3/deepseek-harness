@@ -22,8 +22,8 @@ if (bundlePatch === undefined) throw new Error('Claude Code package must declare
 const bundlePatchPath = join(packageDir, bundlePatch)
 const repoTsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
 
-describe('Claude Code provider public Loader composition', () => {
-  it('loads its Bundle patch, one-shot tool, and job controls without starting Claude Code', async () => {
+describe('product-provider public Loader composition', () => {
+  it('loads the Bundle default, two named Claude instances, their tools, and Codex without starting either product', async () => {
     const { stdout, stderr } = await runLoaderSmoke({
       label: 'product-provider Loader composition',
       tempDirPrefix: 'dsh-product-provider-loader-',
@@ -40,22 +40,71 @@ describe('Claude Code provider public Loader composition', () => {
 
     expect(stderr).toBe('')
     expect(JSON.parse(stdout)).toEqual({
-      providers: ['claude-code'],
-      provider: {
-        name: 'claude-code',
-        capabilities: {
-          outputSchema: false,
-          depthLimit: false,
-          toolFilter: false,
-          persona: false,
+      registeredProviders: ['codex', 'claude-primary', 'claude-secondary', 'claude-code'],
+      providers: [
+        {
+          name: 'codex',
+          capabilities: {
+            outputSchema: false,
+            depthLimit: false,
+            toolFilter: false,
+            persona: false,
+          },
+          inheritsParentContext: false,
         },
-        inheritsParentContext: false,
-      },
-      tool: {
-        name: 'subagent_claude_code',
-        parameterNames: ['description', 'prompt', 'run_in_background'],
-        required: ['description', 'prompt'],
-      },
+        {
+          name: 'claude-code',
+          capabilities: {
+            outputSchema: false,
+            depthLimit: false,
+            toolFilter: false,
+            persona: false,
+          },
+          inheritsParentContext: false,
+        },
+        {
+          name: 'claude-primary',
+          capabilities: {
+            outputSchema: false,
+            depthLimit: false,
+            toolFilter: false,
+            persona: false,
+          },
+          inheritsParentContext: false,
+        },
+        {
+          name: 'claude-secondary',
+          capabilities: {
+            outputSchema: false,
+            depthLimit: false,
+            toolFilter: false,
+            persona: false,
+          },
+          inheritsParentContext: false,
+        },
+      ],
+      tools: [
+        {
+          name: 'subagent_codex',
+          parameterNames: ['description', 'prompt', 'run_in_background'],
+          required: ['description', 'prompt'],
+        },
+        {
+          name: 'subagent_claude_code',
+          parameterNames: ['description', 'prompt', 'run_in_background'],
+          required: ['description', 'prompt'],
+        },
+        {
+          name: 'subagent_claude_primary',
+          parameterNames: ['description', 'prompt', 'run_in_background'],
+          required: ['description', 'prompt'],
+        },
+        {
+          name: 'subagent_claude_secondary',
+          parameterNames: ['description', 'prompt', 'run_in_background'],
+          required: ['description', 'prompt'],
+        },
+      ],
       jobTools: ['job_kill', 'job_list', 'job_output'],
       starts: 0,
     })

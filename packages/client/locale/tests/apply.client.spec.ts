@@ -4,8 +4,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import { SettingsSchemaService } from '@deepseek-ai/dsh-client-ui-settings/src/client/schema.ts'
-import { SettingsScopeBinder } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-scope.ts'
+import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   apply, inject, SETTINGS_NS,
@@ -48,7 +47,7 @@ async function bench() {
   ctx.provide('connection', { api: { settings: { describe, mutate } }, isLoopback: true } as never)
   // The settings transport and the forwarded-event port the plugin injects.
   new TestRemote(ctx)
-  await ctx.plugin(SettingsScopeBinder, new SettingsSchemaService(ctx)).await()
+  await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, describe, mutate,
     setHostPreference: (next: string | undefined) => { preference = next; revision += 1 },
@@ -134,7 +133,10 @@ describe('locale apply', () => {
 
   it('loads and refreshes the explicit Host preference after nonblocking activation', async () => {
     const b = await bench()
+    // The shared mirror read once at bench time; a Host-side change reaches it
+    // through the document invalidation, exactly as production announces one.
     b.setHostPreference('en')
+    b.ctx.remote.$dispatch('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
     declareItems(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const locale = b.ctx.get('locale') as LocaleRuntime
@@ -145,7 +147,7 @@ describe('locale apply', () => {
     b.setHostPreference('en')
     b.ctx.remote.$dispatch('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
     await vi.waitFor(() => { expect(locale.getLocale().active).toBe('en') })
-    expect(b.describe).toHaveBeenCalledTimes(3)
+    expect(b.describe).toHaveBeenCalledTimes(4)
   })
 
   it('recovers after an HMR collapse of the declaring entry (stale disposer must not block)', async () => {

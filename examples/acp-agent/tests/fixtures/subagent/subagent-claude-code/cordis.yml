@@ -1,5 +1,5 @@
-# Test-only composition of the Claude Code one-shot tool around its Bundle-supplied provider.
-# The owning e2e applies the package's real patch and never invokes a model or product process.
+# Test-only composition of Codex, the Bundle-supplied default Claude provider,
+# and two named Claude instances. It never invokes a model or product process.
 - id: fixture
   name: './fixture.ts'
 
@@ -9,11 +9,48 @@
 - id: subprocess
   name: '@deepseek-ai/dsh-subprocess-local'
 
+- id: subagent-codex
+  name: '@deepseek-ai/dsh-subagent-codex'
+
+- id: subagent-claude-primary
+  name: '@deepseek-ai/dsh-subagent-claude-code'
+  config:
+    providerName: claude-primary
+
+- id: subagent-claude-secondary
+  name: '@deepseek-ai/dsh-subagent-claude-code'
+  config:
+    providerName: claude-secondary
+
+- id: tool-subagent-codex
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: codex
+    toolName: subagent_codex
+    backgroundMode: one-shot
+    maxDepth: 'provider-managed'
+
 - id: tool-subagent-claude-code
   name: '@deepseek-ai/dsh-tool-subagent'
   config:
     provider: claude-code
     toolName: subagent_claude_code
+    backgroundMode: one-shot
+    maxDepth: 'provider-managed'
+
+- id: tool-subagent-claude-primary
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: claude-primary
+    toolName: subagent_claude_primary
+    backgroundMode: one-shot
+    maxDepth: 'provider-managed'
+
+- id: tool-subagent-claude-secondary
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: claude-secondary
+    toolName: subagent_claude_secondary
     backgroundMode: one-shot
     maxDepth: 'provider-managed'
 
