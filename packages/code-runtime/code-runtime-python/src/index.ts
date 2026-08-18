@@ -335,6 +335,7 @@ const GROUP_REAP_POLL_MS = 50
  * @returns its start time, or undefined when unavailable.
  */
 export function readProcessStart(pid: number): string | undefined {
+  /* v8 ignore next -- one arm per platform: the Linux coverage lane always takes the read path, and Darwin always this one. */
   if (process.platform !== 'linux') return undefined
   try {
     const stat = readFileSync(`/proc/${String(pid)}/stat`, 'utf8')
@@ -1427,6 +1428,7 @@ export class PythonCodeRuntime extends CodeRuntime {
           // falls through, which is also the behavior on platforms with no
           // `/proc` to read.
           const nowStarted = readProcessStart(child.pid)
+          /* v8 ignore next -- the refusal arm needs a real pid recycled into a new group leader between spawn and teardown, which no test can schedule; `readProcessStart` is covered directly instead. */
           if (leaderStarted !== undefined && nowStarted !== undefined && nowStarted !== leaderStarted) return
           process.kill(-child.pid, sig)
         } catch {
