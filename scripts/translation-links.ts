@@ -18,6 +18,8 @@ export interface TranslationLinkContext {
   repoRoot: string
   /** Repository-relative Markdown source path. */
   sourcePath: string
+  /** Whether an English Markdown path belongs to the active bilingual corpus. */
+  isTranslationPairSource: (sourcePath: string) => boolean
   /** Selected content plane; defaults to regular files in the working tree. */
   repositoryFileExists?: (repoPath: string) => boolean
 }
@@ -146,9 +148,8 @@ function translationPairTarget(targetPath: string, context: TranslationLinkConte
   const source = targetPath.endsWith('.zh.md')
     ? targetPath.replace(/\.zh\.md$/, '.md')
     : targetPath.endsWith('.md') ? targetPath : undefined
-  if (source === undefined) return undefined
+  if (source === undefined || !context.isTranslationPairSource(source)) return undefined
   const zh = source.replace(/\.md$/, '.zh.md')
-  if (!repositoryFileExists(context, source) || !repositoryFileExists(context, zh)) return undefined
   return { source, zh }
 }
 

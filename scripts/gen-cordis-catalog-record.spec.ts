@@ -154,13 +154,22 @@ describe('localizePageRegion', () => {
     const root = mkdtempSync(join(tmpdir(), 'cordis-region-locale-'))
     roots.push(root)
     mkdirSync(join(root, 'docs/subsystems'), { recursive: true })
+    mkdirSync(join(root, 'packages'), { recursive: true })
+    mkdirSync(join(root, 'scripts'), { recursive: true })
     writeFileSync(join(root, 'docs/subsystems/target.md'), '# Target\n')
     writeFileSync(join(root, 'docs/subsystems/target.zh.md'), '# 目标\n')
-    const region = `${REGION_BEGIN}\n[Target](target.md#api) [Source](../../packages/x.ts)\n${REGION_END}`
+    writeFileSync(join(root, 'docs/subsystems/excluded.md'), '# Excluded\n')
+    writeFileSync(join(root, 'docs/subsystems/excluded.zh.md'), '# 排除\n')
+    writeFileSync(join(root, 'packages/outside.md'), '# Outside\n')
+    writeFileSync(join(root, 'packages/outside.zh.md'), '# 范围外\n')
+    writeFileSync(join(root, 'scripts/translation-pairing.manifest.json'), JSON.stringify({
+      excluded: ['docs/subsystems/excluded.md'],
+    }))
+    const region = `${REGION_BEGIN}\n[Target](target.md#api) [Excluded](excluded.md) [Outside](../../packages/outside.md)\n${REGION_END}`
 
     expect(localizePageRegion(region, 'docs/subsystems/page.md', root)).toBe(region)
     expect(localizePageRegion(region, 'docs/subsystems/page.zh.md', root)).toBe(
-      `${REGION_BEGIN}\n[Target](target.zh.md#api) [Source](../../packages/x.ts)\n${REGION_END}`,
+      `${REGION_BEGIN}\n[Target](target.zh.md#api) [Excluded](excluded.md) [Outside](../../packages/outside.md)\n${REGION_END}`,
     )
   })
 })

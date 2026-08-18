@@ -30,8 +30,10 @@ import {
   parseTranslationPairingManifest,
   partitionGeneratedRegions,
   requiresSourceLanguageSwitcher,
+  isTranslationPairingManifestExcluded,
   isTranslationScopeFile,
   TRANSLATION_SCOPE_GLOB_EXCLUDES,
+  translationPairSourcePredicate,
   translationStructureDiff,
   translationStructureSignature,
 } from './translation-pairing.ts'
@@ -86,6 +88,7 @@ if (manifestContent === undefined) {
   throw new Error('scripts/translation-pairing.manifest.json is missing from the selected content plane')
 }
 const manifest = parseTranslationPairingManifest(manifestContent.toString('utf8'))
+const isTranslationPairSource = translationPairSourcePredicate(manifest)
 
 /**
  * An excluded entry ending in `/` excludes the whole directory. The trailing
@@ -94,7 +97,7 @@ const manifest = parseTranslationPairingManifest(manifestContent.toString('utf8'
  * manifest must keep their trailing slash.
  */
 function isExcluded(file: string): boolean {
-  return manifest.excluded.some(entry => (entry.endsWith('/') ? file.startsWith(entry) : file === entry))
+  return isTranslationPairingManifestExcluded(file, manifest)
 }
 
 // Enumerate the scope once: the whole corpus, or exactly the named pairs'
@@ -250,11 +253,13 @@ for (const source of [...pairAnchors].sort()) {
     ...translationLinkLocaleViolations(sourceText, {
       repoRoot: root,
       sourcePath: source,
+      isTranslationPairSource,
       repositoryFileExists,
     }, zhSwitcherTargets),
     ...translationLinkLocaleViolations(zhText, {
       repoRoot: root,
       sourcePath: zh,
+      isTranslationPairSource,
       repositoryFileExists,
     }, sourceSwitcherTargets),
   ]) {
@@ -279,11 +284,13 @@ for (const source of [...pairAnchors].sort()) {
   const normalizedSourceRegions = sourceRegions.regions.map(region => normalizeTranslationMarkdownLinks(region, {
     repoRoot: root,
     sourcePath: source,
+    isTranslationPairSource,
     repositoryFileExists,
   }))
   const normalizedZhRegions = zhRegions.regions.map(region => normalizeTranslationMarkdownLinks(region, {
     repoRoot: root,
     sourcePath: zh,
+    isTranslationPairSource,
     repositoryFileExists,
   }))
   if (normalizedSourceRegions.length !== normalizedZhRegions.length
@@ -304,12 +311,14 @@ for (const source of [...pairAnchors].sort()) {
     translationStructureSignature(sourceTree, zhSwitcherTargets, {
       repoRoot: root,
       sourcePath: source,
+      isTranslationPairSource,
       repositoryFileExists,
       markdown: sourceText,
     }),
     translationStructureSignature(zhTree, sourceSwitcherTargets, {
       repoRoot: root,
       sourcePath: zh,
+      isTranslationPairSource,
       repositoryFileExists,
       markdown: zhText,
     }),

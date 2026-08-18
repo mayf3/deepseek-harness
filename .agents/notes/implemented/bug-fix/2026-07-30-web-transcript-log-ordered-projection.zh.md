@@ -75,4 +75,4 @@ Web e2e 场景现在围绕它录制的那一轮上的压缩事务播种一次真
 
 ## Deferred
 
-终端的[已归档压缩进度决策](../../archived/feature/2026-07-30-compaction-progress-visibility.zh.md)使用实时独立标记对驱动单格指示器，并不改变此浏览器投影。
+终端的[已归档压缩进度决策](../../archived/feature/2026-07-30-compaction-progress-visibility.md)使用实时独立标记对驱动单格指示器，并不改变此浏览器投影。

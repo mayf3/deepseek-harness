@@ -8,6 +8,7 @@ import {
   normalizeTranslationMarkdownLinks,
   rewriteTranslationLinkLocales,
   translationLinkLocaleViolations,
+  type TranslationLinkContext,
 } from './translation-links.ts'
 import { removeFixtureSafely } from './test-fixture-cleanup.ts'
 
@@ -21,6 +22,7 @@ function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'dsh-translation-links-'))
   roots.push(root)
   mkdirSync(join(root, 'docs/section'), { recursive: true })
+  mkdirSync(join(root, 'packages'), { recursive: true })
   writeFileSync(join(root, 'docs/guide.md'), '# Guide\n')
   writeFileSync(join(root, 'docs/guide.zh.md'), '# 指南\n')
   writeFileSync(join(root, 'docs/reference.md'), '# Overview\n')
@@ -28,11 +30,26 @@ function fixture(): string {
   writeFileSync(join(root, 'docs/unpaired.md'), '# Only\n')
   writeFileSync(join(root, 'docs/section/index.md'), '# Section\n')
   writeFileSync(join(root, 'docs/section/index.zh.md'), '# 章节\n')
+  writeFileSync(join(root, 'packages/outside.md'), '# Outside\n')
+  writeFileSync(join(root, 'packages/outside.zh.md'), '# 范围外\n')
   return root
 }
 
+function linkContext(
+  root: string,
+  sourcePath: string,
+  repositoryFileExists?: (repoPath: string) => boolean,
+): TranslationLinkContext {
+  return {
+    repoRoot: root,
+    sourcePath,
+    isTranslationPairSource: path => path.startsWith('docs/'),
+    ...(repositoryFileExists === undefined ? {} : { repositoryFileExists }),
+  }
+}
+
 function expectUnchangedLinkInput(root: string, input: string): void {
-  const context = { repoRoot: root, sourcePath: 'docs/guide.md' }
+  const context = linkContext(root, 'docs/guide.md')
   expect(translationLinkLocaleViolations(input, context)).toEqual([])
   expect(rewriteTranslationLinkLocales(input, context)).toEqual({ content: input, rewritten: 0 })
   expect(normalizeTranslationMarkdownLinks(input, context)).toBe(input)
@@ -43,7 +60,7 @@ describe('translation link locale validation', () => {
     const root = fixture()
     expect(translationLinkLocaleViolations(
       '# 指南\n\n正文。\n\n[概览](reference.md?view=full#overview)\n',
-      { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
+      linkContext(root, 'docs/guide.zh.md'),
     )).toEqual([{
       sourcePath: 'docs/guide.zh.md',
       line: 5,
@@ -52,19 +69,27 @@ describe('translation link locale validation', () => {
     }])
   })
 
-  it('accepts the target-locale sibling and an unpaired target', () => {
+  it('accepts the target-locale sibling and an out-of-scope target with its own sibling', () => {
     const root = fixture()
     expect(translationLinkLocaleViolations(
-      '[paired](reference.zh.md) [unpaired](unpaired.md)\n',
-      { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
+      '[paired](reference.zh.md) [outside](../packages/outside.md)\n',
+      linkContext(root, 'docs/guide.zh.md'),
     )).toEqual([])
+  })
+
+  it('does not fall back when an active target is missing its locale sibling', () => {
+    const root = fixture()
+    expect(translationLinkLocaleViolations(
+      '[missing](unpaired.md)\n',
+      linkContext(root, 'docs/guide.zh.md'),
+    )[0]).toMatchObject({ expectedUrl: 'unpaired.zh.md' })
   })
 
   it('requires English sources to use the English sibling', () => {
     const root = fixture()
     expect(translationLinkLocaleViolations(
       '[Reference](reference.zh.md)\n',
-      { repoRoot: root, sourcePath: 'docs/guide.md' },
+      linkContext(root, 'docs/guide.md'),
     )[0]).toMatchObject({
       url: 'reference.zh.md',
       expectedUrl: 'reference.md',
@@ -75,7 +100,7 @@ describe('translation link locale validation', () => {
     const root = fixture()
     expect(translationLinkLocaleViolations(
       '[Section](section/)\n',
-      { repoRoot: root, sourcePath: 'docs/guide.md' },
+      linkContext(root, 'docs/guide.md'),
     )).toEqual([])
   })
 
@@ -83,7 +108,7 @@ describe('translation link locale validation', () => {
     const root = fixture()
     expect(translationLinkLocaleViolations(
       '# 指南\n\n[English](guide.md) | 中文\n',
-      { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
+      linkContext(root, 'docs/guide.zh.md'),
       ['guide.md'],
     )).toEqual([])
   })
@@ -93,7 +118,7 @@ describe('translation link locale validation', () => {
     const markdown = '# 指南\n\n[English](guide.md) | 中文\n\n[正文](guide.md)\n'
     expect(translationLinkLocaleViolations(
       markdown,
-      { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
+      linkContext(root, 'docs/guide.zh.md'),
       ['guide.md'],
     )).toEqual([{
       sourcePath: 'docs/guide.zh.md',
@@ -103,7 +128,7 @@ describe('translation link locale validation', () => {
     }])
     expect(rewriteTranslationLinkLocales(
       markdown,
-      { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
+      linkContext(root, 'docs/guide.zh.md'),
       ['guide.md'],
     ).content).toBe('# 指南\n\n[English](guide.md) | 中文\n\n[正文](guide.zh.md)\n')
   })
@@ -112,36 +137,33 @@ describe('translation link locale validation', () => {
     const root = fixture()
     expect(translationLinkLocaleViolations(
       '[章节](section/)\n',
-      { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
+      linkContext(root, 'docs/guide.zh.md'),
     )[0]).toMatchObject({ expectedUrl: 'section/index.zh.md' })
     expect(normalizeTranslationMarkdownLinks(
       '[Section](section/)\n',
-      { repoRoot: root, sourcePath: 'docs/guide.md' },
+      linkContext(root, 'docs/guide.md'),
     )).toBe(normalizeTranslationMarkdownLinks(
       '[Section](section/index.zh.md)\n',
-      { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
+      linkContext(root, 'docs/guide.zh.md'),
     ))
   })
 
-  it('uses the selected repository content plane for sibling discovery', () => {
+  it('uses the selected content plane for target existence without deriving scope from siblings', () => {
     const root = fixture()
     const staged = new Set(['docs/reference.md', 'docs/reference.zh.md'])
     expect(translationLinkLocaleViolations(
       '[概览](reference.md)\n',
-      {
-        repoRoot: root,
-        sourcePath: 'docs/guide.zh.md',
-        repositoryFileExists: path => staged.has(path),
-      },
+      linkContext(root, 'docs/guide.zh.md', path => staged.has(path)),
     )).toHaveLength(1)
     staged.delete('docs/reference.zh.md')
     expect(translationLinkLocaleViolations(
       '[概览](reference.md)\n',
-      {
-        repoRoot: root,
-        sourcePath: 'docs/guide.zh.md',
-        repositoryFileExists: path => staged.has(path),
-      },
+      linkContext(root, 'docs/guide.zh.md', path => staged.has(path)),
+    )).toHaveLength(1)
+    staged.delete('docs/reference.md')
+    expect(translationLinkLocaleViolations(
+      '[概览](reference.md)\n',
+      linkContext(root, 'docs/guide.zh.md', path => staged.has(path)),
     )).toEqual([])
   })
 })
@@ -152,7 +174,7 @@ describe('translation link rewriting and normalization', () => {
     const input = '[概览](reference.md?view=full&amp;mode=all#overview "reference.md title")\n'
     expect(rewriteTranslationLinkLocales(
       input,
-      { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
+      linkContext(root, 'docs/guide.zh.md'),
     )).toEqual({
       content: '[概览](reference.zh.md?view=full&amp;mode=all#overview "reference.md title")\n',
       rewritten: 1,
@@ -163,7 +185,7 @@ describe('translation link rewriting and normalization', () => {
     const root = fixture()
     expect(rewriteTranslationLinkLocales(
       '[概览][ref]\n\n[ref]: <reference.md#overview> "title"\n',
-      { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
+      linkContext(root, 'docs/guide.zh.md'),
     ).content).toBe('[概览][ref]\n\n[ref]: <reference.zh.md#overview> "title"\n')
   })
 
@@ -183,14 +205,14 @@ describe('translation link rewriting and normalization', () => {
 
   it('normalizes only paired locale paths and retains other bytes', () => {
     const root = fixture()
-    const english = '[Reference](reference.md#overview) [Only](unpaired.md)\n'
-    const chinese = '[Reference](reference.zh.md#overview) [Only](unpaired.md)\n'
+    const english = '[Reference](reference.md#overview) [Outside](../packages/outside.md)\n'
+    const chinese = '[Reference](reference.zh.md#overview) [Outside](../packages/outside.md)\n'
     expect(normalizeTranslationMarkdownLinks(
       english,
-      { repoRoot: root, sourcePath: 'docs/guide.md' },
+      linkContext(root, 'docs/guide.md'),
     )).toBe(normalizeTranslationMarkdownLinks(
       chinese,
-      { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
+      linkContext(root, 'docs/guide.zh.md'),
     ))
   })
 
@@ -200,10 +222,10 @@ describe('translation link rewriting and normalization', () => {
     const literal = '[Reference](reference.zh.md?x=1&y=2#overview)\n'
     expect(normalizeTranslationMarkdownLinks(
       escaped,
-      { repoRoot: root, sourcePath: 'docs/guide.md' },
+      linkContext(root, 'docs/guide.md'),
     )).not.toBe(normalizeTranslationMarkdownLinks(
       literal,
-      { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
+      linkContext(root, 'docs/guide.zh.md'),
     ))
   })
 })

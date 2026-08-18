@@ -18,6 +18,7 @@ import {
 } from './translation-pairing-record.ts'
 import {
   blobHash,
+  isTranslationPairingManifestExcluded,
   isTranslationScopeFile,
   languageSwitcherTargets,
   pairAnchorOfArgument,
@@ -26,15 +27,21 @@ import {
   parseTranslationPairingManifest,
   partitionGeneratedRegions,
   requiresSourceLanguageSwitcher,
+  translationPairSourcePredicate,
   translationStructureDiff,
   translationStructureSignature,
 } from './translation-pairing.ts'
+
+const fixturePairSource = (): boolean => true
 
 function signature(markdown: string) {
   return translationStructureSignature(
     parseTranslationMarkdown(markdown),
     'counterpart.zh.md',
-    { repoRoot: process.cwd(), sourcePath: 'counterpart.md', markdown },
+    {
+      repoRoot: process.cwd(), sourcePath: 'counterpart.md',
+      isTranslationPairSource: fixturePairSource, markdown,
+    },
   )
 }
 
@@ -147,11 +154,16 @@ describe('translation pairing snapshots', () => {
 
 describe('translation pairing manifest', () => {
   it('accepts an exclusions-only manifest', () => {
-    expect(parseTranslationPairingManifest(JSON.stringify({
+    const manifest = parseTranslationPairingManifest(JSON.stringify({
       excluded: ['docs/generated/'],
-    }))).toEqual({
+    }))
+    expect(manifest).toEqual({
       excluded: ['docs/generated/'],
     })
+    expect(isTranslationPairingManifestExcluded('docs/generated/page.md', manifest)).toBe(true)
+    expect(translationPairSourcePredicate(manifest)('docs/generated/page.md')).toBe(false)
+    expect(translationPairSourcePredicate(manifest)('docs/guide.md')).toBe(true)
+    expect(translationPairSourcePredicate(manifest)('packages/example/guide.md')).toBe(false)
   })
 
   it.each([
@@ -192,11 +204,13 @@ describe('translation pairing switchers', () => {
     expect(translationStructureSignature(canonical, targets, {
       repoRoot: process.cwd(),
       sourcePath: 'python/sdk/README.md',
+      isTranslationPairSource: fixturePairSource,
       markdown: canonicalMarkdown,
     }).links).toEqual([])
     expect(translationStructureSignature(wrongPath, targets, {
       repoRoot: process.cwd(),
       sourcePath: 'python/sdk/README.md',
+      isTranslationPairSource: fixturePairSource,
       markdown: wrongMarkdown,
     }).links).toEqual([
       'https://github.com/deepseek-ai/deepseek-harness/blob/master/other/README.zh.md',
@@ -212,7 +226,10 @@ describe('translation pairing switchers', () => {
       expect(translationStructureSignature(
         parseTranslationMarkdown(markdown),
         languageSwitcherTargets('guide.md'),
-        { repoRoot: root, sourcePath: 'guide.zh.md', markdown },
+        {
+          repoRoot: root, sourcePath: 'guide.zh.md',
+          isTranslationPairSource: fixturePairSource, markdown,
+        },
       ).links).toEqual(['dsh-translation-target:guide.md'])
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -305,12 +322,18 @@ describe('translation structural signature', () => {
       const source = translationStructureSignature(
         parseTranslationMarkdown(sourceMarkdown),
         'guide.zh.md',
-        { repoRoot: root, sourcePath: 'guide.md', markdown: sourceMarkdown },
+        {
+          repoRoot: root, sourcePath: 'guide.md',
+          isTranslationPairSource: fixturePairSource, markdown: sourceMarkdown,
+        },
       )
       const counterpart = translationStructureSignature(
         parseTranslationMarkdown(counterpartMarkdown),
         'guide.md',
-        { repoRoot: root, sourcePath: 'guide.zh.md', markdown: counterpartMarkdown },
+        {
+          repoRoot: root, sourcePath: 'guide.zh.md',
+          isTranslationPairSource: fixturePairSource, markdown: counterpartMarkdown,
+        },
       )
       expect(translationStructureDiff(source, counterpart)).toEqual([])
     } finally {
@@ -335,7 +358,10 @@ describe('translation structural signature', () => {
       expect(translationStructureSignature(
         parseTranslationMarkdown(markdown),
         'guide.zh.md',
-        { repoRoot: root, sourcePath: 'guide.md', markdown },
+        {
+          repoRoot: root, sourcePath: 'guide.md',
+          isTranslationPairSource: fixturePairSource, markdown,
+        },
       ).links).toEqual(['dsh-translation-target:reference.md'])
     } finally {
       rmSync(root, { recursive: true, force: true })

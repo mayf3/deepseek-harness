@@ -218,6 +218,22 @@ export function parseTranslationPairingManifest(content: string): TranslationPai
   return { excluded: excludedField(record) }
 }
 
+/** Whether a manifest entry excludes one exact file or a directory subtree. */
+export function isTranslationPairingManifestExcluded(
+  file: string,
+  manifest: TranslationPairingManifest,
+): boolean {
+  return manifest.excluded.some(entry => (entry.endsWith('/') ? file.startsWith(entry) : file === entry))
+}
+
+/** Build the active bilingual-source predicate shared by every link consumer. */
+export function translationPairSourcePredicate(
+  manifest: TranslationPairingManifest,
+): (sourcePath: string) => boolean {
+  return sourcePath => isTranslationScopeFile(sourcePath)
+    && !isTranslationPairingManifestExcluded(sourcePath, manifest)
+}
+
 /**
  * Normalize one CLI pair argument to its English anchor path: any of the
  * pair's three files (`foo.md`, `foo.zh.md`, `foo.i18n.yaml`) or the bare

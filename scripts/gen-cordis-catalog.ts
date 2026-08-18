@@ -33,8 +33,10 @@ import { contextKeyMap, contextMergeFiles, eventNameList } from './cordis-walk.t
 import {
   blobHash,
   parsePairMeta,
+  parseTranslationPairingManifest,
   partitionGeneratedRegions,
   renderPairMeta,
+  translationPairSourcePredicate,
 } from './translation-pairing.ts'
 import { rewriteTranslationLinkLocales } from './translation-links.ts'
 
@@ -716,9 +718,15 @@ export interface WalkPartitionMaps {
 
 /** Project paired Markdown destinations in one generated region to the page's locale. */
 export function localizePageRegion(region: string, pageRel: string, scanRoot: string = root): string {
-  return pageRel.endsWith('.zh.md')
-    ? rewriteTranslationLinkLocales(region, { repoRoot: scanRoot, sourcePath: pageRel }).content
-    : region
+  if (!pageRel.endsWith('.zh.md')) return region
+  const manifest = parseTranslationPairingManifest(
+    readFileSync(resolve(scanRoot, 'scripts/translation-pairing.manifest.json'), 'utf8'),
+  )
+  return rewriteTranslationLinkLocales(region, {
+    repoRoot: scanRoot,
+    sourcePath: pageRel,
+    isTranslationPairSource: translationPairSourcePredicate(manifest),
+  }).content
 }
 
 /**

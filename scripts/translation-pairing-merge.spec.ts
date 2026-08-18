@@ -16,8 +16,8 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { gitBlobHash, storeGitBlob } from './translation-pairing-git.ts'
 import {
-  mergeTranslationPairingRecords,
-  resolveTranslationPairingConflicts,
+  mergeTranslationPairingRecords as mergeTranslationPairingRecordsWithScope,
+  resolveTranslationPairingConflicts as resolveTranslationPairingConflictsWithScope,
 } from './translation-pairing-merge.ts'
 import {
   renderTranslationPairingRecord,
@@ -34,6 +34,27 @@ const fixtures: string[] = []
 interface Fixture {
   env: NodeJS.ProcessEnv
   root: string
+}
+
+function mergeTranslationPairingRecords(
+  root: string,
+  metaPath: string,
+  ancestorRecord: string,
+  currentRecord: string,
+  otherRecord: string,
+) {
+  return mergeTranslationPairingRecordsWithScope(
+    root,
+    metaPath,
+    ancestorRecord,
+    currentRecord,
+    otherRecord,
+    () => true,
+  )
+}
+
+function resolveTranslationPairingConflicts(root: string): string[] {
+  return resolveTranslationPairingConflictsWithScope(root, () => true)
 }
 
 afterEach(() => {
@@ -251,6 +272,19 @@ describe('translation pairing merge composition', { timeout: 15_000 }, () => {
       '',
       '',
     )).toThrow('pairing record escapes the repository')
+  })
+
+  it('rejects a pairing record excluded from the active corpus', () => {
+    const fixture = createFixture(false)
+
+    expect(() => mergeTranslationPairingRecordsWithScope(
+      fixture.root,
+      'docs/guide.i18n.yaml',
+      '',
+      '',
+      '',
+      () => false,
+    )).toThrow('docs/guide.i18n.yaml is excluded from the active bilingual documentation corpus')
   })
 
   it('merges the owner blobs named by three valid records', () => {
