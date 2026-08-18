@@ -16,7 +16,7 @@ README 引用 `https://cdn.deepseek.com/harness/readme/` 下的固定 URL。私�
 
 上传脚本只接受 3 个 README 图片文件名，验证每个源文件均为 PNG，并以 `Content-Type: image/png` 和 `Cache-Control: no-store` 上传到 `dp-cdn-deepseek/harness/readme/`。脚本检查 OBS 响应状态、报告对应公开 URL，并在成功或失败后关闭客户端。仓库级 GitHub Actions Secret 提供 `OBS_DSH_README_ACCESS_KEY_ID` 和 `OBS_DSH_README_SECRET_ACCESS_KEY`；OBS 身份只需拥有该对象前缀的写权限。
 
-资产仓库历史充当更新记录和回滚真源。图片替换后，公开 README 继续使用相同 URL，因此常规图片更新无需修改产品仓库或同步公开仓库。
+资产仓库提供更新记录和回滚真源。图片替换后，公开 README 继续使用相同 URL，因此常规图片更新无需修改产品仓库或同步公开仓库。
 
 ## 曾考虑的替代方案
 
@@ -30,6 +30,6 @@ README 引用 `https://cdn.deepseek.com/harness/readme/` 下的固定 URL。私�
 
 ## 后果
 
-社区二维码可以通过一次资产仓库 push 更新，公开 README 无需改变。产品仓库不携带 OBS 依赖或凭证；上传内容保留可审计的 git 真源；对象元数据和 CDN 路由均会阻止二维码使用陈旧缓存。
+社区二维码可以通过一次资产仓库 push 更新，公开 README 无需改变。产品仓库不携带 OBS 依赖或凭证；上传内容保留可审计的 git 真源；CDN 响应携带 `Cache-Control: no-store`。
 
 README 依赖公开 CDN 和 GitHub 图片代理，发布流程则依赖另一个私有仓库及其 2 个 GitHub Actions Secret。`no-store` 为这些小文件放弃边缘节点和浏览器缓存。

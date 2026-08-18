@@ -16,7 +16,7 @@ The README references fixed URLs under `https://cdn.deepseek.com/harness/readme/
 
 The uploader accepts only the three README filenames, verifies each source is a PNG file, and uploads it to `dp-cdn-deepseek/harness/readme/` with `Content-Type: image/png` and `Cache-Control: no-store`. It checks the OBS response status, reports the resulting public URL, and closes the client on both success and failure. Repository Actions Secrets supply `OBS_DSH_README_ACCESS_KEY_ID` and `OBS_DSH_README_SECRET_ACCESS_KEY`; the OBS identity needs write access only to that object prefix.
 
-The assets repository history is the update ledger and rollback source. The public README keeps the same URLs across image replacements, so ordinary image updates do not require a product-repository change or a public-repository synchronization.
+The assets repository provides the update history and rollback source. The public README keeps the same URLs across image replacements, so ordinary image updates do not require a product-repository change or a public-repository synchronization.
 
 ## Alternatives considered
 
@@ -30,6 +30,6 @@ The assets repository history is the update ledger and rollback source. The publ
 
 ## Consequences
 
-Community QR codes can change through one assets-repository push while the public README remains unchanged. The product repository carries no OBS dependency or credential, uploads retain an auditable git source, and both the object metadata and CDN route prevent stale cached QR codes.
+Community QR codes can change through one assets-repository push while the public README remains unchanged. The product repository carries no OBS dependency or credential, uploads retain an auditable git source, and CDN responses carry `Cache-Control: no-store`.
 
 The README depends on the public CDN and GitHub's image proxy, while publication depends on a second private repository and its two Actions Secrets. `no-store` gives up edge and browser caching for these small files.
