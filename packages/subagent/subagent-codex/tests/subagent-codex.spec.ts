@@ -1661,16 +1661,17 @@ describe('run lifecycle and quiescence', () => {
     child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
     setImmediate(() => {
       child.stderr.write('approval policy is Never; reject command')
+      child.peer.send(
+        agentMessage('partial answer', null),
+        turnCompleted('failed', 'turn-1', 'thread-1', {
+          codexErrorInfo: 'contextWindowExceeded',
+        }),
+      )
     })
-    child.peer.send(
-      agentMessage('partial answer', null),
-      turnCompleted('failed', 'turn-1', 'thread-1', {
-        codexErrorInfo: 'contextWindowExceeded',
-      }),
-    )
+    child.settle({ exitCode: 17, signal: null })
     await expect(run.result).resolves.toEqual({
       output: [{ type: 'text', text: 'partial answer' }],
-      diagnostic: `${expectedFailureDiagnostic('turn', 'contextWindowExceeded')}\nCodex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval`,
+      diagnostic: `${expectedFailureDiagnostic('turn', 'contextWindowExceeded', { outcome: { exitCode: 17, signal: null } })}\nCodex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval`,
       stopReason: 'max-tokens',
     })
     await run.dispose()
@@ -1735,7 +1736,9 @@ describe('run lifecycle and quiescence', () => {
       child.settle({ exitCode: 17, signal: null })
       await expect(run.result).resolves.toEqual({
         output: [],
-        diagnostic: expectedFailureDiagnostic('turn', 'other'),
+        diagnostic: expectedFailureDiagnostic('turn', 'other', {
+          outcome: { exitCode: 17, signal: null },
+        }),
         stopReason: 'error',
       })
       await run.dispose().catch(() => {})

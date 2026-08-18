@@ -363,6 +363,12 @@ export async function startCodexRun(
       : `${failure}\n${permission}`
     return diagnostic
   }
+  const withProcessOutcome = (facts: CodexFailureFacts): CodexFailureFacts => {
+    const outcome = processFailureFacts?.outcome
+    return outcome === undefined
+      ? facts
+      : { ...facts, outcome }
+  }
   const publishedProcessFailure = processFailure.catch(
     async (error: unknown): Promise<never> => {
       // Frames already queued by the exiting app-server remain authoritative.
@@ -382,7 +388,7 @@ export async function startCodexRun(
         // Let stderr already queued with the terminal frame contribute its
         // fixed permission fact before the non-completed result is snapshotted.
         await new Promise<void>((resolve) => { setImmediate(resolve) })
-        const facts = wire.collectFailure()
+        const facts = withProcessOutcome(wire.collectFailure())
         return { ...terminal, diagnostic: recordFailureDiagnostic(facts) }
       } catch (error: unknown) {
         // Give stderr data already queued in Node one turn to reach the wire
@@ -407,7 +413,7 @@ export async function startCodexRun(
           ? error.facts
           : endedBeforeTerminal && processFailureFacts !== undefined
             ? processFailureFacts
-            : wire.collectFailure()
+            : withProcessOutcome(wire.collectFailure())
         recordFailureDiagnostic(facts)
         throw error instanceof CodexRunFailure
           ? error
