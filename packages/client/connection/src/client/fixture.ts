@@ -1551,11 +1551,19 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   // live under one workspace, whose account carries them in attach order.
   const wid = (raw: string): WorkspaceId => raw as WorkspaceId
   const fixtureEpoch = new Date(Date.now() - 300_000).toISOString()
+  const FIXTURE_HOME = '/home/fixture'
   const workspaces: WorkspaceView[] = options.empty ? [] : [{
     workspaceId: wid('fx-ws-fixture'),
     path: '/tmp/fixture',
     title: 'fixture',
     sessionIds: [sid('fx-alpha'), sid('fx-beta'), sid('fx-gamma')],
+    createdAt: fixtureEpoch,
+    updatedAt: fixtureEpoch,
+  }, {
+    workspaceId: wid('fx-ws-home'),
+    path: `${FIXTURE_HOME}/Documents/project`,
+    title: 'project',
+    sessionIds: [],
     createdAt: fixtureEpoch,
     updatedAt: fixtureEpoch,
   }]
@@ -1568,7 +1576,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   // deterministic content mirroring the design mock so assembled Web tests
   // and snapshots can walk it. Leaves are materialized lazily: a child listed
   // by its parent lists as empty until something is created inside it.
-  const FIXTURE_HOME = '/home/fixture'
   const directoryTree = new Map<string, string[]>([
     ['/', ['home']],
     ['/home', ['fixture']],
@@ -2523,7 +2530,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     },
     host: {
       describe: request => ok(request, {
-        version: '0.0.0-fixture', cwd: '/tmp/fixture', attachedSessions, canOpenPath: true,
+        version: '0.0.0-fixture', cwd: '/tmp/fixture', attachedSessions, home: FIXTURE_HOME, canOpenPath: true,
       }),
       // Deterministic native pick: the keyless lanes drive the full
       // pick-then-adopt path without an OS chooser (design-mock content,

@@ -4,6 +4,7 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionProviderComponent, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DetailsSlotProps, DetailsToolOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/src/client/contract/slots.ts'
+import type { ToolDetailsProps } from '../src/client/contract/slots.ts'
 import { ToolDetails } from '../src/client/tool/ToolDetails.tsx'
 
 /** Framework session-area seat used by direct DetailsPanel tests. */
@@ -58,6 +59,11 @@ export function renderToolDetails(t: TranslateNS<'conversation'>): DetailsSlotPr
     // PropsRenderSlots keeps its key generic even for this one-key share;
     // recover the concrete owner selected by the adapter's fixed slot.
     const details = owner as unknown as DetailsToolOwnerProps
-    return <ToolDetails block={details.block} cwd={details.cwd} t={t} />
+    return <ToolDetails
+      block={details.block}
+      cwd={details.cwd}
+      useHostDescription={(selector => selector(undefined)) as ToolDetailsProps['useHostDescription']}
+      t={t}
+    />
   }
 }
