@@ -66,7 +66,7 @@ export type { WorkspaceListState } from './workspaces/service.ts'
 export type {
   DirectoryEntry, DirectoryListing, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-client-connection/client'
-// Runtime owns the snapshot store; web-react only binds it to React.
+// Runtime owns the snapshot store; ui-renderer only binds it to React.
 export { createSnapshotStore, defineStore, shallowEqual } from './contract/store.ts'
 export type {
   EngineStoreHandle, EngineStoreInstance, ObservableSnapshot, SnapshotStore,
