@@ -180,7 +180,7 @@ function expectedLocalePath(
 function resolveTranslationLink(
   url: string,
   context: TranslationLinkContext,
-  authoredUrl: string = url,
+  authoredUrl: string,
 ): ResolvedTranslationLink | undefined {
   if (isExternalOrAbsoluteMarkdownUrl(url)) return undefined
   const { path } = splitMarkdownUrlTarget(url)
@@ -227,13 +227,13 @@ function visitDocumentLinkNodes(
 ): void {
   const tree = parseMarkdown(markdown)
   const switcherOffset = languageSwitcherLinkOffset(tree, markdown, skipTargets)
-  const linkDefinitions = new Set<string>()
+  const referencedIdentifiers = new Set<string>()
   visitMarkdown(tree, (node) => {
-    if (node.type === 'linkReference') linkDefinitions.add(node.identifier)
+    if (node.type === 'linkReference') referencedIdentifiers.add(node.identifier)
   })
   visitMarkdown(tree, (node) => {
     if (node.type === 'link' && node.position?.start.offset === switcherOffset) return
-    if (node.type === 'link' || (node.type === 'definition' && linkDefinitions.has(node.identifier))) {
+    if (node.type === 'link' || (node.type === 'definition' && referencedIdentifiers.has(node.identifier))) {
       visitor(node)
     }
   })
@@ -246,6 +246,7 @@ function visitResolvedDocumentLinks(
   visitor: (node: LinkNode, destination: MarkdownDestination, resolved: ResolvedTranslationLink) => void,
 ): void {
   visitDocumentLinkNodes(markdown, skipTargets, (node) => {
+    if (isExternalOrAbsoluteMarkdownUrl(node.url)) return
     const destination = markdownDestination(markdown, node)
     const resolved = resolveTranslationLink(node.url, context, destination.url)
     if (resolved !== undefined) visitor(node, destination, resolved)
@@ -307,6 +308,7 @@ export function semanticTranslationLinkNodeTarget(
   markdown: string,
   context: TranslationLinkContext,
 ): string {
+  if (isExternalOrAbsoluteMarkdownUrl(node.url)) return node.url
   const destination = markdownDestination(markdown, node)
   const resolved = resolveTranslationLink(node.url, context, destination.url)
   return resolved === undefined

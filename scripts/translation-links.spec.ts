@@ -31,6 +31,13 @@ function fixture(): string {
   return root
 }
 
+function expectUnchangedLinkInput(root: string, input: string): void {
+  const context = { repoRoot: root, sourcePath: 'docs/guide.md' }
+  expect(translationLinkLocaleViolations(input, context)).toEqual([])
+  expect(rewriteTranslationLinkLocales(input, context)).toEqual({ content: input, rewritten: 0 })
+  expect(normalizeTranslationMarkdownLinks(input, context)).toBe(input)
+}
+
 describe('translation link locale validation', () => {
   it('rejects a Chinese link to the English sibling with an exact diagnostic', () => {
     const root = fixture()
@@ -163,18 +170,15 @@ describe('translation link rewriting and normalization', () => {
   it('does not treat an image-only definition as a document link', () => {
     const root = fixture()
     const input = '![preview][asset]\n\n[asset]: reference.zh.md#overview\n'
-    expect(translationLinkLocaleViolations(
-      input,
-      { repoRoot: root, sourcePath: 'docs/guide.md' },
-    )).toEqual([])
-    expect(rewriteTranslationLinkLocales(
-      input,
-      { repoRoot: root, sourcePath: 'docs/guide.md' },
-    )).toEqual({ content: input, rewritten: 0 })
-    expect(normalizeTranslationMarkdownLinks(
-      input,
-      { repoRoot: root, sourcePath: 'docs/guide.md' },
-    )).toBe(input)
+    expectUnchangedLinkInput(root, input)
+  })
+
+  it.each([
+    '<https://example.com/reference.md>\n',
+    'https://example.com/reference.md\n',
+  ])('leaves GFM autolink source unchanged: %s', (input) => {
+    const root = fixture()
+    expectUnchangedLinkInput(root, input)
   })
 
   it('normalizes only paired locale paths and retains other bytes', () => {

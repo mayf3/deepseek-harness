@@ -281,6 +281,11 @@ describe('translation scope discovery', () => {
 })
 
 describe('translation structural signature', () => {
+  it('retains external GFM autolinks without parsing inline-link syntax', () => {
+    const markdown = '<https://example.com/reference.md>\n'
+    expect(signature(markdown).links).toEqual(['https://example.com/reference.md'])
+  })
+
   it('treats target-locale siblings as one semantic link target', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-translation-structure-'))
     try {
