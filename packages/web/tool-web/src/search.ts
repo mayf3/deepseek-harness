@@ -19,41 +19,28 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
  */
 export const WEB_SEARCH_MAX_RESULTS = 8
 
-/** Default upper bound on concurrent searches in one `queries` call. */
+/** Default upper bound on concurrent searches in one tool call. */
 export const WEB_SEARCH_MAX_QUERIES = 4
 
-/**
- * Model-facing `web_search` arguments. `query` preserves the single-query
- * form; `queries` accepts multiple queries in one call.
- */
+/** Model-facing `web_search` arguments. */
 interface WebSearchArgs {
-  query?: string
-  queries?: string[]
+  queries: string[]
 }
 
 /**
- * Validate value constraints the schema DSL can't express: a non-blank
- * `query` or a non-empty `queries` array of non-blank strings, but not both.
- * `queries` must also fit the deployment's query-count bound. Exact duplicate
- * query strings are collapsed after the bound check. Throws a plain `Error`
- * otherwise.
+ * Validate value constraints the schema DSL can't express: `queries` is
+ * non-empty, contains only non-blank strings, and fits the deployment's
+ * query-count bound. Exact duplicate strings are collapsed after the bound
+ * check. Throws a plain `Error` otherwise.
  *
  * @param args - the schema-validated `web_search` arguments.
  * @param maxQueries - the deployment's upper bound on queries in one call.
- * @returns the accepted query, or the accepted queries for a multi-query call.
+ * @returns the accepted queries in their first-occurrence order.
  */
 export function parseSearchArgs(
   args: WebSearchArgs,
   maxQueries: number,
-): { query: string } | { queries: string[] } {
-  if (args.query !== undefined && args.queries !== undefined) {
-    throw new Error('provide either query or queries, not both')
-  }
-  if (args.query !== undefined) {
-    if (args.query.trim().length === 0) throw new Error('query must be a non-empty string')
-    return { query: args.query }
-  }
-  if (args.queries === undefined) throw new Error('provide either query or queries')
+): string[] {
   const queries = args.queries
   if (queries.length === 0) throw new Error('queries must contain at least one query')
   if (queries.length > maxQueries) {
@@ -61,7 +48,7 @@ export function parseSearchArgs(
     throw new Error(`queries must contain at most ${maxQueries} ${noun}`)
   }
   if (queries.some(query => query.trim().length === 0)) throw new Error('each query must be a non-empty string')
-  return { queries: [...new Set(queries)] }
+  return [...new Set(queries)]
 }
 
 /** Display label for a source: its title, else its hostname. */
@@ -108,24 +95,13 @@ export function formatSearchOutput(result: WebSearchResult): string {
 }
 
 /**
- * Derive a display title from either the single query or the query list.
- *
- * @param args - the raw tool arguments.
- * @returns a comma-joined title for the search card.
- */
-function searchTitle(args: WebSearchArgs): string {
-  const queries = args.queries ?? (args.query !== undefined ? [args.query] : [])
-  return queries.join(', ')
-}
-
-/**
- * Pending-call presentation: a search card titled by the query or queries.
+ * Pending-call presentation: a search card titled by the query list.
  *
  * @param args - the raw tool arguments; only the query text feeds the view.
  * @returns the generic card view (`kind: 'search'`) shown while the call runs.
  */
 export function presentSearchCall(args: WebSearchArgs): GenericCallView {
-  const title = searchTitle(args)
+  const title = args.queries.join(', ')
   return { card: 'generic', title, kind: 'search', rawInput: title }
 }
 
@@ -220,9 +196,8 @@ export function searchMetaFromResult(meta: unknown): WebSearchMeta | undefined {
  * `web` capability falls back to the raw `tool/result` content, which is the
  * same text (see the web-result-card Agent Note).
  *
- * @param args - the raw tool arguments; the query or queries become the
- *   result-state title so a window-truncated replay that dropped the call head
- *   still has one.
+ * @param args - the raw tool arguments; the queries become the result-state
+ *   title so a window-truncated replay that dropped the call head still has one.
  * @param result - the final model-facing tool result; `meta` carries the sources.
  * @returns the search result view, or `undefined` (generic card) on failure or
  *   malformed meta.
@@ -234,16 +209,11 @@ export function presentSearchResult(args: WebSearchArgs, result: ToolResult): We
   return {
     card: 'web',
     kind: 'search',
-    title: searchTitle(args),
+    title: args.queries.join(', '),
     sources: meta.sources,
     truncated: meta.truncated,
     ...meta.answer !== undefined ? { answer: meta.answer } : {},
   }
-}
-
-/** Normalize parsed single- or multi-query arguments into a query list. */
-function queriesFromSearchArgs(input: { query: string } | { queries: string[] }): string[] {
-  return 'query' in input ? [input.query] : input.queries
 }
 
 /**
@@ -347,19 +317,19 @@ export function applyWebSearchTool(
     name: 'tool:web_search',
     order: 110,
     text: fetchEnabled
-      ? `Use the web_search tool to discover current information on the web. You can pass up to ${maxQueries} queries in one call via the queries parameter when you need several distinct searches. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.`
-      : `Use the web_search tool to discover current information on the web. You can pass up to ${maxQueries} queries in one call via the queries parameter when you need several distinct searches. It returns an optional answer plus a list of source URLs. Use the returned source snippets when available, and cite the relevant URLs as markdown links.`,
+      ? `Use the web_search tool to discover current information on the web. The required queries array accepts 1–${maxQueries} non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.`
+      : `Use the web_search tool to discover current information on the web. The required queries array accepts 1–${maxQueries} non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Use the returned source snippets when available, and cite the relevant URLs as markdown links.`,
   })
 
   ctx.tools.register(defineTool({
     name: 'web_search',
-    description: `Search the web for current information. Pass one query or up to ${maxQueries} queries to search several topics at once. Returns an optional summary answer and a list of source URLs.`,
+    description: `Search the web for current information. Provide 1–${maxQueries} queries in the required queries array. Returns an optional summary answer and a list of source URLs.`,
     parameters: {
-      query: { type: 'string', description: 'The search query. Provide either this or queries.' },
       queries: {
         type: 'array',
+        required: true,
         items: { type: 'string' },
-        description: `Up to ${maxQueries} search queries to run concurrently and merge into one result. Provide either this or query.`,
+        description: `Required search queries; accepts 1–${maxQueries} items and merges their results.`,
       },
     },
     output: {
@@ -392,8 +362,8 @@ export function applyWebSearchTool(
     // Provider reads do not mutate parent-agent state.
     isConcurrencySafe: () => true,
     async execute(args, exec) {
-      const input = parseSearchArgs(args, maxQueries)
-      const result = await runSearchQueries(ctx, queriesFromSearchArgs(input), maxResults, exec.signal)
+      const queries = parseSearchArgs(args, maxQueries)
+      const result = await runSearchQueries(ctx, queries, maxResults, exec.signal)
       return {
         ...result.content !== undefined ? { content: result.content } : {},
         sources: result.sources.map(projectSource),

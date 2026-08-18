@@ -10,7 +10,7 @@
 
 | 工具 | 参数 | 行为 |
 |---|---|---|
-| `web_search` | `query`（string）或 `queries`（string[]） | 用于发现信息。返回可选答案与来源 URL。`queries` 会并发执行至多 `searchMaxQueries` 个不同搜索，按轮询顺序合并来源，再应用组合后的 `searchMaxResults` 上限。完全相同的查询只执行一次。任何搜索失败都会中止批次中的其余搜索；批次结算完毕后调用才返回错误。两个上限都不面向模型。 |
+| `web_search` | `queries`（必填 string[]） | 用于发现信息。返回可选答案与来源 URL。它会并发执行 1 至 `searchMaxQueries` 个不同搜索，按轮询顺序合并来源，再应用组合后的 `searchMaxResults` 上限。单元素数组执行一次搜索。完全相同的查询只执行一次。任何搜索失败都会中止批次中的其余搜索；批次结算完毕后调用才返回错误。两个上限都不面向模型。 |
 | `web_fetch` | `url`（string） | 获取特定 URL。HTML 主体渲染为 markdown（turndown，带 GFM 表格／删除线）；文本主体原样通过。非 2xx 状态会报告，而非报错。工具调用超时是部署策略（`dsh-tool-call-timeout-policy`），不是模型参数。 |
 
 两个工具都选择并发调度，因为提供方读取会返回内容，不会修改父 agent（智能体）的状态。
@@ -53,13 +53,13 @@
 ##### 启用抓取时的 Web 搜索指引
 
 ```markdown
-Use the web_search tool to discover current information on the web. You can pass up to 4 queries in one call via the queries parameter when you need several distinct searches. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.
+Use the web_search tool to discover current information on the web. The required queries array accepts 1–4 non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.
 ```
 
 ##### 仅搜索时的 Web 搜索指引
 
 ```markdown
-Use the web_search tool to discover current information on the web. You can pass up to 4 queries in one call via the queries parameter when you need several distinct searches. It returns an optional answer plus a list of source URLs. Use the returned source snippets when available, and cite the relevant URLs as markdown links.
+Use the web_search tool to discover current information on the web. The required queries array accepts 1–4 non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Use the returned source snippets when available, and cite the relevant URLs as markdown links.
 ```
 
 ##### Web 抓取指引
@@ -136,7 +136,7 @@ Use the web_fetch tool to retrieve the content of a specific HTTP(S) URL (for ex
 
 #### 模型看到的内容
 
-无效输入精确地变为 `Error: provide either query or queries`、`Error: provide either query or queries, not both`、`Error: query must be a non-empty string`、`Error: queries must contain at least one query`、配置上限为 1 时的 `Error: queries must contain at most 1 query`、上限更大时的 `Error: queries must contain at most <count> queries`、`Error: each query must be a non-empty string` 或 `Error: url must be a non-empty string`。
+schema 校验会在执行前拒绝缺失或非数组的 `queries` 字段以及非字符串数组元素。值错误精确地变为 `Error: queries must contain at least one query`、配置上限为 1 时的 `Error: queries must contain at most 1 query`、上限更大时的 `Error: queries must contain at most <count> queries`、`Error: each query must be a non-empty string` 或 `Error: url must be a non-empty string`。
 
 #### Token 影响
 
