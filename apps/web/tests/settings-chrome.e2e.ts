@@ -400,6 +400,11 @@ describe('web e2e: settings modal and General preferences', () => {
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const zhDialog = page.getByRole('dialog', { name: '设置' })
     await zhDialog.waitFor({ timeout: 10_000 })
+    // The document language follows the active locale in the assembled app, not
+    // only on a directly-mounted plugin. This is a zh browser, so the served
+    // markup's `en` must already have been replaced — asserting it here (rather
+    // than only in an English scenario) is what makes the check discriminating.
+    expect(await page.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
     // The Language selector pill shows the active locale's own name.
     const selector = zhDialog.getByRole('button', { name: '中文' })
     expect(await selector.getAttribute('aria-haspopup')).toBe('menu')
@@ -410,6 +415,8 @@ describe('web e2e: settings modal and General preferences', () => {
     // the rest of the app's copy is intentionally out of this row's scope.)
     const enDialog = page.getByRole('dialog', { name: 'Settings' })
     await enDialog.waitFor({ timeout: 10_000 })
+    // ...and the attribute follows that switch, in the assembled app.
+    await expect.poll(() => page.evaluate(() => document.documentElement.lang), { timeout: 5_000 }).toBe('en')
     expect(await enDialog.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe('true')
     await expect.poll(() => enDialog.getByText('Appearance', { exact: true }).count(), { timeout: 5_000 }).toBe(1)
     expect(await page.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
@@ -498,6 +505,10 @@ describe('web e2e: settings modal and General preferences', () => {
       const dialog = frPage.getByRole('dialog', { name: 'Settings' })
       await dialog.waitFor({ timeout: 10_000 })
       await dialog.getByRole('button', { name: 'English' }).waitFor({ timeout: 10_000 })
+      // The markup already ships `en`, so this alone cannot prove the sync ran
+      // — the zh scenario above is the discriminating half. Asserted here too
+      // so a future change that resolves en but writes the wrong tag is caught.
+      expect(await frPage.evaluate(() => document.documentElement.lang)).toBe('en')
       // Golden of the English fallback dialog — the visible output this change
       // produces. The zh golden above covers the detected-locale surface, so
       // the pair pins both directions of the resolution.

@@ -93,9 +93,12 @@ interface Dictionary {
  */
 function dictionariesIn(file: string): Dictionary[] {
   const text = readFileSync(file, 'utf8')
-  // Cheap pre-filter: parsing every package source is wasteful, and a file
-  // with no locale token cannot declare a dictionary under any shape below.
-  if (!/\b(zh|en)\b/.test(text)) return []
+  // Cheap pre-filter: parsing every package source is wasteful. The pattern
+  // must admit every shape `localeOf` accepts, or a file would be skipped
+  // before parsing — the silent narrowing this gate exists to prevent. A bare
+  // `\b(zh|en)\b` misses `zhSettings`/`accessZh`, because `\b` does not hold
+  // between `h` and an uppercase letter.
+  if (!/\b(zh|en)\b|\b(zh|en)[A-Z]|(Zh|En)\b/.test(text)) return []
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.ESNext, true)
   const found: Dictionary[] = []
   const rel = relative(file)
@@ -112,10 +115,29 @@ function dictionariesIn(file: string): Dictionary[] {
     }
   }
 
-  // Inline registrations: a `[['zh', {...}], ['en', {...}]]` pair handed to a
-  // registration loop in the plugin body. Both halves key off the enclosing
-  // array's line so they pair with each other and not across sites.
+  // Inline registrations, two shapes. A `[['zh', {...}], ['en', {...}]]` pair
+  // handed to a registration loop keys off the enclosing array; separate
+  // `register(NS, 'zh', {...})` / `register(NS, 'en', {...})` calls key off the
+  // namespace argument, so the two calls pair with each other.
   const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression
+      const name = ts.isPropertyAccessExpression(callee) ? callee.name.text : undefined
+      if (name === 'register' && node.arguments.length >= 3) {
+        const [ns, tag, dict] = node.arguments
+        const literal = unwrap(dict)
+        if (
+          ns !== undefined && tag !== undefined && ts.isStringLiteral(tag)
+          && (tag.text === 'zh' || tag.text === 'en')
+          && literal !== undefined && ts.isObjectLiteralExpression(literal)
+        ) {
+          // The namespace expression's source text identifies the pair, so the
+          // zh and en calls for one namespace meet and calls for different
+          // namespaces stay apart.
+          found.push({ file: rel, name: `${tag.text}@register:${ns.getText(source)}`, keys: keysOf(literal) })
+        }
+      }
+    }
     if (ts.isArrayLiteralExpression(node) && node.elements.length === 2) {
       const site = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
       for (const element of node.elements) {
@@ -167,7 +189,9 @@ function localeOf(name: string): { locale: 'zh' | 'en'; pair: string } | undefin
   for (const locale of ['zh', 'en'] as const) {
     const other = locale === 'zh' ? 'Zh' : 'En'
     if (name === locale) return { locale, pair: '' }
-    if (name.startsWith(`${locale}@inline:`)) return { locale, pair: name.slice(name.indexOf(':')) }
+    // Synthetic names for inline shapes carry their own pair key after the
+    // first ':' (the enclosing array's line, or the namespace expression).
+    if (name.startsWith(`${locale}@`)) return { locale, pair: name.slice(name.indexOf(':')) }
     if (name.startsWith(locale) && name.length > 2 && name[2] === name[2]?.toUpperCase()) {
       return { locale, pair: name.slice(2) }
     }

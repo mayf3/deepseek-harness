@@ -61,7 +61,8 @@ describe('document language', () => {
   })
 
   afterEach(() => {
-    vi.unstubAllGlobals()
+    // navigator properties are installed with defineProperty above, so they
+    // are removed the same way; nothing here goes through vi.stubGlobal.
     const own = navigator as unknown as Record<string, unknown>
     delete own.languages
     delete own.language
