@@ -1535,7 +1535,7 @@ describe('run publication, cancellation, and settlement', () => {
     const constructionError = new Error(
       'query construction failed with a live child',
     )
-    const liveChildCleanupFailure = fakeChild({ doneError: cleanupError })
+    const liveChildCleanupFailure = fakeChild({ waitForExitError: cleanupError })
     queryMock.mockImplementationOnce(({ options }) => {
       options.spawnClaudeCodeProcess!(sdkSpawnOptions())
       throw constructionError
@@ -1545,7 +1545,7 @@ describe('run publication, cancellation, and settlement', () => {
       spawn: () => liveChildCleanupFailure.handle,
     })
     await expect(liveCleanupFailure).rejects.toMatchObject({
-      message: `subagent-claude-code: ${expectedFailureDiagnostic('query-start', 'unknown')}; subagent-claude-code: ${expectedFailureDiagnostic('teardown', 'unknown')}`,
+      message: `subagent-claude-code: ${expectedFailureDiagnostic('query-start', 'unknown')}; subagent-claude-code: ${expectedFailureDiagnostic('teardown', 'unknown', { exitCode: 0, signal: null })}`,
       errors: [
         expect.objectContaining({ cause: constructionError }),
         expect.objectContaining({ cause: cleanupError }),
@@ -1611,7 +1611,7 @@ describe('query and process disposal', () => {
     expect(disposed).toBe(true)
   })
 
-  it('reports wait, close, and direct-child failures without skipping cleanup', async () => {
+  it('reports close and tree-wait failures without skipping cleanup', async () => {
     const waitFailure = fakeChild({
       waitForExitError: new Error('wait boom'),
     })
@@ -1636,22 +1636,5 @@ describe('query and process disposal', () => {
       expect.objectContaining({ message: 'wait boom' }),
     ])
     expect(waitFailure.terminate).toHaveBeenCalledOnce()
-
-    const doneFailure = fakeChild({
-      doneError: new Error('spawn boom'),
-    })
-    const directChildFailure = disposeClaudeCodeChild(
-      { close: vi.fn() },
-      doneFailure.handle,
-    )
-    await expect(directChildFailure)
-      .rejects.toThrow(expectedFailureDiagnostic('teardown', 'unknown'))
-    await expect(directChildFailure).rejects.not.toThrow('spawn boom')
-    const directChildError = await directChildFailure.then(
-      () => undefined,
-      (error: unknown) => error,
-    )
-    expect(errorCause(directChildError)?.message).toBe('spawn boom')
-    expect(doneFailure.terminate).toHaveBeenCalledOnce()
   })
 })

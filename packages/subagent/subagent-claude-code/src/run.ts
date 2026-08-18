@@ -270,7 +270,6 @@ export async function disposeClaudeCodeChild(
   child: SubprocessHandle,
 ): Promise<void> {
   const failures: Error[] = []
-  let outcome: SubprocessOutcome | undefined
   try {
     query?.close()
   } catch (error: unknown) {
@@ -283,11 +282,7 @@ export async function disposeClaudeCodeChild(
   } catch (error: unknown) {
     failures.push(thrown(error))
   }
-  try {
-    outcome = await child.done
-  } catch (error: unknown) {
-    failures.push(thrown(error))
-  }
+  const outcome = await child.done
 
   const firstFailure = failures[0]
   if (firstFailure !== undefined) {
