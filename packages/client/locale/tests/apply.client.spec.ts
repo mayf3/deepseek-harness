@@ -2,7 +2,7 @@
  * Language row registration, snapshot projection into the row store, and
  * recovery after an HMR collapse of the declaring entry. */
 import { Context } from '@deepseek-ai/cordis'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { SettingsSchemaService } from '@deepseek-ai/dsh-client-ui-settings/src/client/schema.ts'
 import { SettingsScopeBinder } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-scope.ts'
@@ -78,10 +78,6 @@ describe('locale apply', () => {
   // localized copy sets its locale explicitly via setLocale/Host preference
   // rather than leaning on FALLBACK_LOCALE. This file has no jsdom environment,
   // so there is no `window` and no browser-language detection to stub.
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
   it('declares the slot service', () => {
     expect(inject).toEqual(['slots', 'connection', 'remote', 'settingsScope'])
   })

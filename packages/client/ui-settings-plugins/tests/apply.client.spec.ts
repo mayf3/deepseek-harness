@@ -13,7 +13,6 @@ import type {
   ConfigurablePluginsTabFace, PluginsSettingsSectionInjected,
 } from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 
-
 /**
  * @param served - namespaces the Host describes; omitted answers a failed read,
  * which is what most of these specs want (no card has anything to render).
@@ -86,7 +85,6 @@ describe('ui-settings-plugins apply', () => {
     expect(resolveSlotLabel(tab.options.label)).toBe('插件配置')
     expect(slots.spec('settings.plugin.item')).toMatchObject({ kind: 'keyed', scope: 'root' })
   })
-
 
   it('injects a live tab projection, the card directory, and one business face per card', async () => {
     const { ctx, slots } = await bench()

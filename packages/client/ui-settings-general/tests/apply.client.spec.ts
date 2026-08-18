@@ -10,7 +10,6 @@ import { GeneralSection } from '../src/client/GeneralSection.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from '../src/client/SettingsDocumentAction.tsx'
 
-
 /** The seats this plugin fills for a loopback browser (slot name → expected component). */
 const SEATS = [
   ['settings.trigger', TriggerContent],

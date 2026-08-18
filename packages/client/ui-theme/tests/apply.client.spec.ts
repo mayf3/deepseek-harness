@@ -14,7 +14,6 @@ import { THEME_SETTINGS_NAMESPACE, ThemeSettingsSchema } from '../src/theme-sett
 import { AppearanceRow } from '../src/client/AppearanceRow.tsx'
 import type { createAppearanceRowStore } from '../src/client/settings-store.ts'
 
-
 const SLOT = 'settings.general.item'
 
 function deferred<T>() {

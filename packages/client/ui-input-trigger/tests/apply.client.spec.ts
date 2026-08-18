@@ -12,7 +12,6 @@ import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply, inject, InputTriggerService } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { MenuViewInjected } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 
-
 const sid = (k: string): SessionId => k as SessionId
 
 async function bench() {

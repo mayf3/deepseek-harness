@@ -7,7 +7,6 @@ import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from '@deepsee
 import { WorkspaceBrowser } from '../src/client/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
 
-
 async function bench() {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()

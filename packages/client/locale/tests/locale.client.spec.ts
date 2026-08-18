@@ -138,7 +138,7 @@ describe('LocaleRuntime', () => {
     expect(svc.getSnapshot().revision).toBe(before + 1)
   })
 
-  it('setLocale writes through the scope, republishes an immutable snapshot, and no-ops on same value', () => {
+  it('setLocale writes through the scope and republishes only on a real change', () => {
     const host = stubSettingsScope<LocaleSettings>()
     const { svc, events } = make(host)
     svc.setLocale('en')
@@ -147,9 +147,27 @@ describe('LocaleRuntime', () => {
     expect(events).toHaveLength(1)
     expect(events[0]).toBe(svc.getLocale())
     expect(events[0]!.revision).toBe(1)
+    // Re-selecting the active locale publishes nothing (no subscriber churn)
+    // but still writes: the active value may be a provisional browser-derived
+    // resolution nothing has stored, and picking it is an explicit choice that
+    // must outlive this browser.
     svc.setLocale('en')
     expect(events).toHaveLength(1)
-    expect(host.set).toHaveBeenCalledOnce()
+    expect(host.set).toHaveBeenCalledTimes(2)
+    expect(host.set).toHaveBeenLastCalledWith('preference', 'en')
+  })
+
+  it('persists an explicit pick of the provisional locale, so a shared DSH home agrees', () => {
+    // A browser naming no shipped language opens at FALLBACK_LOCALE with
+    // nothing stored. Choosing that same language in the menu must become
+    // durable, or a Chinese browser sharing the home still opens Chinese.
+    stubLanguages('fr-FR')
+    const host = stubSettingsScope<LocaleSettings>()
+    const { svc } = make(host)
+    expect(svc.getLocale().active).toBe('en')
+    expect(host.set).not.toHaveBeenCalled()
+    svc.setLocale('en')
+    expect(host.set).toHaveBeenCalledWith('preference', 'en')
   })
 
   it('setLocale without a host scope stays process-local', () => {

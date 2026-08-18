@@ -197,13 +197,20 @@ export class LocaleRuntime {
 
   /**
    * Switch the active locale — the only user preference write entry.
+   *
+   * The durable write happens even when the id already matches the active
+   * locale, because the active value may be a provisional browser-derived or
+   * fallback resolution that nothing has stored yet. Picking the language
+   * already on screen is still an explicit choice, and it must survive a
+   * different browser sharing the same DSH home. Only the render notification
+   * is conditional: republishing an unchanged locale would churn every
+   * subscriber for nothing.
    * @param id - a registered locale id; unknown ids throw.
    */
   setLocale(id: string): void {
     const match = this.snapshot.locales.find(l => l.id === id)
     if (match === undefined) throw new Error(`locale "${id}" is not registered`)
-    if (this.snapshot.active === match.id) return
-    this.publish(match.id, true)
+    if (this.snapshot.active !== match.id) this.publish(match.id, true)
     void this.host?.set(LOCALE_PREFERENCE_FIELD, match.id)
   }
 
