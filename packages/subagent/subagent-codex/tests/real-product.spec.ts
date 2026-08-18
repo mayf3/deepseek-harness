@@ -65,17 +65,19 @@ interface RealInstanceFixture {
   readonly workspace: string
 }
 
+type ResponsesScript = readonly ResponsesBehavior[] | ((workspace: string) => readonly ResponsesBehavior[])
+
 async function realInstanceFixture(
-  script: readonly ResponsesBehavior[],
+  script: ResponsesScript,
 ): Promise<RealInstanceFixture> {
   const root = mkdtempSync(join(tmpdir(), 'dsh-codex-real-'))
   roots.push(root)
   const workspace = join(root, 'workspace')
   const codexHome = join(root, 'codex-home')
-  const fixture = await startResponsesFixture(script)
-  fixtures.push(fixture)
   mkdirSync(workspace)
   mkdirSync(codexHome)
+  const fixture = await startResponsesFixture(typeof script === 'function' ? script(workspace) : script)
+  fixtures.push(fixture)
   writeFileSync(join(codexHome, 'config.toml'), [
     'model = "fixture-model"',
     'model_provider = "fixture"',
@@ -133,7 +135,7 @@ async function realRuntime(): Promise<RealRuntime> {
 }
 
 async function realHarness(
-  script: readonly ResponsesBehavior[],
+  script: ResponsesScript,
   permissionMode?: CodexPermissionMode,
 ): Promise<{
   readonly harness: RealHarness
@@ -385,25 +387,30 @@ describe('real @openai/codex 0.147.0 product', () => {
 
   it('executes an explicitly selected dangerous bypass write in the isolated workspace', async () => {
     const sideEffect = 'bypass-side-effect'
-    const command = `echo bypass>${sideEffect}`
-    const commandCalls = [
-      {
-        name: 'exec_command',
-        arguments: {
-          cmd: command,
+    const { harness, fixture } = await realHarness((workspace): readonly ResponsesBehavior[] => {
+      const target = join(workspace, sideEffect)
+      const command = process.platform === 'win32'
+        ? `powershell.exe -NoLogo -NoProfile -NonInteractive -Command "Set-Content -LiteralPath '${target.replaceAll("'", "''")}' -Value 'bypass' -NoNewline"`
+        : `printf bypass > ${JSON.stringify(target)}`
+      const commandCalls = [
+        {
+          name: 'exec_command',
+          arguments: {
+            cmd: command,
+          },
         },
-      },
-      {
-        name: 'shell_command',
-        arguments: {
-          command,
+        {
+          name: 'shell_command',
+          arguments: {
+            command,
+          },
         },
-      },
-    ] as const
-    const { harness } = await realHarness([
-      { kind: 'advertisedFunctionCall', choices: commandCalls },
-      { kind: 'complete', text: 'bypass complete' },
-    ], 'dangerously-bypass-approvals-and-sandbox')
+      ] as const
+      return [
+        { kind: 'advertisedFunctionCall', choices: commandCalls },
+        { kind: 'complete', text: 'bypass complete' },
+      ]
+    }, 'dangerously-bypass-approvals-and-sandbox')
     const target = join(harness.workspace, sideEffect)
     const run = await harness.ctx.subagents.start('codex', {
       prompt: [{ type: 'text', text: 'Create the fixture side effect.' }],
@@ -414,6 +421,7 @@ describe('real @openai/codex 0.147.0 product', () => {
       output: [{ type: 'text', text: 'bypass complete' }],
       stopReason: 'completed',
     })
+    expect(existsSync(target), JSON.stringify(fixture.requests.at(-1)?.body.input)).toBe(true)
     expect(readFileSync(target, 'utf8').trim()).toBe('bypass')
     await run.dispose()
     await expectQuiescent(harness.handles)

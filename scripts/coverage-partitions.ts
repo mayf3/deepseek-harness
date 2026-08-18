@@ -34,6 +34,8 @@ export interface CoverageCommandResult {
   signalCode: NodeJS.Signals | null
   /** Spawn failure recorded independently from process completion. */
   error?: string
+  /** Bounded combined stdout/stderr tail repeated when the command fails. */
+  outputTail?: string
 }
 
 /** Execute one coordinator command with inherited output. */
@@ -120,6 +122,9 @@ export class CoveragePartitionCoordinator {
         const result = await this.runCommand(command)
         if (commandFailed(result)) {
           console.error(`coverage-partitions: FAIL ${command.label} (${commandFailureReason(result)})`)
+          if (result.outputTail !== undefined && result.outputTail !== '') {
+            console.error(`coverage-partitions: output tail for ${command.label}:\n${result.outputTail}`)
+          }
         }
         return result
       }))
@@ -202,6 +207,7 @@ export class CoveragePartitionCoordinator {
 /** Spawn one pnpm-backed command without a platform shell. */
 function runCoverageCommand(command: CoverageCommand): Promise<CoverageCommandResult> {
   return new Promise((resolveCommand) => {
+    let outputTail = ''
     const env = { ...process.env }
     for (const [name, value] of Object.entries(command.env)) {
       if (value === undefined) Reflect.deleteProperty(env, name)
@@ -210,15 +216,30 @@ function runCoverageCommand(command: CoverageCommand): Promise<CoverageCommandRe
     const child = spawn(process.execPath, command.args, {
       cwd: command.cwd,
       env,
-      stdio: 'inherit',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => {
+      process.stdout.write(chunk)
+      outputTail = appendOutputTail(outputTail, chunk)
+    })
+    child.stderr.on('data', (chunk: string) => {
+      process.stderr.write(chunk)
+      outputTail = appendOutputTail(outputTail, chunk)
     })
     child.once('error', (error: Error) => {
-      resolveCommand({ exitCode: null, signalCode: null, error: error.message })
+      resolveCommand({ exitCode: null, signalCode: null, error: error.message, outputTail })
     })
-    child.once('exit', (exitCode, signalCode) => {
-      resolveCommand({ exitCode, signalCode })
+    child.once('close', (exitCode, signalCode) => {
+      resolveCommand({ exitCode, signalCode, outputTail })
     })
   })
+}
+
+function appendOutputTail(previous: string, chunk: string): string {
+  const combined = previous + chunk
+  return combined.length <= 65_536 ? combined : combined.slice(-65_536)
 }
 
 function commandFailed(result: CoverageCommandResult): boolean {

@@ -129,7 +129,7 @@ describe('coverage partition coordinator', () => {
     const runCommand = vi.fn(async (command: CoverageCommand) => {
       await writeBlob(command)
       return command.label === 'partition 2/2'
-        ? { exitCode: 1, signalCode: null }
+        ? { exitCode: 1, signalCode: null, outputTail: 'specific Vitest failure' }
         : passed
     })
     const coordinator = new CoveragePartitionCoordinator({
@@ -141,6 +141,9 @@ describe('coverage partition coordinator', () => {
 
     await expect(coordinator.run()).resolves.toBe(1)
     expect(reported).toHaveBeenCalledWith('coverage-partitions: FAIL partition 2/2 (exit 1)')
+    expect(reported).toHaveBeenCalledWith(
+      'coverage-partitions: output tail for partition 2/2:\nspecific Vitest failure',
+    )
     expect(runCommand).toHaveBeenCalledTimes(3)
   })
 
