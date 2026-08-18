@@ -331,10 +331,7 @@ export async function startCodexRun(
   const result: Promise<SubagentResult> = settleRunResult({
     attempt: async () => {
       try {
-        const terminal = await Promise.race([
-          wire.runTurn(texts, runAbort.signal),
-          processFailure,
-        ])
+        const terminal = await wire.runTurn(texts, runAbort.signal)
         if (terminal.stopReason === 'completed') return terminal
         const facts = wire.collectFailure()
         return { ...terminal, diagnostic: recordFailureDiagnostic(facts) }
@@ -357,15 +354,11 @@ export async function startCodexRun(
             // The wire failure remains authoritative when exit observation fails.
           }
         }
-        const facts = error instanceof CodexRunFailure
-          ? error.facts
-          : endedBeforeTerminal && processFailureFacts !== undefined
-            ? processFailureFacts
-            : wire.collectFailure()
+        const facts = endedBeforeTerminal && processFailureFacts !== undefined
+          ? processFailureFacts
+          : wire.collectFailure()
         recordFailureDiagnostic(facts)
-        throw error instanceof CodexRunFailure
-          ? error
-          : new CodexRunFailure(facts, thrown(error))
+        throw new CodexRunFailure(facts, thrown(error))
       }
     },
     collectOutput,

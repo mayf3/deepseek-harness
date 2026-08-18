@@ -1612,6 +1612,7 @@ describe('run lifecycle and quiescence', () => {
         onError: (error) => { errors.push(error.message) },
       })
       child.settle(outcome)
+      child.fromChild.emit('end')
       await expect(run.result).resolves.toEqual({
         output: [],
         diagnostic: expectedFailureDiagnostic('process', 'process-exit', {
@@ -1649,13 +1650,28 @@ describe('run lifecycle and quiescence', () => {
       child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
         codexErrorInfo: 'other',
       }))
-      await nextTask()
-      child.fromChild.emit('end')
+      child.fromChild.end()
       child.settle({ exitCode: 17, signal: 'SIGABRT' })
       await expect(run.result).resolves.toEqual({
         output: [],
         diagnostic: expectedFailureDiagnostic('turn', 'other'),
         stopReason: 'error',
+      })
+      await run.dispose().catch(() => {})
+    }
+    {
+      const child = fakeChild({ exitOnTerminate: false })
+      const { run, turnStart } = await publishRun(child)
+      child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      child.peer.send(
+        agentMessage('answer', 'final_answer'),
+        turnCompleted('completed'),
+      )
+      child.fromChild.end()
+      child.settle({ exitCode: 17, signal: 'SIGABRT' })
+      await expect(run.result).resolves.toEqual({
+        output: [{ type: 'text', text: 'answer' }],
+        stopReason: 'completed',
       })
       await run.dispose().catch(() => {})
     }
