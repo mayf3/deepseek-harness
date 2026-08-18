@@ -7,7 +7,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   GIT_COMMAND_MAX_BUFFER,
   gitBlobHash,
-  gitIndexPaths,
+  gitMergeInputPaths,
   readGitIndexBlob,
   runGit,
   storeGitBlob,
@@ -179,7 +179,7 @@ function assertMergedPairStructure(
   const zhText = zh.toString('utf8')
   const sourceTree = parseTranslationMarkdown(sourceText)
   const zhTree = parseTranslationMarkdown(zhText)
-  const indexFiles = gitIndexPaths(root)
+  const indexFiles = gitMergeInputPaths(root)
   const repositoryFileExists = (path: string): boolean => indexFiles.has(path)
   const sourceSwitcherTargets = languageSwitcherTargets(paths.source)
   const zhSwitcherTargets = languageSwitcherTargets(paths.zh)

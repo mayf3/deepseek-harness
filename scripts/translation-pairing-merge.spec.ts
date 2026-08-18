@@ -491,6 +491,49 @@ describe('translation pairing merge composition', { timeout: 15_000 }, () => {
     expectMergedPair(fixture)
   })
 
+  it('sees a paired link target added by the other branch', () => {
+    const fixture = createFixture()
+    commitPair(fixture, baseSource, baseZh, 'base')
+    git(fixture, ['switch', '-c', 'current'])
+    commitPair(fixture, currentSource, currentZh, 'current guide')
+    git(fixture, ['switch', 'master'])
+    record(
+      fixture.root,
+      'docs/guide.md',
+      baseSource.replace('Beta base.', '[Reference](reference.md#overview)'),
+      baseZh.replace('乙基础。', '[参考](reference.zh.md#overview)'),
+    )
+    record(
+      fixture.root,
+      'docs/reference.md',
+      '# Reference\n\nEnglish | [中文](reference.zh.md)\n\nOverview.\n',
+      '# 参考\n\n[English](reference.md) | 中文\n\n概览。\n',
+    )
+    git(fixture, ['add', '.'])
+    git(fixture, ['commit', '-m', 'other guide and target'])
+    git(fixture, ['switch', 'current'])
+    installFixtureRuntime(fixture.root)
+    git(fixture, [
+      'config',
+      'merge.dsh-translation-pairing.driver',
+      'scripts/merge-translation-pairing-driver.sh %O %A %B %P',
+    ])
+
+    const merge = spawnSync('git', ['-C', fixture.root, 'merge', '--no-edit', 'master'], {
+      encoding: 'utf8',
+      env: fixture.env,
+    })
+
+    expect(merge.status, merge.stderr).toBe(0)
+    expect(git(fixture, ['diff', '--name-only', '--diff-filter=U'])).toBe('')
+    expect(readFileSync(join(fixture.root, 'docs/guide.md'), 'utf8')).toContain(
+      '[Reference](reference.md#overview)',
+    )
+    expect(readFileSync(join(fixture.root, 'docs/guide.zh.md'), 'utf8')).toContain(
+      '[参考](reference.zh.md#overview)',
+    )
+  })
+
   it('leaves an ordinary recoverable conflict when the configured runtime is unavailable', () => {
     const fixture = createFixture()
     const records = createDivergedPair(fixture)

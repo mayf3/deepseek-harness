@@ -362,7 +362,9 @@ export function translationStructureSignature(
   const sig: TranslationStructureSignature = { headings: [], code: [], tables: [], lists: [], links: [] }
   const definitions = new Map<string, Extract<Nodes, { type: 'definition' }>>()
   const collectDefinitions = (node: Nodes): void => {
-    if (node.type === 'definition') definitions.set(node.identifier, node)
+    if (node.type === 'definition' && !definitions.has(node.identifier)) {
+      definitions.set(node.identifier, node)
+    }
     if ('children' in node) for (const child of node.children) collectDefinitions(child)
   }
   collectDefinitions(tree)

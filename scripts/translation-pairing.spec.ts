@@ -368,6 +368,39 @@ describe('translation structural signature', () => {
     }
   })
 
+  it('compares the first duplicate reference definition that CommonMark resolves', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-translation-structure-'))
+    try {
+      for (const name of ['reference', 'different', 'other']) {
+        writeFileSync(join(root, `${name}.md`), `# ${name}\n`)
+        writeFileSync(join(root, `${name}.zh.md`), `# ${name} zh\n`)
+      }
+      const sourceMarkdown = '[Reference][ref]\n\n[ref]: reference.md\n[ref]: other.md\n'
+      const counterpartMarkdown = '[参考][ref]\n\n[ref]: different.zh.md\n[ref]: other.zh.md\n'
+      const source = translationStructureSignature(
+        parseTranslationMarkdown(sourceMarkdown),
+        'guide.zh.md',
+        {
+          repoRoot: root, sourcePath: 'guide.md',
+          isTranslationPairSource: fixturePairSource, markdown: sourceMarkdown,
+        },
+      )
+      const counterpart = translationStructureSignature(
+        parseTranslationMarkdown(counterpartMarkdown),
+        'guide.md',
+        {
+          repoRoot: root, sourcePath: 'guide.zh.md',
+          isTranslationPairSource: fixturePairSource, markdown: counterpartMarkdown,
+        },
+      )
+      expect(translationStructureDiff(source, counterpart)).toEqual([
+        'link target #1 diverges between the pair: "dsh-translation-target:reference.md" vs "dsh-translation-target:different.md"',
+      ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('accepts matching list kinds, starts, and item counts', () => {
     const source = signature('3. One\n4. Two\n\n- A\n- B\n')
     const counterpart = signature('3. 一\n4. 二\n\n- 甲\n- 乙\n')

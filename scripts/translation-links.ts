@@ -149,7 +149,7 @@ function relativeExpectedPath(
   rawPath: string,
 ): string {
   const relative = posix.relative(posix.dirname(context.sourcePath), expectedPath)
-  const encoded = encodeURI(relative)
+  const encoded = relative.split('/').map(segment => encodeURIComponent(segment)).join('/')
   return rawPath.startsWith('./') && !encoded.startsWith('.') ? `./${encoded}` : encoded
 }
 
@@ -227,12 +227,18 @@ function visitDocumentLinkNodes(
   const tree = parseMarkdown(markdown)
   const switcherOffset = languageSwitcherLinkOffset(tree, markdown, skipTargets)
   const referencedIdentifiers = new Set<string>()
+  const visitedDefinitions = new Set<string>()
   visitMarkdown(tree, (node) => {
     if (node.type === 'linkReference') referencedIdentifiers.add(node.identifier)
   })
   visitMarkdown(tree, (node) => {
     if (node.type === 'link' && node.position?.start.offset === switcherOffset) return
-    if (node.type === 'link' || (node.type === 'definition' && referencedIdentifiers.has(node.identifier))) {
+    if (node.type === 'link') {
+      visitor(node)
+    } else if (node.type === 'definition'
+      && referencedIdentifiers.has(node.identifier)
+      && !visitedDefinitions.has(node.identifier)) {
+      visitedDefinitions.add(node.identifier)
       visitor(node)
     }
   })

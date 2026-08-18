@@ -64,6 +64,29 @@ export function gitIndexPaths(root: string): Set<string> {
 }
 
 /**
+ * Paths visible to a custom merge driver from the current index plus every
+ * merge head Git advertises through `GITHEAD_<oid>` environment entries.
+ *
+ * Git invokes custom drivers before it writes clean additions from the other
+ * heads into stage zero. The explicit post-conflict resolver has no GITHEAD
+ * entries and therefore uses the already-merged index alone.
+ */
+export function gitMergeInputPaths(root: string, environment: NodeJS.ProcessEnv = process.env): Set<string> {
+  const paths = gitIndexPaths(root)
+  const heads = Object.keys(environment)
+    .flatMap(key => /^GITHEAD_([0-9a-f]{40})$/.exec(key)?.[1] ?? [])
+    .sort()
+  for (const head of heads) {
+    const files = runGit(root, ['ls-tree', '-r', '--name-only', '-z', head], `listing merge-head ${head} paths`)
+      .toString('utf8')
+      .split('\0')
+      .filter(Boolean)
+    for (const file of files) paths.add(file)
+  }
+  return paths
+}
+
+/**
  * Read one path from the Git index without consulting working-tree bytes.
  *
  * @param root - Repository root.
