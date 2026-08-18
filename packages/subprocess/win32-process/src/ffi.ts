@@ -108,7 +108,6 @@ export interface Win32ProcessBindings {
   ): number
   waitForSingleObject(handle: NativePtr, milliseconds: number): number
   getExitCodeProcess(process: NativePtr, exitCode: NativePtr): number
-  resumeThread(thread: NativePtr): number
   createJobObjectW(attributes: null, name: null): NativePtr
   setInformationJobObject(job: NativePtr, cls: number, information: Buffer, length: number): number
   terminateProcess(process: NativePtr, exitCode: number): number
@@ -269,7 +268,6 @@ function bindings(): Win32ProcessBindings {
     ]),
     waitForSingleObject: bind(kernel32, 'WaitForSingleObject', 'uint32', [PVOID, 'uint32']),
     getExitCodeProcess: bind(kernel32, 'GetExitCodeProcess', 'int', [PVOID, koffi.pointer('uint32')]),
-    resumeThread: bind(kernel32, 'ResumeThread', 'uint32', [PVOID]),
     createJobObjectW: bind(kernel32, 'CreateJobObjectW', PVOID, [PVOID, 'str16']),
     setInformationJobObject: bind(kernel32, 'SetInformationJobObject', 'int', [PVOID, 'int', PVOID, 'uint32']),
     terminateProcess: bind(kernel32, 'TerminateProcess', 'int', [PVOID, 'uint32']),

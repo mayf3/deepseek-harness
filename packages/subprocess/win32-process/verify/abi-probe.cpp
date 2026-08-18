@@ -19,7 +19,6 @@ int wmain()
   P(offsetof(PROCESS_INFORMATION, hProcess));
   P(offsetof(PROCESS_INFORMATION, hThread));
   P(offsetof(PROCESS_INFORMATION, dwProcessId));
-  P(CREATE_SUSPENDED);
   P(EXTENDED_STARTUPINFO_PRESENT);
   P(PROC_THREAD_ATTRIBUTE_JOB_LIST);
   P(STARTF_USESTDHANDLES);
@@ -42,7 +41,6 @@ int wmain()
   static_assert(sizeof(STARTUPINFOEXW) == 112, "STARTUPINFOEXW size");
   static_assert(offsetof(STARTUPINFOEXW, lpAttributeList) == 104, "STARTUPINFOEXW attribute offset");
   static_assert(sizeof(PROCESS_INFORMATION) == 24, "PROCESS_INFORMATION size");
-  static_assert(CREATE_SUSPENDED == 0x4, "create suspended");
   static_assert(EXTENDED_STARTUPINFO_PRESENT == 0x00080000, "extended startup flag");
   static_assert(PROC_THREAD_ATTRIBUTE_JOB_LIST == 0x0002000D, "Job-list attribute");
   static_assert(STARTF_USESTDHANDLES == 0x100, "std handles flag");

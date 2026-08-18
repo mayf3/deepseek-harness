@@ -39,7 +39,7 @@ export function spawnSandboxed(
  * @param api - ACL/token binding table.
  * @param token - restricted primary token.
  * @param options - command, args, and working directory.
- * @returns process and Job handles after assignment and resume.
+ * @returns process and Job handles after atomic attachment during creation.
  */
 export function spawnSandboxedInherited(
   api: Win32Bindings,

@@ -78,7 +78,7 @@ export interface SpawnedPipedProcess {
   stderrRead: NativePtr
 }
 
-/** Suspended-created child atomically attached to one caller-owned kill-on-close Job. */
+/** Child atomically attached to one caller-owned kill-on-close Job during creation. */
 export interface SpawnedJobProcess {
   /** Direct child process id. */
   pid: number
@@ -311,10 +311,10 @@ function createKillOnCloseJob(api: Win32ProcessBindings): NativePtr {
 }
 
 /**
- * Spawn suspended and atomically attached to a kill-on-close Job, then resume.
+ * Spawn atomically attached to a kill-on-close Job.
  * @param api - active binding table.
  * @param options - command, cwd, args, and restricted primary token.
- * @returns caller-owned process and Job handles after successful resume.
+ * @returns caller-owned process and Job handles after successful creation.
  */
 export function spawnInheritedJobProcess(
   api: Win32ProcessBindings,
@@ -358,7 +358,7 @@ export function spawnInheritedJobProcess(
         api,
         options,
         buildCommandLine(options.command, options.args),
-        abi.CREATE_SUSPENDED | abi.EXTENDED_STARTUPINFO_PRESENT,
+        abi.EXTENDED_STARTUPINFO_PRESENT,
         startupInfo.pointer,
         processInfo,
       )
@@ -394,13 +394,6 @@ export function spawnInheritedJobProcess(
     closeBestEffort(api, info.hThread)
     closeBestEffort(api, info.hProcess)
     throw new Error(`CreateProcessAsUserW succeeded but returned null process/thread handles (pid ${info.dwProcessId})`)
-  }
-  if (api.resumeThread(info.hThread) === 0xFFFFFFFF) {
-    const win32Code = api.getLastError()
-    closeBestEffort(api, info.hThread)
-    closeBestEffort(api, info.hProcess)
-    api.closeHandle(job)
-    throwWin32(api, 'ResumeThread', win32Code, `pid ${info.dwProcessId}`)
   }
   closeBestEffort(api, info.hThread)
   return { pid: info.dwProcessId, process: info.hProcess, job }

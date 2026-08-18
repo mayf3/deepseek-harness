@@ -8,7 +8,6 @@ import {
   spawnPipedProcess,
 } from '../src/index.ts'
 import {
-  CREATE_SUSPENDED,
   EXTENDED_STARTUPINFO_PRESENT,
   POINTER_SIZE,
   PROC_THREAD_ATTRIBUTE_JOB_LIST,
@@ -68,7 +67,6 @@ function inheritedApi(overrides: Partial<Win32ProcessBindings> = {}): {
     initializeProcThreadAttributeList,
     updateProcThreadAttribute,
     deleteProcThreadAttributeList: vi.fn(() => { events.push('attribute-delete') }),
-    resumeThread: vi.fn(() => { events.push('resume'); return 1 }),
     terminateProcess: vi.fn(() => 1),
     closeHandle: vi.fn((handle: NativePtr) => { events.push(`close:${handle}`); return 1 }),
     getLastError: vi.fn(() => 5),
@@ -89,7 +87,7 @@ function inheritedApi(overrides: Partial<Win32ProcessBindings> = {}): {
 describe('spawnInheritedJobProcess', () => {
   const token = 70n as NativePtr
 
-  it('attaches a restricted suspended child to the Job inside CreateProcessAsUserW', () => {
+  it('attaches a restricted child to the Job inside CreateProcessAsUserW', () => {
     const {
       api,
       events,
@@ -107,7 +105,6 @@ describe('spawnInheritedJobProcess', () => {
     expect(child).toEqual({ pid: 1234, process: 60n, job: 50n })
     expect(events.indexOf('attach-job')).toBeLessThan(events.indexOf('create'))
     expect(events.indexOf('attribute-delete')).toBeGreaterThan(events.indexOf('create'))
-    expect(events.indexOf('resume')).toBeGreaterThan(events.indexOf('create'))
     expect(initializeProcThreadAttributeList).toHaveBeenNthCalledWith(1, null, 1, 0, expect.anything())
     expect(initializeProcThreadAttributeList).toHaveBeenNthCalledWith(2, expect.any(Buffer), 1, 0, expect.anything())
     expect(updateProcThreadAttribute).toHaveBeenCalledWith(
@@ -127,7 +124,7 @@ describe('spawnInheritedJobProcess', () => {
       null,
       null,
       1,
-      CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
+      EXTENDED_STARTUPINFO_PRESENT,
       null,
       'C:\\work',
       expect.anything(),

@@ -14,13 +14,13 @@ Windows ACL sandbox 拥有 restricted token、SID、DACL、grant 与 workspace p
 
 Windows ACL sandbox 继续唯一拥有 restricted-token 创建、SID 与 DACL policy、grants、可写路径裁定、临时目录 policy 和公共 sandbox child result。它通过共享 binding context 扩展 policy-specific API，提供 primary token，组合 pipe drain 与 wait，并在自己的生命周期边界关闭调用方拥有的 Job。
 
-每项 native allocation 与 HANDLE 都只有一个 owner。process operation 会释放 Koffi out-parameter，并在失败前关闭已经取得的每个 pipe、thread、process 或 Job handle。pipe 创建成功时，把 process 与 stdout/stderr read handles 返回给 sandbox。inherited-stdio 创建会把 kill-on-close Job 放进 `STARTUPINFOEXW`，因此成功创建的 suspended child 在 resume 前已经归属 Job；attribute、创建或 resume 失败都有唯一且确定的 cleanup owner。sandbox 在 wait 或 disposal 前拥有返回的 process、pipe 与 Job handles。
+每项 native allocation 与 HANDLE 都只有一个 owner。process operation 会释放 Koffi out-parameter，并在失败前关闭已经取得的每个 pipe、thread、process 或 Job handle。pipe 创建成功时，把 process 与 stdout/stderr read handles 返回给 sandbox。inherited-stdio 创建会把 kill-on-close Job 放进 `STARTUPINFOEXW`，因此 child 在任何用户代码运行前已经归属 Job；attribute 或创建失败都有唯一且确定的 cleanup owner。sandbox 在 wait 或 disposal 前拥有返回的 process、pipe 与 Job handles。
 
 该包只导出 sandbox 生产路径已使用的操作。ordinary `CreateProcessW`、精确 `applicationName`、parent-stdio release 与 whole-Job settlement 在 ordinary process consumer 出现前保持缺席。该包是 library，不是 Cordis service 或公共 Windows SDK。
 
 ## Verification
 
-shared suite 覆盖 x64 ABI 值、命令行引用、binding extension、pipe EOF 与 drain allocation 复用、restricted-token process 创建、resume 前的原子 suspended Job 附加、wait 与 exit-code 读取、native allocation 释放，以及每组已取得资源的失败闭集。sandbox 测试保留 restricted-token、fail-closed、pipe/inherit、result 与 disposal 组合行为，不重复低层矩阵。Windows native 检查会编译两份 header probe 并运行迁移后的 sandbox 路径；Wine 提供模拟 Windows package 与组合信号。
+shared suite 覆盖 x64 ABI 值、命令行引用、binding extension、pipe EOF 与 drain allocation 复用、restricted-token process 创建、创建时的原子 Job 附加、wait 与 exit-code 读取、native allocation 释放，以及每组已取得资源的失败闭集。sandbox 测试保留 restricted-token、fail-closed、pipe/inherit、result 与 disposal 组合行为，不重复低层矩阵。Windows native 检查会编译两份 header probe 并运行迁移后的 sandbox 路径；Wine 提供模拟 Windows package 与组合信号。
 
 ## Alternatives considered
 

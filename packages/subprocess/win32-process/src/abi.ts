@@ -6,8 +6,6 @@ export const STARTF_USESTDHANDLES = 0x00000100
 export const HANDLE_FLAG_INHERIT = 0x1
 /** Infinite WaitForSingleObject timeout. */
 export const INFINITE = 0xFFFFFFFF
-/** CreateProcess flag that prevents user code from running before resume. */
-export const CREATE_SUSPENDED = 0x4
 /** CreateProcess flag selecting STARTUPINFOEXW and its process attributes. */
 export const EXTENDED_STARTUPINFO_PRESENT = 0x00080000
 /** Process-thread attribute that assigns the new process to a caller-supplied Job atomically. */

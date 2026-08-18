@@ -75,7 +75,6 @@ describe('spawnInheritedJobProcess allocation cleanup', () => {
         })
         return 1
       }),
-      resumeThread: vi.fn(() => 1),
       closeHandle: vi.fn(() => 1),
       getLastError: vi.fn(() => 5),
       formatMessageW: vi.fn(() => 0),

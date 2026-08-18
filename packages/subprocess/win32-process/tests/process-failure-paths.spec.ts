@@ -61,40 +61,6 @@ function pipeFailureApi(): { api: Win32ProcessBindings; closed: bigint[]; closeH
   return { api, closed, closeHandle }
 }
 
-/** The stub the ResumeThread failure branch needs: everything succeeds until ResumeThread returns 0xFFFFFFFF. */
-function resumeFailureApi(): {
-  api: Win32ProcessBindings
-  closed: bigint[]
-  closeHandle: ReturnType<typeof vi.fn>
-} {
-  const closed: bigint[] = []
-  let std = 50n
-  const closeHandle = vi.fn((handle: NativePtr) => {
-    closed.push(handle)
-    return 1
-  })
-  const resumeThread = vi.fn(() => 0xFFFFFFFF)
-  const api = {
-    createJobObjectW: vi.fn(() => 100n),
-    setInformationJobObject: vi.fn(() => 1),
-    getStdHandle: vi.fn(() => std++),
-    setHandleInformation: vi.fn(() => 1),
-    createProcessAsUserW: vi.fn((
-      _token: unknown, _app: unknown, _cmd: unknown, _pa: unknown, _ta: unknown,
-      _inherit: unknown, _flags: unknown, _env: unknown, _cwd: unknown, _si: unknown, processInfo: NativePtr,
-    ) => {
-      koffi.encode(processInfo, PROCESS_INFORMATION, { hProcess: 200n, hThread: 201n, dwProcessId: 1234, dwThreadId: 5678 })
-      return 1
-    }),
-    ...jobAttributeStubs(),
-    resumeThread,
-    getLastError: vi.fn(() => 5),
-    closeHandle,
-    formatMessageW: vi.fn(() => 0),
-  } as unknown as Win32ProcessBindings
-  return { api, closed, closeHandle }
-}
-
 describe('spawn failure paths close their handles', () => {
   // A dummy token value; the stubbed spawn never reads it.
   const token = 1n as NativePtr
@@ -112,23 +78,6 @@ describe('spawn failure paths close their handles', () => {
     expect((caught as Win32Error).win32Code).toBe(5)
     expect(closeHandle).toHaveBeenCalledTimes(6)
     expect(closed).toEqual([1n, 2n, 3n, 4n, 5n, 6n])
-  })
-
-  it('closes thread, process, and kill-on-close job before throwing when ResumeThread fails', () => {
-    const { api, closed, closeHandle } = resumeFailureApi()
-    let caught: unknown
-    try {
-      spawnInheritedJobProcess(api, { command: 'probe.exe', args: [], cwd: 'C:\\', token })
-    } catch (error) {
-      caught = error
-    }
-    expect(caught).toBeInstanceOf(Win32Error)
-    expect((caught as Win32Error).api).toBe('ResumeThread')
-    expect((caught as Win32Error).win32Code).toBe(5)
-    // thread, process, job — closing the job triggers kill-on-close so the
-    // suspended child dies instead of hanging until this process exits.
-    expect(closeHandle).toHaveBeenCalledTimes(3)
-    expect(closed).toEqual([201n, 200n, 100n])
   })
 
 })
@@ -257,7 +206,6 @@ describe('spawnInheritedJobProcess failure paths', () => {
         return 1
       }),
       ...jobAttributeStubs(),
-      resumeThread: vi.fn(() => 0),
       getLastError: vi.fn(() => 5),
       closeHandle,
       formatMessageW: vi.fn(() => 0),

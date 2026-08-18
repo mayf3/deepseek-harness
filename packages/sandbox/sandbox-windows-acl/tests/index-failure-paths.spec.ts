@@ -154,7 +154,6 @@ function happyStubs(): HappyStubs {
   })
   const updateProcThreadAttribute = vi.fn(() => 1)
   const deleteProcThreadAttributeList = vi.fn()
-  const resumeThread = vi.fn(() => 0)
   const getStdHandle = vi.fn(() => fresh())
   const localFree = vi.fn(() => 0n)
   const closeHandle = vi.fn(() => 1)
@@ -169,7 +168,7 @@ function happyStubs(): HappyStubs {
     setTokenInformation, createPipe, setHandleInformation, createProcessAsUserW,
     peekNamedPipe, readFile, waitForSingleObject, getExitCodeProcess, createJobObjectW,
     setInformationJobObject, initializeProcThreadAttributeList, updateProcThreadAttribute,
-    deleteProcThreadAttributeList, resumeThread, getStdHandle,
+    deleteProcThreadAttributeList, getStdHandle,
     localFree, closeHandle, getLastError, formatMessageW,
   } as unknown as Win32Bindings
   return {
