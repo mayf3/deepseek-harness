@@ -785,6 +785,10 @@ describe('mapStopReason / mapUsage', () => {
       stopReason: 'error',
       errorMessage: 'Failed to buffer the request body: length limit exceeded',
     }))).toMatchObject({ kind: 'error', failure: { code: 'INVALID_REQUEST' } })
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: 'vector length limit exceeded',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
   })
 
   it.each([

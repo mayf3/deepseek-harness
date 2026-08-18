@@ -10,11 +10,11 @@ pi-ai 适配器把会话历史中的每张图片 base64 内联进每一个模型
 
 ## Decision
 
-pi-ai provider profile 增加 `maxRequestImageBytes`（默认 `DEFAULT_MAX_REQUEST_IMAGE_BYTES = 24MiB`，正整数，按路由生效，可从 cordis.yml 与 `llm-pi-ai` settings 段修改）。请求转换时，`toPiContext` 由 `ImageAttachmentRef.bytes` 推算每张历史图片的 base64 长度（无需读取数据）求和，总和超过上限时从最老的图片开始替换为一段固定的模型可见占位文本，告知模型该图片已省略、可重新读取。历史顺序即最老在前，最新的图片总是保留；被 offload 的图片不会从附件存储读取。`classifyPiAiError` 现在把 413 与请求体上限类措辞归类为 `INVALID_REQUEST`（原样重发不可能成功）。默认值低于已知最小的提供方请求体上限（30MiB）并为文本与 JSON 结构留出余量；网关更严格的部署按路由调低。
+pi-ai provider profile 增加 `maxRequestImageBytes`（默认 `DEFAULT_MAX_REQUEST_IMAGE_BYTES = 24MiB`，正整数，按路由生效，可从 cordis.yml 与 `llm-pi-ai` settings 段修改）。请求转换时，`toPiContext` 由 `ImageAttachmentRef.bytes` 推算每张历史图片的 base64 长度（无需读取数据）求和，总和超过上限时从最老的图片开始替换为一段固定的模型可见占位文本。占位文本要求模型在有路径时重新读取文件，否则请用户重新附上图片。越新的图片越晚被省略；单张图片本身超过上限时也会被省略。offload 位置用消息与嵌套块的索引表示，不依赖对象身份，因此重放同一份 JSON 日志会产生相同请求。被 offload 的图片不会从附件存储读取。`classifyPiAiError` 把 413 与明确的请求体上限措辞归类为 `INVALID_REQUEST`（原样重发不可能成功）。默认值低于已知最小的提供方请求体上限（30MiB）并为文本与 JSON 结构留出余量；网关更严格的部署按路由调低。
 
 ## offload 是转换而非历史
 
-占位文本模型可见，但不记录为会话事件。它与适配器的其他序列化（`(no output)` 回退、纯文本折叠）以同样的方式满足「模型可见 ⟺ 已记录」不变量：offload 集合是已记录历史与路由配置的纯函数，确切请求仍可由会话日志加组合配置重建。只有当 offload 决策引入非确定性输入（例如网关的实时反馈）时才需要记录省略事件，那属于暂缓的能力元数据设计。
+占位文本模型可见，但不记录为会话事件。它与适配器的其他序列化（`(no output)` 回退、纯文本折叠）以同样的方式满足「模型可见 ⟺ 已记录」不变量：offload 位置是已记录历史与路由配置的纯函数，确切请求仍可由会话日志加组合配置重建。只有当 offload 决策引入非确定性输入（例如网关的实时反馈）时才需要记录省略事件，那属于暂缓的能力元数据设计。
 
 ## Alternatives considered
 
@@ -29,7 +29,7 @@ pi-ai provider profile 增加 `maxRequestImageBytes`（默认 `DEFAULT_MAX_REQUE
 
 ## Consequences
 
-- 图片较多的长会话持续可用；模型失去最老的图片但被明确告知、可重新读取，最新图片总是保留。
+- 图片较多的长会话持续可用。最老的图片优先省略；仅当最新图片本身无法装进上限时才会省略它。
 - 越过上限会改写较早的一条消息，提供方 prompt cache 前缀在新被 offload 的图片处截止，直到被 offload 的前缀稳定。
 - 上限只统计 base64 图片载荷；部署必须让它低于自家网关的请求体上限并留出余量，发行默认值无法预知私有网关的上限。
 - 由路由能力元数据同时驱动准入与组装（图片数量、单图大小、请求大小、提供方 token 公式）的设计仍为暂缓工作，在本修复之外跟踪。

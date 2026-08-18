@@ -202,6 +202,30 @@ describe('pi-ai request context conversion', () => {
     expect(readImage).not.toHaveBeenCalled()
   })
 
+  it('offloads repeated image-block occurrences by position rather than shared object identity', async () => {
+    const sized: ImageAttachmentRef = { ...ref, bytes: 3 }
+    const shared: ContentBlock = { type: 'image', attachment: sized }
+    const readImage = vi.fn(() => Promise.resolve({ ref: sized, data: Uint8Array.of(1, 2, 3) }))
+    const store = { readImage } as unknown as AttachmentStore
+    const aliased = await toPiContext(request([user([shared, shared])]), store, undefined, 4)
+    const replayed = await toPiContext(request([user([
+      { type: 'image', attachment: { ...sized } },
+      { type: 'image', attachment: { ...sized } },
+    ])]), store, undefined, 4)
+
+    const expected = [{
+      role: 'user',
+      content: [
+        { type: 'text', text: OFFLOADED_IMAGE_TEXT },
+        { type: 'image', data: 'AQID', mimeType: 'image/png' },
+      ],
+      timestamp: 0,
+    }]
+    expect(aliased.messages).toEqual(expected)
+    expect(replayed.messages).toEqual(expected)
+    expect(readImage).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps empty text-only users while separating result-only messages', () => {
     const callId = CallId('unknown-call')
     expect(toPiContext(request([

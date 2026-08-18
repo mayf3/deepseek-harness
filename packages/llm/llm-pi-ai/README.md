@@ -163,7 +163,7 @@ pi-ai installs several provider SDKs and lazy-loads the one selected by the cata
 
 #### What the model sees
 
-The selected catalog model receives `GenerateOptions.system`, history, tools, and sampling fields supported by pi-ai's common streaming API. This package adds no prompt prose, with one exception: when a request's accumulated base64 image payload exceeds the route's `maxRequestImageBytes`, each offloaded image (oldest first) is replaced by a fixed placeholder text telling the model the image was omitted and can be re-read. Provider-native replay metadata is restored only when the adapter validates it for the historical content.
+The selected catalog model receives `GenerateOptions.system`, history, tools, and sampling fields supported by pi-ai's common streaming API. This package adds no prompt prose, with one exception: when a request's accumulated base64 image payload exceeds the route's `maxRequestImageBytes`, each offloaded image (oldest first) is replaced by fixed text. The text tells the model to read the file again when a path is available or ask the user to attach the image again. Provider-native replay metadata is restored only when the adapter validates it for the historical content.
 
 #### Token effect
 

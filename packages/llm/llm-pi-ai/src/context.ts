@@ -28,7 +28,7 @@ function toolResultText(blocks: readonly ContentBlock[]): string {
 
 /** Model-facing stand-in for an image dropped to fit the request bound. */
 export const OFFLOADED_IMAGE_TEXT
-  = '[image omitted to keep the request within the provider size limit; older images are omitted first. Re-read the source file if this image is still needed.]'
+  = '[image omitted to keep the request within its image limit; older images are omitted first. If this image is still needed, read its file again when a path is available; otherwise ask the user to attach it again.]'
 
 /** Base64 length of `bytes` raw bytes (4 output characters per 3 input bytes, padded). */
 function base64Length(bytes: number): number {
@@ -37,49 +37,68 @@ function base64Length(bytes: number): number {
 
 /**
  * Select the images a request must drop to fit the per-request payload bound.
- * History order is oldest-first, so dropping from the front keeps the most
- * recent images. The result is keyed by block identity: the same conversion
- * pass walks the same block objects it was derived from.
+ * History order is oldest-first, so the most recent images are omitted last.
+ * A single image larger than the bound is itself omitted. Locations use
+ * message and nested block indexes so JSON replay cannot change the result by
+ * splitting or preserving shared object identities.
  * @param messages - complete request history, oldest first.
  * @param maxRequestImageBytes - bound on total base64-encoded image payload; undefined leaves every image in place.
- * @returns the image blocks the conversion replaces with {@link OFFLOADED_IMAGE_TEXT}.
+ * @returns the image locations the conversion replaces with {@link OFFLOADED_IMAGE_TEXT}.
  */
 function offloadedImages(
   messages: readonly Message[],
   maxRequestImageBytes: number | undefined,
-): ReadonlySet<ContentBlock> {
-  const offloaded = new Set<ContentBlock>()
+): ReadonlySet<string> {
+  const offloaded = new Set<string>()
   if (maxRequestImageBytes === undefined) return offloaded
-  const images: { block: ContentBlock; base64Bytes: number }[] = []
-  const collect = (blocks: readonly ContentBlock[]): void => {
-    for (const block of blocks) {
-      if (block.type === 'image') images.push({ block, base64Bytes: base64Length(block.attachment.bytes) })
-      else if (block.type === 'tool-result') collect(block.content)
+  const images: { location: string; base64Bytes: number }[] = []
+  const collect = (messageIndex: number, blocks: readonly ContentBlock[], prefix: readonly number[] = []): void => {
+    for (const [blockIndex, block] of blocks.entries()) {
+      const path = [...prefix, blockIndex]
+      if (block.type === 'image') {
+        images.push({
+          location: `${messageIndex}:${path.join('.')}`,
+          base64Bytes: base64Length(block.attachment.bytes),
+        })
+      } else if (block.type === 'tool-result') {
+        collect(messageIndex, block.content, path)
+      }
     }
   }
-  for (const message of messages) collect(message.content)
+  for (const [messageIndex, message] of messages.entries()) collect(messageIndex, message.content)
   let total = images.reduce((sum, image) => sum + image.base64Bytes, 0)
   for (const image of images) {
     if (total <= maxRequestImageBytes) break
-    offloaded.add(image.block)
+    offloaded.add(image.location)
     total -= image.base64Bytes
   }
   return offloaded
 }
 
+interface LocatedContentBlock {
+  readonly block: ContentBlock
+  readonly path: readonly number[]
+}
+
+/** Attach stable nested indexes to blocks from one message. */
+function locatedBlocks(blocks: readonly ContentBlock[], prefix: readonly number[] = []): LocatedContentBlock[] {
+  return blocks.map((block, index) => ({ block, path: [...prefix, index] }))
+}
+
 async function userContent(
-  blocks: readonly ContentBlock[],
+  blocks: readonly LocatedContentBlock[],
   attachments: AttachmentStore,
-  offloaded: ReadonlySet<ContentBlock>,
+  offloaded: ReadonlySet<string>,
+  messageIndex: number,
 ): Promise<string | (TextContent | ImageContent)[]> {
   const content: (TextContent | ImageContent)[] = []
-  for (const block of blocks) {
+  for (const { block, path } of blocks) {
     switch (block.type) {
       case 'text':
         if (block.text.length > 0) content.push({ type: 'text', text: block.text })
         break
       case 'image': {
-        if (offloaded.has(block)) {
+        if (offloaded.has(`${messageIndex}:${path.join('.')}`)) {
           content.push({ type: 'text', text: OFFLOADED_IMAGE_TEXT })
           break
         }
@@ -93,7 +112,7 @@ async function userContent(
       }
       case 'tool-result':
         {
-          const nested = await userContent(block.content, attachments, offloaded)
+          const nested = await userContent(locatedBlocks(block.content, path), attachments, offloaded, messageIndex)
           if (typeof nested === 'string') {
             if (nested.length > 0) content.push({ type: 'text', text: nested })
           } else {
@@ -219,7 +238,7 @@ async function toPiContextWithImages(
   const toolNames = new Map<CallId, string>()
   const messages: PiMessage[] = []
 
-  for (const message of options.messages) {
+  for (const [messageIndex, message] of options.messages.entries()) {
     if (message.role === 'system') {
       if (contentHasImage(message.content)) {
         throw new LlmError('pi-ai cannot represent an image in an in-history system message', 'UNSUPPORTED_CONTENT')
@@ -239,14 +258,17 @@ async function toPiContextWithImages(
       continue
     }
     // user role: text + tool results (each result becomes its own message).
-    const regular = message.content.filter(block => block.type !== 'tool-result')
-    const content = await userContent(regular, attachments, offloaded)
-    const results = message.content.filter(block => block.type === 'tool-result')
+    const located = locatedBlocks(message.content)
+    const regular = located.filter(({ block }) => block.type !== 'tool-result')
+    const content = await userContent(regular, attachments, offloaded, messageIndex)
+    const results = located.filter((entry): entry is LocatedContentBlock & { block: Extract<ContentBlock, { type: 'tool-result' }> } => (
+      entry.block.type === 'tool-result'
+    ))
     if (content.length > 0 || results.length === 0) {
       messages.push({ role: 'user', content, timestamp: 0 })
     }
-    for (const result of results) {
-      const resultContent = await userContent(result.content, attachments, offloaded)
+    for (const { block: result, path } of results) {
+      const resultContent = await userContent(locatedBlocks(result.content, path), attachments, offloaded, messageIndex)
       messages.push({
         role: 'toolResult',
         toolCallId: result.toolCallId,

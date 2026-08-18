@@ -10,11 +10,11 @@ Every image in session history is base64-inlined into every model request by the
 
 ## Decision
 
-The pi-ai provider profile carries `maxRequestImageBytes` (default `DEFAULT_MAX_REQUEST_IMAGE_BYTES = 24MiB`, a positive integer, per route, changeable from cordis.yml and the `llm-pi-ai` settings section). At request conversion, `toPiContext` sums the base64 length of every image in history (derived from `ImageAttachmentRef.bytes` without reading data) and, while the sum exceeds the bound, replaces the oldest images with a fixed model-facing placeholder telling the model the image was omitted and can be re-read. History order is oldest-first, so the most recent images always survive; offloaded images are never read from the attachment store. `classifyPiAiError` now classifies 413 and request-body-cap wording as `INVALID_REQUEST` (resending the same body cannot succeed). The default stays under the smallest documented provider request-body cap (30MiB) with headroom for text and JSON structure; deployments behind stricter gateways lower the value per route.
+The pi-ai provider profile carries `maxRequestImageBytes` (default `DEFAULT_MAX_REQUEST_IMAGE_BYTES = 24MiB`, a positive integer, per route, changeable from cordis.yml and the `llm-pi-ai` settings section). At request conversion, `toPiContext` sums the base64 length of every image in history (derived from `ImageAttachmentRef.bytes` without reading data) and, while the sum exceeds the bound, replaces the oldest images with a fixed model-facing placeholder. The placeholder tells the model to read the file again when a path is available or ask the user to attach the image again. The most recent images are omitted last; an image larger than the bound is itself omitted. Offload locations use message and nested block indexes rather than object identity, so replaying the same JSON log produces the same request. Offloaded images are never read from the attachment store. `classifyPiAiError` classifies 413 and specific request-body-cap wording as `INVALID_REQUEST` (resending the same body cannot succeed). The default stays under the smallest documented provider request-body cap (30MiB) with headroom for text and JSON structure; deployments behind stricter gateways lower the value per route.
 
 ## Offload is conversion, not history
 
-The placeholder is model-visible but not logged as a session event. It stays within the model-visible ⟺ logged invariant the same way the adapter's other serialization does (`(no output)` fallbacks, text-only folding): the offload set is a pure function of the logged history and the route configuration, so the exact request remains reconstructable from the session log plus the composition. A logged elision event becomes necessary only when offload decisions gain non-deterministic inputs (for example live gateway feedback), which belongs to the deferred capability-metadata design.
+The placeholder is model-visible but not logged as a session event. It stays within the model-visible ⟺ logged invariant the same way the adapter's other serialization does (`(no output)` fallbacks, text-only folding): the offload locations are a pure function of the logged history and the route configuration, so the exact request remains reconstructable from the session log plus the composition. A logged elision event becomes necessary only when offload decisions gain non-deterministic inputs (for example live gateway feedback), which belongs to the deferred capability-metadata design.
 
 ## Alternatives considered
 
@@ -29,7 +29,7 @@ The placeholder is model-visible but not logged as a session event. It stays wit
 
 ## Consequences
 
-- An image-heavy long session keeps completing requests; the model loses the oldest images but is told so and can re-read them, and the newest images always survive.
+- An image-heavy long session keeps completing requests. The oldest images are omitted first; the most recent image is omitted only when it cannot fit within the bound.
 - Crossing the bound rewrites an early message, so the provider prompt-cache prefix ends at the newly offloaded image until the offloaded prefix stabilizes.
 - The bound counts base64 image payload only; deployments must keep it below their gateway's request-body cap with headroom, and the shipped default cannot know a private gateway's cap.
 - Route capability metadata driving admission and assembly together (image count, per-image size, request size, provider token formulas) remains deferred design work tracked outside this fix.
