@@ -20,7 +20,6 @@ import {
   blobHash,
   isTranslationScopeFile,
   languageSwitcherTargets,
-  linksTo,
   pairAnchorOfArgument,
   parseTranslationMarkdown,
   parseTranslationPairingCliArgs,
@@ -187,17 +186,21 @@ describe('translation pairing switchers', () => {
     const targets = languageSwitcherTargets('python/sdk/README.zh.md')
     const canonicalMarkdown = '# README\n\nEnglish | [中文](https://github.com/deepseek-ai/deepseek-harness/blob/master/python/sdk/README.zh.md)\n'
     const canonical = parseTranslationMarkdown(canonicalMarkdown)
-    const wrongPath = parseTranslationMarkdown(
-      '[中文](https://github.com/deepseek-ai/deepseek-harness/blob/master/other/README.zh.md)',
-    )
+    const wrongMarkdown = '# README\n\nEnglish | [中文](https://github.com/deepseek-ai/deepseek-harness/blob/master/other/README.zh.md)\n'
+    const wrongPath = parseTranslationMarkdown(wrongMarkdown)
 
-    expect(linksTo(canonical, targets)).toBe(true)
     expect(translationStructureSignature(canonical, targets, {
       repoRoot: process.cwd(),
       sourcePath: 'python/sdk/README.md',
       markdown: canonicalMarkdown,
     }).links).toEqual([])
-    expect(linksTo(wrongPath, targets)).toBe(false)
+    expect(translationStructureSignature(wrongPath, targets, {
+      repoRoot: process.cwd(),
+      sourcePath: 'python/sdk/README.md',
+      markdown: wrongMarkdown,
+    }).links).toEqual([
+      'https://github.com/deepseek-ai/deepseek-harness/blob/master/other/README.zh.md',
+    ])
   })
 
   it('excludes only the header switcher from the structural links', () => {

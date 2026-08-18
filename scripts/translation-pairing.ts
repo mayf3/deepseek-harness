@@ -314,18 +314,6 @@ export function languageSwitcherTargets(counterpart: string): string[] {
   return [basename(counterpart), `${PUBLIC_REPOSITORY_BLOB_ROOT}${counterpart}`]
 }
 
-/** Whether the tree contains a link to any accepted target. */
-export function linksTo(tree: Nodes, targets: string | readonly string[]): boolean {
-  const accepted = new Set(typeof targets === 'string' ? [targets] : targets)
-  let found = false
-  const visit = (node: Nodes): void => {
-    if (node.type === 'link' && accepted.has(node.url)) found = true
-    if ('children' in node) for (const child of node.children) visit(child)
-  }
-  visit(tree)
-  return found
-}
-
 /** Generated English sources cannot carry a switcher without making their generator stale. */
 export function requiresSourceLanguageSwitcher(source: string): boolean {
   return ![
