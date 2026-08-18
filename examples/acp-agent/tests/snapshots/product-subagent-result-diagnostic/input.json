@@ -1,0 +1,7 @@
+{
+  "steps": [
+    { "op": "initialize" },
+    { "op": "newSession" },
+    { "op": "prompt", "text": "Use subagent_codex in the foreground exactly once; its result will fail with a diagnostic and partial output. Then use subagent_codex in the background exactly once and collect subagent-1 with job_output using wait true. After observing both failures, reply with exactly PARENT_OBSERVED_DIAGNOSTICS. Do not call any other tools." }
+  ]
+}

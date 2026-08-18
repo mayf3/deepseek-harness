@@ -16,7 +16,7 @@ Claude Code Bundle 与显式 Codex Host 行都会在共享 Host 平面中恰好�
 
 [生产依赖闭包决策](../simplification/2026-08-12-production-dsh-excludes-product-subagent-providers.md)只部分取代本说明先前关于默认包含提供方的选择：base 组合包排除两个提供方，Claude Code 包拥有可直接安装的 Bundle patch，而 Codex 仍是显式挂载的 Host 插件。本说明继续负责任一提供方存在时的进程级 Host 放置。提供方约定说明继续负责每个产品的协议、结果映射、取消、进程树生命周期与证据层级。[Agent Preset 架构](2026-08-03-per-session-agent-presets.md)继续负责宿主与 agent 的划分、preset 创作，以及改动只影响新组装会话的规则。
 
-两个提供方的可执行文件归属不同。Codex 会启动从 `PATH` 解析出的宿主 `codex`。Claude Code Bundle 会安装锁定的 Agent SDK 与匹配平台 CLI；提供方让 SDK 选择该私有原生可执行文件，再把命令交给共享子进程责任方，既不查询也不回退宿主 `claude`。加载任一提供方只会完成注册，不会创建产品状态、探测版本或身份验证，也不会新增产品专属设置。Codex 命令缺失、Claude 平台载荷缺失、身份验证失败和其他产品故障仍局限于发生问题的那次委派。
+两个提供方的可执行文件归属不同。Codex 会启动从 `PATH` 解析出的宿主 `codex`。Claude Code Bundle 会安装锁定的 Agent SDK 与匹配平台 CLI；提供方让 SDK 选择该私有原生可执行文件，再把命令交给共享子进程责任方，既不查询也不回退宿主 `claude`。加载 Profile 不会创建产品状态、探测版本或测试身份验证；它可以提供每个已挂载 Provider 的部署配置，包括由[非交互权限决策](../feature/2026-08-15-product-subagent-noninteractive-permissions.md)负责的产品专属 `permissionMode` 值，但不会把这些选择移入 Agent Preset 或面向模型的工具。Codex 命令缺失、Claude 平台载荷缺失、身份验证失败和其他产品故障仍局限于发生问题的那次委派。
 
 ## 验证
 

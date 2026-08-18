@@ -1,10 +1,13 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { describe, expect, it, vi } from 'vitest'
-import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { IApiClient, RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
-import { SettingsScopeController, SettingsScopeBinder } from '../src/client/settings-scope.ts'
+import type { SettingsScope, SettingsScopeSpec } from '@deepseek-ai/dsh-client-runtime/client'
+import { SettingsSchemaService } from '../src/client/schema.ts'
+import {
+  SettingsScopeBinder, SettingsScopeController as ProductionSettingsScopeController,
+} from '../src/client/settings-scope.ts'
 
 interface UiTestSettings {
   preference: 'light' | 'dark' | 'system'
@@ -13,6 +16,17 @@ interface UiTestSettings {
 const ENVELOPE = z.object({
   preference: z.union(['light', 'dark', 'system']).default('system'),
 }).toJSON()
+
+const settingsSchema = new SettingsSchemaService(new Context())
+const SettingsScopeController = class<T> extends ProductionSettingsScopeController<T> {
+  constructor(
+    api: Pick<IApiClient, 'settings'>,
+    spec: SettingsScopeSpec<T>,
+    persistence: 'host' | 'memory' = 'host',
+  ) {
+    super(api, spec, persistence, settingsSchema)
+  }
+}
 
 let rpc = 0
 
@@ -379,7 +393,7 @@ describe('SettingsScopeBinder.bind', () => {
     } as never)
     let scope!: SettingsScope<UiTestSettings>
     new TestRemote(ctx)
-    await ctx.plugin(SettingsScopeBinder).await()
+    await ctx.plugin(SettingsScopeBinder, new SettingsSchemaService(ctx)).await()
     const fiber = ctx.plugin({
       inject: ['connection', 'remote', 'settingsScope'],
       apply: (plugin: Context) => {
@@ -411,7 +425,7 @@ describe('SettingsScopeBinder.bind', () => {
     } as never)
     let scope!: SettingsScope<UiTestSettings>
     new TestRemote(ctx)
-    await ctx.plugin(SettingsScopeBinder).await()
+    await ctx.plugin(SettingsScopeBinder, new SettingsSchemaService(ctx)).await()
     const fiber = ctx.plugin({
       inject: ['connection', 'remote', 'settingsScope'],
       apply: (plugin: Context) => {

@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-本包（package）注册固定的 `claude-code` subagent 提供方。每次接受运行请求后，它都会在发起委托的会话工作区中调用官方 Claude Agent SDK，让锁定版本的 SDK 选择随包安装的平台 CLI，提交一个自包含的文本任务，并通过共享的 [`dsh-subagent`](../subagent/README.md) 结果约定仅返回最终答案。
+本包（package）注册固定的 `claude-code` subagent 提供方。每次接受运行请求后，它都会在发起委托的会话工作区中调用官方 Claude Agent SDK，让锁定版本的 SDK 选择随包安装的平台 CLI，提交一个自包含的文本任务，并通过共享的 [`dsh-subagent`](../subagent/README.md) 结果约定返回严格的最终答案或独立的安全失败诊断。
 
 ## 启动与所有权
 
@@ -14,9 +14,9 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 
 ## 原生设置与交互
 
-提供方故意省略 SDK 的 `settingSources` 选项。因此，官方 SDK 会相对于父会话 cwd 读取宿主机常规的用户、项目和本地 Claude 设置，包括原生账户状态与产品配置。提供方既不复制也不过滤这些文件，也不会创建或修改登录状态。
+提供方故意省略 SDK 的 `settingSources` 选项。因此，官方 SDK 会相对于父会话 cwd 读取宿主机常规的用户、项目和本地 Claude 设置，包括原生账户状态与产品配置。提供方既不复制也不过滤这些文件，也不会创建或修改登录状态。Profile 选择的 `permissionMode` 是唯一的 query 级覆盖：Claude Code 仍拥有其设置与沙箱，而所选原生模式决定这个无人值守 query 如何处理权限检查。
 
-每次 query 都设置 `persistSession: false` 并禁用 `AskUserQuestion`。提供方不设置 `canUseTool`、elicitation 或对话回调，因此无人值守交互会经 SDK 失败，而不会等待本提供方不负责的用户界面。
+每次 query 都设置 `persistSession: false` 并禁用 `AskUserQuestion`。除 bypass 模式外，`canUseTool` 会立即拒绝仍需人工审批的请求。Plan 模式还会把 `ExitPlanMode` 放入 SDK 的 `disallowedTools`，因此原生 settings 无法预先放行回到执行模式的转换，模型必须把完整计划作为最终答案返回。MCP elicitation 会被拒绝，已知的拒绝回退对话会被取消，未声明的对话类型则使用 SDK 的无对话失败行为。这些决定都不会等待用户界面。若权限拒绝或无人值守回调参与了一次失败运行，提供方会生成可选的 `SubagentResult.diagnostic`，其中只包含产品、有效模式、请求类别、决定与固定的安全原因；共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。成功运行与本地取消不会公开已捕获的失败说明。
 
 ## 能力与上下文
 
@@ -27,9 +27,18 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 | 配置键 | 默认值 | 含义 |
 |---|---|---|
 | `env` | `{}` | 显式指定的 SDK/CLI 环境，叠加在由共享机制清除凭证后的父环境之上。 |
+| `permissionMode` | `dontAsk` | 为该提供方实例的每次运行固定原生非交互权限策略。 |
 | `disposeGraceMs` | `3000` | 共享进程树责任方各终止层级之间的宽限期，单位为毫秒且须为正有限值，并不得大于仓库共享的 [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md)；随后资源释放会等待整棵进程树退出。 |
 
-生产环境会省略 `pathToClaudeCodeExecutable`，因此 Agent SDK 0.3.220 会从自己的平台包中选择匹配的原生 `claude` 或 `claude.exe`，再通过 custom-spawn 钩子把该绝对命令交给 `dsh-subprocess`。提供方不会检查 `PATH`、重复实现平台选择，也不会回退到宿主 `claude`。原生设置与身份验证继续是权威来源。本插件不选择模型、不创建产品主目录、不执行登录，也不探测账户。具有凭证特征的环境变量会在显式 `env` 覆盖生效前被清除，因此供子进程使用的 API 密钥或 token 必须在该配置中显式提供。除非被覆盖，`ANTHROPIC_BASE_URL` 等非凭证端点变量以及 `PATH` 和 `HOME` 等普通环境变量仍会被继承；`PATH` 不参与选择 Claude 可执行文件。
+| `permissionMode` 值 | 原生行为 |
+|---|---|
+| `dontAsk` | 不弹出提示，直接拒绝尚未获授权的操作。 |
+| `acceptEdits` | 接受文件编辑；其余权限提示由无人值守回调拒绝。 |
+| `auto` | 由 Claude Code 原生分类器允许或拒绝权限请求。 |
+| `plan` | 使用原生规划模式，拒绝执行审批，并把完整计划作为最终答案返回。 |
+| `bypassPermissions` | 显式设置 SDK 的危险确认并跳过权限检查。 |
+
+生产环境会省略 `pathToClaudeCodeExecutable`，因此 Agent SDK 0.3.220 会从自己的平台包中选择匹配的原生 `claude` 或 `claude.exe`，再通过 custom-spawn 钩子把该绝对命令交给 `dsh-subprocess`。提供方不会检查 `PATH`、重复实现平台选择，也不会回退到宿主 `claude`。原生设置与身份验证继续是权威来源，而 `permissionMode` 是唯一的 query 级策略覆盖。本插件不选择模型、不创建产品主目录、不执行登录，也不探测账户。具有凭证特征的环境变量会在显式 `env` 覆盖生效前被清除，因此供子进程使用的 API 密钥或 token 必须在该配置中显式提供。除非被覆盖，`ANTHROPIC_BASE_URL` 等非凭证端点变量以及 `PATH` 和 `HOME` 等普通环境变量仍会被继承；`PATH` 不参与选择 Claude 可执行文件。
 
 本包是可选的 Profile Bundle。将它安装进目标 Profile 后重启该 Profile；安装会把锁定的 Agent SDK 与一个兼容的平台 CLI 载荷带入该 Profile，而包所声明的 `cordis.patch.yml` 层只注册休眠的 `claude-code` Host provider，不会启动 Claude 进程。移除该包后，下一次 Profile 启动会撤回这一 provider 及其私有运行时闭包。
 
@@ -45,6 +54,7 @@ dsh --profile <name>
 # $DSH_HOME/profiles/<name>/cordis.patch.yml (optional provider override)
 - id: subagent-claude-code
   config:
+    permissionMode: acceptEdits
     env:
       ANTHROPIC_API_KEY: !!js process.env.ANTHROPIC_API_KEY
 ```
@@ -75,7 +85,7 @@ dsh --profile <name>
 
 #### 模型看到的内容
 
-Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。它的工作区是父会话 cwd；其模型、系统指令、工具、权限和身份验证来自原生 Claude 设置，可执行版本则来自 Bundle 锁定的 SDK 平台载荷。
+Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。它的工作区是父会话 cwd；其模型、系统指令、工具、沙箱和身份验证来自原生 Claude 设置，提供方的 Profile 配置会固定该 query 的非交互权限模式，而可执行版本来自 Bundle 锁定的 SDK 平台载荷。
 
 #### 对 token 的影响
 
@@ -89,7 +99,7 @@ Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。
 
 #### 模型看到的内容
 
-通过 `dsh-tool-subagent`，前台调用会让父级模型看到符合严格成功条件的 Claude Code 最终答案，或者在结果未完成时看到消费方给出的原样错误。后台调用会先返回 Job id；随后通用作业控制面会送达完成通知，通过 `job_output` 公开最终答案与状态，并允许 `job_kill` 请求取消。Claude Code 的推理、工具活动、中间消息、stderr、工作区差异、用量信息和产品标识符均不会复制到父会话。
+通过 `dsh-tool-subagent`，前台调用会让父级模型看到符合严格成功条件的 Claude Code 最终答案；若结果未完成，错误中会包含终止原因和可选的安全诊断。后台调用会先返回 Job id；随后通用作业控制面会送达完成通知，通过 `job_output` 公开最终答案或失败状态 detail，并允许 `job_kill` 请求取消。Claude Code 的推理、工具活动、中间消息、stderr、工作区差异、用量信息、产品标识符、工具输入和原始协议载荷均不会复制到父会话。
 
 #### 对 token 的影响
 
@@ -105,7 +115,7 @@ Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。
 - **宿主设置有意保持权威**：项目和用户设置可以改变模型、工具与行为；本提供方不提供经过筛选或与宿主环境隔离的生产模式。
 - **身份验证与账户状态仍由原生机制管理**：Bundle 会提供 CLI，但不会创建账户、登录或改写 Claude 设置；配置与身份验证失败会呈现为启动错误或运行错误。
 - **委派时必须存在 SDK 平台载荷**：省略 optional dependencies 的安装、不受支持的平台以及缺失或损坏的载荷都会在第一次 query 时失败；不会回退到宿主 CLI。
-- **没有人工交互路径**：`AskUserQuestion` 被禁用，其他交互回调也不存在，因此需要新审批或输入的任务会失败而不会挂起。
-- **产品载荷仅包含最终文本**：推理、中间消息、工具通信、用量信息、stderr 和工作区差异仍只保留在产品内部；通用 Job id、通知与状态来自共享作业运行时。
+- **没有人工交互路径**：`AskUserQuestion` 被禁用，权限提示会被拒绝，MCP elicitation 会被拒绝，阻塞对话会快速失败而不会挂起。
+- **assistant 载荷仅包含最终文本**：失败运行可以额外公开独立的安全诊断；推理、中间消息、工具通信、用量信息、stderr 和工作区差异仍只保留在产品内部，通用 Job id、通知与状态来自共享作业运行时。
 - **没有可选的共享能力**：对于本提供方，共享服务会拒绝输出 schema、子任务角色设定、工具筛选和 harness 深度强制约束。
 - **没有按实际经过时间触发的超时或副作用回滚**：长时间运行的工作由调用方取消，且取消前已更改的文件或外部系统不会恢复原状。
