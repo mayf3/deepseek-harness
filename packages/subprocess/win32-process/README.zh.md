@@ -26,7 +26,7 @@ Windows ACL 沙箱在这些原语上增加 SID、DACL、grant、workspace 与公
 
 没有直接影响。消费方决定进程输出是否进入工具结果或后续模型请求。
 
-#### KV Cache effect
+#### KV Cache 影响
 
 本包不贡献稳定请求前缀，因此不会使模型 KV Cache 失效。
 
@@ -34,6 +34,6 @@ Windows ACL 沙箱在这些原语上增加 SID、DACL、grant、workspace 与公
 
 - **仅在 Windows 原生加载** — 导入通用类型可跨平台进行，但解析绑定表会加载 Windows DLL，并在其他宿主失败。跨平台测试注入绑定表，不加载原生 API。
 - **没有公共进程服务** — 本包刻意不把原语包装成 Cordis 或 Node streams。消费方必须拥有自己的策略、异步调度、输出上限、取消与最终句柄关闭。
-- **只继承环境** — 进程创建传入空环境块。需要改写环境的调用方必须在调用原语前建立环境，或使用自己的 runner 进程。
+- **只继承环境** — 进程创建传入空环境块。sandbox 会先通过 `SetEnvironmentVariableW` 建立改动，因为经 Koffi 传入显式环境块会使 `CreateProcessAsUserW` 以 `ERROR_INVALID_PARAMETER` 失败。其他需要改写环境的调用方必须在调用原语前建立环境，或使用自己的 runner 进程。
 - **只有 restricted-token 消费方** — ordinary `CreateProcessW`、精确 `applicationName`、parent-stdio release 与 whole-Job settlement 在 ordinary process 消费方出现前均不提供。
 - **header 证据限定架构** — 已提交的 ABI probe 与布局常量覆盖仓库当前 64 位 Windows 目标。支持新的指针宽度或不兼容 Windows ABI 前，必须先更新 probe。

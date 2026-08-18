@@ -55,7 +55,7 @@ import * as abi from './win32-abi.ts'
 export { AclWriteGrant } from './grant.ts'
 export { assertTempRootOutsideWorkspace } from './path-boundary.ts'
 export { tempWriteSid, workspaceWriteSid } from './workspace-sid.ts'
-export { quoteArg, Win32Error } from '@deepseek-ai/dsh-win32-process'
+export { Win32Error } from '@deepseek-ai/dsh-win32-process'
 
 /** Construction options: the workspace/temp allowlists and their distinct SID identities. */
 export interface AclSandboxOptions {
@@ -382,10 +382,11 @@ export class AclSandbox {
     const native = spawnSandboxed(api, token, { command: options.command, args, cwd })
     const stdout = drainPipe(api, native.stdoutRead)
     const stderr = drainPipe(api, native.stderrRead)
-    // waitForExit is deliberately NOT started here: WaitForSingleObject blocks
-    // the thread and would starve the drains while the child is still running
-    // (pipe-buffer deadlock). The drains resolve only after the child closed
-    // its pipe ends — by then the wait returns immediately.
+    // WaitForSingleObject blocks the thread, so settlement starts it only after
+    // both drains settle. Successful drains mean the child closed its pipe ends
+    // and the wait returns immediately. A failed drain terminates the child
+    // before waiting, so a native pipe failure cannot pin the event loop on a
+    // still-running command.
     let settlement: Promise<AclSandboxChildResult> | undefined
     return {
       pid: native.pid,
@@ -394,10 +395,20 @@ export class AclSandbox {
         const failures = drains.flatMap<unknown>(outcome =>
           outcome.status === 'rejected' ? [outcome.reason as unknown] : [])
         let exitCode = 0
-        try {
-          exitCode = waitForExit(api, native.process)
-        } catch (error) {
-          failures.push(error)
+        if (failures.length > 0 && api.terminateProcess(native.process, 1) === 0) {
+          const terminationCode = api.getLastError()
+          try {
+            closeHandleChecked(api, native.process, 'piped child after drain failure')
+          } catch (error) {
+            failures.push(error)
+          }
+          failures.push(new Win32Error('TerminateProcess', terminationCode, `pid ${native.pid} after drain failure`))
+        } else {
+          try {
+            exitCode = waitForExit(api, native.process)
+          } catch (error) {
+            failures.push(error)
+          }
         }
         if (failures.length === 1) throw failures[0]
         if (failures.length > 1) throw new AggregateError(failures, 'piped child settlement failed')

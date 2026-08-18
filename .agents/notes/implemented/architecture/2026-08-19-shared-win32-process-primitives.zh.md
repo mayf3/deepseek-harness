@@ -14,7 +14,7 @@ Windows ACL sandbox 拥有 restricted token、SID、DACL、grant 与 workspace p
 
 Windows ACL sandbox 继续唯一拥有 restricted-token 创建、SID 与 DACL policy、grants、可写路径裁定、临时目录 policy 和公共 sandbox child result。它通过共享 binding context 扩展 policy-specific API，提供 primary token，组合 pipe drain 与 wait，并在自己的生命周期边界关闭调用方拥有的 Job。
 
-每项 native allocation 与 HANDLE 都只有一个 owner。process operation 会释放 Koffi out-parameter，并在失败前关闭已经取得的每个 pipe、thread、process 或 Job handle。pipe 创建成功时，把 process 与 stdout/stderr read handles 返回给 sandbox。inherited-stdio 创建会把 kill-on-close Job 放进 `STARTUPINFOEXW`，因此 child 在任何用户代码运行前已经归属 Job；attribute 或创建失败都有唯一且确定的 cleanup owner。sandbox 在 wait 或 disposal 前拥有返回的 process、pipe 与 Job handles。
+每项 native allocation 与 HANDLE 都只有一个 owner。process operation 会释放 Koffi out-parameter，并在失败前关闭已经取得的每个 pipe、thread、process 或 Job handle。pipe 创建成功时，把 process 与 stdout/stderr read handles 返回给 sandbox；任一 drain 失败时，sandbox settlement 会在同步 wait 前终止 child，若终止本身失败则关闭 process handle 并报告该失败，不阻塞事件循环。inherited-stdio 创建会把 kill-on-close Job 放进 `STARTUPINFOEXW`，因此 child 在任何用户代码运行前已经归属 Job；attribute 或创建失败都有唯一且确定的 cleanup owner。sandbox 在 wait 或 disposal 前拥有返回的 process、pipe 与 Job handles。
 
 该包只导出 sandbox 生产路径已使用的操作。ordinary `CreateProcessW`、精确 `applicationName`、parent-stdio release 与 whole-Job settlement 在 ordinary process consumer 出现前保持缺席。该包是 library，不是 Cordis service 或公共 Windows SDK。
 

@@ -448,6 +448,8 @@ describe('AclSandbox spawn', () => {
   it('pipe spawn still closes the process after a drain failure', async () => {
     const { api } = state.stubs as HappyStubs
     api.getLastError = vi.fn(() => 5)
+    const terminateProcess = vi.fn(() => 1)
+    api.terminateProcess = terminateProcess
     const waitForSingleObject = vi.fn(() => 0)
     api.waitForSingleObject = waitForSingleObject
     const workspace = scratch()
@@ -460,7 +462,23 @@ describe('AclSandbox spawn', () => {
         expect.objectContaining({ api: 'PeekNamedPipe' }),
       ],
     })
+    expect(terminateProcess).toHaveBeenCalledOnce()
     expect(waitForSingleObject).toHaveBeenCalledOnce()
+  })
+
+  it('pipe spawn closes the process without waiting when termination after a drain failure fails', async () => {
+    const { api, closeHandle } = state.stubs as HappyStubs
+    api.getLastError = vi.fn(() => 5)
+    api.terminateProcess = vi.fn(() => 0)
+    const waitForSingleObject = vi.fn(() => { throw new Error('must not wait') })
+    api.waitForSingleObject = waitForSingleObject
+    const workspace = scratch()
+    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-3', mode: 'workspace-write' })
+    await sandbox.init()
+    const child = sandbox.spawn({ command: 'probe.exe' })
+    await expect(child.wait()).rejects.toBeInstanceOf(AggregateError)
+    expect(waitForSingleObject).not.toHaveBeenCalled()
+    expect(closeHandle).toHaveBeenCalled()
   })
 })
 

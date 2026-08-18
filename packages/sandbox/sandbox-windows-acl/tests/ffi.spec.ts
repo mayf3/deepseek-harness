@@ -9,7 +9,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import koffi from 'koffi'
 
-import { Win32Error, quoteArg } from '../src/index.ts'
+import { Win32Error } from '../src/index.ts'
 import {
   allocBytes, decodePtrAt, getTempPath,
   isInvalidHandle, sameSidAt,
@@ -17,7 +17,7 @@ import {
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
 import * as abi from '../src/win32-abi.ts'
 
-/** A stub whose formatMessageW writes real UTF-16 text (the errorText round-trip). */
+/** A stub whose formatMessageW supplies text to the GetTempPath failure path. */
 function formatApi(): { api: Win32Bindings; formatMessageW: ReturnType<typeof vi.fn> } {
   const formatMessageW = vi.fn((_flags: number, _source: null, _id: number, _lang: number, buffer: Buffer, _size: number, _args: null) => {
     const text = 'access denied'
@@ -75,10 +75,9 @@ describe('getTempPath', () => {
   })
 })
 
-describe('public compatibility exports', () => {
-  it('keeps the sandbox Win32 error and quoting API', () => {
+describe('public error export', () => {
+  it('keeps the sandbox Win32 error type', () => {
     expect(new Win32Error('Probe', 5)).toBeInstanceOf(Error)
-    expect(quoteArg('a b')).toBe('"a b"')
   })
 })
 

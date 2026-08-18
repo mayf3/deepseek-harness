@@ -20,7 +20,11 @@ export const FILE_GENERIC_WRITE = 0x00120116
 export const DELETE = 0x00010000
 /** Delete or rename a directory child. */
 export const FILE_DELETE_CHILD = 0x0040
-/** Capability-SID access mask granting write, delete, and child deletion. */
+/**
+ * Capability-SID access mask granting write, delete, and child deletion.
+ * WRITE_DAC and WRITE_OWNER stay excluded so a confined child cannot rewrite
+ * DACLs or take ownership to escape the allowlist.
+ */
 export const GRANT_MASK = (FILE_GENERIC_WRITE | DELETE | FILE_DELETE_CHILD) & ~STANDARD_RIGHTS_WRITE
 /** Full access used in the restricted token default DACL. */
 export const FILE_ALL_ACCESS = 0x1F01FF

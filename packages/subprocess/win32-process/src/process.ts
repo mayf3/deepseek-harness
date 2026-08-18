@@ -142,6 +142,9 @@ function createRestrictedProcess(
   startupInfo: NativePtr,
   processInfo: NativePtr,
 ): number {
+  // The sandbox mutates its process environment before this call. Passing an
+  // explicit block through Koffi makes CreateProcessAsUserW reject the request
+  // with ERROR_INVALID_PARAMETER, so lpEnvironment remains NULL.
   return api.createProcessAsUserW(
     options.token,
     null,
@@ -315,6 +318,10 @@ function createKillOnCloseJob(api: Win32ProcessBindings): NativePtr {
  * @param api - active binding table.
  * @param options - command, cwd, args, and restricted primary token.
  * @returns caller-owned process and Job handles after successful creation.
+ * @remarks Node clears stdio handle inheritability at startup through
+ * uv_disable_stdio_inheritance. This operation temporarily restores the bits
+ * required by STARTF_USESTDHANDLES. Restoring them afterward is best-effort:
+ * failure must not replace the already-created child's outcome.
  */
 export function spawnInheritedJobProcess(
   api: Win32ProcessBindings,
@@ -371,7 +378,10 @@ export function spawnInheritedJobProcess(
     api.closeHandle(job)
     throw error
   } finally {
-    for (const handle of enabled) api.setHandleInformation(handle, abi.HANDLE_FLAG_INHERIT, 0)
+    for (const handle of enabled) {
+      // The runner spawns nothing else; cleanup failure must not mask the child.
+      api.setHandleInformation(handle, abi.HANDLE_FLAG_INHERIT, 0)
+    }
   }
   if (created === 0) {
     freeNative(processInfo)
