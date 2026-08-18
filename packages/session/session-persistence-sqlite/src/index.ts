@@ -15,14 +15,16 @@ import { mkdir, open } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import {
   DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS,
-  SessionPersistence, SessionPersistenceRevision, PersistenceCoordinator,
+  decodeStoredSessionHeader, SessionPersistence, SessionPersistenceRevision,
+  SessionPersistenceRevisionConflictError, PersistenceCoordinator,
   type PersistenceBackend, type SessionLocation, type SessionPersistenceSnapshot,
   type SessionInspection, type SessionPersistenceRevision as PersistenceRevision,
-  type StoredPrefix, type StoredSuffix,
+  type StoredEventRead, type StoredSessionSource,
 } from '@deepseek-ai/dsh-session-persistence'
-import type { SessionEvent, SurfaceEventType, SessionId, SessionHeader, SessionPreparation } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SurfaceEventType, SessionHeader, SessionPreparation } from '@deepseek-ai/dsh-session'
 import {
-  type JournalMode, openDatabase, rowToMeta, scanRows, type EventRow, type SessionRow,
+  type JournalMode, openDatabase, rowToStoredMeta, scanRows, type EventRow, type SessionRow,
 } from './schema.ts'
 
 export { SCHEMA_VERSION } from './schema.ts'
@@ -48,6 +50,27 @@ function sqliteRevision(storeIdentity: string, row: SessionRow): PersistenceRevi
   return SessionPersistenceRevision(
     `${storeIdentity}:incarnation:${row.incarnation}:revision:${row.revision}`,
   )
+}
+
+interface SqliteStoredPrefix {
+  readonly meta: unknown
+  readonly events: unknown[]
+  readonly revision: PersistenceRevision
+  readonly tornMarker?: number
+}
+
+function deferred<T>(): {
+  readonly promise: Promise<T>
+  resolve(value: T): void
+  reject(reason: unknown): void
+} {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((accept, decline) => {
+    resolve = accept
+    reject = decline
+  })
+  return { promise, resolve, reject }
 }
 
 /**
@@ -203,9 +226,43 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
 
   // --- PersistenceBackend hooks (the SQLite storage primitives) ---
 
-  /** Read a stored prefix by id (ids are globally unique — no scope to scan). */
-  loadStored(id: SessionId, signal?: AbortSignal): Promise<StoredPrefix<number> | undefined> {
-    return this.readPrefix(id, signal)
+  /** Open repeatable reads over one SQLite row revision. */
+  async openStored(id: SessionId, signal?: AbortSignal): Promise<StoredSessionSource<number> | undefined> {
+    signal?.throwIfAborted()
+    await this.ready
+    signal?.throwIfAborted()
+    const row = this.rowFor(id)
+    if (row === undefined) return undefined
+    const revision = sqliteRevision(this.storeIdentity, row)
+    return {
+      meta: rowToStoredMeta(row),
+      revision,
+      readEvents: (options = {}): StoredEventRead<number> => {
+        const completed = deferred<{ tornMarker?: number }>()
+        const events = (async function* (backend: SqliteSessionPersistence): AsyncIterable<unknown> {
+          try {
+            const fromSeq = options.fromSeq ?? 0
+            const stored = fromSeq === 0
+              ? await backend.readPrefix(id, signal)
+              : await backend.readSuffix(id, fromSeq, signal)
+            if (stored === undefined || stored.revision !== revision) {
+              throw new SessionPersistenceRevisionConflictError(
+                `session "${id}" changed while reading revision ${revision}`,
+              )
+            }
+            for (const event of stored.events) {
+              signal?.throwIfAborted()
+              yield event
+            }
+            completed.resolve(stored.tornMarker === undefined ? {} : { tornMarker: stored.tornMarker })
+          } catch (error: unknown) {
+            completed.reject(error)
+            throw error
+          }
+        })(this)
+        return { events, completed: completed.promise }
+      },
+    }
   }
 
   /** Read one row's revision without loading its events. */
@@ -222,27 +279,42 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
    * read scales with the suffix, not the log. Torn rows past the preserved
    * region are dropped, never repaired (non-mutating read).
    */
-  async loadStoredFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<StoredSuffix | undefined> {
+  private async readSuffix(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<SqliteStoredPrefix | undefined> {
     signal?.throwIfAborted()
     await this.ready
     signal?.throwIfAborted()
-    const row = this.rowFor(id)
-    if (row === undefined) return undefined
-    const meta = rowToMeta(row)
-    const eventRows = this.db
-      .prepare('SELECT seq, type, time, data, source_event_seqs, surface_op, ignorable FROM events WHERE session_id = ? AND seq >= ? ORDER BY seq')
-      .all(id, fromSeq) as unknown as EventRow[]
+    this.db.exec('BEGIN')
+    let snapshot: { row: SessionRow; eventRows: EventRow[] } | undefined
+    try {
+      const row = this.rowFor(id)
+      if (row !== undefined) {
+        const eventRows = this.db
+          .prepare('SELECT seq, type, time, data, source_event_seqs, surface_op, ignorable FROM events WHERE session_id = ? AND seq >= ? ORDER BY seq')
+          .all(id, fromSeq) as unknown as EventRow[]
+        snapshot = { row, eventRows }
+      }
+      this.db.exec('COMMIT')
+    } catch (error: unknown) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
     signal?.throwIfAborted()
+    if (snapshot === undefined) return undefined
+    const { row, eventRows } = snapshot
     const { preserved } = scanRows(eventRows, fromSeq)
-    return { meta, events: preserved }
+    return {
+      meta: rowToStoredMeta(row),
+      events: preserved,
+      revision: sqliteRevision(this.storeIdentity, row),
+    }
   }
 
   /**
-   * Read a session's row + ordered events into a {@link StoredPrefix}. The
+   * Read a session's row and ordered events at one SQLite snapshot. The
    * torn-tail marker is the seq from which a never-committed tail must be deleted
    * (`scanRows` already returns it as `number | undefined`).
    */
-  private async readPrefix(id: SessionId, signal?: AbortSignal): Promise<StoredPrefix<number> | undefined> {
+  private async readPrefix(id: SessionId, signal?: AbortSignal): Promise<SqliteStoredPrefix | undefined> {
     signal?.throwIfAborted()
     await this.ready
     signal?.throwIfAborted()
@@ -268,7 +340,7 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
     const { row, eventRows } = snapshot
     const { preserved, tornFrom } = scanRows(eventRows)
     return {
-      meta: rowToMeta(row),
+      meta: rowToStoredMeta(row),
       events: preserved,
       revision: sqliteRevision(this.storeIdentity, row),
       ...tornFrom !== undefined ? { tornMarker: tornFrom } : {},
@@ -337,6 +409,102 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
     }
   }
 
+  /** Stage a streamed replacement, then compare and swap it in one transaction. */
+  async replaceStored(
+    expectedRevision: PersistenceRevision,
+    meta: SessionHeader,
+    events: AsyncIterable<SessionEvent>,
+  ): Promise<void> {
+    await this.ready
+    const observed = this.rowFor(meta.id)
+    if (observed === undefined
+      || sqliteRevision(this.storeIdentity, observed) !== expectedRevision) {
+      throw new SessionPersistenceRevisionConflictError(
+        `session "${meta.id}" changed before replacement of revision ${expectedRevision}`,
+      )
+    }
+    if (meta.cwd !== (observed.cwd ?? undefined)) {
+      throw new Error(`replacement for session "${meta.id}" changes its stored identity`)
+    }
+    const staging = `format_upgrade_${randomUUID().replaceAll('-', '')}`
+    this.db.exec(`
+      CREATE TEMP TABLE ${staging} (
+        seq               INTEGER PRIMARY KEY,
+        type              TEXT NOT NULL,
+        time              INTEGER NOT NULL,
+        data              TEXT NOT NULL,
+        source_event_seqs TEXT,
+        surface_op        TEXT,
+        ignorable         INTEGER
+      ) STRICT
+    `)
+    try {
+      const stageEvent = this.db.prepare(
+        `INSERT INTO ${staging} (seq, type, time, data, source_event_seqs, surface_op, ignorable) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      for await (const event of events) {
+        const [surfaceSeqs, surfaceOp, ignorable] = envelopeBindings(event)
+        stageEvent.run(event.seq, event.type, event.time, JSON.stringify(event.data), surfaceSeqs, surfaceOp, ignorable)
+      }
+
+      this.db.exec('BEGIN IMMEDIATE')
+      let began = true
+      try {
+        const row = this.rowFor(meta.id)
+        if (row === undefined
+          || sqliteRevision(this.storeIdentity, row) !== expectedRevision) {
+          this.db.exec('ROLLBACK')
+          began = false
+          throw new SessionPersistenceRevisionConflictError(
+            `session "${meta.id}" changed before replacement of revision ${expectedRevision}`,
+          )
+        }
+        if (meta.cwd !== (row.cwd ?? undefined)) {
+          throw new Error(`replacement for session "${meta.id}" changes its stored identity`)
+        }
+
+        this.db.prepare('DELETE FROM events WHERE session_id = ?').run(meta.id)
+        this.db.prepare(`
+          INSERT INTO events
+            (session_id, seq, type, time, data, source_event_seqs, surface_op, ignorable)
+          SELECT ?, seq, type, time, data, source_event_seqs, surface_op, ignorable
+          FROM ${staging}
+          ORDER BY seq
+        `).run(meta.id)
+        this.db.prepare(`
+          UPDATE sessions SET
+            version = ?,
+            created_at = ?,
+            cwd = ?,
+            parent_session = ?,
+            seed_length = ?,
+            origin = ?,
+            delegation_depth = ?,
+            agent_preset = ?,
+            revision = revision + 1
+          WHERE id = ?
+        `).run(
+          meta.version,
+          meta.createdAt,
+          meta.cwd ?? null,
+          meta.parentSession ?? null,
+          meta.seedLength ?? null,
+          meta.origin ?? null,
+          meta.delegationDepth ?? null,
+          meta.agentPreset ?? null,
+          meta.id,
+        )
+        this.db.exec('COMMIT')
+        began = false
+      } catch (error: unknown) {
+        if (began) this.db.exec('ROLLBACK')
+        throw error
+      }
+    } finally {
+      this.db.exec(`DROP TABLE IF EXISTS ${staging}`)
+    }
+  }
+
   /** List all materialized sessions' metadata (every row is a materialized session). */
   async list(signal?: AbortSignal): Promise<SessionHeader[]> {
     signal?.throwIfAborted()
@@ -346,7 +514,7 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
       .prepare('SELECT * FROM sessions')
       .all() as unknown as SessionRow[]
     signal?.throwIfAborted()
-    return rows.map(rowToMeta)
+    return rows.map(row => decodeStoredSessionHeader(rowToStoredMeta(row), SessionId(row.id)))
   }
 
   /** List metadata with a source-qualified monotonic revision per session. */
@@ -357,7 +525,7 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
     const rows = this.db.prepare('SELECT * FROM sessions').all() as unknown as SessionRow[]
     signal?.throwIfAborted()
     return rows.map(row => ({
-      header: rowToMeta(row),
+      header: decodeStoredSessionHeader(rowToStoredMeta(row), SessionId(row.id)),
       revision: SessionPersistenceRevision(
         `${this.storeIdentity}:incarnation:${row.incarnation}:revision:${row.revision}`,
       ),

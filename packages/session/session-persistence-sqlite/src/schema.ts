@@ -194,6 +194,26 @@ export function rowToMeta(row: SessionRow): SessionHeader {
 }
 
 /**
+ * Reconstruct parsed logical header JSON without applying the current Session
+ * format type. The versioned decoder owns structural migration and validation.
+ * @param row - stored session row.
+ * @returns logical header fields represented by the physical schema.
+ */
+export function rowToStoredMeta(row: SessionRow): unknown {
+  return {
+    version: row.version,
+    id: row.id,
+    createdAt: row.created_at,
+    ...row.cwd !== null ? { cwd: row.cwd } : {},
+    ...row.parent_session !== null ? { parentSession: row.parent_session } : {},
+    ...row.seed_length !== null ? { seedLength: row.seed_length } : {},
+    ...row.origin !== null ? { origin: row.origin } : {},
+    ...row.delegation_depth !== null ? { delegationDepth: row.delegation_depth } : {},
+    ...row.agent_preset !== null ? { agentPreset: row.agent_preset } : {},
+  }
+}
+
+/**
  * Reconstruct a {@link SessionEvent} from an `events` row (parses `data`).
  * @param row - the `events` table row; `data` and the surface columns hold JSON text.
  * @returns the reconstructed event; throws when a JSON column fails to parse
@@ -225,7 +245,7 @@ export function rowToEvent(row: EventRow): SessionEvent {
  *
  * @param rows - one session's event rows, ordered by seq ascending.
  * @param base - the seq the first row is expected to carry; `0` for a whole
- *   log, the requested `fromSeq` for a suffix read (`loadStoredFrom`).
+ *   log, or the requested `fromSeq` for a seekable suffix read.
  * @returns the preserved event prefix, plus `tornFrom` — the seq the physical
  *   delete starts at — when a torn tail exists.
  */

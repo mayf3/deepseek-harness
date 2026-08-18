@@ -1,5 +1,5 @@
 import { createUserMessage, createMessage } from '@deepseek-ai/dsh-llm'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { existsSync } from 'node:fs'
 import { chmod, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises'
@@ -9,10 +9,12 @@ import { DatabaseSync } from 'node:sqlite'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SurfaceEvent, SurfaceEventType } from '@deepseek-ai/dsh-session'
 import SqliteSessionPersistence, { SCHEMA_VERSION } from '@deepseek-ai/dsh-session-persistence-sqlite'
+import { SessionPersistenceRevisionConflictError } from '@deepseek-ai/dsh-session-persistence'
 import {
   openDatabase,
   rowToEvent,
   rowToMeta,
+  rowToStoredMeta,
   scanRows,
   SESSION_PERSISTENCE_SQLITE_APPLICATION_ID,
   type EventRow,
@@ -46,6 +48,10 @@ async function backend(path = ':memory:'): Promise<{ ctx: Context; dispose: () =
   await ctx.plugin(SessionStore)
   const fiber = await ctx.plugin(SqliteSessionPersistence, { path })
   return { ctx, dispose: () => fiber.dispose() }
+}
+
+async function* replacementEvents(events: readonly SessionEvent[]): AsyncIterable<SessionEvent> {
+  for (const event of events) yield structuredClone(event)
 }
 
 // Run the same backend-agnostic contract as JSONL to pin identical semantics.
@@ -161,6 +167,53 @@ describe('scanRows', () => {
 })
 
 describe('rowToMeta', () => {
+  it('projects every optional physical header field without current-format decoding', () => {
+    const row = {
+      id: 'stored-meta',
+      version: 7,
+      created_at: 1,
+      cwd: '/work',
+      parent_session: 'parent',
+      seed_length: 3,
+      origin: 'subagent' as const,
+      incarnation: 'stored-meta',
+      revision: 1,
+      delegation_depth: 2,
+      agent_preset: 'minimal',
+    }
+    expect(rowToStoredMeta(row)).toEqual({
+      version: 7,
+      id: 'stored-meta',
+      createdAt: 1,
+      cwd: '/work',
+      parentSession: 'parent',
+      seedLength: 3,
+      origin: 'subagent',
+      delegationDepth: 2,
+      agentPreset: 'minimal',
+    })
+    expect(rowToStoredMeta({
+      ...row,
+      cwd: null,
+      parent_session: null,
+      seed_length: null,
+      origin: null,
+      delegation_depth: null,
+      agent_preset: null,
+    })).toEqual({ version: 7, id: 'stored-meta', createdAt: 1 })
+    expect(rowToMeta(row)).toEqual({
+      version: 7,
+      id: 'stored-meta',
+      createdAt: 1,
+      cwd: '/work',
+      parentSession: 'parent',
+      seedLength: 3,
+      origin: 'subagent',
+      delegationDepth: 2,
+      agentPreset: 'minimal',
+    })
+  })
+
   it('restores optional origin metadata', () => {
     expect(rowToMeta({
       id: 'with-origin',
@@ -597,16 +650,172 @@ describe('SqliteSessionPersistence: durability and crash semantics', () => {
     await b.dispose()
   })
 
-  it('binds a full stored prefix to the same revision as a lightweight read', async () => {
+  it('binds a stored source to the same revision as a lightweight read', async () => {
     const b = await backend()
     const m = meta('stored-prefix-revision')
     await b.ctx.sessionPersistence.create(m)
     await b.ctx.sessionPersistence.append(m.id, oneTurnLog())
     const persistence = b.ctx.sessionPersistence as SqliteSessionPersistence
 
-    const stored = await persistence.loadStored(m.id)
+    const stored = await persistence.openStored(m.id)
     expect(stored?.revision).toBe(await persistence.readStoredRevision(m.id))
     expect(await persistence.readStoredRevision(SessionId('missing-revision'))).toBeUndefined()
+    await b.dispose()
+  })
+
+  it('rejects revision-bound full and suffix readers after the row changes or disappears', async () => {
+    const { ctx, dispose } = await backend()
+    const m = meta('stored-reader-conflict')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    const persistence = ctx.sessionPersistence as SqliteSessionPersistence
+    const changed = await persistence.openStored(m.id)
+    if (changed === undefined) throw new Error('test session must be materialized')
+    await ctx.sessionPersistence.append(m.id, [
+      { type: 'turn/start', seq: oneTurnLog().length, time: 7, data: { turn: 2 } },
+    ])
+    const changedRead = changed.readEvents()
+    const changedCompletion = changedRead.completed.catch((error: unknown) => error)
+    await expect((async () => { for await (const _event of changedRead.events) { /* consume */ } })())
+      .rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
+    await expect(changedCompletion).resolves.toBeInstanceOf(SessionPersistenceRevisionConflictError)
+
+    const removed = await persistence.openStored(m.id)
+    if (removed === undefined) throw new Error('test session must remain materialized')
+    const internals = persistence as unknown as { db: DatabaseSync }
+    internals.db.prepare('DELETE FROM sessions WHERE id = ?').run(m.id)
+    const removedRead = removed.readEvents({ fromSeq: 1 })
+    const removedCompletion = removedRead.completed.catch((error: unknown) => error)
+    await expect((async () => { for await (const _event of removedRead.events) { /* consume */ } })())
+      .rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
+    await expect(removedCompletion).resolves.toBeInstanceOf(SessionPersistenceRevisionConflictError)
+    await dispose()
+  })
+
+  it('rolls back a suffix snapshot when its SQL read fails and reports absent direct snapshots', async () => {
+    const { ctx, dispose } = await backend()
+    const persistence = ctx.sessionPersistence as SqliteSessionPersistence
+    const internals = persistence as unknown as {
+      db: DatabaseSync
+      readPrefix(id: SessionId): Promise<unknown>
+      readSuffix(id: SessionId, fromSeq: number): Promise<unknown>
+    }
+    expect(await internals.readPrefix(SessionId('missing-prefix'))).toBeUndefined()
+    expect(await internals.readSuffix(SessionId('missing-suffix'), 1)).toBeUndefined()
+
+    const m = meta('suffix-rollback')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    const prepare = internals.db.prepare.bind(internals.db)
+    const spy = vi.spyOn(internals.db, 'prepare').mockImplementation((sql) => {
+      if (sql.includes('seq >= ?')) throw new Error('simulated suffix SELECT failure')
+      return prepare(sql)
+    })
+    await expect(internals.readSuffix(m.id, 1)).rejects.toThrow('simulated suffix SELECT failure')
+    spy.mockRestore()
+    expect((internals.db.prepare('SELECT COUNT(*) AS n FROM events WHERE session_id = ?').get(m.id) as { n: number }).n)
+      .toBe(oneTurnLog().length)
+    await dispose()
+  })
+
+  it('atomically replaces one exact revision and rejects a stale replacement', async () => {
+    const b = await backend()
+    const m = meta('format-replace')
+    const original = [
+      ...oneTurnLog(),
+      { type: 'turn/start', seq: 6, time: 7, data: { turn: 2 } },
+      { type: 'turn/end', seq: 7, time: 8, data: { turn: 2, reason: { kind: 'completed' } } },
+    ] as SessionEvent[]
+    await b.ctx.sessionPersistence.create(m)
+    await b.ctx.sessionPersistence.append(m.id, original)
+    const persistence = b.ctx.sessionPersistence as SqliteSessionPersistence
+    const source = await persistence.openStored(m.id)
+    if (source === undefined) throw new Error('test session must be materialized')
+
+    await persistence.replaceStored(source.revision, m, replacementEvents(oneTurnLog()))
+    const replaced = await persistence.openStored(m.id)
+    if (replaced === undefined) throw new Error('replacement must preserve the session')
+    expect(replaced.revision).not.toBe(source.revision)
+    expect((await b.ctx.sessionPersistence.readFrom(m.id, 0)).events).toEqual(oneTurnLog())
+
+    await expect(
+      persistence.replaceStored(source.revision, m, replacementEvents(original)),
+    ).rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
+    expect((await b.ctx.sessionPersistence.readFrom(m.id, 0)).events).toEqual(oneTurnLog())
+    await b.dispose()
+  })
+
+  it('rejects replacement identity changes before and during the transaction', async () => {
+    const first = await backend()
+    const m = meta('format-replace-identity', '/work')
+    await first.ctx.sessionPersistence.create(m)
+    await first.ctx.sessionPersistence.append(m.id, oneTurnLog())
+    const persistence = first.ctx.sessionPersistence as SqliteSessionPersistence
+    const source = await persistence.openStored(m.id)
+    if (source === undefined) throw new Error('test session must be materialized')
+
+    await expect(persistence.replaceStored(
+      source.revision,
+      { ...m, cwd: '/other' },
+      replacementEvents(oneTurnLog()),
+    )).rejects.toThrow(/changes its stored identity/)
+
+    const internals = persistence as unknown as { db: DatabaseSync }
+    const changesDuringStaging = (async function* (): AsyncIterable<SessionEvent> {
+      yield* oneTurnLog()
+      internals.db.prepare('UPDATE sessions SET cwd = ? WHERE id = ?').run('/raced', m.id)
+    })()
+    await expect(persistence.replaceStored(source.revision, m, changesDuringStaging))
+      .rejects.toThrow(/changes its stored identity/)
+    expect((internals.db.prepare('SELECT COUNT(*) AS n FROM events WHERE session_id = ?').get(m.id) as { n: number }).n)
+      .toBe(oneTurnLog().length)
+    await first.dispose()
+  })
+
+  it('rejects a revision change that occurs while replacement events are staged', async () => {
+    const mounted = await backend()
+    const m = meta('format-replace-staging-race', '/work')
+    await mounted.ctx.sessionPersistence.create(m)
+    await mounted.ctx.sessionPersistence.append(m.id, oneTurnLog())
+    const persistence = mounted.ctx.sessionPersistence as SqliteSessionPersistence
+    const source = await persistence.openStored(m.id)
+    if (source === undefined) throw new Error('test session must be materialized')
+    const internals = persistence as unknown as { db: DatabaseSync }
+    const changesDuringStaging = (async function* (): AsyncIterable<SessionEvent> {
+      yield* oneTurnLog()
+      internals.db.prepare('UPDATE sessions SET revision = revision + 1 WHERE id = ?').run(m.id)
+    })()
+
+    await expect(persistence.replaceStored(source.revision, m, changesDuringStaging))
+      .rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
+    expect((internals.db.prepare('SELECT COUNT(*) AS n FROM events WHERE session_id = ?').get(m.id) as { n: number }).n)
+      .toBe(oneTurnLog().length)
+    await mounted.dispose()
+  })
+
+  it('rolls back the complete replacement when the transaction fails after it begins', async () => {
+    const b = await backend()
+    const m = meta('format-replace-rollback')
+    await b.ctx.sessionPersistence.create(m)
+    await b.ctx.sessionPersistence.append(m.id, oneTurnLog())
+    const persistence = b.ctx.sessionPersistence as SqliteSessionPersistence
+    const source = await persistence.openStored(m.id)
+    if (source === undefined) throw new Error('test session must be materialized')
+    const db = (persistence as unknown as { db: DatabaseSync }).db
+    db.exec(`
+      CREATE TEMP TRIGGER fail_format_replace
+      BEFORE UPDATE ON sessions
+      BEGIN
+        SELECT RAISE(ABORT, 'simulated format replacement failure');
+      END
+    `)
+
+    await expect(
+      persistence.replaceStored(source.revision, m, replacementEvents([])),
+    ).rejects.toThrow(/simulated format replacement failure/)
+    db.exec('DROP TRIGGER fail_format_replace')
+
+    expect((await b.ctx.sessionPersistence.readFrom(m.id, 0)).events).toEqual(oneTurnLog())
     await b.dispose()
   })
 

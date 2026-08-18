@@ -12,7 +12,7 @@ import type { SessionPersistenceRevision } from './revision.ts'
 
 // Re-export the metadata vocabulary so Consumers import it from the Service Definition.
 export type { SessionHeader } from '@deepseek-ai/dsh-session'
-export { SessionPersistenceRevision } from './revision.ts'
+export { SessionPersistenceRevision, SessionPersistenceRevisionConflictError } from './revision.ts'
 
 /** Lightweight immutable source identity returned without loading a full log. */
 export interface SessionPersistenceSnapshot {
@@ -46,17 +46,17 @@ export {
   DEFAULT_WRITE_BATCH_MAX_DELAY_MS,
   MAX_WRITE_BATCH_DELAY_MS,
   PersistenceCoordinator,
-  SessionFormatUnsupportedError,
   SessionPersistenceCorruptionError,
-  sessionFormatVersionRefusal,
 } from './coordinator.ts'
 export type {
   PersistenceBackend,
   PersistenceCoordinatorOptions,
-  StoredPrefix,
-  StoredSuffix,
 } from './coordinator.ts'
-
+export {
+  decodeStoredSessionHeader,
+  SessionFormatUnsupportedError,
+  sessionFormatVersionRefusal,
+} from './format-decoder.ts'
 declare module '@deepseek-ai/cordis' {
   interface Context {
     sessionPersistence: SessionPersistence
@@ -241,3 +241,12 @@ export abstract class SessionPersistence extends Service {
 }
 
 export default SessionPersistence
+
+export type {
+  SessionFormatContext,
+  SessionFormatStep,
+  StoredEventRead,
+  StoredEventReadCompletion,
+  StoredEventReadOptions,
+  StoredSessionSource,
+} from './format-decoder.ts'
