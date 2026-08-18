@@ -10,7 +10,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
-import type { SessionEvent, SessionId, SessionHeader, SurfaceOp } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader, SurfaceOp } from '@deepseek-ai/dsh-session'
 
 /**
  * The on-disk schema version. Bumped only on a breaking change to the table
@@ -180,17 +180,7 @@ export function rowToMeta(row: SessionRow): SessionHeader {
   if (!Number.isSafeInteger(row.created_at) || row.created_at < 0) {
     throw new Error('stored session createdAt must be a non-negative safe integer')
   }
-  return {
-    version: row.version,
-    id: row.id as SessionId,
-    createdAt: row.created_at,
-    ...row.cwd !== null ? { cwd: row.cwd } : {},
-    ...row.parent_session !== null ? { parentSession: row.parent_session as SessionId } : {},
-    ...row.seed_length !== null ? { seedLength: row.seed_length } : {},
-    ...row.origin !== null ? { origin: row.origin } : {},
-    ...row.delegation_depth !== null ? { delegationDepth: row.delegation_depth } : {},
-    ...row.agent_preset !== null ? { agentPreset: row.agent_preset } : {},
-  }
+  return rowToStoredMeta(row) as SessionHeader
 }
 
 /**

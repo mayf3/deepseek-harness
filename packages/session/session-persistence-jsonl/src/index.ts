@@ -106,20 +106,6 @@ interface JsonlStoredHeader {
   readonly revision: PersistenceRevision
 }
 
-function deferred<T>(): {
-  readonly promise: Promise<T>
-  resolve(value: T): void
-  reject(reason: unknown): void
-} {
-  let resolve!: (value: T) => void
-  let reject!: (reason: unknown) => void
-  const promise = new Promise<T>((accept, decline) => {
-    resolve = accept
-    reject = decline
-  })
-  return { promise, resolve, reject }
-}
-
 interface FileRevisionIdentity {
   readonly dev: bigint
   readonly ino: bigint
@@ -254,28 +240,23 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       revision,
       location: { kind: 'jsonl', path },
       readEvents: (options = {}): StoredEventRead<JsonlTornMarker> => {
-        const completed = deferred<{ tornMarker?: JsonlTornMarker }>()
-        const events = (async function* (backend: JsonlSessionPersistence): AsyncIterable<unknown> {
-          try {
-            const prefix = await backend.readPrefix(path, id, signal)
+        const fromSeq = options.fromSeq ?? 0
+        return this.createStoredEventRead(
+          async () => {
+            const prefix = await this.readPrefix(path, id, signal)
             if (prefix.revision !== revision) {
               throw new SessionPersistenceRevisionConflictError(
                 `session "${id}" changed while reading revision ${revision}`,
               )
             }
-            const fromSeq = options.fromSeq ?? 0
-            for (const event of prefix.events) {
-              signal?.throwIfAborted()
-              const seq = (event as { seq?: unknown }).seq
-              if (typeof seq !== 'number' || seq >= fromSeq) yield event
-            }
-            completed.resolve(prefix.tornMarker === undefined ? {} : { tornMarker: prefix.tornMarker })
-          } catch (error: unknown) {
-            completed.reject(error)
-            throw error
-          }
-        })(this)
-        return { events, completed: completed.promise }
+            return prefix
+          },
+          (event) => {
+            const seq = (event as { seq?: unknown }).seq
+            return typeof seq !== 'number' || seq >= fromSeq
+          },
+          signal,
+        )
       },
     }
   }

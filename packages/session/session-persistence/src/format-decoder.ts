@@ -17,6 +17,7 @@ import {
   unversionedFormatCompatibility,
 } from './format-v0-compat.ts'
 import type { UnversionedFormatCompatibility } from './format-v0-compat.ts'
+import { asStoredRecord, readStoredEventEnvelope } from './format-json.ts'
 import type { SessionLocation } from './index.ts'
 import { SESSION_FORMAT_STEPS } from './format-migrations/index.ts'
 import type { SessionPersistenceRevision } from './revision.ts'
@@ -163,12 +164,6 @@ interface DecodedHeader {
   readonly unversionedCompatibility?: UnversionedFormatCompatibility
 }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined
-}
-
 interface StoredHeaderSource {
   readonly meta: unknown
   readonly location?: SessionLocation
@@ -190,7 +185,7 @@ function readSourceHeader(
   expectedId: SessionId,
 ): { meta: Record<string, unknown>; version: number; id: SessionId } {
   const snapshot = snapshotJsonValue(source.meta)
-  const meta = asRecord(snapshot)
+  const meta = asStoredRecord(snapshot)
   if (meta === undefined) throw new Error('stored session header is not a lossless JSON record')
   if (!Number.isSafeInteger(meta['version'])) {
     throw new Error(`stored session header has invalid format version ${String(meta['version'])}`)
@@ -243,7 +238,7 @@ function decodeHeader(
         { cause: error },
       )
     }
-    const record = asRecord(meta)
+    const record = asStoredRecord(meta)
     const actual = record?.['version']
     if (actual !== step.to) {
       throw new Error(`Session format step v${step.from} -> v${step.to} returned header version ${String(actual)}`)
@@ -282,19 +277,7 @@ export function decodeStoredSessionHeader(
 
 function assertCurrentEnvelope(value: unknown, id: SessionId): SessionEvent {
   const snapshot = snapshotJsonValue(value)
-  const event = asRecord(snapshot)
-  if (event === undefined) throw new Error(`session "${id}" contains a non-record event`)
-  if (typeof event['type'] !== 'string') throw new Error(`session "${id}" contains an event without a string type`)
-  if (!Number.isSafeInteger(event['seq']) || (event['seq'] as number) < 0) {
-    throw new Error(`session "${id}" contains event type "${event['type']}" with invalid seq ${String(event['seq'])}`)
-  }
-  if (typeof event['time'] !== 'number' || !Number.isFinite(event['time'])) {
-    throw new Error(`session "${id}" contains event type "${event['type']}" at seq ${String(event['seq'])} with invalid time`)
-  }
-  if (!Object.hasOwn(event, 'data')) {
-    throw new Error(`session "${id}" contains event type "${event['type']}" at seq ${String(event['seq'])} without data`)
-  }
-  return event as unknown as SessionEvent
+  return readStoredEventEnvelope(snapshot, id)
 }
 
 function assertCurrentEventSupported<TornMarker>(
@@ -376,20 +359,6 @@ async function* snapshotStoredEvents(
   }
 }
 
-function deferred<T>(): {
-  readonly promise: Promise<T>
-  resolve(value: T): void
-  reject(reason: unknown): void
-} {
-  let resolve!: (value: T) => void
-  let reject!: (reason: unknown) => void
-  const promise = new Promise<T>((accept, decline) => {
-    resolve = accept
-    reject = decline
-  })
-  return { promise, resolve, reject }
-}
-
 function decodedRead<TornMarker>(
   source: StoredSessionSource<TornMarker>,
   header: DecodedHeader,
@@ -398,7 +367,7 @@ function decodedRead<TornMarker>(
   readonly events: AsyncIterable<SessionEvent>
   readonly completed: Promise<StoredEventReadCompletion<TornMarker>>
 } {
-  const completion = deferred<StoredEventReadCompletion<TornMarker>>()
+  const completion = Promise.withResolvers<StoredEventReadCompletion<TornMarker>>()
   const migrating = header.steps.length > 0
   const compatibility = header.unversionedCompatibility
   let physical: StoredEventRead<TornMarker> | undefined

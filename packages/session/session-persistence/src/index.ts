@@ -6,9 +6,9 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import { SessionPreparation } from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SessionId, SessionHeader } from '@deepseek-ai/dsh-session'
+import { SessionPreparation, type SessionEvent, type SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
 import type { SessionPersistenceRevision } from './revision.ts'
+import type { StoredEventRead, StoredEventReadCompletion } from './format-decoder.ts'
 
 // Re-export the metadata vocabulary so Consumers import it from the Service Definition.
 export type { SessionHeader } from '@deepseek-ai/dsh-session'
@@ -84,6 +84,35 @@ export interface SessionLocation {
 export abstract class SessionPersistence extends Service {
   constructor(ctx: Context) {
     super(ctx, 'sessionPersistence')
+  }
+
+  /**
+   * Build the standard lazy event stream and EOF metadata around one backend read.
+   * @param load - revision-checked batch loader owned by the backend.
+   * @param include - whether one loaded event belongs in this physical read.
+   * @param signal - optional cancellation checked between yielded events.
+   * @returns an independently consumable event read.
+   */
+  protected createStoredEventRead<TornMarker>(
+    load: () => Promise<{ readonly events: readonly unknown[]; readonly tornMarker?: TornMarker }>,
+    include: (event: unknown) => boolean,
+    signal?: AbortSignal,
+  ): StoredEventRead<TornMarker> {
+    const completed = Promise.withResolvers<StoredEventReadCompletion<TornMarker>>()
+    const events = (async function* (): AsyncIterable<unknown> {
+      try {
+        const batch = await load()
+        for (const event of batch.events) {
+          signal?.throwIfAborted()
+          if (include(event)) yield event
+        }
+        completed.resolve(batch.tornMarker === undefined ? {} : { tornMarker: batch.tornMarker })
+      } catch (error: unknown) {
+        completed.reject(error)
+        throw error
+      }
+    })()
+    return { events, completed: completed.promise }
   }
 
   /**

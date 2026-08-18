@@ -4,6 +4,7 @@
  */
 
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import { asStoredRecord, readStoredEventEnvelope } from './format-json.ts'
 
 /** One format-specific normalizer selected before adjacent-version migrations. */
 export interface UnversionedFormatCompatibility {
@@ -25,12 +26,6 @@ export interface UnversionedFormatCompatibility {
   canonicalizeEvents(events: AsyncIterable<unknown>, sessionId: SessionId): AsyncIterable<unknown>
 }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined
-}
-
 function hasOnlyKeys(
   record: Record<string, unknown>,
   required: readonly string[],
@@ -48,16 +43,16 @@ function legacyMessageId(id: SessionId, seq: number): PersistedMessageId {
 }
 
 function replacementStart(event: SessionEvent): number | undefined {
-  const op = asRecord((event as SessionEvent & { surfaceOp?: unknown }).surfaceOp)
+  const op = asStoredRecord((event as SessionEvent & { surfaceOp?: unknown }).surfaceOp)
   return op?.['op'] === 'replace' && typeof op['start'] === 'number'
     ? op['start']
     : undefined
 }
 
 function requiresV0Prefix(value: unknown): boolean {
-  const event = asRecord(value)
+  const event = asStoredRecord(value)
   if (event === undefined) return false
-  const data = asRecord(event['data'])
+  const data = asStoredRecord(event['data'])
   if (event['type'] === 'steering/message') return true
   if (data === undefined) return false
   switch (event['type']) {
@@ -73,29 +68,17 @@ function requiresV0Prefix(value: unknown): boolean {
 }
 
 function readV0Event(value: unknown, id: SessionId): SessionEvent {
-  const event = asRecord(value)
-  if (event === undefined) throw new Error(`session "${id}" contains a non-record event`)
-  if (typeof event['type'] !== 'string') throw new Error(`session "${id}" contains an event without a string type`)
-  if (!Number.isSafeInteger(event['seq']) || (event['seq'] as number) < 0) {
-    throw new Error(`session "${id}" contains event type "${event['type']}" with invalid seq ${String(event['seq'])}`)
-  }
-  if (typeof event['time'] !== 'number' || !Number.isFinite(event['time'])) {
-    throw new Error(`session "${id}" contains event type "${event['type']}" at seq ${String(event['seq'])} with invalid time`)
-  }
-  if (!Object.hasOwn(event, 'data')) {
-    throw new Error(`session "${id}" contains event type "${event['type']}" at seq ${String(event['seq'])} without data`)
-  }
-  return event as unknown as SessionEvent
+  return readStoredEventEnvelope(value, id)
 }
 
 function canonicalizeLegacySteeringEvent(event: SessionEvent, id: SessionId): SessionEvent {
   const legacyType: string = 'steering/message'
   if (event.type !== legacyType) return event
-  const data = asRecord(event.data)
+  const data = asStoredRecord(event.data)
   if (data === undefined) {
     throw new Error(`session "${id}" contains malformed pre-react-loop steering/message at seq ${event.seq}`)
   }
-  const wrapped = asRecord(data['message'])
+  const wrapped = asStoredRecord(data['message'])
   if (wrapped !== undefined && Number.isSafeInteger(data['turn'])
     && hasOnlyKeys(data, ['turn', 'message'])) {
     return { ...event, type: 'user/message', data: wrapped } as SessionEvent
@@ -113,9 +96,9 @@ function canonicalizeLegacySteeringEvent(event: SessionEvent, id: SessionId): Se
 
 function canonicalizeLegacyTurnStartEvent(event: SessionEvent, id: SessionId): SessionEvent {
   if (event.type !== 'turn/start') return event
-  const data = asRecord(event.data)
+  const data = asStoredRecord(event.data)
   if (data === undefined || !Object.hasOwn(data, 'trigger')) return event
-  const trigger = asRecord(data['trigger'])
+  const trigger = asStoredRecord(data['trigger'])
   if (!Number.isSafeInteger(data['turn']) || (data['turn'] as number) < 1
     || !hasOnlyKeys(data, ['turn', 'trigger'])
     || trigger === undefined || typeof trigger['kind'] !== 'string' || trigger['kind'].length === 0) {
@@ -126,12 +109,12 @@ function canonicalizeLegacyTurnStartEvent(event: SessionEvent, id: SessionId): S
 
 function canonicalizeLegacyTurnEndEvent(event: SessionEvent, id: SessionId): SessionEvent {
   if (event.type !== 'turn/end') return event
-  const data = asRecord(event.data)
+  const data = asStoredRecord(event.data)
   if (data === undefined) return event
   const malformed = (): never => {
     throw new Error(`session "${id}" contains malformed pre-react-loop turn/end at seq ${event.seq}`)
   }
-  const reason = asRecord(data['reason'])
+  const reason = asStoredRecord(data['reason'])
   if (!Number.isSafeInteger(data['turn']) || (data['turn'] as number) < 1
     || !hasOnlyKeys(data, ['turn', 'reason'])
     || reason === undefined || typeof reason['kind'] !== 'string') return malformed()
@@ -156,7 +139,7 @@ function canonicalizeLegacyTurnEndEvent(event: SessionEvent, id: SessionId): Ses
     case 'error': {
       if (Object.hasOwn(reason, 'error')) return event
       if (!Number.isSafeInteger(reason['step']) || (reason['step'] as number) < 0) return malformed()
-      const failure = asRecord(reason['failure'])
+      const failure = asStoredRecord(reason['failure'])
       if (failure !== undefined && hasOnlyKeys(reason, ['kind', 'step', 'failure'])
         && hasOnlyKeys(failure, ['message', 'code'], ['status', 'providerRetryAfterMs', 'requestId'])
         && typeof failure['message'] === 'string' && typeof failure['code'] === 'string'
@@ -192,7 +175,7 @@ function canonicalizeLegacyMessageEvent(
   id: SessionId,
   messageIds: ReadonlyMap<number, PersistedMessageId>,
 ): SessionEvent {
-  const data = asRecord(event.data)
+  const data = asStoredRecord(event.data)
   if (data === undefined) return event
   switch (event.type) {
     case 'user/message':
@@ -212,7 +195,7 @@ function canonicalizeLegacyMessageEvent(
             id: legacyMessageId(id, event.seq),
             role: 'assistant',
             content,
-            source: { ...asRecord(provenance), kind: 'model' },
+            source: { ...asStoredRecord(provenance), kind: 'model' },
           },
         },
       } as SessionEvent
@@ -242,8 +225,8 @@ function canonicalizeLegacyMessageEvent(
 }
 
 function eventMessageId(event: SessionEvent): PersistedMessageId | undefined {
-  const data = asRecord(event.data)
-  const message = event.type === 'user/message' ? data : asRecord(data?.['message'])
+  const data = asStoredRecord(event.data)
+  const message = event.type === 'user/message' ? data : asStoredRecord(data?.['message'])
   return typeof message?.['id'] === 'string' ? message['id'] as PersistedMessageId : undefined
 }
 

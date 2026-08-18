@@ -59,20 +59,6 @@ interface SqliteStoredPrefix {
   readonly tornMarker?: number
 }
 
-function deferred<T>(): {
-  readonly promise: Promise<T>
-  resolve(value: T): void
-  reject(reason: unknown): void
-} {
-  let resolve!: (value: T) => void
-  let reject!: (reason: unknown) => void
-  const promise = new Promise<T>((accept, decline) => {
-    resolve = accept
-    reject = decline
-  })
-  return { promise, resolve, reject }
-}
-
 /**
  * Exclusively create a missing database file with owner-only permissions.
  * Existing files retain their modes, and errors other than `EEXIST` propagate.
@@ -238,29 +224,22 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
       meta: rowToStoredMeta(row),
       revision,
       readEvents: (options = {}): StoredEventRead<number> => {
-        const completed = deferred<{ tornMarker?: number }>()
-        const events = (async function* (backend: SqliteSessionPersistence): AsyncIterable<unknown> {
-          try {
+        return this.createStoredEventRead(
+          async () => {
             const fromSeq = options.fromSeq ?? 0
             const stored = fromSeq === 0
-              ? await backend.readPrefix(id, signal)
-              : await backend.readSuffix(id, fromSeq, signal)
+              ? await this.readPrefix(id, signal)
+              : await this.readSuffix(id, fromSeq, signal)
             if (stored === undefined || stored.revision !== revision) {
               throw new SessionPersistenceRevisionConflictError(
                 `session "${id}" changed while reading revision ${revision}`,
               )
             }
-            for (const event of stored.events) {
-              signal?.throwIfAborted()
-              yield event
-            }
-            completed.resolve(stored.tornMarker === undefined ? {} : { tornMarker: stored.tornMarker })
-          } catch (error: unknown) {
-            completed.reject(error)
-            throw error
-          }
-        })(this)
-        return { events, completed: completed.promise }
+            return stored
+          },
+          () => true,
+          signal,
+        )
       },
     }
   }
@@ -280,33 +259,7 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
    * region are dropped, never repaired (non-mutating read).
    */
   private async readSuffix(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<SqliteStoredPrefix | undefined> {
-    signal?.throwIfAborted()
-    await this.ready
-    signal?.throwIfAborted()
-    this.db.exec('BEGIN')
-    let snapshot: { row: SessionRow; eventRows: EventRow[] } | undefined
-    try {
-      const row = this.rowFor(id)
-      if (row !== undefined) {
-        const eventRows = this.db
-          .prepare('SELECT seq, type, time, data, source_event_seqs, surface_op, ignorable FROM events WHERE session_id = ? AND seq >= ? ORDER BY seq')
-          .all(id, fromSeq) as unknown as EventRow[]
-        snapshot = { row, eventRows }
-      }
-      this.db.exec('COMMIT')
-    } catch (error: unknown) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
-    signal?.throwIfAborted()
-    if (snapshot === undefined) return undefined
-    const { row, eventRows } = snapshot
-    const { preserved } = scanRows(eventRows, fromSeq)
-    return {
-      meta: rowToStoredMeta(row),
-      events: preserved,
-      revision: sqliteRevision(this.storeIdentity, row),
-    }
+    return this.readStoredEvents(id, fromSeq, false, signal)
   }
 
   /**
@@ -315,6 +268,15 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
    * (`scanRows` already returns it as `number | undefined`).
    */
   private async readPrefix(id: SessionId, signal?: AbortSignal): Promise<SqliteStoredPrefix | undefined> {
+    return this.readStoredEvents(id, 0, true, signal)
+  }
+
+  private async readStoredEvents(
+    id: SessionId,
+    fromSeq: number,
+    includeTornMarker: boolean,
+    signal?: AbortSignal,
+  ): Promise<SqliteStoredPrefix | undefined> {
     signal?.throwIfAborted()
     await this.ready
     signal?.throwIfAborted()
@@ -323,27 +285,28 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
     try {
       const row = this.rowFor(id)
       if (row !== undefined) {
-        const eventRows = this.db
-          .prepare('SELECT seq, type, time, data, source_event_seqs, surface_op, ignorable FROM events WHERE session_id = ? ORDER BY seq')
-          .all(id) as unknown as EventRow[]
+        const statement = fromSeq === 0
+          ? this.db.prepare('SELECT seq, type, time, data, source_event_seqs, surface_op, ignorable FROM events WHERE session_id = ? ORDER BY seq')
+          : this.db.prepare('SELECT seq, type, time, data, source_event_seqs, surface_op, ignorable FROM events WHERE session_id = ? AND seq >= ? ORDER BY seq')
+        const eventRows = (fromSeq === 0
+          ? statement.all(id)
+          : statement.all(id, fromSeq)) as unknown as EventRow[]
         snapshot = { row, eventRows }
       }
       this.db.exec('COMMIT')
     } catch (error: unknown) {
-      /* v8 ignore start -- synchronous read failures only need transaction cleanup before propagation. */
       this.db.exec('ROLLBACK')
       throw error
-      /* v8 ignore stop */
     }
     signal?.throwIfAborted()
     if (snapshot === undefined) return undefined
     const { row, eventRows } = snapshot
-    const { preserved, tornFrom } = scanRows(eventRows)
+    const { preserved, tornFrom } = scanRows(eventRows, fromSeq)
     return {
       meta: rowToStoredMeta(row),
       events: preserved,
       revision: sqliteRevision(this.storeIdentity, row),
-      ...tornFrom !== undefined ? { tornMarker: tornFrom } : {},
+      ...includeTornMarker && tornFrom !== undefined ? { tornMarker: tornFrom } : {},
     }
   }
 
