@@ -13,7 +13,7 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { accessSync, copyFileSync, constants as fsConstants, mkdtempSync, rmSync } from 'node:fs'
+import { accessSync, copyFileSync, constants as fsConstants, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -313,6 +313,36 @@ const GROUP_REAP_POLL_MS = 50
  * @returns The value's message or string form; a fixed placeholder when its own
  *   conversion throws.
  */
+/**
+ * A process's start time, as the identity half of (pid, started).
+ *
+ * A pid is reusable the moment the kernel reaps it, so signalling one that a
+ * later process inherited would terminate an unrelated process group. Start
+ * time is what distinguishes the original from its replacement: `kill(pid, 0)`
+ * answers "does this number exist", which is true for both.
+ *
+ * Linux reads field 22 of `/proc/<pid>/stat` (starttime in clock ticks); the
+ * field is positional after the comm field's closing parenthesis, which is
+ * parsed from the LAST such character because a process name may contain one.
+ * Darwin has no `/proc`, so the caller gets `undefined` there and the guard
+ * degrades to the pre-existing behavior rather than paying a `ps` fork on a
+ * teardown path. Any read failure is `undefined` for the same reason: this
+ * hardens a narrow race and must never be the thing that breaks teardown.
+ * @param pid - the process to read.
+ * @returns its start time, or undefined when unavailable.
+ */
+export function readProcessStart(pid: number): string | undefined {
+  if (process.platform !== 'linux') return undefined
+  try {
+    const stat = readFileSync(`/proc/${String(pid)}/stat`, 'utf8')
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ')
+    // Field 22 overall; the slice above dropped pid and comm, so it is index 19.
+    return fields[19]
+  } catch {
+    return undefined
+  }
+}
+
 function messageOf(error: unknown): string {
   try {
     return String(error instanceof Error ? error.message : error)
@@ -1355,10 +1385,30 @@ export class PythonCodeRuntime extends CodeRuntime {
       // finish() arms this deadline; when it fires we detach our stream handles
       // and settle on the already-decided result regardless of the orphan.
       let closeDeadline: NodeJS.Timeout | undefined
+      // The leader's start time, read once while it is certainly alive. `child.pid`
+      // keeps its numeric value after the leader is reaped (Node clears the
+      // internal handle, not the field), and `close` can trail `exit` by seconds
+      // while a pipe-holding descendant keeps the streams open. Signalling
+      // `-child.pid` in that window is a RAW syscall -- `child.kill()` would
+      // refuse, having dropped its handle, but `process.kill` has no such guard --
+      // so a recycled pgid would receive this run's SIGTERM and armed SIGKILL.
+      // `groupEmpty()` cannot cover it: it reports whether the group has members,
+      // not whether they are OURS, and it runs only after the first signal.
+      // The repository already takes this position in
+      // packages/subprocess/subprocess-local (`ProcessIdentity`, "preventing
+      // teardown escalation after PID reuse"); this is the same guard, kept local
+      // because a dependency on that package would be a new architectural edge.
+      const leaderStarted = child.pid === undefined ? undefined : readProcessStart(child.pid)
       const killGroup = (sig: NodeJS.Signals): void => {
         try {
           /* v8 ignore next -- undefined pid means spawn never produced a process; finish() short-circuits before reaching kill(). */
-          if (child.pid !== undefined) process.kill(-child.pid, sig)
+          if (child.pid === undefined) return
+          // A pid alone cannot answer this: `process.kill(pid, 0)` succeeds just
+          // as well for a REPLACEMENT process holding the recycled number. Only
+          // the start time distinguishes the two, so a reading that no longer
+          // matches means the group is not this run's and must not be signalled.
+          if (leaderStarted !== undefined && readProcessStart(child.pid) !== leaderStarted) return
+          process.kill(-child.pid, sig)
         } catch {
           // ESRCH — the process already died. Nothing to do.
         }

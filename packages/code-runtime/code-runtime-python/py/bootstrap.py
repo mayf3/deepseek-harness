@@ -319,14 +319,25 @@ class _LogStream(io.TextIOBase):
         # prefix that still fails LogBuffer's ``len(text) + 3 > remaining``
         # check; the accumulation stops there, so the copy is bounded by the log
         # budget however large the pending chunks are.
+        #
+        # `self._pending` is iterated IN PLACE and `extra` handled after it:
+        # `(*self._pending, extra)` would first copy every pending reference into
+        # a same-size tuple, which for a single-character drip (millions of tiny
+        # chunks) is a second pointer array as large as the list itself --
+        # measured at +80 MiB of tuple on top of a 40 MiB list for 5.2M chunks,
+        # the allocation this bounded prefix exists to avoid.
         limit = self._logs.remaining + 4
         parts: list[str] = []
         total = 0
-        for chunk in (*self._pending, extra):
+        for chunk in self._pending:
             parts.append(chunk[: limit - total])
             total += len(parts[-1])
             if total >= limit:
                 break
+        else:
+            # Only reached when the pending chunks did not fill the prefix, so
+            # `extra` is the one remaining source of text.
+            parts.append(extra[: limit - total])
         self._pending = []
         self._pending_chars = 0
         self._logs.push("".join(parts))
@@ -669,17 +680,22 @@ async def _run(channel: ProtocolChannel) -> None:
             # boot rather than letting a near-budget output OOM mid-run. The
             # constants match src/index.ts's OUTPUT_BUDGET_WORST_CASE_ADDRESS_
             # SPACE_MULTIPLE and INTERPRETER_BASELINE_BYTES.
+            # `effective_soft` is always finite, so the re-check is
+            # unconditional: `_clamped` was asked for the finite `addr_bytes` on
+            # both sides, and each of its branches returns either that value or a
+            # `min` with an inherited bound -- RLIM_INFINITY is not reachable. A
+            # guard here would have silently skipped the whole re-check on the
+            # branch it claimed to protect.
             effective_soft = effective_as[0]
-            if effective_soft != resource.RLIM_INFINITY:
-                budgetable = effective_soft - _INTERPRETER_BASELINE_BYTES
-                for _budget_key in ("maxLogBytes", "maxValueBytes"):
-                    if int(boot[_budget_key]) * _OUTPUT_BUDGET_WORST_CASE_MULTIPLE >= budgetable:
-                        raise ValueError(
-                            "config.%s is too large for the inherited RLIMIT_AS of %d bytes "
-                            "(a near-budget output would breach it during encode); "
-                            "lower the budget or raise the inherited address-space limit"
-                            % (_budget_key, effective_soft)
-                        )
+            budgetable = effective_soft - _INTERPRETER_BASELINE_BYTES
+            for _budget_key in ("maxLogBytes", "maxValueBytes"):
+                if int(boot[_budget_key]) * _OUTPUT_BUDGET_WORST_CASE_MULTIPLE >= budgetable:
+                    raise ValueError(
+                        "config.%s is too large for the inherited RLIMIT_AS of %d bytes "
+                        "(a near-budget output would breach it during encode); "
+                        "lower the budget or raise the inherited address-space limit"
+                        % (_budget_key, effective_soft)
+                    )
     except BaseException as exc:  # noqa: BLE001 -- report every failure to host
         channel.send_sync(
             {
@@ -924,8 +940,21 @@ async def _run(channel: ProtocolChannel) -> None:
     # final partial line is not silently dropped. The success path already
     # flushed before framing the value; this is an idempotent no-op there and
     # the flush the exception path needs.
-    flush_out()
-    flush_err()
+    #
+    # Guarded because `done` is ALREADY DECIDED here: on the exception path the
+    # handler above built it, and a flush that raises (its join/encode under
+    # memory pressure, after the program left a near-maxLogBytes pending and then
+    # allocated toward RLIMIT_AS) would skip `send_done` and downgrade a run the
+    # child already classified as `exception` into a host-side `worker-exit`.
+    # Losing the log tail is the lesser outcome, and the marker the ledger
+    # already pushed still reports the truncation. Same rule as
+    # `_make_failure_reporter`: a settled verdict must not be swallowed by the
+    # reporting that follows it.
+    for _flush in (flush_out, flush_err):
+        try:
+            _flush()
+        except BaseException:  # noqa: BLE001 -- swallow ONLY the log tail; `done` must reach the host
+            pass
     reply_task.cancel()
     send_done(done)
 

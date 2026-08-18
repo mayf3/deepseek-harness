@@ -3,8 +3,8 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
-import { PythonCodeRuntime } from '../src/index.ts'
+import { Context } from '@deepseek-ai/cordis'
+import { PythonCodeRuntime, readProcessStart } from '../src/index.ts'
 import { logTruncationMarker } from '../src/protocol.ts'
 import type { Config } from '../src/index.ts'
 import type { CodeBindingFunction, CodeJsonValue, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
@@ -381,6 +381,32 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
       failNextCopyOf.value = undefined
     }
   }, 15_000)
+})
+
+describe('PythonCodeRuntime — process identity', () => {
+  it('reads a live process start time and distinguishes it from an absent pid', () => {
+    // The teardown guard signals `-child.pid` with a RAW `process.kill`, which
+    // (unlike `child.kill()`) has no handle check, so it would reach a recycled
+    // pgid during the window between the leader being reaped and `close` firing.
+    // A pid alone cannot separate the original from its replacement -- both
+    // answer `kill(pid, 0)` -- so the guard compares START TIME, and this pins
+    // that the reading is stable for one process and absent for a pid that
+    // cannot be read.
+    const own = readProcessStart(process.pid)
+    if (process.platform === 'linux') {
+      // Same process, two reads: the identity must be stable, or the guard would
+      // refuse to signal its own live group.
+      expect(own).toBeDefined()
+      expect(readProcessStart(process.pid)).toBe(own)
+      // Pid 0 is never a readable /proc entry, so the guard degrades to
+      // undefined rather than throwing on a teardown path.
+      expect(readProcessStart(0)).toBeUndefined()
+    } else {
+      // Darwin has no /proc: the reader reports undefined, and `killGroup` then
+      // keeps its pre-existing behavior instead of paying a `ps` fork per signal.
+      expect(own).toBeUndefined()
+    }
+  })
 })
 
 describe('PythonCodeRuntime — inherited resource limits', () => {
