@@ -91,7 +91,9 @@ declare module '@deepseek-ai/cordis' {
  * language (and for non-browser runs), and the dictionary consulted after the
  * active locale misses a key. One constant serves both because the shipped
  * `zh`/`en` dictionaries carry identical key sets, so neither direction can
- * leave a key unresolved; English is the source language of the copy.
+ * leave a key unresolved; the residual case points at English rather than
+ * zh because a browser naming neither shipped language is the reader least
+ * likely to read Chinese.
  */
 export const FALLBACK_LOCALE: LocaleId = 'en'
 

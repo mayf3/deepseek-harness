@@ -103,6 +103,20 @@ function dictionariesIn(file: string): Dictionary[] {
   const found: Dictionary[] = []
   const rel = relative(file)
 
+  // Module-scope variable declarations, keyed by name. A 3-arg
+  // `register(NS, 'zh'|'en', dict)` whose third argument is an identifier —
+  // e.g. a local dictionary variable rather than an inline literal — resolves
+  // through here so the gate still verifies its symmetry.
+  const moduleConsts = new Map<string, ts.Expression>()
+  for (const statement of source.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const decl of statement.declarationList.declarations) {
+      if (ts.isIdentifier(decl.name) && decl.initializer !== undefined) {
+        moduleConsts.set(decl.name.text, decl.initializer)
+      }
+    }
+  }
+
   for (const statement of source.statements) {
     if (!ts.isVariableStatement(statement)) continue
     if (statement.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) !== true) continue
@@ -115,6 +129,14 @@ function dictionariesIn(file: string): Dictionary[] {
     }
   }
 
+  // A 3-arg `register(ns, 'zh'|'en', dict)` call whose dictionary argument we
+  // cannot turn into an object literal. We refuse instead of skipping: a
+  // registration we cannot measure is exactly the silent narrowing this gate
+  // exists to catch.
+  const refuse = (ns: string, tag: string, why: string): never => {
+    throw new Error(`cannot verify register('${ns}', '${tag}', ...) in ${rel}: ${why}`)
+  }
+
   // Inline registrations, two shapes. A `[['zh', {...}], ['en', {...}]]` pair
   // handed to a registration loop keys off the enclosing array; separate
   // `register(NS, 'zh', {...})` / `register(NS, 'en', {...})` calls key off the
@@ -122,20 +144,34 @@ function dictionariesIn(file: string): Dictionary[] {
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
       const callee = node.expression
-      const name = ts.isPropertyAccessExpression(callee) ? callee.name.text : undefined
+      const name = ts.isPropertyAccessExpression(callee)
+        ? callee.name.text
+        : ts.isIdentifier(callee) && callee.text === 'register' ? 'register' : undefined
       if (name === 'register' && node.arguments.length >= 3) {
         const [ns, tag, dict] = node.arguments
-        const literal = unwrap(dict)
-        if (
-          ns !== undefined && tag !== undefined && ts.isStringLiteral(tag)
-          && (tag.text === 'zh' || tag.text === 'en')
-          && literal !== undefined && ts.isObjectLiteralExpression(literal)
-        ) {
-          // The namespace expression's source text identifies the pair, so the
-          // zh and en calls for one namespace meet and calls for different
-          // namespaces stay apart.
-          found.push({ file: rel, name: `${tag.text}@register:${ns.getText(source)}`, keys: keysOf(literal) })
+        if (ns === undefined || tag === undefined || !ts.isStringLiteral(tag)) return
+        if (tag.text !== 'zh' && tag.text !== 'en') return
+        const raw = unwrap(dict)
+        const literal = raw !== undefined && ts.isIdentifier(raw)
+          ? (() => {
+            const resolved = moduleConsts.get(raw.text)
+            return resolved === undefined ? undefined : unwrap(resolved)
+          })()
+          : raw
+        const why = raw !== undefined && ts.isIdentifier(raw)
+          ? `third argument ${raw.text} does not resolve to an inline or module-scope object literal`
+          : 'third argument is neither an object literal nor a resolvable dictionary variable'
+        if (literal === undefined || !ts.isObjectLiteralExpression(literal)) {
+          // The dictionary argument must resolve to an object literal; the
+          // gate refuses rather than skips, so the symmetry it verifies never
+          // silently narrows.
+          refuse(ns.getText(source), tag.text, why)
         }
+        const dictionary: ts.ObjectLiteralExpression = literal as ts.ObjectLiteralExpression
+        // The namespace expression's source text identifies the pair, so the
+        // zh and en calls for one namespace meet and calls for different
+        // namespaces stay apart.
+        found.push({ file: rel, name: `${tag.text}@register:${ns.getText(source)}`, keys: keysOf(dictionary) })
       }
     }
     if (ts.isArrayLiteralExpression(node) && node.elements.length === 2) {
@@ -181,7 +217,10 @@ function unwrap(node: ts.Expression | undefined): ts.Expression | undefined {
 /**
  * The locale a dictionary name declares, and the namespace-ish remainder that
  * identifies which pair it belongs to. `zh`/`en`, `zhSettings`/`enSettings`,
- * and `settingsZh`/`settingsEn` are the shapes this repo uses.
+ * and `settingsZh`/`settingsEn` are the shapes this repo uses. A name-prefix
+ * shape requires an uppercase ASCII letter at the third position (`[A-Z]`),
+ * matching the admission of the cheap pre-filter, so `zh2Foo`/`zh_probe`
+ * cannot be treated as dictionaries in one place and skipped in another.
  * @param name - export name or synthetic inline name.
  * @returns locale plus pair key, or undefined when the name names no locale.
  */
@@ -192,7 +231,7 @@ function localeOf(name: string): { locale: 'zh' | 'en'; pair: string } | undefin
     // Synthetic names for inline shapes carry their own pair key after the
     // first ':' (the enclosing array's line, or the namespace expression).
     if (name.startsWith(`${locale}@`)) return { locale, pair: name.slice(name.indexOf(':')) }
-    if (name.startsWith(locale) && name.length > 2 && name[2] === name[2]?.toUpperCase()) {
+    if (name.startsWith(locale) && name.length > 2 && /[A-Z]/.test(name[2] ?? '')) {
       return { locale, pair: name.slice(2) }
     }
     if (name.endsWith(other)) return { locale, pair: name.slice(0, -2) }
