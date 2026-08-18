@@ -99,10 +99,11 @@ export function apply(ctx: ClientContext): void {
     t,
   })
 
-  // Pushed invalidations converge every open surface without polling: any
-  // settings/credentials/topology change refetches once the page loaded. The
-  // welcome notice follows its settings scope, so the shared mirror already
-  // keeps it fresh without a subscription here.
+  // Pushed invalidations converge every open surface without polling. The
+  // settingsScope injection makes ui-settings activate first, and remote
+  // dispatch preserves listener order; its listener therefore starts the
+  // mirror refresh before this store joins that refresh. The welcome notice
+  // follows its settings scope, so it needs no subscription here.
   ctx.effect(() => {
     const refreshModels = (): void => { refreshIfLoaded(controller) }
     const disposers = [

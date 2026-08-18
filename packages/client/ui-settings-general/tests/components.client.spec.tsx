@@ -82,7 +82,7 @@ describe('SettingsDocumentAction', () => {
         })),
         openDocument,
       },
-    } as never)
+    })
     render(<SettingsDocumentAction
       {...kit}
       t={t}
@@ -146,7 +146,7 @@ describe('SettingsDocumentAction', () => {
           result: { ok: false as const, error: { code: 'internal' as const, message: 'xdg-open missing', details: {} } },
         })),
       },
-    } as never)
+    })
     render(<SettingsDocumentAction
       {...kit}
       t={t}

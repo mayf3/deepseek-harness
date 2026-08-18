@@ -182,13 +182,24 @@ describe('permission settings store', () => {
     expect(mutate).not.toHaveBeenCalled()
 
     const thrown = permissionController({
-      // Promise consumers must contain unknown rejection values from a
-      // transport implementation, including non-Error legacy clients.
-      describe: () => Promise.reject('disconnected' as never),
+      describe: async () => { throw 'disconnected' },
       mutate,
     }).controller
     await thrown.load()
     expect(thrown.store.getSnapshot()).toMatchObject({ status: 'error', error: 'disconnected' })
+  })
+
+  it('hides the row in a remote browser instead of loading forever', async () => {
+    const describeCall = vi.fn()
+    const mutate = vi.fn()
+    const wire = { settings: { describe: describeCall, mutate } } as never
+    const mirror = new SettingsDescribeMirror(wire, 'memory')
+    const controller = new PermissionPresetSettingsController(mirror, wire, schema)
+    await controller.load()
+    expect(controller.store.getSnapshot().status).toBe('unavailable')
+    await controller.select('workspace-write')
+    expect(describeCall).not.toHaveBeenCalled()
+    expect(mutate).not.toHaveBeenCalled()
   })
 
   it('follows a mirror refresh without an own read once loaded', async () => {

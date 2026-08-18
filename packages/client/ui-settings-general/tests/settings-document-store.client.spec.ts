@@ -41,7 +41,7 @@ describe('SettingsDocumentStore', () => {
   it('loads provider metadata and asks the settings domain to open its document', async () => {
     const describe = vi.fn(() => Promise.resolve(response(true)))
     const openDocument = vi.fn(() => Promise.resolve(opened()))
-    const controller = derivedDocumentStore({ settings: { describe, openDocument } } as never)
+    const controller = derivedDocumentStore({ settings: { describe, openDocument } })
     await controller.load()
     expect(controller.store.getSnapshot()).toEqual({
       status: 'ready', opening: false, error: null,
@@ -54,7 +54,7 @@ describe('SettingsDocumentStore', () => {
     const openDocument = vi.fn(() => Promise.resolve(opened()))
     const absent = derivedDocumentStore({
       settings: { describe: () => Promise.resolve(response()), openDocument },
-    } as never)
+    })
     await absent.load()
     await absent.open()
     expect(absent.store.getSnapshot().status).toBe('unavailable')
@@ -62,13 +62,13 @@ describe('SettingsDocumentStore', () => {
 
     const failed = derivedDocumentStore({
       settings: { describe: () => Promise.reject(new Error('offline')), openDocument },
-    } as never)
+    })
     await failed.load()
     expect(failed.store.getSnapshot()).toMatchObject({ status: 'unavailable', error: 'offline' })
 
     const rejected = derivedDocumentStore({
       settings: { describe: () => Promise.resolve(describeFailed('provider failed')), openDocument },
-    } as never)
+    })
     await rejected.load()
     expect(rejected.store.getSnapshot()).toMatchObject({
       status: 'unavailable', error: 'provider failed',
@@ -80,7 +80,7 @@ describe('SettingsDocumentStore', () => {
     const openDocument = vi.fn(() => new Promise<RpcResponse<{ opened: true }>>((resolve) => { resolveOpen = resolve }))
     const controller = derivedDocumentStore({
       settings: { describe: () => Promise.resolve(response(true)), openDocument },
-    } as never)
+    })
     await controller.load()
     const first = controller.open()
     const second = controller.open()
@@ -102,7 +102,7 @@ describe('SettingsDocumentStore', () => {
         describe: vi.fn(() => Promise.resolve(response(true))),
         openDocument: () => new Promise((_, reject) => { rejectOpen = reject }),
       },
-    } as never)
+    })
     await controller.load()
     expect(controller.store.getSnapshot().status).toBe('ready')
     const opening = controller.open()

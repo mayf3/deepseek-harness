@@ -18,7 +18,7 @@ import { WelcomeNotice } from '../src/client/WelcomeNotice.tsx'
 // the shipped Chinese copy, so they state the browser they assume.
 usePinnedBrowserLanguages('zh-CN')
 
-async function bench(isLoopback = true, settings?: object) {
+async function bench(isLoopback = true, settings?: object, services: object = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
@@ -29,7 +29,10 @@ async function bench(isLoopback = true, settings?: object) {
   // Without a settings face the mirror's reads fail and stay contained; the
   // Models join itself never fetches until a section actually loads. The real
   // ui-settings apply also provides the settingsSchema service.
-  ctx.provide('connection', { api: settings === undefined ? {} : { settings }, isLoopback } as never)
+  ctx.provide('connection', {
+    api: settings === undefined ? services : { ...services, settings },
+    isLoopback,
+  } as never)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale }
 }
@@ -252,5 +255,50 @@ describe('pushed invalidations', () => {
     await vi.waitFor(() => {
       expect(injected.hooks.welcome.getSnapshot()).toMatchObject({ status: 'ready', acknowledged: true })
     })
+  })
+
+  it('joins the refreshed mirror view on a settings invalidation', async () => {
+    let revision = 1
+    const describe = vi.fn(() => Promise.resolve({
+      rpcId: `apply-models-${revision}` as never,
+      result: {
+        ok: true as const,
+        value: {
+          writable: true,
+          hasDocument: false,
+          namespaces: [{
+            ns: 'llm-test',
+            schema: {},
+            value: {},
+            applies: 'live' as const,
+            secrets: [],
+            revision,
+          }],
+        },
+      },
+    }))
+    const providers = vi.fn(() => Promise.resolve({
+      rpcId: 'apply-models-providers' as never,
+      result: { ok: true as const, value: { providers: [] } },
+    }))
+    const b = await bench(true, { describe }, { llm: { providers } })
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = b.slots.entries('settings.section')
+      .find(candidate => candidate.options.id === 'models')!
+    const injected = (
+      entry.inject as unknown as
+      () => import('../src/client/ModelsSection.tsx').ModelsSectionInjected
+    )()
+    await injected.controller.load()
+    expect(injected.hooks.snapshot.getSnapshot().namespaces.get('llm-test')?.revision).toBe(1)
+
+    revision = 2
+    b.ctx.remote.$dispatch('settings/document-updated', ['llm-test', revision])
+
+    await vi.waitFor(() => {
+      expect(injected.hooks.snapshot.getSnapshot().namespaces.get('llm-test')?.revision).toBe(2)
+    })
+    expect(describe).toHaveBeenCalledTimes(2)
   })
 })

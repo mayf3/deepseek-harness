@@ -29,7 +29,7 @@ export class SettingsDocumentStore {
 
   /**
    * @param api - loopback settings wire face that opens the provider document.
-   * @param describeFace - the shared mirror's read-only face (`hasDocument` source).
+   * @param describeFace - the shared mirror's describe face (`hasDocument` source).
    */
   constructor(
     private readonly api: Pick<IApiClient, 'settings'>,

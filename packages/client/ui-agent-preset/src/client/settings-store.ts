@@ -194,7 +194,7 @@ export class AgentPresetSettingsController {
 
   /**
    * @param api - the agent-preset and settings wire faces (roster and default write).
-   * @param describeFace - the shared mirror's read-only face (writability source).
+   * @param describeFace - the shared mirror's describe face (writability source).
    */
   constructor(
     private readonly api: IApiClient,

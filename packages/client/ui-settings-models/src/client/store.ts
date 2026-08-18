@@ -1,6 +1,6 @@
 /**
  * Models settings page store: one snapshot joining the configurable-provider
- * directory (`llm.providers`), the settings namespaces (`settings.describe`),
+ * directory (`llm.providers`), the settings namespaces (shared settings mirror),
  * and the referenced credentials (`credentials.describe`). The host stays the
  * single fact source — every mutation writes through the wire and the page
  * re-renders from the next describe, pushed or refetched.
@@ -116,7 +116,7 @@ export class ModelsSettingsStore {
 
   /**
    * @param api - the wire face (credentials/llm domains, and settings writes).
-   * @param describeFace - the shared mirror's read-only face (namespace views and writability).
+   * @param describeFace - the shared mirror's describe face (namespace views and writability).
    */
   constructor(
     private readonly api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>,
@@ -127,8 +127,9 @@ export class ModelsSettingsStore {
   /**
    * Refresh the whole page snapshot: the provider directory and the mirror's
    * settings answer in parallel, then one batched credential describe over
-   * every referenced ref. A failure keeps the last good rows and surfaces the
-   * error.
+   * every referenced ref. Provider failure or absence of an initial settings
+   * answer keeps the last good rows and surfaces an error; a failed settings
+   * refresh reuses the mirror's held view.
    * @returns nothing; the snapshot carries the outcome.
    */
   async load(): Promise<void> {
@@ -145,7 +146,7 @@ export class ModelsSettingsStore {
       if (!providersResponse.result.ok) throw new Error(providersResponse.result.error.message)
       const mirrored = this.describeFace.getSnapshot()
       if (mirrored.view === undefined) {
-        throw new Error(mirrored.error ?? 'settings have not answered yet')
+        throw new Error(mirrored.error ?? 'settings are unavailable in this browser')
       }
       providers = providersResponse.result.value.providers
       writable = mirrored.view.writable

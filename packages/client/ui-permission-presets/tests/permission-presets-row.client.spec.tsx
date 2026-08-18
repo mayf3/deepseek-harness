@@ -73,7 +73,7 @@ describe('PermissionRow', () => {
       settings: {
         describe: () => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [view('read-only')] })),
         mutate,
-      } as never,
+      },
     })
     mount(controller)
     const button = await screen.findByRole('button', { name: 'Read Only' })
@@ -100,7 +100,7 @@ describe('PermissionRow', () => {
       settings: {
         describe: () => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [view('read-only')] })),
         mutate,
-      } as never,
+      },
     })
     mount(controller)
     fireEvent.click(await screen.findByRole('button', { name: 'Read Only' }))
@@ -124,7 +124,7 @@ describe('PermissionRow', () => {
       settings: {
         describe: () => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [] })),
         mutate: vi.fn(),
-      } as never,
+      },
     })
     const rendered = mount(absent)
     await waitFor(() => { expect(rendered.container.textContent).toBe('') })
@@ -134,7 +134,7 @@ describe('PermissionRow', () => {
       settings: {
         describe: () => Promise.resolve(ok({ writable: false, hasDocument: false, namespaces: [view('read-only')] })),
         mutate: vi.fn(),
-      } as never,
+      },
     })
     mount(readonly)
     expect((await screen.findByRole('button', { name: 'Read Only' })).hasAttribute('disabled')).toBe(true)
@@ -155,7 +155,7 @@ describe('PermissionRow', () => {
             error: { code: 'settings-conflict', message: 'changed elsewhere', details: {} },
           },
         }),
-      } as never,
+      },
     })
     mount(controller)
     expect((await screen.findByRole('button', { name: 'Loading' })).hasAttribute('disabled')).toBe(true)

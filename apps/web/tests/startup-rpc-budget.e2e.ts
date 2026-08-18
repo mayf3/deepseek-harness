@@ -35,7 +35,7 @@ afterAll(async () => {
 })
 
 describe('startup RPC budget', () => {
-  it('keeps cold-boot settings.describe within the mirror budget', async () => {
+  it('keeps cold-boot settings.describe at the mirror count', async () => {
     page = await newEnglishPage(browser)
     watchConsole(page)
     const calls: string[] = []
@@ -49,6 +49,6 @@ describe('startup RPC budget', () => {
     await page.getByRole('textbox', { name: 'Choose workspace' }).waitFor({ timeout: 30_000 })
     await page.waitForTimeout(3000)
     const describeCount = calls.filter(method => method === 'settings.describe').length
-    expect(describeCount, `startup /api calls:\n${calls.join('\n')}`).toBeLessThanOrEqual(DESCRIBE_BUDGET)
+    expect(describeCount, `startup /api calls:\n${calls.join('\n')}`).toBe(DESCRIBE_BUDGET)
   })
 })

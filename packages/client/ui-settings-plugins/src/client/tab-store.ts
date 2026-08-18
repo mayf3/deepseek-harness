@@ -49,7 +49,7 @@ export class ConfigurablePluginsTabController {
   private readonly unsubscribe: () => void
 
   /**
-   * @param describeFace - the shared mirror's read-only face; its refreshes
+   * @param describeFace - the shared mirror's describe face; its refreshes
    * (document commits, reconnects) are what keep the served set current.
    * @param entries - reads the cards currently registered into the section's slot.
    */

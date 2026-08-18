@@ -188,6 +188,28 @@ describe('SettingsScopeController', () => {
     expect(sibling.getSnapshot()).toMatchObject({ value: { preference: 'dark' }, revision: 5 })
   })
 
+  it('re-reads after a revisionless first write lands during the initial read', async () => {
+    const initial = deferred<ReturnType<typeof described>>()
+    const describeCall = vi.fn()
+      .mockReturnValueOnce(initial.promise)
+      .mockResolvedValueOnce(described({ preference: 'dark' }, 2))
+    const mutate = vi.fn().mockResolvedValueOnce(ok(view({ preference: 'dark' }, 2)))
+    const { mirror, scope } = derivedScope({ describe: describeCall, mutate })
+    const loading = mirror.load()
+    await Promise.resolve()
+
+    await scope.set('preference', 'dark')
+    initial.resolve(described({ preference: 'system' }, 1))
+    await loading
+
+    expect(mutate).toHaveBeenCalledWith({
+      ns: 'ui-test',
+      ops: [{ op: 'set', path: ['preference'], value: 'dark' }],
+    })
+    expect(describeCall).toHaveBeenCalledTimes(2)
+    expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'dark' }, revision: 2 })
+  })
+
   it('recovers the latest rejected or thrown write from Host state', async () => {
     const describeCall = vi.fn()
       .mockResolvedValueOnce(described({ preference: 'system' }, 2))

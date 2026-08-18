@@ -34,11 +34,16 @@ export function decodeWelcomeSection(section: unknown): WelcomeSection {
     : {}
 }
 
+/* v8 ignore next 3 -- closed-union default only defends future source widening */
+function assertNever(_value: never): never {
+  throw new Error('unexpected welcome settings status')
+}
+
 /** Coordinates durable Host acknowledgement or a process-local remote fallback. */
 export class WelcomeNoticeStore {
   /** uSES-safe state source shared by the registered welcome step. */
-  readonly store: SnapshotStore<WelcomeNoticeState> = createSnapshotStore({
-    status: 'idle' as const, acknowledged: false, error: null,
+  readonly store: SnapshotStore<WelcomeNoticeState> = createSnapshotStore<WelcomeNoticeState>({
+    status: 'idle', acknowledged: false, error: null,
   })
 
   private localAcknowledged = false
@@ -51,10 +56,14 @@ export class WelcomeNoticeStore {
    */
   constructor(private readonly scope: SettingsScope<WelcomeSection>) {}
 
-  /** Begin following the bound scope (idempotent) and publish its current answer. */
-  async load(): Promise<void> {
+  /**
+   * Begin following the bound scope (idempotent) and publish its current answer.
+   * @returns settlement after the current answer is published.
+   */
+  load(): Promise<void> {
     this.following ??= this.scope.subscribe(() => { this.derive() })
     this.derive()
+    return Promise.resolve()
   }
 
   /**
@@ -122,7 +131,10 @@ export class WelcomeNoticeStore {
           state.acknowledged = acknowledged
           state.error = null
         })
+        return
       }
+      /* v8 ignore next -- every current settings scope status is handled above */
+      default: return assertNever(scope.status)
     }
   }
 }

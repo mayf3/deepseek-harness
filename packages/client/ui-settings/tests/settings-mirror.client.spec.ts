@@ -33,17 +33,22 @@ function deferred<T>() {
 }
 
 describe('SettingsDescribeMirror', () => {
-  it('folds concurrent load calls into the in-flight read plus one rerun', async () => {
+  it('folds loads before the wire read into it, and mid-flight loads into one rerun', async () => {
     const gate = deferred<RpcResponse<SettingsDescribeView>>()
     const describeCall = vi.fn()
       .mockReturnValueOnce(gate.promise)
       .mockResolvedValue(described([view('theme', 1)]))
     const mirror = new SettingsDescribeMirror({ settings: { describe: describeCall } } as never)
     const first = mirror.load()
-    const second = mirror.load()
-    const third = mirror.load()
+    // Issued before the wire read goes out: covered by that read, no rerun.
+    const early = mirror.load()
+    await Promise.resolve()
+    expect(describeCall).toHaveBeenCalledTimes(1)
+    // Issued while the read is on the wire: exactly one rerun, however many.
+    const mid = mirror.load()
+    const midToo = mirror.load()
     gate.resolve(described([view('theme', 0)]))
-    await Promise.all([first, second, third])
+    await Promise.all([first, early, mid, midToo])
     expect(describeCall).toHaveBeenCalledTimes(2)
     expect(mirror.getSnapshot().status).toBe('ready')
     expect(mirror.namespace('theme')?.revision).toBe(1)
@@ -139,16 +144,73 @@ describe('SettingsDescribeMirror', () => {
     await vi.waitFor(() => { expect(describeCall).toHaveBeenCalledTimes(3) })
   })
 
-  it('suppresses a stale answer that lost to a newer generation', async () => {
+  it('starts no second run for a load issued inside the loading publish', async () => {
+    const gate = deferred<RpcResponse<SettingsDescribeView>>()
+    const describeCall = vi.fn().mockReturnValue(gate.promise)
+    const mirror = new SettingsDescribeMirror({ settings: { describe: describeCall } } as never)
+    let reentered = false
+    const unsubscribe = mirror.subscribe(() => {
+      if (reentered) return
+      reentered = true
+      void mirror.load()
+    })
+    const loading = mirror.load()
+    await Promise.resolve()
+    expect(describeCall).toHaveBeenCalledTimes(1)
+    gate.resolve(described([view('theme', 1)]))
+    await loading
+    unsubscribe()
+    // The reentrant load folded into the first run rather than racing it.
+    expect(describeCall).toHaveBeenCalledTimes(1)
+    expect(mirror.getSnapshot().status).toBe('ready')
+  })
+
+  it('lets the first read cover a write folded inside the loading publish', async () => {
+    const describeCall = vi.fn().mockResolvedValue(described([view('theme', 2)]))
+    const mirror = new SettingsDescribeMirror({ settings: { describe: describeCall } } as never)
+    const unsubscribe = mirror.subscribe(() => {
+      unsubscribe()
+      mirror.acceptView(view('theme', 2))
+    })
+
+    await mirror.load()
+
+    expect(describeCall).toHaveBeenCalledTimes(1)
+    expect(mirror.getSnapshot().status).toBe('ready')
+    expect(mirror.namespace('theme')?.revision).toBe(2)
+  })
+
+  it('re-reads after a folded write invalidates an in-flight document', async () => {
+    const slow = deferred<RpcResponse<SettingsDescribeView>>()
+    const describeCall = vi.fn()
+      .mockResolvedValueOnce(described([view('theme', 4), view('locale', 1)]))
+      .mockReturnValueOnce(slow.promise)
+      .mockResolvedValueOnce(described([view('theme', 5), view('locale', 2)]))
+    const mirror = new SettingsDescribeMirror({ settings: { describe: describeCall } } as never)
+    await mirror.load()
+    expect(describeCall).toHaveBeenCalledTimes(1)
+    const stale = mirror.load()
+    await Promise.resolve()
+    mirror.acceptView(view('theme', 5))
+    slow.resolve(described([view('theme', 4), view('locale', 2)]))
+    await stale
+    expect(describeCall).toHaveBeenCalledTimes(3)
+    expect(mirror.namespace('theme')?.revision).toBe(5)
+    expect(mirror.namespace('locale')?.revision).toBe(2)
+  })
+
+  it('re-reads after a pre-answer write invalidates the in-flight document', async () => {
     const slow = deferred<RpcResponse<SettingsDescribeView>>()
     const describeCall = vi.fn()
       .mockReturnValueOnce(slow.promise)
-      .mockResolvedValue(described([view('theme', 8)]))
+      .mockResolvedValueOnce(described([view('theme', 2)]))
     const mirror = new SettingsDescribeMirror({ settings: { describe: describeCall } } as never)
-    const first = mirror.load()
-    const second = mirror.load()
+    const loading = mirror.load()
+    await Promise.resolve()
+    mirror.acceptView(view('theme', 2))
     slow.resolve(described([view('theme', 1)]))
-    await Promise.all([first, second])
-    expect(mirror.namespace('theme')?.revision).toBe(8)
+    await loading
+    expect(describeCall).toHaveBeenCalledTimes(2)
+    expect(mirror.namespace('theme')?.revision).toBe(2)
   })
 })

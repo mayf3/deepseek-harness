@@ -125,8 +125,7 @@ describe('ModelsSettingsStore', () => {
 
   it('stringifies a non-Error credential transport rejection', async () => {
     const { face, mirror } = api({
-      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- the non-Error rejection is the scenario
-      describeCredentials: () => Promise.reject('credential transport refusal'),
+      describeCredentials: async () => { throw 'credential transport refusal' },
     })
     const store = new ModelsSettingsStore(face, settingsSchema, mirror)
     await expect(store.load()).resolves.toBeUndefined()
@@ -223,10 +222,42 @@ describe('edge joins', () => {
     expect(store.store.getSnapshot()).toMatchObject({ status: 'error', error: 'settings down' })
   })
 
+  it('reports a terminally unavailable settings mirror precisely', async () => {
+    const { face } = api()
+    const store = new ModelsSettingsStore(
+      face,
+      settingsSchema,
+      new SettingsDescribeMirror(face, 'memory'),
+    )
+    await store.load()
+    expect(store.store.getSnapshot()).toMatchObject({
+      status: 'error',
+      error: 'settings are unavailable in this browser',
+    })
+  })
+
+  it('reuses a held settings view after its refresh fails', async () => {
+    let settingsCall = 0
+    const { face, mirror } = api({
+      describeSettings: () => {
+        settingsCall += 1
+        return Promise.resolve(settingsCall === 1
+          ? ok({ writable: true, hasDocument: false, namespaces: NAMESPACES })
+          : fail('settings refresh down'))
+      },
+    })
+    const store = new ModelsSettingsStore(face, settingsSchema, mirror)
+    await store.load()
+    await mirror.load()
+    expect(mirror.getSnapshot().error).toBe('settings refresh down')
+    await store.load()
+    expect(store.store.getSnapshot()).toMatchObject({ status: 'ready', error: null })
+    expect(store.store.getSnapshot().rows).toHaveLength(4)
+  })
+
   it('stringifies a non-Error load failure', async () => {
     // The wire can surface non-Error throwables; the store must stringify them.
-    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- the non-Error rejection is the scenario
-    const { face, mirror } = api({ providers: () => Promise.reject('plain refusal') })
+    const { face, mirror } = api({ providers: async () => { throw 'plain refusal' } })
     const store = new ModelsSettingsStore(face, settingsSchema, mirror)
     await store.load()
     expect(store.store.getSnapshot()).toMatchObject({ status: 'error', error: 'plain refusal' })

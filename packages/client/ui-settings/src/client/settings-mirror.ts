@@ -2,7 +2,7 @@
  * Client mirror of the Host settings document: the one `settings.describe`
  * reader in the browser. Every settings consumer derives from this store —
  * per-namespace scopes through `SettingsScopeBinder.bind`, cross-namespace
- * surfaces through the binder's read-only describe face — so startup cost and
+ * surfaces through the binder's shared describe face — so startup cost and
  * freshness are properties of this class, not of how many features own a
  * preference. The Host stays the fact source: the mirror re-reads on the
  * invalidations its owning plugin subscribes to and folds write answers in
@@ -60,7 +60,7 @@ export interface SettingsDescribeFace {
   ensure(): Promise<void>
   /**
    * Fold one write answer's namespace view into the held view without a wire
-   * read.
+   * read, invalidating any older read still in flight.
    * @param view - the namespace view a settings write answered with.
    */
   acceptView(view: SettingsNamespaceView): void
@@ -117,7 +117,8 @@ export class SettingsDescribeMirror implements SettingsDescribeFace {
       this.rerun = true
       return this.inFlight
     }
-    const run = this.run()
+    // Own the slot before the loading publication can synchronously reenter load().
+    const run = Promise.resolve().then(() => this.run())
     this.inFlight = run
     return run
   }
@@ -137,12 +138,15 @@ export class SettingsDescribeMirror implements SettingsDescribeFace {
 
   /**
    * Fold one write answer's namespace view into the held view without a wire
-   * read. A no-op until a first answer exists — a write cannot precede the
-   * read that supplied its `expectedRevision`.
+   * read, and invalidate any read still in flight. With no held document, the
+   * answer is not published as a partial document; an in-flight read reruns so
+   * it cannot publish a document fetched before the write committed.
    * @param view - the namespace view a settings write answered with.
    */
   acceptView(view: SettingsNamespaceView): void {
     const before = this.store.getSnapshot()
+    this.generation += 1
+    if (this.inFlight !== undefined) this.rerun = true
     if (before.view === undefined) return
     const namespaces = before.view.namespaces.some(row => row.ns === view.ns)
       ? before.view.namespaces.map(row => row.ns === view.ns ? view : row)
@@ -166,10 +170,14 @@ export class SettingsDescribeMirror implements SettingsDescribeFace {
     // that gap would mark a rerun nobody reads, losing the read.
     try {
       do {
-        this.rerun = false
-        const generation = ++this.generation
         const before = this.store.getSnapshot()
         if (before.status === 'idle') this.store.set({ ...before, status: 'loading' })
+        // Cleared immediately before the wire read goes out: a load() marked
+        // earlier (including one reentering from the loading publish above)
+        // is covered by this very read, while one landing after needs the
+        // rerun.
+        this.rerun = false
+        const generation = ++this.generation
         let outcome: { view: SettingsDescribeView } | { failure: string }
         try {
           const response = await this.api.settings.describe({})
@@ -179,6 +187,7 @@ export class SettingsDescribeMirror implements SettingsDescribeFace {
         } catch (error) {
           outcome = { failure: error instanceof Error ? error.message : String(error) }
         }
+        // A write answer invalidates a document read before that write committed.
         if (generation !== this.generation) continue
         if ('view' in outcome) {
           this.store.set({ status: 'ready', view: outcome.view, error: null })
@@ -192,9 +201,13 @@ export class SettingsDescribeMirror implements SettingsDescribeFace {
             error: outcome.failure,
           })
         }
-      } while (this.rerun)
+      } while (this.shouldRerun())
     } finally {
       this.inFlight = undefined
     }
+  }
+
+  private shouldRerun(): boolean {
+    return this.rerun
   }
 }
