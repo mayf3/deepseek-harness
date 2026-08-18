@@ -42,9 +42,9 @@
 
 import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { closeHandleChecked, Win32Error } from '@deepseek-ai/dsh-win32-process'
 
 import { grantWrite, revokeWrite } from './acl.ts'
-import { Win32Error } from './errors.ts'
 import { allocPtrSlot, decodePtr, isNullPtr, throwLastError, win32 } from './ffi.ts'
 import type { NativePtr, Win32Bindings } from './ffi.ts'
 import { assertPrivateTempDisjoint } from './path-boundary.ts'
@@ -52,11 +52,9 @@ import { drainPipe, spawnSandboxed, spawnSandboxedInherited, waitForExit } from 
 import { createRestrictedToken, findLogonSid, makeWellKnownSid, openCurrentProcessToken, setTokenDefaultDaclGrant } from './token.ts'
 import * as abi from './win32-abi.ts'
 
-export { quoteArg } from './spawn.ts'
 export { AclWriteGrant } from './grant.ts'
 export { assertTempRootOutsideWorkspace } from './path-boundary.ts'
 export { tempWriteSid, workspaceWriteSid } from './workspace-sid.ts'
-export { Win32Error } from './errors.ts'
 
 /** Construction options: the workspace/temp allowlists and their distinct SID identities. */
 export interface AclSandboxOptions {
@@ -357,15 +355,27 @@ export class AclSandbox {
 
     if (options.stdio === 'inherit') {
       const native = spawnSandboxedInherited(api, token, { command: options.command, args, cwd })
-      let exitCodePromise: Promise<number> | undefined
+      let settlement: Promise<AclSandboxChildResult> | undefined
       return {
         pid: native.pid,
-        wait: async () => {
-          exitCodePromise ??= Promise.resolve(waitForExit(api, native.process))
-          const exitCode = await exitCodePromise
-          if (api.closeHandle(native.job) === 0) throwLastError(api, 'CloseHandle', 'kill-on-close job')
+        // oxlint-disable-next-line typescript/require-await -- Memoize one promise over synchronous native wait and cleanup.
+        wait: () => (settlement ??= (async () => {
+          const failures: unknown[] = []
+          let exitCode = 0
+          try {
+            exitCode = waitForExit(api, native.process)
+          } catch (error) {
+            failures.push(error)
+          }
+          try {
+            closeHandleChecked(api, native.job, 'kill-on-close job')
+          } catch (error) {
+            failures.push(error)
+          }
+          if (failures.length === 1) throw failures[0]
+          if (failures.length > 1) throw new AggregateError(failures, 'inherited child settlement failed')
           return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), exitCode }
-        },
+        })()),
       }
     }
 
@@ -376,15 +386,27 @@ export class AclSandbox {
     // the thread and would starve the drains while the child is still running
     // (pipe-buffer deadlock). The drains resolve only after the child closed
     // its pipe ends — by then the wait returns immediately.
-    let exitCodePromise: Promise<number> | undefined
+    let settlement: Promise<AclSandboxChildResult> | undefined
     return {
       pid: native.pid,
-      wait: async () => {
-        const stdoutBuffer = await stdout
-        const stderrBuffer = await stderr
-        exitCodePromise ??= Promise.resolve(waitForExit(api, native.process))
-        return { stdout: stdoutBuffer, stderr: stderrBuffer, exitCode: await exitCodePromise }
-      },
+      wait: () => (settlement ??= (async () => {
+        const drains = await Promise.allSettled([stdout, stderr])
+        const failures = drains.flatMap<unknown>(outcome =>
+          outcome.status === 'rejected' ? [outcome.reason as unknown] : [])
+        let exitCode = 0
+        try {
+          exitCode = waitForExit(api, native.process)
+        } catch (error) {
+          failures.push(error)
+        }
+        if (failures.length === 1) throw failures[0]
+        if (failures.length > 1) throw new AggregateError(failures, 'piped child settlement failed')
+        return {
+          stdout: (drains[0] as PromiseFulfilledResult<Buffer>).value,
+          stderr: (drains[1] as PromiseFulfilledResult<Buffer>).value,
+          exitCode,
+        }
+      })()),
     }
   }
 

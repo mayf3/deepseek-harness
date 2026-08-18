@@ -1,18 +1,17 @@
 /**
- * FFI helper tests with stub binding tables (the failure-paths.spec.ts
- * pattern): error formatting and temp-path decoding defenses, the
+ * Sandbox-specific FFI tests with stub binding tables: temp-path decoding,
  * last-error throwers' detail fallback, pointer decode NULL handling, and
  * the bounded SID comparison's early exits. Pure stubs — no real Win32
  * calls, so these run on every platform; the real-FFI round-trip lives in
  * acl.spec.ts and probe.spec.ts (win32 only).
  */
 
+import { Win32Error } from '@deepseek-ai/dsh-win32-process'
 import { describe, expect, it, vi } from 'vitest'
 import koffi from 'koffi'
 
-import { Win32Error } from '../src/errors.ts'
 import {
-  allocBytes, decodePtr, decodePtrAt, errorText, getTempPath,
+  allocBytes, decodePtr, decodePtrAt, getTempPath,
   isInvalidHandle, isNullPtr, sameSidAt, throwLastError, throwWin32,
 } from '../src/ffi.ts'
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
@@ -48,18 +47,6 @@ function craftSid(revision: number, count: number, authority: number[] = [0, 0, 
   return sid
 }
 
-describe('errorText', () => {
-  it('decodes the formatted UTF-16 message and trims it', () => {
-    const { api } = formatApi()
-    expect(errorText(api, 5)).toBe('access denied')
-  })
-
-  it('returns an empty string when FormatMessageW formats nothing', () => {
-    const api = { formatMessageW: vi.fn(() => 0) } as unknown as Win32Bindings
-    expect(errorText(api, 5)).toBe('')
-  })
-})
-
 describe('getTempPath', () => {
   it('decodes the NUL-terminated temp path GetTempPathW wrote', () => {
     const api = {
@@ -82,6 +69,11 @@ describe('getTempPath', () => {
     }
     expect(caught).toBeInstanceOf(Win32Error)
     expect((caught as Win32Error).api).toBe('GetTempPathW')
+  })
+
+  it('rejects a required length larger than the fixed buffer', () => {
+    const api = { getTempPathW: vi.fn(() => 300) } as unknown as Win32Bindings
+    expect(() => getTempPath(api)).toThrow(/GetTempPathW failed \(Win32 122\): required 300/u)
   })
 })
 

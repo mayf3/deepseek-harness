@@ -11,12 +11,13 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { Win32Error } from '@deepseek-ai/dsh-win32-process'
+import { ERROR_BROKEN_PIPE } from '@deepseek-ai/dsh-win32-process/src/abi.ts'
+import { PROCESS_INFORMATION } from '@deepseek-ai/dsh-win32-process/src/ffi.ts'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import koffi from 'koffi'
 
-import { PROCESS_INFORMATION } from '../src/ffi.ts'
 import type { NativePtr, Win32Bindings } from '../src/ffi.ts'
-import { Win32Error } from '../src/errors.ts'
 import { AclSandbox } from '../src/index.ts'
 import * as abi from '../src/win32-abi.ts'
 
@@ -149,7 +150,7 @@ function happyStubs(): HappyStubs {
   const getStdHandle = vi.fn(() => fresh())
   const localFree = vi.fn(() => 0n)
   const closeHandle = vi.fn(() => 1)
-  const getLastError = vi.fn(() => abi.ERROR_BROKEN_PIPE) // the drains' clean EOF
+  const getLastError = vi.fn(() => ERROR_BROKEN_PIPE) // the drains' clean EOF
   const formatMessageW = vi.fn(() => 0)
 
   const api = {
@@ -393,6 +394,65 @@ describe('AclSandbox spawn', () => {
     const child = sandbox.spawn({ command: 'probe.exe', stdio: 'inherit' })
     jobHandle = createJobObjectW.mock.results.at(-1)?.value as NativePtr
     await expect(child.wait()).rejects.toMatchObject({ api: 'CloseHandle' })
+  })
+
+  it('inherit spawn caches one failing settlement and closes the Job once', async () => {
+    const { api, closeHandle, createJobObjectW } = state.stubs as HappyStubs
+    api.waitForSingleObject = vi.fn(() => 0xFFFFFFFF)
+    const workspace = scratch()
+    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-1', mode: 'workspace-write' })
+    await sandbox.init()
+    const child = sandbox.spawn({ command: 'probe.exe', stdio: 'inherit' })
+    const jobHandle = createJobObjectW.mock.results.at(-1)?.value as NativePtr
+    await expect(child.wait()).rejects.toMatchObject({ api: 'WaitForSingleObject' })
+    await expect(child.wait()).rejects.toMatchObject({ api: 'WaitForSingleObject' })
+    expect(closeHandle.mock.calls.filter(([handle]) => handle === jobHandle)).toHaveLength(1)
+  })
+
+  it('inherit spawn aggregates wait and Job-close failures', async () => {
+    const { api, closeHandle, createJobObjectW } = state.stubs as HappyStubs
+    api.waitForSingleObject = vi.fn(() => 0xFFFFFFFF)
+    const workspace = scratch()
+    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-1-1', mode: 'workspace-write' })
+    await sandbox.init()
+    let jobHandle = 0n
+    closeHandle.mockImplementation((handle: NativePtr) => (handle === jobHandle ? 0 : 1))
+    const child = sandbox.spawn({ command: 'probe.exe', stdio: 'inherit' })
+    jobHandle = createJobObjectW.mock.results.at(-1)?.value as NativePtr
+    await expect(child.wait()).rejects.toMatchObject({
+      errors: [
+        expect.objectContaining({ api: 'WaitForSingleObject' }),
+        expect.objectContaining({ api: 'CloseHandle' }),
+      ],
+    })
+  })
+
+  it('pipe spawn reports a wait failure after successful drains', async () => {
+    const { api } = state.stubs as HappyStubs
+    api.waitForSingleObject = vi.fn(() => 0xFFFFFFFF)
+    const workspace = scratch()
+    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-1-2', mode: 'workspace-write' })
+    await sandbox.init()
+    const child = sandbox.spawn({ command: 'probe.exe' })
+    await expect(child.wait()).rejects.toMatchObject({ api: 'WaitForSingleObject' })
+  })
+
+  it('pipe spawn still closes the process after a drain failure', async () => {
+    const { api } = state.stubs as HappyStubs
+    api.getLastError = vi.fn(() => 5)
+    const waitForSingleObject = vi.fn(() => 0)
+    api.waitForSingleObject = waitForSingleObject
+    const workspace = scratch()
+    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-2', mode: 'workspace-write' })
+    await sandbox.init()
+    const child = sandbox.spawn({ command: 'probe.exe' })
+    await expect(child.wait()).rejects.toMatchObject({
+      errors: [
+        expect.objectContaining({ api: 'PeekNamedPipe' }),
+        expect.objectContaining({ api: 'PeekNamedPipe' }),
+      ],
+    })
+    expect(waitForSingleObject).toHaveBeenCalledOnce()
   })
 })
 
