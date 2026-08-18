@@ -1,5 +1,5 @@
-# Test-only composition of Codex plus two named Claude instances and their tools.
-# The owning e2e boots this tree but never invokes a model or product process.
+# Test-only composition of Codex, the Bundle-supplied default Claude provider,
+# and two named Claude instances. It never invokes a model or product process.
 - id: fixture
   name: './fixture.ts'
 
@@ -27,6 +27,14 @@
   config:
     provider: codex
     toolName: subagent_codex
+    backgroundMode: one-shot
+    maxDepth: 'provider-managed'
+
+- id: tool-subagent-claude-code
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: claude-code
+    toolName: subagent_claude_code
     backgroundMode: one-shot
     maxDepth: 'provider-managed'
 
