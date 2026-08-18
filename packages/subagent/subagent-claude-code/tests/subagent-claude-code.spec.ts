@@ -1396,7 +1396,7 @@ describe('run publication, cancellation, and settlement', () => {
     queryMock.mockImplementationOnce(({ options }) => {
       factoryController = options.abortController
       options.spawnClaudeCodeProcess!(sdkSpawnOptions())
-      spawned.settle({ exitCode: 17, signal: 'SIGABRT' })
+      spawned.settle({ exitCode: 17, signal: null })
       throw new Error('query construction failed')
     })
     const factoryFailure = startClaudeCodeRun(request(), {
@@ -1409,7 +1409,7 @@ describe('run publication, cancellation, and settlement', () => {
     await expect(factoryFailure).rejects.toThrow(expectedFailureDiagnostic(
       'query-start',
       'unknown',
-      { exitCode: 17, signal: 'SIGABRT' },
+      { exitCode: 17, signal: null },
     ))
     await expect(factoryFailure).rejects.not.toThrow('query construction failed')
     expect(spawnSpecs).toHaveLength(1)

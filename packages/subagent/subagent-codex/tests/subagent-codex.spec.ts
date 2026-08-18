@@ -1708,7 +1708,7 @@ describe('run lifecycle and quiescence', () => {
         codexErrorInfo: 'other',
       }))
       child.fromChild.end()
-      child.settle({ exitCode: 17, signal: 'SIGABRT' })
+      child.settle({ exitCode: 17, signal: null })
       await expect(run.result).resolves.toEqual({
         output: [],
         diagnostic: expectedFailureDiagnostic('turn', 'other'),
@@ -1725,7 +1725,7 @@ describe('run lifecycle and quiescence', () => {
         turnCompleted('completed'),
       )
       child.fromChild.end()
-      child.settle({ exitCode: 17, signal: 'SIGABRT' })
+      child.settle({ exitCode: 17, signal: null })
       await expect(run.result).resolves.toEqual({
         output: [{ type: 'text', text: 'answer' }],
         stopReason: 'completed',
@@ -1967,11 +1967,11 @@ describe('run lifecycle and quiescence', () => {
     })
     await exitedThreadChild.peer.nextMethod('initialized')
     await exitedThreadChild.peer.nextMethod('thread/start')
-    exitedThreadChild.settle({ exitCode: 17, signal: 'SIGABRT' })
+    exitedThreadChild.settle({ exitCode: null, signal: 'SIGABRT' })
     await expect(exitedThreadStarting).rejects.toThrow(expectedFailureDiagnostic(
       'thread-start',
       'unknown',
-      { outcome: { exitCode: 17, signal: 'SIGABRT' } },
+      { outcome: { exitCode: null, signal: 'SIGABRT' } },
     ))
 
     const stderrChild = fakeChild()
