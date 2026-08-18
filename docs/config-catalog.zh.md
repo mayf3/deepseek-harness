@@ -1637,7 +1637,7 @@ export interface Config {
 export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 ```
 
-来源：[`packages/session/session-persistence-sqlite/src/index.ts:93`](../packages/session/session-persistence-sqlite/src/index.ts)
+来源：[`packages/session/session-persistence-sqlite/src/index.ts:79`](../packages/session/session-persistence-sqlite/src/index.ts)
 
 <a id="deepseek-aidsh-session-projection-cache"></a>
 
