@@ -1,4 +1,4 @@
-/** Opt-in synthetic benchmark for packed session-history transport and folding. */
+/** Opt-in synthetic benchmark for packed session-history transport and exact replay. */
 
 import { createHash } from 'node:crypto'
 import { performance } from 'node:perf_hooks'
@@ -40,6 +40,8 @@ interface HeapPeaks<T> {
 
 interface FoldState {
   readonly blocks: readonly string[]
+  readonly deltaCount: number
+  readonly lastDeltaSeq?: number
   readonly firstTokenTime?: number
   readonly firstVisibleSeq?: number
   readonly firstVisibleTime?: number
@@ -176,7 +178,7 @@ function foldDefinition(kind: string, target: string): ConversationNodeDefinitio
       }
       return null
     },
-    start: () => ({ blocks: [] }),
+    start: () => ({ blocks: [], deltaCount: 0 }),
     update: (context, match) => {
       if (match.event.type !== 'assistant/chunk' || match.event.data.chunk.type !== 'reasoning-delta') {
         return context.state
@@ -188,6 +190,8 @@ function foldDefinition(kind: string, target: string): ConversationNodeDefinitio
       return {
         ...context.state,
         blocks,
+        deltaCount: context.state.deltaCount + 1,
+        lastDeltaSeq: match.event.seq,
         ...context.state.firstTokenTime === undefined ? { firstTokenTime: match.event.time } : {},
         ...visible && context.state.firstVisibleSeq === undefined
           ? { firstVisibleSeq: match.event.seq, firstVisibleTime: match.event.time }
@@ -242,7 +246,7 @@ function digest(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
-it('reports packed history transport and compact fold costs', () => {
+it('reports packed history transport and exact replay costs', () => {
   const fixture = timed(buildEvents)
 
   assemble(conversationInputs(fixture.value.slice(0, 1_000).map(event => ({ event }))))
@@ -332,7 +336,7 @@ it('reports packed history transport and compact fold costs', () => {
   expect(fixture.value.filter(event => event.type !== 'assistant/chunk')).toHaveLength(ORDINARY_EVENTS)
   expect(packedRows).toHaveLength(DELTA_RUNS)
   expect(packed.value).toHaveLength(696)
-  expect(packedPreparation.value).toHaveLength(696)
+  expect(packedPreparation.value).toHaveLength(LOGICAL_EVENTS)
   expect(digest(packedFold.value)).toBe(digest(rawFold.value))
   expect(packedClientHeap.value).toBe(rawClientHeap.value)
   expect(rawHostHeap.value).toBe(rawBytes)
@@ -351,7 +355,7 @@ it('reports packed history transport and compact fold costs', () => {
       deltaEvents: DELTA_EVENTS,
       deltaRuns: packedRows.length,
       packedRecords: packed.value.length,
-      compactFoldInputs: packedPreparation.value.length,
+      decodedEvents: packedPreparation.value.length,
     },
     bytes: {
       rawJson: rawBytes,
@@ -406,3 +410,44 @@ it('reports packed history transport and compact fold costs', () => {
     },
   })}\n`)
 }, 600_000)
+
+it('reports exact decoding cost for long whitespace-prefix runs', () => {
+  historyEntries([{
+    chunks: {
+      type: 'reasoning-chunks',
+      seq0: 0,
+      time0: TIME_ZERO,
+      data: { turn: 1, step: 1, index: 0, dt: [], texts: ['x'] },
+    },
+  }])
+  const results = [10_000, 20_000, 40_000].map((members) => {
+    const record: HistoryRecord = {
+      chunks: {
+        type: 'reasoning-chunks',
+        seq0: 0,
+        time0: TIME_ZERO,
+        data: {
+          turn: 1,
+          step: 1,
+          index: 0,
+          dt: Array.from({ length: members - 1 }, () => 1),
+          texts: Array.from({ length: members }, (_, index) => index === members - 1 ? 'x' : ' '),
+        },
+      },
+    }
+    const decoded = historyEntries([record])
+    const samplesMs = Array.from({ length: 5 }, () => timed(() => historyEntries([record])).ms)
+    expect(decoded).toHaveLength(members)
+    expect(decoded.at(-1)?.event).toMatchObject({
+      seq: members - 1,
+      time: TIME_ZERO + members - 1,
+      data: { chunk: { type: 'reasoning-delta', text: 'x' } },
+    })
+    return {
+      members,
+      medianMs: rounded(median(samplesMs)),
+      samplesMs: samplesMs.map(rounded),
+    }
+  })
+  process.stdout.write(`HISTORY_WHITESPACE_PREFIX_PERF_RESULT ${JSON.stringify(results)}\n`)
+})
