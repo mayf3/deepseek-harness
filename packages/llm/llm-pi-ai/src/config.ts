@@ -38,12 +38,12 @@ export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
  * Default request-level bound on base64-encoded image payload. Every image in
  * history is re-encoded into every request body, so an unbounded conversation
  * eventually exceeds a provider or gateway request-size cap and the session
- * can never complete another request. 24MiB of base64 stays under the
- * smallest documented provider request-body cap (30MiB) with headroom for
- * text and JSON structure; deployments behind stricter gateways lower it per
- * route.
+ * can never complete another request. The 20MiB default admits four images at
+ * the attachment store's 3.5MiB raw-image default after base64 expansion and
+ * reserves request capacity for system prompts, history, tools, and JSON.
+ * Deployments behind stricter gateways lower it per route.
  */
-export const DEFAULT_MAX_REQUEST_IMAGE_BYTES = 24 * 1024 * 1024
+export const DEFAULT_MAX_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
 
 /** Context capacity assumed for a model neither configuration nor the catalog sizes. */
 export const DEFAULT_CONTEXT_WINDOW = 262_144
