@@ -399,7 +399,13 @@ describe('PythonCodeRuntime — process identity', () => {
       expect(own).toBeDefined()
       expect(readProcessStart(process.pid)).toBe(own)
       // Pid 0 is never a readable /proc entry, so the guard degrades to
-      // undefined rather than throwing on a teardown path.
+      // undefined rather than throwing on a teardown path. This is also the
+      // reading a REAPED leader produces -- its /proc entry is gone while the
+      // group it led can still hold survivors -- so `undefined` must NOT be
+      // treated as an identity mismatch. Reading it as one refused the SIGKILL
+      // that the same-group survivor tests depend on, which is why they went red
+      // on Linux while passing on Darwin (where the reader always returns
+      // undefined and the guard is inert).
       expect(readProcessStart(0)).toBeUndefined()
     } else {
       // Darwin has no /proc: the reader reports undefined, and `killGroup` then

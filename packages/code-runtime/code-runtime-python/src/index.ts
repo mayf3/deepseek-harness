@@ -1416,9 +1416,18 @@ export class PythonCodeRuntime extends CodeRuntime {
           if (child.pid === undefined) return
           // A pid alone cannot answer this: `process.kill(pid, 0)` succeeds just
           // as well for a REPLACEMENT process holding the recycled number. Only
-          // the start time distinguishes the two, so a reading that no longer
-          // matches means the group is not this run's and must not be signalled.
-          if (leaderStarted !== undefined && readProcessStart(child.pid) !== leaderStarted) return
+          // the start time distinguishes the two, so a reading that DISAGREES
+          // means the number now belongs to another process and must not be
+          // signalled.
+          //
+          // An ABSENT reading is the ordinary case, not a mismatch: once the
+          // leader is reaped its `/proc/<pid>/stat` is gone, while the group it
+          // led can still hold survivors that this teardown exists to reap. So
+          // only a present-and-different reading blocks the signal; undefined
+          // falls through, which is also the behavior on platforms with no
+          // `/proc` to read.
+          const nowStarted = readProcessStart(child.pid)
+          if (leaderStarted !== undefined && nowStarted !== undefined && nowStarted !== leaderStarted) return
           process.kill(-child.pid, sig)
         } catch {
           // ESRCH — the process already died. Nothing to do.
