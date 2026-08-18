@@ -984,7 +984,7 @@ describe('ChatView', () => {
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: '无法打开文件' })).toBeTruthy()
     })
-    expect(screen.getByRole('alert').textContent).toBe('xdg-open is not available')
+    expect(screen.getByRole('dialog', { name: '无法打开文件' }).textContent).toContain('xdg-open is not available')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重试' })) })
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).toBeNull()
@@ -1002,7 +1002,7 @@ describe('ChatView', () => {
     render(<h.ChatView {...h.props} />)
     await act(async () => { h.toolOwners[0]!.openFile('notes.md') })
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toBe('permission denied')
+      expect(screen.getByRole('dialog', { name: '无法打开文件' }).textContent).toContain('permission denied')
     })
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -1017,7 +1017,7 @@ describe('ChatView', () => {
     render(<h.ChatView {...h.props} />)
     await act(async () => { h.toolOwners[0]!.openFile('empty.ts') })
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toBe('无法打开此文件')
+      expect(screen.getByRole('dialog', { name: '无法打开文件' }).textContent).toContain('无法打开此文件')
     })
   })
 
@@ -1033,7 +1033,7 @@ describe('ChatView', () => {
     render(<h.ChatView {...h.props} />)
     await act(async () => { h.toolOwners[0]!.openFile('src/a.ts') })
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toBe('first refusal')
+      expect(screen.getByRole('dialog', { name: '无法打开文件' }).textContent).toContain('first refusal')
     })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重试' })) })
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
@@ -1054,7 +1054,7 @@ describe('ChatView', () => {
     render(<h.ChatView {...h.props} />)
     await act(async () => { h.toolOwners[0]!.openFile('src/a.ts') })
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toBe('first refusal')
+      expect(screen.getByRole('dialog', { name: '无法打开文件' }).textContent).toContain('first refusal')
     })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重试' })) })
     fireEvent.click(screen.getByRole('button', { name: '取消' }))

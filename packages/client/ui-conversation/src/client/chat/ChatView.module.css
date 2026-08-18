@@ -195,10 +195,3 @@
 .modalAction {
   min-width: 72px;
 }
-
-.modalError {
-  margin-top: 8px;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-state-error-primary);
-}
