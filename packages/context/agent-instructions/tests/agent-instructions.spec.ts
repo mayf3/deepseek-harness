@@ -1,5 +1,5 @@
 import { chmod, mkdtemp, mkdir, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -80,7 +80,8 @@ class RecordingFileSystem extends FileSystem {
   override fileUrl(target: FsTarget): string { return `file://${target.targetKey}` }
 
   override contains(parent: FsTarget, child: FsTarget): boolean {
-    return child.targetKey === parent.targetKey || String(child.targetKey).startsWith(`${parent.targetKey}/`)
+    const descendant = relative(String(parent.targetKey), String(child.targetKey))
+    return descendant === '' || (!descendant.startsWith('..') && !isAbsolute(descendant))
   }
 
   override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {

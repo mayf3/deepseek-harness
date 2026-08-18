@@ -186,7 +186,7 @@ export default defineConfig({
         'packages/client/ui-primitives/src/RiskConfirmation.tsx',
         'packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx',
         'packages/client/ui-workspace/src/client/WorkspacePicker.tsx',
-        'packages/client/web-react/src/*',
+        'packages/client/ui-renderer/src/client/*',
         // This isolated settings-scope lifecycle has complete unit coverage;
         // keep it out of the broader client-runtime GUI debt exemption.
         'packages/client/runtime/src/**/!(settings-scope).ts',
