@@ -9,7 +9,7 @@ kind: "package-reference"
 
 [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.zh.md) seam 的 CPython 子进程实现。与 [`@deepseek-ai/dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.zh.md) 配套；以全新的 `python3` 子进程取代 Node worker 线程，让模型代码从 TypeScript 换成 Python。
 
-本包以默认导出提供 `PythonCodeRuntime`。该插件以 `language: 'python'`、`isolation: 'process'` 注册为 `codeRuntime`。每次 `run()` 启动一个全新的 `python3 -I` 进程，通过 fd 3 发送 boot 帧和程序，并为每个程序结果 resolve 一个 `CodeRunResult`——仅在 seam 被误用时才 reject（binding 命名空间不合法或 config 非正）。子进程把程序作为 async 函数体运行，因此顶层 `await` 与 `return` 都可用；binding 调用经 fd 3 以 JSON-lines 回传。containment 不是安全边界——模型代码具有等同 bash 的信任级别；空环境、`RLIMIT_CPU`／`RLIMIT_AS`、墙钟上限与对子进程进程组的 `SIGTERM`→grace→`SIGKILL` 拆卸共同提供 containment。
+本包持有该 seam 的 wire protocol：host 侧的帧编解码，以及 Python 侧对同一套消息词汇的镜像。在该协议之上，本包交付 `PythonCodeRuntime`（插件的默认导出），它以 `language: 'python'`、`isolation: 'process'` 注册为 `codeRuntime`。每次 `run()` 启动一个全新的 `python3 -I` 进程，通过 fd 3 发送 boot 帧和程序，并为每个程序结果 resolve 一个 `CodeRunResult`——`run()` 仅在 seam 被误用时才 reject，例如 binding 命名空间不合法。配置错误在更早的插件加载期被拒绝：非 Unix 平台、非正或非整数的预算、会被 `setTimeout` 截断的定时器值、超过单个 fd-3 帧承载能力的预算，以及最坏峰值会突破 `RLIMIT_AS` 的 `addressSpaceMb`／输出预算组合，都从构造器抛出，因此配置错误在装配时就失败，而不是等到之后某次运行。子进程把程序作为 async 函数体运行，因此顶层 `await` 与 `return` 都可用；binding 调用经 fd 3 以 JSON-lines 回传。containment 不是安全边界——模型代码具有等同 bash 的信任级别；空环境、`RLIMIT_CPU`／`RLIMIT_AS`、墙钟上限与对子进程进程组的 `SIGTERM`→grace→`SIGKILL` 拆卸共同提供 containment。
 
 ## Wire protocol
 
@@ -26,11 +26,11 @@ host 与 CPython 子进程在子进程的 fd 3 上交换一个无版本号的 JS
 
 ## Model Experience
 
-Indirectly, through Code Mode in [`dsh-tools`](../../core/tools/README.md), which renders this backend's exact completion value when it fits (or an explicit `invalid-output` / `output-limit` failure), plus the exact `[dsh-code-runtime-python] log capture truncated at <maxLogBytes> bytes` log marker, into a retained `run_code` result.
+间接触达：经由 [`dsh-tools`](../../core/tools/README.md) 中的 Code Mode——它把本后端精确的完成值（在放得下时）或一个明确的 `invalid-output` ／ `output-limit` 失败，连同精确的 `[dsh-code-runtime-python] log capture truncated at <maxLogBytes> bytes` 日志标记，一并渲染进一条被保留的 `run_code` 结果。
 
 #### KV Cache effect
 
-No direct invalidation; the named consumer owns any request-prefix changes.
+不直接造成失效；任何对请求前缀的改动由上述具名 Consumer 负责。
 
 ## Known Limitations and Deferred Work
 
