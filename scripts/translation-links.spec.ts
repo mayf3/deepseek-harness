@@ -96,12 +96,12 @@ describe('translation link locale validation', () => {
     })
   })
 
-  it('retains an English directory-index alias', () => {
+  it('does not infer an index page from a directory target', () => {
     const root = fixture()
-    expect(translationLinkLocaleViolations(
-      '[Section](section/)\n',
-      linkContext(root, 'docs/guide.md'),
-    )).toEqual([])
+    const input = '[Section](section/)\n'
+    expect(translationLinkLocaleViolations(input, linkContext(root, 'docs/guide.zh.md'))).toEqual([])
+    expect(rewriteTranslationLinkLocales(input, linkContext(root, 'docs/guide.zh.md')))
+      .toEqual({ content: input, rewritten: 0 })
   })
 
   it('exempts the language switcher target explicitly', () => {
@@ -131,21 +131,6 @@ describe('translation link locale validation', () => {
       linkContext(root, 'docs/guide.zh.md'),
       ['guide.md'],
     ).content).toBe('# 指南\n\n[English](guide.md) | 中文\n\n[正文](guide.zh.md)\n')
-  })
-
-  it('resolves a directory alias to its paired index page', () => {
-    const root = fixture()
-    expect(translationLinkLocaleViolations(
-      '[章节](section/)\n',
-      linkContext(root, 'docs/guide.zh.md'),
-    )[0]).toMatchObject({ expectedUrl: 'section/index.zh.md' })
-    expect(normalizeTranslationMarkdownLinks(
-      '[Section](section/)\n',
-      linkContext(root, 'docs/guide.md'),
-    )).toBe(normalizeTranslationMarkdownLinks(
-      '[Section](section/index.zh.md)\n',
-      linkContext(root, 'docs/guide.zh.md'),
-    ))
   })
 
   it('uses the selected content plane for target existence without deriving scope from siblings', () => {

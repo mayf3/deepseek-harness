@@ -22,7 +22,7 @@ Existing active bilingual sources use the locale-correct target. A Chinese targe
 
 ## Verification
 
-Pairing tests cover English and Chinese locale selection, out-of-scope targets with siblings, in-scope targets missing a counterpart, switcher exclusion, exact query/fragment retention, directory-index resolution, definitions, rewrites, and diagnostics. Documentation-site tests also pin the audited basic, framework, and practice entry links to explicit index pages in both locales. Merge-driver, translation-brief, and Cordis generator tests cover their respective consumers. Corpus checks require zero wrong-locale links, resolvable fragments, fresh generated regions, current pair records, and a successful documentation-site build.
+Pairing tests cover English and Chinese locale selection, out-of-scope targets with siblings, in-scope targets missing a counterpart, switcher exclusion, exact query/fragment retention, non-inference of directory targets, definitions, rewrites, and diagnostics. Documentation-site tests also pin the audited basic, framework, and practice entry links to explicit index pages in both locales. Merge-driver, translation-brief, and Cordis generator tests cover their respective consumers. Corpus checks require zero wrong-locale links, resolvable fragments, fresh generated regions, current pair records, and a successful documentation-site build.
 
 ## Alternatives considered
 

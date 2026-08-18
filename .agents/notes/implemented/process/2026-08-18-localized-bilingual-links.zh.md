@@ -22,7 +22,7 @@ Cordis subsystem 区块生成器先渲染同一个 catalog model，再为中文�
 
 ## Verification
 
-配对测试覆盖中英文 locale 选择、存在兄弟文件的范围外目标、范围内缺少对侧的目标、语言切换行排除、query/fragment 原样保留、目录索引解析、定义式链接、重写与诊断。文档网站测试还会固定中英文两侧已审计的 basic、framework 与 practice 入口，要求它们指向具体索引页。合并驱动、翻译简报与 Cordis 生成器测试分别覆盖各自消费路径。全语料检查要求 locale 错误链接为零、fragment 可解析、生成区块新鲜、配对记录为当前内容，并要求文档网站成功构建。
+配对测试覆盖中英文 locale 选择、存在兄弟文件的范围外目标、范围内缺少对侧的目标、语言切换行排除、query/fragment 原样保留、不从目录目标推断索引页、定义式链接、重写与诊断。文档网站测试还会固定中英文两侧已审计的 basic、framework 与 practice 入口，要求它们指向具体索引页。合并驱动、翻译简报与 Cordis 生成器测试分别覆盖各自消费路径。全语料检查要求 locale 错误链接为零、fragment 可解析、生成区块新鲜、配对记录为当前内容，并要求文档网站成功构建。
 
 ## Alternatives considered
 

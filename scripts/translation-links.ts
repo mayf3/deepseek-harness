@@ -49,7 +49,6 @@ interface ResolvedTranslationLink {
   suffix: string
   expectedPath: string
   expectedUrl: string
-  kind: ResolutionKind
   locale: 'en' | 'zh'
 }
 
@@ -60,7 +59,6 @@ interface Replacement {
 }
 
 type LinkNode = Extract<Nodes, { type: 'link' | 'definition' }>
-type ResolutionKind = 'exact' | 'directory-index'
 
 /** Offset of the one top-level switcher link immediately following the H1. */
 export function languageSwitcherLinkOffset(
@@ -129,19 +127,11 @@ function repositoryRelativePath(path: string): string | undefined {
 function resolveRepositoryTarget(
   rawPath: string,
   context: TranslationLinkContext,
-): { path: string; kind: ResolutionKind } | undefined {
+): string | undefined {
   const decoded = decodePath(rawPath)
   const exact = repositoryRelativePath(posix.join(posix.dirname(context.sourcePath), decoded))
   if (exact === undefined) return undefined
-  if (repositoryFileExists(context, exact)) return { path: exact, kind: 'exact' }
-  const index = repositoryRelativePath(posix.join(exact, 'index.md'))
-  if (decoded.endsWith('/') && index !== undefined && repositoryFileExists(context, index)) {
-    return { path: index, kind: 'directory-index' }
-  }
-  if (posix.extname(decoded) === '' && index !== undefined && repositoryFileExists(context, index)) {
-    return { path: index, kind: 'directory-index' }
-  }
-  return undefined
+  return repositoryFileExists(context, exact) ? exact : undefined
 }
 
 function translationPairTarget(targetPath: string, context: TranslationLinkContext): TranslationPairTarget | undefined {
@@ -153,29 +143,15 @@ function translationPairTarget(targetPath: string, context: TranslationLinkConte
   return { source, zh }
 }
 
-function fallbackRelativePath(context: TranslationLinkContext, targetPath: string, rawPath: string): string {
-  const target = posix.relative(posix.dirname(context.sourcePath), targetPath)
-  const encoded = encodeURI(target)
-  return rawPath.startsWith('./') && !encoded.startsWith('.') ? `./${encoded}` : encoded
-}
-
 function expectedLocalePath(
   rawPath: string,
-  kind: ResolutionKind,
   locale: 'en' | 'zh',
-  context: TranslationLinkContext,
-  targetPath: string,
 ): string {
-  if (kind === 'exact') {
-    if (locale === 'zh' && rawPath.endsWith('.md') && !rawPath.endsWith('.zh.md')) {
-      return rawPath.replace(/\.md$/, '.zh.md')
-    }
-    if (locale === 'en' && rawPath.endsWith('.zh.md')) return rawPath.replace(/\.zh\.md$/, '.md')
+  if (locale === 'zh' && rawPath.endsWith('.md') && !rawPath.endsWith('.zh.md')) {
+    return rawPath.replace(/\.md$/, '.zh.md')
   }
-  if (kind === 'directory-index' && locale === 'zh') {
-    return `${rawPath}${rawPath.endsWith('/') ? '' : '/'}index.zh.md`
-  }
-  return fallbackRelativePath(context, targetPath, rawPath)
+  if (locale === 'en' && rawPath.endsWith('.zh.md')) return rawPath.replace(/\.zh\.md$/, '.md')
+  return rawPath
 }
 
 function resolveTranslationLink(
@@ -187,9 +163,8 @@ function resolveTranslationLink(
   const { path } = splitMarkdownUrlTarget(url)
   const authored = splitMarkdownUrlTarget(authoredUrl)
   if (path === '') return undefined
-  const resolved = resolveRepositoryTarget(path, context)
-  if (resolved === undefined) return undefined
-  const targetPath = resolved.path
+  const targetPath = resolveRepositoryTarget(path, context)
+  if (targetPath === undefined) return undefined
   const pair = translationPairTarget(targetPath, context)
   if (pair === undefined) return undefined
   const locale = context.sourcePath.endsWith('.zh.md') ? 'zh' : 'en'
@@ -199,8 +174,7 @@ function resolveTranslationLink(
     targetPath,
     suffix: authored.suffix,
     expectedPath,
-    expectedUrl: `${expectedLocalePath(authored.path, resolved.kind, locale, context, expectedPath)}${authored.suffix}`,
-    kind: resolved.kind,
+    expectedUrl: `${expectedLocalePath(authored.path, locale)}${authored.suffix}`,
     locale,
   }
 }
