@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-This package registers the fixed `codex` subagent provider. Each accepted run starts the official `codex app-server --stdio` command in the delegating Session's workspace, creates one ephemeral Codex thread, submits one self-contained text task, and returns either the selected final answer or safe failure detail through the shared [`dsh-subagent`](../subagent/README.md) result contract.
+This package registers a Profile-named Codex subagent provider whose default name is `codex`. Each accepted run starts the official `codex app-server --stdio` command in the delegating Session's workspace, creates one ephemeral Codex thread, submits one self-contained text task, and returns either the selected final answer or safe failure detail through the shared [`dsh-subagent`](../subagent/README.md) result contract.
 
 ## Start and ownership
 
@@ -24,6 +24,7 @@ The provider advertises no optional start-time capabilities and reports `inherit
 
 | Key | Default | Meaning |
 |---|---|---|
+| `providerName` | `codex` | Non-empty registry name on `ctx.subagents`; each mounted instance needs a unique value. |
 | `env` | `{}` | Explicit child environment layered over the subprocess seam's credential-scrubbed parent environment. |
 | `permissionMode` | `never` | Native non-interactive approval and sandbox mode fixed for every thread from this Provider instance. |
 | `disposeGraceMs` | `3000` | Positive finite grace in milliseconds, no greater than [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md), between the shared process-tree owner's termination tiers; disposal then waits for whole-tree exit. |
@@ -36,15 +37,24 @@ The provider advertises no optional start-time capabilities and reports `inherit
 
 Production resolves `codex` from `PATH` and uses the host's native Codex configuration and authentication. The Provider overrides only the selected thread approval/reviewer/sandbox fields; all other `CODEX_HOME`, project, model, provider, MCP, hook, skill, and account settings remain native. The plugin does not install Codex, select a model, create `CODEX_HOME`, log in, or probe a version. Credential-shaped ambient variables are removed by the subprocess seam, so an API key intended for the child must be supplied explicitly in `env`; ordinary ambient values such as `PATH` and `HOME` remain available unless overridden.
 
-Production `dsh` does not install or mount this optional provider. A Profile that opts in must install `@deepseek-ai/dsh-subagent-codex` and mount it once on the host plane; loading the provider starts no Codex process until a tool call. Full Agent Presets carry a matching product tool row with `disabled: true`; copy a preset and remove that field to expose `subagent_codex` only to agents composed from the copy. Its `one-shot` policy keeps omitted or `false` `run_in_background` calls in the foreground, while explicit `true` returns a parent-owned Job id for `job_output` or `job_kill`. The base host and full presets already provide the generic Job registry and controls.
+Production `dsh` does not install or mount this optional provider. A Profile that opts in must install `@deepseek-ai/dsh-subagent-codex` and may mount one or more host-plane rows with distinct `providerName`, `permissionMode`, and `env` values; omitting `providerName` keeps the `codex` default. Loading an instance starts no Codex process until a bound tool calls it. Each `dsh-tool-subagent` row names one provider and needs its own `toolName`, so the model sees static tools rather than a dynamic provider selector. Full Agent Presets carry a matching default product tool row with `disabled: true`; copy a preset and remove that field to expose `subagent_codex` only to agents composed from the copy. Its `one-shot` policy keeps omitted or `false` `run_in_background` calls in the foreground, while explicit `true` returns a parent-owned Job id for `job_output` or `job_kill`. The base host and full presets already provide the generic Job registry and controls.
 
-The standalone composition below shows the complete explicit capability. A Profile based on `@deepseek-ai/dsh-base` keeps its existing Job rows, adds the product provider row, and enables the preset tool row instead of mounting duplicate Job services.
+The standalone composition below shows the complete explicit capability. A Profile based on `@deepseek-ai/dsh-base` keeps its existing Job rows, adds the product provider and tool rows, and does not mount duplicate Job services.
 
 ```yaml
-- id: subagent-codex
+- id: subagent-codex-safe
   name: '@deepseek-ai/dsh-subagent-codex'
   config:
-    permissionMode: approve-for-me
+    providerName: codex-safe
+    permissionMode: never
+    env:
+      OPENAI_API_KEY: !!js process.env.OPENAI_API_KEY
+
+- id: subagent-codex-bypass
+  name: '@deepseek-ai/dsh-subagent-codex'
+  config:
+    providerName: codex-bypass
+    permissionMode: dangerously-bypass-approvals-and-sandbox
     env:
       OPENAI_API_KEY: !!js process.env.OPENAI_API_KEY
 
@@ -54,18 +64,26 @@ The standalone composition below shows the complete explicit capability. A Profi
 - id: tool-jobs
   name: '@deepseek-ai/dsh-tool-jobs'
 
-- id: tool-subagent-codex
+- id: tool-subagent-codex-safe
   name: '@deepseek-ai/dsh-tool-subagent'
   config:
-    provider: codex
-    toolName: subagent_codex
+    provider: codex-safe
+    toolName: subagent_codex_safe
+    backgroundMode: one-shot
+    maxDepth: provider-managed
+
+- id: tool-subagent-codex-bypass
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: codex-bypass
+    toolName: subagent_codex_bypass
     backgroundMode: one-shot
     maxDepth: provider-managed
 ```
 
 ## Product compatibility and evidence
 
-The production wire intentionally implements only the app-server methods required by this one-shot contract. Development evidence is pinned to `@openai/codex@0.147.0` / `codex-cli 0.147.0`; the npm package is a test-only dependency, and deployments still supply `codex` on `PATH`. Generated schema evidence pins the complete current error union and HTTP-status locations. Real-product coverage proves that thread-level `never` overrides an ambient `on-request`, automatic review starts through the official app-server, dangerous bypass writes only in suite-owned temporary storage, a real service failure becomes `internalServerError`, process/protocol failure remains safe and quiescent, raw commands and paths stay out of diagnostics, and every wrapper/native process exits.
+The production wire intentionally implements only the app-server methods required by this one-shot contract. Development evidence is pinned to `@openai/codex@0.147.0` / `codex-cli 0.147.0`; the npm package is a test-only dependency, and deployments still supply `codex` on `PATH`. Generated schema evidence pins the complete current error union and HTTP-status locations. Real-product coverage proves that two named instances retain separate environments and native modes, thread-level `never` overrides an ambient `on-request`, automatic review starts through the official app-server, dangerous bypass writes only in suite-owned temporary storage, a real service failure becomes `internalServerError`, process/protocol failure retains safe exit facts and quiescence, raw commands and paths stay out of diagnostics, and every wrapper/native process exits.
 
 ## Model Experience
 
@@ -73,7 +91,7 @@ The production wire intentionally implements only the app-server methods require
 
 #### What the model sees
 
-The Codex child receives the standalone text blocks as one turn in a fresh ephemeral thread. Its workspace is the parent Session cwd; its model, system instructions, tools, and authentication come from the native Codex installation and configuration, while the Provider's Profile configuration fixes the thread's non-interactive approval and sandbox mode.
+The Codex child receives the standalone text blocks as one turn in a fresh ephemeral thread. Its workspace is the parent Session cwd; its model, system instructions, tools, and authentication come from the native Codex installation and configuration, while the selected Provider instance's Profile configuration fixes the thread's environment, non-interactive approval policy, and sandbox mode.
 
 #### Token effect
 
@@ -100,6 +118,7 @@ Append-only: foreground adds one result after the reusable parent prefix, while 
 ## Known Limitations and Deferred Work
 
 - **One fresh process, thread, and turn per run** — there is no continuation, resume, pooling, progress stream, or product-session persistence.
+- **Static instance selection** — Profile rows fix provider names and tool bindings; calls cannot choose a provider dynamically, and every exposed tool needs a unique `toolName`.
 - **Host-managed product installation and account state** — a missing or incompatible `codex`, configuration error, or authentication failure is surfaced with its lifecycle stage and the safe `unknown` fallback rather than a separate public taxonomy; the plugin provides no installer, login flow, or runtime version gate.
 - **Compatibility is pinned by development evidence** — upgrading from the verified 0.147.0 protocol baseline requires regenerating upstream schema evidence and rerunning handshake, answer-selection, approval, cancellation, keyless real-product, and credentialed DeepSeek nonce tests.
 - **No human approval path** — known unattended approval requests are denied and unknown server requests fail closed; the three Profile modes never create a DSH interaction channel or per-call allow policy.

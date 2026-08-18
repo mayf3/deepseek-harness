@@ -10,6 +10,7 @@ import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type {
   SubprocessHandle,
   SubprocessOutcome,
+  SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
@@ -368,7 +369,7 @@ describe('task admission and package contracts', () => {
       .toThrow('must not be empty')
   })
 
-  it('registers one fixed descriptor, validates config, and unregisters on HMR', async () => {
+  it('registers the default descriptor, validates config, and unregisters on HMR', async () => {
     const ctx = new Context()
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(LocalSubprocessRuntime)
@@ -397,7 +398,125 @@ describe('task admission and package contracts', () => {
     await ctx.fiber.dispose()
   })
 
+  it('keeps named instances, runs, and HMR ownership isolated', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(LocalSubprocessRuntime)
+    const safeChild = fakeChild()
+    const bypassChild = fakeChild()
+    const spawnSpecs: SubprocessSpawnSpec[] = []
+    vi.spyOn(ctx.subprocess, 'spawn').mockImplementation((spec) => {
+      spawnSpecs.push(spec)
+      return spec.env?.DSH_CODEX_INSTANCE === 'safe'
+        ? safeChild.handle
+        : bypassChild.handle
+    })
+    const added: string[] = []
+    const started: string[] = []
+    const ended: string[] = []
+    const removed: string[] = []
+    ctx.on('subagent/provider-added', provider => void added.push(provider.name))
+    ctx.on('subagent/start', info => void started.push(info.provider))
+    ctx.on('subagent/end', info => void ended.push(info.provider))
+    ctx.on('subagent/provider-removed', providerName => void removed.push(providerName))
+    const safeFiber = await ctx.plugin(codex, {
+      providerName: 'codex-safe',
+      env: { DSH_CODEX_INSTANCE: 'safe' },
+      permissionMode: 'never',
+      disposeGraceMs: 11,
+    })
+    const bypassFiber = await ctx.plugin(codex, {
+      providerName: 'codex-bypass',
+      env: { DSH_CODEX_INSTANCE: 'bypass' },
+      permissionMode: 'dangerously-bypass-approvals-and-sandbox',
+      disposeGraceMs: 29,
+    })
+    expect(ctx.subagents.list()).toEqual(['codex-safe', 'codex-bypass'])
+    expect(added).toEqual(['codex-safe', 'codex-bypass'])
+
+    const safeController = new AbortController()
+    const safeStarting = ctx.subagents.start(
+      'codex-safe',
+      request(undefined, safeController.signal),
+    )
+    const bypassStarting = ctx.subagents.start('codex-bypass', request())
+    for (const child of [safeChild, bypassChild]) {
+      const initialize = await child.peer.nextMethod('initialize')
+      child.peer.respond(initialize, { userAgent: 'codex-cli 0.147.0' })
+      await child.peer.nextMethod('initialized')
+      const threadStart = await child.peer.nextMethod('thread/start')
+      child.peer.respond(threadStart, {
+        thread: { id: 'thread-1', ephemeral: true },
+      })
+    }
+    const [safeRun, bypassRun] = await Promise.all([
+      safeStarting,
+      bypassStarting,
+    ])
+    await safeFiber.dispose()
+    expect(ctx.subagents.list()).toEqual(['codex-bypass'])
+    expect(removed).toEqual(['codex-safe'])
+    await expect(ctx.subagents.start('codex-safe', request()))
+      .rejects.toMatchObject({ code: 'NO_PROVIDER' })
+
+    const safeTurn = await safeChild.peer.nextMethod('turn/start')
+    const bypassTurn = await bypassChild.peer.nextMethod('turn/start')
+    safeChild.peer.respond(safeTurn, { turn: { id: 'turn-safe' } })
+    bypassChild.peer.send(
+      { id: bypassTurn.id, result: { turn: { id: 'turn-bypass' } } },
+      agentMessage('bypass answer', 'final_answer', 'turn-bypass'),
+      turnCompleted('completed', 'turn-bypass'),
+    )
+    await expect(bypassRun.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'bypass answer' }],
+      stopReason: 'completed',
+    })
+    safeController.abort(new Error('stop only the safe instance'))
+    await expect(safeRun.result).resolves.toEqual({
+      output: [],
+      stopReason: 'aborted',
+    })
+    expect(spawnSpecs.map(spec => ({
+      instance: spec.env?.DSH_CODEX_INSTANCE,
+      graceMs: spec.graceMs,
+    }))).toEqual([
+      { instance: 'safe', graceMs: 11 },
+      { instance: 'bypass', graceMs: 29 },
+    ])
+
+    await Promise.all([safeRun.dispose(), bypassRun.dispose()])
+    expect([...started].sort()).toEqual(['codex-bypass', 'codex-safe'])
+    expect([...ended].sort()).toEqual(['codex-bypass', 'codex-safe'])
+    expect(safeChild.terminate).toHaveBeenCalledOnce()
+    expect(bypassChild.terminate).toHaveBeenCalledOnce()
+    await bypassFiber.dispose()
+    expect(removed).toEqual(['codex-safe', 'codex-bypass'])
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects duplicate provider names without replacing the first instance', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(LocalSubprocessRuntime)
+    const firstFiber = await ctx.plugin(codex, {
+      providerName: 'codex-duplicate',
+    })
+    const first = ctx.subagents.getProvider('codex-duplicate')
+    await expect(ctx.plugin(codex, {
+      providerName: 'codex-duplicate',
+      permissionMode: 'dangerously-bypass-approvals-and-sandbox',
+    })).rejects.toMatchObject({ code: 'DUPLICATE_PROVIDER' })
+    expect(ctx.subagents.getProvider('codex-duplicate')).toBe(first)
+    expect(ctx.subagents.list()).toEqual(['codex-duplicate'])
+    await firstFiber.dispose()
+    await ctx.fiber.dispose()
+  })
+
   it('accepts only the three fixed non-interactive permission modes', () => {
+    expect(codex.Config({}).providerName).toBe('codex')
+    expect(codex.Config({ providerName: 'codex-safe' }).providerName)
+      .toBe('codex-safe')
+    expect(() => codex.Config({ providerName: '' })).toThrow()
     expect(codex.Config({}).permissionMode).toBe(DEFAULT_CODEX_PERMISSION_MODE)
     for (const permissionMode of CODEX_PERMISSION_MODES) {
       expect(codex.Config({ permissionMode }).permissionMode).toBe(permissionMode)
@@ -1920,11 +2039,12 @@ describe('run lifecycle and quiescence', () => {
       warnings.push(String(message))
     }) as typeof ctx.logger.warn
     await ctx.plugin(codex, {
+      providerName: 'codex-diagnostic',
       env: { OPENAI_API_KEY: 'fake' },
       permissionMode: 'approve-for-me',
       disposeGraceMs: 25,
     })
-    const starting = ctx.subagents.start('codex', {
+    const starting = ctx.subagents.start('codex-diagnostic', {
       prompt: [{ type: 'text', text: 'task' }],
       parent: fakeParent,
       signal: new AbortController().signal,
@@ -1971,7 +2091,9 @@ describe('run lifecycle and quiescence', () => {
       cwd: process.cwd(),
     }))
     expect(warnings).toEqual([
-      expect.stringContaining(`subagent-codex: child run failed (error): subagent-codex: ${expectedFailureDiagnostic('turn', 'other')}`),
+      expect.stringContaining(
+        `subagent-codex "codex-diagnostic": child run failed (error): subagent-codex: ${expectedFailureDiagnostic('turn', 'other')}`,
+      ),
     ])
     expect(warnings.join('\n')).not.toContain('SECRET_TOKEN')
     expect(warnings.join('\n')).not.toContain('/private/secret.txt')
