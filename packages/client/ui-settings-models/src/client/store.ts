@@ -12,7 +12,7 @@ import type {
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
-import { getPath, hasPath, nodeAtPath, rehydrateSchema } from '@deepseek-ai/dsh-client-schema-form'
+import type { SettingsSchemaOperations } from './schema-operations.ts'
 
 /**
  * Any route key walks a dict schema to the same profile node, so the lookup
@@ -77,20 +77,28 @@ export function deriveKeyRef(provider: string): string {
  * the choices the page offers cannot drift from the ones the adapter accepts:
  * both come from the same `Config`.
  * @param namespace - the namespace view whose schema declares the profile shape.
+ * @param schema - settings schema operations.
  * @returns the protocol identifiers, or an empty list when the schema has none.
  */
-export function protocolChoices(namespace: SettingsNamespaceView | undefined): string[] {
+export function protocolChoices(
+  namespace: SettingsNamespaceView | undefined,
+  schema: SettingsSchemaOperations,
+): string[] {
   if (namespace === undefined) return []
-  const node = nodeAtPath(rehydrateSchema(namespace.schema), ['providers', PROBE_ROUTE, 'api'])
+  const node = schema.nodeAtPath(schema.rehydrate(namespace.schema), ['providers', PROBE_ROUTE, 'api'])
   const list = (node as { type?: string; list?: readonly { value?: unknown }[] } | undefined)
   if (list?.type !== 'union' || list.list === undefined) return []
   return list.list.map(entry => entry.value).filter((value): value is string => typeof value === 'string')
 }
 
 /** The credential reference a resolved profile names (its `apiKeyEnv` field). */
-function apiKeyEnvOf(namespace: SettingsNamespaceView | undefined, path: readonly string[]): string | undefined {
+function apiKeyEnvOf(
+  namespace: SettingsNamespaceView | undefined,
+  path: readonly string[],
+  schema: SettingsSchemaOperations,
+): string | undefined {
   if (namespace === undefined) return undefined
-  const profile = getPath(namespace.value, path)
+  const profile = schema.getPath(namespace.value, path)
   if (typeof profile !== 'object' || profile === null) return undefined
   const ref = (profile as { apiKeyEnv?: unknown }).apiKeyEnv
   return typeof ref === 'string' && ref.length > 0 ? ref : undefined
@@ -112,6 +120,7 @@ export class ModelsSettingsStore {
    */
   constructor(
     private readonly api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>,
+    private readonly schema: SettingsSchemaOperations,
     private readonly describeFace: SettingsDescribeFace,
   ) {}
 
@@ -153,16 +162,16 @@ export class ModelsSettingsStore {
     const rows: ProviderRow[] = providers.map((entry) => {
       const namespace = namespaces.get(entry.settingsNs)
       const configured = namespace !== undefined
-        && (entry.settingsPath.length === 0 || getPath(namespace.value, entry.settingsPath) !== undefined)
+        && (entry.settingsPath.length === 0 || this.schema.getPath(namespace.value, entry.settingsPath) !== undefined)
       const removable = namespace !== undefined
         && entry.settingsPath.length > 0
-        && hasPath(namespace.user, entry.settingsPath)
-        && !hasPath(namespace.base, entry.settingsPath)
+        && this.schema.hasPath(namespace.user, entry.settingsPath)
+        && !this.schema.hasPath(namespace.base, entry.settingsPath)
       return {
         entry,
         configured,
         removable,
-        apiKeyEnv: apiKeyEnvOf(namespace, entry.settingsPath),
+        apiKeyEnv: apiKeyEnvOf(namespace, entry.settingsPath, this.schema),
         credential: undefined,
       }
     })

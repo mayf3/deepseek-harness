@@ -41,7 +41,7 @@ export type {
 } from './settings-store.ts'
 
 /** Required services (cordis fiber inject). */
-export const inject = ['commandUi', 'sessions', 'slots', 'locale', 'connection', 'remote', 'settingsScope']
+export const inject = ['commandUi', 'sessions', 'slots', 'locale', 'connection', 'remote', 'settingsScope', 'settingsSchema']
 
 const ACCESS_NS = 'permission.access'
 
@@ -114,7 +114,7 @@ export function apply(ctx: ClientContext): void {
   // The row follows the shared describe mirror, whose owning plugin already
   // refreshes it on document commits and reconnects.
   const controller = new PermissionPresetSettingsController(
-    ctx.settingsScope.describe(), connection.api)
+    ctx.settingsScope.describe(), connection.api, ctx.settingsSchema)
   const load = (): Promise<void> => controller.load()
   const select = (preset: string): Promise<void> => controller.select(preset)
   const injected = (): PermissionRowInjected => ({

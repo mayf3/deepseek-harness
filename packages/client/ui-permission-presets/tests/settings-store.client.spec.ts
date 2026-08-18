@@ -1,6 +1,8 @@
+import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
-import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { SettingsSchemaService } from '@deepseek-ai/dsh-client-ui-settings/src/client/schema.ts'
+import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import {
   PermissionPresetSettingsController, permissionDefaultOf,
 } from '../src/client/settings-store.ts'
@@ -13,6 +15,12 @@ const SCHEMA = {
     3: { type: 'union', list: [1, 2] },
     6: { type: 'object', dict: { defaultPreset: 3 } },
   },
+}
+
+const schema = new SettingsSchemaService(new Context())
+
+function resolveDefault(view: SettingsNamespaceView) {
+  return permissionDefaultOf(view, schema)
 }
 
 function view(defaultPreset: string, revision = 0, schema: SettingsNamespaceView['schema'] = SCHEMA): SettingsNamespaceView {
@@ -35,12 +43,12 @@ function ok<T>(value: T) {
 function permissionController(api: object) {
   const wire = { settings: api } as never
   const mirror = new SettingsDescribeMirror(wire)
-  return { mirror, controller: new PermissionPresetSettingsController(mirror, wire) }
+  return { mirror, controller: new PermissionPresetSettingsController(mirror, wire, schema) }
 }
 
 describe('permission settings store', () => {
   it('derives dynamic options and host labels from the descriptor schema', () => {
-    expect(permissionDefaultOf(view('read-only'))).toEqual({
+    expect(resolveDefault(view('read-only'))).toEqual({
       currentValue: 'read-only',
       options: [
         { id: 'read-only', label: 'Read Only' },
@@ -54,7 +62,7 @@ describe('permission settings store', () => {
         2: { type: 'object', dict: { defaultPreset: 1 } },
       },
     }
-    expect(permissionDefaultOf(view('read-only', 0, single))).toEqual({
+    expect(resolveDefault(view('read-only', 0, single))).toEqual({
       currentValue: 'read-only',
       options: [{ id: 'read-only', label: 'Read Only' }],
     })
@@ -65,23 +73,23 @@ describe('permission settings store', () => {
         2: { type: 'object', dict: { defaultPreset: 1 } },
       },
     }
-    expect(permissionDefaultOf(view('read-only', 0, undescribed)).options)
+    expect(resolveDefault(view('read-only', 0, undescribed)).options)
       .toEqual([{ id: 'read-only', label: 'Read Only' }])
   })
 
   it('rejects malformed values and dynamic enums at the wire boundary', () => {
-    expect(() => permissionDefaultOf({ ...view('read-only'), value: {} })).toThrow(/no defaultPreset value/)
-    expect(() => permissionDefaultOf(view('read-only', 0, {
+    expect(() => resolveDefault({ ...view('read-only'), value: {} })).toThrow(/no defaultPreset value/)
+    expect(() => resolveDefault(view('read-only', 0, {
       uid: 1, refs: { 1: { type: 'object', dict: {} } },
     }))).toThrow(/no defaultPreset field/)
-    expect(() => permissionDefaultOf(view('read-only', 0, {
+    expect(() => resolveDefault(view('read-only', 0, {
       uid: 2,
       refs: {
         1: { type: 'union' },
         2: { type: 'object', dict: { defaultPreset: 1 } },
       },
     }))).toThrow(/does not advertise/)
-    expect(() => permissionDefaultOf(view('read-only', 0, {
+    expect(() => resolveDefault(view('read-only', 0, {
       uid: 4,
       refs: {
         1: { type: 'string' },
@@ -90,7 +98,7 @@ describe('permission settings store', () => {
         4: { type: 'object', dict: { defaultPreset: 3 } },
       },
     }))).toThrow(/does not advertise/)
-    expect(() => permissionDefaultOf(view('missing'))).toThrow(/does not advertise/)
+    expect(() => resolveDefault(view('missing'))).toThrow(/does not advertise/)
   })
 
   it('loads and writes defaultPreset with optimistic concurrency', async () => {

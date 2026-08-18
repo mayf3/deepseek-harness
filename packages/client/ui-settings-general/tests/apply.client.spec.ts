@@ -100,7 +100,7 @@ describe('ui-settings-general apply', () => {
     const action = before.slots.entries('settings.action')[0]!
     const actionInjected = (action.inject as unknown as () => SettingsDocumentActionInjected)()
     expect(actionInjected.controller.store.getSnapshot().status).toBe('idle')
-    expect(actionInjected.useSnapshot).toEqual(expect.any(Function))
+    expect(actionInjected.hooks.snapshot).toBe(actionInjected.controller.store)
     // Copy rides the standard locale seat: every seat declares the namespace.
     for (const [name] of SEATS) {
       expect(before.slots.entries(name)[0]!.locale).toBe('settings')

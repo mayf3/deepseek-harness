@@ -7,7 +7,9 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
-import { apply, inject, SettingsScopeBinder } from '../src/client/index.ts'
+import { apply, inject } from '../src/client/index.ts'
+import { SettingsSchemaService } from '../src/client/schema.ts'
+import { SettingsScopeBinder } from '../src/client/settings-scope.ts'
 
 /** Boot the browser half over a fake loopback connection and test remote. */
 function bench() {
@@ -29,6 +31,7 @@ describe('settings domain base plugin', () => {
     const { ctx, describeCall, fiber } = bench()
     await fiber.await()
     expect(ctx.get('settingsScope')).toBeInstanceOf(SettingsScopeBinder)
+    expect(ctx.get('settingsSchema')).toBeInstanceOf(SettingsSchemaService)
     await vi.waitFor(() => { expect(describeCall).toHaveBeenCalledTimes(1) })
   })
 
@@ -48,6 +51,7 @@ describe('settings domain base plugin', () => {
     await vi.waitFor(() => { expect(describeCall).toHaveBeenCalledTimes(1) })
     await fiber.dispose()
     expect(ctx.get('settingsScope')).toBeUndefined()
+    expect(ctx.get('settingsSchema')).toBeUndefined()
     ctx.remote.$dispatch('settings/document-updated', ['ui-test', 0])
     ctx.emit('connection/reset')
     await Promise.resolve()

@@ -13,7 +13,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {
   ConnectionHandle, IApiClient, SettingsNamespaceView, SettingsPathOpView,
 } from '@deepseek-ai/dsh-api-remotes/client'
-import { rehydrateSchema, validateDraft } from '@deepseek-ai/dsh-client-schema-form'
 import {
   createSnapshotStore, type SettingsScope, type SettingsScopeSnapshot,
   type SettingsScopeSpec, type SnapshotStore,
@@ -34,6 +33,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/types'
 // never — the owning package's client-safe, type-only subpath supplies the
 // cordis `Events` entry (and with it the branded `SettingsNamespace`).
 import type {} from '@deepseek-ai/dsh-settings/types'
+import type { SettingsSchemaService } from './schema.ts'
 import { SettingsDescribeMirror, type SettingsDescribeFace } from './settings-mirror.ts'
 
 type SettingsFace = Pick<IApiClient, 'settings'>
@@ -62,12 +62,14 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
    * @param spec - namespace identity and optional narrowing decoder.
    * @param mirror - the shared describe mirror this scope derives from.
    * @param persistence - remote browsers remain process-local because settings RPCs are loopback-only.
+   * @param schema - settings-owned schema operations.
    */
   constructor(
     private readonly api: SettingsFace,
     private readonly spec: SettingsScopeSpec<T>,
     private readonly mirror: SettingsDescribeMirror,
-    private readonly persistence: 'host' | 'memory' = 'host',
+    private readonly persistence: 'host' | 'memory',
+    private readonly schema: SettingsSchemaService,
   ) {
     this.store = createSnapshotStore<SettingsScopeSnapshot<T>>({
       status: persistence === 'host' ? 'loading' : 'unavailable',
@@ -211,7 +213,7 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
     if (typeof view.value !== 'object' || view.value === null || Array.isArray(view.value)) return undefined
     let failure: string | undefined
     try {
-      failure = validateDraft(rehydrateSchema(view.schema), view.value)
+      failure = this.schema.validate(this.schema.rehydrate(view.schema), view.value)
     } catch (_malformedSchemaEnvelope) {
       // A schema envelope this client cannot rehydrate vouches for no section;
       // the value is treated exactly like a schema-invalid one.
@@ -236,18 +238,21 @@ declare module '@deepseek-ai/cordis' {
  */
 export class SettingsScopeBinder extends Service {
   private readonly mirror: SettingsDescribeMirror
+  private readonly schema: SettingsSchemaService
 
   /**
    * @param ctx - the providing plugin's context.
-   * @param config - the shared describe mirror every bound scope derives from.
+   * @param config - the shared describe mirror every bound scope derives from,
+   * plus the settings-owned schema operations.
    */
-  constructor(ctx: Context, config: { mirror: SettingsDescribeMirror }) {
+  constructor(ctx: Context, config: { mirror: SettingsDescribeMirror; schema: SettingsSchemaService }) {
     super(ctx, 'settingsScope')
     this.mirror = config.mirror
+    this.schema = config.schema
   }
 
   /**
-   * The shared mirror's read-only face for cross-namespace surfaces (schema
+   * The shared mirror's read/fold face for cross-namespace surfaces (schema
    * introspection, the served-namespace directory). Per-namespace consumers
    * use {@link bind}; both derive from the same snapshot, so they can never
    * disagree about the document.
@@ -275,6 +280,7 @@ export class SettingsScopeBinder extends Service {
       spec,
       this.mirror,
       connection.isLoopback ? 'host' : 'memory',
+      this.schema,
     )
     ctx.effect(() => {
       void this.mirror.ensure()

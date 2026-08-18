@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
-import {
-  SettingsDescribeMirror, SettingsScopeController,
-} from '@deepseek-ai/dsh-client-ui-settings/client'
+import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { Context } from '@deepseek-ai/cordis'
+import { SettingsSchemaService } from '@deepseek-ai/dsh-client-ui-settings/src/client/schema.ts'
+import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
+import { SettingsScopeController } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-scope.ts'
+
+/** Stateless schema service for scope construction in this jsdom fixture. */
+const schemaService = new SettingsSchemaService(new Context())
 import { WelcomeNotice } from '../src/client/WelcomeNotice.tsx'
 import type { WelcomeNoticeProps } from '../src/client/WelcomeNotice.tsx'
 import { decodeWelcomeSection, WelcomeNoticeStore } from '../src/client/welcome-store.ts'
@@ -61,6 +65,8 @@ function mount(
     api as never,
     { namespace: WELCOME_NOTICE_SETTINGS_NAMESPACE, decode: decodeWelcomeSection },
     mirror,
+    'host',
+    schemaService,
   )
   const controller = new WelcomeNoticeStore(scope)
   void mirror.load()

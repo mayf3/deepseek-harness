@@ -27,7 +27,8 @@ async function bench(isLoopback = true, settings?: object) {
   // same `$dispatch` handoff the connection sink makes.
   new TestRemote(ctx)
   // Without a settings face the mirror's reads fail and stay contained; the
-  // Models join itself never fetches until a section actually loads.
+  // Models join itself never fetches until a section actually loads. The real
+  // ui-settings apply also provides the settingsSchema service.
   ctx.provide('connection', { api: settings === undefined ? {} : { settings }, isLoopback } as never)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale }
@@ -48,7 +49,7 @@ function declare(slots: SlotRegistry): () => void {
 
 describe('ui-settings-models apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope', 'settingsSchema'])
   })
 
   it('registers the models nav entry for declarations before or after apply', async () => {
@@ -64,7 +65,7 @@ describe('ui-settings-models apply', () => {
     expect(injected.t('nav')).toBe('模型')
     expect(injected.t('deleteTitle')).toBe('删除 {provider}？')
     expect(typeof injected.controller.load).toBe('function')
-    expect(typeof injected.useSnapshot).toBe('function')
+    expect(injected.hooks.snapshot).toBe(injected.controller.store)
     expect(injected.api).toBeDefined()
     const onboarding = before.slots.entries('settings.onboarding')
     expect(onboarding).toHaveLength(2)

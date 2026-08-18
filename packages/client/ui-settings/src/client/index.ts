@@ -18,6 +18,7 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 // settings-scope.ts).
 import type {} from '@deepseek-ai/dsh-api-remotes/types'
 import type {} from '@deepseek-ai/dsh-settings/types'
+import { SettingsSchemaService } from './schema.ts'
 import { SettingsScopeBinder } from './settings-scope.ts'
 import { SettingsDescribeMirror } from './settings-mirror.ts'
 
@@ -25,8 +26,9 @@ export type {
   SettingsGeneralItemOwnerProps, SettingsHeaderOwnerProps, SettingsOnboardingOwnerProps,
   SettingsPluginsTabOwnerProps, SettingsSectionOwnerProps, SettingsTriggerOwnerProps,
 } from './contract/slots.ts'
-export { SettingsScopeController, SettingsScopeBinder } from './settings-scope.ts'
-export { SettingsDescribeMirror } from './settings-mirror.ts'
+export type { SettingsScopeController, SettingsScopeBinder } from './settings-scope.ts'
+export type { SettingsSchemaService } from './schema.ts'
+export type { SchemaNode } from './schema.ts'
 export type { SettingsDescribeFace, SettingsDescribeView, SettingsMirrorSnapshot } from './settings-mirror.ts'
 
 /**
@@ -45,6 +47,7 @@ export const inject = ['connection', 'remote']
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
+  const schema = new SettingsSchemaService(ctx)
   const connection = ctx.get('connection') as ConnectionHandle
   const mirror = new SettingsDescribeMirror(
     connection.api,
@@ -55,10 +58,12 @@ export function apply(ctx: ClientContext): void {
       (ctx.get('remote') as ClientContext['remote']).$on('settings/document-updated', () => { void mirror.load() }),
       ctx.on('connection/reset', () => { void mirror.load() }),
     ]
-    // The first connection also emits connection/reset; the in-flight fold
-    // makes this eager read and that reset converge to one wire call.
+    // The first connection also emits connection/reset, so startup normally
+    // costs two reads (budgeted in startup-rpc-budget.e2e.ts). The in-flight
+    // fold does not merge them into one; it guarantees at most one pending
+    // read at a time and that no invalidation arriving mid-read is lost.
     void mirror.ensure()
     return () => { for (const dispose of disposers) dispose() }
   }, 'ui-settings: describe mirror invalidations')
-  new SettingsScopeBinder(ctx, { mirror })
+  new SettingsScopeBinder(ctx, { mirror, schema })
 }

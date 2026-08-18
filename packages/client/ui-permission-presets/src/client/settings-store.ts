@@ -12,10 +12,9 @@ import type {
 import {
   createSnapshotStore, type SnapshotStore,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
-import {
-  nodeAtPath, rehydrateSchema, type SchemaNode,
-} from '@deepseek-ai/dsh-client-schema-form'
+import type {
+  SchemaNode, SettingsDescribeFace, SettingsSchemaService,
+} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { displayPermissionPreset } from './presentation.ts'
 
 /** Permission's settings namespace on the host wire. */
@@ -48,15 +47,16 @@ interface ConstChoice {
 /**
  * Read the dynamic preset enum encoded by the host's `defaultPreset` schema.
  * @param view - permission namespace descriptor.
+ * @param schema - settings schema operations.
  * @returns current value and selectable options.
  */
-export function permissionDefaultOf(view: SettingsNamespaceView): {
+export function permissionDefaultOf(view: SettingsNamespaceView, schema: SettingsSchemaService): {
   currentValue: string
   options: PermissionDefaultOption[]
 } {
   const value = (view.value as { defaultPreset?: unknown } | null)?.defaultPreset
   if (typeof value !== 'string') throw new Error('permission settings has no defaultPreset value')
-  const node = nodeAtPath(rehydrateSchema(view.schema), ['defaultPreset'])
+  const node = schema.nodeAtPath(schema.rehydrate(view.schema), ['defaultPreset'])
   if (node === undefined) throw new Error('permission settings schema has no defaultPreset field')
   const rawChoices = node.type === 'union'
     ? (node.list as SchemaNode[] | undefined) ?? []
@@ -95,12 +95,14 @@ export class PermissionPresetSettingsController {
   private disposed = false
 
   /**
-   * @param describeFace - the shared mirror's read-only face (descriptor and schema source).
+   * @param describeFace - the shared mirror's read/fold face (descriptor and schema source).
    * @param api - settings wire face for the `defaultPreset` write.
+   * @param schema - settings-owned schema operations.
    */
   constructor(
     private readonly describeFace: SettingsDescribeFace,
     private readonly api: Pick<IApiClient, 'settings'>,
+    private readonly schema: SettingsSchemaService,
   ) {}
 
   /**
@@ -120,6 +122,9 @@ export class PermissionPresetSettingsController {
 
   /**
    * Persist one preset as the default for subsequently created sessions.
+   * A selection made while one is already saving is ignored — the row's
+   * control is disabled during the save, so this only drops programmatic
+   * double-submits rather than user intent.
    * @param preset - advertised preset key.
    * @returns nothing; {@link store} carries success or failure.
    */
@@ -162,6 +167,17 @@ export class PermissionPresetSettingsController {
   private derive(): void {
     if (this.disposed || this.saving) return
     const mirrored = this.describeFace.getSnapshot()
+    if (mirrored.status === 'unavailable') {
+      // The terminal non-loopback state: settings RPCs are loopback-only, so
+      // the row hides itself exactly like an unserved namespace.
+      this.store.update((state) => {
+        state.status = 'unavailable'
+        state.writable = false
+        state.currentValue = ''
+        state.options = []
+      })
+      return
+    }
     if (mirrored.view === undefined) {
       // A held failure with no answer is a failed row; without one the read
       // is still in flight and the row keeps its loading state.
@@ -179,7 +195,7 @@ export class PermissionPresetSettingsController {
       return
     }
     try {
-      const resolved = permissionDefaultOf(view)
+      const resolved = permissionDefaultOf(view, this.schema)
       const { writable } = mirrored.view
       this.store.update((state) => {
         state.status = 'ready'
