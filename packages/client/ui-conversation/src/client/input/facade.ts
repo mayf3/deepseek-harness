@@ -78,7 +78,7 @@ const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
 export class SessionInputShell implements SessionInput {
   /** Published machine state + queue overlay (the InputZone currency source). */
   readonly state: SnapshotStore<InputState>
-  /** Latest surfaced notice (null after clear); the wiring renders it beside the error strip. */
+  /** Latest surfaced notice (null after clear); the bar renders errors as banners and information inline. */
   readonly notices: SnapshotStore<InputNotice | null> = createSnapshotStore<InputNotice | null>(null)
   /** The public provide-channel action face (one stable identity per session). */
   readonly actions: InputActions = {

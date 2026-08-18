@@ -65,9 +65,9 @@ export function InputBar({
     [draftImages, input?.imageIds],
   )
   const empty = draft.trim() === '' && attachments.length === 0
-  // Transient error banner (image-intake rejections and prompt failures): the
-  // seq keys the Toast so an identical repeated message restarts the
-  // hold-then-fade cycle instead of silently reusing the faded one.
+  // Transient error banner (machine notices, image-intake rejections, and
+  // prompt failures): the seq keys the Toast so an identical repeated message
+  // restarts the hold-then-fade cycle instead of reusing the faded one.
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
   const toastSeq = useRef(0)
   const showToast = useCallback((text: string) => {
@@ -91,6 +91,9 @@ export function InputBar({
       ? attachmentErrorText(t, promptError.error.details.reason, imageLimits)
       : `${promptError.error.message} (${promptError.error.code})`)
   }, [promptError, showToast, t, imageLimits])
+  useEffect(() => {
+    if (notice?.level === 'error') showToast(notice.text)
+  }, [notice, showToast])
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -580,8 +583,8 @@ export function InputBar({
           onDone={dismissToast}
         />
       )}
-      {notice !== null && (
-        <div className={clsx(css.notice, notice.level === 'error' && css.noticeError)} role="status">
+      {notice?.level === 'info' && (
+        <div className={css.notice} role="status">
           {notice.text}
         </div>
       )}

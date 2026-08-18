@@ -159,7 +159,7 @@ export class InputHub implements SessionInputResolver {
    * Default sink: optimistic clear + prompt. The session is always a real
    * host entity (materialized when its workspace was picked), so there is
    * exactly one path; a failed first prompt is an ordinary prompt failure
-   * (error strip via promptError, draft restored only while untouched).
+   * (banner via promptError, draft restored only while untouched).
    */
   private sink(
     session: SessionFace,

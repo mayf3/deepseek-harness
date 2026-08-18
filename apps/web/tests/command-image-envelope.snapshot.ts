@@ -3,7 +3,7 @@
 // bundles via AppWebEntry, keyless FixtureApiClient transport): an enter
 // submission carrying composer images resolves only through a command whose
 // descriptor declares `input.images`. A non-declaring command refuses with
-// one composer notice and everything retained; a declaring command consumes
+// one composer error banner and everything retained; a declaring command consumes
 // the images — serialized through the real draft-image chain into the
 // commands/execute payload — and clears the composer on success.
 import { fireEvent, screen, waitFor } from '@testing-library/react'
@@ -46,15 +46,17 @@ it('refuses an image-carrying submit to a non-declaring command and keeps draft 
   fireEvent.change(textarea, { target: { value: '/echo hello' } })
   fireEvent.keyDown(textarea, { key: 'Enter' })
 
-  // Several live-region elements exist (session activity among them); the
-  // refusal is the status whose text is the localized notice.
+  // The refusal rides the same transient error banner as other composer
+  // failures; session activity remains on its separate status live region.
   const notice = await waitFor(() => {
-    const el = [...document.querySelectorAll('[role="status"]')]
+    const el = [...document.querySelectorAll('[role="alert"]')]
       .find(candidate => candidate.textContent?.includes('image attachments') ?? false)
-    if (el === undefined) throw new Error('composer refusal notice missing')
+    if (el === undefined) throw new Error('composer refusal banner missing')
     return el
   }, { timeout: 5_000 })
   expect(notice.textContent).toBe('/echo does not accept image attachments; remove them first')
+  expect([...document.querySelectorAll('[role="status"]')]
+    .some(candidate => candidate.textContent?.includes('image attachments') ?? false)).toBe(false)
   // The whole envelope is retained: draft text and the rail thumbnail.
   expect(textarea.value).toBe('/echo hello')
   const rail = document.querySelector('[role="group"][aria-label="Pending images"]')
