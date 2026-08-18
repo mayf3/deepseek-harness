@@ -919,6 +919,29 @@ describe('compat switches', () => {
     })
   })
 
+  it('ignores compat entries whose value is undefined', () => {
+    const models = modelsOf({
+      'acme-gateway': {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test',
+        compat: { supportsStore: undefined },
+        models: [{ id: 'acme-a' }],
+      },
+    }, 'acme-gateway')
+
+    expect(models.get('acme-a')?.compat).toBeUndefined()
+  })
+
+  it('rejects a model switch on an unrecognized protocol as having no configurable compat', () => {
+    expect(() => resolveProfiles({
+      'acme-gateway': {
+        api: 'acme-chat',
+        baseURL: 'https://acme.test',
+        models: [{ id: 'acme-a', compat: { supportsStore: false } }],
+      },
+    })).toThrow(/its api is "acme-chat", which does not take it.*"acme-chat" offers no configurable compat/s)
+  })
+
   it('refuses a compat key no wire protocol declares instead of dropping it', () => {
     // The silent drop is what let an unreadable switch look applied: schemastery
     // passes unknown keys through, and resolution used to read only two fields.
