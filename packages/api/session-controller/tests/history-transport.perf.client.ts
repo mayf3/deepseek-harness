@@ -32,6 +32,12 @@ interface Timed<T> {
   readonly ms: number
 }
 
+interface HeapPeaks<T> {
+  readonly value: T
+  readonly medianPeakBytes: number
+  readonly peakBytes: readonly number[]
+}
+
 interface FoldState {
   readonly blocks: readonly string[]
   readonly firstTokenTime?: number
@@ -68,6 +74,36 @@ function rounded(value: number): number {
 
 function reduction(before: number, after: number): number {
   return rounded((1 - after / before) * 100)
+}
+
+function median(values: readonly number[]): number {
+  const ordered = [...values].sort((left, right) => left - right)
+  return ordered[Math.floor(ordered.length / 2)]!
+}
+
+/** Measure caller-sampled additional V8 heap from forced-GC baselines. */
+function sampledPeakHeap<T>(run: (sample: () => void) => T): HeapPeaks<T> {
+  const forceGc = globalThis.gc
+  if (forceGc === undefined) {
+    throw new Error('history transport memory benchmark requires Vitest worker --expose-gc')
+  }
+  const samples = Array.from({ length: 3 }, () => {
+    forceGc()
+    forceGc()
+    const baseline = process.memoryUsage().heapUsed
+    let peak = baseline
+    const sample = (): void => {
+      peak = Math.max(peak, process.memoryUsage().heapUsed)
+    }
+    const value = run(sample)
+    sample()
+    return { value, peakBytes: peak - baseline }
+  })
+  return {
+    value: samples[0]!.value,
+    medianPeakBytes: median(samples.map(sample => sample.peakBytes)),
+    peakBytes: samples.map(sample => sample.peakBytes),
+  }
 }
 
 function append<Type extends keyof SessionEventMap>(
@@ -208,6 +244,31 @@ function digest(value: unknown): string {
 
 it('reports packed history transport and compact fold costs', () => {
   const fixture = timed(buildEvents)
+
+  assemble(conversationInputs(fixture.value.slice(0, 1_000).map(event => ({ event }))))
+  const rawHostHeap = sampledPeakHeap((sample) => {
+    const entries = fixture.value.map(event => ({ event }))
+    sample()
+    const json = JSON.stringify({ events: entries, hasMore: false } satisfies RawHistoryValue)
+    sample()
+    return Buffer.byteLength(json)
+  })
+  const packedHostHeap = sampledPeakHeap((sample) => {
+    const packedEvents = packChunkRuns(fixture.value)
+    sample()
+    const records = packedEvents.map((record): HistoryRecord =>
+      isChunkRow(record) ? { chunks: record } : { event: record })
+    sample()
+    const json = JSON.stringify({
+      records,
+      hasMore: false,
+      fromSeq: 0,
+      toSeq: fixture.value.length,
+    } satisfies PackedHistoryValue)
+    sample()
+    return Buffer.byteLength(json)
+  })
+
   const rawEntries = timed(() => fixture.value.map(event => ({ event })))
   const packed = timed(() => packChunkRuns(fixture.value))
   const packedRecords = timed(() => packed.value.map((record): HistoryRecord =>
@@ -226,6 +287,30 @@ it('reports packed history transport and compact fold costs', () => {
   const packedGzip = timed(() => gzipSync(packedJson.value).byteLength)
   const rawBrotli = timed(() => brotliCompressSync(rawJson.value).byteLength)
   const packedBrotli = timed(() => brotliCompressSync(packedJson.value).byteLength)
+
+  const rawClientHeap = sampledPeakHeap((sample) => {
+    const parsed = JSON.parse(rawJson.value) as RawHistoryValue
+    sample()
+    for (const entry of parsed.events) historyEntrySchema.parse(entry)
+    sample()
+    const prepared = conversationInputs(parsed.events)
+    sample()
+    const folded = assemble(prepared)
+    sample()
+    return digest(folded)
+  })
+  const packedClientHeap = sampledPeakHeap((sample) => {
+    const parsed = JSON.parse(packedJson.value) as PackedHistoryValue
+    sample()
+    sessionHistoryValueSchema.parse(parsed)
+    sample()
+    const prepared = conversationInputs(historyEntries(parsed.records))
+    sample()
+    const folded = assemble(prepared)
+    sample()
+    return digest(folded)
+  })
+
   const parsedRaw = timed(() => JSON.parse(rawJson.value) as RawHistoryValue)
   const parsedPacked = timed(() => JSON.parse(packedJson.value) as PackedHistoryValue)
   const rawValidation = timed(() => {
@@ -249,6 +334,9 @@ it('reports packed history transport and compact fold costs', () => {
   expect(packed.value).toHaveLength(696)
   expect(packedPreparation.value).toHaveLength(696)
   expect(digest(packedFold.value)).toBe(digest(rawFold.value))
+  expect(packedClientHeap.value).toBe(rawClientHeap.value)
+  expect(rawHostHeap.value).toBe(rawBytes)
+  expect(packedHostHeap.value).toBe(packedBytes)
   expect(packedBytes).toBeLessThan(rawBytes)
 
   const rawResponseMs = rawEntries.ms + rawJson.ms
@@ -275,6 +363,19 @@ it('reports packed history transport and compact fold costs', () => {
       rawBrotli: rawBrotli.value,
       packedBrotli: packedBrotli.value,
       brotliReductionPct: reduction(rawBrotli.value, packedBrotli.value),
+    },
+    memory: {
+      samples: 3,
+      rawHostAdditionalHeapPeakBytes: rawHostHeap.medianPeakBytes,
+      packedHostAdditionalHeapPeakBytes: packedHostHeap.medianPeakBytes,
+      hostReductionPct: reduction(rawHostHeap.medianPeakBytes, packedHostHeap.medianPeakBytes),
+      rawClientAdditionalHeapPeakBytes: rawClientHeap.medianPeakBytes,
+      packedClientAdditionalHeapPeakBytes: packedClientHeap.medianPeakBytes,
+      clientReductionPct: reduction(rawClientHeap.medianPeakBytes, packedClientHeap.medianPeakBytes),
+      rawHostPeakSamples: rawHostHeap.peakBytes,
+      packedHostPeakSamples: packedHostHeap.peakBytes,
+      rawClientPeakSamples: rawClientHeap.peakBytes,
+      packedClientPeakSamples: packedClientHeap.peakBytes,
     },
     host: {
       rawEntryWrapMs: rounded(rawEntries.ms),
