@@ -286,6 +286,15 @@ describe('translation structural signature', () => {
     expect(signature(markdown).links).toEqual(['https://example.com/reference.md'])
   })
 
+  it('retains exact authored bytes for ordinary external link targets', () => {
+    const escaped = signature('[External](https://example.com/?x=1&amp;y=2)\n')
+    const literal = signature('[External](https://example.com/?x=1&y=2)\n')
+    expect(escaped.links).toEqual(['https://example.com/?x=1&amp;y=2'])
+    expect(translationStructureDiff(escaped, literal)).toEqual([
+      'link target #1 diverges between the pair: "https://example.com/?x=1&amp;y=2" vs "https://example.com/?x=1&y=2"',
+    ])
+  })
+
   it('treats target-locale siblings as one semantic link target', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-translation-structure-'))
     try {

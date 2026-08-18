@@ -212,6 +212,18 @@ function replacementFor(destination: MarkdownDestination, value: string): Replac
   return { start: destination.start, end: destination.end, value }
 }
 
+function authoredExternalTarget(markdown: string, node: LinkNode): string {
+  const start = node.position?.start.offset
+  const end = node.position?.end.offset
+  if (start === undefined || end === undefined) {
+    throw new Error(`translation-links: external link ${JSON.stringify(node.url)} has no source offsets`)
+  }
+  const raw = markdown.slice(start, end)
+  if (node.type === 'definition' || raw.startsWith('[')) return markdownDestination(markdown, node).url
+  if (raw.startsWith('<') && raw.endsWith('>')) return raw.slice(1, -1)
+  return raw
+}
+
 function applyReplacements(markdown: string, replacements: Replacement[]): string {
   let output = markdown
   for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
@@ -308,7 +320,7 @@ export function semanticTranslationLinkNodeTarget(
   markdown: string,
   context: TranslationLinkContext,
 ): string {
-  if (isExternalOrAbsoluteMarkdownUrl(node.url)) return node.url
+  if (isExternalOrAbsoluteMarkdownUrl(node.url)) return authoredExternalTarget(markdown, node)
   const destination = markdownDestination(markdown, node)
   const resolved = resolveTranslationLink(node.url, context, destination.url)
   return resolved === undefined
