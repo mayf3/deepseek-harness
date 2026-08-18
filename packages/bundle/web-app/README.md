@@ -6,7 +6,7 @@ The dsh browser-surface bundle. [`cordis.patch.yml`](cordis.patch.yml) rides ove
 
 ## Model retry defaults
 
-The Web layer configures `LlmRuntime.defaultRetryPolicy` with normal mode and `maxRetries: 5`, allowing at most five eligible retries after the initial request. Every adapter route without an explicit provider policy inherits it, including `deepseek-official`, settings-added pi-ai routes, and future adapters. A `llm-deepseek` or pi-ai provider `retryPolicy` overrides the deployment default; non-Web profiles retain the core two-retry default unless their own composition chooses another value.
+Web uses the shared bounded normal default of five eligible retries after the initial request. The `deepseek-official` route and settings-added pi-ai routes use that default when they omit `retryPolicy`; explicit provider policies still win. Web adds no retry-specific composition override, so the same omission behavior applies to non-Web profiles.
 
 ## Model Experience
 

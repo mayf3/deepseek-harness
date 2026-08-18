@@ -136,7 +136,7 @@ export interface PiAiProviderProfile {
   websocketConnectTimeoutMs?: number
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs?: number
-  /** Provider-owned model-request retry policy; omission inherits the LLM deployment default. */
+  /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
 
@@ -151,8 +151,8 @@ export interface ResolvedPiAiProviderProfile
   apiKeyEnv?: CredentialRef
   /** Positive finite provider-idle interval after defaulting. */
   streamIdleTimeoutMs: number
-  /** Explicit immutable retry policy captured with this provider route. */
-  retryPolicy?: ResolvedRetryPolicy
+  /** Immutable retry policy captured with this provider route. */
+  retryPolicy: ResolvedRetryPolicy
   /**
    * The pi-ai provider this route registers, built from the resolved models.
    * Construction happens here so an unserviceable protocol or an underspecified
@@ -294,8 +294,8 @@ function rejectRemovedFields(provider: string, source: PiAiProviderProfile): voi
  * Validate profiles and return a detached route-keyed map suitable for
  * per-request reads. This is the one explicit resolve step, so an omitted dict
  * resolves to the empty (dormant) route set here rather than through a hidden
- * fallback, and each route's models, explicit retry policy, and pi-ai provider
- * are materialized once.
+ * fallback, and each route's models, retry policy, and pi-ai provider are
+ * materialized once.
  * @param providers - configured provider profiles keyed by route.
  * @returns validated profiles in configuration order.
  */
@@ -355,9 +355,7 @@ export function resolveProfiles(
       displayName,
       ...apiKeyEnv === undefined ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
       streamIdleTimeoutMs,
-      ...retryPolicy === undefined ? {} : {
-        retryPolicy: resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
-      },
+      retryPolicy: resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
       ...rest.headers === undefined ? {} : { headers: { ...rest.headers } },
       ...rest.thinkingBudgets === undefined ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },
       configuredMaxTokens: catalog.configuredMaxTokens,

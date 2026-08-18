@@ -5,7 +5,7 @@
  * pi-ai does not ship is declared outright. Profile facts resolve per request
  * over the optional `llm-pi-ai` user-settings section and the optional
  * credential seam, so a changed key, endpoint, model, or knob reaches the next
- * request without a restart; a changed *route set* (or a route's explicit,
+ * request without a restart; a changed *route set* (or a route's
  * registration-captured retry policy) re-registers the same adapter instance
  * in place.
  *
@@ -99,7 +99,7 @@ function registrationFacts(profiles: ReadonlyMap<string, ResolvedPiAiProviderPro
     .map(([provider, profile]) => ({
       provider,
       displayName: profile.displayName,
-      ...profile.retryPolicy === undefined ? {} : { retryPolicy: profile.retryPolicy },
+      retryPolicy: profile.retryPolicy,
     }))
     .sort((left, right) => left.provider.localeCompare(right.provider))
 }

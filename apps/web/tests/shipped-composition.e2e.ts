@@ -94,7 +94,7 @@ it('assembles the shipped Web catalog, file-reference guidance, retry policy, an
     }
   `)
   await ctx.settings.update(settingsNamespace('llm-deepseek'), {
-    retryPolicy: { mode: 'always' },
+    retryPolicy: { mode: 'always', maxRetries: 5 },
   })
   expect(ctx.llm.providerRetryPolicy('deepseek-official')).toMatchInlineSnapshot(`
     {

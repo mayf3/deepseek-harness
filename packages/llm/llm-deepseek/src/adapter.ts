@@ -66,8 +66,8 @@ export interface DeepSeekConnectionOptions {
   models: readonly DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs: number
-  /** Explicit provider-owned model-request retry policy, already resolved. */
-  retryPolicy?: ResolvedRetryPolicy
+  /** Provider-owned model-request retry policy, already resolved. */
+  retryPolicy: ResolvedRetryPolicy
 }
 
 /** Constructor options for {@link DeepSeekAdapter}: the operation-local resolution hooks the plugin owns. */
@@ -166,7 +166,7 @@ export class DeepSeekAdapter extends LlmAdapter {
     return { id: provider, name: 'DeepSeek' }
   }
 
-  override providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined {
+  override providerRetryPolicy(_provider: string): ResolvedRetryPolicy {
     return this.config.options().retryPolicy
   }
 

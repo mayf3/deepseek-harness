@@ -8,9 +8,9 @@ Provider-neutral LLM vocabulary and abstract service. This package defines the c
 
 An adapter registry plus a single streaming call API, interceptable via a waterfall event.
 
-### Configuration
+### Retry policy
 
-`defaultRetryPolicy` is the deployment policy inherited by every provider route whose adapter supplies no explicit override. Omitting it preserves the bounded normal default of two retries. An adapter override wins, and the effective resolved policy is captured with the route registration; this service stores that policy but does not execute retries.
+Each provider adapter supplies its resolved route policy. Omitting provider configuration uses bounded normal mode with five retries after the first request. Layered configuration may retain `maxRetries` or `retryableCodes` after changing `mode` to `always`; resolution ignores those inactive normal-mode fields and captures a pure always policy. This service stores the effective policy but does not execute retries.
 
 ### Public API
 
@@ -21,7 +21,7 @@ An adapter registry plus a single streaming call API, interceptable via a waterf
 - `ctx.llm.registerModelDiscovery(settingsNs: string, discover): () => void` Offer to interrogate provider endpoints for the settings namespace this plugin owns. One offer per namespace (`INVALID_DISCOVERY`/`DUPLICATE_DISCOVERY`), disposed with the calling fiber.
 - `ctx.llm.listModelDiscoveryNamespaces(): string[]` List the namespaces that can interrogate an endpoint, so a surface offers the action only where it works.
 - `ctx.llm.discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<LlmDiscoveredModel[]>` Ask one endpoint which models it advertises.
-- `ctx.llm.providerRetryPolicy(provider: string): ResolvedRetryPolicy` Return the effective retry policy captured during registration: the adapter override when present, otherwise the deployment default.
+- `ctx.llm.providerRetryPolicy(provider: string): ResolvedRetryPolicy` Return the provider-owned retry policy captured during registration, with normal defaults already resolved.
 - `ctx.llm.listModels(provider: string): Promise<LlmModelInfo[]>` Discover the models one registered provider currently advertises.
 - `ctx.llm.resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>` Resolve validated exact-model identity plus available context, output-default, and reasoning metadata from the owning adapter, with optional cancellation for asynchronous adapters.
 - `ctx.llm.resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>` Validate an explicit effort and materialize adapter-configured call defaults without clamping.
@@ -48,7 +48,7 @@ Exact-model metadata is a separate correctness query, not a catalog decoration o
 
 ### Extension points
 
-- Subclass `LlmAdapter` and call `ctx.llm.registerAdapter(providers, adapter)` to add one or more provider routes. `GenerateOptions.provider` selects the adapter; `GenerateOptions.model` is adapter-owned and may be resolved dynamically. Override `providerRetryPolicy()` only for an explicit provider-owned recovery policy; omission inherits `LlmRuntime`'s deployment default. Override `providerInfo()` and asynchronous `listModels()` to expose selector metadata, then implement `resolveModel()` when exact identity, capacity, an output default, or selectable reasoning efforts are available; an asynchronous resolver must honor its optional cancellation signal. The defaults use the route and model ids as names, advertise no models, and return no capacity, output default, or reasoning metadata.
+- Subclass `LlmAdapter` and call `ctx.llm.registerAdapter(providers, adapter)` to add one or more provider routes. `GenerateOptions.provider` selects the adapter; `GenerateOptions.model` is adapter-owned and may be resolved dynamically. Override `providerRetryPolicy()` to supply provider-owned recovery configuration, `providerInfo()` and asynchronous `listModels()` to expose selector metadata, then implement `resolveModel()` when exact identity, capacity, an output default, or selectable reasoning efforts are available; an asynchronous resolver must honor its optional cancellation signal. The defaults use bounded normal retry policy, use the route and model ids as names, advertise no models, and return no capacity, output default, or reasoning metadata.
 - Wrap `llm/stream` via `ctx.on()` waterfall listeners for caching, logging, or routing. A wrapper that retries after emitting a chunk has no durable attempt boundary; shipped agent retry policy therefore uses `agent/request-error` instead.
 
 ### Messages (`message.ts`) and content blocks (`types.ts`)
