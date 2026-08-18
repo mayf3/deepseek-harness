@@ -2,13 +2,13 @@
 
 English | [中文](client-modules.zh.md)
 
-The web plugin table: the Node half of the client module system in [dsh-client-modules](../../packages/client/modules), provided as `ctx.clientModules` (`ClientModuleRegistry`). It scans the host Loader's entries for packages declaring `dsh.client`, composes the `window.__DSH_BOOT__` entry graph, serves each bundle at `/plugins/<id>/client.js`, and answers every index-injection collection with the boot manifest rows — the four faces of one service. It is an optional capability of the web GUI stack, not part of the agent-loop spine, and it is a consumer of [dsh-host-webserver](../../packages/host/webserver): the carrier described in [web-server.md](web-server.md) supplies the prefix route and the `webserver/index-inject` event this service answers. The same package's browser half (`ctx.modules`, the lazy-CJS module table that fetches and materializes these bundles) is kernel machinery documented in the [package README](../../packages/client/modules/README.md), not here.
+The web plugin table: the Node half of the client module system in [dsh-client-modules](../../packages/client/modules), provided as `ctx.clientModules` (`ClientModuleRegistry`). It scans the host Loader's entries for packages declaring `dsh.client`, composes the `window.__DSH_BOOT__` entry graph, serves content-addressed startup batches and individual HMR scripts under `/plugins`, and answers every index-injection collection with the boot protocol rows — the four faces of one service. It is an optional capability of the web GUI stack, not part of the agent-loop spine, and it is a consumer of [dsh-host-webserver](../../packages/host/webserver): the carrier described in [web-server.md](web-server.md) supplies the prefix route and the `webserver/index-inject` event this service answers. The same package's browser half (`ctx.modules`, the lazy-CJS module table that fetches and materializes these bundles) is kernel machinery documented in the [package README](../../packages/client/modules/README.md), not here.
 
 Source: [`packages/client/modules/src/client/manifest.ts`](../../packages/client/modules/src/client/manifest.ts)
 
 ## The wire
 
-The graph is the wire single source between the Node and browser halves: the host composes `WebBootEntry` rows from scanned packages, publishes the graph as a `global` injection row rendered ahead of later script rows (`globalThis["__DSH_BOOT__"]`, with `<` escaped so plugin-controlled strings cannot break out of the script element), and the shell parses it before booting anything. A page without a valid manifest cannot boot — the browser-side parser throws loud on a missing or malformed graph.
+The graph is the wire single source between the Node and browser halves. The host composes `WebBootEntry` rows and `WebBootBatch` descriptors from scanned packages, then contributes the registration facade, application preload, bootstrap script, and graph global to the structured index-injection table before the Vite entry. The `global` row renders as `globalThis["__DSH_BOOT__"]` with `<` escaped so plugin-controlled strings cannot break out of the script element. A page without a valid manifest cannot boot: the browser parser rejects malformed rows or batches, duplicate phase names, unknown members, and entries without exactly one initial batch.
 
 ```ts type-equiv
 /**
@@ -22,9 +22,9 @@ The graph is the wire single source between the Node and browser halves: the hos
 interface WebBootEntry {
   /** Entry name == package name. */
   id: string
-  /** Bundle endpoint, '/plugins/<id>/client.js?rev=<rev>'. */
+  /** Revisioned individual endpoint used by HMR. */
   url: string
-  /** Bundle content hash (cache-busting consistency anchor). */
+  /** Hash over the individual bundle and available source map. */
   rev: string
   /** Package-name dependency edges used for factory arrival and plugin composition. */
   inject?: string[]
@@ -32,6 +32,25 @@ interface WebBootEntry {
   immediately?: boolean
   /** Non-baseline module specifiers this row requests; omitted when it requests none. */
   external?: string[]
+}
+```
+
+```ts type-equiv
+/** Initial script-delivery phase for one content-addressed bundle batch. */
+type WebBootBatchPhase = 'bootstrap' | 'application'
+```
+
+```ts type-equiv
+/** One initial-load script containing the factory registrations for several graph rows. */
+interface WebBootBatch {
+  /** Parser-blocking bootstrap or preloaded application delivery. */
+  phase: WebBootBatchPhase
+  /** Content-addressed batch script endpoint. */
+  url: string
+  /** Hash over the batch script and indexed source map. */
+  rev: string
+  /** Graph entry ids whose factories the script registers, in execution order. */
+  entries: string[]
 }
 ```
 
@@ -46,10 +65,12 @@ interface WebBootGraph {
    * unrelated and remains owned by fiber service waiting.
    */
   entries: WebBootEntry[]
+  /** Initial-load batches; every entry belongs to exactly one batch. */
+  batches: WebBootBatch[]
 }
 ```
 
-Each row's `rev` is the bundle's content hash and rides the URL as a cache-busting query; the graph `rev` hashes the composed rows, so any row change changes it. `immediately` marks the stage-one prefetch tier (fetch and execute during module-face boot, registration only); a lazy row is fetched on first import.
+Each row's `rev` hashes the individual bundle and its available source map. The bootstrap batch contains the modules row; the preloaded application batch contains every other row. Batch revisions hash the generated script and indexed source map, and the graph revision hashes both rows and batch descriptors. `immediately` marks the stage-one registration barrier; application rows share one script transport even when only some carry the mark.
 
 ## The scan
 
@@ -61,7 +82,7 @@ Package metadata — including the negative "not a client package" verdict — i
 
 ## The bundle route and index injection
 
-`GET`/`HEAD /plugins/<id>/client.js` serves the registered bundle from disk with `no-cache` (the rev query, not HTTP caching, anchors consistency); other methods are 405. An unknown id — or a registered row whose bundle is unreadable because it has not been built yet — answers a loud 404, so no unreadable bundle appears as a successful JavaScript response. The injection rows carry the current graph on every index render, so a reload always boots against the live composition.
+`GET`/`HEAD /plugins/_batch/<phase>/<rev>/client.js` serves the generated startup scripts, with indexed maps beside them. `GET`/`HEAD /plugins/<id>/client.js?rev=<rev>` serves the snapshotted individual artifact for HMR and stamps the same revision onto its map request. All versioned responses use long-lived immutable caching. Unknown paths, absent maps, missing revisions, and stale revisions answer 404 rather than serving current bytes under an old URL or letting the SPA fallback return HTML as JavaScript; other methods are 405. The injection rows carry the current graph on every index render, so a reload always boots against the live composition.
 
 ## The service
 

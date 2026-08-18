@@ -40,6 +40,7 @@ function fakeClientModuleHost(rows: Map<string, string>, options: FakeHostOption
       return {
         rev: 'r',
         entries: [...rows.keys()].map(id => ({ id, url: `/plugins/${id}/client.js?rev=r`, rev: 'r' })),
+        batches: [],
       }
     },
     clientPath: id => rows.get(id),
@@ -98,6 +99,11 @@ describe('hmr node half', () => {
     // Nudge mtime past stat granularity so the poller sees a content signal.
     await new Promise(resolve => setTimeout(resolve, POLL_MS * 2))
     writeFileSync(bundle, 'v2-longer')
+    await vi.waitFor(() => { expect(clientModuleHost.rebuiltCalls).toContain('pkg-a') }, { timeout: 3_000 })
+
+    clientModuleHost.rebuiltCalls.length = 0
+    await new Promise(resolve => setTimeout(resolve, POLL_MS * 2))
+    writeFileSync(`${bundle}.map`, '{"version":3}')
     await vi.waitFor(() => { expect(clientModuleHost.rebuiltCalls).toContain('pkg-a') }, { timeout: 3_000 })
 
     await fiber.dispose()

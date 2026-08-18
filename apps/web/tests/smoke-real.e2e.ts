@@ -256,11 +256,39 @@ describe('dsh web keyless CLI smoke', () => {
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     )
+    let browser: Browser | undefined
     try {
       const readyUrl = await waitForReadyLine(child)
       expect(readyUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
       expect((await fetch(readyUrl)).status).toBe(200)
+      browser = await chromium.launch({ headless: true })
+      const page = await newEnglishPage(browser)
+      const pluginScripts: string[] = []
+      const cacheHeaders = new Map<string, string | undefined>()
+      page.on('request', (request) => {
+        const url = new URL(request.url())
+        if (request.resourceType() === 'script' && url.pathname.startsWith('/plugins/')) {
+          pluginScripts.push(url.pathname)
+        }
+      })
+      page.on('response', (response) => {
+        const path = new URL(response.url()).pathname
+        if (path.startsWith('/plugins/_batch/')) {
+          cacheHeaders.set(path, response.headers()['cache-control'])
+        }
+      })
+      await page.goto(readyUrl)
+      await page.getByRole('button', { name: 'New session', exact: true }).first().waitFor({ timeout: 30_000 })
+      expect([...new Set(pluginScripts)].sort()).toEqual([
+        expect.stringMatching(/^\/plugins\/_batch\/application\/[a-f\d]{12}\/client\.js$/),
+        expect.stringMatching(/^\/plugins\/_batch\/bootstrap\/[a-f\d]{12}\/client\.js$/),
+      ])
+      expect([...cacheHeaders.values()]).toEqual([
+        'public, max-age=31536000, immutable',
+        'public, max-age=31536000, immutable',
+      ])
     } finally {
+      await browser?.close()
       const closed = child.exitCode === null
         ? new Promise<void>((resolveClose) => { child.once('close', () => { resolveClose() }) })
         : Promise.resolve()

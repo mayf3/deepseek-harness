@@ -80,7 +80,11 @@ describe('bootstrap failure rendering', () => {
     await expectBootFailure(() => {
       installFacade()
       const duplicate = { id: 'duplicate', url: '/duplicate/client.js', rev: '1' }
-      win.__DSH_BOOT__ = { rev: 'graph', entries: [duplicate, duplicate] }
+      win.__DSH_BOOT__ = {
+        rev: 'graph',
+        entries: [duplicate, duplicate],
+        batches: [{ phase: 'application', url: '/batch.js', rev: 'batch', entries: ['duplicate'] }],
+      }
     }, 'duplicate graph entry "duplicate"')
   })
 })
@@ -159,7 +163,16 @@ describe('plugin activation', () => {
       { id: MODULES_ID, url: '/modules.js', rev: '1' },
       { id: 'renderer', url: '/renderer.js', rev: '1' },
     ]
-    win.__DSH_BOOT__ = { rev: 'graph', entries }
+    win.__DSH_BOOT__ = {
+      rev: 'graph',
+      entries,
+      batches: [{
+        phase: 'application',
+        url: '/application.js',
+        rev: 'batch',
+        entries: entries.map(row => row.id),
+      }],
+    }
     const registrations = new Map<string, ClientBundleRegistration>([
       ['/consumer.js', {
         id: 'consumer',
@@ -188,9 +201,8 @@ describe('plugin activation', () => {
     ])
     const entry = new AppWebEntry(container, {
       loadBundle: async (url) => {
-        const registration = registrations.get(url)
-        if (registration === undefined) throw new Error(`missing fixture registration ${url}`)
-        target.load(registration)
+        if (url !== '/application.js') throw new Error(`missing fixture batch ${url}`)
+        for (const registration of registrations.values()) target.load(registration)
       },
     })
 

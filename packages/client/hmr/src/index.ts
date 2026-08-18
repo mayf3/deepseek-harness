@@ -1,7 +1,7 @@
 /**
  * HMR plugin, node half: the host end of the dev reload chain. One interval
- * stat-polls every graph row's client bundle (polling by design: network
- * mounts deliver no inotify events), reports content changes through
+ * stat-polls every graph row's client bundle and optional source map (polling
+ * by design: network mounts deliver no inotify events), reports changes through
  * `clientModuleHost.rebuilt(id)`, and serves the `/plugins/events` SSE channel
  * broadcasting graph/rebuilt frames to the browser half (src/client/).
  * The web bundle mounts this row unconditionally: without a rebuild
@@ -42,11 +42,36 @@ function sseData(frame: PluginsEventFrame): string {
   return `data: ${JSON.stringify(frame)}\n\n`
 }
 
-interface WatchedBundle {
-  path: string
+interface WatchedArtifactStat {
   mtimeMs: number
   size: number
+  mapMtimeMs: number | null
+  mapSize: number | null
+}
+
+interface WatchedBundle extends WatchedArtifactStat {
+  path: string
   dirty: boolean
+}
+
+/** Snapshot the bundle plus its optional development source map. */
+function artifactStat(path: string): WatchedArtifactStat {
+  const bundle = statSync(path)
+  try {
+    const map = statSync(`${path}.map`)
+    return { mtimeMs: bundle.mtimeMs, size: bundle.size, mapMtimeMs: map.mtimeMs, mapSize: map.size }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    return { mtimeMs: bundle.mtimeMs, size: bundle.size, mapMtimeMs: null, mapSize: null }
+  }
+}
+
+/** Whether neither served artifact changed since the last successful re-hash. */
+function sameArtifactStat(left: WatchedArtifactStat, right: WatchedArtifactStat): boolean {
+  return left.mtimeMs === right.mtimeMs
+    && left.size === right.size
+    && left.mapMtimeMs === right.mapMtimeMs
+    && left.mapSize === right.mapSize
 }
 
 /**
@@ -61,7 +86,7 @@ export function apply(ctx: Context, config: Config): void {
   // --- bundle watch: one HMR-owned stat poll ------------------------------
   const watched = new Map<string, WatchedBundle>()
 
-  const rehash = (id: string, watch: WatchedBundle, current: { mtimeMs: number; size: number }): void => {
+  const rehash = (id: string, watch: WatchedBundle, current: WatchedArtifactStat): void => {
     try {
       // rebuilt() re-hashes; an unchanged hash stays silent (clientModuleHost
       // fires onRebuilt only on a real rev change).
@@ -76,19 +101,21 @@ export function apply(ctx: Context, config: Config): void {
     }
     watch.mtimeMs = current.mtimeMs
     watch.size = current.size
+    watch.mapMtimeMs = current.mapMtimeMs
+    watch.mapSize = current.mapSize
     watch.dirty = false
   }
 
   const watchRow = (id: string, path: string): void => {
-    let baseline: { mtimeMs: number; size: number }
+    let baseline: WatchedArtifactStat
     try {
-      baseline = statSync(path)
+      baseline = artifactStat(path)
     } catch (error) {
-      watched.set(id, { path, mtimeMs: 0, size: 0, dirty: true })
+      watched.set(id, { path, mtimeMs: 0, size: 0, mapMtimeMs: null, mapSize: null, dirty: true })
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') ctx.logger.warn(error)
       return
     }
-    const watch = { path, mtimeMs: baseline.mtimeMs, size: baseline.size, dirty: false }
+    const watch: WatchedBundle = { path, ...baseline, dirty: false }
     watched.set(id, watch)
     // The module host hashed before publishing the graph. Re-hash immediately
     // after capturing this baseline so a write in between cannot become an
@@ -98,15 +125,15 @@ export function apply(ctx: Context, config: Config): void {
 
   const pollWatches = (): void => {
     for (const [id, watch] of watched) {
-      let current: { mtimeMs: number; size: number }
+      let current: WatchedArtifactStat
       try {
-        current = statSync(watch.path)
+        current = artifactStat(watch.path)
       } catch (error) {
         watch.dirty = true
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') ctx.logger.warn(error)
         continue
       }
-      if (!watch.dirty && current.mtimeMs === watch.mtimeMs && current.size === watch.size) continue
+      if (!watch.dirty && sameArtifactStat(current, watch)) continue
       // Stat-before-hash preserves a detectable older baseline for writes that
       // land during hashing. Repeated stat changes heal a torn read.
       rehash(id, watch, current)

@@ -50,9 +50,9 @@ declare module '@deepseek-ai/cordis' {
 export interface WebBootEntry {
   /** Entry name == package name. */
   id: string
-  /** Bundle endpoint, '/plugins/<id>/client.js?rev=<rev>'. */
+  /** Revisioned individual endpoint used by HMR. */
   url: string
-  /** Bundle content hash (cache-busting consistency anchor). */
+  /** Hash over the individual bundle and available source map. */
   rev: string
   /** Package-name dependency edges used for factory arrival and plugin composition. */
   inject?: string[]
@@ -60,6 +60,21 @@ export interface WebBootEntry {
   immediately?: boolean
   /** Non-baseline module specifiers this row requests; omitted when it requests none. */
   external?: string[]
+}
+
+/** Initial script-delivery phase for one content-addressed bundle batch. */
+export type WebBootBatchPhase = 'bootstrap' | 'application'
+
+/** One initial-load script containing the factory registrations for several graph rows. */
+export interface WebBootBatch {
+  /** Parser-blocking bootstrap or preloaded application delivery. */
+  phase: WebBootBatchPhase
+  /** Content-addressed batch script endpoint. */
+  url: string
+  /** Hash over the batch script and indexed source map. */
+  rev: string
+  /** Graph entry ids whose factories the script registers, in execution order. */
+  entries: string[]
 }
 
 /** The composed client entry graph the host injects as `window.__DSH_BOOT__`. */
@@ -72,15 +87,19 @@ export interface WebBootGraph {
    * unrelated and remains owned by fiber service waiting.
    */
   entries: WebBootEntry[]
+  /** Initial-load batches; every entry belongs to exactly one batch. */
+  batches: WebBootBatch[]
 }
 
 /** The npm-package view of one boot row: what the module table needs to fetch the bundle. */
 export interface BootModuleRow {
   /** Entry name == package name (module-table key). */
   id: string
-  /** Bundle endpoint, '/plugins/<id>/client.js?rev=<rev>'. */
+  /** Revisioned individual endpoint used after HMR invalidation. */
   url: string
-  /** Bundle content hash. */
+  /** Content-addressed batch endpoint used before the first HMR invalidation. */
+  initialUrl: string
+  /** Hash over the individual bundle and available source map. */
   rev: string
   /** Injected package rows whose factories arrive before this row materializes. */
   inject: string[]
@@ -156,8 +175,12 @@ export function parseBootManifest(wire: unknown): BootManifest {
   if (!Array.isArray(graph.entries)) {
     throw new Error('client-modules: boot manifest entries must be an array')
   }
-  const modules: BootModuleRow[] = []
+  if (!Array.isArray(graph.batches)) {
+    throw new Error('client-modules: boot manifest batches must be an array')
+  }
+  const moduleFields: Omit<BootModuleRow, 'initialUrl'>[] = []
   const plugins: BootPluginRow[] = []
+  const seenEntryIds = new Set<string>()
   for (const value of graph.entries as unknown[]) {
     if (typeof value !== 'object' || value === null) {
       throw new Error('client-modules: boot manifest entry is not an object')
@@ -167,13 +190,15 @@ export function parseBootManifest(wire: unknown): BootManifest {
     if (typeof row.id !== 'string' || typeof row.url !== 'string' || typeof row.rev !== 'string') {
       throw new Error(`client-modules: boot manifest entry ${where} must carry string id/url/rev`)
     }
+    if (seenEntryIds.has(row.id)) throw new Error(`client-modules: duplicate graph entry "${row.id}"`)
+    seenEntryIds.add(row.id)
     const subject = `boot manifest entry ${where}`
     const inject = optionalStringArray(subject, 'inject', row.inject)
     const external = optionalStringArray(subject, 'external', row.external)
     if (row.immediately !== undefined && typeof row.immediately !== 'boolean') {
       throw new Error(`client-modules: boot manifest entry ${where} immediately must be a boolean`)
     }
-    modules.push({
+    moduleFields.push({
       id: row.id,
       url: row.url,
       rev: row.rev,
@@ -186,6 +211,47 @@ export function parseBootManifest(wire: unknown): BootManifest {
       immediately: row.immediately === true,
     })
   }
+
+  const entryIds = new Set(moduleFields.map(row => row.id))
+  const initialUrls = new Map<string, string>()
+  const phases = new Set<WebBootBatchPhase>()
+  for (const value of graph.batches as unknown[]) {
+    if (typeof value !== 'object' || value === null) {
+      throw new Error('client-modules: boot manifest batch is not an object')
+    }
+    const batch = value as Record<string, unknown>
+    const phase = batch.phase
+    if (phase !== 'bootstrap' && phase !== 'application') {
+      throw new Error(`client-modules: boot manifest batch phase must be "bootstrap" or "application", received ${JSON.stringify(phase)}`)
+    }
+    if (phases.has(phase)) {
+      throw new Error(`client-modules: boot manifest carries duplicate "${phase}" batches`)
+    }
+    phases.add(phase)
+    if (typeof batch.url !== 'string' || typeof batch.rev !== 'string') {
+      throw new Error(`client-modules: boot manifest ${phase} batch must carry string url/rev`)
+    }
+    const entries = optionalStringArray(`boot manifest ${phase} batch`, 'entries', batch.entries)
+    if (entries === undefined || entries.length === 0) {
+      throw new Error(`client-modules: boot manifest ${phase} batch entries must be a non-empty string array`)
+    }
+    for (const id of entries) {
+      if (!entryIds.has(id)) {
+        throw new Error(`client-modules: boot manifest ${phase} batch names unknown entry "${id}"`)
+      }
+      if (initialUrls.has(id)) {
+        throw new Error(`client-modules: boot manifest entry "${id}" belongs to more than one batch`)
+      }
+      initialUrls.set(id, batch.url)
+    }
+  }
+  const modules = moduleFields.map((row): BootModuleRow => {
+    const initialUrl = initialUrls.get(row.id)
+    if (initialUrl === undefined) {
+      throw new Error(`client-modules: boot manifest entry "${row.id}" belongs to no initial-load batch`)
+    }
+    return { ...row, initialUrl }
+  })
   return { rev: graph.rev, modules, plugins }
 }
 
@@ -286,11 +352,14 @@ export interface ClientModuleLoader {
   prefetch(id: string): Promise<void>
   /**
    * Full reset of one non-bootstrap module: drop its registered factory and
-   * materialized record so the next prefetch/import reloads it (the HMR
-   * invalidation hook). The bootstrap module remains materialized.
+   * materialized record so the next prefetch/import reloads its individual
+   * script rather than the initial batch. The bootstrap module remains
+   * materialized.
    * @param id - entry name to invalidate.
+   * @param rev - New content revision from the HMR frame; omitted to reuse
+   * the graph revision or for page-local modules that register directly.
    */
-  invalidate(id: string): void
+  invalidate(id: string, rev?: string): void
 }
 
 /** Internal construction inputs assembled by the modules bundle's bootstrap export. */

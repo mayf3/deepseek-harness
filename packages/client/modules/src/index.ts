@@ -2,11 +2,12 @@
  * Node half of the client module system (`dsh.client` dual-face package): scans
  * the host Loader's entries for packages declaring `dsh.client`, composes the
  * `window.__DSH_BOOT__` entry graph (wire single source: {@link WebBootEntry}
- * in `./client/manifest.ts`) in module-graph order, serves
- * `/plugins/<id>/client.js` and its source map, contributes the boot manifest
- * plus the parser-blocking bootstrap preloads to the webserver's index
- * injection table, and provides the `clientModuleHost` service (the HMR node
- * half's registration/notification face).
+ * in `./client/manifest.ts`) in module-graph order, serves two initial-load
+ * batches plus revisioned per-plugin HMR scripts and their source maps,
+ * contributes the registration facade, application preload, bootstrap script,
+ * and graph to the webserver's index injection table, and provides the
+ * `clientModuleHost` service (the HMR node half's registration/notification
+ * face).
  *
  * Scanning is incremental per package — there is no full-rescan code path.
  * Every cordis `internal/plugin` emission (fiber construction/disposal) marks
@@ -23,7 +24,6 @@
 
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
@@ -32,11 +32,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import { optionalStringArray, stripClientSuffix } from './client/manifest.ts'
-import type { WebBootEntry, WebBootGraph } from './client/manifest.ts'
+import type { WebBootBatch, WebBootBatchPhase, WebBootEntry, WebBootGraph } from './client/manifest.ts'
 
 export { stripClientSuffix } from './client/manifest.ts'
 export type {
-  BootManifest, BootModuleRow, BootPluginRow, WebBootEntry, WebBootGraph,
+  BootManifest, BootModuleRow, BootPluginRow, WebBootBatch, WebBootBatchPhase, WebBootEntry, WebBootGraph,
 } from './client/manifest.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -50,7 +50,7 @@ declare module '@deepseek-ai/cordis' {
 interface DshClientDeclaration {
   inject?: string[]
   platform: string
-  /** Boot phase-one prefetch mark; absent means lazy (fetched on demand). */
+  /** Boot phase-one registration barrier; absent rows still ride the shared application batch. */
   immediately?: boolean
   /**
    * Exact module-table requests beyond the implicit client baseline. Any
@@ -120,7 +120,26 @@ class ClientPackageCompositionError extends AggregateError {
 interface WebPluginRecord {
   entry: WebBootEntry
   meta: PkgMeta
+  /** Exact build artifact whose hash produced entry.rev. */
+  bundle: Buffer
+  /** Revision-stamped individual response used after HMR invalidation. */
+  individualBundle: Buffer
+  /** Optional parsed and original source map snapshot for immutable delivery. */
+  sourceMap?: { body: Buffer; parsed: Record<string, unknown> }
 }
+
+/** One generated initial-load response and its wire descriptor. */
+interface BatchArtifact {
+  descriptor: WebBootBatch
+  script: Buffer
+  sourceMap?: Buffer
+}
+
+/** Versioned code is immutable; mismatched revisions are rejected instead of serving newer bytes. */
+const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable'
+
+/** Source-map trailer emitted by tsdown at the end of every client bundle. */
+const SOURCE_MAP_TRAILER = /(?:\r?\n)?\/\/# sourceMappingURL=[^\r\n]*(?:\r?\n)?$/
 
 /** Narrow an unknown parsed JSON value to the `dsh.client` declaration, throwing on malformed fields. */
 function parseDshClient(pkgName: string, value: unknown): DshClientDeclaration | undefined {
@@ -161,6 +180,113 @@ function clientExportOf(pkgName: string, exportsField: unknown): string | undefi
 /** sha1 content hash shortened to 12 hex chars (bundle rev / graph rev). */
 function shortHash(input: string | Buffer): string {
   return createHash('sha1').update(input).digest('hex').slice(0, 12)
+}
+
+/** Hash several response fields without allowing bytes to move across field boundaries. */
+function framedHash(domain: string, parts: readonly Buffer[]): string {
+  const hash = createHash('sha1').update(domain).update('\0')
+  for (const part of parts) hash.update(`${String(part.byteLength)}:`).update(part)
+  return hash.digest('hex').slice(0, 12)
+}
+
+/** Hash every byte served under one individual artifact revision. */
+function artifactRevision(bundle: Buffer, sourceMap: WebPluginRecord['sourceMap']): string {
+  return framedHash('individual', sourceMap === undefined ? [bundle] : [bundle, sourceMap.body])
+}
+
+/** Remove a bundle-local source-map trailer and retain one final newline. */
+function withoutSourceMapTrailer(input: Buffer): string {
+  const stripped = input.toString('utf8').replace(SOURCE_MAP_TRAILER, '')
+  return stripped.endsWith('\n') ? stripped : `${stripped}\n`
+}
+
+/** Stamp an individual bundle's map request with the same immutable revision. */
+function individualBundle(input: Buffer, rev: string, hasSourceMap: boolean): Buffer {
+  const source = withoutSourceMapTrailer(input)
+  return Buffer.from(hasSourceMap ? `${source}//# sourceMappingURL=client.js.map?rev=${rev}\n` : source)
+}
+
+/** Parse an optional source-map artifact; missing maps do not prevent plugin execution. */
+function sourceMapSnapshot(clientPath: string): WebPluginRecord['sourceMap'] {
+  let body: Buffer
+  try {
+    body = readFileSync(`${clientPath}.map`)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
+  const value = JSON.parse(body.toString('utf8')) as unknown
+  const parsed = typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined
+  if (
+    parsed === undefined
+    || parsed.version !== 3
+    || !Array.isArray(parsed.sources)
+    || parsed.sources.some(source => typeof source !== 'string')
+    || !Array.isArray(parsed.names)
+    || parsed.names.some(name => typeof name !== 'string')
+    || typeof parsed.mappings !== 'string'
+  ) {
+    throw new Error(`client-modules: ${clientPath}.map is not a regular Source Map v3 object`)
+  }
+  return { body, parsed }
+}
+
+/** Count generated lines while assembling indexed-map section offsets. */
+function newlineCount(value: string): number {
+  let count = 0
+  for (const char of value) if (char === '\n') count += 1
+  return count
+}
+
+/** Resolve section sources against their original per-plugin map URL before relocation into a batch. */
+function batchSectionMap(record: WebPluginRecord): Record<string, unknown> {
+  const original = record.sourceMap?.parsed
+  /* v8 ignore next -- callers add sections only for records with a source map. */
+  if (original === undefined) throw new Error(`client-modules: source map missing for ${record.entry.id}`)
+  const sourcePaths = original.sources as string[]
+  const sourceRoot = typeof original.sourceRoot === 'string' ? original.sourceRoot : ''
+  const base = new URL(`/plugins/${record.entry.id}/client.js.map`, 'http://dsh.invalid')
+  const relocated = sourcePaths.map((source) => {
+    const separator = sourceRoot !== '' && !sourceRoot.endsWith('/') && !source.startsWith('/') ? '/' : ''
+    const resolved = new URL(`${sourceRoot}${separator}${source}`, base)
+    return resolved.origin === base.origin
+      ? `${resolved.pathname}${resolved.search}${resolved.hash}`
+      : resolved.href
+  })
+  const section: Record<string, unknown> = { ...original, sources: relocated }
+  delete section.sourceRoot
+  return section
+}
+
+/** Concatenate factory registrations and compose their maps as indexed sections. */
+function buildBatch(phase: WebBootBatchPhase, records: readonly WebPluginRecord[]): BatchArtifact {
+  let source = ''
+  const sections: { offset: { line: number; column: 0 }; map: Record<string, unknown> }[] = []
+  let line = 0
+  for (const record of records) {
+    if (record.sourceMap !== undefined) {
+      sections.push({ offset: { line, column: 0 }, map: batchSectionMap(record) })
+    }
+    const bundle = `${withoutSourceMapTrailer(record.bundle)};\n`
+    source += bundle
+    line += newlineCount(bundle)
+  }
+  const sourceMap = sections.length === 0
+    ? undefined
+    : Buffer.from(`${JSON.stringify({ version: 3, file: 'client.js', sections })}\n`)
+  if (sourceMap !== undefined) source += '//# sourceMappingURL=client.js.map\n'
+  const script = Buffer.from(source)
+  const rev = framedHash('batch', sourceMap === undefined ? [script] : [script, sourceMap])
+  return {
+    descriptor: {
+      phase,
+      url: `/plugins/_batch/${phase}/${rev}/client.js`,
+      rev,
+      entries: records.map(record => record.entry.id),
+    },
+    script,
+    ...(sourceMap === undefined ? {} : { sourceMap }),
+  }
 }
 
 /** Graph row for one bundle rev (url carries the rev as its cache-busting query). */
@@ -222,13 +348,22 @@ export function orderByModuleGraph(entries: readonly WebBootEntry[]): WebBootEnt
 /** Bootstrap package whose ordinary client bundle supplies the module-system implementation. */
 const CLIENT_MODULES_ID = '@deepseek-ai/dsh-client-modules'
 
-/** Ordinary dynamic bundles the HTML parser executes before the Vite shell. */
+/** Dynamic bundles grouped into the parser bootstrap batch before the Vite shell. */
 const PARSER_PRELOAD_IDS = [CLIENT_MODULES_ID] as const
+
+/** Escape a graph URL before placing it in a quoted HTML attribute. */
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+}
 
 /**
  * The boot protocol as index injection rows. The inline registration queue
- * precedes the blocking classic script for modules' ordinary `lib/client.js`
- * artifact. Its `create()` method materializes the modules
+ * precedes the application-batch preload and the blocking bootstrap batch. Its
+ * `create()` method materializes the modules
  * bundle, delegates construction to that bundle, and leaves the same facade
  * in live-registration mode. The graph global follows before the shell reads
  * it.
@@ -259,14 +394,21 @@ window.__ModuleLoader__={
   }
 }
 })()`
-  const preload = PARSER_PRELOAD_IDS.map(id => graph.entries.find(entry => entry.id === id))
-    .filter((entry): entry is WebBootEntry => entry !== undefined)
-    .map((entry): IndexInjection => ({ kind: 'script-src', placement: 'head', src: entry.url }))
-  return [
-    { kind: 'script', placement: 'head', text: queue },
-    ...preload,
-    { kind: 'global', name: '__DSH_BOOT__', value: graph },
-  ]
+  const bootstrap = graph.batches.find(batch => batch.phase === 'bootstrap')
+  const application = graph.batches.find(batch => batch.phase === 'application')
+  const rows: IndexInjection[] = [{ kind: 'script', placement: 'head', text: queue }]
+  if (application !== undefined) {
+    rows.push({
+      kind: 'html',
+      placement: 'head',
+      html: `<link rel="preload" as="script" href="${escapeHtmlAttribute(application.url)}">`,
+    })
+  }
+  if (bootstrap !== undefined) {
+    rows.push({ kind: 'script-src', placement: 'head', src: bootstrap.url })
+  }
+  rows.push({ kind: 'global', name: '__DSH_BOOT__', value: graph })
+  return rows
 }
 
 /**
@@ -288,6 +430,9 @@ export class ClientModuleRegistry extends Service {
   private readonly graphListeners = new Set<() => void>()
   private readonly dirty = new Set<string>()
   private readonly resolvePkgJson: (spec: string) => string
+  private batchResponses = new Map<string, { body: Buffer; contentType: string }>()
+  /** One prior graph generation covers a request racing the HMR recomposition that replaced its URL. */
+  private previousBatchResponses = new Map<string, { body: Buffer; contentType: string }>()
   private flushQueued = false
   private composed: WebBootGraph
 
@@ -368,9 +513,22 @@ export class ClientModuleRegistry extends Service {
   rebuilt(id: string): string | undefined {
     const record = this.table.get(id)
     if (record === undefined) return undefined
-    const rev = shortHash(readFileSync(record.meta.clientPath))
+    const bundle = readFileSync(record.meta.clientPath)
+    let sourceMap: WebPluginRecord['sourceMap']
+    try {
+      sourceMap = sourceMapSnapshot(record.meta.clientPath)
+    } catch (error) {
+      // A client rebuild remains reloadable when its development-only map is
+      // temporarily incomplete; this revision simply exposes no map.
+      this.ctx.logger.warn(error)
+    }
+    const rev = artifactRevision(bundle, sourceMap)
     if (rev === record.entry.rev) return rev
     record.entry = graphRow(id, rev, record.meta)
+    record.bundle = bundle
+    record.individualBundle = individualBundle(bundle, rev, sourceMap !== undefined)
+    if (sourceMap === undefined) delete record.sourceMap
+    else record.sourceMap = sourceMap
     this.composed = this.compose()
     for (const notify of this.rebuildListeners) {
       // Containment: rebuilt() runs inside the HMR watch callback — a
@@ -408,7 +566,36 @@ export class ClientModuleRegistry extends Service {
 
   private compose(): WebBootGraph {
     const entries = orderByModuleGraph([...this.table.values()].map(record => record.entry))
-    return { rev: shortHash(JSON.stringify(entries)), entries }
+    const records = new Map([...this.table.entries()])
+    const bootstrap = PARSER_PRELOAD_IDS
+      .map(id => records.get(id))
+      .filter((record): record is WebPluginRecord => record !== undefined)
+    const bootstrapIds = new Set(bootstrap.map(record => record.entry.id))
+    const application = entries
+      .filter(entry => !bootstrapIds.has(entry.id))
+      .map(entry => records.get(entry.id))
+      .filter((record): record is WebPluginRecord => record !== undefined)
+    const artifacts: BatchArtifact[] = []
+    if (bootstrap.length > 0) artifacts.push(buildBatch('bootstrap', bootstrap))
+    if (application.length > 0) artifacts.push(buildBatch('application', application))
+
+    const batchResponses = new Map<string, { body: Buffer; contentType: string }>()
+    for (const artifact of artifacts) {
+      batchResponses.set(artifact.descriptor.url, {
+        body: artifact.script,
+        contentType: 'text/javascript; charset=utf-8',
+      })
+      if (artifact.sourceMap !== undefined) {
+        batchResponses.set(`${artifact.descriptor.url}.map`, {
+          body: artifact.sourceMap,
+          contentType: 'application/json; charset=utf-8',
+        })
+      }
+    }
+    this.previousBatchResponses = this.batchResponses
+    this.batchResponses = batchResponses
+    const batches = artifacts.map(artifact => artifact.descriptor)
+    return { rev: shortHash(JSON.stringify({ entries, batches })), entries, batches }
   }
 
   private notifyGraphChanged(): void {
@@ -460,15 +647,21 @@ export class ClientModuleRegistry extends Service {
   }
 
   /**
-   * Read the activation-time bundle revision.
+   * Read the activation-time bundle and optional source-map snapshots.
    * @param pkgName - package that declares the client bundle.
    * @param clientPath - absolute path of the built client artifact.
-   * @returns the bundle content's short hash for use as its revision.
+   * @returns the immutable bytes plus the bundle content revision.
    * @throws {MissingClientBundleError} when the read fails with `ENOENT`; other filesystem errors are rethrown unchanged.
    */
-  private initialBundleRevision(pkgName: string, clientPath: string): string {
+  private initialBundleSnapshot(pkgName: string, clientPath: string): {
+    bundle: Buffer
+    rev: string
+    sourceMap?: WebPluginRecord['sourceMap']
+  } {
     try {
-      return shortHash(readFileSync(clientPath))
+      const bundle = readFileSync(clientPath)
+      const sourceMap = sourceMapSnapshot(clientPath)
+      return { bundle, rev: artifactRevision(bundle, sourceMap), ...(sourceMap === undefined ? {} : { sourceMap }) }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       throw new MissingClientBundleError(pkgName, clientPath, error)
@@ -490,8 +683,14 @@ export class ClientModuleRegistry extends Service {
     if (meta === null) return false
     // The rev rides the row from here on: a fiber restart reuses the row (and
     // its rev) untouched; only rebuilt() re-reads the bundle.
-    const rev = this.initialBundleRevision(entryName, meta.clientPath)
-    this.table.set(entryName, { entry: graphRow(entryName, rev, meta), meta })
+    const snapshot = this.initialBundleSnapshot(entryName, meta.clientPath)
+    this.table.set(entryName, {
+      entry: graphRow(entryName, snapshot.rev, meta),
+      meta,
+      bundle: snapshot.bundle,
+      individualBundle: individualBundle(snapshot.bundle, snapshot.rev, snapshot.sourceMap !== undefined),
+      ...(snapshot.sourceMap === undefined ? {} : { sourceMap: snapshot.sourceMap }),
+    })
     return true
   }
 
@@ -523,14 +722,24 @@ export class ClientModuleRegistry extends Service {
     this.notifyGraphChanged()
   }
 
-  private readonly serveBundle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+  private readonly serveBundle = (req: IncomingMessage, res: ServerResponse): void => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.writeHead(405)
       res.end()
       return
     }
     /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server requests. */
-    const pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname)
+    const requestUrl = new URL(req.url ?? '/', 'http://x')
+    const pathname = decodeURIComponent(requestUrl.pathname)
+    const batch = this.batchResponses.get(pathname) ?? this.previousBatchResponses.get(pathname)
+    if (batch !== undefined) {
+      res.writeHead(200, {
+        'content-type': batch.contentType,
+        'cache-control': IMMUTABLE_CACHE,
+      })
+      res.end(req.method === 'HEAD' ? undefined : batch.body)
+      return
+    }
     // The id may contain a scope slash. Anything else under /plugins (including
     // /plugins/events when the HMR row is absent) is an unknown resource.
     const prefix = '/plugins/'
@@ -538,27 +747,26 @@ export class ClientModuleRegistry extends Service {
     const bundleSuffix = '/client.js'
     const isSourceMap = pathname.startsWith(prefix) && pathname.endsWith(mapSuffix)
     const suffix = isSourceMap ? mapSuffix : bundleSuffix
-    const clientPath = pathname.startsWith(prefix) && pathname.endsWith(suffix)
-      ? this.clientPath(pathname.slice(prefix.length, -suffix.length))
+    const id = pathname.startsWith(prefix) && pathname.endsWith(suffix)
+      ? pathname.slice(prefix.length, -suffix.length)
       : undefined
-    const path = clientPath === undefined ? undefined : `${clientPath}${isSourceMap ? '.map' : ''}`
-    if (path === undefined) {
+    const record = id === undefined ? undefined : this.table.get(id)
+    if (record === undefined || requestUrl.searchParams.get('rev') !== record.entry.rev) {
       res.writeHead(404)
       res.end()
       return
     }
-    try {
-      const body = await readFile(path)
-      res.writeHead(200, {
-        'content-type': isSourceMap ? 'application/json; charset=utf-8' : 'text/javascript; charset=utf-8',
-        'cache-control': 'no-cache',
-      })
-      res.end(body)
-    } catch {
-      // Registered but unreadable (bundle not built yet): loud 404 beats a silent SPA-fallback HTML page.
+    const body = isSourceMap ? record.sourceMap?.body : record.individualBundle
+    if (body === undefined) {
       res.writeHead(404)
       res.end()
+      return
     }
+    res.writeHead(200, {
+      'content-type': isSourceMap ? 'application/json; charset=utf-8' : 'text/javascript; charset=utf-8',
+      'cache-control': IMMUTABLE_CACHE,
+    })
+    res.end(req.method === 'HEAD' ? undefined : body)
   }
 }
 
