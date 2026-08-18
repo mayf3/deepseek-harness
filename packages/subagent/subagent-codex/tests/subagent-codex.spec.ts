@@ -1727,10 +1727,11 @@ describe('run lifecycle and quiescence', () => {
       const child = fakeChild({ exitOnTerminate: false })
       const { run, turnStart } = await publishRun(child)
       child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
-      child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
-        codexErrorInfo: 'other',
-      }))
-      child.fromChild.end()
+      setImmediate(() => {
+        child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+          codexErrorInfo: 'other',
+        }))
+      })
       child.settle({ exitCode: 17, signal: null })
       await expect(run.result).resolves.toEqual({
         output: [],
