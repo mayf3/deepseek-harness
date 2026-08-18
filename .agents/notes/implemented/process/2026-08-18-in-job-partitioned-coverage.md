@@ -18,7 +18,7 @@ When partitioning is enabled, `scripts/run-gates.ts` selects `pnpm run test:cove
 
 The coordinator waits for every child, validates that the blob directory contains exactly the expected files, and then runs one `vitest --merge-reports ... --coverage` command. Only that merged command applies the repository's per-file statement, branch, function, and line thresholds, so a partition is never judged against an intentionally partial inventory.
 
-`DSH_COVERAGE_MAX_WORKERS` continues to size the uninstrumented exempt gate and the ordinary non-partitioned path; it does not resize partition children. Native Windows gives the exempt gate two workers and admits four concurrent outer gates: build, production-site validation, instrumented coverage, and exempt-heavy coverage start first, then the observational inventory enters as slots become available. Linux overlaps four instrumented partition processes with two exempt workers, restoring the ordinary path's former four-way instrumented concurrency while keeping every instrumented process single-worker.
+`DSH_COVERAGE_MAX_WORKERS` continues to size the uninstrumented exempt gate and the ordinary non-partitioned path; it does not resize partition children. Native Windows gives the exempt gate two workers and admits four concurrent outer gates: build, production-site validation, instrumented coverage, and exempt-heavy coverage start first, and the observational inventory waits for both coverage gates before entering the available slots. Linux overlaps four instrumented partition processes with two exempt workers, restoring the ordinary path's former four-way instrumented concurrency while keeping every instrumented process single-worker.
 
 ## Failure and output semantics
 

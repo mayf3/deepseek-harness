@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-18-in-job-partitioned-coverage.md
-2026-08-18-in-job-partitioned-coverage.md: 5cbec688a9967bcb23a2277e11a119c7d278d7ee
-2026-08-18-in-job-partitioned-coverage.zh.md: b5d7db566b3883f26ec5528084a05a97b6e97b6a
+2026-08-18-in-job-partitioned-coverage.md: d6b8f98095ebb77c6caf88ce67999e683c71f74c
+2026-08-18-in-job-partitioned-coverage.zh.md: 36a49b91b2544c611bf77350bda66b06a2708ba6

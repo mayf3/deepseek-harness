@@ -110,7 +110,15 @@ describe('gate graph validation', () => {
     expect(byId.get('coverage')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage-exempt-heavy')?.allowFailure).not.toBe(true)
     expect(observational).not.toHaveLength(0)
-    for (const gate of observational) expect(byId.get(gate.id)?.allowFailure).toBe(true)
+    for (const gate of observational) {
+      const completeGate = byId.get(gate.id)
+      expect(completeGate?.allowFailure).toBe(true)
+      expect(completeGate?.needs).toEqual(expect.arrayContaining([
+        'coverage',
+        'coverage-exempt-heavy',
+        ...(gate.needs ?? []),
+      ]))
+    }
   })
 
   it('applies one configured test and polling timeout to both coverage gates', () => {
