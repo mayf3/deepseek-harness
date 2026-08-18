@@ -307,7 +307,7 @@ type SubagentDescendantListEntry = SubagentListEntry & {
 
 ## The terminal result: `SubagentResult`
 
-The outcome of a one-shot run, resolved by `SubagentRun.result`. `structured` is present only after a requested `outputSchema` was successfully satisfied; requesting a schema does not guarantee it, and a provider may return `stopReason: 'error'` when the child fails or finishes without a valid capture. A non-`completed` `stopReason` means `output` may be partial — the consumer maps it to an `isError` tool result rather than reporting partial output as success.
+The outcome of a one-shot run, resolved by `SubagentRun.result`. `structured` is present only after a requested `outputSchema` was successfully satisfied; requesting a schema does not guarantee it, and a provider may return `stopReason: 'error'` when the child fails or finishes without a valid capture. A provider may attach a safe, non-assistant `diagnostic` to a non-`completed` result; the provider removes tool inputs, file contents, environment values, credentials, and raw protocol payloads and limits the complete value to 4096 UTF-8 bytes before consumers present it separately from `output`. A non-`completed` `stopReason` means `output` may be partial — the consumer maps it to an `isError` tool result rather than reporting partial output as success.
 
 ```ts type-equiv
 /**
@@ -330,6 +330,13 @@ interface SubagentResult {
    * schema-agnostic.
    */
   readonly structured?: unknown
+  /**
+   * Provider-authored, non-assistant failure detail for a non-`completed`
+   * result. Providers keep this text free of tool inputs, file contents,
+   * environment values, credentials, and raw protocol payloads, and limit it
+   * to 4096 UTF-8 bytes. Consumers present it separately from {@link output}.
+   */
+  readonly diagnostic?: string
   /** Why the run ended. A non-`completed` reason means `output` may be partial. */
   readonly stopReason: SubagentStopReason
 }
@@ -561,6 +568,18 @@ registerContinuableSetup(contribution: ContinuableSetupContribution): () => void
  * @throws an aggregate error after all branches settle when any failed.
  */
 async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>
+
+/**
+ * Release selected resident continuable direct children of one exact live
+ * parent. Other children of the same parent remain admitted and resident.
+ * Absent targets and a manager-less composition are accepted no-ops.
+ * @param parent - exact live direct parent authorizing the selected release.
+ * @param childIds - durable direct-child ids to release when resident.
+ * @returns once every selected Activation released its `AgentHandle`.
+ * @throws {SubagentError} `UNAUTHORIZED` when a resident target belongs to a
+ *   different parent or the supplied parent identity is stale.
+ */
+async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>
 
 /**
  * Enumerate the parent's direct session-backed subagents without loading or

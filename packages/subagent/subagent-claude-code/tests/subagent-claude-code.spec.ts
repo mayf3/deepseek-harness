@@ -3,6 +3,7 @@ import type {
   Options,
   Query,
   SDKMessage,
+  SDKPermissionDeniedMessage,
   SDKResultMessage,
   SpawnOptions,
 } from '@anthropic-ai/claude-agent-sdk'
@@ -36,6 +37,8 @@ import {
   sdkEnvironmentOverlay,
 } from '../src/process.ts'
 import {
+  CLAUDE_CODE_PERMISSION_MODES,
+  DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
   claudeQueryOptions,
   consumeClaudeQuery,
   disposeClaudeCodeChild,
@@ -189,6 +192,20 @@ function failure(
   } as SDKResultMessage
 }
 
+function permissionDenied(): SDKPermissionDeniedMessage {
+  return {
+    type: 'system',
+    subtype: 'permission_denied',
+    tool_name: 'Bash',
+    tool_use_id: 'tool-secret',
+    decision_reason_type: 'mode',
+    decision_reason: 'contains /private/secret.txt',
+    message: 'command with SECRET_TOKEN was denied',
+    uuid: '00000000-0000-4000-8000-000000000001',
+    session_id: 'session-secret',
+  }
+}
+
 function queryFrom(
   messages: readonly SDKMessage[],
   after?: Error,
@@ -249,6 +266,7 @@ function fakeRun(
   const spec: ClaudeCodeRunSpec = {
     cwd: '/workspace',
     executable: '/native/claude',
+    permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
     env: { ANTHROPIC_API_KEY: 'fake-key' },
     disposeGraceMs: 5,
     spawn: (spawnSpec) => {
@@ -325,6 +343,27 @@ describe('task admission and package contracts', () => {
     await ctx.fiber.dispose()
   })
 
+  it('accepts only the five fixed non-interactive permission modes', () => {
+    expect(claudeCode.Config({}).permissionMode)
+      .toBe(DEFAULT_CLAUDE_CODE_PERMISSION_MODE)
+    for (const permissionMode of CLAUDE_CODE_PERMISSION_MODES) {
+      expect(claudeCode.Config({ permissionMode }).permissionMode)
+        .toBe(permissionMode)
+    }
+    for (const permissionMode of ['default', 'interactive', 'future-mode']) {
+      expect(() => claudeCode.Config({ permissionMode } as never)).toThrow()
+    }
+  })
+
+  it('resolves the safe permission default when apply is called directly', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(LocalSubprocessRuntime)
+    claudeCode.apply(ctx, { env: {}, disposeGraceMs: 3_000 })
+    expect(ctx.subagents.getProvider('claude-code')).toBeDefined()
+    await ctx.fiber.dispose()
+  })
+
   it('starts through the registered provider with its resolved config and diagnostics', async () => {
     const ctx = new Context()
     await ctx.plugin(SubagentRuntime)
@@ -341,6 +380,7 @@ describe('task admission and package contracts', () => {
         CLAUDE_CONFIG_DIR: '/private/tmp/dsh-claude-code-unit-config',
         HOME: '/private/tmp/dsh-claude-code-unit-home',
       },
+      permissionMode: 'auto',
       disposeGraceMs: 29,
     })
 
@@ -377,6 +417,7 @@ describe('task admission and package contracts', () => {
     )
     expect(queryMock.mock.calls[0]?.[0].options.pathToClaudeCodeExecutable)
       .toBe('/native/claude')
+    expect(queryMock.mock.calls[0]?.[0].options.permissionMode).toBe('auto')
     expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
       cwd: process.cwd(),
       graceMs: 29,
@@ -530,16 +571,18 @@ describe('official spawn projection', () => {
 })
 
 describe('query options and result mapping', () => {
-  it('builds the fixed unattended options over the scrubbed environment', () => {
+  it('builds the fixed unattended options over the scrubbed environment', async () => {
     vi.stubEnv('HOST_VISIBLE', 'visible')
     vi.stubEnv('HOST_SECRET_TOKEN', 'must-not-leak')
     vi.stubEnv('DSH_INTERNAL', 'must-not-leak')
     const child = fakeChild()
     const spawn = vi.fn(() => child.handle)
     const captured: SubprocessHandle[] = []
+    const diagnostics: string[] = []
     const spec: ClaudeCodeRunSpec = {
       cwd: '/workspace',
       executable: '/native/claude',
+      permissionMode: 'acceptEdits',
       env: {
         HOST_VISIBLE: 'overridden',
         ANTHROPIC_API_KEY: 'explicit-fake-key',
@@ -548,9 +591,14 @@ describe('query options and result mapping', () => {
       spawn,
     }
     const controller = new AbortController()
-    const options = claudeQueryOptions(spec, controller, (value) => {
-      captured.push(value)
-    })
+    const options = claudeQueryOptions(
+      spec,
+      controller,
+      (value) => {
+        captured.push(value)
+      },
+      value => diagnostics.push(value),
+    )
 
     expect(options).toMatchObject({
       abortController: controller,
@@ -558,22 +606,55 @@ describe('query options and result mapping', () => {
       pathToClaudeCodeExecutable: '/native/claude',
       persistSession: false,
       disallowedTools: ['AskUserQuestion'],
+      permissionMode: 'acceptEdits',
+      supportedDialogKinds: ['refusal_fallback_prompt'],
     })
+    expect(options).not.toHaveProperty('allowDangerouslySkipPermissions')
     expect(options.env).toMatchObject({
       HOST_VISIBLE: 'overridden',
       ANTHROPIC_API_KEY: 'explicit-fake-key',
     })
     expect(options.env).not.toHaveProperty('HOST_SECRET_TOKEN')
     expect(options.env).not.toHaveProperty('DSH_INTERNAL')
-    for (const omitted of [
-      'settingSources',
-      'canUseTool',
-      'onElicitation',
-      'onUserDialog',
-      'supportedDialogKinds',
-    ]) {
-      expect(options).not.toHaveProperty(omitted)
-    }
+    expect(options).not.toHaveProperty('settingSources')
+
+    const callbackSignal = new AbortController().signal
+    await expect(options.canUseTool!(
+      'Bash',
+      { command: 'cat /private/secret.txt', token: 'SECRET_TOKEN' },
+      {
+        signal: callbackSignal,
+        toolUseID: 'tool-1',
+        requestId: 'request-1',
+        blockedPath: '/private/secret.txt',
+        decisionReason: 'SECRET_TOKEN in /private/secret.txt',
+      },
+    )).resolves.toEqual({
+      behavior: 'deny',
+      message: 'This unattended Claude Code subagent cannot request human approval.',
+    })
+    await expect(options.onElicitation!(
+      {
+        serverName: 'private-server',
+        message: 'enter SECRET_TOKEN',
+        requestedSchema: { secret: true },
+      },
+      { signal: callbackSignal },
+    )).resolves.toEqual({ action: 'decline' })
+    await expect(options.onUserDialog!(
+      {
+        dialogKind: 'refusal_fallback_prompt',
+        payload: { path: '/private/secret.txt', token: 'SECRET_TOKEN' },
+      },
+      { signal: callbackSignal },
+    )).resolves.toEqual({ behavior: 'cancelled' })
+    expect(diagnostics).toEqual([
+      'Claude Code unattended decision (mode: acceptEdits; request: tool permission; decision: denied): the provider does not request human approval',
+      'Claude Code unattended decision (mode: acceptEdits; request: MCP elicitation; decision: declined): the provider does not collect interactive MCP input',
+      'Claude Code unattended decision (mode: acceptEdits; request: user dialog; decision: cancelled): the provider does not render blocking dialogs',
+    ])
+    expect(diagnostics.join('\n')).not.toContain('SECRET_TOKEN')
+    expect(diagnostics.join('\n')).not.toContain('/private/secret.txt')
 
     const spawned = options.spawnClaudeCodeProcess!(sdkSpawnOptions())
     expect(spawned).toBeInstanceOf(ManagedClaudeCodeProcess)
@@ -583,6 +664,48 @@ describe('query options and result mapping', () => {
       cwd: '/workspace',
       graceMs: 17,
     }))
+  })
+
+  it.each(CLAUDE_CODE_PERMISSION_MODES)(
+    'maps the %s mode and only confirms the dangerous bypass',
+    (permissionMode) => {
+      const child = fakeChild()
+      const options = claudeQueryOptions({
+        cwd: '/workspace',
+        executable: '/native/claude',
+        permissionMode,
+        env: {},
+        disposeGraceMs: 17,
+        spawn: () => child.handle,
+      }, new AbortController(), () => {}, () => {})
+      expect(options.permissionMode).toBe(permissionMode)
+      expect(options.disallowedTools).toEqual(permissionMode === 'plan'
+        ? ['AskUserQuestion', 'ExitPlanMode']
+        : ['AskUserQuestion'])
+      if (permissionMode === 'bypassPermissions') {
+        expect(options.allowDangerouslySkipPermissions).toBe(true)
+        expect(options).not.toHaveProperty('canUseTool')
+      } else {
+        expect(options).not.toHaveProperty('allowDangerouslySkipPermissions')
+        expect(options.canUseTool).toBeTypeOf('function')
+      }
+    },
+  )
+
+  it('disallows ExitPlanMode before native plan-mode allow rules', () => {
+    const child = fakeChild()
+    const options = claudeQueryOptions({
+      cwd: '/workspace',
+      executable: '/native/claude',
+      permissionMode: 'plan',
+      env: {},
+      disposeGraceMs: 17,
+      spawn: () => child.handle,
+    }, new AbortController(), () => {}, () => {})
+    expect(options.disallowedTools).toEqual([
+      'AskUserQuestion',
+      'ExitPlanMode',
+    ])
   })
 
   it('accepts only a non-error success with a non-blank final result', () => {
@@ -614,6 +737,16 @@ describe('query options and result mapping', () => {
     await expect(consumeClaudeQuery(
       queryFrom([{ type: 'system', subtype: 'init' } as SDKMessage]),
     )).rejects.toThrow('ended without a result')
+
+    const onPermissionDenied = vi.fn()
+    await expect(consumeClaudeQuery(queryFrom([
+      permissionDenied(),
+      success('after denial'),
+    ]), onPermissionDenied)).resolves.toEqual({
+      output: [{ type: 'text', text: 'after denial' }],
+      stopReason: 'completed',
+    })
+    expect(onPermissionDenied).toHaveBeenCalledOnce()
   })
 })
 
@@ -667,6 +800,62 @@ describe('run publication, cancellation, and settlement', () => {
     }
   })
 
+  it('attaches a safe diagnostic when a permission denial precedes failure', async () => {
+    const fixture = fakeRun([
+      permissionDenied(),
+      failure('error_during_execution'),
+    ])
+    const run = await startClaudeCodeRun(request(), fixture.spec)
+    const result = await run.result
+    expect(result).toEqual({
+      output: [],
+      diagnostic: 'Claude Code unattended decision (mode: dontAsk; request: tool permission; decision: denied): Claude Code denied the request before an interactive prompt',
+      stopReason: 'error',
+    })
+    expect(result.diagnostic).not.toContain('SECRET_TOKEN')
+    expect(result.diagnostic).not.toContain('/private/secret.txt')
+    await run.dispose()
+  })
+
+  it('omits captured diagnostics on success and isolates concurrent runs', async () => {
+    const children = [fakeChild(), fakeChild()]
+    let childIndex = 0
+    const spec: ClaudeCodeRunSpec = {
+      cwd: '/workspace',
+      executable: '/native/claude',
+      permissionMode: 'dontAsk',
+      env: {},
+      disposeGraceMs: 5,
+      spawn: () => children[childIndex++]!.handle,
+    }
+    queryMock.mockImplementation(({ prompt, options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      return prompt === 'denied then completed'
+        ? queryFrom([permissionDenied(), success('completed answer')])
+        : queryFrom([failure('error_during_execution')])
+    })
+
+    const [completed, failed] = await Promise.all([
+      startClaudeCodeRun(
+        request([{ type: 'text', text: 'denied then completed' }]),
+        spec,
+      ),
+      startClaudeCodeRun(
+        request([{ type: 'text', text: 'unrelated failure' }]),
+        spec,
+      ),
+    ])
+    await expect(completed.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'completed answer' }],
+      stopReason: 'completed',
+    })
+    await expect(failed.result).resolves.toEqual({
+      output: [],
+      stopReason: 'error',
+    })
+    await Promise.all([completed.dispose(), failed.dispose()])
+  })
+
   it('fails closed when iteration rejects after a result', async () => {
     const fixture = fakeRun(
       [success('partial final')],
@@ -704,6 +893,7 @@ describe('run publication, cancellation, and settlement', () => {
     const spec: ClaudeCodeRunSpec = {
       cwd: '/workspace',
       executable: '/native/claude',
+      permissionMode: 'dontAsk',
       env: {},
       disposeGraceMs: 5,
       spawn: () => children[index++]!.handle,
@@ -755,6 +945,7 @@ describe('run publication, cancellation, and settlement', () => {
       {
         cwd: '/workspace',
         executable: '/native/claude',
+        permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
         env: {},
         disposeGraceMs: 5,
         spawn: () => child.handle,
