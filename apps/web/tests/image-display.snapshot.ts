@@ -142,10 +142,11 @@ it('accepts pasted images into the composer rail in order and removes them', asy
       getData: () => '',
     },
   })
-  const toast = await screen.findByRole('alert')
-  expect(toast.textContent).toContain('Only PNG, JPG, WebP, and GIF images are supported')
+  const unsupportedMessage = 'Only PNG, JPG, WebP, and GIF images are supported'
+  const toast = await screen.findByText(unsupportedMessage)
+  expect(toast.closest('[role="alert"]')).not.toBeNull()
   await waitFor(() => {
-    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByText(unsupportedMessage)).toBeNull()
   }, { timeout: 6_000 })
 })
 
@@ -190,8 +191,9 @@ it('accepts a whole-page drop under the limits-labeled overlay and refuses an ov
       getData: () => '',
     },
   })
-  const banner = await screen.findByRole('alert')
-  expect(banner.textContent).toContain('A message can include up to 20 images')
+  const limitMessage = 'A message can include up to 20 images'
+  const banner = await screen.findByText(limitMessage)
+  expect(banner.closest('[role="alert"]')).not.toBeNull()
   const rail = document.querySelector('[role="group"][aria-label="Pending images"]')
   expect([...(rail?.querySelectorAll('img') ?? [])]).toHaveLength(1)
 })

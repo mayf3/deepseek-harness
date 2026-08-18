@@ -108,8 +108,10 @@ describe('web e2e: Cordis tools use their owned cards', () => {
     // NOT the plugin running. Until a person answers, the browser half has not
     // been fetched, evaluated, or mounted anywhere on this page.
     expect(await page.locator('[data-snapshot-probe]').count()).toBe(0)
+    const approvalTurnSettled = scaffold.whenTurnSettled()
     await approve.click()
     await expect.poll(() => page.locator('[data-snapshot-probe]').count(), { timeout: 30_000 }).toBe(1)
+    await approvalTurnSettled
 
     const sessionId = await runTurnSettled
     const stopTurnSettled = scaffold.whenTurnSettled()
@@ -162,6 +164,12 @@ describe('web e2e: Cordis tools use their owned cards', () => {
 
   it.skipIf(MODE === 'record')('matches the conversation aria golden', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-cordis-aria'))
+    await page.locator('[data-conversation-scroll]').evaluate((host) => { host.scrollTop = host.scrollHeight })
+    await expect.poll(
+      async () => page.getByRole('button', { name: 'Back to bottom', exact: true }).count(),
+      { timeout: 10_000 },
+    ).toBe(0)
+    await page.mouse.move(0, 0)
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   })
