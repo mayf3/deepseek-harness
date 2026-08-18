@@ -1,20 +1,20 @@
 /** Regression coverage for locale-aware bilingual Markdown links. */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   normalizeTranslationMarkdownLinks,
   rewriteTranslationLinkLocales,
-  semanticTranslationLinkTarget,
   translationLinkLocaleViolations,
 } from './translation-links.ts'
+import { removeFixtureSafely } from './test-fixture-cleanup.ts'
 
 const roots: string[] = []
 
 afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  for (const root of roots.splice(0)) removeFixtureSafely(root)
 })
 
 function fixture(): string {
@@ -95,11 +95,11 @@ describe('translation link locale validation', () => {
       '[章节](section/)\n',
       { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
     )[0]).toMatchObject({ expectedUrl: 'section/index.zh.md' })
-    expect(semanticTranslationLinkTarget(
-      'section/',
+    expect(normalizeTranslationMarkdownLinks(
+      '[Section](section/)\n',
       { repoRoot: root, sourcePath: 'docs/guide.md' },
-    )).toBe(semanticTranslationLinkTarget(
-      'section/index.zh.md',
+    )).toBe(normalizeTranslationMarkdownLinks(
+      '[Section](section/index.zh.md)\n',
       { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
     ))
   })

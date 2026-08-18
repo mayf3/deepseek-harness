@@ -3,7 +3,14 @@
 import { existsSync, statSync } from 'node:fs'
 import { posix, resolve } from 'node:path'
 import type { Nodes } from 'mdast'
-import { parseMarkdown, visitMarkdown } from './markdown.ts'
+import {
+  isExternalOrAbsoluteMarkdownUrl,
+  markdownDestination,
+  parseMarkdown,
+  splitMarkdownUrlTarget,
+  visitMarkdown,
+  type MarkdownDestination,
+} from './markdown.ts'
 
 /** Repository and source document used to resolve one relative link. */
 export interface TranslationLinkContext {
@@ -50,31 +57,8 @@ interface Replacement {
   value: string
 }
 
-interface DestinationRange {
-  start: number
-  end: number
-}
-
-interface AuthoredDestination extends DestinationRange {
-  url: string
-}
-
 type LinkNode = Extract<Nodes, { type: 'link' | 'definition' }>
 type ResolutionKind = 'exact' | 'extensionless' | 'directory-index'
-
-function isExternalOrAbsolute(url: string): boolean {
-  return url.startsWith('#')
-    || url.startsWith('//')
-    || url.startsWith('/')
-    || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)
-}
-
-/** Split a URL without normalizing its query or fragment suffix. */
-export function splitTranslationLinkTarget(url: string): { path: string; suffix: string } {
-  const boundary = url.search(/[?#]/)
-  if (boundary === -1) return { path: url, suffix: '' }
-  return { path: url.slice(0, boundary), suffix: url.slice(boundary) }
-}
 
 function decodePath(path: string): string {
   try {
@@ -170,9 +154,9 @@ function resolveTranslationLink(
   context: TranslationLinkContext,
   authoredUrl: string = url,
 ): ResolvedTranslationLink | undefined {
-  if (isExternalOrAbsolute(url)) return undefined
-  const { path } = splitTranslationLinkTarget(url)
-  const authored = splitTranslationLinkTarget(authoredUrl)
+  if (isExternalOrAbsoluteMarkdownUrl(url)) return undefined
+  const { path } = splitMarkdownUrlTarget(url)
+  const authored = splitMarkdownUrlTarget(authoredUrl)
   if (path === '') return undefined
   const resolved = resolveRepositoryTarget(path, context)
   if (resolved === undefined) return undefined
@@ -197,76 +181,7 @@ function hasExpectedLocale(resolved: ResolvedTranslationLink): boolean {
   return !(resolved.locale === 'en' && resolved.kind === 'extensionless')
 }
 
-function skipWhitespace(source: string, start: number): number {
-  let index = start
-  while (/\s/.test(source[index] ?? '')) index += 1
-  return index
-}
-
-function labelEnd(source: string): number {
-  const first = source.indexOf('[')
-  if (first === -1) return -1
-  let depth = 0
-  for (let index = first; index < source.length; index += 1) {
-    const char = source[index]
-    if (char === '\\') index += 1
-    else if (char === '[') depth += 1
-    else if (char === ']') {
-      depth -= 1
-      if (depth === 0) return index
-    }
-  }
-  return -1
-}
-
-function destinationRange(rawNode: string, type: LinkNode['type']): DestinationRange {
-  const endOfLabel = labelEnd(rawNode)
-  if (endOfLabel === -1) throw new Error(`translation-links: cannot locate label end in ${JSON.stringify(rawNode)}`)
-  let start: number
-  if (type === 'definition') {
-    const colon = rawNode.indexOf(':', endOfLabel + 1)
-    if (colon === -1) throw new Error(`translation-links: cannot locate definition separator in ${JSON.stringify(rawNode)}`)
-    start = skipWhitespace(rawNode, colon + 1)
-  } else {
-    if (rawNode[endOfLabel + 1] !== '(') {
-      throw new Error(`translation-links: cannot locate inline destination in ${JSON.stringify(rawNode)}`)
-    }
-    start = skipWhitespace(rawNode, endOfLabel + 2)
-  }
-  if (rawNode[start] === '<') {
-    for (let index = start + 1; index < rawNode.length; index += 1) {
-      if (rawNode[index] === '\\') index += 1
-      else if (rawNode[index] === '>') return { start: start + 1, end: index }
-    }
-    throw new Error(`translation-links: cannot locate angle-bracket destination end in ${JSON.stringify(rawNode)}`)
-  }
-  let depth = 0
-  for (let index = start; index < rawNode.length; index += 1) {
-    const char = rawNode[index]
-    if (char === '\\') index += 1
-    else if (char === '(') depth += 1
-    else if (char === ')') {
-      if (depth === 0) return { start, end: index }
-      depth -= 1
-    } else if (/\s/.test(char ?? '') && depth === 0) {
-      return { start, end: index }
-    }
-  }
-  return { start, end: rawNode.length }
-}
-
-function authoredDestination(markdown: string, node: LinkNode): AuthoredDestination {
-  const start = node.position?.start.offset
-  const end = node.position?.end.offset
-  if (start === undefined || end === undefined) {
-    throw new Error(`translation-links: link ${JSON.stringify(node.url)} has no source offsets`)
-  }
-  const range = destinationRange(markdown.slice(start, end), node.type)
-  const absolute = { start: start + range.start, end: start + range.end }
-  return { ...absolute, url: markdown.slice(absolute.start, absolute.end) }
-}
-
-function replacementFor(destination: AuthoredDestination, value: string): Replacement {
+function replacementFor(destination: MarkdownDestination, value: string): Replacement {
   return { start: destination.start, end: destination.end, value }
 }
 
@@ -291,23 +206,34 @@ function visitDocumentLinkNodes(markdown: string, visitor: (node: LinkNode) => v
   })
 }
 
+function visitResolvedDocumentLinks(
+  markdown: string,
+  context: TranslationLinkContext,
+  skipTargets: readonly string[],
+  visitor: (node: LinkNode, destination: MarkdownDestination, resolved: ResolvedTranslationLink) => void,
+): void {
+  const skipped = new Set(skipTargets)
+  visitDocumentLinkNodes(markdown, (node) => {
+    if (skipped.has(node.url)) return
+    const destination = markdownDestination(markdown, node)
+    const resolved = resolveTranslationLink(node.url, context, destination.url)
+    if (resolved !== undefined) visitor(node, destination, resolved)
+  })
+}
+
 /** Return one violation per wrong-locale link or link definition. */
 export function translationLinkLocaleViolations(
   markdown: string,
   context: TranslationLinkContext,
   skipTargets: readonly string[] = [],
 ): TranslationLinkLocaleViolation[] {
-  const skipped = new Set(skipTargets)
   const violations: TranslationLinkLocaleViolation[] = []
-  visitDocumentLinkNodes(markdown, (node) => {
-    if (skipped.has(node.url)) return
-    const authored = authoredDestination(markdown, node)
-    const resolved = resolveTranslationLink(node.url, context, authored.url)
-    if (resolved === undefined || hasExpectedLocale(resolved)) return
+  visitResolvedDocumentLinks(markdown, context, skipTargets, (node, destination, resolved) => {
+    if (hasExpectedLocale(resolved)) return
     violations.push({
       sourcePath: context.sourcePath,
       line: node.position?.start.line ?? 0,
-      url: authored.url,
+      url: destination.url,
       expectedUrl: resolved.expectedUrl,
     })
   })
@@ -320,14 +246,10 @@ export function rewriteTranslationLinkLocales(
   context: TranslationLinkContext,
   skipTargets: readonly string[] = [],
 ): TranslationLinkRewriteResult {
-  const skipped = new Set(skipTargets)
   const replacements: Replacement[] = []
-  visitDocumentLinkNodes(markdown, (node) => {
-    if (skipped.has(node.url)) return
-    const authored = authoredDestination(markdown, node)
-    const resolved = resolveTranslationLink(node.url, context, authored.url)
-    if (resolved === undefined || hasExpectedLocale(resolved)) return
-    replacements.push(replacementFor(authored, resolved.expectedUrl))
+  visitResolvedDocumentLinks(markdown, context, skipTargets, (_node, destination, resolved) => {
+    if (hasExpectedLocale(resolved)) return
+    replacements.push(replacementFor(destination, resolved.expectedUrl))
   })
   return { content: applyReplacements(markdown, replacements), rewritten: replacements.length }
 }
@@ -338,27 +260,14 @@ export function normalizeTranslationMarkdownLinks(
   context: TranslationLinkContext,
   skipTargets: readonly string[] = [],
 ): string {
-  const skipped = new Set(skipTargets)
   const replacements: Replacement[] = []
-  visitDocumentLinkNodes(markdown, (node) => {
-    if (skipped.has(node.url)) return
-    const authored = authoredDestination(markdown, node)
-    const resolved = resolveTranslationLink(node.url, context, authored.url)
-    if (resolved === undefined) return
+  visitResolvedDocumentLinks(markdown, context, skipTargets, (_node, destination, resolved) => {
     replacements.push(replacementFor(
-      authored,
+      destination,
       `dsh-translation-target:${resolved.pair.source}${resolved.suffix}`,
     ))
   })
   return applyReplacements(markdown, replacements)
-}
-
-/** Semantic target used by the pair structure signature. */
-export function semanticTranslationLinkTarget(url: string, context: TranslationLinkContext): string {
-  const resolved = resolveTranslationLink(url, context)
-  return resolved === undefined
-    ? url
-    : `dsh-translation-target:${resolved.pair.source}${resolved.suffix}`
 }
 
 /** Semantic target of one authored inline link or referenced definition. */
@@ -367,9 +276,9 @@ export function semanticTranslationLinkNodeTarget(
   markdown: string,
   context: TranslationLinkContext,
 ): string {
-  const authored = authoredDestination(markdown, node)
-  const resolved = resolveTranslationLink(node.url, context, authored.url)
+  const destination = markdownDestination(markdown, node)
+  const resolved = resolveTranslationLink(node.url, context, destination.url)
   return resolved === undefined
-    ? authored.url
+    ? destination.url
     : `dsh-translation-target:${resolved.pair.source}${resolved.suffix}`
 }
