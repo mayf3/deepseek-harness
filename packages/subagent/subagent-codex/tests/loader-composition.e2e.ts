@@ -15,7 +15,7 @@ const configPath = join(fixtureDir, 'cordis.yml')
 const repoTsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
 
 describe('Codex provider public Loader composition', () => {
-  it('loads the opt-in package, one-shot task tool, and job controls without starting Codex', async () => {
+  it('loads two named instances, their tools, and job controls without starting Codex', async () => {
     const { stdout, stderr } = await runLoaderSmoke({
       label: 'subagent-codex Loader composition',
       tempDirPrefix: 'dsh-subagent-codex-loader-',
@@ -31,22 +31,41 @@ describe('Codex provider public Loader composition', () => {
 
     expect(stderr).toBe('')
     expect(JSON.parse(stdout)).toEqual({
-      providers: ['codex'],
-      provider: {
-        name: 'codex',
-        capabilities: {
-          outputSchema: false,
-          depthLimit: false,
-          toolFilter: false,
-          persona: false,
+      providers: ['codex-primary', 'codex-secondary'],
+      providerDetails: [
+        {
+          name: 'codex-primary',
+          capabilities: {
+            outputSchema: false,
+            depthLimit: false,
+            toolFilter: false,
+            persona: false,
+          },
+          inheritsParentContext: false,
         },
-        inheritsParentContext: false,
-      },
-      tool: {
-        name: 'subagent_codex',
-        parameterNames: ['description', 'prompt', 'run_in_background'],
-        required: ['description', 'prompt'],
-      },
+        {
+          name: 'codex-secondary',
+          capabilities: {
+            outputSchema: false,
+            depthLimit: false,
+            toolFilter: false,
+            persona: false,
+          },
+          inheritsParentContext: false,
+        },
+      ],
+      tools: [
+        {
+          name: 'subagent_codex_primary',
+          parameterNames: ['description', 'prompt', 'run_in_background'],
+          required: ['description', 'prompt'],
+        },
+        {
+          name: 'subagent_codex_secondary',
+          parameterNames: ['description', 'prompt', 'run_in_background'],
+          required: ['description', 'prompt'],
+        },
+      ],
       jobTools: ['job_kill', 'job_list', 'job_output'],
       starts: 0,
     })

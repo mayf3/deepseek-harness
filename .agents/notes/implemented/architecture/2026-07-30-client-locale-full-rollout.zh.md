@@ -42,4 +42,4 @@ typed locale 标准席位（`locale:` 注册声明 → 框架注入强类型 `t`
 - 语言切换全 UI 即时刷新且零重注册；新包接入 = 字典 + declare-merge + `locale: NS` 三步，无手写胶水。
 - 代价：list label 的消费方必须知道 `resolveSlotLabel`（裸读 `options.label` 现在可能拿到函数）；类型上 `SlotLabel` 已挡住多数误用。
 - ui-primitives 的中文默认值在英文语言下依旧是中文，**直到消费方传入 labels**——未迁移的 JsonTree 消费方（ui-trajectory）显示其英文默认值，恰好符合其整包英文现状。
-- e2e 英文钉死意味着 zh 默认态主要靠包级组件测试与 settings 语言切换用例覆盖，浏览器 e2e 不再验证 zh 文案。
+- e2e 英文钉死意味着 zh 文案面主要靠包级组件测试与 settings 语言切换用例覆盖，浏览器 e2e 不再验证 zh 文案。开场/回落 locale（声明了本应用都不支持语言的浏览器，或非浏览器运行）是 `en` 而非 `zh`，见 [browser-derived initial locale](../feature/2026-07-31-browser-derived-initial-locale.zh.md)。
