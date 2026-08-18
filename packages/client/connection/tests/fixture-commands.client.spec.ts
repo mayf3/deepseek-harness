@@ -117,9 +117,12 @@ describe('createFixtureApi commands/skills', () => {
     const planMessage = await callRemote<{ result: { kind: string } } | undefined>(
       rpc, 'commands/execute', { agentId: sid('fx-alpha'), line: '/plan sketch the layout', images: [png] })
     expect(planMessage?.result.kind).toBe('success')
+    const imageOnlyPlan = await callRemote<{ result: { kind: string } } | undefined>(
+      rpc, 'commands/execute', { agentId: sid('fx-alpha'), line: '/plan', images: [png] })
+    expect(imageOnlyPlan?.result.kind).toBe('success')
   })
 
-  it('mirrors the producer grammar rejections for carrier-less declaring lines', async () => {
+  it('mirrors the producer grammar rejections for control-only declaring lines', async () => {
     const { rpc } = createFixtureFaces()
     const png = { mediaType: 'image/png', data: 'AA==' }
     const bareGoal = await callRemote<{ result: { kind: string; text?: string } } | undefined>(
@@ -128,14 +131,12 @@ describe('createFixtureApi commands/skills', () => {
       kind: 'error',
       text: 'Image attachments only accompany a goal objective: /goal <objective> or /goal edit <objective>.',
     })
-    for (const line of ['/plan', '/plan off']) {
-      const refused = await callRemote<{ result: { kind: string; text?: string } } | undefined>(
-        rpc, 'commands/execute', { agentId: sid('fx-alpha'), line, images: [png] })
-      expect(refused?.result).toEqual({
-        kind: 'error',
-        text: 'Image attachments require a plan message: /plan <message>.',
-      })
-    }
+    const refused = await callRemote<{ result: { kind: string; text?: string } } | undefined>(
+      rpc, 'commands/execute', { agentId: sid('fx-alpha'), line: '/plan off', images: [png] })
+    expect(refused?.result).toEqual({
+      kind: 'error',
+      text: 'Image attachments cannot accompany /plan off.',
+    })
   })
 
   it('answers no execution for an unknown name even when images accompany it', async () => {

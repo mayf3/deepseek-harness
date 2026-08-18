@@ -645,7 +645,7 @@ describe('/plan', () => {
     expect(foldPlanMode(agent.session.events)).toBe(false)
   })
 
-  it('rides image attachments on the steered plan message and refuses carriers without one', async () => {
+  it('steers image attachments with or without text and refuses them on /plan off', async () => {
     const ctx = await setup()
     await ctx.plugin(CommandRuntime)
     await new Promise(resolve => setImmediate(resolve))
@@ -693,11 +693,22 @@ describe('/plan', () => {
     const bareSteer = vi.fn()
     ;(bareAgent as unknown as { steer: typeof bareSteer }).steer = bareSteer
     expect((await ctx.commands.execute(bareAgent, '/plan', images, signal))?.result)
-      .toEqual({ kind: 'error', text: 'Image attachments require a plan message: /plan <message>.' })
-    expect((await ctx.commands.execute(bareAgent, '/plan off', images, signal))?.result)
-      .toEqual({ kind: 'error', text: 'Image attachments require a plan message: /plan <message>.' })
-    expect(bareSteer).not.toHaveBeenCalled()
-    expect(ctx.planMode.get(bareAgent)).toEqual({ active: false })
+      .toEqual({ kind: 'success', text: 'Entering plan mode (applies from the next step). Use /plan off to leave.' })
+    expect(bareSteer).toHaveBeenCalledExactlyOnceWith({
+      id: expect.any(String) as unknown,
+      role: 'user',
+      content: [{ type: 'image', attachment: expect.objectContaining({ attachmentId: 'att-2' }) as unknown }],
+      source: { kind: 'user' },
+    })
+    expect(ctx.planMode.get(bareAgent)).toEqual({ active: false, pending: true })
+
+    const activeAgent = await agentWithSession(ctx, 'imaged-off-plan-command', { active: true })
+    const offSteer = vi.fn()
+    ;(activeAgent as unknown as { steer: typeof offSteer }).steer = offSteer
+    expect((await ctx.commands.execute(activeAgent, '/plan off', images, signal))?.result)
+      .toEqual({ kind: 'error', text: 'Image attachments cannot accompany /plan off.' })
+    expect(offSteer).not.toHaveBeenCalled()
+    expect(ctx.planMode.get(activeAgent)).toEqual({ active: true })
   })
 
   it('removes the contributed command when the plan-mode plugin is disposed', async () => {

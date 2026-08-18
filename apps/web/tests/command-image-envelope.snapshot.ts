@@ -3,9 +3,10 @@
 // bundles via AppWebEntry, keyless FixtureApiClient transport): an enter
 // submission carrying composer images resolves only through a command whose
 // descriptor declares `input.images`. A non-declaring command refuses with
-// one composer error banner and everything retained; a declaring command consumes
-// the images — serialized through the real draft-image chain into the
-// commands/execute payload — and clears the composer on success.
+// one composer error banner and everything retained; a declaring command
+// consumes the images — serialized through the real draft-image chain into
+// the commands/execute payload — and clears the composer on success, including
+// when the image is the whole `/plan` task.
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { installAssembledBootEnv, mountAssembledApp } from './assembled-boot.ts'
@@ -77,4 +78,20 @@ it('consumes images through a declaring command and clears the composer on succe
     expect(textarea.value).toBe('')
     expect(document.querySelector('[role="group"][aria-label="Pending images"]')).toBeNull()
   }, { timeout: 5_000 })
+})
+
+it('submits a bare /plan with an image as an image-only plan request', async () => {
+  mountAssembledApp()
+  const textarea = await freshComposer()
+  await pasteImage(textarea, 'plan-task.png')
+
+  fireEvent.change(textarea, { target: { value: '/plan' } })
+  fireEvent.keyDown(textarea, { key: 'Enter' })
+
+  await waitFor(() => {
+    expect(textarea.value).toBe('')
+    expect(document.querySelector('[role="group"][aria-label="Pending images"]')).toBeNull()
+  }, { timeout: 5_000 })
+  expect([...document.querySelectorAll('[role="alert"]')]
+    .some(candidate => candidate.textContent?.includes('/plan') ?? false)).toBe(false)
 })

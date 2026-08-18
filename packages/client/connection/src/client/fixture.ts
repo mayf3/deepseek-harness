@@ -742,26 +742,34 @@ function viewFor(event: SessionEvent, log: readonly SessionEvent[]): ToolEventVi
 }
 
 /**
- * Fixture parallel of the plan unit's double-event fold: `command/run`
- * records named `plan` with recorded input set the wanted target (`off` →
- * false, else true); `plan/mode` commits and clears it. `wanted` is exposed
- * for the prompt boundary (the fixture's step/start parallel).
+ * Fixture parallel of the plan unit's lifecycle fold. The paired
+ * `command/done` retains successful plan selections and drops failures;
+ * `plan/mode` commits one. `wanted` is exposed for the prompt boundary (the
+ * fixture's step/start parallel).
  */
 function foldPlan(log: readonly SessionEvent[]): { active: boolean; pending: boolean; wanted: boolean | null } {
   let active = false
   let wanted: boolean | null = null
+  let running: { commandId: unknown; wanted: boolean } | null = null
   for (const event of log) {
     const item = event as unknown as { type: string; data?: Record<string, unknown> }
     if (item.type === 'command/run' && item.data?.['name'] === 'plan') {
       const args = item.data['args']
       if (typeof args !== 'string') continue
-      wanted = args.trim() !== 'off'
+      running = { commandId: item.data['commandId'], wanted: args.trim() !== 'off' }
+    } else if (item.type === 'command/done'
+      && item.data !== undefined
+      && running !== null
+      && item.data['commandId'] === running.commandId) {
+      wanted = item.data['kind'] === 'success' && running.wanted !== active ? running.wanted : null
+      running = null
     } else if (item.type === 'plan/mode') {
       active = item.data?.['active'] === true
       wanted = null
     }
   }
-  return { active, pending: wanted !== null && wanted !== active, wanted }
+  const selected = running?.wanted ?? wanted
+  return { active, pending: selected !== null && selected !== active, wanted: selected }
 }
 
 /** The plan projection's wire view over the full log. */
@@ -1752,7 +1760,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       // executor's order (an unknown name answers undefined and logs no
       // lifecycle): the declaration rejection covers every known command
       // without `input.images`, and the two producer grammar rejections cover
-      // the declaring commands' carrier-less lines. The fixture stores no
+      // the declaring commands' control-only lines. The fixture stores no
       // bytes, so an accepted batch is acknowledged and dropped.
       const known = ['permission', 'goal', 'compact', 'echo', 'plan']
       if (images.length > 0 && name !== undefined && known.includes(name)) {
@@ -1760,8 +1768,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           ? `/${name} does not accept image attachments`
           : name === 'goal' && args.trim() === ''
             ? 'Image attachments only accompany a goal objective: /goal <objective> or /goal edit <objective>.'
-            : name === 'plan' && (args.trim() === '' || args.trim() === 'off')
-              ? 'Image attachments require a plan message: /plan <message>.'
+            : name === 'plan' && args.trim() === 'off'
+              ? 'Image attachments cannot accompany /plan off.'
               : undefined
         if (rejection !== undefined) {
           const commandId = `fx-cmd-${logOf(id).length}` as CommandId
