@@ -45,6 +45,19 @@ function signature(markdown: string) {
   )
 }
 
+function fixtureSignature(
+  root: string,
+  sourcePath: string,
+  markdown: string,
+  switcherTarget: string,
+) {
+  return translationStructureSignature(
+    parseTranslationMarkdown(markdown),
+    switcherTarget,
+    { repoRoot: root, sourcePath, isTranslationPairSource: fixturePairSource, markdown },
+  )
+}
+
 function gitSupportsObjectFormat(format: 'sha256'): boolean {
   const root = mkdtempSync(join(tmpdir(), 'dsh-git-object-format-'))
   try {
@@ -319,22 +332,8 @@ describe('translation structural signature', () => {
       writeFileSync(join(root, 'reference.zh.md'), '# 参考\n')
       const sourceMarkdown = '[Reference](reference.md?view=full#section)\n'
       const counterpartMarkdown = '[参考](reference.zh.md?view=full#section)\n'
-      const source = translationStructureSignature(
-        parseTranslationMarkdown(sourceMarkdown),
-        'guide.zh.md',
-        {
-          repoRoot: root, sourcePath: 'guide.md',
-          isTranslationPairSource: fixturePairSource, markdown: sourceMarkdown,
-        },
-      )
-      const counterpart = translationStructureSignature(
-        parseTranslationMarkdown(counterpartMarkdown),
-        'guide.md',
-        {
-          repoRoot: root, sourcePath: 'guide.zh.md',
-          isTranslationPairSource: fixturePairSource, markdown: counterpartMarkdown,
-        },
-      )
+      const source = fixtureSignature(root, 'guide.md', sourceMarkdown, 'guide.zh.md')
+      const counterpart = fixtureSignature(root, 'guide.zh.md', counterpartMarkdown, 'guide.md')
       expect(translationStructureDiff(source, counterpart)).toEqual([])
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -377,22 +376,8 @@ describe('translation structural signature', () => {
       }
       const sourceMarkdown = '[Reference][ref]\n\n[ref]: reference.md\n[ref]: other.md\n'
       const counterpartMarkdown = '[参考][ref]\n\n[ref]: different.zh.md\n[ref]: other.zh.md\n'
-      const source = translationStructureSignature(
-        parseTranslationMarkdown(sourceMarkdown),
-        'guide.zh.md',
-        {
-          repoRoot: root, sourcePath: 'guide.md',
-          isTranslationPairSource: fixturePairSource, markdown: sourceMarkdown,
-        },
-      )
-      const counterpart = translationStructureSignature(
-        parseTranslationMarkdown(counterpartMarkdown),
-        'guide.md',
-        {
-          repoRoot: root, sourcePath: 'guide.zh.md',
-          isTranslationPairSource: fixturePairSource, markdown: counterpartMarkdown,
-        },
-      )
+      const source = fixtureSignature(root, 'guide.md', sourceMarkdown, 'guide.zh.md')
+      const counterpart = fixtureSignature(root, 'guide.zh.md', counterpartMarkdown, 'guide.md')
       expect(translationStructureDiff(source, counterpart)).toEqual([
         'link target #1 diverges between the pair: "dsh-translation-target:reference.md" vs "dsh-translation-target:different.md"',
       ])
