@@ -75,10 +75,30 @@ describe('translation link locale validation', () => {
   it('exempts the language switcher target explicitly', () => {
     const root = fixture()
     expect(translationLinkLocaleViolations(
-      '[English](guide.md) | 中文\n',
+      '# 指南\n\n[English](guide.md) | 中文\n',
       { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
       ['guide.md'],
     )).toEqual([])
+  })
+
+  it('does not exempt an ordinary body link to the counterpart', () => {
+    const root = fixture()
+    const markdown = '# 指南\n\n[English](guide.md) | 中文\n\n[正文](guide.md)\n'
+    expect(translationLinkLocaleViolations(
+      markdown,
+      { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
+      ['guide.md'],
+    )).toEqual([{
+      sourcePath: 'docs/guide.zh.md',
+      line: 5,
+      url: 'guide.md',
+      expectedUrl: 'guide.zh.md',
+    }])
+    expect(rewriteTranslationLinkLocales(
+      markdown,
+      { repoRoot: root, sourcePath: 'docs/guide.zh.md' },
+      ['guide.md'],
+    ).content).toBe('# 指南\n\n[English](guide.md) | 中文\n\n[正文](guide.zh.md)\n')
   })
 
   it('resolves a directory alias to its paired index page', () => {

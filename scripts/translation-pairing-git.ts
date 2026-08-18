@@ -50,12 +50,17 @@ export interface GitIndexBlob {
 
 /** Every stage-zero path currently present in the Git index. */
 export function gitIndexPaths(root: string): Set<string> {
-  return new Set(
-    runGit(root, ['ls-files', '-z'], 'listing Git index paths')
-      .toString('utf8')
-      .split('\0')
-      .filter(Boolean),
-  )
+  const paths = new Set<string>()
+  const entries = runGit(root, ['ls-files', '--stage', '-z'], 'listing Git index paths')
+    .toString('utf8')
+    .split('\0')
+    .filter(Boolean)
+  for (const entry of entries) {
+    const match = /^\d+ [0-9a-f]+ ([0-3])\t([\s\S]+)$/.exec(entry)
+    if (!match?.[1] || match[2] === undefined) throw new Error('git ls-files --stage returned a malformed entry')
+    if (match[1] === '0') paths.add(match[2])
+  }
+  return paths
 }
 
 /**

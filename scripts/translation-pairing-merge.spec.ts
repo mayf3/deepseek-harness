@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -275,11 +276,14 @@ describe('translation pairing merge composition', { timeout: 15_000 }, () => {
     const fixture = createFixture(false)
     write(fixture.root, 'docs/reference.md', '# Overview\n')
     write(fixture.root, 'docs/reference.zh.md', '# 概览\n')
+    git(fixture, ['add', 'docs/reference.md', 'docs/reference.zh.md'])
     const source = baseSource.replace('Alpha base.', '[Reference](reference.md#overview)')
     const zh = baseZh.replace('甲基础。', '[参考](reference.zh.md#overview)')
     const ancestor = record(fixture.root, 'docs/guide.md', source, zh)
     const current = record(fixture.root, 'docs/guide.md', source, zh)
     const other = record(fixture.root, 'docs/guide.md', source, zh)
+    rmSync(join(fixture.root, 'docs/reference.md'))
+    rmSync(join(fixture.root, 'docs/reference.zh.md'))
 
     expect(mergeTranslationPairingRecords(
       fixture.root,
@@ -294,6 +298,7 @@ describe('translation pairing merge composition', { timeout: 15_000 }, () => {
     const fixture = createFixture(false)
     write(fixture.root, 'docs/reference.md', '# Overview\n')
     write(fixture.root, 'docs/reference.zh.md', '# 概览\n')
+    git(fixture, ['add', 'docs/reference.md', 'docs/reference.zh.md'])
     const source = baseSource.replace('Alpha base.', '[Reference](reference.md)')
     const zh = baseZh.replace('甲基础。', '[参考](reference.md)')
     const ancestor = record(fixture.root, 'docs/guide.md', source, zh)

@@ -185,9 +185,8 @@ describe('translation pairing switchers', () => {
 
   it('accepts only the canonical public URL for an absolute switcher', () => {
     const targets = languageSwitcherTargets('python/sdk/README.zh.md')
-    const canonical = parseTranslationMarkdown(
-      '[中文](https://github.com/deepseek-ai/deepseek-harness/blob/master/python/sdk/README.zh.md)',
-    )
+    const canonicalMarkdown = '# README\n\nEnglish | [中文](https://github.com/deepseek-ai/deepseek-harness/blob/master/python/sdk/README.zh.md)\n'
+    const canonical = parseTranslationMarkdown(canonicalMarkdown)
     const wrongPath = parseTranslationMarkdown(
       '[中文](https://github.com/deepseek-ai/deepseek-harness/blob/master/other/README.zh.md)',
     )
@@ -196,9 +195,25 @@ describe('translation pairing switchers', () => {
     expect(translationStructureSignature(canonical, targets, {
       repoRoot: process.cwd(),
       sourcePath: 'python/sdk/README.md',
-      markdown: '[中文](https://github.com/deepseek-ai/deepseek-harness/blob/master/python/sdk/README.zh.md)',
+      markdown: canonicalMarkdown,
     }).links).toEqual([])
     expect(linksTo(wrongPath, targets)).toBe(false)
+  })
+
+  it('excludes only the header switcher from the structural links', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-translation-switcher-'))
+    try {
+      writeFileSync(join(root, 'guide.md'), '# Guide\n')
+      writeFileSync(join(root, 'guide.zh.md'), '# 指南\n')
+      const markdown = '# 指南\n\n[English](guide.md) | 中文\n\n[正文](guide.md)\n'
+      expect(translationStructureSignature(
+        parseTranslationMarkdown(markdown),
+        languageSwitcherTargets('guide.md'),
+        { repoRoot: root, sourcePath: 'guide.zh.md', markdown },
+      ).links).toEqual(['dsh-translation-target:guide.md'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 

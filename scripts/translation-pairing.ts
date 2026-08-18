@@ -13,6 +13,7 @@ import { gfmFromMarkdown } from 'mdast-util-gfm'
 import { gfm } from 'micromark-extension-gfm'
 import type { Nodes } from 'mdast'
 import {
+  languageSwitcherLinkOffset,
   semanticTranslationLinkNodeTarget,
   type TranslationLinkContext,
 } from './translation-links.ts'
@@ -353,9 +354,7 @@ export function translationStructureSignature(
   switcherTargets: string | readonly string[],
   linkContext: TranslationLinkContext & { markdown: string },
 ): TranslationStructureSignature {
-  const acceptedSwitchers = new Set(
-    typeof switcherTargets === 'string' ? [switcherTargets] : switcherTargets,
-  )
+  const switcherOffset = languageSwitcherLinkOffset(tree, linkContext.markdown, switcherTargets)
   const sig: TranslationStructureSignature = { headings: [], code: [], tables: [], lists: [], links: [] }
   const definitions = new Map<string, Extract<Nodes, { type: 'definition' }>>()
   const collectDefinitions = (node: Nodes): void => {
@@ -383,13 +382,13 @@ export function translationStructureSignature(
           : `bullet:items=${node.children.length}`)
         break
       case 'link':
-        if (!acceptedSwitchers.has(node.url)) {
+        if (node.position?.start.offset !== switcherOffset) {
           sig.links.push(linkTarget(node))
         }
         break
       case 'linkReference': {
         const definition = definitions.get(node.identifier)
-        if (definition !== undefined && !acceptedSwitchers.has(definition.url)) {
+        if (definition !== undefined) {
           sig.links.push(linkTarget(definition))
         }
         break

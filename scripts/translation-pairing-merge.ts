@@ -7,6 +7,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   GIT_COMMAND_MAX_BUFFER,
   gitBlobHash,
+  gitIndexPaths,
   readGitIndexBlob,
   runGit,
   storeGitBlob,
@@ -14,13 +15,15 @@ import {
 import {
   isTranslationScopeFile,
   languageSwitcherTargets,
-  linksTo,
   parseTranslationMarkdown,
   requiresSourceLanguageSwitcher,
   translationStructureDiff,
   translationStructureSignature,
 } from './translation-pairing.ts'
-import { translationLinkLocaleViolations } from './translation-links.ts'
+import {
+  hasLanguageSwitcher,
+  translationLinkLocaleViolations,
+} from './translation-links.ts'
 import {
   parseTranslationPairingRecord,
   renderTranslationPairingRecord,
@@ -168,22 +171,27 @@ function assertMergedPairStructure(root: string, paths: TranslationPairPaths, so
   const zhText = zh.toString('utf8')
   const sourceTree = parseTranslationMarkdown(sourceText)
   const zhTree = parseTranslationMarkdown(zhText)
+  const indexFiles = gitIndexPaths(root)
+  const repositoryFileExists = (path: string): boolean => indexFiles.has(path)
   const sourceSwitcherTargets = languageSwitcherTargets(paths.source)
   const zhSwitcherTargets = languageSwitcherTargets(paths.zh)
-  if (requiresSourceLanguageSwitcher(paths.source) && !linksTo(sourceTree, zhSwitcherTargets)) {
+  if (requiresSourceLanguageSwitcher(paths.source)
+    && !hasLanguageSwitcher(sourceTree, sourceText, zhSwitcherTargets)) {
     throw new Error(`${paths.source} clean merge lost its language-switcher link to ${basename(paths.zh)}`)
   }
-  if (!linksTo(zhTree, sourceSwitcherTargets)) {
+  if (!hasLanguageSwitcher(zhTree, zhText, sourceSwitcherTargets)) {
     throw new Error(`${paths.zh} clean merge lost its language-switcher link to ${basename(paths.source)}`)
   }
   const localeViolations = [
     ...translationLinkLocaleViolations(sourceText, {
       repoRoot: root,
       sourcePath: paths.source,
+      repositoryFileExists,
     }, zhSwitcherTargets),
     ...translationLinkLocaleViolations(zhText, {
       repoRoot: root,
       sourcePath: paths.zh,
+      repositoryFileExists,
     }, sourceSwitcherTargets),
   ]
   if (localeViolations.length > 0) {
@@ -195,11 +203,13 @@ function assertMergedPairStructure(root: string, paths: TranslationPairPaths, so
     translationStructureSignature(sourceTree, zhSwitcherTargets, {
       repoRoot: root,
       sourcePath: paths.source,
+      repositoryFileExists,
       markdown: sourceText,
     }),
     translationStructureSignature(zhTree, sourceSwitcherTargets, {
       repoRoot: root,
       sourcePath: paths.zh,
+      repositoryFileExists,
       markdown: zhText,
     }),
   )

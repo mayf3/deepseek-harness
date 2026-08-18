@@ -60,6 +60,41 @@ interface Replacement {
 type LinkNode = Extract<Nodes, { type: 'link' | 'definition' }>
 type ResolutionKind = 'exact' | 'directory-index'
 
+/** Offset of the one top-level switcher link immediately following the H1. */
+export function languageSwitcherLinkOffset(
+  tree: Nodes,
+  markdown: string,
+  acceptedTargets: string | readonly string[],
+): number | undefined {
+  if (tree.type !== 'root') return undefined
+  const accepted = new Set(typeof acceptedTargets === 'string' ? [acceptedTargets] : acceptedTargets)
+  const headingIndex = tree.children.findIndex(node => node.type === 'heading' && node.depth === 1)
+  if (headingIndex < 0) return undefined
+  for (const node of tree.children.slice(headingIndex + 1)) {
+    if (node.type === 'heading') return undefined
+    if (node.type !== 'paragraph' || node.position === undefined) continue
+    const start = node.position.start.offset
+    const end = node.position.end.offset
+    if (start === undefined || end === undefined) continue
+    const authored = markdown.slice(start, end)
+    if (!/^(?:English \| \[中文\]\([^\n]+\)|\[English\]\([^\n]+\) \| 中文)$/.test(authored)) continue
+    const links = node.children.filter((child): child is Extract<Nodes, { type: 'link' }> => child.type === 'link')
+    if (links.length === 1 && accepted.has(links[0]?.url ?? '')) {
+      return links[0]?.position?.start.offset
+    }
+  }
+  return undefined
+}
+
+/** Whether the tree carries its canonical top-level language switcher. */
+export function hasLanguageSwitcher(
+  tree: Nodes,
+  markdown: string,
+  acceptedTargets: string | readonly string[],
+): boolean {
+  return languageSwitcherLinkOffset(tree, markdown, acceptedTargets) !== undefined
+}
+
 function decodePath(path: string): string {
   try {
     return decodeURIComponent(path)
@@ -185,13 +220,19 @@ function applyReplacements(markdown: string, replacements: Replacement[]): strin
   return output
 }
 
-function visitDocumentLinkNodes(markdown: string, visitor: (node: LinkNode) => void): void {
+function visitDocumentLinkNodes(
+  markdown: string,
+  skipTargets: readonly string[],
+  visitor: (node: LinkNode) => void,
+): void {
   const tree = parseMarkdown(markdown)
+  const switcherOffset = languageSwitcherLinkOffset(tree, markdown, skipTargets)
   const linkDefinitions = new Set<string>()
   visitMarkdown(tree, (node) => {
     if (node.type === 'linkReference') linkDefinitions.add(node.identifier)
   })
   visitMarkdown(tree, (node) => {
+    if (node.type === 'link' && node.position?.start.offset === switcherOffset) return
     if (node.type === 'link' || (node.type === 'definition' && linkDefinitions.has(node.identifier))) {
       visitor(node)
     }
@@ -204,9 +245,7 @@ function visitResolvedDocumentLinks(
   skipTargets: readonly string[],
   visitor: (node: LinkNode, destination: MarkdownDestination, resolved: ResolvedTranslationLink) => void,
 ): void {
-  const skipped = new Set(skipTargets)
-  visitDocumentLinkNodes(markdown, (node) => {
-    if (skipped.has(node.url)) return
+  visitDocumentLinkNodes(markdown, skipTargets, (node) => {
     const destination = markdownDestination(markdown, node)
     const resolved = resolveTranslationLink(node.url, context, destination.url)
     if (resolved !== undefined) visitor(node, destination, resolved)

@@ -25,7 +25,6 @@ import {
 } from './translation-pairing-record.ts'
 import {
   languageSwitcherTargets,
-  linksTo,
   parseTranslationMarkdown,
   parseTranslationPairingCliArgs,
   parseTranslationPairingManifest,
@@ -37,6 +36,7 @@ import {
   translationStructureSignature,
 } from './translation-pairing.ts'
 import {
+  hasLanguageSwitcher,
   normalizeTranslationMarkdownLinks,
   translationLinkLocaleViolations,
 } from './translation-links.ts'
@@ -294,10 +294,10 @@ for (const source of [...pairAnchors].sort()) {
 
   const sourceTree = parseTranslationMarkdown(sourceText)
   const zhTree = parseTranslationMarkdown(zhText)
-  if (!linksTo(zhTree, sourceSwitcherTargets)) {
+  if (!hasLanguageSwitcher(zhTree, zhText, sourceSwitcherTargets)) {
     errors.push(`${zh}: missing language switcher — no link to ${basename(source)}`)
   }
-  if (requiresSourceLanguageSwitcher(source) && !linksTo(sourceTree, zhSwitcherTargets)) {
+  if (requiresSourceLanguageSwitcher(source) && !hasLanguageSwitcher(sourceTree, sourceText, zhSwitcherTargets)) {
     errors.push(`${source}: missing language switcher — no link back to ${basename(zh)}`)
   }
   for (const divergence of translationStructureDiff(
