@@ -9,6 +9,7 @@ import json
 import os
 import queue
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -32,6 +33,8 @@ MINIMAL_SYSTEM_PROMPT = "You are a helpful software engineer assistant."
 FS_SEARCH_PROMPT = "Exercise the packaged filesystem search tools."
 FS_SEARCH_TEXT = "filesystem search smoke ok"
 FS_SEARCH_MARKER = "PACKAGED_FS_SEARCH_OK"
+MCP_PROMPT = "Exercise the packaged MCP client with one external stdio server."
+MCP_TEXT = "MCP client smoke ok"
 MINIMAL_CORDIS = (
     Path(__file__).resolve().parent.parent / "examples" / "jsonrpc-agent" / "minimal.cordis.yml"
 )
@@ -143,6 +146,130 @@ FS_SEARCH_CORDIS = """\
   config:
     sampleOverCapGlobResults: false
 """
+MCP_SERVER_SCRIPT = """\
+import json
+import os
+import sys
+
+
+log_path = os.environ.get("MCP_SMOKE_LOG")
+
+
+def send(message):
+    sys.stdout.write(json.dumps(message, separators=(",", ":")) + "\\n")
+    sys.stdout.flush()
+
+
+for line in sys.stdin:
+    request = json.loads(line)
+    if log_path is not None:
+        with open(log_path, "a", encoding="utf-8") as log:
+            log.write(str(request.get("method")) + "\\n")
+    request_id = request.get("id")
+    if request_id is None:
+        continue
+    method = request.get("method")
+    if method == "initialize":
+        send({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "protocolVersion": request["params"]["protocolVersion"],
+                "capabilities": {"tools": {"listChanged": False}},
+                "serverInfo": {"name": "python-wheel-fixture", "version": "1.0.0"},
+            },
+        })
+    elif method == "tools/list":
+        send({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "tools": [{
+                    "name": "add",
+                    "description": "Add two numbers.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+                        "required": ["a", "b"],
+                        "additionalProperties": False,
+                    },
+                }],
+            },
+        })
+    elif method == "tools/call":
+        params = request["params"]
+        if params.get("name") != "add" or params.get("arguments") != {"a": 19, "b": 23}:
+            send({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": -32602, "message": "unexpected tool call"},
+            })
+            continue
+        send({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {"content": [{"type": "text", "text": "42"}]},
+        })
+    else:
+        send({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": -32601, "message": f"unsupported method: {method}"},
+        })
+"""
+
+
+def mcp_cordis(server_script: Path) -> str:
+    """Build an external config that mounts the packaged MCP client."""
+    return json.dumps([
+        {
+            "id": "sdk-jsonrpc-server",
+            "name": "@deepseek-ai/dsh-sdk-jsonrpc-server",
+        },
+        {
+            "id": "agent-core",
+            "name": "@deepseek-ai/dsh-agent-spine-demo",
+            "config": {
+                "workspaceContext": False,
+                "skills": {"enabled": False},
+                "toolBash": False,
+            },
+        },
+        {
+            "id": "sessions",
+            "name": "@deepseek-ai/dsh-session-persistence-jsonl",
+            "config": {"root": "./sessions", "compression": "none"},
+        },
+        {
+            "id": "mcp-fixture",
+            "name": "@deepseek-ai/dsh-mcp-client",
+            "config": {
+                "serverName": "fixture",
+                "transport": "stdio",
+                "command": sys.executable,
+                "args": [str(server_script)],
+                "env": {"MCP_SMOKE_LOG": str(server_script.with_suffix(".log"))},
+                "failOnStartupError": True,
+                "reconnect": {"enabled": False},
+            },
+        },
+    ], indent=2)
+
+
+def wait_for_mcp_discovery(log_path: Path) -> None:
+    """Wait until the external server has answered initial tool discovery."""
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if log_path.exists() and "tools/list" in log_path.read_text().splitlines():
+            # The server records the request before flushing its response; give the
+            # client one scheduler interval to register the returned generation.
+            time.sleep(0.1)
+            return
+        time.sleep(0.025)
+    observed = log_path.read_text() if log_path.exists() else "<no MCP requests>"
+    raise AssertionError(f"packaged MCP client did not complete tool discovery: {observed}")
+
+
 class MockModelHandler(BaseHTTPRequestHandler):
     """Return deterministic text, worker, and orchestration completions."""
 
@@ -177,6 +304,9 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
     if latest.get("role") == "tool":
         call_id, tool_name = latest_tool_call(messages)
         tool_text = message_text(latest.get("content"))
+        mcp = mcp_tool_followup(call_id, tool_name, tool_text)
+        if mcp is not None:
+            return mcp
         fs_search = fs_search_tool_followup(call_id, tool_name, tool_text)
         if fs_search is not None:
             return fs_search
@@ -222,6 +352,7 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
         CODE_PROMPT,
         WORKFLOW_PROMPT,
         FS_SEARCH_PROMPT,
+        MCP_PROMPT,
     }
     prompt = next(
         (candidate for candidate in user_prompts if candidate in scenario_prompts),
@@ -271,7 +402,27 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
             "grep",
             {"pattern": FS_SEARCH_MARKER, "path": "."},
         )
+    if prompt == MCP_PROMPT:
+        assert_advertised_tool(body, "mcp__fixture__add")
+        return tool_call_chunks(
+            "mcp-add",
+            "mcp__fixture__add",
+            {"a": 19, "b": 23},
+        )
     return text_chunks(EXPECTED_TEXT)
+
+
+def mcp_tool_followup(
+    call_id: str,
+    tool_name: str,
+    tool_text: str,
+) -> list[dict[str, object]] | None:
+    """Verify one tool call through the packaged MCP client."""
+    if call_id != "mcp-add":
+        return None
+    if tool_name != "mcp__fixture__add" or "42" not in tool_text:
+        raise AssertionError(f"packaged MCP call returned an unexpected result: {tool_name}: {tool_text}")
+    return text_chunks(MCP_TEXT)
 
 
 def fs_search_tool_followup(
@@ -538,7 +689,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scenario",
-        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-snapshot", "direct"),
+        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-mcp", "sdk-snapshot", "direct"),
         default="all",
     )
     parser.add_argument("--exe", type=Path)
@@ -563,6 +714,8 @@ def main() -> None:
         if args.scenario in {"all", "sdk-fs-search"}:
             assert args.exe is not None
             smoke_sdk_fs_search(model.url, args.exe.resolve())
+        if args.scenario in {"all", "sdk-mcp"}:
+            smoke_sdk_mcp(model.url, None if args.exe is None else args.exe.resolve())
         if args.scenario in {"all", "sdk-snapshot"}:
             assert args.exe is not None
             smoke_sdk_snapshot(model.url, args.exe.resolve(), args.update_snapshots)
@@ -684,6 +837,42 @@ def smoke_sdk_fs_search(base_url: str, executable: Path) -> None:
 
         assert result.final_response == FS_SEARCH_TEXT, result.final_response
         assert_session_log(sessions, root, FS_SEARCH_TEXT, FS_SEARCH_MARKER, "needle.txt")
+
+
+def smoke_sdk_mcp(base_url: str, executable: Path | None) -> None:
+    """Discover and call an external stdio MCP tool through the packaged client."""
+    from deepseek_harness import DeepSeekHarness
+
+    with tempfile.TemporaryDirectory(prefix="dsh-sdk-mcp-") as temporary:
+        root = Path(temporary).resolve()
+        sessions = root / "sessions"
+        server_script = root / "mcp_server.py"
+        server_script.write_text(MCP_SERVER_SCRIPT)
+        cordis = root / "cordis.yml"
+        cordis.write_text(mcp_cordis(server_script))
+        discovery_log = server_script.with_suffix(".log")
+        with DeepSeekHarness(
+            provider="deepseek-official",
+            model="smoke-model",
+            cwd=str(root),
+            session_root=str(sessions),
+            cordis=str(cordis),
+            runtime_bin=None if executable is None else str(executable),
+            api_key="sk-keyless-smoke",
+            base_url=base_url,
+            request_timeout_seconds=60,
+        ) as harness:
+            wait_for_mcp_discovery(discovery_log)
+            result = harness.run(MCP_PROMPT, session_id="mcp-smoke")
+
+        assert result.final_response == MCP_TEXT, result.final_response
+        assert discovery_log.read_text().splitlines() == [
+            "initialize",
+            "notifications/initialized",
+            "tools/list",
+            "tools/call",
+        ]
+        assert_session_log(sessions, root, MCP_TEXT, "mcp__fixture__add", "42")
 
 
 def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) -> None:

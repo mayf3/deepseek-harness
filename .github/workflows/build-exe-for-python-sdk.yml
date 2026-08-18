@@ -272,6 +272,8 @@ jobs:
             deepseek-harness-sdk=="$VERSION"
           "$RUNNER_TEMP/dsh-sdk-smoke/bin/python" scripts/smoke-python-runtime.py \
             --scenario sdk-default
+          "$RUNNER_TEMP/dsh-sdk-smoke/bin/python" scripts/smoke-python-runtime.py \
+            --scenario sdk-mcp
 
       - name: Check Linux GLIBC requirements
         if: runner.os == 'Linux'
@@ -309,6 +311,7 @@ jobs:
             /opt/python/cp310-cp310/bin/python -m venv /tmp/dsh-sdk
             /tmp/dsh-sdk/bin/python -m pip install --find-links /work/dist-python deepseek-harness-sdk=="$VERSION"
             /tmp/dsh-sdk/bin/python /work/scripts/smoke-python-runtime.py --scenario sdk-default
+            /tmp/dsh-sdk/bin/python /work/scripts/smoke-python-runtime.py --scenario sdk-mcp
           '
 
       - uses: actions/upload-artifact@v7
