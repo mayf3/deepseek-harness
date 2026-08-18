@@ -262,7 +262,8 @@ export async function consumeClaudeQuery(
  * Close the official query, terminate the managed process tree, and wait for
  * the subprocess owner to prove it is gone.
  * @param query - official SDK query, when creation reached that point.
- * @param child - shared-service handle that owns the CLI process tree.
+ * @param child - live shared-service handle that owns the CLI process tree;
+ * spawn-failed handles settle at the startup boundary instead.
  */
 export async function disposeClaudeCodeChild(
   query: Pick<Query, 'close'> | undefined,
@@ -276,13 +277,11 @@ export async function disposeClaudeCodeChild(
     failures.push(thrown(error))
   }
 
-  if (child.pid > 0) {
-    child.terminate()
-    try {
-      await child.waitForExit()
-    } catch (error: unknown) {
-      failures.push(thrown(error))
-    }
+  child.terminate()
+  try {
+    await child.waitForExit()
+  } catch (error: unknown) {
+    failures.push(thrown(error))
   }
   try {
     outcome = await child.done
@@ -297,13 +296,10 @@ export async function disposeClaudeCodeChild(
       category: 'unknown',
       outcome,
     } as const
-    if (failures.length === 1) {
-      throw new ClaudeCodeFailure(facts, firstFailure)
-    }
-    throw new AggregateError(
-      failures.map(failure => new ClaudeCodeFailure(facts, failure)),
-      `subagent-claude-code: ${failureDiagnostic(facts)}`,
-    )
+    const cause = failures.length === 1
+      ? firstFailure
+      : new AggregateError(failures, 'Claude Code teardown failures')
+    throw new ClaudeCodeFailure(facts, cause)
   }
 }
 

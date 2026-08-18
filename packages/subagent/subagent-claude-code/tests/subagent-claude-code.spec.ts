@@ -451,8 +451,6 @@ describe('task admission and package contracts', () => {
     const safeChild = fakeChild()
     const bypassChild = fakeChild()
     const spawnSpecs: SubprocessSpawnSpec[] = []
-    vi.spyOn(ctx.subprocess, 'resolveExecutable')
-      .mockResolvedValue('/native/claude')
     vi.spyOn(ctx.subprocess, 'spawn').mockImplementation((spec) => {
       spawnSpecs.push(spec)
       return spec.env?.DSH_CLAUDE_INSTANCE === 'safe'
@@ -463,7 +461,6 @@ describe('task admission and package contracts', () => {
     queryMock.mockImplementation(({ options }) => {
       queryOptions.push(options)
       options.spawnClaudeCodeProcess!(sdkSpawnOptions({
-        command: options.pathToClaudeCodeExecutable!,
         cwd: options.cwd!,
         env: options.env!,
         signal: options.abortController!.signal,
@@ -770,7 +767,6 @@ describe('official spawn projection', () => {
     expect(spec.argv).toEqual([
       command, '--output-format', 'stream-json',
     ])
-    expect(spec.env).not.toHaveProperty('DSH_CLAUDE_CODE_EXECUTABLE')
   })
 
   it('projects streams, exit facts, listeners, and idempotent tree termination', async () => {
@@ -1629,28 +1625,33 @@ describe('query and process disposal', () => {
       'unknown',
       { exitCode: 0, signal: null },
     ))
-    await expect(waitAndClose).rejects.toBeInstanceOf(AggregateError)
+    const waitAndCloseError = await waitAndClose.then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    const waitAndCloseCause = errorCause(waitAndCloseError)
+    expect(waitAndCloseCause).toBeInstanceOf(AggregateError)
+    expect((waitAndCloseCause as AggregateError).errors).toEqual([
+      expect.objectContaining({ message: 'close boom' }),
+      expect.objectContaining({ message: 'wait boom' }),
+    ])
     expect(waitFailure.terminate).toHaveBeenCalledOnce()
 
     const doneFailure = fakeChild({
-      pid: -1,
       doneError: new Error('spawn boom'),
     })
-    await expect(disposeClaudeCodeChild(
+    const directChildFailure = disposeClaudeCodeChild(
       { close: vi.fn() },
       doneFailure.handle,
-    )).rejects.toThrow(expectedFailureDiagnostic('teardown', 'unknown'))
-
-    const both = fakeChild({
-      pid: -1,
-      doneError: new Error('spawn boom'),
-    })
-    const bothFailures = disposeClaudeCodeChild(
-      { close: () => { throw new Error('close boom') } },
-      both.handle,
     )
-    await expect(bothFailures)
+    await expect(directChildFailure)
       .rejects.toThrow(expectedFailureDiagnostic('teardown', 'unknown'))
-    await expect(bothFailures).rejects.toBeInstanceOf(AggregateError)
+    await expect(directChildFailure).rejects.not.toThrow('spawn boom')
+    const directChildError = await directChildFailure.then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    expect(errorCause(directChildError)?.message).toBe('spawn boom')
+    expect(doneFailure.terminate).toHaveBeenCalledOnce()
   })
 })

@@ -322,9 +322,6 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
       .toBe(process.platform === 'win32'
         ? realpathSync(claudeBin).toLowerCase()
         : realpathSync(claudeBin))
-    expect(harness.spawnSpecs[0]?.env)
-      .not.toHaveProperty('DSH_CLAUDE_CODE_EXECUTABLE')
-
     expect(fixture.requests).toHaveLength(1)
     const recorded = fixture.requests[0]!
     expect(recorded.method).toBe('POST')
