@@ -802,7 +802,7 @@ describe('official spawn projection', () => {
   })
 
   it('emits spawn errors', async () => {
-    const child = fakeChild()
+    const child = fakeChild({ pid: -1 })
     const process = new ManagedClaudeCodeProcess(child.handle)
     const errorListener = vi.fn()
     const removed = vi.fn()
