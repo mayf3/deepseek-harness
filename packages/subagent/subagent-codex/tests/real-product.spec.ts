@@ -385,9 +385,7 @@ describe('real @openai/codex 0.147.0 product', () => {
 
   it('executes an explicitly selected dangerous bypass write in the isolated workspace', async () => {
     const sideEffect = 'bypass-side-effect'
-    const command = process.platform === 'win32'
-      ? `cmd /c echo bypass>${sideEffect}`
-      : `printf bypass > ${sideEffect}`
+    const command = `echo bypass>${sideEffect}`
     const commandCalls = [
       {
         name: 'exec_command',
