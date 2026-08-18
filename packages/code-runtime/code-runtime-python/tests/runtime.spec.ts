@@ -827,12 +827,24 @@ describe('PythonCodeRuntime — programs and bindings', () => {
       .rejects.toThrow(/maxValueBytes times the 12x worst-case Unicode expansion must fit/)
     // Discriminates 12 from 8: a 48 MiB maxLogBytes against a 512 MiB address
     // space leaves 448 MiB budgetable. 48*8 = 384 MiB fits (the old 8x multiple
-    // wrongly ADMITTED this), but 48*12 = 576 MiB does not — and this is exactly
-    // the config that OOMs, since a settlement flush holds the pending chunks,
-    // their join, and the encode copy at once (~12x). The 12x gate rejects it.
+    // wrongly ADMITTED this), but 48*12 = 576 MiB does not. The ~12x peak this
+    // guards is the NEWLINE path's single near-budget write — the caller's own
+    // string, the line slice, and the encode copy live at once. The settlement
+    // flush is no longer the binding case: `flush_line` drops the pending chunks
+    // before its push, so it holds two copies, not three.
     const ctxTwelve = new Context()
     await expect(ctxTwelve.plugin(PythonCodeRuntime, { maxLogBytes: 48 * 1024 * 1024, addressSpaceMb: 512 }))
       .rejects.toThrow(/maxLogBytes times the 12x worst-case Unicode expansion must fit/)
+    // An addressSpaceMb at or below the interpreter baseline leaves nothing
+    // budgetable, so no budget value can pass. It is rejected on its own terms:
+    // the budget loop would otherwise report "a limit of -1" (or -2796203 at
+    // 32 MiB) while naming maxLogBytes, sending the operator to the wrong knob.
+    const ctxBaseline = new Context()
+    await expect(ctxBaseline.plugin(PythonCodeRuntime, { addressSpaceMb: 64 }))
+      .rejects.toThrow(/addressSpaceMb must exceed the 67108864-byte interpreter baseline/)
+    const ctxBelow = new Context()
+    await expect(ctxBelow.plugin(PythonCodeRuntime, { addressSpaceMb: 32 }))
+      .rejects.toThrow(/addressSpaceMb must exceed the 67108864-byte interpreter baseline/)
     // The default caps against the default 512 MiB address space load.
     const ok = new Context()
     const fiber = await ok.plugin(PythonCodeRuntime, { maxLogBytes: 65536, maxValueBytes: 32768, addressSpaceMb: 512 })

@@ -266,12 +266,15 @@ const OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE = 12
  * multiple claims the rest. The budget check subtracts this from `addressSpaceMb`
  * so a budget sized right at `addressSpaceMb / MULTIPLE` — which the multiple
  * alone would admit — cannot leave the peak output allocation plus the
- * interpreter over the limit. 64 MiB is generous for a `python3 -I` process
- * whose own resident set is tens of MiB; the value is a fixed safety margin, not
- * a deployment knob.
+ * interpreter over the limit. Sized against ADDRESS SPACE, which is what
+ * `RLIMIT_AS` bounds, not resident set: the bootstrap's own measurement is
+ * 30.23 MiB of mappings for a `python3 -I` child (see `_make_cpu_enforcer`,
+ * which also records the 64 MiB glibc per-thread arena reservation that pushes
+ * it to 102.37 MiB when threads are used). 64 MiB is roughly twice the measured
+ * baseline, leaving room for allocator arenas and import jitter. The value is a
+ * fixed safety margin, not a deployment knob.
  */
 const INTERPRETER_BASELINE_BYTES = 64 * 1024 * 1024
-
 
 /**
  * Interval between process-group liveness probes while settlement waits for an
@@ -794,6 +797,14 @@ export class PythonCodeRuntime extends CodeRuntime {
     // peak plus the reserved baseline is the whole address space, the RLIMIT_AS
     // edge. `ceil(budgetableBytes / MULTIPLE) - 1` is the last integer strictly
     // under `budgetableBytes / MULTIPLE`.
+    // Reject a too-small address space on its own terms FIRST. Once
+    // `budgetableBytes` is zero or negative no budget can pass, and the loop
+    // below would report "a limit of -1" (or -2796203 at addressSpaceMb 32) while
+    // naming `maxLogBytes` -- pointing the operator at the knob that is not the
+    // problem. The baseline is what `addressSpaceMb` must clear here.
+    if (budgetableBytes <= 0) {
+      throw new Error(`dsh-code-runtime-python: config.addressSpaceMb must exceed the ${INTERPRETER_BASELINE_BYTES}-byte interpreter baseline with room for the output budgets, so the child has address space left to build and encode them; got ${String(this.config.addressSpaceMb)} MiB (${addressSpaceBytes} bytes)`)
+    }
     const admissibleBudget = Math.ceil(budgetableBytes / OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE) - 1
     for (const key of ['maxLogBytes', 'maxValueBytes'] as const) {
       if (this.config[key] * OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE >= budgetableBytes) {

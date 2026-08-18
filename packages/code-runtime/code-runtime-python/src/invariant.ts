@@ -15,9 +15,11 @@ export const name = 'code-runtime-python-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: this package ships only the fd-3 wire-protocol codec and its Python mirror,
- * exposing no runtime event sequence or mutable data relation; `protocol.spec.ts` and
- * `protocol-mirror.e2e.ts` cover the protocol's behavior.
+ * No runtime invariant: every relation this backend maintains — frame ordering, budget accounting,
+ * and process teardown — lives in the CPython subprocess or on the fd-3 wire, so no same-process
+ * event sequence or mutable data relation is observable from a Cordis listener. `protocol.spec.ts`,
+ * `protocol-mirror.e2e.ts`, and the real-subprocess `runtime.spec.ts` cover that behavior, matching
+ * the sibling process-boundary backend `@deepseek-ai/dsh-code-runtime-worker-thread`.
  */
 const install: InvariantInstaller = () => {}
 

@@ -66,8 +66,8 @@ export const DUNDER_MEMBER = /^__.+__$/
 /**
  * Reserved words of every portable target language (ECMAScript ∪ Python),
  * refused as {@link CodeBindingNamespace.global} / error-class names by all
- * backends. Python is a portability target here even though only the
- * TypeScript worker has a published backend. The portable-identifier contract
+ * backends, which ship for both languages: the TypeScript worker thread and
+ * the CPython subprocess. The portable-identifier contract
  * promises a namespace list valid on one backend is valid on every backend; a
  * per-language check would let `lambda` pass the TypeScript backend and fail
  * the Python one. Extending the seam with a new language means widening this
@@ -106,7 +106,7 @@ export abstract class CodeRuntime extends Service {
    * generates language-specific presentation (typed SDK stubs, usage
    * instructions) switches on it and fails loud on a language it cannot
    * present. Well-known values: `'typescript'` and `'python'`, those
-   * `dsh-tools` presents; only `'typescript'` has a published backend.
+   * `dsh-tools` presents; each has a published backend.
    */
   abstract readonly language: string
 

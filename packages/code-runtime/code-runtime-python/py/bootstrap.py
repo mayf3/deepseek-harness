@@ -363,8 +363,8 @@ class _LogStream(io.TextIOBase):
         # against them.
         with self._logs.lock:
             if self._pending:
-                # Join, drop the chunks, THEN push — the same order the newline
-                # path uses (:232-235). Pushing before the clear would keep the
+                # Join, drop the chunks, THEN push — the same join-clear-push order
+                # as `_write_locked`'s newline branch. Pushing before the clear would keep the
                 # pending chunks alive through `_push_locked`'s `text.encode`, so
                 # the chunks, their join, and the encode copy would all be live at
                 # once; dropping the chunks first leaves only the join and its
@@ -1184,8 +1184,8 @@ def _encode_json_plain(value: Any) -> str:
     # that pulls its children one at a time and writes each into the shared buffer,
     # rather than one stack entry (plus a separator marker) per child: a flat
     # `[0] * 6_000_000` encodes to ~12 MB but per-element frames are ~400 MB — an
-    # RLIMIT_AS death on a value `_check_done_value` already admitted (which now
-    # walks in O(depth) too). The output string is the only width-proportional
+    # RLIMIT_AS death on a value `_check_done_value` already admitted (it walks by
+    # depth as well). The output string is the only width-proportional
     # allocation, and its size the caller metered within budget. `io.StringIO`
     # accumulates without the intermediate `"".join(chunks)` second copy. A cursor
     # frame is [kind, iterator, wrote_any]; a visit frame is (VISIT, value).
