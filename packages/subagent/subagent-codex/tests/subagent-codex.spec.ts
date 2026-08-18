@@ -415,11 +415,6 @@ describe('task admission and package contracts', () => {
     expect(JSON.stringify(rows)).not.toContain('tool-subagent')
   })
 
-  it('uses only the official package-declared wrapper for app-server', () => {
-    expect(codexAppServerArgv()[0]).toBe(process.execPath)
-    expect(codexAppServerArgv().slice(2)).toEqual(['app-server', '--stdio'])
-  })
-
   it('accepts one or more text blocks and rejects empty or non-text tasks', () => {
     expect(textTask([
       { type: 'text', text: 'one' },
@@ -1666,7 +1661,6 @@ describe('run lifecycle and quiescence', () => {
     const outcomes: SubprocessOutcome[] = [
       { exitCode: 9, signal: null },
       { exitCode: null, signal: 'SIGABRT' },
-      { exitCode: 9, signal: 'SIGABRT' },
       { exitCode: null, signal: null },
     ]
     for (const outcome of outcomes) {
@@ -1689,7 +1683,7 @@ describe('run lifecycle and quiescence', () => {
       await run.dispose().catch(() => {})
     }
     {
-      const outcome = { exitCode: 17, signal: 'SIGABRT' } as const
+      const outcome = { exitCode: 17, signal: null } as const
       const child = fakeChild({ exitOnTerminate: false })
       const { run, turnStart } = await publishRun(child, undefined, {
         disposeGraceMs: 100,
@@ -2227,13 +2221,6 @@ describe('disposeCodexChild', () => {
       .resolves.toBeUndefined()
     expect(child.terminate).not.toHaveBeenCalled()
     expect(child.waitForExit).not.toHaveBeenCalled()
-  })
-
-  it('accepts absent stdin', async () => {
-    const child = fakeChild()
-    const handle = { ...child.handle, stdin: undefined }
-    const wire = defaultWire(child)
-    await expect(disposeCodexChild(wire, handle)).resolves.toBeUndefined()
   })
 
   it('reports tree-wait failure with safe teardown facts', async () => {

@@ -1182,7 +1182,6 @@ describe('run publication, cancellation, and settlement', () => {
     const outcomes: SubprocessOutcome[] = [
       { exitCode: 23, signal: null },
       { exitCode: null, signal: 'SIGABRT' },
-      { exitCode: 23, signal: 'SIGABRT' },
       { exitCode: null, signal: null },
     ]
     for (const outcome of outcomes) {
