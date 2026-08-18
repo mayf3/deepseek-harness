@@ -214,17 +214,20 @@ describe('typert loader', () => {
 
     await ctx.loader.remove(id)
     await ctx.loader.await()
-    // The unmount reconciliation rides a queued microtask flush.
-    await new Promise(resolve => setTimeout(resolve, 20))
-    expect(ctx.typert.get('@fixture/with-typert#Thing')).toBeUndefined()
+    // The unmount reconciliation rides a queued microtask flush; poll instead
+    // of assuming a fixed delay covers it under coverage-lane contention.
+    await vi.waitFor(() => {
+      expect(ctx.typert.get('@fixture/with-typert#Thing')).toBeUndefined()
+    }, { timeout: 10_000 })
     await ctx.loader.remove(plainId)
     await ctx.loader.await()
     await new Promise(resolve => setTimeout(resolve, 20))
 
     await ctx.loader.create({ name: '@fixture/with-typert' })
     await ctx.loader.await()
-    await new Promise(resolve => setTimeout(resolve, 20))
-    expect(ctx.typert.get('@fixture/with-typert#Thing')).toBeDefined()
+    await vi.waitFor(() => {
+      expect(ctx.typert.get('@fixture/with-typert#Thing')).toBeDefined()
+    }, { timeout: 10_000 })
   })
 
   it('follows entries mounted after activation', LOADER_TEST_TIMEOUT, async () => {
