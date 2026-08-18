@@ -189,6 +189,12 @@ export async function disposeCodexChild(
   wire.close()
 
   if (child.pid > 0) {
+    let outcome: SubprocessOutcome | undefined
+    void child.done.then(
+      (value) => { outcome = value },
+      /* v8 ignore next -- a positive pid excludes spawn-level done rejection. */
+      () => {},
+    )
     try {
       child.stdin?.end()
     } catch {
@@ -198,7 +204,6 @@ export async function disposeCodexChild(
     try {
       await child.waitForExit()
     } catch (error: unknown) {
-      const outcome = await child.done
       throw new CodexRunFailure({
         stage: 'teardown',
         category: 'unknown',
@@ -294,8 +299,8 @@ export async function startCodexRun(
       throw new CodexRunFailure(processFailureFacts, thrown(error))
     },
   )
-  // A normal post-result dispose also closes the process. Keep that expected
-  // late rejection observed after the result race has already settled.
+  // A normal post-result dispose also closes the process. Keep its expected
+  // late rejection observed when the terminal result settles first.
   processFailure.catch(() => {})
 
   const runAbort = new AbortController()
@@ -316,12 +321,17 @@ export async function startCodexRun(
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
     const cancelledBeforeCleanup = runAbort.signal.aborted
+    if (!(error instanceof CodexRunFailure) && !cancelledBeforeCleanup) {
+      // Node reports stdout EOF before the child close that owns its outcome.
+      // Let an already-exiting process publish those facts before rollback.
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+    }
     const failure = new CodexRunFailure({
       stage: startupStage,
       category: 'unknown',
       outcome: error instanceof CodexRunFailure
         ? error.facts.outcome
-        : undefined,
+        : processFailureFacts?.outcome,
     }, thrown(error))
     try {
       await disposeProcess()
@@ -353,10 +363,21 @@ export async function startCodexRun(
       : `${failure}\n${permission}`
     return diagnostic
   }
+  const publishedProcessFailure = processFailure.catch(
+    async (error: unknown): Promise<never> => {
+      // Frames already queued by the exiting app-server remain authoritative.
+      // One I/O turn lets them settle before process exit ends the run.
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      throw error
+    },
+  )
   const result: Promise<SubagentResult> = settleRunResult({
     attempt: async () => {
       try {
-        const terminal = await wire.runTurn(texts, runAbort.signal)
+        const terminal = await Promise.race([
+          wire.runTurn(texts, runAbort.signal),
+          publishedProcessFailure,
+        ])
         if (terminal.stopReason === 'completed') return terminal
         // Let stderr already queued with the terminal frame contribute its
         // fixed permission fact before the non-completed result is snapshotted.
@@ -382,11 +403,15 @@ export async function startCodexRun(
             // The wire failure remains authoritative when exit observation fails.
           }
         }
-        const facts = endedBeforeTerminal && processFailureFacts !== undefined
-          ? processFailureFacts
-          : wire.collectFailure()
+        const facts = error instanceof CodexRunFailure
+          ? error.facts
+          : endedBeforeTerminal && processFailureFacts !== undefined
+            ? processFailureFacts
+            : wire.collectFailure()
         recordFailureDiagnostic(facts)
-        throw new CodexRunFailure(facts, thrown(error))
+        throw error instanceof CodexRunFailure
+          ? error
+          : new CodexRunFailure(facts, thrown(error))
       }
     },
     collectOutput,

@@ -1689,7 +1689,6 @@ describe('run lifecycle and quiescence', () => {
         onError: (error) => { errors.push(error.message) },
       })
       child.settle(outcome)
-      child.fromChild.emit('end')
       await expect(run.result).resolves.toEqual({
         output: [],
         diagnostic: expectedFailureDiagnostic('process', 'process-exit', {
@@ -1998,6 +1997,28 @@ describe('run lifecycle and quiescence', () => {
       { outcome: { exitCode: null, signal: 'SIGABRT' } },
     ))
 
+    const eofBeforeCloseChild = fakeChild({ exitOnTerminate: false })
+    const eofBeforeCloseStarting = startCodexRun(
+      request(),
+      runSpec(eofBeforeCloseChild),
+    )
+    const eofBeforeCloseInitialize = await eofBeforeCloseChild.peer
+      .nextMethod('initialize')
+    eofBeforeCloseChild.peer.respond(eofBeforeCloseInitialize, {
+      userAgent: 'codex-cli 0.147.0',
+    })
+    await eofBeforeCloseChild.peer.nextMethod('initialized')
+    await eofBeforeCloseChild.peer.nextMethod('thread/start')
+    eofBeforeCloseChild.fromChild.emit('end')
+    setImmediate(() => {
+      eofBeforeCloseChild.settle({ exitCode: 23, signal: null })
+    })
+    await expect(eofBeforeCloseStarting).rejects.toThrow(
+      expectedFailureDiagnostic('thread-start', 'unknown', {
+        outcome: { exitCode: 23, signal: null },
+      }),
+    )
+
     const stderrChild = fakeChild()
     const stderrStarting = startCodexRun(request(), runSpec(stderrChild))
     const stderrInitialize = await stderrChild.peer.nextMethod('initialize')
@@ -2294,5 +2315,25 @@ describe('disposeCodexChild', () => {
       { outcome: { exitCode: 0, signal: null } },
     ))
     await expect(disposal).rejects.not.toThrow('SECRET_TOKEN')
+  })
+
+  it('does not wait for a pending process outcome after tree observation fails', async () => {
+    const child = fakeChild({
+      exitOnTerminate: false,
+      waitForExitError: new Error('SECRET_TOKEN wait failure'),
+    })
+    const wire = defaultWire(child)
+    let disposalError: unknown
+    const disposal = disposeCodexChild(wire, child.handle).catch(
+      (error: unknown) => { disposalError = error },
+    )
+    await nextTask()
+    expect(disposalError).toBeInstanceOf(Error)
+    expect(String(disposalError)).toContain(
+      expectedFailureDiagnostic('teardown', 'unknown'),
+    )
+    expect(String(disposalError)).not.toContain('SECRET_TOKEN')
+    child.settle()
+    await disposal
   })
 })
