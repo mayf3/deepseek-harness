@@ -102,20 +102,6 @@ function openFailureMessage(error: unknown, fallback: string): string {
   return message === '' ? fallback : message
 }
 
-/**
- * Local demo only: `?openFileFail=1` randomly refuses (or lets the Host
- * open succeed) so the three dialog cases can be clicked through.
- */
-function demoOpenFailure(): Promise<void> | undefined {
-  if (typeof location === 'undefined') return undefined
-  if (!new URLSearchParams(location.search).has('openFileFail')) return undefined
-  const pick = Math.floor(Math.random() * 4)
-  if (pick === 0) return Promise.reject(new Error('xdg-open is not available'))
-  if (pick === 1) return Promise.reject('permission denied')
-  if (pick === 2) return Promise.reject(new Error(''))
-  return undefined
-}
-
 function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | null {
   let latest: number | null = null
   for (const turn of timeline.turns.values()) {
@@ -189,7 +175,7 @@ export function ChatView({
   const requestOpenFile = useCallback((path: string) => {
     const id = ++fileOpenRequest.current
     setFileOpenBusy(true)
-    void Promise.resolve(demoOpenFailure() ?? openFile(path)).then(
+    void Promise.resolve(openFile(path)).then(
       () => {
         if (id !== fileOpenRequest.current) return
         setFileOpenError(null)
