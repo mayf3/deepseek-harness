@@ -4,7 +4,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import { SettingsScopeBinder } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { SettingsSchemaService } from '@deepseek-ai/dsh-client-ui-settings/src/client/schema.ts'
+import { SettingsScopeBinder } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-scope.ts'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   apply, inject, SETTINGS_NS,
@@ -47,7 +48,7 @@ async function bench() {
   ctx.provide('connection', { api: { settings: { describe, mutate } }, isLoopback: true } as never)
   // The settings transport and the forwarded-event port the plugin injects.
   new TestRemote(ctx)
-  await ctx.plugin(SettingsScopeBinder).await()
+  await ctx.plugin(SettingsScopeBinder, new SettingsSchemaService(ctx)).await()
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, describe, mutate,
     setHostPreference: (next: string | undefined) => { preference = next; revision += 1 },

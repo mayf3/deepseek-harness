@@ -9,13 +9,16 @@
  * through ui-layout and ui-theme. Export discipline: packages/client/AGENTS.md.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import { SettingsSchemaService } from './schema.ts'
 import { SettingsScopeBinder } from './settings-scope.ts'
 
 export type {
   SettingsGeneralItemOwnerProps, SettingsHeaderOwnerProps, SettingsOnboardingOwnerProps,
   SettingsPluginsTabOwnerProps, SettingsSectionOwnerProps, SettingsTriggerOwnerProps,
 } from './contract/slots.ts'
-export { SettingsScopeController, SettingsScopeBinder } from './settings-scope.ts'
+export type { SettingsScopeController, SettingsScopeBinder } from './settings-scope.ts'
+export type { SettingsSchemaService } from './schema.ts'
+export type { SchemaNode } from './schema.ts'
 
 /**
  * Required services: none. The transport is resolved per caller through
@@ -31,5 +34,6 @@ export const inject = []
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  new SettingsScopeBinder(ctx)
+  const schema = new SettingsSchemaService(ctx)
+  new SettingsScopeBinder(ctx, schema)
 }
