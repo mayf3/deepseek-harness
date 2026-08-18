@@ -1,10 +1,16 @@
 /**
  * Pure ACP transcript and session-log normalizers. They scrub session ids, run cwd, RPC ids,
- * timestamps, and hook duration while preserving deterministic event sequence numbers.
+ * timestamps and hook duration while preserving event payloads.
  * Request-header scrubbers stay composable so one scenario per header class can pin prompt and
  * tool-schema sidecars.
  * @module @deepseek-ai/dsh-acp-snapshot/normalize
  */
+
+import {
+  decodeSessionSnapshotBody,
+  isPackedSessionChunkRow,
+  omitSessionEventEnvelope,
+} from '@deepseek-ai/dsh-llm-replay'
 
 const SESSION_ID = '{{sessionId}}'
 const CWD = '{{cwd}}'
@@ -282,10 +288,12 @@ export function normalizeStdout(
 
 /**
  * Normalize a session JSONL log into a stable expected output: the header line's
- * volatile fields (`createdAt`, `id`, `cwd`) and every event's `time` are
- * zeroed/scrubbed, all volatile strings scrubbed, and `seq` is LEFT INTACT
- * (deterministic by contract). A packed chunk row's timing (`time0`, the `dt`
- * gaps) zeroes just like an event `time`; its `seq0` stays, like `seq`.
+ * volatile fields (`createdAt`, `id`, `cwd`) are zeroed/scrubbed, ordinary
+ * event `time` and packed-row `time0` values are zeroed, and all volatile
+ * strings are scrubbed. A projected session fixture has its sequence/time
+ * envelopes materialized in the parsed objects before normalization. Packed
+ * `data.dt` gaps remain normalized because they carry the same wall-clock noise
+ * as their `time0` anchor.
  * Output is JSONL in the same shape as the input — one compact record per
  * line.
  *
@@ -301,32 +309,70 @@ export function normalizeSessionLog(
 ): string {
   const cwdPathMode = options.cwdPathMode ?? 'canonical'
   const lines = rawLog.split('\n').filter(line => line.trim().length > 0)
-  const records = lines.map((line) => {
-    const record = JSON.parse(line) as Record<string, unknown>
-    // Header line: { type: 'session', createdAt, id, cwd, … }.
-    if (record.type === 'session') {
-      if ('createdAt' in record) record.createdAt = 0
-    } else if ('time0' in record) {
-      // Packed chunk row: zero the anchor timestamp and every member gap.
-      record.time0 = 0
-      const data = record.data
-      if (data !== null && typeof data === 'object' && Array.isArray((data as { dt?: unknown }).dt)) {
-        (data as { dt: unknown[] }).dt = (data as { dt: unknown[] }).dt.map(() => 0)
-      }
-    } else if ('time' in record) {
-      // Event line: zero the epoch-ms timestamp; keep seq (deterministic).
-      record.time = 0
-      // A hook/result carries the hook's wall-clock runtime (`data.durationMs`),
-      // which is run-to-run noise like `time` — zero it so the expected output reflects
-      // the hook's decision/exit, not how long the shell took.
-      if (record.type === 'hook/result' && record.data !== null && typeof record.data === 'object') {
-        const data = record.data as Record<string, unknown>
-        if ('durationMs' in data) data.durationMs = 0
-      }
+  const records = lines.map(line => JSON.parse(line) as Record<string, unknown>)
+  if (records[0]?.type === 'session') decodeSessionSnapshotBody(records.slice(1))
+  const normalized = records.map(record => normalizeSessionRecord(record, ctx, cwdPathMode))
+  return normalized.map(r => JSON.stringify(r)).join('\n') + '\n'
+}
+
+/** Normalize one already-parsed session or stream record in place. */
+function normalizeSessionRecord(
+  record: Record<string, unknown>,
+  ctx: NormalizeContext,
+  cwdPathMode: CwdPathMode,
+): Record<string, unknown> {
+  // Header line: { type: 'session', createdAt, id, cwd, … }.
+  if (record.type === 'session') {
+    if ('createdAt' in record) record.createdAt = 0
+  } else if (isPackedSessionChunkRow(record)) {
+    if ('time0' in record) record.time0 = 0
+    const data = record.data
+    if (data !== null && typeof data === 'object' && Array.isArray((data as { dt?: unknown }).dt)) {
+      (data as { dt: unknown[] }).dt = (data as { dt: unknown[] }).dt.map(() => 0)
     }
-    return scrubValue(record, ctx, cwdPathMode) as Record<string, unknown>
-  })
-  return records.map(r => JSON.stringify(r)).join('\n') + '\n'
+  } else if ('time' in record) {
+    record.time = 0
+  }
+  // A hook/result carries the hook's wall-clock runtime (`data.durationMs`),
+  // which is run-to-run noise like `time` — zero it so the expected output reflects
+  // the hook's decision/exit, not how long the shell took.
+  if (record.type === 'hook/result' && record.data !== null && typeof record.data === 'object') {
+    const data = record.data as Record<string, unknown>
+    if ('durationMs' in data) data.durationMs = 0
+  }
+  return scrubValue(record, ctx, cwdPathMode) as Record<string, unknown>
+}
+
+/**
+ * Normalize and project persisted session JSONL for a committed fixture.
+ * Each non-empty line is parsed once; body records are normalized, request
+ * headers are tokenized, and persistence-only envelopes are omitted before
+ * the record is serialized.
+ *
+ * @param rawLog - persisted or already-projected session JSONL.
+ * @param ctx - the run's volatile values to scrub.
+ * @param options - separator output controls.
+ * @returns normalized committed session snapshot JSONL.
+ */
+export function normalizeSessionSnapshot(
+  rawLog: string,
+  ctx: NormalizeContext,
+  options: NormalizeOptions = {},
+): string {
+  const cwdPathMode = options.cwdPathMode ?? 'canonical'
+  let recordIndex = 0
+  return rawLog.split('\n').map((line) => {
+    if (line.trim().length === 0) return line
+    const parsed = JSON.parse(line) as Record<string, unknown>
+    const record = normalizeSessionRecord(parsed, ctx, cwdPathMode)
+    if (recordIndex++ === 0) {
+      if (record.type !== 'session') throw new Error('session snapshot must start with a session header')
+      return JSON.stringify(record)
+    }
+    scrubRequestHeaderRecord(record, { system: true, tools: true })
+    omitSessionEventEnvelope(record)
+    return JSON.stringify(record)
+  }).join('\n')
 }
 
 /**
@@ -373,6 +419,29 @@ export function scrubRequestHeaders(rawLog: string): string {
   return scrubHeaderContent(rawLog, { system: true, tools: true })
 }
 
+/**
+ * Project a persisted session log while tokenizing all request-header bulk.
+ * Each non-empty line is parsed at most once; the session header stays
+ * byte-identical and body payloads are changed only by header tokenization.
+ *
+ * @param rawLog - persisted or already-projected session JSONL.
+ * @returns committed snapshot JSONL with request headers tokenized.
+ */
+export function scrubSessionSnapshot(rawLog: string): string {
+  let recordIndex = 0
+  return rawLog.split('\n').map((line) => {
+    if (line.trim().length === 0) return line
+    const record = JSON.parse(line) as Record<string, unknown>
+    if (recordIndex++ === 0) {
+      if (record.type !== 'session') throw new Error('session snapshot must start with a session header')
+      return line
+    }
+    omitSessionEventEnvelope(record)
+    scrubRequestHeaderRecord(record, { system: true, tools: true })
+    return JSON.stringify(record)
+  }).join('\n')
+}
+
 /** Which independent request-header payloads a scrubber replaces. */
 interface HeaderScrubOptions {
   system?: boolean
@@ -385,17 +454,20 @@ function scrubHeaderContent(rawLog: string, options: HeaderScrubOptions): string
   const out = lines.map((line) => {
     if (line.trim().length === 0) return line
     const record = JSON.parse(line) as Record<string, unknown>
-    const data = record.data as Record<string, unknown> | null | undefined
-    if (data === null || typeof data !== 'object') return line
-    if (record.type === 'request/header') {
-      const header = data.header as Record<string, unknown> | null | undefined
-      if (header === null || typeof header !== 'object') return line
-      let touched = false
-      if (options.system === true && 'system' in header) { header.system = SYSTEM; touched = true }
-      if (options.tools === true && 'tools' in header) { header.tools = TOOLS; touched = true }
-      return touched ? JSON.stringify(record) : line
-    }
-    return line
+    return scrubRequestHeaderRecord(record, options) ? JSON.stringify(record) : line
   })
   return out.join('\n')
+}
+
+/** Tokenize selected request-header fields on one parsed record. */
+function scrubRequestHeaderRecord(record: Record<string, unknown>, options: HeaderScrubOptions): boolean {
+  if (record.type !== 'request/header') return false
+  const data = record.data as Record<string, unknown> | null | undefined
+  if (data === null || typeof data !== 'object') return false
+  const header = data.header as Record<string, unknown> | null | undefined
+  if (header === null || typeof header !== 'object') return false
+  let touched = false
+  if (options.system === true && 'system' in header) { header.system = SYSTEM; touched = true }
+  if (options.tools === true && 'tools' in header) { header.tools = TOOLS; touched = true }
+  return touched
 }

@@ -11,7 +11,6 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { delimiter as pathDelimiter } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-compaction'
-import { decodeStorageRecord } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type {
   ContentBlock,
@@ -26,6 +25,16 @@ import type {
   TokenUsage,
 } from '@deepseek-ai/dsh-llm'
 import { LlmAdapter, LlmError, ReasoningEffortId, assertNever, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
+import { decodeSessionSnapshot } from './session-snapshot.ts'
+
+export {
+  decodeSessionSnapshot,
+  decodeSessionSnapshotBody,
+  isPackedSessionChunkRow,
+  omitSessionEventEnvelope,
+  projectSessionSnapshot,
+  type DecodedSessionSnapshot,
+} from './session-snapshot.ts'
 
 /**
  * One recorded model call. `throw` may replay prefix chunks before failing;
@@ -165,13 +174,7 @@ export interface SessionScript {
  * @returns every event after the header, in log order.
  */
 export function parseSessionLog(text: string): SessionEvent[] {
-  const lines = text.split('\n').filter(line => line.trim().length > 0)
-  const events: SessionEvent[] = []
-  // The JSONL backend guarantees line 0 is the session header.
-  for (let i = 1; i < lines.length; i++) {
-    events.push(...decodeStorageRecord(JSON.parse(lines[i] as string)))
-  }
-  return events
+  return decodeSessionSnapshot(text).events
 }
 
 /**

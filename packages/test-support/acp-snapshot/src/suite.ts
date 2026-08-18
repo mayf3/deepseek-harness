@@ -21,6 +21,7 @@ import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { isSurfaceEligibleType } from '@deepseek-ai/dsh-session/surface'
+import { decodeSessionSnapshot } from '@deepseek-ai/dsh-llm-replay'
 import { describe, expect, it } from 'vitest'
 import { type AgentUnderTest, type HarvestedLog, type InputScript, runScenario } from './harness.ts'
 import {
@@ -30,6 +31,7 @@ import {
   normalizeSessionLog,
   normalizeStdout,
   scrubRequestHeaders,
+  scrubSessionSnapshot,
   scrubSystemPrompts,
   scrubToolSchemas,
   tokenizeSessionFixtureCwd,
@@ -1031,7 +1033,8 @@ export function stabilizeRefreshLog(
 ): string {
   const freshRecords = parseJsonlRecords(fresh)
   const stable = applyFixtureReplacements(fresh, replacements)
-  const existingRecords = logicalRecords(parseJsonlRecords(existing))
+  const decodedExisting = decodeSessionSnapshot(existing)
+  const existingRecords = logicalRecords([decodedExisting.header, ...decodedExisting.bodyRecords])
   const records = parseJsonlRecords(stable)
   const existingContext = fixtureContext(existing)
   const stringMappings = normalizedStringMappings(
@@ -1220,9 +1223,7 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
 
         // Record writes live model fixtures; keyless refresh writes every comparable replayed
         // fixture. Pinning JSONL keeps prefixes but moves prompts and schemas into sidecars.
-        const scrub = scenario.pinsHeader === true
-          ? (log: string): string => scrubToolSchemas(scrubSystemPrompts(log))
-          : scrubRequestHeaders
+        const scrub = scrubSessionSnapshot
         const portableFixture = scenario.workspaceParent === undefined
           ? tokenizeSessionFixtureCwd
           : (log: string): string => log
@@ -1245,14 +1246,14 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
           const refreshReplacements = REFRESHING
             ? refreshFixtureReplacements(result.sessionLogs, existingFixtures)
             : []
-          const freshFixtures = REFRESHING
+          const freshFixtures = (REFRESHING
             ? result.sessionLogs.map((log, index) => scrub(portableFixture(stabilizeRefreshLog(
               log.content,
               existingFixtures[index] as string,
               refreshReplacements,
               ctx,
             ))))
-            : result.sessionLogs.map(log => scrub(portableFixture(log.content)))
+            : result.sessionLogs.map(log => scrub(portableFixture(log.content))))
           const outputFixtures = stabilizeFixtureMessageIds(freshFixtures, existingFixtures)
           await Promise.all(outputFixtures.map((fixture, index) =>
             writeFile(join(dir, outputFixtureFiles[index] as string), fixture)))

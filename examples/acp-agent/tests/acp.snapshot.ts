@@ -15,7 +15,7 @@ import {
   type SnapshotSuiteOptions,
 } from '@deepseek-ai/dsh-acp-snapshot'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
-import { decodeStorageRecord } from '@deepseek-ai/dsh-session'
+import { decodeSessionSnapshot } from '@deepseek-ai/dsh-llm-replay'
 
 /**
  * The acp-agent example's snapshot suite: the scenario table for
@@ -121,8 +121,12 @@ async function prepareFsSearchWorkspace(cwd: string): Promise<void> {
 // TODO(acp-snapshot-ownership): Move backend/product scenarios to headless while
 // retaining ACP protocol contracts here.
 
-function fixtureRecords(name: string): unknown[] {
+function fixtureText(name: string): string {
   return readFileSync(join(SNAPSHOTS_DIR, name, 'session.jsonl'), 'utf8')
+}
+
+function fixtureRecords(name: string): unknown[] {
+  return fixtureText(name)
     .trimEnd()
     .split('\n')
     .map(line => JSON.parse(line) as unknown)
@@ -762,7 +766,8 @@ it('pins pi-ai image offload in the request sent by the assembled app', async ()
 }, 45_000)
 
 it('packed ACP fixture retains every chunk row kind without changing the logical session', () => {
-  const source = fixtureRecords(PACKED_CHUNKS_SOURCE)
+  const source = fixtureText(PACKED_CHUNKS_SOURCE)
+  const packedText = fixtureText('packed-chunks')
   const packed = fixtureRecords('packed-chunks')
   const rowTypes = packed.flatMap((record) => {
     if (record === null || typeof record !== 'object') return []
@@ -794,9 +799,12 @@ it('packed ACP fixture retains every chunk row kind without changing the logical
     if (cloned.type === 'hook/result') delete cloned.data?.durationMs
     return cloned
   }
-  const logicalRecords = (records: readonly unknown[]): unknown[] => [
-    records[0],
-    ...records.slice(1).flatMap(record => decodeStorageRecord(record)).map(withoutMessageId),
-  ]
-  expect(logicalRecords(packed)).toStrictEqual(logicalRecords(source))
+  const logicalRecords = (fixture: string): unknown[] => {
+    const decoded = decodeSessionSnapshot(fixture)
+    return [
+      decoded.header,
+      ...decoded.events.map(withoutMessageId),
+    ]
+  }
+  expect(logicalRecords(packedText)).toStrictEqual(logicalRecords(source))
 })

@@ -20,6 +20,7 @@ import {
   normalizeStdout,
   refreshFixtureReplacements,
   scrubRequestHeaders,
+  scrubSessionSnapshot,
   stabilizeFixtureMessageIds,
   stabilizeRefreshLog,
   tokenizeSessionFixtureCwd,
@@ -362,7 +363,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         await mkdir(scenarioDir, { recursive: true })
         const existing = await Promise.all(files.map(async file => existsSync(file) ? readFile(file, 'utf8') : ''))
         const fixtures = stabilizeFixtureMessageIds(
-          ordered.map(log => scrubRequestHeaders(tokenizeSessionFixtureCwd(log.content))),
+          ordered.map(log => scrubSessionSnapshot(tokenizeSessionFixtureCwd(log.content))),
           existing,
         )
         await Promise.all(fixtures.map(async (fixture, index) => {
@@ -385,7 +386,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         const refreshed = ordered.map((log, index) => {
           const existing = expectedContents[index]
           if (existing === undefined) throw new Error(`no fixture for persisted log ${index}`)
-          return scrubRequestHeaders(tokenizeSessionFixtureCwd(
+          return scrubSessionSnapshot(tokenizeSessionFixtureCwd(
             stabilizeRefreshLog(log.content, existing, replacements, actualContext),
           ))
         })
