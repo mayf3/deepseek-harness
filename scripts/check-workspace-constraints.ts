@@ -7,6 +7,7 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { hasTypertRemoteNavigation, isForbiddenPublicationFile } from './publication-payload.ts'
 import { collectProjectReferenceFaceViolations } from './project-reference-faces.ts'
 
@@ -47,8 +48,10 @@ const repositoryUrl = 'git+https://github.com/deepseek-harness/deepseek-harness.
  * their trusted publishing against the repository that runs the workflow.
  */
 const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harness.git'
+/** Private packages that participate in workspace checks but not releases. */
+const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 /** Directories whose packages this repository publishes: one release member each. */
-const releaseMemberDirectory = /^(?:packages\/[^/]+\/[^/]+|apps\/[^/]+|vendor\/[^/]+)$/
+const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/[^/]+|vendor\/[^/]+)$/
 
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
@@ -59,7 +62,7 @@ const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
 }
 
 /** The subset of package.json fields this constraint check cares about. */
-interface PackageManifest {
+export interface PackageManifest {
   name?: string
   version?: string
   private?: boolean
@@ -87,7 +90,7 @@ interface PackageManifest {
 }
 
 /** One workspace manifest and its repo-relative path. */
-interface WorkspaceManifest {
+export interface WorkspaceManifest {
   dir: string
   manifest: PackageManifest
 }
@@ -228,8 +231,18 @@ function usesEmittedTreeDefaults(manifest: PackageManifest): boolean {
     exportDefault(manifest, subpath)?.startsWith('./lib/types/') === true)
 }
 
-function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
+/** Experimental manifest requirements enforced independently from release metadata. */
+export function checkExperimentalManifest({ dir, manifest }: WorkspaceManifest): string[] {
+  if (!experimentalPackageDirectory.test(dir)) return []
+  const label = manifest.name ?? dir
   const errors: string[] = []
+  if (manifest.private !== true) errors.push(`${label}: experimental package must set "private": true`)
+  if (manifest.publishConfig !== undefined) errors.push(`${label}: experimental package must omit publishConfig`)
+  return errors
+}
+
+function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
+  const errors = checkExperimentalManifest({ dir, manifest })
   const label = manifest.name ?? dir
   const isLandlockPackageDir = dir.startsWith('native/landlock-run/packages/')
   const isPublicLandlockPackage = isLandlockPackageDir
@@ -271,7 +284,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
       || manifest.repository.directory !== dir) {
       errors.push(`${label}: release member repository must use ${publishedRepositoryUrl} with directory ${dir}`)
     }
-  } else if (manifest.private !== true) {
+  } else if (!experimentalPackageDirectory.test(dir) && manifest.private !== true) {
     errors.push(`${label}: package.json must set "private": true`)
   }
 
@@ -390,6 +403,31 @@ function checkRepositoryVersion(): string[] {
 
 /** Dependency sections whose ranges reach a published tarball or a local install. */
 const dependencySections = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const
+/** Dependency sections present in an installed runtime. */
+const runtimeDependencySections = ['dependencies', 'optionalDependencies', 'peerDependencies'] as const
+
+/**
+ * Prevent an official runtime from requiring a package its release omits.
+ * @param manifests - release, private experimental, and deployment-root manifests.
+ * @returns One error for each forbidden runtime dependency.
+ */
+export function checkExperimentalDependencyIsolation(manifests: readonly WorkspaceManifest[]): string[] {
+  const experimentalNames = new Set(manifests
+    .filter(entry => experimentalPackageDirectory.test(entry.dir))
+    .map(entry => entry.manifest.name)
+    .filter(name => name !== undefined))
+  const errors: string[] = []
+  for (const { dir, manifest } of manifests) {
+    if (!releaseMemberDirectory.test(dir) && dir !== 'python/sdk-runtime') continue
+    for (const section of runtimeDependencySections) {
+      for (const name of Object.keys(manifest[section] ?? {})) {
+        if (!experimentalNames.has(name)) continue
+        errors.push(`${manifest.name ?? dir}: ${section}.${name} must not reference an experimental package`)
+      }
+    }
+  }
+  return errors
+}
 
 /**
  * Require the `workspace:` protocol for every reference to a workspace member.
@@ -415,15 +453,25 @@ function checkWorkspaceProtocol(manifests: readonly WorkspaceManifest[]): string
   return errors
 }
 
-const manifests = workspaceManifests()
-const errors = [
-  ...checkRepositoryVersion(),
-  ...manifests.flatMap(checkWorkspace),
-  ...checkWorkspaceProtocol(manifests),
-  ...checkHierarchyShape(),
-  ...collectProjectReferenceFaceViolations(root),
-]
-if (errors.length > 0) {
-  console.error(errors.join('\n'))
-  process.exitCode = 1
+/** Run the repository constraint gate. */
+export function main(): void {
+  const manifests = workspaceManifests()
+  const dependencyManifests = [
+    ...manifests,
+    { dir: 'python/sdk-runtime', manifest: readJson(join(root, 'python/sdk-runtime/package.json')) },
+  ]
+  const errors = [
+    ...checkRepositoryVersion(),
+    ...manifests.flatMap(checkWorkspace),
+    ...checkWorkspaceProtocol(manifests),
+    ...checkExperimentalDependencyIsolation(dependencyManifests),
+    ...checkHierarchyShape(),
+    ...collectProjectReferenceFaceViolations(root),
+  ]
+  if (errors.length > 0) {
+    console.error(errors.join('\n'))
+    process.exitCode = 1
+  }
 }
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main()

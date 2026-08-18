@@ -1635,6 +1635,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['an aggregate error after all branches settle when any failed.'],
       },
       {
+        signature: 'async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>',
+        description: 'Release selected resident continuable direct children of one exact live parent. Other children of the same parent remain admitted and resident. Absent targets and a manager-less composition are accepted no-ops.',
+        parameters: [{ name: 'parent', description: 'exact live direct parent authorizing the selected release.' }, { name: 'childIds', description: 'durable direct-child ids to release when resident.' }],
+        returns: 'once every selected Activation released its `AgentHandle`.',
+        throws: ['{SubagentError} `UNAUTHORIZED` when a resident target belongs to a different parent or the supplied parent identity is stale.'],
+      },
+      {
         signature: 'listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>',
         description: 'Enumerate the parent\'s direct session-backed subagents without loading or resuming an Agent and without any query service: the listing merges the live session store with optional session persistence (live-preferred) and serves each child\'s durable mode/label from the registered `subagent` projection unit down a three-rung ladder — the registry\'s watermark snapshot for a live child; for a cold one, a durable projection-cache row when the optional cache serves an own-suffix identity (its `seq` gate proves the value postdates the fork seed, where a child\'s own descriptor is immutable once appended), else one persistence inspection folded through the registry. The projection fold is the single classification authority; per-child diagnostics relay a fold that served no identity or a failed inspection, never a list-time descriptor parse. Absent persistence, enumeration is live-only (a cold child cannot be resumed then either, so its absence is capability absence, not an error). This service consults no Agent registrations, Activations, or providers.\n\nEvery persistence read receives `signal`, and the listing rechecks cancellation around each of those awaits. Read rejections that settle after an abort become a stable `SubagentError` with code `CANCELLED`.',
         parameters: [{ name: 'parentSessionId', description: 'parent session whose direct children are listed.' }, { name: 'signal', description: 'caller-owned cancellation forwarded to persistence reads and observed around every read await.' }],
@@ -1739,6 +1746,79 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Assemble global and scoped providers, detach tool parameters, apply canonical ordering, then run the assembly waterfall. Scoped sections and variables shadow globals. The returned waterfall value is authoritative except that an effective complete section is restored afterwards as the sole prompt section.',
         parameters: [{ name: 'context', description: 'the optional scope and plugin-defined assembly fields.' }],
         returns: 'the post-waterfall assembly with any complete prompt enforced.',
+      },
+    ],
+  },
+  {
+    key: 'teams',
+    summary: 'Agent Teams service backed by the exact live Lead Session log.',
+    description: 'Agent Teams service backed by the exact live Lead Session log.',
+    methods: [
+      {
+        signature: 'membership(agent: Agent): TeamMembership',
+        description: 'Resolve one exact live Agent\'s Team role.',
+        parameters: [{ name: 'agent', description: 'exact live Agent used as the authority credential.' }],
+        returns: 'its root, Team identity, role, and model-facing name.',
+      },
+      {
+        signature: 'listMembers(agent: Agent): TeamMemberView[]',
+        description: 'List the runtime-enriched roster visible to one Team member.',
+        parameters: [{ name: 'agent', description: 'exact live Team member.' }],
+        returns: 'Lead and teammate rows in creation order.',
+      },
+      {
+        signature: 'async spawnTeammate(caller: Agent, request: SpawnTeammateRequest): Promise<SpawnTeammateResult>',
+        description: 'Create one named, continuable direct child of the Team Lead.',
+        parameters: [{ name: 'caller', description: 'exact live Lead Agent.' }, { name: 'request', description: 'immutable name, description, prompt, context mode, provider, and cancellation.' }],
+        returns: 'the active roster row.',
+      },
+      {
+        signature: 'async sendMessage(caller: Agent, request: SendTeamMessageRequest): Promise<SendTeamMessageResult>',
+        description: 'Queue one durable peer message, then attempt immediate delivery.',
+        parameters: [{ name: 'caller', description: 'exact live sending Team member.' }, { name: 'request', description: 'target name, content, scheduling mode, and pre-queue cancellation.' }],
+        returns: 'durable message identity and immediate-delivery observation.',
+      },
+      {
+        signature: 'async createTask(caller: Agent, request: CreateTeamTaskRequest): Promise<TeamTaskView>',
+        description: 'Create one unowned pending task in the Team Lead log.',
+        parameters: [{ name: 'caller', description: 'exact live Team member creating the task.' }, { name: 'request', description: 'task text, blockers, and advisory write scopes.' }],
+        returns: 'the revision-one task view.',
+      },
+      {
+        signature: 'getTask(caller: Agent, id: TeamTaskId): TeamTaskView',
+        description: 'Return one task, including a deleted tombstone.',
+        parameters: [{ name: 'caller', description: 'exact live Team member reading the task.' }, { name: 'id', description: 'Team-local task identity.' }],
+        returns: 'the latest task value and derived readiness diagnostics.',
+      },
+      {
+        signature: 'listTasks(caller: Agent): TeamTaskView[]',
+        description: 'List current non-deleted tasks in numeric creation order.',
+        parameters: [{ name: 'caller', description: 'exact live Team member reading the board.' }],
+        returns: 'detached current task views.',
+      },
+      {
+        signature: 'async updateTask(caller: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskView>',
+        description: 'Compare-and-set one authorized task transition.',
+        parameters: [{ name: 'caller', description: 'exact live Team member authorizing the mutation.' }, { name: 'request', description: 'task identity, expected revision, action, and action fields.' }],
+        returns: 'the committed next task revision.',
+      },
+      {
+        signature: 'async waitForChange(caller: Agent, timeoutMs: number, signal: AbortSignal): Promise<TeamWaitResult>',
+        description: 'Wait for the next Team-domain or member-status change.',
+        parameters: [{ name: 'caller', description: 'exact live Team member waiting for activity.' }, { name: 'timeoutMs', description: 'bounded wait duration from ten seconds through one hour.' }, { name: 'signal', description: 'caller cancellation for the wait only.' }],
+        returns: 'one observed change or a timeout result.',
+      },
+      {
+        signature: 'interrupt(caller: Agent, targetName: string): { previousStatus: \'running\' | \'idle\' | \'inactive\' }',
+        description: 'Interrupt one live teammate turn without clearing its pending inbox.',
+        parameters: [{ name: 'caller', description: 'exact live Lead Agent.' }, { name: 'targetName', description: 'durable teammate name.' }],
+        returns: 'the target status sampled before cancellation.',
+      },
+      {
+        signature: 'tryMembership(agent: Agent): TeamMembership | undefined',
+        description: 'Resolve a caller without throwing, used by scoped-tool installation and observers.',
+        parameters: [{ name: 'agent', description: 'candidate exact live Agent.' }],
+        returns: 'Team membership, or undefined for non-Team subagents and stale identities.',
       },
     ],
   },
@@ -2869,7 +2949,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ContinuableStartSpec',
-    declaration: 'export interface ContinuableStartSpec {\n    readonly provider: string;\n    readonly label: string;\n    readonly request: Omit<SubagentStartRequest, \'label\' | \'signal\' | \'outputSchema\'>;\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface ContinuableStartSpec {\n    readonly provider: string;\n    readonly label: string;\n    readonly childId?: SessionId;\n    readonly request: Omit<SubagentStartRequest, \'label\' | \'signal\' | \'outputSchema\'>;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'ContinuableSubagentDescriptorData',
@@ -2918,6 +2998,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CreateSessionOptions',
     declaration: 'export interface CreateSessionOptions {\n    readonly seed?: readonly SessionEvent[];\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly createdAt?: number;\n        readonly seedLength?: number;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n}',
+  },
+  {
+    name: 'CreateTeamTaskRequest',
+    declaration: 'export interface CreateTeamTaskRequest {\n    readonly subject: string;\n    readonly description: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n}',
   },
   {
     name: 'CredentialInfo',
@@ -3732,6 +3816,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SearchResultView = SearchMatchesResultView | SearchPathsResultView;',
   },
   {
+    name: 'SendTeamMessageRequest',
+    declaration: 'export interface SendTeamMessageRequest {\n    readonly target: string;\n    readonly content: ContentBlock[];\n    readonly delivery: \'quiet\' | \'wakeup\';\n    readonly signal: AbortSignal;\n}',
+  },
+  {
+    name: 'SendTeamMessageResult',
+    declaration: 'export interface SendTeamMessageResult {\n    readonly messageId: TeamMessageId;\n    readonly status: \'accepted\' | \'queued\';\n}',
+  },
+  {
     name: 'ServerResponse',
     declaration: 'export interface ServerResponse {\n    type: \'server-response\';\n    rpcId: RpcId;\n    result: RpcResult<unknown>;\n}',
   },
@@ -4076,6 +4168,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SkillViewOptions extends SkillLookupOptions {\n    readonly scope?: ScopeKey | undefined;\n}',
   },
   {
+    name: 'SpawnTeammateRequest',
+    declaration: 'export interface SpawnTeammateRequest {\n    readonly name: string;\n    readonly description: string;\n    readonly prompt: ContentBlock[];\n    readonly context: \'fresh\' | \'fork\';\n    readonly provider: string;\n    readonly signal: AbortSignal;\n}',
+  },
+  {
+    name: 'SpawnTeammateResult',
+    declaration: 'export interface SpawnTeammateResult {\n    readonly member: TeamMemberView;\n}',
+  },
+  {
     name: 'SpillLocator',
     declaration: 'export type SpillLocator = Branded<\'SpillLocator\'>;',
   },
@@ -4161,7 +4261,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentRuntime',
-    declaration: 'export class SubagentRuntime extends Service {\n    constructor(ctx: Context);\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async followup(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async reportFrom(child: Agent, content: ContentBlock[], options: SubagentReportOptions): Promise<MessageId>;\n    registerContinuableSetup(contribution: ContinuableSetupContribution): () => void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>;\n}',
+    declaration: 'export class SubagentRuntime extends Service {\n    constructor(ctx: Context);\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async followup(parent: Agent, childId: SessionId, content: ContentBlock[], options: SubagentFollowupOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async reportFrom(child: Agent, content: ContentBlock[], options: SubagentReportOptions): Promise<MessageId>;\n    registerContinuableSetup(contribution: ContinuableSetupContribution): () => void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>;\n}',
   },
   {
     name: 'SubagentStartRequest',
@@ -4254,6 +4354,42 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TableValueOf',
     declaration: 'export type TableValueOf<S extends DomainSpec, N extends keyof S[\'tables\']> = S[\'tables\'][N] extends DomainTableSpec<string, infer V> ? V : never;',
+  },
+  {
+    name: 'TeamId',
+    declaration: 'export type TeamId = Branded<\'TeamId\'>;',
+  },
+  {
+    name: 'TeamMembership',
+    declaration: 'export interface TeamMembership {\n    readonly root: Agent;\n    readonly id: TeamId;\n    readonly role: \'lead\' | \'teammate\';\n    readonly name: string;\n}',
+  },
+  {
+    name: 'TeamMemberView',
+    declaration: 'export interface TeamMemberView {\n    readonly id: SessionId;\n    readonly name: string;\n    readonly role: \'lead\' | \'teammate\';\n    readonly status: \'running\' | \'idle\' | \'inactive\' | \'provisioning\' | \'failed\';\n    readonly description?: string;\n    readonly provider?: string;\n    readonly context?: \'fresh\' | \'fork\';\n    readonly model?: string;\n    readonly diagnostics: string[];\n}',
+  },
+  {
+    name: 'TeamMessageId',
+    declaration: 'export type TeamMessageId = Branded<\'TeamMessageId\'>;',
+  },
+  {
+    name: 'TeamTaskAction',
+    declaration: 'export type TeamTaskAction = \'claim\' | \'release\' | \'edit\' | \'set_dependencies\' | \'complete\' | \'reopen\' | \'reassign\' | \'delete\';',
+  },
+  {
+    name: 'TeamTaskId',
+    declaration: 'export type TeamTaskId = Branded<\'TeamTaskId\'>;',
+  },
+  {
+    name: 'TeamTaskStatus',
+    declaration: 'export type TeamTaskStatus = \'pending\' | \'in_progress\' | \'completed\' | \'deleted\';',
+  },
+  {
+    name: 'TeamTaskView',
+    declaration: 'export interface TeamTaskView {\n    readonly id: TeamTaskId;\n    readonly revision: number;\n    readonly subject: string;\n    readonly description: string;\n    readonly status: TeamTaskStatus;\n    readonly blockedBy: TeamTaskId[];\n    readonly writeScopes: string[];\n    readonly ownerName?: string;\n    readonly ready: boolean;\n    readonly writeScopeWarnings: string[];\n}',
+  },
+  {
+    name: 'TeamWaitResult',
+    declaration: 'export interface TeamWaitResult {\n    readonly timedOut: boolean;\n}',
   },
   {
     name: 'TerminalBackend',
@@ -4534,6 +4670,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TypertTypeModel',
     declaration: 'export interface TypertTypeModel {\n    readonly name: string;\n    readonly declaration: string;\n}',
+  },
+  {
+    name: 'UpdateTeamTaskRequest',
+    declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: string;\n}',
   },
   {
     name: 'UserMessage',
