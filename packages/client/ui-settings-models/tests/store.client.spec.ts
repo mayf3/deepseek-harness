@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { RpcResponse } from '@deepseek-ai/dsh-api-remotes/client'
 import { messageOf, ModelsSettingsStore } from '../src/client/store.ts'
+import { settingsSchema } from './settings-schema.client.ts'
 
 let nextRpc = 0
 function ok<T>(value: T): RpcResponse<T> {
@@ -72,7 +73,7 @@ function api(overrides: {
 describe('ModelsSettingsStore', () => {
   it('joins rows with configured, removable, and credential state', async () => {
     const { face, seenRefs } = api()
-    const store = new ModelsSettingsStore(face)
+    const store = new ModelsSettingsStore(face, settingsSchema)
     await store.load()
     const state = store.store.getSnapshot()
     expect(state.status).toBe('ready')
@@ -100,7 +101,7 @@ describe('ModelsSettingsStore', () => {
 
   it('degrades the credential badge, not the page, when the credential domain fails', async () => {
     const { face } = api({ describeCredentials: () => Promise.resolve(fail('no provider')) })
-    const store = new ModelsSettingsStore(face)
+    const store = new ModelsSettingsStore(face, settingsSchema)
     await store.load()
     const state = store.store.getSnapshot()
     expect(state.status).toBe('ready')
@@ -112,7 +113,7 @@ describe('ModelsSettingsStore', () => {
     const { face } = api({
       describeCredentials: () => Promise.reject(new Error('credential transport down')),
     })
-    const store = new ModelsSettingsStore(face)
+    const store = new ModelsSettingsStore(face, settingsSchema)
     await expect(store.load()).resolves.toBeUndefined()
     expect(store.store.getSnapshot()).toMatchObject({
       status: 'ready',
@@ -125,18 +126,18 @@ describe('ModelsSettingsStore', () => {
       // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- the non-Error rejection is the scenario
       describeCredentials: () => Promise.reject('credential transport refusal'),
     })
-    const store = new ModelsSettingsStore(face)
+    const store = new ModelsSettingsStore(face, settingsSchema)
     await expect(store.load()).resolves.toBeUndefined()
     expect(store.store.getSnapshot().credentialError).toBe('credential transport refusal')
   })
 
   it('surfaces a directory failure and keeps the last good rows', async () => {
     const { face } = api()
-    const store = new ModelsSettingsStore(face)
+    const store = new ModelsSettingsStore(face, settingsSchema)
     await store.load()
     expect(store.store.getSnapshot().rows).toHaveLength(4)
     const broken = api({ providers: () => Promise.resolve(fail('directory down')) })
-    const failing = new ModelsSettingsStore(broken.face)
+    const failing = new ModelsSettingsStore(broken.face, settingsSchema)
     await failing.load()
     expect(failing.store.getSnapshot()).toMatchObject({ status: 'error', error: 'directory down' })
     // The first store's snapshot is untouched by the second's failure.
@@ -157,7 +158,7 @@ describe('ModelsSettingsStore', () => {
         return ok({ providers: DIRECTORY })
       },
     })
-    const store = new ModelsSettingsStore(face)
+    const store = new ModelsSettingsStore(face, settingsSchema)
     const first = store.load()
     const second = store.load()
     release?.()
@@ -187,7 +188,7 @@ describe('edge joins', () => {
         ] as never,
       })),
     })
-    const store = new ModelsSettingsStore(face)
+    const store = new ModelsSettingsStore(face, settingsSchema)
     await store.load()
     const state = store.store.getSnapshot()
     expect(state.rows[0]).toMatchObject({ configured: true, removable: false })
@@ -207,7 +208,7 @@ describe('edge joins', () => {
         ] as never,
       })),
     })
-    const store = new ModelsSettingsStore(face)
+    const store = new ModelsSettingsStore(face, settingsSchema)
     await store.load()
     expect(seenRefs).toEqual([])
     expect(store.store.getSnapshot().status).toBe('ready')
@@ -215,7 +216,7 @@ describe('edge joins', () => {
 
   it('surfaces a settings describe failure', async () => {
     const { face } = api({ describeSettings: () => Promise.resolve(fail('settings down')) })
-    const store = new ModelsSettingsStore(face)
+    const store = new ModelsSettingsStore(face, settingsSchema)
     await store.load()
     expect(store.store.getSnapshot()).toMatchObject({ status: 'error', error: 'settings down' })
   })
@@ -224,7 +225,7 @@ describe('edge joins', () => {
     // The wire can surface non-Error throwables; the store must stringify them.
     // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- the non-Error rejection is the scenario
     const { face } = api({ providers: () => Promise.reject('plain refusal') })
-    const store = new ModelsSettingsStore(face)
+    const store = new ModelsSettingsStore(face, settingsSchema)
     await store.load()
     expect(store.store.getSnapshot()).toMatchObject({ status: 'error', error: 'plain refusal' })
   })
@@ -243,7 +244,7 @@ describe('edge joins', () => {
         return ok({ providers: DIRECTORY })
       },
     })
-    const store = new ModelsSettingsStore(face)
+    const store = new ModelsSettingsStore(face, settingsSchema)
     const first = store.load()
     const second = store.load()
     await second
