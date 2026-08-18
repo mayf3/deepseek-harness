@@ -605,6 +605,27 @@ describe('endpoint interrogation', () => {
     // A disclosed output cap rides along with the candidate that has one.
     expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'a' }, { id: 'b', maxTokens: 2048 }])
   })
+
+  it('selects and clears every discovered candidate in one action', async () => {
+    const discover = vi.fn(() => Promise.resolve(ok({
+      models: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+    })))
+    await mountSection({ discover })
+    openEditor('openai')
+
+    fireEvent.click(screen.getByText(en.fetchModels))
+    const dialog = await screen.findByRole('dialog')
+    const boxes = [...dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+    expect(boxes.map(box => box.checked)).toEqual([true, true, true])
+
+    fireEvent.click(within_(dialog, en.fetchDeselectAll))
+    expect(boxes.map(box => box.checked)).toEqual([false, false, false])
+    expect(within_(dialog, en.fetchSelectAll)).toBeTruthy()
+
+    fireEvent.click(within_(dialog, en.fetchSelectAll))
+    expect(boxes.map(box => box.checked)).toEqual([true, true, true])
+    expect(within_(dialog, en.fetchDeselectAll)).toBeTruthy()
+  })
 })
 
 describe('provider rows', () => {
