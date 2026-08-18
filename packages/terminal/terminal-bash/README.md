@@ -34,6 +34,6 @@ A standing-policy change appends an owner-rendered superseding runtime-context s
 
 - Line-oriented output is normalized; full-screen alternate-buffer interaction is unsupported.
 - Exact stdin-wait detection depends on the mounted subprocess provider; providers that cannot prove it use prompt-marker and silence/timeout readiness. Windows is such a provider: the shell pid is the pseudo foreground group and there is no exact stdin-wait tier, so a marker-less child settles on the silence bound.
-- The pwsh bootstrap writes through `[Console]::` (the UTF-8 encoding pin and the prompt function), which the Windows ACL sandbox's read-only mode (ConstrainedLanguage) may deny; the `Write-Host -NoNewline` fallback is the designed alternative, decided by the Windows-native lane.
+- The pwsh bootstrap writes through `[Console]::` (the UTF-8 encoding pin and the prompt function), which the Windows ACL sandbox's read-only mode (ConstrainedLanguage) may deny. The shell can still settle through the controlled printable prompt and silence tier, but marker readiness is unavailable and non-ASCII output may follow the host code page.
 - Cleanup guarantees are those of `SubprocessTerminalHandle`; provider-specific gaps belong to that implementation's contract rather than this PTY consumer.
 - Sessions do not survive harness process exit.

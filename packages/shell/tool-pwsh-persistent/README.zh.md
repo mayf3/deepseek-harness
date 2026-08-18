@@ -51,5 +51,5 @@
 - 模型重定义 `prompt` 函数会移除就绪标记；shell 随后退化为静默档而非 marker 快路径。
 - 命令执行期间没有交互 stdin：读取输入的前台命令会阻塞到就绪超时，随后重置 shell。
 - SIGTSTP/SIGHUP 在 Windows 不可用（backend 拒绝）；SIGINT 以控制台级 Ctrl-C 输入写入投递，在提示符处取消当前行而非向进程发信号。
-- 在 Windows ACL 沙箱的只读模式下，pwsh 以 ConstrainedLanguage 启动，可能拒绝 prompt 函数的 `[Console]::` 调用；backend 文档化的 `Write-Host -NoNewline` 回退由 Windows-native 车道证据裁决。
+- 在 Windows ACL 沙箱的只读模式下，pwsh 以 ConstrainedLanguage 启动，可能拒绝引导代码通过 `[Console]::` 固定编码并写入 prompt marker。命令仍可通过可打印提示符和静默档结算，但非 ASCII 输出可能沿用宿主代码页。
 - BEL 终结的 OSC 标记仍只是就绪信号；面向模型的 BEL 事件通道保持延后，与当前实现对齐。

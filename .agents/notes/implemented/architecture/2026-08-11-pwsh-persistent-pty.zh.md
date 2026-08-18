@@ -18,7 +18,7 @@ harness 在 Windows 上没有持久 shell。持久 `bash` 栈按构造就是 POS
 
 ### `@deepseek-ai/dsh-subprocess-local` 的 Windows 基座
 
-`createProcessInspector()` 在 win32 返回 `WindowsProcessInspector` 而不是抛错。基于 koffi 的检查器通过 Toolhelp32 枚举进程表并取 GetProcessTimes 创建时间身份（与 POSIX start-identity 相同的 PID 复用防护），把 **shell pid 作为伪前台进程组**（Windows 没有 POSIX 进程组；这个稳定值让 prompt-marker 就绪快路径在一个轮询间隔内结算），不报告 stdin-wait 证据（就绪与 macOS 同档），信号走 `taskkill /T` 升级（仅 SIGKILL 加 `/F`）。koffi（`^3.1.0`，`sandbox-windows-acl` 已固定的版本）仅在 win32 惰性加载。
+`createProcessInspector()` 在 win32 返回 `WindowsProcessInspector` 而不是抛错。基于 koffi 的检查器通过 Toolhelp32 枚举进程表，把 GetProcessTimes 创建身份与进程句柄零时等待结合起来（同时防止 PID 复用并识别已终止的进程对象），把 **shell pid 作为伪前台进程组**（Windows 没有 POSIX 进程组；这个稳定值让 prompt-marker 就绪快路径在一个轮询间隔内结算），不报告 stdin-wait 证据（就绪与 macOS 同档），信号走 `taskkill /T` 升级（仅 SIGKILL 加 `/F`）。koffi（`^3.1.0`，`sandbox-windows-acl` 已固定的版本）仅在 win32 惰性加载。
 
 `LocalTerminalHandle` 为 win32 分支，因为 node-pty 的 `kill(signal)` 会抛错（"Signals not supported on windows"），其无参 kill 委托的 console-list agent 在没有父控制台时失败。拆卸经 taskkill 升级并以 shell 的启动身份作栅栏；由于被外部 taskkill 的 shell 可能永远不会触发 node-pty 的退出通知，句柄从 inspector 验证的消失状态结算 `done`（`settleExitIfGone`）。`signalForeground` 把 SIGINT 映射为 `\x03` Ctrl-C 输入写入（conhost 转为控制台级 CTRL_C 事件的投递方式；实测可中断运行中的命令），SIGTERM/SIGKILL 路由到 taskkill，SIGTSTP/SIGHUP 以 Windows 不可用为由拒绝。公共 `PtySignal` 集合与 seam 类型不变；映射全部留在 backend。
 
@@ -38,7 +38,7 @@ minimal 预设用 #2234 的 `disabled: !!js` 插值按平台门控持久 shell �
 
 ### 测试
 
-Windows 测试面沿用 master 的豁免结构：terminal-bash 与 subprocess-local 的测试在 win32 上继续排除（`windowsUnsupportedTests`），其源码在 win32 上继续覆盖豁免（`windowsUnsupportedCoveragePackages`），平台门控 fixture 与 node 翻译命令因此仍是 win32 开发车道的证据；koffi-backed inspector 在 Linux 侧加入 windows-only 覆盖豁免。`tool-pwsh-persistent` 不在豁免之列：其套件在 windows-native 车道上运行、源码受覆盖约束，镜像 `tool-bash-persistent` 的 stub 模式矩阵并加回显剥离模式；真实 pwsh 套件在真实 ConPTY 会话上证明持久 cwd/env、密钥清洗、多行与 here-string 命令、大输出裁剪与退出/重置。
+Windows 测试面沿用 master 的豁免结构：terminal-bash 与 subprocess-local 的测试在 win32 上继续排除（`windowsUnsupportedTests`），其源码在 win32 上继续覆盖豁免（`windowsUnsupportedCoveragePackages`），平台门控 fixture 与 node 翻译命令因此仍是 win32 开发车道的证据；koffi-backed inspector 在 Linux 侧加入 windows-only 覆盖豁免。`tool-pwsh-persistent` 不在豁免之列：其套件在 windows-native 车道上运行、源码受覆盖约束，镜像 `tool-bash-persistent` 的 stub 模式矩阵并加回显剥离模式；真实 pwsh 套件在真实 ConPTY 会话上证明持久 cwd/env、密钥清洗、多行与 here-string 命令、大输出裁剪与退出/重置。ACP keyless snapshot 通过真实 Loader 组合启动持久工具，并固定模型可见的 schema 与结果。
 
 ## 备选方案
 
@@ -62,4 +62,4 @@ Windows 测试面沿用 master 的豁免结构：terminal-bash 与 subprocess-lo
 
 **输入回显是接受的平台事实。** PSReadLine 回显提交的输入；marker 锚定提取与包装器原文剥离在完整结果中移除它，部分输出回退中残留有界。
 
-**携带的风险。** Windows ACL 沙箱只读模式下，ConstrainedLanguage 可能拒绝 prompt 函数的 `[Console]::` 调用；`Write-Host -NoNewline` 回退已设计好，由 Windows-native 车道裁决。模型重定义 `prompt` 函数会使就绪降级到静默档。模型命令中的裸 ESC 字符不受支持（PSReadLine 会吞掉）。koffi 成为进程基座的依赖，承担与沙箱包相同的安装/prebuild 评审。
+**携带的风险。** Windows ACL 沙箱只读模式下，ConstrainedLanguage 可能拒绝引导代码通过 `[Console]::` 固定编码并写入 prompt marker；此时命令通过可打印提示符和静默档结算，非 ASCII 输出可能沿用宿主代码页。模型重定义 `prompt` 函数同样会使就绪降级到静默档。模型命令中的裸 ESC 字符不受支持（PSReadLine 会吞掉）。koffi 成为进程基座的依赖，承担与沙箱包相同的安装/prebuild 评审。

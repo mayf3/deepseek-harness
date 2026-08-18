@@ -51,5 +51,5 @@ Append-only tool results follow the reusable request prefix.
 - A model redefinition of the `prompt` function removes the readiness marker; the shell then settles on the silence tier instead of the marker fast path.
 - There is no interactive stdin during a command: a foreground command that reads input blocks until the readiness timeout, which resets the shell.
 - SIGTSTP/SIGHUP are unavailable on Windows (backend-rejected); SIGINT is delivered as a console-wide Ctrl-C input write, which at a prompt cancels the pending line instead of signalling a process.
-- Under the Windows ACL sandbox's read-only mode, pwsh starts in ConstrainedLanguage, which may deny the prompt function's `[Console]::` call; the backend's documented `Write-Host -NoNewline` fallback is selected by the Windows-native lane evidence.
+- Under the Windows ACL sandbox's read-only mode, pwsh starts in ConstrainedLanguage, which may deny the bootstrap's `[Console]::` encoding pin and prompt marker. Commands can still settle through the printable prompt and silence tier, but non-ASCII output may follow the host code page.
 - The BEL-terminated OSC marker remains a readiness signal only; a BEL event channel to the model stays deferred, aligned with the current implementation.

@@ -34,6 +34,6 @@
 
 - 输出按行规范化；不支持全屏备用缓冲区交互。
 - 精确 stdin 等待检测取决于已挂载的进程管理提供方；无法证明该状态的提供方使用提示符标记和静默／超时就绪机制。Windows 正是这样的提供方：shell pid 是伪前台进程组，没有精确的 stdin-wait 档，因此无标记的子进程按静默上限结算。
-- pwsh 引导（UTF-8 编码钉与 `prompt` 函数）通过 `[Console]::` 写入，Windows ACL 沙箱的只读模式（ConstrainedLanguage）可能拒绝它；`Write-Host -NoNewline` 回退是设计好的备选，由 Windows-native 车道裁决。
+- pwsh 引导（UTF-8 编码钉与 `prompt` 函数）通过 `[Console]::` 写入，Windows ACL 沙箱的只读模式（ConstrainedLanguage）可能拒绝它。shell 仍可通过受控可打印提示符和静默档结算，但无法使用 marker 就绪，非 ASCII 输出也可能沿用宿主代码页。
 - 清理保证以 `SubprocessTerminalHandle` 的保证为准；提供方特定的缺口属于该实现的约定，而非这个 PTY 消费方。
 - harness 进程退出后，会话无法继续存在。
