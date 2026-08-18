@@ -10,7 +10,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {
   ConnectionHandle, IApiClient, SettingsNamespaceView, SettingsPathOpView,
 } from '@deepseek-ai/dsh-api-remotes/client'
-import { rehydrateSchema, validateDraft } from '@deepseek-ai/dsh-client-schema-form'
 import {
   createSnapshotStore, type SettingsScope, type SettingsScopeSnapshot,
   type SettingsScopeSpec, type SnapshotStore,
@@ -22,7 +21,7 @@ import {
 // Client half declares `ctx.remote` with no generated import, and the
 // allowlist's `types` subpath is a pure-type source file, so the pair supplies
 // `$on` and its key face without dragging a build artifact in. The runtime
-// `remote` injection belongs to whoever calls bindSettingsScope: the
+// `remote` injection belongs to whoever calls `ctx.settingsScope.bind(spec)`: the
 // subscription is registered on the caller's own context.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/types'
@@ -31,6 +30,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/types'
 // never — the owning package's client-safe, type-only subpath supplies the
 // cordis `Events` entry (and with it the branded `SettingsNamespace`).
 import type {} from '@deepseek-ai/dsh-settings/types'
+import type { SettingsSchemaService } from './schema.ts'
 type SettingsFace = Pick<IApiClient, 'settings'>
 
 /**
@@ -50,11 +50,13 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
    * @param api - settings wire face.
    * @param spec - namespace identity and optional narrowing decoder.
    * @param persistence - remote browsers remain process-local because settings RPCs are loopback-only.
+   * @param schema - settings-owned schema operations.
    */
   constructor(
     private readonly api: SettingsFace,
     private readonly spec: SettingsScopeSpec<T>,
-    private readonly persistence: 'host' | 'memory' = 'host',
+    private readonly persistence: 'host' | 'memory',
+    private readonly schema: SettingsSchemaService,
   ) {
     this.store = createSnapshotStore<SettingsScopeSnapshot<T>>({
       status: persistence === 'host' ? 'loading' : 'unavailable',
@@ -201,7 +203,7 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
     if (typeof view.value !== 'object' || view.value === null || Array.isArray(view.value)) return undefined
     let failure: string | undefined
     try {
-      failure = validateDraft(rehydrateSchema(view.schema), view.value)
+      failure = this.schema.validate(this.schema.rehydrate(view.schema), view.value)
     } catch (_malformedSchemaEnvelope) {
       // A schema envelope this client cannot rehydrate vouches for no section;
       // the value is treated exactly like a schema-invalid one.
@@ -228,7 +230,7 @@ export class SettingsScopeBinder extends Service {
   /**
    * @param ctx - the providing plugin's context.
    */
-  constructor(ctx: Context) {
+  constructor(ctx: Context, private readonly schema: SettingsSchemaService) {
     super(ctx, 'settingsScope')
   }
 
@@ -249,6 +251,7 @@ export class SettingsScopeBinder extends Service {
       connection.api,
       spec,
       connection.isLoopback ? 'host' : 'memory',
+      this.schema,
     )
     ctx.effect(() => {
       const refresh = (namespace?: string): void => {
