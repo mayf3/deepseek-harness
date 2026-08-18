@@ -919,19 +919,6 @@ describe('compat switches', () => {
     })
   })
 
-  it('ignores compat entries whose value is undefined', () => {
-    const models = modelsOf({
-      'acme-gateway': {
-        api: 'openai-completions',
-        baseURL: 'https://acme.test',
-        compat: { supportsStore: undefined },
-        models: [{ id: 'acme-a' }],
-      },
-    }, 'acme-gateway')
-
-    expect(models.get('acme-a')?.compat).toBeUndefined()
-  })
-
   it('rejects a model switch on an unrecognized protocol as having no configurable compat', () => {
     expect(() => resolveProfiles({
       'acme-gateway': {

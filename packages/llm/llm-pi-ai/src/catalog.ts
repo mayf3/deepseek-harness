@@ -356,7 +356,6 @@ export type EveryOfferedFieldIsDocumented = AssertNever<Exclude<OfferedCompatFie
  */
 function configuredCompatEntries(compat: PiAiCompatProfile | undefined): readonly (readonly [string, unknown])[] {
   return Object.entries(compat ?? {}).flatMap(([field, value]) => {
-    if (value === undefined) return []
     const empty = typeof value === 'object' && value !== null && !Array.isArray(value)
       && Object.keys(value as object).length === 0
     return empty ? [] : [[field, value] as const]
