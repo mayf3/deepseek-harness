@@ -940,10 +940,11 @@ export interface PiAiProviderProfile {
    */
   modelOverrides?: Record<string, PiAiModelOverride>
   /**
-   * Reasoning-dispatch switches for every `openai-completions` model on this
-   * route; each model's own `compat` overrides per field. What neither sets
-   * keeps the installed catalog entry's value, then pi-ai's baseURL-derived
-   * detection.
+   * pi-ai wire-compatibility switches defaulting every model on this route
+   * whose protocol declares them; each model's own `compat` overrides per
+   * field. What neither sets keeps the installed catalog entry's value, then
+   * pi-ai's own detection. A switch no model on the route could read is
+   * refused rather than left looking applied.
    */
   compat?: PiAiCompatProfile
   /**
@@ -1024,7 +1025,7 @@ export interface PiAiModelProfile {
    * declares the offered levels and their wire spellings.
    */
   reasoningEfforts?: false | PiAiReasoningEfforts
-  /** Reasoning-dispatch switches for this model, winning over the route's. */
+  /** pi-ai wire-compatibility switches for this model, winning over the route's per field; one its protocol does not declare is refused. */
   compat?: PiAiCompatProfile
 }
 
@@ -1038,19 +1039,65 @@ export interface PiAiModelProfile {
 export type PiAiModelOverride = Omit<PiAiModelProfile, 'id'>
 
 /**
- * Reasoning-dispatch compatibility switches, set on the route (its models'
- * default) or per model (winning over the route). Only the switches pi-ai's
- * reasoning dispatch reads are offered; the rest of pi-ai's compat surface
- * keeps its baseURL-derived auto-detection. pi-ai types both fields only on
- * `OpenAICompletionsCompat` — the other wire protocols define their reasoning
- * fields in the protocol itself — so resolution rejects a model-level switch
- * anywhere else, while a route-level default skips past models it cannot fit.
+ * pi-ai wire-compatibility switches, set on the route (its models' default) or
+ * per model (winning over the route, field by field).
+ *
+ * pi-ai decides each of these from the provider id and baseURL when no layer
+ * sets it, and a private gateway's URL says nothing: for an endpoint it does
+ * not recognize the detection answers as though it were OpenAI itself, which
+ * is wrong for most OpenAI-compatible gateways. So every field here is one a
+ * deployment must be able to state because nothing can infer it, while the
+ * fields pi-ai's catalog sets for a named vendor stay withheld.
+ *
+ * A field belongs to the protocols whose upstream compat type declares it: a
+ * model-level switch its protocol does not take fails resolution, and a
+ * route-level one skips past models it cannot fit.
  */
 export interface PiAiCompatProfile {
-  /** Reasoning parameter format the endpoint expects; absent keeps the catalog entry's, then pi-ai's baseURL-derived guess. */
-  thinkingFormat?: PiAiThinkingFormat
-  /** Whether the endpoint accepts `reasoning_effort`; absent keeps the catalog entry's, then pi-ai's baseURL-derived guess. */
+  /** Whether the endpoint accepts `store`; `openai-completions`. */
+  supportsStore?: boolean
+  /**
+   * Whether the endpoint accepts the `developer` role for the system prompt,
+   * which pi-ai sends only to a reasoning model; `false` keeps `system`.
+   * `openai-completions`, `openai-responses`.
+   */
+  supportsDeveloperRole?: boolean
+  /** Whether the endpoint accepts `reasoning_effort`; `openai-completions`. */
   supportsReasoningEffort?: boolean
+  /** Whether the endpoint accepts `stream_options: {include_usage: true}`; `openai-completions`. */
+  supportsUsageInStreaming?: boolean
+  /** Which output-cap field the endpoint reads; `openai-completions`. */
+  maxTokensField?: 'max_completion_tokens' | 'max_tokens'
+  /** Whether tool results must carry `name`; `openai-completions`. */
+  requiresToolResultName?: boolean
+  /** Whether a user message after tool results needs an assistant message between; `openai-completions`. */
+  requiresAssistantAfterToolResult?: boolean
+  /** Whether thinking blocks must travel as text in `<thinking>` delimiters; `openai-completions`. */
+  requiresThinkingAsText?: boolean
+  /** Whether replayed assistant messages need an empty `reasoning_content` while reasoning is on; `openai-completions`. */
+  requiresReasoningContentOnAssistantMessages?: boolean
+  /** Reasoning parameter format the endpoint expects; `openai-completions`. */
+  thinkingFormat?: PiAiThinkingFormat
+  /** Kwargs sent as `chat_template_kwargs`, for the two `chat-template` thinking formats; `openai-completions`. */
+  chatTemplateKwargs?: Record<string, ChatTemplateKwargValue>
+  /** Whether the endpoint accepts `strict` in tool definitions; `openai-completions`, `openai-responses`. */
+  supportsStrictMode?: boolean
+  /** Prompt-cache marker convention; `openai-completions`. */
+  cacheControlFormat?: 'anthropic'
+  /** Whether the endpoint accepts long prompt-cache retention; all three protocols. */
+  supportsLongCacheRetention?: boolean
+  /** Whether the endpoint accepts per-tool `eager_input_streaming`; `anthropic-messages`. */
+  supportsEagerToolInputStreaming?: boolean
+  /** Whether the endpoint accepts `cache_control` on tool definitions; `anthropic-messages`. */
+  supportsCacheControlOnTools?: boolean
+  /** Whether the endpoint accepts the `temperature` request field; `anthropic-messages`. */
+  supportsTemperature?: boolean
+  /** Whether to force adaptive thinking regardless of model id; `anthropic-messages`. */
+  forceAdaptiveThinking?: boolean
+  /** Whether to replay an empty thinking signature instead of converting thinking to text; `anthropic-messages`. */
+  allowEmptySignature?: boolean
+  /** Whether the endpoint accepts Anthropic strict tool schemas; `anthropic-messages`. */
+  supportsStrictTools?: boolean
 }
 
 /** One request modality a pi-ai model may accept. */
@@ -1067,21 +1114,12 @@ export type PiAiModality = Model<Api>['input'][number]
 export type PiAiReasoningEfforts = Partial<Record<ModelThinkingLevel, string | null>>
 
 /** One reasoning-dispatch wire format a profile may name. */
-export type PiAiThinkingFormat = Exclude<PiThinkingFormat, WithheldThinkingFormat>
-
-/** The `compat.thinkingFormat` spellings pi-ai accepts on an `openai-completions` model. */
-type PiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFormat']>
-
-/**
- * pi-ai thinking formats a profile cannot name: both drive the request through
- * `chatTemplateKwargs`, which this configuration does not expose.
- */
-type WithheldThinkingFormat = 'chat-template' | 'qwen-chat-template'
+export type PiAiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFormat']>
 ```
 
-依赖：`Api`（`@earendil-works/pi-ai`）· `CacheRetention`（`@earendil-works/pi-ai`）· `Model`（`@earendil-works/pi-ai`）· `ModelThinkingLevel`（`@earendil-works/pi-ai`）· `OpenAICompletionsCompat`（`@earendil-works/pi-ai`）· [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets`（`@earendil-works/pi-ai`）· `Transport`（`@earendil-works/pi-ai`）
+依赖：`Api`（`@earendil-works/pi-ai`）· `CacheRetention`（`@earendil-works/pi-ai`）· `ChatTemplateKwargValue`（`@earendil-works/pi-ai`）· `Model`（`@earendil-works/pi-ai`）· `ModelThinkingLevel`（`@earendil-works/pi-ai`）· `OpenAICompletionsCompat`（`@earendil-works/pi-ai`）· [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets`（`@earendil-works/pi-ai`）· `Transport`（`@earendil-works/pi-ai`）
 
-来源：[`packages/llm/llm-pi-ai/src/config.ts:172`](../packages/llm/llm-pi-ai/src/config.ts)
+来源：[`packages/llm/llm-pi-ai/src/config.ts:173`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 
