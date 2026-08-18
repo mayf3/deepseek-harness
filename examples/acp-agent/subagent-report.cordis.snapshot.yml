@@ -1,6 +1,5 @@
-# Keyless counterpart to subagent-report-quiet.cordis.yml: replace the live
-# adapter with replay, keep report delivery quiet, and fence the child behind
-# the end of its parent's spawn turn so settlement opens the next turn.
+# Keyless counterpart to subagent-report.cordis.yml: replace the live adapter
+# with replay and preserve its child and parent scheduling fence.
 - id: base
   name: '@deepseek-ai/cordis-plugin-include'
   config:
@@ -32,10 +31,6 @@
             - passthrough-runner
           runnerFailureSignatures:
             - 'passthrough-runner: profile rejected'
-      - id: tool-subagent-report
-        name: '@deepseek-ai/dsh-tool-subagent-report'
-        config:
-          reportDelivery: quiet
       - insert:
           - id: llm-replay
             name: '@deepseek-ai/dsh-llm-replay'

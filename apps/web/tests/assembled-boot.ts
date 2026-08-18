@@ -186,9 +186,10 @@ export function installAssembledBootEnv(): void {
 /**
  * Mount the assembled application on the fixture transport; the teardown
  * registered by installAssembledBootEnv disposes it.
+ * @param search - fixture query string used to select deterministic host behavior.
  */
-export function mountAssembledApp(): void {
-  history.replaceState(null, '', '/?fixture')
+export function mountAssembledApp(search = '?fixture'): void {
+  history.replaceState(null, '', `/${search}`)
   const root = document.createElement('div')
   root.id = 'root'
   document.body.appendChild(root)

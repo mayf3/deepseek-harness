@@ -335,10 +335,12 @@ export interface Config {
   maxMessageImageBytes?: number
   /** Maximum intrinsic width multiplied by height accepted for one image. */
   maxImagePixels?: number
+  /** Maximum intrinsic width and maximum intrinsic height accepted for one image. */
+  maxImageDimension?: number
 }
 ```
 
-Source: [`packages/attachment/attachment-local/src/index.ts:24`](../packages/attachment/attachment-local/src/index.ts)
+Source: [`packages/attachment/attachment-local/src/index.ts:31`](../packages/attachment/attachment-local/src/index.ts)
 
 <a id="deepseek-aidsh-bash-local"></a>
 
@@ -2664,9 +2666,9 @@ Requires: `subagents` · `tools` · `systemPrompt`
 /** Config: how accepted reports are scheduled on the parent. */
 export interface Config {
   /**
-   * Parent scheduling (default `wakeup`). `wakeup` creates one ordinary later
-   * parent turn; `quiet` adds context without waking, so a parked parent learns
-   * of the report only when something else wakes it.
+   * Parent scheduling (default `next-step`). `next-step` wakes the parent and
+   * enters at its nearest step boundary; `quiet` adds the same context without
+   * waking, so a parked parent waits for another waking input.
    */
   reportDelivery?: SubagentReportDelivery
 }

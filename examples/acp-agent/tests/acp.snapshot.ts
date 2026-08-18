@@ -47,8 +47,8 @@ const CHILD_QUESTION_CONFIG = fileURLToPath(new URL('../child-question.cordis.ym
 const SESSION_SANDBOX_ROOT_CONFIG = fileURLToPath(new URL('../session-sandbox-root.cordis.yml', import.meta.url))
 const RETRY_CONFIG = fileURLToPath(new URL('../retry.cordis.yml', import.meta.url))
 const SESSION_TITLE_CONFIG = fileURLToPath(new URL('../session-title.cordis.yml', import.meta.url))
-const SUBAGENT_REPORT_QUIET_CONFIG = fileURLToPath(
-  new URL('../subagent-report-quiet.cordis.yml', import.meta.url),
+const SUBAGENT_REPORT_CONFIG = fileURLToPath(
+  new URL('../subagent-report.cordis.yml', import.meta.url),
 )
 const SUBAGENT_DURABILITY_FAILURE_CONFIG = fileURLToPath(
   new URL('../subagent-durability-failure.cordis.yml', import.meta.url),
@@ -212,6 +212,17 @@ const SCENARIOS: Scenario[] = [
     recorded: false,
     headerClass: 'image',
     configPath: IMAGE_TEXT_ROUTE_CONFIG,
+  },
+  // Authored keyless replay of the oversized-image refusal: admission rejects
+  // the 2001x1 fixture at the default 2000px per-side limit, the model sees a
+  // recoverable tool error, and the turn still completes — the image never
+  // enters durable history.
+  {
+    name: 'read-image-dimension',
+    hasModelTurn: true,
+    recorded: false,
+    headerClass: 'image',
+    configPath: IMAGE_CONFIG,
   },
   {
     name: 'inline-image-prompt',
@@ -456,16 +467,15 @@ const SCENARIOS: Scenario[] = [
     configPath: SUBAGENT_DURABILITY_FAILURE_CONFIG,
   },
   // Authored child-to-parent transcript: the child calls its scope-local
-  // `report`, and the runtime's unconditional settlement notice then wakes the
-  // parked parent into one ordinary turn that claims both. The overlay pins
-  // quiet report delivery because two independent wakes have no orderable
-  // transcript; the shipped waking default is covered by package tests.
+  // `report` through the shipped next-step policy. A maintenance fence holds
+  // the parent until the runtime's unconditional settlement notice follows;
+  // the resumed parent then claims both messages in causal order.
   {
     name: 'subagent-report',
     hasModelTurn: true,
     recorded: false,
     overridden: false,
-    configPath: SUBAGENT_REPORT_QUIET_CONFIG,
+    configPath: SUBAGENT_REPORT_CONFIG,
     pinsChildToolSchemas: [1],
     pinsChildSystemPrompts: [1],
   },
