@@ -63,7 +63,7 @@ describe.skipIf(MODE === 'record')('web e2e: dedicated Skill tool row', () => {
     const output = call.locator('pre')
     await output.waitFor()
     expect(await output.textContent()).toContain('<skill_content name="editing-cordis-compositions">')
-    expect(await output.textContent()).toContain('Codex and Claude Code providers are independent optional Profile Bundles')
+    expect(await output.textContent()).toContain('Each Bundle registers its dormant default provider and exclusively uses its pinned package-local platform CLI')
     expect(await output.evaluate(element => getComputedStyle(element.parentElement!).maxHeight)).toBe('260px')
 
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
