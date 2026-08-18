@@ -14,9 +14,9 @@ Codex 与 Claude Code 提供方已经能够运行一项自包含任务并返回�
 
 生产 `dsh` 不安装可选产品提供方。选择启用产品集成的 Profile 会安装 `dsh-subagent-codex`、`dsh-subagent-claude-code` 或两者，并在 host plane（宿主平面）各挂载一次。`standard`、`code` 与 `cordis` Agent Preset 使用 `backgroundMode: one-shot` 配置相应的休眠工具行；删除某一行的 `disabled` 字段后，现有可选参数 `run_in_background` 会向由该 preset 组装的 agent 公开。省略该参数或传入 `false` 时会在前台等待；显式传入 `true` 时会在同步完成 Job 预检与登记后返回由父级拥有的 Job id，而不会等待提供方启动或完成。
 
-[通用 one-shot 后台适配器](2026-07-08-background-subagent-tasks.md)负责后台登记与结算。它会启动同一个 [`SubagentRun`](2026-06-21-subagent-capability-seam.md)，让 Job 自有的取消信号覆盖提供方启动与执行，等待 `run.result` 和 `run.dispose()`，把终态结果映射进 Job，并由 `job_output`、`job_list`、`job_kill` 与现有完成通知公开该状态。[产品提供方决策](2026-08-04-claude-code-and-codex-subagent-backends.md)继续负责原生协议、答案选择、本地取消与进程树完全停稳。
+[通用 one-shot 后台适配器](2026-07-08-background-subagent-tasks.md)负责后台登记与结算。它会启动同一个 [`SubagentRun`](2026-06-21-subagent-capability-seam.md)，让 Job 自有的取消信号覆盖提供方启动与执行，等待 `run.result` 和 `run.dispose()`，把终态结果与可选安全诊断映射进 Job，并由 `job_output`、`job_list`、`job_kill` 与现有完成通知公开该状态。[产品提供方决策](2026-08-04-claude-code-and-codex-subagent-backends.md)继续负责原生协议、答案选择、本地取消与进程树完全停稳；[非交互权限决策](2026-08-15-product-subagent-noninteractive-permissions.md)负责各产品提供方的 Profile 配置与诊断生产。
 
-本决策不新增提供方配置、服务接口、事件、协议字段、持久化格式或产品标识符。前台与后台的区别仅在于由哪个现有消费方等待同一个 one-shot 运行。
+本调度决策不新增提供方配置、服务接口、事件、协议字段、持久化格式或产品标识符。提供方可以独立定义自己的 Profile 配置；前台与后台的区别仍然只在于由哪个现有消费方等待同一个 one-shot 运行。
 
 ### 归属与生命周期
 
@@ -37,7 +37,7 @@ product tool call
 | 产品选择与公开 | Agent Preset | 把一个固定工具名绑定到一个固定提供方 | 启用一行只会公开对应产品工具 |
 | 前台或后台选择 | `dsh-tool-subagent` | 按 `one-shot` 策略解析 `run_in_background` | 省略参数时在前台运行；显式传入 `true` 时返回 Job id |
 | Job id、状态、输出、取消与通知 | `ctx.jobs` 与 `dsh-tool-jobs` | 登记并展示现有 one-shot 运行 | 通用作业工具为准确父级收集或停止运行 |
-| 原生答案与进程完全停稳 | 产品提供方与 `dsh-subprocess` | 产生一个最终结果并释放一棵进程树 | Job 结算与前台返回都会等待资源释放 |
+| 原生结果、可选诊断与进程完全停稳 | 产品提供方与 `dsh-subprocess` | 产生一个最终结果并释放一棵进程树 | Job 结算与前台返回消费同一结果，且都会等待资源释放 |
 
 ## 发布组装
 
@@ -49,7 +49,7 @@ ACP 产品组装使用相同的固定产品行与通用作业控制工具。其�
 
 ## 验证
 
-Web 组装测试会从仓库 examples 依赖锚点显式挂载两个可选提供方，再启动四种用户 preset 变体——不启用产品、只启用 Codex、只启用 Claude Code，以及同时启用两者——并检查每个已启用产品工具都会与 `job_output`、`job_list` 和 `job_kill` 一起公开 `run_in_background`。两个由包负责的 Loader 组装会在空 `PATH` 下运行，检查相同 schema 与控制工具，并证明显式加载提供方不会启动产品进程。ACP 无密钥快照会固定显式组装后的产品 schema，而现有 `dsh-tool-subagent` 与作业测试套件会固定前台默认值、Job 登记、最终输出收集、取消、完成通知、owner 资源释放与提供方资源释放。
+Web 组装测试会从仓库 examples 依赖锚点显式挂载两个可选提供方，再启动四种用户 preset 变体——不启用产品、只启用 Codex、只启用 Claude Code，以及同时启用两者——并检查每个已启用产品工具都会与 `job_output`、`job_list` 和 `job_kill` 一起公开 `run_in_background`。两个由包负责的 Loader 组装会在空 `PATH` 下运行，检查相同 schema 与控制工具，并证明显式加载提供方不会启动产品进程。ACP 无密钥快照会固定显式组装后的产品 schema，而现有 `dsh-tool-subagent` 与作业测试套件会固定前台默认值、Job 登记、最终输出收集、共享诊断呈现、取消、完成通知、owner 资源释放与提供方资源释放。两个真实产品提供方测试套件还会分别证明各自的原生权限失败先进入同一个共享结果，再由任一调度路径消费。
 
 ## 曾考虑的替代方案
 
@@ -65,6 +65,6 @@ Web 组装测试会从仓库 examples 依赖锚点显式挂载两个可选提供
 
 ## 后果
 
-agent 可以在 Codex 或 Claude Code 处理独立 one-shot 任务时继续推进其他工作，随后通过其他后台 producer 共用的 Job 控制工具收集最终回答或取消运行。前台调用方继续获得既有结果与错误行为。
+agent 可以在 Codex 或 Claude Code 处理独立 one-shot 任务时继续推进其他工作，随后通过其他后台 producer 共用的 Job 控制工具收集最终回答或取消运行。若失败结果提供了安全的提供方诊断，前台与一次性后台消费方会呈现同一内容。
 
-每次产品委托仍会启动一个全新的原生进程或 query，把最终文本作为唯一产品载荷，并以提供方资源释放和整棵进程树退出结束。后台调用还会额外公开通用 Job id、状态、完成通知以及收集或取消结果。后台 Job 仅存在于当前进程且由父级拥有：它不会在父级资源释放后继续存活，不会公开产品中间活动，也不会让产品对话变得可恢复。只有 Profile 显式安装产品集成时，生产安装才承担对应成本；公开后台参数的任何组装还必须让通用 Job 提供方与控制工具保持可用。
+每次产品委托仍会启动一个全新的原生进程或 query，把最终 assistant 文本作为唯一 assistant 载荷，并以提供方资源释放和整棵进程树退出结束。失败结果可以另行携带安全诊断。后台调用还会额外公开通用 Job id、状态、完成通知以及收集或取消结果。后台 Job 仅存在于当前进程且由父级拥有：它不会在父级资源释放后继续存活，不会公开产品中间活动，也不会让产品对话变得可恢复。只有 Profile 显式安装产品集成时，生产安装才承担对应成本；公开后台参数的任何组装还必须让通用 Job 提供方与控制工具保持可用。

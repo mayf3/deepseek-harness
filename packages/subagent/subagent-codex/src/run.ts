@@ -8,7 +8,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -46,9 +46,7 @@ const CODEX_PACKAGE_BIN = resolve(
   codexPackageManifest.bin.codex,
 )
 
-function missingPayloadDiagnostic(child: SubprocessHandle): string | undefined {
-  const stderr = child.collected.stderr?.readFrom(0).text
-  if (stderr === undefined) return undefined
+function missingPayloadDiagnostic(stderr: string): string | undefined {
   const platformPackage = /Missing optional dependency (@openai\/codex-[a-z0-9-]+)/
     .exec(stderr)?.[1]
   return platformPackage === undefined
@@ -58,12 +56,28 @@ function missingPayloadDiagnostic(child: SubprocessHandle): string | undefined {
 
 function withMissingPayloadDiagnostic(
   error: Error,
-  child: SubprocessHandle,
+  stderr: string,
 ): Error {
-  const diagnostic = missingPayloadDiagnostic(child)
+  const diagnostic = missingPayloadDiagnostic(stderr)
   if (diagnostic === undefined || error.message.includes(diagnostic)) return error
   return new Error(`${error.message}: ${diagnostic}`, { cause: error })
 }
+
+/** Profile-selectable non-interactive Codex permission mode. */
+export type CodexPermissionMode =
+  | 'never'
+  | 'approve-for-me'
+  | 'dangerously-bypass-approvals-and-sandbox'
+
+/** Native non-interactive Codex modes mapped to official `thread/start` fields. */
+export const CODEX_PERMISSION_MODES = [
+  'never',
+  'approve-for-me',
+  'dangerously-bypass-approvals-and-sandbox',
+] as const satisfies readonly CodexPermissionMode[]
+
+/** Safe default for unattended Codex runs. */
+export const DEFAULT_CODEX_PERMISSION_MODE: CodexPermissionMode = 'never'
 
 /**
  * Fixed package-local app-server command, independent of the host `PATH`.
@@ -77,6 +91,8 @@ export function codexAppServerArgv(): string[] {
 export interface CodexRunSpec {
   /** Parent Session workspace, also supplied to `thread/start`. */
   readonly cwd: string
+  /** Profile-selected native non-interactive permission mode. */
+  readonly permissionMode: CodexPermissionMode
   /** Explicit deployment/test environment layered after the shared scrub. */
   readonly env: Record<string, string>
   /** Subprocess termination grace passed to the shared process-tree owner. */
@@ -157,11 +173,7 @@ export async function startCodexRun(
   const child = spec.spawn({
     argv: codexAppServerArgv(),
     cwd: spec.cwd,
-    stdio: {
-      stdin: 'pipe',
-      stdout: 'pipe',
-      stderr: { maxBytes: CODEX_STDERR_TAIL_BYTES },
-    },
+    stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
     graceMs: spec.disposeGraceMs,
     env: spec.env,
   })
@@ -169,16 +181,46 @@ export async function startCodexRun(
   const wire = new CodexAppServerWire(
     child.stdout as NonNullable<SubprocessHandle['stdout']>,
     child.stdin as NonNullable<SubprocessHandle['stdin']>,
+    spec.permissionMode,
   )
-  const disposeProcess = (): Promise<void> => disposeCodexChild(wire, child)
+  let stderrTail = Buffer.alloc(0)
+  const onStderr = (chunk: Buffer | string): void => {
+    const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+    const combined = Buffer.concat([stderrTail, bytes])
+    stderrTail = combined.length > CODEX_STDERR_TAIL_BYTES
+      ? Buffer.from(combined.subarray(combined.length - CODEX_STDERR_TAIL_BYTES))
+      : combined
+    wire.observeStderr(bytes.toString())
+    try {
+      // Synchronous fd forwarding preserves byte order without owning a
+      // backpressure queue. A slow host sink can block this event-loop turn.
+      writeFileSync(process.stderr.fd, bytes)
+    } catch {
+      // Host stderr is an observation sink, not a child-run failure authority.
+    }
+  }
+  const onStderrError = (): void => {
+    // Stderr observation is auxiliary. JSON-RPC and child.done remain the
+    // only terminal authorities if the diagnostic stream itself fails.
+  }
+  child.stderr?.on('data', onStderr)
+  child.stderr?.on('error', onStderrError)
+  const disposeProcess = async (): Promise<void> => {
+    try {
+      await disposeCodexChild(wire, child)
+      // Let stderr already queued by the process close reach both bounded
+      // diagnostic consumers before their listeners are detached.
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+    } finally {
+      child.stderr?.off('data', onStderr)
+      child.stderr?.off('error', onStderrError)
+    }
+  }
 
   const processFailure: Promise<never> = child.done.then(
-    outcome => Promise.reject(withMissingPayloadDiagnostic(
-      new Error(
-        'subagent-codex: app-server exited before the run settled '
-        + `(code ${String(outcome.exitCode)}, signal ${String(outcome.signal)})`,
-      ),
-      child,
+    outcome => Promise.reject(new Error(
+      'subagent-codex: app-server exited before the run settled '
+      + `(code ${String(outcome.exitCode)}, signal ${String(outcome.signal)})`,
     )),
     (error: unknown) => Promise.reject(thrown(error)),
   )
@@ -206,23 +248,33 @@ export async function startCodexRun(
       await disposeProcess()
     } catch (disposeError: unknown) {
       throw new AggregateError(
-        [withMissingPayloadDiagnostic(startupCause, child), thrown(disposeError)],
+        [withMissingPayloadDiagnostic(startupCause, stderrTail.toString()), thrown(disposeError)],
         'subagent-codex: startup failed and app-server cleanup also failed',
       )
     }
     if (runAbort.signal.aborted) {
       throw new Error('subagent-codex: request was aborted before run publication')
     }
-    throw withMissingPayloadDiagnostic(startupCause, child)
+    throw withMissingPayloadDiagnostic(startupCause, stderrTail.toString())
   }
 
   const collectOutput = (): ContentBlock[] => wire.collectOutput()
   const result: Promise<SubagentResult> = settleRunResult({
-    attempt: () => Promise.race([
-      wire.runTurn(texts, runAbort.signal),
-      processFailure,
-    ]),
+    attempt: async () => {
+      try {
+        return await Promise.race([
+          wire.runTurn(texts, runAbort.signal),
+          processFailure,
+        ])
+      } catch (error: unknown) {
+        // Give stderr data already queued in Node one turn to reach the wire
+        // before settlement snapshots the diagnostic; later OS data is best-effort.
+        await new Promise<void>((resolve) => { setImmediate(resolve) })
+        throw withMissingPayloadDiagnostic(thrown(error), stderrTail.toString())
+      }
+    },
     collectOutput,
+    collectDiagnostic: () => wire.collectDiagnostic(),
     cancelled: () => runAbort.signal.aborted,
     onError: spec.onError,
     signal: request.signal,

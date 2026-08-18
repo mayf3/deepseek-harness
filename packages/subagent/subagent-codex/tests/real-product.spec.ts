@@ -20,6 +20,7 @@ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
+import type { CodexPermissionMode } from '../src/run.ts'
 import {
   startResponsesFixture,
   type ResponsesBehavior,
@@ -58,7 +59,10 @@ interface RealHarness {
   readonly workspace: string
 }
 
-async function realHarness(script: readonly ResponsesBehavior[]): Promise<{
+async function realHarness(
+  script: readonly ResponsesBehavior[],
+  permissionMode?: CodexPermissionMode,
+): Promise<{
   readonly harness: RealHarness
   readonly fixture: ResponsesFixture
 }> {
@@ -113,7 +117,11 @@ async function realHarness(script: readonly ResponsesBehavior[]): Promise<{
     handles.push(handle)
     return handle
   })
-  await ctx.plugin(codex, { env, disposeGraceMs: 2_000 })
+  await ctx.plugin(codex, {
+    env,
+    ...permissionMode === undefined ? {} : { permissionMode },
+    disposeGraceMs: 2_000,
+  })
   const parent = {
     id: 'real-parent',
     session: { header: { cwd: workspace } },
@@ -148,12 +156,12 @@ function responseInputTexts(body: Record<string, unknown>): string[] {
 }
 
 describe('real @openai/codex 0.147.0 product', () => {
-  it('passes the exact task and fake authentication to local Responses and returns exact text', async () => {
+  it('starts approve-for-me through the real app-server and returns exact text', async () => {
     const sentinel = 'REAL_CODEX_SENTINEL_0_147_0'
     const task = 'Return the fixture sentinel exactly.'
     const { harness, fixture } = await realHarness([
       { kind: 'complete', text: sentinel },
-    ])
+    ], 'approve-for-me')
     expect(codexPackage.version).toBe('0.147.0')
     const version = await execFileAsync(process.execPath, [codexEntry, '--version'], {
       env: { ...process.env, ...harness.env },
@@ -205,7 +213,7 @@ describe('real @openai/codex 0.147.0 product', () => {
     })).rejects.toThrow(/Missing optional dependency @openai\/codex-[a-z0-9-]+/)
   }, 30_000)
 
-  it('cancels a real app-server command approval without executing the command', async () => {
+  it('overrides on-request with never and reports a denied command safely', async () => {
     const command = process.platform === 'win32'
       ? 'cmd /c type nul > approval-side-effect'
       : 'touch approval-side-effect'
@@ -232,6 +240,11 @@ describe('real @openai/codex 0.147.0 product', () => {
         kind: 'advertisedFunctionCall',
         choices: commandCalls,
       },
+      {
+        kind: 'error',
+        status: 400,
+        message: 'fixture terminal failure after permission denial',
+      },
     ])
     const sideEffect = join(harness.workspace, 'approval-side-effect')
     const run = await harness.ctx.subagents.start('codex', {
@@ -239,14 +252,20 @@ describe('real @openai/codex 0.147.0 product', () => {
       parent: harness.parent,
       signal: new AbortController().signal,
     })
-    await expect(run.result).resolves.toEqual({
-      output: [],
-      stopReason: 'error',
-    })
+    const result = await run.result
+    expect(result.output).toEqual([])
+    expect(result.stopReason).toBe('error')
+    expect([
+      'Codex unattended decision (mode: never; request: command approval; decision: cancelled): the provider does not grant interactive approval',
+      'Codex unattended decision (mode: never; request: sandbox execution; decision: failed): Codex reported a sandbox failure',
+      'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
+    ]).toContain(result.diagnostic)
+    expect(result.diagnostic).not.toContain(command)
+    expect(result.diagnostic).not.toContain(harness.workspace)
     await run.dispose()
 
     expect(existsSync(sideEffect)).toBe(false)
-    expect(fixture.requests).toHaveLength(1)
+    expect(fixture.requests).toHaveLength(2)
     const tools = fixture.requests[0]!.body.tools as Array<Record<string, unknown>>
     expect(commandCalls.some(call => tools.some(tool => (
       tool.type === 'function' && tool.name === call.name
@@ -254,6 +273,44 @@ describe('real @openai/codex 0.147.0 product', () => {
     expect(fixture.requests.every(requestEntry =>
       requestEntry.headers.authorization === 'Bearer dsh-fake-openai-key',
     )).toBe(true)
+    await expectQuiescent(harness.handles)
+  }, 60_000)
+
+  it('executes an explicitly selected dangerous bypass write in the isolated workspace', async () => {
+    const sideEffect = 'bypass-side-effect'
+    const command = process.platform === 'win32'
+      ? `cmd /c echo bypass>${sideEffect}`
+      : `printf bypass > ${sideEffect}`
+    const commandCalls = [
+      {
+        name: 'exec_command',
+        arguments: {
+          cmd: command,
+        },
+      },
+      {
+        name: 'shell_command',
+        arguments: {
+          command,
+        },
+      },
+    ] as const
+    const { harness } = await realHarness([
+      { kind: 'advertisedFunctionCall', choices: commandCalls },
+      { kind: 'complete', text: 'bypass complete' },
+    ], 'dangerously-bypass-approvals-and-sandbox')
+    const target = join(harness.workspace, sideEffect)
+    const run = await harness.ctx.subagents.start('codex', {
+      prompt: [{ type: 'text', text: 'Create the fixture side effect.' }],
+      parent: harness.parent,
+      signal: new AbortController().signal,
+    })
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'bypass complete' }],
+      stopReason: 'completed',
+    })
+    expect(readFileSync(target, 'utf8').trim()).toBe('bypass')
+    await run.dispose()
     await expectQuiescent(harness.handles)
   }, 60_000)
 

@@ -16,7 +16,7 @@ Status: implemented
 
 [生产依赖闭包决策](../simplification/2026-08-12-production-dsh-excludes-product-subagent-providers.md)只部分取代本说明先前关于默认包含提供方的选择：base 组合包排除两个提供方，每个提供方包都拥有可直接安装的 Bundle patch。本说明继续负责每个已安装提供方的进程级 Host 放置。提供方约定说明继续负责每个产品的协议、结果映射、取消、进程树生命周期与证据层级。[Agent Preset 架构](2026-08-03-per-session-agent-presets.md)继续负责宿主与 agent 的划分、preset 创作，以及改动只影响新组装会话的规则。
 
-每个 Bundle 都把可执行文件选择交给包自有的产品运行时：Codex 包运行自身声明的 wrapper，Claude Code 包则让 Agent SDK 选择私有原生可执行文件。两个提供方都不会查询或回退宿主产品命令，原生配置与身份验证仍保持权威。加载任一 Bundle 只会完成提供方注册，不会创建产品状态、探测版本或身份验证，也不会新增产品专属设置。平台载荷缺失、身份验证失败和其他产品故障仍局限于发生问题的那次委派。
+每个 Bundle 都把可执行文件选择交给包自有的产品运行时：Codex 包运行自身声明的 wrapper，Claude Code 包则让 Agent SDK 选择私有原生可执行文件。两个提供方都不会查询或回退宿主产品命令，原生配置与身份验证仍保持权威。加载 Profile 不会创建产品状态、探测版本或测试身份验证；它可以提供每个已挂载 Provider 的部署配置，包括由[非交互权限决策](../feature/2026-08-15-product-subagent-noninteractive-permissions.md)负责的产品专属 `permissionMode` 值，但不会把这些选择移入 Agent Preset 或面向模型的工具。平台载荷缺失、身份验证失败和其他产品故障仍局限于发生问题的那次委派。
 
 ## 验证
 

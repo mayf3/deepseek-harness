@@ -92,6 +92,15 @@ describe('gate graph validation', () => {
     },
   )
 
+  it.each(['ci-primary', 'ci-static', 'check-all'] as const)(
+    'keeps the client dependency policy in %s',
+    (mode) => {
+      const ids = withPnpmEntrypoint(() => gatesForMode(mode).map(subject => subject.id))
+
+      expect(ids).toContain('client-packages')
+    },
+  )
+
   it('keeps native Windows coverage blocking while portability inventory remains observational', () => {
     const gates = withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))
     const byId = new Map(gates.map(subject => [subject.id, subject]))
@@ -99,6 +108,35 @@ describe('gate graph validation', () => {
     expect(byId.get('coverage')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage-exempt-heavy')?.allowFailure).not.toBe(true)
     expect(byId.get('duplication')?.allowFailure).toBe(true)
+  })
+
+  it('applies one configured test and polling timeout to both coverage gates', () => {
+    const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '15000', () =>
+      withPnpmEntrypoint(() => gatesForMode('ci-windows-complete')))
+
+    for (const id of ['coverage', 'coverage-exempt-heavy']) {
+      expect(gates.find(subject => subject.id === id)?.args).toEqual(expect.arrayContaining([
+        '--testTimeout=15000',
+        '--expect.poll.timeout=15000',
+      ]))
+    }
+  })
+
+  it('keeps Vitest timeout defaults when the coverage override is absent', () => {
+    const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', undefined, () =>
+      withPnpmEntrypoint(() => gatesForMode('ci-windows-complete')))
+
+    for (const id of ['coverage', 'coverage-exempt-heavy']) {
+      expect(gates.find(subject => subject.id === id)?.args).not.toEqual(expect.arrayContaining([
+        expect.stringMatching(/^--(?:testTimeout|expect\.poll\.timeout)=/),
+      ]))
+    }
+  })
+
+  it('rejects an invalid coverage timeout before starting a gate', () => {
+    expect(() => withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '0', () =>
+      withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))))
+      .toThrow('DSH_COVERAGE_TEST_TIMEOUT_MS must be a positive integer')
   })
 
   it.each([

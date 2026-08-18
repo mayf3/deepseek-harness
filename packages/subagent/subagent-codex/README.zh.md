@@ -2,17 +2,17 @@
 
 [English](README.md) | 中文
 
-本包注册固定的 `codex` subagent 提供方。每次接受运行请求后，它都会在发起委托的会话工作区中使用 `app-server --stdio` 启动官方包内 Codex wrapper，创建一个临时 Codex 线程，提交一个自包含的文本任务，并通过共享的 [`dsh-subagent`](../subagent/README.md) 结果约定仅返回最终答案。
+本包注册固定的 `codex` subagent 提供方。每次接受运行请求后，它都会在发起委托的会话工作区中使用 `app-server --stdio` 启动官方包内 Codex wrapper，创建一个临时 Codex 线程，提交一个自包含的文本任务，并通过共享的 [`dsh-subagent`](../subagent/README.md) 结果约定返回选定的最终答案或独立的安全失败诊断。
 
 ## 启动与所有权
 
-`start(request)` 只接受非空的文本块序列，并根据父会话确定子级 cwd。随后，它通过 [`dsh-subprocess`](../../subprocess/subprocess/README.md) spawn 固定命令，依次执行 `initialize` → `initialized` → `thread/start { cwd, ephemeral: true }`，且仅在 Codex 返回有效的临时线程后才发布此次运行。若在发布前发生失败或取消，它会关闭通信链路、终止受管进程树并等待其退出，然后拒绝 `start()` 调用。
+`start(request)` 只接受非空的文本块序列，并根据父会话确定子级 cwd。随后，它通过 [`dsh-subprocess`](../../subprocess/subprocess/README.md) spawn 固定命令，依次执行 `initialize` → `initialized`，把 Profile 选择的模式映射为官方 `thread/start` approval／reviewer／sandbox 字段并与 `{ cwd, ephemeral: true }` 一起发送，且仅在 Codex 返回有效的临时线程后才发布此次运行。若在发布前发生失败或取消，它会关闭通信链路、终止受管进程树并等待其退出，然后拒绝 `start()` 调用。
 
 已发布的 `run.result` 恰好启动一个轮次。它只接受与此次运行的线程和轮次匹配的通知，随后等待权威的终止通知 `turn/completed`。以最后一条 `phase: "final_answer"` 的 `agentMessage` 为准；若 Codex 没有发出明确的最终阶段，则以最后一条 `phase: null` 的消息作为兼容性回退。过程说明绝不会取代上述任一答案；成功完成的轮次若没有非空白答案，结果也会判为错误。
 
-对于命令与文件审批，无人值守的提供方会从请求给出的决策选项中选择一项不予批准的决策，并优先选择 `cancel`；稳定的 0.147.0 请求形态没有决策选项列表，因此回退到 `decline`。它对权限请求返回作用域限于当前轮次的空权限集，不向用户输入请求提供任何答案，并拒绝 MCP elicitation。若请求在无人值守模式下没有合法响应，或是未知服务器请求，此次运行就会失败。
+对于命令与文件审批，无人值守的提供方会从请求给出的决策选项中选择一项不予批准的决策，并优先选择 `cancel`；稳定的 0.147.0 请求形态没有决策选项列表，因此回退到 `decline`。它对权限请求返回作用域限于当前轮次的空权限集，不向用户输入请求提供任何答案，并拒绝 MCP elicitation。若请求在无人值守模式下没有合法响应，或是未知服务器请求，此次运行就会失败。wire 只记录有效模式、请求类别、决定与固定的安全原因，也会识别被拒绝的命令／文件 item 和 `sandboxError` 终态。Codex 0.147.0 的部分早期 `never` 拒绝和 sandbox violation 只写入结构化 stderr，因此提供方会 pipe stderr、原样转发给 Host，并在每次运行的有界尾缓冲中匹配两个固定签名；原始 stderr 不会进入诊断。
 
-本地取消会在结果竞态中胜出并映射为 `aborted`。失败轮次的 `codexErrorInfo` 若为 `contextWindowExceeded`，则映射为 `max-tokens`；其他任何远端中断或失败轮次都映射为 `error`，且该提供方不会产生 `refusal`。`dispose()`（资源释放）具有幂等性：如果当前的两个标识符均已知，它会尽力请求 `turn/interrupt`，关闭 JSON-RPC 通信链路，结束标准输入，调用共享的进程树逐级终止机制，并等待整棵进程树退出。结果失败与独立的清理失败仍彼此分离。
+本地取消会在结果竞态中胜出并映射为 `aborted`。失败轮次的 `codexErrorInfo` 若为 `contextWindowExceeded`，则映射为 `max-tokens`；其他任何远端中断或失败轮次都映射为 `error`，且该提供方不会产生 `refusal`。权限相关错误可以额外携带有界、非 assistant 的 `SubagentResult.diagnostic`；成功和本地取消不会附带它。`dispose()`（资源释放）具有幂等性：如果当前的两个标识符均已知，它会尽力请求 `turn/interrupt`，关闭 JSON-RPC 通信链路，结束标准输入，调用共享的进程树逐级终止机制，等待整棵进程树退出，并移除 stderr observer。结果失败与独立的清理失败仍彼此分离。
 
 ## 能力与上下文
 
@@ -23,9 +23,16 @@
 | 配置键 | 默认值 | 含义 |
 |---|---|---|
 | `env` | `{}` | 显式指定的子进程环境，叠加在由子进程 seam 清除凭证后的父环境之上。 |
+| `permissionMode` | `never` | 为该提供方实例的每个线程固定原生非交互审批与沙箱模式。 |
 | `disposeGraceMs` | `3000` | 共享进程树责任方各终止层级之间的宽限期，单位为毫秒且须为正有限值，并不得大于仓库共享的 [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md)；随后资源释放会等待整棵进程树退出。 |
 
-生产环境会解析锁定的 `@openai/codex@0.147.0` 依赖所声明的 `codex` bin，并使用当前 Node 可执行文件启动该 JavaScript wrapper。Wrapper 会选择匹配的原生平台载荷；提供方既不检查也不回退 `PATH` 中的宿主 `codex`。父会话 cwd、`HOME` 与 `CODEX_HOME` 继续让原生 Codex 配置和身份验证保持权威。本插件不选择模型、不创建产品主目录、不执行登录，也不探测账户。子进程 seam 会先移除具有凭证特征的环境变量，再应用显式 `env` 覆盖。
+| `permissionMode` 值 | `thread/start` 字段 | 原生行为 |
+|---|---|---|
+| `never` | `approvalPolicy: never`；省略 sandbox | 永不请求审批；执行失败会在原生 sandbox 下返回模型。 |
+| `approve-for-me` | `approvalPolicy: on-request`、`approvalsReviewer: auto_review`、`sandbox: workspace-write` | 由 Codex 自动评审权限请求，不等待人工。 |
+| `dangerously-bypass-approvals-and-sandbox` | `approvalPolicy: never`、`sandbox: danger-full-access` | 跳过审批与 sandbox；必须显式选择该值。 |
+
+生产环境会解析锁定的 `@openai/codex@0.147.0` 依赖所声明的 `codex` bin，并使用当前 Node 可执行文件启动该 JavaScript wrapper。Wrapper 会选择匹配的原生平台载荷；提供方既不检查也不回退 `PATH` 中的宿主 `codex`。父会话 cwd、`HOME` 与 `CODEX_HOME` 继续让原生 Codex 配置和身份验证保持权威，而提供方只覆盖选定线程的 approval／reviewer／sandbox 字段。其他项目、模型、provider、MCP、hook、skill 与账户设置仍由原生机制负责。本插件不选择模型、不创建 `CODEX_HOME`、不执行登录，也不探测账户。子进程 seam 会先移除具有凭证特征的环境变量，再应用显式 `env` 覆盖。
 
 本包是可选的 Profile Bundle。将它安装进目标 Profile 后重启该 Profile；安装会把官方 wrapper 与一个兼容的原生平台载荷带入该 Profile，而包所声明的 `cordis.patch.yml` 层只注册休眠的 `codex` Host provider，不会启动 Codex 进程。移除该包后，下一次 Profile 启动会撤回这一 provider 及其私有运行时闭包。
 
@@ -41,6 +48,7 @@ dsh --profile <name>
 # $DSH_HOME/profiles/<name>/cordis.patch.yml (optional provider override)
 - id: subagent-codex
   config:
+    permissionMode: approve-for-me
     env:
       OPENAI_API_KEY: !!js process.env.OPENAI_API_KEY
 ```
@@ -63,13 +71,15 @@ dsh --profile <name>
 
 如果安装时省略 optional dependencies、当前平台不受支持，或所选载荷缺失，第一次委派会以 wrapper 的原生载荷启动错误失败。提供方既不会探测宿主 CLI，也不会用它重试。
 
+真实产品覆盖还会证明线程级 `never` 覆盖环境中的 `on-request`，自动评审通过官方 app-server 启动，危险绕过只在测试拥有的临时存储中写入，安全诊断不包含原始命令与路径，而且所有 wrapper／native 进程都会退出。
+
 ## 模型体验
 
 ### 子级请求
 
 #### 模型看到的内容
 
-Codex 子级会在一个全新的临时线程中，以单个轮次接收这些独立文本块。它的工作区是父会话 cwd；其模型、系统指令、工具、沙箱和身份验证来自原生 Codex 配置，可执行版本则来自 Bundle 锁定的平台载荷。
+Codex 子级会在一个全新的临时线程中，以单个轮次接收这些独立文本块。它的工作区是父会话 cwd；其模型、系统指令、工具和身份验证来自原生 Codex 配置，提供方的 Profile 配置会固定该线程的非交互审批与沙箱模式，而可执行版本来自 Bundle 锁定的平台载荷。
 
 #### 对 token 的影响
 
@@ -83,7 +93,7 @@ Codex 子级会在一个全新的临时线程中，以单个轮次接收这些�
 
 #### 模型看到的内容
 
-通过 `dsh-tool-subagent`，前台调用会让父级模型看到选定的 Codex 最终答案，或者在结果未完成时看到消费方给出的原样错误。后台调用会先返回 Job id；随后通用作业控制面会送达完成通知，通过 `job_output` 公开最终答案与状态，并允许 `job_kill` 请求取消。Codex 的过程说明、推理（reasoning）、工具活动、stderr、工作区差异、用量信息和产品标识符均不会复制到父会话。
+通过 `dsh-tool-subagent`，前台调用会让父级模型看到选定的 Codex 最终答案；若结果未完成，错误中会包含终止原因和可选的安全诊断。后台调用会先返回 Job id；随后通用作业控制面会送达完成通知，通过 `job_output` 公开最终答案或失败状态 detail，并允许 `job_kill` 请求取消。Codex 的过程说明、推理（reasoning）、工具活动、原始 stderr、工作区差异、用量信息、产品标识符、命令、路径和协议载荷均不会复制到父会话。
 
 #### 对 token 的影响
 
@@ -99,7 +109,7 @@ Codex 子级会在一个全新的临时线程中，以单个轮次接收这些�
 - **身份验证与账户状态仍由原生机制管理**：Bundle 会提供 CLI，但不会创建账户、登录、信任项目或改写 Codex 设置；配置与身份验证失败会呈现为启动错误或运行错误。
 - **委派时必须存在原生平台载荷**：省略 optional dependencies 的安装、不受支持的平台以及缺失或损坏的载荷都会在第一次运行时失败；不会回退到宿主 CLI。
 - **兼容性由开发证据锁定**：若要从已验证的 0.147.0 协议基线升级，必须重新生成上游 schema 证据，并重新运行握手、答案选择、审批、取消、无密钥真实产品以及带密钥的 DeepSeek 随机数测试。
-- **没有人工审批路径**：已知的无人值守审批请求会被拒绝，未知服务器请求会以默认拒绝方式使运行失败；部署方无法通过本包配置允许策略。
-- **产品载荷仅包含最终文本**：推理、过程说明、中间消息、工具通信、用量信息、stderr 和工作区差异仍只保留在产品内部；通用 Job id、通知与状态来自共享作业运行时。
+- **没有人工审批路径**：已知的无人值守审批请求会被拒绝，未知服务器请求会以默认拒绝方式使运行失败；三种 Profile 模式都不会创建 DSH 交互通道或逐次调用 allow 策略。
+- **assistant 载荷仅包含最终文本**：失败运行可以额外公开独立的安全诊断；推理、过程说明、中间消息、工具通信、用量信息、原始 stderr 和工作区差异不会进入父会话，通用 Job id、通知与状态来自共享作业运行时。
 - **没有可选的共享能力**：对于本提供方，共享服务会拒绝输出 schema、子任务角色设定、工具筛选和 harness 深度强制约束。
 - **没有按实际经过时间触发的超时或副作用回滚**：长时间运行的工作由调用方取消，且取消前已更改的文件或外部系统不会恢复原状。

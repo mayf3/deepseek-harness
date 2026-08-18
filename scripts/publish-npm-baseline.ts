@@ -24,7 +24,7 @@ const DEFAULT_REGISTRY = 'https://registry.npm.harnessment.com'
 const DEFAULT_OUTPUT_DIRECTORY = '.artifacts/npm-baseline'
 const PACKAGE_PATTERNS = [
   'vendor/*/package.json',
-  'packages/*/*/package.json',
+  'packages/!(experimental)/*/package.json',
   'apps/*/package.json',
 ] as const
 const DEPENDENCY_SECTIONS = [
