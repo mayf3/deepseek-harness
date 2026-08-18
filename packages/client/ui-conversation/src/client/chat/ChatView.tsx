@@ -12,10 +12,10 @@
 // ChatNodeSeat subscribes to one Node key, so Assistant deltas and Tool
 // lifecycle updates replace only their own row without remounting it.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ChatViewSlotProps } from '../contract/slots.ts'
+import type { ChatViewSlotProps, RenderMessageImages } from '../contract/slots.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { formatRunDuration } from './message-chrome.ts'
@@ -163,6 +163,10 @@ export function ChatView({
   const pendingSteering = useMemo(
     () => inbox.filter(item => item.placement === 'steering'),
     [inbox],
+  )
+  const renderMessageImages = useCallback<RenderMessageImages>(
+    owner => renderSlot('conversation.message.images', { ...owner, loadImage }),
+    [loadImage, renderSlot],
   )
   const runningTurnStart = useMemo(() => runningTurnStartTime(timeline), [timeline])
 
@@ -389,7 +393,7 @@ export function ChatView({
               openFile={openFile}
               inspectCall={inspectCall}
               forkAt={forkAt}
-              loadImage={loadImage}
+              renderMessageImages={renderMessageImages}
               fileMentions={fileMentions}
               renderSlot={renderSlot}
               t={t}
@@ -402,7 +406,12 @@ export function ChatView({
               wait, tool execution, streaming) so it never flickers per step. */}
           {running && <TurnStatus startTime={runningTurnStart} t={t} />}
           {pendingSteering.map(item => (
-            <PendingSteeringBubble key={item.id} content={item.content} loadImage={loadImage} t={t} />
+            <PendingSteeringBubble
+              key={item.id}
+              content={item.content}
+              renderMessageImages={renderMessageImages}
+              t={t}
+            />
           ))}
         </div>
         {!atBottom && (
