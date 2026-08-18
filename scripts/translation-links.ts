@@ -143,13 +143,19 @@ function translationPairTarget(targetPath: string, context: TranslationLinkConte
   return { source, zh }
 }
 
+function encodePathSegment(segment: string): string {
+  return encodeURIComponent(segment).replace(/[!'()*]/g, character => (
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  ))
+}
+
 function relativeExpectedPath(
   context: TranslationLinkContext,
   expectedPath: string,
   rawPath: string,
 ): string {
   const relative = posix.relative(posix.dirname(context.sourcePath), expectedPath)
-  const encoded = relative.split('/').map(segment => encodeURIComponent(segment)).join('/')
+  const encoded = relative.split('/').map(encodePathSegment).join('/')
   return rawPath.startsWith('./') && !encoded.startsWith('.') ? `./${encoded}` : encoded
 }
 
