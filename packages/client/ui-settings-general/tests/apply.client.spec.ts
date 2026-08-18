@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-settings-general/client'
 import { CloseLabel, HeaderContent, TriggerContent } from '../src/client/chrome.tsx'
 import { GeneralSection } from '../src/client/GeneralSection.tsx'
@@ -48,6 +49,8 @@ async function bench(isLoopback = true) {
     api: { settings: { describe: settingsDescribe, openDocument: settingsOpenDocument } },
     isLoopback,
   } as never)
+  new TestRemote(ctx)
+  await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, settingsDescribe, settingsOpenDocument }
 }
 
@@ -75,7 +78,7 @@ function generalEntry(slots: SlotRegistry) {
 
 describe('ui-settings-general apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'settingsScope'])
   })
 
   it('fills all five seats for declarations before or after apply', async () => {
@@ -149,16 +152,17 @@ describe('ui-settings-general apply', () => {
     expect(resolveSlotLabel(generalEntry(b.slots)!.options.label)).toBe('通用设置')
   })
 
-  it('refreshes loaded document availability on reconnect without reading it eagerly', async () => {
+  it('reads availability from the shared mirror and follows its reconnect refresh', async () => {
     const b = await bench()
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const entry = b.slots.entries('settings.action')[0]!
     const { controller } = (entry.inject as unknown as () => SettingsDocumentActionInjected)()
-    b.ctx.emit('connection/reset')
-    expect(b.settingsDescribe).not.toHaveBeenCalled()
+    // The mirror read once at its own boot; the action's load adds no read.
+    await vi.waitFor(() => { expect(b.settingsDescribe).toHaveBeenCalledOnce() })
     await controller.load()
     expect(b.settingsDescribe).toHaveBeenCalledOnce()
+    expect(controller.store.getSnapshot().status).toBe('ready')
     b.ctx.emit('connection/reset')
     await vi.waitFor(() => { expect(b.settingsDescribe).toHaveBeenCalledTimes(2) })
   })
