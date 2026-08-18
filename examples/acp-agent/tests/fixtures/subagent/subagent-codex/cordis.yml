@@ -11,6 +11,8 @@
 
 - id: subagent-codex
   name: '@deepseek-ai/dsh-subagent-codex'
+  config:
+    permissionMode: approve-for-me
 
 - id: tool-subagent-codex
   name: '@deepseek-ai/dsh-tool-subagent'

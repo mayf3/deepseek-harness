@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -23,6 +24,7 @@ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as claudeCode from '../src/index.ts'
+import type { ClaudeCodePermissionMode } from '../src/run.ts'
 import {
   startMessagesFixture,
   type MessagesBehavior,
@@ -122,7 +124,11 @@ interface RealHarness {
   readonly executable: string
 }
 
-async function realHarness(behavior: MessagesBehavior): Promise<{
+async function realHarness(
+  behavior: MessagesBehavior,
+  permissionMode?: ClaudeCodePermissionMode,
+  nativeAllow: readonly string[] = [],
+): Promise<{
   readonly harness: RealHarness
   readonly fixture: MessagesFixture
 }> {
@@ -144,7 +150,13 @@ async function realHarness(behavior: MessagesBehavior): Promise<{
   }
   writeFileSync(
     join(claudeConfig, 'settings.json'),
-    `${JSON.stringify({ model: settingsModel }, null, 2)}\n`,
+    `${JSON.stringify({
+      model: settingsModel,
+      permissions: {
+        defaultMode: 'default',
+        ...nativeAllow.length === 0 ? {} : { allow: nativeAllow },
+      },
+    }, null, 2)}\n`,
   )
   const fixture = await startMessagesFixture(behavior)
   fixtures.push(fixture)
@@ -177,7 +189,11 @@ async function realHarness(behavior: MessagesBehavior): Promise<{
     handles.push(handle)
     return handle
   })
-  await ctx.plugin(claudeCode, { env, disposeGraceMs: 3_000 })
+  await ctx.plugin(claudeCode, {
+    env,
+    ...permissionMode === undefined ? {} : { permissionMode },
+    disposeGraceMs: 3_000,
+  })
   const parent = {
     id: 'real-parent',
     session: { header: { cwd: workspace } },
@@ -291,6 +307,80 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
     await run.dispose()
     expect(fixture.requests).toHaveLength(1)
     expect(fixture.requests[0]!.headers['x-api-key']).toBe(fakeKey)
+    await expectQuiescent(harness.handles)
+  })
+
+  it('overrides interactive settings, denies a write, and returns a safe diagnostic', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-claude-code-denied-target-'))
+    roots.push(root)
+    const target = join(root, 'denied.txt')
+    const { harness } = await realHarness({
+      kind: 'tool-use',
+      toolName: 'Write',
+      input: {
+        file_path: target,
+        content: 'SECRET_TOKEN must not reach the diagnostic',
+      },
+    })
+    const run = await startRequest(harness, 'Write the requested fixture file.')
+    await vi.waitFor(() => {
+      expect(observedSdkMessages.some(message =>
+        message.type === 'system'
+        && message.subtype === 'permission_denied')).toBe(true)
+    }, { timeout: 30_000 })
+    expect(existsSync(target)).toBe(false)
+    harness.handles[0]!.terminate()
+    const result = await run.result
+    expect(result).toEqual({
+      output: [],
+      diagnostic: 'Claude Code unattended decision (mode: dontAsk; request: tool permission; decision: denied): Claude Code denied the request before an interactive prompt',
+      stopReason: 'error',
+    })
+    expect(result.diagnostic).not.toContain(target)
+    expect(result.diagnostic).not.toContain('SECRET_TOKEN')
+    await run.dispose()
+    await expectQuiescent(harness.handles)
+  })
+
+  it('runs an explicitly selected bypass write in the isolated workspace', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-claude-code-bypass-target-'))
+    roots.push(root)
+    const target = join(root, 'bypass.txt')
+    const { harness } = await realHarness({
+      kind: 'tool-use',
+      toolName: 'Write',
+      input: {
+        file_path: target,
+        content: 'bypass write completed',
+      },
+      finalText: 'write complete',
+    }, 'bypassPermissions')
+    const run = await startRequest(harness, 'Write the requested fixture file.')
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'write complete' }],
+      stopReason: 'completed',
+    })
+    expect(readFileSync(target, 'utf8')).toBe('bypass write completed')
+    await run.dispose()
+    await expectQuiescent(harness.handles)
+  })
+
+  it('returns the completed plan without approving execution', async () => {
+    const { harness, fixture } = await realHarness({
+      kind: 'tool-use',
+      toolName: 'ExitPlanMode',
+      input: {},
+      finalText: 'PLAN_ONLY_RESULT',
+    }, 'plan', ['ExitPlanMode'])
+    const run = await startRequest(harness, 'Design the fixture change without implementing it.')
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'PLAN_ONLY_RESULT' }],
+      stopReason: 'completed',
+    })
+    expect(fixture.requests).toHaveLength(2)
+    expect(JSON.stringify(fixture.requests[1]?.body.messages))
+      .toContain('ExitPlanMode exists but is not enabled in this context')
+    await run.dispose()
     await expectQuiescent(harness.handles)
   })
 
