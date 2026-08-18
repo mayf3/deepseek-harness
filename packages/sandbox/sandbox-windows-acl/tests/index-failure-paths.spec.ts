@@ -525,7 +525,6 @@ describe('AclSandbox spawn', () => {
     const settlement = child.wait()
     await expect(settlement).rejects.toBeInstanceOf(AggregateError)
     const failure = await settlement.catch((error: unknown): unknown => error)
-    expect(failure).toBeInstanceOf(AggregateError)
     if (!(failure instanceof AggregateError)) throw new Error('expected AggregateError')
     const apis = (failure.errors as unknown[])
       .filter((error): error is Win32Error => error instanceof Win32Error)
