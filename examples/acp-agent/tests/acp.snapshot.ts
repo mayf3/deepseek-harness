@@ -1,11 +1,19 @@
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { createServer } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { mkdir, utimes, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { expect, it } from 'vitest'
-import { defineAcpSnapshotSuite, type Scenario, type SnapshotSuiteOptions } from '@deepseek-ai/dsh-acp-snapshot'
+import {
+  defineAcpSnapshotSuite,
+  runScenario,
+  type InputScript,
+  type Scenario,
+  type SnapshotSuiteOptions,
+} from '@deepseek-ai/dsh-acp-snapshot'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { decodeStorageRecord } from '@deepseek-ai/dsh-session'
 
@@ -40,6 +48,7 @@ const ADVANCED_CONFIG = fileURLToPath(new URL('../advanced.cordis.yml', import.m
 const FS_CONFIG = fileURLToPath(new URL('../fs.cordis.yml', import.meta.url))
 const SESSION_QUERY_CONFIG = fileURLToPath(new URL('../session-query.cordis.yml', import.meta.url))
 const IMAGE_CONFIG = fileURLToPath(new URL('../image.cordis.yml', import.meta.url))
+const IMAGE_OFFLOAD_CONFIG = fileURLToPath(new URL('./fixtures/image-offload.cordis.yml', import.meta.url))
 const IMAGE_TEXT_ROUTE_CONFIG = fileURLToPath(new URL('../image-text-route.cordis.yml', import.meta.url))
 const PTY_CONFIG = fileURLToPath(new URL('../pty.cordis.yml', import.meta.url))
 const DEPTH_TWO_CONFIG = fileURLToPath(new URL('../depth-two.cordis.yml', import.meta.url))
@@ -654,6 +663,92 @@ defineAcpSnapshotSuite({
   mode: snapshotModeFromEnv(process.env.DSH_SNAPSHOT),
   hasPwsh,
 })
+
+it('pins pi-ai image offload in the request sent by the assembled app', async () => {
+  const requests: Record<string, unknown>[] = []
+  const server = createServer((request: IncomingMessage, response: ServerResponse) => {
+    let body = ''
+    request.setEncoding('utf8')
+    request.on('data', (chunk: string) => { body += chunk })
+    request.on('end', () => {
+      requests.push(JSON.parse(body) as Record<string, unknown>)
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      response.end([
+        'data: {"choices":[{"delta":{"role":"assistant","content":""},"index":0,"finish_reason":null}]}',
+        'data: {"choices":[{"delta":{"content":"DONE"},"index":0,"finish_reason":null}]}',
+        'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
+        'data: [DONE]',
+        '',
+      ].join('\n\n'))
+    })
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('image-offload snapshot server has no port')
+
+  const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'
+  const input: InputScript = {
+    steps: [
+      { op: 'initialize' },
+      { op: 'newSession' },
+      {
+        op: 'promptContent',
+        content: [
+          { type: 'text', text: 'Compare the older image ' },
+          { type: 'image', data: image, mimeType: 'image/png' },
+          { type: 'text', text: ' with the newer image ' },
+          { type: 'image', data: image, mimeType: 'image/png' },
+          { type: 'text', text: ', then reply with DONE.' },
+        ],
+      },
+    ],
+  }
+
+  try {
+    const result = await runScenario(input, {
+      agent: AGENT,
+      mode: 'record',
+      configPath: IMAGE_OFFLOAD_CONFIG,
+      fixtureFile: join(SNAPSHOTS_DIR, 'image-offload-request', 'session.jsonl'),
+      env: {
+        DSH_SNAPSHOT_API_KEY: 'snapshot-key',
+        DSH_SNAPSHOT_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+      },
+    })
+    expect(result.stderr).toBe('')
+    expect(requests).toHaveLength(1)
+    const messages = requests[0]?.messages as { content?: unknown }[] | undefined
+    const offloaded = messages?.find(message => JSON.stringify(message.content).includes('[image omitted'))
+    expect(offloaded?.content).toMatchInlineSnapshot(`
+      [
+        {
+          "text": "Compare the older image ",
+          "type": "text",
+        },
+        {
+          "text": "[image omitted to keep the request within its image limit; older images are omitted first. If this image is still needed, read its file again when a path is available; otherwise ask the user to attach it again.]",
+          "type": "text",
+        },
+        {
+          "text": " with the newer image ",
+          "type": "text",
+        },
+        {
+          "image_url": {
+            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+          },
+          "type": "image_url",
+        },
+        {
+          "text": ", then reply with DONE.",
+          "type": "text",
+        },
+      ]
+    `)
+  } finally {
+    await new Promise<void>(resolve => server.close(() => { resolve() }))
+  }
+}, 45_000)
 
 it('packed ACP fixture retains every chunk row kind without changing the logical session', () => {
   const source = fixtureRecords(PACKED_CHUNKS_SOURCE)
