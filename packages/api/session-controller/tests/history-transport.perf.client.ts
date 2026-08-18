@@ -5,6 +5,7 @@ import { createServer, type Server } from 'node:http'
 import { performance } from 'node:perf_hooks'
 import { brotliCompressSync, gzipSync } from 'node:zlib'
 import { expect, it } from 'vitest'
+import { z } from 'zod'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { HistoryEntry, HistoryRecord } from '@deepseek-ai/dsh-api-remotes/client'
 import { isChunkRow, packChunkRuns } from '@deepseek-ai/dsh-session/chunk-rows'
@@ -77,6 +78,11 @@ interface PackedHistoryValue {
   readonly fromSeq: number
   readonly toSeq: number
 }
+
+const rawSessionHistoryValueSchema: z.ZodType<RawHistoryValue> = z.object({
+  events: z.array(historyEntrySchema),
+  hasMore: z.boolean(),
+}) as unknown as z.ZodType<RawHistoryValue>
 
 function timed<T>(run: () => T): Timed<T> {
   const start = performance.now()
@@ -370,9 +376,9 @@ it('reports packed history transport and exact replay costs', async () => {
   const packedTransfer = await loopbackTransfer(packedJson.value)
 
   const rawClientHeap = sampledPeakHeap((sample) => {
-    const parsed = JSON.parse(rawJson.value) as RawHistoryValue
+    const wire: unknown = JSON.parse(rawJson.value)
     sample()
-    for (const entry of parsed.events) historyEntrySchema.parse(entry)
+    const parsed = rawSessionHistoryValueSchema.parse(wire)
     sample()
     const prepared = conversationInputs(parsed.events)
     sample()
@@ -381,9 +387,9 @@ it('reports packed history transport and exact replay costs', async () => {
     return digest(folded)
   })
   const packedClientHeap = sampledPeakHeap((sample) => {
-    const parsed = JSON.parse(packedJson.value) as PackedHistoryValue
+    const wire: unknown = JSON.parse(packedJson.value)
     sample()
-    sessionHistoryValueSchema.parse(parsed)
+    const parsed = sessionHistoryValueSchema.parse(wire) as unknown as PackedHistoryValue
     sample()
     const prepared = conversationInputs(historyEntries(parsed.records))
     sample()
@@ -392,14 +398,12 @@ it('reports packed history transport and exact replay costs', async () => {
     return digest(folded)
   })
 
-  const parsedRaw = timed(() => JSON.parse(rawJson.value) as RawHistoryValue)
-  const parsedPacked = timed(() => JSON.parse(packedJson.value) as PackedHistoryValue)
-  const rawValidation = timed(() => {
-    for (const entry of parsedRaw.value.events) historyEntrySchema.parse(entry)
-  })
-  const packedValidation = timed(() => sessionHistoryValueSchema.parse(parsedPacked.value))
-  const rawPreparation = timed(() => conversationInputs(parsedRaw.value.events))
-  const packedPreparation = timed(() => conversationInputs(historyEntries(parsedPacked.value.records)))
+  const parsedRaw = timed((): unknown => JSON.parse(rawJson.value))
+  const parsedPacked = timed((): unknown => JSON.parse(packedJson.value))
+  const rawValidation = timed(() => rawSessionHistoryValueSchema.parse(parsedRaw.value))
+  const packedValidation = timed(() => sessionHistoryValueSchema.parse(parsedPacked.value) as unknown as PackedHistoryValue)
+  const rawPreparation = timed(() => conversationInputs(rawValidation.value.events))
+  const packedPreparation = timed(() => conversationInputs(historyEntries(packedValidation.value.records)))
 
   assemble(rawPreparation.value.slice(0, 1_000))
   assemble(packedPreparation.value)
