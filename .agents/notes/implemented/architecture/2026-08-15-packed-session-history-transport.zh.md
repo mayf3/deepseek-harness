@@ -32,7 +32,7 @@ Status: implemented
 
 与原始逻辑事件相比，打包使未压缩 JSON 减少 90.8%；与有损的已完成步骤投影候选相比减少 83.4%。Brotli 输出相对原始形式减少 73.2%，相对该投影候选减少 44.8%。这些数字描述该样本，并非协议保证；收益随 delta run 的长度与规律性变化。
 
-可选运行的 `packages/client/runtime/tests/history-transport.perf.client.ts` benchmark 使用合成内容构造相同的逻辑事件数、普通事件数与 delta run 数。`DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.perf.config.ts packages/client/runtime/tests/history-transport.perf.client.ts` 会在 `HISTORY_TRANSPORT_PERF_RESULT` 下报告协议体积、Host／client 计时与采样的额外 V8 堆峰值；第二组清单会在 `HISTORY_WHITESPACE_PREFIX_PERF_RESULT` 下报告 10,000、20,000 与 40,000 个成员的空白前缀 run 各五次精确解码的中位数。堆测量会在三次运行前强制执行垃圾回收，并相对于相同的已初始化 benchmark 状态，报告 Host 构造／序列化或 Client 解析／校验／解码／折叠各主要阶段之后所观察峰值的中位数。该指标不测量进程 RSS，也可能遗漏单个采样阶段内部的瞬态峰值。CI 不执行这组手动性能用例，其中也没有依赖机器性能的耗时或内存断言；结构断言固定 fixture 的事件规模、精确解码事件数，以及双消费方 Assistant 折叠 fixture 的一致最终状态，包括 delta 数量与末个 delta 序号。
+可选运行的 `packages/client/runtime/tests/history-transport.perf.client.ts` benchmark 使用合成内容构造相同的逻辑事件数、普通事件数与 delta run 数。`DSH_SNAPSHOT=replay pnpm exec vitest run --config vitest.web.perf.config.ts packages/client/runtime/tests/history-transport.perf.client.ts` 会在 `HISTORY_TRANSPORT_PERF_RESULT` 下报告协议体积、Host／client 计时、未压缩且采用 chunked response 的 Node loopback 传输中位数、组合后的合成 API 等待／UI 就绪时间，以及采样的额外 V8 堆峰值；第二组清单会在 `HISTORY_WHITESPACE_PREFIX_PERF_RESULT` 下报告 10,000、20,000 与 40,000 个成员的空白前缀 run 各五次精确解码的中位数。组合计时从内存事件数组开始，不包含冷持久化读取、projection 与 presenter 工作、生产 API bridge 与 RPC 信封，也不包含 Chromium 调度，因此它是对比清单，而非生产环境 wall-clock 延迟。堆测量会在三次运行前强制执行垃圾回收，并相对于相同的已初始化 benchmark 状态，报告 Host 构造／序列化或 Client 解析／校验／解码／折叠各主要阶段之后所观察峰值的中位数；该指标不测量进程 RSS、external 或 ArrayBuffer 内存，也可能遗漏单个采样阶段内部的瞬态峰值。CI 不执行这组手动性能用例，其中也没有依赖机器性能的耗时或内存断言；结构断言固定 fixture 的事件规模、精确解码事件数，以及双消费方 Assistant 折叠 fixture 的一致最终状态，包括 delta 数量与末个 delta 序号。
 
 ## 曾考虑的替代方案
 

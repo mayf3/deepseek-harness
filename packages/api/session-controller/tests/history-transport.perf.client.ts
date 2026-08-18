@@ -1,6 +1,7 @@
 /** Opt-in synthetic benchmark for packed session-history transport and exact replay. */
 
 import { createHash } from 'node:crypto'
+import { createServer, type Server } from 'node:http'
 import { performance } from 'node:perf_hooks'
 import { brotliCompressSync, gzipSync } from 'node:zlib'
 import { expect, it } from 'vitest'
@@ -36,6 +37,19 @@ interface HeapPeaks<T> {
   readonly value: T
   readonly medianPeakBytes: number
   readonly peakBytes: readonly number[]
+}
+
+interface TransferSample {
+  readonly headersMs: number
+  readonly bodyMs: number
+  readonly totalMs: number
+}
+
+interface TransferTimings {
+  readonly headersMs: number
+  readonly bodyMs: number
+  readonly totalMs: number
+  readonly samples: readonly TransferSample[]
 }
 
 interface FoldState {
@@ -81,6 +95,67 @@ function reduction(before: number, after: number): number {
 function median(values: readonly number[]): number {
   const ordered = [...values].sort((left, right) => left - right)
   return ordered[Math.floor(ordered.length / 2)]!
+}
+
+async function listen(server: Server): Promise<number> {
+  await new Promise<void>((resolve, reject) => {
+    const failed = (error: Error): void => { reject(error) }
+    server.once('error', failed)
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', failed)
+      resolve()
+    })
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('history transport benchmark server has no TCP port')
+  return address.port
+}
+
+async function close(server: Server): Promise<void> {
+  if (!server.listening) return
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error === undefined) resolve()
+      else reject(error)
+    })
+  })
+}
+
+async function loopbackTransfer(json: string): Promise<TransferTimings> {
+  const server = createServer((_request, response) => {
+    // Production Response.json reaches the bridge without content-length, so
+    // leave Node's response chunked for the same body-transfer behavior.
+    response.writeHead(200, { 'content-type': 'application/json' })
+    response.write(json)
+    response.end()
+  })
+  const port = await listen(server)
+  const once = async (): Promise<TransferSample> => {
+    const started = performance.now()
+    const response = await fetch(`http://127.0.0.1:${String(port)}/`)
+    const headers = performance.now()
+    const body = await response.text()
+    const completed = performance.now()
+    if (body.length !== json.length) throw new Error('history transport benchmark received a truncated body')
+    return {
+      headersMs: headers - started,
+      bodyMs: completed - headers,
+      totalMs: completed - started,
+    }
+  }
+  try {
+    await once()
+    const samples: TransferSample[] = []
+    for (let index = 0; index < 5; index++) samples.push(await once())
+    return {
+      headersMs: median(samples.map(sample => sample.headersMs)),
+      bodyMs: median(samples.map(sample => sample.bodyMs)),
+      totalMs: median(samples.map(sample => sample.totalMs)),
+      samples,
+    }
+  } finally {
+    await close(server)
+  }
 }
 
 /** Measure caller-sampled additional V8 heap from forced-GC baselines. */
@@ -246,7 +321,7 @@ function digest(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
-it('reports packed history transport and exact replay costs', () => {
+it('reports packed history transport and exact replay costs', async () => {
   const fixture = timed(buildEvents)
 
   assemble(conversationInputs(fixture.value.slice(0, 1_000).map(event => ({ event }))))
@@ -291,6 +366,8 @@ it('reports packed history transport and exact replay costs', () => {
   const packedGzip = timed(() => gzipSync(packedJson.value).byteLength)
   const rawBrotli = timed(() => brotliCompressSync(rawJson.value).byteLength)
   const packedBrotli = timed(() => brotliCompressSync(packedJson.value).byteLength)
+  const rawTransfer = await loopbackTransfer(rawJson.value)
+  const packedTransfer = await loopbackTransfer(packedJson.value)
 
   const rawClientHeap = sampledPeakHeap((sample) => {
     const parsed = JSON.parse(rawJson.value) as RawHistoryValue
@@ -347,6 +424,10 @@ it('reports packed history transport and exact replay costs', () => {
   const packedResponseMs = packed.ms + packedRecords.ms + packedJson.ms
   const rawClientMs = parsedRaw.ms + rawValidation.ms + rawPreparation.ms + rawFold.ms
   const packedClientMs = parsedPacked.ms + packedValidation.ms + packedPreparation.ms + packedFold.ms
+  const rawApiWaitMs = rawResponseMs + rawTransfer.totalMs + parsedRaw.ms + rawValidation.ms
+  const packedApiWaitMs = packedResponseMs + packedTransfer.totalMs + parsedPacked.ms + packedValidation.ms
+  const rawReadyMs = rawResponseMs + rawTransfer.totalMs + rawClientMs
+  const packedReadyMs = packedResponseMs + packedTransfer.totalMs + packedClientMs
   process.stdout.write(`HISTORY_TRANSPORT_PERF_RESULT ${JSON.stringify({
     fixture: {
       buildMs: rounded(fixture.ms),
@@ -395,6 +476,26 @@ it('reports packed history transport and exact replay costs', () => {
       packedResponseMs: rounded(packedResponseMs),
       responseReductionPct: reduction(rawResponseMs, packedResponseMs),
     },
+    transport: {
+      samples: 5,
+      rawHeadersMs: rounded(rawTransfer.headersMs),
+      packedHeadersMs: rounded(packedTransfer.headersMs),
+      rawBodyMs: rounded(rawTransfer.bodyMs),
+      packedBodyMs: rounded(packedTransfer.bodyMs),
+      rawTotalMs: rounded(rawTransfer.totalMs),
+      packedTotalMs: rounded(packedTransfer.totalMs),
+      totalReductionPct: reduction(rawTransfer.totalMs, packedTransfer.totalMs),
+      rawSamples: rawTransfer.samples.map(sample => ({
+        headersMs: rounded(sample.headersMs),
+        bodyMs: rounded(sample.bodyMs),
+        totalMs: rounded(sample.totalMs),
+      })),
+      packedSamples: packedTransfer.samples.map(sample => ({
+        headersMs: rounded(sample.headersMs),
+        bodyMs: rounded(sample.bodyMs),
+        totalMs: rounded(sample.totalMs),
+      })),
+    },
     client: {
       rawParseMs: rounded(parsedRaw.ms),
       packedParseMs: rounded(parsedPacked.ms),
@@ -407,6 +508,14 @@ it('reports packed history transport and exact replay costs', () => {
       rawHistoryMs: rounded(rawClientMs),
       packedHistoryMs: rounded(packedClientMs),
       historyReductionPct: reduction(rawClientMs, packedClientMs),
+    },
+    combined: {
+      rawApiWaitMs: rounded(rawApiWaitMs),
+      packedApiWaitMs: rounded(packedApiWaitMs),
+      apiWaitReductionPct: reduction(rawApiWaitMs, packedApiWaitMs),
+      rawReadyMs: rounded(rawReadyMs),
+      packedReadyMs: rounded(packedReadyMs),
+      readyReductionPct: reduction(rawReadyMs, packedReadyMs),
     },
   })}\n`)
 }, 600_000)
