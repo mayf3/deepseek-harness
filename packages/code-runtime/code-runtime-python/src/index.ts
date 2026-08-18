@@ -1428,7 +1428,10 @@ export class PythonCodeRuntime extends CodeRuntime {
           // falls through, which is also the behavior on platforms with no
           // `/proc` to read.
           const nowStarted = readProcessStart(child.pid)
-          /* v8 ignore next -- the refusal arm needs a real pid recycled into a new group leader between spawn and teardown, which no test can schedule; `readProcessStart` is covered directly instead. */
+          // The refusal arm needs a real pid recycled into a new group leader
+          // between spawn and teardown, which no test can schedule; the reader
+          // itself is covered directly by the process-identity test.
+          /* v8 ignore next -- unreachable without real pid reuse; see above. */
           if (leaderStarted !== undefined && nowStarted !== undefined && nowStarted !== leaderStarted) return
           process.kill(-child.pid, sig)
         } catch {
