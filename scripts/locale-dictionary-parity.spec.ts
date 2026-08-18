@@ -20,7 +20,7 @@
  */
 
 import type { Dirent } from 'node:fs'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
@@ -47,30 +47,27 @@ function sourceFiles(): string[] {
 
 /** Immediate subdirectory names, or none when the path is not a directory. */
 function directories(dir: string): string[] {
-  if (!existsSync(dir)) return []
-  let entries: Dirent[]
+  return readEntries(dir).filter(entry => entry.isDirectory()).map(entry => entry.name)
+}
+
+/**
+ * Directory entries, treating only a genuinely absent directory as empty.
+ * Any other failure (`EACCES`, I/O) rethrows: silently reading it as "absent"
+ * would narrow the sweep and let the gate pass while checking less.
+ * @param dir - absolute directory path.
+ * @returns entries, or none when the directory does not exist.
+ */
+function readEntries(dir: string): Dirent[] {
   try {
-    entries = readdirSync(dir, { withFileTypes: true })
-  } catch {
-    // Swallows only the race between existsSync and readdirSync (a package
-    // directory removed mid-sweep); readdirSync is the sole statement in the
-    // try, so no other failure can reach here.
-    return []
+    return readdirSync(dir, { withFileTypes: true })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
   }
-  return entries.filter(entry => entry.isDirectory()).map(entry => entry.name)
 }
 
 function walk(dir: string, out: string[]): void {
-  if (!existsSync(dir)) return
-  let entries: Dirent[]
-  try {
-    entries = readdirSync(dir, { withFileTypes: true })
-  } catch {
-    // Same narrow race as `directories`: readdirSync is the only statement
-    // guarded, so this cannot mask a parse or assertion failure.
-    return
-  }
-  for (const entry of entries) {
+  for (const entry of readEntries(dir)) {
     const full = resolve(dir, entry.name)
     if (entry.isDirectory()) walk(full, out)
     else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) out.push(full)
