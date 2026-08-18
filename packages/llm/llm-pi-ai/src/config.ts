@@ -294,8 +294,7 @@ function rejectRemovedFields(provider: string, source: PiAiProviderProfile): voi
  * Validate profiles and return a detached route-keyed map suitable for
  * per-request reads. This is the one explicit resolve step, so an omitted dict
  * resolves to the empty (dormant) route set here rather than through a hidden
- * fallback, and each route's models, retry policy, and pi-ai provider are
- * materialized once.
+ * fallback, and each route's models and pi-ai provider are materialized once.
  * @param providers - configured provider profiles keyed by route.
  * @returns validated profiles in configuration order.
  */

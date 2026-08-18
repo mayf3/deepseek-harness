@@ -832,7 +832,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'providerRetryPolicy(provider: string): ResolvedRetryPolicy',
-        description: 'Read the retry policy captured when one provider route was registered.',
+        description: 'Resolve the retry policy captured when one provider route was registered.',
         parameters: [{ name: 'provider', description: 'registered provider route to inspect.' }],
         returns: 'the provider-owned policy, with normal defaults already resolved.',
       },

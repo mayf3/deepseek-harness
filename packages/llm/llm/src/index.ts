@@ -288,6 +288,7 @@ export class LlmRuntime extends Service {
     string,
     (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>
   >()
+
   constructor(ctx: Context) {
     super(ctx, 'llm')
   }
@@ -558,7 +559,7 @@ export class LlmRuntime extends Service {
   }
 
   /**
-   * Read the retry policy captured when one provider route was registered.
+   * Resolve the retry policy captured when one provider route was registered.
    * @param provider - registered provider route to inspect.
    * @returns the provider-owned policy, with normal defaults already resolved.
    */

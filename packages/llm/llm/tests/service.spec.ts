@@ -203,7 +203,7 @@ describe('LlmRuntime', () => {
     expect(adapter.lastOptions?.messages[0]).toBe(message)
   })
 
-  it('captures provider-owned retry policies and defaults omitted policies', async () => {
+  it('captures provider-owned retry policy at registration and defaults omission', async () => {
     const configured = resolveRetryPolicy({ mode: 'always' }, 'test retryPolicy')
     const adapter = new class extends ScriptedAdapter {
       override providerRetryPolicy(provider: string) {
