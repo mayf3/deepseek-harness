@@ -305,10 +305,10 @@ export abstract class ReleaseFamily {
   abstract readonly installedEntry: InstalledEntry | undefined
 }
 
-/** `packages/*` and `apps/*`: one shared version across the whole family. */
+/** Release packages and apps: one shared version across the whole family. */
 class DshFamily extends ReleaseFamily {
   readonly id = 'dsh'
-  readonly patterns = ['packages/*/*/package.json', 'apps/*/package.json'] as const
+  readonly patterns = ['packages/!(experimental)/*/package.json', 'apps/*/package.json'] as const
   readonly tagPrefix = 'dsh-v'
 
   /**
