@@ -10,9 +10,7 @@ import type {
 import {
   createSnapshotStore, type SnapshotStore,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import {
-  nodeAtPath, rehydrateSchema, type SchemaNode,
-} from '@deepseek-ai/dsh-client-schema-form'
+import type { SchemaNode, SettingsSchemaService } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { displayPermissionPreset } from './presentation.ts'
 
 /** Permission's settings namespace on the host wire. */
@@ -45,15 +43,16 @@ interface ConstChoice {
 /**
  * Read the dynamic preset enum encoded by the host's `defaultPreset` schema.
  * @param view - permission namespace descriptor.
+ * @param schema - settings schema operations.
  * @returns current value and selectable options.
  */
-export function permissionDefaultOf(view: SettingsNamespaceView): {
+export function permissionDefaultOf(view: SettingsNamespaceView, schema: SettingsSchemaService): {
   currentValue: string
   options: PermissionDefaultOption[]
 } {
   const value = (view.value as { defaultPreset?: unknown } | null)?.defaultPreset
   if (typeof value !== 'string') throw new Error('permission settings has no defaultPreset value')
-  const node = nodeAtPath(rehydrateSchema(view.schema), ['defaultPreset'])
+  const node = schema.nodeAtPath(schema.rehydrate(view.schema), ['defaultPreset'])
   if (node === undefined) throw new Error('permission settings schema has no defaultPreset field')
   const rawChoices = node.type === 'union'
     ? (node.list as SchemaNode[] | undefined) ?? []
@@ -91,7 +90,10 @@ export class PermissionPresetSettingsController {
   private view: SettingsNamespaceView | undefined
 
   /** @param api - Settings wire face. */
-  constructor(private readonly api: Pick<IApiClient, 'settings'>) {}
+  constructor(
+    private readonly api: Pick<IApiClient, 'settings'>,
+    private readonly schema: SettingsSchemaService,
+  ) {}
 
   /**
    * Refresh the permission descriptor. Latest request wins.
@@ -161,7 +163,7 @@ export class PermissionPresetSettingsController {
   }
 
   private accept(view: SettingsNamespaceView, writable: boolean): void {
-    const resolved = permissionDefaultOf(view)
+    const resolved = permissionDefaultOf(view, this.schema)
     this.view = view
     this.store.update((state) => {
       state.status = 'ready'
