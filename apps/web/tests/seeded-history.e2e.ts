@@ -33,6 +33,7 @@ const UI_EXPECTED = fileURLToPath(new URL('./snapshots/seeded-history/ui.expecte
 // Command-row goldens over the same conversation after direct host commands.
 const COMMAND_ROW_EXPECTED = fileURLToPath(new URL('./snapshots/seeded-history/command-row.expected.md', import.meta.url))
 const FEEDBACK_ROW_EXPECTED = fileURLToPath(new URL('./snapshots/seeded-history/feedback-row.expected.md', import.meta.url))
+const FILE_OPEN_FAILURE_EXPECTED = fileURLToPath(new URL('./snapshots/seeded-history/file-open-failure.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'seeded-history-web-e2e'
 
@@ -427,6 +428,8 @@ describe('web e2e: seeded history renders through cold resume', () => {
       await fileLink.click()
       const dialog = page.getByRole('dialog', { name: 'Couldn’t open file' })
       await dialog.waitFor({ timeout: 5_000 })
+      const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+      await compareOrRefreshGolden(FILE_OPEN_FAILURE_EXPECTED, snapshot, MODE)
       await expect.poll(() => dialog.innerText(), { timeout: 5_000 })
         .toContain('path open failed: xdg-open is not available')
       await page.getByRole('button', { name: 'Retry' }).click()
@@ -544,6 +547,6 @@ describe('web e2e: seeded history renders through cold resume', () => {
     // stream would have failed the turn loudly. Cleanliness pins the wire.
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['command-row.expected.md', 'feedback-row.expected.md', 'seed.jsonl', 'ui.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['command-row.expected.md', 'feedback-row.expected.md', 'file-open-failure.expected.md', 'seed.jsonl', 'ui.expected.md'])
   })
 })

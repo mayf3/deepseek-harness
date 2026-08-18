@@ -152,7 +152,7 @@ function emptyWorkspaces() {
 function makeHarness(init?: Partial<ConversationSnapshot>) {
   const { set, source } = makeSource(init)
   const openDetails = vi.fn<(t: SelectionTarget) => void>()
-  const openFile = vi.fn<(path: string) => void>()
+  const openFile = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined)
   const loadOlder = vi.fn()
   const inspectCall = vi.fn<(callId: string) => void>()
   // In-memory scroll memory matching the apply.ts per-session map contract.
@@ -1018,6 +1018,18 @@ describe('ChatView', () => {
     await act(async () => { h.toolOwners[0]!.openFile('empty.ts') })
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: '无法打开文件' }).textContent).toContain('无法打开此文件')
+    })
+  })
+
+  it('names a workspace-folder Host refusal as a folder', async () => {
+    const openFile = vi.fn<(path: string) => Promise<void>>()
+      .mockRejectedValueOnce(new Error(''))
+    const h = makeHarness({ nodes: [toolResult(3, 'a')] })
+    h.props.openFile = openFile
+    render(<h.ChatView {...h.props} />)
+    await act(async () => { h.toolOwners[0]!.openFile('.') })
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: '无法打开文件夹' }).textContent).toContain('无法打开此文件夹')
     })
   })
 

@@ -12,9 +12,9 @@ Status: implemented
 
 ## 决策
 
-inject 返回 `workspaces.openPath` 的 promise。聊天视图包装该打开器：拒绝时打开页面内 Modal，展示抛出的文本（文本为空时用 `fileOpen.unknown`），并提供对同一路径的重试；取消、Escape、关闭控件和点击遮罩会关掉对话框。关闭之后才落到的结果会被忽略，因此已取消的进行中拒绝不能再次打开对话框。
+inject 返回 `workspaces.openPath` 的 promise。聊天视图包装该打开器：拒绝时打开页面内 Modal，展示抛出的文本（文本为空时用未知打开回退文案），并提供对同一路径的重试；取消、Escape、关闭控件和点击遮罩会关掉对话框。关闭之后才落到的结果会被忽略，因此已取消的进行中拒绝不能再次打开对话框。
 
-对话框位于 chat 视图（拥有 Host 调用），而不是每个工具行。产物文件标签和收尾消息中的提及已经共用该打开器，因此走同一包装。
+对话框位于 chat 视图（拥有 Host 调用），而不是每个工具行。产物文件标签和收尾消息中的提及已经共用该打开器，因此走同一包装。产物文件的文件夹操作打开 `.`，该拒绝使用文件夹标题和未知打开回退文案。
 
 Host 消息按抛出内容展示。`WorkspaceRuntime.openPath` 会在 wire 错误前加上 `path open failed: ` 前缀；对话框不拆掉该前缀。
 
@@ -22,7 +22,7 @@ Host 消息按抛出内容展示。`WorkspaceRuntime.openPath` 会在 wire 错�
 
 - **按行内联错误。** Host 调用由会话拥有，多个入口共用一个打开器；行内横幅会在每个点击目标旁重复同一拒绝。
 - **没有重试的 toast。** 产品要求同时给出原因和重试入口。工作区文件夹采纳对话框已经把这两者配对。
-- **写入 chat store 并持久化。** 打开失败是瞬时视图状态。chat store 会在刷新后存活，于是残留对话框会在无法有效重试原手势的刷新之后回来。
+- **写入 chat store 并跨 remount 保留。** 打开失败是瞬时视图状态。chat store 会在视图 remount 后存活，于是残留对话框会在无法有效重试原手势的页签切换之后回来。
 
 ## 后果
 
@@ -30,4 +30,4 @@ Host 消息按抛出内容展示。`WorkspaceRuntime.openPath` 会在 wire 错�
 
 ## 测试
 
-包测试覆盖 inject 拒绝、对话框文案（Error、非 Error、空文本）、同一路径重试、取消，以及关闭之后才落到的结果。`apps/web/tests/seeded-history.e2e.ts` 在冷恢复的 read 行上把 `host.openPath` stub 为失败，并断言英文原因以及对同一 payload 的第二次调用。
+包测试覆盖 inject 拒绝、对话框文案（Error、非 Error、空文本、工作区文件夹）、同一路径重试、取消，以及关闭之后才落到的结果。`apps/web/tests/seeded-history.e2e.ts` 在冷恢复的 read 行上把 `host.openPath` stub 为失败，用 `file-open-failure.expected.md` 钉住组装后的对话框，并断言英文原因以及对同一 payload 的第二次调用。

@@ -102,6 +102,11 @@ function openFailureMessage(error: unknown, fallback: string): string {
   return message === '' ? fallback : message
 }
 
+/** ProducedFiles opens the session workspace as `.`. */
+function isFolderOpenPath(path: string): boolean {
+  return path === '.'
+}
+
 function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | null {
   let latest: number | null = null
   for (const turn of timeline.turns.values()) {
@@ -175,7 +180,7 @@ export function ChatView({
   const requestOpenFile = useCallback((path: string) => {
     const id = ++fileOpenRequest.current
     setFileOpenBusy(true)
-    void Promise.resolve(openFile(path)).then(
+    void openFile(path).then(
       () => {
         if (id !== fileOpenRequest.current) return
         setFileOpenError(null)
@@ -183,7 +188,13 @@ export function ChatView({
       },
       (error: unknown) => {
         if (id !== fileOpenRequest.current) return
-        setFileOpenError({ path, message: openFailureMessage(error, t('fileOpen.unknown')) })
+        setFileOpenError({
+          path,
+          message: openFailureMessage(
+            error,
+            t(isFolderOpenPath(path) ? 'fileOpen.folderUnknown' : 'fileOpen.unknown'),
+          ),
+        })
         setFileOpenBusy(false)
       },
     )
@@ -468,6 +479,7 @@ export function ChatView({
       </div>
       {fileOpenError !== null && (
         <FileOpenErrorDialog
+          path={fileOpenError.path}
           message={fileOpenError.message}
           busy={fileOpenBusy}
           onClose={closeFileOpenError}
@@ -481,8 +493,9 @@ export function ChatView({
 
 /** In-page Host open-path refusal: the wire reason plus a retry of the same path. */
 function FileOpenErrorDialog({
-  message, busy, onClose, onRetry, t,
+  path, message, busy, onClose, onRetry, t,
 }: {
+  path: string
   message: string
   busy: boolean
   onClose: () => void
@@ -494,7 +507,7 @@ function FileOpenErrorDialog({
       open
       onClose={onClose}
       closeLabel={t('close')}
-      title={t('fileOpen.title')}
+      title={t(isFolderOpenPath(path) ? 'fileOpen.folderTitle' : 'fileOpen.title')}
       description={message}
       footer={(
         <>

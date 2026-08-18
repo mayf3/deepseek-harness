@@ -244,7 +244,7 @@ describe('conversation slot inject API', () => {
     const b = await bench()
     b.runtime.workspaces.stub('openPath', () => Promise.reject(new Error('xdg-open is not available')))
     const { injected } = b.chatViewApi(ROOT)
-    await expect(Promise.resolve(injected.openFile('src/a.ts'))).rejects.toThrow('xdg-open is not available')
+    await expect(injected.openFile('src/a.ts')).rejects.toThrow('xdg-open is not available')
     await b.runtime.dispose()
   })
 
