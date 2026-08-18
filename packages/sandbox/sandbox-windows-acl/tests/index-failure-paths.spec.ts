@@ -522,12 +522,13 @@ describe('AclSandbox spawn', () => {
     await sandbox.init()
     const child = sandbox.spawn({ command: 'probe.exe' })
     api.closeHandle = vi.fn(() => 0)
-    await expect(child.wait()).rejects.toMatchObject({
-      errors: expect.arrayContaining([
-        expect.objectContaining({ api: 'CloseHandle' }),
-        expect.objectContaining({ api: 'TerminateProcess' }),
-      ]),
-    })
+    const failure = await child.wait().catch((error: unknown): unknown => error)
+    expect(failure).toBeInstanceOf(AggregateError)
+    if (!(failure instanceof AggregateError)) throw new Error('expected AggregateError')
+    const apis = (failure.errors as unknown[])
+      .filter((error): error is Win32Error => error instanceof Win32Error)
+      .map(error => error.api)
+    expect(apis).toEqual(expect.arrayContaining(['CloseHandle', 'TerminateProcess']))
   })
 })
 
