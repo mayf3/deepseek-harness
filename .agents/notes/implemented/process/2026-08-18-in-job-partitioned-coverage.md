@@ -18,7 +18,7 @@ When partitioning is enabled, `scripts/run-gates.ts` selects `pnpm run test:cove
 
 The coordinator waits for every child, validates that the blob directory contains exactly the expected files, and then runs one `vitest --merge-reports ... --coverage` command. Only that merged command applies the repository's per-file statement, branch, function, and line thresholds, so a partition is never judged against an intentionally partial inventory.
 
-`DSH_COVERAGE_MAX_WORKERS` continues to size the uninstrumented exempt gate and the ordinary non-partitioned path; it does not resize partition children. Native Windows gives the exempt gate two workers and admits four concurrent outer gates: build, production-site validation, instrumented coverage, and exempt-heavy coverage start first, and the observational inventory waits for both coverage gates before entering the available slots. Linux overlaps four instrumented partition processes with two exempt workers, restoring the ordinary path's former four-way instrumented concurrency while keeping every instrumented process single-worker.
+`DSH_COVERAGE_MAX_WORKERS` continues to size the uninstrumented exempt gate and the ordinary non-partitioned path; it does not resize partition children. Native Windows gives the exempt gate two workers and admits four concurrent outer gates. Build, production-site validation, and instrumented coverage start immediately; exempt-heavy coverage starts only after build passes, preventing its temporary Oxlint probes from racing source compilation. The observational inventory waits only for both coverage gates to settle, so it still runs after a coverage failure; each gate's `needs` dependencies remain pass-required. Linux overlaps four instrumented partition processes with two exempt workers, restoring the ordinary path's former four-way instrumented concurrency while keeping every instrumented process single-worker.
 
 ## Failure and output semantics
 
@@ -38,7 +38,7 @@ Completed native Windows comparisons measured two partitions near 405 seconds an
 
 **Raise the Vitest worker count inside one instrumented process.** Rejected because completed Windows trials at higher fan-out exposed worker exits, fixture instability, and Node 24 CJS lexer failures. Separate single-worker processes preserve isolation while still executing the selected partitions concurrently.
 
-**Use one partition count on every host.** Rejected because Linux's two-process run and Windows's eight-process run have different startup costs and resource ceilings. Each fixed configuration requires its own completed end-to-end evidence.
+**Use one partition count on every host.** Rejected because Linux's four-process run and Windows's eight-process run have different startup costs and resource ceilings. Each fixed configuration requires its own completed end-to-end evidence.
 
 **Apply thresholds independently in each partition.** Rejected because every partition intentionally sees only part of the suite and would report false uncovered files. Threshold ownership belongs to the merged report.
 

@@ -45,6 +45,8 @@ export interface Gate {
   command: string
   args: string[]
   needs?: string[]
+  /** Gate ids that must settle, regardless of outcome, before this gate starts. */
+  after?: string[]
   env?: Record<string, string | undefined>
   /** Keep a failure visible without failing the aggregate. */
   allowFailure?: boolean
@@ -454,8 +456,10 @@ function ciWindowsBlockingGates(): Gate[] {
 }
 
 function ciWindowsCompleteGates(): Gate[] {
-  const coverage = coverageGates()
-  const coverageNeeds = coverage.map(gate => gate.id)
+  const coverage = coverageGates().map(gate => gate.id === 'coverage-exempt-heavy'
+    ? { ...gate, needs: [...new Set(['build', ...(gate.needs ?? [])])] }
+    : gate)
+  const coverageAfter = coverage.map(gate => gate.id)
   const observational = ciWindowsObservationalGates()
     // The required production site replaces the observational MPA build; both
     // VitePress modes write the same output directory and cannot overlap.
@@ -463,7 +467,7 @@ function ciWindowsCompleteGates(): Gate[] {
     .map(gate => ({
       ...gate,
       allowFailure: true,
-      needs: [...new Set([...coverageNeeds, ...(gate.needs ?? [])])],
+      after: [...new Set([...coverageAfter, ...(gate.after ?? [])])],
     }))
   return [
     pnpmScript('build', 'build'),
@@ -713,6 +717,11 @@ function validateGateGraph(gates: readonly Gate[]): void {
         throw new Error(`run-gates: gate ${JSON.stringify(gate.id)} depends on unknown gate ${JSON.stringify(dependency)}.`)
       }
     }
+    for (const predecessor of gate.after ?? []) {
+      if (!ids.has(predecessor)) {
+        throw new Error(`run-gates: gate ${JSON.stringify(gate.id)} waits for unknown gate ${JSON.stringify(predecessor)}.`)
+      }
+    }
   }
 
   const cycle = findDependencyCycle(gates)
@@ -734,8 +743,8 @@ function findDependencyCycle(gates: readonly Gate[]): string[] | undefined {
 
     active.set(id, path.length)
     path.push(id)
-    for (const dependency of gate.needs ?? []) {
-      const cycle = visit(dependency)
+    for (const predecessor of [...(gate.needs ?? []), ...(gate.after ?? [])]) {
+      const cycle = visit(predecessor)
       if (cycle !== undefined) return cycle
     }
     path.pop()
@@ -776,7 +785,7 @@ export async function runGates(
   for (;;) {
     let madeProgress = false
     while (running.length < maxActive) {
-      const ready = gates.find(gate => states.get(gate.id) === 'pending' && dependenciesPassed(gate, states))
+      const ready = gates.find(gate => states.get(gate.id) === 'pending' && predecessorsReady(gate, states))
       if (ready === undefined) break
       states.set(ready.id, 'running')
       running.push({ gate: ready, promise: execute(ready) })
@@ -785,32 +794,24 @@ export async function runGates(
     }
 
     if (running.length === 0) {
-      let pending = gates.filter(gate => states.get(gate.id) === 'pending')
-      while (pending.length > 0) {
-        const gate = pending.find(item => (item.needs ?? []).some((id) => {
-          const state = states.get(id)
-          return state === 'failed' || state === 'skipped'
-        }))
-        if (gate === undefined) throw new Error('run-gates: validated graph stalled without a failed dependency.')
-        const failedDeps = (gate.needs ?? []).filter((id) => {
-          const state = states.get(id)
-          return state === 'failed' || state === 'skipped'
-        })
-        const result: GateResult = {
-          gate,
-          status: 'skipped',
-          durationMs: 0,
-          output: [],
-          exitCode: null,
-          signalCode: null,
-          error: `dependency failed or skipped: ${failedDeps.join(', ')}`,
-        }
-        states.set(gate.id, 'skipped')
-        results.set(gate.id, result)
-        observe(result)
-        pending = pending.filter(item => item !== gate)
+      const pending = gates.filter(gate => states.get(gate.id) === 'pending')
+      if (pending.length === 0) break
+      const gate = pending.find(item => (item.needs ?? []).some(id => gateFailed(states.get(id))))
+      if (gate === undefined) throw new Error('run-gates: validated graph stalled without a failed dependency.')
+      const failedDeps = (gate.needs ?? []).filter(id => gateFailed(states.get(id)))
+      const result: GateResult = {
+        gate,
+        status: 'skipped',
+        durationMs: 0,
+        output: [],
+        exitCode: null,
+        signalCode: null,
+        error: `dependency failed or skipped: ${failedDeps.join(', ')}`,
       }
-      break
+      states.set(gate.id, 'skipped')
+      results.set(gate.id, result)
+      observe(result)
+      continue
     }
 
     if (!madeProgress) {
@@ -829,8 +830,17 @@ export async function runGates(
   })
 }
 
-function dependenciesPassed(gate: Gate, states: Map<string, GateState>): boolean {
+function predecessorsReady(gate: Gate, states: Map<string, GateState>): boolean {
   return (gate.needs ?? []).every(id => states.get(id) === 'passed')
+    && (gate.after ?? []).every(id => gateSettled(states.get(id)))
+}
+
+function gateSettled(state: GateState | undefined): boolean {
+  return state === 'passed' || state === 'failed' || state === 'skipped'
+}
+
+function gateFailed(state: GateState | undefined): boolean {
+  return state === 'failed' || state === 'skipped'
 }
 
 /**

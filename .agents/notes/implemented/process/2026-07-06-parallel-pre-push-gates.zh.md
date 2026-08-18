@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-[scripts/run-gates.ts](../../../../scripts/run-gates.ts) 拥有 CI、`doc-sync` 和按需启用的 `check:all` 命令所使用的有界调度器。它将具名模式展开为叶子门禁，在启动子进程前拒绝空的或有歧义的依赖图，遵守产物依赖，默认缓冲可归因的输出，分别报告进程退出与信号终止结果，并在调用方需要不同 worker 上限时接受 `DSH_GATE_CONCURRENCY`。标记为 `allowFailure` 的门禁仍会报告结果，但不会使聚合流程失败。
+[scripts/run-gates.ts](../../../../scripts/run-gates.ts) 拥有 CI、`doc-sync` 和按需启用的 `check:all` 命令所使用的有界调度器。它将具名模式展开为叶子门禁，在启动子进程前拒绝空的或有歧义的依赖图，遵守产物依赖，默认缓冲可归因的输出，分别报告进程退出与信号终止结果，并在调用方需要不同 worker 上限时接受 `DSH_GATE_CONCURRENCY`。`needs` 边要求前置门禁通过，否则跳过依赖方；`after` 边只等待前置门禁以任意结果结算，随后仍允许后继门禁运行。标记为 `allowFailure` 的门禁仍会报告结果，但不会使聚合流程失败。
 
 自身子进程能够保留有效归因的长时间协调门禁可以选择 `streamOutput`。其 stdout 与 stderr 会立即到达父进程，不会被缓冲，也不会在结束时重复打印。分区覆盖率与并行 Web 快照使用该模式，使运行中途的失败无需等待兄弟工作结束就能显示。
 
@@ -24,7 +24,7 @@ Node 24 消费方任务采用单个包含 10 道门禁的模式，而非由 shel
 
 ## 验证
 
-[scripts/run-gates.spec.ts](../../../../scripts/run-gates.spec.ts) 在执行器运行前拒绝无效图，锁定消费方与原生 Windows 清单及其依赖或失败语义，通过真实子进程验证信号终止，并证明流式输出会立即显示且不被缓冲。[scripts/publint-all.spec.ts](../../../../scripts/publint-all.spec.ts) 在下游产物消费方运行前拒绝缺失的公开导出。
+[scripts/run-gates.spec.ts](../../../../scripts/run-gates.spec.ts) 在执行器运行前拒绝无效图，锁定必须通过与只等结算两种顺序，锁定消费方与原生 Windows 清单及其失败语义，通过真实子进程验证信号终止，并证明流式输出会立即显示且不被缓冲。[scripts/publint-all.spec.ts](../../../../scripts/publint-all.spec.ts) 在下游产物消费方运行前拒绝缺失的公开导出。
 
 ## 曾考虑的替代方案
 

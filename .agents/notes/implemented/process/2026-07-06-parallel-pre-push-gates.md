@@ -12,7 +12,7 @@ Aggregate jobs such as documentation synchronization hide long sequential chains
 
 ## Decision
 
-[scripts/run-gates.ts](../../../../scripts/run-gates.ts) owns the bounded scheduler used by CI, `doc-sync`, and the opt-in `check:all` command. It expands named modes into leaf gates, rejects empty or ambiguous dependency graphs before starting a child, respects artifact dependencies, buffers attributable output by default, reports exit and signal outcomes independently, and accepts `DSH_GATE_CONCURRENCY` when a caller needs a different worker bound. A gate marked `allowFailure` still reports its result but does not fail the aggregate.
+[scripts/run-gates.ts](../../../../scripts/run-gates.ts) owns the bounded scheduler used by CI, `doc-sync`, and the opt-in `check:all` command. It expands named modes into leaf gates, rejects empty or ambiguous dependency graphs before starting a child, respects artifact dependencies, buffers attributable output by default, reports exit and signal outcomes independently, and accepts `DSH_GATE_CONCURRENCY` when a caller needs a different worker bound. A `needs` edge requires the predecessor to pass and skips its dependent otherwise; an `after` edge waits for any terminal outcome and then permits the follower to run. A gate marked `allowFailure` still reports its result but does not fail the aggregate.
 
 Long coordinator gates whose own subprocesses preserve useful attribution may opt into `streamOutput`. Their stdout and stderr reach the parent immediately without being buffered or printed again at completion. Partitioned coverage and parallel Web snapshots use this mode so a mid-run failure is visible without waiting for sibling work.
 
@@ -24,7 +24,7 @@ The per-gate package scripts remain the vocabulary for ad hoc local runs. `hygie
 
 ## Verification
 
-[scripts/run-gates.spec.ts](../../../../scripts/run-gates.spec.ts) rejects invalid graphs before the executor runs, pins the consumer and native Windows inventories and their dependency or failure semantics, exercises signal termination through a real child process, and proves that streamed output is immediate and unbuffered. [scripts/publint-all.spec.ts](../../../../scripts/publint-all.spec.ts) rejects a missing public export before downstream artifact consumers run.
+[scripts/run-gates.spec.ts](../../../../scripts/run-gates.spec.ts) rejects invalid graphs before the executor runs, pins pass-required and settle-only ordering, pins the consumer and native Windows inventories and their failure semantics, exercises signal termination through a real child process, and proves that streamed output is immediate and unbuffered. [scripts/publint-all.spec.ts](../../../../scripts/publint-all.spec.ts) rejects a missing public export before downstream artifact consumers run.
 
 ## Alternatives considered
 
