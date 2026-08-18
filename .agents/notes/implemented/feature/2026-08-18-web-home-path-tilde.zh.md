@@ -14,7 +14,7 @@ Workspace 悬停卡片和 Tool 调用摘要会显示完整的 POSIX 家目录路
 
 `dsh-client-runtime` 中的 `abbreviateHomePath` 是仅用于展示的辅助函数。当路径是 POSIX 家目录或其后代时返回 `~` 或 `~/…`；`home` 缺失、为空或为 `/`，任一侧是 Windows 盘符或 UNC 路径，或只是前缀命中（`/Users/u` 不能收走 `/Users/u2`）时，路径保持不变。Tool 摘要先做工作区相对缩短，再调用该辅助函数，因此会话 cwd 内的路径仍然更短。`filePath`、Host 打开以及 Workspace 悬停复制仍使用作者给出的文件系统路径。
 
-`ui-tool` 与 `ui-workspace` 在各自的 slot 注册上注入 `connection.hostDescription`。ChatView 不增加 Host 描述钩子。测试假对象若缺少 `hostDescription`，会回退到空来源，因此不会进行缩写。
+`ui-tool` 与 `ui-workspace` 在各自的 slot 注册上注入 `connection.hostDescription`。ChatView 不增加 Host 描述钩子。该字段在 `ConnectionHandle` 上是必填的；测试假对象提供一个来源，其快照在连接完成前可以为 undefined。
 
 fixture 的 Host 家目录是 `/home/fixture`。第二个 fixture Workspace 位于 `/home/fixture/Documents/project`，组装回放可以悬停出 `~/Documents/project`，而不必移动现有的 `/tmp/fixture` 账户。TerminalBlock 自有的提示符标签折叠保持不变。
 
@@ -30,7 +30,7 @@ fixture 的 Host 家目录是 `/home/fixture`。第二个 fixture Workspace 位�
 
 ## Consequences
 
-POSIX 家目录下的 Workspace 悬停路径，以及缩短 cwd 后仍落在家目录里的 Tool 路径摘要，会显示为 `~`。复制与打开仍使用完整路径。Windows 盘符和 UNC 路径永远不会变成 `~`。若 Host 把 `/` 报成 home，不会把整个文件系统收成 `~`。缺少 `hostDescription` 的不完整测试连接假对象会渲染未缩写路径，而不是挂起或抛错。
+POSIX 家目录下的 Workspace 悬停路径，以及缩短 cwd 后仍落在家目录里的 Tool 路径摘要，会显示为 `~`。复制与打开仍使用完整路径。Windows 盘符和 UNC 路径永远不会变成 `~`。若 Host 把 `/` 报成 home，不会把整个文件系统收成 `~`。首次 describe 之前或重连期间，来源快照为 undefined，路径保持未缩写。
 
 ## Testing
 

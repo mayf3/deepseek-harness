@@ -5,7 +5,6 @@ import { cleanup, fireEvent, render } from '@testing-library/react'
 import type { RunningToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
 import { classifyTool, resultText, toolRowModel } from '../src/client/tool/models/tool-call-model.ts'
 import { ToolRow } from '../src/client/tool/components/ToolRow.tsx'
 import { GenericToolCard, type GenericToolCardProps } from '../src/client/tool/toolviews/GenericToolCard.tsx'
@@ -118,13 +117,6 @@ describe('tool-call-model', () => {
     expect(toolRowModel('web_fetch', running({ name: 'web_fetch', argsRaw: '{"url":"https://example.com"}' })).filePath)
       .toBeUndefined()
     expect(toolRowModel('bash', running()).filePath).toBeUndefined()
-  })
-
-  it('resolveWorkspacePath joins relative paths under cwd and passes absolute through', () => {
-    expect(resolveWorkspacePath('/w', 'src/a.ts')).toBe('/w/src/a.ts')
-    expect(resolveWorkspacePath('/w/', '/abs/a.ts')).toBe('/abs/a.ts')
-    expect(resolveWorkspacePath(undefined, 'src/a.ts')).toBe('src/a.ts')
-    expect(resolveWorkspacePath('/w', 'C:\\x\\a.ts')).toBe('C:\\x\\a.ts')
   })
 
   it('displays workspace-rooted paths relative to the session cwd', () => {

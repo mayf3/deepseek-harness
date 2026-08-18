@@ -261,7 +261,12 @@ describe('ReadRow keyed toolview', () => {
 })
 
 describe('DetailsPanel Output section (read)', () => {
-  function mount(snapshot: ConversationSnapshot, selection: SelectionTarget | null, cwd?: string) {
+  function mount(
+    snapshot: ConversationSnapshot,
+    selection: SelectionTarget | null,
+    cwd?: string,
+    description?: Parameters<typeof renderToolDetails>[1],
+  ) {
     localStorage.clear()
     const chat = createChatStore().create()
     if (selection !== null) chat.actions.select(selection)
@@ -282,7 +287,7 @@ describe('DetailsPanel Output section (read)', () => {
     return render(
       <DetailsPanel
         SessionProvider={SessionProviderStub}
-        renderSlot={renderToolDetails(t)}
+        renderSlot={renderToolDetails(t, description)}
         sessionId={SID}
         t={t}
         useSession={bindSnapshotSelector({ getSnapshot: () => snapshot, subscribe: () => () => {} })}
@@ -340,6 +345,15 @@ describe('DetailsPanel Output section (read)', () => {
     }), target)
     expect(view.container.querySelector('[data-read]')).toBeNull()
     expect(view.getByText('输出').closest('section')?.querySelector('pre')?.textContent).toBe('plain result')
+  })
+
+  it('abbreviates a leftover POSIX home path on the read card label', () => {
+    const view = mount(snapshot({
+      nodes: [settled({ resultView: resultRead({ path: '/Users/u/notes.md' }) })],
+    }), target, '/tmp/ws', {
+      version: '0', cwd: '/tmp', attachedSessions: 0, home: '/Users/u', canOpenPath: false,
+    })
+    expect(view.getByText('~/notes.md')).toBeTruthy()
   })
 
   it('a running read keeps the 运行中… placeholder (no result view)', () => {

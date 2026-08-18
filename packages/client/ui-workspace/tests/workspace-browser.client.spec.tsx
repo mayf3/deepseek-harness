@@ -96,6 +96,27 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
 }
 
 describe('WorkspaceBrowser', () => {
+  it('workspace hover card shows a POSIX home descendant as ~', () => {
+    vi.useFakeTimers()
+    try {
+      mount({
+        useWorkspaces: hook(workspaceState([{
+          ...workspace('project', []),
+          path: '/home/u/Documents/project',
+          title: 'Project',
+        }])),
+        useHostDescription: selector => selector({
+          version: '0', cwd: '/tmp', attachedSessions: 0, home: '/home/u', canOpenPath: false,
+        }),
+      })
+      fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(screen.getByText('~/Documents/project')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('prunes deleted Workspace view state only after the Workspace baseline is ready', async () => {
     const pending = {
       ...workspaceState([]),

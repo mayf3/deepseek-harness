@@ -14,7 +14,7 @@ Workspace hover cards and Tool call summaries showed full POSIX home paths. Thos
 
 `abbreviateHomePath` in `dsh-client-runtime` is the display-only helper. It returns `~` or `~/…` when the path is the POSIX home or a descendant, and leaves the path unchanged when `home` is missing, empty, or `/`, when either value is a Windows drive or UNC path, or when the match is only a prefix (`/Users/u` does not claim `/Users/u2`). Tool summaries run workspace-relative shortening first, then this helper, so a path inside the session cwd stays short. `filePath`, Host open, and Workspace hover copy keep the authored filesystem path.
 
-`ui-tool` and `ui-workspace` inject `connection.hostDescription` at their own slot registrations. ChatView does not grow a Host-description hook. A missing `hostDescription` on an incomplete test fake falls back to an absent source, so abbreviation does not run.
+`ui-tool` and `ui-workspace` inject `connection.hostDescription` at their own slot registrations. ChatView does not grow a Host-description hook. The field is required on `ConnectionHandle`; test fakes supply a source whose snapshot may be undefined before connect.
 
 The fixture Host home is `/home/fixture`. A second fixture Workspace at `/home/fixture/Documents/project` lets assembled replay hover `~/Documents/project` without moving the existing `/tmp/fixture` account. TerminalBlock's own prompt-label collapse is unchanged.
 
@@ -30,7 +30,7 @@ The fixture Host home is `/home/fixture`. A second fixture Workspace at `/home/f
 
 ## Consequences
 
-POSIX home-rooted Workspace hover paths and leftover Tool path summaries display as `~`. Copy and open still use the full path. Windows drive and UNC paths never become `~`. A Host that reports `/` as home does not turn the whole filesystem into `~`. Incomplete test connection fakes without `hostDescription` render unabbreviated paths instead of hanging or throwing.
+POSIX home-rooted Workspace hover paths and leftover Tool path summaries display as `~`. Copy and open still use the full path. Windows drive and UNC paths never become `~`. A Host that reports `/` as home does not turn the whole filesystem into `~`. Before the first describe, or while reconnecting, the source snapshot is undefined and paths stay unabbreviated.
 
 ## Testing
 
