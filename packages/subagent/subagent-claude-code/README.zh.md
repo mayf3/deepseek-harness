@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-本包（package）注册固定的 `claude-code` subagent 提供方。每次接受运行请求后，它都会在发起委托的会话工作区中调用官方 Claude Agent SDK，通过共享子进程服务解析原生 `claude` 可执行文件，提交一个自包含的文本任务，并通过共享的 [`dsh-subagent`](../subagent/README.md) 结果约定返回严格的最终答案或安全的失败说明。
+本包（package）注册由 Profile 命名、默认名称为 `claude-code` 的 Claude Code subagent 提供方。每次接受运行请求后，它都会在发起委托的会话工作区中调用官方 Claude Agent SDK，通过共享子进程服务解析原生 `claude` 可执行文件，提交一个自包含的文本任务，并通过共享的 [`dsh-subagent`](../subagent/README.md) 结果约定返回严格的最终答案或安全的失败说明。
 
 ## 启动与所有权
 
@@ -26,6 +26,7 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 
 | 配置键 | 默认值 | 含义 |
 |---|---|---|
+| `providerName` | `claude-code` | `ctx.subagents` 中的非空注册名称；每个已挂载实例都需要唯一值。 |
 | `env` | `{}` | 显式指定的 SDK/CLI 环境，叠加在由共享机制清除凭证后的父环境之上。 |
 | `permissionMode` | `dontAsk` | 为该提供方实例的每次运行固定原生非交互权限策略。 |
 | `disposeGraceMs` | `3000` | 共享进程树责任方各终止层级之间的宽限期，单位为毫秒且须为正有限值，并不得大于仓库共享的 [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md)；随后资源释放会等待整棵进程树退出。 |
@@ -40,15 +41,24 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 
 生产环境从子进程执行世界清除凭证后的 `PATH` 解析 `claude`，再应用显式 `env` 条目，并把所得路径作为 `pathToClaudeCodeExecutable` 交给 SDK。在 Windows 上，解析到的 `.cmd` 或 `.bat` 路径会作为带引号、仅供本次 spawn 使用的环境值交给 `cmd.exe /v:off` 展开一次，因此合法路径中的元字符仍只是数据。锁定版本的 SDK 随后把固定命令行选项放在 cmd 的命令尾部；这些选项不含 cmd 元字符，也并不是普通的 Windows argv。原生设置与身份验证继续是权威来源。本插件不安装另一份 CLI、不选择模型、不创建产品主目录、不执行登录，也不探测账户。具有凭证特征的环境变量会在显式 `env` 覆盖生效前被清除，因此供子进程使用的 API 密钥或 token 必须在该配置中显式提供。除非被覆盖，`ANTHROPIC_BASE_URL` 等非凭证端点变量以及 `PATH` 和 `HOME` 等普通环境变量仍会被继承。
 
-生产 `dsh` 不会安装或挂载这个可选提供方。选择启用它的 Profile 必须安装 `@deepseek-ai/dsh-subagent-claude-code`，并在 host plane（宿主平面）挂载一次；加载提供方本身不会在工具调用前启动 Claude 进程。完整 Agent Preset 携带对应的产品工具行并设置 `disabled: true`；复制一个 preset 后删除该字段，即可只向由该副本组装的 agent 暴露 `subagent_claude_code`。其 `one-shot` 策略会让省略 `run_in_background` 或传入 `false` 的调用继续在前台等待，而显式传入 `true` 会返回由父 agent 拥有的 Job ID，供 `job_output` 或 `job_kill` 使用。base host（基础宿主）与完整 preset 已提供通用作业注册表和控制工具。
+生产 `dsh` 不会安装或挂载这个可选提供方。选择启用它的 Profile 必须安装 `@deepseek-ai/dsh-subagent-claude-code`，并可在 host plane（宿主平面）挂载一个或多个具有不同 `providerName`、`permissionMode` 与 `env` 的配置项；省略 `providerName` 时仍使用默认的 `claude-code`。加载实例本身不会在绑定工具调用前启动 Claude 进程。每个 `dsh-tool-subagent` 配置项指定一个提供方，并需要独立的 `toolName`，因此模型看到的是静态工具，而不是动态提供方选择器。完整 Agent Preset 携带对应的默认产品工具行并设置 `disabled: true`；复制一个 preset 后删除该字段，即可只向由该副本组装的 agent 暴露 `subagent_claude_code`。其 `one-shot` 策略会让省略 `run_in_background` 或传入 `false` 的调用继续在前台等待，而显式传入 `true` 会返回由父 agent 拥有的 Job ID，供 `job_output` 或 `job_kill` 使用。base host（基础宿主）与完整 preset 已提供通用作业注册表和控制工具。
 
-下列独立组装展示完整的显式能力。基于 `@deepseek-ai/dsh-base` 的 Profile 保留已有 Job 行，只新增产品提供方行并启用 preset 工具行，禁止重复挂载 Job 服务。
+下列独立组装展示完整的显式能力。基于 `@deepseek-ai/dsh-base` 的 Profile 保留已有 Job 配置项，新增产品提供方与工具配置项，而且不重复挂载 Job 服务。
 
 ```yaml
-- id: subagent-claude-code
+- id: subagent-claude-safe
   name: '@deepseek-ai/dsh-subagent-claude-code'
   config:
-    permissionMode: acceptEdits
+    providerName: claude-safe
+    permissionMode: dontAsk
+    env:
+      ANTHROPIC_API_KEY: !!js process.env.ANTHROPIC_API_KEY
+
+- id: subagent-claude-bypass
+  name: '@deepseek-ai/dsh-subagent-claude-code'
+  config:
+    providerName: claude-bypass
+    permissionMode: bypassPermissions
     env:
       ANTHROPIC_API_KEY: !!js process.env.ANTHROPIC_API_KEY
 
@@ -58,18 +68,26 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 - id: tool-jobs
   name: '@deepseek-ai/dsh-tool-jobs'
 
-- id: tool-subagent-claude-code
+- id: tool-subagent-claude-safe
   name: '@deepseek-ai/dsh-tool-subagent'
   config:
-    provider: claude-code
-    toolName: subagent_claude_code
+    provider: claude-safe
+    toolName: subagent_claude_safe
+    backgroundMode: one-shot
+    maxDepth: provider-managed
+
+- id: tool-subagent-claude-bypass
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: claude-bypass
+    toolName: subagent_claude_bypass
     backgroundMode: one-shot
     maxDepth: provider-managed
 ```
 
 ## 产品兼容性与证据
 
-运行时依赖精确锁定为 `@anthropic-ai/claude-agent-sdk@0.3.220`。生产运行使用原生 `claude` 安装。无密钥真实产品测试使用由 SDK 分发的 Claude Code 2.1.220 CLI 作为确定性 fixture（测试前置数据），并通过同一套原生可执行文件解析路径与 Windows batch shim 路径运行；这项测试不声称兼容每个独立安装的版本。Loader 组合证明两个产品包能够共存且不会启动任一产品。
+运行时依赖精确锁定为 `@anthropic-ai/claude-agent-sdk@0.3.220`。生产运行使用原生 `claude` 安装。无密钥真实产品测试使用由 SDK 分发的 Claude Code 2.1.220 CLI 作为确定性 fixture（测试前置数据），并通过同一套原生可执行文件解析路径与 Windows batch shim 路径运行；这项测试不声称兼容每个独立安装的版本。Loader 组合证明两个命名 Claude 实例可与 Codex 包共存，而且不会启动任一产品。
 
 限定于项目所有者身份的分发授权涵盖官方 SDK 及每个 SDK 版本声明的官方 CLI／平台载荷。[`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md) 会披露当前可选载荷闭包，但不会认定其中声明的条款属于宽松许可；其他无关的非宽松运行时依赖仍会使第三方声明门禁失败。
 
@@ -79,7 +97,7 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 
 #### 模型看到的内容
 
-Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。它的工作区是父会话 cwd；其模型、系统指令、工具、沙箱和身份验证来自宿主机原生 Claude 设置与产品安装，而提供方的 Profile 配置会固定该 query 的非交互权限模式。
+Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。它的工作区是父会话 cwd；其模型、系统指令、工具、沙箱和身份验证来自宿主机原生 Claude 设置与产品安装，而所选提供方实例的 Profile 配置会固定该 query 的环境与非交互权限模式。
 
 #### 对 token 的影响
 
@@ -106,6 +124,7 @@ Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。
 ## 已知限制与后续工作
 
 - **每次运行均新建一个 query 和一个进程**：不支持续接、恢复、池化、进度流或产品会话持久化。
+- **静态选择实例**：Profile 配置项固定提供方名称与工具绑定；调用无法动态选择提供方，而且每个公开工具都需要唯一的 `toolName`。
 - **宿主设置有意保持权威**：项目和用户设置可以改变模型、工具与行为；本提供方不提供经过筛选或与宿主环境隔离的生产模式。
 - **产品安装与账户状态仍由原生机制管理**：`claude` 缺失或不兼容、配置错误或身份验证失败会公开其生命周期阶段与安全的 `unknown` 回退，而不会增加单独的公开分类；本插件不提供安装程序或登录流程。
 - **SDK 平台 CLI 仍在安装闭包内**：生产环境会忽略它，改用宿主提供的 `claude`，但当前 SDK 的可选依赖仍会安装，并提供无密钥兼容性 fixture。移除该载荷属于独立的产品安装闭包后续项。

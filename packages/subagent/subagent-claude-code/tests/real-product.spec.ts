@@ -135,14 +135,17 @@ interface RealHarness {
   readonly executable: string
 }
 
-async function realHarness(
-  behavior: MessagesBehavior,
-  permissionMode?: ClaudeCodePermissionMode,
-  nativeAllow: readonly string[] = [],
-): Promise<{
-  readonly harness: RealHarness
+interface RealInstanceFixture {
   readonly fixture: MessagesFixture
-}> {
+  readonly workspace: string
+  readonly env: Record<string, string>
+  readonly executable: string
+}
+
+async function realInstanceFixture(
+  behavior: MessagesBehavior,
+  nativeAllow: readonly string[] = [],
+): Promise<RealInstanceFixture> {
   const root = mkdtempSync(join(tmpdir(), 'dsh-claude-code-real-'))
   roots.push(root)
   const workspace = join(root, 'workspace')
@@ -187,6 +190,16 @@ async function realHarness(
     ALL_PROXY: '',
     NO_PROXY: '127.0.0.1,localhost',
   }
+  return { fixture, workspace, env, executable }
+}
+
+interface RealRuntime {
+  readonly ctx: Context
+  readonly handles: SubprocessHandle[]
+  readonly spawnSpecs: SubprocessSpawnSpec[]
+}
+
+async function realRuntime(): Promise<RealRuntime> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(SubagentRuntime)
@@ -200,18 +213,39 @@ async function realHarness(
     handles.push(handle)
     return handle
   })
+  return { ctx, handles, spawnSpecs }
+}
+
+async function realHarness(
+  behavior: MessagesBehavior,
+  permissionMode?: ClaudeCodePermissionMode,
+  nativeAllow: readonly string[] = [],
+): Promise<{
+  readonly harness: RealHarness
+  readonly fixture: MessagesFixture
+}> {
+  const instance = await realInstanceFixture(behavior, nativeAllow)
+  const { ctx, handles, spawnSpecs } = await realRuntime()
   await ctx.plugin(claudeCode, {
-    env,
+    env: instance.env,
     ...permissionMode === undefined ? {} : { permissionMode },
     disposeGraceMs: 3_000,
   })
   const parent = {
     id: 'real-parent',
-    session: { header: { cwd: workspace } },
+    session: { header: { cwd: instance.workspace } },
   } as unknown as Agent
   return {
-    harness: { ctx, handles, spawnSpecs, parent, workspace, env, executable },
-    fixture,
+    harness: {
+      ctx,
+      handles,
+      spawnSpecs,
+      parent,
+      workspace: instance.workspace,
+      env: instance.env,
+      executable: instance.executable,
+    },
+    fixture: instance.fixture,
   }
 }
 
@@ -359,6 +393,80 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
     await run.dispose()
     expect(fixture.requests).toHaveLength(1)
     await expectQuiescent(harness.handles)
+  })
+
+  it('runs two named instances concurrently and unloads one without revoking its run', async () => {
+    const safeInstance = await realInstanceFixture({ kind: 'hold' })
+    const bypassInstance = await realInstanceFixture({
+      kind: 'complete',
+      text: 'NAMED_BYPASS_RESULT',
+    })
+    const { ctx, handles, spawnSpecs } = await realRuntime()
+    const safeFiber = await ctx.plugin(claudeCode, {
+      providerName: 'claude-safe',
+      env: safeInstance.env,
+      permissionMode: 'dontAsk',
+      disposeGraceMs: 3_000,
+    })
+    const bypassFiber = await ctx.plugin(claudeCode, {
+      providerName: 'claude-bypass',
+      env: bypassInstance.env,
+      permissionMode: 'bypassPermissions',
+      disposeGraceMs: 3_000,
+    })
+    const safeParent = {
+      id: 'safe-parent',
+      session: { header: { cwd: safeInstance.workspace } },
+    } as unknown as Agent
+    const bypassParent = {
+      id: 'bypass-parent',
+      session: { header: { cwd: bypassInstance.workspace } },
+    } as unknown as Agent
+    const safeController = new AbortController()
+
+    const [safeRun, bypassRun] = await Promise.all([
+      ctx.subagents.start('claude-safe', {
+        prompt: [{ type: 'text', text: 'Hold the safe instance.' }],
+        parent: safeParent,
+        signal: safeController.signal,
+      }),
+      ctx.subagents.start('claude-bypass', {
+        prompt: [{ type: 'text', text: 'Complete the bypass instance.' }],
+        parent: bypassParent,
+        signal: new AbortController().signal,
+      }),
+    ])
+    await safeInstance.fixture.requestStarted
+    await safeFiber.dispose()
+    expect(ctx.subagents.list()).toEqual(['claude-bypass'])
+    await expect(ctx.subagents.start('claude-safe', {
+      prompt: [{ type: 'text', text: 'This start must fail.' }],
+      parent: safeParent,
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'NO_PROVIDER' })
+
+    await expect(bypassRun.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'NAMED_BYPASS_RESULT' }],
+      stopReason: 'completed',
+    })
+    safeController.abort(new Error('cancel only the published safe run'))
+    await expect(safeRun.result).resolves.toEqual({
+      output: [],
+      stopReason: 'aborted',
+    })
+    await Promise.all([safeRun.dispose(), bypassRun.dispose()])
+    expect(safeInstance.fixture.requests).toHaveLength(1)
+    expect(bypassInstance.fixture.requests).toHaveLength(1)
+    expect(safeInstance.fixture.requests[0]?.body.messages)
+      .not.toEqual(bypassInstance.fixture.requests[0]?.body.messages)
+    expect(spawnSpecs.map(spec => spec.env?.CLAUDE_CONFIG_DIR).sort())
+      .toEqual([
+        safeInstance.env.CLAUDE_CONFIG_DIR,
+        bypassInstance.env.CLAUDE_CONFIG_DIR,
+      ].sort())
+    await expectQuiescent(handles)
+    await bypassFiber.dispose()
+    expect(ctx.subagents.list()).toEqual([])
   })
 
   it('maps a real CLI process failure to its exit outcome', async () => {
