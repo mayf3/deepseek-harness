@@ -358,27 +358,23 @@ export class AclSandbox {
       let settlement: Promise<AclSandboxChildResult> | undefined
       return {
         pid: native.pid,
-        wait: () => {
-          // oxlint-disable-next-line typescript/require-await -- Memoize one promise over synchronous native wait and cleanup.
-          settlement ??= (async () => {
-            const failures: unknown[] = []
-            let exitCode = 0
-            try {
-              exitCode = waitForExit(api, native.process)
-            } catch (error) {
-              failures.push(error)
-            }
-            try {
-              closeHandleChecked(api, native.job, 'kill-on-close job')
-            } catch (error) {
-              failures.push(error)
-            }
-            if (failures.length === 1) throw failures[0]
-            if (failures.length > 1) throw new AggregateError(failures, 'inherited child settlement failed')
-            return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), exitCode }
-          })()
-          return settlement
-        },
+        wait: () => (settlement ??= new Promise((resolveResult) => {
+          const failures: unknown[] = []
+          let exitCode = 0
+          try {
+            exitCode = waitForExit(api, native.process)
+          } catch (error) {
+            failures.push(error)
+          }
+          try {
+            closeHandleChecked(api, native.job, 'kill-on-close job')
+          } catch (error) {
+            failures.push(error)
+          }
+          if (failures.length === 1) throw failures[0]
+          if (failures.length > 1) throw new AggregateError(failures, 'inherited child settlement failed')
+          resolveResult({ stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), exitCode })
+        })),
       }
     }
 
