@@ -326,6 +326,24 @@ describe('workspace browser rows', () => {
     }
   })
 
+  it('workspace hover card without a directory omits the path and copy action', async () => {
+    vi.useFakeTimers()
+    try {
+      const group: GroupNode = {
+        key: 'project', workspaceId: wid('project'), cwd: undefined, createdAt: 0, label: 'Project',
+        sessionCount: 0, expanded: false, containsCurrent: false, sessions: [],
+      }
+      render(<ProjectRowItem group={group} home="/home/u" onToggle={vi.fn()} onCreate={vi.fn()} t={t} />)
+      fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(screen.getAllByText('Project')).toHaveLength(2)
+      expect(screen.getByText(/^创建于 \d+年\d+月\d+日 /)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /^复制:/ })).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('workspace hover card leaves a Windows path verbatim', async () => {
     vi.useFakeTimers()
     try {
