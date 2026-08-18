@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
+import { fileURLToPath } from 'node:url'
 import type {
   Options,
   Query,
@@ -9,6 +12,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import * as yaml from 'js-yaml'
 import {
   afterEach,
   beforeEach,
@@ -54,6 +58,19 @@ type QueryFactory = (params: {
 }) => Query
 
 const queryMock = vi.hoisted(() => vi.fn<QueryFactory>())
+
+const CLAUDE_AGENT_SDK_VERSION = '0.3.220'
+const CLAUDE_CODE_VERSION = '2.1.220'
+const CLAUDE_PLATFORM_PACKAGES = [
+  '@anthropic-ai/claude-agent-sdk-darwin-arm64',
+  '@anthropic-ai/claude-agent-sdk-darwin-x64',
+  '@anthropic-ai/claude-agent-sdk-linux-arm64',
+  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl',
+  '@anthropic-ai/claude-agent-sdk-linux-x64',
+  '@anthropic-ai/claude-agent-sdk-linux-x64-musl',
+  '@anthropic-ai/claude-agent-sdk-win32-arm64',
+  '@anthropic-ai/claude-agent-sdk-win32-x64',
+] as const
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async importOriginal => ({
   ...await importOriginal<typeof import('@anthropic-ai/claude-agent-sdk')>(),
@@ -290,7 +307,6 @@ function fakeRun(
   const options: FakeRun['options'] = []
   const spec: ClaudeCodeRunSpec = {
     cwd: '/workspace',
-    executable: '/native/claude',
     permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
     env: { ANTHROPIC_API_KEY: 'fake-key' },
     disposeGraceMs: 5,
@@ -325,6 +341,66 @@ afterEach(() => {
 })
 
 describe('task admission and package contracts', () => {
+  it('ships one independently installable provider-only Bundle patch', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>
+      files?: string[]
+      dsh?: { bundle?: { patch?: string } }
+    }
+    expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
+    expect(manifest.files).toContain('cordis.patch.yml')
+    expect(manifest.dependencies).toHaveProperty(
+      '@anthropic-ai/claude-agent-sdk',
+      CLAUDE_AGENT_SDK_VERSION,
+    )
+    expect(manifest.dependencies).toHaveProperty(
+      '@modelcontextprotocol/sdk',
+      '^1.29.0',
+    )
+    expect(manifest.dependencies).toHaveProperty('zod', '^4.4.3')
+    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-codex')
+
+    const sdkRoot = dirname(fileURLToPath(
+      import.meta.resolve('@anthropic-ai/claude-agent-sdk'),
+    ))
+    const sdkManifest = JSON.parse(readFileSync(
+      resolve(sdkRoot, 'package.json'),
+      'utf8',
+    )) as {
+      version: string
+      claudeCodeVersion: string
+      optionalDependencies: Record<string, string>
+    }
+    expect(sdkManifest.version).toBe(CLAUDE_AGENT_SDK_VERSION)
+    expect(sdkManifest.claudeCodeVersion).toBe(CLAUDE_CODE_VERSION)
+    expect(sdkManifest.optionalDependencies).toEqual(Object.fromEntries(
+      CLAUDE_PLATFORM_PACKAGES.map(packageName => [
+        packageName,
+        CLAUDE_AGENT_SDK_VERSION,
+      ]),
+    ))
+    const lockfile = readFileSync(resolve(root, '../../../pnpm-lock.yaml'), 'utf8')
+    for (const packageName of CLAUDE_PLATFORM_PACKAGES) {
+      expect(lockfile).toContain(
+        `  '${packageName}@${CLAUDE_AGENT_SDK_VERSION}':`,
+      )
+      expect(lockfile).toContain(
+        `      '${packageName}': ${CLAUDE_AGENT_SDK_VERSION}`,
+      )
+    }
+
+    const parsed = yaml.load(readFileSync(resolve(root, manifest.dsh!.bundle!.patch!), 'utf8'))
+    const rows = Array.isArray(parsed)
+      ? (parsed as Array<{ insert?: Array<{ id?: string; name?: string }> }>).flatMap(entry => entry.insert ?? [])
+      : []
+    expect(rows).toEqual([{
+      id: 'subagent-claude-code',
+      name: '@deepseek-ai/dsh-subagent-claude-code',
+    }])
+    expect(JSON.stringify(rows)).not.toContain('tool-subagent')
+  })
+
   it('preserves text sequences and rejects empty, blank, and non-text tasks', () => {
     expect(textTask([
       { type: 'text', text: 'one' },
@@ -375,8 +451,6 @@ describe('task admission and package contracts', () => {
     const safeChild = fakeChild()
     const bypassChild = fakeChild()
     const spawnSpecs: SubprocessSpawnSpec[] = []
-    vi.spyOn(ctx.subprocess, 'resolveExecutable')
-      .mockResolvedValue('/native/claude')
     vi.spyOn(ctx.subprocess, 'spawn').mockImplementation((spec) => {
       spawnSpecs.push(spec)
       return spec.env?.DSH_CLAUDE_INSTANCE === 'safe'
@@ -387,7 +461,6 @@ describe('task admission and package contracts', () => {
     queryMock.mockImplementation(({ options }) => {
       queryOptions.push(options)
       options.spawnClaudeCodeProcess!(sdkSpawnOptions({
-        command: options.pathToClaudeCodeExecutable!,
         cwd: options.cwd!,
         env: options.env!,
         signal: options.abortController!.signal,
@@ -516,7 +589,7 @@ describe('task admission and package contracts', () => {
     const spawn = vi.spyOn(ctx.subprocess, 'spawn')
       .mockImplementation(() => child.handle)
     const resolveExecutable = vi.spyOn(ctx.subprocess, 'resolveExecutable')
-      .mockResolvedValue('/native/claude')
+      .mockResolvedValue('/host/bin/claude')
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     await ctx.plugin(claudeCode, {
       providerName: 'claude-diagnostic',
@@ -540,29 +613,52 @@ describe('task admission and package contracts', () => {
     )
     expect(queryMock).not.toHaveBeenCalled()
 
-    resolveExecutable.mockRejectedValueOnce(new Error('claude missing from PATH'))
-    const missingExecutable = ctx.subagents.start('claude-diagnostic', request())
-    await expect(missingExecutable)
+    const invalidCwdParent = {
+      id: 'parent-with-invalid-cwd',
+      session: { header: { cwd: 'relative/SECRET_TOKEN' } },
+    } as unknown as Agent
+    const invalidCwd = ctx.subagents.start('claude-diagnostic', {
+      ...request(),
+      parent: invalidCwdParent,
+    })
+    await expect(invalidCwd)
       .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
-    await expect(missingExecutable).rejects.not.toThrow('claude missing from PATH')
+    await expect(invalidCwd).rejects.not.toThrow('relative/SECRET_TOKEN')
     expect(warn).toHaveBeenCalledWith(
       'subagent-claude-code "claude-diagnostic": child start failed: %o',
       expect.any(Error),
     )
     expect(errorCause(warn.mock.calls[0]?.[1] as unknown)?.message)
-      .toBe('claude missing from PATH')
-    expect(queryMock).not.toHaveBeenCalled()
+      .toContain('relative/SECRET_TOKEN')
 
-    const resolutionAbort = new AbortController()
-    resolveExecutable.mockImplementationOnce(async () => {
-      resolutionAbort.abort(new Error('parent cancelled executable resolution'))
-      throw new Error('SECRET_TOKEN from executable resolution')
-    })
-    await expect(ctx.subagents.start(
-      'claude-diagnostic',
-      request(undefined, resolutionAbort.signal),
-    )).rejects.toThrow('aborted before SDK startup')
+    const invalidCwdAbort = new AbortController()
+    invalidCwdAbort.abort(new Error('cancel invalid cwd startup'))
+    await expect(ctx.subagents.start('claude-diagnostic', {
+      ...request(undefined, invalidCwdAbort.signal),
+      parent: invalidCwdParent,
+    })).rejects.toThrow('aborted before SDK startup')
     expect(queryMock).not.toHaveBeenCalled()
+    warn.mockClear()
+
+    vi.stubEnv('PATH', '/host/bin')
+    queryMock.mockImplementationOnce(() => {
+      throw new Error(
+        'Native CLI binary for fixture-platform not found. Reinstall @anthropic-ai/claude-agent-sdk without --omit=optional, or set options.pathToClaudeCodeExecutable.',
+      )
+    })
+    const missingPayload = ctx.subagents.start('claude-diagnostic', request())
+    await expect(missingPayload)
+      .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
+    await expect(missingPayload).rejects.not.toThrow('Native CLI binary')
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'subagent-claude-code "claude-diagnostic": child run failed (error):',
+      ),
+      expect.any(Error),
+    )
+    expect(errorCause(warn.mock.calls[0]?.[1] as unknown)?.message)
+      .toContain('Native CLI binary for fixture-platform not found')
+    expect(resolveExecutable).not.toHaveBeenCalled()
 
     const run = await ctx.subagents.start('claude-diagnostic', request())
     child.settle({ exitCode: 9, signal: null })
@@ -578,14 +674,10 @@ describe('task admission and package contracts', () => {
       ),
       expect.any(Error),
     )
-    expect(resolveExecutable).toHaveBeenCalledWith(
-      'claude',
-      expect.objectContaining({ ANTHROPIC_API_KEY: 'provider-fake-key' }),
-      expect.any(AbortSignal),
-    )
-    expect(queryMock.mock.calls[0]?.[0].options.pathToClaudeCodeExecutable)
-      .toBe('/native/claude')
-    expect(queryMock.mock.calls[0]?.[0].options.permissionMode).toBe('auto')
+    expect(resolveExecutable).not.toHaveBeenCalled()
+    expect(queryMock.mock.calls[1]?.[0].options)
+      .not.toHaveProperty('pathToClaudeCodeExecutable')
+    expect(queryMock.mock.calls[1]?.[0].options.permissionMode).toBe('auto')
     expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
       cwd: process.cwd(),
       graceMs: 29,
@@ -665,20 +757,16 @@ describe('official spawn projection', () => {
     )).toThrow('SDK spawn request omitted its workspace')
   })
 
-  it.each(['cmd', 'bat'])('routes a Windows .%s shim through cmd.exe', (extension) => {
-    const command = String.raw`C:\Program Files\Claude\claude.${extension}`
+  it('forwards the SDK-selected Windows native executable without a batch shim', () => {
+    const command = String.raw`C:\Program Files\Claude\claude.exe`
     const spec = claudeSpawnSpec(sdkSpawnOptions({
       command,
       args: ['--output-format', 'stream-json'],
-    }), 7, 'win32')
+    }), 7)
 
     expect(spec.argv).toEqual([
-      'cmd.exe', '/d', '/v:off', '/s', '/c', '%DSH_CLAUDE_CODE_EXECUTABLE%',
-      '--output-format', 'stream-json',
+      command, '--output-format', 'stream-json',
     ])
-    expect(spec.env).toEqual(expect.objectContaining({
-      DSH_CLAUDE_CODE_EXECUTABLE: `"${command}"`,
-    }))
   })
 
   it('projects streams, exit facts, listeners, and idempotent tree termination', async () => {
@@ -714,7 +802,7 @@ describe('official spawn projection', () => {
   })
 
   it('emits spawn errors', async () => {
-    const child = fakeChild()
+    const child = fakeChild({ pid: -1 })
     const process = new ManagedClaudeCodeProcess(child.handle)
     const errorListener = vi.fn()
     const removed = vi.fn()
@@ -752,7 +840,6 @@ describe('query options and result mapping', () => {
     const diagnostics: string[] = []
     const spec: ClaudeCodeRunSpec = {
       cwd: '/workspace',
-      executable: '/native/claude',
       permissionMode: 'acceptEdits',
       env: {
         HOST_VISIBLE: 'overridden',
@@ -774,12 +861,12 @@ describe('query options and result mapping', () => {
     expect(options).toMatchObject({
       abortController: controller,
       cwd: '/workspace',
-      pathToClaudeCodeExecutable: '/native/claude',
       persistSession: false,
       disallowedTools: ['AskUserQuestion'],
       permissionMode: 'acceptEdits',
       supportedDialogKinds: ['refusal_fallback_prompt'],
     })
+    expect(options).not.toHaveProperty('pathToClaudeCodeExecutable')
     expect(options).not.toHaveProperty('allowDangerouslySkipPermissions')
     expect(options.env).toMatchObject({
       HOST_VISIBLE: 'overridden',
@@ -843,7 +930,6 @@ describe('query options and result mapping', () => {
       const child = fakeChild()
       const options = claudeQueryOptions({
         cwd: '/workspace',
-        executable: '/native/claude',
         permissionMode,
         env: {},
         disposeGraceMs: 17,
@@ -867,7 +953,6 @@ describe('query options and result mapping', () => {
     const child = fakeChild()
     const options = claudeQueryOptions({
       cwd: '/workspace',
-      executable: '/native/claude',
       permissionMode: 'plan',
       env: {},
       disposeGraceMs: 17,
@@ -1011,7 +1096,6 @@ describe('run publication, cancellation, and settlement', () => {
     let childIndex = 0
     const spec: ClaudeCodeRunSpec = {
       cwd: '/workspace',
-      executable: '/native/claude',
       permissionMode: 'dontAsk',
       env: {},
       disposeGraceMs: 5,
@@ -1064,7 +1148,6 @@ describe('run publication, cancellation, and settlement', () => {
     })
     const run = await startClaudeCodeRun(request(), {
       cwd: '/workspace',
-      executable: '/native/claude',
       permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
       env: {},
       disposeGraceMs: 5,
@@ -1115,7 +1198,6 @@ describe('run publication, cancellation, and settlement', () => {
       })
       const run = await startClaudeCodeRun(request(), {
         cwd: '/workspace',
-        executable: '/native/claude',
         permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
         env: {},
         disposeGraceMs: 5,
@@ -1144,7 +1226,6 @@ describe('run publication, cancellation, and settlement', () => {
     let index = 0
     const spec: ClaudeCodeRunSpec = {
       cwd: '/workspace',
-      executable: '/native/claude',
       permissionMode: 'dontAsk',
       env: {},
       disposeGraceMs: 5,
@@ -1196,7 +1277,6 @@ describe('run publication, cancellation, and settlement', () => {
       request(undefined, parentAbort.signal),
       {
         cwd: '/workspace',
-        executable: '/native/claude',
         permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
         env: {},
         disposeGraceMs: 5,
@@ -1355,19 +1435,126 @@ describe('run publication, cancellation, and settlement', () => {
     cleanupRaceChild.settle()
     await expect(cleanupRace).rejects.toThrow('aborted before SDK startup')
 
+    const spawnError = Object.assign(
+      new Error('spawn /sdk/claude EACCES'),
+      { code: 'EACCES', path: '/sdk/claude' },
+    )
     const failedSpawn = fakeChild({
       pid: -1,
-      doneError: new Error('spawn failed'),
+      doneError: spawnError,
     })
     const failed = fakeRun([], undefined, failedSpawn)
     const failedStartup = startClaudeCodeRun(request(), failed.spec)
     await expect(failedStartup)
       .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
-    await expect(failedStartup).rejects.toThrow(
-      `${expectedFailureDiagnostic('query-start', 'unknown')}; subagent-claude-code: ${expectedFailureDiagnostic('teardown', 'unknown')}`,
-    )
-    await expect(failedStartup).rejects.toBeInstanceOf(AggregateError)
+    await expect(failedStartup).rejects.not.toThrow('spawn /sdk/claude EACCES')
+    await expect(failedStartup).rejects.toMatchObject({ cause: spawnError })
     expect(failed.close).toHaveBeenCalledOnce()
+    expect(failedSpawn.terminate).not.toHaveBeenCalled()
+    expect(failedSpawn.waitForExit).not.toHaveBeenCalled()
+
+    const failedSpawnAbort = new AbortController()
+    const cancelledFailedSpawn = fakeChild({
+      pid: -1,
+      doneError: spawnError,
+    })
+    const cancelledFailedClose = vi.fn()
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      failedSpawnAbort.abort(new Error('startup cancelled'))
+      return queryFrom([], undefined, cancelledFailedClose)
+    })
+    await expect(startClaudeCodeRun(
+      request(undefined, failedSpawnAbort.signal),
+      { ...unused.spec, spawn: () => cancelledFailedSpawn.handle },
+    )).rejects.toThrow('aborted before SDK startup')
+    expect(cancelledFailedClose).toHaveBeenCalledOnce()
+
+    const cancelledFailedSpawnCloseError = new Error('cancelled query close failed')
+    const cancelledFailedSpawnClose = vi.fn(() => {
+      throw cancelledFailedSpawnCloseError
+    })
+    const cancelledFailedSpawnWithCloseFailure = fakeChild({
+      pid: -1,
+      doneError: spawnError,
+    })
+    const failedSpawnAbortWithCloseFailure = new AbortController()
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      failedSpawnAbortWithCloseFailure.abort(new Error('startup cancelled'))
+      return queryFrom([], undefined, cancelledFailedSpawnClose)
+    })
+    const cancelledWithCloseFailure = startClaudeCodeRun(
+      request(undefined, failedSpawnAbortWithCloseFailure.signal),
+      { ...unused.spec, spawn: () => cancelledFailedSpawnWithCloseFailure.handle },
+    )
+    await expect(cancelledWithCloseFailure).rejects.toMatchObject({
+      message: `subagent-claude-code: ${expectedFailureDiagnostic('query-start', 'unknown')}; subagent-claude-code: ${expectedFailureDiagnostic('teardown', 'unknown')}`,
+      errors: [
+        expect.objectContaining({
+          message: `subagent-claude-code: ${expectedFailureDiagnostic('query-start', 'unknown')}`,
+          cause: spawnError,
+        }),
+        expect.objectContaining({
+          message: `subagent-claude-code: ${expectedFailureDiagnostic('teardown', 'unknown')}`,
+          cause: cancelledFailedSpawnCloseError,
+        }),
+      ],
+    })
+    await expect(cancelledWithCloseFailure)
+      .rejects.not.toThrow('spawn /sdk/claude EACCES')
+    expect(cancelledFailedSpawnClose).toHaveBeenCalledOnce()
+
+    const failedSpawnCloseError = new Error('query close failed')
+    const failedSpawnClose = vi.fn(() => { throw failedSpawnCloseError })
+    const failedSpawnWithCloseFailure = fakeChild({
+      pid: -1,
+      doneError: spawnError,
+    })
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      return queryFrom([], undefined, failedSpawnClose)
+    })
+    const failedWithCloseFailure = startClaudeCodeRun(request(), {
+      ...unused.spec,
+      spawn: () => failedSpawnWithCloseFailure.handle,
+    })
+    await expect(failedWithCloseFailure)
+      .rejects.toThrow(expectedFailureDiagnostic('query-start', 'unknown'))
+    await expect(failedWithCloseFailure)
+      .rejects.not.toThrow('spawn /sdk/claude EACCES')
+    await expect(failedWithCloseFailure).rejects.toMatchObject({
+      message: `subagent-claude-code: ${expectedFailureDiagnostic('query-start', 'unknown')}; subagent-claude-code: ${expectedFailureDiagnostic('teardown', 'unknown')}`,
+      errors: [
+        expect.objectContaining({ cause: spawnError }),
+        expect.objectContaining({ cause: failedSpawnCloseError }),
+      ],
+    })
+
+    const cleanupError = new Error('live child cleanup failed')
+    const constructionError = new Error(
+      'query construction failed with a live child',
+    )
+    const liveChildCleanupFailure = fakeChild({ waitForExitError: cleanupError })
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      throw constructionError
+    })
+    const liveCleanupFailure = startClaudeCodeRun(request(), {
+      ...unused.spec,
+      spawn: () => liveChildCleanupFailure.handle,
+    })
+    await expect(liveCleanupFailure).rejects.toMatchObject({
+      message: `subagent-claude-code: ${expectedFailureDiagnostic('query-start', 'unknown')}; subagent-claude-code: ${expectedFailureDiagnostic('teardown', 'unknown', { exitCode: 0, signal: null })}`,
+      errors: [
+        expect.objectContaining({ cause: constructionError }),
+        expect.objectContaining({ cause: cleanupError }),
+      ],
+    })
+    await expect(liveCleanupFailure)
+      .rejects.not.toThrow('query construction failed with a live child')
+    await expect(liveCleanupFailure)
+      .rejects.not.toThrow('live child cleanup failed')
   })
 })
 
@@ -1424,7 +1611,7 @@ describe('query and process disposal', () => {
     expect(disposed).toBe(true)
   })
 
-  it('reports wait, close, and direct-child failures without skipping cleanup', async () => {
+  it('reports close and tree-wait failures without skipping cleanup', async () => {
     const waitFailure = fakeChild({
       waitForExitError: new Error('wait boom'),
     })
@@ -1438,28 +1625,16 @@ describe('query and process disposal', () => {
       'unknown',
       { exitCode: 0, signal: null },
     ))
-    await expect(waitAndClose).rejects.toBeInstanceOf(AggregateError)
-    expect(waitFailure.terminate).toHaveBeenCalledOnce()
-
-    const doneFailure = fakeChild({
-      pid: -1,
-      doneError: new Error('spawn boom'),
-    })
-    await expect(disposeClaudeCodeChild(
-      { close: vi.fn() },
-      doneFailure.handle,
-    )).rejects.toThrow(expectedFailureDiagnostic('teardown', 'unknown'))
-
-    const both = fakeChild({
-      pid: -1,
-      doneError: new Error('spawn boom'),
-    })
-    const bothFailures = disposeClaudeCodeChild(
-      { close: () => { throw new Error('close boom') } },
-      both.handle,
+    const waitAndCloseError = await waitAndClose.then(
+      () => undefined,
+      (error: unknown) => error,
     )
-    await expect(bothFailures)
-      .rejects.toThrow(expectedFailureDiagnostic('teardown', 'unknown'))
-    await expect(bothFailures).rejects.toBeInstanceOf(AggregateError)
+    const waitAndCloseCause = errorCause(waitAndCloseError)
+    expect(waitAndCloseCause).toBeInstanceOf(AggregateError)
+    expect((waitAndCloseCause as AggregateError).errors).toEqual([
+      expect.objectContaining({ message: 'close boom' }),
+      expect.objectContaining({ message: 'wait boom' }),
+    ])
+    expect(waitFailure.terminate).toHaveBeenCalledOnce()
   })
 })

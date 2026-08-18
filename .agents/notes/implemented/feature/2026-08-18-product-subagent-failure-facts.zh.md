@@ -24,7 +24,7 @@ Product subagent failure (product: <product>; stage: <stage>; category: <categor
 
 提供方会省略不可用的可选字段。退出码与信号是相互独立的事实，只要已观测到就分别保留。来自[非交互权限决策](2026-08-15-product-subagent-noninteractive-permissions.md)且参与失败的权限决定会跟在结构化行之后；最新的安全权限事实仍只属于当前操作。共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。
 
-成功结果与本地取消都不公开失败事实。原始产品错误、stderr、工具输入、路径、环境值、凭证和协议 payload 绝不会进入诊断。启动与清理拒绝会在 Error 消息中使用同一安全行，而原始失败只保留在内部 cause 链与 Host 日志中。
+成功结果与本地取消都不公开失败事实。原始产品错误、stderr、工具输入、路径、环境值、凭证和协议 payload 绝不会进入诊断。启动与清理拒绝会在 Error 消息中使用同一安全行。原始失败保留在内部 cause 链中；提供方 Host 日志与转发的 stderr 也只作为产品本地观测。
 
 ### Claude Code 事实
 
@@ -32,7 +32,7 @@ Agent SDK 0.3.220 定义四种错误子类型：`error_during_execution`、`erro
 
 | 阶段 | 归属操作 | 可观察失败 |
 | --- | --- | --- |
-| `query-start` | 原生可执行文件解析、SDK query 构造与未发布回滚 | `start()` 以固定安全事实和回滚前已观测到的进程结果拒绝 |
+| `query-start` | SDK query 构造、原生平台载荷启动与未发布回滚 | `start()` 以固定安全事实和回滚前已观测到的进程结果拒绝 |
 | `query-run` | 已发布 SDK 消息迭代与严格终态结果校验 | 运行以 `error` 兑现，并携带准确已知子类型或固定结果类别 |
 | `process` | SDK 提供终态结果之前受管 CLI 已退出 | 运行以 `error` 兑现，并携带 `process-exit` 以及可用的退出码和信号 |
 | `teardown` | Query 关闭与受管进程树释放 | `dispose()` 独立拒绝并携带固定安全事实，同时清理仍会完成最终退出等待 |
@@ -60,7 +60,7 @@ Codex app-server 0.147.0 定义十一种字符串类别与五种对象 variant�
 | 当前失败阶段 | 产品提供方操作 | 只在失败点派生；绝不持久化，也不作为恢复状态 |
 | 退出码与信号 | `dsh-subprocess` 进程句柄 | 提供方展示已观测值，不推测缺失值 |
 | 诊断字节与送达 | `dsh-subagent`、前台工具与 Job 运行时 | 两种调度模式都把同一份有界文本与 assistant 输出分开呈现 |
-| 原始产品失败 | 产品运行时与 Host 日志 | 只保留在内部，绝不成为模型可见的结果文本 |
+| 原始产品失败 | 产品运行时、内部 cause 链与 Host 观测 | 只保留在内部，绝不成为模型可见的结果文本 |
 
 ## Verification
 

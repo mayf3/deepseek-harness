@@ -24,7 +24,7 @@ Product subagent failure (product: <product>; stage: <stage>; category: <categor
 
 The Provider omits unavailable optional fields. Exit code and signal are independent facts and are each retained when observed. A contributing permission decision from the [non-interactive permissions decision](2026-08-15-product-subagent-noninteractive-permissions.md) follows the structured line; the latest safe permission fact remains operation-local. The shared result boundary limits the complete text to 4096 UTF-8 bytes.
 
-Successful results and local cancellation expose no failure fact. Raw product errors, stderr, tool input, paths, environment values, credentials, and protocol payloads never enter the diagnostic. Startup and cleanup rejections use the same safe line in their Error message while retaining the original failure only on the internal cause chain and in Host logging.
+Successful results and local cancellation expose no failure fact. Raw product errors, stderr, tool input, paths, environment values, credentials, and protocol payloads never enter the diagnostic. Startup and cleanup rejections use the same safe line in their Error message. Original failures remain on internal cause chains; Provider Host logs and forwarded stderr remain product-local observation only.
 
 ### Claude Code facts
 
@@ -32,7 +32,7 @@ Agent SDK 0.3.220 defines four error subtypes: `error_during_execution`, `error_
 
 | Stage | Owned operation | Observable failure |
 | --- | --- | --- |
-| `query-start` | Native executable resolution, SDK query construction, and unpublished rollback | `start()` rejects with fixed safe facts and any process outcome observed before rollback |
+| `query-start` | SDK query construction, native platform-payload startup, and unpublished rollback | `start()` rejects with fixed safe facts and any process outcome observed before rollback |
 | `query-run` | Published SDK message iteration and strict terminal-result validation | The run resolves as `error` with the exact known subtype or a fixed result category |
 | `process` | Managed CLI exits before the SDK supplies a terminal result | The run resolves as `error` with `process-exit` and the available exit code and signal |
 | `teardown` | Query close and managed process-tree release | `dispose()` rejects independently with fixed safe facts after cleanup still reaches its final exit wait |
@@ -60,7 +60,7 @@ Codex app-server 0.147.0 defines eleven string categories and five object varian
 | Current failure stage | Product Provider operation | Derived at the failure site; never persisted or used as a recovery state |
 | Exit code and signal | `dsh-subprocess` process handle | The Provider displays observed values without inferring missing ones |
 | Diagnostic bytes and delivery | `dsh-subagent`, foreground tool, and Job runtime | The same bounded text is presented separately from assistant output in both scheduling modes |
-| Raw product failure | Product runtime and Host log | It remains internal and never becomes model-visible result text |
+| Raw product failure | Product runtime, internal cause chain, and Host observation | It remains internal and never becomes model-visible result text |
 
 ## Verification
 

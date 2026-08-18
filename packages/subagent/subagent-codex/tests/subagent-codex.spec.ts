@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
+import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import * as yaml from 'js-yaml'
 import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
@@ -60,6 +64,16 @@ vi.mock('node:fs', async (importOriginal) => {
 })
 
 type JsonObject = Record<string, unknown>
+
+const CODEX_VERSION = '0.147.0'
+const CODEX_PLATFORM_PACKAGES = [
+  '@openai/codex-darwin-arm64',
+  '@openai/codex-darwin-x64',
+  '@openai/codex-linux-arm64',
+  '@openai/codex-linux-x64',
+  '@openai/codex-win32-arm64',
+  '@openai/codex-win32-x64',
+] as const
 
 const fakeParent = {
   id: 'parent',
@@ -140,6 +154,7 @@ interface FakeChild {
   readonly stderr: PassThrough
   readonly settle: (outcome?: SubprocessOutcome) => void
   readonly fail: (error: Error) => void
+  readonly setStderr: (text: string) => void
   readonly terminate: () => void
   readonly waitForExit: (signal?: AbortSignal) => Promise<boolean>
 }
@@ -214,6 +229,7 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
     stderr,
     settle,
     fail,
+    setStderr: (text: string): void => { stderr.write(text) },
     terminate,
     waitForExit,
   }
@@ -342,19 +358,66 @@ function expectedFailureDiagnostic(
 }
 
 describe('task admission and package contracts', () => {
-  it('keeps the app-server command fixed on POSIX and Windows', () => {
-    expect(codexAppServerArgv('linux')).toEqual([
-      'codex', 'app-server', '--stdio',
-    ])
-    expect(codexAppServerArgv('win32')).toEqual([
-      'cmd.exe',
-      '/d',
-      '/s',
-      '/c',
-      'codex',
+  it('ships one independently installable provider-only Bundle patch', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>
+      files?: string[]
+      dsh?: { bundle?: { patch?: string } }
+    }
+    expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
+    expect(manifest.files).toContain('cordis.patch.yml')
+    expect(manifest.dependencies).toHaveProperty(
+      '@deepseek-ai/dsh-sdk-protocol',
+      'workspace:^',
+    )
+    expect(manifest.dependencies).toHaveProperty('@openai/codex', CODEX_VERSION)
+    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
+
+    const codexPackageJson = fileURLToPath(import.meta.resolve('@openai/codex/package.json'))
+    const codexManifest = JSON.parse(readFileSync(codexPackageJson, 'utf8')) as {
+      version: string
+      bin: { codex: string }
+      optionalDependencies: Record<string, string>
+    }
+    expect(codexManifest.version).toBe(CODEX_VERSION)
+    expect(codexManifest.bin).toEqual({ codex: 'bin/codex.js' })
+    expect(codexManifest.optionalDependencies).toEqual(Object.fromEntries(
+      CODEX_PLATFORM_PACKAGES.map(packageName => [
+        packageName,
+        `npm:@openai/codex@${CODEX_VERSION}-${packageName.slice('@openai/codex-'.length)}`,
+      ]),
+    ))
+    expect(codexAppServerArgv()).toEqual([
+      process.execPath,
+      resolve(dirname(codexPackageJson), codexManifest.bin.codex),
       'app-server',
       '--stdio',
     ])
+
+    const lockfile = readFileSync(resolve(root, '../../../pnpm-lock.yaml'), 'utf8')
+    for (const packageName of CODEX_PLATFORM_PACKAGES) {
+      const suffix = packageName.slice('@openai/codex-'.length)
+      expect(lockfile).toContain(`  '@openai/codex@${CODEX_VERSION}-${suffix}':`)
+      expect(lockfile).toContain(
+        `      '${packageName}': '@openai/codex@${CODEX_VERSION}-${suffix}'`,
+      )
+    }
+
+    const parsed = yaml.load(readFileSync(resolve(root, manifest.dsh!.bundle!.patch!), 'utf8'))
+    const rows = Array.isArray(parsed)
+      ? (parsed as Array<{ insert?: Array<{ id?: string; name?: string }> }>).flatMap(entry => entry.insert ?? [])
+      : []
+    expect(rows).toEqual([{
+      id: 'subagent-codex',
+      name: '@deepseek-ai/dsh-subagent-codex',
+    }])
+    expect(JSON.stringify(rows)).not.toContain('tool-subagent')
+  })
+
+  it('uses only the official package-declared wrapper for app-server', () => {
+    expect(codexAppServerArgv()[0]).toBe(process.execPath)
+    expect(codexAppServerArgv().slice(2)).toEqual(['app-server', '--stdio'])
   })
 
   it('accepts one or more text blocks and rejects empty or non-text tasks', () => {

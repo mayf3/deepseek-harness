@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -7,8 +8,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { rm } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { delimiter, join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
@@ -32,11 +34,13 @@ import {
 const execFileAsync = promisify(execFile)
 const packageRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const codexBinDir = join(packageRoot, 'node_modules', '.bin')
-const codexEntry = join(packageRoot, 'node_modules', '@openai', 'codex', 'bin', 'codex.js')
+const codexPackageJson = createRequire(import.meta.url).resolve('@openai/codex/package.json')
 const codexPackage = JSON.parse(readFileSync(
-  join(packageRoot, 'node_modules', '@openai', 'codex', 'package.json'),
+  codexPackageJson,
   'utf8',
-)) as { version: string }
+)) as { version: string; bin: { codex: string } }
+const codexEntry = resolve(dirname(codexPackageJson), codexPackage.bin.codex)
+const codexPackageRoot = dirname(dirname(codexEntry))
 
 const roots: string[] = []
 const fixtures: ResponsesFixture[] = []
@@ -53,6 +57,7 @@ afterEach(async () => {
 interface RealHarness {
   readonly ctx: Context
   readonly handles: SubprocessHandle[]
+  readonly spawnSpecs: SubprocessSpawnSpec[]
   readonly parent: Agent
   readonly env: Record<string, string>
   readonly workspace: string
@@ -99,7 +104,7 @@ async function realInstanceFixture(
     CODEX_HOME: codexHome,
     HOME: root,
     XDG_CONFIG_HOME: join(root, 'xdg'),
-    PATH: `${codexBinDir}${delimiter}${process.env.PATH ?? ''}`,
+    PATH: root,
     HTTP_PROXY: '',
     HTTPS_PROXY: '',
     ALL_PROXY: '',
@@ -139,7 +144,7 @@ async function realHarness(
   readonly fixture: ResponsesFixture
 }> {
   const instance = await realInstanceFixture(script)
-  const { ctx, handles } = await realRuntime()
+  const { ctx, handles, spawnSpecs } = await realRuntime()
   await ctx.plugin(codex, {
     env: instance.env,
     ...permissionMode === undefined ? {} : { permissionMode },
@@ -153,6 +158,7 @@ async function realHarness(
     harness: {
       ctx,
       handles,
+      spawnSpecs,
       parent,
       env: instance.env,
       workspace: instance.workspace,
@@ -281,6 +287,13 @@ describe('real @openai/codex 0.147.0 product', () => {
     })
     await run.dispose()
 
+    expect(harness.spawnSpecs[0]?.argv).toEqual([
+      process.execPath,
+      codexEntry,
+      'app-server',
+      '--stdio',
+    ])
+
     expect(fixture.requests).toHaveLength(1)
     const recorded = fixture.requests[0]!
     expect(recorded.method).toBe('POST')
@@ -289,6 +302,24 @@ describe('real @openai/codex 0.147.0 product', () => {
     expect(responseInputTexts(recorded.body)).toContain(task)
     await expectQuiescent(harness.handles)
   }, 60_000)
+
+  it('fails a missing platform payload without falling back to a host codex', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-codex-missing-payload-'))
+    roots.push(root)
+    const isolatedPackage = join(root, 'node_modules', '@openai', 'codex')
+    mkdirSync(dirname(isolatedPackage), { recursive: true })
+    cpSync(codexPackageRoot, isolatedPackage, { recursive: true, dereference: true })
+    const isolatedEntry = join(isolatedPackage, 'bin', 'codex.js')
+
+    await expect(execFileAsync(process.execPath, [isolatedEntry, '--version'], {
+      env: {
+        PATH: codexBinDir,
+        ...process.platform === 'win32' && process.env.SystemRoot !== undefined
+          ? { SystemRoot: process.env.SystemRoot }
+          : {},
+      },
+    })).rejects.toThrow(/Missing optional dependency @openai\/codex-[a-z0-9-]+/)
+  }, 30_000)
 
   it('runs two named instances concurrently and unloads one without revoking its run', async () => {
     const safeInstance = await realInstanceFixture([{ kind: 'hold' }])

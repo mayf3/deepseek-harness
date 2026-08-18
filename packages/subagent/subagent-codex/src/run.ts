@@ -8,7 +8,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, resolve } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -31,6 +33,23 @@ import {
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
+
+interface CodexPackageManifest {
+  readonly bin: {
+    readonly codex: string
+  }
+}
+
+const codexPackageJsonPath = createRequire(import.meta.url).resolve('@openai/codex/package.json')
+const codexPackageManifest = JSON.parse(
+  readFileSync(codexPackageJsonPath, 'utf8'),
+) as CodexPackageManifest
+
+/** Absolute package-local JavaScript wrapper selected by the package manifest. */
+const CODEX_PACKAGE_BIN = resolve(
+  dirname(codexPackageJsonPath),
+  codexPackageManifest.bin.codex,
+)
 
 /** Profile-selectable non-interactive Codex permission mode. */
 export type CodexPermissionMode =
@@ -95,20 +114,11 @@ class CodexRunFailure extends Error {
 }
 
 /**
- * Resolve the fixed app-server command for a platform.
- *
- * Windows npm and pnpm installs expose `codex.cmd`, which requires `cmd.exe`;
- * the argv is constant so no task or configuration text enters the
- * shell boundary.
- * @param platform - host platform used to select the executable boundary.
- * @returns argv for the fixed Codex app-server command.
+ * Fixed package-local app-server command, independent of the host `PATH`.
+ * @returns Node, the official wrapper, and the fixed app-server arguments.
  */
-export function codexAppServerArgv(
-  platform: NodeJS.Platform = process.platform,
-): string[] {
-  return platform === 'win32'
-    ? ['cmd.exe', '/d', '/s', '/c', 'codex', 'app-server', '--stdio']
-    : ['codex', 'app-server', '--stdio']
+export function codexAppServerArgv(): string[] {
+  return [process.execPath, CODEX_PACKAGE_BIN, 'app-server', '--stdio']
 }
 
 /** Fully resolved inputs for one Codex app-server run. */
@@ -245,6 +255,9 @@ export async function startCodexRun(
   const disposeProcess = async (): Promise<void> => {
     try {
       await disposeCodexChild(wire, child)
+      // Let stderr already queued by the process close reach both bounded
+      // diagnostic consumers before their listeners are detached.
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
     } finally {
       child.stderr?.off('data', onStderr)
       child.stderr?.off('error', onStderrError)
