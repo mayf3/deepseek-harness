@@ -32,6 +32,7 @@ const AGENT = {
 // The Code Mode overlay configs (include-patched variants of cordis.yml; the
 // replay swap resolves each one's sibling `*cordis.snapshot.yml`).
 const CODE_MODE_CONFIG = fileURLToPath(new URL('../code-mode.cordis.yml', import.meta.url))
+const CODE_MODE_IMAGE_CONFIG = fileURLToPath(new URL('../code-mode-image.cordis.yml', import.meta.url))
 const CODE_MODE_WORKSPACE_CONTEXT_CONFIG = fileURLToPath(new URL('../code-mode-workspace-context.cordis.yml', import.meta.url))
 const BOTH_MODE_CONFIG = fileURLToPath(new URL('../both-mode.cordis.yml', import.meta.url))
 const WORKSPACE_CONTEXT_CONFIG = fileURLToPath(new URL('../agent-instructions.cordis.yml', import.meta.url))
@@ -46,8 +47,8 @@ const CHILD_QUESTION_CONFIG = fileURLToPath(new URL('../child-question.cordis.ym
 const SESSION_SANDBOX_ROOT_CONFIG = fileURLToPath(new URL('../session-sandbox-root.cordis.yml', import.meta.url))
 const RETRY_CONFIG = fileURLToPath(new URL('../retry.cordis.yml', import.meta.url))
 const SESSION_TITLE_CONFIG = fileURLToPath(new URL('../session-title.cordis.yml', import.meta.url))
-const SUBAGENT_REPORT_QUIET_CONFIG = fileURLToPath(
-  new URL('../subagent-report-quiet.cordis.yml', import.meta.url),
+const SUBAGENT_REPORT_CONFIG = fileURLToPath(
+  new URL('../subagent-report.cordis.yml', import.meta.url),
 )
 const SUBAGENT_DURABILITY_FAILURE_CONFIG = fileURLToPath(
   new URL('../subagent-durability-failure.cordis.yml', import.meta.url),
@@ -212,6 +213,24 @@ const SCENARIOS: Scenario[] = [
     headerClass: 'image',
     configPath: IMAGE_TEXT_ROUTE_CONFIG,
   },
+  // Authored keyless replay of the oversized-image refusal: admission rejects
+  // the 2001x1 fixture at the default 2000px per-side limit, the model sees a
+  // recoverable tool error, and the turn still completes — the image never
+  // enters durable history.
+  {
+    name: 'read-image-dimension',
+    hasModelTurn: true,
+    recorded: false,
+    headerClass: 'image',
+    configPath: IMAGE_CONFIG,
+  },
+  {
+    name: 'inline-image-prompt',
+    hasModelTurn: true,
+    recorded: false,
+    headerClass: 'image',
+    configPath: IMAGE_CONFIG,
+  },
   {
     name: 'pty-tools',
     hasModelTurn: true,
@@ -348,6 +367,13 @@ const SCENARIOS: Scenario[] = [
   // reply, and a clean completed retry turn. Its overlay only pins a deterministic
   // 1 ms zero-jitter delay, so it shares the default header class.
   { name: 'empty-response-retry', hasModelTurn: true, recorded: false, configPath: RETRY_CONFIG },
+  // Keyless, authored (like error-finish): a live model cannot be coaxed into
+  // a deterministic mid-tool-call output-limit truncation. Turn 1's script ends
+  // at `max-tokens` with an unfinished tool call and adapter replay metadata for
+  // both blocks; the durable assistant/message pins assembly dropping the tool
+  // call AND pruning its per-block replay entry in the same decision, and turn 2
+  // proves the session continues past the truncated step.
+  { name: 'max-tokens-continue', hasModelTurn: true, recorded: false },
   // Keyless, authored (like error-finish/cancel): deterministically forcing a
   // LIVE model to repeat one call three times is not a stable recording, so
   // the fixture scripts five identical todo_write calls and pins BOTH reminder
@@ -441,16 +467,15 @@ const SCENARIOS: Scenario[] = [
     configPath: SUBAGENT_DURABILITY_FAILURE_CONFIG,
   },
   // Authored child-to-parent transcript: the child calls its scope-local
-  // `report`, and the runtime's unconditional settlement notice then wakes the
-  // parked parent into one ordinary turn that claims both. The overlay pins
-  // quiet report delivery because two independent wakes have no orderable
-  // transcript; the shipped waking default is covered by package tests.
+  // `report` through the shipped next-step policy. A maintenance fence holds
+  // the parent until the runtime's unconditional settlement notice follows;
+  // the resumed parent then claims both messages in causal order.
   {
     name: 'subagent-report',
     hasModelTurn: true,
     recorded: false,
     overridden: false,
-    configPath: SUBAGENT_REPORT_QUIET_CONFIG,
+    configPath: SUBAGENT_REPORT_CONFIG,
     pinsChildToolSchemas: [1],
     pinsChildSystemPrompts: [1],
   },
@@ -540,6 +565,16 @@ const SCENARIOS: Scenario[] = [
   // tools:sdk section rides in the prompt, and the program's tool calls land as
   // tool/code-dispatch events. Each overlay composes and pins its own header class.
   { name: 'code-mode-turn', hasModelTurn: true, recorded: true, pinsHeader: true, headerClass: 'code', configPath: CODE_MODE_CONFIG },
+  {
+    name: 'code-mode-read-image',
+    hasModelTurn: true,
+    recorded: false,
+    pinsHeader: true,
+    headerClass: 'code-image',
+    toolSchemasSource: 'code-mode-turn',
+    configPath: CODE_MODE_IMAGE_CONFIG,
+    posixOnly: true,
+  },
   // A nested fs dispatch inside run_code discovers workspace instructions. The
   // projection enters the inbox after the outer result and becomes model-visible
   // on the following step, retaining workspace provenance end to end.

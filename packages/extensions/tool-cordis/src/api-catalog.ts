@@ -364,6 +364,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'completion after the encoded raster has been fully decoded.',
       },
       {
+        signature: 'async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>',
+        description: 'Validate one ordered image batch before committing any member. Validation failures start no writes; storage failures return no partial references, although already published content-addressed objects may stay unreachable until a future retention policy collects them.',
+        parameters: [{ name: 'inputs', description: 'encoded images in their owning message order.' }],
+        returns: 'durable references in the exact input order.',
+      },
+      {
         signature: 'abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>',
         description: 'Validate and durably commit one image before its owning session event is appended.',
         parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
@@ -3131,7 +3137,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ImageAttachmentLimits',
-    declaration: 'export interface ImageAttachmentLimits {\n    maxImageBytes: number;\n    maxImagesPerMessage: number;\n    maxMessageImageBytes: number;\n    maxImagePixels: number;\n    mediaTypes: readonly ImageMediaType[];\n}',
+    declaration: 'export interface ImageAttachmentLimits {\n    maxImageBytes: number;\n    maxImagesPerMessage: number;\n    maxMessageImageBytes: number;\n    maxImagePixels: number;\n    maxImageDimension: number;\n    mediaTypes: readonly ImageMediaType[];\n}',
   },
   {
     name: 'ImageAttachmentRef',
@@ -3576,6 +3582,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'ReplayEnvelope',
+    declaration: 'export interface ReplayEnvelope {\n    response: unknown;\n    blocks?: readonly unknown[];\n}',
   },
   {
     name: 'RequestContext',
@@ -4091,7 +4101,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'StreamChunk',
-    declaration: 'export type StreamChunk = {\n    type: \'block-start\';\n    index: number;\n    blockType: ContentBlockType;\n} | {\n    type: \'text-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'reasoning-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'tool-call-delta\';\n    index: number;\n    id: CallId;\n    name?: string;\n    argumentsDelta: string;\n} | {\n    type: \'block-end\';\n    index: number;\n    block: ContentBlock;\n} | {\n    type: \'usage\';\n    usage: TokenUsage;\n} | {\n    type: \'finish\';\n    reason: FinishReason;\n    replayState?: unknown;\n};',
+    declaration: 'export type StreamChunk = {\n    type: \'block-start\';\n    index: number;\n    blockType: ContentBlockType;\n} | {\n    type: \'text-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'reasoning-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'tool-call-delta\';\n    index: number;\n    id: CallId;\n    name?: string;\n    argumentsDelta: string;\n} | {\n    type: \'block-end\';\n    index: number;\n    block: ContentBlock;\n} | {\n    type: \'usage\';\n    usage: TokenUsage;\n} | {\n    type: \'finish\';\n    reason: FinishReason;\n    replayState?: ReplayEnvelope;\n};',
   },
   {
     name: 'SubagentCapabilities',
@@ -4119,7 +4129,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentReportDelivery',
-    declaration: 'export type SubagentReportDelivery = \'quiet\' | \'wakeup\';',
+    declaration: 'export type SubagentReportDelivery = \'quiet\' | \'next-step\';',
   },
   {
     name: 'SubagentReportOptions',
@@ -4531,7 +4541,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WebBootEntry',
-    declaration: 'export interface WebBootEntry {\n    id: string;\n    url: string;\n    rev: string;\n    inject?: string[];\n    immediately?: boolean;\n}',
+    declaration: 'export interface WebBootEntry {\n    id: string;\n    url: string;\n    rev: string;\n    inject?: string[];\n    immediately?: boolean;\n    external?: string[];\n}',
   },
   {
     name: 'WebBootGraph',

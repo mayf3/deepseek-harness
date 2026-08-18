@@ -101,7 +101,7 @@ type StubMode =
   | 'exit-after-send'
 
 class StubPtySession implements TerminalBackendSession {
-  readonly motd = '__DSH_PERSISTENT_BASH_PROMPT__ '
+  readonly motd = 'stub> '
   readonly pid = 123
   statusValue: TerminalSessionStatus = { kind: 'running' }
   scrollback = this.motd
@@ -340,7 +340,7 @@ describe('tool-bash-persistent', () => {
     expect(ctx.tools.get('bash')).toBeUndefined()
   })
 
-  it('handles inferred idle, prompt fallback, shell exit, clipping, and cleanup', async () => {
+  it('handles inferred idle, stdin_read fallback, shell exit, clipping, and cleanup', async () => {
     const { ctx, owner, stub, fiber } = await setup({
       backendType: 'stub',
       maxOutputChars: 10,
@@ -353,18 +353,16 @@ describe('tool-bash-persistent', () => {
 
     session.mode = 'incremental-fallback'
     session.scrollback = ''
-    expect(text(await call(ctx, owner, 'incremental fallback'))).toBe('increment')
+    expect(text(await call(ctx, owner, 'incremental fallback'))).toContain('increment')
 
     session.mode = 'prompt-only'
     const promptFallback = text(await call(ctx, owner, 'bad {'))
     expect(promptFallback).toContain('bash: synt')
-    expect(promptFallback).not.toContain('DSH_PERSISTENT_BASH_PROMPT')
 
     session.mode = 'prompt-crlf'
     session.scrollback = ''
     const crlfPromptFallback = text(await call(ctx, owner, 'bad {'))
     expect(crlfPromptFallback).toContain('bash: synt')
-    expect(crlfPromptFallback).not.toContain('DSH_PERSISTENT_BASH_PROMPT')
 
     session.mode = 'end-only'
     session.scrollback = ''
@@ -465,7 +463,7 @@ describe('tool-bash-persistent', () => {
     expect(text(await call(ctx, owner, 'paged output'))).toBe('hello from stub')
   })
 
-  it('sanitizes a prompt fallback reached after multiple polling rounds', async () => {
+  it('returns a stdin_read fallback reached after multiple polling rounds', async () => {
     const { ctx, owner, stub } = await setup({ backendType: 'stub', maxOutputChars: 1_000 })
     await call(ctx, owner, 'warm up')
     const session = stub.sessions[0]!
@@ -474,7 +472,8 @@ describe('tool-bash-persistent', () => {
     const result = text(await call(ctx, owner, 'bad {'))
     expect(result).toContain('partial syntax output')
     expect(result).toContain('bash: syntax error')
-    expect(result).not.toContain('DSH_PERSISTENT_BASH_PROMPT')
+    // The backend owns the prompt text, so the fallback retains it verbatim.
+    expect(result.endsWith('stub> ')).toBe(true)
     expect(result).not.toContain('DSH_PERSISTENT_BASH_START')
   })
 

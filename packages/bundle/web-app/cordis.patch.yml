@@ -180,6 +180,9 @@
     - id: ui-layout
       name: '@deepseek-ai/dsh-client-ui-layout'
 
+    - id: ui-renderer
+      name: '@deepseek-ai/dsh-client-ui-renderer'
+
     - id: ui-sidebar
       name: '@deepseek-ai/dsh-client-ui-sidebar'
 
@@ -197,6 +200,9 @@
 
     - id: ui-conversation
       name: '@deepseek-ai/dsh-client-ui-conversation'
+
+    - id: ui-attachment
+      name: '@deepseek-ai/dsh-client-ui-attachment'
 
     # Tool call tree, generic fallback, and keyed business Tool views.
     - id: ui-tool

@@ -43,7 +43,7 @@ export type {
 } from './settings-store.ts'
 
 /** Required services (cordis fiber inject). */
-export const inject = ['commandUi', 'sessions', 'slots', 'locale', 'connection', 'remote']
+export const inject = ['commandUi', 'sessions', 'slots', 'locale', 'connection', 'remote', 'settingsSchema']
 
 const ACCESS_NS = 'permission.access'
 
@@ -113,7 +113,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register('settings.permission', { zh, en }), 'ui-permission: settings row dictionaries')
 
   const connection = ctx.get('connection') as ConnectionHandle
-  const controller = new PermissionPresetSettingsController(connection.api)
+  const controller = new PermissionPresetSettingsController(connection.api, ctx.settingsSchema)
   const load = (): Promise<void> => controller.load()
   const select = (preset: string): Promise<void> => controller.select(preset)
   const injected = (): PermissionRowInjected => ({

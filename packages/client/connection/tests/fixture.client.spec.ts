@@ -173,6 +173,7 @@ describe('createFixtureApi', () => {
           maxImagesPerMessage: 20,
           maxMessageImageBytes: 100 * 1024 * 1024,
           maxImagePixels: 40_000_000,
+          maxImageDimension: 2000,
           mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
         },
       } },
@@ -866,6 +867,15 @@ describe('createFixtureApi', () => {
       content: [{ type: 'text' as const, text: 'keep me' }],
     }))
     expect(prompt.result).toMatchObject({ ok: false, error: { code: 'agent-busy' } })
+    const imagePrompt = await rejecting.sessions.prompt(req({
+      sessionId: real.result.value.sessionId,
+      mode: 'queue' as const,
+      content: [{ type: 'image' as const, mediaType: 'image/png' as const, data: 'iVBORw0KGgo=' }],
+    }))
+    expect(imagePrompt.result).toMatchObject({
+      ok: false,
+      error: { code: 'attachment-error', details: { reason: 'IMAGE_DIMENSION_TOO_LARGE' } },
+    })
   })
 
   it('timing hooks: history delay + one-shot failure, silent append, and breakStreams end open generators', async () => {
