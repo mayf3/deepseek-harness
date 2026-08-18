@@ -1,5 +1,5 @@
 /** Register the Tool call tree, details renderer, and built-in atomic views. */
-import type { ConnectionHandle, HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { ToolCallTree } from './tool/ToolCallTree.tsx'
@@ -16,19 +16,13 @@ import { webToolview } from './tool/toolviews/web-row.tsx'
 /** Required services: the slot registry and the Host description used for POSIX `~`. */
 export const inject = ['slots', 'connection']
 
-const absentHostDescription: HostDescriptionSource = {
-  getSnapshot: () => undefined,
-  subscribe: () => () => {},
-}
-
 /**
  * Mount the whole-Tool renderers and built-in atomic Tool registrations.
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle
-  const hostDescription = connection.hostDescription ?? absentHostDescription
-  const toolInject = () => ({ hooks: { hostDescription } })
+  const toolInject = () => ({ hooks: { hostDescription: connection.hostDescription } })
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'tool-call',
