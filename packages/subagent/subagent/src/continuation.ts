@@ -98,7 +98,7 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 
 /** Deployment scheduling policy for accepted child reports. */
-export type SubagentReportDelivery = 'quiet' | 'wakeup'
+export type SubagentReportDelivery = 'quiet' | 'next-step'
 
 /** Options for one continuable child's report to its direct parent. */
 export interface SubagentReportOptions {
@@ -644,7 +644,7 @@ export class SubagentContinuationManager {
         senderSessionId: activation.childId,
       },
     })
-    if (delivery === 'wakeup') {
+    if (delivery === 'next-step') {
       this.sendWaking(parent, message, () => { this.sendReport(parent, message, delivery) })
     } else {
       this.sendReport(parent, message, delivery)
@@ -656,7 +656,7 @@ export class SubagentContinuationManager {
    * Perform one waking send to a parent, accounted against that parent's own
    * Activation when it has one. Registering the id before the send is what
    * keeps a continuation-managed parent from being judged quiescent in the
-   * window between `followup()` and the microtask that admits it.
+   * window between a waking send and the microtask that admits it.
    * @param parent - the exact live parent receiving the waking message.
    * @param message - the message whose id is accounted.
    * @param send - the synchronous waking send to perform.
@@ -681,7 +681,7 @@ export class SubagentContinuationManager {
     delivery: SubagentReportDelivery,
   ): void {
     try {
-      if (delivery === 'wakeup') parent.followup(message)
+      if (delivery === 'next-step') parent.steer(message)
       else parent.inject(message)
     } catch (error: unknown) {
       throw new SubagentError(
@@ -1158,7 +1158,7 @@ export class SubagentContinuationManager {
     messageId: MessageId,
     send: () => void,
   ): MessageId {
-    // `Agent.followup()` publishes inbox events synchronously, so observers must
+    // Waking Agent sends publish inbox events synchronously, so observers must
     // see this Activation as busy before the call begins.
     activation.accepted.add(messageId)
     try {
