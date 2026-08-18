@@ -82,6 +82,51 @@ describe('verifyRuntimeClosure', () => {
     ])
   })
 
+  it('does not interpret an ordinary plugin array config as nested Loader entries', async () => {
+    const root = fixture({
+      'python/sdk-runtime/package.json': { name: 'runtime', dependencies: { '@scope/plugin': 'workspace:^' } },
+      'python/sdk-runtime/platforms.json': platforms,
+      'apps/cli/config/agent-presets/standard/agent.cordis.yml': `
+- id: plugin
+  name: '@scope/plugin'
+  config:
+    - name: '@scope/config-value'
+`,
+    })
+
+    const result = await verifyRuntimeClosure(root)
+
+    expect(result.failures).toEqual([])
+  })
+
+  it('fails when no shipped preset is discovered', async () => {
+    const root = fixture({
+      'python/sdk-runtime/package.json': { name: 'runtime', dependencies: {} },
+      'python/sdk-runtime/platforms.json': platforms,
+    })
+
+    const result = await verifyRuntimeClosure(root)
+
+    expect(result.presetCount).toBe(0)
+    expect(result.failures).toEqual([
+      'no agent presets matched apps/cli/config/agent-presets/*/agent.cordis.yml',
+    ])
+  })
+
+  it('fails when the runtime platform manifest has no targets', async () => {
+    const root = fixture({
+      'python/sdk-runtime/package.json': { name: 'runtime', dependencies: {} },
+      'python/sdk-runtime/platforms.json': {},
+      'apps/cli/config/agent-presets/standard/agent.cordis.yml': '[]\n',
+    })
+
+    const result = await verifyRuntimeClosure(root)
+
+    expect(result.failures).toEqual([
+      'python/sdk-runtime/platforms.json defines no runtime targets',
+    ])
+  })
+
   it('retains the required workspace-peer closure check', async () => {
     const root = fixture({
       'python/sdk-runtime/package.json': { name: 'runtime', dependencies: { '@scope/root': 'workspace:^' } },

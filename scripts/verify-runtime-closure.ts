@@ -8,7 +8,7 @@ import { globSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import { loadCordisYaml } from './cordis-yaml.ts'
+import { isCordisGroupEntry, loadCordisYaml } from './cordis-yaml.ts'
 
 interface PackageManifest {
   name?: string
@@ -29,6 +29,8 @@ interface RuntimePlatform {
 }
 
 type RuntimePlatformManifest = Record<string, RuntimePlatform>
+
+const AGENT_PRESET_GLOB = 'apps/cli/config/agent-presets/*/agent.cordis.yml'
 
 export interface RuntimeClosureResult {
   failures: string[]
@@ -51,6 +53,8 @@ export async function verifyRuntimeClosure(
   const workspace = await loadWorkspacePackages(root)
   const runtimeDependencies = runtimeManifest.dependencies ?? {}
   const platforms = await loadJson<RuntimePlatformManifest>(resolve(root, 'python/sdk-runtime/platforms.json'))
+  const presetPaths = globSync(AGENT_PRESET_GLOB, { cwd: root }).sort()
+  const targets = Object.keys(platforms).sort()
   const parents = new Map<string, string | undefined>()
   const queue: string[] = []
 
@@ -60,7 +64,10 @@ export async function verifyRuntimeClosure(
     queue.push(dependency)
   }
 
-  const failures = await missingPresetPlugins(root, runtimeDependencies, platforms)
+  const failures: string[] = []
+  if (presetPaths.length === 0) failures.push(`no agent presets matched ${AGENT_PRESET_GLOB}`)
+  if (targets.length === 0) failures.push('python/sdk-runtime/platforms.json defines no runtime targets')
+  failures.push(...await missingPresetPlugins(root, runtimeDependencies, presetPaths, targets))
   for (let index = 0; index < queue.length; index += 1) {
     const packageName = queue[index]
     if (packageName === undefined) continue
@@ -86,7 +93,7 @@ export async function verifyRuntimeClosure(
 
   return {
     failures,
-    presetCount: globSync('apps/cli/config/agent-presets/*/agent.cordis.yml', { cwd: root }).length,
+    presetCount: presetPaths.length,
     workspacePackageCount: queue.length,
   }
 }
@@ -112,18 +119,18 @@ if (import.meta.main) {
 async function missingPresetPlugins(
   root: string,
   runtimeDependencies: Readonly<Record<string, string>>,
-  platforms: RuntimePlatformManifest,
+  presetPaths: readonly string[],
+  targets: readonly string[],
 ): Promise<string[]> {
   const missing = new Map<string, Set<string>>()
   const failures: string[] = []
-  const presetPaths = globSync('apps/cli/config/agent-presets/*/agent.cordis.yml', { cwd: root }).sort()
   for (const presetPath of presetPaths) {
     const document = loadCordisYaml(await readFile(resolve(root, presetPath), 'utf8'))
     if (!Array.isArray(document)) {
       failures.push(`${presetPath}: preset root must be a Loader entry array`)
       continue
     }
-    for (const target of Object.keys(platforms).sort()) {
+    for (const target of targets) {
       const processPlatform = processPlatformForTarget(target)
       for (const plugin of activeBarePluginPackages(document, processPlatform)) {
         if (runtimeDependencies[plugin] !== undefined) continue
@@ -150,7 +157,7 @@ function activeBarePluginPackages(entries: unknown[], processPlatform: string): 
       const packageName = barePackageName(value.name)
       if (packageName !== undefined) packages.add(packageName)
     }
-    if (Array.isArray(value.config)) {
+    if (isCordisGroupEntry(value)) {
       for (const child of value.config) visit(child, disabled)
     }
   }

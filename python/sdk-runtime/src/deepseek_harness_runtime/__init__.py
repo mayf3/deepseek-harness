@@ -71,10 +71,11 @@ def bundled_runtime_path() -> Path:
     """Absolute path of the bundled single-file runtime executable for the current platform.
 
     Raises FileNotFoundError when the platform is unsupported, the executable
-    has not been placed into this package, or the required macOS spawn helper is
-    missing; the message names the acquisition routes (acquisition strategy is
-    deliberately separate from this lookup interface, so an on-demand download
-    can replace it without touching callers).
+    has not been placed into this package, the required ripgrep sidecar is
+    missing, or the required macOS spawn helper is missing; the message names
+    the acquisition routes (acquisition strategy is deliberately separate from
+    this lookup interface, so an on-demand download can replace it without
+    touching callers).
     """
     tag = _current_platform_tag()
     path = bundled_package_dir() / "runtime" / f"dsh-jsonrpc-agent-pkg-{tag}"

@@ -171,7 +171,7 @@ let rgPathPromise: Promise<string> | undefined
 export function resolveRgPath(): Promise<string> {
   rgPathPromise ??= Promise.resolve().then(async () => {
     const executableSidecar = `${process.execPath}-rg`
-    if (existsSync(executableSidecar)) return executableSidecar
+    if ('pkg' in process && existsSync(executableSidecar)) return executableSidecar
     return (await import('@vscode/ripgrep')).rgPath
   })
   return rgPathPromise
