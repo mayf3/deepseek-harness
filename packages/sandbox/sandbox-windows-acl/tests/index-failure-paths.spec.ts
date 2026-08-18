@@ -466,6 +466,38 @@ describe('AclSandbox spawn', () => {
     expect(waitForSingleObject).toHaveBeenCalledOnce()
   })
 
+  it('pipe spawn terminates promptly when one drain fails and the sibling remains open', async () => {
+    const { api } = state.stubs as HappyStubs
+    let peekCount = 0
+    let terminated = false
+    let lastError = 5
+    api.peekNamedPipe = vi.fn((_handle, _buffer, _size, _read, totalAvail: NativePtr) => {
+      peekCount += 1
+      if (peekCount === 1) return 0
+      if (terminated) {
+        lastError = ERROR_BROKEN_PIPE
+        return 0
+      }
+      koffi.encode(totalAvail, 'uint32', 0)
+      return 1
+    })
+    api.getLastError = vi.fn(() => lastError)
+    const terminateProcess = vi.fn(() => {
+      terminated = true
+      return 1
+    })
+    api.terminateProcess = terminateProcess
+    const waitForSingleObject = vi.fn(() => 0)
+    api.waitForSingleObject = waitForSingleObject
+    const workspace = scratch()
+    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-2-1', mode: 'workspace-write' })
+    await sandbox.init()
+    const child = sandbox.spawn({ command: 'probe.exe' })
+    await expect(child.wait()).rejects.toMatchObject({ api: 'PeekNamedPipe' })
+    expect(terminateProcess).toHaveBeenCalledOnce()
+    expect(waitForSingleObject).toHaveBeenCalledOnce()
+  })
+
   it('pipe spawn closes the process without waiting when termination after a drain failure fails', async () => {
     const { api, closeHandle } = state.stubs as HappyStubs
     api.getLastError = vi.fn(() => 5)
@@ -479,6 +511,23 @@ describe('AclSandbox spawn', () => {
     await expect(child.wait()).rejects.toBeInstanceOf(AggregateError)
     expect(waitForSingleObject).not.toHaveBeenCalled()
     expect(closeHandle).toHaveBeenCalled()
+  })
+
+  it('pipe spawn aggregates process-handle closure failure after termination failure', async () => {
+    const { api } = state.stubs as HappyStubs
+    api.getLastError = vi.fn(() => 5)
+    api.terminateProcess = vi.fn(() => 0)
+    const workspace = scratch()
+    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-4', mode: 'workspace-write' })
+    await sandbox.init()
+    const child = sandbox.spawn({ command: 'probe.exe' })
+    api.closeHandle = vi.fn(() => 0)
+    await expect(child.wait()).rejects.toMatchObject({
+      errors: expect.arrayContaining([
+        expect.objectContaining({ api: 'CloseHandle' }),
+        expect.objectContaining({ api: 'TerminateProcess' }),
+      ]),
+    })
   })
 })
 

@@ -391,24 +391,35 @@ export class AclSandbox {
     return {
       pid: native.pid,
       wait: () => (settlement ??= (async () => {
-        const drains = await Promise.allSettled([stdout, stderr])
+        let drains: PromiseSettledResult<Buffer>[]
+        try {
+          const [stdoutBuffer, stderrBuffer] = await Promise.all([stdout, stderr])
+          drains = [
+            { status: 'fulfilled', value: stdoutBuffer },
+            { status: 'fulfilled', value: stderrBuffer },
+          ]
+        } catch (firstDrainFailure) {
+          if (api.terminateProcess(native.process, 1) === 0) {
+            const failures: unknown[] = [firstDrainFailure]
+            const terminationCode = api.getLastError()
+            try {
+              closeHandleChecked(api, native.process, 'piped child after drain failure')
+            } catch (error) {
+              failures.push(error)
+            }
+            failures.push(new Win32Error('TerminateProcess', terminationCode, `pid ${native.pid} after drain failure`))
+            void Promise.allSettled([stdout, stderr])
+            throw new AggregateError(failures, 'piped child settlement failed')
+          }
+          drains = await Promise.allSettled([stdout, stderr])
+        }
         const failures = drains.flatMap<unknown>(outcome =>
           outcome.status === 'rejected' ? [outcome.reason as unknown] : [])
         let exitCode = 0
-        if (failures.length > 0 && api.terminateProcess(native.process, 1) === 0) {
-          const terminationCode = api.getLastError()
-          try {
-            closeHandleChecked(api, native.process, 'piped child after drain failure')
-          } catch (error) {
-            failures.push(error)
-          }
-          failures.push(new Win32Error('TerminateProcess', terminationCode, `pid ${native.pid} after drain failure`))
-        } else {
-          try {
-            exitCode = waitForExit(api, native.process)
-          } catch (error) {
-            failures.push(error)
-          }
+        try {
+          exitCode = waitForExit(api, native.process)
+        } catch (error) {
+          failures.push(error)
         }
         if (failures.length === 1) throw failures[0]
         if (failures.length > 1) throw new AggregateError(failures, 'piped child settlement failed')
