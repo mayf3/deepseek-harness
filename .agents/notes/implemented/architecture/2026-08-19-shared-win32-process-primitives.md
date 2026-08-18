@@ -10,17 +10,17 @@ The Windows ACL sandbox owns restricted-token, SID, DACL, grant, and workspace p
 
 ## Decision
 
-`@deepseek-ai/dsh-win32-process` owns the reusable Win32 process ABI and native resource operations currently consumed by `sandbox-windows-acl`. The package lazily loads `kernel32.dll` and `advapi32.dll`, verifies the x64 `STARTUPINFOW` and `PROCESS_INFORMATION` layouts, quotes argv for `CreateProcessAsUserW`, and exposes checked restricted-token pipe and inherited-stdio Job operations.
+`@deepseek-ai/dsh-win32-process` owns the reusable Win32 process ABI and native resource operations currently consumed by `sandbox-windows-acl`. The package lazily loads `kernel32.dll` and `advapi32.dll`, verifies the x64 `STARTUPINFOW`, `STARTUPINFOEXW`, and `PROCESS_INFORMATION` layouts, quotes argv for `CreateProcessAsUserW`, and exposes checked restricted-token pipe and inherited-stdio Job operations.
 
 The Windows ACL sandbox remains the only owner of restricted-token creation, SID and DACL policy, grants, writable-path decisions, temporary-directory policy, and the public sandbox child result. It extends the shared binding context with policy-specific APIs, supplies the primary token, combines pipe drains and waits, and closes the caller-owned Job at its lifecycle boundary.
 
-Every native allocation and HANDLE has one owner. A process operation frees its Koffi out-parameters and closes every pipe, thread, process, or Job handle acquired before a failure. Successful pipe creation returns the process plus stdout/stderr read handles to the sandbox. Successful inherited-stdio creation returns the process plus kill-on-close Job after the child is suspended, assigned to the Job, and resumed; assignment failure terminates the suspended child before releasing its handles. The sandbox owns returned process, pipe, and Job handles until wait or disposal.
+Every native allocation and HANDLE has one owner. A process operation frees its Koffi out-parameters and closes every pipe, thread, process, or Job handle acquired before a failure. Successful pipe creation returns the process plus stdout/stderr read handles to the sandbox. Inherited-stdio creation puts the kill-on-close Job in `STARTUPINFOEXW`, so a successfully created suspended child is already Job-owned before resume; attribute, creation, or resume failure therefore has one deterministic cleanup owner. The sandbox owns returned process, pipe, and Job handles until wait or disposal.
 
 The package exports only operations used by the sandbox production path. Ordinary `CreateProcessW`, exact `applicationName`, parent-stdio release, and whole-Job settlement remain absent until an ordinary process consumer needs them. The package is a library, not a Cordis service or a public Windows SDK.
 
 ## Verification
 
-The shared suite covers x64 ABI values, command-line quoting, binding extension, pipe EOF and drain allocation reuse, restricted-token process creation, suspended Job assignment before resume, wait and exit-code reads, native allocation release, and every acquired-resource failure set. Sandbox tests retain restricted-token, fail-closed, pipe/inherit, result, and disposal composition without duplicating the low-level matrix. Native Windows checks compile the header probe and run the migrated sandbox paths; Wine supplies the emulated Windows package and composition signal.
+The shared suite covers x64 ABI values, command-line quoting, binding extension, pipe EOF and drain allocation reuse, restricted-token process creation, atomic suspended Job attachment before resume, wait and exit-code reads, native allocation release, and every acquired-resource failure set. Sandbox tests retain restricted-token, fail-closed, pipe/inherit, result, and disposal composition without duplicating the low-level matrix. Native Windows checks compile both header probes and run the migrated sandbox paths; Wine supplies the emulated Windows package and composition signal.
 
 ## Alternatives considered
 

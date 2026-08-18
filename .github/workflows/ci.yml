@@ -488,6 +488,22 @@ jobs:
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
+      - name: Compile and run Win32 header ABI probes
+        shell: pwsh
+        run: |
+          $probeRoot = Join-Path $env:RUNNER_TEMP 'dsh-win32-abi-probes'
+          New-Item -ItemType Directory -Force -Path $probeRoot | Out-Null
+          $processProbe = Join-Path $probeRoot 'win32-process.exe'
+          $sandboxProbe = Join-Path $probeRoot 'sandbox-windows-acl.exe'
+          g++ -std=c++20 -municode -O2 -o $processProbe packages/subprocess/win32-process/verify/abi-probe.cpp
+          if ($LASTEXITCODE -ne 0) { throw 'win32-process ABI probe compilation failed' }
+          & $processProbe
+          if ($LASTEXITCODE -ne 0) { throw 'win32-process ABI probe failed' }
+          g++ -std=c++20 -municode -O2 -o $sandboxProbe packages/sandbox/sandbox-windows-acl/verify/abi-probe.cpp -ladvapi32
+          if ($LASTEXITCODE -ne 0) { throw 'sandbox-windows-acl ABI probe compilation failed' }
+          & $sandboxProbe
+          if ($LASTEXITCODE -ne 0) { throw 'sandbox-windows-acl ABI probe failed' }
+
       - name: Run complete native Windows gate inventory
         shell: pwsh
         run: pnpm run check:ci:windows-complete

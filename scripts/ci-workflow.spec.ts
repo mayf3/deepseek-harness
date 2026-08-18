@@ -78,6 +78,10 @@ describe('CI workflow', () => {
     const nativeCommandSteps = (windowsNative.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
+    expect(nativeCommandSteps.some(step => (
+      step.run.includes('packages/subprocess/win32-process/verify/abi-probe.cpp')
+      && step.run.includes('packages/sandbox/sandbox-windows-acl/verify/abi-probe.cpp')
+    ))).toBe(true)
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
 
     // wine-apt-cache: master-only, seeds the Wine apt cache.

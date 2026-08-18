@@ -145,7 +145,15 @@ function happyStubs(): HappyStubs {
   })
   const createJobObjectW = vi.fn(() => fresh())
   const setInformationJobObject = vi.fn(() => 1)
-  const assignProcessToJobObject = vi.fn(() => 1)
+  const initializeProcThreadAttributeList = vi.fn((list: Buffer | null, _count: number, _flags: number, size: NativePtr) => {
+    if (list === null) {
+      koffi.encode(size, 'size_t', 64)
+      return 0
+    }
+    return 1
+  })
+  const updateProcThreadAttribute = vi.fn(() => 1)
+  const deleteProcThreadAttributeList = vi.fn()
   const resumeThread = vi.fn(() => 0)
   const getStdHandle = vi.fn(() => fresh())
   const localFree = vi.fn(() => 0n)
@@ -160,7 +168,8 @@ function happyStubs(): HappyStubs {
     getLengthSid, copySid, createWellKnownSid, isValidSid, createRestrictedToken,
     setTokenInformation, createPipe, setHandleInformation, createProcessAsUserW,
     peekNamedPipe, readFile, waitForSingleObject, getExitCodeProcess, createJobObjectW,
-    setInformationJobObject, assignProcessToJobObject, resumeThread, getStdHandle,
+    setInformationJobObject, initializeProcThreadAttributeList, updateProcThreadAttribute,
+    deleteProcThreadAttributeList, resumeThread, getStdHandle,
     localFree, closeHandle, getLastError, formatMessageW,
   } as unknown as Win32Bindings
   return {

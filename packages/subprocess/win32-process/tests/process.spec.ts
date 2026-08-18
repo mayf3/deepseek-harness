@@ -7,7 +7,12 @@ import {
   spawnInheritedJobProcess,
   spawnPipedProcess,
 } from '../src/index.ts'
-import { CREATE_SUSPENDED } from '../src/abi.ts'
+import {
+  CREATE_SUSPENDED,
+  EXTENDED_STARTUPINFO_PRESENT,
+  POINTER_SIZE,
+  PROC_THREAD_ATTRIBUTE_JOB_LIST,
+} from '../src/abi.ts'
 import { PROCESS_INFORMATION } from '../src/ffi.ts'
 import type { NativePtr, Win32ProcessBindings } from '../src/index.ts'
 
@@ -17,9 +22,12 @@ function inheritedApi(overrides: Partial<Win32ProcessBindings> = {}): {
   api: Win32ProcessBindings
   events: string[]
   createProcessAsUserW: ReturnType<typeof vi.fn>
-  assignProcessToJobObject: ReturnType<typeof vi.fn>
+  initializeProcThreadAttributeList: ReturnType<typeof vi.fn>
+  updateProcThreadAttribute: ReturnType<typeof vi.fn>
+  attachedJob: () => NativePtr | null
 } {
   const events: string[] = []
+  let attachedJob: NativePtr | null = null
   const createProcessAsUserWImpl: Win32ProcessBindings['createProcessAsUserW'] =
     overrides.createProcessAsUserW
     ?? ((_token, _app, _line, _pa, _ta, _inherit, _flags, _env, _cwd, _startup, info) => {
@@ -33,7 +41,22 @@ function inheritedApi(overrides: Partial<Win32ProcessBindings> = {}): {
       return 1
     })
   const createProcessAsUserW = vi.fn(createProcessAsUserWImpl)
-  const assignProcessToJobObject = vi.fn(() => { events.push('assign'); return 1 })
+  const initializeProcThreadAttributeList = vi.fn((list: Buffer | null, _count: number, _flags: number, size: NativePtr) => {
+    if (list === null) {
+      events.push('attribute-size')
+      koffi.encode(size, 'size_t', 64)
+      return 0
+    }
+    events.push('attribute-init')
+    return 1
+  })
+  const updateProcThreadAttribute = vi.fn((_list, _flags, attribute: number, value: NativePtr) => {
+    if (attribute === PROC_THREAD_ATTRIBUTE_JOB_LIST) {
+      attachedJob = koffi.decode(value, PVOID) as NativePtr
+      events.push('attach-job')
+    }
+    return 1
+  })
   const api = {
     createJobObjectW: vi.fn(() => 50n),
     setInformationJobObject: vi.fn(() => 1),
@@ -42,7 +65,9 @@ function inheritedApi(overrides: Partial<Win32ProcessBindings> = {}): {
       events.push(flags === 0 ? 'restore' : 'inherit')
       return 1
     }),
-    assignProcessToJobObject,
+    initializeProcThreadAttributeList,
+    updateProcThreadAttribute,
+    deleteProcThreadAttributeList: vi.fn(() => { events.push('attribute-delete') }),
     resumeThread: vi.fn(() => { events.push('resume'); return 1 }),
     terminateProcess: vi.fn(() => 1),
     closeHandle: vi.fn((handle: NativePtr) => { events.push(`close:${handle}`); return 1 }),
@@ -55,7 +80,9 @@ function inheritedApi(overrides: Partial<Win32ProcessBindings> = {}): {
     api,
     events,
     createProcessAsUserW,
-    assignProcessToJobObject,
+    initializeProcThreadAttributeList,
+    updateProcThreadAttribute,
+    attachedJob: () => attachedJob,
   }
 }
 
@@ -67,7 +94,9 @@ describe('spawnInheritedJobProcess', () => {
       api,
       events,
       createProcessAsUserW,
-      assignProcessToJobObject,
+      initializeProcThreadAttributeList,
+      updateProcThreadAttribute,
+      attachedJob,
     } = inheritedApi()
     const child = spawnInheritedJobProcess(api, {
       command: 'cmd.exe',
@@ -76,9 +105,21 @@ describe('spawnInheritedJobProcess', () => {
       token,
     })
     expect(child).toEqual({ pid: 1234, process: 60n, job: 50n })
-    expect(events.indexOf('assign')).toBeGreaterThan(events.indexOf('create'))
+    expect(events.indexOf('attach-job')).toBeLessThan(events.indexOf('create'))
+    expect(events.indexOf('attribute-delete')).toBeGreaterThan(events.indexOf('create'))
     expect(events.indexOf('resume')).toBeGreaterThan(events.indexOf('create'))
-    expect(assignProcessToJobObject).toHaveBeenCalledWith(50n, 60n)
+    expect(initializeProcThreadAttributeList).toHaveBeenNthCalledWith(1, null, 1, 0, expect.anything())
+    expect(initializeProcThreadAttributeList).toHaveBeenNthCalledWith(2, expect.any(Buffer), 1, 0, expect.anything())
+    expect(updateProcThreadAttribute).toHaveBeenCalledWith(
+      expect.any(Buffer),
+      0,
+      PROC_THREAD_ATTRIBUTE_JOB_LIST,
+      expect.anything(),
+      POINTER_SIZE,
+      null,
+      null,
+    )
+    expect(attachedJob()).toBe(50n)
     expect(createProcessAsUserW).toHaveBeenCalledWith(
       token,
       null,
@@ -86,7 +127,7 @@ describe('spawnInheritedJobProcess', () => {
       null,
       null,
       1,
-      CREATE_SUSPENDED,
+      CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
       null,
       'C:\\work',
       expect.anything(),
@@ -149,10 +190,10 @@ describe('spawnInheritedJobProcess', () => {
     expect(caught).toMatchObject({ api: 'CreateProcessAsUserW', win32Code: 87 })
   })
 
-  it('terminates a restricted child when CreateProcessAsUserW returns a null thread handle', () => {
-    const terminateProcess = vi.fn(() => 1)
+  it('closes the atomic Job when CreateProcessAsUserW returns a null thread handle', () => {
+    const closeHandle = vi.fn(() => 1)
     const { api } = inheritedApi({
-      terminateProcess,
+      closeHandle,
       createProcessAsUserW: vi.fn((_token, _app, _line, _pa, _ta, _inherit, _flags, _env, _cwd, _startup, info) => {
         koffi.encode(info, PROCESS_INFORMATION, {
           hProcess: 60n,
@@ -169,7 +210,8 @@ describe('spawnInheritedJobProcess', () => {
       cwd: 'C:\\work',
       token,
     })).toThrow('null process/thread handles')
-    expect(terminateProcess).toHaveBeenCalledWith(60n, 1)
+    expect(closeHandle).toHaveBeenCalledWith(50n)
+    expect(closeHandle).toHaveBeenCalledWith(60n)
   })
 })
 

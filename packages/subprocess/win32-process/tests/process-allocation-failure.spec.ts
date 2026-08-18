@@ -20,11 +20,21 @@ afterEach(() => {
 
 describe('spawnInheritedJobProcess allocation cleanup', () => {
   it('frees startup info when process-info allocation throws', () => {
+    const deleteProcThreadAttributeList = vi.fn()
     const api = {
       createJobObjectW: vi.fn(() => 50n),
       setInformationJobObject: vi.fn(() => 1),
       getStdHandle: vi.fn((selector: number) => BigInt(100 - selector)),
       setHandleInformation: vi.fn(() => 1),
+      initializeProcThreadAttributeList: vi.fn((list: Buffer | null, _count: number, _flags: number, size: NativePtr) => {
+        if (list === null) {
+          koffi.encode(size, 'size_t', 64)
+          return 0
+        }
+        return 1
+      }),
+      updateProcThreadAttribute: vi.fn(() => 1),
+      deleteProcThreadAttributeList,
       closeHandle: vi.fn(() => 1),
       getLastError: vi.fn(() => 5),
       formatMessageW: vi.fn(() => 0),
@@ -37,7 +47,8 @@ describe('spawnInheritedJobProcess allocation cleanup', () => {
       cwd: 'C:\\',
       token: 70n as NativePtr,
     })).toThrow('process-info allocation failed')
-    expect(free).toHaveBeenCalledOnce()
+    expect(deleteProcThreadAttributeList).toHaveBeenCalledOnce()
+    expect(free).toHaveBeenCalledTimes(4)
   })
 
   it('frees process info after a successful inherited spawn', () => {
@@ -46,6 +57,15 @@ describe('spawnInheritedJobProcess allocation cleanup', () => {
       setInformationJobObject: vi.fn(() => 1),
       getStdHandle: vi.fn((selector: number) => BigInt(100 - selector)),
       setHandleInformation: vi.fn(() => 1),
+      initializeProcThreadAttributeList: vi.fn((list: Buffer | null, _count: number, _flags: number, size: NativePtr) => {
+        if (list === null) {
+          koffi.encode(size, 'size_t', 64)
+          return 0
+        }
+        return 1
+      }),
+      updateProcThreadAttribute: vi.fn(() => 1),
+      deleteProcThreadAttributeList: vi.fn(),
       createProcessAsUserW: vi.fn((_token, _app, _line, _pa, _ta, _inherit, _flags, _env, _cwd, _startup, info) => {
         koffi.encode(info, PROCESS_INFORMATION, {
           hProcess: 60n,
@@ -55,7 +75,6 @@ describe('spawnInheritedJobProcess allocation cleanup', () => {
         })
         return 1
       }),
-      assignProcessToJobObject: vi.fn(() => 1),
       resumeThread: vi.fn(() => 1),
       closeHandle: vi.fn(() => 1),
       getLastError: vi.fn(() => 5),
@@ -68,7 +87,7 @@ describe('spawnInheritedJobProcess allocation cleanup', () => {
       cwd: 'C:\\',
       token: 70n as NativePtr,
     })).toEqual({ pid: 1234, process: 60n, job: 50n })
-    expect(free).toHaveBeenCalledTimes(2)
+    expect(free).toHaveBeenCalledTimes(5)
   })
 })
 

@@ -6,10 +6,10 @@
  * acl.spec.ts and probe.spec.ts (win32 only).
  */
 
-import { Win32Error } from '@deepseek-ai/dsh-win32-process'
 import { describe, expect, it, vi } from 'vitest'
 import koffi from 'koffi'
 
+import { Win32Error, quoteArg } from '../src/index.ts'
 import {
   allocBytes, decodePtrAt, getTempPath,
   isInvalidHandle, sameSidAt,
@@ -72,6 +72,13 @@ describe('getTempPath', () => {
   it('rejects a required length larger than the fixed buffer', () => {
     const api = { getTempPathW: vi.fn(() => 300) } as unknown as Win32Bindings
     expect(() => getTempPath(api)).toThrow(/GetTempPathW failed \(Win32 122\): required 300/u)
+  })
+})
+
+describe('public compatibility exports', () => {
+  it('keeps the sandbox Win32 error and quoting API', () => {
+    expect(new Win32Error('Probe', 5)).toBeInstanceOf(Error)
+    expect(quoteArg('a b')).toBe('"a b"')
   })
 })
 

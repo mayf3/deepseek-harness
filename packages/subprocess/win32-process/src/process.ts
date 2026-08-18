@@ -15,6 +15,7 @@ import {
   throwLastError,
   throwWin32,
 } from './ffi.ts'
+import { createJobStartupInfo } from './job-attribute.ts'
 import type { NativePtr, Win32ProcessBindings } from './ffi.ts'
 
 /**
@@ -77,7 +78,7 @@ export interface SpawnedPipedProcess {
   stderrRead: NativePtr
 }
 
-/** Suspended-created child assigned to one caller-owned kill-on-close Job before resume. */
+/** Suspended-created child atomically attached to one caller-owned kill-on-close Job. */
 export interface SpawnedJobProcess {
   /** Direct child process id. */
   pid: number
@@ -310,7 +311,7 @@ function createKillOnCloseJob(api: Win32ProcessBindings): NativePtr {
 }
 
 /**
- * Spawn suspended inside a kill-on-close Job, then resume.
+ * Spawn suspended and atomically attached to a kill-on-close Job, then resume.
  * @param api - active binding table.
  * @param options - command, cwd, args, and restricted primary token.
  * @returns caller-owned process and Job handles after successful resume.
@@ -331,7 +332,6 @@ export function spawnInheritedJobProcess(
   const stdOut = getStdHandle(abi.STD_OUTPUT_HANDLE, 'stdout')
   const stdErr = getStdHandle(abi.STD_ERROR_HANDLE, 'stderr')
   const enabled: NativePtr[] = []
-  let startupInfo: NativePtr | undefined
   let processInfo: NativePtr | undefined
   let created = 0
   let createFailureCode = 0
@@ -346,27 +346,28 @@ export function spawnInheritedJobProcess(
       }
       enabled.push(handle)
     }
-    startupInfo = allocStartupInfo()
-    encodeStartupInfo(startupInfo, {
-      cb: abi.STARTUPINFOW_SIZE,
+    const startupInfo = createJobStartupInfo(api, {
       dwFlags: abi.STARTF_USESTDHANDLES,
       hStdInput: stdIn,
       hStdOutput: stdOut,
       hStdError: stdErr,
-    })
-    processInfo = allocProcessInfo()
-    created = createRestrictedProcess(
-      api,
-      options,
-      buildCommandLine(options.command, options.args),
-      abi.CREATE_SUSPENDED,
-      startupInfo,
-      processInfo,
-    )
-    if (created === 0) createFailureCode = api.getLastError()
+    }, job)
+    try {
+      processInfo = allocProcessInfo()
+      created = createRestrictedProcess(
+        api,
+        options,
+        buildCommandLine(options.command, options.args),
+        abi.CREATE_SUSPENDED | abi.EXTENDED_STARTUPINFO_PRESENT,
+        startupInfo.pointer,
+        processInfo,
+      )
+      if (created === 0) createFailureCode = api.getLastError()
+    } finally {
+      startupInfo.dispose()
+    }
   } catch (error) {
     freeNative(processInfo)
-    freeNative(startupInfo)
     api.closeHandle(job)
     throw error
   } finally {
@@ -374,7 +375,6 @@ export function spawnInheritedJobProcess(
   }
   if (created === 0) {
     freeNative(processInfo)
-    freeNative(startupInfo)
     api.closeHandle(job)
     throwWin32(
       api,
@@ -388,22 +388,12 @@ export function spawnInheritedJobProcess(
     info = decodeProcessInfo(processInfo)
   } finally {
     freeNative(processInfo)
-    freeNative(startupInfo)
   }
   if (info.hProcess === null || info.hThread === null) {
-    if (info.hProcess !== null) api.terminateProcess(info.hProcess, 1)
+    api.closeHandle(job)
     closeBestEffort(api, info.hThread)
     closeBestEffort(api, info.hProcess)
-    api.closeHandle(job)
     throw new Error(`CreateProcessAsUserW succeeded but returned null process/thread handles (pid ${info.dwProcessId})`)
-  }
-  if (api.assignProcessToJobObject(job, info.hProcess) === 0) {
-    const win32Code = api.getLastError()
-    api.terminateProcess(info.hProcess, 1)
-    closeBestEffort(api, info.hThread)
-    closeBestEffort(api, info.hProcess)
-    api.closeHandle(job)
-    throwWin32(api, 'AssignProcessToJobObject', win32Code, `pid ${info.dwProcessId}`)
   }
   if (api.resumeThread(info.hThread) === 0xFFFFFFFF) {
     const win32Code = api.getLastError()

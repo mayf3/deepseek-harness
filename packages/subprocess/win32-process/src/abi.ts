@@ -8,6 +8,10 @@ export const HANDLE_FLAG_INHERIT = 0x1
 export const INFINITE = 0xFFFFFFFF
 /** CreateProcess flag that prevents user code from running before resume. */
 export const CREATE_SUSPENDED = 0x4
+/** CreateProcess flag selecting STARTUPINFOEXW and its process attributes. */
+export const EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+/** Process-thread attribute that assigns the new process to a caller-supplied Job atomically. */
+export const PROC_THREAD_ATTRIBUTE_JOB_LIST = 0x0002000D
 /** GetStdHandle selector for standard input. */
 export const STD_INPUT_HANDLE = -10
 /** GetStdHandle selector for standard output. */
@@ -34,5 +38,9 @@ export const JOBOBJECT_EXTENDED_LIMIT_SIZE = 144
 export const JOBOBJECT_EXTENDED_LIMIT_FLAGS_OFFSET = 16
 /** x64 STARTUPINFOW byte size verified by the native probe. */
 export const STARTUPINFOW_SIZE = 104
+/** x64 STARTUPINFOEXW byte size verified by the native probe. */
+export const STARTUPINFOEXW_SIZE = 112
+/** x64 pointer and HANDLE byte size. */
+export const POINTER_SIZE = 8
 /** x64 PROCESS_INFORMATION byte size verified by the native probe. */
 export const PROCESS_INFORMATION_SIZE = 24

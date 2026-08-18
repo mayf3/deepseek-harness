@@ -55,6 +55,7 @@ import * as abi from './win32-abi.ts'
 export { AclWriteGrant } from './grant.ts'
 export { assertTempRootOutsideWorkspace } from './path-boundary.ts'
 export { tempWriteSid, workspaceWriteSid } from './workspace-sid.ts'
+export { quoteArg, Win32Error } from '@deepseek-ai/dsh-win32-process'
 
 /** Construction options: the workspace/temp allowlists and their distinct SID identities. */
 export interface AclSandboxOptions {

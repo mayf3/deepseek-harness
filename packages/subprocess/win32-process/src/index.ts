@@ -19,6 +19,7 @@ export type {
 export {
   closeHandleChecked,
   drainPipe,
+  quoteArg,
   spawnInheritedJobProcess,
   spawnPipedProcess,
   waitForProcessExit,
