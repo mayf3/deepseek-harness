@@ -1712,7 +1712,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 }
 ```
 
-来源：[`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+来源：[`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `interrupt_agent`
 
@@ -1733,7 +1733,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 }
 ```
 
-来源：[`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+来源：[`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `list_agents`
 
@@ -1746,7 +1746,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 }
 ```
 
-来源：[`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+来源：[`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `send_message`
 
@@ -1772,7 +1772,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 }
 ```
 
-来源：[`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+来源：[`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `spawn_teammate`
 
@@ -1811,7 +1811,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 }
 ```
 
-来源：[`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+来源：[`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `team_task_create`
 
@@ -1851,7 +1851,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 }
 ```
 
-来源：[`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+来源：[`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `team_task_get`
 
@@ -1872,7 +1872,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 }
 ```
 
-来源：[`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+来源：[`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `team_task_list`
 
@@ -1911,7 +1911,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 }
 ```
 
-来源：[`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+来源：[`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `team_task_update`
 
@@ -1978,7 +1978,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 }
 ```
 
-来源：[`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+来源：[`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `wait_agent`
 
@@ -1996,7 +1996,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 }
 ```
 
-来源：[`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+来源：[`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 这 10 个工具限定于隐式 Team Lead 与持久 teammate 作用域。随产品发布的 dsh-base bundle 默认禁用该包；文档中的 Agent Teams profile patch 会启用它，并禁用旧 continuable child 的同名控制工具。
 

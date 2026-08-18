@@ -304,22 +304,22 @@
     {
       "doc": "docs/subsystems/team.md",
       "symbol": "TeamMemberSnapshot",
-      "source": "packages/team/team/src/types.ts"
+      "source": "packages/experimental/team/src/types.ts"
     },
     {
       "doc": "docs/subsystems/team.md",
       "symbol": "TeamMessageSnapshot",
-      "source": "packages/team/team/src/types.ts"
+      "source": "packages/experimental/team/src/types.ts"
     },
     {
       "doc": "docs/subsystems/team.md",
       "symbol": "TeamMessageSource",
-      "source": "packages/team/team/src/types.ts"
+      "source": "packages/experimental/team/src/types.ts"
     },
     {
       "doc": "docs/subsystems/team.md",
       "symbol": "TeamTaskSnapshot",
-      "source": "packages/team/team/src/types.ts"
+      "source": "packages/experimental/team/src/types.ts"
     },
     {
       "doc": "docs/subsystems/commands.md",

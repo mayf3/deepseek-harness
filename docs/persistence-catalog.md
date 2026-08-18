@@ -719,7 +719,7 @@ Source: [`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent
 
 Types: [TeamId](subsystems/team.md) · [TeamMemberSnapshot](subsystems/team.md)
 
-Source: [`packages/team/team/src/types.ts:206`](../packages/team/team/src/types.ts)
+Source: [`packages/experimental/team/src/types.ts:206`](../packages/experimental/team/src/types.ts)
 
 <a id="teammessagedelivered--log-only"></a>
 
@@ -737,7 +737,7 @@ Source: [`packages/team/team/src/types.ts:206`](../packages/team/team/src/types.
 
 Types: [TeamId](subsystems/team.md) · [TeamMessageId](subsystems/team.md)
 
-Source: [`packages/team/team/src/types.ts:212`](../packages/team/team/src/types.ts)
+Source: [`packages/experimental/team/src/types.ts:212`](../packages/experimental/team/src/types.ts)
 
 <a id="teammessagequeued--log-only"></a>
 
@@ -750,7 +750,7 @@ Source: [`packages/team/team/src/types.ts:212`](../packages/team/team/src/types.
 
 Types: [TeamId](subsystems/team.md) · [TeamMessageSnapshot](subsystems/team.md)
 
-Source: [`packages/team/team/src/types.ts:210`](../packages/team/team/src/types.ts)
+Source: [`packages/experimental/team/src/types.ts:210`](../packages/experimental/team/src/types.ts)
 
 <a id="teamtask--log-only"></a>
 
@@ -763,7 +763,7 @@ Source: [`packages/team/team/src/types.ts:210`](../packages/team/team/src/types.
 
 Types: [TeamId](subsystems/team.md) · [TeamTaskSnapshot](subsystems/team.md)
 
-Source: [`packages/team/team/src/types.ts:208`](../packages/team/team/src/types.ts)
+Source: [`packages/experimental/team/src/types.ts:208`](../packages/experimental/team/src/types.ts)
 
 ### `todo/*`
 

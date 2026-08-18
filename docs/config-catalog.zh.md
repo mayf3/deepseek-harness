@@ -2270,7 +2270,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/team/team/src/types.ts:125`](../packages/team/team/src/types.ts)
+来源：[`packages/experimental/team/src/types.ts:125`](../packages/experimental/team/src/types.ts)
 
 
 <a id="deepseek-aidsh-terminal-bash"></a>
@@ -2721,7 +2721,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/team/tool-team/src/index.ts:17`](../packages/team/tool-team/src/index.ts)
+来源：[`packages/experimental/tool-team/src/index.ts:17`](../packages/experimental/tool-team/src/index.ts)
 
 
 <a id="deepseek-aidsh-tool-terminal"></a>

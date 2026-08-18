@@ -67,7 +67,7 @@ const GROUP_ORDER = [
   'core',
   'typert',
   'goal',
-  'team',
+  'experimental',
   'process',
   'bash',
   'pty',

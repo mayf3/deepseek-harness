@@ -1708,7 +1708,7 @@ Send a durable follow-up task to another Team member and start a turn when neede
 }
 ```
 
-Source: [`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+Source: [`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `interrupt_agent`
 
@@ -1729,7 +1729,7 @@ Interrupt one teammate's current turn while preserving its pending inbox. Team L
 }
 ```
 
-Source: [`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+Source: [`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `list_agents`
 
@@ -1742,7 +1742,7 @@ List the Lead and every durable teammate with current runtime status.
 }
 ```
 
-Source: [`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+Source: [`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `send_message`
 
@@ -1768,7 +1768,7 @@ Send durable information to another Team member without starting an idle member.
 }
 ```
 
-Source: [`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+Source: [`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `spawn_teammate`
 
@@ -1807,7 +1807,7 @@ Create one named, durable teammate. Only the Team Lead may call this tool.
 }
 ```
 
-Source: [`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+Source: [`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `team_task_create`
 
@@ -1847,7 +1847,7 @@ Create one unowned pending task on the shared Team task board.
 }
 ```
 
-Source: [`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+Source: [`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `team_task_get`
 
@@ -1868,7 +1868,7 @@ Read the complete latest value of one shared task before changing or executing i
 }
 ```
 
-Source: [`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+Source: [`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `team_task_list`
 
@@ -1907,7 +1907,7 @@ List shared tasks, including readiness, owner, revision, blockers, and write-sco
 }
 ```
 
-Source: [`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+Source: [`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `team_task_update`
 
@@ -1974,7 +1974,7 @@ Compare-and-set a shared task action using the latest revision from team_task_ge
 }
 ```
 
-Source: [`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+Source: [`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 ### `wait_agent`
 
@@ -1992,7 +1992,7 @@ Wait for the next teammate status, mailbox, or shared-task change after this cal
 }
 ```
 
-Source: [`packages/team/tool-team/src/index.ts`](../packages/team/tool-team/src/index.ts)
+Source: [`packages/experimental/tool-team/src/index.ts`](../packages/experimental/tool-team/src/index.ts)
 
 All ten tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names.
 

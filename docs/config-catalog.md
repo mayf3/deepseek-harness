@@ -2268,7 +2268,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/team/team/src/types.ts:125`](../packages/team/team/src/types.ts)
+Source: [`packages/experimental/team/src/types.ts:125`](../packages/experimental/team/src/types.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -2718,7 +2718,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/team/tool-team/src/index.ts:17`](../packages/team/tool-team/src/index.ts)
+Source: [`packages/experimental/tool-team/src/index.ts:17`](../packages/experimental/tool-team/src/index.ts)
 
 <a id="deepseek-aidsh-tool-terminal"></a>
 

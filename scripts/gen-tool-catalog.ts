@@ -512,7 +512,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   {
     pkg: '@deepseek-ai/dsh-tool-team',
     dir: 'tool-team',
-    source: 'packages/team/tool-team/src/index.ts',
+    source: 'packages/experimental/tool-team/src/index.ts',
     requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.teams', 'an exact live Team member Agent'],
     writes: ['tool/call', 'team/member', 'team/message/queued', 'team/message/delivered', 'team/task', 'tool/result'],
     async mount(ctx) {
