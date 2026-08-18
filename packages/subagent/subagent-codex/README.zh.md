@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-本包注册固定的 `codex` subagent 提供方。每次接受运行请求后，它都会在发起委托的会话工作区中使用 `app-server --stdio` 启动官方包内 Codex wrapper，创建一个临时 Codex 线程，提交一个自包含的文本任务，并通过共享的 [`dsh-subagent`](../subagent/README.md) 结果约定返回选定的最终答案或独立的安全失败诊断。
+本包注册由 Profile 命名、默认名称为 `codex` 的 Codex subagent 提供方。每次接受运行请求后，它都会在发起委托的会话工作区中使用 `app-server --stdio` 启动官方包内 Codex wrapper，创建一个临时 Codex 线程，提交一个自包含的文本任务，并通过共享的 [`dsh-subagent`](../subagent/README.md) 结果约定返回选定的最终答案或独立的安全失败诊断。
 
 ## 启动与所有权
 
@@ -22,6 +22,7 @@
 
 | 配置键 | 默认值 | 含义 |
 |---|---|---|
+| `providerName` | `codex` | `ctx.subagents` 中的非空注册名称；每个已挂载实例都需要唯一值。 |
 | `env` | `{}` | 显式指定的子进程环境，叠加在由子进程 seam 清除凭证后的父环境之上。 |
 | `permissionMode` | `never` | 为该提供方实例的每个线程固定原生非交互审批与沙箱模式。 |
 | `disposeGraceMs` | `3000` | 共享进程树责任方各终止层级之间的宽限期，单位为毫秒且须为正有限值，并不得大于仓库共享的 [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md)；随后资源释放会等待整棵进程树退出。 |
@@ -42,25 +43,49 @@ dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-codex
 dsh --profile <name>
 ```
 
-安装决定 Host 可用性，而不是模型权限。完整 Agent Preset 携带下列工具行并设置 `disabled: true`；复制一个 preset 后删除该字段，即可只向由该副本组装的新 agent 暴露 `subagent_codex`。其 `one-shot` 策略会让省略 `run_in_background` 或传入 `false` 的调用继续在前台等待，而显式传入 `true` 会返回由父 agent 拥有的 Job ID，供 `job_output` 或 `job_kill` 使用。base Host 与完整 preset 已提供通用 Job 注册表和控制工具。Profile 自己的 patch 可以替换 Bundle 行的完整 `config`，而自定义 Host 组合仍可直接挂载本包。
+安装决定 Host 可用性，而不是模型权限。Bundle 会提供休眠的默认 `codex` 配置项；Profile 可以替换该配置项的完整 config，也可以挂载更多具有不同 `providerName`、`permissionMode` 与 `env` 的配置项。加载实例本身不会在绑定工具调用前启动 Codex 进程。每个 `dsh-tool-subagent` 配置项指定一个提供方，并需要独立的 `toolName`，因此模型看到的是静态工具，而不是动态提供方选择器。完整 Agent Preset 携带对应的默认产品工具行并设置 `disabled: true`；复制一个 preset 后删除该字段，即可只向由该副本组装的 agent 暴露 `subagent_codex`。其 `one-shot` 策略会让省略 `run_in_background` 或传入 `false` 的调用继续在前台等待，而显式传入 `true` 会返回由父 agent 拥有的 Job ID，供 `job_output` 或 `job_kill` 使用。base host（基础宿主）与完整 preset 已提供通用作业注册表和控制工具。
+
+下列独立组装展示完整的显式能力。基于 `@deepseek-ai/dsh-base` 的 Profile 保留已有 Job 配置项，新增产品提供方与工具配置项，而且不重复挂载 Job 服务。
 
 ```yaml
-# $DSH_HOME/profiles/<name>/cordis.patch.yml (optional provider override)
-- id: subagent-codex
+- id: subagent-codex-safe
+  name: '@deepseek-ai/dsh-subagent-codex'
   config:
-    permissionMode: approve-for-me
+    providerName: codex-safe
+    permissionMode: never
+    env:
+      OPENAI_API_KEY: !!js process.env.OPENAI_API_KEY
+
+- id: subagent-codex-bypass
+  name: '@deepseek-ai/dsh-subagent-codex'
+  config:
+    providerName: codex-bypass
+    permissionMode: dangerously-bypass-approvals-and-sandbox
     env:
       OPENAI_API_KEY: !!js process.env.OPENAI_API_KEY
 ```
 
 ```yaml
-# A copied Agent Preset; remove `disabled` to grant this tool.
-- id: tool-subagent-codex
+- id: jobs
+  name: '@deepseek-ai/dsh-jobs-local'
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+- id: tool-subagent-codex-safe
   name: '@deepseek-ai/dsh-tool-subagent'
   disabled: true
   config:
-    provider: codex
-    toolName: subagent_codex
+    provider: codex-safe
+    toolName: subagent_codex_safe
+    backgroundMode: one-shot
+    maxDepth: provider-managed
+
+- id: tool-subagent-codex-bypass
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: codex-bypass
+    toolName: subagent_codex_bypass
     backgroundMode: one-shot
     maxDepth: provider-managed
 ```
@@ -73,13 +98,15 @@ dsh --profile <name>
 
 真实产品覆盖还会证明线程级 `never` 覆盖环境中的 `on-request`，自动评审通过官方 app-server 启动，危险绕过只在测试拥有的临时存储中写入，安全诊断不包含原始命令与路径，而且所有 wrapper／native 进程都会退出。
 
+同一真实产品层级还会证明两个命名实例保留彼此独立的环境与原生模式。
+
 ## 模型体验
 
 ### 子级请求
 
 #### 模型看到的内容
 
-Codex 子级会在一个全新的临时线程中，以单个轮次接收这些独立文本块。它的工作区是父会话 cwd；其模型、系统指令、工具和身份验证来自原生 Codex 配置，提供方的 Profile 配置会固定该线程的非交互审批与沙箱模式，而可执行版本来自 Bundle 锁定的平台载荷。
+Codex 子级会在一个全新的临时线程中，以单个轮次接收这些独立文本块。它的工作区是父会话 cwd；其模型、系统指令、工具和身份验证来自原生 Codex 配置，所选提供方实例的 Profile 配置会固定该线程的环境、非交互审批策略与沙箱模式，而可执行版本来自 Bundle 锁定的平台载荷。
 
 #### 对 token 的影响
 
@@ -106,6 +133,7 @@ Codex 子级会在一个全新的临时线程中，以单个轮次接收这些�
 ## 已知限制与后续工作
 
 - **每次运行均新建一个进程、一个线程和一个轮次**：不支持续接、恢复、池化、进度流或产品会话持久化。
+- **静态选择实例**：Profile 配置项固定提供方名称与工具绑定；调用无法动态选择提供方，而且每个公开工具都需要唯一的 `toolName`。
 - **身份验证与账户状态仍由原生机制管理**：Bundle 会提供 CLI，但不会创建账户、登录、信任项目或改写 Codex 设置；配置与身份验证失败会呈现为启动错误或运行错误。
 - **委派时必须存在原生平台载荷**：省略 optional dependencies 的安装、不受支持的平台以及缺失或损坏的载荷都会在第一次运行时失败；不会回退到宿主 CLI。
 - **兼容性由开发证据锁定**：若要从已验证的 0.147.0 协议基线升级，必须重新生成上游 schema 证据，并重新运行握手、答案选择、审批、取消、无密钥真实产品以及带密钥的 DeepSeek 随机数测试。

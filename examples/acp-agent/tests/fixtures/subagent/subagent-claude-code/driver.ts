@@ -24,31 +24,56 @@ const ctx = await boot(
 )
 
 try {
-  const provider = ctx.subagents.getProvider('claude-code')
-  if (provider === undefined) throw new Error('claude-code provider was not registered')
-  const tool = ctx.tools.schemas().find(schema => schema.name === 'subagent_claude_code')
-  if (tool === undefined) throw new Error('subagent_claude_code tool was not registered')
-  const properties = tool.parameters.properties
-  if (typeof properties !== 'object' || properties === null || Array.isArray(properties)) {
-    throw new Error('subagent_claude_code has invalid parameter properties')
-  }
-
-  process.stdout.write(`${JSON.stringify({
-    providers: ctx.subagents.list(),
-    provider: {
+  const providerNames = [
+    'codex',
+    'claude-code',
+    'claude-primary',
+    'claude-secondary',
+  ] as const
+  const toolNames = [
+    'subagent_codex',
+    'subagent_claude_code',
+    'subagent_claude_primary',
+    'subagent_claude_secondary',
+  ] as const
+  const providers = providerNames.map((providerName) => {
+    const provider = ctx.subagents.getProvider(providerName)
+    if (provider === undefined) {
+      throw new Error(`${providerName} provider was not registered`)
+    }
+    return {
       name: provider.name,
       capabilities: provider.capabilities,
       inheritsParentContext: provider.inheritsParentContext,
-    },
-    tool: {
+    }
+  })
+  const tools = toolNames.map((toolName) => {
+    const tool = ctx.tools.schemas().find(schema => schema.name === toolName)
+    if (tool === undefined) throw new Error(`${toolName} tool was not registered`)
+    const properties = tool.parameters.properties
+    if (
+      typeof properties !== 'object'
+      || properties === null
+      || Array.isArray(properties)
+    ) {
+      throw new Error(`${toolName} has invalid parameter properties`)
+    }
+    return {
       name: tool.name,
       parameterNames: Object.keys(properties).sort(),
       required: tool.parameters.required,
-    },
-    jobTools: ctx.tools.schemas()
-      .map(schema => schema.name)
-      .filter(name => name === 'job_kill' || name === 'job_list' || name === 'job_output')
-      .sort(),
+    }
+  })
+  const jobTools = ctx.tools.schemas()
+    .map(schema => schema.name)
+    .filter(name => name === 'job_kill' || name === 'job_list' || name === 'job_output')
+    .sort()
+
+  process.stdout.write(`${JSON.stringify({
+    registeredProviders: ctx.subagents.list(),
+    providers,
+    tools,
+    jobTools,
     starts,
   })}\n`)
 } finally {

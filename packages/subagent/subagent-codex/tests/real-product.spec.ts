@@ -59,13 +59,15 @@ interface RealHarness {
   readonly workspace: string
 }
 
-async function realHarness(
-  script: readonly ResponsesBehavior[],
-  permissionMode?: CodexPermissionMode,
-): Promise<{
-  readonly harness: RealHarness
+interface RealInstanceFixture {
   readonly fixture: ResponsesFixture
-}> {
+  readonly env: Record<string, string>
+  readonly workspace: string
+}
+
+async function realInstanceFixture(
+  script: readonly ResponsesBehavior[],
+): Promise<RealInstanceFixture> {
   const root = mkdtempSync(join(tmpdir(), 'dsh-codex-real-'))
   roots.push(root)
   const workspace = join(root, 'workspace')
@@ -104,6 +106,16 @@ async function realHarness(
     ALL_PROXY: '',
     NO_PROXY: '127.0.0.1,localhost',
   }
+  return { fixture, env, workspace }
+}
+
+interface RealRuntime {
+  readonly ctx: Context
+  readonly handles: SubprocessHandle[]
+  readonly spawnSpecs: SubprocessSpawnSpec[]
+}
+
+async function realRuntime(): Promise<RealRuntime> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(SubagentRuntime)
@@ -117,16 +129,38 @@ async function realHarness(
     handles.push(handle)
     return handle
   })
+  return { ctx, handles, spawnSpecs }
+}
+
+async function realHarness(
+  script: readonly ResponsesBehavior[],
+  permissionMode?: CodexPermissionMode,
+): Promise<{
+  readonly harness: RealHarness
+  readonly fixture: ResponsesFixture
+}> {
+  const instance = await realInstanceFixture(script)
+  const { ctx, handles, spawnSpecs } = await realRuntime()
   await ctx.plugin(codex, {
-    env,
+    env: instance.env,
     ...permissionMode === undefined ? {} : { permissionMode },
     disposeGraceMs: 2_000,
   })
   const parent = {
     id: 'real-parent',
-    session: { header: { cwd: workspace } },
+    session: { header: { cwd: instance.workspace } },
   } as unknown as Agent
-  return { harness: { ctx, handles, spawnSpecs, parent, env, workspace }, fixture }
+  return {
+    harness: {
+      ctx,
+      handles,
+      spawnSpecs,
+      parent,
+      env: instance.env,
+      workspace: instance.workspace,
+    },
+    fixture: instance.fixture,
+  }
 }
 
 async function expectQuiescent(handles: readonly SubprocessHandle[]): Promise<void> {
@@ -212,6 +246,79 @@ describe('real @openai/codex 0.147.0 product', () => {
       },
     })).rejects.toThrow(/Missing optional dependency @openai\/codex-[a-z0-9-]+/)
   }, 30_000)
+
+  it('runs two named instances concurrently and unloads one without revoking its run', async () => {
+    const safeInstance = await realInstanceFixture([{ kind: 'hold' }])
+    const bypassInstance = await realInstanceFixture([{
+      kind: 'complete',
+      text: 'NAMED_CODEX_BYPASS_RESULT',
+    }])
+    const { ctx, handles, spawnSpecs } = await realRuntime()
+    const safeFiber = await ctx.plugin(codex, {
+      providerName: 'codex-safe',
+      env: safeInstance.env,
+      permissionMode: 'never',
+      disposeGraceMs: 2_000,
+    })
+    const bypassFiber = await ctx.plugin(codex, {
+      providerName: 'codex-bypass',
+      env: bypassInstance.env,
+      permissionMode: 'dangerously-bypass-approvals-and-sandbox',
+      disposeGraceMs: 2_000,
+    })
+    const safeParent = {
+      id: 'safe-parent',
+      session: { header: { cwd: safeInstance.workspace } },
+    } as unknown as Agent
+    const bypassParent = {
+      id: 'bypass-parent',
+      session: { header: { cwd: bypassInstance.workspace } },
+    } as unknown as Agent
+    const safeController = new AbortController()
+
+    const [safeRun, bypassRun] = await Promise.all([
+      ctx.subagents.start('codex-safe', {
+        prompt: [{ type: 'text', text: 'Hold the safe instance.' }],
+        parent: safeParent,
+        signal: safeController.signal,
+      }),
+      ctx.subagents.start('codex-bypass', {
+        prompt: [{ type: 'text', text: 'Complete the bypass instance.' }],
+        parent: bypassParent,
+        signal: new AbortController().signal,
+      }),
+    ])
+    await safeInstance.fixture.requestStarted
+    await safeFiber.dispose()
+    expect(ctx.subagents.list()).toEqual(['codex-bypass'])
+    await expect(ctx.subagents.start('codex-safe', {
+      prompt: [{ type: 'text', text: 'This start must fail.' }],
+      parent: safeParent,
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'NO_PROVIDER' })
+
+    await expect(bypassRun.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'NAMED_CODEX_BYPASS_RESULT' }],
+      stopReason: 'completed',
+    })
+    safeController.abort(new Error('cancel only the published safe run'))
+    await expect(safeRun.result).resolves.toEqual({
+      output: [],
+      stopReason: 'aborted',
+    })
+    await Promise.all([safeRun.dispose(), bypassRun.dispose()])
+    expect(safeInstance.fixture.requests).toHaveLength(1)
+    expect(bypassInstance.fixture.requests).toHaveLength(1)
+    expect(safeInstance.fixture.requests[0]?.body.input)
+      .not.toEqual(bypassInstance.fixture.requests[0]?.body.input)
+    expect(spawnSpecs.map(spec => spec.env?.CODEX_HOME).sort()).toEqual([
+      safeInstance.env.CODEX_HOME,
+      bypassInstance.env.CODEX_HOME,
+    ].sort())
+    await expectQuiescent(handles)
+    await bypassFiber.dispose()
+    expect(ctx.subagents.list()).toEqual([])
+  }, 60_000)
 
   it('overrides on-request with never and reports a denied command safely', async () => {
     const command = process.platform === 'win32'

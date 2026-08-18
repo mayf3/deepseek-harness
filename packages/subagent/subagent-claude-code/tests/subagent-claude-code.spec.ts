@@ -388,7 +388,7 @@ describe('task admission and package contracts', () => {
       .toThrow('must not be empty')
   })
 
-  it('registers one fixed descriptor, validates config, and unregisters on HMR', async () => {
+  it('registers the default descriptor, validates config, and unregisters on HMR', async () => {
     const ctx = new Context()
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(LocalSubprocessRuntime)
@@ -419,7 +419,126 @@ describe('task admission and package contracts', () => {
     await ctx.fiber.dispose()
   })
 
+  it('keeps named instances, runs, and HMR ownership isolated', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(LocalSubprocessRuntime)
+    const safeChild = fakeChild()
+    const bypassChild = fakeChild()
+    const spawnSpecs: SubprocessSpawnSpec[] = []
+    vi.spyOn(ctx.subprocess, 'resolveExecutable')
+      .mockResolvedValue('/native/claude')
+    vi.spyOn(ctx.subprocess, 'spawn').mockImplementation((spec) => {
+      spawnSpecs.push(spec)
+      return spec.env?.DSH_CLAUDE_INSTANCE === 'safe'
+        ? safeChild.handle
+        : bypassChild.handle
+    })
+    const queryOptions: Options[] = []
+    queryMock.mockImplementation(({ options }) => {
+      queryOptions.push(options)
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions({
+        command: options.pathToClaudeCodeExecutable!,
+        cwd: options.cwd!,
+        env: options.env!,
+        signal: options.abortController!.signal,
+      }))
+      return options.permissionMode === 'dontAsk'
+        ? waitingQuery(options.abortController!.signal)
+        : queryFrom([success('bypass answer')])
+    })
+
+    const added: string[] = []
+    const started: string[] = []
+    const ended: string[] = []
+    const removed: string[] = []
+    ctx.on('subagent/provider-added', provider => void added.push(provider.name))
+    ctx.on('subagent/start', info => void started.push(info.provider))
+    ctx.on('subagent/end', info => void ended.push(info.provider))
+    ctx.on('subagent/provider-removed', providerName => void removed.push(providerName))
+    const safeFiber = await ctx.plugin(claudeCode, {
+      providerName: 'claude-safe',
+      env: { DSH_CLAUDE_INSTANCE: 'safe' },
+      permissionMode: 'dontAsk',
+      disposeGraceMs: 11,
+    })
+    const bypassFiber = await ctx.plugin(claudeCode, {
+      providerName: 'claude-bypass',
+      env: { DSH_CLAUDE_INSTANCE: 'bypass' },
+      permissionMode: 'bypassPermissions',
+      disposeGraceMs: 29,
+    })
+    expect(ctx.subagents.list()).toEqual(['claude-safe', 'claude-bypass'])
+    expect(added).toEqual(['claude-safe', 'claude-bypass'])
+
+    const safeController = new AbortController()
+    const [safeRun, bypassRun] = await Promise.all([
+      ctx.subagents.start('claude-safe', request(undefined, safeController.signal)),
+      ctx.subagents.start('claude-bypass', request()),
+    ])
+    await safeFiber.dispose()
+    expect(ctx.subagents.list()).toEqual(['claude-bypass'])
+    expect(removed).toEqual(['claude-safe'])
+    await expect(ctx.subagents.start('claude-safe', request()))
+      .rejects.toMatchObject({ code: 'NO_PROVIDER' })
+
+    await expect(bypassRun.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'bypass answer' }],
+      stopReason: 'completed',
+    })
+    safeController.abort(new Error('stop only the safe instance'))
+    await expect(safeRun.result).resolves.toEqual({
+      output: [],
+      stopReason: 'aborted',
+    })
+    expect(queryOptions.map(options => ({
+      instance: options.env?.DSH_CLAUDE_INSTANCE,
+      permissionMode: options.permissionMode,
+    }))).toEqual([
+      { instance: 'safe', permissionMode: 'dontAsk' },
+      { instance: 'bypass', permissionMode: 'bypassPermissions' },
+    ])
+    expect(spawnSpecs.map(spec => ({
+      instance: spec.env?.DSH_CLAUDE_INSTANCE,
+      graceMs: spec.graceMs,
+    }))).toEqual([
+      { instance: 'safe', graceMs: 11 },
+      { instance: 'bypass', graceMs: 29 },
+    ])
+
+    await Promise.all([safeRun.dispose(), bypassRun.dispose()])
+    expect([...started].sort()).toEqual(['claude-bypass', 'claude-safe'])
+    expect([...ended].sort()).toEqual(['claude-bypass', 'claude-safe'])
+    expect(safeChild.terminate).toHaveBeenCalledOnce()
+    expect(bypassChild.terminate).toHaveBeenCalledOnce()
+    await bypassFiber.dispose()
+    expect(removed).toEqual(['claude-safe', 'claude-bypass'])
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects duplicate provider names without replacing the first instance', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(LocalSubprocessRuntime)
+    const firstFiber = await ctx.plugin(claudeCode, {
+      providerName: 'claude-duplicate',
+    })
+    const first = ctx.subagents.getProvider('claude-duplicate')
+    await expect(ctx.plugin(claudeCode, {
+      providerName: 'claude-duplicate',
+      permissionMode: 'bypassPermissions',
+    })).rejects.toMatchObject({ code: 'DUPLICATE_PROVIDER' })
+    expect(ctx.subagents.getProvider('claude-duplicate')).toBe(first)
+    expect(ctx.subagents.list()).toEqual(['claude-duplicate'])
+    await firstFiber.dispose()
+    await ctx.fiber.dispose()
+  })
+
   it('accepts only the five fixed non-interactive permission modes', () => {
+    expect(claudeCode.Config({}).providerName).toBe('claude-code')
+    expect(claudeCode.Config({ providerName: 'claude-safe' }).providerName)
+      .toBe('claude-safe')
+    expect(() => claudeCode.Config({ providerName: '' })).toThrow()
     expect(claudeCode.Config({}).permissionMode)
       .toBe(DEFAULT_CLAUDE_CODE_PERMISSION_MODE)
     for (const permissionMode of CLAUDE_CODE_PERMISSION_MODES) {
@@ -451,6 +570,7 @@ describe('task admission and package contracts', () => {
       .mockResolvedValue('/host/bin/claude')
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     await ctx.plugin(claudeCode, {
+      providerName: 'claude-diagnostic',
       env: {
         ANTHROPIC_API_KEY: 'provider-fake-key',
         CLAUDE_CONFIG_DIR: '/private/tmp/dsh-claude-code-unit-config',
@@ -460,7 +580,7 @@ describe('task admission and package contracts', () => {
       disposeGraceMs: 29,
     })
 
-    await expect(ctx.subagents.start('claude-code', {
+    await expect(ctx.subagents.start('claude-diagnostic', {
       ...request(),
       parent: {
         id: 'parent-without-cwd',
@@ -477,11 +597,11 @@ describe('task admission and package contracts', () => {
         'Native CLI binary for fixture-platform not found. Reinstall @anthropic-ai/claude-agent-sdk without --omit=optional, or set options.pathToClaudeCodeExecutable.',
       )
     })
-    await expect(ctx.subagents.start('claude-code', request()))
+    await expect(ctx.subagents.start('claude-diagnostic', request()))
       .rejects.toThrow('Native CLI binary for fixture-platform not found')
     expect(resolveExecutable).not.toHaveBeenCalled()
 
-    const run = await ctx.subagents.start('claude-code', request())
+    const run = await ctx.subagents.start('claude-diagnostic', request())
     child.settle({ exitCode: 9, signal: null })
     child.stdout.end()
     await expect(run.result).resolves.toEqual({
@@ -489,7 +609,7 @@ describe('task admission and package contracts', () => {
       stopReason: 'error',
     })
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(
-      'subagent-claude-code: child run failed (error):',
+      'subagent-claude-code "claude-diagnostic": child run failed (error):',
     ))
     expect(resolveExecutable).not.toHaveBeenCalled()
     expect(queryMock.mock.calls[1]?.[0].options)

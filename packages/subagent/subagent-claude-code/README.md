@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-This package registers the fixed `claude-code` subagent provider. Each accepted run invokes the official Claude Agent SDK in the delegating Session's workspace, lets the pinned SDK select its installed platform CLI, submits one self-contained text task, and returns either the strict final answer or a separate safe failure diagnostic through the shared [`dsh-subagent`](../subagent/README.md) result contract.
+This package registers a Profile-named Claude Code subagent provider whose default name is `claude-code`. Each accepted run invokes the official Claude Agent SDK in the delegating Session's workspace, lets the pinned SDK select its installed platform CLI, submits one self-contained text task, and returns either the strict final answer or a separate safe failure diagnostic through the shared [`dsh-subagent`](../subagent/README.md) result contract.
 
 ## Start and ownership
 
@@ -26,6 +26,7 @@ The provider advertises no optional start-time capabilities and reports `inherit
 
 | Key | Default | Meaning |
 |---|---|---|
+| `providerName` | `claude-code` | Non-empty registry name on `ctx.subagents`; each mounted instance needs a unique value. |
 | `env` | `{}` | Explicit SDK/CLI environment layered over the shared credential-scrubbed parent environment. |
 | `permissionMode` | `dontAsk` | Native non-interactive permission policy fixed for every run from this Provider instance. |
 | `disposeGraceMs` | `3000` | Positive finite grace in milliseconds, no greater than [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md), between the shared process-tree owner's termination tiers; disposal then waits for whole-tree exit. |
@@ -48,25 +49,49 @@ dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-claude-code
 dsh --profile <name>
 ```
 
-Installation controls Host availability, not model permission. Full Agent Presets carry the tool row below with `disabled: true`; copy a preset and remove that field to expose `subagent_claude_code` only to new agents composed from the copy. Its `one-shot` policy keeps omitted or `false` `run_in_background` calls in the foreground, while explicit `true` returns a parent-owned Job id for `job_output` or `job_kill`. The base Host and full presets already provide the generic Job registry and controls. The Profile's own patch can replace the Bundle row's complete `config`, while a custom Host composition can still mount the package directly.
+Installation controls Host availability, not model permission. The Bundle supplies the dormant default `claude-code` row; the Profile may replace that row's complete config or mount additional rows with distinct `providerName`, `permissionMode`, and `env` values. Loading an instance starts no Claude process until a bound tool calls it. Each `dsh-tool-subagent` row names one provider and needs its own `toolName`, so the model sees static tools rather than a dynamic provider selector. Full Agent Presets carry a matching default product tool row with `disabled: true`; copy a preset and remove that field to expose `subagent_claude_code` only to agents composed from the copy. Its `one-shot` policy keeps omitted or `false` `run_in_background` calls in the foreground, while explicit `true` returns a parent-owned Job id for `job_output` or `job_kill`. The base host and full presets already provide the generic Job registry and controls.
+
+The standalone composition below shows the complete explicit capability. A Profile based on `@deepseek-ai/dsh-base` keeps its existing Job rows, adds the product provider and tool rows, and does not mount duplicate Job services.
 
 ```yaml
-# $DSH_HOME/profiles/<name>/cordis.patch.yml (optional provider override)
-- id: subagent-claude-code
+- id: subagent-claude-safe
+  name: '@deepseek-ai/dsh-subagent-claude-code'
   config:
-    permissionMode: acceptEdits
+    providerName: claude-safe
+    permissionMode: dontAsk
+    env:
+      ANTHROPIC_API_KEY: !!js process.env.ANTHROPIC_API_KEY
+
+- id: subagent-claude-bypass
+  name: '@deepseek-ai/dsh-subagent-claude-code'
+  config:
+    providerName: claude-bypass
+    permissionMode: bypassPermissions
     env:
       ANTHROPIC_API_KEY: !!js process.env.ANTHROPIC_API_KEY
 ```
 
 ```yaml
-# A copied Agent Preset; remove `disabled` to grant this tool.
-- id: tool-subagent-claude-code
+- id: jobs
+  name: '@deepseek-ai/dsh-jobs-local'
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+- id: tool-subagent-claude-safe
   name: '@deepseek-ai/dsh-tool-subagent'
   disabled: true
   config:
-    provider: claude-code
-    toolName: subagent_claude_code
+    provider: claude-safe
+    toolName: subagent_claude_safe
+    backgroundMode: one-shot
+    maxDepth: provider-managed
+
+- id: tool-subagent-claude-bypass
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: claude-bypass
+    toolName: subagent_claude_bypass
     backgroundMode: one-shot
     maxDepth: provider-managed
 ```
@@ -77,6 +102,8 @@ The runtime dependency is pinned to `@anthropic-ai/claude-agent-sdk@0.3.220`, wh
 
 Installing with optional dependencies omitted, using an unsupported platform, or losing the selected payload leaves provider registration dormant but makes the first delegation fail with the SDK's native-payload startup error. The provider neither probes a host CLI nor retries with one.
 
+Loader composition proves that the Bundle default, two additional named Claude instances, and the existing Codex package coexist without starting either product.
+
 The project owner's identity-scoped distribution authorization covers the official SDK and the official CLI/platform payloads declared by each SDK version. [`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md) discloses the current optional payload closure without classifying its declared terms as permissive; unrelated non-permissive runtime dependencies continue to fail the notices gate.
 
 ## Model Experience
@@ -85,7 +112,7 @@ The project owner's identity-scoped distribution authorization covers the offici
 
 #### What the model sees
 
-The Claude Code child receives the standalone text task as one fresh SDK query. Its workspace is the parent Session cwd; its model, system instructions, tools, sandbox, and authentication come from native Claude settings, the Provider's Profile configuration fixes the query's non-interactive permission mode, and the executable version comes from the Bundle's pinned SDK platform payload.
+The Claude Code child receives the standalone text task as one fresh SDK query. Its workspace is the parent Session cwd; its model, system instructions, tools, sandbox, and authentication come from native Claude settings, the selected Provider instance's Profile configuration fixes the query's environment and non-interactive permission mode, and the executable version comes from the Bundle's pinned SDK platform payload.
 
 #### Token effect
 
@@ -112,6 +139,7 @@ Append-only: foreground adds one result after the reusable parent prefix, while 
 ## Known Limitations and Deferred Work
 
 - **One fresh query and process per run** — there is no continuation, resume, pooling, progress stream, or product-session persistence.
+- **Static instance selection** — Profile rows fix provider names and tool bindings; calls cannot choose a provider dynamically, and every exposed tool needs a unique `toolName`.
 - **Host settings are intentionally authoritative** — project and user settings can change model, tools, and behavior; the provider does not provide a filtered or hermetic production mode.
 - **Authentication and account state remain native** — the Bundle supplies the CLI but does not create an account, log in, or rewrite Claude settings; configuration and authentication failures surface as startup or run errors.
 - **The SDK platform payload is required at delegation time** — installs that omit optional dependencies, unsupported platforms, and missing or damaged payloads fail at the first query; there is no host-CLI fallback.
