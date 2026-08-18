@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // The Tool presentation package's acceptance chain on the REAL machinery stack:
-// SlotTestRuntime (cordis Context + SlotRegistry ledger + the web-react
+// SlotTestRuntime (cordis Context + SlotRegistry ledger + the ui-renderer
 // renderer) + ui-conversation and ui-tool apply — no outlet twins. Proves the
 // keyed 'tool.call.toolview' hole end to end: registered rows dispatch by
 // entryKey (the bash sample lands through its plugin), unregistered tools

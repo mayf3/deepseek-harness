@@ -1,11 +1,19 @@
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { createServer } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { mkdir, utimes, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { expect, it } from 'vitest'
-import { defineAcpSnapshotSuite, type Scenario, type SnapshotSuiteOptions } from '@deepseek-ai/dsh-acp-snapshot'
+import {
+  defineAcpSnapshotSuite,
+  runScenario,
+  type InputScript,
+  type Scenario,
+  type SnapshotSuiteOptions,
+} from '@deepseek-ai/dsh-acp-snapshot'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { decodeStorageRecord } from '@deepseek-ai/dsh-session'
 
@@ -40,6 +48,7 @@ const ADVANCED_CONFIG = fileURLToPath(new URL('../advanced.cordis.yml', import.m
 const FS_CONFIG = fileURLToPath(new URL('../fs.cordis.yml', import.meta.url))
 const SESSION_QUERY_CONFIG = fileURLToPath(new URL('../session-query.cordis.yml', import.meta.url))
 const IMAGE_CONFIG = fileURLToPath(new URL('../image.cordis.yml', import.meta.url))
+const IMAGE_OFFLOAD_CONFIG = fileURLToPath(new URL('./fixtures/image-offload.cordis.yml', import.meta.url))
 const IMAGE_TEXT_ROUTE_CONFIG = fileURLToPath(new URL('../image-text-route.cordis.yml', import.meta.url))
 const PTY_CONFIG = fileURLToPath(new URL('../pty.cordis.yml', import.meta.url))
 const DEPTH_TWO_CONFIG = fileURLToPath(new URL('../depth-two.cordis.yml', import.meta.url))
@@ -47,8 +56,8 @@ const CHILD_QUESTION_CONFIG = fileURLToPath(new URL('../child-question.cordis.ym
 const SESSION_SANDBOX_ROOT_CONFIG = fileURLToPath(new URL('../session-sandbox-root.cordis.yml', import.meta.url))
 const RETRY_CONFIG = fileURLToPath(new URL('../retry.cordis.yml', import.meta.url))
 const SESSION_TITLE_CONFIG = fileURLToPath(new URL('../session-title.cordis.yml', import.meta.url))
-const SUBAGENT_REPORT_QUIET_CONFIG = fileURLToPath(
-  new URL('../subagent-report-quiet.cordis.yml', import.meta.url),
+const SUBAGENT_REPORT_CONFIG = fileURLToPath(
+  new URL('../subagent-report.cordis.yml', import.meta.url),
 )
 const SUBAGENT_DURABILITY_FAILURE_CONFIG = fileURLToPath(
   new URL('../subagent-durability-failure.cordis.yml', import.meta.url),
@@ -66,6 +75,9 @@ const BACKGROUND_TASK_ADMISSION_CONFIG = fileURLToPath(
 )
 const PRODUCT_SUBAGENT_CODEX_CONFIG = fileURLToPath(new URL('../product-subagent-codex.cordis.yml', import.meta.url))
 const PRODUCT_SUBAGENT_BOTH_CONFIG = fileURLToPath(new URL('../product-subagent-both.cordis.yml', import.meta.url))
+const PRODUCT_SUBAGENT_RESULT_DIAGNOSTIC_CONFIG = fileURLToPath(
+  new URL('../subagent-result-diagnostic.cordis.yml', import.meta.url),
+)
 const FS_DIFF_BOUND_CONFIG = fileURLToPath(new URL('./fs-diff-bound.cordis.yml', import.meta.url))
 const SNAPSHOTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'snapshots')
 const PACKED_CHUNKS_SOURCE = 'hook-cc-pretool-deny'
@@ -159,6 +171,16 @@ const SCENARIOS: Scenario[] = [
     configPath: PRODUCT_SUBAGENT_BOTH_CONFIG,
   },
   {
+    name: 'product-subagent-result-diagnostic',
+    hasModelTurn: true,
+    recorded: false,
+    overridden: true,
+    pinsHeader: true,
+    headerClass: 'product-subagent-result-diagnostic',
+    systemPromptSource: 'product-subagent-codex',
+    configPath: PRODUCT_SUBAGENT_RESULT_DIAGNOSTIC_CONFIG,
+  },
+  {
     name: 'session-title-after-turn',
     hasModelTurn: true,
     recorded: false,
@@ -212,6 +234,17 @@ const SCENARIOS: Scenario[] = [
     recorded: false,
     headerClass: 'image',
     configPath: IMAGE_TEXT_ROUTE_CONFIG,
+  },
+  // Authored keyless replay of the oversized-image refusal: admission rejects
+  // the 2001x1 fixture at the default 2000px per-side limit, the model sees a
+  // recoverable tool error, and the turn still completes — the image never
+  // enters durable history.
+  {
+    name: 'read-image-dimension',
+    hasModelTurn: true,
+    recorded: false,
+    headerClass: 'image',
+    configPath: IMAGE_CONFIG,
   },
   {
     name: 'inline-image-prompt',
@@ -456,16 +489,15 @@ const SCENARIOS: Scenario[] = [
     configPath: SUBAGENT_DURABILITY_FAILURE_CONFIG,
   },
   // Authored child-to-parent transcript: the child calls its scope-local
-  // `report`, and the runtime's unconditional settlement notice then wakes the
-  // parked parent into one ordinary turn that claims both. The overlay pins
-  // quiet report delivery because two independent wakes have no orderable
-  // transcript; the shipped waking default is covered by package tests.
+  // `report` through the shipped next-step policy. A maintenance fence holds
+  // the parent until the runtime's unconditional settlement notice follows;
+  // the resumed parent then claims both messages in causal order.
   {
     name: 'subagent-report',
     hasModelTurn: true,
     recorded: false,
     overridden: false,
-    configPath: SUBAGENT_REPORT_QUIET_CONFIG,
+    configPath: SUBAGENT_REPORT_CONFIG,
     pinsChildToolSchemas: [1],
     pinsChildSystemPrompts: [1],
   },
@@ -644,6 +676,92 @@ defineAcpSnapshotSuite({
   mode: snapshotModeFromEnv(process.env.DSH_SNAPSHOT),
   hasPwsh,
 })
+
+it('pins pi-ai image offload in the request sent by the assembled app', async () => {
+  const requests: Record<string, unknown>[] = []
+  const server = createServer((request: IncomingMessage, response: ServerResponse) => {
+    let body = ''
+    request.setEncoding('utf8')
+    request.on('data', (chunk: string) => { body += chunk })
+    request.on('end', () => {
+      requests.push(JSON.parse(body) as Record<string, unknown>)
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      response.end([
+        'data: {"choices":[{"delta":{"role":"assistant","content":""},"index":0,"finish_reason":null}]}',
+        'data: {"choices":[{"delta":{"content":"DONE"},"index":0,"finish_reason":null}]}',
+        'data: {"choices":[{"delta":{},"index":0,"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
+        'data: [DONE]',
+        '',
+      ].join('\n\n'))
+    })
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('image-offload snapshot server has no port')
+
+  const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'
+  const input: InputScript = {
+    steps: [
+      { op: 'initialize' },
+      { op: 'newSession' },
+      {
+        op: 'promptContent',
+        content: [
+          { type: 'text', text: 'Compare the older image ' },
+          { type: 'image', data: image, mimeType: 'image/png' },
+          { type: 'text', text: ' with the newer image ' },
+          { type: 'image', data: image, mimeType: 'image/png' },
+          { type: 'text', text: ', then reply with DONE.' },
+        ],
+      },
+    ],
+  }
+
+  try {
+    const result = await runScenario(input, {
+      agent: AGENT,
+      mode: 'record',
+      configPath: IMAGE_OFFLOAD_CONFIG,
+      fixtureFile: join(SNAPSHOTS_DIR, 'image-offload-request', 'session.jsonl'),
+      env: {
+        DSH_SNAPSHOT_API_KEY: 'snapshot-key',
+        DSH_SNAPSHOT_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+      },
+    })
+    expect(result.stderr).toBe('')
+    expect(requests).toHaveLength(1)
+    const messages = requests[0]?.messages as { content?: unknown }[] | undefined
+    const offloaded = messages?.find(message => JSON.stringify(message.content).includes('[image omitted'))
+    expect(offloaded?.content).toMatchInlineSnapshot(`
+      [
+        {
+          "text": "Compare the older image ",
+          "type": "text",
+        },
+        {
+          "text": "[image omitted to keep the request within its image limit; older images are omitted first. If this image is still needed, read its file again when a path is available; otherwise ask the user to attach it again.]",
+          "type": "text",
+        },
+        {
+          "text": " with the newer image ",
+          "type": "text",
+        },
+        {
+          "image_url": {
+            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+          },
+          "type": "image_url",
+        },
+        {
+          "text": ", then reply with DONE.",
+          "type": "text",
+        },
+      ]
+    `)
+  } finally {
+    await new Promise<void>(resolve => server.close(() => { resolve() }))
+  }
+}, 45_000)
 
 it('packed ACP fixture retains every chunk row kind without changing the logical session', () => {
   const source = fixtureRecords(PACKED_CHUNKS_SOURCE)

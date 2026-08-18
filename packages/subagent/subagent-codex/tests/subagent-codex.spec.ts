@@ -10,11 +10,14 @@ import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type {
   SubprocessHandle,
   SubprocessOutcome,
+  SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
 import * as invariant from '../src/invariant.ts'
 import {
+  CODEX_PERMISSION_MODES,
+  DEFAULT_CODEX_PERMISSION_MODE,
   codexAppServerArgv,
   DEFAULT_DISPOSE_GRACE_MS,
   disposeCodexChild,
@@ -23,6 +26,38 @@ import {
   type CodexRunSpec,
 } from '../src/run.ts'
 import { CodexAppServerWire } from '../src/wire.ts'
+
+const { hostStderrWrite } = vi.hoisted(() => ({
+  hostStderrWrite: {
+    capture: false,
+    failNext: false,
+    chunks: [] as Buffer[],
+  },
+}))
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return {
+    ...actual,
+    writeFileSync(
+      fd: number,
+      value: string | Uint8Array,
+    ): void {
+      if (fd === 2 && hostStderrWrite.capture) {
+        if (hostStderrWrite.failNext) {
+          hostStderrWrite.failNext = false
+          throw Object.assign(new Error('host stderr broke'), { code: 'EIO' })
+        }
+        const bytes = typeof value === 'string'
+          ? Buffer.from(value)
+          : Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+        hostStderrWrite.chunks.push(bytes)
+        return
+      }
+      actual.writeFileSync(fd, value)
+    },
+  }
+})
 
 type JsonObject = Record<string, unknown>
 
@@ -101,6 +136,7 @@ interface FakeChild {
   readonly peer: ProtocolPeer
   readonly fromChild: PassThrough
   readonly toChild: PassThrough
+  readonly stderr: PassThrough
   readonly settle: (outcome?: SubprocessOutcome) => void
   readonly fail: (error: Error) => void
   readonly terminate: () => void
@@ -110,6 +146,7 @@ interface FakeChild {
 function fakeChild(options: FakeChildOptions = {}): FakeChild {
   const fromChild = new PassThrough()
   const toChild = new PassThrough()
+  const stderr = new PassThrough()
   const peer = new ProtocolPeer(toChild, fromChild)
   let exited = false
   let resolveDone!: (outcome: SubprocessOutcome) => void
@@ -159,7 +196,7 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
     pid: options.pid ?? 1234,
     stdin: toChild,
     stdout: fromChild,
-    stderr: undefined,
+    stderr,
     collected: {},
     done,
     terminate,
@@ -170,11 +207,20 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
     peer,
     fromChild,
     toChild,
+    stderr,
     settle,
     fail,
     terminate,
     waitForExit,
   }
+}
+
+function defaultWire(child: FakeChild): CodexAppServerWire {
+  return new CodexAppServerWire(
+    child.handle.stdout!,
+    child.handle.stdin!,
+    DEFAULT_CODEX_PERMISSION_MODE,
+  )
 }
 
 function runSpec(
@@ -183,6 +229,7 @@ function runSpec(
 ): CodexRunSpec {
   return {
     cwd: process.cwd(),
+    permissionMode: DEFAULT_CODEX_PERMISSION_MODE,
     env: {},
     disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
     spawn: () => child.handle,
@@ -195,7 +242,7 @@ async function initializeWire(): Promise<{
   readonly wire: CodexAppServerWire
 }> {
   const child = fakeChild()
-  const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+  const wire = defaultWire(child)
   wire.start()
   const initializing = wire.initialize(new AbortController().signal)
   const initialize = await child.peer.nextMethod('initialize')
@@ -260,7 +307,10 @@ function turnCompleted(
 }
 
 describe('task admission and package contracts', () => {
-  it('resolves the fixed app-server command through the Windows npm shim boundary', () => {
+  it('keeps the app-server command fixed on POSIX and Windows', () => {
+    expect(codexAppServerArgv('linux')).toEqual([
+      'codex', 'app-server', '--stdio',
+    ])
     expect(codexAppServerArgv('win32')).toEqual([
       'cmd.exe',
       '/d',
@@ -270,7 +320,6 @@ describe('task admission and package contracts', () => {
       'app-server',
       '--stdio',
     ])
-    expect(codexAppServerArgv('linux')).toEqual(['codex', 'app-server', '--stdio'])
   })
 
   it('accepts one or more text blocks and rejects empty or non-text tasks', () => {
@@ -285,7 +334,7 @@ describe('task admission and package contracts', () => {
       .toThrow('must not be empty')
   })
 
-  it('registers one fixed descriptor, validates config, and unregisters on HMR', async () => {
+  it('registers the default descriptor, validates config, and unregisters on HMR', async () => {
     const ctx = new Context()
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(LocalSubprocessRuntime)
@@ -312,6 +361,179 @@ describe('task admission and package contracts', () => {
     await expect(ctx.plugin(codex, { disposeGraceMs: MAX_TIMER_DELAY_MS + 1 }))
       .rejects.toThrow(`disposeGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
     await ctx.fiber.dispose()
+  })
+
+  it('keeps named instances, runs, and HMR ownership isolated', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(LocalSubprocessRuntime)
+    const safeChild = fakeChild()
+    const bypassChild = fakeChild()
+    const spawnSpecs: SubprocessSpawnSpec[] = []
+    vi.spyOn(ctx.subprocess, 'spawn').mockImplementation((spec) => {
+      spawnSpecs.push(spec)
+      return spec.env?.DSH_CODEX_INSTANCE === 'safe'
+        ? safeChild.handle
+        : bypassChild.handle
+    })
+    const added: string[] = []
+    const started: string[] = []
+    const ended: string[] = []
+    const removed: string[] = []
+    ctx.on('subagent/provider-added', provider => void added.push(provider.name))
+    ctx.on('subagent/start', info => void started.push(info.provider))
+    ctx.on('subagent/end', info => void ended.push(info.provider))
+    ctx.on('subagent/provider-removed', providerName => void removed.push(providerName))
+    const safeFiber = await ctx.plugin(codex, {
+      providerName: 'codex-safe',
+      env: { DSH_CODEX_INSTANCE: 'safe' },
+      permissionMode: 'never',
+      disposeGraceMs: 11,
+    })
+    const bypassFiber = await ctx.plugin(codex, {
+      providerName: 'codex-bypass',
+      env: { DSH_CODEX_INSTANCE: 'bypass' },
+      permissionMode: 'dangerously-bypass-approvals-and-sandbox',
+      disposeGraceMs: 29,
+    })
+    expect(ctx.subagents.list()).toEqual(['codex-safe', 'codex-bypass'])
+    expect(added).toEqual(['codex-safe', 'codex-bypass'])
+
+    const safeController = new AbortController()
+    const safeStarting = ctx.subagents.start(
+      'codex-safe',
+      request(undefined, safeController.signal),
+    )
+    const bypassStarting = ctx.subagents.start('codex-bypass', request())
+    for (const child of [safeChild, bypassChild]) {
+      const initialize = await child.peer.nextMethod('initialize')
+      child.peer.respond(initialize, { userAgent: 'codex-cli 0.147.0' })
+      await child.peer.nextMethod('initialized')
+      const threadStart = await child.peer.nextMethod('thread/start')
+      child.peer.respond(threadStart, {
+        thread: { id: 'thread-1', ephemeral: true },
+      })
+    }
+    const [safeRun, bypassRun] = await Promise.all([
+      safeStarting,
+      bypassStarting,
+    ])
+    await safeFiber.dispose()
+    expect(ctx.subagents.list()).toEqual(['codex-bypass'])
+    expect(removed).toEqual(['codex-safe'])
+    await expect(ctx.subagents.start('codex-safe', request()))
+      .rejects.toMatchObject({ code: 'NO_PROVIDER' })
+
+    const safeTurn = await safeChild.peer.nextMethod('turn/start')
+    const bypassTurn = await bypassChild.peer.nextMethod('turn/start')
+    safeChild.peer.respond(safeTurn, { turn: { id: 'turn-safe' } })
+    bypassChild.peer.send(
+      { id: bypassTurn.id, result: { turn: { id: 'turn-bypass' } } },
+      agentMessage('bypass answer', 'final_answer', 'turn-bypass'),
+      turnCompleted('completed', 'turn-bypass'),
+    )
+    await expect(bypassRun.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'bypass answer' }],
+      stopReason: 'completed',
+    })
+    safeController.abort(new Error('stop only the safe instance'))
+    await expect(safeRun.result).resolves.toEqual({
+      output: [],
+      stopReason: 'aborted',
+    })
+    expect(spawnSpecs.map(spec => ({
+      instance: spec.env?.DSH_CODEX_INSTANCE,
+      graceMs: spec.graceMs,
+    }))).toEqual([
+      { instance: 'safe', graceMs: 11 },
+      { instance: 'bypass', graceMs: 29 },
+    ])
+
+    await Promise.all([safeRun.dispose(), bypassRun.dispose()])
+    expect([...started].sort()).toEqual(['codex-bypass', 'codex-safe'])
+    expect([...ended].sort()).toEqual(['codex-bypass', 'codex-safe'])
+    expect(safeChild.terminate).toHaveBeenCalledOnce()
+    expect(bypassChild.terminate).toHaveBeenCalledOnce()
+    await bypassFiber.dispose()
+    expect(removed).toEqual(['codex-safe', 'codex-bypass'])
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects duplicate provider names without replacing the first instance', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(LocalSubprocessRuntime)
+    const firstFiber = await ctx.plugin(codex, {
+      providerName: 'codex-duplicate',
+    })
+    const first = ctx.subagents.getProvider('codex-duplicate')
+    await expect(ctx.plugin(codex, {
+      providerName: 'codex-duplicate',
+      permissionMode: 'dangerously-bypass-approvals-and-sandbox',
+    })).rejects.toMatchObject({ code: 'DUPLICATE_PROVIDER' })
+    expect(ctx.subagents.getProvider('codex-duplicate')).toBe(first)
+    expect(ctx.subagents.list()).toEqual(['codex-duplicate'])
+    await firstFiber.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('accepts only the three fixed non-interactive permission modes', () => {
+    expect(codex.Config({}).providerName).toBe('codex')
+    expect(codex.Config({ providerName: 'codex-safe' }).providerName)
+      .toBe('codex-safe')
+    expect(() => codex.Config({ providerName: '' })).toThrow()
+    expect(codex.Config({}).permissionMode).toBe(DEFAULT_CODEX_PERMISSION_MODE)
+    for (const permissionMode of CODEX_PERMISSION_MODES) {
+      expect(codex.Config({ permissionMode }).permissionMode).toBe(permissionMode)
+    }
+    for (const permissionMode of ['on-request', 'untrusted', 'future-mode']) {
+      expect(() => codex.Config({ permissionMode } as never)).toThrow()
+    }
+  })
+
+  it('resolves the safe permission default when apply is called directly', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(LocalSubprocessRuntime)
+    codex.apply(ctx, { env: {}, disposeGraceMs: 3_000 })
+    expect(ctx.subagents.getProvider('codex')).toBeDefined()
+    await ctx.fiber.dispose()
+  })
+
+  it.each([
+    ['never', { approvalPolicy: 'never' }],
+    ['approve-for-me', {
+      approvalPolicy: 'on-request',
+      approvalsReviewer: 'auto_review',
+      sandbox: 'workspace-write',
+    }],
+    ['dangerously-bypass-approvals-and-sandbox', {
+      approvalPolicy: 'never',
+      sandbox: 'danger-full-access',
+    }],
+  ] as const)('maps %s to the official thread/start fields', async (permissionMode, expected) => {
+    const child = fakeChild()
+    const wire = new CodexAppServerWire(
+      child.handle.stdout!,
+      child.handle.stdin!,
+      permissionMode,
+    )
+    wire.start()
+    const initializing = wire.initialize(new AbortController().signal)
+    const initialize = await child.peer.nextMethod('initialize')
+    child.peer.respond(initialize, { userAgent: 'codex-cli 0.147.0' })
+    await initializing
+    await child.peer.nextMethod('initialized')
+    const starting = wire.startThread('/workspace', new AbortController().signal)
+    const threadStart = await child.peer.nextMethod('thread/start')
+    expect(threadStart.params).toEqual({
+      cwd: '/workspace',
+      ephemeral: true,
+      ...expected,
+    })
+    child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
+    await starting
+    wire.close()
   })
 
   it('requires a parent session cwd without suggesting unsupported config', async () => {
@@ -363,7 +585,7 @@ describe('task admission and package contracts', () => {
 describe('CodexAppServerWire', () => {
   it('sends the fixed handshake, thread, and turn payloads and keeps final_answer', async () => {
     const child = fakeChild()
-    const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+    const wire = defaultWire(child)
     expect(wire.collectOutput()).toEqual([])
     wire.start()
 
@@ -386,7 +608,11 @@ describe('CodexAppServerWire', () => {
 
     const starting = wire.startThread('/workspace', new AbortController().signal)
     const threadStart = await child.peer.nextMethod('thread/start')
-    expect(threadStart.params).toEqual({ cwd: '/workspace', ephemeral: true })
+    expect(threadStart.params).toEqual({
+      cwd: '/workspace',
+      ephemeral: true,
+      approvalPolicy: 'never',
+    })
     child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
     await starting
 
@@ -473,7 +699,7 @@ describe('CodexAppServerWire', () => {
   it('rejects invalid handshake, thread, and turn response shapes', async () => {
     {
       const child = fakeChild()
-      const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+      const wire = defaultWire(child)
       wire.start()
       const pending = wire.initialize(new AbortController().signal)
       const frame = await child.peer.nextMethod('initialize')
@@ -483,7 +709,7 @@ describe('CodexAppServerWire', () => {
     }
     {
       const child = fakeChild()
-      const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+      const wire = defaultWire(child)
       wire.start()
       const pending = wire.startThread('/workspace', new AbortController().signal)
       const frame = await child.peer.nextMethod('thread/start')
@@ -586,15 +812,31 @@ describe('CodexAppServerWire', () => {
         threadId: 'thread-1',
         turnId: 'turn-1',
         availableDecisions: ['decline', 'cancel'],
+        command: 'cat /private/secret.txt',
       },
     })
     expect(await child.peer.nextResponse('command')).toMatchObject({
       result: { decision: 'cancel' },
     })
+    expect(wire.collectDiagnostic()).toBeUndefined()
 
     child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
     await nextTask()
+    expect(wire.collectDiagnostic()).toBe(
+      'Codex unattended decision (mode: never; request: command approval; decision: cancelled): the provider does not grant interactive approval',
+    )
     const requests = [
+      {
+        id: 'command-decline',
+        method: 'item/commandExecution/requestApproval',
+        params: {
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          availableDecisions: ['decline'],
+        },
+        result: { decision: 'decline' },
+        diagnostic: 'Codex unattended decision (mode: never; request: command approval; decision: declined): the provider does not grant interactive approval',
+      },
       {
         id: 'file',
         method: 'item/fileChange/requestApproval',
@@ -604,30 +846,46 @@ describe('CodexAppServerWire', () => {
           availableDecisions: ['decline'],
         },
         result: { decision: 'decline' },
+        diagnostic: 'Codex unattended decision (mode: never; request: file approval; decision: declined): the provider does not grant interactive approval',
+      },
+      {
+        id: 'file-cancel',
+        method: 'item/fileChange/requestApproval',
+        params: {
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          availableDecisions: ['cancel'],
+        },
+        result: { decision: 'cancel' },
+        diagnostic: 'Codex unattended decision (mode: never; request: file approval; decision: cancelled): the provider does not grant interactive approval',
       },
       {
         id: 'file-default',
         method: 'item/fileChange/requestApproval',
         params: { threadId: 'thread-1', turnId: 'turn-1' },
         result: { decision: 'decline' },
+        diagnostic: 'Codex unattended decision (mode: never; request: file approval; decision: declined): the provider does not grant interactive approval',
       },
       {
         id: 'permissions',
         method: 'item/permissions/requestApproval',
         params: { threadId: 'thread-1', turnId: 'turn-1' },
         result: { permissions: {}, scope: 'turn' },
+        diagnostic: 'Codex unattended decision (mode: never; request: permission grant; decision: denied): the provider grants no additional turn permissions',
       },
       {
         id: 'user-input',
         method: 'item/tool/requestUserInput',
         params: { threadId: 'thread-1', turnId: 'turn-1', questions: [] },
         result: { answers: {} },
+        diagnostic: 'Codex unattended decision (mode: never; request: user input; decision: empty response): the provider does not collect interactive answers',
       },
       {
         id: 'mcp',
         method: 'mcpServer/elicitation/request',
         params: { threadId: 'thread-1', turnId: null },
         result: { action: 'decline', content: null, _meta: null },
+        diagnostic: 'Codex unattended decision (mode: never; request: MCP elicitation; decision: declined): the provider does not collect interactive MCP input',
       },
     ] as const
     for (const serverRequest of requests) {
@@ -635,11 +893,203 @@ describe('CodexAppServerWire', () => {
       expect(await child.peer.nextResponse(serverRequest.id)).toMatchObject({
         result: serverRequest.result,
       })
+      expect(wire.collectDiagnostic()).toBe(serverRequest.diagnostic)
     }
+    expect(wire.collectDiagnostic()).not.toContain('/private/secret.txt')
 
+    child.peer.send(agentMessage('answer', 'final_answer'), turnCompleted('completed'))
+    await expect(result).resolves.toEqual({
+      output: [{ type: 'text', text: 'answer' }],
+      stopReason: 'completed',
+    })
+    wire.close()
+  })
+
+  it('records only a safe diagnostic for an explicit sandbox failure', async () => {
+    const { child, wire } = await initializeWire()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+      message: 'failed at /private/secret.txt with SECRET_TOKEN',
+      additionalDetails: 'raw command payload',
+      codexErrorInfo: 'sandboxError',
+    }))
+    await expect(result).rejects.toThrow('status failed')
+    expect(wire.collectDiagnostic()).toBe(
+      'Codex unattended decision (mode: never; request: sandbox execution; decision: failed): Codex reported a sandbox failure',
+    )
+    expect(wire.collectDiagnostic()).not.toContain('SECRET_TOKEN')
+    expect(wire.collectDiagnostic()).not.toContain('/private/secret.txt')
+    wire.close()
+  })
+
+  it('records declined command and file items without retaining their payloads', async () => {
+    const { child, wire } = await initializeWire()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    child.peer.send({
+      method: 'item/completed',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        item: {
+          type: 'commandExecution',
+          status: 'declined',
+          command: 'cat /private/secret.txt',
+        },
+      },
+    })
+    await nextTask()
+    expect(wire.collectDiagnostic()).toBe(
+      'Codex unattended decision (mode: never; request: command execution; decision: declined): Codex declined the command under the selected permission mode',
+    )
+    expect(wire.collectDiagnostic()).not.toContain('/private/secret.txt')
+
+    child.peer.send(
+      {
+        method: 'item/completed',
+        params: {
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          item: {
+            type: 'fileChange',
+            status: 'declined',
+            patch: 'SECRET_TOKEN in /private/secret.txt',
+          },
+        },
+      },
+      turnCompleted('failed', 'turn-1', 'thread-1', {
+        message: 'SECRET_TOKEN in /private/secret.txt',
+        codexErrorInfo: 'other',
+      }),
+    )
+    await expect(result).rejects.toThrow('status failed')
+    expect(wire.collectDiagnostic()).toBe(
+      'Codex unattended decision (mode: never; request: file change; decision: declined): Codex declined the file change under the selected permission mode',
+    )
+    expect(wire.collectDiagnostic()).not.toContain('SECRET_TOKEN')
+    expect(wire.collectDiagnostic()).not.toContain('/private/secret.txt')
+    wire.close()
+  })
+
+  it('recognizes large, split, and ordered stderr signatures without retaining raw text', () => {
+    const first = fakeChild()
+    const largeWire = new CodexAppServerWire(
+      first.handle.stdout!,
+      first.handle.stdin!,
+      'never',
+    )
+    largeWire.observeStderr(
+      `SECRET_TOKEN approval policy is Never; reject command${'x'.repeat(2_048)}`,
+    )
+    expect(largeWire.collectDiagnostic()).toBe(
+      'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
+    )
+    expect(largeWire.collectDiagnostic()).not.toContain('SECRET_TOKEN')
+
+    const second = fakeChild()
+    const splitWire = new CodexAppServerWire(
+      second.handle.stdout!,
+      second.handle.stdin!,
+      'never',
+    )
+    splitWire.observeStderr('SECRET_TOKEN approval policy is Ne')
+    splitWire.observeStderr('ver; reject command — /private/secret.txt')
+    expect(splitWire.collectDiagnostic()).toBe(
+      'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
+    )
+    expect(splitWire.collectDiagnostic()).not.toContain('SECRET_TOKEN')
+    expect(splitWire.collectDiagnostic()).not.toContain('/private/secret.txt')
+
+    const third = fakeChild()
+    const orderedWire = new CodexAppServerWire(
+      third.handle.stdout!,
+      third.handle.stdin!,
+      'dangerously-bypass-approvals-and-sandbox',
+    )
+    orderedWire.observeStderr(
+      'approval policy is Never; reject command; recorded sandbox violation: path=/private/secret.txt',
+    )
+    expect(orderedWire.collectDiagnostic()).toBe(
+      'Codex unattended decision (mode: dangerously-bypass-approvals-and-sandbox; request: sandbox execution; decision: failed): Codex reported a sandbox violation',
+    )
+    expect(orderedWire.collectDiagnostic()).not.toContain('/private/secret.txt')
+  })
+
+  it('does not reapply an old stderr signature after a newer request diagnostic', async () => {
+    const { child, wire } = await initializeWire()
+    wire.observeStderr('recorded sandbox violation:')
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    await nextTask()
+    child.peer.send({
+      id: 'file-approval',
+      method: 'item/fileChange/requestApproval',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        availableDecisions: ['decline'],
+      },
+    })
+    await child.peer.nextResponse('file-approval')
+    expect(wire.collectDiagnostic()).toContain('request: file approval')
+    wire.observeStderr('later benign stderr')
+    expect(wire.collectDiagnostic()).toContain('request: file approval')
     child.peer.send(agentMessage('answer', 'final_answer'), turnCompleted('completed'))
     await expect(result).resolves.toMatchObject({ stopReason: 'completed' })
     wire.close()
+  })
+
+  it('keeps a newer request diagnostic after replaying an older early item', async () => {
+    const { child, wire } = await initializeWire()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.send({
+      method: 'item/completed',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        item: { type: 'fileChange', status: 'declined' },
+      },
+    })
+    await nextTask()
+    child.peer.send({
+      id: 'newer-command-request',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        availableDecisions: ['cancel'],
+      },
+    })
+    await child.peer.nextResponse('newer-command-request')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    child.peer.send(agentMessage('answer', 'final_answer'), turnCompleted('completed'))
+    await expect(result).resolves.toMatchObject({ stopReason: 'completed' })
+    expect(wire.collectDiagnostic()).toContain('request: command approval')
+    wire.close()
+  })
+
+  it('keeps a newer stderr fact after replaying an older early terminal', async () => {
+    hostStderrWrite.capture = true
+    hostStderrWrite.chunks.length = 0
+    const { child, wire } = await initializeWire()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+      message: 'sandbox failure',
+      codexErrorInfo: 'sandboxError',
+    }))
+    await nextTask()
+    wire.observeStderr('approval policy is Never; reject command')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    await expect(result).rejects.toThrow('sandboxError')
+    expect(wire.collectDiagnostic()).toContain('request: command execution')
+    wire.close()
+    hostStderrWrite.capture = false
   })
 
   it('fails the run on unknown requests or wrong request association', async () => {
@@ -701,6 +1151,44 @@ describe('CodexAppServerWire', () => {
     })
     child.peer.respond(turnStart, { turn: { id: 'turn-response' } })
     await expect(result).rejects.toThrow('did not match the active turn')
+    wire.close()
+  })
+
+  it('does not retain a diagnostic from a mismatched early item', async () => {
+    const { child, wire } = await initializeWire()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.send({
+      method: 'item/completed',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-early',
+        item: { type: 'fileChange', status: 'declined' },
+      },
+    })
+    child.peer.respond(turnStart, { turn: { id: 'turn-response' } })
+    await expect(result).rejects.toThrow('did not match the active turn')
+    expect(wire.collectDiagnostic()).toBeUndefined()
+    wire.close()
+  })
+
+  it('does not retain a diagnostic from a mismatched provisional request', async () => {
+    const { child, wire } = await initializeWire()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.send({
+      id: 'provisional-approval',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-early',
+        availableDecisions: ['cancel'],
+      },
+    })
+    await child.peer.nextResponse('provisional-approval')
+    child.peer.respond(turnStart, { turn: { id: 'turn-response' } })
+    await expect(result).rejects.toThrow('did not match the active turn')
+    expect(wire.collectDiagnostic()).toBeUndefined()
     wire.close()
   })
 
@@ -790,7 +1278,7 @@ describe('CodexAppServerWire', () => {
   it('rejects pending work on abort, EOF, and stream error', async () => {
     {
       const child = fakeChild()
-      const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+      const wire = defaultWire(child)
       wire.start()
       const controller = new AbortController()
       controller.abort('pre-aborted')
@@ -800,7 +1288,7 @@ describe('CodexAppServerWire', () => {
     }
     {
       const child = fakeChild()
-      const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+      const wire = defaultWire(child)
       wire.start()
       const controller = new AbortController()
       const pending = wire.initialize(controller.signal)
@@ -811,7 +1299,7 @@ describe('CodexAppServerWire', () => {
     }
     {
       const child = fakeChild()
-      const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+      const wire = defaultWire(child)
       wire.start()
       const pending = wire.initialize(new AbortController().signal)
       await child.peer.nextMethod('initialize')
@@ -821,7 +1309,7 @@ describe('CodexAppServerWire', () => {
     }
     {
       const child = fakeChild()
-      const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+      const wire = defaultWire(child)
       wire.start()
       const pending = wire.initialize(new AbortController().signal)
       await child.peer.nextMethod('initialize')
@@ -831,7 +1319,7 @@ describe('CodexAppServerWire', () => {
     }
     {
       const child = fakeChild()
-      const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+      const wire = defaultWire(child)
       wire.start()
       const pending = wire.initialize(new AbortController().signal)
       await child.peer.nextMethod('initialize')
@@ -864,7 +1352,7 @@ describe('run lifecycle and quiescence', () => {
     expect(spawn).toHaveBeenCalledWith({
       argv: codexAppServerArgv(),
       cwd: process.cwd(),
-      stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
+      stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
       env: { OPENAI_API_KEY: 'fake' },
     })
@@ -929,6 +1417,114 @@ describe('run lifecycle and quiescence', () => {
       await expect(run.result).resolves.toEqual({ output: [], stopReason: 'error' })
       await run.dispose()
     }
+    {
+      const child = fakeChild()
+      const { run, turnStart } = await publishRun(child)
+      child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      child.stderr.emit('error', new Error('stderr broke'))
+      child.peer.send(agentMessage('answer', 'final_answer'), turnCompleted('completed'))
+      await expect(run.result).resolves.toEqual({
+        output: [{ type: 'text', text: 'answer' }],
+        stopReason: 'completed',
+      })
+      await run.dispose()
+      expect(child.stderr.listenerCount('error')).toBe(0)
+    }
+  })
+
+  it('attaches a safe permission diagnostic when a published run fails', async () => {
+    const { child, run, turnStart } = await publishRun()
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    await nextTask()
+    child.peer.send({
+      id: 'approval-diagnostic',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        availableDecisions: ['cancel'],
+        command: 'cat /private/secret.txt',
+      },
+    })
+    expect(await child.peer.nextResponse('approval-diagnostic')).toMatchObject({
+      result: { decision: 'cancel' },
+    })
+    child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+      message: 'SECRET_TOKEN in /private/secret.txt',
+      codexErrorInfo: 'other',
+    }))
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: 'Codex unattended decision (mode: never; request: command approval; decision: cancelled): the provider does not grant interactive approval',
+      stopReason: 'error',
+    })
+    await run.dispose()
+  })
+
+  it('drains queued stderr before settling a failed published run', async () => {
+    hostStderrWrite.capture = true
+    hostStderrWrite.chunks.length = 0
+    const { child, run, turnStart } = await publishRun()
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+      message: 'fixture terminal failure',
+      codexErrorInfo: 'badRequest',
+    }))
+    setImmediate(() => {
+      child.stderr.write('approval policy is Never; reject command')
+    })
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: 'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
+      stopReason: 'error',
+    })
+    await run.dispose()
+    hostStderrWrite.capture = false
+  })
+
+  it('forwards stderr while extracting only a fixed safe permission signature', async () => {
+    const child = fakeChild()
+    hostStderrWrite.capture = true
+    hostStderrWrite.chunks.length = 0
+    const { run, turnStart } = await publishRun(child)
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    child.stderr.write('SECRET_TOKEN approval policy is Ne')
+    child.stderr.write('ver; reject command — /private/secret.txt')
+    child.stderr.emit('data', 'string stderr suffix')
+    child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+      message: 'fixture terminal failure',
+      codexErrorInfo: 'badRequest',
+    }))
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: 'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
+      stopReason: 'error',
+    })
+    expect(Buffer.concat(hostStderrWrite.chunks).toString()).toContain('SECRET_TOKEN')
+    expect(hostStderrWrite.chunks).toHaveLength(3)
+    await run.dispose()
+    expect(child.stderr.listenerCount('data')).toBe(0)
+    hostStderrWrite.capture = false
+  })
+
+  it('contains host stderr write failures without changing run settlement', async () => {
+    const child = fakeChild()
+    hostStderrWrite.capture = true
+    hostStderrWrite.failNext = true
+    const { run, turnStart } = await publishRun(child)
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    child.stderr.write('approval policy is Never; reject command')
+    child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+      message: 'fixture terminal failure',
+      codexErrorInfo: 'badRequest',
+    }))
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: 'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
+      stopReason: 'error',
+    })
+    await run.dispose()
+    hostStderrWrite.capture = false
   })
 
   it('rejects before spawn when pre-aborted and rolls back startup failures', async () => {
@@ -939,6 +1535,7 @@ describe('run lifecycle and quiescence', () => {
       request(undefined, controller.signal),
       {
         cwd: process.cwd(),
+        permissionMode: DEFAULT_CODEX_PERMISSION_MODE,
         env: {},
         disposeGraceMs: 10,
         spawn,
@@ -952,6 +1549,27 @@ describe('run lifecycle and quiescence', () => {
     child.peer.respond(initialize, null)
     await expect(starting).rejects.toThrow('invalid initialize response')
     expect(child.terminate).toHaveBeenCalledTimes(1)
+
+    const stderrChild = fakeChild()
+    const stderrStarting = startCodexRun(request(), runSpec(stderrChild))
+    const stderrInitialize = await stderrChild.peer.nextMethod('initialize')
+    stderrChild.stderr.emit('error', new Error('startup stderr broke'))
+    stderrChild.peer.respond(stderrInitialize, { userAgent: 'codex-cli 0.147.0' })
+    await stderrChild.peer.nextMethod('initialized')
+    const stderrThreadStart = await stderrChild.peer.nextMethod('thread/start')
+    stderrChild.peer.respond(stderrThreadStart, {
+      thread: { id: 'thread-1', ephemeral: true },
+    })
+    const stderrRun = await stderrStarting
+    const stderrTurnStart = await stderrChild.peer.nextMethod('turn/start')
+    stderrChild.peer.send(
+      { id: stderrTurnStart.id, result: { turn: { id: 'turn-1' } } },
+      agentMessage('answer', 'final_answer'),
+      turnCompleted('completed'),
+    )
+    await expect(stderrRun.result).resolves.toMatchObject({ stopReason: 'completed' })
+    await stderrRun.dispose()
+    expect(stderrChild.stderr.listenerCount('error')).toBe(0)
   })
 
   it('rolls back an abort that wins immediately after thread creation', async () => {
@@ -965,6 +1583,11 @@ describe('run lifecycle and quiescence', () => {
     child.peer.respond(initialize, { userAgent: 'codex-cli 0.147.0' })
     await child.peer.nextMethod('initialized')
     const threadStart = await child.peer.nextMethod('thread/start')
+    expect(threadStart.params).toEqual({
+      cwd: process.cwd(),
+      ephemeral: true,
+      approvalPolicy: 'never',
+    })
     child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
     controller.abort('startup race')
     await expect(starting).rejects.toThrow('aborted before run publication')
@@ -989,12 +1612,21 @@ describe('run lifecycle and quiescence', () => {
   })
 
   it('keeps overlapping runs isolated', async () => {
-    const first = fakeChild()
-    const second = fakeChild()
-    const runs = await Promise.all([
-      publishRun(first),
-      publishRun(second),
-    ])
+    const initialStderrListeners = {
+      error: process.stderr.listenerCount('error'),
+      unpipe: process.stderr.listenerCount('unpipe'),
+      close: process.stderr.listenerCount('close'),
+      finish: process.stderr.listenerCount('finish'),
+    }
+    const runs = await Promise.all(
+      Array.from({ length: 6 }, () => publishRun(fakeChild())),
+    )
+    expect({
+      error: process.stderr.listenerCount('error'),
+      unpipe: process.stderr.listenerCount('unpipe'),
+      close: process.stderr.listenerCount('close'),
+      finish: process.stderr.listenerCount('finish'),
+    }).toEqual(initialStderrListeners)
     for (const [index, entry] of runs.entries()) {
       const id = `turn-${index + 1}`
       entry.child.peer.send(
@@ -1004,12 +1636,62 @@ describe('run lifecycle and quiescence', () => {
       )
     }
     const results = await Promise.all(runs.map(entry => entry.run.result))
-    expect(results.map(result => result.output)).toEqual([
-      [{ type: 'text', text: 'answer-1' }],
-      [{ type: 'text', text: 'answer-2' }],
-    ])
-    expect(runs[0].run.id).not.toBe(runs[1].run.id)
+    expect(results.map(result => result.output)).toEqual(
+      Array.from({ length: 6 }, (_, index) => [
+        { type: 'text', text: `answer-${index + 1}` },
+      ]),
+    )
+    expect(runs[0]!.run.id).not.toBe(runs[1]!.run.id)
     await Promise.all(runs.map(entry => entry.run.dispose()))
+  })
+
+  it('isolates permission modes and diagnostics across overlapping runs', async () => {
+    const first = await publishRun(fakeChild(), undefined, {
+      permissionMode: 'never',
+    })
+    const second = await publishRun(fakeChild(), undefined, {
+      permissionMode: 'dangerously-bypass-approvals-and-sandbox',
+    })
+    first.child.peer.respond(first.turnStart, { turn: { id: 'turn-never' } })
+    second.child.peer.respond(second.turnStart, { turn: { id: 'turn-bypass' } })
+    await nextTask()
+    first.child.peer.send({
+      id: 'never-approval',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-never',
+        availableDecisions: ['cancel'],
+      },
+    })
+    second.child.peer.send({
+      id: 'bypass-elicitation',
+      method: 'mcpServer/elicitation/request',
+      params: { threadId: 'thread-1', turnId: null },
+    })
+    await Promise.all([
+      first.child.peer.nextResponse('never-approval'),
+      second.child.peer.nextResponse('bypass-elicitation'),
+    ])
+    first.child.peer.send(turnCompleted('failed', 'turn-never', 'thread-1', {
+      message: 'first failure',
+      codexErrorInfo: 'other',
+    }))
+    second.child.peer.send(turnCompleted('failed', 'turn-bypass', 'thread-1', {
+      message: 'second failure',
+      codexErrorInfo: 'other',
+    }))
+    await expect(first.run.result).resolves.toEqual({
+      output: [],
+      diagnostic: 'Codex unattended decision (mode: never; request: command approval; decision: cancelled): the provider does not grant interactive approval',
+      stopReason: 'error',
+    })
+    await expect(second.run.result).resolves.toEqual({
+      output: [],
+      diagnostic: 'Codex unattended decision (mode: dangerously-bypass-approvals-and-sandbox; request: MCP elicitation; decision: declined): the provider does not collect interactive MCP input',
+      stopReason: 'error',
+    })
+    await Promise.all([first.run.dispose(), second.run.dispose()])
   })
 
   it('uses the registered provider config and logs flattened errors', async () => {
@@ -1023,10 +1705,12 @@ describe('run lifecycle and quiescence', () => {
       warnings.push(String(message))
     }) as typeof ctx.logger.warn
     await ctx.plugin(codex, {
+      providerName: 'codex-diagnostic',
       env: { OPENAI_API_KEY: 'fake' },
+      permissionMode: 'approve-for-me',
       disposeGraceMs: 25,
     })
-    const starting = ctx.subagents.start('codex', {
+    const starting = ctx.subagents.start('codex-diagnostic', {
       prompt: [{ type: 'text', text: 'task' }],
       parent: fakeParent,
       signal: new AbortController().signal,
@@ -1035,20 +1719,50 @@ describe('run lifecycle and quiescence', () => {
     child.peer.respond(initialize, { userAgent: 'codex-cli 0.147.0' })
     await child.peer.nextMethod('initialized')
     const threadStart = await child.peer.nextMethod('thread/start')
+    expect(threadStart.params).toEqual({
+      cwd: process.cwd(),
+      ephemeral: true,
+      approvalPolicy: 'on-request',
+      approvalsReviewer: 'auto_review',
+      sandbox: 'workspace-write',
+    })
     child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
     const run = await starting
-    await child.peer.nextMethod('turn/start')
-    child.settle({ exitCode: 1, signal: null })
-    await expect(run.result).resolves.toMatchObject({ stopReason: 'error' })
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    await nextTask()
+    child.peer.send({
+      id: 'provider-approval',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        availableDecisions: ['cancel'],
+        command: 'cat /private/secret.txt',
+      },
+    })
+    await child.peer.nextResponse('provider-approval')
+    child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+      message: 'SECRET_TOKEN in /private/secret.txt',
+      codexErrorInfo: 'other',
+    }))
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: 'Codex unattended decision (mode: approve-for-me; request: command approval; decision: cancelled): the provider does not grant interactive approval',
+      stopReason: 'error',
+    })
     expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
+      argv: ['codex', 'app-server', '--stdio'],
       env: { OPENAI_API_KEY: 'fake' },
       graceMs: 25,
       cwd: process.cwd(),
     }))
     expect(warnings).toEqual([
-      expect.stringContaining('subagent-codex: child run failed (error):'),
+      expect.stringContaining('subagent-codex "codex-diagnostic": child run failed (error): subagent-codex: Codex turn ended with status failed: error'),
     ])
-    await run.dispose().catch(() => {})
+    expect(warnings.join('\n')).not.toContain('SECRET_TOKEN')
+    expect(warnings.join('\n')).not.toContain('/private/secret.txt')
+    await run.dispose()
     await ctx.fiber.dispose()
   })
 })
@@ -1056,7 +1770,7 @@ describe('run lifecycle and quiescence', () => {
 describe('disposeCodexChild', () => {
   it('closes stdin, terminates, and waits for the managed tree', async () => {
     const child = fakeChild()
-    const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+    const wire = defaultWire(child)
     const end = vi.spyOn(child.toChild, 'end')
     await disposeCodexChild(wire, child.handle)
     expect(end).toHaveBeenCalled()
@@ -1067,7 +1781,7 @@ describe('disposeCodexChild', () => {
 
   it('does not finish disposal before the managed tree exits', async () => {
     const child = fakeChild({ exitOnTerminate: false })
-    const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+    const wire = defaultWire(child)
     let disposed = false
     const disposal = disposeCodexChild(wire, child.handle).then(() => {
       disposed = true
@@ -1081,7 +1795,7 @@ describe('disposeCodexChild', () => {
 
   it('contains a concurrently closed stdin error', async () => {
     const child = fakeChild()
-    const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+    const wire = defaultWire(child)
     vi.spyOn(child.toChild, 'end').mockImplementation(() => {
       throw new Error('already closed')
     })
@@ -1094,7 +1808,7 @@ describe('disposeCodexChild', () => {
       pid: -1,
       doneError: new Error('spawn failed'),
     })
-    const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+    const wire = defaultWire(child)
     await expect(disposeCodexChild(wire, child.handle))
       .resolves.toBeUndefined()
     expect(child.terminate).not.toHaveBeenCalled()
@@ -1106,14 +1820,14 @@ describe('disposeCodexChild', () => {
       const child = fakeChild({
         doneError: new Error('close observer failed'),
       })
-      const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+      const wire = defaultWire(child)
       await expect(disposeCodexChild(wire, child.handle))
         .rejects.toThrow('close observer failed')
     }
     {
       const child = fakeChild()
       const handle = { ...child.handle, stdin: undefined }
-      const wire = new CodexAppServerWire(child.handle.stdout!, child.handle.stdin!)
+      const wire = defaultWire(child)
       await expect(disposeCodexChild(wire, handle)).resolves.toBeUndefined()
     }
   })

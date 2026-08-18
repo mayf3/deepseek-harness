@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-This package registers the fixed `claude-code` subagent provider. Each accepted run invokes the official Claude Agent SDK in the delegating Session's workspace, resolves the native `claude` executable through the shared subprocess service, submits one self-contained text task, and returns only the final answer through the shared [`dsh-subagent`](../subagent/README.md) result contract.
+This package registers a Profile-named Claude Code subagent provider whose default name is `claude-code`. Each accepted run invokes the official Claude Agent SDK in the delegating Session's workspace, resolves the native `claude` executable through the shared subprocess service, submits one self-contained text task, and returns either the strict final answer or safe failure detail through the shared [`dsh-subagent`](../subagent/README.md) result contract.
 
 ## Start and ownership
 
@@ -14,9 +14,9 @@ Local cancellation wins the result race and maps to `aborted`. `dispose()` is id
 
 ## Native settings and interaction
 
-The provider deliberately omits the SDK `settingSources` option. The official SDK therefore reads the host's normal user, project, and local Claude settings relative to the parent Session cwd, including native account state and product configuration. The provider neither copies nor filters those files and does not create or modify login state.
+The provider deliberately omits the SDK `settingSources` option. The official SDK therefore reads the host's normal user, project, and local Claude settings relative to the parent Session cwd, including native account state and product configuration. The provider neither copies nor filters those files and does not create or modify login state. The Profile-selected `permissionMode` is the one query-level override: Claude Code still owns its settings and sandbox, while the selected native mode decides how this unattended query handles permission checks.
 
-Each query sets `persistSession: false` and disables `AskUserQuestion`. It supplies no `canUseTool`, elicitation, or dialog callback, so unattended interactions fail through the SDK instead of waiting for a user interface this provider does not own.
+Each query sets `persistSession: false` and disables `AskUserQuestion`. Except in bypass mode, `canUseTool` immediately denies requests that still require human approval. Plan mode also places `ExitPlanMode` in the SDK's `disallowedTools`, so native settings cannot pre-approve a transition back to execution and the model must return the completed plan as its final answer. MCP elicitation is declined, the known refusal fallback dialog is cancelled, and undeclared dialog kinds use the SDK's no-dialog failure behavior. These decisions never wait for a user interface. A permission denial or unattended callback that contributes to a failed run produces an optional `SubagentResult.diagnostic` containing only the product, effective mode, request category, decision, and fixed safe reason; the shared result boundary limits the complete text to 4096 UTF-8 bytes. Successful and locally cancelled runs do not expose the captured failure detail.
 
 ## Capabilities and context
 
@@ -26,19 +26,39 @@ The provider advertises no optional start-time capabilities and reports `inherit
 
 | Key | Default | Meaning |
 |---|---|---|
+| `providerName` | `claude-code` | Non-empty registry name on `ctx.subagents`; each mounted instance needs a unique value. |
 | `env` | `{}` | Explicit SDK/CLI environment layered over the shared credential-scrubbed parent environment. |
+| `permissionMode` | `dontAsk` | Native non-interactive permission policy fixed for every run from this Provider instance. |
 | `disposeGraceMs` | `3000` | Positive finite grace in milliseconds, no greater than [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md), between the shared process-tree owner's termination tiers; disposal then waits for whole-tree exit. |
+
+| `permissionMode` value | Native behavior |
+|---|---|
+| `dontAsk` | Deny operations that are not already authorized instead of prompting. |
+| `acceptEdits` | Accept file edits; any remaining permission prompt is denied by the unattended callback. |
+| `auto` | Let Claude Code's native classifier allow or deny permission requests. |
+| `plan` | Run in native planning mode, deny execution approval, and return the completed plan as the final answer. |
+| `bypassPermissions` | Explicitly set the SDK's dangerous confirmation and bypass permission checks. |
 
 Production resolves `claude` from the subprocess execution world's credential-scrubbed `PATH`, with explicit `env` entries applied, and passes the resulting path to the SDK as `pathToClaudeCodeExecutable`. On Windows, a resolved `.cmd` or `.bat` path is carried as a quoted, per-spawn environment value that `cmd.exe /v:off` expands once, so valid path metacharacters remain data. The pinned SDK's fixed flags then occupy cmd's command tail and contain no cmd metacharacters; they are not ordinary Windows argv. Native settings and authentication remain authoritative. The plugin does not install another CLI, select a model, create a product home, log in, or probe an account. Credential-shaped ambient variables are removed before the explicit `env` overlay is applied, so an API key or token intended for the child must be supplied there. Non-credential endpoint variables such as `ANTHROPIC_BASE_URL`, along with ordinary ambient values such as `PATH` and `HOME`, remain inherited unless overridden.
 
-Production `dsh` does not install or mount this optional provider. A Profile that opts in must install `@deepseek-ai/dsh-subagent-claude-code` and mount it once on the host plane; loading the provider starts no Claude process until a tool call. Full Agent Presets carry a matching product tool row with `disabled: true`; copy a preset and remove that field to expose `subagent_claude_code` only to agents composed from the copy. Its `one-shot` policy keeps omitted or `false` `run_in_background` calls in the foreground, while explicit `true` returns a parent-owned Job id for `job_output` or `job_kill`. The base host and full presets already provide the generic Job registry and controls.
+Production `dsh` does not install or mount this optional provider. A Profile that opts in must install `@deepseek-ai/dsh-subagent-claude-code` and may mount one or more host-plane rows with distinct `providerName`, `permissionMode`, and `env` values; omitting `providerName` keeps the `claude-code` default. Loading an instance starts no Claude process until a bound tool calls it. Each `dsh-tool-subagent` row names one provider and needs its own `toolName`, so the model sees static tools rather than a dynamic provider selector. Full Agent Presets carry a matching default product tool row with `disabled: true`; copy a preset and remove that field to expose `subagent_claude_code` only to agents composed from the copy. Its `one-shot` policy keeps omitted or `false` `run_in_background` calls in the foreground, while explicit `true` returns a parent-owned Job id for `job_output` or `job_kill`. The base host and full presets already provide the generic Job registry and controls.
 
-The standalone composition below shows the complete explicit capability. A Profile based on `@deepseek-ai/dsh-base` keeps its existing Job rows, adds the product provider row, and enables the preset tool row instead of mounting duplicate Job services.
+The standalone composition below shows the complete explicit capability. A Profile based on `@deepseek-ai/dsh-base` keeps its existing Job rows, adds the product provider and tool rows, and does not mount duplicate Job services.
 
 ```yaml
-- id: subagent-claude-code
+- id: subagent-claude-safe
   name: '@deepseek-ai/dsh-subagent-claude-code'
   config:
+    providerName: claude-safe
+    permissionMode: dontAsk
+    env:
+      ANTHROPIC_API_KEY: !!js process.env.ANTHROPIC_API_KEY
+
+- id: subagent-claude-bypass
+  name: '@deepseek-ai/dsh-subagent-claude-code'
+  config:
+    providerName: claude-bypass
+    permissionMode: bypassPermissions
     env:
       ANTHROPIC_API_KEY: !!js process.env.ANTHROPIC_API_KEY
 
@@ -48,18 +68,26 @@ The standalone composition below shows the complete explicit capability. A Profi
 - id: tool-jobs
   name: '@deepseek-ai/dsh-tool-jobs'
 
-- id: tool-subagent-claude-code
+- id: tool-subagent-claude-safe
   name: '@deepseek-ai/dsh-tool-subagent'
   config:
-    provider: claude-code
-    toolName: subagent_claude_code
+    provider: claude-safe
+    toolName: subagent_claude_safe
+    backgroundMode: one-shot
+    maxDepth: provider-managed
+
+- id: tool-subagent-claude-bypass
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: claude-bypass
+    toolName: subagent_claude_bypass
     backgroundMode: one-shot
     maxDepth: provider-managed
 ```
 
 ## Product compatibility and evidence
 
-The runtime dependency is pinned to `@anthropic-ai/claude-agent-sdk@0.3.220`. Production runs the native `claude` installation. The keyless real-product test uses the SDK-distributed Claude Code 2.1.220 CLI as a deterministic fixture, routed through the same native executable-resolution and Windows batch-shim path; it does not claim compatibility with every independently installed version. Loader composition proves that both product packages coexist without starting either product.
+The runtime dependency is pinned to `@anthropic-ai/claude-agent-sdk@0.3.220`. Production runs the native `claude` installation. The keyless real-product test uses the SDK-distributed Claude Code 2.1.220 CLI as a deterministic fixture, routed through the same native executable-resolution and Windows batch-shim path; it does not claim compatibility with every independently installed version. Loader composition proves that two named Claude instances and the Codex package coexist without starting either product.
 
 The project owner's identity-scoped distribution authorization covers the official SDK and the official CLI/platform payloads declared by each SDK version. [`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md) discloses the current optional payload closure without classifying its declared terms as permissive; unrelated non-permissive runtime dependencies continue to fail the notices gate.
 
@@ -69,7 +97,7 @@ The project owner's identity-scoped distribution authorization covers the offici
 
 #### What the model sees
 
-The Claude Code child receives the standalone text task as one fresh SDK query. Its workspace is the parent Session cwd, while its model, system instructions, tools, permissions, and authentication come from the host's native Claude settings and product installation.
+The Claude Code child receives the standalone text task as one fresh SDK query. Its workspace is the parent Session cwd; its model, system instructions, tools, sandbox, and authentication come from the host's native Claude settings and product installation, while the selected Provider instance's Profile configuration fixes the query's environment and non-interactive permission mode.
 
 #### Token effect
 
@@ -83,7 +111,7 @@ Independent of the parent request cache. Reuse depends only on Claude Code's own
 
 #### What the model sees
 
-Through `dsh-tool-subagent`, a foreground call gives the parent the strict final Claude Code answer or the consumer's exact error for a non-completed result. A background call first returns a Job id; the generic job controls later deliver a completion notice, expose the final answer and status through `job_output`, and let `job_kill` request cancellation. Claude Code reasoning, tool activity, intermediate messages, stderr, workspace diffs, usage, and product ids are not copied into the parent Session.
+Through `dsh-tool-subagent`, a foreground call gives the parent the strict final Claude Code answer or an error containing the stop reason and optional safe diagnostic for a non-completed result. A background call first returns a Job id; the generic job controls later deliver a completion notice, expose the final answer or failed status detail through `job_output`, and let `job_kill` request cancellation. Claude Code reasoning, tool activity, intermediate messages, stderr, workspace diffs, usage, product ids, tool inputs, and raw protocol payloads are not copied into the parent Session.
 
 #### Token effect
 
@@ -96,10 +124,11 @@ Append-only: foreground adds one result after the reusable parent prefix, while 
 ## Known Limitations and Deferred Work
 
 - **One fresh query and process per run** — there is no continuation, resume, pooling, progress stream, or product-session persistence.
+- **Static instance selection** — Profile rows fix provider names and tool bindings; calls cannot choose a provider dynamically, and every exposed tool needs a unique `toolName`.
 - **Host settings are intentionally authoritative** — project and user settings can change model, tools, and behavior; the provider does not provide a filtered or hermetic production mode.
 - **Product installation and account state remain native** — a missing or incompatible `claude`, configuration error, or authentication failure is surfaced as a startup or run error; the plugin provides no installer or login flow.
 - **The SDK platform CLI remains in the install closure** — production ignores it in favor of the host `claude`, but the current SDK optional dependency is still installed and supplies the keyless compatibility fixture. Removing that payload belongs to the separate product installation-closure follow-up.
-- **No human interaction path** — `AskUserQuestion` is disabled and other interactive callbacks are absent, so tasks requiring new approval or input fail instead of suspending.
-- **Product payload is final text only** — reasoning, intermediate messages, tool traffic, usage, stderr, and workspace diffs remain product-local; generic Job ids, notices, and status come from the shared job runtime.
+- **No human interaction path** — `AskUserQuestion` is disabled, permission prompts are denied, MCP elicitation is declined, and blocking dialogs fail closed instead of suspending.
+- **Assistant payload is final text only** — a failed run may additionally expose the separate safe diagnostic; reasoning, intermediate messages, tool traffic, usage, stderr, and workspace diffs remain product-local, while generic Job ids, notices, and status come from the shared job runtime.
 - **No optional shared capabilities** — output schemas, child personas, tool filtering, and harness depth enforcement are rejected by the shared service for this provider.
 - **No wall-clock timeout or side-effect rollback** — the caller cancels long work, and files or external systems changed before cancellation are not restored.

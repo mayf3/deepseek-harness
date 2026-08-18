@@ -335,10 +335,12 @@ export interface Config {
   maxMessageImageBytes?: number
   /** Maximum intrinsic width multiplied by height accepted for one image. */
   maxImagePixels?: number
+  /** Maximum intrinsic width and maximum intrinsic height accepted for one image. */
+  maxImageDimension?: number
 }
 ```
 
-Source: [`packages/attachment/attachment-local/src/index.ts:24`](../packages/attachment/attachment-local/src/index.ts)
+Source: [`packages/attachment/attachment-local/src/index.ts:31`](../packages/attachment/attachment-local/src/index.ts)
 
 <a id="deepseek-aidsh-bash-local"></a>
 
@@ -868,7 +870,7 @@ export interface Config {
   models?: DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
   streamIdleTimeoutMs?: number
-  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
 
@@ -983,7 +985,14 @@ export interface PiAiProviderProfile {
   websocketConnectTimeoutMs?: number
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs?: number
-  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  /**
+   * Maximum base64-encoded image payload per request. When a request's
+   * accumulated images exceed it, the oldest images are replaced by text
+   * placeholders until the request fits, so a long session keeps completing
+   * requests instead of being rejected by a request-size cap.
+   */
+  maxRequestImageBytes?: number
+  /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
 
@@ -1079,7 +1088,7 @@ type WithheldThinkingFormat = 'chat-template' | 'qwen-chat-template'
 
 Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
 
-Source: [`packages/llm/llm-pi-ai/src/config.ts:172`](../packages/llm/llm-pi-ai/src/config.ts)
+Source: [`packages/llm/llm-pi-ai/src/config.ts:192`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 
@@ -2081,19 +2090,31 @@ Source: [`packages/subagent/subagent-acp/src/index.ts:27`](../packages/subagent/
 Requires: `subagents` · `subprocess`
 
 ```ts config-catalog
-/** Deployment-owned environment and process-release bound. */
+/** Deployment-owned permission, environment, and process-release settings. */
 export interface Config {
+  /** Provider name on `ctx.subagents` (default `claude-code`). */
+  providerName?: string
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.
    */
   env?: Record<string, string>
+  /**
+   * Native non-interactive mode fixed for this Provider instance. Defaults to
+   * `dontAsk`; `acceptEdits` accepts edits, `auto` uses the native classifier,
+   * `plan` returns a plan without approving execution, and
+   * `bypassPermissions` explicitly skips permission checks.
+   */
+  permissionMode?: ClaudeCodePermissionMode
   /** Grace in milliseconds for Claude Code process-tree termination. */
   disposeGraceMs?: number
 }
+
+/** Profile-selectable non-interactive Claude Code permission mode. */
+export type ClaudeCodePermissionMode = typeof CLAUDE_CODE_PERMISSION_MODES[number]
 ```
 
-Source: [`packages/subagent/subagent-claude-code/src/index.ts:32`](../packages/subagent/subagent-claude-code/src/index.ts)
+Source: [`packages/subagent/subagent-claude-code/src/index.ts:37`](../packages/subagent/subagent-claude-code/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-codex"></a>
 
@@ -2102,19 +2123,29 @@ Source: [`packages/subagent/subagent-claude-code/src/index.ts:32`](../packages/s
 Requires: `subagents` · `subprocess`
 
 ```ts config-catalog
-/** Deployment-owned environment and process-release bound. */
+/** Deployment-owned permission, environment, and process-release settings. */
 export interface Config {
+  /** Provider name on `ctx.subagents` (default `codex`). */
+  providerName?: string
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.
    */
   env?: Record<string, string>
+  /** Native non-interactive permission mode fixed for this Provider instance. */
+  permissionMode?: CodexPermissionMode
   /** Grace in milliseconds for app-server process-tree termination. */
   disposeGraceMs?: number
 }
+
+/** Profile-selectable non-interactive Codex permission mode. */
+export type CodexPermissionMode =
+  | 'never'
+  | 'approve-for-me'
+  | 'dangerously-bypass-approvals-and-sandbox'
 ```
 
-Source: [`packages/subagent/subagent-codex/src/index.ts:30`](../packages/subagent/subagent-codex/src/index.ts)
+Source: [`packages/subagent/subagent-codex/src/index.ts:35`](../packages/subagent/subagent-codex/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-dsh-sdk"></a>
 
@@ -2243,6 +2274,30 @@ export interface Config {
 ```
 
 Source: [`packages/core/system-prompt/src/index.ts:186`](../packages/core/system-prompt/src/index.ts)
+
+<a id="deepseek-aidsh-team"></a>
+
+## `@deepseek-ai/dsh-team`
+
+Requires: `agents` · `sessions` · `sessionPersistence` · `subagents`
+
+```ts config-catalog
+/** Team-service deployment limits. */
+export interface Config {
+  /** Maximum immutable teammate names retained by one Team. */
+  readonly maxMembers?: number
+  /** Maximum non-deleted tasks retained by one Team. */
+  readonly maxTasks?: number
+  /** Maximum queued-minus-delivered messages for one target member. */
+  readonly maxPendingMessagesPerMember?: number
+  /** Maximum UTF-8 bytes in one complete sender-framed delivery. */
+  readonly maxMessageBytes?: number
+  /** Maximum milliseconds allowed for Team-owned runtime disposal. */
+  readonly disposalTimeoutMs?: number
+}
+```
+
+Source: [`packages/experimental/team/src/types.ts:125`](../packages/experimental/team/src/types.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -2664,9 +2719,9 @@ Requires: `subagents` · `tools` · `systemPrompt`
 /** Config: how accepted reports are scheduled on the parent. */
 export interface Config {
   /**
-   * Parent scheduling (default `wakeup`). `wakeup` creates one ordinary later
-   * parent turn; `quiet` adds context without waking, so a parked parent learns
-   * of the report only when something else wakes it.
+   * Parent scheduling (default `next-step`). `next-step` wakes the parent and
+   * enters at its nearest step boundary; `quiet` adds the same context without
+   * waking, so a parked parent waits for another waking input.
    */
   reportDelivery?: SubagentReportDelivery
 }
@@ -2675,6 +2730,24 @@ export interface Config {
 Depends on: [`SubagentReportDelivery`](subsystems/subagent.md)
 
 Source: [`packages/subagent/tool-subagent-report/src/index.ts:27`](../packages/subagent/tool-subagent-report/src/index.ts)
+
+<a id="deepseek-aidsh-tool-team"></a>
+
+## `@deepseek-ai/dsh-tool-team`
+
+Requires: `agents` · `teams` · `tools` · `systemPrompt`
+
+```ts config-catalog
+/** Tool routing configuration. */
+export interface Config {
+  /** Continuable-subagent provider used for fresh teammates. */
+  readonly freshProvider?: string
+  /** Continuable-subagent provider used for completed-prefix fork teammates. */
+  readonly forkProvider?: string
+}
+```
+
+Source: [`packages/experimental/tool-team/src/index.ts:17`](../packages/experimental/tool-team/src/index.ts)
 
 <a id="deepseek-aidsh-tool-terminal"></a>
 
@@ -3032,6 +3105,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-modules` — requires `webServer` · `loader` ([`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts))
 - `@deepseek-ai/dsh-client-runtime` ([`packages/client/runtime/src/index.ts`](../packages/client/runtime/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-agent-preset` ([`packages/client/ui-agent-preset/src/index.ts`](../packages/client/ui-agent-preset/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-attachment` ([`packages/client/ui-attachment/src/index.ts`](../packages/client/ui-attachment/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-commands` ([`packages/client/ui-commands/src/index.ts`](../packages/client/ui-commands/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-conversation` ([`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-cordis` ([`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts))
@@ -3046,6 +3120,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-model-selection` ([`packages/client/ui-model-selection/src/index.ts`](../packages/client/ui-model-selection/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-permission-presets` ([`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-plan` ([`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-renderer` ([`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings` ([`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-general` ([`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-models` ([`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts))
@@ -3122,13 +3197,10 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-atomic-write` ([`packages/util/atomic-write/src/index.ts`](../packages/util/atomic-write/src/index.ts))
 - `@deepseek-ai/dsh-base` ([`packages/bundle/base/src/index.ts`](../packages/bundle/base/src/index.ts))
 - `@deepseek-ai/dsh-brand` ([`packages/util/brand/src/index.ts`](../packages/util/brand/src/index.ts))
-- `@deepseek-ai/dsh-client-schema-form` ([`packages/client/schema-form/src/index.ts`](../packages/client/schema-form/src/index.ts))
 - `@deepseek-ai/dsh-client-test-runtime` ([`packages/test-support/client-runtime/src/index.ts`](../packages/test-support/client-runtime/src/index.ts))
-- `@deepseek-ai/dsh-client-ui-attachment` ([`packages/client/ui-attachment/src/index.ts`](../packages/client/ui-attachment/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-primitives` ([`packages/client/ui-primitives/src/index.ts`](../packages/client/ui-primitives/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-slots` ([`packages/client/ui-slots/src/index.ts`](../packages/client/ui-slots/src/index.ts))
 - `@deepseek-ai/dsh-client-web` ([`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts))
-- `@deepseek-ai/dsh-client-web-react` ([`packages/client/web-react/src/index.ts`](../packages/client/web-react/src/index.ts))
 - `@deepseek-ai/dsh-cmdline` ([`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts))
 - `@deepseek-ai/dsh-code-runtime-python` ([`packages/code-runtime/code-runtime-python/src/index.ts`](../packages/code-runtime/code-runtime-python/src/index.ts))
 - `@deepseek-ai/dsh-home-paths` ([`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts))
