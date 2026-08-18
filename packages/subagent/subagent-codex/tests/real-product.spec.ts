@@ -10,7 +10,7 @@ import {
 import { rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
@@ -100,7 +100,7 @@ async function realInstanceFixture(
     CODEX_HOME: codexHome,
     HOME: root,
     XDG_CONFIG_HOME: join(root, 'xdg'),
-    PATH: root,
+    PATH: `${codexBinDir}${delimiter}${process.env.PATH ?? ''}`,
     HTTP_PROXY: '',
     HTTPS_PROXY: '',
     ALL_PROXY: '',
