@@ -83,18 +83,12 @@ class ClaudeCodeProvider implements SubagentProvider {
         'subagent-claude-code: no working directory for the child — delegate from a parent session that has one',
       )
     }
-    const executable = await this.ctx.subprocess.resolveExecutable(
-      'claude',
-      this.config.env,
-      request.signal,
-    )
     const spec: ClaudeCodeRunSpec = {
       cwd: resolveChildCwd(
         'subagent-claude-code',
         undefined,
         parentCwd,
       ),
-      executable,
       permissionMode: this.config.permissionMode,
       env: this.config.env,
       disposeGraceMs: this.config.disposeGraceMs,

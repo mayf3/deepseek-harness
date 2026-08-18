@@ -1,5 +1,5 @@
-# Test-only composition of two named Codex instances and their one-shot tools.
-# The owning e2e boots this tree but never invokes the model or Codex.
+# Test-only composition of the Bundle-supplied default and two named Codex instances.
+# The owning e2e applies the package's real patch and never invokes the model or Codex.
 - id: fixture
   name: './fixture.ts'
 
@@ -18,6 +18,14 @@
   name: '@deepseek-ai/dsh-subagent-codex'
   config:
     providerName: codex-secondary
+
+- id: tool-subagent-codex
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: codex
+    toolName: subagent_codex
+    backgroundMode: one-shot
+    maxDepth: 'provider-managed'
 
 - id: tool-subagent-codex-primary
   name: '@deepseek-ai/dsh-tool-subagent'
