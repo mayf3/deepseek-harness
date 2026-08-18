@@ -8,6 +8,10 @@ Provider-neutral LLM vocabulary and abstract service. This package defines the c
 
 An adapter registry plus a single streaming call API, interceptable via a waterfall event.
 
+### Configuration
+
+`defaultRetryPolicy` is the deployment policy inherited by every provider route whose adapter supplies no explicit override. Omitting it preserves the bounded normal default of two retries. An adapter override wins, and the effective resolved policy is captured with the route registration; this service stores that policy but does not execute retries.
+
 ### Public API
 
 - `ctx.llm.registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle` Register one adapter instance for the given provider routes. Registration is all-or-nothing, and is disposed with the calling fiber. The returned disposer also carries `replace(providers)`: the candidate route set is validated in full before anything moves, so a conflict with another adapter leaves the current routes registered and serving, and the swap itself is one synchronous section with no observable gap. `replace([])` is legal — a registration holding zero routes — unlike an empty initial registration.
@@ -17,7 +21,7 @@ An adapter registry plus a single streaming call API, interceptable via a waterf
 - `ctx.llm.registerModelDiscovery(settingsNs: string, discover): () => void` Offer to interrogate provider endpoints for the settings namespace this plugin owns. One offer per namespace (`INVALID_DISCOVERY`/`DUPLICATE_DISCOVERY`), disposed with the calling fiber.
 - `ctx.llm.listModelDiscoveryNamespaces(): string[]` List the namespaces that can interrogate an endpoint, so a surface offers the action only where it works.
 - `ctx.llm.discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<LlmDiscoveredModel[]>` Ask one endpoint which models it advertises.
-- `ctx.llm.providerRetryPolicy(provider: string): ResolvedRetryPolicy` Return the provider-owned retry policy captured during registration, with normal defaults resolved.
+- `ctx.llm.providerRetryPolicy(provider: string): ResolvedRetryPolicy` Return the effective retry policy captured during registration: the adapter override when present, otherwise the deployment default.
 - `ctx.llm.listModels(provider: string): Promise<LlmModelInfo[]>` Discover the models one registered provider currently advertises.
 - `ctx.llm.resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>` Resolve validated exact-model identity plus available context, output-default, and reasoning metadata from the owning adapter, with optional cancellation for asynchronous adapters.
 - `ctx.llm.resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>` Validate an explicit effort and materialize adapter-configured call defaults without clamping.
@@ -28,7 +32,7 @@ An adapter registry plus a single streaming call API, interceptable via a waterf
 
 Interrogating an endpoint is configuration-time work over a *draft*, keyed by settings namespace rather than by provider route — the provider a surface is adding does not exist yet, so there is no route to name. The request may still *name* a route it is editing, and an adapter that already describes that route answers from its own knowledge without a network call; `baseURL` is optional and one of the two is required. The request otherwise carries the endpoint, the protocol, and a credential the harness uses for that one interrogation and never stores — nothing here reads or writes settings or credentials, and the reply is candidate metadata a surface may offer for adoption, never a registered catalog. `LlmDiscoveredModel` makes every field but `id` optional because most provider listings disclose an id and nothing else; a surface adopting one still owes the capacities its adapter requires. Duplicate and unusable ids are dropped, an unserved namespace fails with `NO_DISCOVERY`, and a request naming neither a route nor an endpoint fails with `INVALID_DISCOVERY`.
 
-Provider and model metadata is a discovery surface, not a routing whitelist. `registerAdapter()` still owns provider exclusivity and captures the adapter's retry policy for each route, while an adapter may accept model ids absent from `listModels()`; consumers must not reject a request because its model is unlisted. Returned selector metadata is detached and invalid or duplicate adapter entries fail with `INVALID_ADAPTER` or `INVALID_CATALOG`.
+Provider and model metadata is a discovery surface, not a routing whitelist. `registerAdapter()` still owns provider exclusivity and captures each route's effective retry policy, while an adapter may accept model ids absent from `listModels()`; consumers must not reject a request because its model is unlisted. Returned selector metadata is detached and invalid or duplicate adapter entries fail with `INVALID_ADAPTER` or `INVALID_CATALOG`.
 
 Every topology commit point — adapter routes registering or disposing, directory entries appearing or withdrawing — emits the payload-free `llm/adapters-updated` event after the mutation, so consumers re-read `listProviders()`/`listModels()`/`listConfigurableProviders()` instead of polling. Observer failures are contained (logged, non-vetoing); only `INVARIANT`-coded failures rethrow after the fan-out.
 
@@ -44,7 +48,7 @@ Exact-model metadata is a separate correctness query, not a catalog decoration o
 
 ### Extension points
 
-- Subclass `LlmAdapter` and call `ctx.llm.registerAdapter(providers, adapter)` to add one or more provider routes. `GenerateOptions.provider` selects the adapter; `GenerateOptions.model` is adapter-owned and may be resolved dynamically. Override `providerRetryPolicy()` to supply provider-owned recovery configuration, `providerInfo()` and asynchronous `listModels()` to expose selector metadata, then implement `resolveModel()` when exact identity, capacity, an output default, or selectable reasoning efforts are available; an asynchronous resolver must honor its optional cancellation signal. The defaults use bounded normal retry policy, use the route and model ids as names, advertise no models, and return no capacity, output default, or reasoning metadata.
+- Subclass `LlmAdapter` and call `ctx.llm.registerAdapter(providers, adapter)` to add one or more provider routes. `GenerateOptions.provider` selects the adapter; `GenerateOptions.model` is adapter-owned and may be resolved dynamically. Override `providerRetryPolicy()` only for an explicit provider-owned recovery policy; omission inherits `LlmRuntime`'s deployment default. Override `providerInfo()` and asynchronous `listModels()` to expose selector metadata, then implement `resolveModel()` when exact identity, capacity, an output default, or selectable reasoning efforts are available; an asynchronous resolver must honor its optional cancellation signal. The defaults use the route and model ids as names, advertise no models, and return no capacity, output default, or reasoning metadata.
 - Wrap `llm/stream` via `ctx.on()` waterfall listeners for caching, logging, or routing. A wrapper that retries after emitting a chunk has no durable attempt boundary; shipped agent retry policy therefore uses `agent/request-error` instead.
 
 ### Messages (`message.ts`) and content blocks (`types.ts`)

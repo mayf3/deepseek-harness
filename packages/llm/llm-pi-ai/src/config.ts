@@ -1,9 +1,7 @@
 /**
  * Configuration schema and provider-profile validation for the pi-ai adapter.
  * Profiles are a dict keyed by provider route, so the composition base and a
- * user-settings layer merge per provider and the route set is structural. An
- * adapter-level retry default lets a deployment choose one policy for every
- * route that does not override it without changing the core omission default.
+ * user-settings layer merge per provider and the route set is structural.
  *
  * A route key is not required to name an installed pi-ai provider. When it does,
  * that provider's endpoint, protocol, display name, and model catalog are the
@@ -138,7 +136,7 @@ export interface PiAiProviderProfile {
   websocketConnectTimeoutMs?: number
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs?: number
-  /** Provider-owned model-request retry policy; omission inherits the adapter default, then normal defaults. */
+  /** Provider-owned model-request retry policy; omission inherits the LLM deployment default. */
   retryPolicy?: RetryPolicyConfig
 }
 
@@ -153,8 +151,8 @@ export interface ResolvedPiAiProviderProfile
   apiKeyEnv?: CredentialRef
   /** Positive finite provider-idle interval after defaulting. */
   streamIdleTimeoutMs: number
-  /** Immutable retry policy captured with this provider route. */
-  retryPolicy: ResolvedRetryPolicy
+  /** Explicit immutable retry policy captured with this provider route. */
+  retryPolicy?: ResolvedRetryPolicy
   /**
    * The pi-ai provider this route registers, built from the resolved models.
    * Construction happens here so an unserviceable protocol or an underspecified
@@ -170,13 +168,8 @@ export interface ResolvedPiAiProviderProfile
   configuredMaxTokens: ReadonlyMap<string, number>
 }
 
-/** Plugin configuration: the provider routes this instance owns and their shared defaults. */
+/** Plugin configuration: the provider routes this instance owns. */
 export interface Config {
-  /**
-   * Retry policy inherited by every provider profile that omits its own
-   * `retryPolicy`; omission here uses the bounded normal defaults.
-   */
-  defaultRetryPolicy?: RetryPolicyConfig
   /**
    * pi-ai provider routes, keyed by provider. An empty (or omitted) dict is
    * the dormant settings-driven posture: the adapter mounts with no routes
@@ -260,7 +253,6 @@ const profile = z.object({
 
 /** Runtime schema for {@link Config}. */
 export const Config: z<Config> = z.object({
-  defaultRetryPolicy: RetryPolicySchema,
   providers: z.dict(profile).default({}),
 })
 
@@ -277,7 +269,7 @@ export const Config: z<Config> = z.object({
  * @throws Error naming the route and model that cannot be served.
  */
 export function assertServiceable(config: Config): void {
-  resolveProfiles(config.providers, config.defaultRetryPolicy)
+  resolveProfiles(config.providers)
 }
 
 /** Reject removed pre-release profile fields and name their replacements. */
@@ -302,23 +294,17 @@ function rejectRemovedFields(provider: string, source: PiAiProviderProfile): voi
  * Validate profiles and return a detached route-keyed map suitable for
  * per-request reads. This is the one explicit resolve step, so an omitted dict
  * resolves to the empty (dormant) route set here rather than through a hidden
- * fallback, and each route's models, retry policy, and pi-ai provider are
- * materialized once.
+ * fallback, and each route's models, explicit retry policy, and pi-ai provider
+ * are materialized once.
  * @param providers - configured provider profiles keyed by route.
- * @param defaultRetryPolicy - adapter policy inherited by profiles that omit one.
  * @returns validated profiles in configuration order.
  */
 export function resolveProfiles(
   providers: Readonly<Record<string, PiAiProviderProfile>> | undefined,
-  defaultRetryPolicy?: RetryPolicyConfig,
 ): Map<string, ResolvedPiAiProviderProfile> {
   if (Array.isArray(providers)) {
     throw new Error('llm-pi-ai: providers is now a dict keyed by provider route, not an array of profiles')
   }
-  const resolvedDefaultRetryPolicy = resolveRetryPolicy(
-    defaultRetryPolicy,
-    'llm-pi-ai: defaultRetryPolicy',
-  )
   const entries = Object.entries(providers ?? {})
   const resolved = new Map<string, ResolvedPiAiProviderProfile>()
   for (const [provider, source] of entries) {
@@ -369,9 +355,9 @@ export function resolveProfiles(
       displayName,
       ...apiKeyEnv === undefined ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
       streamIdleTimeoutMs,
-      retryPolicy: retryPolicy === undefined
-        ? resolvedDefaultRetryPolicy
-        : resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
+      ...retryPolicy === undefined ? {} : {
+        retryPolicy: resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
+      },
       ...rest.headers === undefined ? {} : { headers: { ...rest.headers } },
       ...rest.thinkingBudgets === undefined ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },
       configuredMaxTokens: catalog.configuredMaxTokens,

@@ -7,6 +7,7 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import type {
   GenerateOptions,
   LlmConfigurableProvider,
@@ -21,8 +22,8 @@ import type {
   StreamChunk,
 } from './types.ts'
 import { freezeMessage, type Message } from './message.ts'
-import { resolveRetryPolicy } from './retry-policy.ts'
-import type { ResolvedRetryPolicy } from './retry-policy.ts'
+import { resolveRetryPolicy, RetryPolicySchema } from './retry-policy.ts'
+import type { ResolvedRetryPolicy, RetryPolicyConfig } from './retry-policy.ts'
 import type { ProviderRequestId } from './brand.ts'
 import { callConfigEquals, deepFreeze } from './call-config.ts'
 import type { LlmCallConfig, LlmCallConfigAdapterDefaults } from './call-config.ts'
@@ -171,6 +172,12 @@ export interface PreparedLlmCall {
   stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 }
 
+/** Deployment-wide defaults applied to provider routes without adapter-owned overrides. */
+export interface Config {
+  /** Model-request retry policy inherited by routes whose adapter omits one; omission uses normal defaults. */
+  defaultRetryPolicy?: RetryPolicyConfig
+}
+
 /**
  * Provider-wire adapter for the harness message and stream vocabulary. Register implementations
  * with `ctx.llm.registerAdapter(providers, adapter)`. Every provider HTTP request must include
@@ -188,9 +195,9 @@ export abstract class LlmAdapter {
   }
 
   /**
-   * Return the provider-owned retry policy captured with this route.
+   * Return an explicit provider-owned retry policy override for this route.
    * @param _provider - a route passed to `registerAdapter()` for this instance.
-   * @returns a resolved policy, or `undefined` to use the normal defaults.
+   * @returns a resolved override, or `undefined` to inherit the LLM deployment default.
    */
   providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined {
     return undefined
@@ -282,15 +289,22 @@ export interface DirectoryRegistrationHandle {
  * API, interceptable via the `llm/stream` waterfall.
  */
 export class LlmRuntime extends Service {
+  static Config: z<Config> = z.object({
+    defaultRetryPolicy: RetryPolicySchema,
+  })
+
   private adapters = new Map<string, AdapterRegistration>()
   private directory = new Map<string, LlmConfigurableProvider>()
   private discoveries = new Map<
     string,
     (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>
   >()
+  /** Resolved once because service configuration is fixed for this runtime instance. */
+  private readonly defaultRetryPolicy: ResolvedRetryPolicy
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'llm')
+    this.defaultRetryPolicy = resolveRetryPolicy(config.defaultRetryPolicy, 'llm: defaultRetryPolicy')
   }
 
   /** Notify topology observers without letting one broken listener veto the commit. */
@@ -385,7 +399,7 @@ export class LlmRuntime extends Service {
       }
       unique.add(provider)
       const retryPolicy = adapter.providerRetryPolicy(provider)
-        ?? resolveRetryPolicy(undefined, `llm: provider "${provider}" retryPolicy`)
+        ?? this.defaultRetryPolicy
       registrations.push({
         adapter,
         provider: { id: info.id, name: info.name },
@@ -559,9 +573,9 @@ export class LlmRuntime extends Service {
   }
 
   /**
-   * Resolve the retry policy captured when one provider route was registered.
+   * Read the effective retry policy captured when one provider route was registered.
    * @param provider - registered provider route to inspect.
-   * @returns the provider-owned policy, with normal defaults already resolved.
+   * @returns the adapter override or deployment default, fully resolved.
    */
   providerRetryPolicy(provider: string): ResolvedRetryPolicy {
     return this.registration(provider).retryPolicy

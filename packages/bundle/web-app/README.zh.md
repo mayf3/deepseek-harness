@@ -6,7 +6,7 @@ dsh 浏览器表层组合包。[`cordis.patch.yml`](cordis.patch.yml) 叠加在 
 
 ## 模型重试默认值
 
-Web 层会配置 normal 模式重试与 `maxRetries: 5`，使其在初次请求后最多再重试 5 次符合条件的失败。该默认值适用于随附的 `deepseek-official` 路由，以及每个未自行配置 `retryPolicy` 的 pi-ai 提供方 profile。`llm-deepseek` 用户设置分节、pi-ai profile 级策略或更后面的 profile patch 可以替换对应的部署默认值；非 Web profile 仍使用各自的策略。
+Web 层会为 `LlmRuntime.defaultRetryPolicy` 配置 normal 模式与 `maxRetries: 5`，使其在初次请求后最多再重试 5 次符合条件的失败。每条没有显式提供方策略的适配器路由都会继承它，包括 `deepseek-official`、由 settings 新增的 pi-ai 路由及未来适配器。`llm-deepseek` 或 pi-ai 提供方的 `retryPolicy` 会覆盖部署默认值；非 Web profile 保留核心的两次重试默认值，除非自身组合选择其他值。
 
 ## 模型体验
 

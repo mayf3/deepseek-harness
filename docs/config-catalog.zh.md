@@ -838,6 +838,53 @@ export interface Config {
 
 来源：[`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local/src/index.ts)
 
+<a id="deepseek-aidsh-llm"></a>
+
+## `@deepseek-ai/dsh-llm`
+
+```ts config-catalog
+/** Deployment-wide defaults applied to provider routes without adapter-owned overrides. */
+export interface Config {
+  /** Model-request retry policy inherited by routes whose adapter omits one; omission uses normal defaults. */
+  defaultRetryPolicy?: RetryPolicyConfig
+}
+
+/** Model-request retry policy configuration for a provider route or deployment default. */
+export type RetryPolicyConfig = NormalRetryPolicyConfig | AlwaysRetryPolicyConfig
+
+/** Current bounded transient retry behavior for one provider route. */
+export interface NormalRetryPolicyConfig {
+  /** Retry only configured transient failure codes. */
+  mode: 'normal'
+  /** Maximum eligible retries after the first request (default 2). */
+  maxRetries?: number
+  /** Stable failure codes eligible for this policy. */
+  retryableCodes?: string[]
+  /** Local exponential-backoff and jitter configuration. */
+  backoff?: BackoffConfig
+}
+
+/** Unbounded retry behavior for every model-request failure on one provider route. */
+export interface AlwaysRetryPolicyConfig {
+  /** Retry every model-request failure until success, cancellation, or disposal. */
+  mode: 'always'
+  /** Local exponential-backoff and jitter configuration. */
+  backoff?: BackoffConfig
+}
+
+/** Bounded exponential backoff with symmetric jitter around each local delay. */
+export interface BackoffConfig {
+  /** Initial local exponential-backoff delay in milliseconds (default 500). */
+  initialDelayMs?: number
+  /** Maximum locally scheduled or accepted provider delay in milliseconds (default 10000). */
+  maxDelayMs?: number
+  /** Symmetric random multiplier range around one (default 0.1). */
+  jitterRatio?: number
+}
+```
+
+来源：[`packages/llm/llm/src/index.ts:176`](../packages/llm/llm/src/index.ts)
+
 <a id="deepseek-aidsh-llm-deepseek"></a>
 
 ## `@deepseek-ai/dsh-llm-deepseek`
@@ -870,7 +917,7 @@ export interface Config {
   models?: DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
   streamIdleTimeoutMs?: number
-  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  /** Provider-owned model-request retry policy; omission inherits the LLM deployment default. */
   retryPolicy?: RetryPolicyConfig
 }
 
@@ -900,13 +947,8 @@ export interface DeepSeekCatalogModel {
 需要：`llm`
 
 ```ts config-catalog
-/** Plugin configuration: the provider routes this instance owns and their shared defaults. */
+/** Plugin configuration: the provider routes this instance owns. */
 export interface Config {
-  /**
-   * Retry policy inherited by every provider profile that omits its own
-   * `retryPolicy`; omission here uses the bounded normal defaults.
-   */
-  defaultRetryPolicy?: RetryPolicyConfig
   /**
    * pi-ai provider routes, keyed by provider. An empty (or omitted) dict is
    * the dormant settings-driven posture: the adapter mounts with no routes
@@ -990,7 +1032,7 @@ export interface PiAiProviderProfile {
   websocketConnectTimeoutMs?: number
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs?: number
-  /** Provider-owned model-request retry policy; omission inherits the adapter default, then normal defaults. */
+  /** Provider-owned model-request retry policy; omission inherits the LLM deployment default. */
   retryPolicy?: RetryPolicyConfig
 }
 
@@ -1086,7 +1128,7 @@ type WithheldThinkingFormat = 'chat-template' | 'qwen-chat-template'
 
 依赖：`Api`（`@earendil-works/pi-ai`）· `CacheRetention`（`@earendil-works/pi-ai`）· `Model`（`@earendil-works/pi-ai`）· `ModelThinkingLevel`（`@earendil-works/pi-ai`）· `OpenAICompletionsCompat`（`@earendil-works/pi-ai`）· [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets`（`@earendil-works/pi-ai`）· `Transport`（`@earendil-works/pi-ai`）
 
-来源：[`packages/llm/llm-pi-ai/src/config.ts:174`](../packages/llm/llm-pi-ai/src/config.ts)
+来源：[`packages/llm/llm-pi-ai/src/config.ts:172`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 
@@ -3078,7 +3120,6 @@ export interface Config {
 - `@deepseek-ai/dsh-host-directory-picker-auto` — 需要 `webServer` · `loader`（[`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker-native`（[`packages/host/directory-picker-native/src/index.ts`](../packages/host/directory-picker-native/src/index.ts)）
 - `@deepseek-ai/dsh-host-plugin-inventory` — 需要 `loader`（[`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts)）
-- `@deepseek-ai/dsh-llm`（[`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts)）
 - `@deepseek-ai/dsh-lsp`（[`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts)）
 - `@deepseek-ai/dsh-schedule` — 需要 `agents` · `sessions` · `tools` · `sessionPersistence`（[`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts)）
 - `@deepseek-ai/dsh-session`（[`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts)）

@@ -203,7 +203,7 @@ describe('LlmRuntime', () => {
     expect(adapter.lastOptions?.messages[0]).toBe(message)
   })
 
-  it('captures provider-owned retry policy at registration and defaults omission', async () => {
+  it('captures an adapter retry override ahead of the deployment default', async () => {
     const configured = resolveRetryPolicy({ mode: 'always' }, 'test retryPolicy')
     const adapter = new class extends ScriptedAdapter {
       override providerRetryPolicy(provider: string) {
@@ -211,17 +211,40 @@ describe('LlmRuntime', () => {
       }
     }(SCRIPT)
     const ctx = new Context()
-    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmRuntime, {
+      defaultRetryPolicy: { mode: 'normal', maxRetries: 5 },
+    })
     ctx.llm.registerAdapter(['configured', 'defaulted'], adapter)
 
     expect(ctx.llm.providerRetryPolicy('configured')).toBe(configured)
     expect(ctx.llm.providerRetryPolicy('defaulted')).toMatchObject({
       mode: 'normal',
-      maxRetries: 2,
+      maxRetries: 5,
     })
     expect(() => ctx.llm.providerRetryPolicy('missing')).toThrow(
       expect.objectContaining({ code: 'NO_ADAPTER' }),
     )
+  })
+
+  it('uses bounded normal defaults when the deployment omits a retry policy', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    ctx.llm.registerAdapter(['defaulted'], new ScriptedAdapter(SCRIPT))
+
+    expect(ctx.llm.providerRetryPolicy('defaulted')).toMatchObject({
+      mode: 'normal',
+      maxRetries: 2,
+    })
+  })
+
+  it('rejects an invalid deployment retry policy before any route registers', async () => {
+    const ctx = new Context()
+    await expect(ctx.plugin(LlmRuntime, {
+      defaultRetryPolicy: {
+        mode: 'normal',
+        backoff: { initialDelayMs: 10, maxDelayMs: 5 },
+      },
+    })).rejects.toThrow(/llm: defaultRetryPolicy/)
   })
 
   it('keeps a prepared registration and retry policy after route replacement', async () => {

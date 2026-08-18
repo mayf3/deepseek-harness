@@ -5,7 +5,7 @@
  * pi-ai does not ship is declared outright. Profile facts resolve per request
  * over the optional `llm-pi-ai` user-settings section and the optional
  * credential seam, so a changed key, endpoint, model, or knob reaches the next
- * request without a restart; a changed *route set* (or a route's resolved,
+ * request without a restart; a changed *route set* (or a route's explicit,
  * registration-captured retry policy) re-registers the same adapter instance
  * in place.
  *
@@ -13,10 +13,6 @@
  * - id: llm
  *   name: '@deepseek-ai/dsh-llm-pi-ai'
  *   config:
- *     # Optional deployment default; a provider profile may override it.
- *     defaultRetryPolicy:
- *       mode: normal
- *       maxRetries: 5
  *     providers:
  *       # Catalog route: everything but the credential comes from pi-ai.
  *       openai:
@@ -103,7 +99,7 @@ function registrationFacts(profiles: ReadonlyMap<string, ResolvedPiAiProviderPro
     .map(([provider, profile]) => ({
       provider,
       displayName: profile.displayName,
-      retryPolicy: profile.retryPolicy,
+      ...profile.retryPolicy === undefined ? {} : { retryPolicy: profile.retryPolicy },
     }))
     .sort((left, right) => left.provider.localeCompare(right.provider))
 }
@@ -169,7 +165,7 @@ export function apply(ctx: Context, config: Config): void {
   const profiles = (): ReadonlyMap<string, ResolvedPiAiProviderProfile> => {
     const raw = current()
     if (raw === lastRaw && memoized !== undefined) return memoized
-    const next = resolveProfiles(raw.providers, raw.defaultRetryPolicy)
+    const next = resolveProfiles(raw.providers)
     lastRaw = raw
     memoized = next
     return next

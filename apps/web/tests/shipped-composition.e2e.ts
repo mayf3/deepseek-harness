@@ -93,8 +93,22 @@ it('assembles the shipped Web catalog, file-reference guidance, retry policy, an
       ],
     }
   `)
+  await ctx.settings.update(settingsNamespace('llm-deepseek'), {
+    retryPolicy: { mode: 'always' },
+  })
+  expect(ctx.llm.providerRetryPolicy('deepseek-official')).toMatchInlineSnapshot(`
+    {
+      "initialDelayMs": 500,
+      "jitterRatio": 0.1,
+      "maxDelayMs": 10000,
+      "mode": "always",
+    }
+  `)
   await ctx.settings.update(settingsNamespace('llm-pi-ai'), {
-    providers: { openai: {} },
+    providers: {
+      openai: {},
+      anthropic: { retryPolicy: { mode: 'always' } },
+    },
   })
   expect(ctx.llm.providerRetryPolicy('openai')).toMatchInlineSnapshot(`
     {
@@ -110,6 +124,14 @@ it('assembles the shipped Web catalog, file-reference guidance, retry policy, an
         "TIMEOUT",
         "TRANSPORT",
       ],
+    }
+  `)
+  expect(ctx.llm.providerRetryPolicy('anthropic')).toMatchInlineSnapshot(`
+    {
+      "initialDelayMs": 500,
+      "jitterRatio": 0.1,
+      "maxDelayMs": 10000,
+      "mode": "always",
     }
   `)
   // The catalog belongs to an AGENT, not to the process: every model-facing row

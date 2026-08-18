@@ -40,16 +40,9 @@
     # once the web UI owns the choice per session.
     mode: !!js process.env.DSH_TOOLS_MODE
 
-# The Web deployment gives its model routes a larger bounded transient-failure
-# budget than the provider omission default. DeepSeek settings can override
-# its policy, and each pi-ai provider profile can override the inherited one.
-- id: llm-deepseek
-  config:
-    retryPolicy:
-      mode: normal
-      maxRetries: 5
-
-- id: llm-pi-ai
+# The Web deployment gives every model route without an explicit provider
+# policy a larger bounded transient-failure budget than the core default.
+- id: llm
   config:
     defaultRetryPolicy:
       mode: normal

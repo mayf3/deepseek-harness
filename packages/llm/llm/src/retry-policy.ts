@@ -1,5 +1,5 @@
 /**
- * Provider-owned request-retry policy configuration and resolution.
+ * Provider-route request-retry policy configuration and resolution.
  *
  * Adapters expose one resolved policy per registered provider route; the
  * optional dsh-llm-retry plugin executes it on the agent's failed-step extension point.
@@ -53,7 +53,7 @@ export interface AlwaysRetryPolicyConfig {
   backoff?: BackoffConfig
 }
 
-/** Provider-owned model-request retry policy configuration. */
+/** Model-request retry policy configuration for a provider route or deployment default. */
 export type RetryPolicyConfig = NormalRetryPolicyConfig | AlwaysRetryPolicyConfig
 
 /** Fully resolved backoff shared by both retry modes. */
@@ -137,9 +137,9 @@ function resolveBackoff(config: BackoffConfig | undefined, path: string): Resolv
 }
 
 /**
- * Validate, default, and detach one provider-owned retry policy.
- * @param config - optional provider configuration; omission selects normal defaults.
- * @param path - diagnostic path naming the provider config that owns the value.
+ * Validate, default, and detach one retry policy.
+ * @param config - optional route or deployment configuration; omission selects normal defaults.
+ * @param path - diagnostic path naming the configuration that owns the value.
  * @returns an immutable policy safe to capture in provider registration state.
  */
 export function resolveRetryPolicy(
