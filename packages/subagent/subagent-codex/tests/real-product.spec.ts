@@ -15,7 +15,10 @@ import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
+import type {
+  SubprocessHandle,
+  SubprocessOutcome,
+} from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
 import type { CodexPermissionMode } from '../src/run.ts'
@@ -132,6 +135,26 @@ async function expectQuiescent(handles: readonly SubprocessHandle[]): Promise<vo
   }
 }
 
+function expectedProcessExitDiagnostic(outcome: SubprocessOutcome): string {
+  const fields = [
+    'product: Codex',
+    'stage: process',
+    'category: process-exit',
+  ]
+  if (outcome.exitCode !== null) fields.push(`exit code: ${outcome.exitCode}`)
+  if (outcome.signal !== null) fields.push(`signal: ${outcome.signal}`)
+  return `Product subagent failure (${fields.join('; ')})`
+}
+
+interface JsonSchemaNode {
+  readonly enum?: string[]
+  readonly format?: string
+  readonly minimum?: number
+  readonly properties?: Record<string, JsonSchemaNode>
+  readonly required?: string[]
+  readonly type?: string | string[]
+}
+
 function responseInputTexts(body: Record<string, unknown>): string[] {
   if (!Array.isArray(body.input)) return []
   return body.input.flatMap((item): string[] => {
@@ -175,10 +198,7 @@ describe('real @openai/codex 0.147.0 product', () => {
     )) as {
       definitions: {
         CodexErrorInfo: {
-          oneOf: Array<{
-            enum?: string[]
-            properties?: Record<string, unknown>
-          }>
+          oneOf: JsonSchemaNode[]
         }
       }
     }
@@ -203,6 +223,16 @@ describe('real @openai/codex 0.147.0 product', () => {
       'responseTooManyFailedAttempts',
       'activeTurnNotSteerable',
     ])
+    for (const variant of schema.definitions.CodexErrorInfo.oneOf.slice(1, 5)) {
+      const category = Object.keys(variant.properties ?? {})[0]!
+      const detail = variant.properties?.[category]
+      expect(detail?.required).toBeUndefined()
+      expect(detail?.properties?.httpStatusCode).toEqual({
+        format: 'uint16',
+        minimum: 0,
+        type: ['integer', 'null'],
+      })
+    }
 
     const run = await harness.ctx.subagents.start('codex', {
       prompt: [{ type: 'text', text: task }],
@@ -323,10 +353,10 @@ describe('real @openai/codex 0.147.0 product', () => {
       await fixture.requestStarted
       expect(harness.handles).toHaveLength(1)
       harness.handles[0]!.terminate()
-      await harness.handles[0]!.done
+      const outcome = await harness.handles[0]!.done
       await expect(run.result).resolves.toEqual({
         output: [],
-        diagnostic: 'Product subagent failure (product: Codex; stage: turn; category: unknown)',
+        diagnostic: expectedProcessExitDiagnostic(outcome),
         stopReason: 'error',
       })
       await run.dispose()

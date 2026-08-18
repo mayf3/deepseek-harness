@@ -164,13 +164,7 @@ export async function disposeCodexChild(
   wire: CodexAppServerWire,
   child: SubprocessHandle,
 ): Promise<void> {
-  const failures: Error[] = []
-  let outcome: SubprocessOutcome | undefined
-  try {
-    wire.close()
-  } catch (error: unknown) {
-    failures.push(thrown(error))
-  }
+  wire.close()
 
   if (child.pid > 0) {
     try {
@@ -182,31 +176,17 @@ export async function disposeCodexChild(
     try {
       await child.waitForExit()
     } catch (error: unknown) {
-      failures.push(thrown(error))
+      const outcome = await child.done
+      throw new CodexRunFailure({
+        stage: 'teardown',
+        category: 'unknown',
+        outcome,
+      }, thrown(error))
     }
-    try {
-      outcome = await child.done
-    } catch (error: unknown) {
-      failures.push(thrown(error))
-    }
+    await child.done
   } else {
     await child.done.catch(() => {})
   }
-
-  const firstFailure = failures[0]
-  if (firstFailure === undefined) return
-  const facts = {
-    stage: 'teardown',
-    category: 'unknown',
-    outcome,
-  } as const
-  if (failures.length === 1) {
-    throw new CodexRunFailure(facts, firstFailure)
-  }
-  throw new AggregateError(
-    failures.map(failure => new CodexRunFailure(facts, failure)),
-    `subagent-codex: ${failureDiagnostic(facts)}`,
-  )
 }
 
 /**
@@ -271,16 +251,23 @@ export async function startCodexRun(
     }
   }
 
-  const processFailure: Promise<never> = child.done.then(
-    outcome => Promise.reject(new CodexRunFailure({
-      stage: 'process',
-      category: 'process-exit',
-      outcome,
-    })),
-    (error: unknown) => Promise.reject(new CodexRunFailure({
-      stage: 'process',
-      category: 'unknown',
-    }, thrown(error))),
+  let processFailureFacts: CodexFailureFacts | undefined
+  const processFailure: Promise<never> = child.done.then<never>(
+    (outcome) => {
+      processFailureFacts = {
+        stage: 'process',
+        category: 'process-exit',
+        outcome,
+      }
+      throw new CodexRunFailure(processFailureFacts)
+    },
+    (error: unknown) => {
+      processFailureFacts = {
+        stage: 'process',
+        category: 'unknown',
+      }
+      throw new CodexRunFailure(processFailureFacts, thrown(error))
+    },
   )
   // A normal post-result dispose also closes the process. Keep that expected
   // late rejection observed after the result race has already settled.
@@ -349,19 +336,32 @@ export async function startCodexRun(
           processFailure,
         ])
         if (terminal.stopReason === 'completed') return terminal
-        const facts = wire.collectFailure() ?? {
-          stage: 'turn',
-          category: 'unknown',
-        }
+        const facts = wire.collectFailure()
         return { ...terminal, diagnostic: recordFailureDiagnostic(facts) }
       } catch (error: unknown) {
         // Give stderr data already queued in Node one turn to reach the wire
-        // before settlement snapshots the diagnostic; later OS data is best-effort.
+        // before settlement snapshots the diagnostic.
         await new Promise<void>((resolve) => { setImmediate(resolve) })
-        const wireFacts = wire.collectFailure()
+        const endedBeforeTerminal = wire.endedBeforeTerminal()
+        if (
+          endedBeforeTerminal
+          && processFailureFacts === undefined
+          && !runAbort.signal.aborted
+        ) {
+          try {
+            const exited = await child.waitForExit(
+              AbortSignal.timeout(spec.disposeGraceMs),
+            )
+            if (exited) await child.done
+          } catch {
+            // The wire failure remains authoritative when exit observation fails.
+          }
+        }
         const facts = error instanceof CodexRunFailure
           ? error.facts
-          : wireFacts ?? { stage: 'turn', category: 'unknown' }
+          : endedBeforeTerminal && processFailureFacts !== undefined
+            ? processFailureFacts
+            : wire.collectFailure()
         recordFailureDiagnostic(facts)
         throw error instanceof CodexRunFailure
           ? error

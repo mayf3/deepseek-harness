@@ -237,6 +237,8 @@ export class CodexAppServerWire {
     readonly reason: string
   } | undefined
   private stderrTail = ''
+  private inputEnded = false
+  private terminalObserved = false
   private closed = false
 
   constructor(
@@ -268,6 +270,14 @@ export class CodexAppServerWire {
   /** Start reading app-server frames. */
   start(): void {
     this.transport.start()
+  }
+
+  /**
+   * Whether protocol output ended before a terminal turn notification.
+   * @returns `true` only for an early protocol close without a terminal turn.
+   */
+  endedBeforeTerminal(): boolean {
+    return this.inputEnded && !this.terminalObserved
   }
 
   /**
@@ -415,10 +425,11 @@ export class CodexAppServerWire {
 
   /**
    * The structured failure fact observed for this published turn.
-   * @returns a fixed stage/category pair and optional HTTP status.
+   * Call only after a non-completed return or rejection from {@link runTurn}.
+   * @returns the fixed stage/category pair and optional HTTP status.
    */
-  collectFailure(): CodexWireFailureFacts | undefined {
-    return this.failure
+  collectFailure(): CodexWireFailureFacts {
+    return this.failure as CodexWireFailureFacts
   }
 
   /**
@@ -469,6 +480,7 @@ export class CodexAppServerWire {
   }
 
   private readonly onInputEnd = (): void => {
+    this.inputEnded = true
     this.fail(new Error('subagent-codex: app-server protocol stream closed'))
   }
 
@@ -720,6 +732,7 @@ export class CodexAppServerWire {
       return
     }
     if (id !== this.turnId) return
+    this.terminalObserved = true
     if (!['completed', 'interrupted', 'failed'].includes(String(turn.status))) {
       throw new Error(`subagent-codex: app-server returned invalid terminal turn status ${String(turn.status)}`)
     }

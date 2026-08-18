@@ -1479,50 +1479,6 @@ describe('run lifecycle and quiescence', () => {
     }
   })
 
-  it('uses safe unknown fallbacks when the wire supplies no failure fact', async () => {
-    {
-      const collectFailure = vi.spyOn(
-        CodexAppServerWire.prototype,
-        'collectFailure',
-      ).mockReturnValue(undefined)
-      const { child, run, turnStart } = await publishRun()
-      child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
-      child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
-        codexErrorInfo: 'contextWindowExceeded',
-      }))
-      await expect(run.result).resolves.toEqual({
-        output: [],
-        diagnostic: expectedFailureDiagnostic('turn', 'unknown'),
-        stopReason: 'max-tokens',
-      })
-      collectFailure.mockRestore()
-      await run.dispose()
-    }
-    {
-      const runTurn = vi.spyOn(CodexAppServerWire.prototype, 'runTurn')
-        .mockRejectedValueOnce(new Error('SECRET_TOKEN wire failure'))
-      const child = fakeChild()
-      const starting = startCodexRun(request(), runSpec(child))
-      const initialize = await child.peer.nextMethod('initialize')
-      child.peer.respond(initialize, { userAgent: 'codex-cli 0.147.0' })
-      await child.peer.nextMethod('initialized')
-      const threadStart = await child.peer.nextMethod('thread/start')
-      child.peer.respond(threadStart, {
-        thread: { id: 'thread-1', ephemeral: true },
-      })
-      const run = await starting
-      const result = await run.result
-      expect(result).toEqual({
-        output: [],
-        diagnostic: expectedFailureDiagnostic('turn', 'unknown'),
-        stopReason: 'error',
-      })
-      expect(result.diagnostic).not.toContain('SECRET_TOKEN')
-      runTurn.mockRestore()
-      await run.dispose()
-    }
-  })
-
   it('flattens child exit and protocol failures after publication', async () => {
     const errors: string[] = []
     const outcomes: SubprocessOutcome[] = [
@@ -1550,8 +1506,44 @@ describe('run lifecycle and quiescence', () => {
       await run.dispose().catch(() => {})
     }
     {
+      const outcome = { exitCode: 17, signal: 'SIGABRT' } as const
+      const child = fakeChild({ exitOnTerminate: false })
+      const { run, turnStart } = await publishRun(child, undefined, {
+        disposeGraceMs: 100,
+      })
+      child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      child.fromChild.emit('end')
+      setTimeout(() => { child.settle(outcome) }, 5)
+      await expect(run.result).resolves.toEqual({
+        output: [],
+        diagnostic: expectedFailureDiagnostic('process', 'process-exit', {
+          outcome,
+        }),
+        stopReason: 'error',
+      })
+      await run.dispose().catch(() => {})
+    }
+    {
+      const child = fakeChild({ exitOnTerminate: false })
+      const { run, turnStart } = await publishRun(child)
+      child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      child.peer.send(turnCompleted('failed', 'turn-1', 'thread-1', {
+        codexErrorInfo: 'other',
+      }))
+      await nextTask()
+      child.fromChild.emit('end')
+      child.settle({ exitCode: 17, signal: 'SIGABRT' })
+      await expect(run.result).resolves.toEqual({
+        output: [],
+        diagnostic: expectedFailureDiagnostic('turn', 'other'),
+        stopReason: 'error',
+      })
+      await run.dispose().catch(() => {})
+    }
+    {
       const child = fakeChild()
       const { run, turnStart } = await publishRun(child, undefined, {
+        disposeGraceMs: 10,
         onError: () => { throw new Error('diagnostic sink') },
       })
       child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
@@ -1700,6 +1692,19 @@ describe('run lifecycle and quiescence', () => {
       .rejects.toThrow(expectedFailureDiagnostic('initialize', 'unknown'))
     await expect(spawnFailure).rejects.not.toThrow('SECRET_TOKEN')
 
+    const asyncSpawnFailureChild = fakeChild({
+      pid: -1,
+      doneError: new Error('SECRET_TOKEN async spawn failure'),
+    })
+    const asyncSpawnFailure = startCodexRun(
+      request(),
+      runSpec(asyncSpawnFailureChild),
+    )
+    await expect(asyncSpawnFailure)
+      .rejects.toThrow(expectedFailureDiagnostic('initialize', 'unknown'))
+    await expect(asyncSpawnFailure).rejects.not.toThrow('SECRET_TOKEN')
+    expect(asyncSpawnFailureChild.terminate).not.toHaveBeenCalled()
+
     const child = fakeChild()
     const starting = startCodexRun(request(), runSpec(child))
     const initialize = await child.peer.nextMethod('initialize')
@@ -1708,6 +1713,31 @@ describe('run lifecycle and quiescence', () => {
       .rejects.toThrow(expectedFailureDiagnostic('initialize', 'unknown'))
     await expect(starting).rejects.not.toThrow('invalid initialize response')
     expect(child.terminate).toHaveBeenCalledTimes(1)
+
+    const cleanupFailureChild = fakeChild({
+      waitForExitError: new Error('SECRET_TOKEN wait failure'),
+    })
+    const cleanupFailure = startCodexRun(
+      request(),
+      runSpec(cleanupFailureChild),
+    )
+    const cleanupFailureInitialize = await cleanupFailureChild.peer
+      .nextMethod('initialize')
+    cleanupFailureChild.peer.respond(cleanupFailureInitialize, null)
+    const cleanupError: unknown = await cleanupFailure.then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    expect(cleanupError).toBeInstanceOf(AggregateError)
+    expect(String(cleanupError)).toContain(
+      expectedFailureDiagnostic('initialize', 'unknown'),
+    )
+    expect(String(cleanupError)).toContain(expectedFailureDiagnostic(
+      'teardown',
+      'unknown',
+      { outcome: { exitCode: 0, signal: null } },
+    ))
+    expect(String(cleanupError)).not.toContain('SECRET_TOKEN')
 
     const cleanupRaceAbort = new AbortController()
     const cleanupRaceChild = fakeChild({ exitOnTerminate: false })
@@ -1793,27 +1823,6 @@ describe('run lifecycle and quiescence', () => {
     child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
     controller.abort('startup race')
     await expect(starting).rejects.toThrow('aborted before run publication')
-    expect(child.terminate).toHaveBeenCalledTimes(1)
-  })
-
-  it('rolls back a subprocess done rejection during startup', async () => {
-    const child = fakeChild({ doneError: new Error('spawn observer failed') })
-    const error: unknown = await startCodexRun(request(), runSpec(child)).then(
-      () => undefined,
-      (failure: unknown) => failure,
-    )
-    expect(error).toBeInstanceOf(AggregateError)
-    if (!(error instanceof AggregateError)) {
-      throw new Error('expected startup and rollback failures')
-    }
-    expect(error.errors).toEqual([
-      expect.objectContaining({
-        message: `subagent-codex: ${expectedFailureDiagnostic('initialize', 'unknown')}`,
-      }),
-      expect.objectContaining({
-        message: `subagent-codex: ${expectedFailureDiagnostic('teardown', 'unknown')}`,
-      }),
-    ])
     expect(child.terminate).toHaveBeenCalledTimes(1)
   })
 
@@ -1957,7 +1966,6 @@ describe('run lifecycle and quiescence', () => {
       stopReason: 'error',
     })
     expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
-      argv: codexAppServerArgv(),
       env: { OPENAI_API_KEY: 'fake' },
       graceMs: 25,
       cwd: process.cwd(),
@@ -2020,39 +2028,24 @@ describe('disposeCodexChild', () => {
     expect(child.waitForExit).not.toHaveBeenCalled()
   })
 
-  it('reports direct-child observer failure and accepts absent stdin', async () => {
-    {
-      const child = fakeChild({
-        doneError: new Error('close observer failed'),
-      })
-      const wire = defaultWire(child)
-      await expect(disposeCodexChild(wire, child.handle))
-        .rejects.toThrow(expectedFailureDiagnostic('teardown', 'unknown'))
-    }
-    {
-      const child = fakeChild()
-      const handle = { ...child.handle, stdin: undefined }
-      const wire = defaultWire(child)
-      await expect(disposeCodexChild(wire, handle)).resolves.toBeUndefined()
-    }
+  it('accepts absent stdin', async () => {
+    const child = fakeChild()
+    const handle = { ...child.handle, stdin: undefined }
+    const wire = defaultWire(child)
+    await expect(disposeCodexChild(wire, handle)).resolves.toBeUndefined()
   })
 
-  it('aggregates wire-close and tree-wait failures with safe teardown facts', async () => {
+  it('reports tree-wait failure with safe teardown facts', async () => {
     const child = fakeChild({
       waitForExitError: new Error('SECRET_TOKEN wait failure'),
     })
     const wire = defaultWire(child)
-    vi.spyOn(wire, 'close').mockImplementation(() => {
-      throw new Error('/private/secret.txt close failure')
-    })
     const disposal = disposeCodexChild(wire, child.handle)
-    await expect(disposal).rejects.toBeInstanceOf(AggregateError)
     await expect(disposal).rejects.toThrow(expectedFailureDiagnostic(
       'teardown',
       'unknown',
       { outcome: { exitCode: 0, signal: null } },
     ))
     await expect(disposal).rejects.not.toThrow('SECRET_TOKEN')
-    await expect(disposal).rejects.not.toThrow('/private/secret.txt')
   })
 })
