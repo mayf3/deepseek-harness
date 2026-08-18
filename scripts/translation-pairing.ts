@@ -351,7 +351,7 @@ export function requiresSourceLanguageSwitcher(source: string): boolean {
 export function translationStructureSignature(
   tree: Nodes,
   switcherTargets: string | readonly string[],
-  linkContext?: TranslationLinkContext & { markdown: string },
+  linkContext: TranslationLinkContext & { markdown: string },
 ): TranslationStructureSignature {
   const acceptedSwitchers = new Set(
     typeof switcherTargets === 'string' ? [switcherTargets] : switcherTargets,
@@ -364,9 +364,7 @@ export function translationStructureSignature(
   }
   collectDefinitions(tree)
   const linkTarget = (node: Extract<Nodes, { type: 'link' | 'definition' }>): string => (
-    linkContext === undefined
-      ? node.url
-      : semanticTranslationLinkNodeTarget(node, linkContext.markdown, linkContext)
+    semanticTranslationLinkNodeTarget(node, linkContext.markdown, linkContext)
   )
   const visit = (node: Nodes): void => {
     switch (node.type) {

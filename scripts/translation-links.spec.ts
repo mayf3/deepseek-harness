@@ -64,16 +64,8 @@ describe('translation link locale validation', () => {
     })
   })
 
-  it('normalizes an English extensionless file alias but retains a directory-index alias', () => {
+  it('retains an English directory-index alias', () => {
     const root = fixture()
-    expect(translationLinkLocaleViolations(
-      '[Reference](reference)\n',
-      { repoRoot: root, sourcePath: 'docs/guide.md' },
-    )[0]).toMatchObject({ expectedUrl: 'reference.md' })
-    expect(rewriteTranslationLinkLocales(
-      '[Reference](reference)\n',
-      { repoRoot: root, sourcePath: 'docs/guide.md' },
-    ).content).toBe('[Reference](reference.md)\n')
     expect(translationLinkLocaleViolations(
       '[Section](section/)\n',
       { repoRoot: root, sourcePath: 'docs/guide.md' },

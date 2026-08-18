@@ -58,7 +58,7 @@ interface Replacement {
 }
 
 type LinkNode = Extract<Nodes, { type: 'link' | 'definition' }>
-type ResolutionKind = 'exact' | 'extensionless' | 'directory-index'
+type ResolutionKind = 'exact' | 'directory-index'
 
 function decodePath(path: string): string {
   try {
@@ -101,14 +101,8 @@ function resolveRepositoryTarget(
   if (decoded.endsWith('/') && index !== undefined && repositoryFileExists(context, index)) {
     return { path: index, kind: 'directory-index' }
   }
-  if (posix.extname(decoded) === '') {
-    const markdown = repositoryRelativePath(`${exact}.md`)
-    if (markdown !== undefined && repositoryFileExists(context, markdown)) {
-      return { path: markdown, kind: 'extensionless' }
-    }
-    if (index !== undefined && repositoryFileExists(context, index)) {
-      return { path: index, kind: 'directory-index' }
-    }
+  if (posix.extname(decoded) === '' && index !== undefined && repositoryFileExists(context, index)) {
+    return { path: index, kind: 'directory-index' }
   }
   return undefined
 }
@@ -142,7 +136,6 @@ function expectedLocalePath(
     }
     if (locale === 'en' && rawPath.endsWith('.zh.md')) return rawPath.replace(/\.zh\.md$/, '.md')
   }
-  if (kind === 'extensionless') return `${rawPath}${locale === 'zh' ? '.zh.md' : '.md'}`
   if (kind === 'directory-index' && locale === 'zh') {
     return `${rawPath}${rawPath.endsWith('/') ? '' : '/'}index.zh.md`
   }
@@ -177,8 +170,7 @@ function resolveTranslationLink(
 }
 
 function hasExpectedLocale(resolved: ResolvedTranslationLink): boolean {
-  if (resolved.targetPath !== resolved.expectedPath) return false
-  return !(resolved.locale === 'en' && resolved.kind === 'extensionless')
+  return resolved.targetPath === resolved.expectedPath
 }
 
 function replacementFor(destination: MarkdownDestination, value: string): Replacement {

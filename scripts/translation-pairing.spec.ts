@@ -32,7 +32,11 @@ import {
 } from './translation-pairing.ts'
 
 function signature(markdown: string) {
-  return translationStructureSignature(parseTranslationMarkdown(markdown), 'counterpart.zh.md')
+  return translationStructureSignature(
+    parseTranslationMarkdown(markdown),
+    'counterpart.zh.md',
+    { repoRoot: process.cwd(), sourcePath: 'counterpart.md', markdown },
+  )
 }
 
 function gitSupportsObjectFormat(format: 'sha256'): boolean {
@@ -189,7 +193,11 @@ describe('translation pairing switchers', () => {
     )
 
     expect(linksTo(canonical, targets)).toBe(true)
-    expect(translationStructureSignature(canonical, targets).links).toEqual([])
+    expect(translationStructureSignature(canonical, targets, {
+      repoRoot: process.cwd(),
+      sourcePath: 'python/sdk/README.md',
+      markdown: '[中文](https://github.com/deepseek-ai/deepseek-harness/blob/master/python/sdk/README.zh.md)',
+    }).links).toEqual([])
     expect(linksTo(wrongPath, targets)).toBe(false)
   })
 })
