@@ -85,17 +85,11 @@ class ClaudeCodeProvider implements SubagentProvider {
       )
     }
     let cwd: string
-    let executable: string
     try {
       cwd = resolveChildCwd(
         'subagent-claude-code',
         undefined,
         parentCwd,
-      )
-      executable = await this.ctx.subprocess.resolveExecutable(
-        'claude',
-        this.config.env,
-        request.signal,
       )
     } catch (error: unknown) {
       if (request.signal.aborted) {
@@ -112,7 +106,6 @@ class ClaudeCodeProvider implements SubagentProvider {
     }
     const spec: ClaudeCodeRunSpec = {
       cwd,
-      executable,
       permissionMode: this.config.permissionMode,
       env: this.config.env,
       disposeGraceMs: this.config.disposeGraceMs,

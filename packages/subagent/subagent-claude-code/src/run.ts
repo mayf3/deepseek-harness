@@ -150,8 +150,6 @@ function unattendedDiagnostic(
 export interface ClaudeCodeRunSpec {
   /** Parent Session workspace supplied to the SDK and real CLI. */
   readonly cwd: string
-  /** Exact native Claude Code executable resolved from the host PATH. */
-  readonly executable: string
   /** Profile-selected native non-interactive permission mode. */
   readonly permissionMode: ClaudeCodePermissionMode
   /** Explicit deployment/test environment layered after shared scrubbing. */
@@ -168,6 +166,12 @@ function thrown(value: unknown): Error {
   /* v8 ignore next -- typed SDK and subprocess failures reject with Error. */
   return value instanceof Error ? value : new Error(String(value))
 }
+
+/** Read live request cancellation across awaited startup cleanup. */
+function isAborted(signal: AbortSignal): boolean {
+  return signal.aborted
+}
+
 /* jscpd:ignore-end */
 
 /**
@@ -323,7 +327,6 @@ export function claudeQueryOptions(
   return {
     abortController: controller,
     cwd: spec.cwd,
-    pathToClaudeCodeExecutable: spec.executable,
     env: { ...scrubbedParentEnv(), ...spec.env },
     persistSession: false,
     disallowedTools: spec.permissionMode === 'plan'
@@ -445,6 +448,7 @@ export async function startClaudeCodeRun(
     }
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
+    const cancelledBeforeCleanup = controller.signal.aborted
     // Let child.done publish a concurrently observed exit before classification.
     await Promise.resolve()
     const startupOutcome = managedProcess?.outcome
@@ -453,11 +457,46 @@ export async function startClaudeCodeRun(
       category: 'unknown',
       outcome: startupOutcome,
     } as const
-    const startupFailure = (): ClaudeCodeFailure => new ClaudeCodeFailure(
+    const startupFailure = (cause: unknown = error): ClaudeCodeFailure => new ClaudeCodeFailure(
       startupFacts,
-      thrown(error),
+      thrown(cause),
     )
     requestCancel()
+    if (child !== undefined && child.pid <= 0) {
+      let closeError: Error | undefined
+      try {
+        query?.close()
+      } catch (disposeError: unknown) {
+        closeError = thrown(disposeError)
+      }
+
+      let spawnError = thrown(error)
+      try {
+        await child.done
+      } catch (childError: unknown) {
+        spawnError = thrown(childError)
+      }
+
+      if (closeError !== undefined) {
+        const failure = startupFailure(spawnError)
+        const cleanupFailure = new ClaudeCodeFailure({
+          stage: 'teardown',
+          category: 'unknown',
+        }, closeError)
+        const aggregate = new AggregateError(
+          [failure, cleanupFailure],
+          `${failure.message}; ${cleanupFailure.message}`,
+        )
+        reportFailure(aggregate)
+        throw aggregate
+      }
+      if (cancelledBeforeCleanup || isAborted(request.signal)) {
+        throw new Error('subagent-claude-code: request was aborted before SDK startup')
+      }
+      const failure = startupFailure(spawnError)
+      reportFailure(failure)
+      throw failure
+    }
     if (child !== undefined) {
       try {
         await disposeClaudeCodeChild(query, child)
@@ -488,9 +527,7 @@ export async function startClaudeCodeRun(
         throw aggregate
       }
     }
-    try {
-      request.signal.throwIfAborted()
-    } catch {
+    if (cancelledBeforeCleanup || isAborted(request.signal)) {
       throw new Error('subagent-claude-code: request was aborted before SDK startup')
     }
     const failure = startupFailure()

@@ -32,7 +32,7 @@ Agent SDK 0.3.220 定义四种错误子类型：`error_during_execution`、`erro
 
 | 阶段 | 归属操作 | 可观察失败 |
 | --- | --- | --- |
-| `query-start` | 原生可执行文件解析、SDK query 构造与未发布回滚 | `start()` 以固定安全事实和回滚前已观测到的进程结果拒绝 |
+| `query-start` | SDK query 构造、原生平台载荷启动与未发布回滚 | `start()` 以固定安全事实和回滚前已观测到的进程结果拒绝 |
 | `query-run` | 已发布 SDK 消息迭代与严格终态结果校验 | 运行以 `error` 兑现，并携带准确已知子类型或固定结果类别 |
 | `process` | SDK 提供终态结果之前受管 CLI 已退出 | 运行以 `error` 兑现，并携带 `process-exit` 以及可用的退出码和信号 |
 | `teardown` | Query 关闭与受管进程树释放 | `dispose()` 独立拒绝并携带固定安全事实，同时清理仍会完成最终退出等待 |

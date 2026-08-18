@@ -4,12 +4,12 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  symlinkSync,
+  realpathSync,
   writeFileSync,
 } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import type {
@@ -132,14 +132,12 @@ interface RealHarness {
   readonly parent: Agent
   readonly workspace: string
   readonly env: Record<string, string>
-  readonly executable: string
 }
 
 interface RealInstanceFixture {
   readonly fixture: MessagesFixture
   readonly workspace: string
   readonly env: Record<string, string>
-  readonly executable: string
 }
 
 async function realInstanceFixture(
@@ -151,17 +149,9 @@ async function realInstanceFixture(
   const workspace = join(root, 'workspace')
   const claudeConfig = join(root, 'claude-config')
   const xdgConfig = join(root, 'xdg')
-  const nativeBin = join(root, 'native&%literal%!bang!bin')
   mkdirSync(workspace)
   mkdirSync(claudeConfig)
   mkdirSync(xdgConfig)
-  mkdirSync(nativeBin)
-  const executable = join(nativeBin, process.platform === 'win32' ? 'claude.cmd' : 'claude')
-  if (process.platform === 'win32') {
-    writeFileSync(executable, `@echo off\r\n"${claudeBin}" %*\r\n`)
-  } else {
-    symlinkSync(claudeBin, executable)
-  }
   writeFileSync(
     join(claudeConfig, 'settings.json'),
     `${JSON.stringify({
@@ -175,7 +165,6 @@ async function realInstanceFixture(
   const fixture = await startMessagesFixture(behavior)
   fixtures.push(fixture)
   const env = {
-    PATH: `${nativeBin}${delimiter}${process.env.PATH ?? ''}`,
     ANTHROPIC_API_KEY: fakeKey,
     ANTHROPIC_BASE_URL: fixture.baseUrl,
     CLAUDE_CONFIG_DIR: claudeConfig,
@@ -190,7 +179,7 @@ async function realInstanceFixture(
     ALL_PROXY: '',
     NO_PROXY: '127.0.0.1,localhost',
   }
-  return { fixture, workspace, env, executable }
+  return { fixture, workspace, env }
 }
 
 interface RealRuntime {
@@ -243,7 +232,6 @@ async function realHarness(
       parent,
       workspace: instance.workspace,
       env: instance.env,
-      executable: instance.executable,
     },
     fixture: instance.fixture,
   }
@@ -309,7 +297,7 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
     expect(sdkPackage.version).toBe('0.3.220')
     expect(sdkPackage.claudeCodeVersion).toBe('2.1.220')
     expect(sdkPackage.optionalDependencies[platformPackage]).toBe('0.3.220')
-    const version = await execFileAsync(process.platform === 'win32' ? claudeBin : harness.executable, ['--version'], {
+    const version = await execFileAsync(claudeBin, ['--version'], {
       env: { ...process.env, ...harness.env },
     })
     expect(version.stdout.trim()).toBe('2.1.220 (Claude Code)')
@@ -326,18 +314,16 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
         message.type === 'system' && message.subtype === 'init',
     )
     expect(initMessage?.claude_code_version).toBe('2.1.220')
-    if (process.platform === 'win32') {
-      expect(harness.spawnSpecs[0]?.argv.slice(0, 6)).toEqual([
-        'cmd.exe', '/d', '/v:off', '/s', '/c', '%DSH_CLAUDE_CODE_EXECUTABLE%',
-      ])
-      const batchExecutable = harness.spawnSpecs[0]?.env?.DSH_CLAUDE_CODE_EXECUTABLE
-      expect(batchExecutable?.startsWith('"')).toBe(true)
-      expect(batchExecutable?.endsWith('"')).toBe(true)
-      expect(batchExecutable?.slice(1, -1).toLowerCase())
-        .toBe(harness.executable.toLowerCase())
-    } else {
-      expect(harness.spawnSpecs[0]?.argv[0]).toBe(harness.executable)
-    }
+    const spawnedExecutable = harness.spawnSpecs[0]?.argv[0]
+    expect(spawnedExecutable).toBeDefined()
+    expect(process.platform === 'win32'
+      ? realpathSync(spawnedExecutable!).toLowerCase()
+      : realpathSync(spawnedExecutable!))
+      .toBe(process.platform === 'win32'
+        ? realpathSync(claudeBin).toLowerCase()
+        : realpathSync(claudeBin))
+    expect(harness.spawnSpecs[0]?.env)
+      .not.toHaveProperty('DSH_CLAUDE_CODE_EXECUTABLE')
 
     expect(fixture.requests).toHaveLength(1)
     const recorded = fixture.requests[0]!

@@ -32,7 +32,7 @@ Agent SDK 0.3.220 defines four error subtypes: `error_during_execution`, `error_
 
 | Stage | Owned operation | Observable failure |
 | --- | --- | --- |
-| `query-start` | Native executable resolution, SDK query construction, and unpublished rollback | `start()` rejects with fixed safe facts and any process outcome observed before rollback |
+| `query-start` | SDK query construction, native platform-payload startup, and unpublished rollback | `start()` rejects with fixed safe facts and any process outcome observed before rollback |
 | `query-run` | Published SDK message iteration and strict terminal-result validation | The run resolves as `error` with the exact known subtype or a fixed result category |
 | `process` | Managed CLI exits before the SDK supplies a terminal result | The run resolves as `error` with `process-exit` and the available exit code and signal |
 | `teardown` | Query close and managed process-tree release | `dispose()` rejects independently with fixed safe facts after cleanup still reaches its final exit wait |
