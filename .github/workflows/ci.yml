@@ -495,14 +495,17 @@ jobs:
           New-Item -ItemType Directory -Force -Path $probeRoot | Out-Null
           $processProbe = Join-Path $probeRoot 'win32-process.exe'
           $sandboxProbe = Join-Path $probeRoot 'sandbox-windows-acl.exe'
-          g++ -std=c++20 -municode -O2 -o $processProbe packages/subprocess/win32-process/verify/abi-probe.cpp
-          if ($LASTEXITCODE -ne 0) { throw 'win32-process ABI probe compilation failed' }
-          & $processProbe
-          if ($LASTEXITCODE -ne 0) { throw 'win32-process ABI probe failed' }
-          g++ -std=c++20 -municode -O2 -o $sandboxProbe packages/sandbox/sandbox-windows-acl/verify/abi-probe.cpp -ladvapi32
-          if ($LASTEXITCODE -ne 0) { throw 'sandbox-windows-acl ABI probe compilation failed' }
-          & $sandboxProbe
-          if ($LASTEXITCODE -ne 0) { throw 'sandbox-windows-acl ABI probe failed' }
+          $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) { throw "Visual Studio locator not found: $vswhere" }
+          $vsInstall = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          if (-not $vsInstall) { throw 'Visual Studio C++ build tools not found' }
+          $vcvars = Join-Path $vsInstall 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path $vcvars)) { throw "MSVC environment script not found: $vcvars" }
+          $processSource = Join-Path $PWD 'packages/subprocess/win32-process/verify/abi-probe.cpp'
+          $sandboxSource = Join-Path $PWD 'packages/sandbox/sandbox-windows-acl/verify/abi-probe.cpp'
+          $probeCommand = "call `"$vcvars`" && cl /nologo /std:c++20 /EHsc /W4 /Fe:`"$processProbe`" `"$processSource`" && `"$processProbe`" && cl /nologo /std:c++20 /EHsc /W4 /Fe:`"$sandboxProbe`" `"$sandboxSource`" advapi32.lib && `"$sandboxProbe`""
+          & cmd.exe /d /s /c $probeCommand
+          if ($LASTEXITCODE -ne 0) { throw 'Win32 ABI probe compilation or execution failed' }
 
       - name: Run complete native Windows gate inventory
         shell: pwsh

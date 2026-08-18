@@ -81,6 +81,8 @@ describe('CI workflow', () => {
     expect(nativeCommandSteps.some(step => (
       step.run.includes('packages/subprocess/win32-process/verify/abi-probe.cpp')
       && step.run.includes('packages/sandbox/sandbox-windows-acl/verify/abi-probe.cpp')
+      && step.run.includes('vswhere.exe')
+      && step.run.includes('vcvars64.bat')
     ))).toBe(true)
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
 
