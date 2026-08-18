@@ -123,7 +123,7 @@ class MemoryCredentials extends CredentialProvider {
       return Promise.reject(new Error(`credentials: ${ref} is shadowed by the read-only environment`))
     }
     this.values.set(ref, value)
-    this.ctx.emit('credentials/updated', ref)
+    this.ctx.emit('credentials/reference-updated', ref)
     return Promise.resolve()
   }
 
@@ -132,7 +132,7 @@ class MemoryCredentials extends CredentialProvider {
       return Promise.reject(new Error(`credentials: ${ref} is shadowed by the read-only environment`))
     }
     this.values.delete(ref)
-    this.ctx.emit('credentials/updated', ref)
+    this.ctx.emit('credentials/reference-updated', ref)
     return Promise.resolve()
   }
 
@@ -632,8 +632,8 @@ describe('credentials domain', () => {
       expectOk(await api.credentials.unset(request({ ref: 'OPENAI_API_KEY' })))
     })
     expect(frames).toEqual([
-      { type: 'host/remote-event', event: 'credentials/updated', args: ['OPENAI_API_KEY'] },
-      { type: 'host/remote-event', event: 'credentials/updated', args: ['OPENAI_API_KEY'] },
+      { type: 'host/remote-event', event: 'credentials/reference-updated', args: ['OPENAI_API_KEY'] },
+      { type: 'host/remote-event', event: 'credentials/reference-updated', args: ['OPENAI_API_KEY'] },
     ])
   })
 

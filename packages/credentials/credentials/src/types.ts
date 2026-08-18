@@ -72,15 +72,15 @@ declare module '@deepseek-ai/cordis' {
      * @param ref - the reference whose stored value changed.
      * @mode emit
      */
-    'credentials/updated'(ref: CredentialRef): void
+    'credentials/reference-updated'(ref: CredentialRef): void
 
     /**
      * Committed change to a stored credential record: a `modifyRecord` that
      * wrote, a `deleteRecord` that removed, or an external edit observed in
-     * storage. Separate from `credentials/updated` because the two key
+     * storage. Separate from `credentials/reference-updated` because the two key
      * grammars are disjoint — a listener that received both on one event could
      * not tell which space a subject belongs to. Listener failures are
-     * contained on the same terms as `credentials/updated`.
+     * contained on the same terms as `credentials/reference-updated`.
      * @param key - the record whose stored value changed.
      * @mode emit
      */

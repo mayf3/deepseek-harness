@@ -1,5 +1,5 @@
 // Third-review behaviors: read-modify-write under the writer lock (external
-// edits survive an API write), the contained credentials/updated fan-out (a
+// edits survive an API write), the contained credentials/reference-updated fan-out (a
 // broken observer never fails a committed write), and the YAML document
 // editor's isolation between entries.
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -45,7 +45,7 @@ describe('read-modify-write', () => {
     const path = join(dir, '.credentials.yaml')
     const ctx = await boot({ path, watch: false })
     const seen: string[] = []
-    ctx.on('credentials/updated', (ref) => { seen.push(ref) })
+    ctx.on('credentials/reference-updated', (ref) => { seen.push(ref) })
     await ctx.credentials.set(ALPHA, 'one')
     // The external edit has landed on disk but no watcher reported it (watch
     // is off — the same blind spot as a debounce window or a missed event).
@@ -117,11 +117,11 @@ describe('contained update fan-out', () => {
   it('does not fail a committed set when a listener throws, and later listeners still run', async () => {
     const dir = await tempDir()
     const ctx = await boot({ path: join(dir, '.credentials.yaml'), watch: false })
-    ctx.on('credentials/updated', () => {
+    ctx.on('credentials/reference-updated', () => {
       throw new Error('observer boom')
     })
     const second = vi.fn()
-    ctx.on('credentials/updated', second)
+    ctx.on('credentials/reference-updated', second)
     await expect(ctx.credentials.set(ALPHA, 'one')).resolves.toBeUndefined()
     expect(second).toHaveBeenCalledWith(ALPHA)
     expect(await ctx.credentials.resolve(ALPHA)).toEqual({ value: 'one', source: 'file' })
@@ -133,7 +133,7 @@ describe('contained update fan-out', () => {
     // An unknown-returning function keeps the typed surface legal while the
     // runtime value is still the rejected promise the containment must handle.
     const boom = (): unknown => Promise.reject(new Error('async observer boom'))
-    ctx.on('credentials/updated', boom)
+    ctx.on('credentials/reference-updated', boom)
     await expect(ctx.credentials.set(ALPHA, 'one')).resolves.toBeUndefined()
     await new Promise(resolve => setTimeout(resolve, 10))
   })
@@ -142,11 +142,11 @@ describe('contained update fan-out', () => {
     const dir = await tempDir()
     const path = join(dir, '.credentials.yaml')
     const ctx = await boot({ path, watch: false })
-    ctx.on('credentials/updated', () => {
+    ctx.on('credentials/reference-updated', () => {
       throw Object.assign(new Error('forged relation'), { code: 'INVARIANT' })
     })
     const second = vi.fn()
-    ctx.on('credentials/updated', second)
+    ctx.on('credentials/reference-updated', second)
     await expect(ctx.credentials.set(ALPHA, 'one')).rejects.toThrow(/forged relation/)
     // Harness-fatal by design — but the write itself committed first.
     expect(second).toHaveBeenCalledWith(ALPHA)

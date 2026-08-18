@@ -41,7 +41,7 @@ async function boot(config: ConstructorParameters<typeof LocalCredentialProvider
 
 function updates(ctx: Context): CredentialRef[] {
   const seen: CredentialRef[] = []
-  ctx.on('credentials/updated', (ref) => {
+  ctx.on('credentials/reference-updated', (ref) => {
     seen.push(ref)
   })
   return seen

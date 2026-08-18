@@ -147,7 +147,7 @@ describe('watcher pipeline', () => {
     const path = join(dir, '.credentials.yaml')
     const ctx = await boot({ path, debounceMs: 5 })
     let arm = true
-    ctx.on('credentials/updated', () => {
+    ctx.on('credentials/reference-updated', () => {
       if (!arm) return
       throw Object.assign(new Error('forged relation'), { code: 'INVARIANT' })
     })
@@ -178,7 +178,7 @@ describe('watcher pipeline', () => {
     await fiber
     let disposed = false
     let postDisposeCommits = 0
-    ctx.on('credentials/updated', () => {
+    ctx.on('credentials/reference-updated', () => {
       if (disposed) postDisposeCommits += 1
     })
 
@@ -202,7 +202,7 @@ describe('watcher pipeline', () => {
     await writeCredentials(path, 'version: 1\nrefs:\n  DSH_CRED_PIPE: doomed\n')
     const ctx = await boot({ path, debounceMs: 5 })
     const seen: string[] = []
-    ctx.on('credentials/updated', (ref) => {
+    ctx.on('credentials/reference-updated', (ref) => {
       seen.push(ref)
     })
 
@@ -221,7 +221,7 @@ describe('watcher pipeline', () => {
     await writeCredentials(path, 'version: 1\nrefs:\n  DSH_CRED_PIPE: a\n')
     const ctx = await boot({ path, debounceMs: 5 })
     const seen: string[] = []
-    ctx.on('credentials/updated', (ref) => {
+    ctx.on('credentials/reference-updated', (ref) => {
       seen.push(ref)
     })
 

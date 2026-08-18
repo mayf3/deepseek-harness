@@ -263,7 +263,7 @@ export abstract class CredentialProvider extends Service {
   abstract deleteRecord(key: CredentialKey): Promise<void>
 
   /**
-   * Fan `credentials/updated` out with contained listener failures: every
+   * Fan `credentials/reference-updated` out with contained listener failures: every
    * listener runs, and a sync throw or async rejection is logged without
    * changing the committed operation's outcome — except `INVARIANT`-coded
    * failures, which rethrow after every listener ran (the rethrow reaches the
@@ -274,7 +274,7 @@ export abstract class CredentialProvider extends Service {
    * @param ref - the reference whose stored value changed.
    */
   protected notifyUpdated(ref: CredentialRef): void {
-    this.fanOut('credentials/updated', ref)
+    this.fanOut('credentials/reference-updated', ref)
   }
 
   /**
@@ -290,7 +290,7 @@ export abstract class CredentialProvider extends Service {
      fan-out: the contained-dispatch shape is the reviewed listener-lifecycle
      contract, and extracting it would couple the two seams' event semantics. */
   /** The contained dispatch both notifications run through; see {@link notifyUpdated}. */
-  private fanOut(event: 'credentials/updated' | 'credentials/record-updated', subject: string): void {
+  private fanOut(event: 'credentials/reference-updated' | 'credentials/record-updated', subject: string): void {
     let invariantFailure: unknown
     const args = [event, subject]
     for (const listener of this.ctx.events.dispatch('emit', args) as Array<(...listenerArgs: unknown[]) => unknown>) {

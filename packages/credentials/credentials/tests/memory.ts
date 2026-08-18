@@ -45,13 +45,13 @@ export class MemoryCredentials extends CredentialProvider {
       return Promise.reject(new Error('memory credentials: an empty value cannot be stored; use unset'))
     }
     this.store.set(ref, value)
-    this.ctx.emit('credentials/updated', ref)
+    this.ctx.emit('credentials/reference-updated', ref)
     return Promise.resolve()
   }
 
   override unset(ref: CredentialRef): Promise<void> {
     if (this.store.delete(ref)) {
-      this.ctx.emit('credentials/updated', ref)
+      this.ctx.emit('credentials/reference-updated', ref)
     }
     return Promise.resolve()
   }
