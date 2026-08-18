@@ -15,9 +15,6 @@
       "path": "../ui-slots"
     },
     {
-      "path": "../connection"
-    },
-    {
       "path": "../ui-primitives"
     },
     {
@@ -27,16 +24,19 @@
       "path": "../ui-settings"
     },
     {
-      "path": "../web-react"
-    },
-    {
       "path": "../locale"
     },
     {
       "path": "../../settings/settings"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-sidebar"
     }
   ]
 }

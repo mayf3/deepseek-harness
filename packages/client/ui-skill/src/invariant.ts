@@ -4,7 +4,7 @@
  */
 
 /* jscpd:ignore-start */
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-client-ui-skill'
@@ -15,9 +15,10 @@ export const name = 'client-ui-skill-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: a single slash-source registration whose disposal is
- * proven by the HMR-safety spec — it emits no cordis events and owns no
- * cross-plugin mutable state.
+ * No runtime invariant: the slash source, locale dictionaries, and keyed
+ * toolview are registry-owned registrations whose disposal is proven by the
+ * HMR-safety spec. They emit no cordis events and own no cross-plugin mutable
+ * state.
  */
 const install: InvariantInstaller = () => {}
 

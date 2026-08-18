@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createUserMessage, CallId, ReasoningEffortId , createMessage } from '@deepseek-ai/dsh-llm'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import { createUserMessage, CallId, ReasoningEffortId, createMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import { serializeMessages, serializeRequest } from '../src/serialize.ts'
 
@@ -132,6 +133,19 @@ describe('serializeMessages', () => {
     expect(wire).toEqual([{ role: 'user', content: 'see chart' }])
   })
 
+  it('rejects image blocks instead of silently flattening them away', () => {
+    expect(() => serializeMessages([createUserMessage({
+      content: [{
+        type: 'image',
+        attachment: {
+          attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+          mediaType: 'image/png', bytes: 68, width: 1, height: 1,
+        },
+      }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })])).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_CONTENT' }))
+  })
+
   it('emits an empty user message rather than dropping block-less messages', () => {
     const wire = serializeMessages([createUserMessage({
       content: [],
@@ -189,13 +203,13 @@ describe('serializeRequest', () => {
     expect(wire.tools).toBeUndefined()
   })
 
-  it('maps adapter-default thinking and the request reasoning effort', () => {
+  it.each(['low', 'high', 'max'] as const)('maps adapter-default thinking and request effort %s', (effort) => {
     const wire = serializeRequest(
-      request({ messages: history, reasoningEffort: ReasoningEffortId('max') }),
+      request({ messages: history, reasoningEffort: ReasoningEffortId(effort) }),
       { thinking: 'enabled', reasoningEffort: 'high' },
     )
     expect(wire.thinking).toEqual({ type: 'enabled' })
-    expect(wire.reasoning_effort).toBe('max')
+    expect(wire.reasoning_effort).toBe(effort)
   })
 
   it('maps off to disabled thinking without a wire reasoning effort', () => {

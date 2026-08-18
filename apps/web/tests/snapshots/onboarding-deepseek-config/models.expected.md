@@ -7,6 +7,12 @@
     - button "模型":
       - img
       - text: 模型
+    - button "插件":
+      - img
+      - text: 插件
+    - button "Agent 预设":
+      - img
+      - text: Agent 预设
   - button "打开配置文件"
   - button "关闭":
     - img
@@ -25,12 +31,6 @@
         - text: 自定义设置 API 地址
         - textbox "API 地址":
           - /placeholder: https://api.deepseek.com
-        - text: 推理强度
-        - combobox "推理强度":
-          - option "默认" [selected]
-          - option "off"
-          - option "high"
-          - option "max"
         - region "模型目录":
           - text: 模型目录 已自定义模型目录
           - button "恢复默认模型"

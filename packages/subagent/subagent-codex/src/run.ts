@@ -8,6 +8,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -23,6 +24,22 @@ import { CodexAppServerWire } from './wire.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
+
+/** Profile-selectable non-interactive Codex permission mode. */
+export type CodexPermissionMode =
+  | 'never'
+  | 'approve-for-me'
+  | 'dangerously-bypass-approvals-and-sandbox'
+
+/** Native non-interactive Codex modes mapped to official `thread/start` fields. */
+export const CODEX_PERMISSION_MODES = [
+  'never',
+  'approve-for-me',
+  'dangerously-bypass-approvals-and-sandbox',
+] as const satisfies readonly CodexPermissionMode[]
+
+/** Safe default for unattended Codex runs. */
+export const DEFAULT_CODEX_PERMISSION_MODE: CodexPermissionMode = 'never'
 
 /**
  * Resolve the fixed app-server command for a platform.
@@ -45,6 +62,8 @@ export function codexAppServerArgv(
 export interface CodexRunSpec {
   /** Parent Session workspace, also supplied to `thread/start`. */
   readonly cwd: string
+  /** Profile-selected native non-interactive permission mode. */
+  readonly permissionMode: CodexPermissionMode
   /** Explicit deployment/test environment layered after the shared scrub. */
   readonly env: Record<string, string>
   /** Subprocess termination grace passed to the shared process-tree owner. */
@@ -61,7 +80,7 @@ function thrown(value: unknown): Error {
 }
 
 /**
- * Validate and preserve the one-shot task before crossing the process seam.
+ * Validate and preserve the one-shot task before crossing the process boundary.
  * @param prompt - task content accepted from the shared subagent service.
  * @returns the exact non-empty text block sequence.
  */
@@ -110,7 +129,7 @@ export async function disposeCodexChild(
 /**
  * Start the real `codex app-server --stdio` child and publish its one-shot run.
  * @param request - resolved shared subagent request.
- * @param spec - workspace, environment, process seam, and diagnostic policy.
+ * @param spec - Workspace, environment, process service, and diagnostic policy.
  * @returns the published run after initialization and ephemeral thread creation.
  */
 export async function startCodexRun(
@@ -125,7 +144,7 @@ export async function startCodexRun(
   const child = spec.spawn({
     argv: codexAppServerArgv(),
     cwd: spec.cwd,
-    stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
+    stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
     graceMs: spec.disposeGraceMs,
     env: spec.env,
   })
@@ -133,8 +152,33 @@ export async function startCodexRun(
   const wire = new CodexAppServerWire(
     child.stdout as NonNullable<SubprocessHandle['stdout']>,
     child.stdin as NonNullable<SubprocessHandle['stdin']>,
+    spec.permissionMode,
   )
-  const disposeProcess = (): Promise<void> => disposeCodexChild(wire, child)
+  const onStderr = (chunk: Buffer | string): void => {
+    const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+    wire.observeStderr(bytes.toString())
+    try {
+      // Synchronous fd forwarding preserves byte order without owning a
+      // backpressure queue. A slow host sink can block this event-loop turn.
+      writeFileSync(process.stderr.fd, bytes)
+    } catch {
+      // Host stderr is an observation sink, not a child-run failure authority.
+    }
+  }
+  const onStderrError = (): void => {
+    // Stderr observation is auxiliary. JSON-RPC and child.done remain the
+    // only terminal authorities if the diagnostic stream itself fails.
+  }
+  child.stderr?.on('data', onStderr)
+  child.stderr?.on('error', onStderrError)
+  const disposeProcess = async (): Promise<void> => {
+    try {
+      await disposeCodexChild(wire, child)
+    } finally {
+      child.stderr?.off('data', onStderr)
+      child.stderr?.off('error', onStderrError)
+    }
+  }
 
   const processFailure: Promise<never> = child.done.then(
     outcome => Promise.reject(new Error(
@@ -178,11 +222,21 @@ export async function startCodexRun(
 
   const collectOutput = (): ContentBlock[] => wire.collectOutput()
   const result: Promise<SubagentResult> = settleRunResult({
-    attempt: () => Promise.race([
-      wire.runTurn(texts, runAbort.signal),
-      processFailure,
-    ]),
+    attempt: async () => {
+      try {
+        return await Promise.race([
+          wire.runTurn(texts, runAbort.signal),
+          processFailure,
+        ])
+      } catch (error: unknown) {
+        // Give stderr data already queued in Node one turn to reach the wire
+        // before settlement snapshots the diagnostic; later OS data is best-effort.
+        await new Promise<void>((resolve) => { setImmediate(resolve) })
+        throw error
+      }
+    },
     collectOutput,
+    collectDiagnostic: () => wire.collectDiagnostic(),
     cancelled: () => runAbort.signal.aborted,
     onError: spec.onError,
     signal: request.signal,

@@ -21,7 +21,12 @@ it('boots the built plugin graph and renders a fixture session end to end', asyn
 
   // The sidebar renders from the boot graph: every inject layer activated.
   const tree = await screen.findByRole('tree', { name: 'Sessions' }, { timeout: 10_000 })
-  await within(tree).findByText('4 sessions')
+  // The compact layout dropped group session counts; the fixture workspace
+  // group row renders immediately with its sessions beneath it.
+  const fixtureGroup = (await within(tree).findAllByText('fixture'))
+    .map(el => el.closest<HTMLElement>('[role="treeitem"]'))
+    .find(el => el?.getAttribute('aria-expanded') !== null)
+  if (fixtureGroup === undefined) throw new Error('fixture Workspace group missing')
 
   // The resident fixture has both a question and an approval; composer routing
   // exposes the question first, and the assembled workspace plugin mirrors that
@@ -38,10 +43,12 @@ it('boots the built plugin graph and renders a fixture session end to end', asyn
   await waitFor(() => {
     expect(document.querySelector('[data-sample="bash"]')).not.toBeNull()
   }, { timeout: 10_000 })
-
-  // Resolve the resident approval so the ordinary composer bar (which owns
-  // ContextMeter) resumes without replacing the session shell. This minimal
-  // boot graph intentionally does not mount the separate question UI plugin.
+  // The generated bundle roster mounts the question UI before the approval UI.
+  // Skip the resident fixture's three questions, then resolve its approval so
+  // the ordinary composer bar (which owns ContextMeter) resumes.
+  for (let index = 0; index < 3; index += 1) {
+    fireEvent.click(await screen.findByRole('button', { name: 'Skip this question' }))
+  }
   fireEvent.click(await screen.findByRole('button', { name: 'Allow once' }))
 
   // The fixture mirrors all three token-meter projections, so the assembled
@@ -95,7 +102,7 @@ it('boots the built plugin graph and renders a fixture session end to end', asyn
   // Every bundle injected its plugin-owned style tag (the loader's CSS path).
   const styleOwners = [...document.head.querySelectorAll('style[data-plugin]')]
     .map(style => style.getAttribute('data-plugin'))
-  for (const plugin of ['@deepseek-ai/dsh-client-ui-layout', '@deepseek-ai/dsh-client-ui-sidebar', '@deepseek-ai/dsh-client-ui-conversation']) {
+  for (const plugin of ['@deepseek-ai/dsh-client-ui-layout', '@deepseek-ai/dsh-client-ui-sidebar', '@deepseek-ai/dsh-client-ui-conversation', '@deepseek-ai/dsh-client-ui-tool']) {
     expect(styleOwners).toContain(plugin)
   }
 })

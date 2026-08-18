@@ -5,8 +5,8 @@ import react from '@vitejs/plugin-react'
 
 const src = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url))
 const STANDALONE_ERROR = 'apps/web is not a standalone application: bare Vite cannot inject window.__DSH_BOOT__. '
-  + 'Build with `pnpm run build && pnpm run build:web`, then run `dsh web` (repository checkout: `pnpm run dsh -- web`). '
-  + 'For client-plugin HMR, run `pnpm run dsh -- web --dev` together with `pnpm run dev:web`.'
+  + 'From a repository checkout, run `pnpm dsh web`; an installed package uses `dsh web`. '
+  + 'For client-plugin HMR, run `pnpm dsh web` together with `pnpm run dev:web`.'
 
 /** Fail before a Vite dev or preview server can expose the boot-manifest-free shell. */
 function rejectStandaloneServe(): Plugin {
@@ -31,7 +31,7 @@ function rejectStandaloneServe(): Plugin {
  * editing shell code re-hashes only index and returning clients keep the
  * cached vendor chunk.
  *
- * Boundary invariant: every member must be react-free. A package that
+ * Every member must be React-free. A package that
  * imports react/jsx-runtime must never be listed — rollup folds a module
  * shared between the entry and a manual chunk into the manual chunk, so one
  * react-importing member would drag the single shared react copy into
@@ -73,10 +73,13 @@ const BOOT_GRAMMAR_FILES: readonly string[] = [
   'dist/json.mjs',
 ]
 
-/** Font asset extensions routed to assets/fonts/ (KaTeX's woff2/woff/ttf faces today). */
+/** Font asset extensions routed to assets/fonts/ (KaTeX's woff2/woff/ttf faces). */
 const FONT_EXTENSIONS: readonly string[] = ['.woff2', '.woff', '.ttf']
 
-/** npm package name of a resolved module id (the segment after the LAST `node_modules/` — pnpm nests the real package under an inner node_modules). */
+/**
+ * npm package name of a resolved module id: the segment after the last
+ * `node_modules/`. pnpm nests the real package under an inner node_modules.
+ */
 function npmPackageOf(id: string): string | undefined {
   const parts = id.split('/node_modules/')
   if (parts.length === 1) return undefined
@@ -94,7 +97,7 @@ export default defineConfig({
       output: {
         // Output layout: the two main chunks stay at assets/ root; lazy
         // @shikijs/langs grammar chunks group under assets/langs/; fonts
-        // (today all KaTeX faces referenced by vendor.css) group under
+        // (all KaTeX faces referenced by vendor.css) group under
         // assets/fonts/. Sourcemaps need no arrangement: rollup writes each
         // .map next to its js and references it by bare relative filename.
         chunkFileNames(chunk): string {
@@ -124,23 +127,22 @@ export default defineConfig({
     },
   },
   resolve: {
-    // Workspace packages resolve to SOURCE: package.json exports point at lib
-    // for Node/type consumers, but the browser bundle must compile src directly
-    // so CSS rides vite's pipeline instead of the CSS-externalized lib bundle.
-    // Only the shell's normal-package surface is aliased — plugin packages are
-    // NEVER bundled here (web2 shell self-sufficiency); they arrive as runtime
-    // bundles through the client module system. Order matters — subpath
-    // aliases must win over bare-name prefixes.
+    // One instance per shared npm identity: a bare specifier otherwise resolves
+    // from the importer's directory, so a diverging range ships a second React
+    // and splits hook and element identity. Entries are package ids — they cover
+    // react/jsx-runtime and react-dom/client — and resolve from this package's
+    // node_modules, so react must stay a devDependency here and any watcher must
+    // run vite from this directory (scripts/dev-web.ts). Workspace packages need
+    // no entry: pnpm links each of them to a single directory.
+    dedupe: ['react', 'react-dom'],
+    // Workspace packages are consumed as built lib products: each resolves
+    // through its own package.json exports from the importer's directory, and
+    // CSS still rides Vite's pipeline because the client build preset emits it
+    // beside the bundle. Plugin packages never enter this graph; they arrive as
+    // runtime bundles through the client module system. The remaining alias
+    // browserizes the vendored Cordis Loader's only Node import.
     alias: [
-      // Browserization of the vendored cordis Loader: its only node-only
-      // import; the two process probes are mapped by `define` below.
       { find: /^node:module$/, replacement: src('./src/node-module-stub.ts') },
-      { find: /^@deepseek-ai\/dsh-client-web$/, replacement: src('../../packages/client/web/src/boot.tsx') },
-      { find: /^@deepseek-ai\/dsh-client-web-react$/, replacement: src('../../packages/client/web-react/src/index.ts') },
-      { find: /^@deepseek-ai\/dsh-client-ui-slots$/, replacement: src('../../packages/client/ui-slots/src/index.ts') },
-      { find: /^@deepseek-ai\/dsh-client-ui-primitives$/, replacement: src('../../packages/client/ui-primitives/src/index.ts') },
-      { find: /^@deepseek-ai\/dsh-client-schema-form$/, replacement: src('../../packages/client/schema-form/src/index.ts') },
-      { find: /^@deepseek-ai\/dsh-client-modules\/client$/, replacement: src('../../packages/client/modules/src/client/index.ts') },
     ],
   },
   define: {

@@ -1,13 +1,15 @@
 import { execFile } from 'node:child_process'
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import type {
@@ -15,13 +17,14 @@ import type {
   SDKMessage,
   SDKSystemMessage,
 } from '@anthropic-ai/claude-agent-sdk'
-import { Context } from 'cordis'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import SubagentService from '@deepseek-ai/dsh-subagent'
-import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
-import LocalSubprocessService from '@deepseek-ai/dsh-subprocess-local'
+import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as claudeCode from '../src/index.ts'
+import type { ClaudeCodePermissionMode } from '../src/run.ts'
 import {
   startMessagesFixture,
   type MessagesBehavior,
@@ -86,11 +89,27 @@ const roots: string[] = []
 const fixtures: MessagesFixture[] = []
 const contexts: Context[] = []
 
+// Ambient Anthropic model env leaks into the real CLI and overrides the
+// fixture settings.json on developer machines; delete it for this file and
+// restore it after, like the workspace-context USERPROFILE isolation.
+const ambientAnthropicModel = process.env.ANTHROPIC_MODEL
+const ambientAnthropicSmallFastModel = process.env.ANTHROPIC_SMALL_FAST_MODEL
+
+beforeAll(() => {
+  delete process.env.ANTHROPIC_MODEL
+  delete process.env.ANTHROPIC_SMALL_FAST_MODEL
+})
+
+afterAll(() => {
+  if (ambientAnthropicModel !== undefined) process.env.ANTHROPIC_MODEL = ambientAnthropicModel
+  if (ambientAnthropicSmallFastModel !== undefined) process.env.ANTHROPIC_SMALL_FAST_MODEL = ambientAnthropicSmallFastModel
+})
+
 afterEach(async () => {
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
   await Promise.all(fixtures.splice(0).map(fixture => fixture.close()))
   for (const root of roots.splice(0)) {
-    rmSync(root, { recursive: true, force: true })
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
   observedSdkMessages.length = 0
 })
@@ -98,12 +117,18 @@ afterEach(async () => {
 interface RealHarness {
   readonly ctx: Context
   readonly handles: SubprocessHandle[]
+  readonly spawnSpecs: SubprocessSpawnSpec[]
   readonly parent: Agent
   readonly workspace: string
   readonly env: Record<string, string>
+  readonly executable: string
 }
 
-async function realHarness(behavior: MessagesBehavior): Promise<{
+async function realHarness(
+  behavior: MessagesBehavior,
+  permissionMode?: ClaudeCodePermissionMode,
+  nativeAllow: readonly string[] = [],
+): Promise<{
   readonly harness: RealHarness
   readonly fixture: MessagesFixture
 }> {
@@ -112,16 +137,31 @@ async function realHarness(behavior: MessagesBehavior): Promise<{
   const workspace = join(root, 'workspace')
   const claudeConfig = join(root, 'claude-config')
   const xdgConfig = join(root, 'xdg')
+  const nativeBin = join(root, 'native&%literal%!bang!bin')
   mkdirSync(workspace)
   mkdirSync(claudeConfig)
   mkdirSync(xdgConfig)
+  mkdirSync(nativeBin)
+  const executable = join(nativeBin, process.platform === 'win32' ? 'claude.cmd' : 'claude')
+  if (process.platform === 'win32') {
+    writeFileSync(executable, `@echo off\r\n"${claudeBin}" %*\r\n`)
+  } else {
+    symlinkSync(claudeBin, executable)
+  }
   writeFileSync(
     join(claudeConfig, 'settings.json'),
-    `${JSON.stringify({ model: settingsModel }, null, 2)}\n`,
+    `${JSON.stringify({
+      model: settingsModel,
+      permissions: {
+        defaultMode: 'default',
+        ...nativeAllow.length === 0 ? {} : { allow: nativeAllow },
+      },
+    }, null, 2)}\n`,
   )
   const fixture = await startMessagesFixture(behavior)
   fixtures.push(fixture)
   const env = {
+    PATH: `${nativeBin}${delimiter}${process.env.PATH ?? ''}`,
     ANTHROPIC_API_KEY: fakeKey,
     ANTHROPIC_BASE_URL: fixture.baseUrl,
     CLAUDE_CONFIG_DIR: claudeConfig,
@@ -138,22 +178,28 @@ async function realHarness(behavior: MessagesBehavior): Promise<{
   }
   const ctx = new Context()
   contexts.push(ctx)
-  await ctx.plugin(SubagentService)
-  await ctx.plugin(LocalSubprocessService)
+  await ctx.plugin(SubagentRuntime)
+  await ctx.plugin(LocalSubprocessRuntime)
   const handles: SubprocessHandle[] = []
+  const spawnSpecs: SubprocessSpawnSpec[] = []
   const spawn = ctx.subprocess.spawn.bind(ctx.subprocess)
   vi.spyOn(ctx.subprocess, 'spawn').mockImplementation((spec) => {
+    spawnSpecs.push(spec)
     const handle = spawn(spec)
     handles.push(handle)
     return handle
   })
-  await ctx.plugin(claudeCode, { env, disposeGraceMs: 3_000 })
+  await ctx.plugin(claudeCode, {
+    env,
+    ...permissionMode === undefined ? {} : { permissionMode },
+    disposeGraceMs: 3_000,
+  })
   const parent = {
     id: 'real-parent',
     session: { header: { cwd: workspace } },
   } as unknown as Agent
   return {
-    harness: { ctx, handles, parent, workspace, env },
+    harness: { ctx, handles, spawnSpecs, parent, workspace, env, executable },
     fixture,
   }
 }
@@ -182,7 +228,7 @@ function startRequest(
   })
 }
 
-describe('real Claude Agent SDK 0.3.220 and Claude Code 2.1.220', {
+describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 fixture', {
   timeout: 60_000,
 }, () => {
   it('inherits host settings and sends the exact task and fake key to local Messages', async () => {
@@ -195,7 +241,7 @@ describe('real Claude Agent SDK 0.3.220 and Claude Code 2.1.220', {
     expect(sdkPackage.version).toBe('0.3.220')
     expect(sdkPackage.claudeCodeVersion).toBe('2.1.220')
     expect(sdkPackage.optionalDependencies[platformPackage]).toBe('0.3.220')
-    const version = await execFileAsync(claudeBin, ['--version'], {
+    const version = await execFileAsync(process.platform === 'win32' ? claudeBin : harness.executable, ['--version'], {
       env: { ...process.env, ...harness.env },
     })
     expect(version.stdout.trim()).toBe('2.1.220 (Claude Code)')
@@ -212,6 +258,18 @@ describe('real Claude Agent SDK 0.3.220 and Claude Code 2.1.220', {
         message.type === 'system' && message.subtype === 'init',
     )
     expect(initMessage?.claude_code_version).toBe('2.1.220')
+    if (process.platform === 'win32') {
+      expect(harness.spawnSpecs[0]?.argv.slice(0, 6)).toEqual([
+        'cmd.exe', '/d', '/v:off', '/s', '/c', '%DSH_CLAUDE_CODE_EXECUTABLE%',
+      ])
+      const batchExecutable = harness.spawnSpecs[0]?.env?.DSH_CLAUDE_CODE_EXECUTABLE
+      expect(batchExecutable?.startsWith('"')).toBe(true)
+      expect(batchExecutable?.endsWith('"')).toBe(true)
+      expect(batchExecutable?.slice(1, -1).toLowerCase())
+        .toBe(harness.executable.toLowerCase())
+    } else {
+      expect(harness.spawnSpecs[0]?.argv[0]).toBe(harness.executable)
+    }
 
     expect(fixture.requests).toHaveLength(1)
     const recorded = fixture.requests[0]!
@@ -249,6 +307,80 @@ describe('real Claude Agent SDK 0.3.220 and Claude Code 2.1.220', {
     await run.dispose()
     expect(fixture.requests).toHaveLength(1)
     expect(fixture.requests[0]!.headers['x-api-key']).toBe(fakeKey)
+    await expectQuiescent(harness.handles)
+  })
+
+  it('overrides interactive settings, denies a write, and returns a safe diagnostic', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-claude-code-denied-target-'))
+    roots.push(root)
+    const target = join(root, 'denied.txt')
+    const { harness } = await realHarness({
+      kind: 'tool-use',
+      toolName: 'Write',
+      input: {
+        file_path: target,
+        content: 'SECRET_TOKEN must not reach the diagnostic',
+      },
+    })
+    const run = await startRequest(harness, 'Write the requested fixture file.')
+    await vi.waitFor(() => {
+      expect(observedSdkMessages.some(message =>
+        message.type === 'system'
+        && message.subtype === 'permission_denied')).toBe(true)
+    }, { timeout: 30_000 })
+    expect(existsSync(target)).toBe(false)
+    harness.handles[0]!.terminate()
+    const result = await run.result
+    expect(result).toEqual({
+      output: [],
+      diagnostic: 'Claude Code unattended decision (mode: dontAsk; request: tool permission; decision: denied): Claude Code denied the request before an interactive prompt',
+      stopReason: 'error',
+    })
+    expect(result.diagnostic).not.toContain(target)
+    expect(result.diagnostic).not.toContain('SECRET_TOKEN')
+    await run.dispose()
+    await expectQuiescent(harness.handles)
+  })
+
+  it('runs an explicitly selected bypass write in the isolated workspace', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-claude-code-bypass-target-'))
+    roots.push(root)
+    const target = join(root, 'bypass.txt')
+    const { harness } = await realHarness({
+      kind: 'tool-use',
+      toolName: 'Write',
+      input: {
+        file_path: target,
+        content: 'bypass write completed',
+      },
+      finalText: 'write complete',
+    }, 'bypassPermissions')
+    const run = await startRequest(harness, 'Write the requested fixture file.')
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'write complete' }],
+      stopReason: 'completed',
+    })
+    expect(readFileSync(target, 'utf8')).toBe('bypass write completed')
+    await run.dispose()
+    await expectQuiescent(harness.handles)
+  })
+
+  it('returns the completed plan without approving execution', async () => {
+    const { harness, fixture } = await realHarness({
+      kind: 'tool-use',
+      toolName: 'ExitPlanMode',
+      input: {},
+      finalText: 'PLAN_ONLY_RESULT',
+    }, 'plan', ['ExitPlanMode'])
+    const run = await startRequest(harness, 'Design the fixture change without implementing it.')
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'PLAN_ONLY_RESULT' }],
+      stopReason: 'completed',
+    })
+    expect(fixture.requests).toHaveLength(2)
+    expect(JSON.stringify(fixture.requests[1]?.body.messages))
+      .toContain('ExitPlanMode exists but is not enabled in this context')
+    await run.dispose()
     await expectQuiescent(harness.handles)
   })
 

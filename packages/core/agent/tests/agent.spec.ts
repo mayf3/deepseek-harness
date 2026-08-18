@@ -1,11 +1,12 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { Context, Service, symbols } from 'cordis'
+import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
 import AgentRegistry, {
   agentEvents,
   Inbox,
 } from '@deepseek-ai/dsh-agent'
+import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 
 import type {
   Agent,
@@ -142,6 +143,31 @@ describe('Inbox', () => {
 })
 
 describe('AgentRegistry', () => {
+  it('contributes Agent lookup and scoped Context providers while Typert is live', async () => {
+    const ctx = new Context()
+    const agentFiber = ctx.plugin(AgentRegistry)
+    await agentFiber
+    await ctx.plugin(TypertRegistry)
+    const agent = stubAgent('remote-agent')
+    const disposeAgent = ctx.agents.register(agent)
+
+    const lookup = ctx.typert.lookups.get('agent')
+    expect(lookup).toMatchObject({
+      parameter: 'agent',
+      wire: 'agentId',
+      hostTypeSymbol: '@deepseek-ai/dsh-agent#Agent',
+      wireTypeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
+    })
+    expect(lookup?.resolve(agent.id)).toBe(agent)
+    expect(ctx.typert.contexts.getHost('agent')?.resolve(agent.id)).toBe(agent.ctx)
+
+    disposeAgent()
+    expect(lookup?.resolve(agent.id)).toBeUndefined()
+    await agentFiber.dispose()
+    expect(ctx.typert.lookups.get('agent')).toBeUndefined()
+    expect(ctx.typert.contexts.getHost('agent')).toBeUndefined()
+  })
+
   it('registers exact entries, emits lifecycle events, and unregisters on owner disposal', async () => {
     const ctx = new Context()
     await ctx.plugin(AgentRegistry)

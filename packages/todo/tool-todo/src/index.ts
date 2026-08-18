@@ -5,8 +5,8 @@
  * @module @deepseek-ai/dsh-tool-todo
  */
 
-import type { Context } from 'cordis'
-import z from 'schemastery'
+import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -143,7 +143,6 @@ export function apply(ctx: Context, config: Config): void {
         return state
       },
       view: state => state,
-      // Fold semantics changed: turn/start clears the standing plan (was last-write-wins only).
       stateVersion: 2,
     })
   })

@@ -19,7 +19,7 @@ interface PackageManifest {
   devDependencies?: Record<string, string>
 }
 
-/** One package and the files participating in its invariant publication contract. */
+/** One package and the files participating in its invariant publication rules. */
 export interface PackageInvariantOwner {
   readonly dir: string
   readonly manifestPath: string
@@ -53,7 +53,7 @@ export function packageInvariantOwners(root: string): PackageInvariantOwner[] {
     })
 }
 
-/** Return all violations of the package-invariant companion contract. */
+/** Return all violations of the package-invariant companion rules. */
 export function collectPackageInvariantViolations(root: string): PackageInvariantViolation[] {
   const violations: PackageInvariantViolation[] = []
   for (const owner of packageInvariantOwners(root)) {
@@ -96,11 +96,11 @@ function checkManifest(
     addViolation(violations, owner.manifestPath, 'files must publish lib/invariant.js')
   }
   if (owner.packageName === '@deepseek-ai/dsh-invariants') return
-  if (manifest.peerDependencies?.['@deepseek-ai/dsh-invariants'] !== '^0.0.1') {
+  if (manifest.peerDependencies?.['@deepseek-ai/dsh-invariants'] !== 'workspace:^') {
     addViolation(
       violations,
       owner.manifestPath,
-      '@deepseek-ai/dsh-invariants must be a ^0.0.1 peerDependency',
+      '@deepseek-ai/dsh-invariants must be a workspace:^ peerDependency',
     )
   }
   if (manifest.devDependencies?.['@deepseek-ai/dsh-invariants'] !== 'workspace:^') {
@@ -118,15 +118,12 @@ function checkBuild(
   violations: PackageInvariantViolation[],
 ): void {
   const tsconfigPath = `${owner.dir}/tsconfig.json`
-  const tsconfig = JSON.parse(readFileSync(resolve(root, tsconfigPath), 'utf8')) as {
-    references?: Array<{ path?: string }>
-  }
   if (owner.packageName !== '@deepseek-ai/dsh-invariants'
-    && !tsconfig.references?.some(reference => reference.path === '../../support/invariants')) {
+    && !projectReferencesInvariants(root, owner.dir, tsconfigPath)) {
     addViolation(
       violations,
       tsconfigPath,
-      'TypeScript project references must include ../../support/invariants',
+      'TypeScript project references must include ../../runtime-diagnostics/invariants',
     )
   }
 
@@ -136,6 +133,31 @@ function checkBuild(
   if (!source.includes('lib/types/invariant.js')) {
     addViolation(violations, configPath, 'package build override must bundle lib/types/invariant.js')
   }
+}
+
+function projectReferencesInvariants(root: string, ownerDir: string, entryPath: string): boolean {
+  const ownerRoot = resolve(root, ownerDir)
+  const target = resolve(root, 'packages/runtime-diagnostics/invariants')
+  const pending = [resolve(root, entryPath)]
+  const visited = new Set<string>()
+  while (pending.length > 0) {
+    const configPath = pending.pop()
+    if (configPath === undefined) break
+    if (visited.has(configPath)) continue
+    visited.add(configPath)
+    const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+      references?: Array<{ path?: string }>
+    }
+    for (const reference of config.references ?? []) {
+      if (reference.path === undefined) continue
+      const referenced = resolve(dirname(configPath), reference.path)
+      if (referenced === target) return true
+      if (!referenced.startsWith(`${ownerRoot}${sep}`)) continue
+      const childConfig = referenced.endsWith('.json') ? referenced : resolve(referenced, 'tsconfig.json')
+      if (existsSync(childConfig)) pending.push(childConfig)
+    }
+  }
+  return false
 }
 
 function checkSource(

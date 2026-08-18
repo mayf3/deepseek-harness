@@ -32,22 +32,36 @@
  *         apiKeyEnv: ACME_GATEWAY_API_KEY
  *         api: openai-completions
  *         baseURL: https://gateway.acme.example/v1
+ *         # Reasoning dialect for a URL pi-ai cannot recognize.
+ *         compat:
+ *           thinkingFormat: deepseek
  *         models:
  *           - id: acme-large
  *             name: Acme Large
  *             contextWindow: 65536
  *             maxTokens: 4096
+ *           - id: acme-think
+ *             name: Acme Think
+ *             contextWindow: 262144
+ *             maxTokens: 32768
+ *             # key = selectable level, value = wire spelling; only off may
+ *             # leave the value empty (supported, send nothing).
+ *             reasoningEfforts:
+ *               off:
+ *               high: high
+ *               max: ultra
  * ```
  *
  * @module @deepseek-ai/dsh-llm-pi-ai
  */
 
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
+import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigurableProvider } from '@deepseek-ai/dsh-llm'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { PiAiAdapter } from './adapter.ts'
-import { catalogProviderIds } from './catalog.ts'
+import { catalogProviderIds, catalogProviderTakesApiKey } from './catalog.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
@@ -55,7 +69,16 @@ import { discoverModels } from './discovery.ts'
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
 export { Config } from './config.ts'
-export type { PiAiModelProfile, PiAiProviderProfile, ResolvedPiAiProviderProfile } from './config.ts'
+export type {
+  PiAiCompatProfile,
+  PiAiModality,
+  PiAiModelOverride,
+  PiAiModelProfile,
+  PiAiProviderProfile,
+  PiAiReasoningEfforts,
+  PiAiThinkingFormat,
+  ResolvedPiAiProviderProfile,
+} from './config.ts'
 export { supportedProtocols } from './provider.ts'
 
 export const name = 'llm-pi-ai'
@@ -82,21 +105,43 @@ function registrationFacts(profiles: ReadonlyMap<string, ResolvedPiAiProviderPro
 }
 
 /**
- * The configurable-provider directory: every installed catalog route, plus
- * every route the current profiles declare. A hand-declared route has no
- * catalog entry, so without this union it would have no settings address and
- * configuration surfaces could neither show nor edit it.
+ * The configurable-provider directory: every installed catalog route this
+ * adapter can authenticate, plus every route the current profiles declare. A
+ * hand-declared route has no catalog entry, so without this union it would
+ * have no settings address and configuration surfaces could neither show nor
+ * edit it.
+ *
+ * The profile half is unconditional, which is what keeps a route already
+ * stored against a withheld provider editable and deletable rather than
+ * stranded in the settings document with nothing on the page to remove it.
  * @param profiles - the currently resolved provider profiles.
  * @returns the directory entries in catalog order, declared routes last.
  */
 function directoryEntries(
   profiles: ReadonlyMap<string, ResolvedPiAiProviderProfile>,
 ): LlmConfigurableProvider[] {
+  const catalog = new Set(catalogProviderIds())
   const entries = new Map<string, LlmConfigurableProvider>()
   const declare = (provider: string, displayName: string): void => {
-    entries.set(provider, { provider, displayName, settingsNs: NS, settingsPath: ['providers', provider] })
+    entries.set(provider, {
+      provider,
+      displayName,
+      settingsNs: NS,
+      settingsPath: ['providers', provider],
+      // Membership of the installed catalog, not of the settings document:
+      // narrowing a shipped provider's models stores a profile too, and that
+      // route is still one pi-ai knows.
+      declared: !catalog.has(provider),
+    })
   }
-  for (const provider of catalogProviderIds()) declare(provider, provider)
+  // A provider whose only native method is OAuth leaves this adapter nothing
+  // to authenticate with, so offering it would put a card on the settings page
+  // whose own posture — no key, credentials discovered by the provider — fails
+  // every request. Catalog *membership* is unaffected, so `declare` above still
+  // answers what pi-ai ships.
+  for (const provider of catalog) {
+    if (catalogProviderTakesApiKey(provider)) declare(provider, provider)
+  }
   for (const [provider, profile] of profiles) declare(provider, profile.displayName)
   return [...entries.values()]
 }
@@ -131,7 +176,6 @@ export function apply(ctx: Context, config: Config): void {
     provider: string,
     profile: ResolvedPiAiProviderProfile,
   ): Promise<string | undefined> => {
-    if (profile.apiKey !== undefined) return profile.apiKey
     const ref = profile.apiKeyEnv
     // Only a profile that names no credential at all defers to pi-ai's
     // provider-native discovery. Once one is named, a miss must fail loud:
@@ -142,9 +186,8 @@ export function apply(ctx: Context, config: Config): void {
     const credentials = ctx.get('credentials')
     const hit = credentials !== undefined
       ? (await credentials.resolve(ref))?.value
-      // Without the seam, read exactly the named variable so a plain
-      // cordis.yml composition works from the environment alone.
-      : process.env[ref]
+      // Without the seam the environment is the whole credential plane.
+      : launchEnvironmentOf(ctx).get(ref)?.value
     if (hit !== undefined && hit.length > 0) return assertUsableApiKey(hit, 'llm-pi-ai', ref)
     throw new LlmError(
       `llm-pi-ai: no credential for provider route "${provider}"; its profile resolves ${ref}, which is not`
@@ -154,7 +197,17 @@ export function apply(ctx: Context, config: Config): void {
     )
   }
 
-  const adapter = new PiAiAdapter({ profiles, resolveApiKey })
+  const adapter = new PiAiAdapter({
+    profiles,
+    resolveApiKey,
+    resolveAttachments: () => ctx.get('attachments'),
+    onReplayDegrade: ({ provider, model, reason }) => {
+      ctx.logger.warn(
+        `llm-pi-ai: unusable replay state on assistant history for route "${provider}/${model}";`
+        + ` sending that message as provider-neutral content (${reason})`,
+      )
+    },
+  })
   // The full installed catalog is configurable from the moment the plugin
   // mounts — dormant or not — so configuration surfaces can offer every
   // pi-ai provider before any route exists. Hand-declared routes join it as

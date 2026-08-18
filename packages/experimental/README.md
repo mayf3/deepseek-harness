@@ -1,7 +1,12 @@
-# experimental/ — experimental and internal packages
+# experimental/ — private experimental packages
 
 English | [中文](README.zh.md)
 
-This group hosts team-shared engineering and product-manager prototypes plus internal-only Cordis plugins. It is excluded from official releases; packages move to their product-role group before release.
+This group contains prototypes and internal-only Cordis plugins that use the repository's real runtime without joining an official release. Its packages are private, carry no stability or support promise, and retain the same engineering, security, documentation, lifecycle, testing, and snapshot requirements as release packages.
 
-No packages live here yet. The [subtree rules](AGENTS.md) define the no-warranty, dependency, and promotion boundaries.
+| Package | Role | ctx key |
+|---|---|---|
+| `team/` | Implicit-root Agent Teams roster, durable peer mailbox, shared task DAG, and runtime coordination | `ctx.teams` |
+| `tool-team/` | Scoped model-facing Agent Teams tools and collaboration guidance | — |
+
+The [subtree rules](AGENTS.md) define dependency isolation, release exclusion, and promotion.

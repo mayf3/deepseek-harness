@@ -136,10 +136,9 @@ function formatDiagnostics(diagnostics: readonly ts.Diagnostic[], blocks: Block[
 }
 
 /**
- * Reuse the host-aggregate references from a temp project one directory below
- * root. Doc fragments speak the host vocabulary, so the standalone project
- * seeds tsconfig.host.json (never the root solution: flattening host+client
- * into one program collides the cordis Context merges).
+ * Reuse the Host aggregate references from a temp project one directory below
+ * root. Generated Client API examples opt out because their declarations do
+ * not exist until Host tsdown has run.
  */
 function workspaceReferences(): { path: string }[] {
   const file = join(root, 'tsconfig.host.json')
@@ -222,7 +221,7 @@ const { primary: all, derivatives } = partitionPairedMarkdownDerivatives(
 const checked = all.filter(b => b.kind === 'check')
 const ignored = all.filter(b => b.kind === 'ignore')
 // Only compile-eligible fences belong in the opt-out ratio; every other skipped
-// kind has an independent verifier named in BlockKind's contract above.
+// kind has an independent verifier named in the BlockKind rules above.
 const ratioDenominator = checked.length + ignored.length
 
 if (checked.length === 0) {

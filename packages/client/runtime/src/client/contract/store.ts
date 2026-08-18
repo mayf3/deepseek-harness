@@ -2,11 +2,11 @@
  * Snapshot store engine (zustand vanilla + immer + subscribeWithSelector +
  * rafFlush middleware + opt-in persist + dev freeze) plus the declarative
  * shell over it: {@link defineStore} bakes an init/persist/actions literal
- * into a {@link StoreHandle}, the registration-side store seat of the slot
- * terminal design (§4). Lives in the React-free runtime (store-migration
- * ruling: the data layer owns its engine; web-react is shell-only React
+ * into a {@link StoreHandle}, the registration-side store seat of slot
+ * terminals. Lives in the React-free runtime (the data layer owns its
+ * engine; ui-renderer is shell-only React
  * glue): engine products are bare observables — subscribe/getSnapshot/
- * update/set, NO selector hook. Hook synthesis is web-react's (the one
+ * update/set, NO selector hook. Hook synthesis is ui-renderer's (the one
  * uSES bridge, cached per source at the binding site).
  */
 import { createStore, type StoreApi } from 'zustand/vanilla'
@@ -18,7 +18,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 
 // Store contract types are ui-slots authority; re-exported beside the engine
-// so store consumers get one import surface.
+// so store consumers get one import path.
 export type {
   ActionsDecl, BakedActions, BoundActions, StoreFactory, StoreHandle, StoreInstance, StoreSpec,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -26,7 +26,7 @@ export type {
 /** Minimal observable snapshot source: Session objects and snapshot stores both satisfy it. */
 export interface ObservableSnapshot<T> { getSnapshot(): T; subscribe(fn: () => void): () => void }
 
-/** Writable snapshot store (bare data face; React selector hooks are synthesized in web-react). */
+/** Writable snapshot store (bare data face; React selector hooks are synthesized in ui-renderer). */
 export interface SnapshotStore<T> extends ObservableSnapshot<T> {
   /**
    * Mutate the state through an immer draft.
@@ -165,7 +165,7 @@ function deepFreeze(value: unknown): void {
 
 /** A live engine instance: the contract instance plus the raw engine store. */
 export interface EngineStoreInstance<T, A extends ActionsDecl<T>> extends StoreInstance<T, A> {
-  /** The underlying engine store (framework/test surface; components never see it). */
+  /** The underlying engine store (framework/test API; components never see it). */
   readonly store: SnapshotStore<T>
 }
 
