@@ -100,6 +100,7 @@ type StubMode =
   | 'paged-scrollback'
   | 'with-echo'
   | 'exit-after-send'
+  | 'prompt-collision'
 
 const START_PATTERN = /__DSH_PERSISTENT_PWSH_START_[^_]+(?:-[^_]+)*__/
 const END_PATTERN = /__DSH_PERSISTENT_PWSH_END_[^:]+:/
@@ -215,7 +216,9 @@ class StubTerminalSession implements TerminalBackendSession {
     }
     const commandOutput = this.mode === 'large'
       ? 'x'.repeat(100)
-      : this.mode === 'nonzero' ? '' : 'hello from stub'
+      : this.mode === 'nonzero' ? ''
+        : this.mode === 'prompt-collision' ? this.motd
+          : 'hello from stub'
     const exitCode = this.mode === 'nonzero' ? 7 : 0
     const output = `${start ?? ''}\n${commandOutput}\n${end ?? ''}${exitCode}\n${this.motd}`
     this.scrollback += output
@@ -360,6 +363,15 @@ describe('tool-pwsh-persistent', () => {
     expect(result).not.toContain('__DSH_PERSISTENT_PWSH_START_')
     expect(result).not.toContain('__DSH_PERSISTENT_PWSH_END_')
     expect(result).not.toContain('Invoke-Expression')
+  })
+
+  it('preserves command output that equals the private shell prompt', async () => {
+    const { ctx, owner, stub } = await setup({ backendType: 'stub' })
+    await call(ctx, owner, 'warm up')
+    const session = stub.sessions[0]!
+
+    session.mode = 'prompt-collision'
+    expect(text(await call(ctx, owner, 'complete prompt collision'))).toBe(session.motd)
   })
 
   it('reports the exit path when the shell exits between send settlement and the next poll', async () => {

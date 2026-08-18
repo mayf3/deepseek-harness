@@ -124,7 +124,7 @@ function commandOutput(
   // scrolled out and extraction fell back to the echoed copy.
   captured = captured.replaceAll(wrapper, '')
   return {
-    text: stripPrompt(captured.replace(/^\r?\n/, '')),
+    text: captured.replace(/^\r?\n/, '').replace(/\r?\n$/, ''),
     incomplete: startMarker < 0,
     exitCode: Number(status),
   }
