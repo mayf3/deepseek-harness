@@ -24,7 +24,7 @@ Status: implemented
 
 #### Windows 池
 
-`dsh-win-ci`：公司内部 Windows CI 服务器（一台 96 核 / 580 GB 机器）上 32 个常驻运行器实例（计划任务 `GH-Runner-01`…`GH-Runner-32`）。标签：`[self-hosted, dsh-win-ci, windows]`。镜像必须预装 Node 24、pnpm、Git（Git Bash 在 `PATH` 上，即 `C:\Program Files\Git\bin`——`bash` 工具按名称 spawn `bash`）、PowerShell 7，并为符号链接支持启用开发人员模式。切换前先看 `serial / windows (self-hosted standby)` 最近一次运行：绿色热备验证该池能端到端执行 `check:ci:windows-complete`。
+`dsh-win-ci`：公司内部 Windows CI 服务器（一台 96 核 / 580 GB 机器）上 32 个常驻运行器实例（计划任务 `GH-Runner-01`…`GH-Runner-32`）。标签：`[self-hosted, dsh-win-ci, windows]`。镜像必须预装 Node 24、pnpm、Git（Git Bash 在 `PATH` 上，即 `C:\Program Files\Git\bin`——`bash` 工具按名称 spawn `bash`）、PowerShell 7、带 x64 MSVC 工具链与 Windows SDK 的 Visual Studio C++ Build Tools，并为符号链接支持启用开发人员模式。切换前先看 `serial / windows (self-hosted standby)` 最近一次运行：该通道会在完整聚合前编译并运行与 `windows-native` 相同的两份 Win32 header ABI probe，因此绿色热备会同时验证编译器前置条件与 `check:ci:windows-complete` 端到端流程。
 
 ### 切换步骤（任何具备写权限的协作者，约 1 分钟，无需合并）
 

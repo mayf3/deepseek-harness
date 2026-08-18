@@ -24,7 +24,7 @@ The decision belongs at workflow level because cancellation applies to the whole
 
 #### Windows pool
 
-`dsh-win-ci`: 32 always-on runner instances (scheduled tasks `GH-Runner-01`…`GH-Runner-32`) on the in-house Windows CI server (one 96-core / 580 GB machine). Labels: `[self-hosted, dsh-win-ci, windows]`. The image must preinstall Node 24, pnpm, Git (with Git Bash on `PATH`, i.e. `C:\Program Files\Git\bin` — the `bash` tool spawns `bash` by name), PowerShell 7, and enable Developer Mode for symlink support. Check the latest `serial / windows (self-hosted standby)` run before switching: a green standby verifies the pool can execute `check:ci:windows-complete` end-to-end.
+`dsh-win-ci`: 32 always-on runner instances (scheduled tasks `GH-Runner-01`…`GH-Runner-32`) on the in-house Windows CI server (one 96-core / 580 GB machine). Labels: `[self-hosted, dsh-win-ci, windows]`. The image must preinstall Node 24, pnpm, Git (with Git Bash on `PATH`, i.e. `C:\Program Files\Git\bin` — the `bash` tool spawns `bash` by name), PowerShell 7, Visual Studio C++ Build Tools with the x64 MSVC toolchain and Windows SDK, and enable Developer Mode for symlink support. Check the latest `serial / windows (self-hosted standby)` run before switching: before the complete aggregate, that lane compiles and runs the same two Win32 header ABI probes as `windows-native`, so a green standby verifies both the compiler prerequisite and `check:ci:windows-complete` end-to-end.
 
 ### Switch (any repository writer, ~1 minute, no merge)
 

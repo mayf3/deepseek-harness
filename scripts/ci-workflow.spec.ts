@@ -49,8 +49,8 @@ describe('CI workflow', () => {
     const node24Coverage = workflow.jobs['node-24-coverage']
     const node24Consumers = workflow.jobs['node-24-consumers']
     const aggregate = workflow.jobs['all-checks-passed']
-    if (!Array.isArray(windows.steps) || !Array.isArray(aggregate.needs)) {
-      throw new TypeError('Windows job must define steps and the aggregate must define needs')
+    if (!Array.isArray(windows.steps) || !Array.isArray(serialWindows.steps) || !Array.isArray(aggregate.needs)) {
+      throw new TypeError('Windows jobs must define steps and the aggregate must define needs')
     }
     const commandSteps = windows.steps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
@@ -78,12 +78,7 @@ describe('CI workflow', () => {
     const nativeCommandSteps = (windowsNative.steps as unknown[]).filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
-    expect(nativeCommandSteps.some(step => (
-      step.run.includes('packages/subprocess/win32-process/verify/abi-probe.cpp')
-      && step.run.includes('packages/sandbox/sandbox-windows-acl/verify/abi-probe.cpp')
-      && step.run.includes('vswhere.exe')
-      && step.run.includes('vcvars64.bat')
-    ))).toBe(true)
+    expect(nativeCommandSteps.map(step => step.run)).toContain('./scripts/verify-win32-abi.ps1')
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
 
     // wine-apt-cache: master-only, seeds the Wine apt cache.
@@ -94,6 +89,16 @@ describe('CI workflow', () => {
     expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
+    const serialWindowsCommandSteps = serialWindows.steps.filter((step): step is Record<string, unknown> & { run: string } => (
+      isRecord(step) && typeof step.run === 'string'
+    ))
+    expect(serialWindowsCommandSteps.map(step => step.run)).toContain('./scripts/verify-win32-abi.ps1')
+    expect(serialWindowsCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
+    const abiProbeScript = readFileSync(resolve(root, 'scripts/verify-win32-abi.ps1'), 'utf8')
+    expect(abiProbeScript).toContain('vswhere.exe')
+    expect(abiProbeScript).toContain('vcvars64.bat')
+    expect(abiProbeScript).toContain('packages/subprocess/win32-process/verify/abi-probe.cpp')
+    expect(abiProbeScript).toContain('packages/sandbox/sandbox-windows-acl/verify/abi-probe.cpp')
 
     // Aggregate: Wine `windows` required, native `windows-native` excluded.
     expect(aggregate.needs).toContain('windows')

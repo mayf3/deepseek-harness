@@ -490,22 +490,7 @@ jobs:
 
       - name: Compile and run Win32 header ABI probes
         shell: pwsh
-        run: |
-          $probeRoot = Join-Path $env:RUNNER_TEMP 'dsh-win32-abi-probes'
-          New-Item -ItemType Directory -Force -Path $probeRoot | Out-Null
-          $processProbe = Join-Path $probeRoot 'win32-process.exe'
-          $sandboxProbe = Join-Path $probeRoot 'sandbox-windows-acl.exe'
-          $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio\Installer\vswhere.exe'
-          if (-not (Test-Path $vswhere)) { throw "Visual Studio locator not found: $vswhere" }
-          $vsInstall = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
-          if (-not $vsInstall) { throw 'Visual Studio C++ build tools not found' }
-          $vcvars = Join-Path $vsInstall 'VC\Auxiliary\Build\vcvars64.bat'
-          if (-not (Test-Path $vcvars)) { throw "MSVC environment script not found: $vcvars" }
-          $processSource = Join-Path $PWD 'packages/subprocess/win32-process/verify/abi-probe.cpp'
-          $sandboxSource = Join-Path $PWD 'packages/sandbox/sandbox-windows-acl/verify/abi-probe.cpp'
-          $probeCommand = "call `"$vcvars`" && cl /nologo /std:c++20 /EHsc /W4 /Fe:`"$processProbe`" `"$processSource`" && `"$processProbe`" && cl /nologo /std:c++20 /EHsc /W4 /Fe:`"$sandboxProbe`" `"$sandboxSource`" advapi32.lib && `"$sandboxProbe`""
-          & cmd.exe /d /s /c $probeCommand
-          if ($LASTEXITCODE -ne 0) { throw 'Win32 ABI probe compilation or execution failed' }
+        run: ./scripts/verify-win32-abi.ps1
 
       - name: Run complete native Windows gate inventory
         shell: pwsh
@@ -709,6 +694,10 @@ jobs:
       - name: Install (immutable)
         shell: pwsh
         run: pnpm install --frozen-lockfile
+
+      - name: Compile and run Win32 header ABI probes
+        shell: pwsh
+        run: ./scripts/verify-win32-abi.ps1
 
       - name: Run complete unsharded Windows gate inventory serially
         shell: pwsh
