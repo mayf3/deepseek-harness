@@ -143,15 +143,27 @@ function translationPairTarget(targetPath: string, context: TranslationLinkConte
   return { source, zh }
 }
 
+function relativeExpectedPath(
+  context: TranslationLinkContext,
+  expectedPath: string,
+  rawPath: string,
+): string {
+  const relative = posix.relative(posix.dirname(context.sourcePath), expectedPath)
+  const encoded = encodeURI(relative)
+  return rawPath.startsWith('./') && !encoded.startsWith('.') ? `./${encoded}` : encoded
+}
+
 function expectedLocalePath(
   rawPath: string,
   locale: 'en' | 'zh',
+  context: TranslationLinkContext,
+  expectedPath: string,
 ): string {
   if (locale === 'zh' && rawPath.endsWith('.md') && !rawPath.endsWith('.zh.md')) {
     return rawPath.replace(/\.md$/, '.zh.md')
   }
   if (locale === 'en' && rawPath.endsWith('.zh.md')) return rawPath.replace(/\.zh\.md$/, '.md')
-  return rawPath
+  return relativeExpectedPath(context, expectedPath, rawPath)
 }
 
 function resolveTranslationLink(
@@ -174,7 +186,7 @@ function resolveTranslationLink(
     targetPath,
     suffix: authored.suffix,
     expectedPath,
-    expectedUrl: `${expectedLocalePath(authored.path, locale)}${authored.suffix}`,
+    expectedUrl: `${expectedLocalePath(authored.path, locale, context, expectedPath)}${authored.suffix}`,
     locale,
   }
 }

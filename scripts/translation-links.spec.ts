@@ -69,6 +69,22 @@ describe('translation link locale validation', () => {
     }])
   })
 
+  it('rewrites an encoded exact filename without changing its query or fragment suffix', () => {
+    const root = fixture()
+    const input = '[概览](reference%2Emd?view=full&amp;mode=all#overview)\n'
+    expect(translationLinkLocaleViolations(
+      input,
+      linkContext(root, 'docs/guide.zh.md'),
+    )[0]).toMatchObject({
+      url: 'reference%2Emd?view=full&amp;mode=all#overview',
+      expectedUrl: 'reference.zh.md?view=full&amp;mode=all#overview',
+    })
+    expect(rewriteTranslationLinkLocales(input, linkContext(root, 'docs/guide.zh.md'))).toEqual({
+      content: '[概览](reference.zh.md?view=full&amp;mode=all#overview)\n',
+      rewritten: 1,
+    })
+  })
+
   it('accepts the target-locale sibling and an out-of-scope target with its own sibling', () => {
     const root = fixture()
     expect(translationLinkLocaleViolations(
