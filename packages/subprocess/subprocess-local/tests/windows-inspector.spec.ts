@@ -9,21 +9,22 @@ import type {
   NativePtr,
   ProcessEntry,
   WindowsProcessInspectorInternals,
+  WindowsProcessState,
 } from '@deepseek-ai/dsh-subprocess-local/src/windows-inspector.ts'
 
 function fakeInternals() {
   const entries: ProcessEntry[] = []
-  const times = new Map<number, string>()
+  const states = new Map<number, WindowsProcessState>()
   const kills: Array<[number, boolean]> = []
   return {
     internals: {
       snapshot: () => [...entries],
-      creationTime: pid => times.get(pid),
+      processState: pid => states.get(pid),
       taskkill: (pid: number, force: boolean) => { kills.push([pid, force]) },
     } satisfies WindowsProcessInspectorInternals,
-    add(entry: ProcessEntry, started?: string): void {
+    add(entry: ProcessEntry, started?: string, active = true): void {
       entries.push(entry)
-      if (started !== undefined) times.set(entry.pid, started)
+      if (started !== undefined) states.set(entry.pid, { started, active })
     },
     kills,
   }
@@ -80,6 +81,9 @@ describe('WindowsProcessInspector (injected internals)', () => {
     expect(inspector.isAlive({ pid: 11, started: 't11' })).toBe(true)
     expect(inspector.isAlive({ pid: 11, started: 'stale' })).toBe(false)
     expect(inspector.isAlive({ pid: 99, started: 't99' })).toBe(false)
+
+    fake.add({ pid: 12, parentPid: 10 }, 't12', false)
+    expect(inspector.isAlive({ pid: 12, started: 't12' })).toBe(false)
   })
 
   it('maps SIGKILL to a forced taskkill and other signals to the grace form', () => {
@@ -94,8 +98,10 @@ describe('WindowsProcessInspector (injected internals)', () => {
   it('signals a process only while its start identity matches', () => {
     const fake = fakeInternals()
     fake.add({ pid: 10, parentPid: 0 }, 't10')
+    fake.add({ pid: 11, parentPid: 10 }, 't11', false)
     const inspector = new WindowsProcessInspector(fake.internals)
     inspector.signalProcess({ pid: 10, started: 't10' }, 'SIGKILL')
+    inspector.signalProcess({ pid: 11, started: 't11' }, 'SIGKILL')
     inspector.signalProcess({ pid: 10, started: 'stale' }, 'SIGTERM')
     expect(fake.kills).toEqual([[10, true]])
   })
