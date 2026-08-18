@@ -8,7 +8,7 @@ English | [中文](2026-08-18-rail-search-outside-click-self-dismissal.zh.md)
 
 The collapsed sidebar's rail search button arms the rail gesture (`searchOnExpand`), expands the search affordance (`searchExpanded`), and requests sidebar expansion — designed to land the user in a focused search input once the column slides open. In a real browser the gesture never completed: the sidebar expanded but the search box stayed closed and unfocused.
 
-The initiating click destroys its own effect. React dispatches the rail button's handler mid-bubble; the state flip renders the wide header and mounts the browser's outside-click dismissal listener on `document` during that same dispatch. The click then keeps bubbling and reaches `document` with the now-unmounted rail button as its target — outside `searchRoot` — so the freshly mounted listener immediately collapses the search it was opening. The package test missed this because `fireEvent.click` on the button does not re-bubble through listeners mounted during dispatch the way a real browser event does.
+The initiating click destroys its own effect. React dispatches the rail button's handler mid-bubble; the state flip renders the wide header and mounts the WorkspaceBrowser's outside-click dismissal listener on `document` during that same dispatch. The click then keeps bubbling and reaches `document` with the now-unmounted rail button as its target — outside `searchRoot` — so the freshly mounted listener immediately collapses the search it was opening. The package test missed this because `fireEvent.click` on the button does not re-bubble through listeners mounted during dispatch the way a real browser event does.
 
 ## Decision
 
@@ -24,4 +24,4 @@ The outside-click dismissal listener does not mount while the rail gesture is in
 
 ## Consequences
 
-The rail search gesture works end to end in the assembled application (verified against a real `dsh web` server via scripted browser interaction: expansion, `aria-expanded`, and input focus after the slide). During the in-flight window (~300 ms column slide) an outside click does not dismiss the search; that window ends the moment focus lands. The regression test pins the document-level bubbling order that unit-level `fireEvent` alone does not exercise.
+The rail search gesture works end to end in the assembled application, pinned by an `apps/web` real-browser scenario: a real click travels through the collapsed rail, the wide flip, and the document-level bubble, and the search stays expanded with focus landing in the input. During the in-flight window (~300 ms column slide) an outside click does not dismiss the search; that window ends the moment focus lands. The package-level regression test additionally pins the guard's timing at the unit level.
