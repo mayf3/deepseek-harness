@@ -2,6 +2,6 @@
   - heading "Couldn’t open file" [level=2]
   - button "Close":
     - img
-  - paragraph: path open failed: xdg-open is not available
+  - paragraph: "path open failed: xdg-open is not available"
   - button "Cancel"
   - button "Retry"
