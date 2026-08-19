@@ -299,6 +299,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run compatibility smokes
+        env:
+          DSH_BUILD_CLIENT_PROFILE: official
         run: pnpm run check:node-compat
 
   python-sdk:
