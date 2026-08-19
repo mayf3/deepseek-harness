@@ -787,7 +787,8 @@ type HistorySource =
 function projectionsFor(ctx: Context, session: Session): SessionProjectionsBlock | undefined {
   const registry = ctx.get('sessionProjections')
   if (registry === undefined) return undefined
-  return registry.snapshot(session)
+  // The history block is a wire payload: host-only units never leave the host.
+  return registry.snapshot(session, { wireOnly: true })
 }
 
 /**
@@ -807,7 +808,7 @@ async function listProjectionsFor(
 ): Promise<SessionProjectionsBlock | undefined> {
   try {
     const block = session !== undefined
-      ? ctx.get('sessionProjections')?.snapshot(session)
+      ? ctx.get('sessionProjections')?.snapshot(session, { wireOnly: true })
       : await ctx.get('sessionProjectionCache')?.cachedSnapshot(meta)
     return block !== undefined && Object.keys(block.values).length > 0 ? block : undefined
   } catch (error) {
@@ -823,7 +824,8 @@ function detachedProjectionsFor(
 ): SessionProjectionsBlock | undefined {
   const registry = ctx.get('sessionProjections')
   if (registry === undefined) return undefined
-  return registry.restore({}, events, 0).snapshot
+  // The history block is a wire payload: host-only units never leave the host.
+  return registry.restore({}, events, 0, { wireOnly: true }).snapshot
 }
 
 /**
