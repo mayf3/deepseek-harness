@@ -8,7 +8,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, resolve } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -24,6 +26,42 @@ import { CodexAppServerWire } from './wire.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
+/** Bounded stderr tail retained only to recognize the wrapper's payload error. */
+const CODEX_STDERR_TAIL_BYTES = 16 * 1024
+
+interface CodexPackageManifest {
+  readonly bin: {
+    readonly codex: string
+  }
+}
+
+const codexPackageJsonPath = createRequire(import.meta.url).resolve('@openai/codex/package.json')
+const codexPackageManifest = JSON.parse(
+  readFileSync(codexPackageJsonPath, 'utf8'),
+) as CodexPackageManifest
+
+/** Absolute package-local JavaScript wrapper selected by the package manifest. */
+const CODEX_PACKAGE_BIN = resolve(
+  dirname(codexPackageJsonPath),
+  codexPackageManifest.bin.codex,
+)
+
+function missingPayloadDiagnostic(stderr: string): string | undefined {
+  const platformPackage = /Missing optional dependency (@openai\/codex-[a-z0-9-]+)/
+    .exec(stderr)?.[1]
+  return platformPackage === undefined
+    ? undefined
+    : `Missing optional dependency ${platformPackage}`
+}
+
+function withMissingPayloadDiagnostic(
+  error: Error,
+  stderr: string,
+): Error {
+  const diagnostic = missingPayloadDiagnostic(stderr)
+  if (diagnostic === undefined || error.message.includes(diagnostic)) return error
+  return new Error(`${error.message}: ${diagnostic}`, { cause: error })
+}
 
 /** Profile-selectable non-interactive Codex permission mode. */
 export type CodexPermissionMode =
@@ -42,20 +80,11 @@ export const CODEX_PERMISSION_MODES = [
 export const DEFAULT_CODEX_PERMISSION_MODE: CodexPermissionMode = 'never'
 
 /**
- * Resolve the fixed app-server command for a platform.
- *
- * Windows npm and pnpm installs expose `codex.cmd`, which requires `cmd.exe`;
- * the argv is constant so no task or configuration text enters the
- * shell boundary.
- * @param platform - host platform used to select the executable boundary.
- * @returns argv for the fixed Codex app-server command.
+ * Fixed package-local app-server command, independent of the host `PATH`.
+ * @returns Node, the official wrapper, and the fixed app-server arguments.
  */
-export function codexAppServerArgv(
-  platform: NodeJS.Platform = process.platform,
-): string[] {
-  return platform === 'win32'
-    ? ['cmd.exe', '/d', '/s', '/c', 'codex', 'app-server', '--stdio']
-    : ['codex', 'app-server', '--stdio']
+export function codexAppServerArgv(): string[] {
+  return [process.execPath, CODEX_PACKAGE_BIN, 'app-server', '--stdio']
 }
 
 /** Fully resolved inputs for one Codex app-server run. */
@@ -154,8 +183,13 @@ export async function startCodexRun(
     child.stdin as NonNullable<SubprocessHandle['stdin']>,
     spec.permissionMode,
   )
+  let stderrTail = Buffer.alloc(0)
   const onStderr = (chunk: Buffer | string): void => {
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+    const combined = Buffer.concat([stderrTail, bytes])
+    stderrTail = combined.length > CODEX_STDERR_TAIL_BYTES
+      ? Buffer.from(combined.subarray(combined.length - CODEX_STDERR_TAIL_BYTES))
+      : combined
     wire.observeStderr(bytes.toString())
     try {
       // Synchronous fd forwarding preserves byte order without owning a
@@ -174,6 +208,9 @@ export async function startCodexRun(
   const disposeProcess = async (): Promise<void> => {
     try {
       await disposeCodexChild(wire, child)
+      // Let stderr already queued by the process close reach both bounded
+      // diagnostic consumers before their listeners are detached.
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
     } finally {
       child.stderr?.off('data', onStderr)
       child.stderr?.off('error', onStderrError)
@@ -206,18 +243,19 @@ export async function startCodexRun(
     await Promise.race([wire.startThread(spec.cwd, request.signal), processFailure])
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
+    const startupCause = thrown(error)
     try {
       await disposeProcess()
     } catch (disposeError: unknown) {
       throw new AggregateError(
-        [thrown(error), thrown(disposeError)],
+        [withMissingPayloadDiagnostic(startupCause, stderrTail.toString()), thrown(disposeError)],
         'subagent-codex: startup failed and app-server cleanup also failed',
       )
     }
     if (runAbort.signal.aborted) {
       throw new Error('subagent-codex: request was aborted before run publication')
     }
-    throw thrown(error)
+    throw withMissingPayloadDiagnostic(startupCause, stderrTail.toString())
   }
 
   const collectOutput = (): ContentBlock[] => wire.collectOutput()
@@ -232,7 +270,7 @@ export async function startCodexRun(
         // Give stderr data already queued in Node one turn to reach the wire
         // before settlement snapshots the diagnostic; later OS data is best-effort.
         await new Promise<void>((resolve) => { setImmediate(resolve) })
-        throw error
+        throw withMissingPayloadDiagnostic(thrown(error), stderrTail.toString())
       }
     },
     collectOutput,

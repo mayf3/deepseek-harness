@@ -637,9 +637,6 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
-      ],
-      "ignoreDependencies": [
-        "@openai/codex"
       ]
     },
     "packages/subagent/subagent-claude-code": {
