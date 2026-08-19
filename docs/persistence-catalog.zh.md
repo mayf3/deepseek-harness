@@ -92,7 +92,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-来源：[`packages/core/session/src/types.ts:336`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:343`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:372`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:404`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:340`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:347`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:376`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:408`](../packages/core/session/src/types.ts)
 
 ## 事件
 
@@ -228,14 +228,18 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * Assembled assistant message for one step (derived history uses this).
  * Carries the step's `usage` when the adapter reported token accounting, so
  * the model output and its accounting travel together (there is no separate
- * usage record). `usage` is absent when the adapter reported none.
+ * usage record). `usage` is absent when the adapter reported none. A turn
+ * cancelled mid-stream finalizes its delivered text/reasoning prefix as this
+ * event with `interrupted: true`; undispatched tool calls are absent. The
+ * marker distinguishes that prefix without re-deriving interruption from turn
+ * boundaries. An aborted turn with no such event streamed no visible content.
  */
-'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage }
+'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true }
 ```
 
 类型：[TokenUsage](subsystems/llm-streaming.md)
 
-来源：[`packages/core/session/src/types.ts:273`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:277`](../packages/core/session/src/types.ts)
 
 ### `command/*`
 
@@ -258,7 +262,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/interaction/commands/src/types.ts:95`](../packages/interaction/commands/src/types.ts)
+来源：[`packages/interaction/commands/src/types.ts:103`](../packages/interaction/commands/src/types.ts)
 
 <a id="commandrun--log-only"></a>
 
@@ -278,7 +282,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'command/run': { commandId: CommandId; name: string; args?: string; source: CommandSource }
 ```
 
-来源：[`packages/interaction/commands/src/types.ts:88`](../packages/interaction/commands/src/types.ts)
+来源：[`packages/interaction/commands/src/types.ts:96`](../packages/interaction/commands/src/types.ts)
 
 ### `compaction/*`
 
@@ -532,7 +536,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'plan/mode': { active: boolean }
 ```
 
-来源：[`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/src/index.ts)
+来源：[`packages/plan/plan-mode/src/index.ts:54`](../packages/plan/plan-mode/src/index.ts)
 
 ### `request/*`
 
@@ -548,7 +552,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'request/context': RequestContext
 ```
 
-来源：[`packages/core/session/src/types.ts:309`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:313`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -562,7 +566,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'request/header': { header: EpochHeader; reason: RequestHeaderReason }
 ```
 
-来源：[`packages/core/session/src/types.ts:304`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:308`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -637,7 +641,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'session/end-seed': Record<string, never>
 ```
 
-来源：[`packages/core/session/src/types.ts:332`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:336`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -783,7 +787,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[TodoItem](subsystems/session.md)
 
-来源：[`packages/core/session/src/types.ts:299`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:303`](../packages/core/session/src/types.ts)
 
 ### `tool/*`
 
@@ -802,7 +806,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[CallId](subsystems/core.md)
 
-来源：[`packages/core/session/src/types.ts:279`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:283`](../packages/core/session/src/types.ts)
 
 <a id="toolcode-dispatch--log-only"></a>
 
@@ -877,7 +881,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/core/session/src/types.ts:291`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:295`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 

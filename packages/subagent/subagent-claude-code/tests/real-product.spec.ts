@@ -4,12 +4,12 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  symlinkSync,
+  realpathSync,
   writeFileSync,
 } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import type {
@@ -21,7 +21,11 @@ import { Context } from '@deepseek-ai/cordis'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import type {
+  SubprocessHandle,
+  SubprocessOutcome,
+  SubprocessSpawnSpec,
+} from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as claudeCode from '../src/index.ts'
 import type { ClaudeCodePermissionMode } from '../src/run.ts'
@@ -32,6 +36,7 @@ import {
 } from './messages-fixture.ts'
 
 const observedSdkMessages = vi.hoisted((): SDKMessage[] => [])
+const sdkTestOverrides = vi.hoisted((): { maxTurns?: number } => ({}))
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
   const actual = await importOriginal<
@@ -39,8 +44,13 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
   >()
   return {
     ...actual,
-    query(options: Parameters<typeof actual.query>[0]): Query {
-      const query = actual.query(options)
+    query(params: Parameters<typeof actual.query>[0]): Query {
+      const query = actual.query(sdkTestOverrides.maxTurns === undefined
+        ? params
+        : {
+          ...params,
+          options: { ...params.options, maxTurns: sdkTestOverrides.maxTurns },
+        })
       // Observe the real SDK stream without replacing its protocol or CLI.
       return new Proxy(query, {
         get(target, property) {
@@ -112,6 +122,7 @@ afterEach(async () => {
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
   observedSdkMessages.length = 0
+  delete sdkTestOverrides.maxTurns
 })
 
 interface RealHarness {
@@ -121,33 +132,26 @@ interface RealHarness {
   readonly parent: Agent
   readonly workspace: string
   readonly env: Record<string, string>
-  readonly executable: string
 }
 
-async function realHarness(
-  behavior: MessagesBehavior,
-  permissionMode?: ClaudeCodePermissionMode,
-  nativeAllow: readonly string[] = [],
-): Promise<{
-  readonly harness: RealHarness
+interface RealInstanceFixture {
   readonly fixture: MessagesFixture
-}> {
+  readonly workspace: string
+  readonly env: Record<string, string>
+}
+
+async function realInstanceFixture(
+  behavior: MessagesBehavior,
+  nativeAllow: readonly string[] = [],
+): Promise<RealInstanceFixture> {
   const root = mkdtempSync(join(tmpdir(), 'dsh-claude-code-real-'))
   roots.push(root)
   const workspace = join(root, 'workspace')
   const claudeConfig = join(root, 'claude-config')
   const xdgConfig = join(root, 'xdg')
-  const nativeBin = join(root, 'native&%literal%!bang!bin')
   mkdirSync(workspace)
   mkdirSync(claudeConfig)
   mkdirSync(xdgConfig)
-  mkdirSync(nativeBin)
-  const executable = join(nativeBin, process.platform === 'win32' ? 'claude.cmd' : 'claude')
-  if (process.platform === 'win32') {
-    writeFileSync(executable, `@echo off\r\n"${claudeBin}" %*\r\n`)
-  } else {
-    symlinkSync(claudeBin, executable)
-  }
   writeFileSync(
     join(claudeConfig, 'settings.json'),
     `${JSON.stringify({
@@ -161,7 +165,6 @@ async function realHarness(
   const fixture = await startMessagesFixture(behavior)
   fixtures.push(fixture)
   const env = {
-    PATH: `${nativeBin}${delimiter}${process.env.PATH ?? ''}`,
     ANTHROPIC_API_KEY: fakeKey,
     ANTHROPIC_BASE_URL: fixture.baseUrl,
     CLAUDE_CONFIG_DIR: claudeConfig,
@@ -176,6 +179,16 @@ async function realHarness(
     ALL_PROXY: '',
     NO_PROXY: '127.0.0.1,localhost',
   }
+  return { fixture, workspace, env }
+}
+
+interface RealRuntime {
+  readonly ctx: Context
+  readonly handles: SubprocessHandle[]
+  readonly spawnSpecs: SubprocessSpawnSpec[]
+}
+
+async function realRuntime(): Promise<RealRuntime> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(SubagentRuntime)
@@ -189,18 +202,38 @@ async function realHarness(
     handles.push(handle)
     return handle
   })
+  return { ctx, handles, spawnSpecs }
+}
+
+async function realHarness(
+  behavior: MessagesBehavior,
+  permissionMode?: ClaudeCodePermissionMode,
+  nativeAllow: readonly string[] = [],
+): Promise<{
+  readonly harness: RealHarness
+  readonly fixture: MessagesFixture
+}> {
+  const instance = await realInstanceFixture(behavior, nativeAllow)
+  const { ctx, handles, spawnSpecs } = await realRuntime()
   await ctx.plugin(claudeCode, {
-    env,
+    env: instance.env,
     ...permissionMode === undefined ? {} : { permissionMode },
     disposeGraceMs: 3_000,
   })
   const parent = {
     id: 'real-parent',
-    session: { header: { cwd: workspace } },
+    session: { header: { cwd: instance.workspace } },
   } as unknown as Agent
   return {
-    harness: { ctx, handles, spawnSpecs, parent, workspace, env, executable },
-    fixture,
+    harness: {
+      ctx,
+      handles,
+      spawnSpecs,
+      parent,
+      workspace: instance.workspace,
+      env: instance.env,
+    },
+    fixture: instance.fixture,
   }
 }
 
@@ -214,6 +247,29 @@ async function expectQuiescent(
     expect(outcome).toHaveProperty('exitCode')
     expect(outcome).toHaveProperty('signal')
   }
+}
+
+function expectedFailure(
+  stage: 'query-run' | 'process',
+  category: 'error_during_execution' | 'process-exit',
+  outcome: SubprocessOutcome,
+): string {
+  const fields = [
+    'product: Claude Code',
+    `stage: ${stage}`,
+    `category: ${category}`,
+  ]
+  if (outcome.exitCode !== null) fields.push(`exit code: ${outcome.exitCode}`)
+  if (outcome.signal !== null) fields.push(`signal: ${outcome.signal}`)
+  return `Product subagent failure (${fields.join('; ')})`
+}
+
+function expectedObservedFailure(outcome: SubprocessOutcome): string {
+  return observedSdkMessages.some(message =>
+    message.type === 'result'
+    && message.subtype === 'error_during_execution')
+    ? expectedFailure('query-run', 'error_during_execution', outcome)
+    : expectedFailure('process', 'process-exit', outcome)
 }
 
 function startRequest(
@@ -241,7 +297,7 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
     expect(sdkPackage.version).toBe('0.3.220')
     expect(sdkPackage.claudeCodeVersion).toBe('2.1.220')
     expect(sdkPackage.optionalDependencies[platformPackage]).toBe('0.3.220')
-    const version = await execFileAsync(process.platform === 'win32' ? claudeBin : harness.executable, ['--version'], {
+    const version = await execFileAsync(claudeBin, ['--version'], {
       env: { ...process.env, ...harness.env },
     })
     expect(version.stdout.trim()).toBe('2.1.220 (Claude Code)')
@@ -258,19 +314,14 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
         message.type === 'system' && message.subtype === 'init',
     )
     expect(initMessage?.claude_code_version).toBe('2.1.220')
-    if (process.platform === 'win32') {
-      expect(harness.spawnSpecs[0]?.argv.slice(0, 6)).toEqual([
-        'cmd.exe', '/d', '/v:off', '/s', '/c', '%DSH_CLAUDE_CODE_EXECUTABLE%',
-      ])
-      const batchExecutable = harness.spawnSpecs[0]?.env?.DSH_CLAUDE_CODE_EXECUTABLE
-      expect(batchExecutable?.startsWith('"')).toBe(true)
-      expect(batchExecutable?.endsWith('"')).toBe(true)
-      expect(batchExecutable?.slice(1, -1).toLowerCase())
-        .toBe(harness.executable.toLowerCase())
-    } else {
-      expect(harness.spawnSpecs[0]?.argv[0]).toBe(harness.executable)
-    }
-
+    const spawnedExecutable = harness.spawnSpecs[0]?.argv[0]
+    expect(spawnedExecutable).toBeDefined()
+    expect(process.platform === 'win32'
+      ? realpathSync(spawnedExecutable!).toLowerCase()
+      : realpathSync(spawnedExecutable!))
+      .toBe(process.platform === 'win32'
+        ? realpathSync(claudeBin).toLowerCase()
+        : realpathSync(claudeBin))
     expect(fixture.requests).toHaveLength(1)
     const recorded = fixture.requests[0]!
     expect(recorded.method).toBe('POST')
@@ -294,16 +345,124 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
     await expectQuiescent(harness.handles)
   })
 
-  it('maps a real CLI process failure to error', async () => {
+  it('maps a real SDK max-turns result to safe query-run facts', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-claude-code-max-turns-'))
+    roots.push(root)
+    const target = join(root, 'max-turns.txt')
+    sdkTestOverrides.maxTurns = 1
+    const { harness, fixture } = await realHarness({
+      kind: 'tool-use',
+      toolName: 'Write',
+      input: {
+        file_path: target,
+        content: 'real-sdk-max-turns',
+      },
+    }, 'bypassPermissions')
+    const run = await startRequest(harness, 'Exercise the SDK max-turns result.')
+    const result = await run.result
+    expect(observedSdkMessages
+      .filter(message => message.type === 'result')
+      .map(message => message.subtype)).toEqual(['error_max_turns'])
+    expect(result).toMatchObject({
+      output: [],
+      stopReason: 'error',
+    })
+    expect(result.diagnostic).toContain(
+      'product: Claude Code; stage: query-run; category: error_max_turns',
+    )
+    expect(readFileSync(target, 'utf8')).toBe('real-sdk-max-turns')
+    expect(result.diagnostic).not.toContain(target)
+    expect(result.diagnostic).not.toContain('real-sdk-max-turns')
+    await run.dispose()
+    expect(fixture.requests).toHaveLength(1)
+    await expectQuiescent(harness.handles)
+  })
+
+  it('runs two named instances concurrently and unloads one without revoking its run', async () => {
+    const safeInstance = await realInstanceFixture({ kind: 'hold' })
+    const bypassInstance = await realInstanceFixture({
+      kind: 'complete',
+      text: 'NAMED_BYPASS_RESULT',
+    })
+    const { ctx, handles, spawnSpecs } = await realRuntime()
+    const safeFiber = await ctx.plugin(claudeCode, {
+      providerName: 'claude-safe',
+      env: safeInstance.env,
+      permissionMode: 'dontAsk',
+      disposeGraceMs: 3_000,
+    })
+    const bypassFiber = await ctx.plugin(claudeCode, {
+      providerName: 'claude-bypass',
+      env: bypassInstance.env,
+      permissionMode: 'bypassPermissions',
+      disposeGraceMs: 3_000,
+    })
+    const safeParent = {
+      id: 'safe-parent',
+      session: { header: { cwd: safeInstance.workspace } },
+    } as unknown as Agent
+    const bypassParent = {
+      id: 'bypass-parent',
+      session: { header: { cwd: bypassInstance.workspace } },
+    } as unknown as Agent
+    const safeController = new AbortController()
+
+    const [safeRun, bypassRun] = await Promise.all([
+      ctx.subagents.start('claude-safe', {
+        prompt: [{ type: 'text', text: 'Hold the safe instance.' }],
+        parent: safeParent,
+        signal: safeController.signal,
+      }),
+      ctx.subagents.start('claude-bypass', {
+        prompt: [{ type: 'text', text: 'Complete the bypass instance.' }],
+        parent: bypassParent,
+        signal: new AbortController().signal,
+      }),
+    ])
+    await safeInstance.fixture.requestStarted
+    await safeFiber.dispose()
+    expect(ctx.subagents.list()).toEqual(['claude-bypass'])
+    await expect(ctx.subagents.start('claude-safe', {
+      prompt: [{ type: 'text', text: 'This start must fail.' }],
+      parent: safeParent,
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'NO_PROVIDER' })
+
+    await expect(bypassRun.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'NAMED_BYPASS_RESULT' }],
+      stopReason: 'completed',
+    })
+    safeController.abort(new Error('cancel only the published safe run'))
+    await expect(safeRun.result).resolves.toEqual({
+      output: [],
+      stopReason: 'aborted',
+    })
+    await Promise.all([safeRun.dispose(), bypassRun.dispose()])
+    expect(safeInstance.fixture.requests).toHaveLength(1)
+    expect(bypassInstance.fixture.requests).toHaveLength(1)
+    expect(safeInstance.fixture.requests[0]?.body.messages)
+      .not.toEqual(bypassInstance.fixture.requests[0]?.body.messages)
+    expect(spawnSpecs.map(spec => spec.env?.CLAUDE_CONFIG_DIR).sort())
+      .toEqual([
+        safeInstance.env.CLAUDE_CONFIG_DIR,
+        bypassInstance.env.CLAUDE_CONFIG_DIR,
+      ].sort())
+    await expectQuiescent(handles)
+    await bypassFiber.dispose()
+    expect(ctx.subagents.list()).toEqual([])
+  })
+
+  it('maps a real CLI process failure to its exit outcome', async () => {
     const { harness, fixture } = await realHarness({ kind: 'hold' })
     const run = await startRequest(harness, 'Exercise the failure path.')
     await fixture.requestStarted
     expect(harness.handles).toHaveLength(1)
     harness.handles[0]!.terminate()
-    await expect(run.result).resolves.toEqual({
-      output: [],
-      stopReason: 'error',
-    })
+    const outcome = await harness.handles[0]!.done
+    const result = await run.result
+    expect(result.output).toEqual([])
+    expect(result.stopReason).toBe('error')
+    expect(result.diagnostic).toBe(expectedObservedFailure(outcome))
     await run.dispose()
     expect(fixture.requests).toHaveLength(1)
     expect(fixture.requests[0]!.headers['x-api-key']).toBe(fakeKey)
@@ -330,12 +489,15 @@ describe('real Claude Agent SDK 0.3.220 and its distributed Claude Code 2.1.220 
     }, { timeout: 30_000 })
     expect(existsSync(target)).toBe(false)
     harness.handles[0]!.terminate()
+    const outcome = await harness.handles[0]!.done
     const result = await run.result
-    expect(result).toEqual({
-      output: [],
-      diagnostic: 'Claude Code unattended decision (mode: dontAsk; request: tool permission; decision: denied): Claude Code denied the request before an interactive prompt',
-      stopReason: 'error',
-    })
+    expect(result.output).toEqual([])
+    expect(result.stopReason).toBe('error')
+    const diagnosticLines = result.diagnostic?.split('\n') ?? []
+    expect(diagnosticLines[0]).toBe(expectedObservedFailure(outcome))
+    expect(diagnosticLines[1]).toBe(
+      'Claude Code unattended decision (mode: dontAsk; request: tool permission; decision: denied): Claude Code denied the request before an interactive prompt',
+    )
     expect(result.diagnostic).not.toContain(target)
     expect(result.diagnostic).not.toContain('SECRET_TOKEN')
     await run.dispose()

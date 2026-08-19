@@ -17,7 +17,8 @@
     "website"
   ],
   "scripts": {
-    "build": "npm run build:lib && npm run build:web",
+    "build": "tsx scripts/build.ts",
+    "build:official": "tsx scripts/build.ts --profile official",
     "build:lib": "npm run build:lib:host && npm run build:lib:client",
     "build:lib:host": "tsc -b tsconfig.host.json && tsdown --env.DSH_BUILD_FACE host",
     "build:lib:client": "tsc -b tsconfig.client.json && tsdown --env.DSH_BUILD_FACE client",
@@ -33,6 +34,7 @@
     "duplication": "jscpd --config .jscpd.json packages scripts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:coverage:partitioned": "tsx scripts/run-coverage-partitions.ts",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:issue-management": "node .github/issue-management/policy.test.mjs",
     "test:snapshot": "vitest run --config vitest.snapshot.config.ts",
@@ -42,6 +44,7 @@
     "test:web": "npm run build && npm run test:web:built",
     "test:web:refresh": "npm run build && DSH_SNAPSHOT=refresh vitest run --config vitest.web.config.ts",
     "test:web:built": "vitest run --config vitest.web.config.ts",
+    "test:web:ci": "tsx scripts/run-web-snapshots.ts",
     "test:web:perf": "npm run build && npm run test:web:perf:built",
     "test:web:perf:built": "DSH_SNAPSHOT=replay vitest run --config vitest.web.perf.config.ts",
     "test:web:stress": "npm run build && vitest run --config vitest.web-stress.config.ts",

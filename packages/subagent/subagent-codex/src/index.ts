@@ -1,7 +1,7 @@
 /**
- * Fixed Codex one-shot subagent provider. Every accepted run starts a fresh
- * official `codex app-server --stdio` process in the delegating Session's
- * workspace and publishes only after an ephemeral thread exists.
+ * Profile-named Codex one-shot subagent provider. Every accepted run starts a
+ * fresh official package-local Codex wrapper with `app-server --stdio` in the
+ * delegating Session's workspace and publishes only after an ephemeral thread exists.
  *
  * @module @deepseek-ai/dsh-subagent-codex
  */
@@ -21,6 +21,7 @@ import {
   CODEX_PERMISSION_MODES,
   DEFAULT_CODEX_PERMISSION_MODE,
   DEFAULT_DISPOSE_GRACE_MS,
+  codexStartupFailure,
   startCodexRun,
   type CodexPermissionMode,
   type CodexRunSpec,
@@ -29,8 +30,12 @@ import {
 export const name = 'subagent-codex'
 export const inject = ['subagents', 'subprocess']
 
+const DEFAULT_PROVIDER_NAME = 'codex'
+
 /** Deployment-owned permission, environment, and process-release settings. */
 export interface Config {
+  /** Provider name on `ctx.subagents` (default `codex`). */
+  providerName?: string
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.
@@ -43,6 +48,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
+  providerName: z.string().min(1).default(DEFAULT_PROVIDER_NAME),
   env: z.dict(z.string()).default({}),
   permissionMode: z.union([...CODEX_PERMISSION_MODES])
     .default(DEFAULT_CODEX_PERMISSION_MODE),
@@ -52,11 +58,11 @@ export const Config: z<Config> = z.object({
 type ResolvedConfig = Required<Config>
 
 class CodexProvider implements SubagentProvider {
-  readonly name = 'codex'
   readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
   readonly inheritsParentContext = false
 
   constructor(
+    readonly name: string,
     private readonly ctx: Context,
     private readonly config: ResolvedConfig,
   ) {}
@@ -68,19 +74,30 @@ class CodexProvider implements SubagentProvider {
         'subagent-codex: no working directory for the child — delegate from a parent session that has one',
       )
     }
-    const spec: CodexRunSpec = {
-      cwd: resolveChildCwd(
+    let cwd: string
+    try {
+      cwd = resolveChildCwd(
         'subagent-codex',
         undefined,
         parentCwd,
-      ),
+      )
+    } catch (error: unknown) {
+      if (request.signal.aborted) {
+        throw new Error(
+          'subagent-codex: request was aborted before app-server startup',
+        )
+      }
+      throw codexStartupFailure(error)
+    }
+    const spec: CodexRunSpec = {
+      cwd,
       permissionMode: this.config.permissionMode,
       env: this.config.env,
       disposeGraceMs: this.config.disposeGraceMs,
       spawn: spawnSpec => this.ctx.subprocess.spawn(spawnSpec),
       onError: (error, stopReason) => {
         this.ctx.logger.warn(
-          `subagent-codex: child run failed (${stopReason}): ${error.message}`,
+          `subagent-codex "${this.name}": child run failed (${stopReason}): ${error.message}`,
         )
       },
     }
@@ -89,12 +106,13 @@ class CodexProvider implements SubagentProvider {
 }
 
 /**
- * Register the fixed `codex` provider.
+ * Register one Profile-named Codex provider.
  * @param ctx - context carrying shared subagent and subprocess services.
- * @param config - permission mode, child environment, and disposal grace.
+ * @param config - registry name, permission mode, child environment, and disposal grace.
  */
 export function apply(ctx: Context, config: Config): void {
   const resolved: ResolvedConfig = {
+    providerName: config.providerName ?? DEFAULT_PROVIDER_NAME,
     env: config.env as Record<string, string>,
     permissionMode: config.permissionMode ?? DEFAULT_CODEX_PERMISSION_MODE,
     disposeGraceMs: config.disposeGraceMs as number,
@@ -109,5 +127,9 @@ export function apply(ctx: Context, config: Config): void {
       `subagent-codex: disposeGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`,
     )
   }
-  ctx.subagents.registerProvider(new CodexProvider(ctx, resolved))
+  ctx.subagents.registerProvider(new CodexProvider(
+    resolved.providerName,
+    ctx,
+    resolved,
+  ))
 }

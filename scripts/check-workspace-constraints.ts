@@ -87,6 +87,11 @@ export interface PackageManifest {
   devDependencies?: Record<string, string>
   dependencies?: Record<string, string>
   optionalDependencies?: Record<string, string>
+  dsh?: {
+    bundle?: {
+      patch?: string
+    }
+  }
 }
 
 /** One workspace manifest and its repo-relative path. */
@@ -134,10 +139,6 @@ function workspaceManifests(): WorkspaceManifest[] {
 }
 
 const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
-  // Profile bundles publish their dsh.bundle.patch layer beside the lib.
-  '@deepseek-ai/dsh-base': ['cordis.patch.yml'],
-  '@deepseek-ai/dsh-web-app': ['cordis.patch.yml'],
-  '@deepseek-ai/dsh-headless': ['cordis.patch.yml'],
   // Statically linked client libraries keep their stylesheets next to the emitted
   // JavaScript, which imports them by relative path: the compile shell runs
   // them through its own CSS pipeline, so the sheets are published artifacts.
@@ -155,6 +156,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // sandbox-local resolves it through the package's ./runner export. tsdown
   // also shares its generated FFI code through a hashed runtime chunk.
   '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
+  // SQLite loads every statement from immutable package resources at runtime.
+  '@deepseek-ai/dsh-session-persistence-sqlite': ['resources/sql/**/*.sql'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
 }
@@ -164,7 +167,12 @@ function sameStringList(actual: readonly string[] | undefined, expected: readonl
 }
 
 function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
-  const extras = manifest.name ? packageFileExtras[manifest.name] ?? [] : []
+  const declaredPatch = manifest.dsh?.bundle?.patch
+  const bundleFiles = declaredPatch === undefined ? [] : [declaredPatch.replace(/^\.\//, '')]
+  const extras = [
+    ...bundleFiles,
+    ...(manifest.name ? packageFileExtras[manifest.name] ?? [] : []),
+  ]
   return [
     'lib/index.js',
     // Every package publishes its invariant ownership companion as a separate
