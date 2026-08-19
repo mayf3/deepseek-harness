@@ -28,7 +28,7 @@ A strong simplification removes, folds, or demotes something real and has clear 
 - Hand-rolled code reimplements what a well-maintained external package or a Node builtin at the engine floor already provides, and the swap would delete the implementation plus its dedicated tests ([dependency policy](../../notes/implemented/process/2026-07-26-dependencies-over-hand-rolling.md)).
 - The simplified behavior may differ slightly, but the new behavior is still reasonable and easier to explain.
 
-Thin candidates are usually not enough for an Agent Note: deleting one typo, running `knip` once, removing an intentionally documented backend/adapter, or flagging "this looks complex" without call-site proof.
+Thin candidates are usually not enough for an Agent Note: deleting one typo, removing an intentionally documented backend/adapter, or flagging "this looks complex" without call-site proof.
 
 ## Survey Broadly
 
@@ -69,7 +69,7 @@ For every symbol or behavior, classify consumers before writing:
 - Non-production corpus: tests, README/docs, Agent Notes, snapshots, generated expected outputs, and comments.
 - Ambiguous corpus: examples and scripts that may be product smoke paths. Inspect usage before classifying.
 
-Use `rg` first. Good searches include the exact symbol, event name, package name, config key, method name with both `.name(` and `name(`, and any wire strings. Then read the call sites. `knip` can help, but it is not a substitute for understanding public interfaces, dynamic event names, tests, docs, and Cordis loader paths.
+Use `rg` first. Good searches include the exact symbol, event name, package name, config key, method name with both `.name(` and `name(`, and any wire strings. Then read the call sites, public interfaces, dynamic event names, tests, docs, and Cordis loader paths.
 
 Reject or downgrade a candidate when:
 

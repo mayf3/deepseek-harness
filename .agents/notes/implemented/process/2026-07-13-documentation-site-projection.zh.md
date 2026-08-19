@@ -24,7 +24,7 @@ Status: implemented
 
 `website/AGENTS.md` 是网站子树中唯一维护的 Markdown 文件。投影器测试会枚举所有已跟踪文件和未被忽略的未跟踪文件，并拒绝网站中的任何其他 Markdown，因此网站专用的 locale、路由、API 或生成源文件副本无法绕过发布 manifest。
 
-Mermaid 渲染权威图表。网站工作区显式声明 `vitepress-plugin-mermaid` 要求 Vite 预打包的 5 个包，因为 pnpm 的严格依赖隔离会使本地开发服务器无法使用这些传递依赖；Knip 将这种仅运行时使用记录为有意的依赖例外。
+Mermaid 渲染权威图表。网站工作区显式声明 `vitepress-plugin-mermaid` 要求 Vite 预打包的 5 个包，因为 pnpm 的严格依赖隔离会使本地开发服务器无法使用这些传递依赖。
 
 网站发布与网站构建保持分离。专用 GitHub Actions 工作流运行现有文档门禁，将 `website/.dist` 作为 Pages 产物上传，并只在构建成功后部署。`actions/configure-pages` 在构建时向 VitePress 提供目标位置的 base path，因此私有 Pages 源站、未来的公开项目路径和自定义域名不需要各自的检入配置。Pages 可见性仍是仓库托管设置，而不是工作流权限。
 
