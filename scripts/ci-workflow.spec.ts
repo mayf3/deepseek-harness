@@ -238,6 +238,20 @@ describe('E2B e2e workflow', () => {
   })
 })
 
+describe('DeepSeek e2e workflow', () => {
+  it('prepares bubblewrap from the pinned payload without a package transaction', () => {
+    const workflow = loadWorkflow('.github/workflows/e2e.yml')
+    const e2e = workflowJob(workflow, 'e2e')
+    if (!Array.isArray(e2e.steps)) throw new TypeError('DeepSeek e2e workflow must define steps')
+
+    const steps = e2e.steps.filter(isRecord)
+    expect(steps.find(step => step.name === 'Prepare bubblewrap (unrestrict userns)')).toMatchObject({
+      run: 'bash scripts/prepare-ci-bubblewrap.sh',
+    })
+    expect(JSON.stringify(steps)).not.toContain('apt-get')
+  })
+})
+
 describe('Python release workflows', () => {
   it('keeps complete wheel validation separate from protected public publication', () => {
     const workflow = loadWorkflow('.github/workflows/python-release.yml')
