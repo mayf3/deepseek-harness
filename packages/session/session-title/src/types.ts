@@ -65,13 +65,7 @@ export interface SessionTitleUserMessage {
   readonly text: string
 }
 
-/** One bounded reverse-linked group of eligible title-input messages. */
-export interface TitleInputChunk {
-  readonly messages: readonly SessionTitleUserMessage[]
-  readonly previous: TitleInputChunk | null
-}
-
-/** Eligible title input stored in bounded reverse-linked chunks. */
+/** Eligible title input stored as a bounded aggregate. */
 export interface TitleInputState {
   /** The oldest eligible message, or null before any. */
   readonly first: SessionTitleUserMessage | null
@@ -79,8 +73,6 @@ export interface TitleInputState {
   readonly count: number
   /** Newest eligible message, or null before any. */
   readonly last: SessionTitleUserMessage | null
-  /** Newest chunk in the reverse-linked list. */
-  readonly tail: TitleInputChunk | null
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {

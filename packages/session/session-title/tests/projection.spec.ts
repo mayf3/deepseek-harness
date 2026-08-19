@@ -62,7 +62,7 @@ describe('title projection unit', () => {
     expect('title' in ctx.sessionProjections.snapshot(session).values).toBe(false)
   })
 
-  it('keeps thousands of title inputs in bounded reverse-linked chunks without persisting them', async () => {
+  it('keeps thousands of title inputs as a bounded aggregate and checkpoints it', async () => {
     const { ctx, session } = await harness(false)
     session.append('turn/start', { turn: 1 })
     for (let index = 0; index < 5_000; index++) {
@@ -75,9 +75,8 @@ describe('title projection unit', () => {
 
     const state = ctx.sessionProjections.stateOf(session, 'titleInput')
     expect(state?.count).toBe(5_000)
-    let chunks = 0
-    for (let chunk = state?.tail ?? null; chunk !== null; chunk = chunk.previous) chunks += 1
-    expect(chunks).toBe(Math.ceil(5_000 / 64))
-    expect(ctx.sessionProjections.checkpoint(session).titleInput).toBeUndefined()
+    expect(state?.first?.text).toBe('message 0')
+    expect(state?.last?.text).toBe('message 4999')
+    expect(ctx.sessionProjections.checkpoint(session).titleInput).toBeDefined()
   })
 })

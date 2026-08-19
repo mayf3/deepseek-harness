@@ -31,7 +31,6 @@ import type {
   SessionTitleSnapshot,
   SessionTitleSource,
   SessionTitleUserMessage,
-  TitleInputChunk,
   TitleInputState,
   TitleProjection,
 } from './types.ts'
@@ -211,20 +210,28 @@ export function titleSnapshotFromState(state: TitleUnitState): SessionTitleSnaps
   })
 }
 
-const TITLE_INPUT_CHUNK_SIZE = 64
+const EMPTY_TITLE_INPUT: TitleInputState = { first: null, last: null, count: 0 }
 
-const EMPTY_TITLE_INPUT: TitleInputState = { first: null, last: null, count: 0, tail: null }
-
-function titleInputPrefix(state: TitleInputState, throughSeq: number): SessionTitleUserMessage[] {
-  const chunks: TitleInputChunk[] = []
-  for (let chunk = state.tail; chunk !== null; chunk = chunk.previous) chunks.push(chunk)
-  const prefix: SessionTitleUserMessage[] = []
-  for (const chunk of chunks.reverse()) {
-    for (const message of chunk.messages) {
-      if (message.seq <= throughSeq) prefix.push(message)
-    }
+/**
+ * Collect eligible human text messages from a session log, in seq order.
+ * The full eligible prefix is only materialized for one provider generation,
+ * so it is scanned from the log at execution time rather than retained by
+ * the O(1) `titleInput` projection.
+ * @param events - the session event log.
+ * @param throughSeq - optional inclusive upper seq bound.
+ * @returns eligible messages with exact source seqs.
+ */
+function collectSessionTitleMessages(
+  events: readonly SessionEvent[],
+  throughSeq?: number,
+): SessionTitleUserMessage[] {
+  const messages: SessionTitleUserMessage[] = []
+  for (const event of events) {
+    if (throughSeq !== undefined && event.seq > throughSeq) break
+    const message = sessionTitleUserMessageOf(event)
+    if (message !== undefined) messages.push(message)
   }
-  return prefix
+  return messages
 }
 
 // Zod cannot express the branded provider id without a runtime transform.
@@ -326,20 +333,16 @@ export class SessionTitleService extends Service {
 
     ctx.sessionProjections.register<'titleInput', TitleInputState>({
       key: 'titleInput',
-      stateVersion: 1,
+      stateVersion: 2,
       stateSchema: zod.custom<TitleInputState>(),
       init: () => EMPTY_TITLE_INPUT,
       apply: (state, event) => {
         const message = sessionTitleUserMessageOf(event)
         if (message === undefined) return state
-        const tail = state.tail === null || state.tail.messages.length >= TITLE_INPUT_CHUNK_SIZE
-          ? { messages: [message], previous: state.tail }
-          : { messages: [...state.tail.messages, message], previous: state.tail.previous }
         return {
           first: state.first ?? message,
           last: message,
           count: state.count + 1,
-          tail,
         }
       },
     })
@@ -586,7 +589,7 @@ export class SessionTitleService extends Service {
       this.assertCurrent(session, work)
       await this.ensureFallback(session)
       this.assertCurrent(session, work)
-      const messages = titleInputPrefix(this.titleInputOf(session), work.throughSeq)
+      const messages = collectSessionTitleMessages(session.events, work.throughSeq)
       const result = await work.registration.provider.generate({
         session,
         messages,
