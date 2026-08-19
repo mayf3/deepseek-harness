@@ -293,6 +293,19 @@ describe('SessionProjectionCache cold read', () => {
     expect(persistence.readFrom).toHaveBeenNthCalledWith(2, SessionId('shrunk'), 0, undefined)
   })
 
+  it('discards malformed persisted state and degrades to one full re-read', async () => {
+    const pool = new MemoryMediaPool()
+    const logs = new Map([['malformed', storedLog([['real']])]])
+    seedRow(pool, 'malformed', { ver: 1, seq: 1, val: { marks: 'not-an-array' } })
+    const { cache, persistence } = await harness({ pool, logs })
+
+    const snapshot = await cache.coldSnapshot(SessionId('malformed'))
+
+    expect(snapshot.values['cache-test/marks']).toEqual({ marks: ['real'] })
+    expect(persistence.readFrom).toHaveBeenNthCalledWith(1, SessionId('malformed'), 1, undefined)
+    expect(persistence.readFrom).toHaveBeenNthCalledWith(2, SessionId('malformed'), 0, undefined)
+  })
+
   it('write-back failure is contained: the snapshot is still served', async () => {
     const pool = new MemoryMediaPool()
     const logs = new Map([['soft', storedLog([['a']])]])

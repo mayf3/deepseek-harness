@@ -12,7 +12,7 @@ The projection registry persisted each unit's internal fold state without a runt
 
 `SessionProjectionStateMap` is the merge-extensible table for host fold states. Every `ProjectionDefinition` key belongs to this table and supplies a `stateSchema`; cached rows are validated before they seed a fold. `SessionProjectionMap` retains its existing meaning and name as the sole table of client-visible whole values, preserving existing client data structures such as `title: string | null`.
 
-A unit whose key also appears in `SessionProjectionMap` supplies `wire.viewSchema` and `wire.view`. Client-visible units are always checkpointed. A host-only unit omits `wire` and is checkpointed only when `persist` is true. Carrier reads use `wireOnly` so internal states do not enter API payloads. Host code reads one current state through `stateOf(session, key)`; the returned reference is borrowed and must not be mutated.
+A unit whose key also appears in `SessionProjectionMap` supplies `wire.viewSchema` and `wire.view`. Client-visible units are always checkpointed. A host-only unit omits `wire` and is checkpointed only when `persist` is true. Snapshot APIs return only `SessionProjectionMap`, so internal states cannot enter API payloads. Host code reads one current state through `stateOf(session, key)`; the returned reference is borrowed and must not be mutated.
 
 ## Consequences
 

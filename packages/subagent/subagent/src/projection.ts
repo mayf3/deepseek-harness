@@ -24,22 +24,21 @@ export interface TimingState {
   descriptorSeen: boolean
 }
 
+const activeIntervalSchema = z.object({
+  since: z.number().int().nonnegative(),
+  through: z.number().int().nonnegative(),
+}).strict()
+
 // Zod's optional output includes explicit `undefined`; with
 // exactOptionalPropertyTypes the public interface permits omission only.
 const projectionSchema = z.object({
   settledMs: z.number().int().nonnegative(),
-  active: z.object({
-    since: z.number().int().nonnegative(),
-    through: z.number().int().nonnegative(),
-  }).strict().optional(),
+  active: activeIntervalSchema.optional(),
 }).strict() as unknown as z.ZodType<SubagentTimingProjection>
 
 const timingStateSchema: z.ZodType<TimingState> = z.object({
   settledMs: z.number().int().nonnegative(),
-  active: z.object({
-    since: z.number().int().nonnegative(),
-    through: z.number().int().nonnegative(),
-  }).strict().optional(),
+  active: activeIntervalSchema.optional(),
   pendingTurnStart: z.number().int().nonnegative().optional(),
   descriptorSeen: z.boolean(),
 }).strict()
