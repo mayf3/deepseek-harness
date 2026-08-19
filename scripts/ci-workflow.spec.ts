@@ -143,6 +143,9 @@ describe('CI workflow', () => {
     // panel: ci-master triggers only on push(master) + workflow_dispatch and
     // never on pull_request; ci.yml is exactly pull_request-only. Assert the
     // full sets so losing the wrong event, or gaining an extra one, fails.
+    if (!isRecord(workflow.on) || !isRecord(prWorkflow.on)) {
+      throw new TypeError('both CI workflows must define on')
+    }
     expect(Object.keys(workflow.on).sort()).toEqual(['push', 'workflow_dispatch'])
     expect(Object.keys(prWorkflow.on)).toEqual(['pull_request'])
 
