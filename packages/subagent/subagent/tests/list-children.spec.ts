@@ -390,7 +390,7 @@ describe('SubagentRuntime.listChildren', () => {
     // seq 2 >= seedLength 0: the cached identity provably comes from the
     // child's own suffix, so it is final and the log is never re-read — the
     // divergent label proves the row, not the log, produced the entry.
-    ctx.sessionProjectionCache.cachedSnapshot = () => ({
+    ctx.sessionProjectionCache.cachedSnapshot = async () => ({
       asOfSeq: 2,
       values: { subagent: { mode: 'continuable', label: 'cached own', seq: 2 } },
     })
@@ -420,7 +420,7 @@ describe('SubagentRuntime.listChildren', () => {
     }, events)
     // A creation-window checkpoint carried the ANCESTOR identity: its seq 2
     // fails the own-suffix gate (< seedLength 4), so preparation rules.
-    ctx.sessionProjectionCache.cachedSnapshot = () => ({
+    ctx.sessionProjectionCache.cachedSnapshot = async () => ({
       asOfSeq: 2,
       values: { subagent: { mode: 'continuable', label: 'ancestor label', seq: 2 } },
     })
@@ -469,7 +469,7 @@ describe('SubagentRuntime.listChildren', () => {
       origin: 'subagent',
     }, childEvents(descriptorPayload('actually valid')))
     // A stale cached sentinel must not out-rank the authoritative re-fold.
-    ctx.sessionProjectionCache.cachedSnapshot = () => ({ asOfSeq: 0, values: { subagent: null } })
+    ctx.sessionProjectionCache.cachedSnapshot = async () => ({ asOfSeq: 0, values: { subagent: null } })
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
       kind: 'child', id: healthy, label: 'actually valid', mode: 'continuable',
@@ -701,8 +701,7 @@ describe('SubagentRuntime.listChildren', () => {
     // points; both writes are fail-soft asynchronous, so wait for the row.
     const header = (await ctx.sessionPersistence.list()).find(meta => meta.id === childId)
     await vi.waitFor(async () => {
-      const cut = ctx.sessionProjectionCache.cachedSnapshot(header!)
-      expect(cut?.values.subagent).toBeDefined()
+      expect((await ctx.sessionProjectionCache.cachedSnapshot(header!))?.values.subagent).toBeDefined()
     }, { timeout: 5_000 })
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
@@ -728,7 +727,7 @@ describe('SubagentRuntime.listChildren', () => {
     expect(inspect).toHaveBeenCalledTimes(1)
     // A stored row whose cut predates the descriptor: the subagent key is
     // absent from the served values, and preparation still rules.
-    ctx.sessionProjectionCache.cachedSnapshot = () => ({ asOfSeq: 0, values: {} })
+    ctx.sessionProjectionCache.cachedSnapshot = async () => ({ asOfSeq: 0, values: {} })
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual(expected)
     expect(inspect).toHaveBeenCalledTimes(2)
   })
@@ -754,7 +753,7 @@ describe('SubagentRuntime.listChildren', () => {
       parentSession: parent.id,
       origin: 'subagent',
     }, childEvents(descriptorPayload('recovered child')))
-    ctx.sessionProjectionCache.cachedSnapshot = () => {
+    ctx.sessionProjectionCache.cachedSnapshot = async () => {
       // A poisoned stored row (any unit's) detonates at view time; the cache
       // is derived data, so its failure must not become a verdict.
       throw new Error('poisoned cache row')

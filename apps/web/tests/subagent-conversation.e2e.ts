@@ -6,7 +6,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import {
-  SESSION_FORMAT_VERSION, SessionId as sessionId, type SessionEvent, type SessionId,
+  SESSION_FORMAT_VERSION, SessionId as sessionId, type SessionEvent, type SessionHeader, type SessionId,
 } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-agent'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
@@ -113,7 +113,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     oneShotId = sessionId('recorded-one-shot')
     const oneShotDurationMs = 192 * 24 * 60 * 60 * 1_000
     const oneShotAt = Date.now() - oneShotDurationMs
-    await scaffold.ctx.sessionPersistence.create({
+    const oneShotHeader: SessionHeader = {
       version: SESSION_FORMAT_VERSION,
       id: oneShotId,
       createdAt: oneShotAt,
@@ -121,7 +121,8 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       parentSession: parent.id,
       origin: 'subagent',
       delegationDepth: 1,
-    })
+    }
+    await scaffold.ctx.sessionPersistence.create(oneShotHeader)
     await scaffold.ctx.sessionPersistence.append(oneShotId, [
       {
         type: 'turn/start',
@@ -154,10 +155,10 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
         data: { turn: 1, reason: { kind: 'completed' } },
       },
     ] as SessionEvent[])
-    await scaffold.ctx.sessionProjectionCache.coldSnapshot(oneShotId)
+    await scaffold.ctx.sessionProjectionCache.coldSnapshot(oneShotHeader)
     grandchildId = sessionId('recorded-grandchild')
     const authoredAt = Date.now()
-    await scaffold.ctx.sessionPersistence.create({
+    const grandchildHeader: SessionHeader = {
       version: SESSION_FORMAT_VERSION,
       id: grandchildId,
       createdAt: authoredAt,
@@ -165,7 +166,8 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       parentSession: childId,
       origin: 'subagent',
       delegationDepth: 2,
-    })
+    }
+    await scaffold.ctx.sessionPersistence.create(grandchildHeader)
     await scaffold.ctx.sessionPersistence.append(grandchildId, [
       {
         type: 'turn/start',
@@ -198,7 +200,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
         data: { turn: 1, reason: { kind: 'completed' } },
       },
     ] as SessionEvent[])
-    await scaffold.ctx.sessionProjectionCache.coldSnapshot(grandchildId)
+    await scaffold.ctx.sessionProjectionCache.coldSnapshot(grandchildHeader)
     expect(scaffold.ctx.agents.get(childId)).toBeUndefined()
     expect(scaffold.ctx.agents.get(oneShotId)).toBeUndefined()
     expect(scaffold.ctx.agents.get(grandchildId)).toBeUndefined()

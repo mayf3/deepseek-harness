@@ -91,7 +91,7 @@ describe('sessions.list cold merge', () => {
       readFrom,
     } as never)
     ctx.provide('sessionProjectionCache', {
-      cachedSnapshot: (meta: SessionHeader) => {
+      cachedSnapshot: async (meta: SessionHeader) => {
         if (meta.id === sid('small-blank')) {
           return { asOfSeq: 0, values: { sessionListMetadata: { blank: true, lastPromptAt: null } } }
         }
