@@ -71,6 +71,26 @@ function readV0Event(value: unknown, id: SessionId): SessionEvent {
   return readStoredEventEnvelope(value, id)
 }
 
+/**
+ * PR #2302 changed these durable v0 discriminants without a format-version bump.
+ * @see https://github.com/deepseek-harness/deepseek-harness/pull/2302
+ */
+function canonicalizeLegacyCompactionEvent(event: SessionEvent): SessionEvent {
+  const type: string = event.type
+  switch (type) {
+    case 'compact/start':
+      return { ...event, type: 'compaction/start' } as SessionEvent
+    case 'compact/summary':
+      return { ...event, type: 'compaction/summary' } as SessionEvent
+    case 'compact/end':
+      return { ...event, type: 'compaction/end' } as SessionEvent
+    case 'compact/prune':
+      return { ...event, type: 'compaction/prune' } as SessionEvent
+    default:
+      return event
+  }
+}
+
 function canonicalizeLegacySteeringEvent(event: SessionEvent, id: SessionId): SessionEvent {
   const legacyType: string = 'steering/message'
   if (event.type !== legacyType) return event
@@ -237,7 +257,8 @@ async function* canonicalizeV0Events(
   const messageIds = new Map<number, PersistedMessageId>()
   for await (const value of events) {
     const event = readV0Event(value, id)
-    const turnStart = canonicalizeLegacyTurnStartEvent(event, id)
+    const compaction = canonicalizeLegacyCompactionEvent(event)
+    const turnStart = canonicalizeLegacyTurnStartEvent(compaction, id)
     const turnEnd = canonicalizeLegacyTurnEndEvent(turnStart, id)
     const steering = canonicalizeLegacySteeringEvent(turnEnd, id)
     const canonical = canonicalizeLegacyMessageEvent(steering, id, messageIds)

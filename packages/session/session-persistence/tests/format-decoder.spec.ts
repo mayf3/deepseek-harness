@@ -504,6 +504,59 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
     expect(canonical).toEqual(events)
   })
 
+  it('canonicalizes every historical compact event name without changing its record', async () => {
+    const { decodeStoredSession } = await configuredDecoder(0, [])
+    const events = [
+      {
+        type: 'compact/start', seq: 0, time: 1,
+        data: { compactionId: 'legacy', turn: 1 },
+        surfaceOp: { op: 'retain' },
+      },
+      {
+        type: 'compact/summary', seq: 1, time: 2,
+        data: { summary: 'old summary', shadowedSeqs: [7, 8] },
+        durableMetadata: { source: 'historical-v0' },
+      },
+      {
+        type: 'compaction/end', seq: 2, time: 3,
+        data: { compactionId: 'current', turn: 1 },
+      },
+      {
+        type: 'compact/end', seq: 3, time: 4,
+        data: { compactionId: 'legacy', turn: 1 },
+      },
+      {
+        type: 'compact/prune', seq: 4, time: 5,
+        data: {
+          shadowedRange: { start: 7, end: 8 },
+          shadowedSeqs: [7, 8],
+          shadowedTokenCount: 456,
+        },
+      },
+    ]
+    const stored = storedSource(0, events)
+
+    const decoded = decodeStoredSession(stored.source, id)
+    const canonical = await collectEvents(decoded.events)
+    await decoded.completed
+
+    expect(canonical).toEqual(events.map(event => ({
+      ...event,
+      type: event.type.replace(/^compact\//, 'compaction/'),
+    })))
+    expect(stored.reads).toEqual([0])
+  })
+
+  it('still rejects other unknown v0 event names after compaction normalization', async () => {
+    const { decodeStoredSession } = await configuredDecoder(0, [])
+    const decoded = decodeStoredSession(storedSource(0, [{
+      type: 'compact/future', seq: 0, time: 1, data: {},
+    }]).source, id)
+
+    const failure = await decodedFailure(decoded)
+    expect(failure.message).toMatch(/event type "compact\/future".*not marked ignorable/)
+  })
+
   it('does not run older registered steps for an already-current source', async () => {
     const calls: string[] = []
     const { decodeStoredSession } = await configuredDecoder(

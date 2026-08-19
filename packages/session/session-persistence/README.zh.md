@@ -43,7 +43,7 @@
 
 以后新增 vN→vN+1 时，在 `src/format-migrations/vN-to-vN+1.ts` 添加步骤，从静态 `SESSION_FORMAT_STEPS` 数组导出，并递增 `SESSION_FORMAT_VERSION`。该步骤验证它接受的所有 vN header/event 变体，保持 id 与 cwd 不变，返回 version 为 N+1 的 header，并把跨事件状态保留在自己的 iterator 中。后端和协调器不增加版本特判。
 
-v0 decoder 还识别[消息标识机制引入前的消息](../../../.agents/notes/implemented/bug-fix/2026-07-28-load-pre-identity-session-messages.md)与 [react-loop 引入前会话](../../../.agents/notes/implemented/bug-fix/2026-08-04-load-pre-react-loop-sessions.md)决策所限定的版本机制建立前变体。这些兼容转换不是版本步骤。
+v0 decoder 还识别[消息标识机制引入前的消息](../../../.agents/notes/implemented/bug-fix/2026-07-28-load-pre-identity-session-messages.md)与 [react-loop 引入前会话](../../../.agents/notes/implemented/bug-fix/2026-08-04-load-pre-react-loop-sessions.md)决策所限定的版本机制建立前变体，并将历史 `compact/start`、`compact/summary`、`compact/end`、`compact/prune` 名称归一化为规范的 `compaction/*` 名称。这些兼容转换不是版本步骤。
 
 活动会话发出 `session/disposed` 时，协调器等待其 controller，以串行方式执行最终 drain，然后释放该精确 `Session` 对象拥有的状态。失败退役会将 controller 保留在活动会话 map 中，使后端拆卸可重试。后端拆卸先停止事件接纳，flush 每个剩余 controller，等待每 id 操作，最后才关闭存储句柄。
 

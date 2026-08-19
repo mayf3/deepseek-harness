@@ -18,7 +18,7 @@ Session log 在发布后必须能升级格式，而最先发布的运行时决�
 
 **格式迁移就是 decoder，不是 Coordinator 的修复分支。**后端通过可重复读取的 `StoredSessionSource` 把解析后的持久化数据作为 `unknown` 暴露：一个原始 header、一个精确 revision，以及每次产生独立 `AsyncIterable` 且绑定该 revision 的 `readEvents()` factory。每一步实现 `migrateHeader()` 和惰性的 `migrateEvents()` 转换，只能前进一个版本，也不能改变 Session id 或 cwd。只要发生版本转换，就读取完整事件流，并在所有步骤完成后才应用请求的 suffix；版本相等时仍保留 backend suffix seek。Decoder 验证每一步输出的 header version，完整链路结束后才执行当前 `SessionHeader` 和 `SessionEvent` 校验。
 
-**以后每次 format bump 只增加一个格式步骤。**改动新增 `format-migrations/vN-to-vN+1.ts`，把该步骤导出到静态 `SESSION_FORMAT_STEPS` 数组，并递增 `SESSION_FORMAT_VERSION`。这一步自己负责它接受的所有旧 header 和 event 变体、iterator 转换中的跨事件状态，以及对畸形输入的明确失败。Backend 和 Coordinator 不增加版本特判。没有改变版本号的历史变体继续隔离在 format-v0 compatibility decoder 中，不作为后续版本步骤的模板。
+**以后每次 format bump 只增加一个格式步骤。**改动新增 `format-migrations/vN-to-vN+1.ts`，把该步骤导出到静态 `SESSION_FORMAT_STEPS` 数组，并递增 `SESSION_FORMAT_VERSION`。这一步自己负责它接受的所有旧 header 和 event 变体、iterator 转换中的跨事件状态，以及对畸形输入的明确失败。Backend 和 Coordinator 不增加版本特判。没有改变版本号的历史变体继续隔离在 format-v0 compatibility decoder 中，不作为后续版本步骤的模板。该 decoder 将历史 `compact/start`、`compact/summary`、`compact/end`、`compact/prune` 名称映射为规范的 `compaction/*` 事件，并保留每条记录的其余内容。
 
 **Recovery 和写回只消费当前格式数据。**`inspect()` 和 `readFrom()` 只在内存中解码。Cold `prepare()`/`load()` 先解码完整 source，补充当前 recovery closers，再用完整、平衡的当前格式 stream 替换精确的旧 revision。Live HMR adoption 在 seed 校验后使用同一个 replacement primitive，但不会为仍由 live Session 掌握的 turn 合成 closer。替换成功或 revision 冲突后都会丢弃 prepared object，重新打开持久化 source 后再继续。
 
