@@ -62,4 +62,13 @@ describe('ui-theme host', () => {
     await ctx.plugin({ apply }).await()
     expect(scriptText(collect(ctx)[0])).toContain('const preference = "system"')
   })
+
+  it('falls back to the schema default while the theme namespace holds no section', async () => {
+    // A settings provider whose namespace read comes back empty (registration
+    // still pending or a provider without schema defaults).
+    const ctx = new Context()
+    ctx.provide('settings', { register: () => () => {}, get: () => undefined } as never)
+    await ctx.plugin({ apply }).await()
+    expect(scriptText(collect(ctx)[0])).toContain('const preference = "system"')
+  })
 })
