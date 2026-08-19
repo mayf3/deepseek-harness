@@ -27,7 +27,7 @@ DeepSeek 视觉部署使用 chat-completions 图片协议，但直接 `deepseek-
 
 ## Verification
 
-包测试固定模型发现与回退能力、配置校验与存活 settings 更新、user 和工具结果协议消息、所有已准入 MIME 类型、取消、附件失败、413 分类、确切图片上限行为和 pi-ai 等价性。无需密钥的组装 ACP 请求会记录原生适配器的工具结果 data URL 与最旧图片占位文本。
+包测试固定模型发现与回退能力、配置校验与存活 settings 更新、user 和工具结果协议消息、所有已准入 MIME 类型、取消、附件失败、413 分类、确切图片上限行为和 pi-ai 等价性。无需密钥的组装 ACP 请求会记录原生适配器的工具结果 data URL 与最旧图片占位文本。真实 API 冒烟测试会配置明确支持图片的目录项，并且仅在提供方密钥之外还设置 `DEEPSEEK_VISION_E2E=1` 时发送确定性图片。
 
 ## Consequences
 

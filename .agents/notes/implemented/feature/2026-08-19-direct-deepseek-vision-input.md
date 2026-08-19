@@ -27,7 +27,7 @@ Canonical messages continue to store only `ImageAttachmentRef`. Data URLs exist 
 
 ## Verification
 
-Package tests pin model discovery and fallback capabilities, configuration validation and live settings updates, user and tool-result wire messages, all admitted MIME types, cancellation, attachment failures, 413 classification, exact image-bound behavior, and pi-ai equivalence. A keyless assembled ACP request records the native adapter's tool-result data URL and oldest-image placeholder.
+Package tests pin model discovery and fallback capabilities, configuration validation and live settings updates, user and tool-result wire messages, all admitted MIME types, cancellation, attachment failures, 413 classification, exact image-bound behavior, and pi-ai equivalence. A keyless assembled ACP request records the native adapter's tool-result data URL and oldest-image placeholder. A real-API smoke test with an explicit image-capable catalog entry sends a deterministic image only when `DEEPSEEK_VISION_E2E=1` is set in addition to the provider key.
 
 ## Consequences
 
