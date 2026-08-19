@@ -121,6 +121,7 @@ export function decodeSessionSnapshotBody(records: readonly Record<string, unkno
     try {
       decoded = decodeStorageRecord(record)
     } catch (error) {
+      /* v8 ignore next -- decodeStorageRecord only throws Error instances; the String arm only satisfies the unknown narrowing. */
       const detail = error instanceof Error ? error.message : String(error)
       throw new Error(`session snapshot line ${index + 2}: ${detail}`, { cause: error })
     }

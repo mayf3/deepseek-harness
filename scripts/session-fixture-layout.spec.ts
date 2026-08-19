@@ -65,6 +65,6 @@ describe('canonicalSessionFixture', () => {
 
   it('labels malformed packed rows with the fixture path and line', () => {
     expect(() => canonicalSessionFixture(`${HEADER}\n{"type":"text-chunks"}\n`, 'broken.jsonl'))
-      .toThrow(/broken\.jsonl: malformed text-chunks storage row/)
+      .toThrow(/broken\.jsonl: session snapshot line 2: malformed text-chunks storage row/)
   })
 })
