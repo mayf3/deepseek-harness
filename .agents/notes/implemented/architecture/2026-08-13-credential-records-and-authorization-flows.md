@@ -51,7 +51,7 @@ Withdrawal settles an attempt whether or not its flow reacts to the signal. A fl
 
 ## Consequences
 
-`.credentials.yaml` gains a version and two sections, and the pre-release flat layout is refused by name with the migration stated in the message — pre-release stance, no compatibility shim. Every fixture in the repo that wrote the flat document was rewritten; the llm suites' fixtures were missed by the record change itself and fixed here.
+`.credentials.yaml` gains a version and two sections. A boot upgrades the recognized pre-release flat layout in place — an all-string flat mapping nests verbatim under `refs:` under the writer lock — because a key stored through the Models page by an earlier internal build must survive the layout change without a hand edit and without its model requests failing. Any flat shape the recognizer cannot prove it understands keeps the by-name refusal with the hand migration stated in the message; the parser itself still reads exactly one layout, and the migration step retires with the pre-release stance at the first tagged release. Every fixture in the repo that wrote the flat document was rewritten; the llm suites' fixtures were missed by the record change itself and fixed here.
 
 `openai-codex` returns to the provider picker and to the Models page directory. Signing in is offered for every installed provider that ships a login, which today is all 38 — 31 collect a key through pi-ai's own prompt, six offer that beside a subscription login, and Codex offers only the subscription login.
 

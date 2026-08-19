@@ -230,12 +230,19 @@ describe('document validation', () => {
   it.each([
     ['a non-mapping root', 'just a string\n', /must be a mapping/],
     ['a sequence root', '- DSH_CRED_TEST\n', /must be a mapping/],
-    // The pre-release layout is refused by name rather than read as an empty
-    // store: a silently ignored document would surface as an authentication
-    // failure on the first request instead of at load.
-    ['the pre-release flat layout', 'DSH_CRED_TEST: stored\n', /nest the existing 1 entry under/],
-    ['the pre-release flat layout with several entries', 'DSH_CRED_TEST: a\nDSH_CRED_OTHER: b\n',
+    // A flat document the boot migration cannot prove it understands is
+    // refused by name rather than read as an empty store or rewritten: a
+    // silently ignored document would surface as an authentication failure on
+    // the first request instead of at load. (The recognized all-string flat
+    // layout upgrades in place instead — migration.spec owns that path.)
+    ['the flat layout with a non-string value', 'DSH_CRED_TEST: [nope]\n', /nest the existing 1 entry under/],
+    ['the flat layout with several entries and a non-string value', 'DSH_CRED_TEST: a\nDSH_CRED_OTHER: [b]\n',
       /nest the existing 2 entries under/],
+    ['the flat layout with an empty value', 'DSH_CRED_TEST: ""\n', /pre-release flat layout/],
+    ['the flat layout with an unaddressable key', 'not-a-ref: value\n', /pre-release flat layout/],
+    ['the flat layout with a non-string key', '1: a\n', /pre-release flat layout/],
+    ['the flat layout under document directives', '%YAML 1.2\n---\nDSH_CRED_TEST: a\n',
+      /pre-release flat layout/],
     ['a future version', 'version: 2\nrefs: {}\n', /this build reads version 1/],
     ['an unknown top-level key', 'version: 1\nsecrets: {}\n', /unknown top-level key "secrets"/],
     ['a non-mapping refs section', 'version: 1\nrefs: nope\n', /"refs" .* must be a mapping/],

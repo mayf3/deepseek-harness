@@ -226,6 +226,45 @@ export function parseCredentialsDocument(text: string, filename: string): Creden
   return { refs: parseRefs(fields['refs'], filename), records: parseRecords(fields['records'], filename) }
 }
 
+/**
+ * Render the version-1 layout for a pre-release flat document, or `undefined`
+ * for anything else. The flat layout is recognized exactly — a non-empty
+ * top-level mapping of addressable reference names to non-empty string
+ * scalars, with no `version` key and no document directives — and the rewrite
+ * nests the original lines verbatim under `refs:` at two spaces' indent, so
+ * comments, blank lines, and each value's spelling survive byte for byte.
+ * Anything the recognizer declines keeps {@link parseCredentialsDocument}'s
+ * loud rejection: a document this build cannot prove it understands is never
+ * rewritten. Remove with the pre-release stance at the first tagged release.
+ * @param text - the document's text.
+ * @returns the migrated text, or `undefined` when the text is not the recognized flat layout.
+ */
+export function renderFlatLayoutMigration(text: string): string | undefined {
+  const document = parseDocument(text, { prettyErrors: true, uniqueKeys: true })
+  if (document.errors.length > 0) return undefined
+  const flat = document.contents
+  if (!isMap(flat) || flat.items.length === 0) return undefined
+  for (const line of text.split('\n')) {
+    // A directive or document marker would not survive being indented into
+    // the `refs:` block; no shipped writer ever emitted one here.
+    if (/^(%|---|\.\.\.)/.test(line)) return undefined
+  }
+  for (const pair of flat.items) {
+    if (!isScalar(pair.key) || typeof pair.key.value !== 'string' || pair.key.value === 'version') return undefined
+    try {
+      credentialRef(pair.key.value)
+    } catch {
+      // Only credentialRef's rejection of a non-POSIX name lands here; the
+      // flat reader refused such a key too, so this is not the recognized
+      // layout and the loud rejection stands.
+      return undefined
+    }
+    if (!isScalar(pair.value) || typeof pair.value.value !== 'string' || pair.value.value.length === 0) return undefined
+  }
+  const body = text.split('\n').map(line => (line.length === 0 ? line : `  ${line}`)).join('\n')
+  return `version: ${DOCUMENT_VERSION}\nrefs:\n${body}${text.endsWith('\n') ? '' : '\n'}`
+}
+
 /** Admit a `refs` section: POSIX-identifier keys over non-empty string values. */
 function parseRefs(section: unknown, filename: string): Map<string, string> {
   const entries = new Map<string, string>()
@@ -764,7 +803,10 @@ export class LocalCredentialProvider extends CredentialProvider {
   /**
    * Boot read: an absent file is an empty store; an invalid one fails the
    * plugin's activation, because a credentials document that exists but
-   * cannot be trusted must never be treated as "no credentials stored".
+   * cannot be trusted must never be treated as "no credentials stored". The
+   * one exception is the recognized pre-release flat layout, which is
+   * upgraded in place first — a key stored by an earlier build must survive
+   * the layout change without a hand edit.
    */
   private async loadInitial(): Promise<void> {
     await assertOwnerOnly(this.spec.filename)
@@ -775,10 +817,42 @@ export class LocalCredentialProvider extends CredentialProvider {
       if (!isENOENT(error)) throw error
       return
     }
+    if (renderFlatLayoutMigration(text) !== undefined) text = await this.migrateFlatDocument()
     const document = parseCredentialsDocument(text, this.spec.filename)
     this.values = document.refs
     this.records = document.records
     this.text = text
+  }
+
+  /**
+   * One-shot upgrade of the recognized pre-release flat layout, before the
+   * watcher exists. The rewrite runs under the document's writer lock and
+   * re-reads first — a concurrent boot may have migrated already — and
+   * whatever the re-read finds that is not the flat layout is returned
+   * untouched for the ordinary parse. Values are carried verbatim; only the
+   * enclosing layout changes. Remove with the pre-release stance at the
+   * first tagged release.
+   * @returns the document text this boot should parse.
+   */
+  private async migrateFlatDocument(): Promise<string> {
+    return withFileLock(this.spec.filename, async () => {
+      const current = await readFile(this.spec.filename, 'utf8')
+      const migrated = renderFlatLayoutMigration(current)
+      /* v8 ignore next 2 -- the losing side of the cross-process migration race:
+         another boot rewrote the document between the unlocked recognize and
+         this lock. That interleaving cannot be scheduled deterministically
+         through a whole boot (migration.spec drives it best-effort); the
+         decision itself is the recognizer's covered versioned-document decline. */
+      if (migrated === undefined) return current
+      // 0600: a document holding secrets is never world-readable.
+      await writeFileAtomic(this.spec.filename, migrated, { mode: 0o600, dirMode: 0o700 })
+      this.ctx.logger.info(
+        'credentials-local: migrated %s to the version %d layout; values are unchanged',
+        this.spec.filename,
+        DOCUMENT_VERSION,
+      )
+      return migrated
+    }, { waitMs: DOCUMENT_LOCK_WAIT_MS })
   }
 
   /* jscpd:ignore-start -- same deliberate mirror of settings-file's reload and
