@@ -1,5 +1,7 @@
 /** `reference` namespace dictionaries for the unified `@` source. */
 
+import type {} from '@deepseek-ai/dsh-client-ui-slots'
+
 /** Dictionary namespace owned by this plugin. */
 export const NS = 'reference'
 

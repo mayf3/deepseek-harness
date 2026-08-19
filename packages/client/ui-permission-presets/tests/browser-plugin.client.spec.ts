@@ -13,8 +13,8 @@ import { describe, expect, it } from 'vitest'
 import { SlotRegistry, type SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
+import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { CommandDecoration } from '@deepseek-ai/dsh-client-ui-commands/client'
-import { SettingsSchemaService } from '@deepseek-ai/dsh-client-ui-settings/src/client/schema.ts'
 import type { PermissionSelect } from '@deepseek-ai/dsh-permission-presets/client'
 import {
   PermissionRow, type PermissionRowInjected,
@@ -42,7 +42,6 @@ async function bench() {
   // The plugin injects `remote`; forwarded events reach it through the same
   // `$dispatch` handoff the connection sink makes.
   new TestRemote(ctx)
-  new SettingsSchemaService(ctx)
   ctx.slots.register({
     name: 'root',
     children: {
@@ -60,6 +59,7 @@ async function bench() {
       },
     },
   } as never)
+  await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   let decoration: CommandDecoration | undefined
   ctx.provide('commandUi', {
     decorate(c: CommandDecoration) {

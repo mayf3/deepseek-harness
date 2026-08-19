@@ -190,6 +190,38 @@ describe('SubagentRuntime.startContinuable', () => {
     expect(hasUserText(loaded.events, 'child task')).toBe(true)
   })
 
+  it('uses a caller-reserved child identity and rejects a duplicate reservation', async () => {
+    const release = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('reserved answer'), gate: release.promise },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    const reservedId = SessionId('00000000-0000-4000-8000-000000000123')
+
+    const started = await ctx.subagents.startContinuable({
+      ...startSpec(parent),
+      childId: reservedId,
+    })
+    expect(started.childId).toBe(reservedId)
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+
+    await expect(ctx.subagents.startContinuable({
+      ...startSpec(parent),
+      childId: reservedId,
+    })).rejects.toMatchObject({ code: 'DUPLICATE_CHILD' })
+
+    release.resolve(undefined)
+    await waitNoActivation(ctx, reservedId)
+    const loaded = await ctx.sessionPersistence.load(reservedId)
+    expect(loaded.meta.id).toBe(reservedId)
+
+    await expect(ctx.subagents.startContinuable({
+      ...startSpec(parent),
+      childId: reservedId,
+    })).rejects.toMatchObject({ code: 'DUPLICATE_CHILD' })
+    expect(ctx.agents.get(reservedId)).toBeUndefined()
+  })
+
   it('rejects without ids when the provider has no prepareContinuable capability', async () => {
     const { ctx, parent } = await setup([])
     const start = vi.fn(async () => { throw new Error('must not dispatch') })
@@ -745,10 +777,10 @@ describe('continuable durability and teardown', () => {
 
     hold.resolve(undefined)
 
+    await waitNoActivation(ctx, started.childId)
     await vi.waitFor(() => {
       expect(warnings.some(warning => warning.includes('normal settlement cleanup failed'))).toBe(true)
-    })
-    expect(ctx.agents.get(started.childId)).toBeUndefined()
+    }, { timeout: 5_000 })
   })
 
   it('disposes every live Activation forest child-first on manager teardown', async () => {
@@ -871,6 +903,86 @@ describe('continuable durability and teardown', () => {
 
     releaseChild.resolve(undefined)
     await waitNoActivation(ctx, started.childId)
+  })
+
+  it('releases only selected direct children', async () => {
+    const releaseTarget = Promise.withResolvers<undefined>()
+    const releaseSibling = Promise.withResolvers<undefined>()
+    const releaseGrandchild = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('target'), gate: releaseTarget.promise },
+      { chunks: textResponse('sibling'), gate: releaseSibling.promise },
+      { chunks: textResponse('grandchild'), gate: releaseGrandchild.promise },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    const target = await ctx.subagents.startContinuable(startSpec(parent))
+    const sibling = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
+    const targetAgent = ctx.agents.get(target.childId)!
+    const siblingAgent = ctx.agents.get(sibling.childId)!
+    const grandchild = await ctx.subagents.startContinuable(startSpec(targetAgent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(3) })
+    const cancel = vi.spyOn(targetAgent, 'cancel')
+
+    const drained = ctx.subagents.drainContinuableChildren(parent, [target.childId, target.childId])
+
+    expect(cancel).toHaveBeenCalledWith({ kind: 'parent' })
+    expect(ctx.agents.get(sibling.childId)).toBe(siblingAgent)
+    releaseTarget.resolve(undefined)
+    releaseGrandchild.resolve(undefined)
+    await drained
+    expect(ctx.agents.get(target.childId)).toBeUndefined()
+    expect(ctx.agents.get(grandchild.childId)).toBeUndefined()
+    expect(ctx.agents.get(sibling.childId)).toBe(siblingAgent)
+    releaseSibling.resolve(undefined)
+    await waitNoActivation(ctx, sibling.childId)
+  })
+
+  it('reports selected-child disposal failures after releasing the child', async () => {
+    const hold = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('target'), gate: hold.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    const target = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const manager = (ctx.subagents as unknown as {
+      continuations: { activations: Map<SessionId, { handle: { dispose: () => Promise<void> } }> }
+    }).continuations
+    const activation = manager.activations.get(target.childId)!
+    const realDispose = activation.handle.dispose.bind(activation.handle)
+    activation.handle.dispose = async () => {
+      await realDispose()
+      throw new Error('selected cleanup failed')
+    }
+
+    const drained = ctx.subagents.drainContinuableChildren(parent, [target.childId])
+    hold.resolve(undefined)
+
+    await expect(drained).rejects.toMatchObject({ code: 'ACTIVATION_TEARDOWN_FAILED' })
+    expect(ctx.agents.get(target.childId)).toBeUndefined()
+  })
+
+  it('rejects selected-child teardown through another live parent', async () => {
+    const release = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('target'), gate: release.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    const other = ctx.agentLoop.create(SessionId('other-parent'), { provider: 'mock', model: 'mock' })
+    const target = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+
+    await expect(ctx.subagents.drainContinuableChildren(other, [target.childId]))
+      .rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+    expect(ctx.agents.get(target.childId)).toBeDefined()
+
+    release.resolve(undefined)
+    await waitNoActivation(ctx, target.childId)
+  })
+
+  it('rejects selected-child teardown through a stale parent identity', async () => {
+    const { ctx, parent } = await setup([])
+    const stale = { ...parent, id: parent.id } as unknown as Agent
+
+    await expect(ctx.subagents.drainContinuableChildren(stale, []))
+      .rejects.toMatchObject({ code: 'UNAUTHORIZED' })
   })
 
   it('finds scoped descendants after an intermediate one-shot Agent leaves the registry', async () => {

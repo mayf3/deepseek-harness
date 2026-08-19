@@ -892,7 +892,7 @@ export interface Config {
   models?: DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
   streamIdleTimeoutMs?: number
-  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
 
@@ -1007,7 +1007,14 @@ export interface PiAiProviderProfile {
   websocketConnectTimeoutMs?: number
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs?: number
-  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  /**
+   * Maximum base64-encoded image payload per request. When a request's
+   * accumulated images exceed it, the oldest images are replaced by text
+   * placeholders until the request fits, so a long session keeps completing
+   * requests instead of being rejected by a request-size cap.
+   */
+  maxRequestImageBytes?: number
+  /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
 
@@ -1103,7 +1110,7 @@ type WithheldThinkingFormat = 'chat-template' | 'qwen-chat-template'
 
 依赖：`Api`（`@earendil-works/pi-ai`）· `CacheRetention`（`@earendil-works/pi-ai`）· `Model`（`@earendil-works/pi-ai`）· `ModelThinkingLevel`（`@earendil-works/pi-ai`）· `OpenAICompletionsCompat`（`@earendil-works/pi-ai`）· [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets`（`@earendil-works/pi-ai`）· `Transport`（`@earendil-works/pi-ai`）
 
-来源：[`packages/llm/llm-pi-ai/src/config.ts:172`](../packages/llm/llm-pi-ai/src/config.ts)
+来源：[`packages/llm/llm-pi-ai/src/config.ts:192`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 
@@ -2105,19 +2112,31 @@ export type PermissionPolicy = 'allow' | 'reject'
 需要：`subagents` · `subprocess`
 
 ```ts config-catalog
-/** Deployment-owned environment and process-release bound. */
+/** Deployment-owned permission, environment, and process-release settings. */
 export interface Config {
+  /** Provider name on `ctx.subagents` (default `claude-code`). */
+  providerName?: string
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.
    */
   env?: Record<string, string>
+  /**
+   * Native non-interactive mode fixed for this Provider instance. Defaults to
+   * `dontAsk`; `acceptEdits` accepts edits, `auto` uses the native classifier,
+   * `plan` returns a plan without approving execution, and
+   * `bypassPermissions` explicitly skips permission checks.
+   */
+  permissionMode?: ClaudeCodePermissionMode
   /** Grace in milliseconds for Claude Code process-tree termination. */
   disposeGraceMs?: number
 }
+
+/** Profile-selectable non-interactive Claude Code permission mode. */
+export type ClaudeCodePermissionMode = typeof CLAUDE_CODE_PERMISSION_MODES[number]
 ```
 
-来源：[`packages/subagent/subagent-claude-code/src/index.ts:32`](../packages/subagent/subagent-claude-code/src/index.ts)
+来源：[`packages/subagent/subagent-claude-code/src/index.ts:37`](../packages/subagent/subagent-claude-code/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-codex"></a>
 
@@ -2126,19 +2145,29 @@ export interface Config {
 需要：`subagents` · `subprocess`
 
 ```ts config-catalog
-/** Deployment-owned environment and process-release bound. */
+/** Deployment-owned permission, environment, and process-release settings. */
 export interface Config {
+  /** Provider name on `ctx.subagents` (default `codex`). */
+  providerName?: string
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.
    */
   env?: Record<string, string>
+  /** Native non-interactive permission mode fixed for this Provider instance. */
+  permissionMode?: CodexPermissionMode
   /** Grace in milliseconds for app-server process-tree termination. */
   disposeGraceMs?: number
 }
+
+/** Profile-selectable non-interactive Codex permission mode. */
+export type CodexPermissionMode =
+  | 'never'
+  | 'approve-for-me'
+  | 'dangerously-bypass-approvals-and-sandbox'
 ```
 
-来源：[`packages/subagent/subagent-codex/src/index.ts:30`](../packages/subagent/subagent-codex/src/index.ts)
+来源：[`packages/subagent/subagent-codex/src/index.ts:35`](../packages/subagent/subagent-codex/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-dsh-sdk"></a>
 
@@ -2267,6 +2296,31 @@ export interface Config {
 ```
 
 来源：[`packages/core/system-prompt/src/index.ts:186`](../packages/core/system-prompt/src/index.ts)
+
+<a id="deepseek-aidsh-team"></a>
+
+## `@deepseek-ai/dsh-team`
+
+需要：`agents` · `sessions` · `sessionPersistence` · `subagents`
+
+```ts config-catalog
+/** Team-service deployment limits. */
+export interface Config {
+  /** Maximum immutable teammate names retained by one Team. */
+  readonly maxMembers?: number
+  /** Maximum non-deleted tasks retained by one Team. */
+  readonly maxTasks?: number
+  /** Maximum queued-minus-delivered messages for one target member. */
+  readonly maxPendingMessagesPerMember?: number
+  /** Maximum UTF-8 bytes in one complete sender-framed delivery. */
+  readonly maxMessageBytes?: number
+  /** Maximum milliseconds allowed for Team-owned runtime disposal. */
+  readonly disposalTimeoutMs?: number
+}
+```
+
+来源：[`packages/experimental/team/src/types.ts:125`](../packages/experimental/team/src/types.ts)
+
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -2700,6 +2754,25 @@ export interface Config {
 
 来源：[`packages/subagent/tool-subagent-report/src/index.ts:27`](../packages/subagent/tool-subagent-report/src/index.ts)
 
+<a id="deepseek-aidsh-tool-team"></a>
+
+## `@deepseek-ai/dsh-tool-team`
+
+需要：`agents` · `teams` · `tools` · `systemPrompt`
+
+```ts config-catalog
+/** Tool routing configuration. */
+export interface Config {
+  /** Continuable-subagent provider used for fresh teammates. */
+  readonly freshProvider?: string
+  /** Continuable-subagent provider used for completed-prefix fork teammates. */
+  readonly forkProvider?: string
+}
+```
+
+来源：[`packages/experimental/tool-team/src/index.ts:17`](../packages/experimental/tool-team/src/index.ts)
+
+
 <a id="deepseek-aidsh-tool-terminal"></a>
 
 ## `@deepseek-ai/dsh-tool-terminal`
@@ -2747,7 +2820,7 @@ export interface Config {
 需要：`tools` · `web` · `systemPrompt`
 
 ```ts config-catalog
-/** Plugin config: which web tools to register, the source cap, per-tool budgets, and the fetch output cap. */
+/** Plugin config: which web tools to register, search bounds, per-tool budgets, and the fetch output cap. */
 export interface Config {
   /** Register `web_search`. Defaults to true. */
   search?: boolean
@@ -2755,6 +2828,8 @@ export interface Config {
   fetch?: boolean
   /** Upper bound on sources returned by one `web_search` call. */
   searchMaxResults?: number
+  /** Upper bound on queries accepted by one `web_search` call. */
+  searchMaxQueries?: number
   /** Cooperative timeout budget (ms) for `web_fetch`. Defaults to 30000. */
   fetchTimeoutMs?: number
   /** Cooperative timeout budget (ms) for `web_search`. Defaults to 30000. */
