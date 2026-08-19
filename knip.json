@@ -25,7 +25,11 @@
     ".": {
       "entry": [
         "scripts/**/*.mjs",
-        "scripts/**/*.cjs"
+        "scripts/**/*.cjs",
+        "scripts/types/client-build-environment/index.d.ts"
+      ],
+      "ignoreUnresolved": [
+        "client-build-environment"
       ],
       "project": [
         "scripts/**/*.ts",
@@ -500,6 +504,16 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
+      ]
+    },
+    "packages/context/file-reference": {
+      "ignoreDependencies": [
+        "zod"
+      ]
+    },
+    "packages/context/session-reference": {
+      "ignoreDependencies": [
+        "zod"
       ]
     },
     "packages/session/session-checkpoint-policy": {

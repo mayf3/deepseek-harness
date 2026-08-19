@@ -1,7 +1,10 @@
 /** Release family discovery, publish order, tag naming, and the bump judgements. */
 
-import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { officialClientBuildEnvironment, writeClientBuildRecord } from '../client-build-environment.ts'
 import { releaseFamily, type ReleaseMember } from './families.ts'
 import { compareVersions, nextVendorVersion, reachesPayload } from './bump.ts'
 
@@ -15,6 +18,27 @@ import { compareVersions, nextVendorVersion, reachesPayload } from './bump.ts'
 function member(directory: string, name: string, manifest: Record<string, unknown> = {}): ReleaseMember {
   return { directory, name, version: '0.0.1', manifest }
 }
+
+const roots: string[] = []
+
+function write(path: string, content: string): void {
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, content)
+}
+
+function buildFixture(environment: Record<string, string>): string {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-release-build-'))
+  roots.push(root)
+  write(join(root, 'apps/web/dist/index.html'), '<main></main>')
+  write(join(root, 'packages/client/example/lib/client.js'), 'module.exports = {}\n')
+  writeClientBuildRecord(root, environment)
+  return root
+}
+
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  vi.unstubAllEnvs()
+})
 
 describe('release families', () => {
   it('excludes private experimental packages from the dsh release', () => {
@@ -55,6 +79,23 @@ describe('release families', () => {
 
     expect(() => { vendor.verifyVersions(members) }).not.toThrow()
     expect(() => { vendor.verifyVersions([{ ...members[0]!, version: 'latest' }]) }).toThrow(/unpublishable version/)
+  })
+
+  it('requires a current official client build only for dsh artifacts', () => {
+    const dsh = releaseFamily('dsh')
+    const vendor = releaseFamily('vendor')
+    const officialEnvironment = officialClientBuildEnvironment(resolve(import.meta.dirname, '../..'))
+    vi.stubEnv('DSH_CLIENT_COMMIT_HASH', officialEnvironment.DSH_CLIENT_COMMIT_HASH)
+    const official = buildFixture(officialEnvironment)
+    const defaultBuild = buildFixture({})
+
+    expect(() => { dsh.verifyBuildArtifacts(official) }).not.toThrow()
+    expect(() => { dsh.verifyBuildArtifacts(defaultBuild) }).toThrow(/DSH_CLIENT_TITLE/)
+    expect(() => { dsh.verifyBuildArtifacts(join(defaultBuild, 'missing')) }).toThrow(/record.*missing/)
+    expect(() => { vendor.verifyBuildArtifacts(join(defaultBuild, 'missing')) }).not.toThrow()
+
+    write(join(official, 'packages/client/example/lib/client.js'), 'module.exports = { changed: true }\n')
+    expect(() => { dsh.verifyBuildArtifacts(official) }).toThrow(/artifacts differ/)
   })
 
   it('publishes a dependency before its consumer, and orders ties by name', () => {
