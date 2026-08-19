@@ -139,10 +139,12 @@ describe('CI workflow', () => {
       'cancel-in-progress': true,
     })
 
-    // ci-master must not listen to pull_request: that is what keeps master-only
-    // jobs out of the PR check panel. ci.yml is pull_request-only.
-    expect(workflow.on).not.toHaveProperty('pull_request')
-    expect(prWorkflow.on).toHaveProperty('pull_request')
+    // The exact event sets are what keep master-only jobs out of the PR check
+    // panel: ci-master triggers only on push(master) + workflow_dispatch and
+    // never on pull_request; ci.yml is exactly pull_request-only. Assert the
+    // full sets so losing the wrong event, or gaining an extra one, fails.
+    expect(Object.keys(workflow.on).sort()).toEqual(['push', 'workflow_dispatch'])
+    expect(Object.keys(prWorkflow.on)).toEqual(['pull_request'])
 
     // Neither drill may carry a job-level group: it would not exempt the job
     // from run-scoped cancellation.
