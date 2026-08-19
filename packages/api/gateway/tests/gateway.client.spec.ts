@@ -528,6 +528,21 @@ describe('Client Typert API', () => {
     expect(ctx.get('remote.probe')).toBeUndefined()
   })
 
+  it('unparks a namespace dependent only after its contribution methods exist', async () => {
+    const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>())
+    const { scope: _scope, ...direct } = directDescriptor()
+    let observed: string | undefined
+    // Parked before the mount: the unpark moment is the observation — the
+    // atomic-visibility guarantee says the service never appears methodless.
+    const parked = ctx.inject(['remote.probe'], (probeCtx) => {
+      observed = typeof (probeCtx.get('remote.probe') as { create?: unknown } | undefined)?.create
+    })
+    const dispose = await ctx.remote.$mount({ package: '@fixture/atomic-visibility', descriptors: [direct] })
+    await parked
+    expect(observed).toBe('function')
+    await dispose()
+  })
+
   it('rejects weak parameter and Context codecs plus malformed scope projections', async () => {
     const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>())
     const direct = directDescriptor()
