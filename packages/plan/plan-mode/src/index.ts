@@ -34,7 +34,6 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
 // Type-only edge: resolves `ctx.commands` for the optional command child.
 import type {} from '@deepseek-ai/dsh-commands'
-import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 // Type-only: resolves ctx.sessionProjections for the optional unit child.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { PlanProjection } from './types.ts'
@@ -149,8 +148,20 @@ interface PlanUnitState {
   /** The selection's target mode; null when no selection is outstanding. */
   wanted: boolean | null
   /** The latest plan command awaiting its paired settlement. */
-  running: { commandId: CommandId; wanted: boolean } | null
+  running: { commandId: string; wanted: boolean } | null
 }
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    plan: PlanUnitState
+  }
+}
+
+const planUnitStateSchema: ZodType<PlanUnitState> = zod.object({
+  active: zod.boolean(),
+  wanted: zod.boolean().nullable(),
+  running: zod.object({ commandId: zod.string(), wanted: zod.boolean() }).nullable(),
+})
 
 /** Wire payload schema of the `plan` projection. */
 const planProjectionSchema: ZodType<PlanProjection> = zod.object({
@@ -247,7 +258,7 @@ export class PlanModeController extends Service {
     ctx.inject(['sessionProjections'], (projectionCtx) => {
       projectionCtx.sessionProjections.register<'plan', PlanUnitState>({
         key: 'plan',
-        schema: planProjectionSchema,
+        stateSchema: planUnitStateSchema,
         init: () => ({ active: false, wanted: null, running: null }),
         apply: (state, event) => {
           if (event.type === 'command/run' && event.data.name === 'plan') {
@@ -266,9 +277,12 @@ export class PlanModeController extends Service {
           }
           return state
         },
-        view: (state) => {
-          const wanted = state.running?.wanted ?? state.wanted
-          return { active: state.active, pending: wanted !== null && wanted !== state.active }
+        wire: {
+          viewSchema: planProjectionSchema,
+          view: (state) => {
+            const wanted = state.running?.wanted ?? state.wanted
+            return { active: state.active, pending: wanted !== null && wanted !== state.active }
+          },
         },
         stateVersion: 2,
       })

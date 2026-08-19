@@ -1,6 +1,6 @@
 /**
  * Persisted projection cache (`ctx.sessionProjectionCache`): durable
- * checkpoints of every registered projection unit's state, one record per
+ * checkpoints of every client-visible or explicitly persisted projection unit's state, one record per
  * session on the domain data form (`session_projcache` domain — the shipped
  * json backend lands it beside `workspace.json`). The cache is a fold
  * shortcut, never an authority: a row is possibly stale (its `seq`
@@ -113,13 +113,17 @@ export class SessionProjectionCache extends Service {
    * paths (the history tail baseline, {@link coldSnapshot}) supersede these
    * values whenever a session is actually opened.
    * @param meta - the listed session's header (identity witness; no log read).
+   * @param options - restrict the result to client-visible keys.
    * @returns the cut (`asOfSeq` = lowest served-row watermark), or
    *   `undefined` when no usable row exists for this lifecycle.
    */
-  cachedSnapshot(meta: SessionHeader): ProjectionSnapshot | undefined {
+  cachedSnapshot(
+    meta: SessionHeader,
+    options?: { wireOnly?: boolean },
+  ): ProjectionSnapshot | undefined {
     const record = this.recordFor(meta.id, identityOf(meta))
     if (record === undefined) return undefined
-    const values = this.ctx.sessionProjections.viewCheckpoint(record.rows)
+    const values = this.ctx.sessionProjections.viewCheckpoint(record.rows, options)
     const keys = Object.keys(values)
     if (keys.length === 0) return undefined
     // The block carries ONE cut: the lowest served watermark is the seq every

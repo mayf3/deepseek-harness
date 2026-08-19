@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { z as zod } from 'zod'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
@@ -785,7 +786,7 @@ type HistorySource =
 function projectionsFor(ctx: Context, session: Session): SessionProjectionsBlock | undefined {
   const registry = ctx.get('sessionProjections')
   if (registry === undefined) return undefined
-  return registry.snapshot(session)
+  return registry.snapshot(session, { wireOnly: true })
 }
 
 /**
@@ -801,8 +802,8 @@ function projectionsFor(ctx: Context, session: Session): SessionProjectionsBlock
 function listProjectionsFor(ctx: Context, meta: SessionHeader, session: Session | undefined): SessionProjectionsBlock | undefined {
   try {
     const block = session !== undefined
-      ? ctx.get('sessionProjections')?.snapshot(session)
-      : ctx.get('sessionProjectionCache')?.cachedSnapshot(meta)
+      ? ctx.get('sessionProjections')?.snapshot(session, { wireOnly: true })
+      : ctx.get('sessionProjectionCache')?.cachedSnapshot(meta, { wireOnly: true })
     return block !== undefined && Object.keys(block.values).length > 0 ? block : undefined
   } catch (error) {
     ctx.logger.warn(`session.list: projection column for "${meta.id}" failed (serving the row without it): ${String(error)}`)
@@ -817,7 +818,7 @@ function detachedProjectionsFor(
 ): SessionProjectionsBlock | undefined {
   const registry = ctx.get('sessionProjections')
   if (registry === undefined) return undefined
-  return registry.restore({}, events, 0).snapshot
+  return registry.restore({}, events, 0, { wireOnly: true }).snapshot
 }
 
 /**
@@ -1235,10 +1236,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   ctx.inject(['sessionProjections'], (projectionCtx) => {
     projectionCtx.sessionProjections.register<'sessionListMetadata', SessionListMetadata>({
       key: 'sessionListMetadata',
-      schema: sessionListMetadataProjectionSchema,
+      stateSchema: sessionListMetadataProjectionSchema,
       init: () => ({ blank: true, lastPromptAt: null }),
       apply: applySessionListMetadata,
-      view: state => state,
+      wire: { viewSchema: sessionListMetadataProjectionSchema, view: state => state },
       stateVersion: 1,
     })
   })
@@ -1259,10 +1260,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   ctx.inject(['sessionProjections', 'attachments'], (projectionCtx) => {
     projectionCtx.sessionProjections.register<'imageLimits', null>({
       key: 'imageLimits',
-      schema: imageLimitsProjectionSchema,
+      stateSchema: zod.null(),
       init: () => null,
       apply: state => state,
-      view: () => projectionCtx.attachments.imageLimits,
+      wire: { viewSchema: imageLimitsProjectionSchema, view: () => projectionCtx.attachments.imageLimits },
       stateVersion: 1,
     })
   })

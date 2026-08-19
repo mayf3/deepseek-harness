@@ -19,6 +19,10 @@ import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-
 import SessionProjectionCache from '../src/index.ts'
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    'cache-test/marks': MarksState
+    'cache-test/marks2': Map<string, string>
+  }
   interface SessionProjectionMap {
     'cache-test/marks': { marks: string[] }
   }
@@ -35,14 +39,17 @@ declare module '@deepseek-ai/dsh-session/types' {
 }
 
 type MarksState = { marks: string[] } | null
-const marksUnit = (stateVersion = 1): ProjectionDefinition<'cache-test/marks', MarksState> => ({
+const marksUnit = (stateVersion = 1) => ({
   key: 'cache-test/marks',
-  schema: z.object({ marks: z.array(z.string()) }),
+  stateSchema: z.object({ marks: z.array(z.string()) }).nullable(),
   init: () => null,
   apply: (state, event) => (event.type === 'cache-test/mark' ? (event).data : state),
-  view: state => state ?? { marks: [] },
+  wire: {
+    viewSchema: z.object({ marks: z.array(z.string()) }),
+    view: state => state ?? { marks: [] },
+  },
   stateVersion,
-})
+}) satisfies ProjectionDefinition<'cache-test/marks', MarksState>
 
 /** A persistence double serving readFrom over a fixed per-id stored log (headers stamp createdAt 0). */
 function fakePersistence(logs: Map<string, SessionEvent[]>) {
@@ -175,11 +182,11 @@ describe('SessionProjectionCache write policy', () => {
     expect(storedRows(pool, clean.id)?.['cache-test/marks']).toEqual({ ver: 1, seq: -1, val: null })
     // A unit whose state violates the plain-JSON contract fails the write loud.
     ctx.sessionProjections.register({
-      key: 'cache-test/marks2' as never,
-      schema: { parse: (value: unknown) => value } as never,
+      key: 'cache-test/marks2',
+      stateSchema: z.custom<Map<string, string>>(() => true),
+      persist: true,
       init: () => new Map<string, string>(),
-      apply: (state: unknown) => state,
-      view: () => null as never,
+      apply: state => state,
       stateVersion: 1,
     })
     await expect(ctx.sessionProjectionCache.write(clean)).rejects.toThrow('not losslessly JSON-serializable')

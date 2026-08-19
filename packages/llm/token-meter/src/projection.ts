@@ -33,7 +33,7 @@ export interface ContextPressureProjection {
    * plus cache reads and writes. Response output is excluded, so this does not
    * grow as the current turn streams. Absent until a provider reports usage.
    */
-  pressureTokens?: number
+  pressureTokens?: number | undefined
   /**
    * What the NEXT request's prompt would cost: {@link pressureTokens} plus the
    * heuristic repricing of everything the surface gained or lost since that
@@ -42,9 +42,9 @@ export interface ContextPressureProjection {
    * which `pressureTokens` alone cannot do, since compaction reports no usage
    * of its own. Absent until a provider reports usage.
    */
-  projectedTokens?: number
+  projectedTokens?: number | undefined
   /** Newest recorded route capacity; absent when no adapter advertised one. */
-  contextWindow?: number
+  contextWindow?: number | undefined
 }
 
 /**

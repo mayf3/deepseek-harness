@@ -16,9 +16,13 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    'test/marks': MarksState
+    'test/count': number
+  }
+
   interface SessionProjectionMap {
     'test/marks': { marks: string[] }
-    'test/count': number
   }
 }
 
@@ -28,24 +32,28 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 
-/** Whole-value unit: latest test/mark event wins; unrelated events return the same reference. */
 type MarksState = { marks: string[] } | null
-const marksUnit = (): ProjectionDefinition<'test/marks', MarksState> => ({
+/** Whole-value unit: latest test/mark event wins; unrelated events return the same reference. */
+const marksUnit = (): ProjectionDefinition<'test/marks', MarksState>
+  & { wire: NonNullable<ProjectionDefinition<'test/marks', MarksState>['wire']> } => ({
   key: 'test/marks',
-  schema: z.object({ marks: z.array(z.string()) }),
+  stateSchema: z.object({ marks: z.array(z.string()) }).nullable(),
   init: () => null,
   apply: (state, event) => (event.type === 'test/mark' ? (event).data : state),
-  view: state => state ?? { marks: [] },
+  wire: {
+    viewSchema: z.object({ marks: z.array(z.string()) }),
+    view: state => state ?? { marks: [] },
+  },
   stateVersion: 1,
 })
 
-/** Counting unit over every event — state changes on each apply. */
+/** Host-only counting unit over every event — state changes on each apply. */
 const countUnit = (): ProjectionDefinition<'test/count', number> => ({
   key: 'test/count',
-  schema: z.number().int().nonnegative(),
+  stateSchema: z.number().int().nonnegative(),
+  persist: true,
   init: () => 0,
   apply: state => state + 1,
-  view: state => state,
   stateVersion: 1,
 })
 
@@ -101,6 +109,90 @@ describe('SessionProjectionRegistry drive', () => {
     expect(seen).toEqual([{ key: 'test/marks', value: { marks: ['a'] }, seq: event.seq, sessionId: String(session.id) }])
   })
 
+  it('contains a throwing change listener and continues the remaining feed', async () => {
+    const { ctx, session } = await harness()
+    ctx.sessionProjections.register(marksUnit())
+    const seen: string[] = []
+    ctx.sessionProjections.onChanged(() => {
+      throw new Error('change listener boom')
+    })
+    ctx.sessionProjections.onChanged((_session, key) => {
+      seen.push(key)
+    })
+
+    expect(() => mark(session, ['contained'])).not.toThrow()
+    expect(seen).toEqual(['test/marks'])
+  })
+
+  it('publishes only client-visible changes and honors the direct disposer', async () => {
+    const { ctx, session } = await harness()
+    ctx.sessionProjections.register(marksUnit())
+    ctx.sessionProjections.register(countUnit())
+    const seen: string[] = []
+    const dispose = ctx.sessionProjections.onChanged((_session, key) => {
+      seen.push(key)
+    })
+    mark(session, ['wire'])
+    expect(seen).toEqual(['test/marks'])
+    dispose()
+    mark(session, ['disposed'])
+    expect(seen).toEqual(['test/marks'])
+  })
+
+  it('makes an earlier session listener read current and skips duplicate drive application', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const seen: unknown[] = []
+    ctx.on('session/event', (session) => {
+      seen.push(ctx.sessionProjections.snapshot(session).values['test/marks'])
+    })
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.sessionProjections.register(marksUnit())
+    const session = ctx.sessions.create()
+
+    mark(session, ['early listener'])
+
+    expect(seen).toEqual([{ marks: ['early listener'] }])
+    expect(ctx.sessionProjections.snapshot(session).values['test/marks'])
+      .toEqual({ marks: ['early listener'] })
+  })
+
+  it('forward-applies events appended while the session is detached', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.sessionProjections.register(countUnit())
+    const session = ctx.sessions.prepare()
+    const detach = ctx.sessions.enter(session)
+    session.append('turn/start', { turn: 1 })
+    expect(ctx.sessionProjections.snapshot(session).values['test/count']).toBe(1)
+    detach()
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
+    ctx.sessions.enter(session)
+
+    session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+
+    expect(ctx.sessionProjections.snapshot(session).values['test/count']).toBe(4)
+  })
+
+  it('brings a detached session cell current on its first read after reattachment', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.sessionProjections.register(countUnit())
+    const session = ctx.sessions.prepare()
+    const detach = ctx.sessions.enter(session)
+    session.append('turn/start', { turn: 1 })
+    expect(ctx.sessionProjections.snapshot(session).values['test/count']).toBe(1)
+    detach()
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
+    ctx.sessions.enter(session)
+
+    expect(ctx.sessionProjections.snapshot(session).values['test/count']).toBe(3)
+  })
+
   it('drives independently per session (cells are per-session watermarks)', async () => {
     const { ctx, session } = await harness()
     const other = ctx.sessions.create()
@@ -111,7 +203,7 @@ describe('SessionProjectionRegistry drive', () => {
     expect(ctx.sessionProjections.snapshot(other).values['test/marks']).toEqual({ marks: ['two'] })
   })
 
-  it('runs every registered unit — a changing unit notifies while a same-reference unit stays silent', async () => {
+  it('updates host-only units without publishing them to wire listeners', async () => {
     const { ctx, session } = await harness()
     ctx.sessionProjections.register(marksUnit())
     ctx.sessionProjections.register(countUnit())
@@ -120,8 +212,7 @@ describe('SessionProjectionRegistry drive', () => {
       changedKeys.push(key)
     })
     session.append('turn/start', { turn: 1 })
-    // count applied (+1 change), marks returned the same reference.
-    expect(changedKeys).toEqual(['test/count'])
+    expect(changedKeys).toEqual([])
     const snapshot = ctx.sessionProjections.snapshot(session)
     expect(snapshot.values['test/count']).toBe(1)
     expect(snapshot.values['test/marks']).toEqual({ marks: [] })
@@ -200,7 +291,18 @@ describe('SessionProjectionRegistry drive', () => {
     expect(ctx.sessionProjections.snapshot(session).values).toEqual({})
   })
 
-  it('checkpoints every registered unit with its stateVersion and per-cell watermark', async () => {
+  it('snapshot serves the wire view for a client key and the raw state for a host-internal key', async () => {
+    const { ctx, session } = await harness()
+    ctx.sessionProjections.register(marksUnit())
+    ctx.sessionProjections.register(countUnit())
+    mark(session, ['a', 'b'])
+    const values = ctx.sessionProjections.snapshot(session).values
+    expect(values['test/marks']).toEqual({ marks: ['a', 'b'] })
+    expect(values['test/count']).toEqual(1)
+    expect('test/unregistered' in values).toBe(false)
+  })
+
+  it('checkpoints every persisted unit with its stateVersion and per-cell watermark', async () => {
     const { ctx, session } = await harness()
     ctx.sessionProjections.register(marksUnit())
     ctx.sessionProjections.register({ ...countUnit(), stateVersion: 7 })
@@ -324,6 +426,40 @@ describe('SessionProjectionRegistry drive', () => {
     expect(ctx.sessionProjections.viewCheckpoint({})).toEqual({})
   })
 
+  it('viewCheckpoint and restore can serve wire keys while retaining full host checkpoints', async () => {
+    const { ctx } = await harness()
+    ctx.sessionProjections.register(marksUnit())
+    ctx.sessionProjections.register(countUnit())
+    const rows = {
+      'test/marks': { ver: 1, seq: 4, val: { marks: ['stored'] } },
+      'test/count': { ver: 1, seq: 4, val: 5 },
+    }
+    expect(ctx.sessionProjections.viewCheckpoint(rows)).toEqual({
+      'test/marks': { marks: ['stored'] },
+      'test/count': 5,
+    })
+    expect(ctx.sessionProjections.viewCheckpoint(rows, { wireOnly: true })).toEqual({
+      'test/marks': { marks: ['stored'] },
+    })
+
+    const restored = ctx.sessionProjections.restore(rows, [], 5, { wireOnly: true })
+    expect(restored.snapshot.values).toEqual({
+      'test/marks': { marks: ['stored'] },
+    })
+    expect(restored.checkpoint['test/count']).toEqual(rows['test/count'])
+  })
+
+  it('rejects version-matching rows whose state no longer matches the registered schema', async () => {
+    const { ctx } = await harness()
+    ctx.sessionProjections.register(marksUnit())
+    const drifted = {
+      'test/marks': { ver: 1, seq: 2, val: { marks: 'not-an-array' } },
+    }
+
+    expect(ctx.sessionProjections.viewCheckpoint(drifted)).toEqual({})
+    expect(() => ctx.sessionProjections.restore(drifted, [], 3)).toThrow()
+  })
+
   it('restore rejects a row claiming events past the supplied log end (shrunk log ⇒ re-read)', async () => {
     const { ctx } = await harness()
     ctx.sessionProjections.register(countUnit())
@@ -352,12 +488,15 @@ describe('SessionProjectionRegistry drive', () => {
     const { ctx, session } = await harness()
     ctx.sessionProjections.register({
       key: 'test/marks',
-      schema: z.object({ marks: z.array(z.string()) }),
+      stateSchema: z.object({ marks: z.array(z.string()) }).nullable(),
       init: () => null as MarksState,
       apply: state => state,
-      // A Promise (what an accidentally-async view would return) is not the
-      // declared shape: the boundary parse rejects it before it leaves.
-      view: () => Promise.resolve({ marks: [] }) as never,
+      wire: {
+        viewSchema: z.object({ marks: z.array(z.string()) }),
+        // A Promise (what an accidentally-async view would return) is not the
+        // declared shape: the boundary parse rejects it before it leaves.
+        view: () => Promise.resolve({ marks: [] }) as never,
+      },
       stateVersion: 1,
     })
     expect(() => ctx.sessionProjections.snapshot(session)).toThrow()
