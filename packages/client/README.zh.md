@@ -7,18 +7,17 @@ dsh web GUI 的浏览器侧：shell 启动、浏览器与宿主通信、共享 U
 | 包 | 目的 |
 |---|---|
 | [`web/`](web/README.md) | 从客户端条目图启动浏览器 shell。 |
+| [`ui-renderer/`](ui-renderer/README.md) | 将 slot 数据绑定到 React，并在客户端启动稳定后挂载组装完成的应用。 |
 | [`modules/`](modules/README.md) | 加载浏览器侧客户端模块。 |
-| [`web-react/`](web-react/README.md) | 连接 shell 运行时与 React 渲染。 |
 | [`connection/`](connection/README.md) | 维护浏览器与宿主之间的 RPC 通信和事件传递。 |
 | [`runtime/`](runtime/README.md) | 为会话、工作区和 UI 组合提供共享客户端服务。 |
 | [`hmr/`](hmr/README.md) | 在开发期间刷新客户端插件。 |
 | [`locale/`](locale/README.md) | 提供本地化偏好与消息词典。 |
-| [`schema-form/`](schema-form/README.md) | 为设置编辑器提供 schema 驱动的草稿处理。 |
 | [`test-runtime/`](../test-support/client-runtime/README.md) | 为客户端功能包提供共享的仓库测试支持。 |
 | [`ui-slots/`](ui-slots/README.md) | 定义 UI 功能注册和组合扩展 slot 的方式。 |
 | [`ui-theme/`](ui-theme/README.md) | 应用所选颜色主题。 |
 | [`ui-primitives/`](ui-primitives/README.md) | 提供共享 React 控件、图标和内容渲染器。 |
-| [`ui-attachment/`](ui-attachment/README.md) | 提供附件展示原子组件：草稿图片栏、消息画廊与灯箱。 |
+| [`ui-attachment/`](ui-attachment/README.md) | 注册输入框与消息图片的附件呈现。 |
 | [`ui-layout/`](ui-layout/README.md) | 排列应用的主要区域。 |
 | [`ui-sidebar/`](ui-sidebar/README.md) | 展示工作区与会话导航。 |
 | [`ui-workspace/`](ui-workspace/README.md) | 提供工作区选择与创建界面。 |

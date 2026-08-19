@@ -302,6 +302,26 @@
       "source": "packages/schedule/schedule/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/team.md",
+      "symbol": "TeamMemberSnapshot",
+      "source": "packages/experimental/team/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/team.md",
+      "symbol": "TeamMessageSnapshot",
+      "source": "packages/experimental/team/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/team.md",
+      "symbol": "TeamMessageSource",
+      "source": "packages/experimental/team/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/team.md",
+      "symbol": "TeamTaskSnapshot",
+      "source": "packages/experimental/team/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/commands.md",
       "symbol": "CommandInputDescriptor",
       "source": "packages/interaction/commands/src/types.ts"

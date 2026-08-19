@@ -545,7 +545,7 @@ function buildAlphaLog(): SessionEvent[] {
   // the real tools so they hit the keyed WebRow registration. Ordered BEFORE
   // the todo turn for the same reason turn 66 is: the standing plan retires at
   // the next turn/start, so a turn after it would empty the dock's plan strip.
-  toolTurn(70, 'web_search', '{"query":"deepseek harness architecture"}', 'Search results for deepseek harness architecture.')
+  toolTurn(70, 'web_search', '{"queries":["deepseek harness architecture"]}', 'Search results for deepseek harness architecture.')
   toolTurn(71, 'web_fetch', '{"url":"https://www.deepseek.com/blog/harness-architecture"}', '# Harness architecture\n\nEverything is a plugin.')
 
   // Turn 72: max-tokens sample — the provider ends the turn at its output cap
@@ -660,8 +660,11 @@ function presentCall(name: string, argsRaw: string): ToolCallView | undefined {
     // The web tools keep a GENERIC pending card and add the `web` result card
     // only at result time (the contract's result-only web shape); their pending
     // kind matches the result kind so a call and its result read as one category.
-    case 'web_search':
-      return { card: 'generic', title: `Search ${str(args.query)}`, kind: 'search', rawInput: args }
+    case 'web_search': {
+      const queries = Array.isArray(args.queries) ? args.queries.filter((query): query is string => typeof query === 'string' && query !== '') : []
+      const title = queries.join(', ')
+      return { card: 'generic', title: `Search ${title}`, kind: 'search', rawInput: args }
+    }
     case 'web_fetch':
       return { card: 'generic', title: `Fetch ${str(args.url)}`, kind: 'fetch', rawInput: args }
     default:
@@ -1077,6 +1080,7 @@ function projectionValuesOf(log: readonly SessionEvent[]): Record<string, unknow
     maxImagesPerMessage: 20,
     maxMessageImageBytes: 100 * 1024 * 1024,
     maxImagePixels: 40_000_000,
+    maxImageDimension: 2000,
     mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
   }
   return values
@@ -2402,6 +2406,13 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           return err(request, { code: 'session-not-found', message: `no session ${id}`, details: { sessionId: id } })
         }
         if (options.rejectPrompt) {
+          if (content.some(block => block.type === 'image')) {
+            return err(request, {
+              code: 'attachment-error',
+              message: 'fixture: image side exceeds the deployment limit',
+              details: { reason: 'IMAGE_DIMENSION_TOO_LARGE' },
+            })
+          }
           return err(request, {
             code: 'agent-busy',
             message: 'fixture: prompt rejected before acceptance',
