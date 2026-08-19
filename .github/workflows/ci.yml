@@ -44,7 +44,9 @@ jobs:
 
   # TODO(hosted-serial-ci): Re-enable the one remaining disabled hosted serial
   # reference job (serial-macos) before release. The self-hosted standby lane
-  # below remains active on every master push.
+  # below remains active on every master push. Re-enabling serial-macos does not
+  # restore a Linux hosted-cache producer: decide whether to add a master seeder
+  # or remove the restore-only steps if cold starts become a concern.
 
   # Three enterprise jobs isolate coverage, static analysis, and the
   # build-backed consumer tail. The consumer job owns the only Linux build so
@@ -225,7 +227,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-
 
-      # Skipped under failover — see the coverage lane's identical rationale.
+      # Skipped under failover: the VM's persistent browser cache is already warm.
       - uses: actions/cache/restore@v4
         if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
         with:
