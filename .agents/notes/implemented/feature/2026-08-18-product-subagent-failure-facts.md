@@ -19,12 +19,12 @@ Each product Provider owns the mapping from its pinned official error union, cur
 The structured line has this fixed order:
 
 ```text
-Product subagent failure (product: <product>; stage: <stage>; category: <category>; exit code: <code>; signal: <signal>)
+Product subagent failure (product: <product>; stage: <stage>; category: <category>; HTTP status: <status>; exit code: <code>; signal: <signal>)
 ```
 
-The Provider omits unavailable exit fields. Exit code and signal are independent facts and are each retained when observed. A contributing permission decision from the [non-interactive permissions decision](2026-08-15-product-subagent-noninteractive-permissions.md) follows the structured line; the latest safe permission fact remains operation-local. The shared result boundary limits the complete text to 4096 UTF-8 bytes.
+The Provider omits unavailable optional fields. Exit code and signal are independent facts and are each retained when observed. A contributing permission decision from the [non-interactive permissions decision](2026-08-15-product-subagent-noninteractive-permissions.md) follows the structured line; the latest safe permission fact remains operation-local. The shared result boundary limits the complete text to 4096 UTF-8 bytes.
 
-Successful results and local cancellation expose no failure fact. Raw product errors, stderr, tool input, paths, environment values, credentials, and protocol payloads never enter the diagnostic. Startup and cleanup rejections use the same safe line in their Error message while retaining the original failure only on the internal cause chain and in Host logging.
+Successful results and local cancellation expose no failure fact. Raw product errors, stderr, tool input, paths, environment values, credentials, and protocol payloads never enter the diagnostic. Startup and cleanup rejections use the same safe line in their Error message. Original failures remain on internal cause chains; Provider Host logs and forwarded stderr remain product-local observation only.
 
 ### Claude Code facts
 
@@ -37,7 +37,20 @@ Agent SDK 0.3.220 defines four error subtypes: `error_during_execution`, `error_
 | `process` | Managed CLI exits before the SDK supplies a terminal result | The run resolves as `error` with `process-exit` and the available exit code and signal |
 | `teardown` | Query close and managed process-tree release | `dispose()` rejects independently with fixed safe facts after cleanup still reaches its final exit wait |
 
-The Codex Provider retains its existing result mapping: `contextWindowExceeded` is `max-tokens`, other turn failures remain `error`, and permission-related paths may carry their existing safe diagnostic. Other Codex error-info members are not represented as shared categories by this decision's current implementation.
+### Codex facts
+
+Codex app-server 0.147.0 defines eleven string categories and five object variants. The Provider preserves `contextWindowExceeded`, `sessionBudgetExceeded`, `usageLimitExceeded`, `serverOverloaded`, `cyberPolicy`, `internalServerError`, `unauthorized`, `badRequest`, `threadRollbackFailed`, `sandboxError`, and `other`. It also preserves `httpConnectionFailed`, `responseStreamConnectionFailed`, `responseStreamDisconnected`, `responseTooManyFailedAttempts`, and `activeTurnNotSteerable`; the four connection/stream variants retain numeric `httpStatusCode`, while the active-turn variant does not expose `turnKind`. Unknown strings, objects with another variant set, malformed values, and unclassified exceptions use `unknown`.
+
+| Stage | Owned operation | Observable failure |
+| --- | --- | --- |
+| `initialize` | App-server spawn and initialize/initialized handshake | `start()` rejects with fixed safe facts and any process outcome already observed |
+| `thread-start` | Ephemeral `thread/start` request and response validation | `start()` rejects with the thread stage and any available process outcome |
+| `turn-start` | Published `turn/start` request, provisional ids, and early frames | The run resolves as `error` with a safe unknown fallback when no structured category exists |
+| `turn` | Terminal notification, final-answer selection, and error-info mapping | The complete category and optional HTTP status reach the non-completed result |
+| `process` | Managed app-server exits before another terminal path settles | The run resolves as `error` with `process-exit` and any available code and signal |
+| `teardown` | Wire close and process-tree release | `dispose()` rejects independently; startup rollback aggregation exposes both startup and teardown lines |
+
+`contextWindowExceeded` remains `max-tokens`; every other known or unknown Codex category remains `error`, and `cyberPolicy` does not become `refusal`.
 
 ### Ownership and lifecycle
 
@@ -47,11 +60,11 @@ The Codex Provider retains its existing result mapping: `contextWindowExceeded` 
 | Current failure stage | Product Provider operation | Derived at the failure site; never persisted or used as a recovery state |
 | Exit code and signal | `dsh-subprocess` process handle | The Provider displays observed values without inferring missing ones |
 | Diagnostic bytes and delivery | `dsh-subagent`, foreground tool, and Job runtime | The same bounded text is presented separately from assistant output in both scheduling modes |
-| Raw product failure | Product runtime and Host log | It remains internal and never becomes model-visible result text |
+| Raw product failure | Product runtime, internal cause chain, and Host observation | It remains internal and never becomes model-visible result text |
 
 ## Verification
 
-Claude Code package tests pin all four SDK subtypes, invalid success, missing result, unknown values and exceptions, all four stages, independent exit code and signal fields, permission-fact ordering, sanitization, successful-result and cancellation omission, concurrent-run isolation, and cleanup completion. The real SDK/CLI fixture produces an actual `error_max_turns` result and an actual early process exit while proving whole-tree quiescence. The keyless ACP snapshot records the same failure diagnostic in foreground error output, the background completion notice, and `job_output`.
+Claude Code package tests pin all four SDK subtypes, invalid success, missing result, unknown values and exceptions, all four stages, independent exit code and signal fields, permission-fact ordering, sanitization, successful-result and cancellation omission, concurrent-run isolation, and cleanup completion. Codex package tests pin all sixteen error-info variants, HTTP status presence and absence, all six stages, unknown fallback, stop-reason preservation, permission ordering, sanitization, cancellation, concurrency, and cleanup aggregation. The real SDK/CLI fixture produces an actual Claude `error_max_turns`; the real app-server fixture produces an actual Codex `internalServerError`; both fixtures cover process/protocol failure and whole-tree quiescence. The keyless ACP snapshot records each product's exact diagnostic in foreground error output, a background completion notice, and `job_output`.
 
 ## Alternatives considered
 
@@ -67,7 +80,7 @@ Claude Code package tests pin all four SDK subtypes, invalid success, missing re
 
 ## Consequences
 
-The parent can distinguish important Claude Code product limits, invalid terminal results, unknown query failures, and early process exits without receiving raw product text. Foreground and background scheduling preserve the same fact because both consume one `SubagentResult`.
+The parent can distinguish important Claude Code limits and Codex budget, usage, service, policy, request, connection, stream, rollback, sandbox, and active-turn failures without receiving raw product text. Foreground and background scheduling preserve the same fact because both consume one `SubagentResult`.
 
 The diagnostic is display text rather than a new public protocol. Callers may present it but must not branch on its punctuation or product-private category names. A pinned product-version upgrade must update the Provider mapping and evidence when its official error union changes.
 

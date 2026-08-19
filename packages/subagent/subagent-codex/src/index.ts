@@ -21,6 +21,7 @@ import {
   CODEX_PERMISSION_MODES,
   DEFAULT_CODEX_PERMISSION_MODE,
   DEFAULT_DISPOSE_GRACE_MS,
+  codexStartupFailure,
   startCodexRun,
   type CodexPermissionMode,
   type CodexRunSpec,
@@ -73,12 +74,23 @@ class CodexProvider implements SubagentProvider {
         'subagent-codex: no working directory for the child — delegate from a parent session that has one',
       )
     }
-    const spec: CodexRunSpec = {
-      cwd: resolveChildCwd(
+    let cwd: string
+    try {
+      cwd = resolveChildCwd(
         'subagent-codex',
         undefined,
         parentCwd,
-      ),
+      )
+    } catch (error: unknown) {
+      if (request.signal.aborted) {
+        throw new Error(
+          'subagent-codex: request was aborted before app-server startup',
+        )
+      }
+      throw codexStartupFailure(error)
+    }
+    const spec: CodexRunSpec = {
+      cwd,
       permissionMode: this.config.permissionMode,
       env: this.config.env,
       disposeGraceMs: this.config.disposeGraceMs,

@@ -19,12 +19,12 @@ Status: implemented
 结构化行采用以下固定顺序：
 
 ```text
-Product subagent failure (product: <product>; stage: <stage>; category: <category>; exit code: <code>; signal: <signal>)
+Product subagent failure (product: <product>; stage: <stage>; category: <category>; HTTP status: <status>; exit code: <code>; signal: <signal>)
 ```
 
-提供方会省略不可用的退出字段。退出码与信号是相互独立的事实，只要已观测到就分别保留。来自[非交互权限决策](2026-08-15-product-subagent-noninteractive-permissions.md)且参与失败的权限决定会跟在结构化行之后；最新的安全权限事实仍只属于当前操作。共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。
+提供方会省略不可用的可选字段。退出码与信号是相互独立的事实，只要已观测到就分别保留。来自[非交互权限决策](2026-08-15-product-subagent-noninteractive-permissions.md)且参与失败的权限决定会跟在结构化行之后；最新的安全权限事实仍只属于当前操作。共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。
 
-成功结果与本地取消都不公开失败事实。原始产品错误、stderr、工具输入、路径、环境值、凭证和协议 payload 绝不会进入诊断。启动与清理拒绝会在 Error 消息中使用同一安全行，而原始失败只保留在内部 cause 链与 Host 日志中。
+成功结果与本地取消都不公开失败事实。原始产品错误、stderr、工具输入、路径、环境值、凭证和协议 payload 绝不会进入诊断。启动与清理拒绝会在 Error 消息中使用同一安全行。原始失败保留在内部 cause 链中；提供方 Host 日志与转发的 stderr 也只作为产品本地观测。
 
 ### Claude Code 事实
 
@@ -37,7 +37,20 @@ Agent SDK 0.3.220 定义四种错误子类型：`error_during_execution`、`erro
 | `process` | SDK 提供终态结果之前受管 CLI 已退出 | 运行以 `error` 兑现，并携带 `process-exit` 以及可用的退出码和信号 |
 | `teardown` | Query 关闭与受管进程树释放 | `dispose()` 独立拒绝并携带固定安全事实，同时清理仍会完成最终退出等待 |
 
-Codex 提供方保留既有结果映射：`contextWindowExceeded` 是 `max-tokens`，其他轮次失败仍是 `error`，权限相关路径可以携带既有安全诊断。本决策的当前实现不会把其他 Codex error-info 成员表示为共享类别。
+### Codex 事实
+
+Codex app-server 0.147.0 定义十一种字符串类别与五种对象 variant。提供方会保留 `contextWindowExceeded`、`sessionBudgetExceeded`、`usageLimitExceeded`、`serverOverloaded`、`cyberPolicy`、`internalServerError`、`unauthorized`、`badRequest`、`threadRollbackFailed`、`sandboxError` 和 `other`。它还会保留 `httpConnectionFailed`、`responseStreamConnectionFailed`、`responseStreamDisconnected`、`responseTooManyFailedAttempts` 与 `activeTurnNotSteerable`；四种连接／stream variant 会保留数值 `httpStatusCode`，而 active-turn variant 不公开 `turnKind`。未知字符串、同时含其他 variant 的对象、格式错误值与未分类异常统一使用 `unknown`。
+
+| 阶段 | 归属操作 | 可观察失败 |
+| --- | --- | --- |
+| `initialize` | App-server spawn 与 initialize/initialized 握手 | `start()` 以固定安全事实和已经观测到的进程结果拒绝 |
+| `thread-start` | 临时 `thread/start` 请求与响应校验 | `start()` 以线程阶段和可用进程结果拒绝 |
+| `turn-start` | 已发布 `turn/start` 请求、暂定 id 与早到 frame | 没有结构化类别时，运行以 `error` 和安全 unknown 回退兑现 |
+| `turn` | 终态通知、最终答案选择与 error-info 映射 | 完整类别与可选 HTTP status 进入非完成结果 |
+| `process` | 受管 app-server 在另一终态路径结算前退出 | 运行以 `error` 兑现，并携带 `process-exit` 以及可用的退出码与信号 |
+| `teardown` | Wire 关闭与进程树释放 | `dispose()` 独立拒绝；启动回滚聚合会同时公开启动与 teardown 两行 |
+
+`contextWindowExceeded` 仍是 `max-tokens`；其他所有已知或未知 Codex 类别仍是 `error`，`cyberPolicy` 不会变成 `refusal`。
 
 ### 所有权与生命周期
 
@@ -47,11 +60,11 @@ Codex 提供方保留既有结果映射：`contextWindowExceeded` 是 `max-token
 | 当前失败阶段 | 产品提供方操作 | 只在失败点派生；绝不持久化，也不作为恢复状态 |
 | 退出码与信号 | `dsh-subprocess` 进程句柄 | 提供方展示已观测值，不推测缺失值 |
 | 诊断字节与送达 | `dsh-subagent`、前台工具与 Job 运行时 | 两种调度模式都把同一份有界文本与 assistant 输出分开呈现 |
-| 原始产品失败 | 产品运行时与 Host 日志 | 只保留在内部，绝不成为模型可见的结果文本 |
+| 原始产品失败 | 产品运行时、内部 cause 链与 Host 观测 | 只保留在内部，绝不成为模型可见的结果文本 |
 
 ## Verification
 
-Claude Code 包测试固定四种 SDK 子类型、无效成功、缺失结果、未知值与异常、四个阶段、相互独立的退出码与信号字段、权限事实顺序、脱敏、成功结果与取消时省略诊断、并发运行隔离和清理完成。真实 SDK/CLI fixture 会产生真实的 `error_max_turns` 结果与真实的进程提前退出，并证明整棵进程树完全停稳。无密钥 ACP snapshot 会在前台错误输出、后台完成通知和 `job_output` 中记录同一份失败诊断。
+Claude Code 包测试固定四种 SDK 子类型、无效成功、缺失结果、未知值与异常、四个阶段、相互独立的退出码与信号字段、权限事实顺序、脱敏、成功结果与取消时省略诊断、并发运行隔离和清理完成。Codex 包测试固定全部十六种 error-info variant、HTTP status 存在与缺失、六个阶段、unknown 回退、终止原因保持不变、权限顺序、脱敏、取消、并发与清理聚合。真实 SDK/CLI fixture 会产生真实的 Claude `error_max_turns`，真实 app-server fixture 会产生真实的 Codex `internalServerError`；两个 fixture 都覆盖进程／协议失败与整棵进程树完全停稳。无密钥 ACP snapshot 会在前台错误输出、后台完成通知和 `job_output` 中记录两个产品各自的准确诊断。
 
 ## Alternatives considered
 
@@ -67,7 +80,7 @@ Claude Code 包测试固定四种 SDK 子类型、无效成功、缺失结果、
 
 ## Consequences
 
-父 agent 可以区分重要的 Claude Code 产品限制、无效终态结果、未知 query 失败和进程提前退出，而不会收到原始产品文本。前台与后台调度会保留同一事实，因为二者都消费同一个 `SubagentResult`。
+父 agent 可以区分重要的 Claude Code 限制，以及 Codex 预算、用量、服务、策略、请求、连接、stream、回滚、sandbox 和 active-turn 失败，而不会收到原始产品文本。前台与后台调度会保留同一事实，因为二者都消费同一个 `SubagentResult`。
 
 诊断只是展示文本，不是新的公开协议。调用方可以呈现它，但不得根据其标点或产品私有类别名称进行分支。锁定产品版本升级并改变官方错误联合时，必须同步更新提供方映射与证据。
 
