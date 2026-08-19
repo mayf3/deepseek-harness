@@ -102,7 +102,46 @@ tapIndex(transform: (html: string) => string): () => void
  * @returns the transformed body.
  */
 applyIndexTaps(html: string): string
+
+/**
+ * Gather the structured injection table: one `webserver/index-inject` emit,
+ * every subscriber pushes its current rows. Fresh per call, so subscribers
+ * read live state (module graph, theme preference) at emit time.
+ * @returns rows in subscriber activation order.
+ */
+collectIndexInjections(): IndexInjection[]
+
+/**
+ * Render one index.html body: the structured injection table first, then
+ * the raw `tapIndex` transforms over the result.
+ * @param html - the raw index.html body.
+ * @returns the transformed body.
+ */
+renderIndex(html: string): string
 ```
 
-Source: [`packages/host/webserver/src/index.ts:59`](../../packages/host/webserver/src/index.ts)
+Source: [`packages/host/webserver/src/index.ts:73`](../../packages/host/webserver/src/index.ts)
+
+<a id="webserver-events"></a>
+
+### `webserver/*` events
+
+<a id="webserverindex-inject--emit"></a>
+
+#### `webserver/index-inject` — emit
+
+Collect the structured index injection table. Emitted on every index render and every worker boot-payload request; listeners push their current rows, so a row's data is read fresh at emit time.
+
+```ts cordis-catalog
+/**
+ * Collect the structured index injection table. Emitted on every index
+ * render and every worker boot-payload request; listeners push their
+ * current rows, so a row's data is read fresh at emit time.
+ * @param table - Mutable row table; listeners append in activation order.
+ * @mode emit
+ */
+'webserver/index-inject'(table: IndexInjection[]): void
+```
+
+Source: [`packages/host/webserver/src/index.ts:34`](../../packages/host/webserver/src/index.ts)
 <!-- END GENERATED cordis-surface -->
