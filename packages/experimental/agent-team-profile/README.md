@@ -21,7 +21,7 @@ The profile must already contain `@deepseek-ai/dsh-base`, whose Subagent service
 
 #### What the model sees
 
-The Team policy and schemas belong to [`@deepseek-ai/dsh-tool-team`](../tool-team/README.md). This bundle changes composition only: Team-scoped `list_agents` and `send_message` replace the disabled global continuable-child controls, while `subagent` and `subagent_fork` remain available as one-shot delegation tools.
+The Team policy and schemas belong to [`@deepseek-ai/dsh-tool-team`](../tool-team/README.md). This bundle changes composition only: Team-scoped `list_agents`, `send_message`, and `interrupt_agent` replace the disabled global continuable-child controls. `subagent` and `subagent_fork` remain available as one-shot delegation tools, whose children do not receive the continuable-child `report` tool.
 
 #### Token effect
 

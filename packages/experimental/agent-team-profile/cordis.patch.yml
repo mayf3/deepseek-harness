@@ -1,6 +1,6 @@
 # Private Agent Teams profile layer. Apply after dsh-base so these replacements
 # remove the global continuable-child controls before the scoped Team tools
-# register the overlapping list_agents and send_message names.
+# register the overlapping list_agents, send_message, and interrupt_agent names.
 
 - id: tool-subagent-control
   disabled: true

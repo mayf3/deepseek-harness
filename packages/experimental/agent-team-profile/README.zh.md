@@ -21,7 +21,7 @@ profile 必须已经包含 `@deepseek-ai/dsh-base`，本层会使用其中的 Su
 
 #### 模型会看到什么
 
-Team 策略与 schema 由 [`@deepseek-ai/dsh-tool-team`](../tool-team/README.md) 所有。本 bundle 只改变 composition：Team-scoped `list_agents` 与 `send_message` 会替代已禁用的全局 continuable-child control，而 `subagent` 与 `subagent_fork` 仍作为一次性 delegation 工具可用。
+Team 策略与 schema 由 [`@deepseek-ai/dsh-tool-team`](../tool-team/README.md) 所有。本 bundle 只改变 composition：Team-scoped `list_agents`、`send_message` 与 `interrupt_agent` 会替代已禁用的全局 continuable-child control。`subagent` 与 `subagent_fork` 仍作为一次性 delegation 工具可用，其子 agent 不会获得 continuable-child `report` 工具。
 
 #### Token 影响
 
