@@ -1074,7 +1074,7 @@ export interface PiAiCompatProfile {
   /** Whether the endpoint accepts `stream_options: {include_usage: true}`; `openai-completions`. */
   supportsUsageInStreaming?: boolean
   /** Which output-cap field the endpoint reads; `openai-completions`. */
-  maxTokensField?: 'max_completion_tokens' | 'max_tokens'
+  maxTokensField?: NonNullable<OpenAICompletionsCompat['maxTokensField']>
   /** Whether tool results must carry `name`; `openai-completions`. */
   requiresToolResultName?: boolean
   /** Whether a user message after tool results needs an assistant message between; `openai-completions`. */
@@ -1085,12 +1085,18 @@ export interface PiAiCompatProfile {
   requiresReasoningContentOnAssistantMessages?: boolean
   /** Reasoning parameter format the endpoint expects; `openai-completions`. */
   thinkingFormat?: PiAiThinkingFormat
-  /** Kwargs sent as `chat_template_kwargs`, for the two `chat-template` thinking formats; `openai-completions`. */
-  chatTemplateKwargs?: Record<string, ChatTemplateKwargValue>
+  /**
+   * Kwargs sent as `chat_template_kwargs`, which pi-ai reads only under the
+   * two `chat-template` thinking formats; `openai-completions`. Nothing checks
+   * that pairing: the format in force may come from the installed catalog
+   * entry or from pi-ai's own baseURL detection, neither of which resolution
+   * can read, so kwargs set beside another format are sent nowhere.
+   */
+  chatTemplateKwargs?: NonNullable<OpenAICompletionsCompat['chatTemplateKwargs']>
   /** Whether the endpoint accepts `strict` in tool definitions; `openai-completions`, `openai-responses`. */
   supportsStrictMode?: boolean
   /** Prompt-cache marker convention; `openai-completions`. */
-  cacheControlFormat?: 'anthropic'
+  cacheControlFormat?: NonNullable<OpenAICompletionsCompat['cacheControlFormat']>
   /** Whether the endpoint accepts long prompt-cache retention; all three protocols. */
   supportsLongCacheRetention?: boolean
   /** Whether the endpoint accepts per-tool `eager_input_streaming`; `anthropic-messages`. */
@@ -1124,9 +1130,9 @@ export type PiAiReasoningEfforts = Partial<Record<ModelThinkingLevel, string | n
 export type PiAiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFormat']>
 ```
 
-Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `ChatTemplateKwargValue` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
+Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
 
-Source: [`packages/llm/llm-pi-ai/src/config.ts:193`](../packages/llm/llm-pi-ai/src/config.ts)
+Source: [`packages/llm/llm-pi-ai/src/config.ts:201`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 

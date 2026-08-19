@@ -21,7 +21,15 @@ import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
-import { MODALITIES, resolveRouteModels, SUPPORTED_THINKING_FORMATS, THINKING_LEVELS } from './catalog.ts'
+import {
+  CACHE_CONTROL_FORMATS,
+  CHAT_TEMPLATE_VARS,
+  MAX_TOKENS_FIELDS,
+  MODALITIES,
+  resolveRouteModels,
+  SUPPORTED_THINKING_FORMATS,
+  THINKING_LEVELS,
+} from './catalog.ts'
 import type {
   PiAiCompatProfile,
   PiAiModality,
@@ -217,7 +225,7 @@ const chatTemplateKwarg: z<ChatTemplateKwargValue> = z.union([
   z.boolean(),
   z.const(null),
   z.object({
-    $var: z.union(['thinking.enabled', 'thinking.effort'] as const).required(),
+    $var: z.union(CHAT_TEMPLATE_VARS).required(),
     omitWhenOff: z.boolean(),
   }),
 ])
@@ -227,7 +235,7 @@ const compatProfile: z<PiAiCompatProfile> = z.object({
   supportsDeveloperRole: z.boolean(),
   supportsReasoningEffort: z.boolean(),
   supportsUsageInStreaming: z.boolean(),
-  maxTokensField: z.union(['max_completion_tokens', 'max_tokens'] as const),
+  maxTokensField: z.union(MAX_TOKENS_FIELDS),
   requiresToolResultName: z.boolean(),
   requiresAssistantAfterToolResult: z.boolean(),
   requiresThinkingAsText: z.boolean(),
@@ -235,7 +243,7 @@ const compatProfile: z<PiAiCompatProfile> = z.object({
   thinkingFormat: z.union(SUPPORTED_THINKING_FORMATS),
   chatTemplateKwargs: z.dict(chatTemplateKwarg),
   supportsStrictMode: z.boolean(),
-  cacheControlFormat: z.union(['anthropic'] as const),
+  cacheControlFormat: z.union(CACHE_CONTROL_FORMATS),
   supportsLongCacheRetention: z.boolean(),
   supportsEagerToolInputStreaming: z.boolean(),
   supportsCacheControlOnTools: z.boolean(),

@@ -929,6 +929,44 @@ describe('compat switches', () => {
     })).toThrow(/its api is "acme-chat", which does not take it.*"acme-chat" offers no configurable compat/s)
   })
 
+  it('refuses a valueless compat key rather than writing null over the catalog', () => {
+    // schemastery passes a YAML bare key through as null. Carried forward it
+    // would replace the installed entry's value, and pi-ai's `??` would then
+    // reach for its baseURL detection — the "written but not applied" outcome.
+    expect(() => resolveProfiles({
+      'acme-gateway': {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test',
+        compat: { supportsDeveloperRole: null } as never,
+        models: [{ id: 'acme-a' }],
+      },
+    })).toThrow(/compat "supportsDeveloperRole" with no value/)
+  })
+
+  it('refuses a valueless compat key on a model entry too', () => {
+    expect(() => resolveProfiles({
+      deepseek: {
+        modelOverrides: { 'deepseek-v4-flash': { compat: { requiresReasoningContentOnAssistantMessages: null } } as never },
+      },
+    })).toThrow(/model "deepseek-v4-flash" sets compat "requiresReasoningContentOnAssistantMessages" with no value/)
+  })
+
+  it('serves the Responses compat type on every protocol pi-ai gives it to', () => {
+    // pi-ai types azure-openai-responses and openai-codex-responses with the
+    // same OpenAIResponsesCompat, so a switch settable on one is settable on all.
+    for (const route of ['azure-openai-responses', 'openai-codex']) {
+      const models = modelsOf({ [route]: { compat: { supportsDeveloperRole: false } } }, route)
+      const [first] = [...models.values()]
+      expect((first?.compat as { supportsDeveloperRole?: boolean }).supportsDeveloperRole).toBe(false)
+    }
+  })
+
+  it('serves the Bedrock compat type on its own protocol', () => {
+    const models = modelsOf({ 'amazon-bedrock': { compat: { supportsStrictMode: false } } }, 'amazon-bedrock')
+    const [first] = [...models.values()]
+    expect((first?.compat as { supportsStrictMode?: boolean }).supportsStrictMode).toBe(false)
+  })
+
   it('refuses a compat key no wire protocol declares instead of dropping it', () => {
     // The silent drop is what let an unreadable switch look applied: schemastery
     // passes unknown keys through, and resolution used to read only two fields.

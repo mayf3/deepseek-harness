@@ -17,7 +17,9 @@ import type { BuiltinProvider } from '@earendil-works/pi-ai/providers/all'
 import type {
   AnthropicMessagesCompat,
   Api,
+  BedrockCompat,
   ChatTemplateKwargValue,
+  KnownApi,
   Model,
   ModelCost,
   ModelThinkingLevel,
@@ -108,6 +110,41 @@ const THINKING_FORMAT_GATE: Record<PiAiThinkingFormat, true> = {
 
 /** Reasoning-dispatch wire formats a profile may name, most-reached first. */
 export const SUPPORTED_THINKING_FORMATS = Object.keys(THINKING_FORMAT_GATE) as readonly PiAiThinkingFormat[]
+
+/** The output-cap field spellings pi-ai accepts. */
+export type PiAiMaxTokensField = NonNullable<OpenAICompletionsCompat['maxTokensField']>
+
+/** Drift gate over {@link PiAiMaxTokensField}; an upstream spelling added here fails compilation until named. */
+const MAX_TOKENS_FIELD_GATE: Record<PiAiMaxTokensField, true> = {
+  max_completion_tokens: true,
+  max_tokens: true,
+}
+
+/** The output-cap field spellings a profile may name. */
+export const MAX_TOKENS_FIELDS = Object.keys(MAX_TOKENS_FIELD_GATE) as readonly PiAiMaxTokensField[]
+
+/** The prompt-cache marker conventions pi-ai accepts. */
+export type PiAiCacheControlFormat = NonNullable<OpenAICompletionsCompat['cacheControlFormat']>
+
+/** Drift gate over {@link PiAiCacheControlFormat}; a new upstream convention fails compilation until named. */
+const CACHE_CONTROL_FORMAT_GATE: Record<PiAiCacheControlFormat, true> = {
+  anthropic: true,
+}
+
+/** The prompt-cache marker conventions a profile may name. */
+export const CACHE_CONTROL_FORMATS = Object.keys(CACHE_CONTROL_FORMAT_GATE) as readonly PiAiCacheControlFormat[]
+
+/** The request-state placeholders a `chat_template_kwargs` value may name. */
+export type PiAiChatTemplateVar = Extract<ChatTemplateKwargValue, { $var: string }>['$var']
+
+/** Drift gate over {@link PiAiChatTemplateVar}; a new upstream placeholder fails compilation until named. */
+const CHAT_TEMPLATE_VAR_GATE: Record<PiAiChatTemplateVar, true> = {
+  'thinking.enabled': true,
+  'thinking.effort': true,
+}
+
+/** The request-state placeholders a profile may name. */
+export const CHAT_TEMPLATE_VARS = Object.keys(CHAT_TEMPLATE_VAR_GATE) as readonly PiAiChatTemplateVar[]
 
 let providerIndex: Map<string, Provider> | undefined
 
@@ -243,16 +280,47 @@ const ANTHROPIC_COMPAT_GATE = {
   supportsToolReferences: 'withhold',
 } as const satisfies Record<keyof AnthropicMessagesCompat, CompatDisposition>
 
+/** Disposition of every `BedrockCompat` field; a drift gate like the one above. */
+const BEDROCK_COMPAT_GATE = {
+  supportsStrictMode: 'offer',
+} as const satisfies Record<keyof BedrockCompat, CompatDisposition>
+
 /**
- * The compat gate of every wire protocol a profile may configure, in the
- * protocol table's order. A protocol absent here takes no configured compat,
- * which is why an unrecognized `api` refuses every switch rather than
- * silently dropping it.
+ * Every wire protocol pi-ai gives a compat type. Derived from `Model.compat`'s
+ * own conditional rather than listed by hand, so a pi-ai release that gives a
+ * further protocol a compat type fails the {@link COMPAT_GATES} entry list
+ * until someone classifies its fields. A protocol pi-ai gives no compat type
+ * resolves away here and takes no configured compat at all.
  */
-const COMPAT_GATES: Readonly<Record<string, Readonly<Record<string, CompatDisposition>>>> = {
+type ApiWithCompat = { [K in KnownApi]: NonNullable<Model<K>['compat']> extends never ? never : K }[KnownApi]
+
+/**
+ * The compat gate of every wire protocol a profile may configure.
+ *
+ * Keyed by protocol, but grouped by pi-ai's compat *type*: the three Responses
+ * protocols share `OpenAIResponsesCompat`, so a switch settable on one is
+ * settable on all three. Keying by protocol alone would refuse
+ * `azure-openai-responses` and `openai-codex-responses` the fields their own
+ * models declare.
+ */
+const COMPAT_GATES: Readonly<Record<ApiWithCompat, Readonly<Record<string, CompatDisposition>>>> = {
   'openai-completions': COMPLETIONS_COMPAT_GATE,
   'openai-responses': RESPONSES_COMPAT_GATE,
+  'azure-openai-responses': RESPONSES_COMPAT_GATE,
+  'openai-codex-responses': RESPONSES_COMPAT_GATE,
   'anthropic-messages': ANTHROPIC_COMPAT_GATE,
+  'bedrock-converse-stream': BEDROCK_COMPAT_GATE,
+}
+
+/**
+ * The compat gate of one resolved protocol. A `string` lookup rather than a
+ * keyed read: a route's `api` is configuration, so it may name a protocol
+ * pi-ai gives no compat type — or none at all.
+ * @param api - resolved wire protocol.
+ * @returns that protocol's field gate, or `undefined` when it takes no compat.
+ */
+function compatGate(api: string): Readonly<Record<string, CompatDisposition>> | undefined {
+  return (COMPAT_GATES as Readonly<Record<string, Readonly<Record<string, CompatDisposition>>>>)[api]
 }
 
 /** The field names one gate offers. */
@@ -263,6 +331,7 @@ type OfferedCompatField =
   | OfferedIn<typeof COMPLETIONS_COMPAT_GATE>
   | OfferedIn<typeof RESPONSES_COMPAT_GATE>
   | OfferedIn<typeof ANTHROPIC_COMPAT_GATE>
+  | OfferedIn<typeof BEDROCK_COMPAT_GATE>
 
 /**
  * pi-ai wire-compatibility switches, set on the route (its models' default) or
@@ -293,7 +362,7 @@ export interface PiAiCompatProfile {
   /** Whether the endpoint accepts `stream_options: {include_usage: true}`; `openai-completions`. */
   supportsUsageInStreaming?: boolean
   /** Which output-cap field the endpoint reads; `openai-completions`. */
-  maxTokensField?: 'max_completion_tokens' | 'max_tokens'
+  maxTokensField?: NonNullable<OpenAICompletionsCompat['maxTokensField']>
   /** Whether tool results must carry `name`; `openai-completions`. */
   requiresToolResultName?: boolean
   /** Whether a user message after tool results needs an assistant message between; `openai-completions`. */
@@ -304,12 +373,18 @@ export interface PiAiCompatProfile {
   requiresReasoningContentOnAssistantMessages?: boolean
   /** Reasoning parameter format the endpoint expects; `openai-completions`. */
   thinkingFormat?: PiAiThinkingFormat
-  /** Kwargs sent as `chat_template_kwargs`, for the two `chat-template` thinking formats; `openai-completions`. */
-  chatTemplateKwargs?: Record<string, ChatTemplateKwargValue>
+  /**
+   * Kwargs sent as `chat_template_kwargs`, which pi-ai reads only under the
+   * two `chat-template` thinking formats; `openai-completions`. Nothing checks
+   * that pairing: the format in force may come from the installed catalog
+   * entry or from pi-ai's own baseURL detection, neither of which resolution
+   * can read, so kwargs set beside another format are sent nowhere.
+   */
+  chatTemplateKwargs?: NonNullable<OpenAICompletionsCompat['chatTemplateKwargs']>
   /** Whether the endpoint accepts `strict` in tool definitions; `openai-completions`, `openai-responses`. */
   supportsStrictMode?: boolean
   /** Prompt-cache marker convention; `openai-completions`. */
-  cacheControlFormat?: 'anthropic'
+  cacheControlFormat?: NonNullable<OpenAICompletionsCompat['cacheControlFormat']>
   /** Whether the endpoint accepts long prompt-cache retention; all three protocols. */
   supportsLongCacheRetention?: boolean
   /** Whether the endpoint accepts per-tool `eager_input_streaming`; `anthropic-messages`. */
@@ -342,6 +417,22 @@ export type EveryProfileFieldIsOffered = AssertNever<Exclude<keyof PiAiCompatPro
  */
 export type EveryOfferedFieldIsDocumented = AssertNever<Exclude<OfferedCompatField, keyof PiAiCompatProfile>>
 
+/** Compile-time constraint that `T` is `true`. */
+type AssertTrue<T extends true> = T
+
+/** Every compat type a gate classifies, merged so one `Pick` reaches all offered fields. */
+type UpstreamCompat = OpenAICompletionsCompat & OpenAIResponsesCompat & AnthropicMessagesCompat & BedrockCompat
+
+/**
+ * Proof that each documented field carries its upstream type, not a hand-copied
+ * restatement of it. The name gates above pin *which* fields exist; without
+ * this, a literal union narrower than pi-ai's would refuse a value the provider
+ * accepts, and `resolveModelCompat`'s cast to `ModelCompat` would hide it.
+ */
+export type EveryProfileFieldMatchesUpstream = AssertTrue<
+  PiAiCompatProfile extends Partial<Pick<UpstreamCompat, OfferedCompatField>> ? true : false
+>
+
 /**
  * The compat entries a profile actually set.
  *
@@ -350,7 +441,9 @@ export type EveryOfferedFieldIsDocumented = AssertNever<Exclude<OfferedCompatFie
  * carries a `chatTemplateKwargs` key whether or not anyone wrote one. An empty
  * one states nothing here: it would send no kwargs, which is exactly what
  * leaving the field out does, so absent and empty are the same request and
- * neither may make a route look like it configured a switch.
+ * neither may make a route look like it configured a switch. A valueless
+ * scalar is the other thing schemastery lets through, and it is refused by
+ * {@link assertOfferedCompatFields} before this runs rather than filtered.
  * @param compat - the configured switches, when any.
  * @returns the entries carrying a value, in declaration order.
  */
@@ -379,7 +472,7 @@ function compatProtocols(field: string): readonly string[] {
  * @returns the offered field names, or an empty list for a protocol taking no compat.
  */
 function offeredCompatFields(api: string): readonly string[] {
-  return Object.entries(COMPAT_GATES[api] ?? {}).flatMap(([field, disposition]) => disposition === 'offer' ? [field] : [])
+  return Object.entries(compatGate(api) ?? {}).flatMap(([field, disposition]) => disposition === 'offer' ? [field] : [])
 }
 
 /**
@@ -415,7 +508,17 @@ function assertOfferedCompatFields(
   // Every key, not only the ones carrying a value: a withheld or undeclared
   // name is never in the schema, so schemastery cannot have materialized it —
   // whatever its value, a person wrote it and expects it to do something.
-  for (const field of Object.keys(compat ?? {})) {
+  for (const [field, value] of Object.entries(compat ?? {})) {
+    // A valueless key (`supportsDeveloperRole:`) survives schemastery, which
+    // passes nullable data through before any member schema runs — the same
+    // behavior `reasoningEfforts` documents. Carrying it forward would write
+    // null over the installed catalog's value and leave pi-ai's `??` reaching
+    // for its baseURL detection, which is the "written but not applied"
+    // outcome this surface exists to refuse.
+    if (value === null) {
+      invalid(provider, `${site} sets compat "${field}" with no value; give it one, or remove the key to`
+        + ' keep the installed catalog\'s value')
+    }
     if (compatProtocols(field).length > 0) continue
     const declared = Object.values(COMPAT_GATES).some(gate => gate[field] !== undefined)
     if (declared) {
@@ -625,7 +728,7 @@ function resolveModelCompat(
   base: Model<Api> | undefined,
   api: string,
 ): { compat: ModelCompat } | Record<string, never> {
-  const gate = COMPAT_GATES[api]
+  const gate = compatGate(api)
   const configured: Record<string, unknown> = {}
   for (const [field, value] of configuredCompatEntries(route)) {
     if (gate?.[field] !== 'offer') continue
