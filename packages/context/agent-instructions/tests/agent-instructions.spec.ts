@@ -3626,6 +3626,72 @@ describe('dynamic nested workspace context injection', () => {
     }
   })
 
+  it('still removes a deleted instruction whose latest update is shadowed while an older one stays visible', async () => {
+    const root = await tempRepo()
+    const home = await tempRepo()
+    try {
+      await mkdir(join(root, '.git'), { recursive: true })
+      await write(join(root, 'pkg/AGENTS.md'), 'first nested rule')
+      await write(join(root, 'pkg/deep/file.txt'), 'hello')
+      const ctx = new Context()
+      await mountFileToolsAndWorkspaceContext(ctx, { dshHome: home, maxBytes: 65536 })
+      const agent = stubAgent(root)
+
+      const first = await ctx.tools.execute({
+        signal: testToolSignal,
+        callId: CallId('read-before-update'),
+        name: 'read',
+        arguments: { file_path: join('pkg', 'deep', 'file.txt') },
+        agent,
+      })
+      const firstSeq = (await appendAdditionalContexts(ctx, agent))!
+
+      await write(join(root, 'pkg/AGENTS.md'), 'second nested rule')
+      const second = await ctx.tools.execute({
+        signal: testToolSignal,
+        callId: CallId('read-after-update'),
+        name: 'read',
+        arguments: { file_path: join('pkg', 'deep', 'file.txt') },
+        agent,
+      })
+      const secondSeq = (await appendAdditionalContexts(ctx, agent))!
+      expect(agent.session.surface.nodes).toContain(firstSeq)
+      expect(agent.session.surface.nodes).toContain(secondSeq)
+
+      // A surface replacement shadows only the latest update; the older one
+      // stays visible, so the scope still has visible state to lose.
+      agent.session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: 'compacted summary' }],
+        source: { kind: 'plugin', plugin: 'compact' },
+      }), {
+        surfaceOp: { op: 'replace', start: secondSeq, end: secondSeq },
+        sourceEventSeqs: [secondSeq],
+      })
+
+      await rm(join(root, 'pkg/AGENTS.md'))
+      await ctx.tools.execute({
+        signal: testToolSignal,
+        callId: CallId('read-after-delete'),
+        name: 'read',
+        arguments: { file_path: join('pkg', 'deep', 'file.txt') },
+        agent,
+      })
+      await appendAdditionalContexts(ctx, agent)
+
+      expect(first.additionalContexts).toBeUndefined()
+      expect(second.additionalContexts).toBeUndefined()
+      const removal = agent.session.events.find(event => event.type === 'user/message'
+        && event.data.source.kind === 'agent-instructions'
+        && event.data.source.changes.some(change => change.action === 'remove'))
+      expect(removal?.type === 'user/message' ? removal.data.source : undefined).toMatchObject({
+        changes: [{ action: 'remove', scope: sk('pkg', 'AGENTS.md'), path: join('pkg', 'AGENTS.md') }],
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
   it('re-arms an unchanged baseline after compaction removes it from the surface', async () => {
     const root = await tempRepo()
     const home = await tempRepo()

@@ -194,7 +194,7 @@ interface CursorPayload {
 
 /** Concrete SQLite owner of the combined `ctx.sessionQuery` service. */
 export class SqliteSessionQueryEngine extends SessionQueryEngine {
-  static override inject = ['sessions', 'sessionProjections']
+  static override inject = ['sessions']
 
   static Config: z<Config> = z.object({
     path: z.string().required(),

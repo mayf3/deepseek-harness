@@ -136,7 +136,6 @@ export function apply(ctx: Context, config: Config): void {
       return state
     },
     wire: { viewSchema: todosProjectionSchema, view: state => state },
-
   })
   ctx.tools.register(defineTool({
     name: 'todo_write',

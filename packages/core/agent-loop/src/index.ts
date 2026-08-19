@@ -378,8 +378,6 @@ export class AgentLoop extends Service implements AgentFactory {
   constructor(ctx: Context, config: Config) {
     super(ctx, 'agentLoop')
 
-    ctx.sessionProjections.register(turnBoundaryProjectionDefinition)
-
     const entry: AgentLoopSettings = {
       maxParallelToolCalls: resolveMaxParallelToolCalls(config.maxParallelToolCalls),
     }
@@ -406,6 +404,9 @@ export class AgentLoop extends Service implements AgentFactory {
       onChange: () => {},
     })
     validateConfiguredAgents(this.config.agents)
+    // Register only after every config validation above has passed, so a
+    // rejected constructor leaves no projection unit behind.
+    ctx.sessionProjections.register(turnBoundaryProjectionDefinition)
     this.ownership = new FactoryOwnership(ctx.fiber)
     this.runtime = { ctx }
     ctx.effect(() => () => this.ownership.dispose(), 'agentLoop.transactions()')

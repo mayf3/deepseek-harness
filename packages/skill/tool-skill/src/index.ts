@@ -74,10 +74,10 @@ export const Config: z<Config> = z.object({
  * The skill-catalog projection's state schema — the one definition of the
  * state shape; the type is inferred from it (state equals the public shape).
  */
-const skillCatalogStateSchema = zod.object({
+const skillCatalogStateSchema = zod.array(zod.object({
   digest: zod.string().min(1),
   seq: zod.number().int().nonnegative(),
-}).nullable()
+})).nullable()
 
 type SkillCatalogState = zod.infer<typeof skillCatalogStateSchema>
 
@@ -89,7 +89,7 @@ type SkillCatalogState = zod.infer<typeof skillCatalogStateSchema>
  */
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
-    /** The latest published skill-catalog message (digest + seq); null before the first publication. */
+    /** Newest-first published skill-catalog messages (digest + seq); null before the first publication. */
     skillCatalog: SkillCatalogState
   }
 }
@@ -225,14 +225,15 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.sessionProjections.register({
     key: 'skillCatalog',
-    stateVersion: 1,
+    stateVersion: 2,
     stateSchema: skillCatalogStateSchema,
     init: () => null,
     apply: (state, event) => {
       if (event.type !== 'user/message' || event.data.source.kind !== 'skill-catalog') return state
       const entries = readCatalogEntries(event.data.source)
       if (entries === undefined) return state
-      return { digest: digestCatalogEntries(entries), seq: event.seq }
+      const record = { digest: digestCatalogEntries(entries), seq: event.seq }
+      return state === null ? [record] : [record, ...state]
     },
   })
 
@@ -395,8 +396,12 @@ function catalogHistory(ctx: Context, agent: Agent): { visibleDigest?: string; p
   const visible = new Set(agent.session.surface.nodes)
   const state = ctx.sessionProjections.stateOf(agent.session, 'skillCatalog') ?? null
   if (state === null) return { published: false }
-  return visible.has(state.seq)
-    ? { visibleDigest: state.digest, published: true }
+  // History is newest-first; the latest visible record restores the previous
+  // scan-visible semantics when a surface replacement shadows the newest
+  // catalog message but an older one stays visible.
+  const latestVisible = state.find(record => visible.has(record.seq))
+  return latestVisible !== undefined
+    ? { visibleDigest: latestVisible.digest, published: true }
     : { published: true }
 }
 

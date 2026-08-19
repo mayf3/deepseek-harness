@@ -9,7 +9,14 @@ import type { UserMessage } from '@deepseek-ai/dsh-llm/types'
 /** One of the two ordered pending-message lists owned by an agent. */
 export type InboxTarget = 'next-turn' | 'next-step'
 
-/** Turn and step boundaries folded from one agent session log. */
+/**
+ * Turn and step boundaries folded from one agent session log.
+ *
+ * Reader contract: the key is registered by `dsh-agent-loop` and absent
+ * otherwise. Without agent-loop no turn events exist, so readers treat an
+ * absent key as "no open turn / no boundaries" — capability absence, not a
+ * corrupt state — and never treat it as an error.
+ */
 export interface TurnBoundaryProjection {
   /** Open turn number, or null between turns. */
   readonly openTurn: number | null

@@ -108,6 +108,7 @@ interface RetryStateEntry {
 
 type LlmRetryState = Record<string, RetryStateEntry>
 
+// Zod cannot express the branded retry id without a runtime transform.
 const llmRetryStateSchema: zod.ZodType<LlmRetryState> = zod.record(zod.string(), zod.object({
   retry: zod.number().int().nonnegative(),
   retryId: zod.string(),
@@ -120,9 +121,10 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 }
 
 export function apply(ctx: Context, config: Config = {}, internals: RetryInternals = {}): void {
+  validateConfig(config)
   ctx.sessionProjections.register({
     key: 'llmRetry',
-    stateVersion: 2,
+    stateVersion: 1,
     stateSchema: llmRetryStateSchema,
     init: () => ({}),
     apply: (state, event) => {
@@ -134,7 +136,6 @@ export function apply(ctx: Context, config: Config = {}, internals: RetryInterna
       return { ...state, [key]: { retry: event.data.retry, retryId: event.data.retryId } }
     },
   })
-  validateConfig(config)
   const random = internals.random ?? Math.random
   const lifetime = new AbortController()
   const active = new Set<Promise<RequestErrorAction>>()

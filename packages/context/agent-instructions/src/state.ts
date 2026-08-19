@@ -136,7 +136,7 @@ function sameInstructionChange(a: AgentInstructionChange, b: AgentInstructionCha
     && a.digest === b.digest
 }
 
-const workspaceInstructionsStateSchema = zod.record(zod.string(), zod.object({
+const workspaceInstructionsStateSchema = zod.record(zod.string(), zod.array(zod.object({
   change: zod.object({
     action: zod.enum(['set', 'replace', 'remove']),
     scope: zod.string(),
@@ -144,14 +144,14 @@ const workspaceInstructionsStateSchema = zod.record(zod.string(), zod.object({
     digest: zod.string().optional(),
   }),
   seq: zod.number().int().nonnegative(),
-}))
+})))
 
-/** Latest workspace-instruction change by scope. */
+/** Newest-first workspace-instruction change history by scope. */
 export type WorkspaceInstructionsState = zod.infer<typeof workspaceInstructionsStateSchema>
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
-    /** Latest workspace-instruction change by scope. */
+    /** Newest-first workspace-instruction change history by scope. */
     workspaceInstructions: WorkspaceInstructionsState
   }
 }
@@ -171,11 +171,13 @@ export function createWorkspaceInstructionsProjection(): ProjectionDefinition<'w
       if (changes.length === 0) return state
       let next = state
       for (const change of changes) {
-        next = { ...next, [change.scope]: { change, seq: event.seq } }
+        const record = { change, seq: event.seq }
+        const history = next[change.scope]
+        next = { ...next, [change.scope]: history === undefined ? [record] : [record, ...history] }
       }
       return next
     },
-    stateVersion: 1,
+    stateVersion: 2,
   }
 }
 
@@ -187,8 +189,12 @@ function visibleInstructionChanges(
   const visible = new Map<string, AgentInstructionChange>()
   const folded = agent.ctx.get('sessionProjections')?.stateOf(agent.session, 'workspaceInstructions')
   if (folded === undefined) throw new Error('workspaceInstructions projection is not registered')
-  for (const [scope, record] of Object.entries(folded)) {
-    if (visibleSeqs.has(record.seq)) visible.set(scope, record.change)
+  for (const [scope, history] of Object.entries(folded)) {
+    // History is newest-first; the latest visible record restores the previous
+    // scan-visible semantics when a surface replacement shadows the newest
+    // change but an older one stays visible.
+    const latestVisible = history.find(record => visibleSeqs.has(record.seq))
+    if (latestVisible !== undefined) visible.set(scope, latestVisible.change)
   }
   for (const message of authorityMessages) {
     if (!isWorkspaceContextSource(message.source)) continue

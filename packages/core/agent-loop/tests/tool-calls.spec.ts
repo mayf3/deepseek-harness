@@ -269,17 +269,13 @@ describe('tool-call scheduler: rolling pool honors maxParallelToolCalls', () => 
     await expect(harness(new MockAdapter([]), 1.5)).rejects.toThrow()
   })
 
-  it('defensively rejects invalid caps when direct construction bypasses the config schema', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionProjectionRegistry)
-    expect(() => new AgentLoop(ctx, { agents: [], maxParallelToolCalls: 0 }))
+  it('defensively rejects invalid caps when direct construction bypasses the config schema', () => {
+    // Validation precedes the turnBoundary registration, so a rejected
+    // constructor registers nothing and needs no fiber cleanup.
+    expect(() => new AgentLoop(new Context(), { agents: [], maxParallelToolCalls: 0 }))
       .toThrow('maxParallelToolCalls must be a positive integer')
-    await ctx.fiber.dispose()
-    const other = new Context()
-    await other.plugin(SessionProjectionRegistry)
-    expect(() => new AgentLoop(other, { agents: [], maxParallelToolCalls: 1.5 }))
+    expect(() => new AgentLoop(new Context(), { agents: [], maxParallelToolCalls: 1.5 }))
       .toThrow('maxParallelToolCalls must be a positive integer')
-    await other.fiber.dispose()
   })
 
   it('defaults the cap when direct construction bypasses the config schema', async () => {
