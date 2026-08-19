@@ -40,6 +40,7 @@
     "apps/web/tests/cold-blank-session.e2e.ts",
     "apps/web/tests/stats-paged-history.e2e.ts",
     "apps/web/tests/sidebar-scrollbar.e2e.ts",
+    "apps/web/tests/rail-search-expand.e2e.ts",
     "apps/web/tests/conversation-column-overflow.e2e.ts",
     "apps/web/tests/code-mode-round.e2e.ts",
     "apps/web/tests/composer-draft-scroll.e2e.ts",
