@@ -822,8 +822,13 @@ export function WorkspaceBrowser({
     searchInput.current?.focus({ preventScroll: true })
   }, [wide, searchExpanded, searchOnExpand])
 
+  // Outside-click dismissal stays off while the rail gesture is in flight
+  // (searchOnExpand): the rail click flips the shell wide and mounts this
+  // listener during its own dispatch, then keeps bubbling to document with
+  // the now-unmounted rail button as its target — outside searchRoot, so the
+  // listener would dismiss the search that click just opened.
   useEffect(() => {
-    if (!wide || !searchExpanded) return
+    if (!wide || !searchExpanded || searchOnExpand) return
     const onClick = (event: MouseEvent): void => {
       if (!(event.target instanceof Node) || searchRoot.current?.contains(event.target) === true) return
       searchInput.current?.blur()
@@ -832,7 +837,7 @@ export function WorkspaceBrowser({
     }
     document.addEventListener('click', onClick)
     return () => { document.removeEventListener('click', onClick) }
-  }, [normalizedQuery, wide, searchExpanded])
+  }, [normalizedQuery, wide, searchExpanded, searchOnExpand])
 
   useEffect(() => {
     if (normalizedQuery === '') {
