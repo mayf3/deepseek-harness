@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { officialClientBuildEnvironment, writeClientBuildRecord } from '../client-build-environment.ts'
 import { releaseFamily, type ReleaseMember } from './families.ts'
-import { compareVersions, nextVendorVersion, reachesPayload } from './bump.ts'
+import { compareVersions, nextVendorVersion, planShared, reachesPayload } from './bump.ts'
 
 /**
  * A release member standing in for a manifest on disk.
@@ -45,7 +45,25 @@ describe('release families', () => {
     const members = releaseFamily('dsh').members(resolve(import.meta.dirname, '../..'))
 
     expect(members.some(member => member.directory.startsWith('packages/experimental/'))).toBe(false)
-    expect(members.map(member => member.name)).not.toContain('@deepseek-ai/dsh-team')
+    expect(members.map(member => member.name)).not.toContain('@deepseek-ai/dsh-experimental-agent-team')
+  })
+
+  it('bumps private dsh packages without adding release tags', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-release-version-'))
+    roots.push(root)
+    write(join(root, 'package.json'), '{"version":"0.0.1"}\n')
+    write(join(root, 'packages/experimental/prototype/package.json'), '{"version":"0.0.1","private":true}\n')
+    write(join(root, 'packages/core/unselected/package.json'), '{"version":"0.0.1"}\n')
+
+    const dsh = releaseFamily('dsh')
+    const published = member('packages/core/published', '@deepseek-ai/dsh-published')
+    const { planned } = planShared(dsh, root, [published], '0.0.2')
+
+    expect(planned.map(entry => ({ path: entry.manifestPath, tag: entry.tag }))).toEqual([
+      { path: 'package.json', tag: undefined },
+      { path: 'packages/core/published/package.json', tag: 'dsh-v0.0.2' },
+      { path: 'packages/experimental/prototype/package.json', tag: undefined },
+    ])
   })
 
   it('names one tag for the whole dsh family and one per vendored package', () => {

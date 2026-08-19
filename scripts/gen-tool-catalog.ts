@@ -58,8 +58,8 @@ import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
-import type TeamService from '@deepseek-ai/dsh-team'
-import * as ToolTeam from '@deepseek-ai/dsh-tool-team'
+import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
+import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
@@ -524,10 +524,10 @@ const TOOL_PACKAGES: ToolPackage[] = [
       'The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers\' `ctx.jobs.start()`.',
   },
   {
-    pkg: '@deepseek-ai/dsh-tool-team',
-    dir: 'tool-team',
-    source: 'packages/experimental/tool-team/src/index.ts',
-    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.teams', 'an exact live Team member Agent'],
+    pkg: '@deepseek-ai/dsh-experimental-tool-agent-team',
+    dir: 'tool-agent-team',
+    source: 'packages/experimental/tool-agent-team/src/index.ts',
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.agentTeams', 'an exact live Team member Agent'],
     writes: ['tool/call', 'team/member', 'team/message/queued', 'team/message/delivered', 'team/task', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(AgentRegistry)
@@ -540,7 +540,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
         role: 'lead' as const,
         name: 'lead',
       }
-      ctx.provide('teams', {
+      ctx.provide('agentTeams', {
         tryMembership: (candidate: Agent) => candidate === agent ? membership : undefined,
         membership: () => membership,
       } as unknown as TeamService)
@@ -553,7 +553,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
         } as unknown as Agent
         Object.assign(agent, { ctx: createScope(inner, agent).ctx })
         inner.agents.register(agent)
-      }, { inject: ['tools', 'systemPrompt', 'agents', 'teams'] }))
+      }, { inject: ['tools', 'systemPrompt', 'agents', 'agentTeams'] }))
       await ctx.plugin(ToolTeam)
       catalogChildScopes.set(ctx, agent)
     },
