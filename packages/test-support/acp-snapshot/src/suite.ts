@@ -21,7 +21,6 @@ import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { isSurfaceEligibleType } from '@deepseek-ai/dsh-session/surface'
-import { decodeSessionSnapshot } from '@deepseek-ai/dsh-llm-replay'
 import { describe, expect, it } from 'vitest'
 import { type AgentUnderTest, type HarvestedLog, type InputScript, runScenario } from './harness.ts'
 import {
@@ -30,6 +29,7 @@ import {
   extractSnapshotSpillPaths,
   normalizeSessionLog,
   normalizeStdout,
+  parseComparableSessionLog,
   scrubRequestHeaders,
   scrubSessionSnapshot,
   scrubSystemPrompts,
@@ -1033,8 +1033,8 @@ export function stabilizeRefreshLog(
 ): string {
   const freshRecords = parseJsonlRecords(fresh)
   const stable = applyFixtureReplacements(fresh, replacements)
-  const decodedExisting = decodeSessionSnapshot(existing)
-  const existingRecords = logicalRecords([decodedExisting.header, ...decodedExisting.bodyRecords])
+  const parsedExisting = parseComparableSessionLog(existing)
+  const existingRecords = logicalRecords(parsedExisting)
   const records = parseJsonlRecords(stable)
   const existingContext = fixtureContext(existing)
   const stringMappings = normalizedStringMappings(

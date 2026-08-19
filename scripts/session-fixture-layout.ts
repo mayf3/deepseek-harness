@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { packChunkRuns, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { decodeSessionSnapshot, omitSessionEventEnvelope } from '@deepseek-ai/dsh-llm-replay'
+import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 
 /** One repository session fixture and its canonical projected representation. */
 export interface SessionFixtureLayout {
@@ -26,7 +26,10 @@ function renderFixture(headerLine: string, events: readonly SessionEvent[]): str
     headerLine,
     ...packChunkRuns(events).map((stored) => {
       const record = stored as unknown as Record<string, unknown>
-      omitSessionEventEnvelope(record)
+      delete record.seq
+      delete record.time
+      delete record.seq0
+      delete record.time0
       return JSON.stringify(record)
     }),
     '',
@@ -62,21 +65,21 @@ export function canonicalSessionFixture(content: string, label = '<session-fixtu
   }
   if (!isSessionHeader(headerValue)) return undefined
 
-  let decodedSource
+  let events
   try {
-    decodedSource = decodeSessionSnapshot(content)
+    events = parseSessionLog(content)
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`${label}: ${detail}`, { cause: error })
   }
-  const canonical = renderFixture(decodedSource.headerLine, decodedSource.events)
-  const decoded = decodeSessionSnapshot(canonical).events
+  const canonical = renderFixture(headerLine, events)
+  const decoded = parseSessionLog(canonical)
   try {
-    deepStrictEqual(withoutEnvelope(decoded), withoutEnvelope(decodedSource.events))
+    deepStrictEqual(withoutEnvelope(decoded), withoutEnvelope(events))
   } catch (error) {
     throw new Error(`${label}: packed snapshot rewrite changed the event payload stream`, { cause: error })
   }
-  if (renderFixture(decodedSource.headerLine, decoded) !== canonical) {
+  if (renderFixture(headerLine, decoded) !== canonical) {
     throw new Error(`${label}: packed rewrite is not idempotent`)
   }
   return canonical

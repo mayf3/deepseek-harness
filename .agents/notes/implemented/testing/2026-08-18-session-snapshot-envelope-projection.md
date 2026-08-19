@@ -14,7 +14,7 @@ A committed session snapshot is a projection of the persisted JSONL. The envelop
 
 Snapshot serialization omits those keys from the parsed body object before writing the line. A persisted-JSONL input is parsed once at the snapshot boundary; the dedicated snapshot normalizer combines value normalization, request-header scrubbing, and projection in that object pass rather than serializing and parsing again. Generic log and stream normalization retains sequence envelopes. Runtime persistence is unchanged.
 
-Replay parses the projected fixture and assigns contiguous synthetic sequence numbers in memory. Synthetic event times start at zero; packed `data.dt` values retain the relative gaps already stored in the fixture. One file must use projected body rows or complete persisted body rows throughout. The repository fixture-layout gate decodes this projected form, retains canonical packed rows, and rejects half-present or mixed persistence envelopes.
+Replay's existing `parseSessionLog` entry point accepts the projected fixture and assigns contiguous synthetic sequence numbers in memory. Synthetic event times start at zero; packed `data.dt` values retain the relative gaps already stored in the fixture. One file must use projected body rows or complete persisted body rows throughout. Projection stays private to each snapshot writer, and replay materialization stays private to the replay parser; the repository fixture-layout gate uses that parser, retains canonical packed rows, and rejects half-present or mixed persistence envelopes.
 
 ## Alternatives considered
 
@@ -26,8 +26,10 @@ Replay parses the projected fixture and assigns contiguous synthetic sequence nu
 
 **Introduce a second replay file.** Rejected because the projected session snapshot already retains every payload needed to derive model streams and compare re-persisted behavior. A second fixture would duplicate the transcript and create synchronization work.
 
+**Publish a shared session-snapshot codec package.** Rejected because this change needs no new product or support-tier capability. Writers only delete four top-level fields while serializing, and replay only needs its existing session-log parser to accept the projected representation. A new package and record-level API would enlarge the change and create an ownership commitment without removing meaningful implementation.
+
 ## Consequences
 
 Adding, removing, or moving an event no longer rewrites the envelope of every later snapshot row. Snapshot diffs continue to show header changes and all payload changes, including numeric sequence references inside `data`.
 
-The checked-in file is no longer byte-for-byte valid persistence JSONL. Consumers must use the shared snapshot decoder instead of passing body rows directly to the storage decoder. The synthetic time anchor is not historical wall-clock data; only retained packed gaps carry relative timing. Repository migration and write-back paths enforce the projection so a later recording cannot reintroduce the omitted fields.
+The checked-in file is no longer byte-for-byte valid persistence JSONL. Replay consumers must use `parseSessionLog` instead of passing body rows directly to the storage decoder; snapshot writers apply the projection only at their own file boundary. The synthetic time anchor is not historical wall-clock data; only retained packed gaps carry relative timing. Repository migration and write-back paths enforce the projection so a later recording cannot reintroduce the omitted fields.

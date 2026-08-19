@@ -14,7 +14,7 @@ Status: implemented
 
 快照序列化会在写入每行前从已解析的正文对象上省略这些键。以持久化 JSONL 为输入的入口只在快照边界解析一次；专用快照 normalizer 在同一轮对象操作中完成值规范化、request header 清理和投影，而不会先序列化再重新解析。通用日志和 stream 规范化会保留序号 envelope。运行时持久化不变。
 
-回放解析投影后的 fixture，并在内存中分配连续的 synthetic 序号。synthetic 事件时间从零开始；打包行的 `data.dt` 保留 fixture 中已有的相对间隔。同一文件必须始终采用投影正文行或完整持久化正文行。仓库 fixture 布局门禁会解码这种投影格式，继续强制规范打包行，并拒绝不完整或混用的持久化 envelope。
+回放的现有 `parseSessionLog` 入口接受投影后的 fixture，并在内存中分配连续的 synthetic 序号。synthetic 事件时间从零开始；打包行的 `data.dt` 保留 fixture 中已有的相对间隔。同一文件必须始终采用投影正文行或完整持久化正文行。投影实现仅位于各快照写入方内部，回放物化实现仅位于回放 parser 内部；仓库 fixture 布局门禁使用该 parser，继续强制规范打包行，并拒绝不完整或混用的持久化 envelope。
 
 ## 曾考虑的替代方案
 
@@ -26,8 +26,10 @@ Status: implemented
 
 **新增第二份 replay 文件。** 拒绝，因为投影后的会话快照仍保留派生模型流和比较重新持久化行为所需的全部 payload。第二份 fixture 会重复 transcript，并引入同步成本。
 
+**发布共享 session-snapshot codec 包。** 拒绝，因为本次变更不需要新的产品或支持层 capability。写入方只需在序列化时删除四个顶层字段，回放只需让现有 session-log parser 接受投影表示。新包和 record-level API 会扩大变更并建立长期归属承诺，却不会删除有意义的实现。
+
 ## 后果
 
 新增、删除或移动事件时，不再重写后续每一条快照记录的 envelope。快照 diff 仍会展示 header 变化和全部 payload 变化，包括 `data` 内的数字序号引用。
 
-签入仓库的文件不再是逐字节有效的持久化 JSONL。消费方必须使用共享快照 decoder，而不能把正文行直接交给 storage decoder。synthetic 时间锚点不是历史墙钟数据；只有保留的打包间隔表示相对时间。仓库迁移与回写路径强制执行该投影，因此后续录制不会重新引入被省略的字段。
+签入仓库的文件不再是逐字节有效的持久化 JSONL。回放消费方必须使用 `parseSessionLog`，而不能把正文行直接交给 storage decoder；快照写入方仅在自身文件边界应用投影。synthetic 时间锚点不是历史墙钟数据；只有保留的打包间隔表示相对时间。仓库迁移与回写路径强制执行该投影，因此后续录制不会重新引入被省略的字段。

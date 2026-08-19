@@ -25,16 +25,7 @@ import type {
   TokenUsage,
 } from '@deepseek-ai/dsh-llm'
 import { LlmAdapter, LlmError, ReasoningEffortId, assertNever, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
-import { decodeSessionSnapshot } from './session-snapshot.ts'
-
-export {
-  decodeSessionSnapshot,
-  decodeSessionSnapshotBody,
-  isPackedSessionChunkRow,
-  omitSessionEventEnvelope,
-  projectSessionSnapshot,
-  type DecodedSessionSnapshot,
-} from './session-snapshot.ts'
+import { parseReplaySessionLog } from './session-snapshot.ts'
 
 /**
  * One recorded model call. `throw` may replay prefix chunks before failing;
@@ -174,7 +165,7 @@ export interface SessionScript {
  * @returns every event after the header, in log order.
  */
 export function parseSessionLog(text: string): SessionEvent[] {
-  return decodeSessionSnapshot(text).events
+  return parseReplaySessionLog(text)
 }
 
 /**

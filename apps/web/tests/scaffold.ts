@@ -51,7 +51,7 @@ import type {
   LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { ReplayHandle } from '@deepseek-ai/dsh-llm-replay'
-import { decodeSessionSnapshot, installLlmReplay, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
+import { installLlmReplay, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import SessionStore, {
   packChunkRuns,
   SESSION_FORMAT_VERSION,
@@ -765,13 +765,47 @@ export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, i
     : realized.split(fixtureCwd).join(scaffold.workspaceCwd)
 }
 
+/**
+ * Parse a committed web seed fixture through the replay reader.
+ * @param fixtureText - session JSONL fixture contents.
+ * @returns the original header line, parsed header, and logical events.
+ */
+export function parseSeedFixture(fixtureText: string): {
+  headerLine: string
+  header: Record<string, unknown>
+  events: SessionEvent[]
+} {
+  const headerLine = fixtureText.split(/\r?\n/).find(line => line.trim().length > 0)
+  if (headerLine === undefined) throw new Error('seed fixture has no session header')
+  const header = JSON.parse(headerLine) as Record<string, unknown>
+  if (header.type !== 'session') throw new Error('seed fixture must start with a session header')
+  return { headerLine, header, events: parseSessionLog(fixtureText) }
+}
+
+/**
+ * Render logical events as an envelope-free web seed fixture.
+ * @param headerLine - original session header line.
+ * @param events - logical session events in order.
+ * @returns projected session JSONL.
+ */
+export function renderSeedFixture(
+  headerLine: string,
+  events: readonly ({ readonly seq: number; readonly time: number } & object)[],
+): string {
+  return [
+    headerLine,
+    ...events.map(({ seq: _seq, time: _time, ...event }) => JSON.stringify(event)),
+    '',
+  ].join('\n')
+}
+
 export async function seedSession(
   scaffold: WebScaffold,
   fixtureText: string,
   id: string,
   agentPreset?: string,
 ): Promise<SessionId> {
-  const decoded = decodeSessionSnapshot(realizeSeedFixture(scaffold, fixtureText, id))
+  const decoded = parseSeedFixture(realizeSeedFixture(scaffold, fixtureText, id))
   const events = decoded.events
   if (events.length === 0) throw new Error('seed fixture has no events')
   const last = events[events.length - 1]!

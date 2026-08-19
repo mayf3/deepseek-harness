@@ -8,11 +8,10 @@ import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { decodeSessionSnapshot, projectSessionSnapshot } from '@deepseek-ai/dsh-llm-replay'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
-  launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
+  launchWebScaffold, parseSeedFixture, renderSeedFixture, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
@@ -37,7 +36,7 @@ const SECOND_PROMPT = 'Now give the final answer.'
  * @returns A contiguous, closed two-turn fixture.
  */
 function completedTailFixture(raw: string): string {
-  const decoded = decodeSessionSnapshot(raw)
+  const decoded = parseSeedFixture(raw)
   const kept = decoded.events.filter(event => event.seq < 101).map((event) => {
     if (event.type === 'assistant/message' && event.seq === 64) {
       const data = event.data as unknown as { content?: unknown[] }
@@ -52,7 +51,7 @@ function completedTailFixture(raw: string): string {
   })
   let seq = kept.length
   let time = (kept.at(-1)?.time ?? -1) + 1
-  const at = (event: Record<string, unknown>): Record<string, unknown> => ({
+  const at = (event: Record<string, unknown>): { seq: number; time: number } & Record<string, unknown> => ({
     ...event,
     seq: seq++,
     time: time++,
@@ -67,11 +66,7 @@ function completedTailFixture(raw: string): string {
     at({ type: 'step/end', data: { turn: 2, step: 1 } }),
     at({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } }),
   ]
-  return projectSessionSnapshot([
-    decoded.headerLine,
-    ...[...kept, ...tail].map(event => JSON.stringify(event)),
-    '',
-  ].join('\n'))
+  return renderSeedFixture(decoded.headerLine, [...kept, ...tail])
 }
 
 describe('web e2e: message IconActions and clocks on settled history', () => {

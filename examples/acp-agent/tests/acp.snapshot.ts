@@ -15,7 +15,7 @@ import {
   type SnapshotSuiteOptions,
 } from '@deepseek-ai/dsh-acp-snapshot'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
-import { decodeSessionSnapshot } from '@deepseek-ai/dsh-llm-replay'
+import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 
 /**
  * The acp-agent example's snapshot suite: the scenario table for
@@ -813,10 +813,11 @@ it('packed ACP fixture retains every chunk row kind without changing the logical
     return cloned
   }
   const logicalRecords = (fixture: string): unknown[] => {
-    const decoded = decodeSessionSnapshot(fixture)
+    const headerLine = fixture.split(/\r?\n/).find(line => line.trim().length > 0)
+    if (headerLine === undefined) throw new Error('ACP fixture has no session header')
     return [
-      decoded.header,
-      ...decoded.events.map(withoutMessageId),
+      JSON.parse(headerLine) as unknown,
+      ...parseSessionLog(fixture).map(withoutMessageId),
     ]
   }
   expect(logicalRecords(packedText)).toStrictEqual(logicalRecords(source))

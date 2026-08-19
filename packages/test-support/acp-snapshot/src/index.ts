@@ -45,7 +45,6 @@ export {
   type NormalizeContext,
   type NormalizeOptions,
 } from './normalize.ts'
-export { projectSessionSnapshot } from '@deepseek-ai/dsh-llm-replay'
 export {
   defineAcpSnapshotSuite,
   refreshFixtureReplacements,

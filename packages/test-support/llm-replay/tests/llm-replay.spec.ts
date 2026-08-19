@@ -12,7 +12,6 @@ import {
   type SessionScript,
   apply,
   deriveReplayScript,
-  decodeSessionSnapshot,
   inject,
   installLlmReplay,
   loadReplayScript,
@@ -20,7 +19,6 @@ import {
   name,
   parseSessionHeader,
   parseSessionLog,
-  projectSessionSnapshot,
   resolveScriptedEntry,
 } from '../src/index.ts'
 
@@ -126,42 +124,14 @@ describe('parseSessionLog', () => {
   })
 })
 
-describe('session snapshot codec', () => {
-  it('projects only body envelopes and retains the header line and payloads', () => {
-    const header = '  {"type":"session","version":0,"id":"s1","createdAt":7}  '
-    const ordinary = {
-      type: 'turn/start', seq: 0, time: 10,
-      data: { turn: 1, seq: 41, time: 42 },
-    }
-    const packed = {
-      type: 'text-chunks', seq0: 1, time0: 20,
-      data: { turn: 1, step: 1, index: 0, dt: [3], texts: ['a', 'b'] },
-    }
-    const projected = projectSessionSnapshot([
-      header,
-      JSON.stringify(ordinary),
-      JSON.stringify(packed),
-      '',
-    ].join('\n'))
-    const lines = projected.trimEnd().split('\n')
-
-    expect(lines[0]).toBe(header)
-    expect(JSON.parse(lines[1] ?? '{}')).toStrictEqual({
-      type: 'turn/start', data: ordinary.data,
-    })
-    expect(JSON.parse(lines[2] ?? '{}')).toStrictEqual({
-      type: 'text-chunks', data: packed.data,
-    })
-    expect(projectSessionSnapshot(projected)).toBe(projected)
-  })
-
+describe('projected replay fixtures', () => {
   it('rejects half-present storage envelopes', () => {
     const fixture = [
       '{"type":"session","version":0,"id":"s1","createdAt":0}',
       '{"type":"turn/start","seq":0,"data":{"turn":1}}',
       '',
     ].join('\n')
-    expect(() => decodeSessionSnapshot(fixture)).toThrow(/both seq\/time or neither/)
+    expect(() => parseSessionLog(fixture)).toThrow(/both seq\/time or neither/)
   })
 
   it.each([
@@ -175,7 +145,7 @@ describe('session snapshot codec', () => {
     ],
   ])('rejects mixed projected and persisted body records', (first, second) => {
     const fixture = `{"type":"session"}\n${first}\n${second}\n`
-    expect(() => decodeSessionSnapshot(fixture)).toThrow(/line 3 cannot mix projected and persisted body records/)
+    expect(() => parseSessionLog(fixture)).toThrow(/line 3 cannot mix projected and persisted body records/)
   })
 
   it('reports malformed storage records with their snapshot line', () => {
@@ -185,30 +155,25 @@ describe('session snapshot codec', () => {
       '{"type":"text-chunks","data":{"turn":1,"step":1,"index":0,"dt":[],"texts":[]}}',
       '',
     ].join('\n')
-    expect(() => decodeSessionSnapshot(fixture)).toThrow(/session snapshot line 3:/)
+    expect(() => parseSessionLog(fixture)).toThrow(/session snapshot line 3:/)
   })
 
   it.each(['null', '1', '[]'])('rejects non-object JSONL records: %s', (record) => {
-    expect(() => decodeSessionSnapshot(`${record}\n`)).toThrow(/line 1 must be a JSON object/)
+    expect(() => parseSessionLog(`${record}\n`)).toThrow(/line 1 must be a JSON object/)
   })
 
   it('reports invalid JSON with its line', () => {
-    expect(() => projectSessionSnapshot('{"type":"session"}\n{broken}\n'))
+    expect(() => parseSessionLog('{"type":"session"}\n{broken}\n'))
       .toThrow(/line 2 contains invalid JSON/)
   })
 
-  it.each([
-    ['decode', decodeSessionSnapshot],
-    ['project', projectSessionSnapshot],
-  ] as const)('requires a session header when attempting to %s', (_name, operation) => {
-    expect(() => operation('')).toThrow(/must start with a session header/)
-    expect(() => operation('{"type":"other"}\n')).toThrow(/must start with a session header/)
+  it('requires a session header', () => {
+    expect(() => parseSessionLog('')).toThrow(/must start with a session header/)
+    expect(() => parseSessionLog('{"type":"other"}\n')).toThrow(/must start with a session header/)
   })
 
   it('materializes an unknown empty storage row as an ordinary event', () => {
-    const decoded = decodeSessionSnapshot('{"type":"session"}\n{}\n')
-    expect(decoded.bodyRecords).toStrictEqual([{ seq: 0, time: 0 }])
-    expect(decoded.events).toStrictEqual([{ seq: 0, time: 0 }])
+    expect(parseSessionLog('{"type":"session"}\n{}\n')).toStrictEqual([{ seq: 0, time: 0 }])
   })
 })
 

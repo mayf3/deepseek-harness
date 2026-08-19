@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { type SessionEvent } from '@deepseek-ai/dsh-session'
-import { decodeSessionSnapshot } from '@deepseek-ai/dsh-llm-replay'
+import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import { canonicalSessionFixture } from './session-fixture-layout.ts'
 
 const HEADER = '  {"type":"session","version":0,"id":"fixture","createdAt":1,"delegationDepth":0}  '
@@ -23,7 +23,7 @@ function unpackedFixture(): string {
 }
 
 function decodedBody(content: string): SessionEvent[] {
-  return decodeSessionSnapshot(content).events
+  return parseSessionLog(content)
 }
 
 describe('canonicalSessionFixture', () => {

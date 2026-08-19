@@ -15,9 +15,6 @@
       "path": "../../runtime-diagnostics/invariants"
     },
     {
-      "path": "../llm-replay"
-    },
-    {
       "path": "../../core/session"
     }
   ]

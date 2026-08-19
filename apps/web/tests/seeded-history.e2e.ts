@@ -17,14 +17,14 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
-import { decodeSessionSnapshot, projectSessionSnapshot } from '@deepseek-ai/dsh-llm-replay'
 import { deriveEventMessage, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import { join } from 'node:path'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
-  launchWebScaffold, realizeSeedFixture, recordFixture, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
+  launchWebScaffold, parseSeedFixture, realizeSeedFixture, recordFixture, renderSeedFixture, seedSession, watchConsole,
+  webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
@@ -54,7 +54,7 @@ const PROMPT = 'Use the read tool twice in one assistant message: read a.txt and
  * @returns the fixture with a manual compaction lifecycle appended.
  */
 function withCompaction(raw: string, meter: TokenMeter): string {
-  const decoded = decodeSessionSnapshot(raw)
+  const decoded = parseSeedFixture(raw)
   const events = decoded.events as unknown as Array<{
     type: string
     seq: number
@@ -173,11 +173,7 @@ function withCompaction(raw: string, meter: TokenMeter): string {
   const closureTurn = lastTurn + 1
   at({ type: 'turn/start', data: { turn: closureTurn } })
   at({ type: 'turn/end', data: { turn: closureTurn, reason: { kind: 'completed' } } })
-  return projectSessionSnapshot([
-    decoded.headerLine,
-    ...events.map(event => JSON.stringify(event)),
-    '',
-  ].join('\n'))
+  return renderSeedFixture(decoded.headerLine, events)
 }
 
 describe('web e2e: seeded history renders through cold resume', () => {

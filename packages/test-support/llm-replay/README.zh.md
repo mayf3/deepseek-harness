@@ -59,8 +59,7 @@ fixture 是持久化会话日志（`<scenario>/session.jsonl`）的投影：它�
 - `installLlmReplay(ctx, config)`：安装已配置回放适配器或 catch-all `llm/stream` 监听器；返回 `ReplayHandle`（包含用于保证 HMR（热模块替换）安全的 `dispose()`，以及清理阶段执行的 `assertConsumed()` 检查；后者确保每个已记录脚本都绑定到实时会话，且每个已绑定游标都已耗尽，从而将场景静默驱动的模型调用少于记录数转换为明确诊断）。在测试中使用它，可以不通过 Loader 或 env var 驱动回放。
 - `loadSessionScripts(config)`：解析场景中有序的 `SessionScript[]`（主会话 + 子会话），准备按首次调用顺序绑定到实时会话。
 - `loadReplayScript(config)`：只解析主会话的 `ReplayEntry[]`（如果伴随文件存在，则使用经校验的替换或补丁；否则从 JSONL 派生；fixture 缺失时明确报错）。
-- `deriveReplayScript(events)` / `parseSessionLog(text)` / `parseSessionHeader(text)` / `resolveScriptedEntry(entry, messages)`：将已记录会话日志中的普通 loop 分片和显式标记的本地压缩输出转换为脚本、读取其 header `id`/`createdAt`、并针对单次实时请求解析 `{{fromRequest:...}}` 占位符的纯辅助工具。派生的 assistant 分组必须以 `finish` 分片结束；没有该分片的分组是 `stream()` 抛出异常的指纹，必须改用 override 伴随文件表达。
-- `decodeSessionSnapshot(text)` / `decodeSessionSnapshotBody(records)` / `projectSessionSnapshot(text)` / `omitSessionEventEnvelope(record)`：fixture 编解码器；可解码投影后或完整持久化 JSONL、在已解析正文记录上补齐 envelope、通过一次解析投影持久化 JSONL 输入，或从已解析正文记录中省略持久化 envelope。
+- `deriveReplayScript(events)` / `parseSessionLog(text)` / `parseSessionHeader(text)` / `resolveScriptedEntry(entry, messages)`：将持久化或投影后会话日志中的普通 loop 分片和显式标记的本地压缩输出转换为脚本、读取其 header `id`/`createdAt`、并针对单次实时请求解析 `{{fromRequest:...}}` 占位符的纯辅助工具。派生的 assistant 分组必须以 `finish` 分片结束；没有该分片的分组是 `stream()` 抛出异常的指纹，必须改用 override 伴随文件表达。
 - 类型 `ReplayEntry` / `ReplayOverrideDoc` / `ReplayOverridePatch` / `SessionScript` / `ReplayConfig` / `ReplayProviderConfig` / `ReplayModelConfig` / `ReplayHandle` / `Config`。
 
 ## 插件导出形态

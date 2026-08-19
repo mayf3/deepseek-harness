@@ -6,11 +6,7 @@
  * @module @deepseek-ai/dsh-acp-snapshot/normalize
  */
 
-import {
-  decodeSessionSnapshotBody,
-  isPackedSessionChunkRow,
-  omitSessionEventEnvelope,
-} from '@deepseek-ai/dsh-llm-replay'
+import { decodeStorageRecord, type SessionEvent } from '@deepseek-ai/dsh-session'
 
 const SESSION_ID = '{{sessionId}}'
 const CWD = '{{cwd}}'
@@ -18,6 +14,70 @@ const SYSTEM = '{{system}}'
 const TOOLS = '{{tools}}'
 const EVENT_TIME = '{{eventTime}}'
 const EVENT_OMITTED_BYTES = '{{eventOmittedBytes}}'
+const PACKED_CHUNK_ROW_TYPES = new Set(['text-chunks', 'reasoning-chunks', 'tool-call-chunks'])
+
+function isPackedFixtureRow(record: Record<string, unknown>): boolean {
+  return typeof record.type === 'string' && PACKED_CHUNK_ROW_TYPES.has(record.type)
+}
+
+/**
+ * Materialize projected body envelopes in caller-owned parsed records.
+ * Package-private support for normalization and refresh alignment.
+ *
+ * @param records - session body records in storage order.
+ * @returns logical events expanded from the materialized records.
+ */
+function materializeFixtureBody(records: readonly Record<string, unknown>[]): SessionEvent[] {
+  let nextSeq = 0
+  let layout: 'unknown' | 'projected' | 'persisted' = 'unknown'
+  return records.flatMap((record, index) => {
+    const packed = isPackedFixtureRow(record)
+    const seqKey = packed ? 'seq0' : 'seq'
+    const timeKey = packed ? 'time0' : 'time'
+    const presentMembers = Number(Object.hasOwn(record, seqKey)) + Number(Object.hasOwn(record, timeKey))
+    if (presentMembers === 1) {
+      throw new Error(`session snapshot line ${index + 2} must carry both ${seqKey}/${timeKey} or neither`)
+    }
+    const recordLayout = presentMembers === 0 ? 'projected' : 'persisted'
+    if (layout === 'unknown') layout = recordLayout
+    else if (layout !== recordLayout) {
+      throw new Error(`session snapshot line ${index + 2} cannot mix projected and persisted body records`)
+    }
+    if (recordLayout === 'projected') {
+      const envelope = { [seqKey]: nextSeq, [timeKey]: 0 }
+      const materialized = Object.hasOwn(record, 'type')
+        ? { type: record.type, ...envelope, ...record }
+        : { ...record, ...envelope }
+      for (const key of Object.keys(record)) Reflect.deleteProperty(record, key)
+      Object.assign(record, materialized)
+    }
+    const decoded = decodeStorageRecord(record)
+    nextSeq += decoded.length
+    return decoded
+  })
+}
+
+/**
+ * Parse persisted or projected session JSONL for package-internal comparison.
+ * Projected body envelopes are materialized on the returned records.
+ *
+ * @param rawLog - session JSONL contents.
+ * @returns parsed records in file order.
+ */
+export function parseComparableSessionLog(rawLog: string): Record<string, unknown>[] {
+  const records = rawLog.split('\n')
+    .filter(line => line.trim().length > 0)
+    .map(line => JSON.parse(line) as Record<string, unknown>)
+  if (records[0]?.type === 'session') materializeFixtureBody(records.slice(1))
+  return records
+}
+
+function omitFixtureEnvelope(record: Record<string, unknown>): void {
+  delete record.seq
+  delete record.time
+  delete record.seq0
+  delete record.time0
+}
 
 /** A cwd-rooted path after volatile cwd replacement, through its last separator-delimited segment. */
 const CWD_ROOTED_PATH_RE = /\{\{cwd\}\}(?:[\\/][^\s<>"'`]+)+/g
@@ -308,9 +368,7 @@ export function normalizeSessionLog(
   options: NormalizeOptions = {},
 ): string {
   const cwdPathMode = options.cwdPathMode ?? 'canonical'
-  const lines = rawLog.split('\n').filter(line => line.trim().length > 0)
-  const records = lines.map(line => JSON.parse(line) as Record<string, unknown>)
-  if (records[0]?.type === 'session') decodeSessionSnapshotBody(records.slice(1))
+  const records = parseComparableSessionLog(rawLog)
   const normalized = records.map(record => normalizeSessionRecord(record, ctx, cwdPathMode))
   return normalized.map(r => JSON.stringify(r)).join('\n') + '\n'
 }
@@ -324,7 +382,7 @@ function normalizeSessionRecord(
   // Header line: { type: 'session', createdAt, id, cwd, … }.
   if (record.type === 'session') {
     if ('createdAt' in record) record.createdAt = 0
-  } else if (isPackedSessionChunkRow(record)) {
+  } else if (isPackedFixtureRow(record)) {
     if ('time0' in record) record.time0 = 0
     const data = record.data
     if (data !== null && typeof data === 'object' && Array.isArray((data as { dt?: unknown }).dt)) {
@@ -443,7 +501,7 @@ export function scrubSessionSnapshot(rawLog: string): string {
 
 function scrubSessionSnapshotBodyRecord(record: Record<string, unknown>): void {
   scrubRequestHeaderRecord(record, { system: true, tools: true })
-  omitSessionEventEnvelope(record)
+  omitFixtureEnvelope(record)
 }
 
 /** Which independent request-header payloads a scrubber replaces. */
