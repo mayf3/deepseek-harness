@@ -258,18 +258,20 @@ describe('client bundle activation', () => {
     expect(String(thrown)).not.toContain('pnpm run build')
   })
 
-  it('rejects a malformed built source map during composition', () => {
+  it('omits a torn or malformed source map without blocking composition', async () => {
     const packageName = '@fixture/malformed-source-map'
     const clientPath = writePackage(packageName)
     mkdirSync(dirname(clientPath), { recursive: true })
     writeFileSync(clientPath, 'module.exports = {}\n')
-    writeFileSync(`${clientPath}.map`, '{}\n')
-    expect(() => construct([packageName]))
-      .toThrow(`${clientPath}.map is not a regular Source Map v3 object`)
+    writeFileSync(`${clientPath}.map`, '{')
+    const torn = constructWithRoute([packageName])
+    const tornRow = torn.service.graph().entries[0]!
+    expect((await routeRequest(torn.route, tornRow.url)).body.toString('utf8'))
+      .not.toContain('sourceMappingURL')
+    expect((await routeRequest(torn.route, `${torn.service.graph().batches[0]!.url}.map`)).status).toBe(404)
 
     writeFileSync(`${clientPath}.map`, '{"version":3,"sources":[null]}\n')
-    expect(() => construct([packageName]))
-      .toThrow(`${clientPath}.map is not a regular Source Map v3 object`)
+    expect(() => construct([packageName])).not.toThrow()
   })
 
   it('retains one prior immutable batch generation across rebuild recomposition', async () => {

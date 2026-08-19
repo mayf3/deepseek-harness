@@ -514,14 +514,7 @@ export class ClientModuleRegistry extends Service {
     const record = this.table.get(id)
     if (record === undefined) return undefined
     const bundle = readFileSync(record.meta.clientPath)
-    let sourceMap: WebPluginRecord['sourceMap']
-    try {
-      sourceMap = sourceMapSnapshot(record.meta.clientPath)
-    } catch (error) {
-      // A client rebuild remains reloadable when its development-only map is
-      // temporarily incomplete; this revision simply exposes no map.
-      this.ctx.logger.warn(error)
-    }
+    const sourceMap = this.readSourceMapSnapshot(record.meta.clientPath)
     const rev = artifactRevision(bundle, sourceMap)
     if (rev === record.entry.rev) return rev
     record.entry = graphRow(id, rev, record.meta)
@@ -566,14 +559,13 @@ export class ClientModuleRegistry extends Service {
 
   private compose(): WebBootGraph {
     const entries = orderByModuleGraph([...this.table.values()].map(record => record.entry))
-    const records = new Map([...this.table.entries()])
     const bootstrap = PARSER_PRELOAD_IDS
-      .map(id => records.get(id))
+      .map(id => this.table.get(id))
       .filter((record): record is WebPluginRecord => record !== undefined)
     const bootstrapIds = new Set(bootstrap.map(record => record.entry.id))
     const application = entries
       .filter(entry => !bootstrapIds.has(entry.id))
-      .map(entry => records.get(entry.id))
+      .map(entry => this.table.get(entry.id))
       .filter((record): record is WebPluginRecord => record !== undefined)
     const artifacts: BatchArtifact[] = []
     if (bootstrap.length > 0) artifacts.push(buildBatch('bootstrap', bootstrap))
@@ -660,11 +652,21 @@ export class ClientModuleRegistry extends Service {
   } {
     try {
       const bundle = readFileSync(clientPath)
-      const sourceMap = sourceMapSnapshot(clientPath)
+      const sourceMap = this.readSourceMapSnapshot(clientPath)
       return { bundle, rev: artifactRevision(bundle, sourceMap), ...(sourceMap === undefined ? {} : { sourceMap }) }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       throw new MissingClientBundleError(pkgName, clientPath, error)
+    }
+  }
+
+  /** Treat a missing, torn, or malformed development map as an unmapped artifact revision. */
+  private readSourceMapSnapshot(clientPath: string): WebPluginRecord['sourceMap'] {
+    try {
+      return sourceMapSnapshot(clientPath)
+    } catch (error) {
+      this.ctx.logger.warn(error)
+      return undefined
     }
   }
 

@@ -26,12 +26,15 @@ const defaultLoadBundle = (url: string): Promise<void> => new Promise((resolve, 
   document.head.append(el)
 })
 
-/** Replace the rev query while preserving same-origin relative URLs. */
+/** Replace the rev query while preserving absolute, protocol-relative, or path-relative form. */
 function atRevision(url: string, rev: string): string {
   const absolute = /^[A-Za-z][A-Za-z\d+.-]*:/.test(url)
+  const protocolRelative = url.startsWith('//')
   const parsed = new URL(url, 'http://dsh.invalid')
   parsed.searchParams.set('rev', rev)
-  return absolute ? parsed.href : `${parsed.pathname}${parsed.search}${parsed.hash}`
+  if (absolute) return parsed.href
+  if (protocolRelative) return `//${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`
 }
 
 /**

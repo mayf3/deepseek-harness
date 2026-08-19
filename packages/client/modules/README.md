@@ -26,3 +26,4 @@ None; this package neither assembles nor sends a provider request.
 
 - **Flat module graph by design** — every bundle is one module node whose edges point only at table leaves; the interface (`loadCache`/`edges`/`invalidate`) already supports a general module graph, so the externalization granularity can change without an interface change.
 - **No unload bookkeeping of its own** — style removal and fiber teardown ordering live with the HMR driver (`@deepseek-ai/dsh-client-hmr`); the loader only inventories owned style tag ids per record.
+- **Snapshot delivery retains artifact bytes** — the Host holds each bundle, optional source map, revision-stamped individual response, and generated batch in memory; HMR additionally retains one prior batch generation. Memory scales as several copies of the composed client artifacts in exchange for immutable responses and one-generation race tolerance.

@@ -265,6 +265,8 @@ describe('dsh web keyless CLI smoke', () => {
       const page = await newEnglishPage(browser)
       const pluginScripts: string[] = []
       const cacheHeaders = new Map<string, string | undefined>()
+      // Chromium reports `preload as=script` as Script and reuses that same
+      // request when the matching script node executes; this count pins both.
       page.on('request', (request) => {
         const url = new URL(request.url())
         if (request.resourceType() === 'script' && url.pathname.startsWith('/plugins/')) {

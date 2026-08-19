@@ -26,3 +26,4 @@ Node 侧会扫描已启用的 Loader 配置项以发现 web `dsh.client` 包，�
 
 - **有意采用扁平模块图**：每个 bundle 是一个模块节点，其边只指向表中的叶节点；接口（`loadCache`/`edges`/`invalidate`）已经支持通用模块图，因此可以改变 externalization 粒度而不更改接口。
 - **自身不维护卸载记录**：样式移除与 fiber 拆卸顺序属于 HMR 驱动器（`@deepseek-ai/dsh-client-hmr`）；loader 只在每条记录中登记其拥有的样式标签 id。
+- **快照式提供会常驻产物字节**：Host 会在内存中保留每个 bundle、可选 sourcemap、带 revision 的独立响应及生成的批次；HMR 还会保留上一代批次。内存会随组合出的客户端产物增长为数份副本，以换取 immutable 响应和一代竞态容忍。

@@ -451,6 +451,16 @@ describe('HMR reset', () => {
     expect(b.fetched.at(-1)).toBe('https://plugins.example.test/plugins/a/client.js?rev=next')
   })
 
+  it('preserves a protocol-relative individual endpoint when applying the rebuilt revision', async () => {
+    const b = bench([
+      row('a', { url: '//plugins.example.test/plugins/a/client.js?rev=0' }),
+    ], { a: () => ({}) })
+    await b.loader.import('a', '', {})
+    b.loader.invalidate('a', 'next')
+    await b.loader.prefetch('a')
+    expect(b.fetched.at(-1)).toBe('//plugins.example.test/plugins/a/client.js?rev=next')
+  })
+
   it('uses the current individual revision when a graph-row invalidation omits an override', async () => {
     const b = bench([row('a')], { a: () => ({}) })
     await b.loader.import('a', '', {})
