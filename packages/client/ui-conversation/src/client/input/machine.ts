@@ -136,7 +136,15 @@ export class InputMachine {
       imageIds: [],
       draftRev: this.draftRev,
       phase: this.phase,
-      ...(c ? { claim: { token: c.token, ...(c.hint !== undefined ? { hint: c.hint } : {}) } } : {}),
+      ...(c
+        ? {
+          claim: {
+            token: c.token,
+            ...(c.hint !== undefined ? { hint: c.hint } : {}),
+            ...(c.images === true ? { images: true } : {}),
+          },
+        }
+        : {}),
       occurrences: this.occurrences,
       ...(this.paste !== undefined ? { paste: this.paste } : {}),
       queue: EMPTY_QUEUE,
@@ -539,7 +547,7 @@ export class InputMachine {
         ? [{ type: 'notice', level: ev.outcome.kind === 'error' ? 'error' : 'info', text: ev.outcome.text }]
         : []
     }
-    const text = ev.message ?? ev.outcome?.text ?? 'command failed'
+    const text = ev.message ?? ev.outcome?.text
     // Keep the same command claim only while the live draft still equals the
     // enter-time draft; user input typed during flight wins.
     // Claimed re-entry additionally requires the watch to hold — an
@@ -547,11 +555,11 @@ export class InputMachine {
     if (this.draft === flight.attempt.draftSnapshot
       && this.claim !== undefined && this.draft.startsWith(this.claim.token)) {
       this.phase = 'claimed'
-      return [{ type: 'notice', level: 'error', text }]
+      return text === undefined ? [] : [{ type: 'notice', level: 'error', text }]
     }
     this.phase = 'plain'
     this.claim = undefined
-    return [{ type: 'notice', level: 'error', text }]
+    return text === undefined ? [] : [{ type: 'notice', level: 'error', text }]
   }
 
   /** Cut undo state after an accepted image-only send. */

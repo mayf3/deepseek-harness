@@ -917,6 +917,11 @@
     },
     {
       "doc": "docs/subsystems/attachment.md",
+      "symbol": "EncodedImageAttachment",
+      "source": "packages/attachment/attachment/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/attachment.md",
       "symbol": "SaveImageAttachment",
       "source": "packages/attachment/attachment/src/types.ts"
     },

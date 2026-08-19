@@ -35,7 +35,7 @@ export interface SessionInput extends InputTarget {
   setDraft(text: string): void
   /** Append ordered browser-owned image ids; busy admission phases refuse. */
   addImages(ids: readonly DraftAttachmentId[]): boolean
-  /** Remove one browser-owned image id. */
+  /** Remove one browser-owned image id; busy admission phases refuse. */
   removeImage(id: DraftAttachmentId): void
   /** Drop ids whose browser-owned objects no longer exist. */
   pruneImages(ids: readonly DraftAttachmentId[]): void
@@ -75,7 +75,7 @@ export interface InputActions {
   setDraft(text: string): void
   /** Append ordered browser-owned image ids; busy admission phases refuse. */
   addImages(ids: readonly DraftAttachmentId[]): boolean
-  /** Remove one browser-owned image id. */
+  /** Remove one browser-owned image id; busy admission phases refuse. */
   removeImage(id: DraftAttachmentId): void
   /** Drop ids whose browser-owned objects no longer exist. */
   pruneImages(ids: readonly DraftAttachmentId[]): void
@@ -214,7 +214,7 @@ export interface InputState {
   readonly draftRev: number
   readonly phase: 'plain' | 'adjudicating' | 'claimed' | 'submitting'
   /** Present exactly while claimed/submitting (claim snapshot during flight; submit closure withheld). */
-  readonly claim?: { readonly token: string; readonly hint?: string }
+  readonly claim?: { readonly token: string; readonly hint?: string; readonly images?: boolean }
   /** Chip occurrence table, sorted by offset (one U+FFFC per entry). */
   readonly occurrences: readonly Occurrence[]
   /** Live paste-match attempt (absent when no paste is matchable). */

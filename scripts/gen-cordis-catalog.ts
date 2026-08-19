@@ -284,6 +284,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ApprovalPolicy: 'approval.md',
   ApprovalRequest: 'approval.md',
   ApprovalService: 'approval.md',
+  EncodedImageAttachment: 'attachment.md',
   ImageAttachmentRef: 'attachment.md',
   SaveImageAttachment: 'attachment.md',
   StoredImageAttachment: 'attachment.md',

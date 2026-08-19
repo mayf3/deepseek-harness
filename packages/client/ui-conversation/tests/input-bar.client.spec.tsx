@@ -2,7 +2,7 @@
 // InputBar behavior over the machine wiring: Enter-send semantics (IME guard,
 // Shift newline, busy Enter policy, Ctrl/Meta steering, repeat suppression), running
 // semantics (input stays free; continuable children keep Send beside Stop), the machine pending lock,
-// decoration backdrop, error/notice strips, and the focus-keeping mousedown.
+// decoration backdrop, error banners, status strips, and the focus-keeping mousedown.
 
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
@@ -123,6 +123,7 @@ function bench(over?: BenchOptions) {
   const shell = new SessionInputShell({
     actx: SCTX,
     defaultSink: sink,
+    commandImages: { serialize: () => Promise.resolve([]), release: () => {}, unsupportedNotice: (token: string) => `${token.trim()} images-unsupported` },
     queue: {
       getSnapshot: () => session.getSnapshot().queue,
       subscribe: fn => session.subscribe(fn),
@@ -1222,10 +1223,25 @@ describe('strips and variants', () => {
     }
   })
 
-  it('renders the notice strip from the machine notice store', () => {
+  it('announces an error notice from the machine store as a fading toast', () => {
+    vi.useFakeTimers()
+    try {
+      const { view, shell } = bench()
+      act(() => { shell.notify('error', '命令失败了') })
+      expect(view.getByRole('alert').textContent).toContain('命令失败了')
+      expect(view.queryByRole('status')).toBeNull()
+      act(() => { vi.advanceTimersByTime(4000) })
+      expect(view.queryByRole('alert')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('renders an information notice from the machine store as a status strip', () => {
     const { view, shell } = bench()
-    act(() => { shell.notify('error', '命令失败了') })
-    expect(view.getByText('命令失败了')).toBeTruthy()
+    act(() => { shell.notify('info', '命令完成了') })
+    expect(view.getByRole('status').textContent).toBe('命令完成了')
+    expect(view.queryByRole('alert')).toBeNull()
   })
 
   it('hero variant adds the hero class and accessory row renders', () => {

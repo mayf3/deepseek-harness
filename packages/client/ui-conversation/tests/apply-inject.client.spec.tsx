@@ -236,10 +236,18 @@ describe('conversation slot inject API', () => {
   it('openFile (chat view face) resolves against session cwd and calls workspaces.openPath', async () => {
     const b = await bench()
     const { injected } = b.chatViewApi(ROOT)
-    injected.openFile('src/a.ts')
+    await injected.openFile('src/a.ts')
     await vi.waitFor(() => {
       expect(b.runtime.workspaces.calls).toContainEqual({ method: 'openPath', args: ['/proj/src/a.ts'] })
     })
+    await b.runtime.dispose()
+  })
+
+  it('openFile rejects when the Host cannot open the path', async () => {
+    const b = await bench()
+    b.runtime.workspaces.stub('openPath', () => Promise.reject(new Error('xdg-open is not available')))
+    const { injected } = b.chatViewApi(ROOT)
+    await expect(injected.openFile('src/a.ts')).rejects.toThrow('xdg-open is not available')
     await b.runtime.dispose()
   })
 

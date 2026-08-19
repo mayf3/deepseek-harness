@@ -11,6 +11,11 @@ import type { DraftAttachmentId } from '../src/client/input/contract.ts'
 import { PLACEHOLDER } from '../src/client/input/machine.ts'
 
 const mention = '@[Research](dsh-session:InNvdXJjZSI)'
+const commandImages = {
+  serialize: () => Promise.resolve([]),
+  release: () => {},
+  unsupportedNotice: (token: string) => `${token.trim()} images-unsupported`,
+}
 
 function chip(shell: SessionInputShell): void {
   shell.setDraft('@res')
@@ -46,6 +51,7 @@ describe('reference submission', () => {
       actx: {} as ClientContext,
       inputTriggers: () => inputTriggers,
       defaultSink: sink,
+      commandImages,
     })
     chip(shell)
     expect(shell.snapshot).toMatchObject({
@@ -87,6 +93,7 @@ describe('reference submission', () => {
       actx: {} as ClientContext,
       inputTriggers: () => inputTriggers,
       defaultSink: sink,
+      commandImages,
     })
     chip(shell)
     shell.submit()
@@ -110,6 +117,7 @@ describe('reference submission', () => {
         signal = received
         return new Promise<SubmitOutcome>(() => {})
       },
+      commandImages,
     })
     shell.setDraft('send this')
     shell.submit()
@@ -118,6 +126,21 @@ describe('reference submission', () => {
     expect(signal?.aborted).toBe(true)
     expect(shell.snapshot.phase).toBe('plain')
     expect(shell.snapshot.draft).toBe('send this')
+  })
+
+  it('retains a rejected default message without duplicating its prompt error notice', async () => {
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext,
+      defaultSink: () => Promise.resolve({ kind: 'error' }),
+      commandImages,
+    })
+    shell.setDraft('retry this')
+    shell.submit()
+    await vi.waitFor(() => {
+      expect(shell.snapshot.phase).toBe('plain')
+    })
+    expect(shell.snapshot.draft).toBe('retry this')
+    expect(shell.notices.getSnapshot()).toBeNull()
   })
 })
 
@@ -128,6 +151,7 @@ describe('submit transaction hardening', () => {
     const shell = new SessionInputShell({
       actx: {} as ClientContext,
       defaultSink: sink,
+      commandImages,
     })
     expect(shell.addImages(['img-1' as DraftAttachmentId])).toBe(true)
     shell.submit('queue')
@@ -143,12 +167,29 @@ describe('submit transaction hardening', () => {
     expect(sink).toHaveBeenCalledTimes(2)
   })
 
+  it('retains an image-only rejection without duplicating its prompt error notice', async () => {
+    const sink = vi.fn(() => Promise.resolve<SubmitOutcome>({ kind: 'error' }))
+    const shell = new SessionInputShell({
+      actx: {} as ClientContext,
+      defaultSink: sink,
+      commandImages,
+    })
+    const imageId = 'img-1' as DraftAttachmentId
+    shell.addImages([imageId])
+    shell.submit()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(shell.snapshot.imageIds).toEqual([imageId])
+    expect(shell.notices.getSnapshot()).toBeNull()
+  })
+
   it('re-tracks at the caret when a continuing insert-text splice lands (directory descent)', () => {
     const track = vi.fn()
     const shell = new SessionInputShell({
       actx: {} as ClientContext,
       inputTriggers: () => ({ track } as unknown as InputTriggerController),
       defaultSink: vi.fn(),
+      commandImages,
     })
     shell.setDraft('@sr')
     const applied = shell.insertText('@src/', { start: 0, end: 3, draftRev: shell.snapshot.draftRev }, true)
