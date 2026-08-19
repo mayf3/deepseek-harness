@@ -42,12 +42,15 @@ declare module '@deepseek-ai/cordis' {
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
-     * Records the selected preset as durable, log-only user intent. The knob
+     * Records the selected preset and whether it came from the session
+     * default, an explicit selection, or legacy-knob inference. The knob
      * events follow in the same turn and control execution; this event stays
      * out of the model transcript and lets {@link effectivePermissionPreset}
-     * preserve a selection when bundles match.
+     * preserve a selection when bundles match. `origin` is optional so logs
+     * written before origin tracking remain readable but are never mistaken
+     * for refreshable defaults.
      */
-    'permission/preset': { preset: string }
+    'permission/preset': { preset: string; origin?: 'default' | 'selection' | 'inferred' }
   }
 }
 
@@ -69,7 +72,7 @@ export interface PresetSpec {
  */
 export const CUSTOM_PRESET = 'custom'
 
-/** Settings namespace carrying the default for future sessions. */
+/** Settings namespace carrying the default for fresh sessions and confirmed reusable blanks. */
 export const PERMISSION_SETTINGS_NAMESPACE = settingsNamespace('permission')
 
 /**
@@ -130,19 +133,18 @@ function foldKnobs(events: readonly SessionEvent[]): KnobState {
   return state
 }
 
-/**
- * Whether a live session is still a fresh Web New Session placeholder. This
- * mirrors the host blank rule (no `turn/start`) but excludes constructor
- * seeds, which preserve their effective permissions instead of following
- * later defaults.
- */
-function isUnseededBlankSession(events: readonly SessionEvent[]): boolean {
-  return !events.some(event => event.type === 'turn/start' || event.type === 'session/end-seed')
+/** Last recorded permission selection, including its durable origin. */
+function latestPermissionSelection(events: readonly SessionEvent[]): Extract<SessionEvent, { type: 'permission/preset' }> | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index] as SessionEvent
+    if (event.type === 'permission/preset') return event
+  }
+  return undefined
 }
 
 /** User setting resolved when a new session receives its initial permission. */
 export interface PermissionSettings {
-  /** Preset pinned into a newly created session. */
+  /** Preset pinned into a fresh session or an eligible confirmed blank reuse. */
   defaultPreset: string
 }
 
@@ -155,8 +157,9 @@ export interface Config {
    */
   presets?: Record<string, PresetSpec>
   /**
-   * Default for new sessions. When omitted, the preset matching the composed
-   * sandbox and approval defaults is used.
+   * Default for fresh sessions and eligible confirmed blank reuse. When
+   * omitted, the preset matching the composed sandbox and approval defaults
+   * is used.
    */
   defaultPreset?: string
 }
@@ -191,7 +194,6 @@ export class PermissionPresetService extends Service {
 
   private readonly presets: Record<string, PresetSpec>
   private defaultSettings: () => PermissionSettings
-  private activeDefaultPreset: string
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'permissionPresets')
@@ -211,7 +213,6 @@ export class PermissionPresetService extends Service {
     this.resolve(defaultPreset)
     const baseSettings: PermissionSettings = { defaultPreset }
     this.defaultSettings = () => baseSettings
-    this.activeDefaultPreset = defaultPreset
     const presetChoices = this.names.map((name) => {
       const choice = z.const(name)
       const label = this.presets[name]?.name
@@ -224,7 +225,7 @@ export class PermissionPresetService extends Service {
       setSource: (current) => {
         this.defaultSettings = current
       },
-      onChange: () => { this.syncBlankSessionsToDefault() },
+      onChange: () => {},
     })
 
     ctx.on('session/created', (session) => {
@@ -280,7 +281,9 @@ export class PermissionPresetService extends Service {
           if (!this.names.includes(name)) {
             return { kind: 'error', text: `unknown preset "${name}" (available: ${this.names.join(', ')})` }
           }
-          this.apply(agent.session, name, (policy) =>{  this.ctx.approval.setPolicy(agent, policy) })
+          this.apply(agent.session, name, (policy) => {
+            this.ctx.approval.setPolicy(agent, policy)
+          }, 'selection')
           return { kind: 'success', text: `preset ${name}` }
         },
       })
@@ -296,7 +299,7 @@ export class PermissionPresetService extends Service {
   }
 
   /**
-   * The preset currently selected as the default for future sessions.
+   * The preset currently selected for fresh sessions and confirmed blank reuse.
    * @returns the resolved settings value, or the composition default without
    * a mounted settings provider.
    */
@@ -313,6 +316,26 @@ export class PermissionPresetService extends Service {
    */
   current(events: readonly SessionEvent[]): string {
     return this.derive(foldKnobs(events))
+  }
+
+  /**
+   * Advance one blank session after the host has confirmed it as the exact
+   * Web New Session reuse target. Only a still-effective
+   * default-origin selection advances; a started session, an explicit pick,
+   * legacy origin-less data, or independently changed knobs remain pinned.
+   * This is the permission-side half of the Web candidate selection and the
+   * host's blankness, membership, cwd, and archive verification.
+   * @param session - the live session selected for Workspace blank reuse.
+   */
+  refreshDefaultForReuse(session: Session): void {
+    const events = session.events
+    if (events.some(event => event.type === 'turn/start')) return
+    const selected = latestPermissionSelection(events)
+    if (selected?.data.origin !== 'default') return
+    if (this.current(events) !== selected.data.preset) return
+    this.apply(session, this.defaultPreset, (policy) => {
+      setApprovalPolicy(session, policy)
+    }, 'default')
   }
 
   /** Resolve the preset for one folded knob state (the shared mathematics of `current` and the projection unit). */
@@ -383,14 +406,21 @@ export class PermissionPresetService extends Service {
    * @param name - the preset to switch to; unknown names throw.
    */
   set(session: Session, name: string): void {
-    this.apply(session, name, (policy) =>{  setApprovalPolicy(session, policy) })
+    this.apply(session, name, (policy) => {
+      setApprovalPolicy(session, policy)
+    }, 'selection')
   }
 
   /** Apply one preset with the caller-selected live or initialization policy writer. */
-  private apply(session: Session, name: string, setApproval: (policy: ApprovalPolicy) => void): void {
+  private apply(
+    session: Session,
+    name: string,
+    setApproval: (policy: ApprovalPolicy) => void,
+    origin: 'default' | 'selection' | 'inferred',
+  ): void {
     const spec = this.resolve(name)
     if (this.current(session.events) !== name) {
-      session.append('permission/preset', { preset: name })
+      session.append('permission/preset', { preset: name, origin })
     }
     const events = session.events
     if (spec.sandbox !== (effectiveSandboxMode(events) ?? this.ctx.shell.sandboxMode)) {
@@ -398,20 +428,6 @@ export class PermissionPresetService extends Service {
     }
     if (spec.approval !== (effectiveApprovalPolicy(events) ?? this.ctx.approval.config.policy ?? 'ask')) {
       setApproval(spec.approval)
-    }
-  }
-
-  /** Advance reusable blank sessions that still carry the previous default. */
-  private syncBlankSessionsToDefault(): void {
-    const previous = this.activeDefaultPreset
-    const next = this.defaultPreset
-    this.activeDefaultPreset = next
-    if (next === previous) return
-    this.resolve(next)
-    for (const session of this.ctx.sessions.list()) {
-      if (!isUnseededBlankSession(session.events)) continue
-      if (this.current(session.events) !== previous) continue
-      this.set(session, next)
     }
   }
 
@@ -430,7 +446,7 @@ export class PermissionPresetService extends Service {
     if (selected === undefined && sandbox === undefined && approval === undefined && !seeded) {
       const name = this.defaultPreset
       const spec = this.resolve(name)
-      session.append('permission/preset', { preset: name })
+      session.append('permission/preset', { preset: name, origin: 'default' })
       setSandboxMode(session, spec.sandbox)
       setApprovalPolicy(session, spec.approval)
       return
@@ -443,7 +459,7 @@ export class PermissionPresetService extends Service {
     }
     const effective = this.derive(state)
     if (selected === undefined && effective !== CUSTOM_PRESET) {
-      session.append('permission/preset', { preset: effective })
+      session.append('permission/preset', { preset: effective, origin: 'inferred' })
     }
     if (sandbox === undefined) {
       setSandboxMode(session, this.ctx.shell.sandboxMode as SandboxMode)

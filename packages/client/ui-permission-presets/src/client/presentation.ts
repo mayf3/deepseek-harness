@@ -42,6 +42,8 @@ export function displayPermissionPreset(
   t?: (key: PermissionPresetLabelKey) => string,
 ): string {
   const key = PRESET_LABEL_KEYS.get(value)
-  if (key !== undefined) return t?.(key) ?? DEFAULT_PRESET_LABELS[key]
+  if (key !== undefined && (name === value || name === DEFAULT_PRESET_LABELS[key])) {
+    return t?.(key) ?? DEFAULT_PRESET_LABELS[key]
+  }
   return displayPresetName(name)
 }

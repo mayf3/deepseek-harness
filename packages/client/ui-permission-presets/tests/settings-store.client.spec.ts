@@ -47,12 +47,12 @@ function permissionController(api: object) {
 }
 
 describe('permission settings store', () => {
-  it('derives dynamic options and built-in labels from the descriptor schema', () => {
+  it('derives dynamic options and preserves labels from the descriptor schema', () => {
     expect(resolveDefault(view('read-only'))).toEqual({
       currentValue: 'read-only',
       options: [
         { id: 'read-only', label: 'Read Only' },
-        { id: 'workspace-write', label: 'Workspace Write' },
+        { id: 'workspace-write', label: 'Workspace' },
       ],
     })
     const single = {

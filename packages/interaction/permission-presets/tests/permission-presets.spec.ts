@@ -131,7 +131,7 @@ describe('PermissionPresetService', () => {
     const session = freshSession('sess-set')
     ctx.permissionPresets.set(session, 'danger-full-access')
     expect(session.events.map(e => [e.type, e.data])).toEqual([
-      ['permission/preset', { preset: 'danger-full-access' }],
+      ['permission/preset', { preset: 'danger-full-access', origin: 'selection' }],
       ['sandbox/mode', { mode: 'danger-full-access' }],
       ['approval/policy', { policy: 'never' }],
     ])
@@ -154,7 +154,7 @@ describe('PermissionPresetService', () => {
     ctx.permissionPresets.set(session, 'danger-full-access')
     const tail = session.events.slice(4)
     expect(tail.map(e => [e.type, e.data])).toEqual([
-      ['permission/preset', { preset: 'danger-full-access' }],
+      ['permission/preset', { preset: 'danger-full-access', origin: 'selection' }],
       ['sandbox/mode', { mode: 'danger-full-access' }],
     ])
   })
@@ -197,7 +197,7 @@ describe('new-session default', () => {
     const ctx = await mountedStore()
     const first = ctx.sessions.create(SessionId('first'))
     expect(first.events.map(event => [event.type, event.data])).toEqual([
-      ['permission/preset', { preset: 'workspace-write' }],
+      ['permission/preset', { preset: 'workspace-write', origin: 'default' }],
       ['sandbox/mode', { mode: 'workspace-write' }],
       ['approval/policy', { policy: 'ask' }],
     ])
@@ -206,6 +206,7 @@ describe('new-session default', () => {
     await ctx.settings.update(PERMISSION_SETTINGS_NAMESPACE, {
       defaultPreset: 'danger-full-access',
     })
+    ctx.permissionPresets.refreshDefaultForReuse(first)
     expect(ctx.permissionPresets.defaultPreset).toBe('danger-full-access')
     const second = ctx.sessions.create(SessionId('second'))
     expect(ctx.permissionPresets.current(first.events)).toBe('workspace-write')
@@ -215,7 +216,7 @@ describe('new-session default', () => {
     ])
   })
 
-  it('advances reusable blank sessions that still carry the previous default', async () => {
+  it('advances a confirmed reusable blank session that still carries its default', async () => {
     const ctx = await mountedStore()
     const blank = ctx.sessions.create(SessionId('blank-placeholder'))
     expect(ctx.permissionPresets.current(blank.events)).toBe('workspace-write')
@@ -223,19 +224,21 @@ describe('new-session default', () => {
     await ctx.settings.update(PERMISSION_SETTINGS_NAMESPACE, {
       defaultPreset: 'danger-full-access',
     })
+    expect(ctx.permissionPresets.current(blank.events)).toBe('workspace-write')
+    ctx.permissionPresets.refreshDefaultForReuse(blank)
 
     expect(ctx.permissionPresets.current(blank.events)).toBe('danger-full-access')
     expect(blank.events.map(event => [event.type, event.data])).toEqual([
-      ['permission/preset', { preset: 'workspace-write' }],
+      ['permission/preset', { preset: 'workspace-write', origin: 'default' }],
       ['sandbox/mode', { mode: 'workspace-write' }],
       ['approval/policy', { policy: 'ask' }],
-      ['permission/preset', { preset: 'danger-full-access' }],
+      ['permission/preset', { preset: 'danger-full-access', origin: 'default' }],
       ['sandbox/mode', { mode: 'danger-full-access' }],
       ['approval/policy', { policy: 'never' }],
     ])
   })
 
-  it('leaves blank sessions with an explicit pick or a constructor seed unchanged', async () => {
+  it('leaves explicit, inferred, legacy, absent, and independently changed selections unchanged', async () => {
     const ctx = await mountedStore()
     const picked = ctx.sessions.create(SessionId('blank-explicit-pick'))
     ctx.permissionPresets.set(picked, 'danger-full-access')
@@ -245,12 +248,55 @@ describe('new-session default', () => {
     expect(ctx.permissionPresets.current(restored.events)).toBe('workspace-write')
     const restoredEvents = [...restored.events]
 
+    const drifted = ctx.sessions.create(SessionId('blank-drifted-knob'))
+    drifted.append('sandbox/mode', { mode: 'read-only' })
+    const driftedEvents = [...drifted.events]
+
+    const legacy = freshSession('blank-originless-selection')
+    legacy.append('permission/preset', { preset: 'workspace-write' })
+    legacy.append('sandbox/mode', { mode: 'workspace-write' })
+    legacy.append('approval/policy', { policy: 'ask' })
+    const legacyEvents = [...legacy.events]
+
+    const absent = freshSession('blank-without-selection')
+
     await ctx.settings.update(PERMISSION_SETTINGS_NAMESPACE, {
       defaultPreset: 'danger-full-access',
     })
+    await ctx.settings.update(PERMISSION_SETTINGS_NAMESPACE, {
+      defaultPreset: 'workspace-write',
+    })
+    ctx.permissionPresets.refreshDefaultForReuse(picked)
+    ctx.permissionPresets.refreshDefaultForReuse(restored)
+    ctx.permissionPresets.refreshDefaultForReuse(drifted)
+    ctx.permissionPresets.refreshDefaultForReuse(legacy)
+    ctx.permissionPresets.refreshDefaultForReuse(absent)
 
     expect(picked.events).toEqual(pickedEvents)
     expect(restored.events).toEqual(restoredEvents)
+    expect(drifted.events).toEqual(driftedEvents)
+    expect(legacy.events).toEqual(legacyEvents)
+    expect(absent.events).toEqual([])
+  })
+
+  it('refreshes a cold default-origin placeholder after resume', async () => {
+    const ctx = await mountedStore()
+    const source = ctx.sessions.create(SessionId('cold-placeholder-source'))
+    const stored = [...source.events]
+    await ctx.settings.update(PERMISSION_SETTINGS_NAMESPACE, {
+      defaultPreset: 'danger-full-access',
+    })
+    const resumed = ctx.sessions.create(SessionId('cold-placeholder-resumed'), { seed: stored })
+    expect(ctx.permissionPresets.current(resumed.events)).toBe('workspace-write')
+
+    ctx.permissionPresets.refreshDefaultForReuse(resumed)
+
+    expect(ctx.permissionPresets.current(resumed.events)).toBe('danger-full-access')
+    expect(resumed.events.slice(-3).map(event => [event.type, event.data])).toEqual([
+      ['permission/preset', { preset: 'danger-full-access', origin: 'default' }],
+      ['sandbox/mode', { mode: 'danger-full-access' }],
+      ['approval/policy', { policy: 'never' }],
+    ])
   })
 
   it('preserves a seeded legacy session instead of applying the latest user default', async () => {

@@ -138,12 +138,16 @@ describe('ui-permission browser plugin', () => {
       confirmLabel: 'Enable Full access',
     })
     b.values.set(sid('s1'), { ...SELECT, options: [
+      { value: 'workspace-write', name: 'Project Files' },
+      { value: 'danger-full-access', name: 'Operator Mode' },
       { value: 'custom-mode', name: 'custom-mode' },
       { value: '__proto__', name: '__proto__' },
       { value: 'plain', name: 'Ask Every Time' },
     ] })
     const passthrough = await c.ui.options(proj, new AbortController().signal)
-    expect(passthrough.map(option => option.label)).toEqual(['Custom Mode', '__proto__', 'Ask Every Time'])
+    expect(passthrough.map(option => option.label)).toEqual([
+      'Project Files', 'Operator Mode', 'Custom Mode', '__proto__', 'Ask Every Time',
+    ])
     // A projection that vanished between availability and open throws.
     expect(() => c.ui.options({ sessionId: sid('ghost') }, new AbortController().signal))
       .toThrow(/not available on this host/)

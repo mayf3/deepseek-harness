@@ -1280,6 +1280,25 @@ describe('command launcher chrome and control seats', () => {
     expect((view.getByLabelText(/^访问模式/) as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it('the Access chip preserves host labels for built-in preset values', () => {
+    const permissions = {
+      options: [
+        { value: 'read-only', name: 'Review Only' },
+        { value: 'workspace-write', name: 'Project Files' },
+        { value: 'danger-full-access', name: 'Operator Mode' },
+        { value: 'custom-mode', name: 'custom-mode' },
+        { value: '__proto__', name: '__proto__' },
+      ],
+      currentValue: 'workspace-write',
+    }
+    const { view } = bench({ permissions })
+    const trigger = view.getByLabelText(/^访问模式/) as HTMLButtonElement
+    expect(trigger.textContent).toBe('Project Files')
+    fireEvent.click(trigger)
+    expect(view.getAllByRole('menuitem').map(item => item.textContent))
+      .toEqual(['Review Only', 'Project Files', 'Operator Mode', 'Custom Mode', '__proto__'])
+  })
+
   it('requires explicit risk acknowledgement before submitting full access', async () => {
     const command = vi.fn(() => Promise.resolve(true))
     const permissions = {

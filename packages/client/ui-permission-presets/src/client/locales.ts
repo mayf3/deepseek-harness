@@ -41,7 +41,7 @@ export const accessZh = {
   'preset.workspaceWrite': '可写入工作区',
   'preset.fullAccess': '完全权限',
   'confirm.title': '确认启用完全权限？',
-  'confirm.description': '启用完全权限后，agent 将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。',
+  'confirm.description': '启用完全权限后，智能体将减少确认步骤，并且可以直接执行更多操作，包括敏感操作、文件修改或外部命令。仅建议在你信任当前任务时使用。',
   'confirm.acknowledge': '我已了解风险，并愿意继续',
   'confirm.cancel': '取消',
   'confirm.enable': '启用完全权限',
