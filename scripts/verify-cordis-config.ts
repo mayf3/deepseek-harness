@@ -12,13 +12,10 @@
 
 import { globSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
-import * as yaml from 'js-yaml'
+import { Script } from 'node:vm'
 import ts from 'typescript'
 import { cordisConfigFiles } from './cordis-config-files.ts'
-
-interface JsExpr {
-  __jsExpr: string
-}
+import { isCordisGroupEntry, isJsExpr, loadCordisYaml } from './cordis-yaml.ts'
 
 export interface PackageManifest {
   name?: string
@@ -58,16 +55,6 @@ const CHOOSER_BACKEND_PACKAGES = [
   '@deepseek-ai/dsh-client-ui-directory-picker-browse',
   '@deepseek-ai/dsh-client-ui-directory-picker-native',
 ]
-const jsExprType = new yaml.Type('tag:yaml.org,2002:js', {
-  kind: 'scalar',
-  resolve: data => typeof data === 'string',
-  construct: (data: unknown): JsExpr => {
-    if (typeof data !== 'string') throw new TypeError('!!js requires a scalar string')
-    return { __jsExpr: data }
-  },
-})
-const schema = yaml.JSON_SCHEMA.extend(jsExprType)
-
 const errors: string[] = []
 const pluginReferences: PluginReference[] = []
 
@@ -75,7 +62,7 @@ if (import.meta.main) {
   const files = cordisConfigFiles(root)
 
   for (const file of files) {
-    const document: unknown = yaml.load(readFileSync(resolve(root, file), 'utf8'), { schema })
+    const document = loadCordisYaml(readFileSync(resolve(root, file), 'utf8'))
     if (!isUnknownArray(document)) {
       errors.push(`${file}: root must be a Loader entry array`)
       continue
@@ -174,7 +161,7 @@ function validatePresetPlaneSeparation(): string[] {
 
 /** Every entry of one config file, or an empty list when it is not an entry array. */
 function loadEntries(file: string): unknown[] {
-  const document: unknown = yaml.load(readFileSync(resolve(root, file), 'utf8'), { schema })
+  const document = loadCordisYaml(readFileSync(resolve(root, file), 'utf8'))
   return isUnknownArray(document) ? document : []
 }
 
@@ -206,7 +193,7 @@ function validateEntry(value: unknown, file: string, path: string): void {
   }
   recordPlugin(value, file)
   validateMetadata(value, file, path)
-  if ((value.group === true || value.name === '@deepseek-ai/cordis-plugin-group') && isUnknownArray(value.config)) {
+  if (isCordisGroupEntry(value)) {
     for (let index = 0; index < value.config.length; index++) {
       validateEntry(value.config[index], file, `${path}.config[${index}]`)
     }
@@ -294,11 +281,12 @@ function validateAppResolution(): string[] {
 /**
  * Discover workspace Bundle packages from their manifest declaration.
  * @param repoRoot Repository root to scan.
- * @returns Sorted repository-relative package manifest paths.
+ * @returns Sorted slash-normalized repository-relative package manifest paths.
  */
 export function bundleManifestPaths(repoRoot: string = root): string[] {
   return globSync('packages/*/*/package.json', { cwd: repoRoot })
     .filter(path => typeof readManifest(path, repoRoot).dsh?.bundle?.patch === 'string')
+    .map(path => path.replaceAll('\\', '/'))
     .sort()
 }
 
@@ -495,9 +483,8 @@ export function metadataExpressionErrors(entry: Record<string, unknown>, path: s
  */
 function disabledExpressionProblem(expression: string): string | undefined {
   try {
-    // Compilation only — the constructor never executes the body.
-    // oxlint-disable-next-line typescript/no-implied-eval
-    new Function(`return (${expression})`)
+    // Compilation only — constructing a Script does not execute its source.
+    new Script(`(${expression})`)
     return undefined
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
@@ -516,10 +503,6 @@ function collectExpressionPaths(value: unknown, path: string, output: string[]):
   }
   if (!isRecord(value)) return
   for (const [key, child] of Object.entries(value)) collectExpressionPaths(child, `${path}.${key}`, output)
-}
-
-function isJsExpr(value: unknown): value is JsExpr {
-  return isRecord(value) && typeof value.__jsExpr === 'string'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
