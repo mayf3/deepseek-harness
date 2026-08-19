@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore from '@deepseek-ai/dsh-session'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import InboxService from '@deepseek-ai/dsh-agent/inbox'
 import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import { subagentIdentityProjectionDefinition } from '@deepseek-ai/dsh-subagent/src/projection.ts'
 import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
@@ -419,6 +420,73 @@ describe('cold history recovery view', () => {
 })
 
 describe('Remote Agent and Session lookup policy', () => {
+  it('resumes a cold session before mutating a restored queue row', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(InboxService)
+    const sessionId = sid('session-cold-queue-mutation')
+    const meta = header(sessionId, 1000)
+    const message = createUserMessage({
+      content: [{ type: 'text', text: 'survives restart' }],
+      source: { kind: 'user' },
+    })
+    const events = [{
+      type: 'agent/inbox/spliced',
+      seq: 0,
+      time: 1001,
+      data: { target: 'next-turn', start: 0, inserted: [message] },
+    }] as SessionEvent[]
+    ctx.provide('sessionPersistence', {
+      list: () => Promise.resolve([meta]),
+      inspect: () => Promise.resolve({ meta, events }),
+      locate: () => undefined,
+    } as never)
+    let resumedAgent: Agent | undefined
+    const resume = vi.spyOn(ctx.agents, 'resume').mockImplementation(async () => {
+      const session = ctx.sessions.create(sessionId, {
+        seed: events,
+        meta: { cwd: '/proj', createdAt: meta.createdAt },
+      })
+      resumedAgent = {
+        id: session.id,
+        options: {},
+        session,
+        inbox: undefined as never,
+        status: 'idle',
+        ctx,
+        send() {},
+        followup() {},
+        steer() {},
+        inject() {},
+        cancel() {},
+        runMaintenance: task => task(new AbortController().signal),
+        whenIdle: () => Promise.resolve(),
+      } satisfies Agent
+      Object.assign(resumedAgent, { inbox: ctx.inboxes.create(resumedAgent) })
+      ctx.agents.register(resumedAgent)
+      return { agent: resumedAgent, dispose: () => Promise.resolve() }
+    })
+    const remote = createSessionTestRemote(ctx, {
+      defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
+      cwd: '/tmp',
+    })
+
+    const response = await remote.updateQueue(request({
+      sessionId,
+      itemId: message.id,
+      action: { kind: 'remove' },
+    }))
+
+    expect(response).toEqual({ ok: true, value: { accepted: true } })
+    expect(resume).toHaveBeenCalledOnce()
+    expect(resumedAgent?.inbox.nextTurn).toEqual([])
+    expect(resumedAgent?.session.events.at(-1)).toMatchObject({
+      type: 'agent/inbox/spliced',
+      data: { target: 'next-turn', start: 0, removedCount: 1, inserted: [], outcome: 'canceled' },
+    })
+  })
+
   it('deduplicates a cold resume across Agent and Session parameters', async () => {
     const ctx = new Context()
     await ctx.plugin(TypertRegistry)

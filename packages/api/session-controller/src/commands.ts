@@ -377,11 +377,11 @@ export class SessionCommandController {
   }
 
   /**
-   * Mutate one still-pending queue occurrence without resuming a cold Agent.
+   * Mutate one still-pending queue occurrence, resuming a cold Agent first.
    * @param request - Session, queue item, and requested mutation.
    * @returns acknowledgement that the queue mutation was applied.
    */
-  updateQueue(request: SessionUpdateQueueRequest): SessionUpdateQueueValue {
+  async updateQueue(request: SessionUpdateQueueRequest): Promise<SessionUpdateQueueValue> {
     if (request.action.kind === 'edit'
       && request.action.content.some(block => block.type !== 'text')) {
       reject(
@@ -390,12 +390,14 @@ export class SessionCommandController {
         { reason: 'QUEUE_EDIT_NON_TEXT' },
       )
     }
-    const agent = this.ctx.agents.get(request.sessionId)
-    if (agent !== undefined && hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
-      rejectFailure(apiSessionSubagentOwnershipError(request.sessionId))
-    }
-    if (agent === undefined) {
+    const found = await this.agents.resolveAgent(request.sessionId)
+    if ('error' in found) {
+      if (found.error.code !== 'session-not-found') rejectFailure(found.error)
       reject('queue-item-not-found', 'queued item is no longer pending', { itemId: request.itemId })
+    }
+    const { agent } = found
+    if (hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
+      rejectFailure(apiSessionSubagentOwnershipError(request.sessionId))
     }
     const nextTurn = agent.inbox.nextTurn.find(message => message.id === request.itemId)
     const nextStep = agent.inbox.nextStep.find(message => message.id === request.itemId)
