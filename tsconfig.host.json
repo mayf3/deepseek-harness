@@ -107,6 +107,7 @@
     "packages/*/*/tests/**/*.client.spec.ts",
     "packages/*/*/tests/**/*.client.spec.tsx",
     "packages/client/tsdown.client.ts",
+    "scripts/*.client.spec.ts",
     "scripts/client-bundle-css.spec.ts",
     "packages/typert/generator/tests/fixtures/**",
     "scripts/client-bundle-purity.spec.ts"
@@ -204,6 +205,7 @@
     { "path": "./packages/terminal/terminal" },
     { "path": "./packages/terminal/terminal-bash" },
     { "path": "./packages/shell/tool-bash-persistent" },
+    { "path": "./packages/shell/tool-pwsh-persistent" },
     { "path": "./packages/terminal/tool-terminal" },
     { "path": "./packages/code-runtime/code-runtime" },
     { "path": "./packages/code-runtime/code-runtime-python" },
