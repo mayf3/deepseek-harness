@@ -24,7 +24,7 @@
   /* Side pads ride the shared clearance (figma Input_Bottom drew L32/R32/B8;
      the sides narrow with the shared width axis); the bottom gradient mask
      is owned by the chat scroller. No top pad: the composer stack's gap owns
-     the space above; error/status strips still carry their own margin. */
+     the space above; the status strip still carries its own margin. */
   padding: 0 var(--dsh-composer-side-clearance) 8px;
 }
 
@@ -45,11 +45,6 @@
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 18px;
-}
-
-.noticeError {
-  background: var(--dsw-alias-interactive-bg-hover-danger);
-  color: var(--dsw-alias-state-error-primary);
 }
 
 .card {
