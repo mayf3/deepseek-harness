@@ -178,7 +178,10 @@ describe('DeepSeekAdapter against a mock server', () => {
     const server = await mockServer([])
     const resolveApiKey = vi.fn(() => Promise.resolve('k'))
     const adapter = new DeepSeekAdapter({
-      options: () => resolveAdapterOptions({ baseURL: server.url }),
+      options: () => resolveAdapterOptions({
+        baseURL: server.url,
+        models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }],
+      }),
       resolveApiKey,
       resolveUserId: () => TEST_USER_ID,
     })
@@ -865,6 +868,21 @@ describe('plugin registration and config', () => {
     ])
   })
 
+  it('defaults an adapter-supplied catalog entry to text input', async () => {
+    const connection = resolveAdapterOptions({ models: [] })
+    const adapter = new DeepSeekAdapter({
+      options: () => ({ ...connection, models: [{ id: 'adapter-model' }] }),
+      resolveApiKey: () => Promise.resolve('k'),
+      resolveUserId: () => TEST_USER_ID,
+    })
+    await expect(adapter.listModels('deepseek-official')).resolves.toEqual([{
+      provider: 'deepseek-official',
+      id: 'adapter-model',
+      name: 'adapter-model',
+      inputModalities: ['text'],
+    }])
+  })
+
   it('advertises configured models without restricting arbitrary request ids', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
@@ -952,6 +970,18 @@ describe('plugin registration and config', () => {
       models: [...models],
     })).rejects.toThrow(message)
     expect(ctx.llm.listProviders()).toEqual([])
+  })
+
+  const invalidProgrammaticModalities: Array<[LlmDeepSeek.DeepSeekCatalogModel[], RegExp]> = [
+    [[{ id: 'm', inputModalities: [] }], /inputModalities must not be empty/],
+    [[{
+      id: 'm',
+      inputModalities: ['audio'] as unknown as NonNullable<LlmDeepSeek.DeepSeekCatalogModel['inputModalities']>,
+    }], /inputModalities must contain only "text" and "image"/],
+  ]
+
+  it.each(invalidProgrammaticModalities)('rejects programmatic modality config that bypasses the schema', (models, message) => {
+    expect(() => resolveAdapterOptions({ models: [...models] })).toThrow(message)
   })
 
   it.each([0, 1.5])('rejects a per-model output cap of %s', (maxTokens) => {

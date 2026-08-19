@@ -73,4 +73,17 @@ describe('offloadRequestImages', () => {
     expect(offloadRequestImages(messages, 8)[0]?.content)
       .toEqual([{ type: 'text', text: OFFLOADED_IMAGE_TEXT }])
   })
+
+  it('keeps unchanged nested content while replacing a later image', () => {
+    const nested = {
+      type: 'tool-result' as const,
+      toolCallId: CallId('text-only'),
+      content: [{ type: 'text' as const, text: 'kept' }],
+    }
+    const messages = [createUserMessage({ content: [nested, image(3)], source })]
+    expect(offloadRequestImages(messages, 1)[0]?.content).toEqual([
+      nested,
+      { type: 'text', text: OFFLOADED_IMAGE_TEXT },
+    ])
+  })
 })
