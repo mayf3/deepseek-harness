@@ -70,7 +70,7 @@ An additional serial Linux reference runs on the in-house self-hosted pool (`vm-
 
 **Publish the static job's build to post-build consumers.** A run-scoped artifact preserves one exact build, but the workflow can only consume it by waiting for the entire static job and then requesting another runner. The [independent consumer build](2026-07-30-independent-ci-consumer-build.md) assigns the single Linux build to its actual consumers instead.
 
-**Keep the complete required path on standard GitHub-hosted capacity.** This avoids repository-external runner configuration, but exact-head standard-runner runs remain materially slower and can spend longer queued behind shared capacity. Standard-hosted compatibility jobs and the self-hosted serial standby preserve portable evidence without making that slower topology the ordinary primary path.
+**Keep the complete required path on standard GitHub-hosted capacity.** This avoids repository-external runner configuration, but exact-head standard-runner runs remain materially slower and can spend longer queued behind shared capacity. Standard-hosted compatibility jobs preserve portable evidence, while the self-hosted serial standby preserves complete-aggregate evidence, without making that slower topology the ordinary primary path.
 
 **Keep blocking and observational native Windows checks in separate jobs.** This would preserve their distinction at the workflow level but pay Windows setup twice. `run-gates` preserves the same blocking versus observational result inside one job.
 
