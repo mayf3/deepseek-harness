@@ -47,7 +47,7 @@ The read ladder, zero full-log load on the happy path: cached rows → `sessionP
     writeIntervalMs: 5000
 ```
 
-Injects `storageDomain`, `sessionProjections`, `sessionPersistence`, `sessions`. Without this row the projection system runs live-only (watermark cache; cold reads fall back to full log loads wherever a carrier implements them).
+Injects `sessionProjections`, `sessionPersistence`, `sessions`. Without this row the projection system runs live-only (watermark cache; cold reads fall back to full log loads wherever a carrier implements them).
 
 ## Model Experience
 
@@ -62,3 +62,4 @@ None; the cache never assembles or sends provider requests.
 - **No eviction or retention surface** — records accumulate per session; pruning stored checkpoints is out-of-band maintenance, same stance as session persistence itself.
 - **Interval throttle is per-session coarse** — the timer arms at the first dirty event after a clean write; a steady sub-threshold trickle writes once per interval, not a sliding window.
 - **`coldSnapshot` reads are not deduplicated** — two concurrent cold reads of one session each run the ladder; last write-back wins (rows are equivalent), acceptable for listing-scale call rates.
+- **Concurrent checkpoints land in call order per session** — writes to one cache file are serialized (an older cut can never overwrite a newer one), but a crash between a file write and its successor leaves the older cut on disk — stale-but-never-wrong, self-healed by the next write or cold read.

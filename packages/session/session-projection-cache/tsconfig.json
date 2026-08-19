@@ -27,10 +27,10 @@
       "path": "../session-projection"
     },
     {
-      "path": "../../storage/storage-json"
+      "path": "../../runtime-diagnostics/invariants"
     },
     {
-      "path": "../../runtime-diagnostics/invariants"
+      "path": "../../util/atomic-write"
     }
   ]
 }

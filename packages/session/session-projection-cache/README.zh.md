@@ -29,9 +29,9 @@
 
 ## 列表读（`cachedSnapshot(meta)`）
 
-零 I/O 一档：从身份匹配的存储记录直接 view 客户端值（仅版本与 state schema 均匹配的 key），以 `{asOfSeq, values}` 切面返回——`asOfSeq` 取所服务行的最低水位，客户端在 higher-seq-wins 规则下播种值存储时，陈旧列表块永远压不过更新的推送帧。host-only 行永不返回。无可用客户端行（未知 id、无关生命周期、无可用行）时返回 `undefined`；api-proxy 列表载体将其转为列缺席。
+每会话一次文件读取：从身份匹配的存储记录直接 view 客户端值（仅版本与 state schema 均匹配的 key），以 `{asOfSeq, values}` 切面返回——`asOfSeq` 取所服务行的最低水位，客户端在 higher-seq-wins 规则下播种值存储时，陈旧列表块永远压不过更新的推送帧。host-only 行永不返回。无可用客户端行（未知 id、无关生命周期、缺失文件、无可用行）时返回 `undefined`；api-proxy 列表载体将其转为列缺席。
 
-## 冷读（`coldSnapshot(id, signal?)`）
+## 冷读（`coldSnapshot(meta, signal?)`）
 
 读取阶梯，正常路径无需加载全量日志：缓存行 → `sessionProjections.restoreFloor`（锚定在最低可用水位之前一个事件的位置）→ 持久化 `readFrom(id, floor)` → `sessionProjections.restore` → 刷新行的 fail-soft 写回。这个锚使缩短的日志（崩溃修复截断）可被证明：越界的行恰好触发一次从 seq 0 的全量重读，而不是把幽灵值当现值服务。无已注册单元时直接服务 `{asOfSeq: -1, values: {}}`，不触碰持久化；无持久日志的会话以 seam 的 `not found` 拒绝。
 
@@ -47,7 +47,7 @@
     writeIntervalMs: 5000
 ```
 
-注入 `storageDomain`、`sessionProjections`、`sessionPersistence`、`sessions`。没有这一行时，投影系统只跑 live（水位缓存；冷读在实现了它的载体处退回全量日志加载）。
+注入 `sessionProjections`、`sessionPersistence`、`sessions`。没有这一行时，投影系统只跑 live（水位缓存；冷读在实现了它的载体处退回全量日志加载）。
 
 ## 模型体验
 
@@ -62,3 +62,4 @@
 - **不提供淘汰或保留接口**：记录会按会话持续累积；清理已存储的检查点属于带外维护，与会话持久化采用相同策略。
 - **间隔节流采用按会话的粗粒度控制**：一次无脏数据的写入完成后，计时器会在首个脏事件到达时启动；对于持续但未达到条数阈值的事件流，系统每个间隔写入一次，而不采用滑动窗口。
 - **`coldSnapshot` 读取不去重**——同一会话的两个并发冷读各跑一遍阶梯；写回最后者胜（行等价），对列表级调用频率可接受。
+- **并发检查点按调用顺序落盘（每会话）**——同一缓存文件的写入被串行化（旧切面永不覆盖新切面），但文件写入与下一次写入之间的崩溃会留下旧切面——陈旧但绝不错误，由下一次写入或冷读自愈。

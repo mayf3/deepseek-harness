@@ -192,6 +192,18 @@ describe('SessionProjectionCache write policy', () => {
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['slow'] })
   })
 
+  it('serializes concurrent checkpoints so they land in call order', async () => {
+    const { ctx, root } = await harness()
+    const session = ctx.sessions.create(SessionId('chained'))
+    const first = ctx.sessionProjectionCache.write(session)
+    mark(session, ['a'])
+    const second = ctx.sessionProjectionCache.write(session)
+    await Promise.all([first, second])
+    // Both cuts landed; the file holds the second (newer) cut (the mark is
+    // the session's first event, seq 0).
+    expect((await storedRows(root, session.id))?.['cache-test/marks']).toEqual({ ver: 1, seq: 0, val: { marks: ['a'] } })
+  })
+
   it('write() on a never-dirty session checkpoints directly and rejects a non-JSON unit state', async () => {
     const { ctx, root } = await harness()
     // Never dirtied: no events — write() still lands the init-derived cut.
@@ -365,7 +377,10 @@ describe('SessionProjectionCache cold read', () => {
     // its rows pass every watermark check, but the identity does not match.
     await seedRecord(root, 'reborn', { 'cache-test/marks': { ver: 1, seq: 2, val: { marks: ['phantom'] } } }, { createdAt: 999 })
     const { cache, root: sameRoot } = await harness({ root, logs })
-    const snapshot = await cache.coldSnapshot(headerOf(SessionId('reborn')))
+    // The caller holds the STALE header (the old lifecycle's createdAt): the
+    // stale record passes the read-side filter, but the stored log's header
+    // is the identity witness and rebinds the write-back to the real lifecycle.
+    const snapshot = await cache.coldSnapshot(headerOf(SessionId('reborn'), 999))
     expect(snapshot.values['cache-test/marks']).toEqual({ marks: ['real'] })
     // The write-back rebinds the record to the actual log's identity.
     expect((await storedRecord(sameRoot, SessionId('reborn')))?.identity).toEqual({ createdAt: 0 })
@@ -416,6 +431,56 @@ describe('SessionProjectionCache cold read', () => {
     expect(await cache.cachedSnapshot(headerOf(id, 777))).toBeUndefined()
     // Unknown id: no block.
     expect(await cache.cachedSnapshot(headerOf(SessionId('never-cached')))).toBeUndefined()
+  })
+
+  describe('SessionProjectionCache without a per-session directory (sqlite-style backend)', () => {
+    it('write() no-ops and cachedSnapshot is undefined — no cache file is ever created', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
+      roots.push(root)
+      const ctx = new Context()
+      contexts.push(ctx)
+      await ctx.plugin(SessionStore)
+      await ctx.plugin(SessionProjectionRegistry)
+      ctx.sessionProjections.register(marksUnit())
+      ctx.provide('sessionPersistence', {
+        readFrom: async () => { throw new Error('no log') },
+        locate: () => undefined,
+      } as never)
+      await ctx.plugin(SessionProjectionCache, { writeEveryEvents: 100, writeIntervalMs: 60_000 })
+      const session = ctx.sessions.create(SessionId('no-path'))
+      mark(session, ['a'])
+      endTurn(session)
+      await settle()
+      expect(await storedRows(root, session.id)).toBeUndefined()
+      expect(await ctx.sessionProjectionCache.cachedSnapshot(headerOf(session.id))).toBeUndefined()
+      // An explicit write is also a no-op: no checkpoint cut, no durability flush.
+      await expect(ctx.sessionProjectionCache.write(session)).resolves.toBeUndefined()
+      expect(await storedRows(root, session.id)).toBeUndefined()
+    })
+
+    it('coldSnapshot falls to the full-log rung when no cache path exists', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
+      roots.push(root)
+      const logs = new Map([['nopath', storedLog([['a']])]])
+      const ctx = new Context()
+      contexts.push(ctx)
+      await ctx.plugin(SessionStore)
+      await ctx.plugin(SessionProjectionRegistry)
+      ctx.sessionProjections.register(marksUnit())
+      const readFrom = vi.fn(async (id: SessionId, fromSeq: number) => {
+        const events = logs.get(String(id))
+        if (events === undefined) throw new Error(`session "${id}" not found`)
+        return { meta: { version: 0, id, createdAt: 0 }, events: events.filter(event => event.seq >= fromSeq) }
+      })
+      ctx.provide('sessionPersistence', { readFrom, locate: () => undefined } as never)
+      await ctx.plugin(SessionProjectionCache, { writeEveryEvents: 100, writeIntervalMs: 60_000 })
+      const snapshot = await ctx.sessionProjectionCache.coldSnapshot(headerOf(SessionId('nopath')))
+      expect(snapshot.values['cache-test/marks']).toEqual({ marks: ['a'] })
+      // No cached rows: the restore floor is undefined, so the ladder is one
+      // full probe read from seq 0 and no write-back happens.
+      expect(readFrom).toHaveBeenCalledWith(SessionId('nopath'), 0, undefined)
+      expect(await storedRows(root, SessionId('nopath'))).toBeUndefined()
+    })
   })
 
   it('holds the not-found contract with zero registered units, and dates the empty cut for a present log', async () => {

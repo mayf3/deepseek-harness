@@ -14,15 +14,15 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { readFile, mkdir } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 // Empty type import: applies the package's cordis Context merge
 // (`ctx.sessionPersistence`), which this service reads on the cold path.
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { ProjectionCheckpoint, ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
-import { writeAtomic } from '@deepseek-ai/dsh-storage-json'
 import { checkpointRecord } from './spec.ts'
 import type { CheckpointIdentity, CheckpointRecord } from './spec.ts'
 
@@ -31,6 +31,9 @@ export type { CheckpointIdentity, CheckpointRecord } from './spec.ts'
 
 /** Cache file name inside each session's own persistence directory. */
 const CACHE_FILE_NAME = 'projection_cache.json'
+/** Owner-only cache files and session directories: the session tree is private data. */
+const CACHE_FILE_MODE = 0o600
+const CACHE_DIR_MODE = 0o700
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -81,6 +84,10 @@ export class SessionProjectionCache extends Service {
   static Config: z<Config> = Config
 
   private readonly dirty = new Map<Session, DirtyState>()
+  /** Serialize atomic replacements per cache path so an older cut never overwrites a newer one. */
+  private readonly writeChains = new Map<string, Promise<void>>()
+  /** In-flight durable writes, drained on service disposal. */
+  private readonly inFlight = new Set<Promise<unknown>>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'sessionProjectionCache')
@@ -125,8 +132,9 @@ export class SessionProjectionCache extends Service {
       const record = checkpointRecord.parse(JSON.parse(await readFile(path, 'utf8')))
       return identityMatches(record.identity, expected) ? record : undefined
     } catch {
-      // Absent, unreadable, malformed, or identity-mismatched — all read as
-      // "no cache row"; the cold-read ladder refolds from the log.
+      // An absent, unreadable, or malformed file reads as "no cache row";
+      // the cold-read ladder refolds from the log. Identity mismatch is a
+      // normal ternary return above, not an exception.
       return undefined
     }
   }
@@ -166,6 +174,10 @@ export class SessionProjectionCache extends Service {
    * @returns resolution after durability and event emission.
    */
   async write(session: Session): Promise<void> {
+    // A backend without a per-session directory (sqlite) persists no cache:
+    // skip the checkpoint cut and the durability flush entirely for it.
+    const path = this.cachePathFor(session.header)
+    if (path === undefined) return
     const rows = this.ctx.sessionProjections.checkpoint(session)
     this.markClean(session)
     // Durability barrier: the checkpoint cut was taken above, so flushing
@@ -176,9 +188,6 @@ export class SessionProjectionCache extends Service {
     // already gone; persistence's own retirement drain covers that path and
     // any residual overreach is caught by the cold read's anchored floor.
     if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
-    const path = this.cachePathFor(session.header)
-    // A backend without a per-session directory (sqlite) persists no cache.
-    if (path === undefined) return
     await this.put(path, identityOf(session.header), rows)
   }
 
@@ -223,9 +232,12 @@ export class SessionProjectionCache extends Service {
       const whole = await persistence.readFrom(meta.id, 0, signal)
       restored = this.ctx.sessionProjections.restore({}, whole.events, 0)
     }
-    const path = this.cachePathFor(meta)
-    if (path !== undefined) {
-      await this.putSoft(path, meta.id, identityOf(tail.meta), restored.checkpoint, 'cold-read write-back')
+    // The write-back path and identity come from the STORED header: a caller
+    // header with a wrong cwd must not mint an orphan cache file in a
+    // directory no real read will ever look at.
+    const writebackPath = this.cachePathFor(tail.meta)
+    if (writebackPath !== undefined) {
+      await this.putSoft(writebackPath, meta.id, identityOf(tail.meta), restored.checkpoint, 'cold-read write-back')
     }
     return restored.snapshot
   }
@@ -263,12 +275,15 @@ export class SessionProjectionCache extends Service {
       this.dirty.delete(session)
     })
 
-    // Clear pending timers with the plugin (their sessions outlive the cache).
+    // With the plugin (their sessions outlive the cache): clear pending
+    // timers, stop accepting new work, and drain in-flight durable writes so
+    // a late flush can never land after disposal (or overwrite a successor).
     this.ctx.effect(() => () => {
       for (const state of this.dirty.values()) {
         if (state.timer !== undefined) clearTimeout(state.timer)
       }
       this.dirty.clear()
+      return Promise.allSettled([...this.inFlight])
     }, 'sessionProjectionCache.timers')
   }
 
@@ -278,11 +293,15 @@ export class SessionProjectionCache extends Service {
    * the counter) and the two mandatory points write unconditionally.
    */
   private async flushSoft(session: Session, trigger: string): Promise<void> {
-    try {
-      await this.write(session)
-    } catch (error) {
-      this.ctx.logger.warn(`session projection cache: ${trigger} write for "${session.id}" failed (cache stays stale): ${String(error)}`)
-    }
+    const run = (async () => {
+      try {
+        await this.write(session)
+      } catch (error) {
+        this.ctx.logger.warn(`session projection cache: ${trigger} write for "${session.id}" failed (cache stays stale): ${String(error)}`)
+      }
+    })()
+    this.inFlight.add(run)
+    void run.finally(() => this.inFlight.delete(run))
   }
 
   /** Reset one session's dirty bookkeeping (its checkpoint is being written). */
@@ -296,15 +315,28 @@ export class SessionProjectionCache extends Service {
     }
   }
 
-  /** Atomically replace one session's cache file with its log identity and a detached snapshot of `rows`. */
-  private async put(path: string, identity: CheckpointIdentity, rows: ProjectionCheckpoint): Promise<void> {
+  /**
+   * Atomically replace one session's cache file with its log identity and a
+   * detached snapshot of `rows`, serialized per path so concurrent checkpoints
+   * land in call order (a stale cut can never overwrite a newer one).
+   */
+  private put(path: string, identity: CheckpointIdentity, rows: ProjectionCheckpoint): Promise<void> {
     const detached = snapshotJsonValue(rows)
     if (detached === undefined) {
       throw new TypeError('projection checkpoint is not losslessly JSON-serializable (a unit state violates the plain-JSON contract)')
     }
     const record: CheckpointRecord = { identity, rows: detached as CheckpointRecord['rows'] }
-    await mkdir(dirname(path), { recursive: true })
-    await writeAtomic(path, JSON.stringify(record, null, 2))
+    const previous = this.writeChains.get(path) ?? Promise.resolve()
+    const next = previous.then(() => writeFileAtomic(
+      path,
+      JSON.stringify(record, null, 2),
+      { mode: CACHE_FILE_MODE, dirMode: CACHE_DIR_MODE },
+    ))
+    void next.finally(() => {
+      if (this.writeChains.get(path) === next) this.writeChains.delete(path)
+    })
+    this.writeChains.set(path, next)
+    return next
   }
 
   /** Fail-soft {@link put}: cache writes must never fail their caller's read or event path. */
@@ -315,11 +347,15 @@ export class SessionProjectionCache extends Service {
     rows: ProjectionCheckpoint,
     what: string,
   ): Promise<void> {
-    try {
-      await this.put(path, identity, rows)
-    } catch (error) {
-      this.ctx.logger.warn(`session projection cache: ${what} for "${id}" failed (cache stays stale): ${String(error)}`)
-    }
+    const run = (async () => {
+      try {
+        await this.put(path, identity, rows)
+      } catch (error) {
+        this.ctx.logger.warn(`session projection cache: ${what} for "${id}" failed (cache stays stale): ${String(error)}`)
+      }
+    })()
+    this.inFlight.add(run)
+    await run.finally(() => this.inFlight.delete(run))
   }
 }
 

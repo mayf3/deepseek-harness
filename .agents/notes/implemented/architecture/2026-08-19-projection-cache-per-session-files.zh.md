@@ -26,3 +26,4 @@ Status: implemented
 - **保留全局 sessions 表。** 保留一次加载式列表与同步 `cachedSnapshot`，但保留了促成此改动的全局写放大与单文件爆炸半径。
 - **存储根目录下每会话一个 storage-domain unit**（扁平 `session_projcache_<id>.json`）。未采用：unit 名必须匹配 `[a-z0-9_]`（会话 id 做不到），且文件会落在会话目录之外，散落在存储根目录而不是日志旁。
 - **在缓存内复刻会话目录布局。** 未采用：持久化后端已通过 `locate` 拥有该布局；复刻路径 helper 会把缓存耦合到后端的内部实现。
+- **复用 `@deepseek-ai/dsh-atomic-write`**（零依赖的 `writeFileAtomic`，带 `mode`/`dirMode`）。已采纳：缓存以 `{ mode: 0o600, dirMode: 0o700 }` 经其写入，使会话目录树与 jsonl 后端自己的 0o700 目录保持一致、仅属主可读，而不是从 storage-json 后端插件再导出一套原子写原语。
