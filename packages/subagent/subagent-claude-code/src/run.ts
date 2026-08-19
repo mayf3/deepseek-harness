@@ -38,14 +38,42 @@ import {
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
+/** Claude Code permission modes that cannot wait for a human response. */
+export const CLAUDE_CODE_PERMISSION_MODES = [
+  'dontAsk',
+  'acceptEdits',
+  'auto',
+  'plan',
+  'bypassPermissions',
+] as const satisfies readonly NonNullable<Options['permissionMode']>[]
+
+/** Profile-selectable non-interactive Claude Code permission mode. */
+export type ClaudeCodePermissionMode = typeof CLAUDE_CODE_PERMISSION_MODES[number]
+
+/** Safe default for unattended Claude Code runs. */
+export const DEFAULT_CLAUDE_CODE_PERMISSION_MODE: ClaudeCodePermissionMode = 'dontAsk'
+
+const SUPPORTED_UNATTENDED_DIALOG_KINDS = [
+  'refusal_fallback_prompt',
+] satisfies NonNullable<Options['supportedDialogKinds']>
+
+function unattendedDiagnostic(
+  mode: ClaudeCodePermissionMode,
+  request: 'tool permission' | 'MCP elicitation' | 'user dialog',
+  decision: 'denied' | 'declined' | 'cancelled',
+  reason: string,
+): string {
+  return `Claude Code unattended decision (mode: ${mode}; request: ${request}; decision: ${decision}): ${reason}`
+}
+
 /* jscpd:ignore-start -- sibling providers intentionally keep product-private
  * run inputs and error normalization instead of adding a shared lifecycle owner. */
 /** Fully resolved inputs for one official Claude Agent SDK query. */
 export interface ClaudeCodeRunSpec {
   /** Parent Session workspace supplied to the SDK and real CLI. */
   readonly cwd: string
-  /** Exact native Claude Code executable resolved from the host PATH. */
-  readonly executable: string
+  /** Profile-selected native non-interactive permission mode. */
+  readonly permissionMode: ClaudeCodePermissionMode
   /** Explicit deployment/test environment layered after shared scrubbing. */
   readonly env: Record<string, string>
   /** Subprocess termination grace passed to the shared process-tree owner. */
@@ -59,6 +87,11 @@ export interface ClaudeCodeRunSpec {
 function thrown(value: unknown): Error {
   /* v8 ignore next -- typed SDK and subprocess failures reject with Error. */
   return value instanceof Error ? value : new Error(String(value))
+}
+
+/** Read live request cancellation across awaited startup cleanup. */
+function isAborted(signal: AbortSignal): boolean {
+  return signal.aborted
 }
 /* jscpd:ignore-end */
 
@@ -107,13 +140,19 @@ export function successfulResult(message: SDKResultMessage): string {
  * Consume the complete SDK stream and require one strict success plus normal
  * iterator completion.
  * @param query - published official SDK query.
+ * @param onPermissionDenied - records a safe fact when the SDK reports native denial.
  * @returns the completed shared result.
  */
 export async function consumeClaudeQuery(
   query: AsyncIterable<SDKMessage>,
+  onPermissionDenied?: () => void,
 ): Promise<SubagentResult> {
   let answer: string | undefined
   for await (const message of query) {
+    if (message.type === 'system' && message.subtype === 'permission_denied') {
+      onPermissionDenied?.()
+      continue
+    }
     if (message.type !== 'result') continue
     answer = successfulResult(message)
   }
@@ -172,20 +211,59 @@ export async function disposeClaudeCodeChild(
  * @param spec - Workspace, environment, process service, and disposal policy.
  * @param controller - per-run cancellation owner.
  * @param capture - receives the real managed child synchronously from the SDK hook.
+ * @param captureDiagnostic - receives safe facts from unattended interaction callbacks.
  * @returns options that inherit native settings while disabling persistence and user questions.
  */
 export function claudeQueryOptions(
   spec: ClaudeCodeRunSpec,
   controller: AbortController,
   capture: (child: SubprocessHandle) => void,
+  captureDiagnostic: (diagnostic: string) => void,
 ): Options {
   return {
     abortController: controller,
     cwd: spec.cwd,
-    pathToClaudeCodeExecutable: spec.executable,
     env: { ...scrubbedParentEnv(), ...spec.env },
     persistSession: false,
-    disallowedTools: ['AskUserQuestion'],
+    disallowedTools: spec.permissionMode === 'plan'
+      ? ['AskUserQuestion', 'ExitPlanMode']
+      : ['AskUserQuestion'],
+    permissionMode: spec.permissionMode,
+    ...spec.permissionMode === 'bypassPermissions'
+      ? { allowDangerouslySkipPermissions: true }
+      : {
+        canUseTool: () => {
+          captureDiagnostic(unattendedDiagnostic(
+            spec.permissionMode,
+            'tool permission',
+            'denied',
+            'the provider does not request human approval',
+          ))
+          return Promise.resolve({
+            behavior: 'deny' as const,
+            message: 'This unattended Claude Code subagent cannot request human approval.',
+          })
+        },
+      },
+    onElicitation: () => {
+      captureDiagnostic(unattendedDiagnostic(
+        spec.permissionMode,
+        'MCP elicitation',
+        'declined',
+        'the provider does not collect interactive MCP input',
+      ))
+      return Promise.resolve({ action: 'decline' })
+    },
+    onUserDialog: () => {
+      captureDiagnostic(unattendedDiagnostic(
+        spec.permissionMode,
+        'user dialog',
+        'cancelled',
+        'the provider does not render blocking dialogs',
+      ))
+      return Promise.resolve({ behavior: 'cancelled' as const })
+    },
+    supportedDialogKinds: SUPPORTED_UNATTENDED_DIALOG_KINDS,
     spawnClaudeCodeProcess: (options: SpawnOptions) => {
       const child = spec.spawn(claudeSpawnSpec(options, spec.disposeGraceMs))
       capture(child)
@@ -220,12 +298,21 @@ export async function startClaudeCodeRun(
 
   let child: SubprocessHandle | undefined
   let query: Query | undefined
+  let diagnostic: string | undefined
+  const captureDiagnostic = (value: string): void => {
+    diagnostic = value
+  }
   try {
     query = officialQuery({
       prompt,
-      options: claudeQueryOptions(spec, controller, (captured) => {
-        child = captured
-      }),
+      options: claudeQueryOptions(
+        spec,
+        controller,
+        (captured) => {
+          child = captured
+        },
+        captureDiagnostic,
+      ),
     })
     if (child === undefined || child.pid <= 0) {
       throw new Error(
@@ -239,12 +326,49 @@ export async function startClaudeCodeRun(
     request.signal.removeEventListener('abort', onAbort)
     const cancelledBeforeCleanup = controller.signal.aborted
     requestCancel()
+    const startupError = thrown(error)
+    if (child !== undefined && child.pid <= 0) {
+      let closeError: Error | undefined
+      try {
+        query?.close()
+      } catch (disposeError: unknown) {
+        closeError = thrown(disposeError)
+      }
+
+      let spawnError = startupError
+      try {
+        await child.done
+      } catch (childError: unknown) {
+        spawnError = thrown(childError)
+      }
+
+      const cancelled = cancelledBeforeCleanup || isAborted(request.signal)
+      if (closeError !== undefined) {
+        const failures = cancelled
+          ? [
+            new Error('subagent-claude-code: request was aborted before SDK startup'),
+            spawnError,
+            closeError,
+          ]
+          : [spawnError, closeError]
+        throw new AggregateError(
+          failures,
+          cancelled
+            ? `subagent-claude-code: request was aborted before SDK startup; Claude Code process startup also failed: ${spawnError.message}; query cleanup also failed`
+            : `subagent-claude-code: Claude Code process startup failed: ${spawnError.message}; query cleanup also failed`,
+        )
+      }
+      if (cancelled) {
+        throw new Error('subagent-claude-code: request was aborted before SDK startup')
+      }
+      throw spawnError
+    }
     if (child !== undefined) {
       try {
         await disposeClaudeCodeChild(query, child)
       } catch (disposeError: unknown) {
         throw new AggregateError(
-          [thrown(error), thrown(disposeError)],
+          [startupError, thrown(disposeError)],
           'subagent-claude-code: startup failed and CLI cleanup also failed',
         )
       }
@@ -253,23 +377,30 @@ export async function startClaudeCodeRun(
         query.close()
       } catch (disposeError: unknown) {
         throw new AggregateError(
-          [thrown(error), thrown(disposeError)],
+          [startupError, thrown(disposeError)],
           'subagent-claude-code: startup failed and query cleanup also failed',
         )
       }
     }
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- the request can abort while process cleanup is awaited.
-    if (cancelledBeforeCleanup || request.signal.aborted) {
+    if (cancelledBeforeCleanup || isAborted(request.signal)) {
       throw new Error('subagent-claude-code: request was aborted before SDK startup')
     }
-    throw thrown(error)
+    throw startupError
   }
 
   const publishedQuery = query
   const publishedChild = child
   const result = settleRunResult({
-    attempt: () => consumeClaudeQuery(publishedQuery),
+    attempt: () => consumeClaudeQuery(publishedQuery, () => {
+      captureDiagnostic(unattendedDiagnostic(
+        spec.permissionMode,
+        'tool permission',
+        'denied',
+        'Claude Code denied the request before an interactive prompt',
+      ))
+    }),
     collectOutput: () => [],
+    collectDiagnostic: () => diagnostic,
     cancelled: () => controller.signal.aborted,
     onError: spec.onError,
     signal: request.signal,

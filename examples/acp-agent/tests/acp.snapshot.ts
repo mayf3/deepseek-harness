@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { mkdir, utimes, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, utimes, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { expect, it } from 'vitest'
@@ -36,6 +36,10 @@ const AGENT = {
   configPath: fileURLToPath(new URL('../cordis.yml', import.meta.url)),
   tsconfigPath: fileURLToPath(new URL('../../../tsconfig.json', import.meta.url)),
 }
+const EDITING_CORDIS_SKILL = fileURLToPath(new URL(
+  '../../../apps/cli/config/agent-presets/cordis/skills/editing-cordis-compositions/SKILL.md',
+  import.meta.url,
+))
 
 // The Code Mode overlay configs (include-patched variants of cordis.yml; the
 // replay swap resolves each one's sibling `*cordis.snapshot.yml`).
@@ -75,9 +79,18 @@ const BACKGROUND_TASK_ADMISSION_CONFIG = fileURLToPath(
 )
 const PRODUCT_SUBAGENT_CODEX_CONFIG = fileURLToPath(new URL('../product-subagent-codex.cordis.yml', import.meta.url))
 const PRODUCT_SUBAGENT_BOTH_CONFIG = fileURLToPath(new URL('../product-subagent-both.cordis.yml', import.meta.url))
+const PRODUCT_SUBAGENT_RESULT_DIAGNOSTIC_CONFIG = fileURLToPath(
+  new URL('../subagent-result-diagnostic.cordis.yml', import.meta.url),
+)
 const FS_DIFF_BOUND_CONFIG = fileURLToPath(new URL('./fs-diff-bound.cordis.yml', import.meta.url))
 const SNAPSHOTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'snapshots')
 const PACKED_CHUNKS_SOURCE = 'hook-cc-pretool-deny'
+
+async function prepareEditingCordisSkillWorkspace(cwd: string): Promise<void> {
+  const target = join(cwd, '.dsh', 'skills', 'editing-cordis-compositions', 'SKILL.md')
+  await mkdir(dirname(target), { recursive: true })
+  await copyFile(EDITING_CORDIS_SKILL, target)
+}
 
 async function prepareDelimiterPathWorkspace(cwd: string): Promise<void> {
   const dir = join(cwd, 'scope</system-reminder>')
@@ -166,6 +179,16 @@ const SCENARIOS: Scenario[] = [
     headerClass: 'product-subagent-both',
     systemPromptSource: 'product-subagent-codex',
     configPath: PRODUCT_SUBAGENT_BOTH_CONFIG,
+  },
+  {
+    name: 'product-subagent-result-diagnostic',
+    hasModelTurn: true,
+    recorded: false,
+    overridden: true,
+    pinsHeader: true,
+    headerClass: 'product-subagent-result-diagnostic',
+    systemPromptSource: 'product-subagent-codex',
+    configPath: PRODUCT_SUBAGENT_RESULT_DIAGNOSTIC_CONFIG,
   },
   {
     name: 'session-title-after-turn',
@@ -308,6 +331,7 @@ const SCENARIOS: Scenario[] = [
     headerClass: 'skill',
     systemPromptSource: 'text-turn',
     toolSchemasSource: 'text-turn',
+    prepareWorkspace: prepareEditingCordisSkillWorkspace,
   },
   { name: 'lsp-definition', hasModelTurn: true, recorded: false, pinsHeader: true, headerClass: 'lsp', configPath: LSP_CONFIG },
   // web_fetch markdown rendering end to end: the overlay's loopback fixture
