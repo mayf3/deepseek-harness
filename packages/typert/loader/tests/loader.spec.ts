@@ -214,8 +214,8 @@ describe('typert loader', () => {
 
     await ctx.loader.remove(id)
     await ctx.loader.await()
-    // The unmount reconciliation rides a queued microtask flush; poll instead
-    // of assuming a fixed delay covers it under coverage-lane contention.
+    // The unmount reconciliation rides a queued microtask flush that settles
+    // after loader.await(); poll for the withdrawal.
     await vi.waitFor(() => {
       expect(ctx.typert.get('@fixture/with-typert#Thing')).toBeUndefined()
     }, { timeout: 10_000 })
