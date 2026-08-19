@@ -724,6 +724,28 @@ describe('WorkspaceBrowser', () => {
     }
   })
 
+  it('keeps the rail-opened search expanded when the initiating click reaches document', () => {
+    vi.useFakeTimers()
+    try {
+      const b = mount({ wide: false })
+      fireEvent.click(screen.getByRole('button', { name: '搜索会话' }))
+      rerender(b, { wide: true })
+      // In the browser the rail click keeps bubbling to document after the
+      // wide flip mounted the outside-click listener, with the unmounted rail
+      // button as its target — outside searchRoot. It must not dismiss the
+      // search it just opened.
+      fireEvent.click(document.body)
+      expect(screen.getByRole('button', { name: '搜索会话' }).getAttribute('aria-expanded')).toBe('true')
+      act(() => { vi.advanceTimersByTime(300) })
+      expect(document.activeElement).toBe(screen.getByPlaceholderText('搜索会话…'))
+      // The gesture has settled: outside clicks dismiss the search again.
+      fireEvent.click(document.body)
+      expect(screen.getByRole('button', { name: '搜索会话' }).getAttribute('aria-expanded')).toBe('false')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('rail add-workspace raises the directory flow in place, with no menu and no expansion', () => {
     const expandSidebar = vi.fn()
     mount({ wide: false, expandSidebar, useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
