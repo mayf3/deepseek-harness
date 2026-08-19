@@ -20,6 +20,7 @@ import {
   decodeStoredSession,
   SessionFormatUnsupportedError,
 } from './format-decoder.ts'
+import { assertNoRetiredSessionEvent } from './format-json.ts'
 import type {
   DecodedSession,
   StoredSessionSource,
@@ -194,21 +195,7 @@ function seedCoversPrefix(seed: readonly SessionEvent[], prefix: readonly Sessio
 
 /** Reject obsolete v0 event records before a live writer persists them. */
 function assertSupportedEvents(events: readonly SessionEvent[], id: SessionId): void {
-  const legacyType: string = 'request/header-delta'
-  const legacy = events.find(event => event.type === legacyType)
-  if (legacy !== undefined) {
-    throw new Error(`session "${id}" contains unsupported legacy request/header-delta event at seq ${legacy.seq}`)
-  }
-  const legacyModeType: string = 'mode/set'
-  const legacyMode = events.find(event => event.type === legacyModeType)
-  if (legacyMode !== undefined) {
-    throw new Error(`session "${id}" contains unsupported legacy mode/set event at seq ${legacyMode.seq}`)
-  }
-  const fallback = events.find(event => event.type === 'request/header'
-    && (event.data as { reason?: string }).reason === 'fallback')
-  if (fallback !== undefined) {
-    throw new Error(`session "${id}" contains unsupported legacy request/header reason "fallback" at seq ${fallback.seq}`)
-  }
+  for (const event of events) assertNoRetiredSessionEvent(event, id)
 }
 
 /** Materialize one decoded event read and observe its physical EOF metadata. */

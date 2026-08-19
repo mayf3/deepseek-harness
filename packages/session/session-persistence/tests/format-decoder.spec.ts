@@ -560,6 +560,23 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
     expect(completionFailure).toBe(failure)
   })
 
+  it('propagates an upstream revision conflict unchanged through a migration step', async () => {
+    const { decodeStoredSession } = await configuredDecoder(1, [migration(0, [])])
+    const { SessionPersistenceRevisionConflictError: DecoderRevisionConflictError } = await import('../src/revision.ts')
+    const failure = new DecoderRevisionConflictError('migrating source changed')
+    const source: StoredSessionSource<never> = {
+      meta: { version: 0, id, createdAt: 1 },
+      revision: SessionPersistenceRevision('conflicting-migration-source'),
+      readEvents: () => ({
+        events: (async function* (): AsyncIterable<unknown> {
+          throw failure
+        })(),
+        completed: Promise.reject(failure),
+      }),
+    }
+    await expect(decodedFailure(decodeStoredSession(source, id))).resolves.toBe(failure)
+  })
+
   it('rejects a missing path and a future source in the correct direction', async () => {
     const { decodeStoredSession, validateHeader } = await configuredDecoder(2, [])
     const old = storedSource(0, [])

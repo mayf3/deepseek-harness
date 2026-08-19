@@ -34,3 +34,23 @@ export function readStoredEventEnvelope(value: unknown, id: SessionId): SessionE
   }
   return event as unknown as SessionEvent
 }
+
+/**
+ * Reject event records retired before the current durable event vocabulary.
+ * @param event - current-envelope event presented for reading or writing.
+ * @param id - Session identity used in diagnostics.
+ */
+export function assertNoRetiredSessionEvent(event: SessionEvent, id: SessionId): void {
+  const retiredType: string = 'request/header-delta'
+  if (event.type === retiredType) {
+    throw new Error(`session "${id}" contains unsupported legacy request/header-delta event at seq ${event.seq}`)
+  }
+  const retiredModeType: string = 'mode/set'
+  if (event.type === retiredModeType) {
+    throw new Error(`session "${id}" contains unsupported legacy mode/set event at seq ${event.seq}`)
+  }
+  if (event.type === 'request/header'
+    && (event.data as { reason?: string }).reason === 'fallback') {
+    throw new Error(`session "${id}" contains unsupported legacy request/header reason "fallback" at seq ${event.seq}`)
+  }
+}

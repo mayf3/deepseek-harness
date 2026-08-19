@@ -17,10 +17,10 @@ import {
   unversionedFormatCompatibility,
 } from './format-v0-compat.ts'
 import type { UnversionedFormatCompatibility } from './format-v0-compat.ts'
-import { asStoredRecord, readStoredEventEnvelope } from './format-json.ts'
+import { asStoredRecord, assertNoRetiredSessionEvent, readStoredEventEnvelope } from './format-json.ts'
 import type { SessionLocation } from './index.ts'
 import { SESSION_FORMAT_STEPS } from './format-migrations/index.ts'
-import type { SessionPersistenceRevision } from './revision.ts'
+import { SessionPersistenceRevisionConflictError, type SessionPersistenceRevision } from './revision.ts'
 
 /** Stable facts available to one format step invocation. */
 export interface SessionFormatContext {
@@ -35,14 +35,16 @@ export interface SessionFormatStep {
   /** Output Session format version; must equal `from + 1`. */
   readonly to: number
   /**
-   * Transform and validate the header fields understood by this step.
+   * Transform and validate the header fields understood by this step. The
+   * detached result must carry {@link to} and preserve the source id and cwd.
    * @param meta - detached input header for {@link from}.
    * @param context - stable session identity.
    * @returns detached header JSON carrying {@link to}.
    */
   migrateHeader(meta: unknown, context: SessionFormatContext): unknown
   /**
-   * Lazily transform and validate events understood by this step.
+   * Lazily transform and validate events understood by this step. The output
+   * must be detached, losslessly JSON-serializable, and contiguous by seq.
    * @param events - detached input records in durable sequence order.
    * @param context - stable session identity.
    * @returns a lazy output stream in the next format.
@@ -285,18 +287,7 @@ function assertCurrentEventSupported<TornMarker>(
   meta: SessionHeader,
   event: SessionEvent,
 ): void {
-  const legacyType: string = 'request/header-delta'
-  if (event.type === legacyType) {
-    throw new Error(`session "${meta.id}" contains unsupported legacy request/header-delta event at seq ${event.seq}`)
-  }
-  const legacyModeType: string = 'mode/set'
-  if (event.type === legacyModeType) {
-    throw new Error(`session "${meta.id}" contains unsupported legacy mode/set event at seq ${event.seq}`)
-  }
-  if (event.type === 'request/header'
-    && (event.data as { reason?: string }).reason === 'fallback') {
-    throw new Error(`session "${meta.id}" contains unsupported legacy request/header reason "fallback" at seq ${event.seq}`)
-  }
+  assertNoRetiredSessionEvent(event, meta.id)
   if (KNOWN_SESSION_EVENT_TYPES.has(event.type) || event.ignorable === true) return
   throw unsupported(
     source,
@@ -336,6 +327,7 @@ function transformEvents(
       try {
         yield* step.migrateEvents(input, context)
       } catch (error: unknown) {
+        if (error instanceof SessionPersistenceRevisionConflictError) throw error
         throw new Error(
           `session "${id}" event migration v${step.from} -> v${step.to} failed`,
           { cause: error },
