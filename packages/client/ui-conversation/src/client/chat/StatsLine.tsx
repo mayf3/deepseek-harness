@@ -102,15 +102,33 @@ export function formatDuration(ms: number): string {
 }
 
 /**
- * Cache-hit share of prompt-side input over the whole durable log.
+ * Display-ready cache-hit share of prompt-side input over the whole durable log.
  * @param usage - the session's token-usage projection value.
- * @returns rounded integer percent, or null when no input was billed.
+ * @returns integer text when integer rounding stays below 100, otherwise the
+ * minimum decimal precision that still rounds below 100; a full hit returns
+ * 100, and no billed input returns null.
  */
-export function cacheHitPercent(usage: TokenUsageProjection): number | null {
-  const denominator = billedInputTokens(usage)
-  return denominator === 0
-    ? null
-    : Math.round(usage.cacheReadTokens / denominator * 100)
+export function cacheHitPercent(usage: TokenUsageProjection): string | null {
+  const cacheReadTokens = BigInt(usage.cacheReadTokens)
+  const denominator = BigInt(usage.uncachedInputTokens)
+    + cacheReadTokens
+    + BigInt(usage.cacheWriteTokens)
+  if (denominator === 0n) return null
+  if (cacheReadTokens === denominator) return '100'
+
+  let decimalPlaces = 0
+  let decimalScale = 1n
+  while (true) {
+    const fullHit = 100n * decimalScale
+    const rounded = (2n * cacheReadTokens * fullHit + denominator) / (2n * denominator)
+    if (rounded < fullHit) {
+      if (decimalPlaces === 0) return rounded.toString()
+      const digits = rounded.toString().padStart(decimalPlaces + 1, '0')
+      return `${digits.slice(0, -decimalPlaces)}.${digits.slice(-decimalPlaces)}`
+    }
+    decimalPlaces += 1
+    decimalScale *= 10n
+  }
 }
 
 /**

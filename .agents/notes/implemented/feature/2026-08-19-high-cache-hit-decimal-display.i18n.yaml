@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-high-cache-hit-decimal-display.md
+2026-08-19-high-cache-hit-decimal-display.md: 29e0ebc11ae690b918c7e9364f29635de1e50f2a
+2026-08-19-high-cache-hit-decimal-display.zh.md: 28cd99a4c321cc4da0ce03142e2fbf438539b0ff
