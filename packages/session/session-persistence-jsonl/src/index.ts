@@ -9,7 +9,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { readdirSync } from 'node:fs'
-import { open, mkdir, readFile, readdir, realpath, link, rename, rm, stat, truncate, writeFile } from 'node:fs/promises'
+import { open, mkdir, readFile, readdir, realpath, link, rename, rm, stat, truncate } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { scheduler } from 'node:timers/promises'
@@ -44,9 +44,6 @@ const DEFAULT_COMPRESSION: JsonlCompression = 'zstd'
  * remains an indivisible synchronous decode.
  */
 const ZSTD_DECODE_YIELD_INTERVAL_MS = 500
-const LOG_LOCK_RETRY_INITIAL_MS = 20
-const LOG_LOCK_RETRY_MAX_MS = 200
-const LOG_LOCK_TIMEOUT_MS = 2_000
 const REPLACEMENT_BATCH_SIZE = 128
 
 /** Assert that the independently decodable first frame contains only the header record. */
@@ -128,10 +125,6 @@ function fileRevision(identity: FileRevisionIdentity): PersistenceRevision {
 /** Whether a filesystem error means absence; every non-ENOENT failure must surface. */
 function isENOENT(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
-}
-
-function isEEXIST(error: unknown): boolean {
-  return (error as NodeJS.ErrnoException | null)?.code === 'EEXIST'
 }
 
 /**
@@ -484,8 +477,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   async appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean): Promise<void> {
     await this.ensureRootEncoding()
     if (isMaterialized) {
-      const path = logPath(this.root, meta.cwd, meta.id, this.compression)
-      await this.withLogLock(path, () => this.appendLines(meta, events))
+      await this.appendLines(meta, events)
     } else {
       await this.materialize(meta, events)
     }
@@ -501,12 +493,9 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     tornMarker: JsonlTornMarker | undefined,
     closers: readonly SessionEvent[],
   ): Promise<void> {
-    const path = logPath(this.root, meta.cwd, meta.id, this.compression)
-    await this.withLogLock(path, async () => {
-      if (tornMarker !== undefined) await this.repair(meta, tornMarker.truncateTo)
-      const repairedEvents = [...(tornMarker?.recoveredEvents ?? []), ...closers]
-      if (repairedEvents.length > 0) await this.appendLines(meta, repairedEvents)
-    })
+    if (tornMarker !== undefined) await this.repair(meta, tornMarker.truncateTo)
+    const repairedEvents = [...(tornMarker?.recoveredEvents ?? []), ...closers]
+    if (repairedEvents.length > 0) await this.appendLines(meta, repairedEvents)
   }
 
   /** Replace one exact source revision through a synced sibling and atomic namespace update. */
@@ -522,48 +511,46 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
         `session "${meta.id}" no longer has revision ${expectedRevision}`,
       )
     }
-    await this.withLogLock(path, async () => {
-      let current: JsonlStoredHeader
-      try {
-        current = await this.readStoredHeader(path, meta.id)
-      } catch (error: unknown) {
-        if (isENOENT(error)) {
-          throw new SessionPersistenceRevisionConflictError(
-            `session "${meta.id}" no longer has revision ${expectedRevision}`,
-          )
-        }
-        throw error
+    let current: JsonlStoredHeader
+    try {
+      current = await this.readStoredHeader(path, meta.id)
+    } catch (error: unknown) {
+      if (isENOENT(error)) {
+        throw new SessionPersistenceRevisionConflictError(
+          `session "${meta.id}" no longer has revision ${expectedRevision}`,
+        )
       }
-      if (current.revision !== expectedRevision) {
+      throw error
+    }
+    if (current.revision !== expectedRevision) {
+      throw new SessionPersistenceRevisionConflictError(
+        `session "${meta.id}" changed before replacement of revision ${expectedRevision}`,
+      )
+    }
+    const currentIdentity = this.storedIdentity(current.meta, path)
+    if (meta.cwd !== currentIdentity.cwd) {
+      throw new Error(`replacement for session "${meta.id}" changes its stored identity`)
+    }
+
+    const tmp = `${path}.${randomBytes(6).toString('hex')}.upgrade.tmp`
+    try {
+      await this.writeReplacement(tmp, meta, events)
+      const beforeCommit = fileRevision(await stat(path, { bigint: true }))
+      if (beforeCommit !== expectedRevision) {
         throw new SessionPersistenceRevisionConflictError(
           `session "${meta.id}" changed before replacement of revision ${expectedRevision}`,
         )
       }
-      const currentIdentity = this.storedIdentity(current.meta, path)
-      if (meta.cwd !== currentIdentity.cwd) {
-        throw new Error(`replacement for session "${meta.id}" changes its stored identity`)
+      /* v8 ignore next -- Windows uses its write-through replacement primitive. */
+      if (process.platform === 'win32') {
+        await replaceFileWin32(tmp, path)
+      } else {
+        await rename(tmp, path)
+        await this.syncDirPosix(dirname(path))
       }
-
-      const tmp = `${path}.${randomBytes(6).toString('hex')}.upgrade.tmp`
-      try {
-        await this.writeReplacement(tmp, meta, events)
-        const beforeCommit = fileRevision(await stat(path, { bigint: true }))
-        if (beforeCommit !== expectedRevision) {
-          throw new SessionPersistenceRevisionConflictError(
-            `session "${meta.id}" changed before replacement of revision ${expectedRevision}`,
-          )
-        }
-        /* v8 ignore next -- Windows uses its write-through replacement primitive. */
-        if (process.platform === 'win32') {
-          await replaceFileWin32(tmp, path)
-        } else {
-          await rename(tmp, path)
-          await this.syncDirPosix(dirname(path))
-        }
-      } finally {
-        await rm(tmp, { force: true })
-      }
-    })
+    } finally {
+      await rm(tmp, { force: true })
+    }
   }
 
   /** List valid unique stored sessions' metadata (header line only — no full-log parse). */
@@ -765,31 +752,6 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       await handle.sync()
     } finally {
       await handle.close()
-    }
-  }
-
-  /** Serialize cooperating cross-process mutations of one materialized log. */
-  private async withLogLock<T>(path: string, operation: () => Promise<T>): Promise<T> {
-    const lockPath = `${path}.lock`
-    const deadline = Date.now() + LOG_LOCK_TIMEOUT_MS
-    let delay = LOG_LOCK_RETRY_INITIAL_MS
-    for (;;) {
-      try {
-        await writeFile(lockPath, `${process.pid}\n`, { mode: 0o600, flag: 'wx' })
-        break
-      } catch (error: unknown) {
-        if (!isEEXIST(error)) throw error
-      }
-      if (Date.now() >= deadline) {
-        throw new Error(`session log writer lock timed out at "${lockPath}"`)
-      }
-      await new Promise(resolve => setTimeout(resolve, delay))
-      delay = Math.min(delay * 2, LOG_LOCK_RETRY_MAX_MS)
-    }
-    try {
-      return await operation()
-    } finally {
-      await rm(lockPath, { force: true })
     }
   }
 

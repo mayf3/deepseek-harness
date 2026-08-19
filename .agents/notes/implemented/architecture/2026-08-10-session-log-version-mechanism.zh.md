@@ -22,7 +22,7 @@ Session log 在发布后必须能升级格式，而最先发布的运行时决�
 
 **Recovery 和写回只消费当前格式数据。**`inspect()` 和 `readFrom()` 只在内存中解码。Cold `prepare()`/`load()` 先解码完整 source，补充当前 recovery closers，再用完整、平衡的当前格式 stream 替换精确的旧 revision。Live HMR adoption 在 seed 校验后使用同一个 replacement primitive，但不会为仍由 live Session 掌握的 turn 合成 closer。替换成功或 revision 冲突后都会丢弃 prepared object，重新打开持久化 source 后再继续。
 
-**Replacement 是 backend 内部的 compare-and-swap。**`replaceStored(expectedRevision, meta, events)` 接受流式当前格式日志，并在提交排他区内检查存储身份和 source revision。JSONL 写入并 fsync 同目录临时 artifact，在持有跨进程锁时复核 revision，原子替换路径（Windows 使用 write-through replacement primitive），并在 POSIX 上同步父目录。SQLite 先暂存 event iterator，再在一个事务中复核并替换 header 与 event rows。提交失败后只会留下完整旧日志或完整新日志；永久保留升级前副本是独立的恢复策略，不属于 format migration API。
+**Replacement 是 backend 内部的 compare-and-swap。**`replaceStored(expectedRevision, meta, events)` 接受流式当前格式日志，并在提交边界检查存储身份和 source revision。JSONL 写入并 fsync 同目录临时 artifact，在原子替换路径前立即复核 source revision，然后原子替换（Windows 使用 write-through replacement primitive），并在 POSIX 上同步父目录；与协调器的其他新鲜性检查一样，复核不提供跨进程写者排他——JSONL 假定每个 session 同时只有一个 live writer。SQLite 先暂存 event iterator，再在一个事务中复核并替换 header 与 event rows。提交失败后只会留下完整旧日志或完整新日志；永久保留升级前副本是独立的恢复策略，不属于 format migration API。
 
 **逐事件的 `ignorable` 标记吸收词汇表增长，普通的新增事件永远不用升版本。**事件词汇表由挂载了哪些插件决定，单个版本整数描述不了它。读取器遇到不认识的事件类型时拒绝解读日志，除非该事件的信封带 `ignorable: true`。默认为必需：忘写标记的后果是把一个本可恢复的会话拒绝过头（体验问题），而默认可忽略会让同样的疏忽静默恢复出残缺会话（安全事故）。架构保证了这条规则成立：模型可见内容只经三种带 `surfaceOp` 标记的 surface 事件加 `request/header`、`request/context` 折叠进入重建，危险的未知事件恰好是那些不进 surface 但改变日志其余部分解读方式的事件（`session/end-seed` 是现存例子）。
 

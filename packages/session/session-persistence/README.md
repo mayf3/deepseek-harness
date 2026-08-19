@@ -58,7 +58,7 @@ The `PersistenceBackend<TornMarker>` hooks (the only contract between the coordi
 | `readStoredRevision(id, signal?)` | Read the current source-qualified revision for one id without loading its event log. It uses the same revision representation as `openStored` and returns `undefined` when the id is absent. |
 | `appendBatch(meta, events, isMaterialized)` | Durably append a contiguous batch, lazily materializing ATOMICALLY when not yet materialized. |
 | `commitRepair(meta, tornMarker, closers)` | Make a crash repair durable: truncate the torn tail (iff `tornMarker !== undefined` — a marker may be falsy, e.g. seq/offset `0`) and append `closers`. NOT required to be atomic. Used by load (truncate + closers) and live-adoption (truncate only). |
-| `replaceStored(expectedRevision, meta, events)` | Atomically replace one exact revision with a complete current-format header and event stream. Revision and stored identity checks occur inside the same backend exclusion or transaction as the commit; a mismatch rejects with `SessionPersistenceRevisionConflictError`. |
+| `replaceStored(expectedRevision, meta, events)` | Atomically replace one exact revision with a complete current-format header and event stream. Revision and stored identity checks occur at the commit boundary — immediately before the atomic rename on JSONL, inside the replacing transaction on SQLite; the checks add no cross-process writer exclusion. A mismatch rejects with `SessionPersistenceRevisionConflictError`. |
 | `list(signal?)` | List all stored metadata, observing optional cancellation. |
 | `close?()` | Optional lifecycle teardown (e.g. close a db handle), awaited after the dispose drain. |
 

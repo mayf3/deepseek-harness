@@ -58,7 +58,7 @@ v0 decoder 还识别[消息标识机制引入前的消息](../../../.agents/note
 | `readStoredRevision(id, signal?)` | 在不加载事件日志的情况下读取一个 id 当前的来源限定修订值。它使用与 `openStored` 相同的修订值表示；id 不存在时返回 `undefined`。 |
 | `appendBatch(meta, events, isMaterialized)` | 持久追加连续批次；尚未实体化时以原子方式延迟实体化。 |
 | `commitRepair(meta, tornMarker, closers)` | 使崩溃修复持久：截断撕裂尾部（当且仅当 `tornMarker !== undefined`；标记可为 falsy，例如 seq/offset `0`），并追加 `closers`。不要求原子性。由 load（截断 + closer）和活动会话接管（仅截断）使用。 |
-| `replaceStored(expectedRevision, meta, events)` | 用完整的当前格式 header 与事件流原子替换一个精确 revision。Revision 与存储身份检查和提交位于同一个 backend 排他区或事务内；不匹配时以 `SessionPersistenceRevisionConflictError` 拒绝。 |
+| `replaceStored(expectedRevision, meta, events)` | 用完整的当前格式 header 与事件流原子替换一个精确 revision。Revision 与存储身份检查发生在提交边界——JSONL 在原子替换前立即检查，SQLite 在替换事务内检查；该检查不提供跨进程写者排他。不匹配时以 `SessionPersistenceRevisionConflictError` 拒绝。 |
 | `list(signal?)` | 列出全部已存储元数据，并遵循可选的取消信号。 |
 | `close?()` | 可选生命周期拆卸（例如关闭 db 句柄），在 dispose drain 后等待其完成。 |
 

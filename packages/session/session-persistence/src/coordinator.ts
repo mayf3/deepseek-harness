@@ -110,8 +110,9 @@ export interface PersistenceBackend<TornMarker = unknown> {
 
   /**
    * Atomically replace one exact stored revision with a complete current log.
-   * The backend checks revision and storage identity in the same exclusive file
-   * operation or database transaction that commits the replacement.
+   * The backend checks revision and storage identity at the commit boundary:
+   * immediately before the atomic rename on JSONL, inside the replacing
+   * transaction on SQLite. The check adds no cross-process writer exclusion.
    * @param expectedRevision - exact source revision decoded by the caller.
    * @param meta - complete current-format header.
    * @param events - complete current-format event stream.

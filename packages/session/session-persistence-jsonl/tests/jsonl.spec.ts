@@ -672,32 +672,6 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     expect(await collectStoredRead(replaced.readEvents())).toHaveLength(128)
   })
 
-  it('retries a held writer lock and rejects lock acquisition failures and timeout', async () => {
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const internals = persistence as unknown as {
-      withLogLock<T>(path: string, operation: () => Promise<T>): Promise<T>
-    }
-    const path = join(root, 'lock-target')
-    const lockPath = `${path}.lock`
-    await writeFile(lockPath, 'held\n')
-    const released = new Promise<void>((resolveRelease) => {
-      setTimeout(() => { void rm(lockPath).then(() => { resolveRelease() }) }, 5)
-    })
-    await expect(internals.withLogLock(path, async () => 'committed')).resolves.toBe('committed')
-    await released
-
-    await expect(internals.withLogLock(`${root}\0invalid`, async () => undefined))
-      .rejects.toMatchObject({ code: 'ERR_INVALID_ARG_VALUE' })
-
-    await writeFile(lockPath, 'held\n')
-    const now = vi.spyOn(Date, 'now')
-      .mockReturnValueOnce(1_000)
-      .mockReturnValueOnce(3_001)
-    await expect(internals.withLogLock(path, async () => undefined))
-      .rejects.toThrow(/writer lock timed out/)
-    now.mockRestore()
-  })
-
   it('rejects malformed version-independent storage identity fields', async () => {
     const persistence = ctx.sessionPersistence as JsonlSessionPersistence
     const path = rawLogPath(root, '/work', SessionId('identity-fields'))
