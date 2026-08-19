@@ -129,9 +129,12 @@ describe('CI workflow', () => {
     // larger runners for 15 minutes in this same group on master.
     expect(workflow.concurrency['cancel-in-progress']).toBe("${{ github.event_name != 'push' }}")
 
-    // The PR-only ci.yml has no push-exemption concurrency; its jobs are
-    // cancel-on-supersede by the default PR cancel behavior and need no carve-out.
-    expect(prWorkflow.concurrency).toBeUndefined()
+    // The PR-only ci.yml still cancels a superseded run on a new push, so a
+    // fresh head does not stack a second full 9-job run behind a stale one.
+    // Unlike ci-master it has no push carve-out: every PR event supersedes.
+    expect(prWorkflow.concurrency).toMatchObject({
+      'cancel-in-progress': true,
+    })
 
     // ci-master must not listen to pull_request: that is what keeps master-only
     // jobs out of the PR check panel. ci.yml is pull_request-only.
@@ -214,6 +217,20 @@ describe('CI workflow', () => {
 
     expect(config).not.toContain("pool: process.platform === 'win32' ? 'threads' : 'forks'")
     expect(config.match(/pool: 'forks'/g)).toHaveLength(2)
+  })
+})
+
+describe('DeepSeek e2e workflow', () => {
+  it('prepares bubblewrap from the pinned payload without a package transaction', () => {
+    const workflow = loadWorkflow('.github/workflows/e2e.yml')
+    const e2e = workflowJob(workflow, 'e2e')
+    if (!Array.isArray(e2e.steps)) throw new TypeError('DeepSeek e2e workflow must define steps')
+
+    const steps = e2e.steps.filter(isRecord)
+    expect(steps.find(step => step.name === 'Prepare bubblewrap (unrestrict userns)')).toMatchObject({
+      run: 'bash scripts/prepare-ci-bubblewrap.sh',
+    })
+    expect(JSON.stringify(steps)).not.toContain('apt-get')
   })
 })
 
