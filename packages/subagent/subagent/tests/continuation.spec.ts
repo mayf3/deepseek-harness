@@ -51,14 +51,14 @@ class GatedAdapter extends LlmAdapter {
   }
 }
 
-// Each persistence-backed temp root has a cleanup that closes its handle before
-// removing the directory. On Windows, rmSync over a directory containing a file
-// whose handle is still open fails with EPERM (the intermittent continuation /
-// skill-filesystem native flakes); jsonl.spec.ts closes the persistence fiber
-// first. Keeping each root's dispose+delete in one closure preserves that order.
+// Each persistence-backed temp root cleans up by closing its handle before
+// removing the directory (Windows rmSync over a dir holding a still-open handle
+// fails with EPERM — the intermittent continuation native flake).
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0)) await cleanup()
+  for (const cleanup of cleanups.splice(0)) {
+    try { await cleanup() } catch { /* keep cleaning the rest regardless */ }
+  }
 })
 
 /** Boot the full continuable stack: loop, persistence, providers, and subagents. */
@@ -72,8 +72,6 @@ async function setupWith(adapter: LlmAdapter, options: { persistence?: boolean }
     const persistedRoot = root
     const persistenceFiber = await ctx.plugin(JsonlSessionPersistence, { root })
     disposePersistence = () => persistenceFiber.dispose()
-    // Close the handle first, then delete: on Windows rmSync over a dir holding
-    // a still-open handle EPERMs. Mirrors jsonl.spec.ts.
     cleanups.push(async () => {
       await persistenceFiber.dispose()
       rmSync(persistedRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
@@ -415,7 +413,7 @@ describe('SubagentRuntime.startContinuable', () => {
 
     const fresh = new Context()
     await mountAgentLoopTestDependencies(fresh)
-    await fresh.plugin(JsonlSessionPersistence, { root: root! })
+    const freshPersistence = await fresh.plugin(JsonlSessionPersistence, { root: root! })
     await fresh.plugin(AgentLoop, { agents: [] })
     await fresh.plugin(SubagentRuntime)
     await fresh.plugin(SubagentSpawn, { providerName: 'spawn' })
@@ -430,6 +428,10 @@ describe('SubagentRuntime.startContinuable', () => {
     expect(resumed.options.provider).toBeUndefined()
     expect(resumed.options.model).toBeUndefined()
     await drainManager(fresh)
+    // This context opened a second JsonlSessionPersistence handle on the same
+    // root; close it before the shared afterEach removes the root, so Windows
+    // rmSync does not hit a still-open handle.
+    await freshPersistence.dispose()
   })
 
   it('continues turn numbering after an inherited fork prefix and pre-turn descriptor', async () => {
@@ -2444,7 +2446,6 @@ describe('continuable errors', () => {
     await mountAgentLoopTestDependencies(ctx)
     const root = mkdtempSync(join(tmpdir(), 'dsh-subagent-continuation-'))
     const persistenceFiber = await ctx.plugin(JsonlSessionPersistence, { root })
-    // Close the handle before deleting (Windows EPERM on held handles).
     cleanups.push(async () => {
       await persistenceFiber.dispose()
       rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
