@@ -420,7 +420,7 @@ export interface ConnectionConfig {
 
 ## `@deepseek-ai/dsh-client-hmr`
 
-需要：`clientModuleHost` · `webServer`
+需要：`clientModules` · `webServer`
 
 ```ts config-catalog
 /** Plugin config, validated by the same-named schemastery schema. */
@@ -684,7 +684,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-hooks-claude-code`
 
-需要：`bash`
+需要：`shell`
 
 ```ts config-catalog
 /** Plugin config: where the CC hook config lives + substitution roots. */
@@ -722,7 +722,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-hooks-codex`
 
-需要：`bash`
+需要：`shell`
 
 ```ts config-catalog
 /** Plugin config: where the Codex hooks.json lives + the model name for payloads. */
@@ -749,7 +749,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-apiproxy`
 
-需要：`agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userInteraction` · `workspace`
+需要：`agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userQuestions` · `workspaceRegistry`
 
 ```ts config-catalog
 /** Gateway plugin configuration. */
@@ -1385,7 +1385,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-permission-presets`
 
-需要：`bash` · `approval` · `sessions`
+需要：`shell` · `approval` · `sessions`
 
 ```ts config-catalog
 /** The {@link PermissionPresetService} config: preset table and composition default. */
@@ -2383,16 +2383,18 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-terminal-bash`
 
-需要：`pty` · `sandboxPolicy` · `subprocess`
+需要：`terminals` · `sandboxPolicy` · `subprocess`
 
 ```ts config-catalog
 /** Public plugin configuration. */
 export interface Config {
   /** Backend registry type (default: `shell`). */
   backendType?: string
-  /** Interactive shell executable (default: `/bin/bash`). */
+  /** Interactive shell dialect (default: `bash`); selects the argv/env/startup defaults. */
+  shellDialect?: ShellDialect
+  /** Interactive shell executable (default per dialect: `/bin/bash`, or the resolved pwsh). */
   shellPath?: string
-  /** Shell arguments (default: `--noprofile --norc -i`). */
+  /** Shell arguments (default per dialect: bash `--noprofile --norc -i`, pwsh `-NoLogo -NoProfile`). */
   shellArgs?: string[]
   /** Terminal rows. */
   rows?: number
@@ -2420,9 +2422,12 @@ export interface Config {
   /** Grace before teardown escalates to `SIGKILL`. */
   disposeGraceMs?: number
 }
+
+/** One supported interactive shell dialect. */
+export type ShellDialect = 'bash' | 'pwsh'
 ```
 
-来源：[`packages/terminal/terminal-bash/src/config.ts:6`](../packages/terminal/terminal-bash/src/config.ts)
+来源：[`packages/terminal/terminal-bash/src/config.ts:10`](../packages/terminal/terminal-bash/src/config.ts)
 
 <a id="deepseek-aidsh-time-context"></a>
 
@@ -2473,7 +2478,7 @@ export type TokenMeterConfig = Record<string, never>
 
 ## `@deepseek-ai/dsh-tool-bash`
 
-需要：`tools` · `bash` · `systemPrompt` · `bashEnv`
+需要：`tools` · `shell` · `systemPrompt` · `shellEnv`
 
 ```ts config-catalog
 /** Configuration for the bash tool. */
@@ -2489,7 +2494,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-tool-bash-persistent`
 
-需要：`tools` · `pty`
+需要：`tools` · `terminals`
 
 ```ts config-catalog
 /** Configuration for the persistent Bash tool. */
@@ -2505,7 +2510,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/shell/tool-bash-persistent/src/index.ts:400`](../packages/shell/tool-bash-persistent/src/index.ts)
+来源：[`packages/shell/tool-bash-persistent/src/index.ts:432`](../packages/shell/tool-bash-persistent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 
@@ -2584,7 +2589,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-tool-jobs`
 
-需要：`tools` · `tasks` · `systemPrompt`
+需要：`tools` · `jobs` · `systemPrompt`
 
 ```ts config-catalog
 /** Configures bounded `job_output` waits and completion-notice delivery. */
@@ -2638,7 +2643,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-tool-pwsh`
 
-需要：`tools` · `bash` · `systemPrompt` · `bashEnv`
+需要：`tools` · `shell` · `systemPrompt` · `shellEnv`
 
 ```ts config-catalog
 /** Configuration for the pwsh tool. */
@@ -2650,11 +2655,33 @@ export interface Config {
 
 来源：[`packages/shell/tool-pwsh/src/index.ts:52`](../packages/shell/tool-pwsh/src/index.ts)
 
+<a id="deepseek-aidsh-tool-pwsh-persistent"></a>
+
+## `@deepseek-ai/dsh-tool-pwsh-persistent`
+
+需要：`tools` · `terminals`
+
+```ts config-catalog
+/** Configuration for the persistent pwsh tool. */
+export interface Config {
+  /** PTY backend used for each owner-isolated persistent shell (default `shell`). */
+  backendType?: string
+  /** Wall-clock limit for one command (default 300000). */
+  timeoutMs?: number
+  /** Maximum returned command-output characters before clipping (default 16000). */
+  maxOutputChars?: number
+  /** Model-facing tool description; deployments may describe their environment. */
+  description?: string
+}
+```
+
+来源：[`packages/shell/tool-pwsh-persistent/src/index.ts:472`](../packages/shell/tool-pwsh-persistent/src/index.ts)
+
 <a id="deepseek-aidsh-tool-ralph"></a>
 
 ## `@deepseek-ai/dsh-tool-ralph`
 
-需要：`tools` · `workflows` · `subagents` · `systemPrompt`
+需要：`tools` · `workflowEngine` · `subagents` · `systemPrompt`
 
 ```ts config-catalog
 /** Deployment policy for the fixed Ralph workflow. */
@@ -2834,7 +2861,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-tool-terminal`
 
-需要：`pty` · `tools` · `systemPrompt`
+需要：`terminals` · `tools` · `systemPrompt`
 
 ```ts config-catalog
 /** Model-facing terminal tool configuration. */
@@ -2902,7 +2929,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-tool-workflow`
 
-需要：`tools` · `workflows` · `systemPrompt`
+需要：`tools` · `workflowEngine` · `systemPrompt`
 
 ```ts config-catalog
 /** Config: the model-facing tool name plus result rendering caps. */

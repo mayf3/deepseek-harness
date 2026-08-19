@@ -395,7 +395,17 @@ jobs:
       - name: Install Wine
         run: |
           if compgen -G "$HOME/wine-debs/*.deb" > /dev/null; then
-            sudo apt-get install -y --no-install-recommends "$HOME"/wine-debs/*.deb
+            # The restored archive is the full --download-only closure of
+            # `wine` for this runner image, so installing the .debs directly
+            # with dpkg needs no repository access. apt-get would instead
+            # re-download the same 100+ MB closure from the mirror, which has
+            # stalled the job past its budget on a degraded runner network.
+            # If the archive cannot satisfy the closure, fall back to the apt
+            # network install.
+            if ! sudo DEBIAN_FRONTEND=noninteractive dpkg -i "$HOME"/wine-debs/*.deb; then
+              sudo DEBIAN_FRONTEND=noninteractive dpkg --configure -a || true
+              sudo apt-get install -y --no-install-recommends "$HOME"/wine-debs/*.deb
+            fi
           else
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends --download-only wine
