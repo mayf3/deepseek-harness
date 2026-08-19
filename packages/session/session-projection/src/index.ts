@@ -47,8 +47,6 @@ export interface ProjectionDefinition<
   key: K
   /** Validates persisted state before it seeds a fold. */
   stateSchema: ZodType<S>
-  /** Persist a host-only unit. Client-visible units are always persisted. */
-  persist?: boolean
   /**
    * State for the empty log.
    * @returns the initial state.
@@ -139,7 +137,6 @@ interface ErasedDefinition {
   apply(state: unknown, event: SessionEvent): unknown
   wire: { viewSchema: { parse(value: unknown): unknown }; view(state: unknown): unknown } | undefined
   stateVersion: number
-  persist: boolean
 }
 
 /** Per-session per-unit watermark cache row. */
@@ -214,7 +211,7 @@ export class SessionProjectionRegistry extends Service {
   ): () => void
   /**
    * Register one host-only unit. Its state is omitted from client snapshots
-   * and persisted only when `persist` is true.
+   * and always checkpointed like every other unit.
    * @param definition - key, state schema, pure unit functions, and stateVersion.
    * @returns the exact disposer that unregisters this unit.
    */
@@ -240,7 +237,6 @@ export class SessionProjectionRegistry extends Service {
         ? undefined
         : { viewSchema: wire.viewSchema, view: state => wire.view(state as S) },
       stateVersion: definition.stateVersion,
-      persist: wire !== undefined || definition.persist === true,
     }
     if (!Number.isSafeInteger(definition.stateVersion) || definition.stateVersion < 0) {
       throw new Error(`session projection ${JSON.stringify(definition.key)} stateVersion must be a non-negative integer, got ${String(definition.stateVersion)}`)
@@ -341,7 +337,6 @@ export class SessionProjectionRegistry extends Service {
   checkpoint(session: Session): ProjectionCheckpoint {
     const rows: ProjectionCheckpoint = {}
     for (const registration of this.registrations.values()) {
-      if (!registration.def.persist) continue
       const cell = this.cellFor(registration, session)
       rows[registration.def.key] = {
         ver: registration.def.stateVersion,
@@ -371,7 +366,6 @@ export class SessionProjectionRegistry extends Service {
   restoreFloor(checkpoint: ProjectionCheckpoint): number | undefined {
     let floor: number | undefined
     for (const registration of this.registrations.values()) {
-      if (!registration.def.persist) continue
       const row = checkpoint[registration.def.key]
       const need = row !== undefined && row.ver === registration.def.stateVersion
         ? Math.max(row.seq + 1, 0)
@@ -399,7 +393,7 @@ export class SessionProjectionRegistry extends Service {
     const values: Record<string, unknown> = {}
     for (const registration of this.registrations.values()) {
       const def = registration.def
-      if (!def.persist || (options?.wireOnly === true && def.wire === undefined)) continue
+      if (options?.wireOnly === true && def.wire === undefined) continue
       const row = checkpoint[def.key]
       if (row === undefined || row.ver !== def.stateVersion) continue
       let state: unknown
@@ -450,7 +444,6 @@ export class SessionProjectionRegistry extends Service {
     const refreshed: ProjectionCheckpoint = {}
     for (const registration of this.registrations.values()) {
       const def = registration.def
-      if (!def.persist) continue
       const row = checkpoint[def.key]
       const usable = row !== undefined
         && row.ver === def.stateVersion

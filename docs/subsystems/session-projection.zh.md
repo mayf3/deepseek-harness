@@ -100,7 +100,7 @@ type ProjectionChangeListener = (
 
 ## 注册表：`ctx.sessionProjections`
 
-`SessionProjectionRegistry`（[签名](#ctxsessionprojections--sessionprojectionregistry)）拥有驱动权：一份 `session/event` 订阅、对每个已注册单元即时调用 `apply`，以及每会话每单元的水位线（watermark）cell。cell 惰性构建：在事件流过之后才注册的单元，或比注册表更早的会话，都在首次触达（事件或读取）时从 `init` 出发在内存日志上折叠。注册是一个 effect，其 disposer 随调用方 fiber 走：领域插件卸载后，其 key（连同缓存的 cell）从后续驱动与快照中消失，客户端将其读作能力缺失。单元贡献方与 host 读取方要求该注册表，因此不完整的组合会在激活时失败（[决策](../../.agents/notes/implemented/architecture/2026-08-07-session-projection-mandatory-seam.md)）。相同且兼容定义的多个注册者共享该单元，直到最后一项注册被 dispose。
+`SessionProjectionRegistry`（[签名](#ctxsessionprojections--sessionprojectionregistry)）拥有驱动权：一份 `session/event` 订阅、对每个已注册单元即时调用 `apply`，以及每会话每单元的水位线（watermark）cell。cell 惰性构建：在事件流过之后才注册的单元，或比注册表更早的会话，都在首次触达（事件或读取）时从 `init` 出发在内存日志上折叠。注册是一个 effect，其 disposer 随调用方 fiber 走：领域插件卸载后，其 key（连同缓存的 cell）从后续驱动与快照中消失，客户端将其读作能力缺失。单元贡献方与 host 读取方要求该注册表，因此不完整的组合会在激活时失败（[决策](../../.agents/notes/implemented/architecture/2026-08-19-session-projection-mandatory-seam.md)）。相同且兼容定义的多个注册者共享该单元，直到最后一项注册被 dispose。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -180,7 +180,7 @@ register< K extends keyof SessionProjectionMap, S extends SessionProjectionState
 
 /**
  * Register one host-only unit. Its state is omitted from client snapshots
- * and persisted only when `persist` is true.
+ * and always checkpointed like every other unit.
  * @param definition - key, state schema, pure unit functions, and stateVersion.
  * @returns the exact disposer that unregisters this unit.
  */
@@ -289,5 +289,5 @@ restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], base
 
 Types: [Session](session.md) · [SessionEvent](session.md)
 
-Source: [`packages/session/session-projection/src/index.ts:186`](../../packages/session/session-projection/src/index.ts)
+Source: [`packages/session/session-projection/src/index.ts:183`](../../packages/session/session-projection/src/index.ts)
 <!-- END GENERATED cordis-surface -->

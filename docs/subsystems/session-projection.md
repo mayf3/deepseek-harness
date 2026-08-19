@@ -100,7 +100,7 @@ type ProjectionChangeListener = (
 
 ## The registry: `ctx.sessionProjections`
 
-`SessionProjectionRegistry` ([signatures](#ctxsessionprojections--sessionprojectionregistry)) owns the drive: one `session/event` subscription, eager `apply` over every registered unit, and per-session per-unit watermark cells. Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect whose disposer rides the calling fiber: an unloaded domain plugin's key (with its cached cells) disappears from subsequent drives and snapshots, and clients read that as capability absence. Unit contributors and host readers require the registry, so an incomplete composition fails during activation ([decision](../../.agents/notes/implemented/architecture/2026-08-07-session-projection-mandatory-seam.md)). Registrants of the same compatible definition share the unit until the last registration is disposed.
+`SessionProjectionRegistry` ([signatures](#ctxsessionprojections--sessionprojectionregistry)) owns the drive: one `session/event` subscription, eager `apply` over every registered unit, and per-session per-unit watermark cells. Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect whose disposer rides the calling fiber: an unloaded domain plugin's key (with its cached cells) disappears from subsequent drives and snapshots, and clients read that as capability absence. Unit contributors and host readers require the registry, so an incomplete composition fails during activation ([decision](../../.agents/notes/implemented/architecture/2026-08-19-session-projection-mandatory-seam.md)). Registrants of the same compatible definition share the unit until the last registration is disposed.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -180,7 +180,7 @@ register< K extends keyof SessionProjectionMap, S extends SessionProjectionState
 
 /**
  * Register one host-only unit. Its state is omitted from client snapshots
- * and persisted only when `persist` is true.
+ * and always checkpointed like every other unit.
  * @param definition - key, state schema, pure unit functions, and stateVersion.
  * @returns the exact disposer that unregisters this unit.
  */
@@ -289,5 +289,5 @@ restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], base
 
 Types: [Session](session.md) · [SessionEvent](session.md)
 
-Source: [`packages/session/session-projection/src/index.ts:186`](../../packages/session/session-projection/src/index.ts)
+Source: [`packages/session/session-projection/src/index.ts:183`](../../packages/session/session-projection/src/index.ts)
 <!-- END GENERATED cordis-surface -->

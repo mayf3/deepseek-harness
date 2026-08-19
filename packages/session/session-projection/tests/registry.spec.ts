@@ -51,7 +51,6 @@ const marksUnit = (): ProjectionDefinition<'test/marks', MarksState>
 const countUnit = (): ProjectionDefinition<'test/count', number> => ({
   key: 'test/count',
   stateSchema: z.number().int().nonnegative(),
-  persist: true,
   init: () => 0,
   apply: state => state + 1,
   stateVersion: 1,

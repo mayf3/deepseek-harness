@@ -153,7 +153,6 @@ export const subagentIdentityProjectionDefinition = {
   key: 'subagent',
   stateVersion: 3,
   stateSchema: identitySchema,
-  persist: true,
   init: () => null,
   apply: (state, event) => {
     if (event.type !== 'subagent/descriptor') return state

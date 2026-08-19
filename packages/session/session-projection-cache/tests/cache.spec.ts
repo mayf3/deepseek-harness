@@ -184,7 +184,6 @@ describe('SessionProjectionCache write policy', () => {
     ctx.sessionProjections.register({
       key: 'cache-test/marks2',
       stateSchema: z.custom<Map<string, string>>(() => true),
-      persist: true,
       init: () => new Map<string, string>(),
       apply: state => state,
       stateVersion: 1,
