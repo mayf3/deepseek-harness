@@ -180,6 +180,7 @@ class ControlledBackend implements PersistenceBackend<never> {
   readonly name = 'session-persistence-controlled'
   readonly store: MemoryStore = new Map()
   readonly lifecycle: string[] = []
+  lastAppendedBatch: readonly SessionEvent[] | undefined
   appendAttempts = 0
   loadAttempts = 0
   repairAttempts = 0
@@ -212,6 +213,7 @@ class ControlledBackend implements PersistenceBackend<never> {
   }
 
   async appendBatch(m: SessionHeader, events: readonly SessionEvent[], _isMaterialized: boolean): Promise<void> {
+    this.lastAppendedBatch = events
     const attempt = ++this.appendAttempts
     await this.beforeAppend?.(attempt)
     const entry = this.store.get(m.id)
@@ -280,6 +282,26 @@ runCoordinatorContract('memory', async (): Promise<CoordinatorFixture> => {
 })
 
 describe('PersistenceCoordinator bounded writes', () => {
+  it('retains the immutable session seed without cloning it', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      const session = ctx.sessions.create(SessionId('shared-seed'), { seed: oneTurnLog() })
+      const seed = session.events
+      await ctx.sessions.flush(session)
+
+      expect(backend.lastAppendedBatch).toBe(seed)
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('cancels the batching deadline when live initialization rejects', async () => {
     vi.useFakeTimers()
     const ctx = new Context()
