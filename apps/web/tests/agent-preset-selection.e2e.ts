@@ -134,7 +134,6 @@ async function seedSubagent(scaffold: WebScaffold, parentId: SessionId): Promise
       data: { turn: 1, reason: { kind: 'completed' } },
     },
   ] as SessionEvent[])
-  await scaffold.ctx.sessionProjectionCache.coldSnapshot(header)
 }
 
 /**

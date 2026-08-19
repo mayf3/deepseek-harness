@@ -13,9 +13,6 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import SessionProjectionCache from '@deepseek-ai/dsh-session-projection-cache'
-import Storage from '@deepseek-ai/dsh-storage'
-import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import SubagentRuntime, {
   SUBAGENT_DESCRIPTOR_VERSION,
   SubagentError,
@@ -27,7 +24,10 @@ import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-a
 type Script = ConstructorParameters<typeof MockAdapter>[0]
 
 const roots: string[] = []
+const projCacheRoots: string[] = []
+
 afterEach(() => {
+  for (const root of projCacheRoots.splice(0)) rmSync(root, { recursive: true, force: true })
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
@@ -44,12 +44,9 @@ async function setup(
   await ctx.plugin(AgentLoop, { agents: [] })
   if (options.sessionProjections !== false) await ctx.plugin(SessionProjectionRegistry)
   if (options.projectionCache === true) {
-    await ctx.plugin(Storage)
-    ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
-    const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
-    ctx.storage.mount('domain', facility)
-    ctx.provide('storageDomain', facility)
-    await ctx.plugin(SessionProjectionCache, { writeEveryEvents: 100, writeIntervalMs: 60_000 })
+    const root = mkdtempSync(join(tmpdir(), 'dsh-subagent-projcache-'))
+    projCacheRoots.push(root)
+    await ctx.plugin(SessionProjectionCache, { root, writeEveryEvents: 100, writeIntervalMs: 60_000 })
   }
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
