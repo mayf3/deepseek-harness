@@ -20,7 +20,7 @@ import type {
 import type { createChatStore } from '../stores.ts'
 import type { ComposerSubmitGesture, InputSubmitMode } from './composer-submission.ts'
 import type { ChatNode, ChatNodeKind } from './chat-nodes.ts'
-import type { CallId, SelectionTarget, ViewTab } from './views.ts'
+import type { ToolCallId, SelectionTarget, ViewTab } from './views.ts'
 
 /** Browser-owned image that has not crossed the durable host boundary. */
 export interface ComposerAttachment {
@@ -344,7 +344,7 @@ export interface InputZone {
  */
 export interface ConvViewOwnerProps {
   /** One-shot inspect request from another view (chat's Inspect button); null when idle. */
-  inspect?: { callId: CallId } | null
+  inspect?: { callId: ToolCallId } | null
   /** Acknowledge the inspect request once applied (clears the store field). */
   onInspectDone?: () => void
 }
@@ -415,11 +415,11 @@ export interface ChatNodeTurnDataInjected {
 /** Stable owner currency delivered to one keyed Chat business renderer. */
 export interface ChatNodeOwnerProps {
   /** Selected Tool call, when the shared details store names one. */
-  selectedCallId?: CallId | undefined
+  selectedCallId?: ToolCallId | undefined
   /** Session workspace root; Tool summaries display paths relative to it. */
   cwd?: string | undefined
   openFile: (path: string) => void
-  inspectCall: (callId: CallId) => void
+  inspectCall: (callId: ToolCallId) => void
   forkAt: (seq: number) => void
   /** Render a historical image group through the attachment slot. */
   renderMessageImages: RenderMessageImages
@@ -761,7 +761,7 @@ export interface ChatViewInjected {
   /** Resolve a session-authorized historical image for inline display. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
   /** Hand a call off to the trajectory view: write the one-shot inspect target and switch tabs. */
-  inspectCall: (callId: CallId) => void
+  inspectCall: (callId: ToolCallId) => void
   /**
    * Per-session scroll memory surviving view switches (in-memory, never
    * persisted): the view saves on every scroll and restores on remount; a

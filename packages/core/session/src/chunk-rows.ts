@@ -18,7 +18,7 @@
  * @module @deepseek-ai/dsh-session/chunk-rows
  */
 
-import { CallId, assertNever } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, assertNever } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from './types.ts'
 
@@ -50,7 +50,7 @@ interface TextRunData extends RunDataBase {
 
 /** Payload of a `tool-call-chunks` row: the run-constant call identity plus each member's raw arguments fragment. */
 interface ToolCallRunData extends RunDataBase {
-  id: CallId
+  id: ToolCallId
   /** Present iff every member carried it, with one uniform value (a mixed run never packs). */
   name?: string
   args: string[]
@@ -167,7 +167,7 @@ function buildRow(kind: DeltaKind, run: readonly DeltaEvent[]): ChunkRow {
       ...envelope,
       data: {
         ...base,
-        id: CallId(call.id),
+        id: ToolCallId(call.id),
         ...Object.hasOwn(call, 'name') ? { name: call.name as string } : {},
         args: run.map(event => (event.data.chunk as { argumentsDelta: string }).argumentsDelta),
       },

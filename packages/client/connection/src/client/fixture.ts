@@ -11,7 +11,7 @@ import {
   createUserMessage,
   isTokenDelta,
 } from '@deepseek-ai/dsh-llm/message'
-import { CallId } from '@deepseek-ai/dsh-llm/brand'
+import { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type {
   AssistantMessage,
   ContentBlock,
@@ -62,7 +62,7 @@ function assistantMessage(content: ContentBlock[], model = 'fx-1'): AssistantMes
 }
 
 function toolResultMessage(callId: string, content: ContentBlock[], isError: boolean): ToolResultMessage {
-  return createToolResultMessage({ callId: CallId(callId), content, isError })
+  return createToolResultMessage({ callId: ToolCallId(callId), content, isError })
 }
 
 const MARKDOWN_FIXTURE = [

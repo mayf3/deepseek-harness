@@ -11,7 +11,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, normalize } from 'node:path'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SaveTextSpill } from '@deepseek-ai/dsh-spill'
 import LocalSpillStore, { encodeSegment, privateRoot, saveTextFile, sessionDir } from '@deepseek-ai/dsh-spill-local'
@@ -28,7 +28,7 @@ afterEach(() => {
 function request(overrides: Partial<SaveTextSpill> = {}): SaveTextSpill {
   return {
     owner: { sessionId: SessionId('sess-1') },
-    source: { toolName: 'web_fetch', callId: CallId('call-1'), label: 'result' },
+    source: { toolName: 'web_fetch', callId: ToolCallId('call-1'), label: 'result' },
     suggestedName: 'web_fetch.txt',
     content: 'the full body',
     ...overrides,

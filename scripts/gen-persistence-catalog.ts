@@ -38,7 +38,7 @@ type EventEnvelopeTypeName = typeof EVENT_ENVELOPE_TYPE_NAMES[number]
 
 /** Primary subsystems page for linked payload types. */
 const LINK_MAP: Record<string, string> = {
-  CallId: 'core.md',
+  ToolCallId: 'core.md',
   ContentBlock: 'core.md',
   MessageSource: 'core.md',
   ScheduleChange: 'schedule.md',

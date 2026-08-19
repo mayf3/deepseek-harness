@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
-import { createUserMessage, CallId, ReasoningEffortId, createMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ToolCallId, ReasoningEffortId, createMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import {
   serializeMessages,
@@ -77,7 +77,7 @@ describe('serializeMessages', () => {
         role: 'assistant',
         content: [
           { type: 'reasoning', text: 'I should check the weather.' },
-          { type: 'tool-call', id: CallId('call-1'), name: 'get_weather', arguments: '{"city":"Paris"}' },
+          { type: 'tool-call', id: ToolCallId('call-1'), name: 'get_weather', arguments: '{"city":"Paris"}' },
         ],
         source: { kind: 'plugin', plugin: 'test' },
       }),
@@ -97,8 +97,8 @@ describe('serializeMessages', () => {
       createMessage({
         role: 'assistant',
         content: [
-          { type: 'tool-call', id: CallId('a'), name: 'one', arguments: '{}' },
-          { type: 'tool-call', id: CallId('b'), name: 'two', arguments: '{}' },
+          { type: 'tool-call', id: ToolCallId('a'), name: 'one', arguments: '{}' },
+          { type: 'tool-call', id: ToolCallId('b'), name: 'two', arguments: '{}' },
         ],
         source: { kind: 'plugin', plugin: 'test' },
       }),
@@ -112,7 +112,7 @@ describe('serializeMessages', () => {
       createUserMessage({
         content: [{
           type: 'tool-result',
-          toolCallId: CallId('call-1'),
+          toolCallId: ToolCallId('call-1'),
           content: [{ type: 'text', text: 'Sunny 22C' }],
         }],
         source: { kind: 'plugin', plugin: 'test' },
@@ -124,7 +124,7 @@ describe('serializeMessages', () => {
   it('sends a sentinel for empty tool-result content', () => {
     const wire = serializeMessages([
       createUserMessage({
-        content: [{ type: 'tool-result', toolCallId: CallId('call-1'), content: [] }],
+        content: [{ type: 'tool-result', toolCallId: ToolCallId('call-1'), content: [] }],
         source: { kind: 'plugin', plugin: 'test' },
       }),
     ])
@@ -136,7 +136,7 @@ describe('serializeMessages', () => {
       createUserMessage({
         content: [
           { type: 'text', text: 'context note' },
-          { type: 'tool-result', toolCallId: CallId('call-1'), content: [{ type: 'text', text: 'ok' }] },
+          { type: 'tool-result', toolCallId: ToolCallId('call-1'), content: [{ type: 'text', text: 'ok' }] },
         ],
         source: { kind: 'plugin', plugin: 'test' },
       }),
@@ -359,7 +359,7 @@ describe('image serialization', () => {
       createUserMessage({
         content: [{
           type: 'tool-result',
-          toolCallId: CallId('first'),
+          toolCallId: ToolCallId('first'),
           content: [{ type: 'image', attachment: imageRef() }],
         }],
         source: { kind: 'plugin', plugin: 'test' },
@@ -367,7 +367,7 @@ describe('image serialization', () => {
       createUserMessage({
         content: [{
           type: 'tool-result',
-          toolCallId: CallId('second'),
+          toolCallId: ToolCallId('second'),
           content: [
             { type: 'text', text: 'caption' },
             { type: 'image', attachment: imageRef('image/jpeg') },
@@ -402,7 +402,7 @@ describe('image serialization', () => {
         { type: 'chart', data: 'ignored' } as unknown as ContentBlock,
         {
           type: 'tool-result',
-          toolCallId: CallId('result'),
+          toolCallId: ToolCallId('result'),
           content: [{ type: 'text', text: 'ok' }],
         },
       ],
@@ -423,14 +423,14 @@ describe('image serialization', () => {
       content: [
         {
           type: 'tool-result',
-          toolCallId: CallId('nested'),
+          toolCallId: ToolCallId('nested'),
           content: [{
             type: 'tool-result',
-            toolCallId: CallId('inner'),
+            toolCallId: ToolCallId('inner'),
             content: [{ type: 'text', text: 'inside' }],
           }],
         },
-        { type: 'tool-result', toolCallId: CallId('empty'), content: [] },
+        { type: 'tool-result', toolCallId: ToolCallId('empty'), content: [] },
       ],
       source: { kind: 'plugin', plugin: 'test' },
     })]
@@ -449,7 +449,7 @@ describe('image serialization', () => {
     const imageResult = (id: string) => createUserMessage({
       content: [{
         type: 'tool-result',
-        toolCallId: CallId(id),
+        toolCallId: ToolCallId(id),
         content: [{ type: 'image', attachment: imageRef() }],
       }],
       source: { kind: 'plugin' as const, plugin: 'test' },
@@ -607,7 +607,7 @@ describe('review fixes: assistant content shapes', () => {
   it('serializes tool-call turns with empty string content, not null', () => {
     const wire = serializeMessages([createMessage({
       role: 'assistant',
-      content: [{ type: 'tool-call', id: CallId('c'), name: 'f', arguments: '{}' }],
+      content: [{ type: 'tool-call', id: ToolCallId('c'), name: 'f', arguments: '{}' }],
       source: { kind: 'plugin', plugin: 'test' },
     })])
     expect(wire[0]).toMatchObject({ content: '' })
