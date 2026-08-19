@@ -59,6 +59,18 @@ describe('ApprovalService.request', () => {
     expect(appended).toHaveLength(0)
   })
 
+  it('names the missing agent loop when no turnBoundary unit is registered, even with turn events logged', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(ApprovalService)
+    const { agent, appended } = fakeAgent([
+      { type: 'turn/start', seq: 0, data: { turn: 1 } },
+    ])
+
+    await expect(ctx.approval.request(requestOf(agent))).rejects.toThrow(/requires the turnBoundary projection/)
+    expect(appended).toHaveLength(0)
+  })
+
   it('throws between turns — a closed turn does not satisfy the enclosure precondition', async () => {
     const ctx = await mounted()
     const { agent, appended } = fakeAgent([

@@ -188,6 +188,7 @@ function visibleInstructionChanges(
   const visibleSeqs = new Set(agent.session.surface.nodes)
   const visible = new Map<string, AgentInstructionChange>()
   const folded = agent.ctx.get('sessionProjections')?.stateOf(agent.session, 'workspaceInstructions')
+  /* v8 ignore next -- agent-instructions registers its own workspaceInstructions unit, so the key is always present */
   if (folded === undefined) throw new Error('workspaceInstructions projection is not registered')
   for (const [scope, history] of Object.entries(folded)) {
     // History is newest-first; the latest visible record restores the previous

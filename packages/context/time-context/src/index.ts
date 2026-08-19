@@ -188,14 +188,14 @@ export function apply(ctx: Context, config: Config): void {
     if (decision.kind === 'reject' || signal.aborted) return decision
     const now = Date.now()
     const state = ctx.sessionProjections.stateOf(agent.session, 'timeContext')
-    if (state !== undefined && refreshIntervalMs !== undefined && refreshIntervalMs > 0) {
+    /* v8 ignore next -- time-context registers its own unit in apply, so the key is always present */
+    if (state === undefined) throw new Error('timeContext projection is not registered')
+    if (refreshIntervalMs !== undefined && refreshIntervalMs > 0) {
       const lastInjection = state.lastInjectionTime
       if (lastInjection != null
         && now >= lastInjection
         && now - lastInjection < refreshIntervalMs) return decision
     }
-    /* v8 ignore next 2 -- time-context registers its own unit in apply, so the key is always present */
-    if (state === undefined) return decision
     /* v8 ignore next 6 -- an injection always records a time, so the lastInjectionTime nullish fallback is unreachable */
     const previous = step === 1
       ? state.lastMessageTime ?? undefined

@@ -282,7 +282,14 @@ export class ApprovalService extends Service {
    */
   async request(req: ApprovalRequest): Promise<ApprovalOutcome> {
     const session = req.agent.session
-    if ((this.ctx.sessionProjections.stateOf(session, 'turnBoundary')?.openTurn ?? null) === null) {
+    const boundary = this.ctx.sessionProjections.stateOf(session, 'turnBoundary')
+    if (boundary === undefined) {
+      throw new Error(
+        'approval.request() requires the turnBoundary projection, which @deepseek-ai/dsh-agent-loop '
+        + 'registers; mount the agent loop next to the projection registry',
+      )
+    }
+    if (boundary.openTurn === null) {
       throw new Error(
         'approval.request() outside an open turn: the approval/asked + approval/decided audit pair '
         + 'must be turn-enclosed (a bare event between turns is crash-tail garbage on reload). '
