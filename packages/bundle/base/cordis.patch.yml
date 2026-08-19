@@ -100,6 +100,13 @@
       config:
         root: !!js dshHomePath('sessions')
 
+    - id: session-projection-cache
+      name: '@deepseek-ai/dsh-session-projection-cache'
+      config:
+        root: !!js dshHomePath('projections')
+        writeEveryEvents: 200
+        writeIntervalMs: 5000
+
     # Durable image bytes live outside the append-only session log. Messages
     # keep content-addressed references that this shared backend resolves for
     # provider requests and authorized history reads.
