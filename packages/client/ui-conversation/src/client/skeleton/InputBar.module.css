@@ -270,6 +270,7 @@
    (figma Input_Bottom chrome). */
 .row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -306,6 +307,12 @@
 
 .trailing {
   flex: none;
+  /* Wrap keeps the left mode chips and the right controls apart when the card
+     runs out of row width: the trailing group (model + send) moves to its own
+     line instead of the left group shrinking until its chip overlaps the
+     model trigger (external:107). The auto margin re-anchors it right on the
+     wrapped line; on a single line space-between already pins it right. */
+  margin-left: auto;
   gap: 12px;
 }
 

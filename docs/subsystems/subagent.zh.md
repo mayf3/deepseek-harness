@@ -307,7 +307,7 @@ type SubagentDescendantListEntry = SubagentListEntry & {
 
 ## 终态结果：`SubagentResult`
 
-单次 run 的最终产出，由 `SubagentRun.result` resolve。`structured` 仅在请求了 `outputSchema` 且成功满足时才存在；请求 schema 不保证一定能得到它，当子 agent 失败或结束时未产出有效 capture 时，提供方可能返回 `stopReason: 'error'`。非 `completed` 的 `stopReason` 意味着 `output` 可能不完整——消费方将其映射为 `isError` 的工具结果，而非将部分输出报告为成功。
+单次 run 的最终产出，由 `SubagentRun.result` resolve。`structured` 仅在请求了 `outputSchema` 且成功满足时才存在；请求 schema 不保证一定能得到它，当子 agent 失败或结束时未产出有效 capture 时，提供方可能返回 `stopReason: 'error'`。提供方可以为非 `completed` 结果附带安全且不属于 assistant 内容的 `diagnostic`；在消费方将它与 `output` 分开呈现前，提供方会排除工具输入、文件内容、环境值、凭证与原始协议载荷，并把完整值限制在 4096 个 UTF-8 字节以内。非 `completed` 的 `stopReason` 意味着 `output` 可能不完整——消费方将其映射为 `isError` 的工具结果，而非将部分输出报告为成功。
 
 ```ts type-equiv
 /**
@@ -330,6 +330,13 @@ interface SubagentResult {
    * schema-agnostic.
    */
   readonly structured?: unknown
+  /**
+   * Provider-authored, non-assistant failure detail for a non-`completed`
+   * result. Providers keep this text free of tool inputs, file contents,
+   * environment values, credentials, and raw protocol payloads, and limit it
+   * to 4096 UTF-8 bytes. Consumers present it separately from {@link output}.
+   */
+  readonly diagnostic?: string
   /** Why the run ended. A non-`completed` reason means `output` may be partial. */
   readonly stopReason: SubagentStopReason
 }

@@ -870,7 +870,7 @@ export interface Config {
   models?: DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
   streamIdleTimeoutMs?: number
-  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
 
@@ -992,7 +992,7 @@ export interface PiAiProviderProfile {
    * requests instead of being rejected by a request-size cap.
    */
   maxRequestImageBytes?: number
-  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
 
@@ -2090,19 +2090,31 @@ Source: [`packages/subagent/subagent-acp/src/index.ts:27`](../packages/subagent/
 Requires: `subagents` · `subprocess`
 
 ```ts config-catalog
-/** Deployment-owned environment and process-release bound. */
+/** Deployment-owned permission, environment, and process-release settings. */
 export interface Config {
+  /** Provider name on `ctx.subagents` (default `claude-code`). */
+  providerName?: string
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.
    */
   env?: Record<string, string>
+  /**
+   * Native non-interactive mode fixed for this Provider instance. Defaults to
+   * `dontAsk`; `acceptEdits` accepts edits, `auto` uses the native classifier,
+   * `plan` returns a plan without approving execution, and
+   * `bypassPermissions` explicitly skips permission checks.
+   */
+  permissionMode?: ClaudeCodePermissionMode
   /** Grace in milliseconds for Claude Code process-tree termination. */
   disposeGraceMs?: number
 }
+
+/** Profile-selectable non-interactive Claude Code permission mode. */
+export type ClaudeCodePermissionMode = typeof CLAUDE_CODE_PERMISSION_MODES[number]
 ```
 
-Source: [`packages/subagent/subagent-claude-code/src/index.ts:32`](../packages/subagent/subagent-claude-code/src/index.ts)
+Source: [`packages/subagent/subagent-claude-code/src/index.ts:37`](../packages/subagent/subagent-claude-code/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-codex"></a>
 
@@ -2111,19 +2123,29 @@ Source: [`packages/subagent/subagent-claude-code/src/index.ts:32`](../packages/s
 Requires: `subagents` · `subprocess`
 
 ```ts config-catalog
-/** Deployment-owned environment and process-release bound. */
+/** Deployment-owned permission, environment, and process-release settings. */
 export interface Config {
+  /** Provider name on `ctx.subagents` (default `codex`). */
+  providerName?: string
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.
    */
   env?: Record<string, string>
+  /** Native non-interactive permission mode fixed for this Provider instance. */
+  permissionMode?: CodexPermissionMode
   /** Grace in milliseconds for app-server process-tree termination. */
   disposeGraceMs?: number
 }
+
+/** Profile-selectable non-interactive Codex permission mode. */
+export type CodexPermissionMode =
+  | 'never'
+  | 'approve-for-me'
+  | 'dangerously-bypass-approvals-and-sandbox'
 ```
 
-Source: [`packages/subagent/subagent-codex/src/index.ts:30`](../packages/subagent/subagent-codex/src/index.ts)
+Source: [`packages/subagent/subagent-codex/src/index.ts:35`](../packages/subagent/subagent-codex/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-dsh-sdk"></a>
 
@@ -2774,7 +2796,7 @@ Source: [`packages/todo/tool-todo/src/index.ts:29`](../packages/todo/tool-todo/s
 Requires: `tools` · `web` · `systemPrompt`
 
 ```ts config-catalog
-/** Plugin config: which web tools to register, the source cap, per-tool budgets, and the fetch output cap. */
+/** Plugin config: which web tools to register, search bounds, per-tool budgets, and the fetch output cap. */
 export interface Config {
   /** Register `web_search`. Defaults to true. */
   search?: boolean
@@ -2782,6 +2804,8 @@ export interface Config {
   fetch?: boolean
   /** Upper bound on sources returned by one `web_search` call. */
   searchMaxResults?: number
+  /** Upper bound on queries accepted by one `web_search` call. */
+  searchMaxQueries?: number
   /** Cooperative timeout budget (ms) for `web_fetch`. Defaults to 30000. */
   fetchTimeoutMs?: number
   /** Cooperative timeout budget (ms) for `web_search`. Defaults to 30000. */
