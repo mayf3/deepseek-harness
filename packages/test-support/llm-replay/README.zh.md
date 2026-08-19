@@ -8,7 +8,7 @@
 
 ## fixture 的工作方式
 
-fixture 是持久化会话日志（`<scenario>/session.jsonl`）的投影：它保留 header 与每个事件 payload，但省略正文的 `seq`/`time` envelope（打包行使用 `seq0`/`time0`）。回放在解析时恢复连续的 synthetic envelope；运行时持久化仍写入完整日志。fixture 的 `assistant/chunk` 事件包含每个 `StreamChunk`，因此按 `(turn, step)` 分组即可重建每次 agent loop（智能体循环）的 `stream()` 调用的分片序列。压缩（compaction）摘要器成功时，日志记录方式有所不同：当 `compaction/summary` 携带 `llmStreamCall: true` 和完整的 `rawOutput` 时，回放会在该事件的位置重建一条规范成功流，其中每个块各使用一对 `block-start`/`block-end`，带上已记录的用量（如有），并以 `stop` 终止。提供方增量的精确切分不属于持久压缩结果。不带该标记的 `rawOutput` 并不意味着发生了本地 LLM 调用，因为模板摘要器和远程摘要器即使未使用此上下文的适配器，也可能保留完整输出。
+fixture 是持久化会话日志（`<scenario>/session.jsonl`）的投影：它保留 header 与每个事件 payload，但省略正文的 `seq`/`time` envelope（打包行使用 `seq0`/`time0`）。回放在解析时恢复连续的 synthetic envelope；同一文件的正文必须全部采用投影行或完整持久化行，不能混用。运行时持久化仍写入完整日志。fixture 的 `assistant/chunk` 事件包含每个 `StreamChunk`，因此按 `(turn, step)` 分组即可重建每次 agent loop（智能体循环）的 `stream()` 调用的分片序列。压缩（compaction）摘要器成功时，日志记录方式有所不同：当 `compaction/summary` 携带 `llmStreamCall: true` 和完整的 `rawOutput` 时，回放会在该事件的位置重建一条规范成功流，其中每个块各使用一对 `block-start`/`block-end`，带上已记录的用量（如有），并以 `stop` 终止。提供方增量的精确切分不属于持久压缩结果。不带该标记的 `rawOutput` 并不意味着发生了本地 LLM 调用，因为模板摘要器和远程摘要器即使未使用此上下文的适配器，也可能保留完整输出。
 
 因此，录制就是「运行一次真实 agent 并收集 `.jsonl`」，由快照 harness 完成；该插件本身不录制。fixture 的 `request/header` 内容可能被标记化为 `{{system}}`/`{{tools}}`（harness 会在一个场景中固定该内容，并清除其余场景中的内容）；回放不受影响，因为派生过程只读取 `assistant/chunk` 和 `compaction/summary` 事件以及第 0 行的会话 header。
 

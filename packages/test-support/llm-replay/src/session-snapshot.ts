@@ -104,6 +104,7 @@ export function omitSessionEventEnvelope(record: Record<string, unknown>): void 
 export function decodeSessionSnapshotBody(records: readonly Record<string, unknown>[]): SessionEvent[] {
   const events: SessionEvent[] = []
   let nextSeq = 0
+  let projected: boolean | undefined
   for (const [index, record] of records.entries()) {
     const [seqKey, timeKey] = envelopeKeys(record)
     const hasSeq = Object.hasOwn(record, seqKey)
@@ -111,9 +112,19 @@ export function decodeSessionSnapshotBody(records: readonly Record<string, unkno
     if (hasSeq !== hasTime) {
       throw new Error(`session snapshot line ${index + 2} must carry both ${seqKey}/${timeKey} or neither`)
     }
-    if (!hasSeq) insertSyntheticEnvelope(record, seqKey, timeKey, nextSeq)
-    const decoded = decodeStorageRecord(record)
-    events.push(...decoded)
+    if (projected === undefined) projected = !hasSeq
+    else if (projected === hasSeq) {
+      throw new Error(`session snapshot line ${index + 2} cannot mix projected and persisted body records`)
+    }
+    if (projected) insertSyntheticEnvelope(record, seqKey, timeKey, nextSeq)
+    let decoded: SessionEvent[]
+    try {
+      decoded = decodeStorageRecord(record)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(`session snapshot line ${index + 2}: ${detail}`, { cause: error })
+    }
+    for (const event of decoded) events.push(event)
     nextSeq += decoded.length
   }
   return events
@@ -121,8 +132,9 @@ export function decodeSessionSnapshotBody(records: readonly Record<string, unkno
 
 /**
  * Decode a committed session snapshot or a complete persisted session log.
- * Snapshot body rows may omit both members of their sequence/time envelope;
- * decoding restores a contiguous synthetic envelope without changing payloads.
+ * Snapshot body rows may all omit both members of their sequence/time
+ * envelope; decoding restores a contiguous synthetic envelope without
+ * changing payloads. Projected and persisted rows cannot coexist in one file.
  *
  * @param text - session JSONL contents.
  * @returns the header, materialized body rows, and logical events.
@@ -134,8 +146,7 @@ export function decodeSessionSnapshot(text: string): DecodedSessionSnapshot {
     throw new Error('session snapshot must start with a session header')
   }
 
-  const bodyRecords: Record<string, unknown>[] = []
-  bodyRecords.push(...records.slice(1).map(({ value }) => value))
+  const bodyRecords = records.slice(1).map(({ value }) => value)
   const events = decodeSessionSnapshotBody(bodyRecords)
 
   return {

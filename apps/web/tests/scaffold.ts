@@ -51,7 +51,7 @@ import type {
   LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { ReplayHandle } from '@deepseek-ai/dsh-llm-replay'
-import { installLlmReplay, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
+import { decodeSessionSnapshot, installLlmReplay, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import SessionStore, {
   packChunkRuns,
   SESSION_FORMAT_VERSION,
@@ -685,7 +685,10 @@ export function fixtureUserPrompts(fixtureText: string): string[] {
  * plugin — the semantic-checkpoint precedent), never raw file writes: no
  * knowledge of bucket hashing, filename encoding, or compression, and
  * malformed session events fail loud at seed time. The fixture's tokenized identity
- * ({{sessionId}}/{{cwd}}) is realized for this world before parsing.
+ * ({{sessionId}}/{{cwd}}) is realized for this world before parsing. Event
+ * times are materialized from event order against the fixture header's
+ * creation time, or the seeded creation time when normalization replaced the
+ * header value with zero.
  * @param scaffold - the target scaffold.
  * @param fixtureText - raw recorded session.jsonl contents.
  * @param id - the seeded session id (stable for deterministic goldens).
@@ -720,7 +723,8 @@ export async function seedSession(
   id: string,
   agentPreset?: string,
 ): Promise<SessionId> {
-  const events = parseSessionLog(realizeSeedFixture(scaffold, fixtureText, id))
+  const decoded = decodeSessionSnapshot(realizeSeedFixture(scaffold, fixtureText, id))
+  const events = decoded.events
   if (events.length === 0) throw new Error('seed fixture has no events')
   const last = events[events.length - 1]!
   // An open final turn would be mutated by resume's crash repair on first
@@ -734,7 +738,13 @@ export async function seedSession(
     delegationDepth: 0,
     ...agentPreset === undefined ? {} : { agentPreset },
   }
-  await persistSeedSession(scaffold, meta, events)
+  const fixtureCreatedAt = decoded.header.createdAt
+  if (typeof fixtureCreatedAt !== 'number') {
+    throw new Error('seed fixture requires a numeric createdAt header')
+  }
+  const timeAnchor = fixtureCreatedAt === 0 ? meta.createdAt : fixtureCreatedAt
+  const materializedEvents = events.map((event, index) => ({ ...event, time: timeAnchor + index }))
+  await persistSeedSession(scaffold, meta, materializedEvents)
   return meta.id
 }
 
@@ -804,6 +814,7 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
       /~\d+(?:y(?: \d+mo)?|mo(?: \d+d)?)|\b(?:\d+d(?: \d+h(?: \d+m \d+s)?)?|\d+h \d+m \d+s|\d+m ?\d+s|\d+(?:\.\d+)?s|\d+(?:\.\d+)?ms)\b/g,
       duration => duration.startsWith('~') ? duration : '{{duration}}',
     )
+    .replace(/\b\d[\d,]*(?:\.\d+)? ms\b/g, '{{duration}}')
     .replace(
       /约\d+(?:年(?:\d+个月)?|个月(?:\d+天)?)|\d+(?:天(?:\d+小时(?:\d+分\d+秒)?)?|小时\d+分\d+秒|分\d+秒|(?:\.\d+)?秒)/g,
       duration => duration.startsWith('约') ? duration : '{{duration}}',

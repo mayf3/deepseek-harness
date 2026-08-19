@@ -369,8 +369,7 @@ export function normalizeSessionSnapshot(
       if (record.type !== 'session') throw new Error('session snapshot must start with a session header')
       return JSON.stringify(record)
     }
-    scrubRequestHeaderRecord(record, { system: true, tools: true })
-    omitSessionEventEnvelope(record)
+    scrubSessionSnapshotBodyRecord(record)
     return JSON.stringify(record)
   }).join('\n')
 }
@@ -422,7 +421,8 @@ export function scrubRequestHeaders(rawLog: string): string {
 /**
  * Project a persisted session log while tokenizing all request-header bulk.
  * Each non-empty line is parsed at most once; the session header stays
- * byte-identical and body payloads are changed only by header tokenization.
+ * byte-identical. Body records omit their persistence-only envelopes, and
+ * request-header payloads are tokenized.
  *
  * @param rawLog - persisted or already-projected session JSONL.
  * @returns committed snapshot JSONL with request headers tokenized.
@@ -436,10 +436,14 @@ export function scrubSessionSnapshot(rawLog: string): string {
       if (record.type !== 'session') throw new Error('session snapshot must start with a session header')
       return line
     }
-    omitSessionEventEnvelope(record)
-    scrubRequestHeaderRecord(record, { system: true, tools: true })
+    scrubSessionSnapshotBodyRecord(record)
     return JSON.stringify(record)
   }).join('\n')
+}
+
+function scrubSessionSnapshotBodyRecord(record: Record<string, unknown>): void {
+  scrubRequestHeaderRecord(record, { system: true, tools: true })
+  omitSessionEventEnvelope(record)
 }
 
 /** Which independent request-header payloads a scrubber replaces. */

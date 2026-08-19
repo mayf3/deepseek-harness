@@ -10,11 +10,11 @@ Status: implemented
 
 ## 决策
 
-签入仓库的会话快照是持久化 JSONL 的投影。第一条 `session` header 保持不变，包括 `version` 与 `createdAt`。每条正文记录保留判别字段、payload 和其他顶层字段；投影仅在相应字段存在时省略 `seq`、`time`、`seq0` 与 `time0`。嵌套在 payload 中的同名字段保持不变。
+签入仓库的会话快照是持久化 JSONL 的投影。envelope 投影不会修改第一条 `session` header，包括 `version` 与 `createdAt`；其他 fixture 规范化仍可能替换 `createdAt`、`id` 和 `cwd` 等易变 header 值。每条正文记录保留判别字段、payload 和其他顶层字段；投影仅在相应字段存在时省略 `seq`、`time`、`seq0` 与 `time0`。嵌套在 payload 中的同名字段保持不变。
 
 快照序列化会在写入每行前从已解析的正文对象上省略这些键。以持久化 JSONL 为输入的入口只在快照边界解析一次；专用快照 normalizer 在同一轮对象操作中完成值规范化、request header 清理和投影，而不会先序列化再重新解析。通用日志和 stream 规范化会保留序号 envelope。运行时持久化不变。
 
-回放解析投影后的 fixture，并在内存中分配连续的 synthetic 序号。synthetic 事件时间从零开始；打包行的 `data.dt` 保留 fixture 中已有的相对间隔。仓库 fixture 布局门禁会解码这种投影格式，继续强制规范打包行，并拒绝只保留一半的持久化 envelope。
+回放解析投影后的 fixture，并在内存中分配连续的 synthetic 序号。synthetic 事件时间从零开始；打包行的 `data.dt` 保留 fixture 中已有的相对间隔。同一文件必须始终采用投影正文行或完整持久化正文行。仓库 fixture 布局门禁会解码这种投影格式，继续强制规范打包行，并拒绝不完整或混用的持久化 envelope。
 
 ## 曾考虑的替代方案
 

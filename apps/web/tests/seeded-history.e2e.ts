@@ -17,6 +17,7 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
+import { decodeSessionSnapshot, projectSessionSnapshot } from '@deepseek-ai/dsh-llm-replay'
 import { deriveEventMessage, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
@@ -53,14 +54,14 @@ const PROMPT = 'Use the read tool twice in one assistant message: read a.txt and
  * @returns the fixture with a manual compaction lifecycle appended.
  */
 function withCompaction(raw: string, meter: TokenMeter): string {
-  const lines = raw.trimEnd().split('\n')
-  const events = lines.slice(1).map(line => JSON.parse(line) as {
+  const decoded = decodeSessionSnapshot(raw)
+  const events = decoded.events as unknown as Array<{
     type: string
     seq: number
     time: number
     surfaceOp?: unknown
     data?: { turn?: unknown; message?: unknown; content?: unknown; callId?: unknown; isError?: unknown }
-  })
+  }>
   const surfaceSeqs = events
     .filter(event => event.surfaceOp === 'append'
       && (event.type === 'user/message'
@@ -84,9 +85,9 @@ function withCompaction(raw: string, meter: TokenMeter): string {
    * @param event - the event body, without seq/time.
    * @returns the assigned seq, so later `sourceEventSeqs` cite the pushed event directly.
    */
-  const at = (event: Record<string, unknown>): number => {
+  const at = (event: { type: string } & Record<string, unknown>): number => {
     const taken = seq++
-    lines.push(JSON.stringify({ ...event, seq: taken, time: time++ }))
+    events.push({ ...event, seq: taken, time: time++ })
     return taken
   }
   const commandId = 'cmd-seeded-manual-compact'
@@ -172,7 +173,11 @@ function withCompaction(raw: string, meter: TokenMeter): string {
   const closureTurn = lastTurn + 1
   at({ type: 'turn/start', data: { turn: closureTurn } })
   at({ type: 'turn/end', data: { turn: closureTurn, reason: { kind: 'completed' } } })
-  return `${lines.join('\n')}\n`
+  return projectSessionSnapshot([
+    decoded.headerLine,
+    ...events.map(event => JSON.stringify(event)),
+    '',
+  ].join('\n'))
 }
 
 describe('web e2e: seeded history renders through cold resume', () => {

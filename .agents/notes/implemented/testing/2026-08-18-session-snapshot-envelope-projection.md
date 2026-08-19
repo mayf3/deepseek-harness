@@ -10,11 +10,11 @@ Committed session snapshots copied the persistence envelope on every body row. T
 
 ## Decision
 
-A committed session snapshot is a projection of the persisted JSONL. Its first `session` header remains unchanged, including `version` and `createdAt`. Every body record retains its discriminant, payload, and other top-level fields, while the projection omits `seq`, `time`, `seq0`, and `time0` when present. Nested fields with the same names are payload and remain unchanged.
+A committed session snapshot is a projection of the persisted JSONL. The envelope projection leaves its first `session` header unchanged, including `version` and `createdAt`; other fixture normalization may still replace volatile header values such as `createdAt`, `id`, and `cwd`. Every body record retains its discriminant, payload, and other top-level fields, while the projection omits `seq`, `time`, `seq0`, and `time0` when present. Nested fields with the same names are payload and remain unchanged.
 
 Snapshot serialization omits those keys from the parsed body object before writing the line. A persisted-JSONL input is parsed once at the snapshot boundary; the dedicated snapshot normalizer combines value normalization, request-header scrubbing, and projection in that object pass rather than serializing and parsing again. Generic log and stream normalization retains sequence envelopes. Runtime persistence is unchanged.
 
-Replay parses the projected fixture and assigns contiguous synthetic sequence numbers in memory. Synthetic event times start at zero; packed `data.dt` values retain the relative gaps already stored in the fixture. The repository fixture-layout gate decodes this projected form, retains canonical packed rows, and rejects a half-present persistence envelope.
+Replay parses the projected fixture and assigns contiguous synthetic sequence numbers in memory. Synthetic event times start at zero; packed `data.dt` values retain the relative gaps already stored in the fixture. One file must use projected body rows or complete persisted body rows throughout. The repository fixture-layout gate decodes this projected form, retains canonical packed rows, and rejects half-present or mixed persistence envelopes.
 
 ## Alternatives considered
 

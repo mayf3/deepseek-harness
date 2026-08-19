@@ -164,6 +164,30 @@ describe('session snapshot codec', () => {
     expect(() => decodeSessionSnapshot(fixture)).toThrow(/both seq\/time or neither/)
   })
 
+  it.each([
+    [
+      '{"type":"turn/start","data":{"turn":1}}',
+      '{"type":"turn/end","seq":1,"time":1,"data":{"turn":1,"reason":{"kind":"completed"}}}',
+    ],
+    [
+      '{"type":"turn/start","seq":0,"time":0,"data":{"turn":1}}',
+      '{"type":"turn/end","data":{"turn":1,"reason":{"kind":"completed"}}}',
+    ],
+  ])('rejects mixed projected and persisted body records', (first, second) => {
+    const fixture = `{"type":"session"}\n${first}\n${second}\n`
+    expect(() => decodeSessionSnapshot(fixture)).toThrow(/line 3 cannot mix projected and persisted body records/)
+  })
+
+  it('reports malformed storage records with their snapshot line', () => {
+    const fixture = [
+      '{"type":"session"}',
+      '{"type":"turn/start","data":{"turn":1}}',
+      '{"type":"text-chunks","data":{"turn":1,"step":1,"index":0,"dt":[],"texts":[]}}',
+      '',
+    ].join('\n')
+    expect(() => decodeSessionSnapshot(fixture)).toThrow(/session snapshot line 3:/)
+  })
+
   it.each(['null', '1', '[]'])('rejects non-object JSONL records: %s', (record) => {
     expect(() => decodeSessionSnapshot(`${record}\n`)).toThrow(/line 1 must be a JSON object/)
   })
