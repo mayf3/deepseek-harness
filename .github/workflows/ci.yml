@@ -42,10 +42,9 @@ env:
 
 jobs:
 
-  # TODO(hosted-serial-ci): Re-enable the remaining disabled hosted serial reference job
-  # (serial-macos) before release. The hosted serial-linux definition was removed as dead
-  # code (it was `if: false`); the self-hosted standby lane below remains active on every
-  # master push.
+  # TODO(hosted-serial-ci): Re-enable the one remaining disabled hosted serial
+  # reference job (serial-macos) before release. The self-hosted standby lane
+  # below remains active on every master push.
 
   # Three enterprise jobs isolate coverage, static analysis, and the
   # build-backed consumer tail. The consumer job owns the only Linux build so
@@ -213,7 +212,11 @@ jobs:
           store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
           echo "path=$store_path" >> "$GITHUB_OUTPUT"
 
-      # Skipped under failover — see the coverage lane's identical rationale.
+      # Pull requests restore the pnpm store and Playwright caches without paying
+      # compression and upload on the required path. No master job saves these
+      # hosted cache keys, so each restore-keys fallback hits the matching archived
+      # entry until it evicts, after which the store is cold. Skipped under failover
+      # — the self-hosted VM's persistent store is already warm.
       - uses: actions/cache/restore@v4
         if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
         with:
@@ -222,10 +225,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-
 
-      # Pull requests restore the pnpm store and Playwright caches without paying
-      # compression and upload on the required path. There is currently no active
-      # master producer for these hosted caches — the hosted serial-linux job that
-      # refreshed them was disabled, so restores below are cold on a lockfile change.
+      # Skipped under failover — see the coverage lane's identical rationale.
       - uses: actions/cache/restore@v4
         if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
         with:
@@ -514,9 +514,8 @@ jobs:
     name: serial / linux (self-hosted standby)
     runs-on: [self-hosted, linux, x64, vm-backup]
     steps:
-      # Full history + DSH_ARCHIVE_BASE_REF below: the same frozen-archive
-      # comparison used by the hosted serial reference. Depth 2 would miss
-      # github.event.before
+      # DSH_ARCHIVE_BASE_REF below compares the frozen-archive gate against
+      # github.event.before, so full history is required: depth 2 would miss it
       # on multi-commit or force pushes; full fetch is cheap here because
       # checkout resolves against the VM's local mirror.
       - uses: actions/checkout@v6
@@ -556,8 +555,8 @@ jobs:
           DSH_SNAPSHOT_MAX_CONCURRENCY: '1'
         run: pnpm run check:ci:linux-primary
 
-  # The sole remaining disabled hosted serial reference job (the hosted linux
-  # definition was removed as dead code); see TODO(hosted-serial-ci) above.
+  # The one remaining disabled hosted serial reference job; see
+  # TODO(hosted-serial-ci) above.
   serial-macos:
     if: false
     name: serial / macos
