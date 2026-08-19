@@ -42,6 +42,12 @@ Status: implemented
 
 在 [`py/bootstrap.py`](../../../../packages/code-runtime/code-runtime-python/py/bootstrap.py) 中，`_clamped` 仅用继承而来的 HARD 限制来约束一个请求的 `(soft, hard)` rlimit 对。一个继承了低于请求值的软限制的部署——比如继承 `(100, 200)`、请求 `(150, 160)`——会拿回 `(150, 160)`，把有效软限制从 100 抬高到 150：对 `RLIMIT_AS` 而言这放松了内存上限，对 `RLIMIT_CPU` 而言它推迟了 SIGXCPU，两者都违反了"取配置值与继承值中最严格者"。现在 `_clamped` 用每一侧各自继承而来的对应值来约束该侧（`RLIM_INFINITY` 不施加任何上限），随后把 soft 钉在 hard 之下，因此 `setrlimit` 绝不会看到一个倒置的对。结算时的 CPU 复查（`die_if_cpu_exhausted`）遵循同一规则：它把已消耗的 CPU 与实际生效的、被夹紧的 `cpu_soft` 比较，而不是与配置的 `cpuSeconds` 比较，因此一个捕获 SIGXCPU、在返回前消耗超过更严格的继承软限制的程序会被报告为 timeout，而非误判为成功。SIGXCPU 诊断不再把配置的 `cpuSeconds` 说成实际生效的预算——在一个更严格的继承软限制之下那个数字是错的——而是报告 CPU 时间是在"至多配置的 N 秒"处被耗尽，这一表述无论哪个限制先触发都成立。
 
+### 并发 binding 回复对 fd 3 做节流
+
+`sendReply` 忽略了 `proto.write` 的 `false` 返回值，因此一个在一轮 `asyncio.gather` 中解析多个大值的程序，会把每条回复都在同一个 turn 内编码、并全部排入 fd 3 的可写缓冲。binding 回复在 seam 层没有字节上限可以约束它，而且这个失败杀掉的是**宿主进程**而不是让本次运行失败：在 highWaterMark 为 64 KiB 的管道上实测，八条 4 MiB 回复会同时缓冲 32.0 MiB。现在回复走一个队列，一次编码并写出一帧，管道写满时等待 `drain`——同样形状实测峰值为 0.0 MiB。编码放在循环内部，因此一条运行已不再需要的排队回复会被 `settled` 检查丢弃，根本不会被序列化。
+
+节流不改变任何模型可观测的行为。子进程通过一个持续读取 fd 3 的 pump、按 id 把每条回复匹配到它自己的 `call`，因此到达顺序从来不可观测，而各 binding 本身仍然并发执行——只有宿主的峰值内存与冲刷时延改变。这也正是为什么串行化并不构成对 seam 并发契约的收窄，而那恰是最初推迟此项的理由；那个理由是错的。
+
 ### Binding replies complete on the calling loop's thread
 
 同样在 `py/bootstrap.py` 中，一个绑定回复 Future 是在运行 `dispatch` 的那个事件循环上创建的。当模型通过 `asyncio.run(tools.x(...))` 从一个工作线程调用某个绑定时，该 Future 属于该线程的事件循环，而不是 `_pump_replies` 读取回复的主事件循环。`asyncio.Future` 不是线程安全的：从另一个线程完成它并不会唤醒它自己的事件循环，因此直接的 `set_result`／`set_exception` 会让那个正在等待的线程被搁置，该次运行退化为墙钟超时。现在每个待处理条目都会在记录 Future 的同时记录其 Future 所属的事件循环，`_pump_replies` 通过该事件循环的 `call_soon_threadsafe` 来完成它。共享的 `pending`／`next_id` 状态由一把 `threading.Lock` 保护，该锁跨越 id 认领、fd-3 写入和计数器推进这三步持有，因此并发调用方无法以违反宿主所要求的 id 顺序来交错帧。对一个已经关闭的事件循环（工作线程已结束、在回复到达前放弃了它的调用）调用 `call_soon_threadsafe` 会抛出 `RuntimeError`；该调度被包裹起来，使这个已无意义的回复被丢弃，而不是让异常终结 pump 任务并搁置此后的每一个回复。

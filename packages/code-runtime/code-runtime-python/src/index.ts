@@ -13,6 +13,7 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { once } from 'node:events'
 import { accessSync, copyFileSync, constants as fsConstants, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
@@ -1382,14 +1383,47 @@ export class PythonCodeRuntime extends CodeRuntime {
       // strings/numbers), which is encodeJsonPlain's precondition. A closed
       // pipe (child already gone) is swallowed since the close path settles
       // the run.
+      //
+      // Replies are encoded and written ONE AT A TIME, waiting for `drain`
+      // whenever fd 3's buffer is full. Binding resolution carries no
+      // seam-level byte cap, so a program that resolves several large values in
+      // one `asyncio.gather` round would otherwise encode them all in the same
+      // turn and queue every frame in the writable stream's buffer -- measured
+      // to exhaust a 256 MiB Node heap, which kills the whole host process
+      // rather than failing this one run. Pacing changes no model-visible
+      // behavior: the child matches each reply to its `call` by id from a pump
+      // that reads fd 3 continuously, so arrival order was never observable,
+      // and the bindings themselves still run concurrently. Only the host's peak
+      // memory and the flush timing change.
+      const replyQueue: ReplyMessage[] = []
+      let draining = false
+      const drainReplies = async (): Promise<void> => {
+        if (draining) return
+        draining = true
+        try {
+          while (replyQueue.length > 0) {
+            if (settled) break
+            const payload = replyQueue.shift() as ReplyMessage
+            // Encode inside the loop, not up front: a queued reply the run no
+            // longer needs is dropped by the `settled` check above without ever
+            // being serialized.
+            if (!proto.write(`${encodeJsonPlain(payload)}\n`)) {
+              await once(proto, 'drain')
+            }
+          }
+        } catch {
+          // Pipe closed under us (child exited), or `drain` never arrives because
+          // the child died. The close path settles the run either way.
+        } finally {
+          draining = false
+          replyQueue.length = 0
+        }
+      }
       const sendReply = (payload: ReplyMessage): void => {
         /* v8 ignore next -- `settled` covers a race where the child exits between decision and write. */
         if (settled) return
-        try {
-          proto.write(`${encodeJsonPlain(payload)}\n`)
-        } catch {
-          // Pipe closed under us (child exited). The close path finishes the run.
-        }
+        replyQueue.push(payload)
+        void drainReplies()
       }
 
       // Escalate SIGTERM → grace → SIGKILL on the entire process group. Idempotent

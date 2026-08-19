@@ -3863,6 +3863,35 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(resolvedLate).toBe(true)
   }, 90_000)
 
+  it('paces concurrent binding replies instead of queueing every frame at once', async () => {
+    // Binding resolution carries no seam-level byte cap. Before pacing, a program
+    // resolving several large values in one `asyncio.gather` round encoded them
+    // all in the same turn and queued every frame in fd 3's writable buffer,
+    // which exhausted the host heap and killed the whole process rather than
+    // failing the run. Replies are now encoded one at a time, waiting for
+    // `drain` when the pipe is full.
+    //
+    // Eight concurrent 4 MiB replies (32 MiB of frames) must all round-trip. The
+    // program sums the lengths, so the assertion proves every reply arrived and
+    // was matched to its own call -- pacing must not drop or misroute any. What
+    // this case cannot show is the peak itself, which lives in the stream's
+    // buffer: measured directly on a 64 KiB-highWaterMark pipe with this same
+    // 8x4 MiB shape, the unpaced writes buffered 32.0 MiB while the paced ones
+    // peaked at 0.0 MiB.
+    const chunk = 'A'.repeat(4 * 1024 * 1024)
+    const { runtime } = await setup({ maxWallMs: 60_000 })
+    const result = await runtime.run({
+      program: [
+        'import asyncio',
+        'parts = await asyncio.gather(*[tools.chunk({}) for _ in range(8)])',
+        'return sum(len(p) for p in parts)',
+      ].join('\n'),
+      bindings: [{ global: 'tools', functions: { chunk: async () => chunk } }],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(8 * chunk.length)
+  }, 90_000)
+
   it('bounds a flood of zero-byte log lines through the per-entry separator charge', async () => {
     // Blank print() lines carry zero content bytes; without the +1 separator
     // charge they would bypass maxLogBytes entirely and grow the retained
