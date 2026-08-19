@@ -400,13 +400,16 @@ export class AclSandbox {
             { status: 'fulfilled', value: stdoutBuffer },
             { status: 'fulfilled', value: stderrBuffer },
           ]
-        } catch (firstDrainFailure) {
+        } catch {
           const terminated = api.terminateProcess(native.process, 1)
           const terminationCode = terminated === 0 ? api.getLastError() : 0
           drainAbort.abort(drainCancellation)
           const settledDrains = await Promise.allSettled([stdout, stderr])
           if (terminated === 0) {
-            const failures: unknown[] = [firstDrainFailure]
+            const failures = settledDrains.flatMap<unknown>(outcome =>
+              outcome.status === 'rejected' && outcome.reason !== drainCancellation
+                ? [outcome.reason as unknown]
+                : [])
             try {
               closeHandleChecked(api, native.process, 'piped child after drain failure')
             } catch (error) {

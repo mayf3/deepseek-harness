@@ -530,9 +530,11 @@ describe('AclSandbox spawn', () => {
     await expect(settlement).rejects.toBeInstanceOf(AggregateError)
     const failure = await settlement.catch((error: unknown): unknown => error)
     if (!(failure instanceof AggregateError)) throw new Error('expected AggregateError')
-    const apis = (failure.errors as unknown[])
+    const errors = failure.errors as unknown[]
+    const apis = errors
       .filter((error): error is Win32Error => error instanceof Win32Error)
       .map(error => error.api)
+    expect(apis.filter(api => api === 'PeekNamedPipe')).toHaveLength(2)
     expect(apis).toEqual(expect.arrayContaining(['CloseHandle', 'TerminateProcess']))
   })
 })
