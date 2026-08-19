@@ -253,22 +253,25 @@ function rootVersion(root: string): string {
  * @returns Private package manifests sorted by path.
  */
 function privateDshVersions(root: string): PrivateDshVersion[] {
-  return globSync('packages/*/*/package.json', { cwd: root }).sort().flatMap((manifestPath) => {
-    const parsed: unknown = JSON.parse(readFileSync(join(root, manifestPath), 'utf8'))
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error(`${manifestPath} is not a JSON object`)
-    }
-    const manifest = parsed as Record<string, unknown>
-    if (manifest.private !== true) return []
-    if (typeof manifest.version !== 'string') {
-      throw new Error(`${manifestPath} must declare a string version`)
-    }
-    return [{
-      manifestPath,
-      label: manifestPath.slice(0, -'/package.json'.length),
-      version: manifest.version,
-    }]
-  })
+  return globSync('packages/*/*/package.json', { cwd: root })
+    .map(path => path.replaceAll('\\', '/'))
+    .sort()
+    .flatMap((manifestPath) => {
+      const parsed: unknown = JSON.parse(readFileSync(join(root, manifestPath), 'utf8'))
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error(`${manifestPath} is not a JSON object`)
+      }
+      const manifest = parsed as Record<string, unknown>
+      if (manifest.private !== true) return []
+      if (typeof manifest.version !== 'string') {
+        throw new Error(`${manifestPath} must declare a string version`)
+      }
+      return [{
+        manifestPath,
+        label: manifestPath.slice(0, -'/package.json'.length),
+        version: manifest.version,
+      }]
+    })
 }
 
 /**
@@ -296,14 +299,14 @@ export function planShared(
   ]
   for (const member of members) {
     planned.push({
-      manifestPath: join(member.directory, 'package.json'),
+      manifestPath: `${member.directory}/package.json`,
       label: member.directory,
       from: member.version,
       to: version,
       tag: family.tagFor({ ...member, version }),
     })
   }
-  const publishableManifests = new Set(members.map(member => join(member.directory, 'package.json')))
+  const publishableManifests = new Set(members.map(member => `${member.directory}/package.json`))
   for (const entry of privateDshVersions(root)) {
     if (publishableManifests.has(entry.manifestPath)) continue
     planned.push({
@@ -335,7 +338,7 @@ function planPerPackage(
     const tagged = lastTaggedVersion(family, member)
     const to = nextVendorVersion(member.version, tagged, prerelease)
     planned.push({
-      manifestPath: join(member.directory, 'package.json'),
+      manifestPath: `${member.directory}/package.json`,
       label: member.directory,
       from: member.version,
       to,
