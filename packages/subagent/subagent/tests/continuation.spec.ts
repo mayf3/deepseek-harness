@@ -51,9 +51,14 @@ class GatedAdapter extends LlmAdapter {
   }
 }
 
-const roots: string[] = []
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+// Each persistence-backed temp root has a cleanup that closes its handle before
+// removing the directory. On Windows, rmSync over a directory containing a file
+// whose handle is still open fails with EPERM (the intermittent continuation /
+// skill-filesystem native flakes); jsonl.spec.ts closes the persistence fiber
+// first. Keeping each root's dispose+delete in one closure preserves that order.
+const cleanups: Array<() => Promise<void>> = []
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0)) await cleanup()
 })
 
 /** Boot the full continuable stack: loop, persistence, providers, and subagents. */
@@ -64,9 +69,15 @@ async function setupWith(adapter: LlmAdapter, options: { persistence?: boolean }
   let root: string | undefined
   if (options.persistence !== false) {
     root = mkdtempSync(join(tmpdir(), 'dsh-subagent-continuation-'))
-    roots.push(root)
+    const persistedRoot = root
     const persistenceFiber = await ctx.plugin(JsonlSessionPersistence, { root })
     disposePersistence = () => persistenceFiber.dispose()
+    // Close the handle first, then delete: on Windows rmSync over a dir holding
+    // a still-open handle EPERMs. Mirrors jsonl.spec.ts.
+    cleanups.push(async () => {
+      await persistenceFiber.dispose()
+      rmSync(persistedRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    })
   }
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SubagentRuntime)
@@ -2432,8 +2443,12 @@ describe('continuable errors', () => {
     const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx)
     const root = mkdtempSync(join(tmpdir(), 'dsh-subagent-continuation-'))
-    roots.push(root)
-    await ctx.plugin(JsonlSessionPersistence, { root })
+    const persistenceFiber = await ctx.plugin(JsonlSessionPersistence, { root })
+    // Close the handle before deleting (Windows EPERM on held handles).
+    cleanups.push(async () => {
+      await persistenceFiber.dispose()
+      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    })
     await ctx.plugin(AgentLoop, { agents: [] })
     const serviceFiber = await ctx.plugin(SubagentRuntime)
     await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
