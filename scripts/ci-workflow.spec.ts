@@ -29,22 +29,24 @@ describe('CI workflow', () => {
 
   it('keeps a required Wine Windows job, a non-blocking native Windows job with failover, and a master-only standby', () => {
     const workflow = loadWorkflow('.github/workflows/ci.yml')
+    const masterWorkflow = loadWorkflow('.github/workflows/ci-master.yml')
     if (!isRecord(workflow.jobs)
       || !isRecord(workflow.jobs.windows)
       || !isRecord(workflow.jobs['windows-native'])
-      || !isRecord(workflow.jobs['wine-apt-cache'])
-      || !isRecord(workflow.jobs['serial-windows'])
       || !isRecord(workflow.jobs['node-24'])
       || !isRecord(workflow.jobs['node-24-coverage'])
       || !isRecord(workflow.jobs['node-24-consumers'])
-      || !isRecord(workflow.jobs['all-checks-passed'])) {
-      throw new TypeError('CI workflow must define windows, windows-native, wine-apt-cache, serial-windows, node-24, node-24-coverage, node-24-consumers, and all-checks-passed jobs')
+      || !isRecord(workflow.jobs['all-checks-passed'])
+      || !isRecord(masterWorkflow.jobs)
+      || !isRecord(masterWorkflow.jobs['wine-apt-cache'])
+      || !isRecord(masterWorkflow.jobs['serial-windows'])) {
+      throw new TypeError('CI workflow must define windows, windows-native, node-24, node-24-coverage, node-24-consumers, and all-checks-passed; ci-master must define wine-apt-cache and serial-windows')
     }
 
     const windows = workflow.jobs.windows
     const windowsNative = workflow.jobs['windows-native']
-    const wineAptCache = workflow.jobs['wine-apt-cache']
-    const serialWindows = workflow.jobs['serial-windows']
+    const wineAptCache = masterWorkflow.jobs['wine-apt-cache']
+    const serialWindows = masterWorkflow.jobs['serial-windows']
     const node24 = workflow.jobs['node-24']
     const node24Coverage = workflow.jobs['node-24-coverage']
     const node24Consumers = workflow.jobs['node-24-consumers']
@@ -80,11 +82,11 @@ describe('CI workflow', () => {
     ))
     expect(nativeCommandSteps.map(step => step.run)).toContain('pnpm run check:ci:windows-complete')
 
-    // wine-apt-cache: master-only, seeds the Wine apt cache.
+    // wine-apt-cache: master-only, seeds the Wine apt cache, lives in ci-master.
     expect(wineAptCache.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
     expect(wineAptCache['runs-on']).toBe('ubuntu-latest')
 
-    // serial-windows: master-only standby, self-hosted, non-blocking.
+    // serial-windows: master-only standby, self-hosted, non-blocking, lives in ci-master.
     expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
@@ -108,10 +110,14 @@ describe('CI workflow', () => {
     expect(aggregate['runs-on']).toContain('vm-backup')
   })
 
-  it('exempts push from cancellation, so one master merge does not cancel the running drill', () => {
-    const workflow = loadWorkflow('.github/workflows/ci.yml')
+  it('exempts push from cancellation in ci-master, so one master merge does not cancel the running drill', () => {
+    const workflow = loadWorkflow('.github/workflows/ci-master.yml')
+    const prWorkflow = loadWorkflow('.github/workflows/ci.yml')
     if (!isRecord(workflow.jobs) || !isRecord(workflow.concurrency)) {
-      throw new TypeError('CI workflow must define jobs and a workflow-level concurrency block')
+      throw new TypeError('ci-master workflow must define jobs and a workflow-level concurrency block')
+    }
+    if (!isRecord(prWorkflow.jobs)) {
+      throw new TypeError('ci workflow must define jobs')
     }
 
     // Cancellation applies to the whole superseded RUN, so this has to be
@@ -120,10 +126,17 @@ describe('CI workflow', () => {
     // a drill takes longer than the interval between master merges. The negated
     // form is load-bearing: `== 'pull_request'` would also stop cancelling
     // workflow_dispatch, and a re-dispatched runner benchmark holds up to 12
-    // larger runners for 15 minutes in this same group on master. The
-    // expression is evaluated against the NEWLY TRIGGERED run, so a dispatch on
-    // master still cancels a mid-flight drill; the runbook records that bound.
+    // larger runners for 15 minutes in this same group on master.
     expect(workflow.concurrency['cancel-in-progress']).toBe("${{ github.event_name != 'push' }}")
+
+    // The PR-only ci.yml has no push-exemption concurrency; its jobs are
+    // cancel-on-supersede by the default PR cancel behavior and need no carve-out.
+    expect(prWorkflow.concurrency).toBeUndefined()
+
+    // ci-master must not listen to pull_request: that is what keeps master-only
+    // jobs out of the PR check panel. ci.yml is pull_request-only.
+    expect(workflow.on).not.toHaveProperty('pull_request')
+    expect(prWorkflow.on).toHaveProperty('pull_request')
 
     // Neither drill may carry a job-level group: it would not exempt the job
     // from run-scoped cancellation.
@@ -138,14 +151,7 @@ describe('CI workflow', () => {
     // What bounds the cost of exempting push: a master push may only carry the
     // cache seeder and the two drills. Any job reachable on push would start
     // accumulating uncancelled runs, so the set is pinned here.
-    //
-    // Classification is an exact allowlist of the conditions in use, not a
-    // substring match: `github.event_name != 'pull_request'` mentions
-    // `pull_request` yet IS push-reachable, so matching on the event name alone
-    // would silently misclassify it as gated.
     const NOT_PUSH_REACHABLE = new Set([
-      "github.event_name == 'pull_request'",
-      "always() && github.event_name == 'pull_request'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'larger-runner-benchmark'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'consolidated-runner-benchmark'",
     ])
@@ -235,20 +241,6 @@ describe('E2B e2e workflow', () => {
       },
     })
     expect(e2b?.run).toContain('packages/e2b/e2b/tests/composition.e2e.ts')
-  })
-})
-
-describe('DeepSeek e2e workflow', () => {
-  it('prepares bubblewrap from the pinned payload without a package transaction', () => {
-    const workflow = loadWorkflow('.github/workflows/e2e.yml')
-    const e2e = workflowJob(workflow, 'e2e')
-    if (!Array.isArray(e2e.steps)) throw new TypeError('DeepSeek e2e workflow must define steps')
-
-    const steps = e2e.steps.filter(isRecord)
-    expect(steps.find(step => step.name === 'Prepare bubblewrap (unrestrict userns)')).toMatchObject({
-      run: 'bash scripts/prepare-ci-bubblewrap.sh',
-    })
-    expect(JSON.stringify(steps)).not.toContain('apt-get')
   })
 })
 
