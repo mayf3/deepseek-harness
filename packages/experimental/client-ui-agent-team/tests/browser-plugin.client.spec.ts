@@ -1,13 +1,10 @@
 import { Context, Service } from '@deepseek-ai/cordis'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import type {
-  TeamMemberView as TeamRosterMember,
-  TeamTaskId,
-} from '@deepseek-ai/dsh-team/client'
-import type {} from '@deepseek-ai/dsh-team/remote'
+import type { TeamMemberView as TeamRosterMember } from '@deepseek-ai/dsh-agent-team-remotes/types'
+import type {} from '@deepseek-ai/dsh-agent-team-remotes/remote'
 import { TeamAction, type TeamActionInjected } from '../src/client/TeamAction.tsx'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
@@ -18,6 +15,7 @@ const CHILD = 'team-child' as SessionId
 async function bench(options: {
   addressed?: boolean
   conflict?: boolean
+  registrationFailure?: boolean
   remoteFailure?: 'view' | 'update'
   refreshGate?: Promise<void>
 } = {}) {
@@ -28,16 +26,23 @@ async function bench(options: {
     return Promise.resolve({ ok: true as const, value })
   }
   const task = {
-    id: 'task-1' as TeamTaskId,
+    id: 'task-1',
     revision: 1, subject: 'Task', description: 'Description', status: 'pending' as const,
     blockedBy: [], writeScopes: [], ready: true, writeScopeWarnings: [],
   }
   class RemoteService extends Service {
+    readonly disposeMount = vi.fn(() => Promise.resolve())
+    readonly mount = vi.fn((_contribution: unknown) => Promise.resolve(this.disposeMount))
+
     constructor(serviceCtx: Context) {
       super(serviceCtx, 'remote')
     }
+
+    $mount(contribution: unknown): Promise<() => Promise<void>> {
+      return this.mount(contribution)
+    }
   }
-  new RemoteService(ctx)
+  const remote = new RemoteService(ctx)
   const failure = {
     ok: false as const,
     error: { code: 'internal', message: 'offline', details: {} },
@@ -100,15 +105,29 @@ async function bench(options: {
     name: 'root',
     children: { 'conversation.session.header.actions': { kind: 'list', scope: 'session' } },
   } as never, () => null)
-  const fiber = ctx.plugin({ inject: [...inject], apply })
-  await fiber.await()
+  if (options.registrationFailure === true) {
+    vi.spyOn(ctx.slots, 'inject').mockImplementationOnce(() => { throw new Error('slot registration failed') })
+  }
+  const fiber = options.registrationFailure === true
+    ? ctx.plugin({ apply() {} })
+    : ctx.plugin({ inject: [...inject], apply })
+  const activation: Promise<unknown> = options.registrationFailure === true
+    ? apply(ctx).catch((error: unknown) => error)
+    : fiber.await()
+  if (options.registrationFailure !== true) {
+    await activation
+  } else {
+    await fiber.await()
+  }
   const entry = () => ctx.slots.entries('conversation.session.header.actions')
     .find(candidate => candidate.component === TeamAction)
   return {
     ctx,
     fiber,
+    activation,
     calls,
     navigation,
+    remote,
     entry,
     collapseHeader,
     select: (sessionId: SessionId) => { current = sessionId },
@@ -118,21 +137,22 @@ async function bench(options: {
 describe('ui-team browser plugin', () => {
   it('registers one disposable header action with RPC-backed task operations', async () => {
     const b = await bench()
-    expect(inject).toEqual(['sessions', 'remote', 'remote.teams', 'slots', 'locale'])
+    expect(inject).toEqual(['sessions', 'remote', 'slots', 'locale'])
     expect(b.entry()).toMatchObject({
       options: { id: 'agent-team', order: 20 },
       locale: 'team',
     })
+    expect(b.remote.mount).toHaveBeenCalledOnce()
     const actions = (b.entry()!.inject as unknown as () => TeamActionInjected)()
     expect((await actions.load(SESSION)).ok).toBe(true)
     expect((await actions.createTask(SESSION, {
       subject: 'Task', description: 'Description', blockedBy: [], writeScopes: [],
     })).ok).toBe(true)
     expect((await actions.updateTask(SESSION, {
-      taskId: 'task-1' as TeamTaskId, expectedRevision: 1, action: 'complete',
+      taskId: 'task-1', expectedRevision: 1, action: 'complete',
     })).ok).toBe(true)
     expect((await actions.updateTask(SESSION, {
-      taskId: 'task-1' as TeamTaskId, expectedRevision: 2, action: 'reassign', owner: 'worker',
+      taskId: 'task-1', expectedRevision: 2, action: 'reassign', owner: 'worker',
     })).ok).toBe(true)
     expect(b.calls.map(call => call.method)).toEqual([
       'teams/view', 'teams/createTask', 'teams/updateTask', 'teams/updateTask',
@@ -150,13 +170,21 @@ describe('ui-team browser plugin', () => {
 
     await b.fiber.dispose()
     expect(b.entry()).toBeUndefined()
+    expect(b.remote.disposeMount).toHaveBeenCalledOnce()
+  })
+
+  it('unmounts the Remote contribution when later Client registration fails', async () => {
+    const b = await bench({ registrationFailure: true })
+    await expect(b.activation).resolves.toMatchObject({ message: 'slot registration failed' })
+    expect(b.remote.mount).toHaveBeenCalledOnce()
+    expect(b.remote.disposeMount).toHaveBeenCalledOnce()
   })
 
   it('marks stale revisions as conflicts and retains non-conflict errors as ordinary failures', async () => {
     const b = await bench({ conflict: true })
     const actions = (b.entry()!.inject as unknown as () => TeamActionInjected)()
     await expect(actions.updateTask(SESSION, {
-      taskId: 'task-1' as TeamTaskId, expectedRevision: 1, action: 'delete',
+      taskId: 'task-1', expectedRevision: 1, action: 'delete',
     })).resolves.toEqual({
       ok: false,
       error: 'stale (team-task-conflict)',
@@ -176,7 +204,7 @@ describe('ui-team browser plugin', () => {
     const update = await bench({ remoteFailure: 'update' })
     const updateActions = (update.entry()!.inject as unknown as () => TeamActionInjected)()
     await expect(updateActions.updateTask(SESSION, {
-      taskId: 'task-1' as TeamTaskId, expectedRevision: 1, action: 'delete',
+      taskId: 'task-1', expectedRevision: 1, action: 'delete',
     })).resolves.toEqual({
       ok: false,
       error: 'offline (internal)',

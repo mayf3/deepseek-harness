@@ -6,7 +6,7 @@ import type {
   TeamTaskId,
   TeamTaskView as TeamTask,
   TeamView,
-} from '@deepseek-ai/dsh-team/client'
+} from '@deepseek-ai/dsh-agent-team-remotes/types'
 import {
   IconCheckOutline14, IconCloseOutline16, IconEditOutline16, IconPlusOutline16,
   IconRefreshOutline14, IconTrashOutline16, IconUserOutline16, StateDot,
@@ -61,7 +61,7 @@ function items(value: string): string[] {
 }
 
 function taskIds(value: string): TeamTaskId[] {
-  return items(value) as TeamTaskId[]
+  return items(value)
 }
 
 function statusKey(status: TeamTask['status']): TeamKey {
@@ -117,18 +117,20 @@ export function TeamAction({
     setPendingTask(null)
   }, [sessionId])
 
-  const refresh = useCallback(async (): Promise<void> => {
+  const refresh = useCallback(async (): Promise<boolean> => {
     const requestedSession = sessionId
     const generation = ++refreshGeneration.current
     setLoading(true)
     const result = await load(requestedSession)
-    if (sessionRef.current !== requestedSession || refreshGeneration.current !== generation) return
+    if (sessionRef.current !== requestedSession || refreshGeneration.current !== generation) return false
     setLoading(false)
     if (result.ok) {
       setView(result.value)
       setError(null)
+      return true
     } else {
       setError(result.error)
+      return false
     }
   }, [load, sessionId])
 
@@ -148,9 +150,9 @@ export function TeamAction({
     setPendingTask(null)
     if (!result.ok) {
       if (result.conflict) {
-        await refresh()
+        const reloaded = await refresh()
         if (sessionRef.current !== requestedSession) return undefined
-        setError(t('conflict'))
+        if (reloaded) setError(t('conflict'))
       } else {
         setError(result.error)
       }
@@ -234,10 +236,12 @@ export function TeamAction({
     setPendingTask(null)
     if (!dependencyResult.ok) {
       if (dependencyResult.conflict) {
-        await refresh()
+        const reloaded = await refresh()
         if (sessionRef.current !== requestedSession) return
+        if (reloaded) setError(t('conflict'))
+      } else {
+        setError(dependencyResult.error)
       }
-      setError(dependencyResult.conflict ? t('conflict') : dependencyResult.error)
       return
     }
     invalidateRefresh()

@@ -1,3 +1,25 @@
-import { clientBundle } from '../../client/tsdown.client.ts'
+import { defineConfig } from 'tsdown'
 
-export default clientBundle('@deepseek-ai/dsh-agent-team-remotes', ['lib/types/index.js', 'lib/types/invariant.js'])
+/** Build the Host adapter and invariant companion as independent bundles. */
+export default defineConfig([
+  {
+    entry: ['lib/types/index.js'],
+    outDir: 'lib',
+    format: ['esm'],
+    platform: 'node',
+    target: 'es2024',
+    fixedExtension: false,
+    dts: false,
+    clean: false,
+  },
+  {
+    entry: ['lib/types/invariant.js'],
+    outDir: 'lib',
+    format: ['esm'],
+    platform: 'node',
+    target: 'es2024',
+    fixedExtension: false,
+    dts: false,
+    clean: false,
+  },
+])

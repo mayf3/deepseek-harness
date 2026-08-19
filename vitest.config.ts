@@ -268,8 +268,6 @@ export default defineConfig({
         // only in lib; the post-build built-bin smoke executes both entries.
         'packages/api/remotes/src/index.ts',
         'packages/api/remotes/src/client/index.ts',
-        'packages/experimental/agent-team-remotes/src/index.ts',
-        'packages/experimental/agent-team-remotes/src/client/index.ts',
         // Slash/command/input round: per-file gaps deferred with the same
         // client-lane debt. TODO(gui): cover and remove with the lane above.
         'packages/client/connection/src/client/fixture.ts',

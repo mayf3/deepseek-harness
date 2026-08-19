@@ -1,10 +1,9 @@
 /** Agent Teams service façade over roster, mailbox, task, and runtime lifecycle owners. */
 
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-session-persistence'
-import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { TeamActivity } from './activity.ts'
 import { errorMessage, TeamError } from './error.ts'
 import { TeamJournal } from './journal.ts'
@@ -23,8 +22,6 @@ import type {
   SpawnTeammateResult,
   TeamMemberView,
   TeamTaskView,
-  TeamTaskMutationResult,
-  TeamView,
   TeamWaitResult,
   UpdateTeamTaskRequest,
 } from './types.ts'
@@ -56,7 +53,7 @@ function positiveLimit(name: string, value: number): number {
 }
 
 /** Agent Teams service backed by the exact live Lead Session log. */
-export class TeamService extends TypertRemoteService {
+export class TeamService extends Service {
   static inject = ['agents', 'sessions', 'sessionPersistence', 'subagents']
 
   static Config: z<Config> = z.object({
@@ -136,19 +133,6 @@ export class TeamService extends TypertRemoteService {
   }
 
   /**
-   * Read the current roster and non-deleted task board for a browser client.
-   * @param agent - exact live Team member used as the authority credential.
-   * @returns detached current roster and task views.
-   */
-  @Remote('view')
-  view(agent: Agent): TeamView {
-    return {
-      members: this.listMembers(agent),
-      tasks: this.listTasks(agent),
-    }
-  }
-
-  /**
    * Create one named, continuable direct child of the Team Lead.
    * @param caller - exact live Lead Agent.
    * @param request - immutable name, description, prompt, context mode, provider, and cancellation.
@@ -179,17 +163,6 @@ export class TeamService extends TypertRemoteService {
   }
 
   /**
-   * Create one shared task for a browser client.
-   * @param agent - exact live Team member creating the task.
-   * @param request - task text, blockers, and advisory write scopes.
-   * @returns the revision-one task view.
-   */
-  @Remote('createTask')
-  createTaskForClient(agent: Agent, request: CreateTeamTaskRequest): Promise<TeamTaskView> {
-    return this.createTask(agent, request)
-  }
-
-  /**
    * Return one task, including a deleted tombstone.
    * @param caller - exact live Team member reading the task.
    * @param id - Team-local task identity.
@@ -216,28 +189,6 @@ export class TeamService extends TypertRemoteService {
    */
   async updateTask(caller: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskView> {
     return await this.tasks.update(caller, this.roster.membership(caller), request)
-  }
-
-  /**
-   * Apply one task mutation for a browser client while preserving CAS conflicts.
-   * @param agent - exact live Team member authorizing the mutation.
-   * @param request - task identity, expected revision, action, and action fields.
-   * @returns the committed task or a browser-safe Team rejection.
-   */
-  @Remote('updateTask')
-  async updateTaskForClient(agent: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskMutationResult> {
-    try {
-      return { ok: true, value: await this.updateTask(agent, request) }
-    } catch (error) {
-      if (!(error instanceof TeamError)) throw error
-      return {
-        ok: false,
-        error: {
-          code: error.code === 'TEAM_TASK_STALE_REVISION' ? 'team-task-conflict' : 'team-rejected',
-          message: error.message,
-        },
-      }
-    }
   }
 
   /**

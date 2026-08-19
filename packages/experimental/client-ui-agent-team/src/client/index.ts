@@ -1,16 +1,17 @@
 /** Browser plugin for the Agent Teams roster, task board, and Team-routed teammate navigation. */
 
-import type {} from '@deepseek-ai/dsh-agent-team-remotes/client'
-import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type {} from '@deepseek-ai/dsh-client-locale/client'
+import teamsRemote from '@deepseek-ai/dsh-agent-team-remotes/remote'
 import type {
   TeamMemberView as TeamRosterMember,
   TeamTaskMutationResult,
   TeamTaskView as TeamTask,
   TeamView,
-} from '@deepseek-ai/dsh-team/client'
+} from '@deepseek-ai/dsh-agent-team-remotes/types'
+import type {} from '@deepseek-ai/dsh-agent-team-remotes/remote'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { TeamAction, type TeamActionInjected, type TeamActionResult } from './TeamAction.tsx'
 import { en, zh, type TeamKey } from './locales.ts'
@@ -26,7 +27,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Required browser services for RPC, navigation, slots, and localized copy. */
-export const inject = ['sessions', 'remote', 'remote.teams', 'slots', 'locale']
+export const inject = ['sessions', 'remote', 'slots', 'locale']
 
 function settle<T>(result: RemoteResult<T>): TeamActionResult<T> {
   if (result.ok) return { ok: true, value: result.value }
@@ -47,8 +48,7 @@ function settleMutation(result: RemoteResult<TeamTaskMutationResult>): TeamActio
   }
 }
 
-/** Register the Team conversation-header action and its RPC-backed business face. */
-export function apply(ctx: ClientContext): void {
+function registerUi(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register('team', { zh, en }), 'ui-team: dictionaries')
   const sessions = ctx.sessions
   const leadSessionId = (sessionId: SessionId): SessionId => {
@@ -77,7 +77,7 @@ export function apply(ctx: ClientContext): void {
       if (sessions.list.getSnapshot().current !== sessionId) return
       sessions.openSubagent({
         parentSessionId,
-        childSessionId: member.id,
+        childSessionId: member.id as SessionId,
         mode: 'continuable',
       })
     },
@@ -93,4 +93,21 @@ export function apply(ctx: ClientContext): void {
       inject: () => actions,
     }, TeamAction),
   )
+}
+
+/** Mount the generated Team Remote contribution, then register its browser UI. */
+export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
+  const disposeRemote = await ctx.remote.$mount(teamsRemote)
+  const ui = ctx.inject(['sessions', 'remote.teams', 'slots', 'locale'], registerUi)
+  try {
+    await ui
+  } catch (error) {
+    await ui.dispose()
+    await disposeRemote()
+    throw error
+  }
+  return async () => {
+    await ui.dispose()
+    await disposeRemote()
+  }
 }

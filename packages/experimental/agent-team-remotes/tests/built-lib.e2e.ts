@@ -1,4 +1,4 @@
-/** Plain-Node smoke for the generated Agent Teams Client Remote assembly. */
+/** Plain-Node smoke for the built Agent Teams Remote adapter artifacts. */
 
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -12,63 +12,37 @@ const artifact = (path: string): string => join(root, path)
 const artifactUrl = (path: string): string => pathToFileURL(artifact(path)).href
 
 const requiredArtifacts = [
-  'packages/experimental/agent-team-remotes/lib/client.js',
   'packages/experimental/agent-team-remotes/lib/index.js',
-  'packages/experimental/team/lib/typert.remote-client.js',
+  'packages/experimental/agent-team-remotes/lib/typert.remote-client.js',
 ].every(path => existsSync(artifact(path)))
 
-describe.skipIf(!requiredArtifacts)('Agent Teams Remote built LIB assembly', () => {
-  it('mounts exactly the generated Team contribution and keeps the Host half inert', async () => {
+describe.skipIf(!requiredArtifacts)('Agent Teams Remote built LIB adapter', () => {
+  it('loads the Host adapter and its generated browser contribution under plain Node', async () => {
     const urls = {
-      client: artifactUrl('packages/experimental/agent-team-remotes/lib/client.js'),
       host: artifactUrl('packages/experimental/agent-team-remotes/lib/index.js'),
+      remote: artifactUrl('packages/experimental/agent-team-remotes/lib/typert.remote-client.js'),
     }
     const script = `
-      const handoffs = new Map()
-      globalThis.window = {
-        __ModuleLoader__: {
-          load(handoff) { handoffs.set(handoff.id, handoff) },
-        },
-      }
       const host = await import(${JSON.stringify(urls.host)})
-      host.apply()
-      await import(${JSON.stringify(urls.client)})
-      const handoff = handoffs.get('@deepseek-ai/dsh-agent-team-remotes')
-      if (handoff === undefined) throw new Error('missing Agent Teams Remote Client handoff')
-      const plugin = handoff.factory(specifier => {
-        throw new Error('unexpected Client external ' + specifier)
-      })
-      let mounted
-      const dispose = () => {}
-      const result = await plugin.apply({
-        remote: {
-          $mount(contribution) {
-            mounted = contribution
-            return Promise.resolve(dispose)
-          },
-        },
-      })
+      const remote = await import(${JSON.stringify(urls.remote)})
       console.log(JSON.stringify({
-        inject: plugin.inject,
-        sameDisposer: result === dispose,
-        methods: mounted?.descriptors.map(descriptor => descriptor.id),
+        className: host.default.name,
+        methods: remote.default.descriptors.map(descriptor => descriptor.id),
       }))
     `
 
     const result = await runPlainNode(script)
     expect(result.exitCode, `stderr:\n${result.stderr}`).toBe(0)
     const output = JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}') as {
-      inject: string[]
-      sameDisposer: boolean
+      className: string
       methods: string[]
     }
     expect(output).toEqual({
-      inject: ['remote'],
-      sameDisposer: true,
+      className: 'AgentTeamRemoteService',
       methods: [
-        '@deepseek-ai/dsh-team#teams/createTask',
-        '@deepseek-ai/dsh-team#teams/updateTask',
-        '@deepseek-ai/dsh-team#teams/view',
+        '@deepseek-ai/dsh-agent-team-remotes#teams/createTask',
+        '@deepseek-ai/dsh-agent-team-remotes#teams/updateTask',
+        '@deepseek-ai/dsh-agent-team-remotes#teams/view',
       ],
     })
   })

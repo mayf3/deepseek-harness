@@ -165,9 +165,9 @@ dispose 会关闭准入、中止并等待已获准的创建与 mailbox dispatch 
 
 <a id="model-experience"></a>
 
-### Client Remote 界面
+### 浏览器适配器
 
-`TeamService` 提供生成式 `teams/view`、`teams/createTask` 与 `teams/updateTask` Typert Remote method。`./client` 只导出浏览器安全的 Team request 与 view type；`./typert` 和 `./remote` 是生成的 Host 与 Client artifact。View 不包含 mailbox 内容或已删除 task tombstone。Task conflict 通过显式 business result 跨越 Remote，使 Client 能重新读取状态，而不会把 Team error code 丢失在通用 carrier failure 中。
+`TeamService` 只提供 roster、mailbox、task 与 lifecycle operation。私有 [`@deepseek-ai/dsh-agent-team-remotes`](../agent-team-remotes/README.md) 包负责浏览器 projection、Remote method 与 transport error mapping。`./client` 重新导出可在浏览器 compilation face 中安全使用的 domain request 与 view type。
 
 ## 模型体验
 

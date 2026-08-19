@@ -2,15 +2,15 @@
 
 [English](README.md) | 中文
 
-Agent Teams Typert Remote contribution 的私有 Client assembly。它的 Client entry 导入生成式 `@deepseek-ai/dsh-team/remote` runtime value，通过稳定 `ctx.remote.$mount()` service 挂载，并重新导出为 `ctx.remote.teams` 增加类型的 declaration merge。
+Agent Teams 的私有浏览器 Remote adapter。其 Host service 注册为 `ctx.teamRemote`，并导出独立的 `teams` wire namespace，因此不会替换或扩大 domain 所有的 `ctx.teams` service。Adapter 将所有读取与 mutation 委托给 `ctx.teams`，不持有 roster、mailbox、task 或 lifecycle state。
 
-该 contribution 提供 `teams/view`、`teams/createTask` 与 `teams/updateTask`。生成式 codec 校验参数和结果，Team service 仍是 roster 与 task 状态的唯一 owner。本包不包含 Host resolver 或 transport 逻辑；`@deepseek-ai/dsh-api-remotes` 提供稳定 Remote service 与 Agent identity policy。
+生成式 contribution 提供 `teams/view`、`teams/createTask` 与 `teams/updateTask`。View 不包含 mailbox 内容或已删除 task tombstone。Task conflict 通过封闭 business result 跨越 Remote；其他 Team rejection 与 carrier 或 Agent lookup failure 保持可区分。`@deepseek-ai/dsh-api-remotes` 提供稳定 Remote carrier 与 Agent identity policy。
 
-Root export 不执行行为，因为本包只在 Client 环境挂载。[`@deepseek-ai/dsh-agent-team-web-profile`](../agent-team-web-profile/README.md) 会先于 Team UI 插入本包，确保 UI 激活时 namespace 已存在。
+[`@deepseek-ai/dsh-client-ui-agent-team`](../client-ui-agent-team/README.md) 通过 `ctx.remote.$mount()` 挂载生成式 Client contribution。[`@deepseek-ai/dsh-agent-team-web-profile`](../agent-team-web-profile/README.md) 会先于该 UI 插入此 Host adapter。
 
 ## 模型体验
 
-无直接影响，因为该 Client assembly 只挂载 typed Remote method，不注册面向模型的输入。
+无直接影响，因为该浏览器 adapter 只委托 typed Remote method，不注册面向模型的输入。
 
 #### KV Cache 影响
 
@@ -18,5 +18,5 @@ Root export 不执行行为，因为本包只在 Client 环境挂载。[`@deepse
 
 ## 已知限制与暂缓事项
 
-- **固定 contribution 集合**：增加 Team Remote method 时，需要重新生成 Team artifact 并重建这个显式 assembly。
+- **固定 contribution 集合**：增加浏览器 operation 时，需要修改该 adapter 并重新生成其 Remote artifact。
 - **仅限源码 checkout**：正式发布会排除这个私有包。

@@ -1,4 +1,4 @@
-/** Package-owned invariant companion for the Agent Teams Client Remote assembly. */
+/** Package-owned invariant companion for the Agent Teams Remote adapter. */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
@@ -10,8 +10,8 @@ export const name = 'agent-team-remotes-invariant'
 /** Service required before the companion can register. */
 export const inject = ['invariants']
 
-// No runtime invariant: Client Remote validates each request and result with
-// the generated Team codecs, while the Team service owns mutable state.
+// No runtime invariant: generated codecs validate the adapter's requests and
+// results, while the Team service owns every mutable relationship.
 const install: InvariantInstaller = () => {}
 
 /**

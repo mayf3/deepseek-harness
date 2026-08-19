@@ -758,7 +758,11 @@
     },
     "packages/experimental/agent-team-remotes": {
       "entry": [
+        "tests/**/*.spec.ts",
         "tests/**/*.e2e.ts"
+      ],
+      "ignoreDependencies": [
+        "zod"
       ]
     },
     "packages/experimental/agent-team-web-profile": {

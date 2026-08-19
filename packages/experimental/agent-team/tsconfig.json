@@ -14,7 +14,6 @@
     { "path": "../../core/session" },
     { "path": "../../core/agent" },
     { "path": "../../subagent/subagent" },
-    { "path": "../../typert/protocol" },
     { "path": "../../session/session-persistence" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]

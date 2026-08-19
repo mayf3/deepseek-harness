@@ -10,13 +10,13 @@ The durable Agent Teams runtime owns roster, mailbox, and task state but exposes
 
 ## Decision
 
-`TeamService` directly contributes three Typert Remote methods: `teams/view`, `teams/createTask`, and `teams/updateTask`. The generated codecs use a browser-safe `@deepseek-ai/dsh-team/client` vocabulary. Views contain roster and current task state but omit pending mailbox content and deleted task tombstones. Task conflicts cross Remote as a closed business result so the browser can preserve `team-task-conflict`; transport and lookup failures remain ordinary `RemoteResult` failures.
+The [browser Remote adapter decision](../simplification/2026-08-19-isolate-agent-team-browser-remote.md) places `teams/view`, `teams/createTask`, and `teams/updateTask` on the private `ctx.teamRemote` service, whose wire namespace remains `teams`. The adapter delegates to `ctx.teams` and owns browser-safe view and mutation-result types. Views contain roster and current task state but omit pending mailbox content and deleted task tombstones. Task conflicts cross Remote as a closed business result so the browser can preserve `team-task-conflict`; transport and lookup failures remain ordinary `RemoteResult` failures.
 
-`@deepseek-ai/dsh-agent-team-remotes` is a private Client assembly that mounts the generated Team contribution through the stable `ctx.remote` service. `@deepseek-ai/dsh-client-ui-agent-team` consumes only `ctx.remote.teams`, Client Session navigation, locale, and slots. It displays roster status, model and diagnostics and supports task create, edit, dependency update, assignment, completion, reopen, and deletion. Every mutation sends the displayed revision. A conflict reloads the complete Team view and asks the user to review instead of retrying or overwriting automatically. Overlapping refreshes publish only the latest request for the selected Session, and a successful mutation invalidates older refresh snapshots.
+`@deepseek-ai/dsh-client-ui-agent-team` mounts the adapter's generated contribution through the stable `ctx.remote` service, then consumes `ctx.remote.teams`, Client Session navigation, locale, and slots. It displays roster status, model and diagnostics and supports task create, edit, dependency update, assignment, completion, reopen, and deletion. Every mutation sends the displayed revision. A conflict reloads the complete Team view and asks the user to review only after the reload succeeds; a reload failure remains visible. Overlapping refreshes publish only the latest request for the selected Session, and a successful mutation invalidates older refresh snapshots.
 
 Teammate navigation uses the existing `{ parentSessionId, childSessionId, mode: 'continuable' }` Subagent address without a Team tag. The UI refreshes the direct-child catalog, rechecks the selected Session, and opens the addressed conversation. History and later human prompts follow the stable Subagent path; the Team mailbox remains reserved for Team peer delivery from Team tools.
 
-`@deepseek-ai/dsh-agent-team-web-profile` inserts the private Remote assembly and UI after the stable Web bundle. It is applied alongside the Host-side `@deepseek-ai/dsh-agent-team-profile`. Neither stable bundle contains disabled Team rows or dependencies.
+`@deepseek-ai/dsh-agent-team-web-profile` inserts the private Host Remote adapter and UI after the stable Web bundle. It is applied alongside the Host-side `@deepseek-ai/dsh-agent-team-profile`. Neither stable bundle contains disabled Team rows or dependencies.
 
 ## Boundaries
 
@@ -32,8 +32,8 @@ The Web UI has no mailbox timeline, worktree or Git controls, teammate creation,
 
 ## Testing
 
-Team Remote generation and Host build verify the typed methods. Client typechecking and browser component tests cover the mounted namespace, Lead routing, every task action, conflict reload, stale async results, navigation, disposal, and status or error presentation. A Web end-to-end test composes both experimental profile layers over the real Host Remote flow.
+Remote-adapter unit tests, generation, and a plain-Node built-artifact smoke verify delegation, error mapping, and typed methods. Client typechecking and browser component tests cover the mounted namespace, Lead routing, every task action, successful and failed conflict reloads, stale async results, navigation, disposal, and status or error presentation. A Web end-to-end test composes both experimental profile layers over the real Host Remote flow.
 
 ## Consequences
 
-The Team service remains the only state machine, while Web is a typed projection and command adapter. The stable API Proxy, Client runtime, Subagent UI, and Web bundle remain Team-agnostic. Source-checkout users must add two ordered experimental profile layers to a Web profile, and promotion can move those packages without changing their npm names or generated namespace.
+The Team service remains the only state machine and exposes no browser-specific methods or result types. The stable API Proxy, Client runtime, Subagent UI, and Web bundle remain Team-agnostic. Source-checkout users must add two ordered experimental profile layers to a Web profile, and promotion can move those packages without changing their npm names or generated namespace.

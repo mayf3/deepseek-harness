@@ -2,15 +2,15 @@
 
 English | [中文](README.zh.md)
 
-Private Client assembly for the Agent Teams Typert Remote contribution. Its Client entry imports the generated `@deepseek-ai/dsh-team/remote` runtime value, mounts it through the stable `ctx.remote.$mount()` service, and re-exports the declaration merge that adds `ctx.remote.teams`.
+Private browser Remote adapter for Agent Teams. Its Host service is registered as `ctx.teamRemote` and exports the separate `teams` wire namespace, so it cannot replace or widen the domain-owned `ctx.teams` service. The adapter delegates every read and mutation to `ctx.teams` and owns no roster, mailbox, task, or lifecycle state.
 
-The contribution exposes `teams/view`, `teams/createTask`, and `teams/updateTask`. The generated codecs validate arguments and results, while the Team service remains the only owner of roster and task state. This package contains no Host resolver or transport logic; `@deepseek-ai/dsh-api-remotes` supplies the stable Remote service and Agent identity policy.
+The generated contribution exposes `teams/view`, `teams/createTask`, and `teams/updateTask`. Views omit mailbox contents and deleted task tombstones. Task conflicts cross Remote as a closed business result; other Team rejections remain distinguishable from carrier or Agent-lookup failures. `@deepseek-ai/dsh-api-remotes` supplies the stable Remote carrier and Agent identity policy.
 
-The root export is inert because this package mounts only in a Client environment. [`@deepseek-ai/dsh-agent-team-web-profile`](../agent-team-web-profile/README.md) inserts it before the Team UI so the namespace exists when the UI activates.
+[`@deepseek-ai/dsh-client-ui-agent-team`](../client-ui-agent-team/README.md) mounts the generated Client contribution through `ctx.remote.$mount()`. [`@deepseek-ai/dsh-agent-team-web-profile`](../agent-team-web-profile/README.md) inserts this Host adapter before that UI.
 
 ## Model Experience
 
-None, as this Client assembly only mounts typed Remote methods and registers no model-facing input.
+None, as this browser adapter delegates typed Remote methods and registers no model-facing input.
 
 #### KV Cache effect
 
@@ -18,5 +18,5 @@ No direct effect; invoked Team methods and their model-facing consumers own any 
 
 ## Known Limitations and Deferred Work
 
-- **Fixed contribution set** — adding a Team Remote method requires regenerating the Team artifacts and rebuilding this explicit assembly.
+- **Fixed contribution set** — adding a browser operation requires changing this adapter and regenerating its Remote artifacts.
 - **Source-checkout only** — this private package is excluded from official releases.

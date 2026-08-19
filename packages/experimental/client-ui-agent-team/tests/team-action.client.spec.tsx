@@ -3,7 +3,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { TeamTaskId, TeamTaskView as TeamTask, TeamView } from '@deepseek-ai/dsh-team/client'
+import type { TeamView } from '@deepseek-ai/dsh-agent-team-remotes/types'
+import type { TeamTaskView as TeamTask } from '@deepseek-ai/dsh-agent-team-remotes/types'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import {
@@ -14,9 +15,8 @@ import { zh } from '../src/client/locales.ts'
 afterEach(cleanup)
 
 const SESSION = 'lead' as SessionId
-const tid = (value: string): TeamTaskId => value as TeamTaskId
 const task: TeamTask = {
-  id: tid('task-1'),
+  id: 'task-1',
   revision: 1,
   subject: 'Implement runtime',
   description: 'Build the Team runtime',
@@ -31,7 +31,7 @@ const view: TeamView = {
   members: [
     { id: SESSION, name: 'lead', role: 'lead', status: 'idle', model: 'model-a', diagnostics: [] },
     {
-      id: 'worker-id' as SessionId,
+      id: 'worker-id',
       name: 'worker',
       role: 'teammate',
       status: 'inactive',
@@ -53,7 +53,7 @@ function props(actions: TeamActionInjected, sessionId: SessionId = SESSION): Tea
 function actions(overrides: Partial<TeamActionInjected> = {}): TeamActionInjected {
   return {
     load: () => Promise.resolve({ ok: true, value: view }),
-    createTask: () => Promise.resolve({ ok: true, value: { ...task, id: tid('task-2'), subject: 'New task' } }),
+    createTask: () => Promise.resolve({ ok: true, value: { ...task, id: 'task-2', subject: 'New task' } }),
     updateTask: () => Promise.resolve({ ok: true, value: { ...task, revision: 2 } }),
     openTeammate: () => Promise.resolve(),
     ...overrides,
@@ -67,7 +67,7 @@ describe('TeamAction', () => {
     const nextView: TeamView = {
       ...view,
       members: [{ id: nextSession, name: 'lead', role: 'lead', status: 'idle', diagnostics: [] }],
-      tasks: [{ ...task, id: tid('task-next'), subject: 'Next session task' }],
+      tasks: [{ ...task, id: 'task-next', subject: 'Next session task' }],
     }
     const load = vi.fn((sessionId: SessionId) => sessionId === SESSION
       ? firstLoad.promise
@@ -104,7 +104,7 @@ describe('TeamAction', () => {
     const newer = Promise.withResolvers<TeamActionResult<TeamView>>()
     const newestView = {
       ...view,
-      tasks: [{ ...task, id: tid('newest-task'), subject: 'Newest task' }],
+      tasks: [{ ...task, id: 'newest-task', subject: 'Newest task' }],
     }
     const load = vi.fn()
       .mockResolvedValueOnce({ ok: true, value: view })
@@ -297,6 +297,38 @@ describe('TeamAction', () => {
     expect(updateTask).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps reload failures visible after task and dependency conflicts', async () => {
+    const taskLoad = vi.fn()
+      .mockResolvedValueOnce({ ok: true, value: view })
+      .mockResolvedValueOnce({ ok: false, error: 'task reload failed', conflict: false })
+    const first = render(<TeamAction {...props(actions({
+      load: taskLoad,
+      updateTask: () => Promise.resolve({ ok: false, error: 'stale task', conflict: true }),
+    }))} />)
+    fireEvent.click(screen.getByRole('button', { name: /Agent Team/u }))
+    await screen.findByText('Implement runtime')
+    fireEvent.click(screen.getByRole('button', { name: /完成/u }))
+    expect(await screen.findByText('task reload failed')).toBeTruthy()
+    expect(screen.queryByText(zh.conflict)).toBeNull()
+    first.unmount()
+
+    const dependencyLoad = vi.fn()
+      .mockResolvedValueOnce({ ok: true, value: view })
+      .mockResolvedValueOnce({ ok: false, error: 'dependency reload failed', conflict: false })
+    const dependencyUpdate = vi.fn()
+      .mockResolvedValueOnce({ ok: true, value: { ...task, revision: 2, subject: 'Edited' } })
+      .mockResolvedValueOnce({ ok: false, error: 'stale dependency', conflict: true })
+    render(<TeamAction {...props(actions({ load: dependencyLoad, updateTask: dependencyUpdate }))} />)
+    fireEvent.click(screen.getByRole('button', { name: /Agent Team/u }))
+    await screen.findByText('Implement runtime')
+    fireEvent.click(screen.getByRole('button', { name: /编辑/u }))
+    fireEvent.change(screen.getByPlaceholderText('任务标题'), { target: { value: 'Edited' } })
+    fireEvent.change(screen.getByPlaceholderText(zh.blockers), { target: { value: 'task-2' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText('dependency reload failed')).toBeTruthy()
+    expect(screen.queryByText(zh.conflict)).toBeNull()
+  })
+
   it('renders roster/task state variants and contains navigation, refresh, and close actions', async () => {
     const { ownerName: _ownerName, ...unownedTask } = task
     const richView: TeamView = {
@@ -305,14 +337,14 @@ describe('TeamAction', () => {
         view.members[0]!,
         { ...view.members[1]!, status: 'running' },
         {
-          id: 'failed-id' as SessionId,
+          id: 'failed-id',
           name: 'failed-worker',
           role: 'teammate',
           status: 'failed',
           diagnostics: ['provider failed'],
         },
         {
-          id: 'provisioning-id' as SessionId,
+          id: 'provisioning-id',
           name: 'provisioning-worker',
           role: 'teammate',
           status: 'provisioning',
@@ -320,9 +352,9 @@ describe('TeamAction', () => {
         },
       ],
       tasks: [
-        { ...unownedTask, id: tid('ready-task'), status: 'pending', ready: true },
-        { ...unownedTask, id: tid('blocked-task'), status: 'pending', ready: false },
-        { ...task, id: tid('completed-task'), status: 'completed' },
+        { ...unownedTask, id: 'ready-task', status: 'pending', ready: true },
+        { ...unownedTask, id: 'blocked-task', status: 'pending', ready: false },
+        { ...task, id: 'completed-task', status: 'completed' },
       ],
     }
     const load = vi.fn(() => Promise.resolve({ ok: true as const, value: richView }))
@@ -378,7 +410,7 @@ describe('TeamAction', () => {
     fireEvent.change(screen.getByPlaceholderText('任务描述'), { target: { value: 'Late description' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     third.rerender(<TeamAction {...props(actions(), 'next-session' as SessionId)} />)
-    pending.resolve({ ok: true, value: { ...task, id: tid('late-task') } })
+    pending.resolve({ ok: true, value: { ...task, id: 'late-task' } })
     await Promise.resolve()
     expect(screen.queryByText('Late task')).toBeNull()
   })
@@ -467,7 +499,7 @@ describe('TeamAction', () => {
   })
 
   it('skips the dependency mutation when an edit keeps the same blockers', async () => {
-    const blockedTask: TeamTask = { ...task, blockedBy: [tid('task-0')] }
+    const blockedTask: TeamTask = { ...task, blockedBy: ['task-0'] }
     const updateTask = vi.fn().mockResolvedValue({
       ok: true,
       value: { ...blockedTask, revision: 2, subject: 'Same dependencies' },

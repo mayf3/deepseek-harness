@@ -165,9 +165,9 @@ Read these pages when the package-level contract is not enough. They move from t
 
 <a id="model-experience"></a>
 
-### Client Remote surface
+### Browser adapter
 
-`TeamService` contributes the generated `teams/view`, `teams/createTask`, and `teams/updateTask` Typert Remote methods. `./client` exports only browser-safe Team request and view types; `./typert` and `./remote` are generated Host and Client artifacts. The view omits mailbox contents and deleted task tombstones. Task conflicts cross Remote as an explicit business result so a Client can reload instead of losing the Team error code inside a generic carrier failure.
+`TeamService` exposes only roster, mailbox, task, and lifecycle operations. The private [`@deepseek-ai/dsh-agent-team-remotes`](../agent-team-remotes/README.md) package owns browser projections, Remote methods, and transport error mapping. `./client` re-exports the domain request and view types that are safe in a browser compilation face.
 
 ## Model Experience
 

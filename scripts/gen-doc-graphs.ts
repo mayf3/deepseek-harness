@@ -529,6 +529,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns the implicit-root roster, durable peer mailbox, shared task DAG, and continuable-child lifecycle; tool-agent-team contributes the scoped model policy and controls.',
   },
   {
+    key: 'teamRemote',
+    pkg: 'agent-team-remotes',
+    title: 'Agent Teams browser adapter',
+    mode: 'core',
+    consumers: ['client-ui-agent-team'],
+    note: 'Stateless private adapter from the teams domain to the generated teams Remote namespace; the Web UI mounts its Client contribution.',
+  },
+  {
     key: 'jobs',
     pkg: 'jobs',
     title: 'Background job registry',
