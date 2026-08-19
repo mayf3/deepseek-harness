@@ -96,6 +96,12 @@ describe('parseSessionLog', () => {
     expect(parseSessionLog(`${header}\n\n${JSON.stringify(ev)}\n\n`)).toEqual([ev])
   })
 
+  it('rejects non-object body rows with their source line', () => {
+    const header = JSON.stringify({ type: 'session', version: 0, id: 's1', createdAt: 0 })
+    expect(() => parseSessionLog(`${header}\nnull\n`))
+      .toThrow('session snapshot line 2 must be a JSON object')
+  })
+
   it('expands a packed chunk row into its events (a fixture recorded with packChunks on)', () => {
     const header = JSON.stringify({ type: 'session', version: 0, id: 's1', createdAt: 0 })
     const row = JSON.stringify({

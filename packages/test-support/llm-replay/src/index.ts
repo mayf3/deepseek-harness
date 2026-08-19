@@ -166,20 +166,41 @@ export interface SessionScript {
  * @returns every event after the header, in log order.
  */
 export function parseSessionLog(text: string): SessionEvent[] {
-  const lines = text.split('\n').filter(line => line.trim().length > 0)
   const events: SessionEvent[] = []
   let nextSeq = 0
+  let headerSkipped = false
   // The JSONL backend guarantees line 0 is the session header. Projected
   // fixtures omit event envelopes; synthesize them while decoding so callers
   // still receive complete SessionEvent values.
-  for (let i = 1; i < lines.length; i++) {
-    const record = JSON.parse(lines[i] as string) as Record<string, unknown>
+  for (const [index, line] of text.split(/\r?\n/).entries()) {
+    if (line.trim().length === 0) continue
+    if (!headerSkipped) {
+      headerSkipped = true
+      continue
+    }
+    let value: unknown
+    try {
+      value = JSON.parse(line) as unknown
+    } catch (error) {
+      throw new Error(`session snapshot line ${index + 1} contains invalid JSON`, { cause: error })
+    }
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error(`session snapshot line ${index + 1} must be a JSON object`)
+    }
+    const record = value as Record<string, unknown>
     const packed = PACKED_CHUNK_ROW_TYPES.has(record.type as string)
     const seqKey = packed ? 'seq0' : 'seq'
     const timeKey = packed ? 'time0' : 'time'
     if (!Object.hasOwn(record, seqKey)) record[seqKey] = nextSeq
     if (!Object.hasOwn(record, timeKey)) record[timeKey] = 0
-    const decoded = decodeStorageRecord(record)
+    let decoded: SessionEvent[]
+    try {
+      decoded = decodeStorageRecord(record)
+    } catch (error) {
+      /* v8 ignore next -- decodeStorageRecord only throws Error instances; the String arm satisfies unknown narrowing. */
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(`session snapshot line ${index + 1}: ${detail}`, { cause: error })
+    }
     events.push(...decoded)
     nextSeq += decoded.length
   }
