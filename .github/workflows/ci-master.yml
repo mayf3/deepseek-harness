@@ -62,6 +62,16 @@ jobs:
           cp /var/cache/apt/archives/*.deb "$HOME/wine-debs/"
           du -sh "$HOME/wine-debs"
 
+  # Hot-standby drill for the in-house self-hosted pool: every master move
+  # re-runs the complete unsharded aggregate on the persistent 64-core VM,
+  # continuously proving that environment can take over a required lane if
+  # the hosted pools degrade (the switch is then setting the writer-manageable
+  # DSH_CI_FAILOVER_LINUX variable — see the failover runbook, no merge required).
+  # Push-triggered, so this lane always executes the base branch's own
+  # workflow definition. This workflow never listens to pull_request, so the
+  # drill does not appear in PR checks. No cache steps because the VM's
+  # persistent pnpm store and tool caches make them redundant (and saving here
+  # would poison the hosted cache namespace with self-hosted paths).
   serial-linux-selfhosted:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     name: serial / linux (self-hosted standby)
