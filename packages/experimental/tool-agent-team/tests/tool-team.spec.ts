@@ -17,7 +17,7 @@ import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import * as ToolSubagentControl from '@deepseek-ai/dsh-tool-subagent-control'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
-import TeamService from '../../team/src/index.ts'
+import TeamService from '../../agent-team/src/index.ts'
 import * as toolTeam from '../src/index.ts'
 
 const SIGNAL = new AbortController().signal
