@@ -330,11 +330,26 @@ export default withMermaid({
     config(md) {
       const renderText = md.renderer.rules.text
       const renderCode = md.renderer.rules.code_inline
-      if (renderText === undefined || renderCode === undefined) {
-        throw new Error('VitePress Markdown renderer is missing its text or inline-code rule.')
+      const renderFence = md.renderer.rules.fence
+      if (renderText === undefined || renderCode === undefined || renderFence === undefined) {
+        throw new Error('VitePress Markdown renderer is missing a required rendering rule.')
       }
       md.renderer.rules.text = (...args) => escapeVueInterpolation(renderText(...args))
       md.renderer.rules.code_inline = (...args) => escapeVueInterpolation(renderCode(...args))
+      const renderedFences = new Map<string, string>()
+      md.renderer.rules.fence = (...args) => {
+        const [tokens, index] = args
+        const token = tokens[index]
+        if (token === undefined) throw new Error('VitePress code-fence renderer received no token.')
+        // Mermaid output embeds the token position, so only Shiki fences are reusable.
+        if (['mermaid', 'mmd'].includes(token.info.trim().split(/\s+/, 1)[0] ?? '')) return renderFence(...args)
+        const key = JSON.stringify([token.content, token.info, token.markup, token.attrs])
+        const cached = renderedFences.get(key)
+        if (cached !== undefined) return cached
+        const html = renderFence(...args)
+        renderedFences.set(key, html)
+        return html
+      }
     },
   },
   mermaid: {},

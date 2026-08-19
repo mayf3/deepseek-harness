@@ -26,6 +26,8 @@ The projector parses Markdown links without reserializing the document. A link t
 
 Mermaid renders the canonical diagrams. The website workspace explicitly declares the five packages that `vitepress-plugin-mermaid` asks Vite to prebundle because pnpm's strict dependency isolation otherwise makes those transitive packages unavailable to the local development server; Knip records this runtime-only use as an intentional dependency exception.
 
+The configured Markdown renderer keeps a build-local cache for non-Mermaid code fences, keyed by the exact content, info string, delimiter, and token attributes. The bilingual projection repeats 886 of its 1,748 code fences, so Shiki renders each distinct representation once. Mermaid fences bypass the cache because the plugin output includes a token-position id. The cache is discarded with the renderer after each build and preserves the emitted fence HTML.
+
 Site publication remains separate from site construction. A dedicated GitHub Actions workflow runs the existing documentation gates, uploads `website/.dist` as a Pages artifact, and deploys only after the build succeeds. `actions/configure-pages` supplies the destination's base path to VitePress at build time, so the private Pages origin, a later public project path, and a custom domain do not require distinct checked-in configurations. Pages visibility remains a repository hosting setting rather than a workflow permission.
 
 ## Alternatives considered
