@@ -227,27 +227,13 @@ describe('normalizeSessionLog', () => {
     expect(out).not.toContain('999')
   })
 
-  it('materializes a projected event envelope in the same parse pass', () => {
+  it('normalizes a projected event without adding a persistence envelope', () => {
     const projected = JSON.stringify({ type: 'turn/start', data: { turn: 1 } })
     const out = normalizeSessionLog(`${header({})}\n${projected}\n`, ctx)
-    expect(out).toContain('"seq":0')
-    expect(out).toContain('"time":0')
-  })
-
-  it('rejects incomplete or mixed projected envelopes', () => {
-    expect(() => normalizeSessionLog(`${header({})}\n{"type":"turn/start","seq":0}\n`, ctx))
-      .toThrow(/both seq\/time or neither/)
-    expect(() => normalizeSessionLog([
-      header({}),
-      '{"type":"turn/start","data":{"turn":1}}',
-      '{"type":"turn/end","seq":1,"time":0,"data":{"turn":1}}',
-      '',
-    ].join('\n'), ctx)).toThrow(/cannot mix projected and persisted body records/)
-  })
-
-  it('materializes a typeless projected record without adding a type field', () => {
-    const out = normalizeSessionLog(`${header({})}\n{}\n`, ctx)
-    expect(JSON.parse(out.trimEnd().split('\n')[1] ?? '{}')).toStrictEqual({ seq: 0, time: 0 })
+    expect(JSON.parse(out.trimEnd().split('\n')[1] ?? '{}')).toStrictEqual({
+      type: 'turn/start',
+      data: { turn: 1 },
+    })
   })
 
   it('scrubs cwd and session id deep inside event data', () => {

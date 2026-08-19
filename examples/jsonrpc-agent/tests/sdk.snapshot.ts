@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   normalizeSessionLog,
+  normalizeSessionSnapshot,
   normalizeStdout,
   refreshFixtureReplacements,
   scrubRequestHeaders,
@@ -408,8 +409,8 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       for (const [index, log] of ordered.entries()) {
         const expected = expectedContents[index]
         if (expected === undefined) throw new Error(`no fixture for persisted log ${index}`)
-        expect(scrubRequestHeaders(normalizeSessionLog(log.content, actualContext)))
-          .toBe(scrubRequestHeaders(normalizeSessionLog(expected, expectedContext)))
+        expect(normalizeSessionSnapshot(log.content, actualContext))
+          .toBe(normalizeSessionSnapshot(expected, expectedContext))
       }
 
       // The SDK-visible wire stream and turn result match their expected outputs.

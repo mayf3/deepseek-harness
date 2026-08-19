@@ -11,7 +11,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { delimiter as pathDelimiter } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-compaction'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { decodeStorageRecord, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -25,7 +25,8 @@ import type {
   TokenUsage,
 } from '@deepseek-ai/dsh-llm'
 import { LlmAdapter, LlmError, ReasoningEffortId, assertNever, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
-import { parseReplaySessionLog } from './session-snapshot.ts'
+
+const PACKED_CHUNK_ROW_TYPES = new Set(['text-chunks', 'reasoning-chunks', 'tool-call-chunks'])
 
 /**
  * One recorded model call. `throw` may replay prefix chunks before failing;
@@ -165,7 +166,24 @@ export interface SessionScript {
  * @returns every event after the header, in log order.
  */
 export function parseSessionLog(text: string): SessionEvent[] {
-  return parseReplaySessionLog(text)
+  const lines = text.split('\n').filter(line => line.trim().length > 0)
+  const events: SessionEvent[] = []
+  let nextSeq = 0
+  // The JSONL backend guarantees line 0 is the session header. Projected
+  // fixtures omit event envelopes; synthesize them while decoding so callers
+  // still receive complete SessionEvent values.
+  for (let i = 1; i < lines.length; i++) {
+    const record = JSON.parse(lines[i] as string) as Record<string, unknown>
+    const packed = PACKED_CHUNK_ROW_TYPES.has(record.type as string)
+    const seqKey = packed ? 'seq0' : 'seq'
+    const timeKey = packed ? 'time0' : 'time'
+    if (!Object.hasOwn(record, seqKey)) record[seqKey] = nextSeq
+    if (!Object.hasOwn(record, timeKey)) record[timeKey] = 0
+    const decoded = decodeStorageRecord(record)
+    events.push(...decoded)
+    nextSeq += decoded.length
+  }
+  return events
 }
 
 /**

@@ -109,7 +109,7 @@ describe('parseSessionLog', () => {
     ])
   })
 
-  it('materializes omitted ordinary and packed snapshot envelopes', () => {
+  it('synthesizes omitted ordinary and packed snapshot envelopes', () => {
     const header = JSON.stringify({ type: 'session', version: 0, id: 's1', createdAt: 7 })
     const ordinary = JSON.stringify({ type: 'turn/start', data: { turn: 1 } })
     const packed = JSON.stringify({
@@ -121,59 +121,6 @@ describe('parseSessionLog', () => {
       chunkEvent(1, 1, 1, { type: 'text-delta', index: 0, text: 'a' }),
       { ...chunkEvent(2, 1, 1, { type: 'text-delta', index: 0, text: 'b' }), time: 3 },
     ])
-  })
-})
-
-describe('projected replay fixtures', () => {
-  it('rejects half-present storage envelopes', () => {
-    const fixture = [
-      '{"type":"session","version":0,"id":"s1","createdAt":0}',
-      '{"type":"turn/start","seq":0,"data":{"turn":1}}',
-      '',
-    ].join('\n')
-    expect(() => parseSessionLog(fixture)).toThrow(/both seq\/time or neither/)
-  })
-
-  it.each([
-    [
-      '{"type":"turn/start","data":{"turn":1}}',
-      '{"type":"turn/end","seq":1,"time":1,"data":{"turn":1,"reason":{"kind":"completed"}}}',
-    ],
-    [
-      '{"type":"turn/start","seq":0,"time":0,"data":{"turn":1}}',
-      '{"type":"turn/end","data":{"turn":1,"reason":{"kind":"completed"}}}',
-    ],
-  ])('rejects mixed projected and persisted body records', (first, second) => {
-    const fixture = `{"type":"session"}\n${first}\n${second}\n`
-    expect(() => parseSessionLog(fixture)).toThrow(/line 3 cannot mix projected and persisted body records/)
-  })
-
-  it('reports malformed storage records with their snapshot line', () => {
-    const fixture = [
-      '{"type":"session"}',
-      '{"type":"turn/start","data":{"turn":1}}',
-      '{"type":"text-chunks","data":{"turn":1,"step":1,"index":0,"dt":[],"texts":[]}}',
-      '',
-    ].join('\n')
-    expect(() => parseSessionLog(fixture)).toThrow(/session snapshot line 3:/)
-  })
-
-  it.each(['null', '1', '[]'])('rejects non-object JSONL records: %s', (record) => {
-    expect(() => parseSessionLog(`${record}\n`)).toThrow(/line 1 must be a JSON object/)
-  })
-
-  it('reports invalid JSON with its line', () => {
-    expect(() => parseSessionLog('{"type":"session"}\n{broken}\n'))
-      .toThrow(/line 2 contains invalid JSON/)
-  })
-
-  it('requires a session header', () => {
-    expect(() => parseSessionLog('')).toThrow(/must start with a session header/)
-    expect(() => parseSessionLog('{"type":"other"}\n')).toThrow(/must start with a session header/)
-  })
-
-  it('materializes an unknown empty storage row as an ordinary event', () => {
-    expect(parseSessionLog('{"type":"session"}\n{}\n')).toStrictEqual([{ seq: 0, time: 0 }])
   })
 })
 

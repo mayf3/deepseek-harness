@@ -412,8 +412,8 @@ describe('headless stream-json snapshots', () => {
           await writeFile(compactionSessionFixture, expectedSession)
         }
         const expectedContext = contextFromLogs([expectedSession])
-        expect(scrubRequestHeaders(normalizeSessionLog(actual.content, actualContext)))
-          .toBe(scrubRequestHeaders(normalizeSessionLog(expectedSession, expectedContext)))
+        expect(normalizeSessionSnapshot(actual.content, actualContext))
+          .toBe(normalizeSessionSnapshot(expectedSession, expectedContext))
       },
     })
 
@@ -657,8 +657,8 @@ describe('headless stream-json snapshots', () => {
         for (const [index, actual] of actualSessions.entries()) {
           const expected = expectedSessions[index]
           if (expected === undefined) throw new Error(`headless snapshot has no fixture for persisted log ${index}`)
-          expect(scrubRequestHeaders(normalizeSessionLog(actual.content, actualContext)))
-            .toBe(scrubRequestHeaders(normalizeSessionLog(expected, expectedContext)))
+          expect(normalizeSessionSnapshot(actual.content, actualContext))
+            .toBe(normalizeSessionSnapshot(expected, expectedContext))
         }
       },
     })
@@ -995,8 +995,8 @@ describe('headless stream-json snapshots', () => {
           await writeFile(ptySessionFixture, expectedSession)
         }
         const expectedContext = contextFromLogs([expectedSession])
-        expect(scrubRequestHeaders(normalizeSessionLog(actual.content, actualContext)))
-          .toBe(scrubRequestHeaders(normalizeSessionLog(expectedSession, expectedContext)))
+        expect(normalizeSessionSnapshot(actual.content, actualContext))
+          .toBe(normalizeSessionSnapshot(expectedSession, expectedContext))
       },
     })
 

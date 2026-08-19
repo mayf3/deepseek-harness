@@ -6,8 +6,6 @@
  * @module @deepseek-ai/dsh-acp-snapshot/normalize
  */
 
-import { decodeStorageRecord, type SessionEvent } from '@deepseek-ai/dsh-session'
-
 const SESSION_ID = '{{sessionId}}'
 const CWD = '{{cwd}}'
 const SYSTEM = '{{system}}'
@@ -18,58 +16,6 @@ const PACKED_CHUNK_ROW_TYPES = new Set(['text-chunks', 'reasoning-chunks', 'tool
 
 function isPackedFixtureRow(record: Record<string, unknown>): boolean {
   return typeof record.type === 'string' && PACKED_CHUNK_ROW_TYPES.has(record.type)
-}
-
-/**
- * Materialize projected body envelopes in caller-owned parsed records.
- * Package-private support for normalization and refresh alignment.
- *
- * @param records - session body records in storage order.
- * @returns logical events expanded from the materialized records.
- */
-function materializeFixtureBody(records: readonly Record<string, unknown>[]): SessionEvent[] {
-  let nextSeq = 0
-  let layout: 'unknown' | 'projected' | 'persisted' = 'unknown'
-  return records.flatMap((record, index) => {
-    const packed = isPackedFixtureRow(record)
-    const seqKey = packed ? 'seq0' : 'seq'
-    const timeKey = packed ? 'time0' : 'time'
-    const presentMembers = Number(Object.hasOwn(record, seqKey)) + Number(Object.hasOwn(record, timeKey))
-    if (presentMembers === 1) {
-      throw new Error(`session snapshot line ${index + 2} must carry both ${seqKey}/${timeKey} or neither`)
-    }
-    const recordLayout = presentMembers === 0 ? 'projected' : 'persisted'
-    if (layout === 'unknown') layout = recordLayout
-    else if (layout !== recordLayout) {
-      throw new Error(`session snapshot line ${index + 2} cannot mix projected and persisted body records`)
-    }
-    if (recordLayout === 'projected') {
-      const envelope = { [seqKey]: nextSeq, [timeKey]: 0 }
-      const materialized = Object.hasOwn(record, 'type')
-        ? { type: record.type, ...envelope, ...record }
-        : { ...record, ...envelope }
-      for (const key of Object.keys(record)) Reflect.deleteProperty(record, key)
-      Object.assign(record, materialized)
-    }
-    const decoded = decodeStorageRecord(record)
-    nextSeq += decoded.length
-    return decoded
-  })
-}
-
-/**
- * Parse persisted or projected session JSONL for package-internal comparison.
- * Projected body envelopes are materialized on the returned records.
- *
- * @param rawLog - session JSONL contents.
- * @returns parsed records in file order.
- */
-export function parseComparableSessionLog(rawLog: string): Record<string, unknown>[] {
-  const records = rawLog.split('\n')
-    .filter(line => line.trim().length > 0)
-    .map(line => JSON.parse(line) as Record<string, unknown>)
-  if (records[0]?.type === 'session') materializeFixtureBody(records.slice(1))
-  return records
 }
 
 function omitFixtureEnvelope(record: Record<string, unknown>): void {
@@ -350,10 +296,8 @@ export function normalizeStdout(
  * Normalize a session JSONL log into a stable expected output: the header line's
  * volatile fields (`createdAt`, `id`, `cwd`) are zeroed/scrubbed, ordinary
  * event `time` and packed-row `time0` values are zeroed, and all volatile
- * strings are scrubbed. A projected session fixture has its sequence/time
- * envelopes materialized in the parsed objects before normalization. Packed
- * `data.dt` gaps remain normalized because they carry the same wall-clock noise
- * as their `time0` anchor.
+ * strings are scrubbed. Projected inputs remain projected. Packed `data.dt`
+ * gaps are normalized even when the projected row omits its `time0` anchor.
  * Output is JSONL in the same shape as the input — one compact record per
  * line.
  *
@@ -368,44 +312,33 @@ export function normalizeSessionLog(
   options: NormalizeOptions = {},
 ): string {
   const cwdPathMode = options.cwdPathMode ?? 'canonical'
-  const records = parseComparableSessionLog(rawLog)
-  const normalized = records.map(record => normalizeSessionRecord(record, ctx, cwdPathMode))
-  return normalized.map(r => JSON.stringify(r)).join('\n') + '\n'
-}
-
-/** Normalize one already-parsed session or stream record in place. */
-function normalizeSessionRecord(
-  record: Record<string, unknown>,
-  ctx: NormalizeContext,
-  cwdPathMode: CwdPathMode,
-): Record<string, unknown> {
-  // Header line: { type: 'session', createdAt, id, cwd, … }.
-  if (record.type === 'session') {
-    if ('createdAt' in record) record.createdAt = 0
-  } else if (isPackedFixtureRow(record)) {
-    if ('time0' in record) record.time0 = 0
-    const data = record.data
-    if (data !== null && typeof data === 'object' && Array.isArray((data as { dt?: unknown }).dt)) {
-      (data as { dt: unknown[] }).dt = (data as { dt: unknown[] }).dt.map(() => 0)
+  const lines = rawLog.split('\n').filter(line => line.trim().length > 0)
+  const records = lines.map((line) => {
+    const record = JSON.parse(line) as Record<string, unknown>
+    if (record.type === 'session') {
+      if ('createdAt' in record) record.createdAt = 0
+    } else if (isPackedFixtureRow(record)) {
+      if ('time0' in record) record.time0 = 0
+      const data = record.data
+      if (data !== null && typeof data === 'object' && Array.isArray((data as { dt?: unknown }).dt)) {
+        (data as { dt: unknown[] }).dt = (data as { dt: unknown[] }).dt.map(() => 0)
+      }
+    } else if ('time' in record) {
+      record.time = 0
     }
-  } else if ('time' in record) {
-    record.time = 0
-  }
-  // A hook/result carries the hook's wall-clock runtime (`data.durationMs`),
-  // which is run-to-run noise like `time` — zero it so the expected output reflects
-  // the hook's decision/exit, not how long the shell took.
-  if (record.type === 'hook/result' && record.data !== null && typeof record.data === 'object') {
-    const data = record.data as Record<string, unknown>
-    if ('durationMs' in data) data.durationMs = 0
-  }
-  return scrubValue(record, ctx, cwdPathMode) as Record<string, unknown>
+    if (record.type === 'hook/result' && record.data !== null && typeof record.data === 'object') {
+      const data = record.data as Record<string, unknown>
+      if ('durationMs' in data) data.durationMs = 0
+    }
+    return scrubValue(record, ctx, cwdPathMode) as Record<string, unknown>
+  })
+  return records.map(r => JSON.stringify(r)).join('\n') + '\n'
 }
 
 /**
  * Normalize and project persisted session JSONL for a committed fixture.
- * Each non-empty line is parsed once; body records are normalized, request
- * headers are tokenized, and persistence-only envelopes are omitted before
- * the record is serialized.
+ * This composes ordinary log normalization with request-header scrubbing and
+ * persistence-envelope projection.
  *
  * @param rawLog - persisted or already-projected session JSONL.
  * @param ctx - the run's volatile values to scrub.
@@ -417,19 +350,7 @@ export function normalizeSessionSnapshot(
   ctx: NormalizeContext,
   options: NormalizeOptions = {},
 ): string {
-  const cwdPathMode = options.cwdPathMode ?? 'canonical'
-  let recordIndex = 0
-  return rawLog.split('\n').map((line) => {
-    if (line.trim().length === 0) return line
-    const parsed = JSON.parse(line) as Record<string, unknown>
-    const record = normalizeSessionRecord(parsed, ctx, cwdPathMode)
-    if (recordIndex++ === 0) {
-      if (record.type !== 'session') throw new Error('session snapshot must start with a session header')
-      return JSON.stringify(record)
-    }
-    scrubSessionSnapshotBodyRecord(record)
-    return JSON.stringify(record)
-  }).join('\n')
+  return scrubSessionSnapshot(normalizeSessionLog(rawLog, ctx, options))
 }
 
 /**
@@ -486,22 +407,18 @@ export function scrubRequestHeaders(rawLog: string): string {
  * @returns committed snapshot JSONL with request headers tokenized.
  */
 export function scrubSessionSnapshot(rawLog: string): string {
+  const scrubbed = scrubRequestHeaders(rawLog)
   let recordIndex = 0
-  return rawLog.split('\n').map((line) => {
+  return scrubbed.split('\n').map((line) => {
     if (line.trim().length === 0) return line
     const record = JSON.parse(line) as Record<string, unknown>
     if (recordIndex++ === 0) {
       if (record.type !== 'session') throw new Error('session snapshot must start with a session header')
       return line
     }
-    scrubSessionSnapshotBodyRecord(record)
+    omitFixtureEnvelope(record)
     return JSON.stringify(record)
   }).join('\n')
-}
-
-function scrubSessionSnapshotBodyRecord(record: Record<string, unknown>): void {
-  scrubRequestHeaderRecord(record, { system: true, tools: true })
-  omitFixtureEnvelope(record)
 }
 
 /** Which independent request-header payloads a scrubber replaces. */
@@ -516,20 +433,17 @@ function scrubHeaderContent(rawLog: string, options: HeaderScrubOptions): string
   const out = lines.map((line) => {
     if (line.trim().length === 0) return line
     const record = JSON.parse(line) as Record<string, unknown>
-    return scrubRequestHeaderRecord(record, options) ? JSON.stringify(record) : line
+    const data = record.data as Record<string, unknown> | null | undefined
+    if (data === null || typeof data !== 'object') return line
+    if (record.type === 'request/header') {
+      const header = data.header as Record<string, unknown> | null | undefined
+      if (header === null || typeof header !== 'object') return line
+      let touched = false
+      if (options.system === true && 'system' in header) { header.system = SYSTEM; touched = true }
+      if (options.tools === true && 'tools' in header) { header.tools = TOOLS; touched = true }
+      return touched ? JSON.stringify(record) : line
+    }
+    return line
   })
   return out.join('\n')
-}
-
-/** Tokenize selected request-header fields on one parsed record. */
-function scrubRequestHeaderRecord(record: Record<string, unknown>, options: HeaderScrubOptions): boolean {
-  if (record.type !== 'request/header') return false
-  const data = record.data as Record<string, unknown> | null | undefined
-  if (data === null || typeof data !== 'object') return false
-  const header = data.header as Record<string, unknown> | null | undefined
-  if (header === null || typeof header !== 'object') return false
-  let touched = false
-  if (options.system === true && 'system' in header) { header.system = SYSTEM; touched = true }
-  if (options.tools === true && 'tools' in header) { header.tools = TOOLS; touched = true }
-  return touched
 }

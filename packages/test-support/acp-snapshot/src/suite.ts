@@ -29,7 +29,6 @@ import {
   extractSnapshotSpillPaths,
   normalizeSessionLog,
   normalizeStdout,
-  parseComparableSessionLog,
   scrubRequestHeaders,
   scrubSessionSnapshot,
   scrubSystemPrompts,
@@ -693,8 +692,8 @@ export function stabilizeFixtureMessageIds(logs: readonly string[], fixtures: re
 /** One packed row's member times, or `undefined` for an ordinary record. */
 function packedTimes(record: Record<string, unknown>): number[] | undefined {
   if (!PACKED_CHUNK_ROW_TYPES.has(record.type as string)) return undefined
-  const row = record as unknown as { time0: number; data: { dt: number[] } }
-  const times = [row.time0]
+  const row = record as unknown as { time0?: number; data: { dt: number[] } }
+  const times = [row.time0 ?? 0]
   for (const gap of row.data.dt) times.push((times[times.length - 1] as number) + gap)
   return times
 }
@@ -1015,8 +1014,8 @@ function normalizedStringMappings(
  * complete record layout aligns and volatile strings form a consistent
  * bijection. Complete durable-message ids are excluded because the later
  * fixture-ready structural pass owns them. Ambiguous layouts or mappings
- * keep fresh strings. Packed timing envelopes expand for alignment, so
- * packing does not shift later records;
+ * keep fresh strings. Packed timing gaps expand from zero when a projected
+ * fixture omits `time0`, so packing does not shift later records;
  * fresh semantic values and fragment arrays remain authoritative.
  *
  * @param fresh The newly harvested session JSONL.
@@ -1033,8 +1032,7 @@ export function stabilizeRefreshLog(
 ): string {
   const freshRecords = parseJsonlRecords(fresh)
   const stable = applyFixtureReplacements(fresh, replacements)
-  const parsedExisting = parseComparableSessionLog(existing)
-  const existingRecords = logicalRecords(parsedExisting)
+  const existingRecords = logicalRecords(parseJsonlRecords(existing))
   const records = parseJsonlRecords(stable)
   const existingContext = fixtureContext(existing)
   const stringMappings = normalizedStringMappings(

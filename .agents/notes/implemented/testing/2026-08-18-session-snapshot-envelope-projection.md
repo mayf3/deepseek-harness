@@ -12,9 +12,9 @@ Committed session snapshots copied the persistence envelope on every body row. T
 
 A committed session snapshot is a projection of the persisted JSONL. The envelope projection leaves its first `session` header unchanged, including `version` and `createdAt`; other fixture normalization may still replace volatile header values such as `createdAt`, `id`, and `cwd`. Every body record retains its discriminant, payload, and other top-level fields, while the projection omits `seq`, `time`, `seq0`, and `time0` when present. Nested fields with the same names are payload and remain unchanged.
 
-Snapshot serialization omits those keys from the parsed body object before writing the line. A persisted-JSONL input is parsed once at the snapshot boundary; the dedicated snapshot normalizer combines value normalization, request-header scrubbing, and projection in that object pass rather than serializing and parsing again. Generic log and stream normalization retains sequence envelopes. Runtime persistence is unchanged.
+Snapshot serialization omits those keys from the parsed body object before writing the line. Snapshot comparison composes ordinary value normalization with that projection, while generic log and stream normalization retains sequence envelopes. Runtime persistence is unchanged.
 
-Replay's existing `parseSessionLog` entry point accepts the projected fixture and assigns contiguous synthetic sequence numbers in memory. Synthetic event times start at zero; packed `data.dt` values retain the relative gaps already stored in the fixture. One file must use projected body rows or complete persisted body rows throughout. Projection stays private to each snapshot writer, and replay materialization stays private to the replay parser; the repository fixture-layout gate uses that parser, retains canonical packed rows, and rejects half-present or mixed persistence envelopes.
+Replay's existing `parseSessionLog` entry point accepts the projected fixture and assigns missing sequence fields in memory while decoding. Synthetic event times start at zero; packed `data.dt` values retain the relative gaps already stored in the fixture. Projection stays private to each snapshot writer, and replay synthesis stays inside the replay parser. The repository fixture-layout check uses that parser and retains canonical packed rows.
 
 ## Alternatives considered
 
