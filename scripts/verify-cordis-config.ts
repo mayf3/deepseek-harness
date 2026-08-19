@@ -294,11 +294,12 @@ function validateAppResolution(): string[] {
 /**
  * Discover workspace Bundle packages from their manifest declaration.
  * @param repoRoot Repository root to scan.
- * @returns Sorted repository-relative package manifest paths.
+ * @returns Sorted slash-normalized repository-relative package manifest paths.
  */
 export function bundleManifestPaths(repoRoot: string = root): string[] {
   return globSync('packages/*/*/package.json', { cwd: repoRoot })
     .filter(path => typeof readManifest(path, repoRoot).dsh?.bundle?.patch === 'string')
+    .map(path => path.replaceAll('\\', '/'))
     .sort()
 }
 
