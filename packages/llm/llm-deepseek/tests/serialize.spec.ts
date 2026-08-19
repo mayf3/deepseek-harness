@@ -393,6 +393,95 @@ describe('image serialization', () => {
     ])
   })
 
+  it('does not emit an empty user message for ignored content beside a tool result', async () => {
+    const messages = [createUserMessage({
+      content: [
+        { type: 'text', text: '' },
+        { type: 'chart', data: 'ignored' } as unknown as ContentBlock,
+        {
+          type: 'tool-result',
+          toolCallId: CallId('result'),
+          content: [{ type: 'text', text: 'ok' }],
+        },
+      ],
+      source: { kind: 'plugin', plugin: 'test' },
+    })]
+
+    await expect(serializeMessagesWithImages(
+      messages,
+      attachmentStore(),
+      new AbortController().signal,
+    )).resolves.toEqual([
+      { role: 'tool', tool_call_id: 'result', content: 'ok' },
+    ])
+  })
+
+  it('recursively converts nested tool-result content and preserves the empty fallback', async () => {
+    const messages = [createUserMessage({
+      content: [
+        {
+          type: 'tool-result',
+          toolCallId: CallId('nested'),
+          content: [{
+            type: 'tool-result',
+            toolCallId: CallId('inner'),
+            content: [{ type: 'text', text: 'inside' }],
+          }],
+        },
+        { type: 'tool-result', toolCallId: CallId('empty'), content: [] },
+      ],
+      source: { kind: 'plugin', plugin: 'test' },
+    })]
+
+    await expect(serializeMessagesWithImages(
+      messages,
+      attachmentStore(),
+      new AbortController().signal,
+    )).resolves.toEqual([
+      { role: 'tool', tool_call_id: 'nested', content: 'inside' },
+      { role: 'tool', tool_call_id: 'empty', content: '(no output)' },
+    ])
+  })
+
+  it('flushes tool-result images before system and assistant history', async () => {
+    const imageResult = (id: string) => createUserMessage({
+      content: [{
+        type: 'tool-result',
+        toolCallId: CallId(id),
+        content: [{ type: 'image', attachment: imageRef() }],
+      }],
+      source: { kind: 'plugin' as const, plugin: 'test' },
+    })
+    const messages = [
+      imageResult('before-system'),
+      createMessage({
+        role: 'system',
+        content: [{ type: 'text', text: 'system history' }],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+      imageResult('before-assistant'),
+      createMessage({
+        role: 'assistant',
+        content: [{ type: 'text', text: 'assistant history' }],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+    ]
+
+    const wire = await serializeMessagesWithImages(
+      messages,
+      attachmentStore(),
+      new AbortController().signal,
+    )
+    expect(wire).toEqual([
+      { role: 'tool', tool_call_id: 'before-system', content: '(see attached image)' },
+      expect.objectContaining({ role: 'user' }),
+      { role: 'system', content: 'system history' },
+      { role: 'tool', tool_call_id: 'before-assistant', content: '(see attached image)' },
+      expect.objectContaining({ role: 'user' }),
+      { role: 'assistant', content: 'assistant history' },
+    ])
+  })
+
   it('offloads oldest images before reads and keeps the newest image', async () => {
     const readImage = vi.fn((ref: ImageAttachmentRef) => Promise.resolve({
       ref,
@@ -435,6 +524,37 @@ describe('image serialization', () => {
     expect(readImage).not.toHaveBeenCalled()
   })
 
+  it('rejects unsupported image history before request offloading can replace it', async () => {
+    const readImage = vi.fn()
+    await expect(serializeRequestWithImages(request({
+      messages: [createMessage({
+        role: 'system',
+        content: [{ type: 'image', attachment: imageRef('image/png', 300) }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }), {
+      attachments: attachmentStore(readImage),
+      maxRequestImageBytes: 1,
+      signal: new AbortController().signal,
+    })).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
+    expect(readImage).not.toHaveBeenCalled()
+  })
+
+  it('prepends the request system prompt on the image path', async () => {
+    const wire = await serializeRequestWithImages(request({
+      system: 'system prompt',
+      messages: [createUserMessage({
+        content: [{ type: 'image', attachment: imageRef() }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }), {
+      attachments: attachmentStore(),
+      maxRequestImageBytes: 20 * 1024 * 1024,
+      signal: new AbortController().signal,
+    })
+    expect(wire.messages[0]).toEqual({ role: 'system', content: 'system prompt' })
+  })
+
   it('preserves stable attachment failure codes', async () => {
     const readImage = vi.fn(() => Promise.reject(new AttachmentError(
       'Stored attachment bytes are corrupt.',
@@ -445,6 +565,15 @@ describe('image serialization', () => {
       source: { kind: 'plugin', plugin: 'test' },
     })], attachmentStore(readImage), new AbortController().signal))
       .rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
+  })
+
+  it('preserves non-attachment resolver failures', async () => {
+    const failure = new Error('resolver failed')
+    const readImage = vi.fn(() => Promise.reject(failure))
+    await expect(serializeMessagesWithImages([createUserMessage({
+      content: [{ type: 'image', attachment: imageRef() }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })], attachmentStore(readImage), new AbortController().signal)).rejects.toBe(failure)
   })
 })
 

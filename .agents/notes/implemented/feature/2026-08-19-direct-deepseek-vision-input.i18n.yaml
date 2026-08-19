@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-direct-deepseek-vision-input.md
-2026-08-19-direct-deepseek-vision-input.md: cf7099cb7ec3bfdbd09737b4246a06a4709fa5d9
-2026-08-19-direct-deepseek-vision-input.zh.md: dbd9b3b0b338caab82a05d39d0affb8e0e7478c9
+2026-08-19-direct-deepseek-vision-input.md: 26d3bf27dc7fe0ee647895cc98dd068e24c3b442
+2026-08-19-direct-deepseek-vision-input.zh.md: 16a34dafe45147b6ec862e0c4045c430e8777ae4

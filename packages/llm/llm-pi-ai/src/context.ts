@@ -26,6 +26,18 @@ function toolResultText(blocks: readonly ContentBlock[]): string {
     : block.type === 'tool-result' ? toolResultText(block.content) : '').join('')
 }
 
+/** Reject image roles that pi-ai cannot replay before request-size offloading can replace them. */
+function assertSupportedImageRoles(messages: readonly Message[]): void {
+  for (const message of messages) {
+    if (message.role !== 'user' && contentHasImage(message.content)) {
+      throw new LlmError(
+        `pi-ai cannot represent an image in an in-history ${message.role} message`,
+        'UNSUPPORTED_CONTENT',
+      )
+    }
+  }
+}
+
 async function userContent(
   blocks: readonly ContentBlock[],
   attachments: AttachmentStore,
@@ -169,15 +181,13 @@ async function toPiContextWithImages(
   onReplayDegrade?: (reason: string) => void,
   maxRequestImageBytes?: number,
 ): Promise<PiContext> {
+  assertSupportedImageRoles(options.messages)
   const requestMessages = offloadRequestImages(options.messages, maxRequestImageBytes)
   const toolNames = new Map<CallId, string>()
   const messages: PiMessage[] = []
 
   for (const message of requestMessages) {
     if (message.role === 'system') {
-      if (contentHasImage(message.content)) {
-        throw new LlmError('pi-ai cannot represent an image in an in-history system message', 'UNSUPPORTED_CONTENT')
-      }
       // pi-ai has a single systemPrompt slot; in-history system messages are
       // folded into user messages to preserve order (rare in practice — the
       // harness sends the system prompt via options.system).

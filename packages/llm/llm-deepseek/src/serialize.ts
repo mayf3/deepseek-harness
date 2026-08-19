@@ -148,9 +148,12 @@ async function contentParts(
 
 /** Keep text-only user messages on the compact string wire form. */
 function userContent(parts: readonly WireUserContentPart[]): string | WireUserContentPart[] {
-  return parts.some(part => part.type === 'image_url')
-    ? [...parts]
-    : parts.map(part => part.type === 'text' ? part.text : '').join('')
+  const text: string[] = []
+  for (const part of parts) {
+    if (part.type === 'image_url') return [...parts]
+    text.push(part.text)
+  }
+  return text.join('')
 }
 
 /** Serialize one assistant message (text + reasoning + tool calls). */
@@ -268,11 +271,12 @@ export async function serializeMessagesWithImages(
     const toolResults = message.content.filter((block): block is Extract<ContentBlock, { type: 'tool-result' }> => (
       block.type === 'tool-result'
     ))
-    if (regular.length > 0 || toolResults.length === 0) {
+    const content = userContent(await contentParts(regular, attachments, signal))
+    if (content.length > 0 || toolResults.length === 0) {
       flushToolImages()
       wire.push({
         role: 'user',
-        content: userContent(await contentParts(regular, attachments, signal)),
+        content,
       })
     }
     for (const result of toolResults) {
