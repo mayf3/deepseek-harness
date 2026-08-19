@@ -2,17 +2,17 @@
 
 English | [中文](README.zh.md)
 
-The persisted projection cache (`ctx.sessionProjectionCache`): durable checkpoints of every projection unit's state, one `projection_cache.json` per session inside the session's own persistence directory (resolved through `sessionPersistence.locate(meta)` — the jsonl backend places it beside the session log). Design authority: the [session-projection RFC](../../../.agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.md) (persisted projection cache section).
+The persisted projection cache (`ctx.sessionProjectionCache`): durable checkpoints of every projection unit's state, one `projection_cache.json` per session under the cache's own storage root (`<root>/<session-id>/projection_cache.json`). The cache owns its directory tree and never consults the persistence layer. Design authority: the [session-projection RFC](../../../.agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.md) (persisted projection cache section).
 
 A stored row `(key → {ver, seq, val})` is a fold shortcut, never an authority: possibly stale (`seq` says exactly how stale) but never wrong. Consequences the implementation commits to:
 
-- **Every background write is fail-soft.** A failed durable write logs a warning and keeps the cache stale; the next write or cold read self-heals. A crash between writes costs a longer tail replay, never a wrong value.
+- **Every background write is fail-soft.** A failed durable write logs a warning and keeps the cache stale; the next write self-heals. A crash between writes costs a longer tail replay, never a wrong value.
 - **A `ver` mismatch against the live unit's `stateVersion` discards, never migrates.** A unit bump invalidates its rows at read time; the key refolds from the log.
-- **A row must pass the live unit's `stateSchema`.** A malformed row is omitted from the cached view and rejected by restore so the cold-read ladder refolds it from the log.
-- **Whole-record writes.** Each write atomically replaces the session's cache file (the registry cut is always complete), snapshotted through the lossless-JSON boundary — a unit state violating the plain-JSON contract fails loud.
-- **Records are bound to a log lifecycle, not just an id.** Each record stores the header identity (`createdAt`, `cwd`) it was folded from; every read validates it (the live or stored header is the witness) before accepting a record, so a deleted-then-recreated id or a persistence store swapped under a surviving cache discards the unrelated record instead of seeding phantom values.
+- **A row must pass the live unit's `stateSchema`.** A malformed file reads as "no cache row", so the cold path refolds from the log.
+- **Whole-record writes.** Each write atomically replaces the session's cache file (the registry cut is always complete), snapshotted through the lossless-JSON boundary — a unit state violating the plain-JSON contract fails loud. Writes to one cache file serialize, so a newer cut never lands before an older one.
+- **Records are bound to a log lifecycle, not just an id.** Each record stores the header identity (`createdAt`, `cwd`) it was folded from; every read validates it (the live header is the witness) before accepting a record, so a deleted-then-recreated id cannot let an old record seed state folded from an unrelated log.
 - **The log leads, the cache follows.** A live checkpoint flushes the session's buffered events durably BEFORE the cache file lands, so a crash can leave the cache behind the log (a longer tail replay) but never ahead of it.
-- **Per-session files, no global medium.** A persistence backend without a per-session directory (e.g. sqlite) disables the durable cache: writes no-op and cold reads fall to the full-log rung. An obsolete cache (any earlier format) is never read — the first cold read refolds from the log and writes the current format.
+- **The cache owns its tree, private by default.** Session directories and cache files are created owner-only (`0o700`/`0o600`). The cache does not depend on which persistence backend is mounted — no `locate`, no per-session-dir probing.
 
 ## Write policy
 
@@ -20,20 +20,16 @@ Two mandatory points, throttled in between:
 
 | Trigger | Nature |
 |---|---|
-| `turn/end` | Mandatory — the turn-final value is what cold reads want. |
-| Session disposal (detach) | Mandatory — the live-to-cold moment; after it the cold ladder serves this session. |
+| `turn/end` | Mandatory — the turn-final value is what listing reads want. |
+| Session disposal (detach) | Mandatory — the live-to-cold moment; after it the cache serves this session's final cut. |
 | `writeEveryEvents` committed events | Config throttle (count). |
 | `writeIntervalMs` since the first dirty event | Config throttle (interval). |
 
-Both `Config` fields are required (no defaults): flush cadence is a deployment choice with no universally correct value, stated in cordis.yml.
+`root` and both throttle triggers are required `Config` fields (no defaults): the cache root and flush cadence are deployment choices stated in cordis.yml.
 
 ## Listing read (`cachedSnapshot(meta)`)
 
-One file read per session: client values viewed straight from the identity-matching stored record (version- and state-schema-matching keys only), returned as a `{asOfSeq, values}` cut — `asOfSeq` is the lowest served-row watermark, so a client seeding its per-session value store under higher-seq-wins can never let a stale list block overwrite a newer push frame. Host-only rows are never returned. `undefined` when no usable client row exists (unknown id, unrelated lifecycle, missing file, or no usable rows); the api-proxy list carrier turns that into an absent column.
-
-## Cold read (`coldSnapshot(meta, signal?)`)
-
-The read ladder, zero full-log load on the happy path: cached rows → `sessionProjections.restoreFloor` (anchored one event below the lowest usable watermark) → persistence `readFrom(id, floor)` → `sessionProjections.restore` → fail-soft write-back of the refreshed rows. The anchor makes a shrunk log (crash-repair truncation) provable: an overreaching row triggers exactly one full re-read from seq 0 instead of serving a ghost value. No registered units serve `{asOfSeq: -1, values: {}}` without touching persistence; a session with no persisted log rejects with the seam's `not found`.
+One file read per session: client values viewed straight from the identity-matching stored record (version- and state-schema-matching keys only), returned as a `{asOfSeq, values}` cut — `asOfSeq` is the lowest served-row watermark, so a client seeding its per-session value store under higher-seq-wins can never let a stale list block overwrite a newer push frame. Host-only rows are never returned. `undefined` when no usable client row exists (unknown id, unrelated lifecycle, missing or malformed file, or no usable rows); the api-proxy list carrier turns that into an absent column.
 
 `write(session)` is the synchronous-cut checkpoint both mandatory points use; carriers may call it directly (not fail-soft — the fail-soft wrappers own containment).
 
@@ -43,15 +39,16 @@ The read ladder, zero full-log load on the happy path: cached rows → `sessionP
 - id: session-projection-cache
   name: '@deepseek-ai/dsh-session-projection-cache'
   config:
+    root: !!js dshHomePath('projections')
     writeEveryEvents: 200
     writeIntervalMs: 5000
 ```
 
-Injects `sessionProjections`, `sessionPersistence`, `sessions`. Without this row the projection system runs live-only (watermark cache; cold reads fall back to full log loads wherever a carrier implements them).
+Injects `sessionProjections`, `sessions`. Without this row the projection system runs live-only (watermark cache; cold reads fall back to full log loads wherever a carrier implements them).
 
 ## Model Experience
 
-None, as the cache only persists and restores host-side read models of already-logged session state and touches no prompt, message, schema, stream, or tool result.
+None, as the cache only persists host-side read models of already-logged session state and touches no prompt, message, schema, stream, or tool result.
 
 #### KV Cache effect
 
@@ -61,5 +58,4 @@ None; the cache never assembles or sends provider requests.
 
 - **No eviction or retention surface** — records accumulate per session; pruning stored checkpoints is out-of-band maintenance, same stance as session persistence itself.
 - **Interval throttle is per-session coarse** — the timer arms at the first dirty event after a clean write; a steady sub-threshold trickle writes once per interval, not a sliding window.
-- **`coldSnapshot` reads are not deduplicated** — two concurrent cold reads of one session each run the ladder; last write-back wins (rows are equivalent), acceptable for listing-scale call rates.
-- **Concurrent checkpoints land in call order per session** — writes to one cache file are serialized (an older cut can never overwrite a newer one), but a crash between a file write and its successor leaves the older cut on disk — stale-but-never-wrong, self-healed by the next write or cold read.
+- **No cache-side cold refold** — the cache serves and refreshes its files but never reads the session log (it does not depend on the persistence layer); a consumer that needs a guaranteed cold snapshot refolds from the log itself.

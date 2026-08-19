@@ -1,9 +1,10 @@
 /**
  * Persisted projection cache (`ctx.sessionProjectionCache`): durable
  * checkpoints of every projection unit's state, one `projection_cache.json`
- * per session inside the session's own persistence directory (resolved via
- * `sessionPersistence.locate(meta)` — the jsonl backend places it beside
- * the session log). The cache is a fold shortcut, never an authority: a row
+ * per session under the cache's own storage root (`<root>/<session-id>/
+ * projection_cache.json`). The cache owns its directory tree and never
+ * consults the persistence layer. The cache is a fold shortcut, never an
+ * authority: a row
  * is possibly stale (its `seq` says how stale) but never wrong, so every
  * write path is fail-soft (a lost write costs a longer tail replay on the
  * next cold read) and a `ver` mismatch discards the row instead of migrating
@@ -15,13 +16,10 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { readFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
-// Empty type import: applies the package's cordis Context merge
-// (`ctx.sessionPersistence`), which this service reads on the cold path.
-import type {} from '@deepseek-ai/dsh-session-persistence'
+import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { ProjectionCheckpoint, ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
 import { checkpointRecord } from './spec.ts'
 import type { CheckpointIdentity, CheckpointRecord } from './spec.ts'
@@ -48,6 +46,8 @@ declare module '@deepseek-ai/cordis' {
  * disposal) are policy, not tunables, and always fire.
  */
 export interface Config {
+  /** Directory holding one `<session-id>/projection_cache.json` per session. */
+  root: string
   /** Committed events per session that force a durable checkpoint write between mandatory points. */
   writeEveryEvents: number
   /** Longest time (milliseconds) a dirty checkpoint may stay unwritten between mandatory points. */
@@ -55,6 +55,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
+  root: z.string().required(),
   writeEveryEvents: z.natural().min(1).required(),
   writeIntervalMs: z.natural().min(1).required(),
 })
@@ -71,15 +72,13 @@ interface DirtyState {
  * The persisted projection cache service. Checkpoints live sessions on a
  * throttled write-behind (count/interval triggers from {@link Config}) plus
  * two mandatory points — `turn/end` and session disposal (the live-to-cold
- * moment) — and serves the cold-read ladder: cached file, persistence
- * `readFrom` tail, registry `restore`, durable write-back. Every durable
+ * moment) — and serves the cached rows for a session header. Every durable
  * write is fail-soft: failures log a warning and the cache self-heals on the
- * next write or cold read. A persistence backend without a per-session
- * directory (e.g. sqlite) disables the durable cache: writes no-op, cold
- * reads fall to the full-log rung.
+ * next write. The cache owns its directory tree and never consults the
+ * persistence layer.
  */
 export class SessionProjectionCache extends Service {
-  static inject = ['sessionProjections', 'sessionPersistence', 'sessions']
+  static inject = ['sessionProjections', 'sessions']
 
   static Config: z<Config> = Config
 
@@ -99,19 +98,15 @@ export class SessionProjectionCache extends Service {
   }
 
   /**
-   * Resolve one session's cache file path, or `undefined` when the
-   * persistence backend owns no per-session directory. The file sits beside
-   * the backend's session artifact (the jsonl log), derived from
-   * `sessionPersistence.locate(meta)` — the persistence backend is the sole
-   * owner of the session-directory layout.
-   * @param meta - the session header naming the persistence location.
-   * @returns the absolute cache-file path, or `undefined` for backends
-   *   without a per-session artifact.
+   * Resolve one session's cache file path. The cache owns the layout: a
+   * per-session directory under the configured root, keyed by the session id
+   * (a code-generated string, safe as a path segment). No persistence
+   * lookup — the path is a pure function of the header.
+   * @param meta - the session header naming the cache entry.
+   * @returns the absolute cache-file path.
    */
-  private cachePathFor(meta: SessionHeader): string | undefined {
-    const location = this.ctx.sessionPersistence.locate(meta)
-    if (location === undefined) return undefined
-    return join(dirname(location.path), CACHE_FILE_NAME)
+  private cachePathFor(meta: SessionHeader): string {
+    return join(this.config.root, meta.id, CACHE_FILE_NAME)
   }
 
   /**
@@ -126,15 +121,13 @@ export class SessionProjectionCache extends Service {
    * @returns the identity-matching record, or `undefined`.
    */
   private async recordFor(meta: SessionHeader, expected: CheckpointIdentity): Promise<CheckpointRecord | undefined> {
-    const path = this.cachePathFor(meta)
-    if (path === undefined) return undefined
     try {
-      const record = checkpointRecord.parse(JSON.parse(await readFile(path, 'utf8')))
+      const record = checkpointRecord.parse(JSON.parse(await readFile(this.cachePathFor(meta), 'utf8')))
       return identityMatches(record.identity, expected) ? record : undefined
     } catch {
       // An absent, unreadable, or malformed file reads as "no cache row";
-      // the cold-read ladder refolds from the log. Identity mismatch is a
-      // normal ternary return above, not an exception.
+      // the caller refolds from the log. Identity mismatch is a normal
+      // ternary return above, not an exception.
       return undefined
     }
   }
@@ -144,9 +137,7 @@ export class SessionProjectionCache extends Service {
    * (version-matching keys only), each cut carried with its watermark so a
    * client value store can seed under its higher-seq-wins rule — as stale as
    * the last durable checkpoint but never wrong, and never from an unrelated
-   * log (the caller's header is the identity witness). Fresher paths (the
-   * history tail baseline, {@link coldSnapshot}) supersede these values
-   * whenever a session is actually opened.
+   * log (the caller's header is the identity witness).
    * @param meta - the listed session's header (identity witness; no log read).
    * @returns the cut (`asOfSeq` = lowest served-row watermark), or
    *   `undefined` when no usable row exists for this lifecycle.
@@ -174,10 +165,7 @@ export class SessionProjectionCache extends Service {
    * @returns resolution after durability and event emission.
    */
   async write(session: Session): Promise<void> {
-    // A backend without a per-session directory (sqlite) persists no cache:
-    // skip the checkpoint cut and the durability flush entirely for it.
     const path = this.cachePathFor(session.header)
-    if (path === undefined) return
     const rows = this.ctx.sessionProjections.checkpoint(session)
     this.markClean(session)
     // Durability barrier: the checkpoint cut was taken above, so flushing
@@ -189,57 +177,6 @@ export class SessionProjectionCache extends Service {
     // any residual overreach is caught by the cold read's anchored floor.
     if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
     await this.put(path, identityOf(session.header), rows)
-  }
-
-  /**
-   * Cold-read one persisted session's projections with zero full-log load:
-   * cached rows + a persistence `readFrom` tail from the registry's restore
-   * floor, refolded by the registry and written back (fail-soft) so the next
-   * cold read starts closer. A cache row invalidated by a shrunk log
-   * (crash-repair truncation) triggers one full re-read from seq 0 — the
-   * ladder's slow rung, still no crash. Rejects when the session has no
-   * persisted log (`not found` from the persistence seam).
-   * @param meta - the persisted session whose projections are read (locates
-   *   the cache file and witnesses the stored log identity).
-   * @param signal - optional cancellation for the persistence reads.
-   * @returns the snapshot cut at the stored log end.
-   */
-  async coldSnapshot(meta: SessionHeader, signal?: AbortSignal): Promise<ProjectionSnapshot> {
-    const record = await this.recordFor(meta, identityOf(meta))
-    const cached = record?.rows ?? {}
-    const floor = this.ctx.sessionProjections.restoreFloor(cached)
-    const persistence = this.ctx.sessionPersistence
-    if (floor === undefined) {
-      // No unit registered: nothing to fold, but the not-found contract must
-      // hold in this topology too — the probe read rejects for an absent log
-      // and dates the empty cut for a present one.
-      const probe = await persistence.readFrom(meta.id, 0, signal)
-      return { asOfSeq: probe.events.at(-1)?.seq ?? -1, values: {} }
-    }
-    let restored: { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
-    const tail = await persistence.readFrom(meta.id, floor, signal)
-    // The tail's stored header is the identity witness: a record bound to a
-    // different lifecycle (recreated id, swapped store) is discarded whole
-    // before any of its rows can seed a fold.
-    const related = record === undefined || identityMatches(record.identity, identityOf(tail.meta))
-    try {
-      if (!related) throw new Error('unrelated log identity')
-      restored = this.ctx.sessionProjections.restore(cached, tail.events, floor)
-    } catch {
-      // Recoverable failures are an unrelated record, a row outside the
-      // supplied suffix or log end, and stateSchema rejection. The full read
-      // removes every checkpoint seed and lets each unit refold from init.
-      const whole = await persistence.readFrom(meta.id, 0, signal)
-      restored = this.ctx.sessionProjections.restore({}, whole.events, 0)
-    }
-    // The write-back path and identity come from the STORED header: a caller
-    // header with a wrong cwd must not mint an orphan cache file in a
-    // directory no real read will ever look at.
-    const writebackPath = this.cachePathFor(tail.meta)
-    if (writebackPath !== undefined) {
-      await this.putSoft(writebackPath, meta.id, identityOf(tail.meta), restored.checkpoint, 'cold-read write-back')
-    }
-    return restored.snapshot
   }
 
   // --- write-behind (throttle + mandatory points) ---
@@ -334,28 +271,12 @@ export class SessionProjectionCache extends Service {
     ))
     void next.finally(() => {
       if (this.writeChains.get(path) === next) this.writeChains.delete(path)
+    }).catch(() => {
+      // The chain cleanup must run on failure too; the write rejection
+      // itself is `next`'s, observed by the caller awaiting `put`.
     })
     this.writeChains.set(path, next)
     return next
-  }
-
-  /** Fail-soft {@link put}: cache writes must never fail their caller's read or event path. */
-  private async putSoft(
-    path: string,
-    id: SessionId,
-    identity: CheckpointIdentity,
-    rows: ProjectionCheckpoint,
-    what: string,
-  ): Promise<void> {
-    const run = (async () => {
-      try {
-        await this.put(path, identity, rows)
-      } catch (error) {
-        this.ctx.logger.warn(`session projection cache: ${what} for "${id}" failed (cache stays stale): ${String(error)}`)
-      }
-    })()
-    this.inFlight.add(run)
-    await run.finally(() => this.inFlight.delete(run))
   }
 }
 

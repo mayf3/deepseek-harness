@@ -1,9 +1,9 @@
 /**
  * The projection-cache record schema: one `projection_cache.json` per
- * session, stored inside the session's own persistence directory (resolved
- * through `sessionPersistence.locate(meta)`). The file holds the session's
- * full projection checkpoint (`key → {ver, seq, val}` rows) plus the log
- * identity it was folded from.
+ * session, stored under the cache's own root tree at
+ * `<root>/<session-id>/projection_cache.json` (independent of session
+ * persistence). The file holds the session's full projection checkpoint
+ * (`key → {ver, seq, val}` rows) plus the log identity it was folded from.
  * @module @deepseek-ai/dsh-session-projection-cache/src/spec
  */
 
