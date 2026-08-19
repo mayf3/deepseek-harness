@@ -217,7 +217,10 @@ export class PlanModeController extends Service {
       },
     })
 
-    ctx.sessionProjections.register(planProjectionDefinition)
+    // The `plan` projection unit registers through the projection registry.
+    ctx.inject(['sessionProjections'], (projectionCtx) => {
+      projectionCtx.sessionProjections.register(planProjectionDefinition)
+    })
 
     // The command child activates only when a command registry is composed.
     ctx.inject(['commands'], (commandCtx) => {

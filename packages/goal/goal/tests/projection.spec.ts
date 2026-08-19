@@ -1,4 +1,12 @@
-/** Goal projection behavior. */
+/**
+ * The `goal` projection unit: mounting GoalService beside the registry
+ * serves the current whole goal on the history tail page with a consistent
+ * asOfSeq; before the first create the value is null; a clear tombstone
+ * returns it to null; a composition without the goal service has no `goal`
+ * key; unmounting drops it (HMR safety). Malformed goal-shaped events are
+ * ignored fail-soft (same-reference return) — strict replay validation
+ * belongs to the write side and foldGoal, never the projection drive.
+ */
 
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'

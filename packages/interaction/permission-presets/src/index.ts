@@ -208,13 +208,17 @@ export class PermissionPresetService extends Service {
       })),
       currentValue: zod.string().min(1),
     }) as unknown as zod.ZodType<PermissionSelect>
-    ctx.sessionProjections.register({
-      key: 'permissions',
-      stateVersion: 1,
-      stateSchema: knobStateSchema,
-      init: () => EMPTY_KNOBS,
-      apply: applyKnobEvent,
-      wire: { viewSchema: selectSchema, view: state => this.selectFor(state) },
+    // The `permissions` projection unit folds the three whole-value knob
+    // events; it registers through the projection registry.
+    ctx.inject(['sessionProjections'], (projectionCtx) => {
+      projectionCtx.sessionProjections.register({
+        key: 'permissions',
+        stateVersion: 1,
+        stateSchema: knobStateSchema,
+        init: () => EMPTY_KNOBS,
+        apply: applyKnobEvent,
+        wire: { viewSchema: selectSchema, view: state => this.selectFor(state) },
+      })
     })
 
     // The /permission command: the one write path a web client uses (the
