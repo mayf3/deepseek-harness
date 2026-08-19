@@ -4,6 +4,7 @@ import AgentRegistry, { agentEvents, Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import GoalService, {
   GoalError,
   GoalId,
@@ -60,6 +61,7 @@ function stubAgent(rawId: string, seed?: readonly import('@deepseek-ai/dsh-sessi
 async function harness(config: { defaultMaxGoalRounds?: number } = {}) {
   const ctx = new Context()
   await ctx.plugin(AgentRegistry)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(GoalService, config)
   const stub = stubAgent(`goal-test-${Math.random()}`)
   ctx.agents.register(stub.agent)
@@ -131,6 +133,7 @@ describe('GoalService creation and replay', () => {
   it('also resolves the default when constructed directly without Cordis config normalization', async () => {
     const ctx = new Context()
     await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SessionProjectionRegistry)
     const goals = new GoalService(ctx)
     const stub = stubAgent('goal-direct-construction')
     ctx.agents.register(stub.agent)
@@ -142,6 +145,7 @@ describe('GoalService creation and replay', () => {
   it('rejects invalid direct configuration', async () => {
     const ctx = new Context()
     await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SessionProjectionRegistry)
     await expect(ctx.plugin(GoalService, { defaultMaxGoalRounds: -1 })).rejects.toThrow(expect.objectContaining({
       code: 'GOAL_INVALID_MAX_ROUNDS',
     }))
@@ -155,6 +159,7 @@ describe('GoalService creation and replay', () => {
 
     const ctx = new Context()
     await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(GoalService)
     const resumed = stubAgent('seeded-goal', first.session.events)
     ctx.agents.register(resumed.agent)
@@ -169,6 +174,7 @@ describe('GoalService creation and replay', () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(GoalService)
     const parent = stubAgentForSession(ctx.sessions.create(SessionId('goal-fork-parent')))
     ctx.agents.register(parent.agent)
@@ -215,6 +221,7 @@ describe('GoalService creation and replay', () => {
   it('removes the service and its session-start listener with the providing fiber', async () => {
     const ctx = new Context()
     await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SessionProjectionRegistry)
     const fiber = await ctx.plugin(GoalService)
     const first = ctx.goals
     const stub = stubAgent('goal-hmr')
@@ -423,6 +430,7 @@ describe('GoalService mutations', () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(GoalService)
     const stub = stubAgentForSession(ctx.sessions.create(SessionId('goal-reentrant-observer')))
     ctx.agents.register(stub.agent)
@@ -441,6 +449,7 @@ describe('GoalService mutations', () => {
   it('does not delegate goal persistence to agent injection', async () => {
     const ctx = new Context()
     await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(GoalService)
     const stub = stubAgent('goal-independent-injection')
     stub.agent.inject = () => { throw new Error('injection must not be called') }

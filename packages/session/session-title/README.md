@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Log-backed session titles with an immediate deterministic fallback and one optional asynchronous provider. Every accepted revision is a log-only `session/title` event; `foldSessionTitle()` and `ctx.sessionTitle.get()` select the latest event and return its event seq and timestamp.
+Log-backed session titles with an immediate deterministic fallback and one optional asynchronous provider. Every accepted revision is a log-only `session/title` event. The required `title` projection retains the full latest snapshot for `ctx.sessionTitle.get()` while its client view remains `string | null`; `foldSessionTitle()` remains the direct fold for detached logs.
 
 Only text blocks from human `user/message` events are eligible. The first eligible prompt schedules a fallback from its first words within the configured UTF-8 byte limit. Whitespace is normalized, terminal control sequences are removed, and truncation never splits a code point. Empty and non-text prompts wait for later eligible input.
 
@@ -12,6 +12,8 @@ Only text blocks from human `user/message` events are eligible. The first eligib
 - `refresh(session, signal?)` materializes the fallback when needed, then explicitly runs the registered provider over the current eligible messages. Provider errors and caller cancellation reject; cancellation does not roll back an already accepted fallback event.
 - `rename(session, title)` accepts an explicit user title synchronously: it normalizes the text, supersedes in-flight automatic work, and appends a `session/title` event with the `user` source. A user-sourced latest title pins the session — later user messages schedule no automatic revision; an explicit `refresh` remains the deliberate unpin.
 - `register(provider)` installs the sole optional provider and returns its awaitable Cordis effect disposer. A second registration throws immediately; disposal aborts pending and active calls, waits for their settlement, and only then permits another provider to register.
+
+The service also registers the host-only `titleInput` projection. It incrementally retains eligible human text and the latest request route, so provider scheduling reads typed state through `stateOf()` instead of rescanning the session log.
 
 Automatic work never delays the main agent response. A provider starts only after a marked loop-built request's exact route matches the current logged `request/header`, including when the unchanged header needs no new snapshot. Its late completion appends a standalone log-only event directly through `Session` without opening a turn. Persistence observes that event eagerly and drains on ordinary lifecycle checkpoints; title publication itself does not force a flush. Automatic failures warn and retain the latest title. New all-message revisions, provider disposal, session disposal, and explicit refresh abort older work, and a stale completion cannot append. Concurrent explicit refreshes reserve their revision before provider work, while overlapping automatic and explicit fallback requests share one session-local in-flight append. The service and bundled model provider each append their own literal event type, so no generic title-write marker, cast, or settlement queue is needed. Service teardown cancels queued work and drains calls that ignore cancellation before unloading completes.
 

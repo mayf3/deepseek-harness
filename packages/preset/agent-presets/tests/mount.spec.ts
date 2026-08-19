@@ -9,6 +9,7 @@ import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import AgentRegistry, { assembleContextFor, type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -48,6 +49,7 @@ async function harness(roster: Config = { default: 'standard', roots: ROOTS, inc
   await ctx.plugin(SystemPrompt, { persona: '' })
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(AgentPresets, roster)
   return ctx
@@ -417,6 +419,7 @@ describe('the preset file is an input, never a persistence target', () => {
     await scoped.plugin(SystemPrompt, { persona: '' })
     await scoped.plugin(ToolRuntime)
     await scoped.plugin(AgentRegistry)
+    await scoped.plugin(SessionProjectionRegistry)
     await scoped.plugin(AgentLoop, { agents: [] })
     await scoped.plugin(AgentPresets, { default: 'self-disposing', roots: [{ path: root, trust: 'user' as const }], includeUserRoot: false })
 
@@ -582,6 +585,7 @@ describe('replacing a composition', () => {
     await scoped.plugin(SystemPrompt, { persona: '' })
     await scoped.plugin(ToolRuntime)
     await scoped.plugin(AgentRegistry)
+    await scoped.plugin(SessionProjectionRegistry)
     await scoped.plugin(AgentLoop, { agents: [] })
     await scoped.plugin(AgentPresets, { default: 'first', roots: [{ path: root, trust: 'user' as const }], includeUserRoot: false })
     const handle = await scoped.agents.create({

@@ -5,7 +5,7 @@
  * mode/label is the registered `subagent` projection unit's value, resolved
  * down a three-rung ladder: the registry's watermark cache for a live child,
  * a durable projection-cache row when it serves an own-suffix identity (the
- * seq gate), and one persistence inspection folded through the registry
+ * seq gate), and one persistence inspection folded through the same unit
  * otherwise, validated against the enumerated lifecycle. The projection fold
  * is the single classification authority — this module parses no descriptor
  * itself. Absent persistence, enumeration is live-only: a cold child is
@@ -22,6 +22,7 @@ import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import type { SessionProjectionCache } from '@deepseek-ai/dsh-session-projection-cache'
 import { SubagentError } from './error.ts'
+import { subagentIdentityProjectionDefinition } from './projection.ts'
 import type { SubagentIdentityProjection } from './projection-types.ts'
 
 /**
@@ -77,11 +78,9 @@ export type SubagentListEntry =
      * Why the candidate has no `child` row: `corrupt` for a settled candidate
      * whose projection fold served no identity (a missing, malformed, or
      * unrecognized-version descriptor — deliberately undistinguished), and
-     * for any candidate whose log makes a registered unit's fold or schema
-     * throw (deterministic data damage, contained per child); `unavailable`
-     * when the candidate's persistence inspection failed (retried on the
-     * next listing). `unsupported` is never produced; it remains in the
-     * union for consumers that route on it.
+     * `unavailable` when the candidate's persistence inspection failed
+     * (retried on the next listing). `unsupported` is never produced; it
+     * remains in the union for consumers that route on it.
      */
     readonly reason: 'corrupt' | 'unsupported' | 'unavailable'
   }
@@ -117,19 +116,19 @@ interface PositionedCandidate {
 /**
  * Enumerate one parent's origin-classified direct children from the
  * live-preferred merge of `ctx.sessions` and optional session persistence,
- * serving each identity from the `subagent` projection unit: the registry's
- * watermark snapshot for a live child; for a cold one, a durable
+ * serving each identity from the `subagent` projection unit: `stateOf()` for
+ * a live child; for a cold one, a durable
  * projection-cache row when it serves an own-suffix identity (the seq gate),
  * else one bounded-concurrency persistence inspection folded through the
- * registry.
+ * same unit.
  * @see SubagentRuntime.listChildren for the public cancellation and failure contract.
  * @param ctx - context carrying the session store, the projection registry,
  *   optional persistence, and the optional projection cache.
  * @param parentSessionId - parent session whose direct children are listed.
  * @param signal - caller-owned cancellation observed around every persistence read.
  * @returns children and per-child diagnostics ordered by `createdAt`, then id.
- * @throws {@link SubagentError} when the projection registry or the session
- *   store is not mounted, or the caller cancels the listing.
+ * @throws {@link SubagentError} when the session store is not mounted or the
+ *   caller cancels the listing.
  */
 export async function listChildren(
   ctx: Context,
@@ -185,16 +184,7 @@ async function prepareListing(
   ctx: Context,
   signal: AbortSignal | undefined,
 ): Promise<ListingRuntime> {
-  const projections = ctx.get('sessionProjections')
-  // Checked before any read, even with zero candidates: mode/label are the
-  // row's strong contract, so a missing fold capability is a deterministic
-  // deployment configuration error, never an empty success.
-  if (projections === undefined) {
-    throw new SubagentError(
-      'listing subagents requires the sessionProjections registry (load @deepseek-ai/dsh-session-projection)',
-      'SUBAGENT_CONTROL_PROJECTIONS_UNAVAILABLE',
-    )
-  }
+  const projections = ctx.sessionProjections
   // Strict global read, never the `ctx.sessions` property proxy: the proxy is
   // caller-scope bound, so a consumer plugin without its own `sessions`
   // injection (the model-facing tool, the API proxy) would throw on access.
@@ -257,17 +247,7 @@ async function resolveCandidateRows(
     // The registry's watermark cache serves the live value with zero log
     // reads; a live child without an identity yet is the creation window
     // before the establishing provider appends its descriptor.
-    let identity: SubagentIdentityProjection | null | undefined
-    try {
-      identity = projections.snapshot(candidate.live).values.subagent
-    } catch {
-      // The snapshot folds EVERY registered unit over this child's log, so
-      // any unit's fold or schema can reject damaged payloads. That is
-      // deterministic data damage in this one child; it degrades to one
-      // corrupt diagnostic instead of failing the whole listing.
-      rows[index] = { kind: 'diagnostic', id: childId, reason: 'corrupt' }
-      return
-    }
+    const identity = projections.stateOf(candidate.live, 'subagent')
     // The unit's serializable no-value sentinel is `null`; `undefined` can
     // only mean the key was dropped at a JSON boundary. Both are no value.
     if (identity === undefined || identity === null) return
@@ -283,7 +263,7 @@ async function resolveCandidateRows(
       async () => {
         for (let job = queue.shift(); job !== undefined; job = queue.shift()) {
           rows[job.index] = await resolveColdIdentity(
-            persistence, projections, cache, job.header,
+            persistence, cache, job.header,
             subagentParents.has(job.header.id), signal,
           )
         }
@@ -338,16 +318,13 @@ function compareCorpusRecords(a: CorpusRecord, b: CorpusRecord): number {
 /**
  * Resolve one cold candidate down the remaining ladder: a durable
  * projection-cache row when it serves an own-suffix identity (the seq gate),
- * otherwise one persistence inspection folded through the projection
- * registry (the same detached recipe the API proxy uses for detached session
- * projections). A failed inspection is one transient `unavailable` row
- * retried on the next listing; an inspection naming another lifecycle, and a
- * settled log the fold cannot identify — or that makes any registered unit
- * throw — are final, so they report `corrupt`.
+ * otherwise one persistence inspection folded through the same subagent unit.
+ * A failed inspection is one transient `unavailable` row retried on the next
+ * listing; an inspection naming another lifecycle or a settled log the fold
+ * cannot identify reports `corrupt`.
  */
 async function resolveColdIdentity(
   persistence: SessionPersistence,
-  projections: SessionProjectionRegistry,
   cache: SessionProjectionCache | undefined,
   header: SessionHeader,
   hasChildren: boolean,
@@ -393,16 +370,11 @@ async function resolveColdIdentity(
   if (!sameLifecycle(inspected.meta, header)) {
     return { kind: 'diagnostic', id: childId, reason: 'corrupt' }
   }
-  let identity: SubagentIdentityProjection | null | undefined
-  try {
-    identity = projections.restore({}, inspected.events, 0).snapshot.values.subagent
-  } catch {
-    // The restore folds EVERY registered unit over this child's log, so any
-    // unit's fold or schema can reject damaged payloads — deterministic data
-    // damage in this one child, contained as its own corrupt diagnostic.
-    return { kind: 'diagnostic', id: childId, reason: 'corrupt' }
+  let identity: SubagentIdentityProjection | null = subagentIdentityProjectionDefinition.init()
+  for (const event of inspected.events) {
+    identity = subagentIdentityProjectionDefinition.apply(identity, event)
   }
-  if (identity === undefined || identity === null) {
+  if (identity === null) {
     return { kind: 'diagnostic', id: childId, reason: 'corrupt' }
   }
   return childRow(childId, identity, 'inactive', hasChildren)

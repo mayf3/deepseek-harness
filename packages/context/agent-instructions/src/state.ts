@@ -4,7 +4,10 @@
  * @module @deepseek-ai/dsh-agent-instructions/state
  */
 
+import { z as zod } from 'zod'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-session-projection'
+import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
@@ -133,18 +136,59 @@ function sameInstructionChange(a: AgentInstructionChange, b: AgentInstructionCha
     && a.digest === b.digest
 }
 
+const workspaceInstructionsStateSchema = zod.record(zod.string(), zod.object({
+  change: zod.object({
+    action: zod.enum(['set', 'replace', 'remove']),
+    scope: zod.string(),
+    path: zod.string(),
+    digest: zod.string().optional(),
+  }),
+  seq: zod.number().int().nonnegative(),
+}))
+
+/** Latest workspace-instruction change by scope. */
+export type WorkspaceInstructionsState = zod.infer<typeof workspaceInstructionsStateSchema>
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    /** Latest workspace-instruction change by scope. */
+    workspaceInstructions: WorkspaceInstructionsState
+  }
+}
+
+/**
+ * Create the workspace-instruction projection.
+ * @returns Workspace-instruction projection definition.
+ */
+export function createWorkspaceInstructionsProjection(): ProjectionDefinition<'workspaceInstructions', WorkspaceInstructionsState> {
+  return {
+    key: 'workspaceInstructions',
+    stateSchema: workspaceInstructionsStateSchema,
+    init: () => ({}),
+    apply: (state, event) => {
+      if (event.type !== 'user/message' || !isWorkspaceContextSource(event.data.source)) return state
+      const changes = workspaceInstructionChanges(event.data.source)
+      if (changes.length === 0) return state
+      let next = state
+      for (const change of changes) {
+        next = { ...next, [change.scope]: { change, seq: event.seq } }
+      }
+      return next
+    },
+    stateVersion: 1,
+  }
+}
+
 function visibleInstructionChanges(
   agent: Agent,
   authorityMessages: readonly UserMessage[],
 ): Map<string, AgentInstructionChange> {
   const visibleSeqs = new Set(agent.session.surface.nodes)
   const visible = new Map<string, AgentInstructionChange>()
-  for (const [seq, event] of agent.session.events.entries()) {
-    if (event.type !== 'user/message' || !isWorkspaceContextSource(event.data.source)) continue
-    const changes = workspaceInstructionChanges(event.data.source)
-    for (const change of changes) {
-      if (visibleSeqs.has(seq)) visible.set(change.scope, change)
-    }
+  const folded = agent.ctx.get('sessionProjections')?.stateOf(agent.session, 'workspaceInstructions')
+  if (folded === undefined) throw new Error('workspaceInstructions projection is not registered')
+  for (const [scope, record] of Object.entries(folded)) {
+    if (visibleSeqs.has(record.seq)) visible.set(scope, record.change)
   }
   for (const message of authorityMessages) {
     if (!isWorkspaceContextSource(message.source)) continue

@@ -15,11 +15,13 @@ import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import type { ToolExecution, ToolExecutionResult, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-session-projection'
 import { Config, resolveConfig, workspaceBaselineIdentity, type ResolvedConfig } from './config.ts'
 import { findProjectRoot, loadBaselineInstructionSet } from './files.ts'
 import {
   applyInstructionVersionUpdates,
   baselineInstructionState,
+  createWorkspaceInstructionsProjection,
   name,
   reconcileInstructionContext,
   workspaceContextMessage,
@@ -77,7 +79,12 @@ function filePathFromExecution(exec: ToolExecution): string | undefined {
   return filePath.length > 0 ? filePath : undefined
 }
 
+/** Required services (the projection registry drives the instruction fold). */
+export const inject = ['sessionProjections']
+
 export function apply(ctx: Context, config: Config): void {
+  ctx.sessionProjections.register(createWorkspaceInstructionsProjection())
+
   const resolved: ResolvedConfig = resolveConfig(config)
   const instructionVersions: InstructionVersionCache = new WeakMap()
   const baselinePreparations = new WeakMap<Session, {

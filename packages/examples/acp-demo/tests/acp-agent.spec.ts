@@ -9,6 +9,7 @@ import { agentEvents } from '@deepseek-ai/dsh-agent'
 import { TOOL_ORDER_REST } from '@deepseek-ai/dsh-system-prompt'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as acpAgent from '../src/index.ts'
 
 /**
@@ -32,6 +33,9 @@ async function mount(config: acpAgent.Config, withBash = false): Promise<Context
     })
   }
   config.persistenceRoot ??= await mkdtemp(join(tmpdir(), 'dsh-acp-demo-persistence-'))
+  // The bundled spine's AgentLoop declares the registry as a required
+  // injection; the app does not mount it (leaves do), so the harness does.
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(acpAgent, config)
   return ctx
 }
@@ -127,6 +131,7 @@ describe('dsh-acp-demo composition', () => {
     // `ctx.plugin`, which validates+defaults the config first) with no
     // persistenceRoot, so the runtime fallback is the one that fires.
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     // No persona: covers the omitted-persona forwarding branch too.
     await acpAgent.apply(ctx, {
       provider: 'mock',
@@ -154,6 +159,7 @@ describe('dsh-acp-demo composition', () => {
   it('uses default skill config when apply is called directly without skills', async () => {
     await withIsolatedSkillHomes(async () => {
       const ctx = new Context()
+      await ctx.plugin(SessionProjectionRegistry)
       await acpAgent.apply(ctx, { provider: 'mock', model: 'mock', workspaceContext: false })
       expect(ctx.skills).toBeDefined()
       expect(await ctx.skills.list()).toEqual([])

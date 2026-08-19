@@ -8,7 +8,7 @@ Sources: [`packages/session/session-title/src/index.ts`](../../packages/session/
 
 ## Durable title state
 
-`SessionTitleProviderId` is recorded for provider-produced revisions. `SessionTitleEventData` lists the exact human-message seqs used for the title, while `SessionTitleSnapshot` adds the durable event envelope facts selected by `foldSessionTitle()`.
+`SessionTitleProviderId` is recorded for provider-produced revisions. `SessionTitleEventData` lists the exact human-message seqs used for the title, while `SessionTitleSnapshot` adds the durable event envelope facts retained in the `title` projection state. `ctx.sessionTitle.get()` reads that state through `stateOf()`; the client view remains only the title string or `null`. `foldSessionTitle()` provides the same selection for detached logs.
 
 ```ts type-equiv
 /** Identifies one session-title provider registration. */
@@ -200,5 +200,5 @@ register(provider: SessionTitleProvider): () => Promise<void>
 
 Types: [Session](session.md)
 
-Source: [`packages/session/session-title/src/index.ts:261`](../../packages/session/session-title/src/index.ts)
+Source: [`packages/session/session-title/src/index.ts:282`](../../packages/session/session-title/src/index.ts)
 <!-- END GENERATED cordis-surface -->

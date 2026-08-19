@@ -48,7 +48,7 @@ export interface AgentInstructionChange {
   action: 'set' | 'replace' | 'remove'
   scope: string
   path: string
-  digest?: string
+  digest?: string | undefined
 }
 
 /** One state transition paired with the content used to render it. */

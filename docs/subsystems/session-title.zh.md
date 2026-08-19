@@ -8,7 +8,7 @@
 
 ## 持久标题状态
 
-提供方生成修订时会记录 `SessionTitleProviderId`。`SessionTitleEventData` 列出生成标题时使用的精确人类消息 seq，`SessionTitleSnapshot` 则加入 `foldSessionTitle()` 选出的持久事件封装信息。
+提供方生成修订时会记录 `SessionTitleProviderId`。`SessionTitleEventData` 列出生成标题时使用的精确人类消息 seq，`SessionTitleSnapshot` 则加入 `title` 投影状态保留的持久事件封装信息。`ctx.sessionTitle.get()` 通过 `stateOf()` 读取该状态；客户端视图仍只包含标题字符串或 `null`。`foldSessionTitle()` 为脱离服务的日志提供相同选择。
 
 ```ts type-equiv
 /** Identifies one session-title provider registration. */
@@ -200,5 +200,5 @@ register(provider: SessionTitleProvider): () => Promise<void>
 
 Types: [Session](session.md)
 
-Source: [`packages/session/session-title/src/index.ts:261`](../../packages/session/session-title/src/index.ts)
+Source: [`packages/session/session-title/src/index.ts:282`](../../packages/session/session-title/src/index.ts)
 <!-- END GENERATED cordis-surface -->

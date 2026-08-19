@@ -13,7 +13,6 @@ import { agentEvents } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
-// Type-only: resolves ctx.sessionProjections for the optional unit child.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import {
   applyGoalEvent,
@@ -50,7 +49,7 @@ import type {
 // The pure payload outlet (./types.ts, ONE home of the `goal` projection-key
 // declaration) re-exported onto the package root keeps the module edge in
 // the emitted index.d.ts, so aggregate programs consuming the declarations
-// still receive the SessionProjectionMap merge.
+// still receive the SessionProjectionStateMap merge.
 export type * from './types.ts'
 export type * from './domain.ts'
 export { GOAL_CHANGE_VERSION, GoalError, GoalId } from './runtime.ts'
@@ -181,7 +180,7 @@ function resolveBlockReason(reason: unknown): GoalBlockReason {
 
 /** Goal service (`ctx.goals`) backed exclusively by the owning session log. */
 export class GoalService extends TypertRemoteService {
-  static inject = ['agents']
+  static inject = ['agents', 'sessionProjections']
 
   static Config: z<Config> = z.object({
     defaultMaxGoalRounds: z.number().default(256),
@@ -198,18 +197,13 @@ export class GoalService extends TypertRemoteService {
     ctx.on('agent/session-start', ({ agent }) => {
       this.cache(agent.session).activation = 'disarmed'
     })
-    // The `goal` projection unit: last-wins fold of goal/change whole values
-    // (see applyGoalProjection). The unit child activates only when a
-    // projection registry is composed (headless assemblies stay unaffected).
-    ctx.inject(['sessionProjections'], (projectionCtx) => {
-      projectionCtx.sessionProjections.register<'goal', GoalProjection | null>({
-        key: 'goal',
-        stateSchema: goalProjectionSchema,
-        init: () => null,
-        apply: applyGoalProjection,
-        wire: { viewSchema: goalProjectionSchema, view: state => state },
-        stateVersion: 4,
-      })
+    ctx.sessionProjections.register<'goal', GoalProjection | null>({
+      key: 'goal',
+      stateVersion: 4,
+      stateSchema: goalProjectionSchema,
+      init: () => null,
+      apply: applyGoalProjection,
+      wire: { viewSchema: goalProjectionSchema, view: state => state },
     })
   }
 

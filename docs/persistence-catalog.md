@@ -115,7 +115,7 @@ Sources: [`packages/core/session/src/types.ts:336`](../packages/core/session/src
 }
 ```
 
-Source: [`packages/core/agent/src/types.ts:19`](../packages/core/agent/src/types.ts)
+Source: [`packages/core/agent/src/types.ts:33`](../packages/core/agent/src/types.ts)
 
 ### `agent-preset/*`
 
@@ -160,7 +160,7 @@ Source: [`packages/preset/agent-presets/src/session.ts:26`](../packages/preset/a
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/interaction/user-approval/src/index.ts:44`](../packages/interaction/user-approval/src/index.ts)
+Source: [`packages/interaction/user-approval/src/index.ts:73`](../packages/interaction/user-approval/src/index.ts)
 
 <a id="approvaldecided--log-only"></a>
 
@@ -178,7 +178,7 @@ Source: [`packages/interaction/user-approval/src/index.ts:44`](../packages/inter
 }
 ```
 
-Source: [`packages/interaction/user-approval/src/index.ts:55`](../packages/interaction/user-approval/src/index.ts)
+Source: [`packages/interaction/user-approval/src/index.ts:84`](../packages/interaction/user-approval/src/index.ts)
 
 <a id="approvalpolicy--log-only"></a>
 
@@ -189,7 +189,8 @@ Source: [`packages/interaction/user-approval/src/index.ts:55`](../packages/inter
  * The session's approval policy was switched — log-only, durable,
  * replayable, never in the model transcript (the model learns the policy
  * from the runtime-context snapshot and live switch notices). The LAST
- * such event is the session's override ({@link effectiveApprovalPolicy}).
+ * such event is the session's override (folded by the approvalPolicy
+ * projection unit).
  * `source: 'delegation'` marks an override seeded into a child; an absent
  * source is a runtime switch.
  */
@@ -200,7 +201,7 @@ Source: [`packages/interaction/user-approval/src/index.ts:55`](../packages/inter
 }
 ```
 
-Source: [`packages/interaction/user-approval/src/index.ts:67`](../packages/interaction/user-approval/src/index.ts)
+Source: [`packages/interaction/user-approval/src/index.ts:97`](../packages/interaction/user-approval/src/index.ts)
 
 ### `assistant/*`
 
@@ -504,13 +505,13 @@ Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src
 /**
  * Records the selected preset as durable, log-only user intent. The knob
  * events follow in the same turn and control execution; this event stays
- * out of the model transcript and lets {@link effectivePermissionPreset}
+ * out of the model transcript and lets the permission projection unit
  * preserve a selection when bundles match.
  */
 'permission/preset': { preset: string }
 ```
 
-Source: [`packages/interaction/permission-presets/src/index.ts:50`](../packages/interaction/permission-presets/src/index.ts)
+Source: [`packages/interaction/permission-presets/src/index.ts:46`](../packages/interaction/permission-presets/src/index.ts)
 
 ### `plan/*`
 
@@ -522,12 +523,12 @@ Source: [`packages/interaction/permission-presets/src/index.ts:50`](../packages/
 /**
  * Whether plan mode is in force from this point on: log-only, non-surface,
  * whole-value replace. The last `plan/mode` wins; a log with none folds to
- * inactive through {@link foldPlanMode}.
+ * inactive through the projection unit's fold.
  */
 'plan/mode': { active: boolean }
 ```
 
-Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/src/index.ts)
+Source: [`packages/plan/plan-mode/src/index.ts:48`](../packages/plan/plan-mode/src/index.ts)
 
 ### `request/*`
 
@@ -570,7 +571,7 @@ Source: [`packages/core/session/src/types.ts:304`](../packages/core/session/src/
  * The session's sandbox mode was switched — log-only (like `approval/*`;
  * NOT a surface event, carries no `surfaceOp`): durable and replayable,
  * never in the model transcript. The LAST such event is the session's
- * override ({@link effectiveSandboxMode}). `source: 'delegation'` marks
+ * override (folded by the sandboxMode projection unit). `source: 'delegation'` marks
  * an override seeded into a child; an absent source is a runtime switch.
  */
 'sandbox/mode': {
@@ -648,7 +649,7 @@ Source: [`packages/core/session/src/types.ts:332`](../packages/core/session/src/
 
 Types: [SessionTitleEventData](subsystems/session-title.md)
 
-Source: [`packages/session/session-title/src/index.ts:100`](../packages/session/session-title/src/index.ts)
+Source: [`packages/session/session-title/src/index.ts:75`](../packages/session/session-title/src/index.ts)
 
 <a id="sessiontitle-llm-request--log-only"></a>
 

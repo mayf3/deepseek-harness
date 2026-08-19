@@ -7,10 +7,12 @@
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { z as zod } from 'zod'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-projection'
 import {
   escapeText,
   isModelInvocable,
@@ -22,7 +24,7 @@ import {
 } from '@deepseek-ai/dsh-skill'
 
 export const name = 'tool-skill'
-export const inject = ['agents', 'tools', 'skills']
+export const inject = ['agents', 'tools', 'skills', 'sessionProjections']
 
 const DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH = 500
 /**
@@ -69,11 +71,29 @@ export const Config: z<Config> = z.object({
 })
 
 /**
+ * The skill-catalog projection's state schema — the one definition of the
+ * state shape; the type is inferred from it (state equals the public shape).
+ */
+const skillCatalogStateSchema = zod.object({
+  digest: zod.string().min(1),
+  seq: zod.number().int().nonnegative(),
+}).nullable()
+
+type SkillCatalogState = zod.infer<typeof skillCatalogStateSchema>
+
+/**
  * Register the model-facing skill loader and its visibility-matched
  * durable session catalog. The catalog is emitted only when the calling agent
  * resolves this plugin's exact tool registration; a restriction or scoped
  * same-name shadow therefore removes both the schema and its call guidance.
  */
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    /** The latest published skill-catalog message (digest + seq); null before the first publication. */
+    skillCatalog: SkillCatalogState
+  }
+}
+
 export function apply(ctx: Context, config: Config = {}): void {
   const catalogDescriptionMaxLength = config.catalogDescriptionMaxLength ?? DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH
   assertPositiveInteger('catalogDescriptionMaxLength', catalogDescriptionMaxLength, 3)
@@ -203,6 +223,19 @@ export function apply(ctx: Context, config: Config = {}): void {
     return { kind: 'enter', messages: [...decision.messages, ...injections] }
   })
 
+  ctx.sessionProjections.register({
+    key: 'skillCatalog',
+    stateVersion: 1,
+    stateSchema: skillCatalogStateSchema,
+    init: () => null,
+    apply: (state, event) => {
+      if (event.type !== 'user/message' || event.data.source.kind !== 'skill-catalog') return state
+      const entries = readCatalogEntries(event.data.source)
+      if (entries === undefined) return state
+      return { digest: digestCatalogEntries(entries), seq: event.seq }
+    },
+  })
+
   // Register after the tool so reverse teardown removes guidance first. Exact definition
   // identity prevents a scoped shadow merely named `skill` from inheriting this catalog.
   //
@@ -226,7 +259,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const skills = snapshot.skills.filter(isModelInvocable)
     const entries = catalogSourceEntries(skills, catalogDescriptionMaxLength)
     const digest = digestCatalogEntries(entries)
-    const history = catalogHistory(agent)
+    const history = catalogHistory(ctx, agent)
     const existing = catalogMessage(decision.messages)
     if (history.visibleDigest === digest) {
       return existing === undefined
@@ -358,22 +391,13 @@ function readCatalogEntries(source: unknown): SkillCatalogSource['entries'] | un
   return readable
 }
 
-function catalogHistory(agent: Agent): { visibleDigest?: string; published: boolean } {
+function catalogHistory(ctx: Context, agent: Agent): { visibleDigest?: string; published: boolean } {
   const visible = new Set(agent.session.surface.nodes)
-  const events = agent.session.events
-  let published = false
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    // The loop bounds prove the read-only event view contains this index.
-    // oxlint-disable-next-line typescript/no-non-null-assertion
-    const event = events[index]!
-    if (event.type !== 'user/message' || event.data.source.kind !== 'skill-catalog') continue
-    const entries = readCatalogEntries(event.data.source)
-    if (entries === undefined) continue
-    const digest = digestCatalogEntries(entries)
-    published = true
-    if (visible.has(event.seq)) return { visibleDigest: digest, published }
-  }
-  return { published }
+  const state = ctx.sessionProjections.stateOf(agent.session, 'skillCatalog') ?? null
+  if (state === null) return { published: false }
+  return visible.has(state.seq)
+    ? { visibleDigest: state.digest, published: true }
+    : { published: true }
 }
 
 function catalogMessage(

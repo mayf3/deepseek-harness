@@ -46,6 +46,10 @@
 - id: session-checkpoints
   name: '@deepseek-ai/dsh-session-checkpoint-policy'
 
+# Required by plugins that register or read session projection state below.
+- id: session-projection
+  name: '@deepseek-ai/dsh-session-projection'
+
 - id: subagent
   name: '@deepseek-ai/dsh-subagent'
 

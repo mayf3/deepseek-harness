@@ -1,16 +1,6 @@
-/**
- * The `title` projection unit: mounting the title service beside the
- * projection registry serves the current normalized title (last-wins over
- * session/title events, the same events foldSessionTitle consumes) — null
- * before the first title — through the registry snapshot and the change
- * feed; compositions without the registry are unaffected; unmounting the
- * service removes the key (HMR safety). The bespoke session/title mux frame
- * is untouched by this unit (its retirement is the client value-store
- * migration's concern).
- */
-
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -26,7 +16,6 @@ async function harness(withTitleService: boolean): Promise<{ ctx: Context; sessi
   return { ctx, session: ctx.sessions.create(SessionId('titled')) }
 }
 
-/** Append one session/title event directly (the replay-plane shape the unit folds). */
 function appendTitle(session: Session, title: string): number {
   return session.append('session/title', { title, messageSeqs: [1], source: { kind: 'fallback' } }).seq
 }
@@ -46,7 +35,6 @@ describe('title projection unit', () => {
     })
     const firstSeq = appendTitle(session, 'First title')
     const secondSeq = appendTitle(session, 'Second title')
-    // Unrelated event: same-reference apply, no notification.
     session.append('turn/start', { turn: 1 })
     expect(changes).toEqual([
       { key: 'title', value: 'First title', seq: firstSeq },
@@ -72,5 +60,24 @@ describe('title projection unit', () => {
     expect(ctx.sessionProjections.snapshot(session).values.title).toBe('Ephemeral')
     await fiber.dispose()
     expect('title' in ctx.sessionProjections.snapshot(session).values).toBe(false)
+  })
+
+  it('keeps thousands of title inputs in bounded reverse-linked chunks without persisting them', async () => {
+    const { ctx, session } = await harness(false)
+    session.append('turn/start', { turn: 1 })
+    for (let index = 0; index < 5_000; index++) {
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: `message ${String(index)}` }],
+        source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+    }
+    await ctx.plugin(SessionTitleService, CONFIG)
+
+    const state = ctx.sessionProjections.stateOf(session, 'titleInput')
+    expect(state?.count).toBe(5_000)
+    let chunks = 0
+    for (let chunk = state?.tail ?? null; chunk !== null; chunk = chunk.previous) chunks += 1
+    expect(chunks).toBe(Math.ceil(5_000 / 64))
+    expect(ctx.sessionProjections.checkpoint(session).titleInput).toBeUndefined()
   })
 })

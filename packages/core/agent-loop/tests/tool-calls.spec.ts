@@ -12,6 +12,7 @@ import LlmRuntime from '@deepseek-ai/dsh-llm'
 import ToolRuntime, { defineContentToolFixture, TOOL_ABORTED_BEFORE_DISPATCH, TOOL_RUNTIME_SCHEDULER, type PostToolDecision, type PreToolDecision } from '@deepseek-ai/dsh-tools'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop, { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from '@deepseek-ai/dsh-agent-loop'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { MockAdapter, textResponse } from './mock-adapter.ts'
 import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
@@ -20,6 +21,7 @@ async function harness(adapter: MockAdapter, maxParallelToolCalls?: number) {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SystemPrompt, { persona: '' })
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
@@ -267,17 +269,24 @@ describe('tool-call scheduler: rolling pool honors maxParallelToolCalls', () => 
     await expect(harness(new MockAdapter([]), 1.5)).rejects.toThrow()
   })
 
-  it('defensively rejects invalid caps when direct construction bypasses the config schema', () => {
-    expect(() => new AgentLoop(new Context(), { agents: [], maxParallelToolCalls: 0 }))
+  it('defensively rejects invalid caps when direct construction bypasses the config schema', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
+    expect(() => new AgentLoop(ctx, { agents: [], maxParallelToolCalls: 0 }))
       .toThrow('maxParallelToolCalls must be a positive integer')
-    expect(() => new AgentLoop(new Context(), { agents: [], maxParallelToolCalls: 1.5 }))
+    await ctx.fiber.dispose()
+    const other = new Context()
+    await other.plugin(SessionProjectionRegistry)
+    expect(() => new AgentLoop(other, { agents: [], maxParallelToolCalls: 1.5 }))
       .toThrow('maxParallelToolCalls must be a positive integer')
+    await other.fiber.dispose()
   })
 
   it('defaults the cap when direct construction bypasses the config schema', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SystemPrompt, { persona: '' })
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(AgentRegistry)
@@ -346,6 +355,7 @@ describe('tool-call scheduler: rolling pool honors maxParallelToolCalls', () => 
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SystemPrompt, { persona: '' })
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(AgentRegistry)
@@ -704,6 +714,7 @@ describe('code-mode native-tool denial through the agent loop', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SystemPrompt, { persona: '' })
     await ctx.plugin(ToolRuntime, { mode: 'code' })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- FakeCodeRuntime is an internal test helper with an opaque type shape

@@ -883,15 +883,6 @@ function subagentPromptError(
   return err(request, { code: 'internal', message: 'subagent prompt failed', details: {} })
 }
 
-/** Stable RPC face of the missing projections capability, shared by every catalog read path. */
-function projectionsUnavailableError(): RpcError {
-  return {
-    code: 'internal',
-    message: 'subagent catalog is unavailable: this deployment does not mount the sessionProjections registry (load @deepseek-ai/dsh-session-projection)',
-    details: {},
-  }
-}
-
 /** Verify one address and mode against the complete direct-child catalog. */
 async function catalogChild(
   ctx: Context,
@@ -927,9 +918,6 @@ async function catalogChild(
   } catch (error: unknown) {
     if (signal?.aborted || (error instanceof SubagentError && error.code === 'CANCELLED')) {
       return { error: { code: 'cancelled', message: 'subagent catalog read was cancelled', details: {} } }
-    }
-    if (error instanceof SubagentError && error.code === 'SUBAGENT_CONTROL_PROJECTIONS_UNAVAILABLE') {
-      return { error: projectionsUnavailableError() }
     }
     return { error: { code: 'internal', message: 'subagent catalog read failed', details: {} } }
   }
@@ -1370,31 +1358,30 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       // the signal fired — never invoked, entry pending forever, zombie frame
       // on every mux replay. Settle synchronously instead of publishing.
       if (req.signal?.aborted === true) return Promise.resolve<ApprovalOutcome>('cancelled')
-      // The audit pair `approval/asked` is already appended by the service
+      // The audit pair `approval/asked` is already folded by the service
       // before dispatch, but dispatch rides a microtask: parallel tool calls
-      // can append several asked events before any answerer runs. THIS
-      // request's event is therefore the newest asked event that is still
-      // undecided, unclaimed by another pending entry, and — when the ask
-      // names a call — carries the same callId.
-      const events = req.agent.session.events
+      // can add several pending records before any answerer runs. THIS
+      // request's record is therefore the newest one that is still unclaimed
+      // by another pending entry and — when the ask names a call — carries
+      // the same callId.
+      const pending = ctx.get('sessionProjections')?.stateOf(req.agent.session, 'approvalPending')
       const claimed = new Set<ApprovalRequestId>()
       for (const entry of pendingApprovals.values()) claimed.add(entry.approvalId)
-      const decided = new Set<ApprovalRequestId>()
       let approvalId: ApprovalRequestId | undefined
-      for (let i = events.length - 1; i >= 0; i -= 1) {
-        const event = events[i] as SessionEvent
-        if (event.type === 'approval/decided') {
-          decided.add(event.data.id)
-        } else if (event.type === 'approval/asked') {
-          if (decided.has(event.data.id) || claimed.has(event.data.id)) continue
+      let bestSeq = -1
+      if (pending !== undefined) {
+        for (const [id, record] of Object.entries(pending)) {
+          if (claimed.has(id as ApprovalRequestId)) continue
           // Symmetric pairing: a callId-bearing ask only takes its own call's
           // record, and a callId-less ask only takes a callId-less record —
           // so neither shape can steal the other's audit id under parallel
           // asks. (Today every producer — the tool executor — passes callId;
           // the callId-less arm guards any future non-tool asker.)
-          if ((req.callId ?? null) !== (event.data.callId ?? null)) continue
-          approvalId = event.data.id
-          break
+          if ((req.callId ?? null) !== record.callId) continue
+          if (record.seq > bestSeq) {
+            bestSeq = record.seq
+            approvalId = id as ApprovalRequestId
+          }
         }
       }
       // No asked event means the request bypassed the service's audit path —
@@ -2569,9 +2556,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               message: 'subagent catalog read was cancelled',
               details: {},
             })
-          }
-          if (error instanceof SubagentError && error.code === 'SUBAGENT_CONTROL_PROJECTIONS_UNAVAILABLE') {
-            return err(request, projectionsUnavailableError())
           }
           return err(request, {
             code: 'internal',

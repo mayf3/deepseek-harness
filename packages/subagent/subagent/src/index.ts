@@ -169,6 +169,8 @@ declare module '@deepseek-ai/cordis' {
 
 /** Named provider registry with one-shot runs, durable discovery, and continuable-child operations. */
 export class SubagentRuntime extends Service {
+  static inject = ['sessionProjections']
+
   private providers = new Map<string, SubagentProvider>()
   private continuations: SubagentContinuationManager | undefined
   /** Deployment contributions composed into unpublished continuable children. */
@@ -194,10 +196,8 @@ export class SubagentRuntime extends Service {
         if (this.continuations === manager) this.continuations = undefined
       }, 'subagents.continuationBinding()')
     })
-    ctx.inject(['sessionProjections'], (projectionCtx) => {
-      projectionCtx.sessionProjections.register(subagentTimingProjectionDefinition)
-      projectionCtx.sessionProjections.register(subagentIdentityProjectionDefinition)
-    })
+    ctx.sessionProjections.register(subagentTimingProjectionDefinition)
+    ctx.sessionProjections.register(subagentIdentityProjectionDefinition)
   }
 
   /**
@@ -334,7 +334,7 @@ export class SubagentRuntime extends Service {
    * row when the optional cache serves an own-suffix identity (its `seq`
    * gate proves the value postdates the fork seed, where a child's own
    * descriptor is immutable once appended), else one persistence inspection
-   * folded through the registry. The
+   * folded through the same unit. The
    * projection fold is the single classification authority; per-child
    * diagnostics relay a fold that served no identity or a failed inspection,
    * never a list-time descriptor parse. Absent persistence, enumeration is
@@ -349,8 +349,8 @@ export class SubagentRuntime extends Service {
    * @param signal - caller-owned cancellation forwarded to persistence reads
    *   and observed around every read await.
    * @returns children and per-child diagnostics ordered by `createdAt`, then id.
-   * @throws {@link SubagentError} when the projection registry or the session
-   *   store is not mounted, or the caller cancels the listing.
+   * @throws {@link SubagentError} when the session store is not mounted, or
+   *   the caller cancels the listing.
    */
   listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]> {
     return listSubagentChildren(this.ctx, parentSessionId, signal)

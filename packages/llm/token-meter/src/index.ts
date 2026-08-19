@@ -10,7 +10,6 @@ import { BlockAssembler, deepFreeze } from '@deepseek-ai/dsh-llm'
 import type { Message, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { EpochHeader, Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { canonicalHeader, headerEquals, isSurfaceEvent } from '@deepseek-ai/dsh-session'
-// Type-only: resolves the optional projection registry Context declaration.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {
   TokenMeasurement,
@@ -24,6 +23,11 @@ import { estimateContent, estimateHeader, estimateMessage, ROLE_OVERHEAD } from 
 import { foldSurfaceTokens } from './surface-fold.ts'
 
 export type * from './types.ts'
+// Module-edge re-export: forces the emitted index.d.ts to import the
+// projection-unit modules, so their SessionProjectionStateMap augmentations load
+// in aggregate programs that only import the package root.
+export type * from './usage-projection.ts'
+export type * from './breakdown-projection.ts'
 
 interface MeasurementAnchor {
   readonly header: EpochHeader | undefined
@@ -76,19 +80,17 @@ export class TokenMeter extends Service {
   // the public type excludes settings while validateConfigKeys rejects them.
   static Config: z<TokenMeterConfig> = z.object({}) as unknown as z<TokenMeterConfig>
 
+  static inject = ['sessionProjections']
+
   private readonly states = new WeakMap<Session, ReplayState>()
 
   constructor(ctx: Context, config: TokenMeterConfig = {}) {
     super(ctx, 'tokenMeter')
     validateConfigKeys(config)
 
-    // Projection registration is an optional child: compositions without the
-    // generic registry keep the meter's standalone read shape.
-    ctx.inject(['sessionProjections'], (projectionCtx) => {
-      projectionCtx.sessionProjections.register(tokenUsageProjectionDefinition)
-      projectionCtx.sessionProjections.register(contextPressureProjectionDefinition)
-      projectionCtx.sessionProjections.register(contextBreakdownProjectionDefinition)
-    })
+    ctx.sessionProjections.register(tokenUsageProjectionDefinition)
+    ctx.sessionProjections.register(contextPressureProjectionDefinition)
+    ctx.sessionProjections.register(contextBreakdownProjectionDefinition)
 
     // Readers catch up independently, while eager observation bounds ordinary
     // read latency without creating state for sessions no consumer has read.

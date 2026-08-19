@@ -27,7 +27,7 @@
 - **单元的同步纪律。**`init`/`apply`/`wire.view` 必须是同步的；载体在切出页面切片的同一 tick 内读取 `snapshot()`，`asOfSeq` 之所以是一个一致切面正系于此。误写成异步的 view 会返回 Promise，并被 `wire.viewSchema.parse` 拒绝。
 - **状态是经校验的纯 JSON，`stateVersion` 是其失效锚点。** 持久投影缓存存储 `(sessionId, key, ver, seq, val)` 行，并在使用前以 `stateSchema` 校验 `val`；状态字段或折叠语义一旦变化就递增 `stateVersion`。client-visible 单元自动持久化；host-only 单元以 `persist: true` 选择持久化。
 - **本层没有协议词汇。** 注册表只暴露变更流与快照读取面；载体（api-proxy）据此自铸各自的帧（`session/projection`）与块。
-- **可选能力。** 领域插件在 `ctx.inject(['sessionProjections'], …)` 下注册，因此不带注册表的 headless 组装完全不受影响；载体使用 `ctx.get('sessionProjections')`，注册表缺席时完全省略自己的块与帧。
+- **单元与 host 读取方必需。** 贡献或读取投影单元的插件注入 `sessionProjections`，因此不完整的组合会在激活时失败。较低层的 api-proxy factory 仍对隔离测试和诊断保持容错，注册表缺席时省略投影块与帧。
 
 ## 职责
 

@@ -2,16 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { z } from 'zod'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import SessionProjectionCache from '@deepseek-ai/dsh-session-projection-cache'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -55,8 +54,10 @@ async function setup(
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
   await ctx.plugin(SubagentFork, { providerName: 'fork' })
   ctx.llm.registerAdapter(['mock'], new MockAdapter(script))
-  const parent = ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' })
-  return { ctx, parent }
+  const parent = ctx.get('agentLoop') === undefined
+    ? undefined
+    : ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' })
+  return { ctx, parent: parent as Agent }
 }
 
 const testSignal = new AbortController().signal
@@ -117,40 +118,6 @@ function descriptorPayload(label: string, version = SUBAGENT_DESCRIPTOR_VERSION)
   return { version, mode: 'continuable' as const, provider: 'spawn', label }
 }
 
-declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionStateMap {
-    subagentListHostileProbe: { poisoned?: boolean | undefined }
-  }
-  interface SessionProjectionMap {
-    /** Test-only hostile probe proving per-child isolation of foreign unit failures. */
-    subagentListHostileProbe: null
-  }
-}
-
-/**
- * A foreign registered unit that rejects one specific child's log at view
- * time: `apply` never throws (the eager drive passes every committed event
- * through it), while the poisoned state detonates only when a listing read
- * folds or serves this child through the registry.
- */
-const hostileProjectionDefinition = {
-  key: 'subagentListHostileProbe',
-  stateSchema: z.object({ poisoned: z.boolean().optional() }),
-  init: () => ({}),
-  apply: (state, event) =>
-    event.type === 'subagent/descriptor' && (event.data as { label?: string }).label === 'poison me'
-      ? { poisoned: true }
-      : state,
-  wire: {
-    viewSchema: z.null(),
-    view: (state) => {
-      if (state.poisoned === true) throw new Error('hostile unit rejects the poisoned log')
-      return null
-    },
-  },
-  stateVersion: 1,
-} satisfies ProjectionDefinition<'subagentListHostileProbe', { poisoned?: boolean | undefined }>
-
 describe('SubagentRuntime.listChildren', () => {
   it('lists live children without persistence, query services, or the continuation runtime', async () => {
     const ctx = new Context()
@@ -180,11 +147,10 @@ describe('SubagentRuntime.listChildren', () => {
     ])
   })
 
-  it('fails loud when the projection registry is not mounted, even with no children', async () => {
-    const { ctx, parent } = await setup([], { sessionProjections: false })
-    await expect(ctx.subagents.listChildren(parent.id)).rejects.toThrow(
-      expect.objectContaining({ code: 'SUBAGENT_CONTROL_PROJECTIONS_UNAVAILABLE' }) as Error,
-    )
+  it('never activates without the projection registry (mandatory seam)', async () => {
+    const { ctx } = await setup([], { sessionProjections: false })
+    expect(ctx.get('subagents')).toBeUndefined()
+    expect(ctx.get('agentLoop')).toBeUndefined()
   })
 
   it('fails loud when the session store is not mounted', async () => {
@@ -595,47 +561,6 @@ describe('SubagentRuntime.listChildren', () => {
     ])
   })
 
-  it('contains a foreign unit failure during a cold fold to that child as corrupt', async () => {
-    const { ctx, parent } = await setup([textResponse('done')])
-    ctx.sessionProjections.register(hostileProjectionDefinition)
-    const healthy = await startChild(ctx, parent, 'healthy sibling')
-    const poisoned = await authorChild(ctx, '00000000-0000-4000-8000-00000000d00d', {
-      parentSession: parent.id,
-      origin: 'subagent',
-    }, childEvents(descriptorPayload('poison me')))
-    // The subagent unit itself folds this child cleanly; the FOREIGN unit's
-    // view throws, and that damage stays contained to the one child.
-    const entries = await ctx.subagents.listChildren(parent.id)
-    expect(entries).toContainEqual({ kind: 'diagnostic', id: poisoned, reason: 'corrupt' })
-    expect(entries).toContainEqual({
-      kind: 'child', id: healthy, label: 'healthy sibling', mode: 'continuable',
-      activity: 'inactive', hasChildren: false,
-    })
-  })
-
-  it('contains a foreign unit failure during a live snapshot to that child as corrupt', async () => {
-    const { ctx, parent } = await setup([])
-    ctx.sessionProjections.register(hostileProjectionDefinition)
-    const poisonedId = SessionId('live-poisoned-child')
-    const poisoned = ctx.sessions.create(poisonedId, {
-      meta: { parentSession: parent.id, origin: 'subagent' },
-    })
-    poisoned.append('turn/start', { turn: 1 })
-    poisoned.append('subagent/descriptor', descriptorPayload('poison me'))
-    const healthyId = SessionId('live-healthy-child')
-    const healthy = ctx.sessions.create(healthyId, {
-      meta: { parentSession: parent.id, origin: 'subagent' },
-    })
-    healthy.append('turn/start', { turn: 1 })
-    healthy.append('subagent/descriptor', descriptorPayload('live healthy'))
-    const entries = await ctx.subagents.listChildren(parent.id)
-    expect(entries).toContainEqual({ kind: 'diagnostic', id: poisonedId, reason: 'corrupt' })
-    expect(entries).toContainEqual({
-      kind: 'child', id: healthyId, label: 'live healthy', mode: 'continuable',
-      activity: 'running', hasChildren: false,
-    })
-  })
-
   it('fails the whole enumeration when the persisted listing itself fails', async () => {
     const { ctx, parent } = await setup([textResponse('done')])
     await startChild(ctx, parent, 'never listed')
@@ -775,8 +700,9 @@ describe('SubagentRuntime.listChildren', () => {
     // The child's turn/end and disposal are the cache's mandatory checkpoint
     // points; both writes are fail-soft asynchronous, so wait for the row.
     const header = (await ctx.sessionPersistence.list()).find(meta => meta.id === childId)
-    await vi.waitFor(() => {
-      expect(ctx.sessionProjectionCache.cachedSnapshot(header!)?.values.subagent).toBeDefined()
+    await vi.waitFor(async () => {
+      const cut = ctx.sessionProjectionCache.cachedSnapshot(header!)
+      expect(cut?.values.subagent).toBeDefined()
     }, { timeout: 5_000 })
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
@@ -972,10 +898,14 @@ describe('SubagentRuntime.listChildren', () => {
   })
 
   it('SubagentError from listChildren is typed with its stable code', async () => {
-    const { ctx, parent } = await setup([], { sessionProjections: false })
-    const caught: unknown = await ctx.subagents.listChildren(parent.id).catch((error: unknown) => error)
+    const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(SubagentRuntime)
+    const caught: unknown = await ctx.subagents
+      .listChildren(SessionId('no-store-parent'))
+      .catch((error: unknown) => error)
     expect(caught).toBeInstanceOf(SubagentError)
-    expect((caught as SubagentError).code).toBe('SUBAGENT_CONTROL_PROJECTIONS_UNAVAILABLE')
+    expect((caught as SubagentError).code).toBe('SUBAGENT_CONTROL_SESSION_STORE_UNAVAILABLE')
   })
 })
 
@@ -1211,10 +1141,8 @@ describe('SubagentRuntime.listDescendants', () => {
     expect(list).not.toHaveBeenCalled()
   })
 
-  it('fails loud when the projection registry is not mounted', async () => {
-    const { ctx, parent } = await setup([], { sessionProjections: false })
-    await expect(ctx.subagents.listDescendants(parent.id)).rejects.toThrow(
-      expect.objectContaining({ code: 'SUBAGENT_CONTROL_PROJECTIONS_UNAVAILABLE' }) as Error,
-    )
+  it('does not activate when the projection registry is not mounted', async () => {
+    const { ctx } = await setup([], { sessionProjections: false })
+    expect(ctx.subagents).toBeUndefined()
   })
 })

@@ -4,7 +4,9 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { CompactionId, compactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import { createUserMessage, CallId , createMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
+import { titleProjectionDefinition } from '@deepseek-ai/dsh-session-title'
 import SessionReferenceResolver, {
   decodeSessionReferenceUri,
   encodeSessionReferenceUri,
@@ -35,6 +37,8 @@ class TestSessionQueryEngine extends SessionQueryEngine {
 async function harness(config: Config = {}): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
+  ctx.sessionProjections.register(titleProjectionDefinition)
   await ctx.plugin(TestSessionQueryEngine)
   await ctx.plugin(SessionReferenceResolver, config)
   return ctx

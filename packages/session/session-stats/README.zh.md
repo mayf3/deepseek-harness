@@ -21,7 +21,7 @@
   name: '@deepseek-ai/dsh-session-stats'
 ```
 
-注入 `sessionProjections`——这是插件的全部用途；在没有 registry 的装配中 fiber 保持挂起，不注册任何内容。
+要求注入 `sessionProjections`——这是插件的全部用途；不完整的装配会在激活时失败。
 
 ## 模型体验
 

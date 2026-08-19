@@ -6,7 +6,9 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import PlanModeController, { foldPlanMode } from '@deepseek-ai/dsh-plan-mode'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import PlanModeController, { planProjectionDefinition } from '@deepseek-ai/dsh-plan-mode'
+import type { PlanUnitState } from '@deepseek-ai/dsh-plan-mode/types'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 
 const PLAN_CONFIG = { section: 'Test plan mode instructions.' }
@@ -23,6 +25,7 @@ async function harness(adapter: MockAdapter): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
@@ -49,6 +52,13 @@ function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
       }
     })
   })
+}
+
+/** The logged-mode fold the plan projection unit serves: last `plan/mode` wins. */
+function foldPlanMode(events: readonly SessionEvent[]): boolean {
+  let state: PlanUnitState = planProjectionDefinition.init()
+  for (const event of events) state = planProjectionDefinition.apply(state, event)
+  return state.active
 }
 
 function findEvent<T extends SessionEvent['type']>(

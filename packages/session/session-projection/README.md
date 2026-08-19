@@ -27,7 +27,7 @@ Session-projection Service Definition and drive registry. It owns `ctx.sessionPr
 - **Synchronous unit discipline.** `init`/`apply`/`wire.view` MUST be synchronous; carriers read `snapshot()` in the same tick as their page slice, which is what makes `asOfSeq` one consistent cut. An accidentally async view returns a Promise, which fails `wire.viewSchema.parse`.
 - **State is validated plain JSON, `stateVersion` is its invalidation anchor.** The persisted projection cache stores `(sessionId, key, ver, seq, val)` rows and validates `val` with `stateSchema` before use; bump `stateVersion` whenever the state fields or fold semantics change. Client-visible units persist automatically; a host-only unit opts in with `persist: true`.
 - **No wire vocabulary here.** The registry exposes only the change feed and the snapshot read face; carriers (api-proxy) mint their own frames (`session/projection`) and blocks from them.
-- **Optional capability.** Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected; carriers use `ctx.get('sessionProjections')` and omit their block/frames entirely when the registry is absent.
+- **Required for units and host reads.** Plugins that contribute or read projection units inject `sessionProjections`, so incomplete compositions fail during activation. The lower-level api-proxy factory remains tolerant for isolated tests and diagnostics and omits projection blocks and frames when the registry is absent.
 
 ## Role
 

@@ -23,7 +23,7 @@ Usage accounting sums disjoint input, cache-read, cache-write, and output bucket
 
 ## Session projections
 
-When the composition provides `ctx.sessionProjections`, token-meter registers three units through an optional child fiber.
+Token-meter requires `ctx.sessionProjections` and registers three units.
 
 `tokenUsage` carries the complete durable log's `uncachedInputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`. Usage chunks are counted even when a request later fails; a final assistant-message usage for the same `(turn, step)` replaces that sample instead of double-counting it. Reasoning remains an output subdivision. The single last-sample slot relies on a session-log ordering property: once a later step reports usage, a legal log never reports usage for an earlier step again.
 

@@ -11,6 +11,8 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
@@ -23,6 +25,10 @@ import { createApiProxy } from '../src/api-proxy.ts'
 async function harness(): Promise<{ ctx: Context; api: ApiProxy }> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
+  // No loop in this bench: register the turnBoundary unit so the approval
+  // service's turn-enclosure gate sees the open turn.
+  ctx.sessionProjections.register(turnBoundaryProjectionDefinition)
   await ctx.plugin(SystemPrompt, { persona: '' })
   await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
@@ -211,6 +217,8 @@ describe('approval pending registry', () => {
     // effect while an ask is still pending.
     const ctx = new Context()
     await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.sessionProjections.register(turnBoundaryProjectionDefinition)
     await ctx.plugin(SystemPrompt, { persona: '' })
     await ctx.plugin(UserQuestionService)
     await ctx.plugin(AgentRegistry)

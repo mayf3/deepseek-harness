@@ -20,14 +20,15 @@
 
 import { resolve as resolvePath } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
+import { z as zod } from 'zod'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
 import { canonicalPath, type SandboxExecutionPolicy, type SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type { Session } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { effectiveSandboxMode } from './session-mode.ts'
 
-export { SANDBOX_MODES, effectiveSandboxMode, setSandboxMode } from './session-mode.ts'
+export { SANDBOX_MODES, setSandboxMode } from './session-mode.ts'
 
 /** Resolve filesystem identity before lexical normalization can erase symlink-sensitive components. */
 function resolveWorkspaceRoot(path: string): string {
@@ -88,6 +89,22 @@ export interface SandboxPolicyRequest {
  * section. Tool layers call {@link resolve} for each execution so a session's
  * mode log and immutable cwd travel together to every enforcing capability.
  */
+/** The sandbox-mode projection's state schema (state equals the public shape). */
+const sandboxModeStateSchema = zod.union([
+  zod.literal('read-only'),
+  zod.literal('workspace-write'),
+  zod.literal('danger-full-access'),
+]).nullable()
+
+type SandboxModeState = zod.infer<typeof sandboxModeStateSchema>
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    /** Last logged sandbox-mode override, or null before one (deployment default applies at resolve time). */
+    sandboxMode: SandboxModeState
+  }
+}
+
+/** The sandbox policy seam: the deployment default mode and workspace-write root, with per-session overrides folded from the log. */
 export class SandboxPolicyService extends Service {
   // Inline schema call: the config catalog walks `static Config` statically.
   static Config: z<Config> = z.object({
@@ -96,6 +113,8 @@ export class SandboxPolicyService extends Service {
     // stored root is always absolute regardless of how it was supplied.
     workspaceRoot: z.string(),
   })
+
+  static inject = ['sessionProjections']
 
   /** The deployment default mode — the fallback beneath a session override. */
   readonly defaultMode: SandboxMode
@@ -108,6 +127,14 @@ export class SandboxPolicyService extends Service {
     // the process cwd is real branching, resolved absolute either way.
     this.defaultMode = config.mode as SandboxMode
     this.workspaceRoot = resolveWorkspaceRoot(config.workspaceRoot ?? process.cwd())
+
+    ctx.sessionProjections.register({
+      key: 'sandboxMode',
+      stateVersion: 1,
+      stateSchema: sandboxModeStateSchema,
+      init: () => null,
+      apply: (state, event) => (event.type === 'sandbox/mode' ? event.data.mode : state),
+    })
 
     ctx.inject(['systemPrompt'], (scope: Context) => {
       scope.systemPrompt.context({
@@ -147,7 +174,7 @@ export class SandboxPolicyService extends Service {
    * @returns the last logged mode, or `undefined` without one.
    */
   overrideOf(session: Session): SandboxMode | undefined {
-    return effectiveSandboxMode(session.events)
+    return this.ctx.sessionProjections.stateOf(session, 'sandboxMode') ?? undefined
   }
 }
 

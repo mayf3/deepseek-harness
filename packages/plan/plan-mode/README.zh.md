@@ -6,7 +6,7 @@
 
 ## 持久状态
 
-`plan/mode`（`{ active: boolean }`）是一个仅存在于日志中、每次以完整值替换的 `SessionEventMap` 成员。`foldPlanMode(events)` 返回最后记录的值，如果没有则返回 `false`，因此恢复、fork 和压缩（compaction）都能直接从会话日志恢复 plan 状态。UI 通过 `session/event` 观察已提交的切换。
+`plan/mode`（`{ active: boolean }`）是一个仅存在于日志中、每次以完整值替换的 `SessionEventMap` 成员。必需的 `plan` 投影单元折叠已提交模式、命令结算结果和最近一次请求头对应的模式，因此恢复、fork 和压缩（compaction）都能直接从会话日志恢复该状态。
 
 `ctx.planMode.set(agent, active)` 会在 agent 空闲时立即追加独立的 `plan/mode` 事件，因为下一个提示词之前不会运行轮内 pre-step。agent 运行时，该方法会保留待生效选择，直到下一个被接受的轮内 pre-step。返回值区分 `committed`、`queued`、表示反转的 `cancelled` 和 `noop`。`get(agent)` 返回 `{ active, pending? }`，将用于组装当前步骤的日志状态与用户的轮中选择分开。初始与续步 pre-step 都会应用待生效选择；同一步骤的请求恢复重试会复用已冻结的 assembly，并将该选择保留到下一个被接受的轮内 pre-step。当最后记录的请求头描述了另一状态时，用户选择的变更会贡献一条插件来源的 `user/message` 通知（两条提交路径皆然）。
 
@@ -22,7 +22,7 @@ Web 客户端使用该插件提供的 `/plan` 命令；其他入口可以直接�
 
 ## 会话投影
 
-当组合挂载 `ctx.sessionProjections`（[`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.md)）时，本包会在一个注入的子插件中注册 `plan` 投影单元。名为 `plan` 且携带已记录 `args` 的 `command/run` 记录会开始一个候选目标（`off` → 未激活，其余 → 激活）；与它配对的 `command/done` 保留成功选择并丢弃错误选择；`plan/mode` 提交已记录状态并清除已保留的选择。其他任何事件都返回同一个状态引用。`view` 推导 `{ active, pending }`，其中 `pending` 仅在未结算或已成功的选择与已记录状态不同时为 true。该值仍完全由日志回放得出，因此 host 重启、其他标签页和冷读都能仅凭日志恢复它，被拒绝的带图 `/plan off` 也不会留下待退出状态。key 由 `src/types.ts` 通过声明合并加入 `SessionProjectionMap`：host 消费方经 `./types` 获取，client 聚合经 `./client` 获取。框架负责驱动该单元，载体通过历史尾页和 `session/projection` 推送帧提供其值。未挂载注册表的组合不受影响。
+本包要求组合提供 `ctx.sessionProjections`（[`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.md)），并注册 `plan` 投影单元。名为 `plan` 且携带已记录 `args` 的 `command/run` 记录会开始一个候选目标（`off` → 未激活，其余 → 激活）；与它配对的 `command/done` 保留成功选择并丢弃错误选择；`plan/mode` 提交已记录状态并清除已保留的选择；`request/header` 记录最近一次请求由哪种模式组装。其他任何事件都返回同一个状态引用。host 逻辑通过 `stateOf()` 读取完整状态。客户端 `view` 仍为 `{ active, pending }`，其中 `pending` 仅在未结算或已成功的选择与已记录状态不同时为 true。该 key 分别合并到 host 状态的 `SessionProjectionStateMap` 与客户端视图的 `SessionProjectionMap`；载体通过历史尾页和 `session/projection` 推送帧提供后者。
 
 ## 配置
 

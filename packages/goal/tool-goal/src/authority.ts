@@ -6,13 +6,11 @@ import type { GoalView } from '@deepseek-ai/dsh-goal'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-session-projection'
 
-type TurnStartEvent = Extract<SessionEvent, { type: 'turn/start' }>
-
-/** Current open turn plus the events accepted after its start boundary. */
+/** The calling agent plus the events accepted after its open turn's start boundary. */
 export interface GoalToolExecution {
   readonly agent: Agent
-  readonly start: TurnStartEvent
   readonly events: readonly SessionEvent[]
 }
 
@@ -26,19 +24,19 @@ function reject(message: string, code = 'GOAL_TOOL_AUTHORITY_REQUIRED'): never {
   throw new HarnessError(message, code)
 }
 
-/** Locate the open turn enclosing a model tool call. */
-function openTurn(agent: Agent): { start: TurnStartEvent; events: readonly SessionEvent[] } {
+/**
+ * The event window of the open turn enclosing a model tool call. The
+ * open-turn boundary comes from the `turnBoundary` projection (one O(1)
+ * snapshot read); the suffix is the raw event window after the open
+ * `turn/start` seq.
+ */
+function openTurnEvents(ctx: Context, agent: Agent): readonly SessionEvent[] {
   const events = agent.session.events
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const boundary = events[index]
-    if (boundary?.type === 'turn/end') {
-      reject('goal tools require an open model turn', 'GOAL_TOOL_DRIVER_REQUIRED')
-    }
-    if (boundary?.type === 'turn/start') {
-      return { start: boundary, events: events.slice(index + 1) }
-    }
+  const boundary = ctx.sessionProjections.stateOf(agent.session, 'turnBoundary')
+  if (boundary === undefined || boundary.openTurnStartSeq === null) {
+    reject('goal tools require an open model turn', 'GOAL_TOOL_DRIVER_REQUIRED')
   }
-  return reject('goal tools require an open model turn', 'GOAL_TOOL_DRIVER_REQUIRED')
+  return events.slice(boundary.openTurnStartSeq + 1)
 }
 
 /**
@@ -59,7 +57,7 @@ export function goalToolExecution(ctx: Context, exec: ToolRunContext): GoalToolE
       'GOAL_TOOL_DRIVER_REQUIRED',
     )
   }
-  return { agent, ...openTurn(agent) }
+  return { agent, events: openTurnEvents(ctx, agent) }
 }
 
 /**

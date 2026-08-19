@@ -7,11 +7,13 @@
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { z as zod } from 'zod'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type CallId } from '@deepseek-ai/dsh-llm'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
 declare module '@deepseek-ai/cordis' {
@@ -28,6 +30,33 @@ declare module '@deepseek-ai/cordis' {
      * @mode waterfall
      */
     'approval/request'(this: Scoped<ApprovalService>, req: ApprovalRequest, next: () => Promise<ApprovalOutcome>): Promise<ApprovalOutcome>
+  }
+}
+
+const approvalPolicyStateSchema = zod.union([
+  zod.literal('ask'),
+  zod.literal('never'),
+]).nullable()
+
+type ApprovalPolicyState = zod.infer<typeof approvalPolicyStateSchema>
+
+const approvalPendingStateSchema = zod.record(zod.string(), zod.object({
+  callId: zod.string().nullable(),
+  seq: zod.number().int().nonnegative(),
+}))
+
+type ApprovalPendingState = zod.infer<typeof approvalPendingStateSchema>
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    /** Last logged approval-policy override, or null before one (composition default applies at read time). */
+    approvalPolicy: ApprovalPolicyState
+    /**
+     * Outstanding `approval/asked` records not yet resolved by their
+     * `approval/decided` — the audit-pair pending set (the carrier's
+     * approval/request correlation reads it).
+     */
+    approvalPending: ApprovalPendingState
   }
 }
 
@@ -60,7 +89,8 @@ declare module '@deepseek-ai/dsh-session/types' {
      * The session's approval policy was switched — log-only, durable,
      * replayable, never in the model transcript (the model learns the policy
      * from the runtime-context snapshot and live switch notices). The LAST
-     * such event is the session's override ({@link effectiveApprovalPolicy}).
+     * such event is the session's override (folded by the approvalPolicy
+     * projection unit).
      * `source: 'delegation'` marks an override seeded into a child; an absent
      * source is a runtime switch.
      */
@@ -100,38 +130,6 @@ export const APPROVAL_POLICIES: readonly ApprovalPolicy[] = ['ask', 'never']
 const NEVER_SENTENCE = 'Approval prompts are disabled in this session: actions that require approval are rejected automatically — do not request sandbox escalation (do not set `sandbox_permissions`).'
 /** Model-facing statement for an interactive policy that may still fail closed. */
 const ASK_SENTENCE = 'Approval policy: ask. Operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.'
-
-/**
- * The session's approval-policy override: the last `approval/policy` event in
- * the log, or undefined when the session never switched (callers apply the
- * plugin's configured default). The pure fold — resume needs no catch-up
- * machinery because replaying the log IS the state.
- * @param events - session events in log order (other event types are skipped).
- * @returns the policy of the last switch event, or undefined without one.
- */
-export function effectiveApprovalPolicy(events: readonly SessionEvent[]): ApprovalPolicy | undefined {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index] as SessionEvent
-    if (event.type === 'approval/policy') return event.data.policy
-  }
-  return undefined
-}
-
-/**
- * Whether the log currently sits inside an open turn (a `turn/start` not yet
- * closed by a `turn/end`) — the {@link ApprovalService.request} precondition.
- * The audit pair must be turn-enclosed: the turn is the durable log's
- * commit/replay boundary, so a bare event appended between turns is
- * indistinguishable from a crash tail and silently dropped on reload.
- */
-function hasOpenTurn(events: readonly SessionEvent[]): boolean {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const type = (events[index] as SessionEvent).type
-    if (type === 'turn/start') return true
-    if (type === 'turn/end') return false
-  }
-  return false
-}
 
 /**
  * Append the sole durable representation of a session policy override. Invalid
@@ -194,10 +192,38 @@ export class ApprovalService extends Service {
     policy: z.union(['ask', 'never'] as const).default('ask'),
   })
 
+  static inject = ['sessionProjections']
+
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'approval')
 
     const effective = (agent: Agent): ApprovalPolicy => this.effectivePolicy(agent.session)
+
+    ctx.sessionProjections.register({
+      key: 'approvalPolicy',
+      stateVersion: 1,
+      stateSchema: approvalPolicyStateSchema,
+      init: () => null,
+      apply: (state, event) => (event.type === 'approval/policy' ? event.data.policy : state),
+    })
+    ctx.sessionProjections.register({
+      key: 'approvalPending',
+      stateVersion: 1,
+      stateSchema: approvalPendingStateSchema,
+      init: () => ({}),
+      apply: (state, event) => {
+        if (event.type === 'approval/asked') {
+          if (state[event.data.id] !== undefined) return state
+          return { ...state, [event.data.id]: { callId: event.data.callId ?? null, seq: event.seq } }
+        }
+        if (event.type === 'approval/decided') {
+          if (state[event.data.id] === undefined) return state
+          const { [event.data.id]: _decided, ...next } = state
+          return next
+        }
+        return state
+      },
+    })
 
     // The complete current value travels after retained history, so switching
     // policy does not rewrite the stable system-prompt cache prefix.
@@ -256,7 +282,7 @@ export class ApprovalService extends Service {
    */
   async request(req: ApprovalRequest): Promise<ApprovalOutcome> {
     const session = req.agent.session
-    if (!hasOpenTurn(session.events)) {
+    if ((this.ctx.sessionProjections.stateOf(session, 'turnBoundary')?.openTurn ?? null) === null) {
       throw new Error(
         'approval.request() outside an open turn: the approval/asked + approval/decided audit pair '
         + 'must be turn-enclosed (a bare event between turns is crash-tail garbage on reload). '
@@ -276,7 +302,7 @@ export class ApprovalService extends Service {
   }
 
   /**
-   * The session's effective policy: its own `approval/policy` fold, else the
+   * The session's effective policy: its projected `approval/policy` state, else the
    * configured default (the schema already defaulted an omitted policy to
    * `'ask'`; the `??` only narrows the optional-input TYPE).
    * @param session - the exact accepted session whose policy applies.
@@ -287,12 +313,12 @@ export class ApprovalService extends Service {
   }
 
   /**
-   * Read the session override without applying the configured default.
+   * Read the projected session override without applying the configured default.
    * @param session - session whose log supplies the override.
    * @returns the last logged policy, or `undefined` without one.
    */
   overrideOf(session: Session): ApprovalPolicy | undefined {
-    return effectiveApprovalPolicy(session.events)
+    return this.ctx.sessionProjections.stateOf(session, 'approvalPolicy') ?? undefined
   }
 
   /**

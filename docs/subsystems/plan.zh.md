@@ -8,7 +8,7 @@
 
 ## 已记录状态与恢复
 
-`plan/mode`（`{ active: boolean }`）是仅记日志、整值替换的[会话事件](session.md)：持久且可回放，绝不进入模型 transcript（文本记录）。`foldPlanMode(events, end?)` 返回前缀中最后一条已记录值，没有时返回 `false`：生效状态始终是会话日志的纯折叠，因此恢复、fork 与压缩（compaction）无需实时镜像即可将其复原，UI 通过 `session/event` 观察已提交的切换。完整事件声明见[持久化日志事件目录](../persistence-catalog.md)。
+`plan/mode`（`{ active: boolean }`）是仅记日志、整值替换的[会话事件](session.md)：持久且可回放，绝不进入模型 transcript（文本记录）。必需的 `plan` 会话投影单元折叠已提交模式、命令结算结果和最近一次请求头记录的模式。`ctx.planMode` 通过 `stateOf()` 读取该 host 状态，而客户端只接收 `{ active, pending }`；恢复、fork 与压缩（compaction）都能从日志恢复两者。完整事件声明见[持久化日志事件目录](../persistence-catalog.md)。
 
 ## 待生效选择与 pre-step 追加
 
@@ -50,7 +50,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.planMode` — `PlanModeController`
 
-`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the stable exit tool. UIs observe committed flips through `session/event`; there is no live mirror.
+`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the stable exit tool. Client carriers expose the projection's cropped `{ active, pending }` view.
 
 ```ts cordis-catalog
 /**
@@ -83,5 +83,5 @@ set(agent: Agent, active: boolean): 'committed' | 'queued' | 'cancelled' | 'noop
 
 Types: [Agent](core.md)
 
-Source: [`packages/plan/plan-mode/src/index.ts:199`](../../packages/plan/plan-mode/src/index.ts)
+Source: [`packages/plan/plan-mode/src/index.ts:169`](../../packages/plan/plan-mode/src/index.ts)
 <!-- END GENERATED cordis-surface -->
