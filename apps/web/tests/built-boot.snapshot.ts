@@ -10,11 +10,32 @@
 // benches over src). This smoke additionally pins the resident interaction
 // fixture's cross-plugin projection because only the built connection/runtime/
 // workspace graph can prove that transport-to-row path end to end.
+import { resolve } from 'node:path'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { installAssembledBootEnv, mountAssembledApp } from './assembled-boot.ts'
 
 installAssembledBootEnv()
+
+const buildEnvironmentModulePath = '../../../scripts/client-build-environment.ts'
+const buildEnvironmentModule: unknown = await import(buildEnvironmentModulePath)
+if (typeof buildEnvironmentModule !== 'object' || buildEnvironmentModule === null) {
+  throw new TypeError('client build environment module must be an object')
+}
+const readClientBuildRecord: unknown = Reflect.get(buildEnvironmentModule, 'readClientBuildRecord')
+if (!isBuildRecordReader(readClientBuildRecord)) {
+  throw new TypeError('client build environment module must export readClientBuildRecord')
+}
+const record: unknown = readClientBuildRecord(resolve(import.meta.dirname, '../../..'))
+if (typeof record !== 'object' || record === null) throw new TypeError('client build record must be an object')
+const clientBuildEnvironment: unknown = Reflect.get(record, 'environment')
+if (typeof clientBuildEnvironment !== 'object' || clientBuildEnvironment === null) {
+  throw new TypeError('client build record environment must be an object')
+}
+
+function isBuildRecordReader(value: unknown): value is (root: string) => unknown {
+  return typeof value === 'function'
+}
 
 it('boots the built plugin graph and renders a fixture session end to end', async () => {
   mountAssembledApp()

@@ -35,7 +35,6 @@ permissions:
   contents: read
 
 env:
-  DSH_CLIENT_BRAND: official
   PRIMARY_NODE_VERSION: '24'
   # CI runs must never report to the production telemetry endpoint baked
   # into apps/cli/cordis.yml (AppCLIEntry disables the row when set).
@@ -300,6 +299,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run compatibility smokes
+        env:
+          DSH_BUILD_CLIENT_PROFILE: official
         run: pnpm run check:node-compat
 
   python-sdk:

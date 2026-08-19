@@ -49,7 +49,6 @@ permissions:
   contents: read
 
 env:
-  DSH_CLIENT_BRAND: official
   # CI runs must never report to the production telemetry endpoint baked
   # into apps/cli/cordis.yml (AppCLIEntry disables the row when set).
   DSH_TELEMETRY_DISABLED: '1'
@@ -220,6 +219,8 @@ jobs:
           }
 
       - name: Build single-exe
+        env:
+          DSH_BUILD_CLIENT_PROFILE: official
         run: pnpm exec tsx scripts/build-exe-for-python-sdk.ts --targets=${{ matrix.target }}
 
       - name: Resolve platform outputs

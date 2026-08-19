@@ -29,7 +29,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DSH_CLIENT_BRAND: official
   PRIMARY_NODE_VERSION: '24'
   DSH_TELEMETRY_DISABLED: '1'
 
@@ -76,7 +75,7 @@ jobs:
         run: pnpm run release:verify --family dsh
 
       - name: Build
-        run: pnpm run build
+        run: pnpm run build:official
 
       - name: Pack release tarballs
         run: pnpm run release:pack --family dsh --out dist/npm

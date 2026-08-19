@@ -9,7 +9,6 @@ permissions:
   contents: read
 
 env:
-  DSH_CLIENT_BRAND: official
   # CI runs must never report to the production telemetry endpoint baked
   # into apps/cli/cordis.yml (AppCLIEntry disables the row when set).
   DSH_TELEMETRY_DISABLED: '1'
@@ -47,7 +46,7 @@ jobs:
 
       # The Loader smoke runs package exports under plain Node in lib mode.
       - name: Build (lib for the E2B Loader smoke)
-        run: pnpm run build
+        run: pnpm run build:official
 
       - name: E2B tests (live sandbox)
         env:

@@ -19,7 +19,6 @@ permissions:
   contents: read
 
 env:
-  DSH_CLIENT_BRAND: official
   # CI runs must never report to the production telemetry endpoint baked
   # into apps/cli/cordis.yml (AppCLIEntry disables the row when set).
   DSH_TELEMETRY_DISABLED: '1'
@@ -118,7 +117,7 @@ jobs:
       # together so registry state cannot mask source/package drift.
       - name: Build packages for the pack rehearsal
         if: matrix.runner == 'landlock'
-        run: pnpm run build
+        run: pnpm run build:official
 
       - name: Packed-distribution e2e (pack → install → confine)
         if: matrix.runner == 'landlock'
