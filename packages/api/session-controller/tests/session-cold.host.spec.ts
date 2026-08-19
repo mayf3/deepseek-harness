@@ -10,8 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore from '@deepseek-ai/dsh-session'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
-import InboxService from '@deepseek-ai/dsh-agent/inbox'
+import AgentRegistry, { agentEvents, Inbox } from '@deepseek-ai/dsh-agent'
 import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import { subagentIdentityProjectionDefinition } from '@deepseek-ai/dsh-subagent/src/projection.ts'
 import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
@@ -424,7 +423,6 @@ describe('Remote Agent and Session lookup policy', () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
-    await ctx.plugin(InboxService)
     const sessionId = sid('session-cold-queue-mutation')
     const meta = header(sessionId, 1000)
     const message = createUserMessage({
@@ -437,11 +435,11 @@ describe('Remote Agent and Session lookup policy', () => {
       time: 1001,
       data: { target: 'next-turn', start: 0, inserted: [message] },
     }] as SessionEvent[]
-    ctx.provide('sessionPersistence', {
+    providePersistence(ctx, {
       list: () => Promise.resolve([meta]),
       inspect: () => Promise.resolve({ meta, events }),
       locate: () => undefined,
-    } as never)
+    })
     let resumedAgent: Agent | undefined
     const resume = vi.spyOn(ctx.agents, 'resume').mockImplementation(async () => {
       const session = ctx.sessions.create(sessionId, {
@@ -463,7 +461,9 @@ describe('Remote Agent and Session lookup policy', () => {
         runMaintenance: task => task(new AbortController().signal),
         whenIdle: () => Promise.resolve(),
       } satisfies Agent
-      Object.assign(resumedAgent, { inbox: ctx.inboxes.create(resumedAgent) })
+      Object.assign(resumedAgent, {
+        inbox: new Inbox(ctx, resumedAgent.session, agentEvents(ctx, resumedAgent)),
+      })
       ctx.agents.register(resumedAgent)
       return { agent: resumedAgent, dispose: () => Promise.resolve() }
     })
@@ -485,6 +485,25 @@ describe('Remote Agent and Session lookup policy', () => {
       type: 'agent/inbox/spliced',
       data: { target: 'next-turn', start: 0, removedCount: 1, inserted: [], outcome: 'canceled' },
     })
+  })
+
+  it('keeps queue-item-not-found for a cold session when no persistence backend is composed', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    const remote = createSessionTestRemote(ctx, {
+      defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
+      cwd: '/tmp',
+    })
+
+    const response = await remote.updateQueue(request({
+      sessionId: sid('session-no-persistence'),
+      itemId: MessageId('queued-item'),
+      action: { kind: 'remove' },
+    }))
+
+    expect(response.ok).toBe(false)
+    if (!response.ok) expect(response.error.code).toBe('queue-item-not-found')
   })
 
   it('deduplicates a cold resume across Agent and Session parameters', async () => {
@@ -575,6 +594,41 @@ describe('Remote Agent and Session lookup policy', () => {
     await expect(liveFailure).rejects.toMatchObject(ownershipFailure)
     expect(resume).not.toHaveBeenCalled()
     expect(inspect).toHaveBeenCalledOnce()
+  })
+
+  it('reapplies the subagent ownership fence after a successful resume publishes the Agent', async () => {
+    const ctx = new Context()
+    await ctx.plugin(TypertRegistry)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    const sessionId = sid('session-remote-resumed-child')
+    const meta = header(sessionId, 1000)
+    providePersistence(ctx, {
+      list: () => Promise.resolve([meta]),
+      inspect: () => Promise.resolve({ meta, events: [] as SessionEvent[] }),
+      locate: () => undefined,
+    })
+    vi.spyOn(ctx.agents, 'resume').mockImplementationOnce(async () => {
+      const session = ctx.sessions.create(sessionId, {
+        meta: { cwd: '/proj', origin: 'subagent' },
+      })
+      const published = { id: session.id, session, status: 'idle', ctx } as Agent
+      ctx.agents.register(published)
+      return { agent: published, dispose: () => Promise.resolve() }
+    })
+    const defaultLookup = ctx.typert.lookups.get('agent')
+    createSessionTestRemote(ctx, {
+      defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
+      cwd: '/tmp',
+    })
+    await vi.waitFor(() => { expect(ctx.typert.lookups.get('agent')).not.toBe(defaultLookup) })
+    const lookup = ctx.typert.lookups.get('agent')
+    if (lookup === undefined) throw new Error('Agent lookup provider was not mounted')
+
+    const resolution = lookup.resolve(sessionId)
+
+    await expect(resolution).rejects.toBeInstanceOf(TypertLookupFailure)
+    await expect(resolution).rejects.toMatchObject({ failure: { code: 'agent-busy' } })
   })
 })
 

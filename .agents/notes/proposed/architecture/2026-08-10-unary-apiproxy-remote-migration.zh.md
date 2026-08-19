@@ -44,7 +44,7 @@ Remote API 有意采用服务名称，而不保留旧 RPC 的点分名称。例�
 | Session Host 生命周期 | `session.list`、`search`、`create`、`fork` | 跨 Agent 持久化、Workspace 分配、preset 组合和创建策略。 |
 | Session transcript | `session.history`、`attachment`、`subagent.history` | cold／live 日志、分页、投影、呈现器和附件授权。 |
 | Agent 模型选择 | `session.models`、`selectModel` | 各 Agent 的状态、模型校验和默认值持久化属于 BFF 策略。 |
-| Agent 输入与控制 | `session.prompt`、`updateQueue`、`cancel` | 图片准入、Inbox 变更和端点特有的仅限 live 语义。 |
+| Agent 输入与控制 | `session.prompt`、`updateQueue`、`cancel` | 图片准入、Inbox 变更，以及端点特有的仅限 live（`cancel`）或恢复冷会话（`updateQueue`）语义。 |
 | 原生 settings 文档 | `settings.openDocument` | Host 路径解析、文档准备和原生打开仍属于 API Proxy 中的产品策略。 |
 | Session skill 目录 | `skill.list` | 不得恢复冷 Session；preset 的常驻 scope 和呈现器过滤属于 BFF 关联操作。 |
 | Host 运行时信息 | `host.describe` | 版本、cwd、默认模型和当前已附加的 Session 数量来自多个 Host 所有者。 |
@@ -67,7 +67,7 @@ Remote API 有意采用服务名称，而不保留旧 RPC 的点分名称。例�
 - 持久化存储中不存在的 id 以 `session-not-found` 失败；
 - resolver 失败会保留现有的 `RpcError`，并通过 `TypertLookupFailure` 传递。
 
-Lookup 策略作用于整个 key，而非特定端点。提示词输入、队列编辑、取消、模型选择和 skill 列表等方法如果使用共享 `agent` 或 `session` lookup，就无法保留仅限 live 或禁止恢复的行为，因此在 Typert 支持显式的逐端点策略之前，这些方法仍留在 API Proxy 中。
+Lookup 策略作用于整个 key，而非特定端点。提示词输入、取消、模型选择和 skill 列表等方法如果使用共享 `agent` 或 `session` lookup，就无法保留仅限 live 或禁止恢复的行为；队列编辑目前已通过共享 resolver 恢复冷会话，但把 Inbox 变更和错误映射策略留在本地。在 Typert 支持显式的逐端点策略之前，这些方法仍留在 API Proxy 中。
 
 签名只包含 branded id 的方法不会调用 Typert 对象 lookup。`subagents.interruptByParent()` 必须保留现有的进程内 Activation lookup 和父级离线行为：它不会调用 `agentFor`、读取目录、检查持久化，也不会冷恢复父 Agent 或子 Agent。
 

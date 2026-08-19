@@ -396,9 +396,6 @@ export class SessionCommandController {
       reject('queue-item-not-found', 'queued item is no longer pending', { itemId: request.itemId })
     }
     const { agent } = found
-    if (hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
-      rejectFailure(apiSessionSubagentOwnershipError(request.sessionId))
-    }
     const nextTurn = agent.inbox.nextTurn.find(message => message.id === request.itemId)
     const nextStep = agent.inbox.nextStep.find(message => message.id === request.itemId)
     const located = nextTurn === undefined

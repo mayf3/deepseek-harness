@@ -6,17 +6,17 @@ Status: implemented
 
 ## 问题
 
-Inbox 状态保存在会话日志中，但 `session.updateQueue` 之前只查找 live Agent。Host 重启后，普通持久 Session 会保持冷状态，直到某项操作需要其 Agent，因此编辑或移除已恢复的待处理项会错误返回 `queue-item-not-found`。
+Inbox 状态保存在会话日志中。若实现只查找 live Agent，Host 重启后就无法访问普通持久 Session 中已恢复的待处理行，因此即使持久层仍拥有该 queue occurrence，编辑或移除操作也会返回 `queue-item-not-found`。
 
 ## 决策
 
-`session.updateQueue` 在读取或修改 Inbox 前，通过共享 Agent 解析器解析普通冷 Session。持久 Session 确实不存在时仍映射为 `queue-item-not-found`；其他恢复失败保留原有错误，subagent ownership 也保持与其他 Agent 操作相同的限制。
+`session.updateQueue` 在读取或修改 Inbox 前，通过共享 Agent 解析器解析普通冷 Session。持久 Session 确实不存在时（包括未组装持久化后端的部署）仍映射为 `queue-item-not-found`；其他恢复失败保留原有错误，subagent ownership 也保持与其他 Agent 操作相同的限制。
 
 解析出的 Agent 从已注册的持久投影构建 Inbox。因此，该命令会读取恢复出的待处理列表，并通过既有的规范化 `agent/inbox/spliced` 事件记录编辑或移除。系统不引入新的会话事件或磁盘格式。
 
 ## 验证
 
-冷操作测试提供一份带待处理 Inbox splice 的分离持久 Session，调用 `session.updateQueue`，并证明 Session 会被恢复、待处理项会被移除且持久删除 splice 会被追加。
+冷操作测试提供一份带待处理 Inbox splice 的分离持久 Session，调用 `session.updateQueue`，并证明 Session 会被恢复、待处理项会被移除且持久删除 splice 会被追加。既有 keyless Web queue-actions snapshot 通过真实 HTTP／SSE 路径覆盖用户可见的编辑与移除；其输出保持不变，Host 测试则隔离验证冷生命周期分支。
 
 ## 考虑过的替代方案
 

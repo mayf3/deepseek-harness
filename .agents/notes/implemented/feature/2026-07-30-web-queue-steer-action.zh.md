@@ -32,7 +32,7 @@ Composer 对新输入采用另一套尽力而为约定。所寻址会话空闲�
 
 ### Host 与客户端边界
 
-`session.updateQueue` 会携带 `steer` 操作，并把两种负面结果映射为类型化 RPC 错误。这项转换是一次同步 Agent 操作；Host 绝不会通过组合移除和提示词调用来重建它。
+`session.updateQueue` 会携带 `steer` 操作，并把两种负面结果映射为类型化 RPC 错误。这项转换是一次 Agent 操作；Host 绝不会通过组合移除和提示词调用来重建它。
 
 Host 仍以现有 `queuedMirror` 作为唯一的瞬态 inbox 权威。`session/queue` 快照会携带所有存活单次入队项及其 `placement: 'queued' | 'steering'`：QueueDock 只渲染 queued 行，ChatView 则在会话流末尾、`Deep diving...` 运行状态行之后渲染待处理 steering，提供复制操作，但不提供 fork、编辑或删除操作。重连会重放同一份快照，因此这项可见性既不依赖客户端乐观展示，也不需要第二个注册表。
 

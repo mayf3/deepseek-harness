@@ -6,17 +6,17 @@ English | [中文](2026-08-17-durable-web-queue-recovery.zh.md)
 
 ## Problem
 
-Inbox state survives in the session log, but `session.updateQueue` previously looked up only a live Agent. After a Host restart, an ordinary persisted Session remains cold until an operation needs its Agent, so editing or removing a restored pending item incorrectly returned `queue-item-not-found`.
+Inbox state survives in the session log. An implementation that looks up only a live Agent cannot reach the restored pending rows of an ordinary persisted Session after a Host restart, so editing or removing one returns `queue-item-not-found` even though persistence still owns the queue occurrence.
 
 ## Decision
 
-`session.updateQueue` resolves an ordinary cold Session through the shared Agent resolver before reading or mutating its Inbox. A missing persisted Session still maps to `queue-item-not-found`, while other resume failures keep their existing error and subagent ownership keeps the same fence as other Agent operations.
+`session.updateQueue` resolves an ordinary cold Session through the shared Agent resolver before reading or mutating its Inbox. A missing persisted Session — including in a deployment that composes no persistence backend — still maps to `queue-item-not-found`, while other resume failures keep their existing error and subagent ownership keeps the same fence as other Agent operations.
 
 The resolved Agent constructs its Inbox from the registered durable projection. The command therefore reads the restored pending lists and records edits or removals through the existing normalized `agent/inbox/spliced` event. No new session event or on-disk format is introduced.
 
 ## Verification
 
-A cold-operation test provides a detached persisted Session with a pending Inbox splice, invokes `session.updateQueue`, and proves that the Session is resumed, the row is removed, and the durable removal splice is appended.
+A cold-operation test provides a detached persisted Session with a pending Inbox splice, invokes `session.updateQueue`, and proves that the Session is resumed, the row is removed, and the durable removal splice is appended. The shipped keyless Web queue-actions snapshot covers user-visible editing and removal through the real HTTP/SSE path; its output is unchanged, while the Host test isolates the cold lifecycle branch.
 
 ## Alternatives considered
 

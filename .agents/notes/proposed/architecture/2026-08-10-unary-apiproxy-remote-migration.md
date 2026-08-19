@@ -44,7 +44,7 @@ The Remote API deliberately follows Service names rather than preserving dotted 
 | Session Host lifecycle | `session.list`, `search`, `create`, `fork` | Cross-Agent persistence, Workspace assignment, preset composition, and creation policy. |
 | Session transcript | `session.history`, `attachment`, `subagent.history` | Cold/live logs, pagination, projections, presenters, and attachment authorization. |
 | Agent model selection | `session.models`, `selectModel` | Per-Agent state, model validation, and default persistence are BFF policy. |
-| Agent input and control | `session.prompt`, `updateQueue`, `cancel` | Image admission, Inbox mutation, and endpoint-specific live-only semantics. |
+| Agent input and control | `session.prompt`, `updateQueue`, `cancel` | Image admission, Inbox mutation, and endpoint-specific live-only (`cancel`) or cold-resume (`updateQueue`) semantics. |
 | Native settings document | `settings.openDocument` | Host path resolution, document preparation, and native opening remain product policy in API Proxy. |
 | Session skill catalog | `skill.list` | Cold Sessions must not resume; preset standing scope and presenter filtering are BFF joins. |
 | Host runtime information | `host.describe` | Version, cwd, default model, and attached count combine several Host owners. |
@@ -67,7 +67,7 @@ The migration must pin these outcomes with integration tests:
 - an id missing from durable persistence fails with `session-not-found`;
 - resolver failures keep their existing `RpcError` through `TypertLookupFailure`.
 
-Lookup policy is key-wide, not endpoint-specific. Methods such as prompt, queue editing, cancellation, model selection, and skill listing cannot use the shared `agent` or `session` lookup while retaining live-only or no-resume behavior, so they remain in the API Proxy until Typert supports an explicit per-endpoint policy.
+Lookup policy is key-wide, not endpoint-specific. Methods such as prompt, cancellation, model selection, and skill listing cannot use the shared `agent` or `session` lookup while retaining live-only or no-resume behavior; queue editing now resolves cold sessions through the shared resolver but keeps its Inbox-mutation and error-mapping policy local. These methods remain in the API Proxy until Typert supports an explicit per-endpoint policy.
 
 Methods whose signatures contain only branded ids do not invoke Typert object lookup. `subagents.interruptByParent()` must retain the existing process-local Activation lookup and parent-offline behavior: it does not call `agentFor`, read the catalog, inspect persistence, or cold-resume a parent or child.
 

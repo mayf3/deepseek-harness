@@ -49,7 +49,15 @@ async function commandHarness(): Promise<{
     assembled: undefined,
   }
   const agents = {
-    resolveAgent: () => Promise.resolve({ agent }),
+    resolveAgent: (sessionId: SessionId) => Promise.resolve(sessionId === agent.id
+      ? { agent }
+      : {
+        error: {
+          code: 'session-not-found' as const,
+          message: `session "${sessionId}" not found`,
+          details: { sessionId },
+        },
+      }),
     selectionFor: () => selection,
     serializeImageAdmission: <Value>(_agent: Agent, operation: () => Promise<Value>) => operation(),
     composeAgent: () => Promise.resolve({ setup: () => {} }),
@@ -96,22 +104,22 @@ describe('Session queue commands', () => {
     await expectFailure(Promise.resolve().then(() => controller.updateQueue({
       sessionId: agent.id, itemId: queued.id, action: { kind: 'steer' },
     })), 'steer-unavailable')
-    expect(controller.updateQueue({
+    await expect(controller.updateQueue({
       sessionId: agent.id,
       itemId: queued.id,
       action: { kind: 'edit', content: [{ type: 'text', text: 'edited' }] },
-    })).toEqual({ accepted: true })
+    })).resolves.toEqual({ accepted: true })
     expect(inbox.nextTurn[0]?.content).toEqual([{ type: 'text', text: 'edited' }])
-    expect(controller.updateQueue({
+    await expect(controller.updateQueue({
       sessionId: agent.id, itemId: nextStep.id, action: { kind: 'remove' },
-    })).toEqual({ accepted: true })
+    })).resolves.toEqual({ accepted: true })
 
     Object.assign(agent, { status: 'running' })
     const steered = inbox.nextTurn[0]
     if (steered === undefined) throw new Error('missing edited queue item')
-    expect(controller.updateQueue({
+    await expect(controller.updateQueue({
       sessionId: agent.id, itemId: steered.id, action: { kind: 'steer' },
-    })).toEqual({ accepted: true })
+    })).resolves.toEqual({ accepted: true })
     expect(steer).toHaveBeenCalledWith(steered)
 
     await expectFailure(Promise.resolve().then(() => controller.cancel({

@@ -153,7 +153,8 @@ Each method explicitly selects a cold inspection, live-only lookup, or resume-ca
 | `session.follow(address)` | one live or prepared observation carrying the opening page and projections | Publishes the snapshot first, then promotes an ordinary cold Session once in the background |
 | `session.control()` | current attached Agents, pending registry, and process-local registries | Baseline and reconnect do not resume an Agent |
 | `session.attachment`, fork source read | authorized durable Session data | A read does not resume an Agent |
-| `session.updateQueue`, `cancel` | only the current live Agent | Does not resume vanished state |
+| `session.updateQueue` | live Agent or ordinary persisted Session | Resumes an ordinary cold Session before mutating its Inbox |
+| `session.cancel` | only the current live Agent | Does not resume vanished state |
 | `models`, `selectModel`, `rename`, `prompt` | command resolves the target Session | Resumes only when the method explicitly permits it |
 | `create` and fork target | new Session/Agent | The user command supplies creation authority |
 

@@ -61,7 +61,7 @@ The gateway maps missing parent, missing or diagnostic catalog entries, not-resu
 
 Viewing persisted history creates no mux subscription by itself. When a follow-up materializes a cold child Activation, the existing Host and mux streams publish its lifecycle and events. Reconnect rebuilds the addressed window through `subagent.history`.
 
-The ordinary `session.history` route is likewise observation-only for both ordinary and subagent sessions, but it does not carry the catalog address or grant continuation authority. Every ordinary route that needs an Agent resolves through the shared ownership fence before cold resume; `session.cancel` and `session.updateQueue` apply the same check directly because they intentionally query only attached Agents.
+The ordinary `session.history` route is likewise observation-only for both ordinary and subagent sessions, but it does not carry the catalog address or grant continuation authority. Every ordinary route that needs an Agent resolves through the shared ownership fence before cold resume; `session.cancel` applies the check directly because it intentionally queries only attached Agents, while `session.updateQueue` resolves cold sessions through the same fence ([durable web queue recovery](../bug-fix/2026-08-17-durable-web-queue-recovery.md)).
 
 The adapter stays in `dsh-host-apiproxy`; `dsh-host-webserver` remains a carrier. Browser code imports the contract through the existing connection package and never reaches host `ctx`, preserving the [GUI RPC layering](../../implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md).
 

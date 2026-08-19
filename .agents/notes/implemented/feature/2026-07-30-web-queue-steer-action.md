@@ -32,7 +32,7 @@ The action does not run `agent/prompt-submit`: choosing steering intentionally c
 
 ### Host and client boundary
 
-`session.updateQueue` carries the `steer` action and maps the two negative outcomes to typed RPC errors. The conversion is one synchronous Agent operation; the Host never reconstructs it by combining remove and prompt calls.
+`session.updateQueue` carries the `steer` action and maps the two negative outcomes to typed RPC errors. The conversion is one Agent operation; the Host never reconstructs it by combining remove and prompt calls.
 
 The Host's existing `queuedMirror` remains the sole transient inbox authority. Its `session/queue` snapshot carries every live occurrence with `placement: 'queued' | 'steering'`: QueueDock renders only queued rows, while ChatView renders pending steering at the conversation tail after the `Deep diving...` running-status row, with Copy but without Fork, edit, or delete actions. Reconnect replays the same snapshot, so this visibility does not require client optimism or a second registry.
 
