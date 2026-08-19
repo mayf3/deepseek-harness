@@ -1,21 +1,25 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Markdown image policy" [disabled]
+  - button "Session log":
+    - text: Session log
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
 - text: Show the Markdown image policy. {{clock}}
 - button "Copy":
   - img
-- button "Branch into a new conversation" [disabled]:
-  - img
-- text: Available only on the last message of a completed turn
 - heading "Markdown images" [level=2]
 - paragraph:
   - img "Remote test image"
 - paragraph: Local test image
 - paragraph: REMOTE_IMAGE_DONE
 - button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
   - img
 - button "Branch into a new conversation":
   - img
@@ -24,8 +28,8 @@
 - button "Commands":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
-- button "Select model":
-  - text: Select model
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: 1 turns · 1 steps LLM {{duration}} Input 0 tok · Output 0 tok
+- text: 1 turns · 1 steps LLM {{duration}}

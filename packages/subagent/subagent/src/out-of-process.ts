@@ -16,6 +16,31 @@ import { isAbsolute, resolve } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SubagentCapabilities, SubagentResult, SubagentRun, SubagentStopReason } from './types.ts'
 
+/** Maximum UTF-8 size of {@link SubagentResult.diagnostic}. */
+const MAX_SUBAGENT_DIAGNOSTIC_BYTES = 4_096
+
+const DIAGNOSTIC_TRUNCATION_SUFFIX = '\n[diagnostic truncated]'
+const utf8Encoder = new TextEncoder()
+const utf8Decoder = new TextDecoder()
+
+/**
+ * Limit provider-authored failure detail without splitting a UTF-8 sequence.
+ * @param diagnostic - safe diagnostic text produced by the provider.
+ * @returns the original text, or a visibly truncated value within the limit.
+ */
+function limitSubagentDiagnostic(diagnostic: string): string {
+  const bytes = utf8Encoder.encode(diagnostic)
+  if (bytes.byteLength <= MAX_SUBAGENT_DIAGNOSTIC_BYTES) return diagnostic
+
+  const suffixBytes = utf8Encoder.encode(DIAGNOSTIC_TRUNCATION_SUFFIX).byteLength
+  let prefixBytes = MAX_SUBAGENT_DIAGNOSTIC_BYTES - suffixBytes
+  while (((bytes[prefixBytes] as number) & 0b1100_0000) === 0b1000_0000) {
+    prefixBytes -= 1
+  }
+  return utf8Decoder.decode(bytes.subarray(0, prefixBytes))
+    + DIAGNOSTIC_TRUNCATION_SUFFIX
+}
+
 /**
  * The capability advertisement of an out-of-process backend: NONE. A child in
  * another process cannot honor parent-enforced start features
@@ -132,9 +157,11 @@ function toError(value: unknown): Error {
 export interface RunResultSettlement {
   /** The turn attempt (typically racing local cancellation); returns the terminal result. */
   attempt: () => Promise<SubagentResult>
-  /** Snapshot of the child output streamed so far (a partial answer survives failure). */
+  /** Snapshot the provider exposes when cancellation or failure wins settlement. */
   collectOutput: () => ContentBlock[]
-  /** Whether local cancellation settled (an in-flight rejection then reads as `aborted`). */
+  /** Snapshot safe provider-authored detail when a failure wins settlement. */
+  collectDiagnostic?: (() => string | undefined) | undefined
+  /** Whether local cancellation settled before the attempt's outcome is observed. */
   cancelled: () => boolean
   /** Diagnostic sink for a failure flattened to a stop reason; a throw from it is contained. */
   onError?: ((error: Error, stopReason: SubagentStopReason) => void) | undefined
@@ -146,16 +173,19 @@ export interface RunResultSettlement {
 
 /**
  * Settle an out-of-process run result under the seam contract: `result` never
- * rejects after publication. A rejection from the attempt resolves as
- * `aborted` when cancellation already settled locally, else it is flattened
- * to `stopReason: 'error'` through the contained diagnostic sink; the abort
- * listener is removed on every path.
+ * rejects after publication. A normally completed or rejected attempt resolves
+ * as `aborted` when cancellation already settled locally; another rejection is
+ * flattened to `stopReason: 'error'` through the contained diagnostic sink.
+ * The abort listener is removed on every path.
  * @param parts - the attempt, output snapshot, cancellation state, sink, and signal wiring.
  * @returns the terminal result (never a rejection).
  */
 export async function settleRunResult(parts: RunResultSettlement): Promise<SubagentResult> {
   try {
-    return await parts.attempt()
+    const result = await parts.attempt()
+    return parts.cancelled()
+      ? { output: parts.collectOutput(), stopReason: 'aborted' }
+      : result
   } catch (error: unknown) {
     // Cover a rejection already queued when cancellation arrives.
     if (parts.cancelled()) return { output: parts.collectOutput(), stopReason: 'aborted' }
@@ -165,7 +195,15 @@ export async function settleRunResult(parts: RunResultSettlement): Promise<Subag
     } catch {
       // The diagnostic sink cannot reject the run result.
     }
-    return { output: parts.collectOutput(), stopReason: 'error' }
+    const collected = parts.collectDiagnostic?.()
+    const diagnostic = collected === undefined
+      ? undefined
+      : limitSubagentDiagnostic(collected)
+    return {
+      output: parts.collectOutput(),
+      ...diagnostic === undefined ? {} : { diagnostic },
+      stopReason: 'error',
+    }
   } finally {
     parts.signal.removeEventListener('abort', parts.onAbort)
   }

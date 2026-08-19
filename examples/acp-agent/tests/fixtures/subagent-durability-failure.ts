@@ -1,4 +1,4 @@
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
 export const name = 'subagent-durability-failure'
@@ -31,6 +31,8 @@ const FAILED_CHECKPOINT_TURN = 3
 /** Fail the child checkpoint and stabilize the authored follow-up failure ordering. */
 export function apply(ctx: Context): void {
   const followupsAccepted = Promise.withResolvers<undefined>()
+  const parentTurnClosed = Promise.withResolvers<undefined>()
+  let parentClosed = false
   const publishedFailure = process.env.DSH_SUBAGENT_PUBLISHED_FAILURE === '1'
   const persistence = ctx.sessionPersistence
   const load = persistence.load.bind(persistence)
@@ -62,7 +64,21 @@ export function apply(ctx: Context): void {
     agents.create = create
     persistence.load = load
     followupsAccepted.resolve(undefined)
+    parentTurnClosed.resolve(undefined)
   }, 'subagent snapshot ordering')
+
+  // The manager's settlement notice races whatever the parent is doing when the
+  // child's Activation ends, and this transcript pins it as the parent's own
+  // later turn. Hold the child's steps until the parent's spawn turn closes, so
+  // the notice can only arrive at an idle parent. The parent's turn never awaits
+  // child model work — its own fences need inbox acceptance only — so the child
+  // cannot deadlock it.
+  ctx.on('session/event', (session, event) => {
+    if (session.header.parentSession !== undefined || event.type !== 'turn/end') return
+    if (event.data.turn !== 1) return
+    parentClosed = true
+    parentTurnClosed.resolve(undefined)
+  })
 
   // Remap the placeholder child id in a follow-up to the live child. The child
   // id the model "knows" is authored into the transcript, while the running
@@ -84,14 +100,19 @@ export function apply(ctx: Context): void {
   // runs, so the queued FIFO order is what the transcript records. The first
   // child enqueue is the initial delegation, which also pins the real child id.
   let accepted = 0
-  ctx.on('agent/inbox/inserted', (agent) => {
+  ctx.on('agent/inbox/inserted', ({ agent }) => {
     if (agent.session.header.parentSession === undefined) return
     if (realChildId === undefined) realChildId = agent.session.header.id
     accepted += 1
     if (accepted >= 3) followupsAccepted.resolve(undefined)
   })
-  ctx.on('agent/pre-step', async (agent, _messages, _context, next) => {
-    if (agent.session.header.parentSession !== undefined) await followupsAccepted.promise
+  ctx.on('agent/pre-step', async ({ agent }, next) => {
+    if (agent.session.header.parentSession === undefined) return next()
+    await followupsAccepted.promise
+    // The published-failure variant's child never reaches a step (its follow-up
+    // throws), and its parent turn awaits that child, so only the continuable
+    // scenario takes the settlement fence.
+    if (!publishedFailure && !parentClosed) await parentTurnClosed.promise
     return next()
   })
 

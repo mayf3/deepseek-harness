@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { Context, type Fiber } from 'cordis'
+import { Context, type Fiber } from '@deepseek-ai/cordis'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import LlmService, { createUserMessage, CallId, LlmAdapter  } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, CallId, LlmAdapter  } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRegistry, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { MockAdapter, textResponse, toolCallResponse } from './mock-adapter.ts'
 
 const testToolSignal = new AbortController().signal
@@ -19,10 +19,10 @@ interface Harness {
 
 async function harness(adapter: LlmAdapter): Promise<Harness> {
   const ctx = new Context()
-  await ctx.plugin(LlmService)
+  await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRegistry)
+  await ctx.plugin(ToolRuntime)
   const agentsFiber = await ctx.plugin(AgentRegistry)
   const loopFiber = await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)
@@ -31,7 +31,7 @@ async function harness(adapter: LlmAdapter): Promise<Harness> {
 
 function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
   return new Promise((resolve) => {
-    const dispose = ctx.on('agent/status', (subject, status) => {
+    const dispose = ctx.on('agent/status', ({ agent: subject, status }) => {
       if (subject === agent && status === 'idle') {
         dispose()
         resolve()
@@ -119,10 +119,10 @@ describe('AgentLoop initiator scope', () => {
   it('keeps overlapping driver continuations bound to their exact Agents', async () => {
     const ctx = new Context()
     const adapter = new OverlapAdapter(ctx)
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRegistry)
+    await ctx.plugin(ToolRuntime)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
     ctx.llm.registerAdapter(['mock'], adapter)
@@ -164,18 +164,18 @@ describe('AgentLoop initiator scope', () => {
       if (context.agent === agent) capture(context.signal)
       return next()
     })
-    ctx.on('agent/pre-step', async (subject, _message, { signal }, next) => {
+    ctx.on('agent/pre-step', async ({ agent: subject, signal }, next) => {
       if (subject === agent) {
         expect(ctx.agents.requireInitiator()).toBe(agent)
         preStepSignals.push(signal)
       }
       return next()
     })
-    ctx.on('agent/request', async (subject, _turn, _step, signal, next) => {
+    ctx.on('agent/request', async ({ agent: subject, signal }, next) => {
       if (subject === agent) capture(signal)
       return next()
     })
-    ctx.on('agent/turn-stopping', (subject, _turn, signal) => {
+    ctx.on('agent/turn-stopping', ({ agent: subject, signal }) => {
       if (subject === agent) capture(signal)
     })
     ctx.tools.register(defineContentToolFixture({
@@ -378,10 +378,10 @@ describe('AgentLoop initiator scope', () => {
   it('keeps ALS readable while root disposal drains sibling AgentLoop fibers', async () => {
     const ctx = new Context()
     const adapter = new ReloadAdapter()
-    await ctx.plugin(LlmService)
+    await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRegistry)
+    await ctx.plugin(ToolRuntime)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentLoop, { agents: [] })
     ctx.llm.registerAdapter(['mock'], adapter)

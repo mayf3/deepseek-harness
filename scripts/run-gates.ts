@@ -10,13 +10,19 @@ import { availableParallelism } from 'node:os'
 import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { COVERAGE_EXEMPT_ENV, coverageExemptHeavySuites } from './coverage-exempt.ts'
+import {
+  COVERAGE_PARTITIONS_ENV,
+  COVERAGE_TEST_TIMEOUT_ENV,
+  coverageTestTimeoutArgs,
+  parseCoveragePartitionCount,
+} from './coverage-partitions.ts'
 
 /** A named aggregate exposed by the gate runner. */
 export type Mode =
   | 'ci-primary'
   | 'ci-linux-primary'
   | 'ci-static'
-  | 'ci-lint'
+  | 'ci-lint-contracts-ready'
   | 'ci-coverage'
   | 'ci-snapshot'
   | 'ci-artifacts'
@@ -39,8 +45,13 @@ export interface Gate {
   command: string
   args: string[]
   needs?: string[]
+  /** Gate ids that must settle, regardless of outcome, before this gate starts. */
+  after?: string[]
   env?: Record<string, string | undefined>
+  /** Keep a failure visible without failing the aggregate. */
   allowFailure?: boolean
+  /** Write child output as it arrives instead of buffering it until completion. */
+  streamOutput?: boolean
 }
 
 /** The observed outcome of one gate process. */
@@ -101,7 +112,7 @@ function parseMode(raw: string | undefined): Mode {
     case 'ci-primary':
     case 'ci-linux-primary':
     case 'ci-static':
-    case 'ci-lint':
+    case 'ci-lint-contracts-ready':
     case 'ci-coverage':
     case 'ci-snapshot':
     case 'ci-artifacts':
@@ -115,7 +126,7 @@ function parseMode(raw: string | undefined): Mode {
       return raw
     default:
       throw new Error(
-        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint | ci-coverage | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational | node-compat | check-all | doc-sync, got ${JSON.stringify(raw)}.`,
+        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational | node-compat | check-all | doc-sync, got ${JSON.stringify(raw)}.`,
       )
   }
 }
@@ -197,7 +208,7 @@ export function gatesForMode(selected: Mode): Gate[] {
       return [...ciPrimaryGates(), webSnapshotGate(['built-package-invariants'])]
     case 'ci-static':
       return ciStaticGates({ ownsBuild: false })
-    case 'ci-lint':
+    case 'ci-lint-contracts-ready':
       return [
         lintGate(),
         pnpmScript('duplication', 'duplication'),
@@ -224,6 +235,7 @@ export function gatesForMode(selected: Mode): Gate[] {
         pnpmScript('cordis-config', 'verify-cordis-config', { label: 'Cordis config' }),
         pnpmScript('client-domain-graph', 'verify-client-domain-graph', { label: 'client domain graph' }),
         pnpmScript('test', 'test'),
+        pnpmScript('issue-management', 'test:issue-management', { label: 'Issue management policy' }),
         pnpmScript('duplication', 'duplication'),
         snapshotGate(),
         pnpmScript('build', 'build'),
@@ -232,6 +244,7 @@ export function gatesForMode(selected: Mode): Gate[] {
         ...docSyncLeafGates({
           docTypecheckNeeds: ['build'],
           docTypecheckEnv: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
+          docTypecheckScript: 'doc-typecheck:contracts-ready',
         }),
         pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
       ]
@@ -240,25 +253,41 @@ export function gatesForMode(selected: Mode): Gate[] {
   }
 }
 
-function ciPrimaryGates(): Gate[] {
+function ciSharedStaticGates(): Gate[] {
   return [
     pnpmScript('runtime-closure', 'verify-runtime-closure', { label: 'runtime closure' }),
     pnpmScript('constraints', 'constraints'),
+    pnpmScript('dsh-package-licenses', 'verify-dsh-package-licenses', { label: 'DSH package licenses' }),
     pnpmScript('package-invariants', 'verify-package-invariants', { label: 'package invariants' }),
     pnpmScript('cordis-config', 'verify-cordis-config', { label: 'Cordis config' }),
-    pnpmScript('typecheck', 'typecheck'),
-    lintGate(),
+    pnpmScript('optional-dependency-imports', 'verify-optional-dependency-imports', {
+      label: 'optional dependency imports',
+    }),
+    pnpmScript('client-packages', 'verify-client-packages', { label: 'client packages' }),
+    pnpmScript('issue-management', 'test:issue-management', { label: 'Issue management policy' }),
+  ]
+}
+
+function ciPrimaryGates(): Gate[] {
+  return [
+    ...ciSharedStaticGates(),
+    typertContractsGate(),
+    pnpmScript('typecheck', 'typecheck:contracts-ready', { needs: ['typert-contracts'] }),
+    lintGate({ needs: ['typert-contracts'] }),
     pnpmScript('duplication', 'duplication'),
     ...coverageGates(),
     ...nodeCompatSmokeGates(),
     snapshotGate(),
-    ...docSyncLeafGates(),
+    ...docSyncLeafGates({
+      docTypecheckNeeds: ['typert-contracts'],
+      docTypecheckScript: 'doc-typecheck:contracts-ready',
+    }),
     pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
     pnpmScript('knip', 'knip'),
-    // typecheck and build now drive the same root solution graph; without the
-    // dependency two concurrent `tsc -b` runs race the same tsbuildinfo files.
-    // The tsc step is an incremental no-op after typecheck.
-    pnpmScript('build', 'build', { needs: ['typecheck'] }),
+    // The prepared typecheck and build both drive Client tsc, while build also
+    // repeats the Host contract pass. Wait for all three consumers so build
+    // neither races tsbuildinfo nor replaces declarations while they are read.
+    pnpmScript('build', 'build', { needs: ['typecheck', 'lint', 'doc-typecheck'] }),
     pnpmScript('publint', 'publint', { needs: ['build'] }),
     pnpmScript('node-next-types', 'verify-node-next-types', {
       label: 'node-next types',
@@ -294,12 +323,12 @@ function nodeCompatSmokeGates(options: { cliSmoke?: boolean } = {}): Gate[] {
     pnpmExec('source-worker-smoke', [
       'vitest',
       'run',
-      'packages/workflow/workflow-workerthread/tests/source-worker.compat.spec.ts',
+      'packages/workflow/workflow-worker-thread/tests/source-worker.compat.spec.ts',
     ], { label: 'source worker smoke' }),
     pnpmExec('jsonl-zstd-smoke', [
       'vitest',
       'run',
-      'packages/session-persistence/session-persistence-jsonl/tests/zstd.compat.spec.ts',
+      'packages/session/session-persistence-jsonl/tests/zstd.compat.spec.ts',
     ], { label: 'JSONL Zstandard smoke' }),
     pnpmExec('dsh-source-launch-smoke', [
       'vitest',
@@ -328,7 +357,7 @@ function nodeCompatSmokeGates(options: { cliSmoke?: boolean } = {}): Gate[] {
   return gates
 }
 
-/** Active Node major used to scope version-specific compatibility contracts. */
+/** Active Node major used to select version-specific compatibility checks. */
 function runningNodeMajor(): number {
   const major = Number.parseInt(process.versions.node.split('.')[0] ?? '', 10)
   if (!Number.isSafeInteger(major)) {
@@ -339,10 +368,7 @@ function runningNodeMajor(): number {
 
 function ciStaticGates(options: { ownsBuild: boolean }): Gate[] {
   return [
-    pnpmScript('runtime-closure', 'verify-runtime-closure', { label: 'runtime closure' }),
-    pnpmScript('constraints', 'constraints'),
-    pnpmScript('package-invariants', 'verify-package-invariants', { label: 'package invariants' }),
-    pnpmScript('cordis-config', 'verify-cordis-config', { label: 'Cordis config' }),
+    ...ciSharedStaticGates(),
     ...options.ownsBuild ? [pnpmScript('build', 'build')] : [],
     ...docSyncLeafGates({
       includeDocTypecheck: options.ownsBuild,
@@ -350,6 +376,7 @@ function ciStaticGates(options: { ownsBuild: boolean }): Gate[] {
         ? {
           docTypecheckNeeds: ['build'],
           docTypecheckEnv: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
+          docTypecheckScript: 'doc-typecheck:contracts-ready',
         }
         : {},
       docsBuildScript: 'docs:build:mpa',
@@ -379,14 +406,14 @@ function ciConsumerGates(): Gate[] {
     pnpmScript('build', 'build'),
     pnpmScript('node-compat', 'check:node-compat', { label: 'Node compatibility' }),
     pnpmScript('publint', 'publint', { needs: builtTree }),
-    builtPackageInvariantsGate(['publint']),
-    pnpmScript('lint-and-duplication', 'check:ci:lint', {
+    builtPackageInvariantsGate(builtTree),
+    pnpmScript('lint-and-duplication', 'check:ci:lint:contracts-ready', {
       label: 'lint and duplication',
       needs: validatedBuild,
     }),
     snapshotGate(validatedBuild),
     webSnapshotGate(validatedBuild),
-    pnpmScript('doc-typecheck', 'doc-typecheck', {
+    pnpmScript('doc-typecheck', 'doc-typecheck:contracts-ready', {
       needs: validatedBuild,
       env: { DSH_DOC_TYPECHECK_USE_BUILD_OUTPUT: '1' },
     }),
@@ -399,6 +426,20 @@ function ciConsumerGates(): Gate[] {
 }
 
 function webSnapshotGate(needs: string[]): Gate {
+  const workerRaw = process.env.DSH_WEB_SNAPSHOT_WORKERS
+  if (workerRaw !== undefined && workerRaw !== '') {
+    const workers = Number.parseInt(workerRaw, 10)
+    if (!Number.isSafeInteger(workers) || workers < 2 || String(workers) !== workerRaw) {
+      throw new Error(`run-gates: DSH_WEB_SNAPSHOT_WORKERS must be an integer greater than 1, got ${JSON.stringify(workerRaw)}.`)
+    }
+    return pnpmScript('web-snapshot', 'test:web:ci', {
+      label: 'web browser snapshot',
+      displayCommand: `DSH_SNAPSHOT=replay DSH_WEB_SNAPSHOT_WORKERS=${workers} pnpm run test:web:ci`,
+      env: { DSH_SNAPSHOT: 'replay' },
+      needs,
+      streamOutput: true,
+    })
+  }
   return pnpmScript('web-snapshot', 'test:web:built', {
     label: 'web browser snapshot',
     displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
@@ -415,14 +456,23 @@ function ciWindowsBlockingGates(): Gate[] {
 }
 
 function ciWindowsCompleteGates(): Gate[] {
+  const coverage = coverageGates().map(gate => gate.id === 'coverage-exempt-heavy'
+    ? { ...gate, needs: [...new Set(['build', ...(gate.needs ?? [])])] }
+    : gate)
+  const coverageAfter = coverage.map(gate => gate.id)
   const observational = ciWindowsObservationalGates()
     // The required production site replaces the observational MPA build; both
     // VitePress modes write the same output directory and cannot overlap.
     .filter(gate => gate.id !== 'build' && gate.id !== 'docs-site-build')
-    .map(gate => ({ ...gate, allowFailure: true }))
+    .map(gate => ({
+      ...gate,
+      allowFailure: true,
+      after: [...new Set([...coverageAfter, ...(gate.after ?? [])])],
+    }))
   return [
     pnpmScript('build', 'build'),
     pnpmScript('windows-site', 'docs:build', { label: 'production site' }),
+    ...coverage,
     ...observational,
   ]
 }
@@ -430,7 +480,7 @@ function ciWindowsCompleteGates(): Gate[] {
 function ciWindowsObservationalGates(): Gate[] {
   return [
     ...ciStaticGates({ ownsBuild: true }),
-    // Linux owns required lint, coverage, and snapshots; Windows omits those duplicates.
+    // Linux owns required lint and snapshots; Windows omits those duplicates.
     pnpmScript('duplication', 'duplication'),
     pnpmScript('publint', 'publint', { needs: ['build'] }),
     pnpmScript('node-next-types', 'verify-node-next-types', {
@@ -442,25 +492,37 @@ function ciWindowsObservationalGates(): Gate[] {
   ]
 }
 
-function lintGate(): Gate {
+function typertContractsGate(): Gate {
+  return pnpmScript('typert-contracts', 'build:lib:host', { label: 'Typert contracts' })
+}
+
+function lintGate(options: { needs?: string[] } = {}): Gate {
   const raw = process.env.DSH_OXLINT_THREADS
-  return pnpmScript('lint', 'lint', raw === undefined || raw === ''
-    ? {}
-    : { displayCommand: `DSH_OXLINT_THREADS=${raw} pnpm run lint` })
+  const script = 'lint:contracts-ready'
+  return pnpmScript('lint', script, {
+    ...raw === undefined || raw === ''
+      ? {}
+      : { displayCommand: `DSH_OXLINT_THREADS=${raw} pnpm run ${script}` },
+    ...options.needs === undefined ? {} : { needs: options.needs },
+  })
 }
 
 // The heavy suites run uninstrumented beside the thresholded gate: their
 // compiler- and subprocess-bound fixtures pay a multiple of their runtime
 // under v8 instrumentation while contributing nothing the thresholds need
-// (membership contract in scripts/coverage-exempt.ts).
+// (membership rules in scripts/coverage-exempt.ts).
 //
-// DSH_COVERAGE_MAX_WORKERS is the lane's worker budget, so the two parallel
-// gates split it instead of each claiming it whole (the failover pool's
-// 8 x 6-instance bound assumes one lane never exceeds its value). The exempt
+// DSH_COVERAGE_MAX_WORKERS is the ordinary lane's worker budget, so the two
+// parallel gates split it instead of each claiming it whole. When
+// DSH_COVERAGE_PARTITIONS is set, its single-worker processes replace the
+// instrumented share while this budget still sizes the exempt gate. The exempt
 // gate's wall clock is dominated by its longest single file, so it takes the
-// small share. A budget of 1 gives each gate 1 worker; lanes that need a
-// strict total of one (the serial reference jobs) also set
-// DSH_GATE_CONCURRENCY=1, which keeps the gates from overlapping at all.
+// small share. A budget of 1 gives each gate 1 worker; lanes that need a strict
+// total of one (the serial reference jobs) also set DSH_GATE_CONCURRENCY=1,
+// which keeps the gates from overlapping at all.
+// DSH_COVERAGE_TEST_TIMEOUT_MS raises Vitest's per-test and expect.poll
+// defaults together for instrumented lanes whose scheduling overhead exceeds
+// those defaults. Explicit fixture timeouts remain authoritative.
 function coverageWorkerArgs(): { instrumented: string[]; exempt: string[] } {
   const [flag] = positiveIntArg('DSH_COVERAGE_MAX_WORKERS', '--maxWorkers')
   if (flag === undefined) return { instrumented: [], exempt: [] }
@@ -475,21 +537,33 @@ function coverageWorkerArgs(): { instrumented: string[]; exempt: string[] } {
 
 function coverageGates(): Gate[] {
   const workers = coverageWorkerArgs()
-  return [
-    pnpmExec('coverage', [
+  const timeouts = coverageTestTimeoutArgs(process.env[COVERAGE_TEST_TIMEOUT_ENV])
+  const partitions = parseCoveragePartitionCount(process.env[COVERAGE_PARTITIONS_ENV])
+  const instrumented = partitions === undefined
+    ? pnpmExec('coverage', [
       'vitest',
       'run',
       '--coverage',
       ...workers.instrumented,
+      ...timeouts,
     ], {
       label: 'test:coverage',
       env: { [COVERAGE_EXEMPT_ENV]: '1' },
-    }),
+    })
+    : pnpmScript('coverage', 'test:coverage:partitioned', {
+      label: 'test:coverage',
+      displayCommand: `${COVERAGE_PARTITIONS_ENV}=${partitions} pnpm run test:coverage:partitioned`,
+      env: { [COVERAGE_EXEMPT_ENV]: '1' },
+      streamOutput: true,
+    })
+  return [
+    instrumented,
     pnpmExec('coverage-exempt-heavy', [
       'vitest',
       'run',
       ...coverageExemptHeavySuites.map(suite => suite.filter),
       ...workers.exempt,
+      ...timeouts,
     ], {
       label: 'test:coverage-exempt-heavy',
     }),
@@ -497,7 +571,7 @@ function coverageGates(): Gate[] {
 }
 
 // Example and package snapshots boot their bins in `lib` mode (built artifacts under plain Node,
-// plugins via real exports); repository-script snapshots execute their real source entry path.
+// plugins via real exports); script snapshots execute their real source entry path.
 // Callers wait either on `build` or on a validation gate that transitively owns that build.
 function snapshotGate(needs: string[] = ['build']): Gate {
   return pnpmScript('snapshot', 'test:snapshot', {
@@ -533,15 +607,21 @@ function flagEnabled(envName: string): boolean {
 function hygieneLeafGates(options: { artifactNeeds?: string[] } = {}): Gate[] {
   const artifactOptions = options.artifactNeeds === undefined ? {} : { needs: options.artifactNeeds }
   return [
+    pnpmScript('rescope-vendor', 'rescope-vendor:check', { label: 'vendor rescope' }),
     pnpmScript('knip', 'knip'),
     pnpmScript('publint', 'publint', artifactOptions),
     pnpmScript('constraints', 'constraints'),
+    pnpmScript('dsh-package-licenses', 'verify-dsh-package-licenses', { label: 'DSH package licenses' }),
     pnpmScript('package-invariants', 'verify-package-invariants', { label: 'package invariants' }),
     builtPackageInvariantsGate(options.artifactNeeds),
     pnpmScript('node-next-types', 'verify-node-next-types', {
       label: 'node-next types',
       ...artifactOptions,
     }),
+    pnpmScript('optional-dependency-imports', 'verify-optional-dependency-imports', {
+      label: 'optional dependency imports',
+    }),
+    pnpmScript('client-packages', 'verify-client-packages', { label: 'client packages' }),
   ]
 }
 
@@ -549,6 +629,7 @@ function docSyncLeafGates(options: {
   includeDocTypecheck?: boolean
   docTypecheckNeeds?: string[]
   docTypecheckEnv?: Record<string, string | undefined>
+  docTypecheckScript?: 'doc-typecheck' | 'doc-typecheck:contracts-ready'
   docsBuildScript?: 'docs:build' | 'docs:build:mpa'
 } = {}): Gate[] {
   const docTypecheckOptions: Partial<Gate> = {}
@@ -557,8 +638,9 @@ function docSyncLeafGates(options: {
   return [
     ...options.includeDocTypecheck === false
       ? []
-      : [pnpmScript('doc-typecheck', 'doc-typecheck', docTypecheckOptions)],
+      : [pnpmScript('doc-typecheck', options.docTypecheckScript ?? 'doc-typecheck', docTypecheckOptions)],
     pnpmScript('cordis-catalog', 'verify-cordis-catalog', { label: 'cordis catalog' }),
+    pnpmScript('client-catalog', 'verify-client-catalog', { label: 'client catalog' }),
     pnpmScript('export-jsdoc', 'verify-export-jsdoc', { label: 'export jsdoc' }),
     pnpmScript('tool-catalog', 'verify-tool-catalog', { label: 'tool catalog' }),
     pnpmScript('config-catalog', 'verify-config-catalog', { label: 'config catalog' }),
@@ -567,19 +649,22 @@ function docSyncLeafGates(options: {
     pnpmScript('scoped-events', 'verify-scoped-events', { label: 'scoped events' }),
     pnpmScript('markdown-wrap', 'verify-md-wrap', { label: 'markdown wrap' }),
     pnpmScript('markdown-links', 'verify-md-links', { label: 'markdown links' }),
+    pnpmScript('public-repository-links', 'verify-public-repository-links', { label: 'public repository links' }),
     pnpmScript('doc-refs', 'verify-doc-refs', { label: 'doc refs' }),
     pnpmScript('package-paths', 'verify-package-paths', { label: 'package paths' }),
+    pnpmScript('config-source-ownership', 'verify-config-source-ownership', { label: 'config source ownership' }),
     pnpmScript('package-readme-model-experience', 'verify-package-readme-model-experience', { label: 'package README model experience' }),
     pnpmScript('mermaid', 'verify-mermaid'),
     pnpmScript('agent-note-classification', 'verify-agent-note-classification', { label: 'agent note classification' }),
     pnpmScript('agent-note-format', 'verify-agent-note-format', { label: 'agent note format' }),
     pnpmScript('archived-agent-notes', 'verify-archived-agent-notes', { label: 'archived agent notes' }),
     pnpmScript('type-equivalence', 'verify-type-equiv', { label: 'type equivalence' }),
+    pnpmScript('skill-invocation-metadata', 'verify-skill-invocation-metadata', { label: 'skill invocation metadata' }),
     pnpmScript('translation-prompt', 'verify-translation-prompt', { label: 'translation prompt' }),
     pnpmScript('translation-pairing', 'verify-translation-pairing', { label: 'translation pairing' }),
     pnpmScript('doc-budgets', 'verify-doc-budgets', { label: 'doc budgets' }),
-    pnpmExec('docs-site-projection', ['vitest', 'run', 'scripts/project-doc-site.spec.ts'], {
-      label: 'documentation projection',
+    pnpmExec('docs-site-projection', ['vitest', 'run', 'scripts/project-doc-site.spec.ts', 'scripts/verify-doc-site-fragments.spec.ts'], {
+      label: 'documentation site checks',
     }),
     // Keep the VitePress build itself in one gate because projection rewrites website/.generated.
     pnpmScript('docs-site-build', options.docsBuildScript ?? 'docs:build', { label: 'documentation build' }),
@@ -595,15 +680,18 @@ function builtBinSmokeGate(needs: string[] = ['build']): Gate {
     'vitest.e2e.config.ts',
     'examples/headless-agent/tests/keyless-smoke.e2e.ts',
     'apps/cli/tests/built-bin.e2e.ts',
-    'packages/examples/cli-demo/tests/built-bin.e2e.ts',
     'packages/examples/acp-demo/tests/built-bin.e2e.ts',
     'packages/host/directory-picker-native/tests/built-worker.e2e.ts',
-    'packages/ui/jsonrpc/tests/built-scope-carrier.e2e.ts',
-    // The worker-entry packages' built bundles: the only automated proof
-    // that lib/index.js resolves its sibling lib/worker.cjs under plain node
-    // (the e2e lane runs unbuilt, so these files self-skip there).
-    'packages/workflow/workflow-workerthread/tests/built-worker.e2e.ts',
-    'packages/code-runtime/code-runtime-worker/tests/built-lib.e2e.ts',
+    'packages/sdk/server/tests/built-scope-carrier.e2e.ts',
+    'packages/subagent/subagent-codex/tests/loader-composition.e2e.ts',
+    'packages/subagent/subagent-claude-code/tests/loader-composition.e2e.ts',
+    'packages/api/remotes/tests/built-lib.e2e.ts',
+    // Built execution consumers: the only automated proof that package-name
+    // imports reach their lib/ entrypoints under plain Node. The e2e lane runs
+    // unbuilt, so these files self-skip there.
+    'packages/workflow/workflow-worker-thread/tests/built-worker.e2e.ts',
+    'packages/code-runtime/code-runtime-worker-thread/tests/built-lib.e2e.ts',
+    'packages/lsp/lsp-stdio/tests/built-lib.e2e.ts',
   ], {
     label: 'built-bin smoke',
     needs,
@@ -629,6 +717,11 @@ function validateGateGraph(gates: readonly Gate[]): void {
         throw new Error(`run-gates: gate ${JSON.stringify(gate.id)} depends on unknown gate ${JSON.stringify(dependency)}.`)
       }
     }
+    for (const predecessor of gate.after ?? []) {
+      if (!ids.has(predecessor)) {
+        throw new Error(`run-gates: gate ${JSON.stringify(gate.id)} waits for unknown gate ${JSON.stringify(predecessor)}.`)
+      }
+    }
   }
 
   const cycle = findDependencyCycle(gates)
@@ -650,8 +743,8 @@ function findDependencyCycle(gates: readonly Gate[]): string[] | undefined {
 
     active.set(id, path.length)
     path.push(id)
-    for (const dependency of gate.needs ?? []) {
-      const cycle = visit(dependency)
+    for (const predecessor of [...(gate.needs ?? []), ...(gate.after ?? [])]) {
+      const cycle = visit(predecessor)
       if (cycle !== undefined) return cycle
     }
     path.pop()
@@ -692,7 +785,7 @@ export async function runGates(
   for (;;) {
     let madeProgress = false
     while (running.length < maxActive) {
-      const ready = gates.find(gate => states.get(gate.id) === 'pending' && dependenciesPassed(gate, states))
+      const ready = gates.find(gate => states.get(gate.id) === 'pending' && predecessorsReady(gate, states))
       if (ready === undefined) break
       states.set(ready.id, 'running')
       running.push({ gate: ready, promise: execute(ready) })
@@ -701,32 +794,24 @@ export async function runGates(
     }
 
     if (running.length === 0) {
-      let pending = gates.filter(gate => states.get(gate.id) === 'pending')
-      while (pending.length > 0) {
-        const gate = pending.find(item => (item.needs ?? []).some((id) => {
-          const state = states.get(id)
-          return state === 'failed' || state === 'skipped'
-        }))
-        if (gate === undefined) throw new Error('run-gates: validated graph stalled without a failed dependency.')
-        const failedDeps = (gate.needs ?? []).filter((id) => {
-          const state = states.get(id)
-          return state === 'failed' || state === 'skipped'
-        })
-        const result: GateResult = {
-          gate,
-          status: 'skipped',
-          durationMs: 0,
-          output: [],
-          exitCode: null,
-          signalCode: null,
-          error: `dependency failed or skipped: ${failedDeps.join(', ')}`,
-        }
-        states.set(gate.id, 'skipped')
-        results.set(gate.id, result)
-        observe(result)
-        pending = pending.filter(item => item !== gate)
+      const pending = gates.filter(gate => states.get(gate.id) === 'pending')
+      if (pending.length === 0) break
+      const gate = pending.find(item => (item.needs ?? []).some(id => gateFailed(states.get(id))))
+      if (gate === undefined) throw new Error('run-gates: validated graph stalled without a failed dependency.')
+      const failedDeps = (gate.needs ?? []).filter(id => gateFailed(states.get(id)))
+      const result: GateResult = {
+        gate,
+        status: 'skipped',
+        durationMs: 0,
+        output: [],
+        exitCode: null,
+        signalCode: null,
+        error: `dependency failed or skipped: ${failedDeps.join(', ')}`,
       }
-      break
+      states.set(gate.id, 'skipped')
+      results.set(gate.id, result)
+      observe(result)
+      continue
     }
 
     if (!madeProgress) {
@@ -745,8 +830,17 @@ export async function runGates(
   })
 }
 
-function dependenciesPassed(gate: Gate, states: Map<string, GateState>): boolean {
+function predecessorsReady(gate: Gate, states: Map<string, GateState>): boolean {
   return (gate.needs ?? []).every(id => states.get(id) === 'passed')
+    && (gate.after ?? []).every(id => gateSettled(states.get(id)))
+}
+
+function gateSettled(state: GateState | undefined): boolean {
+  return state === 'passed' || state === 'failed' || state === 'skipped'
+}
+
+function gateFailed(state: GateState | undefined): boolean {
+  return state === 'failed' || state === 'skipped'
 }
 
 /**
@@ -771,10 +865,12 @@ export async function runGate(gate: Gate): Promise<GateResult> {
     child.stdout.setEncoding('utf8')
     child.stderr.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => {
-      output.push({ stream: 'stdout', text: chunk })
+      if (gate.streamOutput === true) process.stdout.write(chunk)
+      else output.push({ stream: 'stdout', text: chunk })
     })
     child.stderr.on('data', (chunk: string) => {
-      output.push({ stream: 'stderr', text: chunk })
+      if (gate.streamOutput === true) process.stderr.write(chunk)
+      else output.push({ stream: 'stderr', text: chunk })
     })
     child.on('error', (error) => {
       spawnError = `failed to start command: ${error.message}`
@@ -828,7 +924,7 @@ function printResult(result: GateResult): void {
     console.error(`command: ${result.gate.displayCommand}`)
     console.error(`outcome: ${formatGateResultReason(result)}`)
   }
-  printOutput(result.output)
+  if (result.gate.streamOutput !== true) printOutput(result.output)
 }
 
 function printSummary(results: GateResult[], durationMs: number): void {

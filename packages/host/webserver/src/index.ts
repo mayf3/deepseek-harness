@@ -1,25 +1,23 @@
 /**
  * @deepseek-ai/dsh-host-webserver — Web route-registration plugin: a node:http
- * server plus the `httpServer` service (HTTP and upgrade route registries,
- * index transform taps, and static dist fallback). Knows no harness concepts;
- * feature plugins own every registered protocol. Web shape only — Electron
- * loads dist over file:// and carries fetch over an IPC bridge. This package
- * never prints: the URL line belongs to the shell.
+ * server plus the `webServer` service (HTTP and upgrade route registries,
+ * index transform taps, and the single fallback seat for everything no route
+ * claims). Knows no harness concepts and serves no files; the composing
+ * application's frontend plugin owns dist serving through the fallback hook.
+ * Web shape only — Electron loads dist over file:// and carries fetch over an
+ * IPC bridge. This package never prints: the URL line belongs to the shell.
  */
 
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse, Server } from 'node:http'
-import { readFile } from 'node:fs/promises'
 import type { AddressInfo } from 'node:net'
 import type { Duplex } from 'node:stream'
-import { dirname } from 'node:path'
-import { Context, Service } from 'cordis'
-import z from 'schemastery'
-import { serveStatic } from './static.ts'
+import { Context, Service } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
-    httpServer: HttpServerService
+    webServer: WebServer
   }
 }
 
@@ -43,28 +41,25 @@ export interface WebUpgradeRoute {
   handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>
 }
 
-/** Gateway config: listen address plus the static dist anchor (injected by the composing app, never self-resolved). */
+/** Gateway config: the listen address. */
 export interface Config {
   /** Listen host; the two supported values are loopback and all-interfaces. */
   host: '127.0.0.1' | '0.0.0.0'
   /** Listen port; zero requests an OS-assigned port. */
   port: number
-  /** Absolute path of index.html inside the static root (dist location is workspace knowledge of the app). */
-  distIndex: string
 }
 
 /**
- * The web-shape HTTP carrier service. Activation listens immediately (route
- * registration order carries no request-facing semantics: named routes are
- * composed to be disjoint, and the static dist fallback answers anything not
- * yet claimed during the boot window). A listen failure throws out of init —
- * a FAILED fiber the boot's fail-loud sweep reports.
+ * The browser HTTP carrier service. Activation listens immediately. Route
+ * registration order does not affect requests because configured named routes
+ * must be distinct, and the fallback handler answers anything not yet claimed
+ * during startup with 404 until its owner registers. A listen failure rejects
+ * initialization, and the boot process reports the failed fiber.
  */
-export class HttpServerService extends Service {
+export class WebServer extends Service {
   static Config: z<Config> = z.object({
     host: z.union([z.const('127.0.0.1'), z.const('0.0.0.0')]).required(),
     port: z.natural().max(65535).required(),
-    distIndex: z.string().required(),
   })
 
   private readonly exact = new Map<string, WebRoute>()
@@ -72,15 +67,12 @@ export class HttpServerService extends Service {
   private readonly upgrades = new Map<string, WebUpgradeRoute>()
   private readonly upgradedSockets = new Set<Duplex>()
   private readonly indexTaps: ((html: string) => string)[] = []
-  private readonly distRoot: string
-  private readonly distIndex: string
+  private fallback: WebRoute['handler'] | undefined
   private server!: Server
   private listenedPort!: number
 
   constructor(ctx: Context, private config: Config) {
-    super(ctx, 'httpServer')
-    this.distIndex = config.distIndex
-    this.distRoot = dirname(config.distIndex)
+    super(ctx, 'webServer')
   }
 
   /** The listening port (the OS-assigned value when config.port is 0). */
@@ -123,8 +115,24 @@ export class HttpServerService extends Service {
   }
 
   /**
-   * Register an index.html transform, applied to every index response in
-   * registration order.
+   * Claim the fallback seat: the handler answering every request no named
+   * route matches (the SPA dist server in the shipped Web composition). One
+   * owner only — a second registration throws, because two fallbacks cannot
+   * compose.
+   * @param handler - owns the full response lifecycle of unmatched requests.
+   * @returns the disposer releasing the seat.
+   */
+  registerFallback(handler: WebRoute['handler']): () => void {
+    if (this.fallback !== undefined) {
+      throw new Error('webserver: fallback already registered')
+    }
+    this.fallback = handler
+    return () => { this.fallback = undefined }
+  }
+
+  /**
+   * Register an index.html transform, applied by the fallback owner to every
+   * index response ({@link applyIndexTaps}) in registration order.
    * @param transform - pure html-to-html function.
    * @returns the disposer removing the transform.
    */
@@ -147,14 +155,13 @@ export class HttpServerService extends Service {
         await route.handler(req, res)
         return
       }
-      // Static fallback keeps the pre-plugin semantics: non-GET/HEAD is 405,
-      // traversal 403, miss falls back to index.html 200 (SPA routing).
-      if (req.method !== 'GET' && req.method !== 'HEAD') {
-        res.writeHead(405)
+      const fallback = this.fallback
+      if (fallback === undefined) {
+        res.writeHead(404)
         res.end()
         return
       }
-      await serveStatic(decodeURIComponent(rawPath), res, this.distRoot, this.distIndex, () => this.renderIndex())
+      await fallback(req, res)
     }
     // Last-resort guard: handle() rejecting would otherwise be an unhandled
     // rejection killing the process on one malformed request (bad %-escape,
@@ -216,8 +223,8 @@ export class HttpServerService extends Service {
       })
     })
 
-    // Node does not include upgraded sockets in closeAllConnections(), so the
-    // service tracks and destroys them as part of the same ownership boundary.
+    // Node does not include upgraded sockets in closeAllConnections(). The service
+    // owns them with the other connections, so it tracks and destroys them explicitly.
     this.ctx.effect(() => async () => {
       const serverClosed = new Promise<void>((resolve) => {
         this.server.close(() => { resolve() })
@@ -228,7 +235,7 @@ export class HttpServerService extends Service {
         socket.destroy()
       }))
       await Promise.all([serverClosed, ...upgradedClosed])
-    }, 'httpServer.listen')
+    }, 'webServer.listen')
   }
 
   /** Longest-prefix-wins over the prefix table after an exact-table miss. */
@@ -243,12 +250,17 @@ export class HttpServerService extends Service {
     return best
   }
 
-  /** Index body: dist index.html through the registered taps in order. */
-  private async renderIndex(): Promise<string> {
-    let html = await readFile(this.distIndex, 'utf8')
-    for (const transform of this.indexTaps) html = transform(html)
-    return html
+  /**
+   * Run an index.html body through the registered taps in registration order
+   * — called by the fallback owner on every index response it renders.
+   * @param html - the raw index.html body.
+   * @returns the transformed body.
+   */
+  applyIndexTaps(html: string): string {
+    let out = html
+    for (const transform of this.indexTaps) out = transform(out)
+    return out
   }
 }
 
-export default HttpServerService
+export default WebServer

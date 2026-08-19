@@ -8,7 +8,7 @@
  *
  * Local workspace discovery is a process-backed `rg` workflow, so these tools
  * execute through `ctx.subprocess.spawn()` with fixed ripgrep argv templates —
- * never `ctx.bash`, never `ctx.bash.start()`, never a model-visible background
+ * never `ctx.shell`, never `ctx.shell.start()`, never a model-visible background
  * task. The tool layer owns schemas, argument validation, argv construction
  * ({@link module:@deepseek-ai/dsh-tool-fs-search/glob} /
  * {@link module:@deepseek-ai/dsh-tool-fs-search/grep}), result parsing,
@@ -26,8 +26,9 @@
  * @module @deepseek-ai/dsh-tool-fs-search
  */
 
-import type { Context } from 'cordis'
-import z from 'schemastery'
+import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { GLOB_MAX_RESULTS, applyGlobTool } from './glob.ts'
 import { GREP_MAX_LINE_BYTES, GREP_MAX_MATCHES, applyGrepTool } from './grep.ts'
 import { RAW_OUTPUT_MAX_BYTES, SEARCH_GRACE_MS, SEARCH_META_MAX_BYTES, SEARCH_STDERR_MAX_BYTES, SEARCH_TIMEOUT_MS } from './search-core.ts'
@@ -82,11 +83,14 @@ export interface Config {
   searchMetaMaxBytes?: number
   /** Max complete raw `rg` stdout bytes a search will parse; larger raw output fails with `SEARCH_RAW_OUTPUT_OVERFLOW`. */
   rawOutputMaxBytes?: number
-  /** Terminate-escalation grace period (ms) for one search process, handed to the subprocess seam. */
+  /** Terminate-escalation grace (ms), handed to the subprocess seam and bounded by `MAX_TIMER_DELAY_MS`. */
   graceMs?: number
   /** Max bytes retained for one search's stderr tail; the excerpt is embedded in `SEARCH_*` error messages, never shown on success. */
   stderrMaxBytes?: number
-  /** Cooperative tool-call timeout budget (ms) on both tools, enforced by `@deepseek-ai/dsh-timeout-policy` through `exec.signal`. */
+  /**
+   * Cooperative tool-call timeout budget (ms) on both tools, enforced by
+   * `@deepseek-ai/dsh-tool-call-timeout-policy` through `exec.signal`.
+   */
   timeoutMs?: number
 }
 
@@ -130,6 +134,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   assertPositiveInteger('searchMetaMaxBytes', resolved.searchMetaMaxBytes)
   assertPositiveInteger('rawOutputMaxBytes', resolved.rawOutputMaxBytes)
   assertPositiveInteger('graceMs', resolved.graceMs)
+  if (resolved.graceMs > MAX_TIMER_DELAY_MS) {
+    throw new Error(`tool-fs-search: graceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
+  }
   assertPositiveInteger('stderrMaxBytes', resolved.stderrMaxBytes)
   assertPositiveInteger('timeoutMs', resolved.timeoutMs)
   applyGlobTool(ctx, {

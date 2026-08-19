@@ -7,8 +7,8 @@
  * nor Fetch-Metadata to reads (images and navigations — those
  * headers go only to trustworthy destinations), so an unmarked request may
  * still be a rebound browser read and Host is the one header rebinding cannot
- * forge. Non-browser and remote clients pass the same fence via loopback, the
- * CLI-derived LAN IP literals, or a declared `trustedHosts` authority.
+ * forge. Non-browser and remote clients pass the same fence via loopback,
+ * deployment-derived LAN IP literals, or a declared `trustedHosts` authority.
  * Network reachability and authentication stay out of scope: binding policy
  * belongs to the webserver config, and this fence is not an auth layer.
  */
@@ -16,12 +16,13 @@
 import type { IncomingHttpHeaders } from 'node:http'
 import { isLoopbackHostname } from './loopback-hostname.ts'
 
-/** The request facts the fence reads (structural subset of IncomingMessage). */
+/** The request facts the fence reads from either HTTP representation. */
 interface ApiTrustRequest {
-  headers: IncomingHttpHeaders
+  headers: IncomingHttpHeaders | Headers
 }
 
-function header(headers: IncomingHttpHeaders, name: string): string | undefined {
+function header(headers: IncomingHttpHeaders | Headers, name: string): string | undefined {
+  if (headers instanceof Headers) return headers.get(name) ?? undefined
   const value = headers[name]
   return typeof value === 'string' ? value : undefined
 }
@@ -88,7 +89,7 @@ function isTrustedAuthority(hostUrl: URL, trustedHosts: readonly string[]): bool
 
 /**
  * Decide whether one /api request may reach the RPC bridge.
- * @param request - node HTTP request facts (headers).
+ * @param request - Node HTTP or Fetch request facts (headers).
  * @param trustedHosts - non-loopback authorities this deployment serves: exact `host:port`, or port-less `host` matching any port.
  * @returns true when the Host is ours (loopback or trusted) and any attached browser markers are same-origin.
  */

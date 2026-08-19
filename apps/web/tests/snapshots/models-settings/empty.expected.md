@@ -7,6 +7,12 @@
     - button "模型":
       - img
       - text: 模型
+    - button "插件":
+      - img
+      - text: 插件
+    - button "Agent 预设":
+      - img
+      - text: Agent 预设
   - button "打开配置文件"
   - button "关闭":
     - img
@@ -38,7 +44,6 @@
     - option "moonshotai-cn"
     - option "nvidia"
     - option "openai"
-    - option "openai-codex"
     - option "opencode"
     - option "opencode-go"
     - option "openrouter"
@@ -55,7 +60,7 @@
     - option "zai-coding-cn"
   - text: API 密钥
   - textbox "API 密钥":
-    - /placeholder: 输入 API 密钥
+    - /placeholder: 输入 API 密钥，或留空使用环境认证
   - group: 自定义设置
   - button "取消"
   - button "保存"

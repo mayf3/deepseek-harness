@@ -1,20 +1,20 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import LlmService from '@deepseek-ai/dsh-llm'
+import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRegistry from '@deepseek-ai/dsh-tools'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { MockAdapter, textResponse } from './mock-adapter.ts'
 
 async function harness(adapter: MockAdapter): Promise<Context> {
   const ctx = new Context()
-  await ctx.plugin(LlmService)
+  await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRegistry)
+  await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)
@@ -60,17 +60,17 @@ describe('Agent', () => {
     ctx.on('session/event', (session, event) => {
       if (session === agent.session && event.type === 'turn/start') lifecycle.push('turn/start')
     })
-    ctx.on('agent/inbox/inserted', (subject, event) => {
-      if (subject === agent) inserted.push(event)
+    ctx.on('agent/inbox/inserted', ({ agent: subject, message }) => {
+      if (subject === agent) inserted.push({ message })
     })
-    ctx.on('agent/inbox/claimed', (subject, event) => {
+    ctx.on('agent/inbox/claimed', ({ agent: subject, message, turn }) => {
       if (subject === agent) {
         lifecycle.push('agent/inbox/claimed')
-        claimed.push(event)
+        claimed.push({ message, turn })
       }
     })
-    ctx.on('agent/inbox/discarded', (subject, event) => {
-      if (subject === agent) discarded.push(event)
+    ctx.on('agent/inbox/discarded', ({ agent: subject, message }) => {
+      if (subject === agent) discarded.push({ message })
     })
     const context = createUserMessage({
       content: [{ type: 'text', text: 'discard me' }],
@@ -114,7 +114,7 @@ describe('Agent', () => {
     const ctx = await harness(new MockAdapter([textResponse('ok')]))
     const agent = ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
     const statuses: string[] = []
-    ctx.on('agent/status', (subject, status) => {
+    ctx.on('agent/status', ({ agent: subject, status }) => {
       if (subject === agent) statuses.push(status)
     })
 
@@ -152,7 +152,7 @@ describe('Agent', () => {
     const ctx = await harness(new MockAdapter([textResponse('ok')]))
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
     const agent = ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
-    ctx.on('agent/status', (_subject, status) => {
+    ctx.on('agent/status', ({ status }) => {
       throw new Error(`bad ${status} listener`)
     })
 

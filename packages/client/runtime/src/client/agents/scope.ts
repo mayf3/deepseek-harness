@@ -15,9 +15,15 @@
  * — a cold session's host Agent is already disposed while its client actx
  * stays alive for history viewing.
  */
-import { Context as CordisContext } from 'cordis'
-import type { Context, Fiber } from 'cordis'
-import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
+import { Context as CordisContext } from '@deepseek-ai/cordis'
+import type { Context, Fiber } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { TypertClientRemote, TypertRemoteScopeApi } from '@deepseek-ai/dsh-typert-protocol'
+
+/** Client Cordis Context carrying one Agent identity and its scoped Remote namespaces. */
+export type AgentContext = Omit<Context, 'remote'> & {
+  readonly remote: TypertClientRemote & TypertRemoteScopeApi<'agent'>
+}
 
 /** Context tag written by {@link createScope}. */
 const kScope = Symbol('dsh.client.scope')
@@ -29,7 +35,7 @@ export interface AgentScopeHandle {
    * through it (passing it as the dispatch subject routes to this agent's
    * tagged listeners plus every untagged one).
    */
-  ctx: Context
+  ctx: AgentContext
   /** Backing fiber (dispose tears down every scope-owned registration). */
   fiber: Fiber
 }
@@ -48,15 +54,16 @@ function agentScope(): void {}
  */
 export function createScope(ctx: Context, key: SessionId): AgentScopeHandle {
   const fiber = ctx.plugin(agentScope)
+  const scoped = fiber.ctx.extend({
+    [kScope]: key,
+    [CordisContext.filter](listenerCtx: Context): boolean {
+      const tag = scopeOf(listenerCtx)
+      return tag === undefined || tag === key
+    },
+  }) as AgentContext
   return {
     fiber,
-    ctx: fiber.ctx.extend({
-      [kScope]: key,
-      [CordisContext.filter](listenerCtx: Context): boolean {
-        const tag = scopeOf(listenerCtx)
-        return tag === undefined || tag === key
-      },
-    }),
+    ctx: scoped,
   }
 }
 

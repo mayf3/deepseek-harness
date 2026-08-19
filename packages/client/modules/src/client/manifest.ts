@@ -1,51 +1,52 @@
 /**
  * Client module system: the browser peer of Node's internal ESM loader, built
  * as a lazy CJS table. The vendored cordis Loader consumes this object
- * through its `internal` seam (the only call site is `EntryTree.import` →
+ * through its `internal` contract (the only call site is `EntryTree.import` →
  * `internal.import`), which keeps entry governance (fiber lifecycle, inject
  * waiting, update/refresh) entirely on the vendored side while this package
  * owns code arrival.
  *
- * Lazy CJS model (web2 §0): executing a plugin bundle only REGISTERS its
+ * Lazy CJS model: executing a plugin bundle only REGISTERS its
  * factory (`window.__ModuleLoader__.load({id, factory})`); every module body
  * side effect — including CSS injection — lives inside the factory closure
  * and runs at materialization, not at script execution. Materialization
- * (factory(require) → export surface) happens on first import/require and is
+ * (factory(require) → exports) happens on first import/require and is
  * memoized in {@link ClientModuleLoader.loadCache}; a factory that requires
  * another registered-but-unmaterialized module materializes it recursively,
  * so load order needs no external sequencing.
  *
  * Resolution branch order (import): seed word → shell instance; memoized
- * record → surface; static registry (shell-own modules, e.g. app-shell) →
- * module; registered factory → materialize; graph row → load + materialize;
- * anything else → throw (loud — the runtime mirror of the
- * build-time bundle purity gate). The synchronous `require` handed to
- * factories walks the same order minus the load branch: loading is async,
- * so only already-registered bundles can be required — and cross-plugin value
- * imports are a build error anyway.
+ * record → exports; graph row → register its dependency factories and own
+ * factory; registered factory → materialize; anything else → throw (loud —
+ * the runtime mirror of the build-time bundle purity gate).
+ * The synchronous `require` handed to factories walks the same order minus
+ * the load branch. Loading is async, so a requested dynamic package must have
+ * registered its factory before a consumer materializes.
  *
  * This file is the browser-safe contract face (zero node imports): the
- * `__DSH_BOOT__` wire types, the boot-manifest parser, and the seams around
+ * `__DSH_BOOT__` wire types, the boot-manifest parser, and the boundaries around
  * {@link ClientModuleSystem}. The package root is the host-side service that
  * composes the wire.
  */
 
-import type {} from 'cordis'
+import type {} from '@deepseek-ai/cordis'
 import type { ClientModuleSystem } from './system.ts'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** The client module system the web shell builds at boot (contract C5; provided by the `./client` wrapper plugin). */
+    /** The client module system the web shell builds at boot (provided by the `./client` wrapper plugin). */
     modules: ClientModuleLoader
   }
 }
 
 /**
- * One composed client entry pushed by the host (web2 §0 graph row). Wire
+ * One composed client entry pushed by the host (a graph row). Wire
  * single source: the host node half (package root) produces this same shape.
  * `immediately` marks stage-one prefetch; `inject` is informational graph
- * metadata (the authoritative edges live in each package's dshClient
- * declaration and reach fibers through entry creation).
+ * metadata (the authoritative edges live in each package's `dsh.client`
+ * declaration and reach fibers through entry creation). `external` carries
+ * module-graph edges: unlike `inject`, they constrain code arrival because
+ * `require` is synchronous (see {@link WebBootGraph.entries}).
  */
 export interface WebBootEntry {
   /** Entry name == package name. */
@@ -58,13 +59,19 @@ export interface WebBootEntry {
   inject?: string[]
   /** Stage-one prefetch mark: load the script for factory registration during module-face boot. */
   immediately?: boolean
+  /** Non-baseline module specifiers this row requests; omitted when it requests none. */
+  external?: string[]
 }
 
 /** The composed client entry graph the host injects as `window.__DSH_BOOT__`. */
 export interface WebBootGraph {
   /** Consistency anchor over the whole graph (content + bundle hashes). */
   rev: string
-  /** Composed entries; order carries no semantics (activation order is fiber inject waiting). */
+  /**
+   * Composed entries in module-graph order — a dynamic package row precedes
+   * rows whose `external` requests that package. Cordis activation order is
+   * unrelated and remains owned by fiber service waiting.
+   */
   entries: WebBootEntry[]
 }
 
@@ -76,6 +83,8 @@ export interface BootModuleRow {
   url: string
   /** Bundle content hash. */
   rev: string
+  /** Module specifiers this row requests from the module table ([] when the wire omits them). */
+  external: string[]
 }
 
 /** The cordis-plugin view of one boot row: what entry composition needs (optional wire fields normalized). */
@@ -96,6 +105,36 @@ export interface BootManifest {
   modules: BootModuleRow[]
   /** Rows as entry composition consumes them. */
   plugins: BootPluginRow[]
+}
+
+/**
+ * Validate an optional string-array field read from a `dsh.client` declaration
+ * or from the boot wire.
+ * @param subject - diagnostic prefix naming the package or the wire row.
+ * @param field - field name as it appears in the diagnostic.
+ * @param value - the raw field value.
+ * @returns the validated array, or undefined when the field is absent.
+ * @throws {Error} when the value is present but is not an array of strings.
+ */
+export function optionalStringArray(subject: string, field: string, value: unknown): string[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) {
+    throw new Error(`client-modules: ${subject} ${field} must be a string array`)
+  }
+  return value as string[]
+}
+
+/**
+ * Normalize a module specifier onto the graph row that owns it: a plugin bundle
+ * IS its package's client half, so `<id>/client` (the exports subpath external
+ * bundles emit) and the bare package name resolve to the same exports. Both the
+ * require path and graph composition normalize here, which is what lets each
+ * importing package request the subpath its own code imports.
+ * @param spec - module specifier as a bundle requires it or a declaration spells it.
+ * @returns the specifier with a trailing `/client` removed.
+ */
+export function stripClientSuffix(spec: string): string {
+  return spec.endsWith('/client') ? spec.slice(0, -'/client'.length) : spec
 }
 
 /**
@@ -127,111 +166,141 @@ export function parseBootManifest(wire: unknown): BootManifest {
     if (typeof row.id !== 'string' || typeof row.url !== 'string' || typeof row.rev !== 'string') {
       throw new Error(`client-modules: boot manifest entry ${where} must carry string id/url/rev`)
     }
-    if (row.inject !== undefined && (!Array.isArray(row.inject) || row.inject.some(i => typeof i !== 'string'))) {
-      throw new Error(`client-modules: boot manifest entry ${where} inject must be a string array`)
-    }
+    const subject = `boot manifest entry ${where}`
+    const inject = optionalStringArray(subject, 'inject', row.inject)
+    const external = optionalStringArray(subject, 'external', row.external)
     if (row.immediately !== undefined && typeof row.immediately !== 'boolean') {
       throw new Error(`client-modules: boot manifest entry ${where} immediately must be a boolean`)
     }
-    modules.push({ id: row.id, url: row.url, rev: row.rev })
+    modules.push({
+      id: row.id,
+      url: row.url,
+      rev: row.rev,
+      external: external === undefined ? [] : [...external],
+    })
     plugins.push({
       id: row.id,
-      inject: row.inject === undefined ? [] : [...row.inject as string[]],
+      inject: inject === undefined ? [] : [...inject],
       immediately: row.immediately === true,
     })
   }
   return { rev: graph.rev, modules, plugins }
 }
 
-/** The shape a client bundle hands to `window.__ModuleLoader__.load` (registration handoff, contract C6). */
-export interface ClientPluginHandoff {
+/** One client bundle's factory registration submitted through `window.__ModuleLoader__.load`. */
+export interface ClientBundleRegistration {
   /** Plugin id (package name) — the registration key; must match the graph row being executed. */
   id: string
   /**
    * Closure factory holding the whole bundle body: receives the synchronous
-   * require bound to the module table and returns the bundle's export
-   * surface. Runs once, at materialization.
+   * require bound to the module table and returns the bundle's exports. Runs
+   * once, at materialization.
    */
   factory: (require: (spec: string) => unknown) => Record<string, unknown>
 }
 
-/** Window surface of the web boot protocol: the host-injected graph, the registration sink, and the kernel handoff slot. */
+/** Inputs passed by the web entry when it creates the client module system. */
+export interface ClientModuleCreateOptions {
+  /** Raw Host-injected boot graph; the modules bundle owns validation and projection. */
+  boot: unknown
+  /** Module-table seed: platform-singleton specifier → shell instance. */
+  staticModules: Record<string, unknown>
+  /** Bundle-load hook. Defaults to a same-origin classic `<script src>` element. */
+  loadBundle?: (url: string) => Promise<void>
+}
+
+/** The modules bundle after its factory has been materialized by the HTML bootstrap facade. */
+export interface ClientBootstrapModule {
+  /** Graph/module id carried by the modules bundle registration. */
+  id: string
+  /** Materialized exports reused when Cordis later activates the modules entry. */
+  exports: Record<string, unknown>
+}
+
+/** Stable page-global facade: queues early bundle registrations, then registers them live. */
+export interface ClientModuleLoaderTarget {
+  /** Queue before {@link create}; live registration after it returns. */
+  mode: 'queue' | 'live'
+  /** Registrations submitted by parser-preloaded scripts before the module system exists. */
+  pendingQueue: ClientBundleRegistration[]
+  /** Queue or immediately register one bundle factory according to {@link mode}. */
+  load(registration: ClientBundleRegistration): void
+  /** Create the module system exactly once from the parser-preloaded modules bundle. */
+  create(options: ClientModuleCreateOptions): ClientModuleSystem
+}
+
+/** Window API of the web boot protocol: the host-injected graph and registration facade. */
 export interface DshWindow {
   /** Host-composed entry graph, injected before the shell bundle runs; wire-boundary raw until {@link parseBootManifest}. */
   __DSH_BOOT__?: unknown
-  /** Bundle registration sink; installed once per page by the {@link ClientModuleSystem} constructor (contract C6). */
-  __ModuleLoader__?: { load(handoff: ClientPluginHandoff): void }
-  /**
-   * Kernel handoff slot: the shell kernel stores the instance here right
-   * after construction (before cordis exists) so the `./client` wrapper
-   * plugin can provide it as `ctx.modules`. Missing slot at wrapper apply
-   * time = kernel sequencing bug, thrown loud.
-   */
-  __DSH_MODULES__?: ClientModuleSystem
+  /** HTML-installed facade: a pending registration queue, then the live module-system target. */
+  __ModuleLoader__?: ClientModuleLoaderTarget
 }
 
-/** Per-module bookkeeping in {@link ClientModuleLoader.loadCache} (module-graph seam, flat today). */
+/** Per-module bookkeeping in {@link ClientModuleLoader.loadCache} (module-graph boundary, flat today). */
 export interface ClientModuleRecord {
   /** Module id (entry name / package name). */
   id: string
-  /** The materialized export surface (factory `module.exports`, or the shell module for static registrations). */
-  surface: unknown
+  /** Materialized exports (`module.exports` from a factory or bootstrap registration). */
+  exports: unknown
   /** Owned `<style data-plugin>` tag ids (`data-plugin-css` values) injected during materialization. */
   styles: string[]
-  /** Observed `require()` edges (module-graph seam; only table words can appear today). */
+  /** Observed `require()` edges (module-graph boundary; only table words can appear today). */
   edges: Set<string>
 }
 
 /**
- * The internal-seam subset the vendored Loader and the client HMR plugin
+ * The internal-contract subset the vendored Loader and the client HMR plugin
  * consume. Mounted on `ctx.loader.internal` by the shell boot and provided
- * as `ctx.modules` (contract C5).
+ * as `ctx.modules`.
  */
 export interface ClientModuleLoader {
   /** Discriminant against Node's internal loader shapes ('v1'/'v2'). */
   version: 'client'
-  /** Materialized-module registry: id → record. The governance-side read face for entry export surfaces. */
+  /** Parsed Host boot graph shared with the web entry after module-system creation. */
+  manifest: BootManifest
+  /** Materialized-module registry: id → record. The governance-side read API for entry exports. */
   loadCache: Map<string, ClientModuleRecord>
   /**
-   * Internal seam consumed by the vendored Loader's `tree.import`. Resolves
+   * Internal contract consumed by the vendored Loader's `tree.import`. Resolves
    * `specifier` through the branch order documented on the module, fetching
    * and executing a bundle when needed.
    * @param specifier - module specifier (entry name or table word).
    * @param parentURL - importer URL (unused — the client module graph is flat).
-   * @param attrs - import attributes (unused; interface parity with Node's seam).
-   * @returns the module's export surface.
+   * @param attrs - Import attributes (unused; interface parity with Node's loader contract).
+   * @returns the module's exports.
    */
   import(specifier: string, parentURL: string, attrs: Record<string, unknown>): Promise<unknown>
   /**
-   * Register a shell-own module (app-shell — code that ships inside the shell
-   * bundle and never arrives as a plugin bundle).
-   * @param id - entry name (shell-owned pseudo id).
-   * @param module - the statically imported module namespace.
-   */
-  registerStatic(id: string, module: unknown): void
-  /**
-   * Stage-one arrival: load the entry's script to register its factory (no
-   * materialization — module side effects wait for import).
-   * No-op for static-registered ids and ids whose factory is already
-   * registered; concurrent calls share one in-flight task. To force a fresh
-   * load (HMR), {@link invalidate} first.
+   * Stage-one arrival: load the entry's declared dynamic requests, then its
+   * own script, to register their factories (no materialization — module side
+   * effects wait for import).
+   * No-op for materialized bootstrap ids. A registered graph row still
+   * registers any unresolved declared requests before skipping its own script;
+   * concurrent arrivals share one in-flight task. To force a fresh load (HMR),
+   * {@link invalidate} first.
    * @param id - graph entry name.
    */
   prefetch(id: string): Promise<void>
   /**
-   * Full reset of one module: drop its registered factory and materialized
-   * record so the next prefetch/import reloads it (the HMR invalidation hook).
+   * Full reset of one non-bootstrap module: drop its registered factory and
+   * materialized record so the next prefetch/import reloads it (the HMR
+   * invalidation hook). The bootstrap module remains materialized.
    * @param id - entry name to invalidate.
    */
   invalidate(id: string): void
 }
 
-/** Options for {@link ClientModuleSystem} (assembled by the web shell kernel at boot). */
+/** Internal construction inputs assembled by the modules bundle's bootstrap export. */
 export interface ClientModuleSystemOptions {
-  /** Boot rows in the module-table view (from {@link parseBootManifest}). */
-  modules: BootModuleRow[]
+  /** Parsed boot graph owned by the resulting module system. */
+  manifest: BootManifest
   /** Module-table seed: platform-singleton specifier → shell instance. */
   staticModules: Record<string, unknown>
-  /** Bundle-load seam. Defaults to a same-origin classic `<script src>` element. */
+  /** Stable HTML-installed registration facade to switch from queue to live mode. */
+  registrationTarget: ClientModuleLoaderTarget
+  /** Already-materialized modules bundle consumed while creating the system. */
+  bootstrapModule: ClientBootstrapModule
+  /** Bundle-load hook. Defaults to a same-origin classic `<script src>` element. */
   loadBundle?: (url: string) => Promise<void>
 }

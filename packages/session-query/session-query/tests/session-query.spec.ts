@@ -1,16 +1,16 @@
 import { createUserMessage, createMessage } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it, vi } from 'vitest'
-import { Context, type Fiber } from 'cordis'
+import { Context, type Fiber } from '@deepseek-ai/cordis'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionId as SessionIdType } from '@deepseek-ai/dsh-session'
-import SessionPersistence, { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
-import SessionQueryService, {
+import SessionPersistence, { SessionPersistenceCorruptionError, SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
+import SessionQueryEngine, {
   SESSION_QUERY_DEFAULT_PERSISTED_INSPECT_CONCURRENCY,
   type SessionEventSurface,
   type SessionQueryErrorCode,
 } from '@deepseek-ai/dsh-session-query'
 import { SessionTitleProviderId } from '@deepseek-ai/dsh-session-title'
-import { TestSessionQueryService } from './test-service.ts'
+import { TestSessionQueryEngine } from './test-service.ts'
 
 function header(id: string, createdAt = 1, extra: Partial<SessionHeader> = {}): SessionHeader {
   return { version: SESSION_FORMAT_VERSION, id: SessionId(id), createdAt, ...extra }
@@ -29,6 +29,8 @@ function eventLog(text = 'hello'): SessionEvent[] {
 }
 
 class TestPersistence extends SessionPersistence {
+  override readonly supportsRawArtifacts = false
+
   static entries = new Map<SessionIdType, { meta: SessionHeader; events: SessionEvent[] }>()
   static listFailure: unknown
   static listOverride: ((signal?: AbortSignal) => Promise<SessionHeader[]>) | undefined
@@ -120,10 +122,10 @@ class TestPersistence extends SessionPersistence {
   }
 }
 
-async function liveContext(config: ConstructorParameters<typeof TestSessionQueryService>[1] = {}): Promise<Context> {
+async function liveContext(config: ConstructorParameters<typeof TestSessionQueryEngine>[1] = {}): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
-  await ctx.plugin(TestSessionQueryService, config)
+  await ctx.plugin(TestSessionQueryEngine, config)
   return ctx
 }
 
@@ -132,11 +134,8 @@ function expectCode(code: SessionQueryErrorCode): Error {
 }
 
 function rejectUnknown<T>(reason: unknown): Promise<T> {
-  return new Promise<T>((_resolve, reject) => {
-    // Exercise containment for an implementation that violates the Error rejection convention.
-    // oxlint-disable-next-line typescript/prefer-promise-reject-errors
-    reject(reason)
-  })
+  // Exercise containment for an implementation that violates the Error rejection convention.
+  return Promise.reject(reason) // oxlint-disable-line typescript/prefer-promise-reject-errors
 }
 
 const cancellableSessionListings = [
@@ -1114,6 +1113,24 @@ describe('session-query exact reads', () => {
     await expect(ctx.sessionQuery.listEvents(SessionId('durable'))).rejects.toThrow(expectCode('SESSION_QUERY_PERSISTENCE_FAILED'))
   })
 
+  it('wraps persisted corruption as SESSION_QUERY_CORRUPT_SESSION with its cause preserved', async () => {
+    const durable = header('durable-corrupt')
+    TestPersistence.reset([{ meta: durable, events: eventLog() }])
+    const ctx = await liveContext()
+    await ctx.plugin(TestPersistence)
+    const corruption = new SessionPersistenceCorruptionError(
+      'stored prefix failed validation',
+      { cause: new Error('torn final record') },
+    )
+    TestPersistence.inspectFailure = corruption
+
+    await expect(ctx.sessionQuery.readSession(durable.id)).rejects.toMatchObject({
+      code: 'SESSION_QUERY_CORRUPT_SESSION',
+      message: `stored session "${durable.id}" is corrupt: stored prefix failed validation`,
+      cause: corruption,
+    })
+  })
+
   it('reports absent sessions, persisted load failures, and persisted header conflicts', async () => {
     const durable = header('durable')
     TestPersistence.reset([{ meta: durable, events: eventLog() }])
@@ -1159,7 +1176,7 @@ describe('session-query exact reads', () => {
 
     const direct = new Context()
     await direct.plugin(SessionStore)
-    expect(new TestSessionQueryService(direct)).toBeInstanceOf(SessionQueryService)
+    expect(new TestSessionQueryEngine(direct)).toBeInstanceOf(SessionQueryEngine)
     for (const config of [
       { readWindowMax: -1 },
       { persistedInspectConcurrency: 0 },
@@ -1167,7 +1184,7 @@ describe('session-query exact reads', () => {
     ]) {
       const invalid = new Context()
       await invalid.plugin(SessionStore)
-      expect(() => new TestSessionQueryService(invalid, config))
+      expect(() => new TestSessionQueryEngine(invalid, config))
         .toThrow(expectCode('SESSION_QUERY_INVALID_CONFIG'))
     }
   })
@@ -1175,8 +1192,8 @@ describe('session-query exact reads', () => {
   it('leaves the optional persistence dependency optional', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin(TestSessionQueryService)
-    expect(ctx.sessionQuery).toBeInstanceOf(TestSessionQueryService)
+    const fiber = await ctx.plugin(TestSessionQueryEngine)
+    expect(ctx.sessionQuery).toBeInstanceOf(TestSessionQueryEngine)
     await fiber.dispose()
     expect(ctx.sessionQuery).toBeUndefined()
   })
@@ -1185,7 +1202,7 @@ describe('session-query exact reads', () => {
     TestPersistence.reset()
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    const query = await ctx.plugin(TestSessionQueryService)
+    const query = await ctx.plugin(TestSessionQueryEngine)
     const persistence = await ctx.plugin(TestPersistence)
     const optional = (ctx.sessionQuery as unknown as {
       _corpus: { _optionalPersistenceFiber: Fiber }

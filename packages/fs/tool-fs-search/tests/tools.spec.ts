@@ -6,18 +6,19 @@
  * abort/timeout kills, signal kills, ripgrep exit codes — so these tests
  * verify schemas, argument validation, argv construction, workdir derivation,
  * signal forwarding, `SEARCH_*` error classification, retention,
- * formatted-result spill handoff, and the no-background-task invariant.
+ * formatted-result spill handoff, and the no-background-job invariant.
  * Real-`rg` behavior is pinned separately in integration.spec.ts.
  */
 
 import { describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { join, sep } from 'node:path'
 import { createUserMessage, CallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
-import ToolRegistry, { TOOL_ABORTED_BEFORE_DISPATCH, type ToolExecution, type ToolExecutionToken } from '@deepseek-ai/dsh-tools'
-import { SubprocessService } from '@deepseek-ai/dsh-subprocess'
+import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH, type ToolExecution, type ToolExecutionToken } from '@deepseek-ai/dsh-tools'
+import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessCollectedOutputs, SubprocessHandle, SubprocessOutcome, SubprocessOutputRead, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { rgPath } from '@vscode/ripgrep'
 import { SpillLocator, SpillStore } from '@deepseek-ai/dsh-spill'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
@@ -145,8 +146,10 @@ class FakeHandle implements SubprocessHandle {
  * never spawn outside a single awaited foreground call, so every test can
  * assert on the exact spawn specs and settled handles.
  */
-class FakeSubprocess extends SubprocessService {
+class FakeSubprocess extends SubprocessRuntime {
   spawns: SubprocessSpawnSpec[] = []
+  override async resolveExecutable(command: string): Promise<string> { return command }
+  override spawnTerminal(): Promise<never> { throw new Error('search tools spawn pipes, never terminals') }
   handles: FakeHandle[] = []
   /** Arms the per-spawn script; a `{ reject }` return scripts a spawn-level failure. */
   handler: (spec: SubprocessSpawnSpec) => ScriptedRun | { reject: Error } = () => runResult('')
@@ -189,7 +192,7 @@ async function setup(options: SetupOptions = {}) {
   const warnings: string[] = []
   ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRegistry)
+  await ctx.plugin(ToolRuntime)
   await ctx.plugin(FakeSubprocess)
   const subprocess = ctx.subprocess as FakeSubprocess
   if (options.spill === true) await ctx.plugin(FakeSpill)
@@ -247,7 +250,7 @@ describe('registration', () => {
   it('stays pending until ctx.subprocess exists (inject)', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRegistry)
+    await ctx.plugin(ToolRuntime)
     await ctx.plugin(ToolFsSearch, DEFAULT_CONFIG) // no subprocess service
     expect(ctx.tools.schemas()).toHaveLength(0)
   })
@@ -305,9 +308,20 @@ describe('config validation', () => {
   ] as const)('rejects a non-positive or fractional %s at load', async (name, config) => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRegistry)
+    await ctx.plugin(ToolRuntime)
     await ctx.plugin(FakeSubprocess)
     await expect(ctx.plugin(ToolFsSearch, { ...DEFAULT_CONFIG, ...config })).rejects.toThrow(new RegExp(`tool-fs-search: ${name} must be a positive integer`))
+  })
+
+  it('rejects a grace beyond the Node timer range at load', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(FakeSubprocess)
+    await expect(ctx.plugin(ToolFsSearch, {
+      ...DEFAULT_CONFIG,
+      graceMs: MAX_TIMER_DELAY_MS + 1,
+    })).rejects.toThrow(`tool-fs-search: graceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
   })
 })
 
@@ -867,7 +881,7 @@ describe('glob results', () => {
     expect(spill?.saves).toHaveLength(0)
   })
 
-  it('keeps the full nested Code value without creating a surface spill', async () => {
+  it('keeps the full nested Code value without creating a top-level spill', async () => {
     const { ctx, subprocess, spill } = await setup({ config: { globMaxResults: 2 }, spill: true })
     subprocess.handler = () => runResult('a.ts\nb.ts\nc.ts\nd.ts\n')
     const result = await call(ctx, 'glob', { pattern: '*.ts' }, {
@@ -1014,7 +1028,7 @@ describe('grep results', () => {
     expect(spill?.saves).toHaveLength(0)
   })
 
-  it('keeps every nested Code match in the value without creating a surface spill', async () => {
+  it('keeps every nested Code match in the value without creating a top-level spill', async () => {
     const { ctx, subprocess, spill } = await setup({ config: { grepMaxMatches: 1 }, spill: true })
     subprocess.handler = () => runResult(`${matchLine('a.ts', 1, 'one')}\n${matchLine('b.ts', 2, 'two')}\n`)
     const result = await call(ctx, 'grep', { pattern: 'o' }, {
@@ -1076,7 +1090,7 @@ describe('rg --json transport failures (SEARCH_FAILED)', () => {
   })
 })
 
-describe('the no-background-task invariant', () => {
+describe('the no-background-job invariant', () => {
   it('settles every spawned search handle across successful and failed searches', async () => {
     const { ctx, subprocess } = await setup()
     subprocess.handler = () => runResult('a.ts\n')

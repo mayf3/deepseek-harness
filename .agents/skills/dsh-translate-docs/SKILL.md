@@ -1,9 +1,15 @@
 ---
 name: dsh-translate-docs
-description: Use when creating or updating the bilingual counterpart of a doc in this repo (English ↔ Chinese pairs) — tells the orchestrating agent when to delegate translation to a subagent, and orients the translator to the pairing contract, the terminology source of truth, the translation rules, and the consistency gate that verifies the result
+description: Manually run the extended DeepSeek Harness bilingual-document workflow, including generated briefings, delegated prose translation, whole-document translation, and scoped pairing verification.
+disable-model-invocation: true
+user-invocable: true
 ---
 
 # Translating DeepSeek-Harness docs
+
+## Invocation boundary
+
+Run this extended workflow only when the user explicitly invokes `dsh-translate-docs` by name. Never select or load it for ordinary documentation work, from another skill, or from an inferred translation need; routine translation follows the one-shot, one-pass rule in [docs/AGENTS.md](../../../docs/AGENTS.md).
 
 ## What this skill is
 
@@ -19,7 +25,7 @@ Frozen Agent Notes under `.agents/notes/archived/` are not translation work. The
 
 ## The update path (briefing-driven)
 
-Benchmarked on real pair updates from this repo's history, the briefing-driven path costs a fraction of a guidance-corpus-loading run at equal measured quality; the [briefed-updates Agent Note](../../notes/implemented/process/2026-07-26-briefed-minimal-translation-updates.md) holds the evidence.
+The briefing-driven path matches guidance-corpus quality at a fraction of the cost; the [briefed-updates Agent Note](../../notes/implemented/process/2026-07-26-briefed-minimal-translation-updates.md) owns the benchmark evidence.
 
 1. **Generate the briefing**: `pnpm run gen-translation-brief <any file of the pair>` (no arguments briefs every out-of-sync pair). The briefing maps the change at the narrowest safely aligned granularity — changed Markdown units (paragraph, table row, list item, heading), then whole heading sections, then whole document — and contains the authored side's diff since the last confirmed-consistent state, each changed unit's last-confirmed source, current source, and current counterpart text (with line numbers), the terminology rows the change touches, first-occurrence movement notes, and a digest of the binding update rules.
 2. **Mechanical-only diff? `--apply` it.** When every change lies inside code fences that the pair shares byte-identically, the briefing says so; `pnpm run gen-translation-brief --apply <pair>` splices the edited fences into the counterpart and structure-validates the result before writing — no subagent, no hand-editing.
@@ -43,6 +49,7 @@ When translations need to be written from scratch, the orchestrating agent does 
 
 - **Pass 1 — write, don't transpose.** Read a semantic unit, then restate it as a native technical author in the nearest [style sample's](../../../docs/i18n/style-samples.md) register. Preserve the required frame without forcing sentence-by-sentence correspondence.
 - **Pass 2 — verify against the source, clause by clause.** Fidelity is checked here, not written in: confirm nothing was added or dropped, every term follows the table, and each code span survived verbatim. Fix by rewriting the sentence natively, not by patching words into it.
+- **Read the completed counterpart alone.** After the source comparison, read the translated file without the source beside it and rewrite phrasing whose awkwardness only becomes visible in isolation.
 - Write only the final text to the file, never drafts or notes.
 - Every term in [terminology.md](../../../docs/i18n/terminology.md) renders exactly as specified. For a Chinese target, use the Chinese and first-occurrence columns; an unlisted term needs a citable Chinese OSS/vendor precedent or stays English under 「待定术语」. For an English target, use the English column and an established English technical term; preserve an ambiguous source term with a short gloss and list it as pending. Never invent a rendering inline.
 - Code blocks are byte-identical across the pair, comments included. Relative links keep their `.md` targets; only the switcher line links `.zh.md`.
@@ -56,7 +63,7 @@ When translations need to be written from scratch, the orchestrating agent does 
 
 ## Finish the pair
 
-1. Switcher: `[English](foo.md) | 中文` immediately after the Chinese file's H1, `English | [中文](foo.zh.md)` after the English file's H1 — add both if this is a new pair.
+1. Switcher: `[English](foo.md) | 中文` immediately after the Chinese file's H1, `English | [中文](foo.zh.md)` after the English file's H1 — add both if this is a new pair, except that a generator-owned English source stays byte-identical to generator output and omits its switcher while the Chinese counterpart still links back.
 2. Record consistency: `pnpm run verify-translation-pairing --write <pair>` recomputes and records both sides' full blob hashes in `foo.i18n.yaml`. The yaml diff in your PR is the reviewable statement "I confirmed these two say the same thing" — only run it after you actually have.
 3. No manifest entry is needed for an ordinary document: every in-scope source requires a pair. Change [scripts/translation-pairing.manifest.json](../../../scripts/translation-pairing.manifest.json) only when the owning policy documents a genuine generated, instructional, or bilingual-by-construction exclusion.
 4. Before the PR: the touched pairs are green under the scoped check; `pnpm run doc-sync` (which includes the corpus-wide pairing check plus `verify-md-wrap`/`verify-md-links`) runs once at PR level per [dsh-pre-push-checks](../dsh-pre-push-checks/SKILL.md), not inside each translation task.
@@ -64,4 +71,4 @@ When translations need to be written from scratch, the orchestrating agent does 
 
 ## How to respond to translation review
 
-Follow the [code-review reporting guidance](../dsh-code-review/SKILL.md#reporting-findings): evaluate each comment on its merits, and for terminology comments, remember the table is the contract — a reviewer's rendering decision gets applied to [terminology.md](../../../docs/i18n/terminology.md) so it binds every future translation, not just patched into one file.
+Follow the [code-review reporting guidance](../dsh-code-review/SKILL.md#reporting-findings): evaluate each comment on its merits, and for terminology comments, remember the terminology table is the contract — apply a reviewer's rendering decision to [terminology.md](../../../docs/i18n/terminology.md), not only to one file.

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import type { TypertContribution } from '@deepseek-ai/dsh-typert-registry/types'
 import { EVENT_API, SERVICE_API, TYPE_API } from '@deepseek-ai/dsh-tool-cordis/src/api-catalog.ts'
@@ -46,23 +46,31 @@ describe('model-driven dsh-tools generation', () => {
       summary: service?.summary,
       methods: service?.members
         .filter(member => member.kind === 'method' && !member.name.startsWith('['))
-        .map(member => ({
-          signature: member.signature,
-          jsDoc: member.jsDoc ?? '',
-        })),
-    }).toEqual(SERVICE_API.find(candidate => candidate.key === 'tools'))
+        .map(member => member.signature),
+    }).toEqual((() => {
+      const api = SERVICE_API.find(candidate => candidate.key === 'tools')
+      return {
+        key: api?.key,
+        summary: api?.summary,
+        methods: api?.methods.map(method => method.signature),
+      }
+    })())
     expect(record?.model.events.filter(event => event.name.startsWith('tools/')).map(event => ({
       name: event.name,
       mode: event.mode,
       signature: event.signature,
-      jsDoc: event.jsDoc ?? '',
       summary: event.summary,
-    }))).toEqual(EVENT_API.filter(event => event.name.startsWith('tools/')))
+    }))).toEqual(EVENT_API.filter(event => event.name.startsWith('tools/')).map(event => ({
+      name: event.name,
+      mode: event.mode,
+      signature: event.signature,
+      summary: event.summary,
+    })))
     expect(service?.types.find(type => type.name === 'ToolDefinition')).toEqual(
       TYPE_API.find(type => type.name === 'ToolDefinition'),
     )
 
-    dispose()
+    await dispose()
     expect(ctx.typert.getPackage('@deepseek-ai/dsh-tools', 'host')).toBeUndefined()
   })
 })

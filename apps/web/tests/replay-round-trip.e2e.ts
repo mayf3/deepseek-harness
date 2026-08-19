@@ -1,6 +1,6 @@
 // Web e2e scenario: fresh round trip. A real chromium types a prompt into the
 // real composer; the wire, apiproxy, agent loop, and the REAL bash tool (echo
-// in the temp workspace) all run; the model seam is dsh-llm-replay (keyless)
+// in the temp workspace) all run; the model adapter is dsh-llm-replay (keyless)
 // or the live adapter (record). Drive steps run in every mode and wait only
 // on generic completion (whenTurnSettled — never model-content selectors, so
 // record cannot hang on a live model answering differently); assertion steps
@@ -101,14 +101,14 @@ describe('web e2e: fresh round trip through the real assembly', () => {
       callId: CallId('web-url-probe'),
       name: 'bash',
       arguments: {
-        command: 'printf \'%s\\n%s\\n\' "$DSH_WEB_URL" "$DSH_WEB_MODE"',
+        command: 'printf \'%s\\n\' "$DSH_WEB_URL"',
         description: 'Print current Web runtime',
       },
       agent,
     })
     expect(result.isError).toBe(false)
     expect(result.content.filter(block => block.type === 'text').map(block => block.text).join(''))
-      .toBe(`${scaffold.baseUrl}\nproduction\n`)
+      .toBe(`${scaffold.baseUrl}\n`)
   })
 
   it.skipIf(MODE === 'record')('rendered the settled turn: markdown, tool row, composer restore', async () => {

@@ -30,10 +30,13 @@
       "path": "../../subprocess/subprocess"
     },
     {
-      "path": "../../support/loader-smoke"
+      "path": "../../util/timeout"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../test-support/loader-smoke"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

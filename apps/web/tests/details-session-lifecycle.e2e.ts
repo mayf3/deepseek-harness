@@ -42,7 +42,7 @@ function appFrame(page: Page) {
   return page.locator('[style*="grid-template-columns"]').first()
 }
 
-/** Render the two boundary affordances without platform-dependent coordinates. */
+/** Render the two column-resize handles without platform-dependent coordinates. */
 async function handleSnapshot(page: Page): Promise<string> {
   const handles = await page.locator('[class*="handle"]').evaluateAll(elements =>
     elements.map(element => ({
@@ -121,7 +121,7 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     expect(await page.getByText('Details', { exact: true }).isVisible()).toBe(false)
 
     await page.getByRole('button', { name: /^(?:New session|新.*会话)$/ }).last().click()
-    await page.getByText("Let's start building", { exact: false }).waitFor({ timeout: 15_000 })
+    await page.getByText('Into the Unknown', { exact: false }).waitFor({ timeout: 15_000 })
     await expect.poll(() => detailsTrack(page), { timeout: 5_000 }).toBe(0)
     expect(await page.getByText('Details', { exact: true }).isVisible()).toBe(false)
 

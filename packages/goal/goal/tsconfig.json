@@ -33,10 +33,13 @@
       "path": "../../core/agent"
     },
     {
-      "path": "../../session-projection/session-projection"
+      "path": "../../session/session-projection"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }
