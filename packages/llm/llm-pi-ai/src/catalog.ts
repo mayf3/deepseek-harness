@@ -346,7 +346,10 @@ type OfferedCompatField =
  *
  * A field belongs to the protocols whose upstream compat type declares it: a
  * model-level switch its protocol does not take fails resolution, and a
- * route-level one skips past models it cannot fit.
+ * route-level one skips past models it cannot fit. "The three Responses
+ * protocols" below means `openai-responses`, `azure-openai-responses`, and
+ * `openai-codex-responses`, which pi-ai gives one shared compat type, so a
+ * switch settable on one is settable on all three.
  */
 export interface PiAiCompatProfile {
   /** Whether the endpoint accepts `store`; `openai-completions`. */
@@ -354,7 +357,7 @@ export interface PiAiCompatProfile {
   /**
    * Whether the endpoint accepts the `developer` role for the system prompt,
    * which pi-ai sends only to a reasoning model; `false` keeps `system`.
-   * `openai-completions`, `openai-responses`.
+   * `openai-completions` and the three Responses protocols.
    */
   supportsDeveloperRole?: boolean
   /** Whether the endpoint accepts `reasoning_effort`; `openai-completions`. */
@@ -381,11 +384,17 @@ export interface PiAiCompatProfile {
    * can read, so kwargs set beside another format are sent nowhere.
    */
   chatTemplateKwargs?: NonNullable<OpenAICompletionsCompat['chatTemplateKwargs']>
-  /** Whether the endpoint accepts `strict` in tool definitions; `openai-completions`, `openai-responses`. */
+  /**
+   * Whether the endpoint accepts `strict` in tool definitions;
+   * `openai-completions`, the three Responses protocols, `bedrock-converse-stream`.
+   */
   supportsStrictMode?: boolean
   /** Prompt-cache marker convention; `openai-completions`. */
   cacheControlFormat?: NonNullable<OpenAICompletionsCompat['cacheControlFormat']>
-  /** Whether the endpoint accepts long prompt-cache retention; all three protocols. */
+  /**
+   * Whether the endpoint accepts long prompt-cache retention;
+   * `openai-completions`, the three Responses protocols, `anthropic-messages`.
+   */
   supportsLongCacheRetention?: boolean
   /** Whether the endpoint accepts per-tool `eager_input_streaming`; `anthropic-messages`. */
   supportsEagerToolInputStreaming?: boolean
@@ -425,12 +434,17 @@ type UpstreamCompat = OpenAICompletionsCompat & OpenAIResponsesCompat & Anthropi
 
 /**
  * Proof that each documented field carries its upstream type, not a hand-copied
- * restatement of it. The name gates above pin *which* fields exist; without
- * this, a literal union narrower than pi-ai's would refuse a value the provider
- * accepts, and `resolveModelCompat`'s cast to `ModelCompat` would hide it.
+ * restatement of it. The name gates above pin *which* fields exist; this pins
+ * their types, in both directions because each catches a different drift. A
+ * profile field wider than upstream accepts a value the provider rejects, and
+ * `resolveModelCompat`'s cast to `ModelCompat` would hide it; a narrower one
+ * refuses a value the provider accepts, which is how an upgrade that widens a
+ * union would otherwise leave configuration silently behind.
  */
 export type EveryProfileFieldMatchesUpstream = AssertTrue<
-  PiAiCompatProfile extends Partial<Pick<UpstreamCompat, OfferedCompatField>> ? true : false
+  PiAiCompatProfile extends Partial<Pick<UpstreamCompat, OfferedCompatField>>
+    ? Partial<Pick<UpstreamCompat, OfferedCompatField>> extends PiAiCompatProfile ? true : false
+    : false
 >
 
 /**
@@ -509,24 +523,30 @@ function assertOfferedCompatFields(
   // name is never in the schema, so schemastery cannot have materialized it —
   // whatever its value, a person wrote it and expects it to do something.
   for (const [field, value] of Object.entries(compat ?? {})) {
+    // The name is judged before the value, so a withheld or misspelled key
+    // written bare is refused for being that name rather than for being empty:
+    // the other order sends someone to supply a value the key would be refused
+    // with anyway.
+    if (compatProtocols(field).length === 0) {
+      const declared = Object.values(COMPAT_GATES).some(gate => gate[field] !== undefined)
+      if (declared) {
+        invalid(provider, `${site} sets compat "${field}", which is not configurable here: pi-ai's installed`
+          + ' catalog sets it for the vendors that need it, so name that provider as the route instead')
+      }
+      invalid(provider, `${site} sets compat "${field}", which no wire protocol declares; the configurable`
+        + ` switches are ${allOfferedCompatFields().join(', ')}`)
+    }
     // A valueless key (`supportsDeveloperRole:`) survives schemastery, which
     // passes nullable data through before any member schema runs — the same
-    // behavior `reasoningEfforts` documents. Carrying it forward would write
-    // null over the installed catalog's value and leave pi-ai's `??` reaching
-    // for its baseURL detection, which is the "written but not applied"
-    // outcome this surface exists to refuse.
-    if (value === null) {
+    // behavior `reasoningEfforts` documents — and a `cordis.yml` entry may
+    // reach the same state through `!!js undefined`. Either way the key is
+    // kept, so carrying it forward writes nothing over whatever the next layer
+    // resolved, leaving pi-ai's `??` at its baseURL detection: the "written but
+    // not applied" outcome this surface exists to refuse.
+    if (value == null) {
       invalid(provider, `${site} sets compat "${field}" with no value; give it one, or remove the key to`
-        + ' keep the installed catalog\'s value')
+        + ' leave the field to the next layer — the installed catalog entry, then pi-ai\'s own detection')
     }
-    if (compatProtocols(field).length > 0) continue
-    const declared = Object.values(COMPAT_GATES).some(gate => gate[field] !== undefined)
-    if (declared) {
-      invalid(provider, `${site} sets compat "${field}", which is not configurable here: pi-ai's installed`
-        + ' catalog sets it for the vendors that need it, so name that provider as the route instead')
-    }
-    invalid(provider, `${site} sets compat "${field}", which no wire protocol declares; the configurable`
-      + ` switches are ${allOfferedCompatFields().join(', ')}`)
   }
 }
 
@@ -701,7 +721,7 @@ function resolveModelReasoning(
 }
 
 /** The compat block a materialized model carries, whichever protocol it speaks. */
-type ModelCompat = OpenAICompletionsCompat | OpenAIResponsesCompat | AnthropicMessagesCompat
+type ModelCompat = OpenAICompletionsCompat | OpenAIResponsesCompat | AnthropicMessagesCompat | BedrockCompat
 
 /**
  * Resolve one model's compat block from the profile's switches.

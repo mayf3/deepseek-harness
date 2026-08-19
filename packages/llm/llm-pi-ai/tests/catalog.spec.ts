@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -929,6 +929,56 @@ describe('compat switches', () => {
     })).toThrow(/its api is "acme-chat", which does not take it.*"acme-chat" offers no configurable compat/s)
   })
 
+  it('refuses a valueless compat key written through the composed settings path', async () => {
+    // The write path an operator reaches: a section resolved by schemastery,
+    // judged by this adapter's section validator before it is stored.
+    // schemastery keeps the null, so nothing but that check stands between it
+    // and `Model.compat`.
+    const dir = await home()
+    const ctx = await bootWithSettings(dir, {})
+    await expect(ctx.settings.update(settingsNamespace('llm-pi-ai'), {
+      providers: {
+        'acme-gateway': {
+          api: 'openai-completions',
+          baseURL: 'https://acme.test/v1',
+          compat: { supportsDeveloperRole: null },
+          models: [{ id: 'acme-a' }],
+        },
+      },
+    })).rejects.toThrow(/compat "supportsDeveloperRole" with no value/)
+  })
+
+  it('carries a compat switch from a written settings section onto the wire', async () => {
+    // End to end for the reported gap: the switch enters as configuration and
+    // changes the request the provider receives, not merely the resolved model.
+    vi.stubEnv(KEY_ENV, 'test-key')
+    const server = await mockServer([{ events: textEvents }])
+    const dir = await home()
+    const ctx = await bootWithSettings(dir, {})
+    await ctx.settings.update(settingsNamespace('llm-pi-ai'), {
+      providers: {
+        'acme-gateway': {
+          apiKeyEnv: KEY_ENV,
+          api: 'openai-completions',
+          baseURL: `${server.url}/v1`,
+          compat: { supportsDeveloperRole: false },
+          models: [{ id: 'acme-think', reasoningEfforts: { off: null, high: 'high' } }],
+        },
+      },
+    })
+
+    await assemble(ctx, {
+      provider: 'acme-gateway',
+      model: 'acme-think',
+      reasoningEffort: ReasoningEffortId('high'),
+      system: 'you are a harness',
+      messages: [],
+    })
+
+    const request = server.requests[0] as { messages: { role: string }[] }
+    expect(request.messages.map(message => message.role)).toEqual(['system'])
+  })
+
   it('refuses a valueless compat key rather than writing null over the catalog', () => {
     // schemastery passes a YAML bare key through as null. Carried forward it
     // would replace the installed entry's value, and pi-ai's `??` would then
@@ -938,6 +988,19 @@ describe('compat switches', () => {
         api: 'openai-completions',
         baseURL: 'https://acme.test',
         compat: { supportsDeveloperRole: null } as never,
+        models: [{ id: 'acme-a' }],
+      },
+    })).toThrow(/compat "supportsDeveloperRole" with no value/)
+  })
+
+  it('refuses a compat key whose value is undefined, as a cordis.yml entry can write', () => {
+    // `!!js undefined` reaches the same state as a YAML bare key, and
+    // schemastery keeps the key either way, so both are refused together.
+    expect(() => resolveProfiles({
+      'acme-gateway': {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test',
+        compat: { supportsDeveloperRole: undefined } as never,
         models: [{ id: 'acme-a' }],
       },
     })).toThrow(/compat "supportsDeveloperRole" with no value/)

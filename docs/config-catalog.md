@@ -1058,7 +1058,10 @@ export type PiAiModelOverride = Omit<PiAiModelProfile, 'id'>
  *
  * A field belongs to the protocols whose upstream compat type declares it: a
  * model-level switch its protocol does not take fails resolution, and a
- * route-level one skips past models it cannot fit.
+ * route-level one skips past models it cannot fit. "The three Responses
+ * protocols" below means `openai-responses`, `azure-openai-responses`, and
+ * `openai-codex-responses`, which pi-ai gives one shared compat type, so a
+ * switch settable on one is settable on all three.
  */
 export interface PiAiCompatProfile {
   /** Whether the endpoint accepts `store`; `openai-completions`. */
@@ -1066,7 +1069,7 @@ export interface PiAiCompatProfile {
   /**
    * Whether the endpoint accepts the `developer` role for the system prompt,
    * which pi-ai sends only to a reasoning model; `false` keeps `system`.
-   * `openai-completions`, `openai-responses`.
+   * `openai-completions` and the three Responses protocols.
    */
   supportsDeveloperRole?: boolean
   /** Whether the endpoint accepts `reasoning_effort`; `openai-completions`. */
@@ -1093,11 +1096,17 @@ export interface PiAiCompatProfile {
    * can read, so kwargs set beside another format are sent nowhere.
    */
   chatTemplateKwargs?: NonNullable<OpenAICompletionsCompat['chatTemplateKwargs']>
-  /** Whether the endpoint accepts `strict` in tool definitions; `openai-completions`, `openai-responses`. */
+  /**
+   * Whether the endpoint accepts `strict` in tool definitions;
+   * `openai-completions`, the three Responses protocols, `bedrock-converse-stream`.
+   */
   supportsStrictMode?: boolean
   /** Prompt-cache marker convention; `openai-completions`. */
   cacheControlFormat?: NonNullable<OpenAICompletionsCompat['cacheControlFormat']>
-  /** Whether the endpoint accepts long prompt-cache retention; all three protocols. */
+  /**
+   * Whether the endpoint accepts long prompt-cache retention;
+   * `openai-completions`, the three Responses protocols, `anthropic-messages`.
+   */
   supportsLongCacheRetention?: boolean
   /** Whether the endpoint accepts per-tool `eager_input_streaming`; `anthropic-messages`. */
   supportsEagerToolInputStreaming?: boolean
