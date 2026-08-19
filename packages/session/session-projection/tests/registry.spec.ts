@@ -34,7 +34,7 @@ declare module '@deepseek-ai/dsh-session/types' {
 
 type MarksState = { marks: string[] } | null
 /** Whole-value unit: latest test/mark event wins; unrelated events return the same reference. */
-const marksUnit = (): Omit<ProjectionDefinition<'test/marks', MarksState>, 'wire' | 'persist'>
+const marksUnit = (): Omit<ProjectionDefinition<'test/marks', MarksState>, 'wire'>
   & { wire: NonNullable<ProjectionDefinition<'test/marks', MarksState>['wire']> } => ({
   key: 'test/marks',
   stateSchema: z.object({ marks: z.array(z.string()) }).nullable(),
@@ -51,7 +51,6 @@ const marksUnit = (): Omit<ProjectionDefinition<'test/marks', MarksState>, 'wire
 const countUnit = (): ProjectionDefinition<'test/count', number> => ({
   key: 'test/count',
   stateSchema: z.number().int().nonnegative(),
-  persist: true,
   init: () => 0,
   apply: state => state + 1,
   stateVersion: 1,
@@ -170,14 +169,6 @@ describe('SessionProjectionRegistry drive', () => {
     // cells. Everything else about a definition is functions.
     expect(() => ctx.sessionProjections.register({ ...marksUnit(), stateVersion: 9 }))
       .toThrow(/already registered at stateVersion 1; refusing to share it with stateVersion 9/)
-  })
-
-  it('refuses to share a key across a persistence-policy change', async () => {
-    const { ctx } = await harness()
-    ctx.sessionProjections.register(countUnit())
-
-    expect(() => ctx.sessionProjections.register({ ...countUnit(), persist: false }))
-      .toThrow(/already registered with persist true; refusing to share it with persist false/)
   })
 
   it('rejects a non-integer or negative stateVersion at register time', async () => {

@@ -175,11 +175,11 @@ Source: [`packages/session/session-projection-cache/src/index.ts:71`](../../pack
  * @param definition - key, state schema, pure unit functions, and stateVersion.
  * @returns the exact disposer that unregisters this unit.
  */
-register< K extends keyof SessionProjectionMap, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, 'wire' | 'persist'> & { wire: NonNullable<ProjectionDefinition<K, S>['wire']> persist?: true }, ): () => void
+register< K extends keyof SessionProjectionMap, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, 'wire'> & { wire: NonNullable<ProjectionDefinition<K, S>['wire']> }, ): () => void
 
 /**
  * Register one host-only unit. Its state is omitted from client snapshots
- * and persisted only when `persist` is true.
+ * and always checkpointed like every other unit.
  * @param definition - key, state schema, pure unit functions, and stateVersion.
  * @returns the exact disposer that unregisters this unit.
  */
@@ -224,7 +224,7 @@ snapshot(session: Session): ProjectionSnapshot
  * every subsequent snapshot and frame through it (plain JSON by the unit
  * contract, so the clone is total).
  * @param session - the session whose unit states are checkpointed.
- * @returns one row per persisted key; empty when no persisted unit is registered.
+ * @returns one row per registered key.
  */
 checkpoint(session: Session): ProjectionCheckpoint
 
@@ -241,7 +241,7 @@ checkpoint(session: Session): ProjectionCheckpoint
  * re-read.
  * @param checkpoint - persisted rows for one session (possibly stale or empty).
  * @returns the seq to hand the persistence `readFrom`, or `undefined`
- *   when no persisted unit is registered (no read needed — {@link restore} would
+ *   when no unit is registered (no read needed — {@link restore} would
  *   serve empty values regardless).
  */
 restoreFloor(checkpoint: ProjectionCheckpoint): number | undefined
@@ -285,5 +285,5 @@ restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], base
 
 Types: [Session](session.md) · [SessionEvent](session.md)
 
-Source: [`packages/session/session-projection/src/index.ts:183`](../../packages/session/session-projection/src/index.ts)
+Source: [`packages/session/session-projection/src/index.ts:180`](../../packages/session/session-projection/src/index.ts)
 <!-- END GENERATED cordis-surface -->

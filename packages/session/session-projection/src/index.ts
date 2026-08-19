@@ -47,8 +47,6 @@ export interface ProjectionDefinition<
   key: K
   /** Validates persisted state before it seeds a fold. */
   stateSchema: ZodType<S>
-  /** Persist a host-only unit. Client-visible units are always persisted. */
-  persist?: boolean
   /**
    * State for the empty log.
    * @returns the initial state.
@@ -135,7 +133,6 @@ interface ErasedDefinition {
   apply(state: unknown, event: SessionEvent): unknown
   wire: { viewSchema: { parse(value: unknown): unknown }; view(state: unknown): unknown } | undefined
   stateVersion: number
-  persist: boolean
 }
 
 /** Per-session per-unit watermark cache row. */
@@ -207,14 +204,13 @@ export class SessionProjectionRegistry extends Service {
     K extends keyof SessionProjectionMap,
     S extends SessionProjectionStateMap[K],
   >(
-    definition: Omit<ProjectionDefinition<K, S>, 'wire' | 'persist'> & {
+    definition: Omit<ProjectionDefinition<K, S>, 'wire'> & {
       wire: NonNullable<ProjectionDefinition<K, S>['wire']>
-      persist?: true
     },
   ): () => void
   /**
    * Register one host-only unit. Its state is omitted from client snapshots
-   * and persisted only when `persist` is true.
+   * and always checkpointed like every other unit.
    * @param definition - key, state schema, pure unit functions, and stateVersion.
    * @returns the exact disposer that unregisters this unit.
    */
@@ -240,7 +236,6 @@ export class SessionProjectionRegistry extends Service {
         ? undefined
         : { viewSchema: wire.viewSchema, view: state => wire.view(state as S) },
       stateVersion: definition.stateVersion,
-      persist: wire !== undefined || definition.persist === true,
     }
     if (!Number.isSafeInteger(definition.stateVersion) || definition.stateVersion < 0) {
       throw new Error(`session projection ${JSON.stringify(definition.key)} stateVersion must be a non-negative integer, got ${String(definition.stateVersion)}`)
@@ -253,9 +248,6 @@ export class SessionProjectionRegistry extends Service {
       } else {
         if (existing.def.stateVersion !== erased.stateVersion) {
           throw new Error(`session projection key ${JSON.stringify(key)} is already registered at stateVersion ${String(existing.def.stateVersion)}; refusing to share it with stateVersion ${String(erased.stateVersion)}`)
-        }
-        if (existing.def.persist !== erased.persist) {
-          throw new Error(`session projection key ${JSON.stringify(key)} is already registered with persist ${String(existing.def.persist)}; refusing to share it with persist ${String(erased.persist)}`)
         }
         existing.refs += 1
       }
@@ -332,12 +324,11 @@ export class SessionProjectionRegistry extends Service {
    * every subsequent snapshot and frame through it (plain JSON by the unit
    * contract, so the clone is total).
    * @param session - the session whose unit states are checkpointed.
-   * @returns one row per persisted key; empty when no persisted unit is registered.
+   * @returns one row per registered key.
    */
   checkpoint(session: Session): ProjectionCheckpoint {
     const rows: ProjectionCheckpoint = {}
     for (const registration of this.registrations.values()) {
-      if (!registration.def.persist) continue
       const cell = this.cellFor(registration, session)
       rows[registration.def.key] = {
         ver: registration.def.stateVersion,
@@ -361,13 +352,12 @@ export class SessionProjectionRegistry extends Service {
    * re-read.
    * @param checkpoint - persisted rows for one session (possibly stale or empty).
    * @returns the seq to hand the persistence `readFrom`, or `undefined`
-   *   when no persisted unit is registered (no read needed — {@link restore} would
+   *   when no unit is registered (no read needed — {@link restore} would
    *   serve empty values regardless).
    */
   restoreFloor(checkpoint: ProjectionCheckpoint): number | undefined {
     let floor: number | undefined
     for (const registration of this.registrations.values()) {
-      if (!registration.def.persist) continue
       const row = checkpoint[registration.def.key]
       const need = row !== undefined && row.ver === registration.def.stateVersion
         ? Math.max(row.seq + 1, 0)
@@ -438,7 +428,6 @@ export class SessionProjectionRegistry extends Service {
     const refreshed: ProjectionCheckpoint = {}
     for (const registration of this.registrations.values()) {
       const def = registration.def
-      if (!def.persist) continue
       const row = checkpoint[def.key]
       const usable = row !== undefined
         && row.ver === def.stateVersion

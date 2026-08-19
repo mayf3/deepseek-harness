@@ -1113,14 +1113,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: '`ctx.sessionProjections`: the projection unit table and its drive. The service subscribes to `session/event` once; every committed event passes every registered unit\'s `apply` (eager drive), and a changed state reference in a client-visible unit notifies the change feed with the schema-validated view. Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect (disposer rides the calling fiber): an unloaded domain plugin\'s key disappears from snapshots and clients read it as capability absence. Domain plugins register under `ctx.inject([\'sessionProjections\'], …)` so headless assemblies without the registry stay unaffected. Registrants sharing a key share one unit and are counted: the same tool package mounted in N agent presets registers N times, and the key survives until the last one unloads.',
     methods: [
       {
-        signature: 'register< K extends keyof SessionProjectionMap, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, \'wire\' | \'persist\'> & { wire: NonNullable<ProjectionDefinition<K, S>[\'wire\']> persist?: true }, ): () => void',
+        signature: 'register< K extends keyof SessionProjectionMap, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, \'wire\'> & { wire: NonNullable<ProjectionDefinition<K, S>[\'wire\']> }, ): () => void',
         description: 'Register one domain\'s unit. The registration is an effect on the calling context\'s fiber: disposing the fiber (or calling the returned disposer) removes the key — and the unit\'s cached cells — from subsequent drives and snapshots.',
         parameters: [{ name: 'definition', description: 'key, state schema, pure unit functions, and stateVersion.' }],
         returns: 'the exact disposer that unregisters this unit.',
       },
       {
         signature: 'register< K extends Exclude<keyof SessionProjectionStateMap, keyof SessionProjectionMap>, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, \'wire\'>, ): () => void',
-        description: 'Register one host-only unit. Its state is omitted from client snapshots and persisted only when `persist` is true.',
+        description: 'Register one host-only unit. Its state is omitted from client snapshots and always checkpointed like every other unit.',
         parameters: [{ name: 'definition', description: 'key, state schema, pure unit functions, and stateVersion.' }],
         returns: 'the exact disposer that unregisters this unit.',
       },
@@ -1146,13 +1146,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'checkpoint(session: Session): ProjectionCheckpoint',
         description: 'State-level checkpoint of every persisted unit for one session, read from the watermark cache (missing cells fold lazily over the in-memory log). This is the write side of the persisted projection cache: the returned rows are the `(key → {ver, seq, val})` part of the durable `(sessionId, key, ver, seq, val)` rows. Every `val` is a DETACHED structured clone — never the live cell reference: the watermark cache is this registry\'s authoritative mutable state, and a caller reaching the live reference could corrupt every subsequent snapshot and frame through it (plain JSON by the unit contract, so the clone is total).',
         parameters: [{ name: 'session', description: 'the session whose unit states are checkpointed.' }],
-        returns: 'one row per persisted key; empty when no persisted unit is registered.',
+        returns: 'one row per registered key.',
       },
       {
         signature: 'restoreFloor(checkpoint: ProjectionCheckpoint): number | undefined',
         description: 'The stored seq a restore tail read over `checkpoint` must start at: one event BELOW the lowest usable watermark (a row is usable when its `ver` matches the live unit\'s `stateVersion`; an absent or mismatched row pulls the floor to `0` — that key must refold the full log). The one-below anchor is load-bearing: the tail then proves how far the stored log still extends, so restore can detect a log that shrank below a row\'s watermark (crash-repair truncation) instead of serving the stale row as current — an empty tail read from the anchor yields an end below every watermark and the restore rejects for a full re-read.',
         parameters: [{ name: 'checkpoint', description: 'persisted rows for one session (possibly stale or empty).' }],
-        returns: 'the seq to hand the persistence `readFrom`, or `undefined` when no persisted unit is registered (no read needed — {@link restore} would serve empty values regardless).',
+        returns: 'the seq to hand the persistence `readFrom`, or `undefined` when no unit is registered (no read needed — {@link restore} would serve empty values regardless).',
       },
       {
         signature: 'viewCheckpoint(checkpoint: ProjectionCheckpoint): Partial<SessionProjectionMap>',
@@ -3633,7 +3633,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ProjectionDefinition',
-    declaration: 'export interface ProjectionDefinition<K extends keyof SessionProjectionStateMap, S extends SessionProjectionStateMap[K] = SessionProjectionStateMap[K]> {\n    key: K;\n    stateSchema: ZodType<S>;\n    persist?: boolean;\n    init(): NoInfer<S>;\n    apply(state: NoInfer<S>, event: SessionEvent): NoInfer<S>;\n    wire?: K extends keyof SessionProjectionMap ? {\n        viewSchema: ZodType<SessionProjectionMap[K]>;\n        view(state: NoInfer<S>): SessionProjectionMap[K];\n    } : never;\n    stateVersion: number;\n}',
+    declaration: 'export interface ProjectionDefinition<K extends keyof SessionProjectionStateMap, S extends SessionProjectionStateMap[K] = SessionProjectionStateMap[K]> {\n    key: K;\n    stateSchema: ZodType<S>;\n    init(): NoInfer<S>;\n    apply(state: NoInfer<S>, event: SessionEvent): NoInfer<S>;\n    wire?: K extends keyof SessionProjectionMap ? {\n        viewSchema: ZodType<SessionProjectionMap[K]>;\n        view(state: NoInfer<S>): SessionProjectionMap[K];\n    } : never;\n    stateVersion: number;\n}',
   },
   {
     name: 'ProjectionSnapshot',

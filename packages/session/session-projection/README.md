@@ -17,7 +17,7 @@ Session-projection Service Definition and drive registry. It owns `ctx.sessionPr
 
 - `SessionProjectionMap` — the merge-extensible client-view table shared by wire blocks and client hooks. Values are wire-JSON whole values; rendering belongs to the slot system, never this layer.
 - `SessionProjectionStateMap` — the merge-extensible host fold-state table. Every client-visible key appears in both tables; host-only keys appear only here.
-- `ProjectionDefinition<K, S>` — `{ key, stateSchema, init(), apply(state, event), wire?, persist?, stateVersion }`: a synchronous state-driven computation unit. `wire` supplies `viewSchema` and `view`; omitting it makes the unit host-only.
+- `ProjectionDefinition<K, S>` — `{ key, stateSchema, init(), apply(state, event), wire?, stateVersion }`: a synchronous state-driven computation unit. `wire` supplies `viewSchema` and `view`; omitting it makes the unit host-only.
 
 ## Contract
 
@@ -25,7 +25,7 @@ Session-projection Service Definition and drive registry. It owns `ctx.sessionPr
 - **Same-reference means no work.** `apply` MUST return the same state reference for events that do not concern the unit; the drive gates the change feed on `Object.is`, so non-matching events cost one call and nothing downstream.
 - **Whole-value event rule (load-bearing).** A state-carrying log event MUST carry the complete post-change state, never a bare delta — it keeps every transition trivially cheap and every served value self-describing (last-wins for consumers).
 - **Synchronous unit discipline.** `init`/`apply`/`wire.view` MUST be synchronous; carriers read `snapshot()` in the same tick as their page slice, which is what makes `asOfSeq` one consistent cut. An accidentally async view returns a Promise, which fails `wire.viewSchema.parse`.
-- **State is validated plain JSON, `stateVersion` is its invalidation anchor.** The persisted projection cache stores `(sessionId, key, ver, seq, val)` rows and validates `val` with `stateSchema` before use; bump `stateVersion` whenever the state fields or fold semantics change. Client-visible units persist automatically; a host-only unit opts in with `persist: true`.
+- **State is validated plain JSON, `stateVersion` is its invalidation anchor.** The persisted projection cache stores `(sessionId, key, ver, seq, val)` rows and validates `val` with `stateSchema` before use; bump `stateVersion` whenever the state fields or fold semantics change. Every unit's state is checkpointed — client-visible and host-only alike.
 - **No wire vocabulary here.** The registry exposes only the change feed and the snapshot read face; carriers (api-proxy) mint their own frames (`session/projection`) and blocks from them.
 - **Optional capability.** Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected; carriers use `ctx.get('sessionProjections')` and omit their block/frames entirely when the registry is absent.
 

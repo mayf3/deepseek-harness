@@ -12,7 +12,7 @@
 
 `SessionProjectionStateMap` 是 host 折叠状态的 merge-extensible 类型表。每个 `ProjectionDefinition` key 都属于此表并提供 `stateSchema`；缓存行只有通过校验后才能为折叠提供初始状态。`SessionProjectionMap` 保留原有名称和语义，继续作为唯一的客户端可见全量值类型表，因此 `title: string | null` 等既有客户端数据结构保持不变。
 
-如果一个单元的 key 也存在于 `SessionProjectionMap`，该单元就提供 `wire.viewSchema` 与 `wire.view`。客户端可见单元始终写入检查点。host-only 单元省略 `wire`，且仅在 `persist` 为 true 时写入检查点。快照 API 只返回 `SessionProjectionMap`，因此内部状态不会进入 API 载荷。host 代码通过 `stateOf(session, key)` 读取一份当前状态；返回的是借用引用，不得修改。
+如果一个单元的 key 也存在于 `SessionProjectionMap`，该单元就提供 `wire.viewSchema` 与 `wire.view`。每个单元的状态都会写入检查点——client-visible 与 host-only 一视同仁；`persist` 选择项已移除，任何单元都不能悄悄跳过持久化缓存。快照 API 只返回 `SessionProjectionMap`，因此内部状态不会进入 API 载荷。host 代码通过 `stateOf(session, key)` 读取一份当前状态；返回的是借用引用，不得修改。
 
 ## 结果
 
@@ -24,5 +24,5 @@
 
 - **把既有类型表改名为状态表，再引入新的客户端类型表**——不予采用，因为这会改变已经确立的客户端类型名称，并导致不必要的客户端载荷迁移。
 - **继续用一张类型表同时描述状态与客户端值**——不予采用，因为这样无法准确表达更丰富的折叠状态和保持兼容的客户端值。
-- **持久化所有 host-only 单元**——不予采用，因为持久化是带存储成本的冷读优化；内部单元只有在消费方需要冷重建时才选择加入。
+- **host-only 单元按需选择持久化**——不予采用：`persist` 标志会让单元悄悄跳过持久化缓存，而省下的（每会话一行小记录）永远不值得这种不对称或它带来的 stateVersion 困惑。每个单元的状态统一写入检查点。
 - **让 `stateOf` 返回状态副本**——不予采用，因为每次 host 读取都克隆会增加工作，却没有保护任何边界；该方法为同进程类型化调用方明确规定只读借用引用义务。

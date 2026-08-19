@@ -12,7 +12,7 @@ The projection registry persisted each unit's internal fold state without a runt
 
 `SessionProjectionStateMap` is the merge-extensible table for host fold states. Every `ProjectionDefinition` key belongs to this table and supplies a `stateSchema`; cached rows are validated before they seed a fold. `SessionProjectionMap` retains its existing meaning and name as the sole table of client-visible whole values, preserving existing client data structures such as `title: string | null`.
 
-A unit whose key also appears in `SessionProjectionMap` supplies `wire.viewSchema` and `wire.view`. Client-visible units are always checkpointed. A host-only unit omits `wire` and is checkpointed only when `persist` is true. Snapshot APIs return only `SessionProjectionMap`, so internal states cannot enter API payloads. Host code reads one current state through `stateOf(session, key)`; the returned reference is borrowed and must not be mutated.
+A unit whose key also appears in `SessionProjectionMap` supplies `wire.viewSchema` and `wire.view`. Every unit's state is checkpointed — client-visible and host-only alike; the `persist` opt-in is gone, so no unit can silently skip the durable cache. Snapshot APIs return only `SessionProjectionMap`, so internal states cannot enter API payloads. Host code reads one current state through `stateOf(session, key)`; the returned reference is borrowed and must not be mutated.
 
 ## Consequences
 
@@ -24,5 +24,5 @@ The original [session-projection proposal](../../proposed/architecture/2026-07-2
 
 - **Rename the existing map to a state table and introduce a new client map** — rejected because it changes the established client type name and invites unnecessary client payload migrations.
 - **Keep one table for both state and client values** — rejected because a richer fold state and a compatibility-preserving client value then cannot be represented accurately.
-- **Persist every host-only unit** — rejected because persistence is a cold-read optimization with storage cost; an internal unit opts in only when its consumers need cold reconstruction.
+- **Opt-in persistence for host-only units** — rejected: a `persist` flag lets a unit silently skip the durable cache, and the savings (one small row per session) never justify the asymmetry or the stateVersion confusion it invites. Every unit's state is checkpointed uniformly.
 - **Return copied state from `stateOf`** — rejected because cloning every host read adds work without protecting a boundary; the method documents a readonly borrowed-reference obligation for typed same-process callers.
