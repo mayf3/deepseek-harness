@@ -5,7 +5,7 @@ import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-inva
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { applyTeamEvent, foldTeam, isTeamEvent } from './fold.ts'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-team'
+const PACKAGE_NAME = '@deepseek-ai/dsh-experimental-agent-team'
 
 /** Cordis companion plugin name. */
 export const name = 'team-invariant'

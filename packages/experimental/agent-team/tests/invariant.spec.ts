@@ -38,7 +38,7 @@ describe('Agent Teams stream invariant', () => {
       })
     }).toThrow(expect.objectContaining<Partial<InvariantError>>({
       code: 'INVARIANT',
-      packageName: '@deepseek-ai/dsh-team',
+      packageName: '@deepseek-ai/dsh-experimental-agent-team',
     }))
     expect(invalid.events).toEqual([])
   })
@@ -63,7 +63,7 @@ describe('Agent Teams stream invariant', () => {
       })
     }).toThrow(expect.objectContaining<Partial<InvariantError>>({
       code: 'INVARIANT',
-      packageName: '@deepseek-ai/dsh-team',
+      packageName: '@deepseek-ai/dsh-experimental-agent-team',
     }))
     expect(session.events).toEqual([])
   })

@@ -587,6 +587,48 @@ export interface Config {
 
 Source: [`packages/e2b/e2b/src/index.ts:43`](../packages/e2b/e2b/src/index.ts)
 
+<a id="deepseek-aidsh-experimental-agent-team"></a>
+
+## `@deepseek-ai/dsh-experimental-agent-team`
+
+Requires: `agents` · `sessions` · `sessionPersistence` · `subagents`
+
+```ts config-catalog
+/** Team-service deployment limits. */
+export interface Config {
+  /** Maximum immutable teammate names retained by one Team. */
+  readonly maxMembers?: number
+  /** Maximum non-deleted tasks retained by one Team. */
+  readonly maxTasks?: number
+  /** Maximum queued-minus-delivered messages for one target member. */
+  readonly maxPendingMessagesPerMember?: number
+  /** Maximum UTF-8 bytes in one complete sender-framed delivery. */
+  readonly maxMessageBytes?: number
+  /** Maximum milliseconds allowed for Team-owned runtime disposal. */
+  readonly disposalTimeoutMs?: number
+}
+```
+
+Source: [`packages/experimental/agent-team/src/types.ts:125`](../packages/experimental/agent-team/src/types.ts)
+
+<a id="deepseek-aidsh-experimental-tool-agent-team"></a>
+
+## `@deepseek-ai/dsh-experimental-tool-agent-team`
+
+Requires: `agents` · `agentTeams` · `tools` · `systemPrompt`
+
+```ts config-catalog
+/** Tool routing configuration. */
+export interface Config {
+  /** Continuable-subagent provider used for fresh teammates. */
+  readonly freshProvider?: string
+  /** Continuable-subagent provider used for completed-prefix fork teammates. */
+  readonly forkProvider?: string
+}
+```
+
+Source: [`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
+
 <a id="deepseek-aidsh-file-reference-local"></a>
 
 ## `@deepseek-ai/dsh-file-reference-local`
@@ -2334,30 +2376,6 @@ export interface Config {
 
 Source: [`packages/core/system-prompt/src/index.ts:186`](../packages/core/system-prompt/src/index.ts)
 
-<a id="deepseek-aidsh-team"></a>
-
-## `@deepseek-ai/dsh-team`
-
-Requires: `agents` · `sessions` · `sessionPersistence` · `subagents`
-
-```ts config-catalog
-/** Team-service deployment limits. */
-export interface Config {
-  /** Maximum immutable teammate names retained by one Team. */
-  readonly maxMembers?: number
-  /** Maximum non-deleted tasks retained by one Team. */
-  readonly maxTasks?: number
-  /** Maximum queued-minus-delivered messages for one target member. */
-  readonly maxPendingMessagesPerMember?: number
-  /** Maximum UTF-8 bytes in one complete sender-framed delivery. */
-  readonly maxMessageBytes?: number
-  /** Maximum milliseconds allowed for Team-owned runtime disposal. */
-  readonly disposalTimeoutMs?: number
-}
-```
-
-Source: [`packages/experimental/team/src/types.ts:125`](../packages/experimental/team/src/types.ts)
-
 <a id="deepseek-aidsh-terminal-bash"></a>
 
 ## `@deepseek-ai/dsh-terminal-bash`
@@ -2816,24 +2834,6 @@ export interface Config {
 Depends on: [`SubagentReportDelivery`](subsystems/subagent.md)
 
 Source: [`packages/subagent/tool-subagent-report/src/index.ts:27`](../packages/subagent/tool-subagent-report/src/index.ts)
-
-<a id="deepseek-aidsh-tool-team"></a>
-
-## `@deepseek-ai/dsh-tool-team`
-
-Requires: `agents` · `teams` · `tools` · `systemPrompt`
-
-```ts config-catalog
-/** Tool routing configuration. */
-export interface Config {
-  /** Continuable-subagent provider used for fresh teammates. */
-  readonly freshProvider?: string
-  /** Continuable-subagent provider used for completed-prefix fork teammates. */
-  readonly forkProvider?: string
-}
-```
-
-Source: [`packages/experimental/tool-team/src/index.ts:17`](../packages/experimental/tool-team/src/index.ts)
 
 <a id="deepseek-aidsh-tool-terminal"></a>
 

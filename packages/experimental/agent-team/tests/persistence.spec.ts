@@ -206,7 +206,7 @@ for (const backend of backends) {
         expect(failedMember?.error).toContain('child Session recovery failed')
       }, { timeout: 5_000 })
 
-      const receipt = await second.ctx.teams.sendMessage(activeHandle.agent, {
+      const receipt = await second.ctx.agentTeams.sendMessage(activeHandle.agent, {
         target: 'recoverable',
         content: [{ type: 'text', text: 'resume after reconciliation' }],
         delivery: 'wakeup',
@@ -274,7 +274,7 @@ for (const backend of backends) {
 
       const first = await stack(backend, storageRoot, [textResponse('initial teammate answer')])
       const firstLead = first.ctx.agentLoop.create(rootId, { provider: 'mock', model: 'mock' })
-      const started = await first.ctx.teams.spawnTeammate(firstLead, {
+      const started = await first.ctx.agentTeams.spawnTeammate(firstLead, {
         name: 'mail-worker',
         description: 'mail recovery worker',
         prompt: [{ type: 'text', text: 'finish before restart' }],
@@ -283,7 +283,7 @@ for (const backend of backends) {
         signal: SIGNAL,
       })
       await vi.waitFor(() => { expect(first.ctx.agents.get(started.member.id)).toBeUndefined() }, { timeout: 5_000 })
-      const quiet = await first.ctx.teams.sendMessage(firstLead, {
+      const quiet = await first.ctx.agentTeams.sendMessage(firstLead, {
         target: 'mail-worker',
         content: [{ type: 'text', text: 'durable quiet context' }],
         delivery: 'quiet',
@@ -304,7 +304,7 @@ for (const backend of backends) {
       })
       expect(second.ctx.agents.get(started.member.id)).toBeUndefined()
 
-      const waking = await second.ctx.teams.sendMessage(rootHandle.agent, {
+      const waking = await second.ctx.agentTeams.sendMessage(rootHandle.agent, {
         target: 'mail-worker',
         content: [{ type: 'text', text: 'resume after restart' }],
         delivery: 'wakeup',
@@ -335,7 +335,7 @@ for (const backend of backends) {
 
       const first = await stack(backend, storageRoot, [textResponse('initial teammate answer')])
       const firstLead = first.ctx.agentLoop.create(rootId, { provider: 'mock', model: 'mock' })
-      const started = await first.ctx.teams.spawnTeammate(firstLead, {
+      const started = await first.ctx.agentTeams.spawnTeammate(firstLead, {
         name: 'dedup-worker',
         description: 'mail deduplication worker',
         prompt: [{ type: 'text', text: 'finish before the crash window' }],

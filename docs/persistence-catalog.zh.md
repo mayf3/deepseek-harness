@@ -723,9 +723,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'team/member': { version: 1; teamId: TeamId; member: TeamMemberSnapshot }
 ```
 
-类型：[TeamId](subsystems/team.md) · [TeamMemberSnapshot](subsystems/team.md)
+类型：[TeamId](subsystems/agent-team.md) · [TeamMemberSnapshot](subsystems/agent-team.md)
 
-来源：[`packages/experimental/team/src/types.ts:206`](../packages/experimental/team/src/types.ts)
+来源：[`packages/experimental/agent-team/src/types.ts:206`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagedelivered--log-only"></a>
 
@@ -741,9 +741,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-类型：[TeamId](subsystems/team.md) · [TeamMessageId](subsystems/team.md)
+类型：[TeamId](subsystems/agent-team.md) · [TeamMessageId](subsystems/agent-team.md)
 
-来源：[`packages/experimental/team/src/types.ts:212`](../packages/experimental/team/src/types.ts)
+来源：[`packages/experimental/agent-team/src/types.ts:212`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagequeued--log-only"></a>
 
@@ -754,9 +754,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'team/message/queued': { version: 1; teamId: TeamId; message: TeamMessageSnapshot }
 ```
 
-类型：[TeamId](subsystems/team.md) · [TeamMessageSnapshot](subsystems/team.md)
+类型：[TeamId](subsystems/agent-team.md) · [TeamMessageSnapshot](subsystems/agent-team.md)
 
-来源：[`packages/experimental/team/src/types.ts:210`](../packages/experimental/team/src/types.ts)
+来源：[`packages/experimental/agent-team/src/types.ts:210`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teamtask--log-only"></a>
 
@@ -767,9 +767,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'team/task': { version: 1; teamId: TeamId; task: TeamTaskSnapshot }
 ```
 
-类型：[TeamId](subsystems/team.md) · [TeamTaskSnapshot](subsystems/team.md)
+类型：[TeamId](subsystems/agent-team.md) · [TeamTaskSnapshot](subsystems/agent-team.md)
 
-来源：[`packages/experimental/team/src/types.ts:208`](../packages/experimental/team/src/types.ts)
+来源：[`packages/experimental/agent-team/src/types.ts:208`](../packages/experimental/agent-team/src/types.ts)
 
 ### `todo/*`
 

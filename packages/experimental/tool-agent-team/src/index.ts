@@ -3,15 +3,15 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { TeamTaskId } from '@deepseek-ai/dsh-team'
-import type { TeamMemberView } from '@deepseek-ai/dsh-team'
+import { TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
+import type { TeamMemberView } from '@deepseek-ai/dsh-experimental-agent-team'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { InferValue, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
 
 /** Cordis plugin name. */
-export const name = 'tool-team'
+export const name = 'tool-agent-team'
 /** Services required by the Team tool plugin. */
-export const inject = ['agents', 'teams', 'tools', 'systemPrompt']
+export const inject = ['agents', 'agentTeams', 'tools', 'systemPrompt']
 
 /** Tool routing configuration. */
 export interface Config {
@@ -165,7 +165,7 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
       name: 'team:policy',
       order: 60,
       text: () => {
-        const membership = ctx.teams.membership(agent)
+        const membership = ctx.agentTeams.membership(agent)
         return `${POLICY}\n\nYour Team role is ${membership.role}; your Team name is ${membership.name}; Team id is ${membership.id}.`
       },
     }))
@@ -187,7 +187,7 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
       async execute(args, exec) {
         const agent = callingAgent(exec.agent, 'spawn_teammate')
         const context = args.context ?? 'fresh'
-        return await ctx.teams.spawnTeammate(agent, {
+        return await ctx.agentTeams.spawnTeammate(agent, {
           name: args.name,
           description: args.description,
           prompt: [{ type: 'text', text: args.prompt }],
@@ -210,7 +210,7 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
         },
         output: jsonOutput(SEND_VALUE_SCHEMA),
         execute(args, exec) {
-          return ctx.teams.sendMessage(callingAgent(exec.agent, toolName), {
+          return ctx.agentTeams.sendMessage(callingAgent(exec.agent, toolName), {
             target: args.target,
             content: [{ type: 'text', text: args.message }],
             delivery,
@@ -228,7 +228,7 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
       parameters: {},
       output: jsonOutput(MEMBER_LIST_VALUE_SCHEMA),
       async execute(_args, exec) {
-        return Promise.resolve(ctx.teams.listMembers(callingAgent(exec.agent, 'list_agents')))
+        return Promise.resolve(ctx.agentTeams.listMembers(callingAgent(exec.agent, 'list_agents')))
       },
     })))
 
@@ -248,11 +248,11 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
         // Preserve TeamService's authoritative timeout validation before the
         // model-only no-progress shortcut.
         if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 10_000 || timeoutMs > 3_600_000) {
-          return await ctx.teams.waitForChange(caller, timeoutMs, exec.signal)
+          return await ctx.agentTeams.waitForChange(caller, timeoutMs, exec.signal)
         }
         // The active-peer read and waiter registration must remain one synchronous
         // span; awaiting between them can lose the only peer-status edge.
-        const hasActivePeer = ctx.teams.listMembers(caller).some(member =>
+        const hasActivePeer = ctx.agentTeams.listMembers(caller).some(member =>
           member.id !== caller.id && ACTIVE_WAIT_STATUSES.has(member.status))
         if (!hasActivePeer) {
           return {
@@ -263,7 +263,7 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
             },
           }
         }
-        return await ctx.teams.waitForChange(caller, timeoutMs, exec.signal)
+        return await ctx.agentTeams.waitForChange(caller, timeoutMs, exec.signal)
       },
     })))
 
@@ -275,7 +275,7 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
       },
       output: jsonOutput(INTERRUPT_VALUE_SCHEMA),
       async execute(args, exec) {
-        return Promise.resolve(ctx.teams.interrupt(
+        return Promise.resolve(ctx.agentTeams.interrupt(
           callingAgent(exec.agent, 'interrupt_agent'),
           args.target,
         ))
@@ -297,7 +297,7 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
       },
       output: jsonOutput(TASK_VIEW_SCHEMA),
       async execute(args, exec) {
-        return await ctx.teams.createTask(callingAgent(exec.agent, 'team_task_create'), {
+        return await ctx.agentTeams.createTask(callingAgent(exec.agent, 'team_task_create'), {
           subject: args.subject,
           description: args.description,
           ...args.blocked_by === undefined ? {} : { blockedBy: args.blocked_by.map(TeamTaskId) },
@@ -323,7 +323,7 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
       output: jsonOutput(TASK_LIST_VALUE_SCHEMA),
       execute(args, exec) {
         const status = args.status
-        const filtered = ctx.teams.listTasks(callingAgent(exec.agent, 'team_task_list')).filter(task =>
+        const filtered = ctx.agentTeams.listTasks(callingAgent(exec.agent, 'team_task_list')).filter(task =>
           (status === undefined || task.status === status)
           && (args.owner === undefined || (args.owner === 'unowned' ? task.ownerName === undefined : task.ownerName === args.owner))
           && (args.ready === undefined || task.ready === args.ready))
@@ -346,7 +346,7 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
       },
       output: jsonOutput(TASK_VIEW_SCHEMA),
       async execute(args, exec) {
-        return Promise.resolve(ctx.teams.getTask(
+        return Promise.resolve(ctx.agentTeams.getTask(
           callingAgent(exec.agent, 'team_task_get'),
           TeamTaskId(args.task_id),
         ))
@@ -373,7 +373,7 @@ function install(agent: Agent, ctx: Context, config: Required<Config>): () => vo
       },
       output: jsonOutput(TASK_VIEW_SCHEMA),
       async execute(args, exec) {
-        return await ctx.teams.updateTask(callingAgent(exec.agent, 'team_task_update'), {
+        return await ctx.agentTeams.updateTask(callingAgent(exec.agent, 'team_task_update'), {
           taskId: TeamTaskId(args.task_id),
           expectedRevision: args.expected_revision,
           action: args.action,
@@ -402,7 +402,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
   const installed = new Map<Agent, () => void>()
   const maybeInstall = (agent: Agent): void => {
-    if (installed.has(agent) || ctx.teams.tryMembership(agent) === undefined) return
+    if (installed.has(agent) || ctx.agentTeams.tryMembership(agent) === undefined) return
     installed.set(agent, install(agent, ctx, resolved))
   }
   for (const agent of ctx.agents.list()) maybeInstall(agent)
