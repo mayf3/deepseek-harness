@@ -27,10 +27,7 @@
       "path": "../session-projection"
     },
     {
-      "path": "../../storage/storage"
-    },
-    {
-      "path": "../../storage/storage-domain"
+      "path": "../../storage/storage-json"
     },
     {
       "path": "../../runtime-diagnostics/invariants"
