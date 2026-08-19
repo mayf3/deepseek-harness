@@ -34,7 +34,7 @@ export { foldTeam } from './fold.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    teams: TeamService
+    agentTeams: TeamService
   }
 }
 
@@ -75,7 +75,7 @@ export class TeamService extends Service {
   private readonly tasks: TeamTaskBoard
 
   constructor(ctx: Context, config: Config = {}) {
-    super(ctx, 'teams')
+    super(ctx, 'agentTeams')
     this.config = {
       maxMembers: positiveLimit('maxMembers', config.maxMembers ?? DEFAULT_MAX_MEMBERS),
       maxTasks: positiveLimit('maxTasks', config.maxTasks ?? DEFAULT_MAX_TASKS),
@@ -110,7 +110,7 @@ export class TeamService extends Service {
       const membership = this.roster.tryMembership(agent)
       if (membership !== undefined) this.activity.notify(membership.id)
     })
-    ctx.effect(() => () => this.disposeRuntime(), 'teams.runtimeLifecycle()')
+    ctx.effect(() => () => this.disposeRuntime(), 'agentTeams.runtimeLifecycle()')
     for (const agent of ctx.agents.list()) this.scheduleRecovery(agent)
   }
 

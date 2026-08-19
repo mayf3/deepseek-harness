@@ -85,7 +85,7 @@ interface TeamServiceInternals {
 
 /** White-box access follows the runtime owners so coverage does not widen the service API. */
 function teamInternals(ctx: Context): TeamServiceInternals {
-  return ctx.teams as unknown as TeamServiceInternals
+  return ctx.agentTeams as unknown as TeamServiceInternals
 }
 
 function spawn(
@@ -95,7 +95,7 @@ function spawn(
   options: { context?: 'fresh' | 'fork'; provider?: string } = {},
 ) {
   const context = options.context ?? 'fresh'
-  return ctx.teams.spawnTeammate(lead, {
+  return ctx.agentTeams.spawnTeammate(lead, {
     name,
     description: `${name} responsibility`,
     prompt: content(`${name} initial`),
@@ -187,7 +187,7 @@ describe('Team identity and provisioning', () => {
 
     expect((await ctx.sessionPersistence.inspect(forked.member.id)).meta.seedLength).toBeGreaterThan(0)
     expect((await ctx.sessionPersistence.inspect(fresh.member.id)).meta.seedLength ?? 0).toBe(0)
-    expect(ctx.teams.listMembers(lead).map(row => [row.name, row.context, row.status])).toEqual([
+    expect(ctx.agentTeams.listMembers(lead).map(row => [row.name, row.context, row.status])).toEqual([
       ['lead', undefined, 'idle'],
       ['fork-worker', 'fork', 'inactive'],
       ['fresh-worker', 'fresh', 'inactive'],
@@ -288,7 +288,7 @@ describe('Team identity and provisioning', () => {
     const { ctx, lead } = await setup([], { maxMembers: 1 })
     await expect(spawn(ctx, lead, 'failed-worker', { provider: 'missing' })).rejects.toThrow()
 
-    expect(ctx.teams.listMembers(lead)[1]).toMatchObject({
+    expect(ctx.agentTeams.listMembers(lead)[1]).toMatchObject({
       name: 'failed-worker',
       status: 'failed',
       provider: 'missing',
@@ -301,11 +301,11 @@ describe('Team identity and provisioning', () => {
     const first = await setup([])
     vi.spyOn(first.ctx.subagents, 'startContinuable').mockRejectedValueOnce('string provider failure')
     await expect(spawn(first.ctx, first.lead, 'string-failure')).rejects.toBe('string provider failure')
-    expect(first.ctx.teams.listMembers(first.lead)[1]).toMatchObject({
+    expect(first.ctx.agentTeams.listMembers(first.lead)[1]).toMatchObject({
       status: 'failed',
       diagnostics: ['string provider failure'],
     })
-    await expect(first.ctx.teams.sendMessage(first.lead, {
+    await expect(first.ctx.agentTeams.sendMessage(first.lead, {
       target: 'string-failure', content: content('cannot deliver'), delivery: 'quiet', signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_MEMBER_NOT_FOUND' })
 
@@ -389,16 +389,16 @@ describe('Team identity and provisioning', () => {
     const started = await spawn(ctx, lead, 'worker')
     const worker = await waitRunning(ctx, started.member.id)
     await expect(spawn(ctx, worker, 'nested')).rejects.toMatchObject({ code: 'TEAM_LEAD_REQUIRED' })
-    expect(() => ctx.teams.interrupt(worker, 'worker')).toThrow(expect.objectContaining({ code: 'TEAM_LEAD_REQUIRED' }))
-    expect(ctx.teams.interrupt(lead, 'worker')).toEqual({ previousStatus: 'running' })
+    expect(() => ctx.agentTeams.interrupt(worker, 'worker')).toThrow(expect.objectContaining({ code: 'TEAM_LEAD_REQUIRED' }))
+    expect(ctx.agentTeams.interrupt(lead, 'worker')).toEqual({ previousStatus: 'running' })
     await waitNoAgent(ctx, worker.id)
-    expect(ctx.teams.interrupt(lead, 'worker')).toEqual({ previousStatus: 'inactive' })
-    expect(() => ctx.teams.interrupt(lead, 'lead')).toThrow(expect.objectContaining({ code: 'TEAM_INVALID_TARGET' }))
+    expect(ctx.agentTeams.interrupt(lead, 'worker')).toEqual({ previousStatus: 'inactive' })
+    expect(() => ctx.agentTeams.interrupt(lead, 'lead')).toThrow(expect.objectContaining({ code: 'TEAM_INVALID_TARGET' }))
   })
 
   it('validates teammate text fields and pre-provisioning cancellation', async () => {
     const { ctx, lead } = await setup([])
-    await expect(ctx.teams.spawnTeammate(lead, {
+    await expect(ctx.agentTeams.spawnTeammate(lead, {
       name: 'empty-description',
       description: ' ',
       prompt: content('unused'),
@@ -406,7 +406,7 @@ describe('Team identity and provisioning', () => {
       provider: 'spawn',
       signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_INVALID_ARGUMENT' })
-    await expect(ctx.teams.spawnTeammate(lead, {
+    await expect(ctx.agentTeams.spawnTeammate(lead, {
       name: 'empty-provider',
       description: 'valid description',
       prompt: content('unused'),
@@ -416,7 +416,7 @@ describe('Team identity and provisioning', () => {
     })).rejects.toMatchObject({ code: 'TEAM_INVALID_ARGUMENT' })
     const controller = new AbortController()
     controller.abort(new TeamError('cancelled before provisioning', 'TEST_CANCELLED'))
-    await expect(ctx.teams.spawnTeammate(lead, {
+    await expect(ctx.agentTeams.spawnTeammate(lead, {
       name: 'cancelled-worker',
       description: 'never provisioned',
       prompt: content('unused'),
@@ -429,7 +429,7 @@ describe('Team identity and provisioning', () => {
 
   it('treats an ordinary fork as a new Root Team and filters inherited Team state', async () => {
     const { ctx, lead } = await setup([])
-    await ctx.teams.createTask(lead, { subject: 'parent task', description: 'belongs to parent' })
+    await ctx.agentTeams.createTask(lead, { subject: 'parent task', description: 'belongs to parent' })
     const handle = await ctx.agents.create({
       sessionId: SessionId('ordinary-fork'),
       seed: lead.session.events,
@@ -437,7 +437,7 @@ describe('Team identity and provisioning', () => {
       agentOptions: { provider: 'mock', model: 'mock' },
     })
 
-    expect(ctx.teams.membership(handle.agent)).toMatchObject({
+    expect(ctx.agentTeams.membership(handle.agent)).toMatchObject({
       id: TeamId(handle.agent.id),
       role: 'lead',
       name: 'lead',
@@ -455,20 +455,20 @@ describe('Team identity and provisioning', () => {
       signal: SIGNAL,
     })
     const live = ctx.agents.get(started.childId)
-    if (live !== undefined) expect(ctx.teams.tryMembership(live)).toBeUndefined()
+    if (live !== undefined) expect(ctx.agentTeams.tryMembership(live)).toBeUndefined()
     await waitNoAgent(ctx, started.childId)
-    expect(() => ctx.teams.membership(lead)).not.toThrow()
+    expect(() => ctx.agentTeams.membership(lead)).not.toThrow()
 
     const impostor = { ...lead } as Agent
-    expect(ctx.teams.tryMembership(impostor)).toBeUndefined()
-    expect(() => ctx.teams.membership(impostor)).toThrow(expect.objectContaining({ code: 'TEAM_NOT_MEMBER' }))
+    expect(ctx.agentTeams.tryMembership(impostor)).toBeUndefined()
+    expect(() => ctx.agentTeams.membership(impostor)).toThrow(expect.objectContaining({ code: 'TEAM_NOT_MEMBER' }))
 
     const orphanRoot = await ctx.agents.create({
       sessionId: SessionId('orphan-ordinary-root'),
       meta: { parentSession: SessionId('absent-parent') },
       agentOptions: { provider: 'mock', model: 'mock' },
     })
-    expect(ctx.teams.membership(orphanRoot.agent)).toMatchObject({ role: 'lead', name: 'lead' })
+    expect(ctx.agentTeams.membership(orphanRoot.agent)).toMatchObject({ role: 'lead', name: 'lead' })
     await orphanRoot.dispose()
   })
 
@@ -490,7 +490,7 @@ describe('Team identity and provisioning', () => {
       resumeSessionId: started.childId,
       agentOptions: { provider: 'mock', model: 'mock' },
     })
-    expect(first.ctx.teams.tryMembership(orphan.agent)).toBeUndefined()
+    expect(first.ctx.agentTeams.tryMembership(orphan.agent)).toBeUndefined()
     expect(teamInternals(first.ctx).roster.liveChildrenByRoot()).toEqual(new Map())
     await orphan.dispose()
 
@@ -503,7 +503,7 @@ describe('Team identity and provisioning', () => {
     const journal = teamInternals(second.ctx).journal
     const state = journal.state.bind(journal)
     journal.state = () => { throw new Error('malformed Team stream') }
-    expect(second.ctx.teams.tryMembership(child.agent)).toBeUndefined()
+    expect(second.ctx.agentTeams.tryMembership(child.agent)).toBeUndefined()
     journal.state = state
     await child.dispose()
   })
@@ -528,7 +528,7 @@ describe('Team shared task DAG', () => {
     })
     await ctx.sessions.flush(lead.session)
 
-    await expect(ctx.teams.createTask(lead, {
+    await expect(ctx.agentTeams.createTask(lead, {
       subject: 'cannot allocate',
       description: 'no safe numeric task id remains',
     })).rejects.toMatchObject({ code: 'TEAM_TASK_LIMIT' })
@@ -536,20 +536,20 @@ describe('Team shared task DAG', () => {
 
   it('bounds non-deleted tasks while retaining deleted task ids as tombstones', async () => {
     const { ctx, lead } = await setup([], { maxTasks: 1 })
-    const first = await ctx.teams.createTask(lead, { subject: 'first', description: 'first task' })
-    await expect(ctx.teams.createTask(lead, { subject: 'overflow', description: 'overflow task' }))
+    const first = await ctx.agentTeams.createTask(lead, { subject: 'first', description: 'first task' })
+    await expect(ctx.agentTeams.createTask(lead, { subject: 'overflow', description: 'overflow task' }))
       .rejects.toMatchObject({ code: 'TEAM_TASK_LIMIT' })
 
-    const deleted = await ctx.teams.updateTask(lead, {
+    const deleted = await ctx.agentTeams.updateTask(lead, {
       taskId: first.id,
       expectedRevision: first.revision,
       action: 'delete',
     })
-    const second = await ctx.teams.createTask(lead, { subject: 'second', description: 'second task' })
+    const second = await ctx.agentTeams.createTask(lead, { subject: 'second', description: 'second task' })
     expect(deleted.status).toBe('deleted')
     expect(second.id).toBe(TeamTaskId('task-2'))
-    expect(ctx.teams.getTask(lead, first.id).status).toBe('deleted')
-    expect(ctx.teams.listTasks(lead).map(task => task.id)).toEqual([second.id])
+    expect(ctx.agentTeams.getTask(lead, first.id).status).toBe('deleted')
+    expect(ctx.agentTeams.listTasks(lead).map(task => task.id)).toEqual([second.id])
   })
 
   it('enforces CAS, ownership, dependencies, transitions, and write-scope warnings', async () => {
@@ -559,63 +559,63 @@ describe('Team shared task DAG', () => {
     const secondMember = await spawn(ctx, lead, 'beta')
     const beta = await waitRunning(ctx, secondMember.member.id)
 
-    const first = await ctx.teams.createTask(alpha, {
+    const first = await ctx.agentTeams.createTask(alpha, {
       subject: 'first',
       description: 'first task',
       writeScopes: ['src', './src/', 'src'],
     })
-    const second = await ctx.teams.createTask(beta, {
+    const second = await ctx.agentTeams.createTask(beta, {
       subject: 'second',
       description: 'second task',
       blockedBy: [first.id],
       writeScopes: ['src/feature'],
     })
     expect(first.writeScopes).toEqual(['src'])
-    await expect(ctx.teams.updateTask(beta, {
+    await expect(ctx.agentTeams.updateTask(beta, {
       taskId: second.id,
       expectedRevision: second.revision,
       action: 'claim',
     })).rejects.toMatchObject({ code: 'TEAM_TASK_BLOCKED' })
 
-    const claimed = await ctx.teams.updateTask(alpha, {
+    const claimed = await ctx.agentTeams.updateTask(alpha, {
       taskId: first.id,
       expectedRevision: first.revision,
       action: 'claim',
     })
-    await expect(ctx.teams.updateTask(beta, {
+    await expect(ctx.agentTeams.updateTask(beta, {
       taskId: first.id,
       expectedRevision: claimed.revision,
       action: 'claim',
     })).rejects.toMatchObject({ code: 'TEAM_TASK_ALREADY_CLAIMED' })
-    expect(ctx.teams.getTask(beta, second.id)).toMatchObject({
+    expect(ctx.agentTeams.getTask(beta, second.id)).toMatchObject({
       ready: false,
       writeScopeWarnings: [`write scopes overlap with ${first.id}`],
     })
-    await expect(ctx.teams.updateTask(beta, {
+    await expect(ctx.agentTeams.updateTask(beta, {
       taskId: first.id,
       expectedRevision: claimed.revision,
       action: 'edit',
       subject: 'stolen',
     })).rejects.toMatchObject({ code: 'TEAM_TASK_UNAUTHORIZED' })
-    await expect(ctx.teams.updateTask(alpha, {
+    await expect(ctx.agentTeams.updateTask(alpha, {
       taskId: first.id,
       expectedRevision: first.revision,
       action: 'complete',
     })).rejects.toMatchObject({ code: 'TEAM_TASK_STALE_REVISION' })
 
-    const completed = await ctx.teams.updateTask(alpha, {
+    const completed = await ctx.agentTeams.updateTask(alpha, {
       taskId: first.id,
       expectedRevision: claimed.revision,
       action: 'complete',
     })
     expect(completed.status).toBe('completed')
-    expect(ctx.teams.getTask(beta, second.id).ready).toBe(true)
-    const secondClaim = await ctx.teams.updateTask(beta, {
+    expect(ctx.agentTeams.getTask(beta, second.id).ready).toBe(true)
+    const secondClaim = await ctx.agentTeams.updateTask(beta, {
       taskId: second.id,
       expectedRevision: second.revision,
       action: 'claim',
     })
-    const released = await ctx.teams.updateTask(beta, {
+    const released = await ctx.agentTeams.updateTask(beta, {
       taskId: second.id,
       expectedRevision: secondClaim.revision,
       action: 'release',
@@ -623,40 +623,40 @@ describe('Team shared task DAG', () => {
     expect(released).toMatchObject({ status: 'pending', ready: true })
     expect('ownerId' in released).toBe(false)
 
-    ctx.teams.interrupt(lead, 'alpha')
-    ctx.teams.interrupt(lead, 'beta')
+    ctx.agentTeams.interrupt(lead, 'alpha')
+    ctx.agentTeams.interrupt(lead, 'beta')
     await Promise.all([waitNoAgent(ctx, alpha.id), waitNoAgent(ctx, beta.id)])
   })
 
   it('rejects malformed scopes and every invalid dependency relation', async () => {
     const { ctx, lead } = await setup([])
-    const first = await ctx.teams.createTask(lead, { subject: 'one', description: 'one' })
-    const second = await ctx.teams.createTask(lead, {
+    const first = await ctx.agentTeams.createTask(lead, { subject: 'one', description: 'one' })
+    const second = await ctx.agentTeams.createTask(lead, {
       subject: 'two', description: 'two', blockedBy: [first.id],
     })
-    await expect(ctx.teams.createTask(lead, {
+    await expect(ctx.agentTeams.createTask(lead, {
       subject: 'bad', description: 'bad', blockedBy: [TeamTaskId('missing')],
     })).rejects.toMatchObject({ code: 'TEAM_TASK_NOT_FOUND' })
-    await expect(ctx.teams.updateTask(lead, {
+    await expect(ctx.agentTeams.updateTask(lead, {
       taskId: first.id,
       expectedRevision: first.revision,
       action: 'set_dependencies',
       blockedBy: [second.id],
     })).rejects.toMatchObject({ code: 'TEAM_TASK_DEPENDENCY_CYCLE' })
-    await expect(ctx.teams.updateTask(lead, {
+    await expect(ctx.agentTeams.updateTask(lead, {
       taskId: first.id,
       expectedRevision: first.revision,
       action: 'set_dependencies',
       blockedBy: [first.id],
     })).rejects.toMatchObject({ code: 'TEAM_TASK_DEPENDENCY_CYCLE' })
-    await expect(ctx.teams.updateTask(lead, {
+    await expect(ctx.agentTeams.updateTask(lead, {
       taskId: first.id,
       expectedRevision: first.revision,
       action: 'set_dependencies',
       blockedBy: [second.id, second.id],
     })).rejects.toMatchObject({ code: 'TEAM_INVALID_ARGUMENT' })
     for (const scope of ['', '.', '..', '/root', 'C:\\root', 'C:root', 'a//b', 'a/../b']) {
-      await expect(ctx.teams.createTask(lead, {
+      await expect(ctx.agentTeams.createTask(lead, {
         subject: 'scope', description: 'scope', writeScopes: [scope],
       })).rejects.toMatchObject({ code: 'TEAM_INVALID_WRITE_SCOPE' })
     }
@@ -664,36 +664,36 @@ describe('Team shared task DAG', () => {
 
   it('rejects incomplete mutations, invalid transitions, and deletion of a live blocker', async () => {
     const { ctx, lead } = await setup([])
-    await expect(ctx.teams.createTask(lead, { subject: ' ', description: 'invalid' }))
+    await expect(ctx.agentTeams.createTask(lead, { subject: ' ', description: 'invalid' }))
       .rejects.toMatchObject({ code: 'TEAM_INVALID_ARGUMENT' })
-    await expect(ctx.teams.createTask(lead, { subject: 'invalid', description: '' }))
+    await expect(ctx.agentTeams.createTask(lead, { subject: 'invalid', description: '' }))
       .rejects.toMatchObject({ code: 'TEAM_INVALID_ARGUMENT' })
-    await expect(ctx.teams.createTask(lead, { subject: 'x'.repeat(201), description: 'too long' }))
+    await expect(ctx.agentTeams.createTask(lead, { subject: 'x'.repeat(201), description: 'too long' }))
       .rejects.toMatchObject({ code: 'TEAM_INVALID_ARGUMENT' })
-    const blocker = await ctx.teams.createTask(lead, { subject: 'blocker', description: 'blocker' })
-    await ctx.teams.createTask(lead, {
+    const blocker = await ctx.agentTeams.createTask(lead, { subject: 'blocker', description: 'blocker' })
+    await ctx.agentTeams.createTask(lead, {
       subject: 'dependent', description: 'dependent', blockedBy: [blocker.id],
     })
-    expect(() => ctx.teams.getTask(lead, TeamTaskId('missing')))
+    expect(() => ctx.agentTeams.getTask(lead, TeamTaskId('missing')))
       .toThrow(expect.objectContaining({ code: 'TEAM_TASK_NOT_FOUND' }))
     for (const action of ['release', 'complete', 'reopen'] as const) {
-      await expect(ctx.teams.updateTask(lead, {
+      await expect(ctx.agentTeams.updateTask(lead, {
         taskId: blocker.id,
         expectedRevision: blocker.revision,
         action,
       })).rejects.toMatchObject({ code: 'TEAM_TASK_INVALID_TRANSITION' })
     }
-    await expect(ctx.teams.updateTask(lead, {
+    await expect(ctx.agentTeams.updateTask(lead, {
       taskId: blocker.id,
       expectedRevision: blocker.revision,
       action: 'edit',
     })).rejects.toMatchObject({ code: 'TEAM_INVALID_ARGUMENT' })
-    await expect(ctx.teams.updateTask(lead, {
+    await expect(ctx.agentTeams.updateTask(lead, {
       taskId: blocker.id,
       expectedRevision: blocker.revision,
       action: 'set_dependencies',
     })).rejects.toMatchObject({ code: 'TEAM_INVALID_ARGUMENT' })
-    await expect(ctx.teams.updateTask(lead, {
+    await expect(ctx.agentTeams.updateTask(lead, {
       taskId: blocker.id,
       expectedRevision: blocker.revision,
       action: 'delete',
@@ -704,54 +704,54 @@ describe('Team shared task DAG', () => {
     const { ctx, lead } = await setup(['hang'])
     const started = await spawn(ctx, lead, 'owner')
     const owner = await waitRunning(ctx, started.member.id)
-    const task = await ctx.teams.createTask(owner, { subject: 'lifecycle', description: 'lifecycle' })
-    const assigned = await ctx.teams.updateTask(lead, {
+    const task = await ctx.agentTeams.createTask(owner, { subject: 'lifecycle', description: 'lifecycle' })
+    const assigned = await ctx.agentTeams.updateTask(lead, {
       taskId: task.id,
       expectedRevision: task.revision,
       action: 'reassign',
       owner: 'owner',
     })
-    await expect(ctx.teams.updateTask(owner, {
+    await expect(ctx.agentTeams.updateTask(owner, {
       taskId: task.id,
       expectedRevision: assigned.revision,
       action: 'reassign',
       owner: 'lead',
     })).rejects.toMatchObject({ code: 'TEAM_LEAD_REQUIRED' })
-    const complete = await ctx.teams.updateTask(owner, {
+    const complete = await ctx.agentTeams.updateTask(owner, {
       taskId: task.id,
       expectedRevision: assigned.revision,
       action: 'complete',
     })
-    await expect(ctx.teams.updateTask(lead, {
+    await expect(ctx.agentTeams.updateTask(lead, {
       taskId: task.id,
       expectedRevision: complete.revision,
       action: 'reassign',
       owner: 'lead',
     })).rejects.toMatchObject({ code: 'TEAM_TASK_INVALID_TRANSITION' })
-    const reopened = await ctx.teams.updateTask(owner, {
+    const reopened = await ctx.agentTeams.updateTask(owner, {
       taskId: task.id,
       expectedRevision: complete.revision,
       action: 'reopen',
     })
-    const claimed = await ctx.teams.updateTask(owner, {
+    const claimed = await ctx.agentTeams.updateTask(owner, {
       taskId: task.id,
       expectedRevision: reopened.revision,
       action: 'claim',
     })
-    const deleted = await ctx.teams.updateTask(owner, {
+    const deleted = await ctx.agentTeams.updateTask(owner, {
       taskId: task.id,
       expectedRevision: claimed.revision,
       action: 'delete',
     })
     expect(deleted.status).toBe('deleted')
-    expect(ctx.teams.listTasks(lead)).toEqual([])
-    await expect(ctx.teams.updateTask(owner, {
+    expect(ctx.agentTeams.listTasks(lead)).toEqual([])
+    await expect(ctx.agentTeams.updateTask(owner, {
       taskId: task.id,
       expectedRevision: deleted.revision,
       action: 'edit',
       subject: 'late',
     })).rejects.toMatchObject({ code: 'TEAM_TASK_DELETED' })
-    ctx.teams.interrupt(lead, 'owner')
+    ctx.agentTeams.interrupt(lead, 'owner')
     await waitNoAgent(ctx, owner.id)
   })
 
@@ -759,40 +759,40 @@ describe('Team shared task DAG', () => {
     const { ctx, lead } = await setup(['hang'])
     const started = await spawn(ctx, lead, 'editor')
     const editor = await waitRunning(ctx, started.member.id)
-    const blocker = await ctx.teams.createTask(lead, { subject: 'blocker', description: 'blocker' })
-    const task = await ctx.teams.createTask(lead, {
+    const blocker = await ctx.agentTeams.createTask(lead, { subject: 'blocker', description: 'blocker' })
+    const task = await ctx.agentTeams.createTask(lead, {
       subject: 'draft',
       description: 'draft description',
       blockedBy: [blocker.id],
     })
-    await expect(ctx.teams.updateTask(lead, {
+    await expect(ctx.agentTeams.updateTask(lead, {
       taskId: TeamTaskId('missing-update'), expectedRevision: 1, action: 'delete',
     })).rejects.toMatchObject({ code: 'TEAM_TASK_NOT_FOUND' })
-    await expect(ctx.teams.updateTask(lead, {
+    await expect(ctx.agentTeams.updateTask(lead, {
       taskId: task.id, expectedRevision: task.revision, action: 'reassign', owner: 'editor',
     })).rejects.toMatchObject({ code: 'TEAM_TASK_BLOCKED' })
 
-    const leadClaim = await ctx.teams.updateTask(lead, {
+    const leadClaim = await ctx.agentTeams.updateTask(lead, {
       taskId: blocker.id, expectedRevision: blocker.revision, action: 'claim',
     })
     expect(leadClaim.ownerName).toBe('lead')
-    const completedBlocker = await ctx.teams.updateTask(lead, {
+    const completedBlocker = await ctx.agentTeams.updateTask(lead, {
       taskId: blocker.id, expectedRevision: leadClaim.revision, action: 'complete',
     })
     expect(completedBlocker.status).toBe('completed')
-    const assigned = await ctx.teams.updateTask(lead, {
+    const assigned = await ctx.agentTeams.updateTask(lead, {
       taskId: task.id, expectedRevision: task.revision, action: 'reassign', owner: 'editor',
     })
-    const subject = await ctx.teams.updateTask(editor, {
+    const subject = await ctx.agentTeams.updateTask(editor, {
       taskId: task.id, expectedRevision: assigned.revision, action: 'edit', subject: 'edited subject',
     })
-    const description = await ctx.teams.updateTask(editor, {
+    const description = await ctx.agentTeams.updateTask(editor, {
       taskId: task.id,
       expectedRevision: subject.revision,
       action: 'edit',
       description: 'edited description',
     })
-    const scopes = await ctx.teams.updateTask(editor, {
+    const scopes = await ctx.agentTeams.updateTask(editor, {
       taskId: task.id,
       expectedRevision: description.revision,
       action: 'edit',
@@ -803,34 +803,34 @@ describe('Team shared task DAG', () => {
       description: 'edited description',
       writeScopes: ['src/nested'],
     })
-    const unassigned = await ctx.teams.updateTask(lead, {
+    const unassigned = await ctx.agentTeams.updateTask(lead, {
       taskId: task.id, expectedRevision: scopes.revision, action: 'reassign', owner: ' ',
     })
     expect(unassigned).toMatchObject({ status: 'pending' })
     expect('ownerId' in unassigned).toBe(false)
 
-    const broad = await ctx.teams.createTask(lead, {
+    const broad = await ctx.agentTeams.createTask(lead, {
       subject: 'broad scope', description: 'broad scope', writeScopes: ['src'],
     })
-    const narrow = await ctx.teams.createTask(lead, {
+    const narrow = await ctx.agentTeams.createTask(lead, {
       subject: 'narrow scope', description: 'narrow scope', writeScopes: ['src/nested'],
     })
-    const disjoint = await ctx.teams.createTask(lead, {
+    const disjoint = await ctx.agentTeams.createTask(lead, {
       subject: 'disjoint scope', description: 'disjoint scope', writeScopes: ['docs'],
     })
-    await ctx.teams.updateTask(lead, {
+    await ctx.agentTeams.updateTask(lead, {
       taskId: broad.id, expectedRevision: broad.revision, action: 'claim',
     })
-    await ctx.teams.updateTask(lead, {
+    await ctx.agentTeams.updateTask(lead, {
       taskId: narrow.id, expectedRevision: narrow.revision, action: 'claim',
     })
-    await ctx.teams.updateTask(lead, {
+    await ctx.agentTeams.updateTask(lead, {
       taskId: disjoint.id, expectedRevision: disjoint.revision, action: 'claim',
     })
-    expect(ctx.teams.getTask(lead, broad.id).writeScopeWarnings)
+    expect(ctx.agentTeams.getTask(lead, broad.id).writeScopeWarnings)
       .toEqual([`write scopes overlap with ${narrow.id}`])
 
-    ctx.teams.interrupt(lead, 'editor')
+    ctx.agentTeams.interrupt(lead, 'editor')
     await waitNoAgent(ctx, editor.id)
   })
 })
@@ -843,10 +843,10 @@ describe('Team mailbox and waiting', () => {
     lead.followup(createUserMessage({ content: content('keep the Lead busy'), source: { kind: 'user' } }))
     await waitRunning(ctx, lead.id)
 
-    const first = await ctx.teams.sendMessage(reporter, {
+    const first = await ctx.agentTeams.sendMessage(reporter, {
       target: 'lead', content: content('first wakeup report'), delivery: 'wakeup', signal: SIGNAL,
     })
-    const second = await ctx.teams.sendMessage(reporter, {
+    const second = await ctx.agentTeams.sendMessage(reporter, {
       target: 'lead', content: content('second wakeup report'), delivery: 'wakeup', signal: SIGNAL,
     })
     expect([first.status, second.status]).toEqual(['accepted', 'accepted'])
@@ -890,7 +890,7 @@ describe('Team mailbox and waiting', () => {
     const { ctx, lead } = await setup(['hang'])
     const started = await spawn(ctx, lead, 'pending-target')
     const target = await waitRunning(ctx, started.member.id)
-    const immediate = await ctx.teams.sendMessage(lead, {
+    const immediate = await ctx.agentTeams.sendMessage(lead, {
       target: 'pending-target',
       content: content('live quiet receipt'),
       delivery: 'quiet',
@@ -969,7 +969,7 @@ describe('Team mailbox and waiting', () => {
     await expect(teamInternals(ctx).mailbox.tryDispatch(lead, disappearing, SIGNAL)).resolves.toBe(false)
     expect(durable(lead).pendingMessages.map(pending => pending.id)).toEqual([disappearing.id])
 
-    ctx.teams.interrupt(lead, 'pending-target')
+    ctx.agentTeams.interrupt(lead, 'pending-target')
     target.cancel({ kind: 'parent' })
     await waitNoAgent(ctx, target.id)
   })
@@ -985,7 +985,7 @@ describe('Team mailbox and waiting', () => {
       return flush(session)
     })
 
-    const first = await ctx.teams.sendMessage(lead, {
+    const first = await ctx.agentTeams.sendMessage(lead, {
       target: 'busy-target', content: content('first waking message'), delivery: 'wakeup', signal: SIGNAL,
     })
 
@@ -996,7 +996,7 @@ describe('Team mailbox and waiting', () => {
       && message.source.messageId === first.messageId)).toBe(true)
 
     flushed.length = 0
-    const second = await ctx.teams.sendMessage(lead, {
+    const second = await ctx.agentTeams.sendMessage(lead, {
       target: 'busy-target', content: content('second waking message'), delivery: 'wakeup', signal: SIGNAL,
     })
 
@@ -1007,7 +1007,7 @@ describe('Team mailbox and waiting', () => {
       && (message.source.messageId === first.messageId || message.source.messageId === second.messageId)))
       .toHaveLength(2)
 
-    ctx.teams.interrupt(lead, 'busy-target')
+    ctx.agentTeams.interrupt(lead, 'busy-target')
     target.cancel({ kind: 'parent' })
     await waitNoAgent(ctx, target.id)
   })
@@ -1030,12 +1030,12 @@ describe('Team mailbox and waiting', () => {
       return createUserMessage({ content: blocks, source: { kind: 'user' } }).id
     })
 
-    const first = ctx.teams.sendMessage(lead, {
+    const first = ctx.agentTeams.sendMessage(lead, {
       target: 'ordered-target', content: content('first waking'), delivery: 'wakeup', signal: SIGNAL,
     })
     await entered.promise
     let secondSettled = false
-    const second = ctx.teams.sendMessage(lead, {
+    const second = ctx.agentTeams.sendMessage(lead, {
       target: 'ordered-target', content: content('second waking'), delivery: 'wakeup', signal: SIGNAL,
     }).finally(() => { secondSettled = true })
     await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
@@ -1135,21 +1135,21 @@ describe('Team mailbox and waiting', () => {
     const inactiveStarted = await spawn(ctx, lead, 'inactive-target')
     await waitNoAgent(ctx, inactiveStarted.member.id)
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect').mockRejectedValueOnce(new Error('inspect unavailable'))
-    const uncertain = await ctx.teams.sendMessage(lead, {
+    const uncertain = await ctx.agentTeams.sendMessage(lead, {
       target: 'inactive-target', content: content('inspection failure'), delivery: 'wakeup', signal: SIGNAL,
     })
     expect(uncertain.status).toBe('queued')
     inspect.mockRestore()
 
     vi.spyOn(ctx.subagents, 'followup').mockRejectedValueOnce(new Error('delivery unavailable'))
-    const failed = await ctx.teams.sendMessage(lead, {
+    const failed = await ctx.agentTeams.sendMessage(lead, {
       target: 'inactive-target', content: content('delivery failure'), delivery: 'wakeup', signal: SIGNAL,
     })
     expect(failed.status).toBe('queued')
     expect(warnings.some(warning => warning.includes('inspect unavailable'))).toBe(true)
     expect(warnings.some(warning => warning.includes('delivery unavailable'))).toBe(true)
 
-    ctx.teams.interrupt(lead, 'live-target')
+    ctx.agentTeams.interrupt(lead, 'live-target')
     await waitNoAgent(ctx, live.id)
   })
 
@@ -1160,12 +1160,12 @@ describe('Team mailbox and waiting', () => {
     const betaStarted = await spawn(ctx, lead, 'beta')
     await waitNoAgent(ctx, betaStarted.member.id)
 
-    const quiet = await ctx.teams.sendMessage(alpha, {
+    const quiet = await ctx.agentTeams.sendMessage(alpha, {
       target: 'beta', content: content('quiet info'), delivery: 'quiet', signal: SIGNAL,
     })
     expect(quiet.status).toBe('queued')
     expect(ctx.agents.get(betaStarted.member.id)).toBeUndefined()
-    const waking = await ctx.teams.sendMessage(alpha, {
+    const waking = await ctx.agentTeams.sendMessage(alpha, {
       target: 'beta', content: content('do another turn'), delivery: 'wakeup', signal: SIGNAL,
     })
     expect(waking.status).toBe('accepted')
@@ -1193,7 +1193,7 @@ describe('Team mailbox and waiting', () => {
       [waking.messageId, 'alpha'],
     ])
 
-    ctx.teams.interrupt(lead, 'alpha')
+    ctx.agentTeams.interrupt(lead, 'alpha')
     await waitNoAgent(ctx, alpha.id)
   })
 
@@ -1204,25 +1204,25 @@ describe('Team mailbox and waiting', () => {
     })
     const target = await spawn(ctx, lead, 'target')
     await waitNoAgent(ctx, target.member.id)
-    await expect(ctx.teams.sendMessage(lead, {
+    await expect(ctx.agentTeams.sendMessage(lead, {
       target: 'target', content: content('x'.repeat(300)), delivery: 'quiet', signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_MESSAGE_TOO_LARGE' })
-    const queued = await ctx.teams.sendMessage(lead, {
+    const queued = await ctx.agentTeams.sendMessage(lead, {
       target: 'target', content: content('one'), delivery: 'quiet', signal: SIGNAL,
     })
     expect(queued.status).toBe('queued')
-    await expect(ctx.teams.sendMessage(lead, {
+    await expect(ctx.agentTeams.sendMessage(lead, {
       target: 'target', content: content('two'), delivery: 'quiet', signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_MAILBOX_FULL' })
-    await expect(ctx.teams.sendMessage(lead, {
+    await expect(ctx.agentTeams.sendMessage(lead, {
       target: 'lead', content: content('self'), delivery: 'quiet', signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_SELF_MESSAGE' })
-    await expect(ctx.teams.sendMessage(lead, {
+    await expect(ctx.agentTeams.sendMessage(lead, {
       target: 'missing', content: content('unknown target'), delivery: 'quiet', signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_MEMBER_NOT_FOUND' })
     const controller = new AbortController()
     controller.abort(new TeamError('cancelled before queue', 'TEST_CANCELLED'))
-    await expect(ctx.teams.sendMessage(lead, {
+    await expect(ctx.agentTeams.sendMessage(lead, {
       target: 'target', content: content('cancelled'), delivery: 'quiet', signal: controller.signal,
     })).rejects.toMatchObject({ code: 'TEST_CANCELLED' })
   })
@@ -1231,11 +1231,11 @@ describe('Team mailbox and waiting', () => {
     const { ctx, lead } = await setup(['hang', textResponse('after interrupt')])
     const started = await spawn(ctx, lead, 'worker')
     const worker = await waitRunning(ctx, started.member.id)
-    const followup = await ctx.teams.sendMessage(lead, {
+    const followup = await ctx.agentTeams.sendMessage(lead, {
       target: 'worker', content: content('retained follow-up'), delivery: 'wakeup', signal: SIGNAL,
     })
     expect(followup.status).toBe('accepted')
-    expect(ctx.teams.interrupt(lead, 'worker')).toEqual({ previousStatus: 'running' })
+    expect(ctx.agentTeams.interrupt(lead, 'worker')).toEqual({ previousStatus: 'running' })
     await vi.waitFor(() => { expect(worker.status).toBe('idle') })
     expect(worker.inbox.nextTurn.some(message => message.source.kind === 'team-message'
       && message.source.messageId === followup.messageId)).toBe(true)
@@ -1252,7 +1252,7 @@ describe('Team mailbox and waiting', () => {
     await ctx.plugin(AgentLoop, { agents: [] })
     await ctx.plugin(SubagentService)
     const fiber = await ctx.plugin(TeamService)
-    const service = ctx.teams
+    const service = ctx.agentTeams
     const lead = ctx.agentLoop.create(SessionId('wait-lead'), {})
 
     await expect(service.waitForChange(lead, 9_999, SIGNAL))
@@ -1314,25 +1314,25 @@ describe('Team mailbox and waiting', () => {
     const disposed = service.waitForChange(lead, 10_000, SIGNAL)
     await fiber.dispose()
     await expect(disposed).resolves.toEqual({ timedOut: false })
-    expect(ctx.get('teams')).toBeUndefined()
+    expect(ctx.get('agentTeams')).toBeUndefined()
   })
 
   it('disposes live teammate Activations and their waits when the Team service unloads', async () => {
     const { ctx, lead, teamFiber } = await setup(['hang'])
     const started = await spawn(ctx, lead, 'dispose-worker')
     await waitRunning(ctx, started.member.id)
-    const waiting = ctx.teams.waitForChange(lead, 10_000, SIGNAL)
+    const waiting = ctx.agentTeams.waitForChange(lead, 10_000, SIGNAL)
 
     await teamFiber.dispose()
 
     await expect(waiting).resolves.toEqual({ timedOut: false })
     expect(ctx.agents.get(started.member.id)).toBeUndefined()
-    expect(ctx.get('teams')).toBeUndefined()
+    expect(ctx.get('agentTeams')).toBeUndefined()
   })
 
   it('closes creation admission and drains an in-flight spawn before unload completes', async () => {
     const { ctx, lead, teamFiber } = await setup(['hang'])
-    const service = ctx.teams
+    const service = ctx.agentTeams
     const start = ctx.subagents.startContinuable.bind(ctx.subagents)
     const entered = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
@@ -1363,7 +1363,7 @@ describe('Team mailbox and waiting', () => {
     await rejected
     await disposal
     if (childId !== undefined) expect(ctx.agents.get(childId)).toBeUndefined()
-    expect(ctx.get('teams')).toBeUndefined()
+    expect(ctx.get('agentTeams')).toBeUndefined()
   })
 
   it('retains an in-flight creation cleanup failure during disposal', async () => {
@@ -1433,9 +1433,9 @@ describe('Team mailbox and waiting', () => {
       },
     })
     await ctx.sessions.flush(lead.session)
-    expect(ctx.teams.listMembers(lead)[1]?.status).toBe('failed')
+    expect(ctx.agentTeams.listMembers(lead)[1]?.status).toBe('failed')
 
-    const internal = ctx.teams as unknown as { disposeRuntime(): Promise<void> }
+    const internal = ctx.agentTeams as unknown as { disposeRuntime(): Promise<void> }
     await internal.disposeRuntime()
     expect(ctx.agents.get(childId)).toBeUndefined()
   })
@@ -1460,14 +1460,14 @@ describe('Team mailbox and waiting', () => {
       })
     })
 
-    const sending = ctx.teams.sendMessage(lead, {
+    const sending = ctx.agentTeams.sendMessage(lead, {
       target: 'mailbox-worker',
       content: content('resume during disposal'),
       delivery: 'wakeup',
       signal: SIGNAL,
     })
     await entered.promise
-    const internal = ctx.teams as unknown as { disposeRuntime(): Promise<void> }
+    const internal = ctx.agentTeams as unknown as { disposeRuntime(): Promise<void> }
     let disposed = false
     const disposal = internal.disposeRuntime().then(() => { disposed = true })
     await aborted.promise
@@ -1521,7 +1521,7 @@ describe('Team mailbox and waiting', () => {
       },
     }), { surfaceOp: 'append' })
 
-    const internal = ctx.teams as unknown as { disposeRuntime(): Promise<void> }
+    const internal = ctx.agentTeams as unknown as { disposeRuntime(): Promise<void> }
     let disposed = false
     const disposal = internal.disposeRuntime().then(() => { disposed = true })
     await entered.promise
@@ -1549,7 +1549,7 @@ describe('Team mailbox and waiting', () => {
     ])
     expect(outcome).toBe('disposed')
     expect(drain).toHaveBeenCalledWith(lead, [started.member.id])
-    expect(ctx.get('teams')).toBeUndefined()
+    expect(ctx.get('agentTeams')).toBeUndefined()
   })
 
   it('bounds disposal while an admitted creation ignores cancellation', async () => {
@@ -1558,7 +1558,7 @@ describe('Team mailbox and waiting', () => {
     internal.roster.inFlightCreations.add(new Promise(() => {}))
 
     await expect(internal.disposeRuntime()).rejects.toBeInstanceOf(AggregateError)
-    await expect(ctx.teams.spawnTeammate(lead, {
+    await expect(ctx.agentTeams.spawnTeammate(lead, {
       name: 'after-timeout',
       description: 'admission remains closed',
       prompt: content('must reject'),
@@ -1566,7 +1566,7 @@ describe('Team mailbox and waiting', () => {
       provider: 'spawn',
       signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_DISPOSED' })
-    await expect(ctx.teams.sendMessage(lead, {
+    await expect(ctx.agentTeams.sendMessage(lead, {
       target: 'nobody', content: content('must reject'), delivery: 'quiet', signal: SIGNAL,
     })).rejects.toMatchObject({ code: 'TEAM_DISPOSED' })
     await expect(internal.mailbox.tryDispatch(lead, {
@@ -1626,7 +1626,7 @@ describe('Team mailbox and waiting', () => {
     vi.spyOn(ctx.subagents, 'drainContinuableDescendants').mockRejectedValueOnce(new Error('drain failure'))
 
     await teamFiber.dispose()
-    expect(ctx.get('teams')).toBeUndefined()
+    expect(ctx.get('agentTeams')).toBeUndefined()
   })
 
   it('reconciles mismatched persisted children and ignores a concurrently settled member', async () => {

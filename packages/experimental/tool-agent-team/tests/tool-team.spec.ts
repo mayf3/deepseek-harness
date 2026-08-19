@@ -402,7 +402,7 @@ describe('dsh-tool-team', () => {
     const childId = spawnedChildId(spawned)
     await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
 
-    await ctx.teams.sendMessage(lead, {
+    await ctx.agentTeams.sendMessage(lead, {
       target: 'cold-worker',
       content: [{ type: 'text', text: 'resume with Team scope' }],
       delivery: 'wakeup',
@@ -422,8 +422,8 @@ describe('dsh-tool-team', () => {
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('unknown tool "list_agents"')
     expect('default' in toolTeam).toBe(false)
-    expect(toolTeam.name).toBe('tool-team')
-    expect(toolTeam.inject).toEqual(['agents', 'teams', 'tools', 'systemPrompt'])
+    expect(toolTeam.name).toBe('tool-agent-team')
+    expect(toolTeam.inject).toEqual(['agents', 'agentTeams', 'tools', 'systemPrompt'])
   })
 
   it('uses configured fresh and fork provider names', async () => {
@@ -437,6 +437,6 @@ describe('dsh-tool-team', () => {
     expect(result.isError).toBe(false)
     const childId = spawnedChildId(result)
     await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
-    expect(ctx.teams.listMembers(lead)[1]).toMatchObject({ provider: 'team-fresh' })
+    expect(ctx.agentTeams.listMembers(lead)[1]).toMatchObject({ provider: 'team-fresh' })
   })
 })
