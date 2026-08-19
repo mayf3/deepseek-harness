@@ -1402,6 +1402,9 @@ export class PythonCodeRuntime extends CodeRuntime {
         draining = true
         try {
           while (replyQueue.length > 0) {
+            // Needs the run to settle between two queued frames. Measured queue
+            // depths reach 11 without the wall clock landing inside that window.
+            /* v8 ignore next -- see above; not schedulable from a test. */
             if (settled) break
             const payload = replyQueue.shift() as ReplyMessage
             // Encode inside the loop, not up front: a queued reply the run no

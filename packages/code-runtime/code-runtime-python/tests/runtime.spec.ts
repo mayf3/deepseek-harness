@@ -3892,6 +3892,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.value).toBe(8 * chunk.length)
   }, 90_000)
 
+
   it('bounds a flood of zero-byte log lines through the per-entry separator charge', async () => {
     // Blank print() lines carry zero content bytes; without the +1 separator
     // charge they would bypass maxLogBytes entirely and grow the retained
