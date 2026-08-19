@@ -712,10 +712,8 @@ export class SessionTitleService extends Service {
   }
 
   private titleInputOf(session: Session): TitleInputState {
-    const state = this.ctx.sessionProjections.stateOf(session, 'titleInput')
     /* v8 ignore next -- session-title registers its own titleInput unit, so the key is always present */
-    if (state === undefined) throw new Error('titleInput projection is not registered')
-    return state
+    return this.ctx.sessionProjections.stateOf(session, 'titleInput') ?? EMPTY_TITLE_INPUT
   }
 
   /** Queue detached service work and retain it through service disposal. */
