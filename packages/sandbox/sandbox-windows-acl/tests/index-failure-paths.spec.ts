@@ -469,23 +469,14 @@ describe('AclSandbox spawn', () => {
   it('pipe spawn terminates promptly when one drain fails and the sibling remains open', async () => {
     const { api } = state.stubs as HappyStubs
     let peekCount = 0
-    let terminated = false
-    let lastError = 5
     api.peekNamedPipe = vi.fn((_handle, _buffer, _size, _read, totalAvail: NativePtr) => {
       peekCount += 1
       if (peekCount === 1) return 0
-      if (terminated) {
-        lastError = ERROR_BROKEN_PIPE
-        return 0
-      }
       koffi.encode(totalAvail, 'uint32', 0)
       return 1
     })
-    api.getLastError = vi.fn(() => lastError)
-    const terminateProcess = vi.fn(() => {
-      terminated = true
-      return 1
-    })
+    api.getLastError = vi.fn(() => 5)
+    const terminateProcess = vi.fn(() => 1)
     api.terminateProcess = terminateProcess
     const waitForSingleObject = vi.fn(() => 0)
     api.waitForSingleObject = waitForSingleObject
@@ -494,6 +485,9 @@ describe('AclSandbox spawn', () => {
     await sandbox.init()
     const child = sandbox.spawn({ command: 'probe.exe' })
     await expect(child.wait()).rejects.toMatchObject({ api: 'PeekNamedPipe' })
+    const settledPeekCount = peekCount
+    await new Promise<void>(resolve => setTimeout(resolve, 5))
+    expect(peekCount).toBe(settledPeekCount)
     expect(terminateProcess).toHaveBeenCalledOnce()
     expect(waitForSingleObject).toHaveBeenCalledOnce()
   })

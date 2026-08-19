@@ -246,8 +246,9 @@ describe('wait and pipe cleanup', () => {
       closeHandle,
     } as unknown as Win32ProcessBindings
     const draining = drainPipe(api, 80n as NativePtr, controller.signal)
-    controller.abort()
-    await expect(draining).rejects.toThrow('pipe drain aborted')
+    const cancellation = new Error('stop pipe drain')
+    controller.abort(cancellation)
+    await expect(draining).rejects.toBe(cancellation)
     expect(peekNamedPipe).toHaveBeenCalledOnce()
     expect(closeHandle).toHaveBeenCalledWith(80n)
   })

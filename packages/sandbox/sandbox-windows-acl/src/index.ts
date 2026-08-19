@@ -381,13 +381,14 @@ export class AclSandbox {
 
     const native = spawnSandboxed(api, token, { command: options.command, args, cwd })
     const drainAbort = new AbortController()
+    const drainCancellation = new Error('piped child drain cancelled after peer failure')
     const stdout = drainPipe(api, native.stdoutRead, drainAbort.signal)
     const stderr = drainPipe(api, native.stderrRead, drainAbort.signal)
     // WaitForSingleObject blocks the thread, so settlement starts it only after
     // both drains settle. Successful drains mean the child closed its pipe ends
-    // and the wait returns immediately. A failed drain terminates the child
-    // before waiting, so a native pipe failure cannot pin the event loop on a
-    // still-running command.
+    // and the wait returns immediately. A failed drain cancels its sibling and
+    // terminates the child before waiting, so inherited pipe writers cannot pin
+    // the event loop after settlement.
     let settlement: Promise<AclSandboxChildResult> | undefined
     return {
       pid: native.pid,
@@ -400,11 +401,12 @@ export class AclSandbox {
             { status: 'fulfilled', value: stderrBuffer },
           ]
         } catch (firstDrainFailure) {
-          if (api.terminateProcess(native.process, 1) === 0) {
+          const terminated = api.terminateProcess(native.process, 1)
+          const terminationCode = terminated === 0 ? api.getLastError() : 0
+          drainAbort.abort(drainCancellation)
+          const settledDrains = await Promise.allSettled([stdout, stderr])
+          if (terminated === 0) {
             const failures: unknown[] = [firstDrainFailure]
-            const terminationCode = api.getLastError()
-            drainAbort.abort()
-            await Promise.allSettled([stdout, stderr])
             try {
               closeHandleChecked(api, native.process, 'piped child after drain failure')
             } catch (error) {
@@ -413,10 +415,12 @@ export class AclSandbox {
             failures.push(new Win32Error('TerminateProcess', terminationCode, `pid ${native.pid} after drain failure`))
             throw new AggregateError(failures, 'piped child settlement failed')
           }
-          drains = await Promise.allSettled([stdout, stderr])
+          drains = settledDrains
         }
         const failures = drains.flatMap<unknown>(outcome =>
-          outcome.status === 'rejected' ? [outcome.reason as unknown] : [])
+          outcome.status === 'rejected' && outcome.reason !== drainCancellation
+            ? [outcome.reason as unknown]
+            : [])
         let exitCode = 0
         try {
           exitCode = waitForExit(api, native.process)
