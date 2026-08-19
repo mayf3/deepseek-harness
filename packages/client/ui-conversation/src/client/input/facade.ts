@@ -103,7 +103,7 @@ export class SessionInputShell implements SessionInput {
   /** One image-only send at a time: Enter during the Host round-trip is a no-op. */
   private imageSendInFlight = false
   private disposed = false
-  /** Draft persistence mirror (chat store write; receives the clipboard projection, never raw placeholders). */
+  /** Draft persistence mirror (chat store write; receives the clipboard projection, never display-only ranges). */
   private mirrorFn: ((text: string) => void) | undefined
 
   constructor(private readonly deps: SessionInputDeps) {
@@ -448,7 +448,7 @@ export class SessionInputShell implements SessionInput {
 
   /**
    * Prompt serialization before the sink: expand each
-   * placeholder to its owner's model form via the session controller's
+   * inline reference range to its owner's model form via the session controller's
    * codec routing. Owner missing / serialize failure / disposal blocks the
    * send — notice + draft and chips retained, never a silent downgrade to
    * the clipboard text. Chip-free drafts skip the async detour.
@@ -464,17 +464,21 @@ export class SessionInputShell implements SessionInput {
     const controller = new AbortController()
     void Promise.all(occurrences.map(async (o) => {
       if (inputTriggers === undefined) throw new Error(`no serializer for reference source "${o.source}"`)
-      return { offset: o.offset, text: await inputTriggers.serializeReference(o.source, o.ref, controller.signal) }
+      return {
+        offset: o.offset,
+        length: o.length,
+        text: await inputTriggers.serializeReference(o.source, o.ref, controller.signal),
+      }
     })).then(
       (parts) => {
         if (this.disposed) return
-        // Splice model forms over their placeholders (offsets are draft-time;
+        // Splice model forms over their display ranges (offsets are draft-time;
         // parts arrive offset-sorted since the table is).
         let out = ''
         let cursor = 0
         for (const part of parts) {
           out += draft.slice(cursor, part.offset) + part.text
-          cursor = part.offset + 1
+          cursor = part.offset + part.length
         }
         out += draft.slice(cursor)
         this.settleSubmit(attempt, this.deps.defaultSink(out.trim(), imageIds, mode, attempt.signal), imageIds)

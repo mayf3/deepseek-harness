@@ -101,7 +101,8 @@ describe('MessageItem arms', () => {
         }}
       />,
     )
-    expect(view.container.querySelector('[data-ref-chip="session"]')?.textContent).toBe('@你好')
+    expect(view.container.querySelector('[data-ref-chip="session"]')?.textContent).toBe('你好')
+    expect(view.container.querySelector('[data-ref-chip="session"] svg')).not.toBeNull()
     expect(view.getByText('这个在讲啥')).toBeTruthy()
     expect(view.getByText('引用会话 · 你好')).toBeTruthy()
   })
@@ -291,6 +292,7 @@ describe('MessageItem arms', () => {
     expect(disclosure.getAttribute('aria-expanded')).toBe('false')
     expect(ctxView.container.querySelector('[data-context-injection-body]')).toBeNull()
     expect(ctxView.container.querySelector('svg')).not.toBeNull()
+    expect(ctxView.container.querySelector('[data-context-recall-icon]')).toBeNull()
 
     fireEvent.click(disclosure)
     expect(disclosure.getAttribute('aria-expanded')).toBe('true')
@@ -743,6 +745,7 @@ describe('MessageItem arms', () => {
       } as never}
       />,
     )
+    expect(view.container.querySelector('[data-context-recall-icon]')).not.toBeNull()
     fireEvent.click(view.getByRole('button', { name: /^跨会话召回\s*重构 loader, 修 CI$/ }))
     const rows = [...view.container.querySelectorAll('[data-context-recalls] li')].map(node => node.textContent)
     expect(rows).toEqual(['重构 loader保留 18 条 · 省略 42 条已截断', '修 CI保留 3 条 · 省略 0 条'])

@@ -8,7 +8,6 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InputTriggerController, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import type { DraftAttachmentId } from '../src/client/input/contract.ts'
-import { PLACEHOLDER } from '../src/client/input/machine.ts'
 
 const mention = '@[Research](dsh-session:InNvdXJjZSI)'
 const commandImages = {
@@ -22,7 +21,7 @@ function chip(shell: SessionInputShell): void {
   const accepted = shell.insertReference({
     source: 'reference',
     ref: mention,
-    label: '@Research',
+    label: 'Research',
     clipboardText: mention,
   }, {
     start: 0,
@@ -55,8 +54,8 @@ describe('reference submission', () => {
     })
     chip(shell)
     expect(shell.snapshot).toMatchObject({
-      draft: `${PLACEHOLDER} `,
-      occurrences: [{ source: 'reference', ref: mention, label: '@Research' }],
+      draft: '@Research ',
+      occurrences: [{ source: 'reference', ref: mention, label: 'Research', offset: 0, length: 9 }],
     })
 
     shell.submit('queue')
@@ -66,8 +65,8 @@ describe('reference submission', () => {
     })
     expect(sink).toHaveBeenNthCalledWith(1, mention, [], 'queue', expect.any(AbortSignal))
     expect(shell.snapshot).toMatchObject({
-      draft: `${PLACEHOLDER} `,
-      occurrences: [{ source: 'reference', ref: mention, label: '@Research' }],
+      draft: '@Research ',
+      occurrences: [{ source: 'reference', ref: mention, label: 'Research', offset: 0, length: 9 }],
     })
     expect(shell.notices.getSnapshot()).toMatchObject({
       level: 'error',
@@ -101,7 +100,7 @@ describe('reference submission', () => {
       expect(shell.snapshot.phase).toBe('plain')
     })
     expect(sink).not.toHaveBeenCalled()
-    expect(shell.snapshot.draft).toBe(`${PLACEHOLDER} `)
+    expect(shell.snapshot.draft).toBe('@Research ')
     expect(shell.snapshot.occurrences).toHaveLength(1)
     expect(shell.notices.getSnapshot()).toMatchObject({
       level: 'error',

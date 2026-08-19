@@ -539,6 +539,26 @@ describe('built-in conversation node Definitions', () => {
     expect(users[1]?.data).not.toHaveProperty('referenceLabels')
   })
 
+  it('keeps a direct message before its following session-reference context', () => {
+    const value = assembler([
+      at(1, 'user/message', textMessage('citing-user', '@Research what changed?'), { surfaceOp: 'append' }),
+      at(2, 'user/message', {
+        ...textMessage('reference-context', 'snapshot'),
+        source: {
+          kind: 'session-reference',
+          form: 'recall',
+          version: 1,
+          references: [{ sessionId: 'source-a', label: 'Research' }],
+        },
+      }, { surfaceOp: 'append' }),
+    ])
+
+    const nodes = [...snapshot(value).nodes.values()]
+      .filter(candidate => candidate.kind === 'user' || candidate.kind === 'context')
+    expect(nodes.map(candidate => candidate.kind)).toEqual(['user', 'context'])
+    expect(nodes[0]?.data).not.toHaveProperty('referenceLabels')
+  })
+
   it('keeps replacement copies out of Chat business nodes', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
