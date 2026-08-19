@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Private Web Agent Teams presentation. It contributes one conversation-header action containing the current roster and shared task board. The Client plugin mounts the generated `ctx.remote.teams` contribution supplied by [`@deepseek-ai/dsh-agent-team-remotes`](../agent-team-remotes/README.md); it does not extend the stable API Proxy or store authoritative Team state.
+Private Web Agent Teams presentation. It contributes one conversation-header action containing the current roster and shared task board. The Client plugin mounts the generated `ctx.remote.teams` contribution from [`@deepseek-ai/dsh-team/remote`](../team/README.md); it does not extend the stable API Proxy or store authoritative Team state.
 
 Opening the panel calls `teams/view`. Roster rows show durable names, runtime status, model, and diagnostics. Selecting a healthy teammate refreshes the existing direct-child catalog and opens the ordinary `{ parentSessionId, childSessionId, mode: 'continuable' }` address. History and later human prompts continue through the stable addressed-subagent conversation path; this package adds no Team-specific field to that address.
 

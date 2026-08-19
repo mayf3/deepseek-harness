@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Private Web profile layer for Agent Teams. Apply it after `@deepseek-ai/dsh-web-app` and [`@deepseek-ai/dsh-agent-team-profile`](../agent-team-profile/README.md). The patch inserts the experimental Host Remote adapter followed by the Team conversation-header UI; it does not modify the stable Web bundle.
+Private Web profile layer for Agent Teams. Apply it after `@deepseek-ai/dsh-web-app` and [`@deepseek-ai/dsh-agent-team-profile`](../agent-team-profile/README.md). The patch inserts the Team conversation-header UI; it does not modify the stable Web bundle.
 
 From a source checkout, add both Agent Teams layers to an initialized Web profile:
 
@@ -11,7 +11,7 @@ pnpm dsh plugin --profile web add ./packages/experimental/agent-team-profile
 pnpm dsh plugin --profile web add ./packages/experimental/agent-team-web-profile
 ```
 
-The Host profile supplies the Team domain and model tools. This Web layer supplies the browser adapter, generated Client Remote namespace, and presentation. Removing either experimental bundle leaves the stable base and Web composition unchanged.
+The Host profile supplies the Team domain, generated Remote methods, and model tools. This Web layer mounts the generated Client Remote namespace and supplies the presentation. Removing either experimental bundle leaves the stable base and Web composition unchanged.
 
 ## Model Experience
 

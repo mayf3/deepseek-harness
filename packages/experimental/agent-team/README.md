@@ -165,9 +165,9 @@ Read these pages when the package-level contract is not enough. They move from t
 
 <a id="model-experience"></a>
 
-### Browser adapter
+### Browser Remote
 
-`TeamService` exposes only roster, mailbox, task, and lifecycle operations. The private [`@deepseek-ai/dsh-agent-team-remotes`](../agent-team-remotes/README.md) package owns browser projections, Remote methods, and transport error mapping. `./client` re-exports the domain request and view types that are safe in a browser compilation face.
+`TeamService` owns the generated `teams/view`, `teams/createTask`, and `teams/updateTask` Remote methods beside the roster, mailbox, task, and lifecycle operations. The `./remote` export supplies the Client contribution mounted by the Web UI, while `./client` re-exports the request, view, and task-mutation result types that are safe in a browser compilation face. Typert retains transport failures in its outer `RemoteResult`; task conflicts and other Team rejections remain explicit domain results inside a successful transport response.
 
 ## Model Experience
 

@@ -4,9 +4,11 @@ import type {
   TeamMemberView as TeamRosterMember,
   TeamTaskAction,
   TeamTaskId,
+  TeamTaskMutationResult,
   TeamTaskView as TeamTask,
   TeamView,
-} from '@deepseek-ai/dsh-agent-team-remotes/types'
+} from '@deepseek-ai/dsh-team/client'
+import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {
   IconCheckOutline14, IconCloseOutline16, IconEditOutline16, IconPlusOutline16,
   IconRefreshOutline14, IconTrashOutline16, IconUserOutline16, StateDot,
@@ -16,10 +18,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { TeamKey } from './locales.ts'
 import css from './TeamAction.module.css'
 
-/** Settled Team UI action result, including the stale-revision discriminator. */
-export type TeamActionResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: string; conflict: boolean }
+/** Generated Remote result consumed directly by the Team UI. */
+export type TeamActionResult<T> = RemoteResult<T>
+
+/** Generated Remote result whose business value preserves Team task rejections. */
+export type TeamTaskActionResult = RemoteResult<TeamTaskMutationResult>
 
 /** Business actions injected by the browser plugin. */
 export interface TeamActionInjected {
@@ -39,7 +42,7 @@ export interface TeamActionInjected {
     blockedBy?: TeamTaskId[]
     writeScopes?: string[]
     owner?: string
-  }) => Promise<TeamActionResult<TeamTask>>
+  }) => Promise<TeamTaskActionResult>
   openTeammate: (sessionId: SessionId, member: TeamRosterMember) => Promise<void>
 }
 
@@ -61,7 +64,11 @@ function items(value: string): string[] {
 }
 
 function taskIds(value: string): TeamTaskId[] {
-  return items(value)
+  return items(value) as TeamTaskId[]
+}
+
+function failureText(error: Pick<RemoteFailure, 'code' | 'message'>): string {
+  return `${error.message} (${error.code})`
 }
 
 function statusKey(status: TeamTask['status']): TeamKey {
@@ -129,7 +136,7 @@ export function TeamAction({
       setError(null)
       return true
     } else {
-      setError(result.error)
+      setError(failureText(result.error))
       return false
     }
   }, [load, sessionId])
@@ -141,7 +148,7 @@ export function TeamAction({
 
   const settleTask = useCallback(async (
     taskId: string,
-    operation: Promise<TeamActionResult<TeamTask>>,
+    operation: Promise<TeamTaskActionResult>,
   ): Promise<TeamTask | undefined> => {
     const requestedSession = sessionId
     setPendingTask(taskId)
@@ -149,24 +156,29 @@ export function TeamAction({
     if (sessionRef.current !== requestedSession) return undefined
     setPendingTask(null)
     if (!result.ok) {
-      if (result.conflict) {
+      setError(failureText(result.error))
+      return undefined
+    }
+    if (!result.value.ok) {
+      if (result.value.error.code === 'team-task-conflict') {
         const reloaded = await refresh()
         if (sessionRef.current !== requestedSession) return undefined
         if (reloaded) setError(t('conflict'))
       } else {
-        setError(result.error)
+        setError(failureText(result.value.error))
       }
       return undefined
     }
+    const task = result.value.value
     invalidateRefresh()
     setError(null)
     setView(current => loadedView(current, loaded => ({
       ...loaded,
-      tasks: result.value.status === 'deleted'
-        ? loaded.tasks.filter(task => task.id !== result.value.id)
-        : replaceTask(loaded.tasks, result.value),
+      tasks: task.status === 'deleted'
+        ? loaded.tasks.filter(candidate => candidate.id !== task.id)
+        : replaceTask(loaded.tasks, task),
     })))
-    return result.value
+    return task
   }, [invalidateRefresh, refresh, sessionId, t])
 
   const submitCreate = async (): Promise<void> => {
@@ -185,7 +197,7 @@ export function TeamAction({
     if (sessionRef.current !== requestedSession) return
     setPendingTask(null)
     if (!result.ok) {
-      setError(result.error)
+      setError(failureText(result.error))
       return
     }
     invalidateRefresh()
@@ -235,19 +247,24 @@ export function TeamAction({
     if (sessionRef.current !== requestedSession) return
     setPendingTask(null)
     if (!dependencyResult.ok) {
-      if (dependencyResult.conflict) {
+      setError(failureText(dependencyResult.error))
+      return
+    }
+    if (!dependencyResult.value.ok) {
+      if (dependencyResult.value.error.code === 'team-task-conflict') {
         const reloaded = await refresh()
         if (sessionRef.current !== requestedSession) return
         if (reloaded) setError(t('conflict'))
       } else {
-        setError(dependencyResult.error)
+        setError(failureText(dependencyResult.value.error))
       }
       return
     }
+    const dependencyTask = dependencyResult.value.value
     invalidateRefresh()
     setView(current => loadedView(current, loaded => ({
       ...loaded,
-      tasks: replaceTask(loaded.tasks, dependencyResult.value),
+      tasks: replaceTask(loaded.tasks, dependencyTask),
     })))
     setEditing(null)
   }

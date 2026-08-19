@@ -756,18 +756,14 @@
         "@deepseek-ai/.+"
       ]
     },
-    "packages/experimental/agent-team-remotes": {
+    "packages/experimental/team": {
       "entry": [
         "tests/**/*.spec.ts",
         "tests/**/*.e2e.ts"
-      ],
-      "ignoreDependencies": [
-        "zod"
       ]
     },
     "packages/experimental/agent-team-web-profile": {
       "ignoreDependencies": [
-        "@deepseek-ai/dsh-agent-team-remotes",
         "@deepseek-ai/dsh-client-ui-agent-team"
       ]
     },

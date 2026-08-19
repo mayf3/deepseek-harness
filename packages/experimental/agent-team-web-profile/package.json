@@ -37,7 +37,6 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-agent-team-remotes": "workspace:^",
     "@deepseek-ai/dsh-client-ui-agent-team": "workspace:^"
   },
   "peerDependencies": {

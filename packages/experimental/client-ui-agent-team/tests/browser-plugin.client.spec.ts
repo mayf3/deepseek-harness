@@ -3,14 +3,15 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import type { TeamMemberView as TeamRosterMember } from '@deepseek-ai/dsh-agent-team-remotes/types'
-import type {} from '@deepseek-ai/dsh-agent-team-remotes/remote'
+import type { TeamMemberView as TeamRosterMember, TeamTaskId } from '@deepseek-ai/dsh-team/client'
+import type {} from '@deepseek-ai/dsh-team/remote'
 import { TeamAction, type TeamActionInjected } from '../src/client/TeamAction.tsx'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
 
 const SESSION = 'team-session' as SessionId
 const CHILD = 'team-child' as SessionId
+const TASK_ID = 'task-1' as TeamTaskId
 
 async function bench(options: {
   addressed?: boolean
@@ -149,10 +150,10 @@ describe('ui-team browser plugin', () => {
       subject: 'Task', description: 'Description', blockedBy: [], writeScopes: [],
     })).ok).toBe(true)
     expect((await actions.updateTask(SESSION, {
-      taskId: 'task-1', expectedRevision: 1, action: 'complete',
+      taskId: TASK_ID, expectedRevision: 1, action: 'complete',
     })).ok).toBe(true)
     expect((await actions.updateTask(SESSION, {
-      taskId: 'task-1', expectedRevision: 2, action: 'reassign', owner: 'worker',
+      taskId: TASK_ID, expectedRevision: 2, action: 'reassign', owner: 'worker',
     })).ok).toBe(true)
     expect(b.calls.map(call => call.method)).toEqual([
       'teams/view', 'teams/createTask', 'teams/updateTask', 'teams/updateTask',
@@ -180,35 +181,35 @@ describe('ui-team browser plugin', () => {
     expect(b.remote.disposeMount).toHaveBeenCalledOnce()
   })
 
-  it('marks stale revisions as conflicts and retains non-conflict errors as ordinary failures', async () => {
+  it('returns the generated task business result without a Client transport wrapper', async () => {
     const b = await bench({ conflict: true })
     const actions = (b.entry()!.inject as unknown as () => TeamActionInjected)()
     await expect(actions.updateTask(SESSION, {
-      taskId: 'task-1', expectedRevision: 1, action: 'delete',
+      taskId: TASK_ID, expectedRevision: 1, action: 'delete',
     })).resolves.toEqual({
-      ok: false,
-      error: 'stale (team-task-conflict)',
-      conflict: true,
+      ok: true,
+      value: {
+        ok: false,
+        error: { code: 'team-task-conflict', message: 'stale' },
+      },
     })
   })
 
-  it('surfaces Remote carrier failures without classifying them as task conflicts', async () => {
+  it('returns Remote carrier failures unchanged', async () => {
     const view = await bench({ remoteFailure: 'view' })
     const viewActions = (view.entry()!.inject as unknown as () => TeamActionInjected)()
     await expect(viewActions.load(SESSION)).resolves.toEqual({
       ok: false,
-      error: 'offline (internal)',
-      conflict: false,
+      error: { code: 'internal', message: 'offline', details: {} },
     })
 
     const update = await bench({ remoteFailure: 'update' })
     const updateActions = (update.entry()!.inject as unknown as () => TeamActionInjected)()
     await expect(updateActions.updateTask(SESSION, {
-      taskId: 'task-1', expectedRevision: 1, action: 'delete',
+      taskId: TASK_ID, expectedRevision: 1, action: 'delete',
     })).resolves.toEqual({
       ok: false,
-      error: 'offline (internal)',
-      conflict: false,
+      error: { code: 'internal', message: 'offline', details: {} },
     })
   })
 

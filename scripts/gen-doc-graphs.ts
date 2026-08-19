@@ -525,16 +525,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'experimental-agent-team',
     title: 'Agent Teams coordination domain',
     mode: 'core',
-    consumers: ['experimental-tool-agent-team'],
-    note: 'Owns the implicit-root roster, durable peer mailbox, shared task DAG, and continuable-child lifecycle; tool-agent-team contributes the scoped model policy and controls.',
-  },
-  {
-    key: 'teamRemote',
-    pkg: 'agent-team-remotes',
-    title: 'Agent Teams browser adapter',
-    mode: 'core',
-    consumers: ['client-ui-agent-team'],
-    note: 'Stateless private adapter from the teams domain to the generated teams Remote namespace; the Web UI mounts its Client contribution.',
+    consumers: ['tool-agent-team', 'client-ui-agent-team'],
+    note: 'Owns the implicit-root roster, durable peer mailbox, shared task DAG, continuable-child lifecycle, and generated Team Remote methods; tool-agent-team contributes model controls and client-ui-agent-team mounts the browser contribution.',
   },
   {
     key: 'jobs',

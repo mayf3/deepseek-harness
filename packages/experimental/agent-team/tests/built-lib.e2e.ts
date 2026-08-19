@@ -1,4 +1,4 @@
-/** Plain-Node smoke for the built Agent Teams Remote adapter artifacts. */
+/** Plain-Node smoke for the built Agent Teams service and Remote contribution. */
 
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -12,15 +12,15 @@ const artifact = (path: string): string => join(root, path)
 const artifactUrl = (path: string): string => pathToFileURL(artifact(path)).href
 
 const requiredArtifacts = [
-  'packages/experimental/agent-team-remotes/lib/index.js',
-  'packages/experimental/agent-team-remotes/lib/typert.remote-client.js',
+  'packages/experimental/team/lib/index.js',
+  'packages/experimental/team/lib/typert.remote-client.js',
 ].every(path => existsSync(artifact(path)))
 
-describe.skipIf(!requiredArtifacts)('Agent Teams Remote built LIB adapter', () => {
-  it('loads the Host adapter and its generated browser contribution under plain Node', async () => {
+describe.skipIf(!requiredArtifacts)('Agent Teams built LIB service', () => {
+  it('loads the Host service and its generated browser contribution under plain Node', async () => {
     const urls = {
-      host: artifactUrl('packages/experimental/agent-team-remotes/lib/index.js'),
-      remote: artifactUrl('packages/experimental/agent-team-remotes/lib/typert.remote-client.js'),
+      host: artifactUrl('packages/experimental/team/lib/index.js'),
+      remote: artifactUrl('packages/experimental/team/lib/typert.remote-client.js'),
     }
     const script = `
       const host = await import(${JSON.stringify(urls.host)})
@@ -38,11 +38,11 @@ describe.skipIf(!requiredArtifacts)('Agent Teams Remote built LIB adapter', () =
       methods: string[]
     }
     expect(output).toEqual({
-      className: 'AgentTeamRemoteService',
+      className: 'TeamService',
       methods: [
-        '@deepseek-ai/dsh-agent-team-remotes#teams/createTask',
-        '@deepseek-ai/dsh-agent-team-remotes#teams/updateTask',
-        '@deepseek-ai/dsh-agent-team-remotes#teams/view',
+        '@deepseek-ai/dsh-team#teams/createTask',
+        '@deepseek-ai/dsh-team#teams/updateTask',
+        '@deepseek-ai/dsh-team#teams/view',
       ],
     })
   })

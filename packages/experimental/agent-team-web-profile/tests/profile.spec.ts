@@ -8,7 +8,7 @@ import * as yaml from 'js-yaml'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 
 describe('Agent Teams Web profile bundle', () => {
-  it('declares a private parseable layer with the Remote assembly before the UI', () => {
+  it('declares a private parseable layer containing the Team UI', () => {
     const root = fileURLToPath(new URL('..', import.meta.url))
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
       private?: boolean
@@ -20,7 +20,6 @@ describe('Agent Teams Web profile bundle', () => {
     expect(manifest.publishConfig).toBeUndefined()
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.dependencies).toEqual({
-      '@deepseek-ai/dsh-agent-team-remotes': 'workspace:^',
       '@deepseek-ai/dsh-client-ui-agent-team': 'workspace:^',
     })
 
@@ -29,7 +28,6 @@ describe('Agent Teams Web profile bundle', () => {
       { schema: entryListSchema },
     ) as { insert?: { id?: string; name?: string }[] }[]
     expect(parsed.flatMap(patch => patch.insert ?? [])).toEqual([
-      { id: 'agent-team-remotes', name: '@deepseek-ai/dsh-agent-team-remotes' },
       { id: 'ui-agent-team', name: '@deepseek-ai/dsh-client-ui-agent-team' },
     ])
   })

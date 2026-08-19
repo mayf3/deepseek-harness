@@ -37,8 +37,5 @@
         freshProvider: spawn
         forkProvider: fork
 
-    - id: agent-team-remotes
-      name: '@deepseek-ai/dsh-agent-team-remotes'
-
     - id: ui-agent-team
       name: '@deepseek-ai/dsh-client-ui-agent-team'

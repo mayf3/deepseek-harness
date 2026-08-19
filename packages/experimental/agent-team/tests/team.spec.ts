@@ -837,6 +837,52 @@ describe('Team shared task DAG', () => {
   })
 })
 
+describe('Team Remote API', () => {
+  it('exports Team views and task mutations from the owning service', async () => {
+    const { ctx, lead } = await setup([])
+    expect(ctx.teams.typertRemote).toMatchObject({ serviceKey: 'teams', namespace: 'teams' })
+    expect(ctx.teams.remoteView(lead)).toEqual({
+      members: [expect.objectContaining({ name: 'lead', role: 'lead', status: 'idle' })],
+      tasks: [],
+    })
+
+    const created = await ctx.teams.remoteCreateTask(lead, {
+      subject: 'Remote task',
+      description: 'Created through the generated API',
+      blockedBy: [],
+      writeScopes: ['packages/experimental/team'],
+    })
+    await expect(ctx.teams.remoteUpdateTask(lead, {
+      taskId: created.id,
+      expectedRevision: created.revision,
+      action: 'claim',
+    })).resolves.toMatchObject({
+      ok: true,
+      value: { id: created.id, revision: 2, ownerName: 'lead' },
+    })
+    expect(ctx.teams.remoteView(lead).tasks).toHaveLength(1)
+  })
+
+  it('preserves Team task rejections and propagates unexpected failures', async () => {
+    const { ctx, lead } = await setup([])
+    const request = { taskId: TeamTaskId('task-1'), expectedRevision: 1, action: 'delete' as const }
+    vi.spyOn(ctx.teams, 'updateTask')
+      .mockRejectedValueOnce(new TeamError('stale', 'TEAM_TASK_STALE_REVISION'))
+      .mockRejectedValueOnce(new TeamError('denied', 'TEAM_TASK_FORBIDDEN'))
+      .mockRejectedValueOnce(new Error('unexpected mutation failure'))
+
+    await expect(ctx.teams.remoteUpdateTask(lead, request)).resolves.toEqual({
+      ok: false,
+      error: { code: 'team-task-conflict', message: 'stale' },
+    })
+    await expect(ctx.teams.remoteUpdateTask(lead, request)).resolves.toEqual({
+      ok: false,
+      error: { code: 'team-rejected', message: 'denied' },
+    })
+    await expect(ctx.teams.remoteUpdateTask(lead, request)).rejects.toThrow('unexpected mutation failure')
+  })
+})
+
 describe('Team mailbox and waiting', () => {
   it('injects a quiet message addressed to the Lead and checkpoints its receipt', async () => {
     const { ctx, lead } = await setup([])

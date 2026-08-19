@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-私有 Web Agent Teams 呈现包。它向会话页头提供一个包含当前 roster 与共享任务板的 action。Client plugin 挂载由 [`@deepseek-ai/dsh-agent-team-remotes`](../agent-team-remotes/README.md) 提供的生成式 `ctx.remote.teams` contribution；它不扩展稳定 API Proxy，也不存储权威 Team 状态。
+私有 Web Agent Teams 呈现包。它向会话页头提供一个包含当前 roster 与共享任务板的 action。Client plugin 挂载来自 [`@deepseek-ai/dsh-team/remote`](../team/README.md) 的生成式 `ctx.remote.teams` contribution；它不扩展稳定 API Proxy，也不存储权威 Team 状态。
 
 打开 panel 会调用 `teams/view`。Roster row 展示持久 name、运行时 status、model 与 diagnostics。选择健康 teammate 时，系统刷新既有直接 child catalog，并打开普通的 `{ parentSessionId, childSessionId, mode: 'continuable' }` address。History 与后续人类 prompt 继续使用稳定 addressed-subagent 会话路径；本包不会向该 address 添加 Team 专用字段。
 
