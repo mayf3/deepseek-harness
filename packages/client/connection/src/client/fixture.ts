@@ -745,26 +745,34 @@ function viewFor(event: SessionEvent, log: readonly SessionEvent[]): ToolEventVi
 }
 
 /**
- * Fixture parallel of the plan unit's double-event fold: `command/run`
- * records named `plan` with recorded input set the wanted target (`off` →
- * false, else true); `plan/mode` commits and clears it. `wanted` is exposed
- * for the prompt boundary (the fixture's step/start parallel).
+ * Fixture parallel of the plan unit's lifecycle fold. The paired
+ * `command/done` retains successful plan selections and drops failures;
+ * `plan/mode` commits one. `wanted` is exposed for the prompt boundary (the
+ * fixture's step/start parallel).
  */
 function foldPlan(log: readonly SessionEvent[]): { active: boolean; pending: boolean; wanted: boolean | null } {
   let active = false
   let wanted: boolean | null = null
+  let running: { commandId: unknown; wanted: boolean } | null = null
   for (const event of log) {
     const item = event as unknown as { type: string; data?: Record<string, unknown> }
     if (item.type === 'command/run' && item.data?.['name'] === 'plan') {
       const args = item.data['args']
       if (typeof args !== 'string') continue
-      wanted = args.trim() !== 'off'
+      running = { commandId: item.data['commandId'], wanted: args.trim() !== 'off' }
+    } else if (item.type === 'command/done'
+      && item.data !== undefined
+      && running !== null
+      && item.data['commandId'] === running.commandId) {
+      wanted = item.data['kind'] === 'success' && running.wanted !== active ? running.wanted : null
+      running = null
     } else if (item.type === 'plan/mode') {
       active = item.data?.['active'] === true
       wanted = null
     }
   }
-  return { active, pending: wanted !== null && wanted !== active, wanted }
+  const selected = running?.wanted ?? wanted
+  return { active, pending: selected !== null && selected !== active, wanted: selected }
 }
 
 /** The plan projection's wire view over the full log. */
@@ -1737,13 +1745,13 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         value: [
           { name: 'compact', description: 'fixture：压缩当前会话上下文' },
           { name: 'echo', description: 'fixture：回显参数', input: { hint: 'text to echo' } },
-          { name: 'goal', description: 'set or view the goal for a long-running task', input: { hint: '<objective>' } },
+          { name: 'goal', description: 'set or view the goal for a long-running task', input: { hint: '<objective>', images: true } },
           { name: 'permission', description: 'Switch the permission preset (sandbox mode + approval policy)', input: { hint: '<preset>' } },
-          { name: 'plan', description: 'Enter or leave plan mode', input: { hint: '[off|message]' } },
+          { name: 'plan', description: 'Enter or leave plan mode', input: { hint: '[off|message]', images: true } },
         ],
       }
     },
-    execute(id: SessionId, line: string): RpcResult<CommandExecution | undefined> {
+    execute(id: SessionId, line: string, images: readonly unknown[] = []): RpcResult<CommandExecution | undefined> {
       const missing = requireGoalSession(id)
       if (missing !== undefined) return missing
       // Structured split mirroring the Host parser: name + verbatim rawInput
@@ -1751,6 +1759,29 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const match = /^\/(\S+)((?:\s.*)?)$/.exec(line.trim())
       const name = match?.[1]
       const args = match?.[2] ?? ''
+      // Mirror the Host image policy AFTER command resolution, matching the
+      // executor's order (an unknown name answers undefined and logs no
+      // lifecycle): the declaration rejection covers every known command
+      // without `input.images`, and the two producer grammar rejections cover
+      // the declaring commands' control-only lines. The fixture stores no
+      // bytes, so an accepted batch is acknowledged and dropped.
+      const known = ['permission', 'goal', 'compact', 'echo', 'plan']
+      if (images.length > 0 && name !== undefined && known.includes(name)) {
+        const rejection = name !== 'goal' && name !== 'plan'
+          ? `/${name} does not accept image attachments`
+          : name === 'goal' && args.trim() === ''
+            ? 'Image attachments only accompany a goal objective: /goal <objective> or /goal edit <objective>.'
+            : name === 'plan' && args.trim() === 'off'
+              ? 'Image attachments cannot accompany /plan off.'
+              : undefined
+        if (rejection !== undefined) {
+          const commandId = `fx-cmd-${logOf(id).length}` as CommandId
+          append(id, { type: 'command/run', data: { commandId, name, args, source: { kind: 'user' } } })
+          const result: CommandResult = { kind: 'error', text: rejection }
+          append(id, { type: 'command/done', data: { commandId, ...result } })
+          return { ok: true, value: { commandId, result } }
+        }
+      }
       if (name === 'permission') {
         const preset = args.trim()
         const commandId = `fx-cmd-${logOf(id).length}` as CommandId
@@ -3015,6 +3046,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         args: {
           agentId: SessionId
           line?: string
+          images?: readonly unknown[]
           ref?: { id: string; revision: number }
           request?: { objective?: string; maxGoalRounds?: number }
         }
@@ -3022,7 +3054,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const sessionId = args.agentId
       switch (endpoint) {
         case 'commands/list': return Promise.resolve(commandRemotes.list(sessionId))
-        case 'commands/execute': return Promise.resolve(commandRemotes.execute(sessionId, args.line as string))
+        case 'commands/execute': return Promise.resolve(commandRemotes.execute(sessionId, args.line as string, args.images ?? []))
         case 'goals/create': return Promise.resolve(goalRemotes.create(sessionId, {
           objective: args.request?.objective as string,
           ...args.request?.maxGoalRounds === undefined ? {} : { maxGoalRounds: args.request.maxGoalRounds },
