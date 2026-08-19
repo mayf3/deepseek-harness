@@ -2207,7 +2207,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'tapIndex(transform: (html: string) => string): () => void',
-        description: 'Register an index.html transform, applied by the fallback owner to every index response (applyIndexTaps) in registration order.',
+        description: 'Register a raw-HTML index transform, the escape hatch for markup no IndexInjection row expresses: renderIndex applies taps in registration order after rendering the structured rows.',
         parameters: [{ name: 'transform', description: 'pure html-to-html function.' }],
         returns: 'the disposer removing the transform.',
       },

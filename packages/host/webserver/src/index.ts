@@ -145,8 +145,9 @@ export class WebServer extends Service {
   }
 
   /**
-   * Register an index.html transform, applied by the fallback owner to every
-   * index response ({@link applyIndexTaps}) in registration order.
+   * Register a raw-HTML index transform, the escape hatch for markup no
+   * {@link IndexInjection} row expresses: {@link renderIndex} applies taps in
+   * registration order after rendering the structured rows.
    * @param transform - pure html-to-html function.
    * @returns the disposer removing the transform.
    */

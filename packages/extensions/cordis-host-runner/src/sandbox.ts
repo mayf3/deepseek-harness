@@ -201,6 +201,10 @@ export function parseErrorMessage(half: 'code.host' | 'code.client', context: st
  * unparseable code — and `vm.Script` is only the best-effort prettifier: on a
  * Node host its failure carries the source-line-and-caret prelude the
  * teaching text builds on, and where the vm is a stub the message stays bare.
+ * The two parsers' syntax faces differ at the margin (`new.target` parses in
+ * a function body but not at the vm wrapper's top level), an accepted cost of
+ * a vm-free gate; and under a page CSP without `'unsafe-eval'`, `new Function`
+ * throws `EvalError`, which propagates unwrapped.
  * @param code - the model-written function body.
  * @param half - which define argument carried it, for the error text.
  * @throws when the body does not parse, with the offending line and a teaching hint.
@@ -209,7 +213,7 @@ export function precheckCode(code: string, half: 'code.host' | 'code.client'): v
   const wrapped = `(async () => {\n${code}\n})()`
   try {
     // Compile-only: constructing the function parses the source and runs nothing.
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval -- parse gate over model-written code; nothing is invoked
+    // oxlint-disable-next-line typescript/no-implied-eval -- parse gate over model-written code; nothing is invoked
     new Function(wrapped)
   } catch (error) {
     if (!isSyntaxError(error)) throw error

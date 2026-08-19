@@ -23,7 +23,7 @@ export type IndexInjection =
    * loader resolves worker-only URLs such as `/plugins/...`).
    */
   | { kind: 'script-src'; placement: IndexInjectionPlacement; src: string }
-  /** A `<style>` element in the head. */
+  /** A `<style>` element in the head. `text` must not contain `</style`, which would close the element early. */
   | { kind: 'style'; text: string }
   /** Raw markup fragment. */
   | { kind: 'html'; placement: IndexInjectionPlacement; html: string }
