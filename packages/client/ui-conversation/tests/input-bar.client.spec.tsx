@@ -1182,6 +1182,21 @@ describe('decorations', () => {
     expect(shell.snapshot.occurrences[0]).toMatchObject({ offset: 3, length: 4 })
   })
 
+  it('keeps the textarea glyph layer transparent when a structured reference becomes disabled', () => {
+    const { view, shell, session, textarea } = bench()
+    act(() => {
+      shell.setDraft('@w1')
+      shell.insertReference({
+        source: 'reference', ref: 'w1', label: '会话一', appearance: 'session', clipboardText: '@w1',
+      }, { start: 0, end: 3, draftRev: shell.snapshot.draftRev })
+      session.set(snapshotOf({ removed: true }))
+    })
+    const backdrop = view.container.querySelector('[data-input-backdrop]')
+    expect(textarea.disabled).toBe(true)
+    expect(backdrop?.getAttribute('data-disabled')).toBe('true')
+    expect(backdrop?.querySelector('[data-decoration="chip"] svg')).not.toBeNull()
+  })
+
   it('Backspace and Delete remove a reference as one range at its boundaries', () => {
     const reference = {
       source: 'reference', ref: 'w1', label: '会话一', appearance: 'session' as const, clipboardText: '@w1',

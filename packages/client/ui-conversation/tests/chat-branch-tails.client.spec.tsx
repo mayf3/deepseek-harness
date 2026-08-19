@@ -107,6 +107,41 @@ describe('MessageItem arms', () => {
     expect(view.getByText('引用会话 · 你好')).toBeTruthy()
   })
 
+  it('renders the complete metadata-confirmed multi-word session label', () => {
+    const view = render(
+      <MessageItem
+        t={t}
+        referenceLabels={['Research notes']}
+        node={{
+          kind: 'user',
+          seq: 1,
+          time: 1_000,
+          content: [{ type: 'text', text: '@Research notes what changed?' }] as never,
+          source: null,
+        }}
+      />,
+    )
+    expect(view.container.querySelector('[data-ref-chip="session"]')?.textContent).toBe('Research notes')
+    expect(view.getByText('what changed?')).toBeTruthy()
+    expect(view.getByText('引用会话 · Research notes')).toBeTruthy()
+  })
+
+  it('renders no-extension paths as files and leaves sentence punctuation outside the reference', () => {
+    const view = render(
+      <MessageItem t={t} node={{
+        kind: 'user',
+        seq: 1,
+        time: 1_000,
+        content: [{ type: 'text', text: 'Read @Dockerfile and @src/README.md, please.' }] as never,
+        source: null,
+      }} />,
+    )
+    const files = [...view.container.querySelectorAll('[data-ref-chip="file"]')]
+    expect(files.map(file => file.textContent)).toEqual(['Dockerfile', 'README.md'])
+    expect(files.every(file => file.querySelector('svg') !== null)).toBe(true)
+    expect(view.container.textContent).toContain('README.md, please.')
+  })
+
   it('user bubbles expose clock / copy and neither branch nor edit; copy writes the text', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {

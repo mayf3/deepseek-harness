@@ -147,6 +147,11 @@
   pointer-events: none;
 }
 
+.backdropDisabled,
+.backdropDisabled :is(.hlToken, .hint, .textRef, .chip, .chipInvalid) {
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .hlToken {
   background-color: transparent;
   color: var(--dsw-alias-state-warn-label);
@@ -191,6 +196,7 @@
   outline: none;
   background: transparent;
   color: transparent;
+  -webkit-text-fill-color: transparent;
   /* Business blue, not brand-primary: that token resolves to ink in this sheet. */
   caret-color: var(--dsw-alias-state-business-primary);
 }
@@ -230,12 +236,15 @@
 /* figma 34:10434: #ADB2B8 light / #81858C dark — the caption pair exactly. */
 .input::placeholder {
   color: var(--dsw-alias-label-caption);
+  -webkit-text-fill-color: var(--dsw-alias-label-caption);
   user-select: none;
 }
 
-/* Running lock: grayed but the draft stays visible; the turn ending re-enables. */
+/* The backdrop owns disabled draft color; the textarea remains caret-only so
+   its marker glyphs cannot cover the reference icons beneath it. */
 .input:disabled {
-  color: var(--dsw-alias-label-tertiary);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
   cursor: not-allowed;
 }
 

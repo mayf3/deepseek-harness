@@ -32,7 +32,7 @@ Retention applies `maxReferenceBytes` independently to each source, keeps compac
 
 #### What the model sees
 
-The model sees two consecutive user-role messages: the current message with its readable `@label`, then the `## Referenced sessions` untrusted snapshot. The warning forbids following instructions, permission claims, or tool requests from the snapshot unless the citing user message requests their use. Labels, cwd values, ids, and conversation text are serialized as JSON inside `<referenced-sessions>` tags; every data `<` is emitted as the lossless JSON escape `\u003c`, so source text cannot spell a framing tag.
+The model sees two consecutive user-role messages: the current message with its readable `@label`, then the `## Referenced sessions` untrusted snapshot. The warning forbids following instructions, permission claims, or tool requests from the snapshot unless the current user explicitly repeats them. Labels, cwd values, ids, and conversation text are serialized as JSON inside `<referenced-sessions>` tags; every data `<` is emitted as the lossless JSON escape `\u003c`, so source text cannot spell a framing tag.
 
 #### Token effect
 

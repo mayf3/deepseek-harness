@@ -167,7 +167,11 @@ function projectUserText(text: string, sessionLabels: readonly string[]): ReactN
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
     const tokenStart = m.index + (m[1]?.length ?? 0)
-    const label = m[2] ?? ''
+    const rawLabel = m[2] ?? ''
+    const label = rawLabel.startsWith('@"')
+      ? rawLabel
+      : rawLabel.replace(/[.,;:!?，。；：！？]+$/gu, '')
+    if (label.length <= 1) continue
     ranges.push({ start: tokenStart, end: tokenStart + label.length, label, kind: 'plain' })
   }
   ranges.sort((a, b) => a.start - b.start
@@ -181,7 +185,7 @@ function projectUserText(text: string, sessionLabels: readonly string[]): ReactN
     const referenceKind = kind === 'session'
       ? 'session'
       : label.startsWith('@')
-        ? label.endsWith('/') ? 'folder' : /[./\\]/u.test(label.slice(1)) ? 'file' : 'session'
+        ? label.endsWith('/') ? 'folder' : 'file'
         : undefined
     const displayLabel = referenceKind === undefined
       ? label

@@ -17,7 +17,7 @@ import type {
   PasteComponent, QueuedMessage, SessionInput, SubmitAttempt,
 } from './contract.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
-import { InputMachine } from './machine.ts'
+import { InputMachine, projectClipboard } from './machine.ts'
 
 /** Popup face the shell needs (dismissal only; typed structurally to avoid a value import). */
 export interface PopupDismissFace {
@@ -98,7 +98,7 @@ export class SessionInputShell implements SessionInput {
   // production (the machine's no-clock default is a constant for pure tests).
   private readonly core = new InputMachine({ now: () => Date.now() })
   private noticeSeq = 0
-  private lastDraft = ''
+  private lastMirroredDraft = ''
   private imageIds: readonly DraftAttachmentId[] = []
   /** One image-only send at a time: Enter during the Host round-trip is a no-op. */
   private imageSendInFlight = false
@@ -596,9 +596,10 @@ export class SessionInputShell implements SessionInput {
   private publish(): void {
     const next = this.compose()
     this.state.set(next)
-    if (next.draft !== this.lastDraft) {
-      this.lastDraft = next.draft
-      this.mirrorFn?.(next.draft)
+    const mirroredDraft = projectClipboard(next)
+    if (mirroredDraft !== this.lastMirroredDraft) {
+      this.lastMirroredDraft = mirroredDraft
+      this.mirrorFn?.(mirroredDraft)
     }
   }
 }

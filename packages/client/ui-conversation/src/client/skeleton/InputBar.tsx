@@ -287,7 +287,7 @@ export function InputBar({
     }
     // Absent machine without a Workspace recovery action stays disabled; the
     // guard narrows the faces for the paths below.
-    if (keyboard === undefined || inputActions === undefined) return
+    if (input === undefined || keyboard === undefined || inputActions === undefined) return
     // Shift+Enter is the native newline UNCONDITIONALLY — decided before the
     // IME guard so a composition-closing Shift+Enter still breaks the line.
     if (e.key === 'Enter' && e.shiftKey) return
@@ -651,7 +651,14 @@ export function InputBar({
             which a compositor-driven gesture outruns and leaves the words trailing the caret. */}
         <div ref={scrollRef} className={css.scroll} data-input-scroll>
           <div className={css.grow}>
-            <div aria-hidden className={css.backdrop} data-input-backdrop>{backdrop}</div>
+            <div
+              aria-hidden
+              className={clsx(css.backdrop, textareaDisabled && css.backdropDisabled)}
+              data-input-backdrop
+              data-disabled={textareaDisabled || undefined}
+            >
+              {backdrop}
+            </div>
             <textarea
               ref={inputRef}
               className={css.input}

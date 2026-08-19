@@ -68,7 +68,7 @@ function targetSessionFixture(): string {
   const session = Session.create(SessionId(TARGET_SESSION_ID))
   session.append('turn/start', { turn: 1 })
   const user = session.append('user/message', createUserMessage({
-    content: [{ type: 'text', text: '@Research what changed?' }],
+    content: [{ type: 'text', text: '@Research notes what changed?' }],
     source: { kind: 'user' },
   }), { surfaceOp: 'append' })
   session.append('user/message', createUserMessage({
@@ -79,7 +79,7 @@ function targetSessionFixture(): string {
       version: 1,
       references: [{
         sessionId: SOURCE_SESSION_ID,
-        label: 'Research',
+        label: 'Research notes',
         capturedThroughSeq: 4,
         compacted: false,
         originalMessages: 2,
@@ -176,12 +176,12 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     const target = page.getByRole('treeitem').filter({ hasText: /^dsh-web-e2e-ws-/ }).first()
     await target.waitFor({ timeout: 15_000 })
     await target.click()
-    await page.getByRole('button', { name: /^Session recall\s*Research$/ }).waitFor({ timeout: 15_000 })
+    await page.getByRole('button', { name: /^Session recall\s*Research notes$/ }).waitFor({ timeout: 15_000 })
 
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(TARGET_SESSION_ID).join('{{targetId}}')
     await compareOrRefreshGolden(ORDER_EXPECTED, snapshot, MODE)
-    expect(snapshot.indexOf('Research what changed?')).toBeLessThan(snapshot.indexOf('Session recall Research'))
+    expect(snapshot.indexOf('Research notes what changed?')).toBeLessThan(snapshot.indexOf('Session recall Research notes'))
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, ['menu.expected.md', 'order.expected.md'])

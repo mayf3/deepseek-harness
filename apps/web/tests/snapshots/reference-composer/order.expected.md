@@ -7,12 +7,12 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
-- text: Research what changed? {{clock}}
+- text: Research notes what changed? Referenced session · Research notes {{clock}}
 - button "Copy":
   - img
-- button "Session recall Research":
+- button "Session recall Research notes":
   - img
-  - text: Session recall Research
+  - text: Session recall Research notes
 - textbox "Message the agent"
 - button "Commands":
   - img

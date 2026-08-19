@@ -34,7 +34,7 @@ Reference preparation is not a new delivery protocol and does not create a turn 
 
 The unified Web `@` source combines session candidates with Host-backed file discovery. Session candidate lookup matches case-insensitive substrings of the session id, cwd, or latest folded title, displays that title, and falls back to the session id when a title observation is absent or fails. Lookup follows the request's cancellation signal, and session id, cwd, and mention labels escape external control characters while the canonical URI retains the original id.
 
-Web exposes file and session discovery through generated Remote methods on their owning services, as detailed in [Web file and session references](2026-07-27-web-file-and-session-references.md). Session picks are atomic chips backed by the Host-produced canonical mention. Ordinary `session.prompt` delivery carries that mention without a reference-specific API Proxy route. Replay associates the separate session-reference context with its neighboring direct message and renders a compact source summary instead of exposing the snapshot JSON.
+Web exposes file and session discovery through generated Remote methods on their owning services, as detailed in [Web file and session references](2026-07-27-web-file-and-session-references.md). Session picks are atomic chips backed by the Host-produced canonical mention. Ordinary `session.prompt` delivery carries that mention without a reference-specific API Proxy route. Replay associates the separate session-reference context with the direct message immediately before it and renders a compact source summary instead of exposing the snapshot JSON.
 
 The [automation-only ACP transport](../simplification/2026-07-23-acp-automation-only-protocol.md) deliberately does not mount session-query or session-reference services.
 
@@ -55,7 +55,7 @@ Each of at most three references is independently capped at 65,536 UTF-8 bytes b
 
 ## Verification
 
-Unit and integration coverage pins URI round-trips and text-boundary punctuation, explicit malformed references, id/cwd/title candidate matching and ranking, failed title-observation fallback, candidate cancellation, control-character escaping, projection exclusions, non-recursive snapshot projection, backend-independent compact checkpoints, tag-safe framing, deduplication, self-reference, count limits, all-or-nothing reads, cancellation against a non-settling storage read, independent per-source byte retention, frozen message ownership, pre-step parsing and insertion, downstream rejection, node-owned replay association, title isolation, and the generated Remote discovery faces. A keyless Web snapshot pins the assembled reference selection path.
+Unit and integration coverage pins URI round-trips and text-boundary punctuation, explicit malformed references, id/cwd/title candidate matching and ranking, failed title-observation fallback, candidate cancellation, control-character escaping, projection exclusions, non-recursive snapshot projection, backend-independent compact checkpoints, tag-safe framing, deduplication, self-reference, count limits, all-or-nothing reads, cancellation against a non-settling storage read, independent per-source byte retention, frozen message ownership, pre-step parsing and insertion, downstream rejection, Chat-projected following-recall association, title isolation, and the generated Remote discovery faces. A keyless Web snapshot pins the assembled reference selection path.
 
 ## Consequences
 
