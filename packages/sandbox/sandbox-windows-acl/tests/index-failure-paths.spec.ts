@@ -500,6 +500,13 @@ describe('AclSandbox spawn', () => {
 
   it('pipe spawn closes the process without waiting when termination after a drain failure fails', async () => {
     const { api, closeHandle } = state.stubs as HappyStubs
+    let peekCount = 0
+    api.peekNamedPipe = vi.fn((_handle, _buffer, _size, _read, totalAvail: NativePtr) => {
+      peekCount += 1
+      if (peekCount === 1) return 0
+      koffi.encode(totalAvail, 'uint32', 0)
+      return 1
+    })
     api.getLastError = vi.fn(() => 5)
     api.terminateProcess = vi.fn(() => 0)
     const waitForSingleObject = vi.fn(() => { throw new Error('must not wait') })
@@ -509,6 +516,9 @@ describe('AclSandbox spawn', () => {
     await sandbox.init()
     const child = sandbox.spawn({ command: 'probe.exe' })
     await expect(child.wait()).rejects.toBeInstanceOf(AggregateError)
+    const settledPeekCount = peekCount
+    await new Promise<void>(resolve => setTimeout(resolve, 5))
+    expect(peekCount).toBe(settledPeekCount)
     expect(waitForSingleObject).not.toHaveBeenCalled()
     expect(closeHandle).toHaveBeenCalled()
   })

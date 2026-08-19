@@ -10,7 +10,7 @@
 - **restricted-token 创建** — `RestrictedProcessSpawnOptions` 要求 sandbox 的 primary token，并使用 `CreateProcessAsUserW`。pipe 与 inherited-stdio 路径共用命令行引用、cwd、继承环境块、返回值检查与句柄清理。
 - **管道进程原语** — `spawnPipedProcess()` 创建匿名 stdin/stdout/stderr 管道，立即关闭 stdin，并返回两个读取端；调用方负责等待进程与排空管道。任一局部失败都会关闭该操作已经拥有的句柄，并在各自 Win32 生命周期结束后释放每个 Koffi 输出槽与结构体分配。
 - **继承 stdio 的 Job 原语** — `spawnInheritedJobProcess()` 创建一个 kill-on-close Job，临时把当前 stdio 句柄设为可继承，并在创建 restricted child 时通过 `STARTUPINFOEXW` 附加该 Job。child 会在任何用户代码运行前归属 Job；attribute 设置或创建失败都会关闭全部已拥有资源，成功创建进程后不会留下无 owner 的 child。
-- **显式结算归属** — `waitForProcessExit()` 等待并关闭进程句柄；`drainPipe()` 在排空期间复用一组固定原生输出槽，并在关闭管道读取句柄前释放这些槽；`closeHandleChecked()` 关闭调用方拥有的 Job 或其他句柄，并报告带操作标签的 Win32 错误。sandbox 决定这些操作何时组成公共 child 的结算与 dispose。
+- **显式结算归属** — `waitForProcessExit()` 等待并关闭进程句柄；`drainPipe()` 在排空期间复用一组固定原生输出槽，接受停止轮询的取消信号，并在关闭管道读取句柄前释放原生分配；`closeHandleChecked()` 关闭调用方拥有的 Job 或其他句柄，并报告带操作标签的 Win32 错误。sandbox 决定这些操作何时组成公共 child 的结算与 dispose。
 
 Windows ACL 沙箱在这些原语上增加 SID、DACL、grant、workspace 与公共 child policy。
 

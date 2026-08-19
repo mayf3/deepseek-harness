@@ -234,6 +234,24 @@ describe('wait and pipe cleanup', () => {
     expect(closeHandle).toHaveBeenCalledWith(80n)
   })
 
+  it('stops polling and closes the read end when cancelled', async () => {
+    const controller = new AbortController()
+    const closeHandle = vi.fn(() => 1)
+    const peekNamedPipe = vi.fn((_handle, _buffer, _size, _read, available) => {
+      koffi.encode(available, 'uint32', 0)
+      return 1
+    })
+    const api = {
+      peekNamedPipe,
+      closeHandle,
+    } as unknown as Win32ProcessBindings
+    const draining = drainPipe(api, 80n as NativePtr, controller.signal)
+    controller.abort()
+    await expect(draining).rejects.toThrow('pipe drain aborted')
+    expect(peekNamedPipe).toHaveBeenCalledOnce()
+    expect(closeHandle).toHaveBeenCalledWith(80n)
+  })
+
   it('checks caller-owned handle closure', () => {
     const closeHandle = vi.fn(() => 1)
     const api = { closeHandle } as unknown as Win32ProcessBindings

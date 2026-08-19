@@ -240,14 +240,21 @@ export function spawnPipedProcess(
  * Drain one anonymous pipe until the writer closes it.
  * @param api - active binding table.
  * @param handle - caller-owned pipe read end.
+ * @param signal - optional cancellation that stops polling and closes the read end.
  * @returns complete bytes read before EOF; the handle is always closed.
+ * @throws when cancellation or a Win32 pipe operation fails.
  */
-export async function drainPipe(api: Win32ProcessBindings, handle: NativePtr): Promise<Buffer> {
+export async function drainPipe(
+  api: Win32ProcessBindings,
+  handle: NativePtr,
+  signal?: AbortSignal,
+): Promise<Buffer> {
   const chunks: Buffer[] = []
   let countSlot: NativePtr | undefined
   try {
     countSlot = allocUint32()
     for (;;) {
+      if (signal?.aborted === true) throw new Error('pipe drain aborted')
       const peeked = api.peekNamedPipe(handle, null, 0, null, countSlot, null)
       if (peeked === 0) {
         const win32Code = api.getLastError()

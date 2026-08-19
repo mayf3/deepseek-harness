@@ -139,6 +139,8 @@ export function allocBytes(length: number): NativePtr {
 /**
  * Allocate one zeroed x64 OVERLAPPED record.
  * @returns allocated pointer.
+ * @remarks Koffi 3.1.1 crashes when LockFileEx or UnlockFileEx receives NULL;
+ * a zeroed OVERLAPPED is equivalent for the synchronous lock-file handle.
  */
 export function allocOverlapped(): NativePtr {
   return allocBytes(32)

@@ -380,8 +380,9 @@ export class AclSandbox {
     }
 
     const native = spawnSandboxed(api, token, { command: options.command, args, cwd })
-    const stdout = drainPipe(api, native.stdoutRead)
-    const stderr = drainPipe(api, native.stderrRead)
+    const drainAbort = new AbortController()
+    const stdout = drainPipe(api, native.stdoutRead, drainAbort.signal)
+    const stderr = drainPipe(api, native.stderrRead, drainAbort.signal)
     // WaitForSingleObject blocks the thread, so settlement starts it only after
     // both drains settle. Successful drains mean the child closed its pipe ends
     // and the wait returns immediately. A failed drain terminates the child
@@ -402,13 +403,14 @@ export class AclSandbox {
           if (api.terminateProcess(native.process, 1) === 0) {
             const failures: unknown[] = [firstDrainFailure]
             const terminationCode = api.getLastError()
+            drainAbort.abort()
+            await Promise.allSettled([stdout, stderr])
             try {
               closeHandleChecked(api, native.process, 'piped child after drain failure')
             } catch (error) {
               failures.push(error)
             }
             failures.push(new Win32Error('TerminateProcess', terminationCode, `pid ${native.pid} after drain failure`))
-            void Promise.allSettled([stdout, stderr])
             throw new AggregateError(failures, 'piped child settlement failed')
           }
           drains = await Promise.allSettled([stdout, stderr])
