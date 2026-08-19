@@ -9,7 +9,6 @@ import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { ContextPressureProjection, TokenUsageProjection } from './projection.ts'
 import { foldSurfaceProjection } from './surface-projection.ts'
 
-
 const zeroBuckets = (): TokenUsageProjection => ({
   uncachedInputTokens: 0,
   outputTokens: 0,
@@ -67,7 +66,11 @@ const pressureSchema: z.ZodType<ContextPressureProjection> = z.object({
   pressureTokens: z.number().int().nonnegative().optional(),
   projectedTokens: z.number().int().nonnegative().optional(),
   contextWindow: z.number().int().positive().optional(),
-}).strict()
+}).strict().transform(({ pressureTokens, projectedTokens, contextWindow }) => ({
+  ...pressureTokens === undefined ? {} : { pressureTokens },
+  ...projectedTokens === undefined ? {} : { projectedTokens },
+  ...contextWindow === undefined ? {} : { contextWindow },
+}))
 
 /** Prompt-side pressure of one request: input plus cache traffic, no output. */
 const pressureFrom = (usage: TokenUsage): number =>
@@ -88,11 +91,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   }
 }
 
-/**
- * The context-pressure unit's state schema — the one definition of the state
- * shape; the state type is inferred from it (claim folds to the same shape as
- * {@link ShadowPriceClaim}).
- */
+/** The context-pressure state schema and source of its inferred type. */
 const contextPressureStateSchema = z.object({
   contextWindow: z.number().int().positive().optional(),
   pressureTokens: z.number().int().nonnegative().optional(),

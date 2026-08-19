@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-19-session-projection-state-and-client-views.md
 2026-08-19-session-projection-state-and-client-views.md: 0b1810b27594e7f18af5afca67ba39b0cb0f3cc3
-2026-08-19-session-projection-state-and-client-views.zh.md: df6b18fab1a3b37bb11bc70bb86a625f76af2421
+2026-08-19-session-projection-state-and-client-views.zh.md: edd2edaf0bc897bb2084325a5768e549637ed720

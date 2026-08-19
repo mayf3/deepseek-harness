@@ -12,31 +12,38 @@ import { foldSubagentDescriptor } from './descriptor.ts'
 import type { SubagentDescriptorData } from './descriptor.ts'
 import type { SubagentIdentityProjection, SubagentTimingProjection } from './projection-types.ts'
 
-const settledMsField = z.number().int().nonnegative()
+/** Fold state for a subagent's latest timing snapshot. */
+export interface TimingState {
+  /** Milliseconds accumulated across completed post-descriptor turns. */
+  settledMs: number
+  /** Current open interval kept paired inside the fold. */
+  active?: { since: number; through: number } | undefined
+  /** Latest pre-descriptor turn start, promoted when the child's own descriptor arrives. */
+  pendingTurnStart?: number | undefined
+  /** Whether the fold has crossed a descriptor in this logical log. */
+  descriptorSeen: boolean
+}
 
-const activeField = z.object({
+const activeIntervalSchema = z.object({
   since: z.number().int().nonnegative(),
   through: z.number().int().nonnegative(),
-}).strict().optional()
+}).strict()
 
-// Zod's optional output includes explicit `undefined`; with
-// exactOptionalPropertyTypes the public interface permits omission only.
-const projectionSchema = z.object({
-  settledMs: settledMsField,
-  active: activeField,
-}).strict() as unknown as z.ZodType<SubagentTimingProjection>
+const projectionSchema: z.ZodType<SubagentTimingProjection> = z.object({
+  settledMs: z.number().int().nonnegative(),
+  active: activeIntervalSchema.optional(),
+}).strict().transform(({ settledMs, active }) => ({
+  settledMs,
+  ...active === undefined ? {} : { active },
+}))
 
-const timingStateSchema = z.object({
-  settledMs: settledMsField,
-  active: activeField,
-  /** Latest pre-descriptor turn start, promoted when the child's own descriptor arrives. */
+const timingStateSchema: z.ZodType<TimingState> = z.object({
+  settledMs: z.number().int().nonnegative(),
+  active: activeIntervalSchema.optional(),
   pendingTurnStart: z.number().int().nonnegative().optional(),
   /** Whether the fold has crossed a descriptor in this logical log. */
   descriptorSeen: z.boolean(),
 }).strict()
-
-/** Fold state for descriptor-relative active-turn duration. */
-export type TimingState = z.infer<typeof timingStateSchema>
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {

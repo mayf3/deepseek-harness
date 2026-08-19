@@ -80,6 +80,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     insertSessionBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
+    useHostDescription: selector => selector(undefined),
     renderSlot: ((_name: string, owner: { open: boolean }) => (owner.open ? <div data-testid="directory-flow" /> : null)) as never,
     t,
     ...overrides,
@@ -95,6 +96,27 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
 }
 
 describe('WorkspaceBrowser', () => {
+  it('workspace hover card shows a POSIX home descendant as ~', () => {
+    vi.useFakeTimers()
+    try {
+      mount({
+        useWorkspaces: hook(workspaceState([{
+          ...workspace('project', []),
+          path: '/home/u/Documents/project',
+          title: 'Project',
+        }])),
+        useHostDescription: selector => selector({
+          version: '0', cwd: '/tmp', attachedSessions: 0, home: '/home/u', canOpenPath: false,
+        }),
+      })
+      fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(screen.getByText('~/Documents/project')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('prunes deleted Workspace view state only after the Workspace baseline is ready', async () => {
     const pending = {
       ...workspaceState([]),

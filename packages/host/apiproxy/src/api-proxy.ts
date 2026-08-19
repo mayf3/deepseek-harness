@@ -5,6 +5,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname } from 'node:path'
 import { z as zod } from 'zod'
 import type { Context } from '@deepseek-ai/cordis'
@@ -786,7 +787,7 @@ type HistorySource =
 function projectionsFor(ctx: Context, session: Session): SessionProjectionsBlock | undefined {
   const registry = ctx.get('sessionProjections')
   if (registry === undefined) return undefined
-  return registry.snapshot(session, { wireOnly: true })
+  return registry.snapshot(session)
 }
 
 /**
@@ -802,8 +803,8 @@ function projectionsFor(ctx: Context, session: Session): SessionProjectionsBlock
 function listProjectionsFor(ctx: Context, meta: SessionHeader, session: Session | undefined): SessionProjectionsBlock | undefined {
   try {
     const block = session !== undefined
-      ? ctx.get('sessionProjections')?.snapshot(session, { wireOnly: true })
-      : ctx.get('sessionProjectionCache')?.cachedSnapshot(meta, { wireOnly: true })
+      ? ctx.get('sessionProjections')?.snapshot(session)
+      : ctx.get('sessionProjectionCache')?.cachedSnapshot(meta)
     return block !== undefined && Object.keys(block.values).length > 0 ? block : undefined
   } catch (error) {
     ctx.logger.warn(`session.list: projection column for "${meta.id}" failed (serving the row without it): ${String(error)}`)
@@ -818,7 +819,7 @@ function detachedProjectionsFor(
 ): SessionProjectionsBlock | undefined {
   const registry = ctx.get('sessionProjections')
   if (registry === undefined) return undefined
-  return registry.restore({}, events, 0, { wireOnly: true }).snapshot
+  return registry.restore({}, events, 0).snapshot
 }
 
 /**
@@ -2834,6 +2835,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           provider: selection.provider,
           model: selection.model,
           attachedSessions: ctx.agents.list().length,
+          home: homedir(),
           canOpenPath: canOpenPaths(),
         }))
       },

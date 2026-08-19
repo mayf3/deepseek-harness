@@ -113,17 +113,13 @@ export class SessionProjectionCache extends Service {
    * paths (the history tail baseline, {@link coldSnapshot}) supersede these
    * values whenever a session is actually opened.
    * @param meta - the listed session's header (identity witness; no log read).
-   * @param options - restrict the result to client-visible keys.
    * @returns the cut (`asOfSeq` = lowest served-row watermark), or
    *   `undefined` when no usable row exists for this lifecycle.
    */
-  cachedSnapshot(
-    meta: SessionHeader,
-    options?: { wireOnly?: boolean },
-  ): ProjectionSnapshot | undefined {
+  cachedSnapshot(meta: SessionHeader): ProjectionSnapshot | undefined {
     const record = this.recordFor(meta.id, identityOf(meta))
     if (record === undefined) return undefined
-    const values = this.ctx.sessionProjections.viewCheckpoint(record.rows, options)
+    const values = this.ctx.sessionProjections.viewCheckpoint(record.rows)
     const keys = Object.keys(values)
     if (keys.length === 0) return undefined
     // The block carries ONE cut: the lowest served watermark is the seq every
@@ -189,10 +185,9 @@ export class SessionProjectionCache extends Service {
       if (!related) throw new Error('unrelated log identity')
       restored = this.ctx.sessionProjections.restore(cached, tail.events, floor)
     } catch {
-      // The recoverable restore failures: an unrelated record, or a row
-      // overreaching the stored log end (or predating the floor). Both imply
-      // floor > 0 (baseSeq-0 restores never throw and an unrelated record
-      // still carried a usable watermark), so the full log is a fresh read.
+      // Recoverable failures are an unrelated record, a row outside the
+      // supplied suffix or log end, and stateSchema rejection. The full read
+      // removes every checkpoint seed and lets each unit refold from init.
       const whole = await persistence.readFrom(id, 0, signal)
       restored = this.ctx.sessionProjections.restore({}, whole.events, 0)
     }

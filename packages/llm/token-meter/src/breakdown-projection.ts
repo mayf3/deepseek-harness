@@ -19,14 +19,10 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   }
 }
 
-/**
- * The context-breakdown unit's state schema — the one definition of the state
- * shape; the state type is inferred from it (claim folds to the same shape as
- * {@link ShadowPriceClaim}).
- */
 /** Non-negative integer token count (the shared figure shape). */
 const tokenCount = z.number().int().nonnegative()
 
+/** The context-breakdown state schema and source of its inferred type. */
 const contextBreakdownStateSchema = z.object({
   systemTokens: tokenCount,
   toolsTokens: tokenCount,

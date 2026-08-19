@@ -9,10 +9,10 @@
  */
 
 /**
- * The single projection type table for the whole chain (host provider, wire
- * block, client cell, React hook). Domain packages merge their key here via
- * declaration merging; values are wire-JSON whole values. How a value is
- * rendered is the slot system's business, never this layer's.
+ * The merge-extensible client projection table shared by wire blocks, client
+ * cells, and React hooks. Domain packages merge their client-visible key here;
+ * values are wire-JSON whole values. How a value is rendered is the slot
+ * system's business, never this layer's.
  */
 export interface SessionProjectionMap {}
 

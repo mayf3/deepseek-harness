@@ -26,9 +26,9 @@ Two mandatory points, throttled in between:
 
 Both `Config` fields are required (no defaults): flush cadence is a deployment choice with no universally correct value, stated in cordis.yml.
 
-## Listing read (`cachedSnapshot(meta, options?)`)
+## Listing read (`cachedSnapshot(meta)`)
 
-The zero-I/O rung: whole values viewed straight from the identity-matching stored record (version- and state-schema-matching keys only), returned as a `{asOfSeq, values}` cut — `asOfSeq` is the lowest served-row watermark, so a client seeding its per-session value store under higher-seq-wins can never let a stale list block overwrite a newer push frame. `{ wireOnly: true }` excludes host-only rows. `undefined` when no usable record exists (unknown id, unrelated lifecycle, or no usable rows); the api-proxy list carrier turns that into an absent column.
+The zero-I/O rung: client values viewed straight from the identity-matching stored record (version- and state-schema-matching keys only), returned as a `{asOfSeq, values}` cut — `asOfSeq` is the lowest served-row watermark, so a client seeding its per-session value store under higher-seq-wins can never let a stale list block overwrite a newer push frame. Host-only rows are never returned. `undefined` when no usable client row exists (unknown id, unrelated lifecycle, or no usable rows); the api-proxy list carrier turns that into an absent column.
 
 ## Cold read (`coldSnapshot(id, signal?)`)
 

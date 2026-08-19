@@ -168,7 +168,8 @@ interface Registration {
  * `ctx.sessionProjections`: the projection unit table and its drive. The
  * service subscribes to `session/event` once; every committed event passes
  * every registered unit's `apply` (eager drive), and a changed state
- * reference notifies the change feed with the schema-validated view.
+ * reference in a client-visible unit notifies the change feed with the
+ * schema-validated view.
  * Cells build lazily — a unit registered after events flowed, or a session
  * older than the registry, folds `init` over the in-memory log on first
  * touch (event or read). Registration is an effect (disposer rides the
@@ -207,7 +208,9 @@ export class SessionProjectionRegistry extends Service {
     K extends keyof SessionProjectionMap,
     S extends SessionProjectionStateMap[K],
   >(
-    definition: ProjectionDefinition<K, S> & { wire: NonNullable<ProjectionDefinition<K, S>['wire']> },
+    definition: Omit<ProjectionDefinition<K, S>, 'wire'> & {
+      wire: NonNullable<ProjectionDefinition<K, S>['wire']>
+    },
   ): () => void
   /**
    * Register one host-only unit. Its state is omitted from client snapshots
@@ -247,10 +250,6 @@ export class SessionProjectionRegistry extends Service {
       if (existing === undefined) {
         this.registrations.set(key, { def: erased, cells: new WeakMap(), refs: 1 })
       } else {
-        // A differing `stateVersion` is the one incompatibility this can name:
-        // the versioned contract says the cached state shape differs, so the
-        // two registrants cannot share cells. Anything else about a definition
-        // is functions, which no runtime comparison can tell apart.
         if (existing.def.stateVersion !== erased.stateVersion) {
           throw new Error(`session projection key ${JSON.stringify(key)} is already registered at stateVersion ${String(existing.def.stateVersion)}; refusing to share it with stateVersion ${String(erased.stateVersion)}`)
         }
@@ -270,7 +269,7 @@ export class SessionProjectionRegistry extends Service {
   /**
    * Subscribe to the change feed. The registration is an effect on the
    * calling context's fiber.
-   * @param listener - called once per unit whose state reference changed, per committed event.
+   * @param listener - called once per client-visible unit whose state reference changed, per committed event.
    * @returns the exact disposer that unsubscribes.
    */
   onChanged(listener: ProjectionChangeListener): () => void {
@@ -300,10 +299,10 @@ export class SessionProjectionRegistry extends Service {
   }
 
   /**
-   * One consistent cut over every registered unit for one session, read from
+   * One consistent cut over every registered client-visible unit for one session, read from
    * the watermark cache (missing cells fold lazily over the in-memory log).
    * Fully synchronous — every value and `asOfSeq` reflect the same log
-   * position. Each value passes its unit's schema before leaving.
+   * position. Each value passes its unit's `viewSchema` before leaving.
    * @param session - the session whose projection values are read.
    * @param options - restrict the result to client-visible keys.
    * @returns the snapshot; `values` is empty when no unit is registered.
@@ -332,7 +331,7 @@ export class SessionProjectionRegistry extends Service {
    * every subsequent snapshot and frame through it (plain JSON by the unit
    * contract, so the clone is total).
    * @param session - the session whose unit states are checkpointed.
-   * @returns one row per registered key; empty when no unit is registered.
+   * @returns one row per registered key.
    */
   checkpoint(session: Session): ProjectionCheckpoint {
     const rows: ProjectionCheckpoint = {}
@@ -377,7 +376,7 @@ export class SessionProjectionRegistry extends Service {
 
   /**
    * View a checkpoint's rows without any log read: for every registered
-   * unit whose row's `ver` matches, serve the schema-validated
+   * client-visible unit whose row's `ver` matches, serve the schema-validated
    * `view` of the schema-validated stored state; mismatched, malformed, or absent rows leave their key
    * absent (a cold or listing consumer treats it as not-yet-available and a
    * fuller read path refolds it). The zero-I/O rung of the read ladder —
@@ -389,7 +388,7 @@ export class SessionProjectionRegistry extends Service {
   viewCheckpoint(
     checkpoint: ProjectionCheckpoint,
     options?: { wireOnly?: boolean },
-  ): Partial<ProjectionValues> {
+  ): Partial<SessionProjectionMap> {
     const values: Record<string, unknown> = {}
     for (const registration of this.registrations.values()) {
       const def = registration.def
@@ -496,7 +495,7 @@ export class SessionProjectionRegistry extends Service {
     return cell
   }
 
-  /** Apply one event to a cell and isolate change-feed subscriber failures. */
+  /** Apply one event to one unit cell, replaying nothing the drive already folded. */
   private applyToCell(
     registration: Registration,
     session: Session,

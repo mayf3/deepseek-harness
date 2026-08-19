@@ -68,20 +68,16 @@ export const CUSTOM_PRESET = 'custom'
 /** Settings namespace carrying the default for future sessions. */
 export const PERMISSION_SETTINGS_NAMESPACE = settingsNamespace('permission')
 
-const sandboxField = zod.union([
-  zod.literal('read-only'),
-  zod.literal('workspace-write'),
-  zod.literal('danger-full-access'),
-]).nullable()
-
-const approvalField = zod.union([zod.literal('ask'), zod.literal('never')]).nullable()
-
 const knobStateSchema: zod.ZodType<KnobState> = zod.object({
   /** Last `permission/preset` payload, or null. */
   preset: zod.string().nullable(),
-  sandbox: sandboxField,
-  approval: approvalField,
-})
+  sandbox: zod.union([
+    zod.literal('read-only'),
+    zod.literal('workspace-write'),
+    zod.literal('danger-full-access'),
+  ]).nullable(),
+  approval: zod.union([zod.literal('ask'), zod.literal('never')]).nullable(),
+}).strict()
 
 /** State for the empty log: every knob at its composition default. */
 const EMPTY_KNOBS: KnobState = { preset: null, sandbox: null, approval: null }

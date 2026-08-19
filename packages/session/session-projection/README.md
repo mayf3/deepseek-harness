@@ -9,9 +9,9 @@ Session-projection Service Definition and drive registry. It owns `ctx.sessionPr
 ### Public API
 
 - `ctx.sessionProjections.register(definition): () => void` Register one domain's unit. Duplicate keys and invalid `stateVersion` throw; the registration is an effect on the calling fiber, so an unloaded domain plugin's key (with its cached cells) disappears from subsequent drives and snapshots — clients read that as capability absence.
-- `ctx.sessionProjections.onChanged(listener): () => void` Subscribe to the change feed: one call per unit whose state reference changed, per committed event, carrying the schema-validated view and the causing seq. Effect-tied like `register`.
+- `ctx.sessionProjections.onChanged(listener): () => void` Subscribe to the change feed: one call per client-visible unit whose state reference changed, per committed event, carrying the schema-validated view and the causing seq. Effect-tied like `register`.
 - `ctx.sessionProjections.stateOf(session, key)` Read one registered unit's current host state without computing unrelated views. The returned value is a live read-only reference; callers must not mutate it.
-- `ctx.sessionProjections.snapshot(session, options?): ProjectionSnapshot` One consistent synchronous cut over every registered unit — `{ asOfSeq, values }` with `asOfSeq` = the seq of the last event every value reflects (`-1` for an empty log). `{ wireOnly: true }` excludes host-only units.
+- `ctx.sessionProjections.snapshot(session): ProjectionSnapshot` One consistent synchronous cut over every registered client-visible unit — `{ asOfSeq, values }` with `asOfSeq` = the seq of the last event every value reflects (`-1` for an empty log). Host-only state is available only through `stateOf`.
 
 ### Key Types
 
