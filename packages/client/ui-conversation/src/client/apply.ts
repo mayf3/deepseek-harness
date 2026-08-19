@@ -337,6 +337,7 @@ export function apply(ctx: Context): void {
             inputTriggers.toggleSource('command', {
               trigger: '/',
               query: '',
+              quoted: false,
               position: snapshot.draft.slice(0, selection.start).trim() === '' ? 'leading' : 'inline',
               span: { ...selection, draftRev: snapshot.draftRev },
             })

@@ -514,6 +514,31 @@ describe('built-in conversation node Definitions', () => {
     })
   })
 
+  it('associates session-reference labels inside the adjacent direct-message node', () => {
+    const referenceSource = {
+      kind: 'session-reference',
+      form: 'recall',
+      version: 1,
+      references: [
+        { sessionId: 'source-a', label: 'Research' },
+        { sessionId: 'source-b', label: 'Review' },
+      ],
+    }
+    const value = assembler([
+      at(1, 'user/message', {
+        ...textMessage('reference-context', 'snapshot'),
+        source: referenceSource,
+      }, { surfaceOp: 'append' }),
+      at(2, 'user/message', textMessage('citing-user', '@Research and @Review'), { surfaceOp: 'append' }),
+      at(4, 'user/message', textMessage('later-user', 'unrelated'), { surfaceOp: 'append' }),
+    ])
+
+    const current = snapshot(value)
+    const users = [...current.nodes.values()].filter(candidate => candidate.kind === 'user')
+    expect(users[0]?.data).toMatchObject({ referenceLabels: ['Research', 'Review'] })
+    expect(users[1]?.data).not.toHaveProperty('referenceLabels')
+  })
+
   it('keeps replacement copies out of Chat business nodes', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
