@@ -927,7 +927,7 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
     expect(originalEvents).toEqual(eventSnapshot)
   })
 
-  it('rejects duplicate, invalid, future-targeting, and incomplete static registries at initialization', async () => {
+  it('rejects duplicate, invalid, and future-targeting static registries at initialization', async () => {
     const calls: string[] = []
     await expect(configuredDecoder(1, [migration(0, calls), migration(0, calls)]))
       .rejects.toThrow(/duplicate Session format step/)
@@ -952,8 +952,28 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
 
     await expect(configuredDecoder(1, [migration(1, calls)]))
       .rejects.toThrow(/targets a version newer than this build/)
+  })
 
-    await expect(configuredDecoder(2, [migration(0, calls)]))
-      .rejects.toThrow(/incomplete path/)
+  it('initializes with a gapped registry and refuses only sessions at or below the gap', async () => {
+    const calls: string[] = []
+    const { decodeStoredSession } = await configuredDecoder(
+      3,
+      [migration(0, calls), migration(2, calls)],
+      calls,
+    )
+    const current = storedSource(3, [])
+    const pastGap = storedSource(2, eventLog())
+    const atGap = storedSource(1, eventLog())
+    const belowGap = storedSource(0, eventLog())
+
+    expect(decodeStoredSession(current.source, id).meta.version).toBe(3)
+    const decoded = decodeStoredSession(pastGap.source, id)
+    expect(decoded.sourceVersion).toBe(2)
+    expect(decoded.meta.version).toBe(3)
+    expect(() => decodeStoredSession(atGap.source, id))
+      .toThrow(/missing v1 -> v2/)
+    expect(() => decodeStoredSession(belowGap.source, id))
+      .toThrow(/missing v1 -> v2/)
+    expect(pastGap.reads).toEqual([])
   })
 })

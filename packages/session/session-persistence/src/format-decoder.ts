@@ -145,15 +145,10 @@ function buildStepIndex(steps: readonly SessionFormatStep[]): ReadonlyMap<number
     }
     byFrom.set(step.from, step)
   }
-  for (const first of byFrom.values()) {
-    for (let version = first.from; version < SESSION_FORMAT_VERSION; version++) {
-      if (!byFrom.has(version)) {
-        throw new TypeError(
-          `Session format registry has an incomplete path from v${first.from} to v${SESSION_FORMAT_VERSION}: missing v${version} -> v${version + 1}`,
-        )
-      }
-    }
-  }
+  // A missing step is a per-session concern, decided by planSteps() at decode
+  // time: it refuses sessions at or below the gap, while later versions whose
+  // path to the current version is complete still upgrade. Initialization
+  // therefore checks only step legality and duplicates here.
   return byFrom
 }
 
