@@ -21,7 +21,7 @@ Users therefore could not distinguish a nearly complete cache hit from a true fu
 | Non-full ratio whose current rounding is 100% | Minimum decimal precision whose rounded result is below 100% |
 | 100% | `100%` |
 
-Every non-empty ratio starts at zero decimal places. A non-full ratio increases precision one place at a time only while rounding would produce 100%, so `99.1%` and `99.49%` remain `99%`, while `99.5%`, `99.95%`, and `99.995%` retain one, two, and three decimal places respectively. `StatsLine` scales and rounds the integer token counts with `bigint`, which avoids floating-point formatting limits and imposes no precision cap or substitute label. A full hit does not carry a redundant decimal. The same derived string feeds the inline row and its overflow tooltip.
+Every non-empty ratio starts at zero decimal places. A non-full ratio increases precision one place at a time only while rounding would produce 100%, so `99.1%` and `99.49%` remain `99%`, while `99.5%`, `99.95%`, and `99.995%` retain one, two, and three decimal places respectively. `StatsLine` uses exact small-factor comparisons over the safe-integer token counts, then scales the near-full gap only while the intermediate remains within that range. This avoids floating-point tie errors without imposing a precision cap or substitute label. A full hit does not carry a redundant decimal. The same derived string feeds the inline row and its overflow tooltip.
 
 ## Ownership and lifecycle
 
@@ -31,7 +31,7 @@ Live updates, reload replay, and reconnect recovery all restore the same `tokenU
 
 ## Verification
 
-The component spec pins the zero denominator, ordinary integer rounding, each precision boundary through three decimal places, a near-full cumulative sample that needs fourteen decimal places, the true `100%` result, both locales, and equality between inline and tooltip values. The assembled `lifecycle-chrome` replay sidecar selects `9,950 / 10,000 = 99.5%` as a deterministic ratio that integer rounding would misreport as 100% while the base session fixture remains recordable; the live assertion and post-reload browser snapshot both display `99.5%` without another model call.
+The component spec pins the zero denominator, ordinary integer rounding, half-step rounding at several decimal precisions, each precision boundary through three decimal places, a near-full cumulative sample that needs fourteen decimal places, the true `100%` result, both locales, and equality between inline and tooltip values. The assembled `lifecycle-chrome` replay sidecar selects `9,950 / 10,000 = 99.5%` as a deterministic ratio that integer rounding would misreport as 100% while the base session fixture remains recordable; the live assertion and post-reload browser snapshot both display `99.5%` without another model call.
 
 ## Alternatives considered
 

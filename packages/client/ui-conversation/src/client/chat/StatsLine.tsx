@@ -101,6 +101,26 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(whole / 60)}m${whole % 60}s`
 }
 
+/** Round a cache-read ratio to an integer percentage, with positive ties rounded up. */
+function roundedIntegerPercent(cacheReadTokens: number, denominator: number): number {
+  const denominatorQuotient = Math.floor(denominator / 200)
+  const denominatorRemainder = denominator % 200
+  let lower = 0
+  let upper = 100
+  while (lower < upper) {
+    const candidate = Math.floor((lower + upper + 1) / 2)
+    const factor = candidate * 2 - 1
+    const threshold = factor * denominatorQuotient
+      + Math.ceil(factor * denominatorRemainder / 200)
+    if (cacheReadTokens >= threshold) {
+      lower = candidate
+    } else {
+      upper = candidate - 1
+    }
+  }
+  return lower
+}
+
 /**
  * Display-ready cache-hit share of prompt-side input over the whole durable log.
  * @param usage - the session's token-usage projection value.
@@ -109,26 +129,36 @@ export function formatDuration(ms: number): string {
  * 100, and no billed input returns null.
  */
 export function cacheHitPercent(usage: TokenUsageProjection): string | null {
-  const cacheReadTokens = BigInt(usage.cacheReadTokens)
-  const denominator = BigInt(usage.uncachedInputTokens)
-    + cacheReadTokens
-    + BigInt(usage.cacheWriteTokens)
-  if (denominator === 0n) return null
-  if (cacheReadTokens === denominator) return '100'
+  const denominator = billedInputTokens(usage)
+  if (denominator === 0) return null
+  const missedInputTokens = usage.uncachedInputTokens + usage.cacheWriteTokens
+  if (missedInputTokens === 0) return '100'
 
-  let decimalPlaces = 0
-  let decimalScale = 1n
-  while (true) {
-    const fullHit = 100n * decimalScale
-    const rounded = (2n * cacheReadTokens * fullHit + denominator) / (2n * denominator)
-    if (rounded < fullHit) {
-      if (decimalPlaces === 0) return rounded.toString()
-      const digits = rounded.toString().padStart(decimalPlaces + 1, '0')
-      return `${digits.slice(0, -decimalPlaces)}.${digits.slice(-decimalPlaces)}`
-    }
+  const integerPercent = roundedIntegerPercent(usage.cacheReadTokens, denominator)
+  if (integerPercent < 100) return String(integerPercent)
+
+  // At the first distinguishing precision, the rounded result is 100 minus
+  // one to five units in the final decimal place. Scale only while the next
+  // multiplication remains at or below the denominator, then derive that
+  // final digit through exact small-factor comparisons.
+  let decimalPlaces = 1
+  let scaledDoubleGap = missedInputTokens * 200
+  const denominatorTens = Math.floor(denominator / 10)
+  while (scaledDoubleGap <= denominatorTens) {
+    scaledDoubleGap *= 10
     decimalPlaces += 1
-    decimalScale *= 10n
   }
+  const denominatorOnes = denominator % 10
+  let roundedLoss = 5
+  for (let loss = 1; loss < 5; loss += 1) {
+    const factor = loss * 2 + 1
+    const threshold = factor * denominatorTens + Math.floor(factor * denominatorOnes / 10)
+    if (scaledDoubleGap <= threshold) {
+      roundedLoss = loss
+      break
+    }
+  }
+  return `99.${'9'.repeat(decimalPlaces - 1)}${10 - roundedLoss}`
 }
 
 /**
