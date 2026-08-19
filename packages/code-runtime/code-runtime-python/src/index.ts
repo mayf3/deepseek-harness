@@ -316,6 +316,17 @@ const GROUP_REAP_POLL_MS = 50
  * @returns The value's message or string form; a fixed placeholder when its own
  *   conversion throws.
  */
+function messageOf(error: unknown): string {
+  try {
+    return String(error instanceof Error ? error.message : error)
+  } catch {
+    // Swallows only a throw from the value's own `message` getter or string
+    // conversion. Nothing else runs inside the try, and the placeholder is a
+    // literal, so this cannot throw again.
+    return '<unrenderable rejection value>'
+  }
+}
+
 /**
  * A process's start time, as the identity half of (pid, started).
  *
@@ -344,17 +355,6 @@ export function readProcessStart(pid: number): string | undefined {
     return fields[19]
   } catch {
     return undefined
-  }
-}
-
-function messageOf(error: unknown): string {
-  try {
-    return String(error instanceof Error ? error.message : error)
-  } catch {
-    // Swallows only a throw from the value's own `message` getter or string
-    // conversion. Nothing else runs inside the try, and the placeholder is a
-    // literal, so this cannot throw again.
-    return '<unrenderable rejection value>'
   }
 }
 
@@ -1347,6 +1347,14 @@ export class PythonCodeRuntime extends CodeRuntime {
             void (async () => {
               try {
                 const resolved = await fn(message.args)
+                // Drop a reply the run no longer needs BEFORE snapshotting it.
+                // `sendReply` also checks `settled`, but only after this value has
+                // been walked and copied: a binding that resolves a wide value
+                // after `maxWallMs`, an abort, or dispose already settled the run
+                // would spend host heap on a frame that is then discarded, and
+                // binding resolution carries no seam-level byte cap to bound it.
+                // oxlint-disable-next-line typescript/no-unnecessary-condition -- the run can settle while this binding is awaited.
+                if (settled) return
                 // The seam requires a lossy resolution to REJECT descriptively,
                 // not silently coerce: a raw JSON.stringify would turn NaN/
                 // Infinity into null and drop undefined fields. Snapshot through

@@ -3832,6 +3832,37 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.value).toBe(reply.length)
   }, 90_000)
 
+  it('drops a late binding resolution before snapshotting it', async () => {
+    // `sendReply` checks `settled`, but only after the resolution has been walked
+    // and copied by `snapshotJsonValue`. Binding resolution carries no seam-level
+    // byte cap, so a binding that resolves a wide value AFTER the run already
+    // settled (here on `maxWallMs`) spent host heap building a frame that is then
+    // discarded. The check now runs before the snapshot.
+    //
+    // The binding resolves well after the 1s wall clock with a 2M-element array;
+    // the run must still report `timeout`, and the late value must not appear.
+    let resolvedLate = false
+    const { runtime } = await setup({ maxWallMs: 1_000 })
+    const result = await runtime.run({
+      program: 'return await tools.slow({})',
+      bindings: [{
+        global: 'tools',
+        functions: {
+          slow: async () => {
+            await new Promise(resolve => setTimeout(resolve, 2_500))
+            resolvedLate = true
+            return Array.from({ length: 2_000_000 }, () => 0)
+          },
+        },
+      }],
+    })
+    expect(result.error?.kind).toBe('timeout')
+    expect(result.value).toBeUndefined()
+    // Pin that the late path actually ran, so the assertion above is not vacuous.
+    await new Promise(resolve => setTimeout(resolve, 2_000))
+    expect(resolvedLate).toBe(true)
+  }, 90_000)
+
   it('bounds a flood of zero-byte log lines through the per-entry separator charge', async () => {
     // Blank print() lines carry zero content bytes; without the +1 separator
     // charge they would bypass maxLogBytes entirely and grow the retained
