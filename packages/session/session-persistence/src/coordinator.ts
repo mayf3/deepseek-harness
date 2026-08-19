@@ -1170,6 +1170,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
       this.live.set(session, restored)
       return restored
     }
+    // Session owns this stable deep-frozen snapshot; backends only serialize it.
     const seed = session.events
     const live: LiveSessionState = {
       init: Promise.resolve(),

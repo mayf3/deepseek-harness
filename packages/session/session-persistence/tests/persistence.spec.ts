@@ -281,7 +281,7 @@ runCoordinatorContract('memory', async (): Promise<CoordinatorFixture> => {
   }
 })
 
-describe('PersistenceCoordinator bounded writes', () => {
+describe('PersistenceCoordinator seed ownership', () => {
   it('retains the immutable session seed without cloning it', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
@@ -301,7 +301,9 @@ describe('PersistenceCoordinator bounded writes', () => {
       await ctx.fiber.dispose()
     }
   })
+})
 
+describe('PersistenceCoordinator bounded writes', () => {
   it('cancels the batching deadline when live initialization rejects', async () => {
     vi.useFakeTimers()
     const ctx = new Context()
