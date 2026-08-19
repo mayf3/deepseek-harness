@@ -12,7 +12,9 @@ Exposing background execution must not add a product session, product-specific j
 
 ## Decision
 
-Production `dsh` does not install the optional product providers. A Profile that opts in installs and mounts `dsh-subagent-codex`, `dsh-subagent-claude-code`, or both once on the host plane. The `standard`, `code`, and `cordis` Agent Presets configure the corresponding dormant tool rows with `backgroundMode: one-shot`; removing a row's `disabled` field exposes the existing optional `run_in_background` argument to agents composed from that preset. Omission or `false` waits in the foreground; explicit `true` returns a parent-owned Job id after synchronous Job preflight and registration, without waiting for provider startup or completion.
+Production `dsh` does not install the optional product providers. A Profile that opts in installs the needed `dsh-subagent-codex` or `dsh-subagent-claude-code` packages and mounts the required provider instances on the host plane. The `standard`, `code`, and `cordis` Agent Presets configure the corresponding dormant tool rows with `backgroundMode: one-shot`; removing a row's `disabled` field exposes the existing optional `run_in_background` argument to agents composed from that preset. Omission or `false` waits in the foreground; explicit `true` returns a parent-owned Job id after synchronous Job preflight and registration, without waiting for provider startup or completion.
+
+The [named-instance decision](2026-08-18-product-subagent-named-instances.md) allows multiple rows for either product. Each additional host provider row has its own `providerName`, and each exposed preset tool row binds that exact name through `provider` while keeping a unique `toolName`; the foreground/background scheduling choice does not constrain the number of instances.
 
 The [generic one-shot background adapter](2026-07-08-background-subagent-tasks.md) owns background registration and settlement. It starts the same [`SubagentRun`](2026-06-21-subagent-capability-seam.md), uses a Job-owned cancellation signal across provider startup and execution, waits for `run.result` and `run.dispose()`, maps the terminal result and optional safe diagnostic into the Job, and lets `job_output`, `job_list`, `job_kill`, and the existing completion notice expose that state. The [product provider decision](2026-08-04-claude-code-and-codex-subagent-backends.md) continues to own native protocols, answer selection, local cancellation, and process-tree quiescence; the [non-interactive permissions decision](2026-08-15-product-subagent-noninteractive-permissions.md) owns each product Provider's Profile configuration and diagnostic production.
 
@@ -33,7 +35,7 @@ product tool call
 
 | Fact or resource | Owner | Product-tool responsibility | Observable result |
 | --- | --- | --- | --- |
-| Product provider installation and registration | Explicit Profile | Install the optional provider package and mount it once on the host plane | The provider name is available without adding its package to every production `dsh` install |
+| Product provider installation and registration | Explicit Profile | Install the optional provider package and mount the required named instances on the host plane | The provider names are available without adding the package to every production `dsh` install |
 | Product selection and exposure | Agent Preset | Bind one fixed tool name to one fixed provider | Enabling one row exposes only that product tool |
 | Foreground or background choice | `dsh-tool-subagent` | Resolve `run_in_background` under `one-shot` policy | Omission is foreground; explicit `true` returns a Job id |
 | Job id, state, output, cancellation, and notice | `ctx.jobs` and `dsh-tool-jobs` | Register and present the existing one-shot run | Generic job tools collect or stop the run for the exact parent |
@@ -41,7 +43,7 @@ product tool call
 
 ## Published composition
 
-The production base keeps both optional product providers out of its dependency closure. An opting-in Profile installs and mounts either or both providers once on the host plane. Each full preset keeps both product-tool rows disabled and contributes the generic Job controls to its own agent scope, while the base host owns the shared Job registry. A user copies a preset and removes `disabled` from the matching product rows after the Profile provider is present; no product process starts during composition.
+The production base keeps both optional product providers out of its dependency closure. An opting-in Profile installs the needed packages and mounts the required provider instances on the host plane. Each full preset keeps both product-tool rows disabled and contributes the generic Job controls to its own agent scope, while the base host owns the shared Job registry. A user copies a preset and removes `disabled` from the matching product rows after the Profile providers are present; no product process starts during composition.
 
 A standalone custom composition that enables one-shot background execution must provide the product provider plus the complete generic Job capability: `dsh-jobs-local` as the Job provider and `dsh-tool-jobs` as the model-facing consumer. A Profile based on `dsh-base` already has the Job capability and adds only the optional product provider before enabling the preset tool row. A product tool without the Job runtime can still execute in the foreground, but an explicit background request fails the existing Job preflight instead of publishing an uncollectable id.
 

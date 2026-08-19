@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
+import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import * as yaml from 'js-yaml'
 import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
@@ -10,6 +14,7 @@ import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type {
   SubprocessHandle,
   SubprocessOutcome,
+  SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
@@ -59,6 +64,16 @@ vi.mock('node:fs', async (importOriginal) => {
 })
 
 type JsonObject = Record<string, unknown>
+
+const CODEX_VERSION = '0.147.0'
+const CODEX_PLATFORM_PACKAGES = [
+  '@openai/codex-darwin-arm64',
+  '@openai/codex-darwin-x64',
+  '@openai/codex-linux-arm64',
+  '@openai/codex-linux-x64',
+  '@openai/codex-win32-arm64',
+  '@openai/codex-win32-x64',
+] as const
 
 const fakeParent = {
   id: 'parent',
@@ -138,6 +153,7 @@ interface FakeChild {
   readonly stderr: PassThrough
   readonly settle: (outcome?: SubprocessOutcome) => void
   readonly fail: (error: Error) => void
+  readonly setStderr: (text: string) => void
   readonly terminate: () => void
   readonly waitForExit: (signal?: AbortSignal) => Promise<boolean>
 }
@@ -209,6 +225,7 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
     stderr,
     settle,
     fail,
+    setStderr: (text: string): void => { stderr.write(text) },
     terminate,
     waitForExit,
   }
@@ -306,19 +323,66 @@ function turnCompleted(
 }
 
 describe('task admission and package contracts', () => {
-  it('keeps the app-server command fixed on POSIX and Windows', () => {
-    expect(codexAppServerArgv('linux')).toEqual([
-      'codex', 'app-server', '--stdio',
-    ])
-    expect(codexAppServerArgv('win32')).toEqual([
-      'cmd.exe',
-      '/d',
-      '/s',
-      '/c',
-      'codex',
+  it('ships one independently installable provider-only Bundle patch', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>
+      files?: string[]
+      dsh?: { bundle?: { patch?: string } }
+    }
+    expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
+    expect(manifest.files).toContain('cordis.patch.yml')
+    expect(manifest.dependencies).toHaveProperty(
+      '@deepseek-ai/dsh-sdk-protocol',
+      'workspace:^',
+    )
+    expect(manifest.dependencies).toHaveProperty('@openai/codex', CODEX_VERSION)
+    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
+
+    const codexPackageJson = fileURLToPath(import.meta.resolve('@openai/codex/package.json'))
+    const codexManifest = JSON.parse(readFileSync(codexPackageJson, 'utf8')) as {
+      version: string
+      bin: { codex: string }
+      optionalDependencies: Record<string, string>
+    }
+    expect(codexManifest.version).toBe(CODEX_VERSION)
+    expect(codexManifest.bin).toEqual({ codex: 'bin/codex.js' })
+    expect(codexManifest.optionalDependencies).toEqual(Object.fromEntries(
+      CODEX_PLATFORM_PACKAGES.map(packageName => [
+        packageName,
+        `npm:@openai/codex@${CODEX_VERSION}-${packageName.slice('@openai/codex-'.length)}`,
+      ]),
+    ))
+    expect(codexAppServerArgv()).toEqual([
+      process.execPath,
+      resolve(dirname(codexPackageJson), codexManifest.bin.codex),
       'app-server',
       '--stdio',
     ])
+
+    const lockfile = readFileSync(resolve(root, '../../../pnpm-lock.yaml'), 'utf8')
+    for (const packageName of CODEX_PLATFORM_PACKAGES) {
+      const suffix = packageName.slice('@openai/codex-'.length)
+      expect(lockfile).toContain(`  '@openai/codex@${CODEX_VERSION}-${suffix}':`)
+      expect(lockfile).toContain(
+        `      '${packageName}': '@openai/codex@${CODEX_VERSION}-${suffix}'`,
+      )
+    }
+
+    const parsed = yaml.load(readFileSync(resolve(root, manifest.dsh!.bundle!.patch!), 'utf8'))
+    const rows = Array.isArray(parsed)
+      ? (parsed as Array<{ insert?: Array<{ id?: string; name?: string }> }>).flatMap(entry => entry.insert ?? [])
+      : []
+    expect(rows).toEqual([{
+      id: 'subagent-codex',
+      name: '@deepseek-ai/dsh-subagent-codex',
+    }])
+    expect(JSON.stringify(rows)).not.toContain('tool-subagent')
+  })
+
+  it('uses only the official package-declared wrapper for app-server', () => {
+    expect(codexAppServerArgv()[0]).toBe(process.execPath)
+    expect(codexAppServerArgv().slice(2)).toEqual(['app-server', '--stdio'])
   })
 
   it('accepts one or more text blocks and rejects empty or non-text tasks', () => {
@@ -333,7 +397,7 @@ describe('task admission and package contracts', () => {
       .toThrow('must not be empty')
   })
 
-  it('registers one fixed descriptor, validates config, and unregisters on HMR', async () => {
+  it('registers the default descriptor, validates config, and unregisters on HMR', async () => {
     const ctx = new Context()
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(LocalSubprocessRuntime)
@@ -362,7 +426,125 @@ describe('task admission and package contracts', () => {
     await ctx.fiber.dispose()
   })
 
+  it('keeps named instances, runs, and HMR ownership isolated', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(LocalSubprocessRuntime)
+    const safeChild = fakeChild()
+    const bypassChild = fakeChild()
+    const spawnSpecs: SubprocessSpawnSpec[] = []
+    vi.spyOn(ctx.subprocess, 'spawn').mockImplementation((spec) => {
+      spawnSpecs.push(spec)
+      return spec.env?.DSH_CODEX_INSTANCE === 'safe'
+        ? safeChild.handle
+        : bypassChild.handle
+    })
+    const added: string[] = []
+    const started: string[] = []
+    const ended: string[] = []
+    const removed: string[] = []
+    ctx.on('subagent/provider-added', provider => void added.push(provider.name))
+    ctx.on('subagent/start', info => void started.push(info.provider))
+    ctx.on('subagent/end', info => void ended.push(info.provider))
+    ctx.on('subagent/provider-removed', providerName => void removed.push(providerName))
+    const safeFiber = await ctx.plugin(codex, {
+      providerName: 'codex-safe',
+      env: { DSH_CODEX_INSTANCE: 'safe' },
+      permissionMode: 'never',
+      disposeGraceMs: 11,
+    })
+    const bypassFiber = await ctx.plugin(codex, {
+      providerName: 'codex-bypass',
+      env: { DSH_CODEX_INSTANCE: 'bypass' },
+      permissionMode: 'dangerously-bypass-approvals-and-sandbox',
+      disposeGraceMs: 29,
+    })
+    expect(ctx.subagents.list()).toEqual(['codex-safe', 'codex-bypass'])
+    expect(added).toEqual(['codex-safe', 'codex-bypass'])
+
+    const safeController = new AbortController()
+    const safeStarting = ctx.subagents.start(
+      'codex-safe',
+      request(undefined, safeController.signal),
+    )
+    const bypassStarting = ctx.subagents.start('codex-bypass', request())
+    for (const child of [safeChild, bypassChild]) {
+      const initialize = await child.peer.nextMethod('initialize')
+      child.peer.respond(initialize, { userAgent: 'codex-cli 0.147.0' })
+      await child.peer.nextMethod('initialized')
+      const threadStart = await child.peer.nextMethod('thread/start')
+      child.peer.respond(threadStart, {
+        thread: { id: 'thread-1', ephemeral: true },
+      })
+    }
+    const [safeRun, bypassRun] = await Promise.all([
+      safeStarting,
+      bypassStarting,
+    ])
+    await safeFiber.dispose()
+    expect(ctx.subagents.list()).toEqual(['codex-bypass'])
+    expect(removed).toEqual(['codex-safe'])
+    await expect(ctx.subagents.start('codex-safe', request()))
+      .rejects.toMatchObject({ code: 'NO_PROVIDER' })
+
+    const safeTurn = await safeChild.peer.nextMethod('turn/start')
+    const bypassTurn = await bypassChild.peer.nextMethod('turn/start')
+    safeChild.peer.respond(safeTurn, { turn: { id: 'turn-safe' } })
+    bypassChild.peer.send(
+      { id: bypassTurn.id, result: { turn: { id: 'turn-bypass' } } },
+      agentMessage('bypass answer', 'final_answer', 'turn-bypass'),
+      turnCompleted('completed', 'turn-bypass'),
+    )
+    await expect(bypassRun.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'bypass answer' }],
+      stopReason: 'completed',
+    })
+    safeController.abort(new Error('stop only the safe instance'))
+    await expect(safeRun.result).resolves.toEqual({
+      output: [],
+      stopReason: 'aborted',
+    })
+    expect(spawnSpecs.map(spec => ({
+      instance: spec.env?.DSH_CODEX_INSTANCE,
+      graceMs: spec.graceMs,
+    }))).toEqual([
+      { instance: 'safe', graceMs: 11 },
+      { instance: 'bypass', graceMs: 29 },
+    ])
+
+    await Promise.all([safeRun.dispose(), bypassRun.dispose()])
+    expect([...started].sort()).toEqual(['codex-bypass', 'codex-safe'])
+    expect([...ended].sort()).toEqual(['codex-bypass', 'codex-safe'])
+    expect(safeChild.terminate).toHaveBeenCalledOnce()
+    expect(bypassChild.terminate).toHaveBeenCalledOnce()
+    await bypassFiber.dispose()
+    expect(removed).toEqual(['codex-safe', 'codex-bypass'])
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects duplicate provider names without replacing the first instance', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(LocalSubprocessRuntime)
+    const firstFiber = await ctx.plugin(codex, {
+      providerName: 'codex-duplicate',
+    })
+    const first = ctx.subagents.getProvider('codex-duplicate')
+    await expect(ctx.plugin(codex, {
+      providerName: 'codex-duplicate',
+      permissionMode: 'dangerously-bypass-approvals-and-sandbox',
+    })).rejects.toMatchObject({ code: 'DUPLICATE_PROVIDER' })
+    expect(ctx.subagents.getProvider('codex-duplicate')).toBe(first)
+    expect(ctx.subagents.list()).toEqual(['codex-duplicate'])
+    await firstFiber.dispose()
+    await ctx.fiber.dispose()
+  })
+
   it('accepts only the three fixed non-interactive permission modes', () => {
+    expect(codex.Config({}).providerName).toBe('codex')
+    expect(codex.Config({ providerName: 'codex-safe' }).providerName)
+      .toBe('codex-safe')
+    expect(() => codex.Config({ providerName: '' })).toThrow()
     expect(codex.Config({}).permissionMode).toBe(DEFAULT_CODEX_PERMISSION_MODE)
     for (const permissionMode of CODEX_PERMISSION_MODES) {
       expect(codex.Config({ permissionMode }).permissionMode).toBe(permissionMode)
@@ -1492,6 +1674,43 @@ describe('run lifecycle and quiescence', () => {
     expect(child.terminate).toHaveBeenCalledTimes(1)
   })
 
+  it('surfaces only the wrapper missing-payload diagnostic during startup', async () => {
+    const child = fakeChild()
+    child.setStderr([
+      `credential-like unrelated stderr ${'x'.repeat(16 * 1024)}`,
+      'Error: Missing optional dependency @openai/codex-linux-x64. '
+        + 'Reinstall Codex: pnpm add -g @openai/codex@latest',
+    ].join('\n'))
+    const starting = startCodexRun(request(), runSpec(child))
+    child.settle({ exitCode: 1, signal: null })
+
+    const error: unknown = await starting.then(
+      () => undefined,
+      (failure: unknown) => failure,
+    )
+    expect(error).toBeInstanceOf(Error)
+    if (!(error instanceof Error)) throw new Error('expected startup failure')
+    expect(error.message).toContain('Missing optional dependency @openai/codex-linux-x64')
+    expect(error.message).not.toContain('credential-like unrelated stderr')
+    expect(error.message).not.toContain('Reinstall Codex')
+    expect(error.message).not.toContain('pnpm add -g')
+    expect(child.terminate).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for process settlement before sampling the missing-payload diagnostic', async () => {
+    const child = fakeChild({ exitOnTerminate: false })
+    const starting = startCodexRun(request(), runSpec(child))
+    child.fromChild.end()
+    await vi.waitFor(() => { expect(child.terminate).toHaveBeenCalledTimes(1) })
+
+    child.setStderr('Error: Missing optional dependency @openai/codex-linux-x64.')
+    child.settle({ exitCode: 1, signal: null })
+
+    await expect(starting).rejects.toThrow(
+      'Missing optional dependency @openai/codex-linux-x64',
+    )
+  })
+
   it('keeps overlapping runs isolated', async () => {
     const initialStderrListeners = {
       error: process.stderr.listenerCount('error'),
@@ -1586,11 +1805,12 @@ describe('run lifecycle and quiescence', () => {
       warnings.push(String(message))
     }) as typeof ctx.logger.warn
     await ctx.plugin(codex, {
+      providerName: 'codex-diagnostic',
       env: { OPENAI_API_KEY: 'fake' },
       permissionMode: 'approve-for-me',
       disposeGraceMs: 25,
     })
-    const starting = ctx.subagents.start('codex', {
+    const starting = ctx.subagents.start('codex-diagnostic', {
       prompt: [{ type: 'text', text: 'task' }],
       parent: fakeParent,
       signal: new AbortController().signal,
@@ -1632,13 +1852,13 @@ describe('run lifecycle and quiescence', () => {
       stopReason: 'error',
     })
     expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
-      argv: ['codex', 'app-server', '--stdio'],
+      argv: codexAppServerArgv(),
       env: { OPENAI_API_KEY: 'fake' },
       graceMs: 25,
       cwd: process.cwd(),
     }))
     expect(warnings).toEqual([
-      expect.stringContaining('subagent-codex: child run failed (error): subagent-codex: Codex turn ended with status failed: error'),
+      expect.stringContaining('subagent-codex "codex-diagnostic": child run failed (error): subagent-codex: Codex turn ended with status failed: error'),
     ])
     expect(warnings.join('\n')).not.toContain('SECRET_TOKEN')
     expect(warnings.join('\n')).not.toContain('/private/secret.txt')

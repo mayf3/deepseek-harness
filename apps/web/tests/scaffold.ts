@@ -22,7 +22,7 @@
 // llm seam post-boot with installLlmReplay on the settled root ctx
 // (the plugin-row path discards the ReplayHandle; the direct install keeps
 // assertConsumed for the teardown fixture-consumption check).
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -183,7 +183,11 @@ export interface WebScaffold {
   harnessHome: string
   /** Await a settled turn end: in-process turn/end, then the agent's idle flip (which follows the persistence flush). */
   whenTurnSettled(timeoutMs?: number): Promise<SessionId>
-  /** Tear everything down; asserts the replay fixture was fully consumed first (replay/refresh). */
+  /**
+   * Tear everything down; asserts the replay fixture was fully consumed first
+   * (replay/refresh), unless booted with replayProvidersOnly (whose fixture
+   * is validated call-free at boot).
+   */
   close(): Promise<void>
 }
 
@@ -200,9 +204,20 @@ export interface LaunchOptions {
    * in replay/refresh modes; ignored in record mode (the real adapter
    * answers). Omit for scenarios issuing no model calls — a stray stream then
    * fails loud with NO_ADAPTER (llm-deepseek is disabled and no replay row
-   * mounts).
+   * mounts). With {@link replayProvidersOnly}, the fixture must record no
+   * model calls (its header alone mounts the catalog).
    */
   replayFixture?: string
+  /**
+   * Mount the replay provider catalog (the model directory the UI shows)
+   * without consuming any recorded script: for scenarios that never call a
+   * model but need the real provider/model labels rendered. Requires
+   * {@link replayFixture} whose log records no model calls, and rejects
+   * {@link replayOverride} and {@link replayChildFixtures}; the teardown
+   * consumption check is skipped for this mode. `replayFixture` without this
+   * flag keeps the consumption check.
+   */
+  replayProvidersOnly?: boolean
   /**
    * Recorded child logs assigned in child creation order. Each child owns its
    * own positional replay cursor across initial and continuation turns.
@@ -551,6 +566,36 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // disable llm-deepseek; the first-run lane keeps it mounted but has no
     // replay fixture and never streams. The direct install, unlike the plugin
     // row, returns the ReplayHandle for the teardown consumption check.
+    if (options.replayProvidersOnly) {
+      if (options.replayFixture === undefined) {
+        throw new Error('replayProvidersOnly requires replayFixture (its file supplies the header)')
+      }
+      const fixtureText = readFileSync(options.replayFixture, 'utf8')
+      // The consumption check is skipped for this mode, so no script source
+      // may carry callable entries: reject override/child sources outright
+      // and any call-bearing fixture.
+      if (options.replayOverride !== undefined || options.replayChildFixtures !== undefined) {
+        throw new Error('replayProvidersOnly cannot combine with replayOverride or replayChildFixtures')
+      }
+      // A fixture without a session header row must not mount the catalog
+      // silently: the consumption-skip assumes the header-only shape.
+      let headerType: unknown
+      try {
+        headerType = (JSON.parse(fixtureText.trimStart().split('\n', 1)[0] ?? '') as { type?: unknown }).type
+      } catch {
+        headerType = undefined
+      }
+      if (headerType !== 'session') {
+        throw new Error('replayProvidersOnly fixture must open with a session header row')
+      }
+      const recorded = parseSessionLog(fixtureText)
+      const hasModelCall = recorded.some(event => (
+        event.type === 'assistant/chunk' || event.type === 'request/header' || event.type === 'tool/call'
+      ))
+      if (hasModelCall) {
+        throw new Error('replayProvidersOnly fixture must record no model calls')
+      }
+    }
     if (mode !== 'record' && options.replayFixture !== undefined) {
       replayHandle = installLlmReplay(ctx, {
         file: options.replayFixture,
@@ -612,11 +657,14 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       const failures: unknown[] = []
       // Fixture-consumption check first, while the run's binding state is
       // still authoritative — a scenario that drove fewer model calls than
-      // recorded fails here instead of drifting green.
-      try {
-        replayHandle?.assertConsumed()
-      } catch (error) {
-        failures.push(error)
+      // recorded fails here instead of drifting green. Skipped for
+      // replayProvidersOnly, whose fixture is validated call-free at boot.
+      if (!options.replayProvidersOnly) {
+        try {
+          replayHandle?.assertConsumed()
+        } catch (error) {
+          failures.push(error)
+        }
       }
       try {
         failures.push(...await cleanupScaffoldWorld(ctx, workspaceCwd, persistenceRoot))
