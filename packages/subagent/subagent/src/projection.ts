@@ -29,12 +29,13 @@ const activeIntervalSchema = z.object({
   through: z.number().int().nonnegative(),
 }).strict()
 
-// Zod's optional output includes explicit `undefined`; with
-// exactOptionalPropertyTypes the public interface permits omission only.
-const projectionSchema = z.object({
+const projectionSchema: z.ZodType<SubagentTimingProjection> = z.object({
   settledMs: z.number().int().nonnegative(),
   active: activeIntervalSchema.optional(),
-}).strict() as unknown as z.ZodType<SubagentTimingProjection>
+}).strict().transform(({ settledMs, active }) => ({
+  settledMs,
+  ...active === undefined ? {} : { active },
+}))
 
 const timingStateSchema: z.ZodType<TimingState> = z.object({
   settledMs: z.number().int().nonnegative(),
