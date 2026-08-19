@@ -721,9 +721,9 @@ Source: [`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent
 'team/member': { version: 1; teamId: TeamId; member: TeamMemberSnapshot }
 ```
 
-Types: [TeamId](subsystems/team.md) · [TeamMemberSnapshot](subsystems/team.md)
+Types: [TeamId](subsystems/agent-team.md) · [TeamMemberSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/team/src/types.ts:206`](../packages/experimental/team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:206`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagedelivered--log-only"></a>
 
@@ -739,9 +739,9 @@ Source: [`packages/experimental/team/src/types.ts:206`](../packages/experimental
 }
 ```
 
-Types: [TeamId](subsystems/team.md) · [TeamMessageId](subsystems/team.md)
+Types: [TeamId](subsystems/agent-team.md) · [TeamMessageId](subsystems/agent-team.md)
 
-Source: [`packages/experimental/team/src/types.ts:212`](../packages/experimental/team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:212`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teammessagequeued--log-only"></a>
 
@@ -752,9 +752,9 @@ Source: [`packages/experimental/team/src/types.ts:212`](../packages/experimental
 'team/message/queued': { version: 1; teamId: TeamId; message: TeamMessageSnapshot }
 ```
 
-Types: [TeamId](subsystems/team.md) · [TeamMessageSnapshot](subsystems/team.md)
+Types: [TeamId](subsystems/agent-team.md) · [TeamMessageSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/team/src/types.ts:210`](../packages/experimental/team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:210`](../packages/experimental/agent-team/src/types.ts)
 
 <a id="teamtask--log-only"></a>
 
@@ -765,9 +765,9 @@ Source: [`packages/experimental/team/src/types.ts:210`](../packages/experimental
 'team/task': { version: 1; teamId: TeamId; task: TeamTaskSnapshot }
 ```
 
-Types: [TeamId](subsystems/team.md) · [TeamTaskSnapshot](subsystems/team.md)
+Types: [TeamId](subsystems/agent-team.md) · [TeamTaskSnapshot](subsystems/agent-team.md)
 
-Source: [`packages/experimental/team/src/types.ts:208`](../packages/experimental/team/src/types.ts)
+Source: [`packages/experimental/agent-team/src/types.ts:208`](../packages/experimental/agent-team/src/types.ts)
 
 ### `todo/*`
 
