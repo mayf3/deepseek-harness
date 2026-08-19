@@ -218,6 +218,7 @@ describe('translation scope discovery', () => {
   it.each([
     'packages/example/guide.md',
     'packages/example/CONTRIBUTING.md',
+    'packages/example/BRAND_GUIDELINES.md',
     'examples/tutorial.md',
     'website/reference.md',
     'packages/example/README.txt',
