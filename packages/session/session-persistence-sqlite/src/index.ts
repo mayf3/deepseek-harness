@@ -1,99 +1,45 @@
 /**
- * SQLite durable session-persistence backend. It maps each session header and
- * event to rows, and delegates write-path orchestration to
- * {@link PersistenceCoordinator}. It has no independent per-session artifact,
- * so its locator returns `undefined`.
+ * Opt-in SQLite persistence provider. Logical sessions remain unchanged;
+ * the physical backend packs eligible chunk runs into schema-17 rows.
  * @module @deepseek-ai/dsh-session-persistence-sqlite
  */
 
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { randomUUID } from 'node:crypto'
-import { statSync } from 'node:fs'
-import { DatabaseSync } from 'node:sqlite'
-import { mkdir, open } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import type {
+  SessionEvent,
+  SessionHeader,
+  SessionId,
+  SessionPreparation,
+} from '@deepseek-ai/dsh-session'
 import {
-  DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS,
-  decodeStoredSessionHeader, SessionPersistence, SessionPersistenceRevision,
-  SessionPersistenceRevisionConflictError, PersistenceCoordinator,
-  type PersistenceBackend, type SessionLocation, type SessionPersistenceSnapshot,
-  type SessionInspection, type SessionPersistenceRevision as PersistenceRevision,
-  type StoredEventRead, type StoredSessionSource,
+  DEFAULT_PREPARED_SESSION_CACHE_SIZE,
+  DEFAULT_WRITE_BATCH_MAX_DELAY_MS,
+  MAX_WRITE_BATCH_DELAY_MS,
+  PersistenceCoordinator,
+  SessionPersistence,
+  type SessionInspection,
+  type SessionLocation,
+  type SessionPersistenceSnapshot,
 } from '@deepseek-ai/dsh-session-persistence'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SurfaceEventType, SessionHeader, SessionPreparation } from '@deepseek-ai/dsh-session'
-import {
-  type JournalMode, openDatabase, rowToStoredMeta, scanRows, type EventRow, type SessionRow,
-} from './schema.ts'
+import type { JournalMode } from './schema.ts'
+import { SqliteStore } from './store.ts'
 
 export { SCHEMA_VERSION } from './schema.ts'
 
-/**
- * Serialize an event's optional envelope fields for SQL binding. The surface
- * fields are nullable TEXT columns — null when the event has no surface
- * metadata (non-surface events, events written before surface support); the
- * ignorable marker is a nullable INTEGER column — `1` iff the envelope carries
- * `ignorable: true`.
- */
-function envelopeBindings(event: SessionEvent): [string | null, string | null, number | null] {
-  const se = event as SessionEvent<SurfaceEventType>
-  return [
-    se.sourceEventSeqs ? JSON.stringify(se.sourceEventSeqs) : null,
-    se.surfaceOp !== undefined ? JSON.stringify(se.surfaceOp) : null,
-    event.ignorable === true ? 1 : null,
-  ]
-}
-
-/** Build the source-qualified revision shared by full and lightweight reads. */
-function sqliteRevision(storeIdentity: string, row: SessionRow): PersistenceRevision {
-  return SessionPersistenceRevision(
-    `${storeIdentity}:incarnation:${row.incarnation}:revision:${row.revision}`,
-  )
-}
-
-interface SqliteStoredPrefix {
-  readonly meta: unknown
-  readonly events: unknown[]
-  readonly revision: PersistenceRevision
-  readonly tornMarker?: number
-}
-
-/**
- * Exclusively create a missing database file with owner-only permissions.
- * Existing files retain their modes, and errors other than `EEXIST` propagate.
- * `DatabaseSync` reopens by path, so this does not protect confidentiality or
- * integrity when another principal can replace the database entry in its parent
- * directory.
- */
-async function createDatabaseFile(path: string): Promise<void> {
-  try {
-    const handle = await open(path, 'wx', 0o600)
-    await handle.close()
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-  }
-}
+/** Default wait for another SQLite connection's write reservation. */
+export const DEFAULT_BUSY_TIMEOUT_MS = 5_000
+/** Largest busy timeout accepted by SQLite's signed millisecond interface. */
+export const MAX_BUSY_TIMEOUT_MS = 2_147_483_647
 
 /** Plugin configuration. */
 export interface Config {
-  /**
-   * Filesystem path to the SQLite database file. The special value `:memory:`
-   * opens an in-process database (tests). On filesystems with POSIX modes,
-   * missing directories and databases are created owner-only; existing path
-   * modes are preserved. Filesystem setup errors other than an existing database
-   * fail initialization. The backend does not protect confidentiality or
-   * integrity when another principal can replace the database entry in its
-   * parent directory.
-   */
+  /** SQLite database path, or `:memory:` for an in-process database. */
   path: string
-  /**
-   * SQLite `journal_mode` pragma. `wal` (the default) is the recorded
-   * durability model; pick a rollback-journal mode (`delete`/`truncate`/
-   * `persist`) on filesystems where WAL's shared-memory files do not work
-   * (network mounts). See {@link JournalMode}.
-   */
+  /** Durable SQLite journal mode; defaults to `wal`. */
   journalMode?: JournalMode
+  /** Maximum wait for another SQLite connection's lock; defaults to 5,000 ms. */
+  busyTimeoutMs?: number
   /** Maximum cold Session preparations retained for history-to-resume reuse. */
   preparedSessionCacheSize?: number
   /** Fixed live-event coalescing window; not a backend completion deadline. */
@@ -101,84 +47,49 @@ export interface Config {
 }
 
 /**
- * The SQLite persistence backend. Load as a plugin; it registers as
- * `ctx.sessionPersistence` and (via the coordinator) installs the write-path
- * listeners. Its torn-tail marker is the seq to delete from.
+ * SQLite `SessionPersistence` provider with a schema-owned physical codec.
  */
-export class SqliteSessionPersistence extends SessionPersistence implements PersistenceBackend<number> {
+export class SqliteSessionPersistence extends SessionPersistence {
   override readonly supportsRawArtifacts = false
+  override readonly name = 'session-persistence-sqlite'
 
   static inject = ['sessions']
 
   static Config: z<Config> = z.object({
     path: z.string().required(),
     journalMode: z.union(['wal', 'delete', 'truncate', 'persist'] as const).default('wal'),
+    busyTimeoutMs: z.number().step(1).min(0).max(MAX_BUSY_TIMEOUT_MS).default(DEFAULT_BUSY_TIMEOUT_MS),
     preparedSessionCacheSize: z.number().step(1).min(1).default(DEFAULT_PREPARED_SESSION_CACHE_SIZE),
     writeBatchMaxDelayMs: z.number().step(1).min(1).max(MAX_WRITE_BATCH_DELAY_MS)
       .default(DEFAULT_WRITE_BATCH_MAX_DELAY_MS),
   })
 
-  /**
-   * Backend label for the coordinator's dispose diagnostics. Intentionally
-   * shadows cordis `Service.name` (set to `'sessionPersistence'` by the base);
-   * see the JSONL backend for why this does not affect service resolution.
-   */
-  override readonly name = 'session-persistence-sqlite'
-
-  private db!: DatabaseSync
-  private storeIdentity!: string
-  private ready: Promise<void>
-  private coordinator: PersistenceCoordinator<number>
+  private readonly store: SqliteStore
+  private readonly coordinator: PersistenceCoordinator<number>
 
   constructor(ctx: Context, public config: Config) {
     super(ctx)
-    // Programmatic wrappers may construct the backend without Schemastery normalization.
     const preparedSessionCacheSize = config.preparedSessionCacheSize
       ?? DEFAULT_PREPARED_SESSION_CACHE_SIZE
     const writeBatchMaxDelayMs = config.writeBatchMaxDelayMs
       ?? DEFAULT_WRITE_BATCH_MAX_DELAY_MS
-    // Open asynchronously so directory creation does not block plugin apply;
-    // every storage hook awaits the same readiness promise.
-    this.ready = this.openDb(config.path, (config as Required<Config>).journalMode)
-    this.coordinator = new PersistenceCoordinator<number>(this.ctx, this, {
+    this.store = new SqliteStore({
+      path: config.path,
+      journalMode: config.journalMode ?? 'wal',
+      busyTimeoutMs: config.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS,
+    })
+    this.coordinator = new PersistenceCoordinator(this.ctx, this.store, {
       preparedSessionCacheSize,
       writeBatchMaxDelayMs,
     })
   }
 
-  private async openDb(path: string, journalMode: JournalMode): Promise<void> {
-    const actual = path === ':memory:' ? path : resolve(path)
-    if (actual !== ':memory:') {
-      await mkdir(dirname(actual), { recursive: true, mode: 0o700 })
-      await createDatabaseFile(actual)
-    }
-    this.db = openDatabase(actual, journalMode)
-    try {
-      const row = this.db.prepare(
-        'SELECT store_id FROM persistence_state WHERE singleton = 1',
-      ).get() as { store_id: string } | undefined
-      /* v8 ignore next -- openDatabase inserts the singleton before returning. */
-      if (row === undefined) {
-        throw new Error(`session database at "${actual}" has no store identity`)
-      }
-      if (row.store_id.length === 0) {
-        throw new Error(`session database at "${actual}" has no valid store identity`)
-      }
-      if (actual !== ':memory:') {
-        const identity = statSync(actual, { bigint: true })
-        this.storeIdentity = `file:${identity.dev}:${identity.ino}:${identity.birthtimeNs}:store:${row.store_id}`
-      } else {
-        this.storeIdentity = `memory:store:${row.store_id}`
-      }
-    } catch (error: unknown) {
-      this.db.close()
-      throw error
-    }
+  /** Reject self-contained path and ownership failures without loading Node SQLite. */
+  protected async [Service.init](): Promise<void> {
+    await this.store.validatePath()
   }
 
-  // --- SessionPersistence service API (delegated to the coordinator) ---
-
-  /** SQLite has one database, not an independent local artifact per session. */
+  /** SQLite has one database, not an independent per-session artifact. */
   locate(_meta: SessionHeader): SessionLocation | undefined {
     return undefined
   }
@@ -203,342 +114,20 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
     return this.coordinator.inspect(id, signal)
   }
 
-  readFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<{ meta: SessionHeader; events: SessionEvent[] }> {
+  readFrom(
+    id: SessionId,
+    fromSeq: number,
+    signal?: AbortSignal,
+  ): Promise<{ meta: SessionHeader; events: SessionEvent[] }> {
     return this.coordinator.readFrom(id, fromSeq, signal)
   }
 
-  // One method serves both public `list` and the backend hook; delegating it to
-  // the coordinator would call this hook recursively.
-
-  // --- PersistenceBackend hooks (the SQLite storage primitives) ---
-
-  /** Open repeatable reads over one SQLite row revision. */
-  async openStored(id: SessionId, signal?: AbortSignal): Promise<StoredSessionSource<number> | undefined> {
-    signal?.throwIfAborted()
-    await this.ready
-    signal?.throwIfAborted()
-    const row = this.rowFor(id)
-    if (row === undefined) return undefined
-    const revision = sqliteRevision(this.storeIdentity, row)
-    return {
-      meta: rowToStoredMeta(row),
-      revision,
-      readEvents: (options = {}): StoredEventRead<number> => {
-        return this.createStoredEventRead(
-          async () => {
-            const fromSeq = options.fromSeq ?? 0
-            const stored = fromSeq === 0
-              ? await this.readPrefix(id, signal)
-              : await this.readSuffix(id, fromSeq, signal)
-            if (stored === undefined || stored.revision !== revision) {
-              throw new SessionPersistenceRevisionConflictError(
-                `session "${id}" changed while reading revision ${revision}`,
-              )
-            }
-            return stored
-          },
-          () => true,
-          signal,
-        )
-      },
-    }
+  list(signal?: AbortSignal): Promise<SessionHeader[]> {
+    return this.store.list(signal)
   }
 
-  /** Read one row's revision without loading its events. */
-  async readStoredRevision(id: SessionId, signal?: AbortSignal): Promise<PersistenceRevision | undefined> {
-    signal?.throwIfAborted()
-    await this.ready
-    signal?.throwIfAborted()
-    const row = this.rowFor(id)
-    return row === undefined ? undefined : sqliteRevision(this.storeIdentity, row)
-  }
-
-  /**
-   * Seek-capable suffix read: SQL selects `seq >= fromSeq` directly, so the
-   * read scales with the suffix, not the log. Torn rows past the preserved
-   * region are dropped, never repaired (non-mutating read).
-   */
-  private async readSuffix(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<SqliteStoredPrefix | undefined> {
-    return this.readStoredEvents(id, fromSeq, false, signal)
-  }
-
-  /**
-   * Read a session's row and ordered events at one SQLite snapshot. The
-   * torn-tail marker is the seq from which a never-committed tail must be deleted
-   * (`scanRows` already returns it as `number | undefined`).
-   */
-  private async readPrefix(id: SessionId, signal?: AbortSignal): Promise<SqliteStoredPrefix | undefined> {
-    return this.readStoredEvents(id, 0, true, signal)
-  }
-
-  private async readStoredEvents(
-    id: SessionId,
-    fromSeq: number,
-    includeTornMarker: boolean,
-    signal?: AbortSignal,
-  ): Promise<SqliteStoredPrefix | undefined> {
-    signal?.throwIfAborted()
-    await this.ready
-    signal?.throwIfAborted()
-    this.db.exec('BEGIN')
-    let snapshot: { row: SessionRow; eventRows: EventRow[] } | undefined
-    try {
-      const row = this.rowFor(id)
-      if (row !== undefined) {
-        const statement = fromSeq === 0
-          ? this.db.prepare('SELECT seq, type, time, data, source_event_seqs, surface_op, ignorable FROM events WHERE session_id = ? ORDER BY seq')
-          : this.db.prepare('SELECT seq, type, time, data, source_event_seqs, surface_op, ignorable FROM events WHERE session_id = ? AND seq >= ? ORDER BY seq')
-        const eventRows = (fromSeq === 0
-          ? statement.all(id)
-          : statement.all(id, fromSeq)) as unknown as EventRow[]
-        snapshot = { row, eventRows }
-      }
-      this.db.exec('COMMIT')
-    } catch (error: unknown) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
-    signal?.throwIfAborted()
-    if (snapshot === undefined) return undefined
-    const { row, eventRows } = snapshot
-    const { preserved, tornFrom } = scanRows(eventRows, fromSeq)
-    return {
-      meta: rowToStoredMeta(row),
-      events: preserved,
-      revision: sqliteRevision(this.storeIdentity, row),
-      ...includeTornMarker && tornFrom !== undefined ? { tornMarker: tornFrom } : {},
-    }
-  }
-
-  /**
-   * Durably append a batch in ONE transaction: materialize the sessions row (if
-   * lazy) and INSERT every event, or roll back entirely. The transaction is the
-   * atomicity + durability boundary, so a mid-batch failure (a UNIQUE violation
-   * on a duplicated seq) leaves the stored log untouched.
-   */
-  async appendBatch(meta: SessionHeader, events: readonly SessionEvent[], isMaterialized: boolean): Promise<void> {
-    await this.ready
-    const insertEvent = this.db.prepare(
-      'INSERT INTO events (session_id, seq, type, time, data, source_event_seqs, surface_op, ignorable) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    )
-    this.db.exec('BEGIN')
-    try {
-      if (!isMaterialized) this.writeRow(meta)
-      for (const event of events) {
-        const [surfaceSeqs, surfaceOp, ignorable] = envelopeBindings(event)
-        insertEvent.run(meta.id, event.seq, event.type, event.time, JSON.stringify(event.data), surfaceSeqs, surfaceOp, ignorable)
-      }
-      this.db.prepare('UPDATE sessions SET revision = revision + 1 WHERE id = ?').run(meta.id)
-      this.db.exec('COMMIT')
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
-  }
-
-  /**
-   * Make a crash repair durable in ONE transaction: DELETE the torn tail (from
-   * `tornMarker`) and INSERT the synthetic `closers`. After COMMIT the stored rows
-   * == the balanced log.
-   */
-  async commitRepair(meta: SessionHeader, tornMarker: number | undefined, closers: readonly SessionEvent[]): Promise<void> {
-    await this.ready
-    this.db.exec('BEGIN')
-    try {
-      if (tornMarker !== undefined) {
-        this.db.prepare('DELETE FROM events WHERE session_id = ? AND seq >= ?').run(meta.id, tornMarker)
-      }
-      if (closers.length > 0) {
-        const insertEvent = this.db.prepare(
-          'INSERT INTO events (session_id, seq, type, time, data, source_event_seqs, surface_op, ignorable) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        )
-        for (const event of closers) {
-          const [surfaceSeqs, surfaceOp, ignorable] = envelopeBindings(event)
-          insertEvent.run(meta.id, event.seq, event.type, event.time, JSON.stringify(event.data), surfaceSeqs, surfaceOp, ignorable)
-        }
-      }
-      if (tornMarker !== undefined || closers.length > 0) {
-        this.db.prepare('UPDATE sessions SET revision = revision + 1 WHERE id = ?').run(meta.id)
-      }
-      this.db.exec('COMMIT')
-    } catch (error) {
-      // The DELETE+INSERT cannot collide (a row at a closer's seq is preserved or
-      // deleted as torn first); this rolls back a DB-level failure (disk full,
-      // etc.), unreachable in test.
-      /* v8 ignore start */
-      this.db.exec('ROLLBACK')
-      throw error
-      /* v8 ignore stop */
-    }
-  }
-
-  /** Stage a streamed replacement, then compare and swap it in one transaction. */
-  async replaceStored(
-    expectedRevision: PersistenceRevision,
-    meta: SessionHeader,
-    events: AsyncIterable<SessionEvent>,
-  ): Promise<void> {
-    await this.ready
-    const observed = this.rowFor(meta.id)
-    if (observed === undefined
-      || sqliteRevision(this.storeIdentity, observed) !== expectedRevision) {
-      throw new SessionPersistenceRevisionConflictError(
-        `session "${meta.id}" changed before replacement of revision ${expectedRevision}`,
-      )
-    }
-    if (meta.cwd !== (observed.cwd ?? undefined)) {
-      throw new Error(`replacement for session "${meta.id}" changes its stored identity`)
-    }
-    const staging = `format_upgrade_${randomUUID().replaceAll('-', '')}`
-    this.db.exec(`
-      CREATE TEMP TABLE ${staging} (
-        seq               INTEGER PRIMARY KEY,
-        type              TEXT NOT NULL,
-        time              INTEGER NOT NULL,
-        data              TEXT NOT NULL,
-        source_event_seqs TEXT,
-        surface_op        TEXT,
-        ignorable         INTEGER
-      ) STRICT
-    `)
-    try {
-      const stageEvent = this.db.prepare(
-        `INSERT INTO ${staging} (seq, type, time, data, source_event_seqs, surface_op, ignorable) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      for await (const event of events) {
-        const [surfaceSeqs, surfaceOp, ignorable] = envelopeBindings(event)
-        stageEvent.run(event.seq, event.type, event.time, JSON.stringify(event.data), surfaceSeqs, surfaceOp, ignorable)
-      }
-
-      this.db.exec('BEGIN IMMEDIATE')
-      let began = true
-      try {
-        const row = this.rowFor(meta.id)
-        if (row === undefined
-          || sqliteRevision(this.storeIdentity, row) !== expectedRevision) {
-          this.db.exec('ROLLBACK')
-          began = false
-          throw new SessionPersistenceRevisionConflictError(
-            `session "${meta.id}" changed before replacement of revision ${expectedRevision}`,
-          )
-        }
-        if (meta.cwd !== (row.cwd ?? undefined)) {
-          throw new Error(`replacement for session "${meta.id}" changes its stored identity`)
-        }
-
-        this.db.prepare('DELETE FROM events WHERE session_id = ?').run(meta.id)
-        this.db.prepare(`
-          INSERT INTO events
-            (session_id, seq, type, time, data, source_event_seqs, surface_op, ignorable)
-          SELECT ?, seq, type, time, data, source_event_seqs, surface_op, ignorable
-          FROM ${staging}
-          ORDER BY seq
-        `).run(meta.id)
-        this.db.prepare(`
-          UPDATE sessions SET
-            version = ?,
-            created_at = ?,
-            cwd = ?,
-            parent_session = ?,
-            seed_length = ?,
-            origin = ?,
-            delegation_depth = ?,
-            agent_preset = ?,
-            revision = revision + 1
-          WHERE id = ?
-        `).run(
-          meta.version,
-          meta.createdAt,
-          meta.cwd ?? null,
-          meta.parentSession ?? null,
-          meta.seedLength ?? null,
-          meta.origin ?? null,
-          meta.delegationDepth ?? null,
-          meta.agentPreset ?? null,
-          meta.id,
-        )
-        this.db.exec('COMMIT')
-        began = false
-      } catch (error: unknown) {
-        if (began) this.db.exec('ROLLBACK')
-        throw error
-      }
-    } finally {
-      this.db.exec(`DROP TABLE IF EXISTS ${staging}`)
-    }
-  }
-
-  /** List all materialized sessions' metadata (every row is a materialized session). */
-  async list(signal?: AbortSignal): Promise<SessionHeader[]> {
-    signal?.throwIfAborted()
-    await this.ready
-    signal?.throwIfAborted()
-    const rows = this.db
-      .prepare('SELECT * FROM sessions')
-      .all() as unknown as SessionRow[]
-    signal?.throwIfAborted()
-    return rows.map(row => decodeStoredSessionHeader(rowToStoredMeta(row), SessionId(row.id)))
-  }
-
-  /** List metadata with a source-qualified monotonic revision per session. */
-  async listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]> {
-    signal?.throwIfAborted()
-    await this.ready
-    signal?.throwIfAborted()
-    const rows = this.db.prepare('SELECT * FROM sessions').all() as unknown as SessionRow[]
-    signal?.throwIfAborted()
-    return rows.map(row => ({
-      header: decodeStoredSessionHeader(rowToStoredMeta(row), SessionId(row.id)),
-      revision: SessionPersistenceRevision(
-        `${this.storeIdentity}:incarnation:${row.incarnation}:revision:${row.revision}`,
-      ),
-    }))
-  }
-
-  /** Close the database handle (awaited by the coordinator's dispose, post-drain). */
-  async close(): Promise<void> {
-    await this.ready
-    this.db.close()
-  }
-
-  // --- row helpers ---
-
-  /** Fetch a session's row, or undefined if absent. */
-  private rowFor(id: SessionId): SessionRow | undefined {
-    return this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as unknown as SessionRow | undefined
-  }
-
-  /**
-   * Insert-or-replace a session's metadata row. The only caller is the first
-   * materializing `appendBatch`, so writing the row IS the materialization (its
-   * existence is the signal `list` reads).
-   */
-  private writeRow(meta: SessionHeader): void {
-    this.db.prepare(`
-      INSERT INTO sessions
-        (id, version, created_at, cwd, parent_session, seed_length, origin, delegation_depth, agent_preset, incarnation, revision)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-      ON CONFLICT(id) DO UPDATE SET
-        version = excluded.version,
-        created_at = excluded.created_at,
-        cwd = excluded.cwd,
-        parent_session = excluded.parent_session,
-        seed_length = excluded.seed_length,
-        origin = excluded.origin,
-        delegation_depth = excluded.delegation_depth,
-        agent_preset = excluded.agent_preset
-    `).run(
-      meta.id,
-      meta.version,
-      meta.createdAt,
-      meta.cwd ?? null,
-      meta.parentSession ?? null,
-      meta.seedLength ?? null,
-      meta.origin ?? null,
-      meta.delegationDepth ?? null,
-      meta.agentPreset ?? null,
-      randomUUID(),
-    )
+  listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]> {
+    return this.store.listSnapshots(signal)
   }
 }
 
