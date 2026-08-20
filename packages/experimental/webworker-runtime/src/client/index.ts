@@ -24,6 +24,8 @@ interface ClientTransportGlobal {
     createApiClient: () => WorkerApiClient
     fetch: TunnelFetch
     loadBundle: (url: string) => Promise<void>
+    /** The page spawned the worker the Host runs in, so the page owns it. */
+    ownsHost: boolean
   }
 }
 
@@ -83,6 +85,9 @@ export async function connectWorkerHost(worker: Worker, options?: WorkerHostConn
       createApiClient: () => new WorkerApiClient(tunnel),
       fetch: (input, init) => tunnel.fetch(input, init),
       loadBundle: (url: string) => tunnel.loadBundle(url),
+      // The host lives in a worker this page spawned: the page owns it, so
+      // the privileged surface stays reachable off loopback authorities.
+      ownsHost: true,
     }
     await applyIndexInjections(payload.injections, src => tunnel.loadBundle(src))
     ready.resolve()

@@ -19,7 +19,7 @@ import { randomUUID, type Uuid } from '@deepseek-ai/dsh-util-crypto'
 
 ## Model Experience
 
-无直接影响；消费方用它铸造请求、会话与附件标识符，均不作为语义内容进入提示词。
+间接地，经由用它铸造请求、会话与附件标识符的消费方，这些标识符均不作为语义内容进入提示词。
 
 #### KV Cache effect
 

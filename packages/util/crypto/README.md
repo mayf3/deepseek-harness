@@ -19,7 +19,7 @@ import { randomUUID, type Uuid } from '@deepseek-ai/dsh-util-crypto'
 
 ## Model Experience
 
-None directly; consumers mint request, session, and attachment identifiers with it, none of which enter prompts as semantic content.
+Indirectly, through consumers that mint request, session, and attachment identifiers with it, none of which enter prompts as semantic content.
 
 #### KV Cache effect
 
