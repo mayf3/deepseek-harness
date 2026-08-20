@@ -28,11 +28,13 @@ async function freshComposer(): Promise<HTMLElement> {
   }, { timeout: 10_000 })
 }
 
-/** Type through the clipboard: jsdom carries no editable beforeinput, and the paste command inserts at the caret. */
-function pasteText(surface: HTMLElement, text: string): void {
+/** Type through the clipboard: jsdom carries no editable beforeinput; the
+ * paste command inserts at the caret, committing a microtask later. */
+async function pasteText(surface: HTMLElement, text: string): Promise<void> {
   fireEvent.paste(surface, {
     clipboardData: { items: [], getData: () => text },
   })
+  await waitFor(() => { expect(surface.textContent).toContain(text) })
 }
 
 /** Paste one tiny PNG into the composer and wait for its rail thumbnail. */
@@ -57,7 +59,7 @@ it('refuses an image-carrying submit to a non-declaring command and keeps draft 
   await pasteImage(textarea, 'ref.png')
 
   // /echo is a leadingInput fixture command without `input.images`.
-  pasteText(textarea, '/echo hello')
+  await pasteText(textarea, '/echo hello')
   fireEvent.keyDown(textarea, { key: 'Enter' })
 
   // The refusal rides the same transient error banner as other composer
@@ -84,7 +86,7 @@ it('consumes images through a declaring command and clears the composer on succe
 
   // /goal declares `input.images` in the fixture catalog; the claim submit
   // serializes the pasted bytes and the fixture executor admits them.
-  pasteText(textarea, '/goal rebuild the cathedral')
+  await pasteText(textarea, '/goal rebuild the cathedral')
   fireEvent.keyDown(textarea, { key: 'Enter' })
 
   await waitFor(() => {
@@ -98,7 +100,9 @@ it('submits a bare /plan with an image as an image-only plan request', async () 
   const textarea = await freshComposer()
   await pasteImage(textarea, 'plan-task.png')
 
-  pasteText(textarea, '/plan')
+  // Trailing separator: a bare '/plan' leaves the caret on the token, where
+  // the re-track opens the menu and Enter would pick instead of submit.
+  await pasteText(textarea, '/plan ')
   fireEvent.keyDown(textarea, { key: 'Enter' })
 
   await waitFor(() => {

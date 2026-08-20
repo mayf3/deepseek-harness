@@ -148,6 +148,12 @@ let unmount: (() => Promise<void>) | undefined
  * the boot globals, and the injected plugin styles afterwards.
  */
 export function installAssembledBootEnv(): void {
+  // jsdom implements no scroll geometry: the trigger menu reveals its
+  // highlight with scrollIntoView on open, which a pasted leading token now
+  // reaches in this lane (the editor re-tracks at the settled caret).
+  if (typeof Element.prototype.scrollIntoView !== 'function') {
+    Element.prototype.scrollIntoView = () => {}
+  }
   beforeEach(() => {
     localStorage.clear()
     // The locale service derives its provisional locale from the browser and
