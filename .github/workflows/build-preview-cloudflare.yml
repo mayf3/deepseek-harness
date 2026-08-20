@@ -163,4 +163,5 @@ jobs:
             exit 0
           fi
           gh pr comment "$PR" --body \
-            "$marker \n [Preview for #$PR](https://pr-$PR.${CF_PROJECT}.pages.dev) (requires Cloudflare Access sign-in)"
+            "$marker \
+             [Preview for #$PR](https://pr-$PR.${CF_PROJECT}.pages.dev) (requires Cloudflare Access sign-in)"
