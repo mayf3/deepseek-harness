@@ -81,22 +81,6 @@ export interface Win32ProcessBindings {
     startupInfo: NativePtr,
     processInfo: NativePtr,
   ): number
-  initializeProcThreadAttributeList(
-    attributeList: Buffer | null,
-    attributeCount: number,
-    flags: number,
-    size: NativePtr,
-  ): number
-  updateProcThreadAttribute(
-    attributeList: Buffer,
-    flags: number,
-    attribute: number,
-    value: NativePtr,
-    size: number,
-    previousValue: null,
-    returnSize: null,
-  ): number
-  deleteProcThreadAttributeList(attributeList: Buffer): void
   readFile(file: NativePtr, buffer: Buffer, count: number, bytesRead: NativePtr, overlapped: null): number
   peekNamedPipe(
     pipe: NativePtr,
@@ -110,6 +94,8 @@ export interface Win32ProcessBindings {
   getExitCodeProcess(process: NativePtr, exitCode: NativePtr): number
   createJobObjectW(attributes: null, name: null): NativePtr
   setInformationJobObject(job: NativePtr, cls: number, information: Buffer, length: number): number
+  assignProcessToJobObject(job: NativePtr, process: NativePtr): number
+  resumeThread(thread: NativePtr): number
   terminateProcess(process: NativePtr, exitCode: number): number
   getStdHandle(stdHandle: number): NativePtr
 }
@@ -255,13 +241,6 @@ function bindings(): Win32ProcessBindings {
       PVOID, 'str16', 'str16', PVOID, PVOID, 'int', 'uint32', PVOID, 'str16',
       koffi.pointer(STARTUPINFOW), koffi.pointer(PROCESS_INFORMATION),
     ]),
-    initializeProcThreadAttributeList: bind(kernel32, 'InitializeProcThreadAttributeList', 'int', [
-      PVOID, 'uint32', 'uint32', koffi.pointer('size_t'),
-    ]),
-    updateProcThreadAttribute: bind(kernel32, 'UpdateProcThreadAttribute', 'int', [
-      PVOID, 'uint32', 'size_t', PVOID, 'size_t', PVOID, PVOID,
-    ]),
-    deleteProcThreadAttributeList: bind(kernel32, 'DeleteProcThreadAttributeList', 'void', [PVOID]),
     readFile: bind(kernel32, 'ReadFile', 'int', [PVOID, PVOID, 'uint32', koffi.pointer('uint32'), PVOID]),
     peekNamedPipe: bind(kernel32, 'PeekNamedPipe', 'int', [
       PVOID, PVOID, 'uint32', koffi.pointer('uint32'), koffi.pointer('uint32'), koffi.pointer('uint32'),
@@ -270,6 +249,8 @@ function bindings(): Win32ProcessBindings {
     getExitCodeProcess: bind(kernel32, 'GetExitCodeProcess', 'int', [PVOID, koffi.pointer('uint32')]),
     createJobObjectW: bind(kernel32, 'CreateJobObjectW', PVOID, [PVOID, 'str16']),
     setInformationJobObject: bind(kernel32, 'SetInformationJobObject', 'int', [PVOID, 'int', PVOID, 'uint32']),
+    assignProcessToJobObject: bind(kernel32, 'AssignProcessToJobObject', 'int', [PVOID, PVOID]),
+    resumeThread: bind(kernel32, 'ResumeThread', 'uint32', [PVOID]),
     terminateProcess: bind(kernel32, 'TerminateProcess', 'int', [PVOID, 'uint32']),
     getStdHandle: bind(kernel32, 'GetStdHandle', PVOID, ['int']),
   } as unknown as Win32ProcessBindings

@@ -15,7 +15,6 @@ import {
   throwLastError,
   throwWin32,
 } from './ffi.ts'
-import { createJobStartupInfo } from './job-attribute.ts'
 import type { NativePtr, Win32ProcessBindings } from './ffi.ts'
 
 /**
@@ -78,7 +77,7 @@ export interface SpawnedPipedProcess {
   stderrRead: NativePtr
 }
 
-/** Child atomically attached to one caller-owned kill-on-close Job during creation. */
+/** Suspended child assigned to one caller-owned kill-on-close Job before resume. */
 export interface SpawnedJobProcess {
   /** Direct child process id. */
   pid: number
@@ -240,21 +239,18 @@ export function spawnPipedProcess(
  * Drain one anonymous pipe until the writer closes it.
  * @param api - active binding table.
  * @param handle - caller-owned pipe read end.
- * @param signal - optional cancellation that stops polling and closes the read end.
  * @returns complete bytes read before EOF; the handle is always closed.
- * @throws when the drain is cancelled or a Win32 pipe operation fails.
+ * @throws when a Win32 pipe operation fails.
  */
 export async function drainPipe(
   api: Win32ProcessBindings,
   handle: NativePtr,
-  signal?: AbortSignal,
 ): Promise<Buffer> {
   const chunks: Buffer[] = []
   let countSlot: NativePtr | undefined
   try {
     countSlot = allocUint32()
     for (;;) {
-      signal?.throwIfAborted()
       const peeked = api.peekNamedPipe(handle, null, 0, null, countSlot, null)
       if (peeked === 0) {
         const win32Code = api.getLastError()
@@ -321,10 +317,10 @@ function createKillOnCloseJob(api: Win32ProcessBindings): NativePtr {
 }
 
 /**
- * Spawn atomically attached to a kill-on-close Job.
+ * Spawn suspended, assign the child to a kill-on-close Job, then resume it.
  * @param api - active binding table.
  * @param options - command, cwd, args, and restricted primary token.
- * @returns caller-owned process and Job handles after successful creation.
+ * @returns caller-owned process and Job handles after successful resume.
  * @remarks Node clears stdio handle inheritability at startup through
  * uv_disable_stdio_inheritance. This operation temporarily restores the bits
  * required by STARTF_USESTDHANDLES. Restoring them afterward is best-effort:
@@ -346,6 +342,7 @@ export function spawnInheritedJobProcess(
   const stdOut = getStdHandle(abi.STD_OUTPUT_HANDLE, 'stdout')
   const stdErr = getStdHandle(abi.STD_ERROR_HANDLE, 'stderr')
   const enabled: NativePtr[] = []
+  let startupInfo: NativePtr | undefined
   let processInfo: NativePtr | undefined
   let created = 0
   let createFailureCode = 0
@@ -360,31 +357,30 @@ export function spawnInheritedJobProcess(
       }
       enabled.push(handle)
     }
-    const startupInfo = createJobStartupInfo(api, {
+    startupInfo = allocStartupInfo()
+    encodeStartupInfo(startupInfo, {
+      cb: abi.STARTUPINFOW_SIZE,
       dwFlags: abi.STARTF_USESTDHANDLES,
       hStdInput: stdIn,
       hStdOutput: stdOut,
       hStdError: stdErr,
-    }, job)
-    try {
-      processInfo = allocProcessInfo()
-      created = createRestrictedProcess(
-        api,
-        options,
-        buildCommandLine(options.command, options.args),
-        abi.EXTENDED_STARTUPINFO_PRESENT,
-        startupInfo.pointer,
-        processInfo,
-      )
-      if (created === 0) createFailureCode = api.getLastError()
-    } finally {
-      startupInfo.dispose()
-    }
+    })
+    processInfo = allocProcessInfo()
+    created = createRestrictedProcess(
+      api,
+      options,
+      buildCommandLine(options.command, options.args),
+      abi.CREATE_SUSPENDED,
+      startupInfo,
+      processInfo,
+    )
+    if (created === 0) createFailureCode = api.getLastError()
   } catch (error) {
     freeNative(processInfo)
     api.closeHandle(job)
     throw error
   } finally {
+    freeNative(startupInfo)
     for (const handle of enabled) {
       // The runner spawns nothing else; cleanup failure must not mask the child.
       api.setHandleInformation(handle, abi.HANDLE_FLAG_INHERIT, 0)
@@ -407,25 +403,27 @@ export function spawnInheritedJobProcess(
     freeNative(processInfo)
   }
   if (info.hProcess === null || info.hThread === null) {
+    if (info.hProcess !== null) api.terminateProcess(info.hProcess, 1)
     api.closeHandle(job)
     closeBestEffort(api, info.hThread)
     closeBestEffort(api, info.hProcess)
     throw new Error(`CreateProcessAsUserW succeeded but returned null process/thread handles (pid ${info.dwProcessId})`)
   }
+  if (api.assignProcessToJobObject(job, info.hProcess) === 0) {
+    const win32Code = api.getLastError()
+    api.terminateProcess(info.hProcess, 1)
+    closeBestEffort(api, info.hThread)
+    closeBestEffort(api, info.hProcess)
+    api.closeHandle(job)
+    throwWin32(api, 'AssignProcessToJobObject', win32Code, `pid ${info.dwProcessId}`)
+  }
+  if (api.resumeThread(info.hThread) === 0xFFFFFFFF) {
+    const win32Code = api.getLastError()
+    closeBestEffort(api, info.hThread)
+    closeBestEffort(api, info.hProcess)
+    api.closeHandle(job)
+    throwWin32(api, 'ResumeThread', win32Code, `pid ${info.dwProcessId}`)
+  }
   closeBestEffort(api, info.hThread)
   return { pid: info.dwProcessId, process: info.hProcess, job }
-}
-
-/**
- * Close a handle and surface a failure without losing its operation label.
- * @param api - active binding table.
- * @param handle - caller-owned handle to close.
- * @param detail - lifecycle label included in a failure.
- */
-export function closeHandleChecked(
-  api: Win32ProcessBindings,
-  handle: NativePtr,
-  detail: string,
-): void {
-  if (api.closeHandle(handle) === 0) throwLastError(api, 'CloseHandle', detail)
 }

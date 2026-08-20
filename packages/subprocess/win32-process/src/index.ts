@@ -17,7 +17,6 @@ export type {
   Win32ProcessBindings,
 } from './ffi.ts'
 export {
-  closeHandleChecked,
   drainPipe,
   spawnInheritedJobProcess,
   spawnPipedProcess,

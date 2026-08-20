@@ -10,17 +10,17 @@ Windows ACL sandbox 拥有 restricted token、SID、DACL、grant 与 workspace p
 
 ## Decision
 
-`@deepseek-ai/dsh-win32-process` 拥有 `sandbox-windows-acl` 当前消费的可复用 Win32 process ABI 与 native resource 操作。该包惰性加载 `kernel32.dll` 和 `advapi32.dll`，核验 x64 `STARTUPINFOW`、`STARTUPINFOEXW` 与 `PROCESS_INFORMATION` 布局，为 `CreateProcessAsUserW` 引用 argv，并提供带检查的 restricted-token pipe 与 inherited-stdio Job 操作。
+`@deepseek-ai/dsh-win32-process` 拥有 `sandbox-windows-acl` 当前消费的可复用 Win32 process ABI 与 native resource 操作。该包惰性加载 `kernel32.dll` 和 `advapi32.dll`，核验 x64 `STARTUPINFOW` 与 `PROCESS_INFORMATION` 布局，为 `CreateProcessAsUserW` 引用 argv，并提供带检查的 restricted-token pipe 与 inherited-stdio Job 操作。
 
 Windows ACL sandbox 继续唯一拥有 restricted-token 创建、SID 与 DACL policy、grants、可写路径裁定、临时目录 policy 和公共 sandbox child result。它通过共享 binding context 扩展 policy-specific API，提供 primary token，组合 pipe drain 与 wait，并在自己的生命周期边界关闭调用方拥有的 Job。
 
-每项 native allocation 与 HANDLE 都只有一个 owner。process operation 会释放 Koffi out-parameter，并在失败前关闭已经取得的每个 pipe、thread、process 或 Job handle。pipe 创建成功时，把 process 与 stdout/stderr read handles 返回给 sandbox；任一 drain 失败时，sandbox settlement 会请求终止 direct child，取消并等待 sibling drain，再只在终止成功时执行 direct-child wait。若终止本身失败，则关闭 process handle 并同时报告两项失败。即使 descendant 继承了 pipe writer，两种结果也都不会留下持续轮询的 timer。inherited-stdio 创建会把 kill-on-close Job 放进 `STARTUPINFOEXW`，因此 child 在任何用户代码运行前已经归属 Job；attribute 或创建失败都有唯一且确定的 cleanup owner。sandbox 在 wait 或 disposal 前拥有返回的 process、pipe 与 Job handles。
+每项 native allocation 与 HANDLE 在各个 shared operation 内只有一个 owner。process operation 会释放 Koffi out-parameter，并在受控失败前关闭它已经取得的每个 pipe、thread、process 或 Job handle。pipe 创建成功时，把 process 与 stdout/stderr read handles 返回给 sandbox。inherited-stdio 创建以 suspended 状态启动目标，把它分配给 kill-on-close Job，并只在分配后恢复，因此目标代码不会在 Job 外运行。分配失败会先终止 suspended target 再释放句柄；恢复失败会关闭已经分配的 Job。sandbox 保留既有 pipe-drain、direct-wait、result 与返回 Job 的生命周期。
 
 该包只导出 sandbox 生产路径已使用的操作。ordinary `CreateProcessW`、精确 `applicationName`、parent-stdio release 与 whole-Job settlement 在 ordinary process consumer 出现前保持缺席。该包是 library，不是 Cordis service 或公共 Windows SDK。
 
 ## Verification
 
-shared suite 覆盖 x64 ABI 值、命令行引用、binding extension、pipe EOF 与 drain allocation 复用、restricted-token process 创建、创建时的原子 Job 附加、wait 与 exit-code 读取、native allocation 释放，以及每组已取得资源的失败闭集。sandbox 测试保留 restricted-token、fail-closed、pipe/inherit、result 与 disposal 组合行为，不重复低层矩阵。Windows native 检查会编译两份 header probe 并运行迁移后的 sandbox 路径；Wine 提供模拟 Windows package 与组合信号。
+shared suite 覆盖 x64 ABI 值、命令行引用、binding extension、pipe EOF 与 drain allocation 复用、restricted-token process 创建、suspended 创建后的 Job 分配与恢复、wait 与 exit-code 读取、native allocation 释放，以及已取得资源的失败路径。sandbox 测试保留 restricted-token、fail-closed、pipe/inherit、result 与 disposal 组合行为，不重复低层矩阵。已提交的 header probe 与 Windows package 测试覆盖迁移后的 ABI 和 native 路径；Wine 提供模拟 Windows package 与组合信号。
 
 ## Alternatives considered
 
@@ -32,4 +32,4 @@ shared suite 覆盖 x64 ABI 值、命令行引用、binding extension、pipe EOF
 
 ## Consequences
 
-sandbox 保持公共行为，而通用 Win32 resource ownership 只有一个 package 与一个测试归属。该 package boundary 增加一个 workspace dependency 和发布 library；调用方必须显式拥有 policy、调度、result 组合与返回 HANDLE 的关闭责任。后续 process consumer 只在其生产路径存在时扩展低层 package。
+sandbox 保持公共行为，而通用 Win32 resource ownership 只有一个 package 与一个测试归属。该 package boundary 增加一个 workspace dependency 和发布 library；调用方必须显式拥有 policy、调度、result 组合与返回 HANDLE 的关闭责任。suspended 创建保证目标代码只在 Job 分配后启动，但不会让 runner 的 create-to-assignment 区间对外部终止具备原子性。后续 process consumer 只在其生产路径存在时扩展低层 package。

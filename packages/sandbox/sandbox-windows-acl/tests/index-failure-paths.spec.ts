@@ -145,15 +145,9 @@ function happyStubs(): HappyStubs {
   })
   const createJobObjectW = vi.fn(() => fresh())
   const setInformationJobObject = vi.fn(() => 1)
-  const initializeProcThreadAttributeList = vi.fn((list: Buffer | null, _count: number, _flags: number, size: NativePtr) => {
-    if (list === null) {
-      koffi.encode(size, 'size_t', 64)
-      return 0
-    }
-    return 1
-  })
-  const updateProcThreadAttribute = vi.fn(() => 1)
-  const deleteProcThreadAttributeList = vi.fn()
+  const assignProcessToJobObject = vi.fn(() => 1)
+  const resumeThread = vi.fn(() => 0)
+  const terminateProcess = vi.fn(() => 1)
   const getStdHandle = vi.fn(() => fresh())
   const localFree = vi.fn(() => 0n)
   const closeHandle = vi.fn(() => 1)
@@ -167,8 +161,8 @@ function happyStubs(): HappyStubs {
     getLengthSid, copySid, createWellKnownSid, isValidSid, createRestrictedToken,
     setTokenInformation, createPipe, setHandleInformation, createProcessAsUserW,
     peekNamedPipe, readFile, waitForSingleObject, getExitCodeProcess, createJobObjectW,
-    setInformationJobObject, initializeProcThreadAttributeList, updateProcThreadAttribute,
-    deleteProcThreadAttributeList, getStdHandle,
+    setInformationJobObject, assignProcessToJobObject, resumeThread, terminateProcess,
+    getStdHandle,
     localFree, closeHandle, getLastError, formatMessageW,
   } as unknown as Win32Bindings
   return {
@@ -402,140 +396,6 @@ describe('AclSandbox spawn', () => {
     const child = sandbox.spawn({ command: 'probe.exe', stdio: 'inherit' })
     jobHandle = createJobObjectW.mock.results.at(-1)?.value as NativePtr
     await expect(child.wait()).rejects.toMatchObject({ api: 'CloseHandle' })
-  })
-
-  it('inherit spawn caches one failing settlement and closes the Job once', async () => {
-    const { api, closeHandle, createJobObjectW } = state.stubs as HappyStubs
-    api.waitForSingleObject = vi.fn(() => 0xFFFFFFFF)
-    const workspace = scratch()
-    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-1', mode: 'workspace-write' })
-    await sandbox.init()
-    const child = sandbox.spawn({ command: 'probe.exe', stdio: 'inherit' })
-    const jobHandle = createJobObjectW.mock.results.at(-1)?.value as NativePtr
-    await expect(child.wait()).rejects.toMatchObject({ api: 'WaitForSingleObject' })
-    await expect(child.wait()).rejects.toMatchObject({ api: 'WaitForSingleObject' })
-    expect(closeHandle.mock.calls.filter(([handle]) => handle === jobHandle)).toHaveLength(1)
-  })
-
-  it('inherit spawn aggregates wait and Job-close failures', async () => {
-    const { api, closeHandle, createJobObjectW } = state.stubs as HappyStubs
-    api.waitForSingleObject = vi.fn(() => 0xFFFFFFFF)
-    const workspace = scratch()
-    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-1-1', mode: 'workspace-write' })
-    await sandbox.init()
-    let jobHandle = 0n
-    closeHandle.mockImplementation((handle: NativePtr) => (handle === jobHandle ? 0 : 1))
-    const child = sandbox.spawn({ command: 'probe.exe', stdio: 'inherit' })
-    jobHandle = createJobObjectW.mock.results.at(-1)?.value as NativePtr
-    await expect(child.wait()).rejects.toMatchObject({
-      errors: [
-        expect.objectContaining({ api: 'WaitForSingleObject' }),
-        expect.objectContaining({ api: 'CloseHandle' }),
-      ],
-    })
-  })
-
-  it('pipe spawn reports a wait failure after successful drains', async () => {
-    const { api } = state.stubs as HappyStubs
-    api.waitForSingleObject = vi.fn(() => 0xFFFFFFFF)
-    const workspace = scratch()
-    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-1-2', mode: 'workspace-write' })
-    await sandbox.init()
-    const child = sandbox.spawn({ command: 'probe.exe' })
-    await expect(child.wait()).rejects.toMatchObject({ api: 'WaitForSingleObject' })
-  })
-
-  it('pipe spawn still closes the process after a drain failure', async () => {
-    const { api } = state.stubs as HappyStubs
-    api.getLastError = vi.fn(() => 5)
-    const terminateProcess = vi.fn(() => 1)
-    api.terminateProcess = terminateProcess
-    const waitForSingleObject = vi.fn(() => 0)
-    api.waitForSingleObject = waitForSingleObject
-    const workspace = scratch()
-    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-2', mode: 'workspace-write' })
-    await sandbox.init()
-    const child = sandbox.spawn({ command: 'probe.exe' })
-    await expect(child.wait()).rejects.toMatchObject({
-      errors: [
-        expect.objectContaining({ api: 'PeekNamedPipe' }),
-        expect.objectContaining({ api: 'PeekNamedPipe' }),
-      ],
-    })
-    expect(terminateProcess).toHaveBeenCalledOnce()
-    expect(waitForSingleObject).toHaveBeenCalledOnce()
-  })
-
-  it('pipe spawn terminates promptly when one drain fails and the sibling remains open', async () => {
-    const { api } = state.stubs as HappyStubs
-    let peekCount = 0
-    api.peekNamedPipe = vi.fn((_handle, _buffer, _size, _read, totalAvail: NativePtr) => {
-      peekCount += 1
-      if (peekCount === 1) return 0
-      koffi.encode(totalAvail, 'uint32', 0)
-      return 1
-    })
-    api.getLastError = vi.fn(() => 5)
-    const terminateProcess = vi.fn(() => 1)
-    api.terminateProcess = terminateProcess
-    const waitForSingleObject = vi.fn(() => 0)
-    api.waitForSingleObject = waitForSingleObject
-    const workspace = scratch()
-    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-2-1', mode: 'workspace-write' })
-    await sandbox.init()
-    const child = sandbox.spawn({ command: 'probe.exe' })
-    await expect(child.wait()).rejects.toMatchObject({ api: 'PeekNamedPipe' })
-    const settledPeekCount = peekCount
-    await new Promise<void>(resolve => setTimeout(resolve, 5))
-    expect(peekCount).toBe(settledPeekCount)
-    expect(terminateProcess).toHaveBeenCalledOnce()
-    expect(waitForSingleObject).toHaveBeenCalledOnce()
-  })
-
-  it('pipe spawn closes the process without waiting when termination after a drain failure fails', async () => {
-    const { api, closeHandle } = state.stubs as HappyStubs
-    let peekCount = 0
-    api.peekNamedPipe = vi.fn((_handle, _buffer, _size, _read, totalAvail: NativePtr) => {
-      peekCount += 1
-      if (peekCount === 1) return 0
-      koffi.encode(totalAvail, 'uint32', 0)
-      return 1
-    })
-    api.getLastError = vi.fn(() => 5)
-    api.terminateProcess = vi.fn(() => 0)
-    const waitForSingleObject = vi.fn(() => { throw new Error('must not wait') })
-    api.waitForSingleObject = waitForSingleObject
-    const workspace = scratch()
-    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-3', mode: 'workspace-write' })
-    await sandbox.init()
-    const child = sandbox.spawn({ command: 'probe.exe' })
-    await expect(child.wait()).rejects.toBeInstanceOf(AggregateError)
-    const settledPeekCount = peekCount
-    await new Promise<void>(resolve => setTimeout(resolve, 5))
-    expect(peekCount).toBe(settledPeekCount)
-    expect(waitForSingleObject).not.toHaveBeenCalled()
-    expect(closeHandle).toHaveBeenCalled()
-  })
-
-  it('pipe spawn aggregates process-handle closure failure after termination failure', async () => {
-    const { api } = state.stubs as HappyStubs
-    api.getLastError = vi.fn(() => 5)
-    api.terminateProcess = vi.fn(() => 0)
-    const workspace = scratch()
-    const sandbox = new AclSandbox({ writableDirs: [workspace], tempDir: null, writeSid: 'S-1-4-9000-14-4', mode: 'workspace-write' })
-    await sandbox.init()
-    const child = sandbox.spawn({ command: 'probe.exe' })
-    api.closeHandle = vi.fn(() => 0)
-    const settlement = child.wait()
-    await expect(settlement).rejects.toBeInstanceOf(AggregateError)
-    const failure = await settlement.catch((error: unknown): unknown => error)
-    if (!(failure instanceof AggregateError)) throw new Error('expected AggregateError')
-    const errors = failure.errors as unknown[]
-    const apis = errors
-      .filter((error): error is Win32Error => error instanceof Win32Error)
-      .map(error => error.api)
-    expect(apis.filter(api => api === 'PeekNamedPipe')).toHaveLength(2)
-    expect(apis).toEqual(expect.arrayContaining(['CloseHandle', 'TerminateProcess']))
   })
 })
 

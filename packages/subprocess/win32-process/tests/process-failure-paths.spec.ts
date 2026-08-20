@@ -21,23 +21,6 @@ import { PROCESS_INFORMATION } from '../src/ffi.ts'
 
 const PVOID = koffi.pointer('void')
 
-function jobAttributeStubs(): Pick<
-  Win32ProcessBindings,
-  'initializeProcThreadAttributeList' | 'updateProcThreadAttribute' | 'deleteProcThreadAttributeList'
-> {
-  return {
-    initializeProcThreadAttributeList: vi.fn((list: Buffer | null, _count: number, _flags: number, size: NativePtr) => {
-      if (list === null) {
-        koffi.encode(size, 'size_t', 64)
-        return 0
-      }
-      return 1
-    }),
-    updateProcThreadAttribute: vi.fn(() => 1),
-    deleteProcThreadAttributeList: vi.fn(),
-  }
-}
-
 /** The stub the CreateProcessAsUserW failure branch needs: pipes "succeed", the spawn fails with Win32 5. */
 function pipeFailureApi(): { api: Win32ProcessBindings; closed: bigint[]; closeHandle: ReturnType<typeof vi.fn> } {
   const closed: bigint[] = []
@@ -205,7 +188,9 @@ describe('spawnInheritedJobProcess failure paths', () => {
         koffi.encode(processInfo, PROCESS_INFORMATION, { hProcess: 200n, hThread: 201n, dwProcessId: 1234, dwThreadId: 5678 })
         return 1
       }),
-      ...jobAttributeStubs(),
+      assignProcessToJobObject: vi.fn(() => 1),
+      resumeThread: vi.fn(() => 0),
+      terminateProcess: vi.fn(() => 1),
       getLastError: vi.fn(() => 5),
       closeHandle,
       formatMessageW: vi.fn(() => 0),
@@ -267,34 +252,11 @@ describe('spawnInheritedJobProcess failure paths', () => {
     expect(closeHandle).toHaveBeenCalledWith(100n)
   })
 
-  it('closes the job when the attribute-list size query returns no size', () => {
+  it('terminates the suspended child before closing handles when Job assignment fails', () => {
+    const terminateProcess = vi.fn(() => 1)
     const { api, closeHandle } = inheritedApi({
-      initializeProcThreadAttributeList: vi.fn(() => 0),
-    })
-    expect(() => spawnInheritedJobProcess(api, { command: 'probe.exe', args: [], cwd: 'C:\\', token }))
-      .toThrow(Win32Error)
-    expect(closeHandle).toHaveBeenCalledWith(100n)
-  })
-
-  it('closes the job when attribute-list initialization fails', () => {
-    const initializeProcThreadAttributeList = vi.fn((list: Buffer | null, _count: number, _flags: number, size: NativePtr) => {
-      if (list === null) {
-        koffi.encode(size, 'size_t', 64)
-        return 0
-      }
-      return 0
-    })
-    const { api, closeHandle } = inheritedApi({ initializeProcThreadAttributeList })
-    expect(() => spawnInheritedJobProcess(api, { command: 'probe.exe', args: [], cwd: 'C:\\', token }))
-      .toThrow(Win32Error)
-    expect(closeHandle).toHaveBeenCalledWith(100n)
-  })
-
-  it('deletes the attribute list and closes the job when atomic Job attachment fails', () => {
-    const deleteProcThreadAttributeList = vi.fn()
-    const { api, closeHandle } = inheritedApi({
-      updateProcThreadAttribute: vi.fn(() => 0),
-      deleteProcThreadAttributeList,
+      assignProcessToJobObject: vi.fn(() => 0),
+      terminateProcess,
     })
     let caught: unknown
     try {
@@ -302,8 +264,24 @@ describe('spawnInheritedJobProcess failure paths', () => {
     } catch (error) {
       caught = error
     }
-    expect(caught).toMatchObject({ api: 'UpdateProcThreadAttribute', win32Code: 5 })
-    expect(deleteProcThreadAttributeList).toHaveBeenCalledOnce()
+    expect(caught).toMatchObject({ api: 'AssignProcessToJobObject', win32Code: 5 })
+    expect(terminateProcess).toHaveBeenCalledWith(200n, 1)
+    expect(closeHandle).toHaveBeenCalledWith(201n)
+    expect(closeHandle).toHaveBeenCalledWith(200n)
+    expect(closeHandle).toHaveBeenCalledWith(100n)
+  })
+
+  it('closes the assigned child and Job when ResumeThread fails', () => {
+    const { api, closeHandle } = inheritedApi({ resumeThread: vi.fn(() => 0xFFFFFFFF) })
+    let caught: unknown
+    try {
+      spawnInheritedJobProcess(api, { command: 'probe.exe', args: [], cwd: 'C:\\', token })
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toMatchObject({ api: 'ResumeThread', win32Code: 5 })
+    expect(closeHandle).toHaveBeenCalledWith(201n)
+    expect(closeHandle).toHaveBeenCalledWith(200n)
     expect(closeHandle).toHaveBeenCalledWith(100n)
   })
 
@@ -342,6 +320,8 @@ describe('spawnInheritedJobProcess failure paths', () => {
     expect(closeHandle).toHaveBeenCalledWith(201n)
     expect(closeHandle).not.toHaveBeenCalledWith(200n)
     expect(closeHandle).not.toHaveBeenCalledWith(100n)
+    expect(api.assignProcessToJobObject).toHaveBeenCalledWith(100n, 200n)
+    expect(api.resumeThread).toHaveBeenCalledWith(201n)
   })
 })
 
