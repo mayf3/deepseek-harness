@@ -5,6 +5,7 @@
  */
 import { sha1 } from '@noble/hashes/legacy.js'
 import { sha256, sha512 } from '@noble/hashes/sha2.js'
+import { randomUUID as mintUUID } from '@deepseek-ai/dsh-util-crypto'
 import { Buffer } from 'buffer'
 
 type Hasher = (input: Uint8Array) => Uint8Array
@@ -73,11 +74,13 @@ export function randomBytes(size: number): Buffer<ArrayBuffer> {
 }
 
 /**
- * Random v4 UUID.
+ * Random v4 UUID. Delegated to the repository's own mint rather than to
+ * `crypto.randomUUID`, which browsers expose only in secure contexts — a
+ * preview served over plain HTTP on a LAN address has no `randomUUID`.
  * @returns the UUID string.
  */
 export function randomUUID(): import('node:crypto').UUID {
-  return globalThis.crypto.randomUUID()
+  return mintUUID()
 }
 
 /**

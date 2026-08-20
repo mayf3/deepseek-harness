@@ -200,7 +200,8 @@ export function mkdirSync(path: PathArg, options?: { recursive?: boolean }): str
  * @returns the created directory path.
  */
 export function mkdtempSync(prefix: string): string {
-  const suffix = globalThis.crypto.randomUUID().replaceAll('-', '').slice(0, 6)
+  // Not crypto.randomUUID: browsers expose that only in secure contexts.
+  const suffix = Array.from(globalThis.crypto.getRandomValues(new Uint8Array(3)), byte => byte.toString(16).padStart(2, '0')).join('')
   const target = `${prefix}${suffix}`
   vfs().mkdirSync(target, { recursive: true })
   return target

@@ -21,12 +21,14 @@ import { createNodeBuiltins, REPLACED_PREFIXES } from './node/builtins.ts'
 import { whenRequestListener } from './node/builtin_modules/implemented/http.ts'
 import { installTimerGlobals } from './node/globals/timers.ts'
 import { installProcessGlobal } from './node/globals/process.ts'
+import { installCryptoGlobals } from './node/globals/crypto.ts'
 import { isShellStartFrame } from './shell/process/protocol.ts'
 import { runShellProcess } from './shell/process/host.ts'
 
 // Before the timer globals, so the wrappers close over the patched platform.
 installAsyncContextHooks()
 installTimerGlobals()
+installCryptoGlobals()
 
 let host: { handleMessage(data: unknown): void } | undefined
 let shellRole = false

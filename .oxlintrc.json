@@ -57,6 +57,14 @@
           }
         ],
         "no-useless-constructor": "error",
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "crypto",
+            "property": "randomUUID",
+            "message": "browsers withhold crypto.randomUUID outside secure contexts (plain-HTTP LAN pages); mint through @deepseek-ai/dsh-util-crypto instead"
+          }
+        ],
         "typescript/await-thenable": "error",
         "typescript/ban-ts-comment": [
           "error",
