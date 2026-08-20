@@ -242,6 +242,8 @@ describe('HarnessSdkJsonRpcServer', () => {
       get: () => undefined,
     } as unknown as Context
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    // This isolated prompt test begins after the handshake boundary.
+    ;(server as unknown as { initialized: boolean }).initialized = true
     const prompt = (sessionId: string, text: string) => server.prompt({
       sessionId,
       contentBlocks: [{ type: 'text', text }],
@@ -278,6 +280,8 @@ describe('HarnessSdkJsonRpcServer', () => {
       get: () => undefined,
     } as unknown as Context
     const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    // This isolated prompt test begins after the handshake boundary.
+    ;(server as unknown as { initialized: boolean }).initialized = true
     const prompt = (text: string) => server.prompt({
       sessionId: 'zombie',
       contentBlocks: [{ type: 'text', text }],
@@ -920,9 +924,52 @@ describe('HarnessSdkJsonRpcServer', () => {
       const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
       await expect(server.initialize({ cwd: storageDir, provider: 'private', model: 'missing' }))
         .rejects.toThrow('model unavailable: private/missing')
+      await expect(server.prompt({
+        sessionId: 'invalid-route',
+        contentBlocks: [{ type: 'text', text: 'must not run' }],
+      })).rejects.toThrow('SDK server is not initialized')
       expect((server as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(0)
       await server.shutdown()
     } finally {
+      disposeAdapter()
+      await ctx.fiber.dispose()
+      await rm(storageDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects prompts while exact-route initialization is pending', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-pending-route-'))
+    const ctx = await makeHarness(storageDir)
+    const resolution = Promise.withResolvers<LlmResolvedModelInfo>()
+    const resolvedModel = { provider: 'private', id: 'selected', name: 'Selected' }
+    let resolveModelCalled = false
+    class PendingAdapter extends LlmAdapter {
+      override resolveModel(): Promise<LlmResolvedModelInfo> {
+        resolveModelCalled = true
+        return resolution.promise
+      }
+
+      async * stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
+        throw new Error('unreachable')
+      }
+    }
+    const disposeAdapter = ctx.llm.registerAdapter(['private'], new PendingAdapter())
+    try {
+      const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+      const initialization = server.initialize({ cwd: storageDir, provider: 'private', model: 'selected' })
+      await vi.waitFor(() => { expect(resolveModelCalled).toBe(true) })
+
+      await expect(server.prompt({
+        sessionId: 'too-early',
+        contentBlocks: [{ type: 'text', text: 'must not run' }],
+      })).rejects.toThrow('SDK server is not initialized')
+      expect((server as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(0)
+
+      resolution.resolve(resolvedModel)
+      await initialization
+      await server.shutdown()
+    } finally {
+      resolution.resolve(resolvedModel)
       disposeAdapter()
       await ctx.fiber.dispose()
       await rm(storageDir, { recursive: true, force: true })

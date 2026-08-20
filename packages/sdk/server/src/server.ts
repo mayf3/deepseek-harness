@@ -65,6 +65,7 @@ export class HarnessSdkJsonRpcServer {
   private readonly disposers: (() => void)[] = []
   private shutdownTask: Promise<Record<string, never>> | undefined
   private shuttingDown = false
+  private initialized = false
 
   constructor(
     private readonly ctx: Context,
@@ -144,6 +145,7 @@ export class HarnessSdkJsonRpcServer {
     this.model = model
     this.reasoningEffort = reasoningEffort
     this.maxTokens = params.maxTokens
+    this.initialized = true
     return { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } }
   }
 
@@ -153,6 +155,7 @@ export class HarnessSdkJsonRpcServer {
    * @returns the durable message identity.
    */
   async prompt(params: SessionPromptParams): Promise<SessionPromptResult> {
+    if (!this.initialized) throw new Error('SDK server is not initialized')
     const rec = await this.getOrCreateSession(params.sessionId)
     // An agent-loop-only reload disposes the loop's agents while this record
     // survives; a retained agent accepts followup() silently, so validate the

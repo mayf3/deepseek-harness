@@ -17,7 +17,7 @@ stdio JSON-RPC 对外服务接口（`@deepseek-ai/dsh-sdk-jsonrpc-server`，见[
 - **`@deepseek-ai/dsh-subagent-dsh-sdk`**（`packages/subagent/subagent-dsh-sdk/`）—— 第二个进程外 `SubagentProvider`，采用与 `subagent-acp` 对等的结构，但声明 `agentOptions: true`：每次运行都会把提供方／模型／推理强度／maxTokens 合并到实例默认值之上，并且只把这些字段送入子进程 `initialize`。其他启动能力保持 false，`inheritsParentContext: false`。提供方保留握手后发布所有权事务、通过 `onError` sink 将结果归一为绝不拒绝，以及父命名空间 run id。子答案从流式 `session.event` 读取——最后一条完整 `assistant/message`，否则累积的 `text-delta` 块，部分答案在取消时得以保留。停止原因由子进程的结构化 `TurnEndReason` 映射（`completed`/`max-tokens`/`aborted` 直通；其余一切、包括未运行任何轮次便已结束的子进程，都是 `error`）。其 `dshBin`／profile／patch／home 配置选择隔离的 SDK 应用，`env` 则提供子进程专用的显式值，例如其 API key。
 - **subagent seam 新增 `out-of-process.ts`**：两个进程外后端共享的 provider 侧词汇——`NO_START_CAPABILITIES`、时限校验、子进程 cwd 解析（配置覆盖、否则发起委托的父会话工作区）、绝不拒绝的 `settleRunResult`、以及 `subprocessRunHandle` 发布。进程机制（spawn、环境清理、进程树清理）属于 `dsh-subprocess` seam；`subagent-acp` 经 `ctx.subprocess` spawn 子进程，本后端则经 SDK 客户端 spawn 子进程（subprocess README 记载的 SDK 托管传输例外）并自行应用该 seam 的 `scrubbedParentEnv()`。
 
-`dsh-sdk-jsonrpc-server` 会在 `initialize` 期间校验确切的提供方／模型／推理强度路由，只保存显式提供的推理强度与 token 值，并使用这条固定的进程级路由创建每个 SDK 根 Agent。TypeScript 与 Python 客户端都通过 `dsh --profile sdk` 公开同一组初始化字段；Python wheel 会打包该 CLI 及其封闭依赖树。
+`dsh-sdk-jsonrpc-server` 会在 `initialize` 期间校验确切的提供方／模型／推理强度路由，只保存显式提供的推理强度与 token 值，并使用这条固定的进程级路由创建每个 SDK 根 Agent。由于 JSON-RPC 请求可能并发分派，它会在一次初始化成功完成前拒绝 `session/prompt`，避免待定或非法路由回退到构造期默认值。TypeScript 与 Python 客户端都通过 `dsh --profile sdk` 公开同一组初始化字段；Python wheel 会打包该 CLI 及其封闭依赖树。
 
 ## 测试
 
