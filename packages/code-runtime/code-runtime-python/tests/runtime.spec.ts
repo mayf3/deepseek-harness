@@ -1412,7 +1412,12 @@ describe('PythonCodeRuntime — programs and bindings', () => {
         '__main__._model_traceback = boom',
         '__main__._UNRENDERABLE_DIAGNOSTIC = boom',
         '__main__._LogStream.flush_line = boom',
+        // `send_done` writes via LOCALLY-BOUND `_encode_json_plain` +
+        // `ProtocolChannel.write_encoded`; rebinding these at call time must not
+        // redirect the done frame (a late lookup would be `boom` -> worker-exit).
         '__main__.ProtocolChannel.send_sync = boom',
+        '__main__.ProtocolChannel.write_encoded = boom',
+        '__main__._encode_json_plain = boom',
         'raise ValueError("real failure")',
       ].join('\n'),
       bindings: [],
