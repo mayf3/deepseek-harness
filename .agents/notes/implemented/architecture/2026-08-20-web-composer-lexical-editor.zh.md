@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-08-20-web-composer-lexical-editor.md) | 中文
 
-> 范围：输入框文本表面（ui-conversation input/editor）、InputMachine 瘦身后余下的 SubmitMachine，以及喂给原封不动的 ui-input-trigger 管线的投影契约。取代[输入状态机 note](2026-07-25-web-input-machine-and-slash-pipeline.md) 中 draft/occurrence 的那一半；其提交面、slot 与 trigger 管线部分仍然有效。
+> 范围：输入框文本表面（ui-conversation input/editor）、InputMachine 瘦身后余下的 SubmitMachine，以及喂给原封不动的 ui-input-trigger 管线的投影契约。取代[输入状态机 note](2026-07-25-web-input-machine-and-slash-pipeline.zh.md) 中 draft/occurrence 的那一半；其提交面、slot 与 trigger 管线部分仍然有效。
 
 ## 问题
 

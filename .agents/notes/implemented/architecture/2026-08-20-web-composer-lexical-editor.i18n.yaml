@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-20-web-composer-lexical-editor.md
 2026-08-20-web-composer-lexical-editor.md: 90665028627cf328b6708d0a7ae3ebf641f80c17
-2026-08-20-web-composer-lexical-editor.zh.md: e17802522d55a5225a8b0de2b2f6941a33a5ca69
+2026-08-20-web-composer-lexical-editor.zh.md: bbb9c73af82f56635e59c65942b3b9e4c154ca09
