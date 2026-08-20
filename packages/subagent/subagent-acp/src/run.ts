@@ -95,8 +95,6 @@ type AcpFailureCategory =
   | 'process-start'
   | 'process-exit'
   | 'remote-limit'
-  | 'remote-refusal'
-  | 'permission'
   | 'unknown'
 
 interface AcpFailureFacts {
@@ -311,17 +309,11 @@ function terminalFailure(
         stopReason: 'max_turn_requests',
       }, permission)
     case 'max_tokens':
-      return permission === undefined
-        ? undefined
-        : diagnosticText({ stage: 'prompt', category: 'remote-limit', stopReason: reason }, permission)
     case 'refusal':
-      return permission === undefined
-        ? undefined
-        : diagnosticText({ stage: 'prompt', category: 'remote-refusal', stopReason: reason }, permission)
     case 'cancelled':
       return permission === undefined
         ? undefined
-        : diagnosticText({ stage: 'prompt', category: 'permission', stopReason: reason }, permission)
+        : permissionDiagnostic(permission)
     default:
       return diagnosticText({ stage: 'prompt', category: 'unknown', stopReason: 'unknown' }, permission)
   }

@@ -16,7 +16,7 @@ Each out-of-process provider owns a small mapping from facts it already receives
 
 ### Safe failure text
 
-The first line has this fixed field order:
+Generic error diagnostics have this fixed field order:
 
 ```text
 Subagent failure (provider: <provider>; stage: <stage>; category: <category>; stop reason: <reason>; exit code: <code>; signal: <signal>)
@@ -24,7 +24,7 @@ Subagent failure (provider: <provider>; stage: <stage>; category: <category>; st
 
 Unavailable optional fields are omitted. The complete result is limited to 4096 UTF-8 bytes by the shared settlement boundary. Successful results and local cancellation carry no failure diagnostic. Partial assistant output remains in `SubagentResult.output` and is presented separately.
 
-When an ACP permission request contributes to a non-completed result, a second fixed line records `policy`, the closed ACP tool `request` kind, and `decision`. Tool titles, raw input, locations, option names, and metadata are excluded. A diagnostic-bearing remote `aborted` result keeps its public stop reason; the one-shot Job adapter treats it as failed, while diagnostic-free local cancellation remains killed.
+When an ACP permission request contributes to a non-completed result, a fixed line records `policy`, the closed ACP tool `request` kind, and `decision`. Tool titles, raw input, locations, option names, and metadata are excluded. For `max-tokens`, `refusal`, or remote `aborted`, the public stop reason already carries the terminal fact, so the permission line is the complete diagnostic; generic error paths append it after the failure line. A diagnostic-bearing remote `aborted` result keeps its public stop reason; the one-shot Job adapter treats it as failed, while diagnostic-free local cancellation remains killed.
 
 ### ACP facts
 
@@ -32,7 +32,7 @@ When an ACP permission request contributes to a non-completed result, a second f
 | --- | --- | --- |
 | `initialize` | Parent workspace resolution, spawn, and ACP initialize | `configuration`, `transport`, `process-start`, or `process-exit` |
 | `new-session` | ACP `session/new` and returned session-id validation | `protocol`, `transport`, or `process-exit` |
-| `prompt` | ACP prompt request, remote stop reason, and permission callback | `remote-limit`, `remote-refusal`, `permission`, `transport`, or `unknown` |
+| `prompt` | ACP prompt request, remote stop reason, and permission callback | `remote-limit`, `transport`, `unknown`, or a permission-only diagnostic |
 | `process` | Managed child exits before a prompt terminal response | `process-exit` plus independently observed exit code and signal |
 | `teardown` | EOF quiescence and managed process-tree termination | Fixed teardown facts; the original cleanup failure remains internal |
 

@@ -16,7 +16,7 @@ ACP 或 DSH SDK 子进程可能因为达到远端限制、拒绝必需权限、�
 
 ### 安全失败文本
 
-首行采用以下固定字段顺序：
+通用 error 诊断采用以下固定字段顺序：
 
 ```text
 Subagent failure (provider: <provider>; stage: <stage>; category: <category>; stop reason: <reason>; exit code: <code>; signal: <signal>)
@@ -24,7 +24,7 @@ Subagent failure (provider: <provider>; stage: <stage>; category: <category>; st
 
 不可用的可选字段会被省略。共享结算边界会把完整结果限制在 4096 个 UTF-8 字节以内。成功结果和本地取消不携带失败诊断。部分 assistant 输出继续保留在 `SubagentResult.output` 中，并与诊断分开呈现。
 
-当 ACP 权限请求参与非完成结果时，第二个固定行会记录 `policy`、ACP 闭集工具 `request` 种类和 `decision`。工具标题、raw input、位置、选项名称与 metadata 均被排除。带诊断的远端 `aborted` 结果仍保持公共结束原因；一次性 Job adapter 会把它判为 failed，而不带诊断的本地取消仍是 killed。
+当 ACP 权限请求参与非完成结果时，一个固定行会记录 `policy`、ACP 闭集工具 `request` 种类和 `decision`。工具标题、raw input、位置、选项名称与 metadata 均被排除。对于 `max-tokens`、`refusal` 或远端 `aborted`，公共结束原因已经携带终态事实，因此权限行就是完整诊断；通用 error 路径则把它附在失败行之后。带诊断的远端 `aborted` 结果仍保持公共结束原因；一次性 Job adapter 会把它判为 failed，而不带诊断的本地取消仍是 killed。
 
 ### ACP 事实
 
@@ -32,7 +32,7 @@ Subagent failure (provider: <provider>; stage: <stage>; category: <category>; st
 | --- | --- | --- |
 | `initialize` | 父工作区解析、spawn 与 ACP initialize | `configuration`、`transport`、`process-start` 或 `process-exit` |
 | `new-session` | ACP `session/new` 与返回 session id 校验 | `protocol`、`transport` 或 `process-exit` |
-| `prompt` | ACP prompt 请求、远端结束原因与权限回调 | `remote-limit`、`remote-refusal`、`permission`、`transport` 或 `unknown` |
+| `prompt` | ACP prompt 请求、远端结束原因与权限回调 | `remote-limit`、`transport`、`unknown` 或仅权限诊断 |
 | `process` | 受管子进程先于 prompt 终态响应退出 | `process-exit`，以及分别观测到的退出码与信号 |
 | `teardown` | EOF 停稳与受管进程树终止 | 固定 teardown 事实；原始清理失败仍留在内部 |
 

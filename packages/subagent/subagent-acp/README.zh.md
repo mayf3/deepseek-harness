@@ -58,15 +58,15 @@ ACP 不声明任何启动时能力，因为当前进程无法强制执行远程�
 
 ## 失败诊断
 
-首行采用固定字段顺序：
+通用 error 路径的失败诊断采用固定字段顺序：
 
 ```text
 Subagent failure (provider: ACP; stage: <stage>; category: <category>; stop reason: <reason>; exit code: <code>; signal: <signal>)
 ```
 
-不可用的可选字段会被省略。提供方从实际拥有失败的操作派生 `initialize`、`new-session`、`prompt`、`process` 或 `teardown`。category 区分配置、协议或传输失败、进程启动/退出、远端限制或拒绝、权限相关取消以及固定 unknown 回退。退出码与信号只来自受管子进程结果；stderr、异常消息、任务文本、工具输入、路径、环境值、凭证和协议 payload 绝不会进入诊断。共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。
+不可用的可选字段会被省略。提供方从实际拥有失败的操作派生 `initialize`、`new-session`、`prompt`、`process` 或 `teardown`。category 区分配置、协议或传输失败、进程启动/退出、远端限制以及固定 unknown 回退。退出码与信号只来自受管子进程结果；stderr、异常消息、任务文本、工具输入、路径、环境值、凭证和协议 payload 绝不会进入诊断。共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。
 
-当运行请求过权限且最终未完成时，第二个固定行会记录已配置策略、ACP 闭集工具种类以及提供方允许还是拒绝。工具标题、raw input、位置与选项文本均被排除。成功结果和本地取消会省略两行。带权限诊断的远端 `aborted` 结果仍保持 `aborted`；前台会呈现该诊断，而一次性 Job adapter 会把这种带诊断的远端取消判为 failed，避免与本地取消混淆。
+当运行请求过权限且最终未完成时，一个固定权限行会记录已配置策略、ACP 闭集工具种类以及提供方允许还是拒绝。工具标题、raw input、位置与选项文本均被排除。对于 `max-tokens`、`refusal` 或远端 `aborted`，公共结束原因已经携带终态事实，因此该权限行就是完整诊断；通用 error 路径则把它放在失败行之后。成功结果和本地取消会省略权限行。带权限诊断的远端 `aborted` 结果仍保持 `aborted`；前台会呈现该诊断，而一次性 Job adapter 会把这种带诊断的远端取消判为 failed，避免与本地取消混淆。
 
 ## 进程边界
 
