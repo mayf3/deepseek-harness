@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import sharp from 'sharp'
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
 import type { MasterImagePolicy } from '../src/canonical.ts'
-import { readImageFile, saveImageFile } from '../src/store.ts'
+import { commitPreparedImageFile, prepareImageFile, readImageFile, saveImageFile } from '../src/store.ts'
 
 const fsControl = vi.hoisted(() => ({
   readSignals: [] as AbortSignal[],
@@ -255,5 +255,15 @@ describe('local attachment store', () => {
 
     await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY))
       .rejects.toMatchObject({ code: 'ATTACHMENT_WRITE_FAILED' })
+  })
+
+  it('rejects prepared bytes that no longer match their content-addressed reference', async () => {
+    const storageRoot = await root()
+    const prepared = await prepareImageFile({ data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)
+
+    await expect(commitPreparedImageFile(storageRoot, {
+      ...prepared,
+      data: Uint8Array.of(...prepared.data, 0),
+    })).rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
   })
 })

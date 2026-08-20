@@ -20,16 +20,17 @@ export async function encodeFirstWithinLimit<T extends EncodedCandidate>(
   attempts: readonly (() => Promise<T>)[],
   maxBytes: number,
 ): Promise<T | ExhaustedEncoding<T>> {
-  if (attempts.length === 0) throw new Error('image encoding requires at least one candidate')
-  let smallest: T | undefined
-  for (const attempt of attempts) {
+  const [first, ...remaining] = attempts
+  if (first === undefined) throw new Error('image encoding requires at least one candidate')
+  let smallest = await first()
+  if (smallest.data.byteLength <= maxBytes) return smallest
+  for (const attempt of remaining) {
     const candidate = await attempt()
     if (candidate.data.byteLength <= maxBytes) return candidate
-    if (smallest === undefined || candidate.data.byteLength < smallest.data.byteLength) {
+    if (candidate.data.byteLength < smallest.data.byteLength) {
       smallest = candidate
     }
   }
-  if (smallest === undefined) throw new Error('image encoding did not execute a candidate')
   return { smallest }
 }
 

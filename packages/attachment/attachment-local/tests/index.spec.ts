@@ -58,6 +58,30 @@ describe('local attachment service', () => {
     }
   })
 
+  it('commits a fully prepared image batch in input order', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-attachment-batch-success-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome })
+      const first = new Uint8Array(await sharp({
+        create: { width: 2, height: 1, channels: 3, background: { r: 1, g: 2, b: 3 } },
+      }).png().toBuffer())
+      const second = new Uint8Array(await sharp({
+        create: { width: 1, height: 2, channels: 3, background: { r: 4, g: 5, b: 6 } },
+      }).png().toBuffer())
+
+      const refs = await service.saveImages([
+        { data: first, mediaType: 'image/png', name: 'first.png' },
+        { data: second, mediaType: 'image/png', name: 'second.png' },
+      ])
+
+      expect(refs.map(ref => ref.name)).toEqual(['first.png', 'second.png'])
+      await expect(Promise.all(refs.map(ref => service.readImage(ref))))
+        .resolves.toHaveLength(2)
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
   it.each([3, 4] as const)('admits a 16-bit %s-channel PNG as an 8-bit master object', async (channels) => {
     const dshHome = await mkdtemp(join(tmpdir(), 'dsh-attachment-16-bit-'))
     try {

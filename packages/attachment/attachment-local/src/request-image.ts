@@ -263,11 +263,7 @@ async function writeCached(path: string, data: Uint8Array): Promise<void> {
   const temporary = `${path}.${randomUUID()}.tmp`
   try {
     await writeFile(temporary, data, { mode: 0o600, flag: 'wx' })
-    try {
-      await rename(temporary, path)
-    } catch (error: unknown) {
-      if ((error as NodeJS.ErrnoException | null)?.code !== 'EEXIST') throw error
-    }
+    await rename(temporary, path)
   } finally {
     await rm(temporary, { force: true })
   }

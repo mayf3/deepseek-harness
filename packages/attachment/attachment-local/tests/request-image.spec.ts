@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -39,9 +39,122 @@ describe('request image dimensions', () => {
     })
     expect(projected.width * projected.height).toBeLessThanOrEqual(640_000)
   })
+
+  it('projects a portrait within the same total-pixel budget', () => {
+    const projected = requestImageDimensions(2160, 3840, 640_000)
+
+    expect(projected).toEqual({ width: 600, height: 1066 })
+    expect(projected.width * projected.height).toBeLessThanOrEqual(640_000)
+  })
+
+  it('rounds a portrait inward when integer aspect rounding crosses the pixel cap', () => {
+    expect(requestImageDimensions(2, 4, 5)).toEqual({ width: 1, height: 2 })
+  })
+
+  it('rejects invalid preview dimensions, origins, sizes, and bounds', () => {
+    expect(() => previewCropToMaster(0, 10, {
+      previewWidth: 10, previewHeight: 10, x: 0, y: 0, width: 1, height: 1,
+    })).toThrow('Master image width must be a positive integer')
+    expect(() => previewCropToMaster(10, 10, {
+      previewWidth: 0, previewHeight: 10, x: 0, y: 0, width: 1, height: 1,
+    })).toThrow('Preview width must be a positive integer')
+    expect(() => previewCropToMaster(10, 10, {
+      previewWidth: 10, previewHeight: 10, x: -1, y: 0, width: 1, height: 1,
+    })).toThrow('Preview crop origin must use non-negative integer pixels')
+    expect(() => previewCropToMaster(10, 10, {
+      previewWidth: 10, previewHeight: 10, x: 0, y: 0, width: 0, height: 1,
+    })).toThrow('Preview crop width must be a positive integer')
+    expect(() => previewCropToMaster(10, 10, {
+      previewWidth: 10, previewHeight: 10, x: 9, y: 0, width: 2, height: 1,
+    })).toThrow('Preview crop extends beyond the image shown to the model')
+  })
 })
 
 describe('local request-image cache', () => {
+  it('passes through an in-budget master and reads a request batch in input order', async () => {
+    const attachments = await store()
+    const first = (await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })).ref
+    const second = (await attachments.saveImage({ data: await image(4, 8), mediaType: 'image/png' })).ref
+    const firstMaster = await attachments.readImage(first)
+    const policy = { maxPixels: 1_000, maxBytes: 1024 * 1024 }
+
+    const request = await attachments.readImageRequest(first, policy)
+    const batch = await attachments.readImageRequests([first, second], policy)
+
+    expect(request.data).toEqual(firstMaster.data)
+    expect(batch.map(value => value.master.attachmentId)).toEqual([first.attachmentId, second.attachmentId])
+  })
+
+  it('rejects invalid request policies and master crop bounds', async () => {
+    const attachments = await store()
+    const master = (await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })).ref
+
+    await expect(attachments.readImageRequest(master, { maxPixels: 0, maxBytes: 100 }))
+      .rejects.toThrow('Image request maxPixels must be a positive integer')
+    await expect(attachments.readImageRequest(master, { maxPixels: 100, maxBytes: 0 }))
+      .rejects.toThrow('Image request maxBytes must be a positive integer')
+    await expect(attachments.readImageRequest(master, {
+      maxPixels: 100, maxBytes: 100, crop: { x: -1, y: 0, width: 1, height: 1 },
+    })).rejects.toThrow('Image crop origin must use non-negative integer pixels')
+    await expect(attachments.readImageRequest(master, {
+      maxPixels: 100, maxBytes: 100, crop: { x: 0, y: 0, width: 0, height: 1 },
+    })).rejects.toThrow('Image crop width must be a positive integer')
+    await expect(attachments.readImageRequest(master, {
+      maxPixels: 100, maxBytes: 100, crop: { x: 7, y: 0, width: 2, height: 1 },
+    })).rejects.toThrow('Image crop extends beyond the stored master image')
+  })
+
+  it('refuses a one-pixel request that cannot meet the encoded-byte budget', async () => {
+    const attachments = await store()
+    const master = (await attachments.saveImage({ data: await image(1, 1), mediaType: 'image/png' })).ref
+
+    await expect(attachments.readImageRequest(master, { maxPixels: 1, maxBytes: 1 }))
+      .rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
+  })
+
+  it('regenerates invalid, oversized, incompatible, or mismatched cached variants', async () => {
+    const attachments = await store()
+    const master = (await attachments.saveImage({ data: await image(64, 32), mediaType: 'image/png' })).ref
+    const policy = { maxPixels: 16 * 16, maxBytes: 4_096 }
+    const initial = await attachments.readImageRequest(master, policy)
+    const hash = String(initial.variantId).slice('sha256:'.length)
+    const path = join(attachments.root, 'request-images', hash.slice(0, 2), hash)
+    const noisyPixels = new Uint8Array(64 * 64 * 3)
+    let state = 0x2545f491
+    for (let index = 0; index < noisyPixels.length; index += 1) {
+      state ^= state << 13
+      state ^= state >>> 17
+      state ^= state << 5
+      noisyPixels[index] = state & 0xff
+    }
+    const oversized = new Uint8Array(await sharp(noisyPixels, {
+      raw: { width: 64, height: 64, channels: 3 },
+    }).png().toBuffer())
+    const depth16 = new Uint8Array(await sharp({
+      create: { width: 16, height: 8, channels: 3, background: { r: 1, g: 2, b: 3 } },
+    }).toColourspace('rgb16').png().toBuffer())
+    const cmyk = new Uint8Array(await sharp({
+      create: { width: 16, height: 8, channels: 3, background: { r: 1, g: 2, b: 3 } },
+    }).toColourspace('cmyk').jpeg().toBuffer())
+    const tooWide = await image(23, 11)
+    const unexpectedAlpha = new Uint8Array(await sharp({
+      create: { width: 16, height: 8, channels: 4, background: { r: 1, g: 2, b: 3, alpha: 0.5 } },
+    }).png().toBuffer())
+
+    for (const invalid of [
+      oversized,
+      depth16,
+      cmyk,
+      tooWide,
+      unexpectedAlpha,
+      Uint8Array.of(1, 2, 3),
+    ]) {
+      await writeFile(path, invalid)
+      const regenerated = await attachments.readImageRequest(master, policy)
+      expect(regenerated.data).toEqual(initial.data)
+    }
+  })
+
   it('derives stable square and wide previews and separates route budgets in the cache key', async () => {
     const attachments = await store()
     const square = (await attachments.saveImage({
@@ -97,6 +210,17 @@ describe('local request-image cache', () => {
     expect(cropped.ref.width).toBe(mapped.width)
     expect(cropped.ref.height).toBe(mapped.height)
     expect(pixel[1]).toBeGreaterThan(pixel[0] ?? 0)
+  })
+
+  it('names a crop from an unnamed attachment id', async () => {
+    const attachments = await store()
+    const master = (await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })).ref
+
+    const cropped = await attachments.cropImage(master, {
+      previewWidth: 8, previewHeight: 4, x: 0, y: 0, width: 4, height: 4,
+    })
+
+    expect(cropped.ref.name).toMatch(/^sha256:[0-9a-f]{8}-crop\.(?:png|webp|jpg)$/u)
   })
 
   it('classifies opaque PNG pixels and preserves alpha while enforcing the request budget', async () => {
@@ -232,5 +356,37 @@ describe('local request-image cache', () => {
 
     await expect(request).rejects.toBe(reason)
     expect(readSignal?.reason).toBe(reason)
+  })
+
+  it('normalizes a non-Error cancellation and replaces an aborted shared transform', async () => {
+    const attachments = await store()
+    const master = (await attachments.saveImage({
+      data: await image(2048, 1024), mediaType: 'image/png', name: 'replace.png',
+    })).ref
+    const actualRead = attachments.readImage.bind(attachments)
+    let calls = 0
+    vi.spyOn(attachments, 'readImage').mockImplementation((ref, signal) => {
+      calls += 1
+      if (calls === 1) {
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+        })
+      }
+      return actualRead(ref, signal)
+    })
+    const controller = new AbortController()
+    const policy = { maxPixels: 640_000, maxBytes: 1024 * 1024 }
+    const cancelled = attachments.readImageRequest(master, policy, controller.signal)
+    await vi.waitFor(() => expect(calls).toBe(1))
+
+    controller.abort('cancelled')
+    const replacement = attachments.readImageRequest(master, policy)
+
+    await expect(cancelled).rejects.toMatchObject({
+      message: 'Attachment request cancelled with a non-Error reason.',
+      cause: 'cancelled',
+    })
+    await expect(replacement).resolves.toMatchObject({ width: 1130, height: 565 })
+    expect(calls).toBe(2)
   })
 })

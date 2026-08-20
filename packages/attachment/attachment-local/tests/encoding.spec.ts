@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CompressionLimiter } from '../src/compression-limiter.ts'
-import { encodeFirstWithinLimit } from '../src/encoding.ts'
+import { encodeFirstWithinLimit, isExhaustedEncoding } from '../src/encoding.ts'
 
 describe('lazy image encoding', () => {
   it('does not execute fallback qualities after the first fitting candidate', async () => {
@@ -21,6 +21,19 @@ describe('lazy image encoding', () => {
     expect(first).toHaveBeenCalledTimes(1)
     expect(second).toHaveBeenCalledTimes(1)
     expect(third).not.toHaveBeenCalled()
+  })
+
+  it('rejects an empty candidate list and reports the smallest exhausted candidate', async () => {
+    await expect(encodeFirstWithinLimit([], 8)).rejects.toThrow('requires at least one candidate')
+    const result = await encodeFirstWithinLimit([
+      () => Promise.resolve({ data: new Uint8Array(12), quality: 85 }),
+      () => Promise.resolve({ data: new Uint8Array(9), quality: 80 }),
+      () => Promise.resolve({ data: new Uint8Array(10), quality: 75 }),
+    ], 8)
+
+    expect(isExhaustedEncoding(result)).toBe(true)
+    expect(result).toMatchObject({ smallest: { quality: 80 } })
+    expect(isExhaustedEncoding({ data: new Uint8Array(1) })).toBe(false)
   })
 })
 
@@ -65,6 +78,18 @@ describe('CompressionLimiter', () => {
     const next = limiter.run(() => Promise.resolve('next'))
 
     await expect(failed).rejects.toThrow('synchronous setup failure')
+    await expect(next).resolves.toBe('next')
+  })
+
+  it('normalizes a non-Error rejection and releases its slot', async () => {
+    const limiter = new CompressionLimiter(1)
+    const failed = limiter.run(() => Promise.reject('native failure'))
+    const next = limiter.run(() => Promise.resolve('next'))
+
+    await expect(failed).rejects.toMatchObject({
+      message: 'Image compression task rejected with a non-Error value.',
+      cause: 'native failure',
+    })
     await expect(next).resolves.toBe('next')
   })
 })

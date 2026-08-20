@@ -230,6 +230,40 @@ describe('prepareMasterImage', () => {
         message: 'The 16-bit PNG could not be converted to the canonical 8-bit sRGB form.',
       })
   })
+
+  it.each([
+    ['float PNG', { mediaType: 'image/png', depth: 'float' }],
+    ['uchar JPEG', { mediaType: 'image/jpeg', depth: 'uchar' }],
+  ] as const)('describes a failed %s conversion without exposing the encoder error', async (source, fields) => {
+    const detected = {
+      ...fields,
+      width: 5000,
+      height: 5000,
+      animated: false,
+      carriesMetadata: false,
+      space: 'srgb',
+      hasAlpha: false,
+    } as const
+
+    await expect(prepareMasterImage(Uint8Array.of(1, 2, 3), detected, POLICY))
+      .rejects.toMatchObject({
+        code: 'ATTACHMENT_WRITE_FAILED',
+        message: `The ${source} could not be converted to the canonical 8-bit sRGB form.`,
+      })
+  })
+
+  it('rejects a converted master whose verified alpha metadata disagrees with the source facts', async () => {
+    const data = await flatImage(8, 8, 'png', true)
+    const detected = await detectImage(data)
+
+    await expect(prepareMasterImage(data, { ...detected, hasAlpha: false }, {
+      maxDimension: 4,
+      maxBytes: POLICY.maxBytes,
+    })).rejects.toMatchObject({
+      code: 'ATTACHMENT_WRITE_FAILED',
+      message: 'Canonical image conversion did not produce a single-frame 8-bit sRGB image with matching metadata.',
+    })
+  })
 })
 
 describe('hasLowColourCount', () => {
@@ -286,6 +320,15 @@ describe('hasLowColourCount', () => {
     })
 
     await expect(hasLowColourCount(grayscaleAlpha)).resolves.toBe(true)
+  })
+
+  it('reads one-channel grayscale samples as equal RGB values', async () => {
+    const pixels = new Uint8Array(128 * 16)
+    for (let index = 0; index < pixels.length; index += 1) pixels[index] = index & 0xff
+
+    await expect(hasLowColourCount(sharp(pixels, {
+      raw: { width: 128, height: 16, channels: 1 },
+    }))).resolves.toBe(true)
   })
 
   it('keeps an antialiased text screenshot readable on the low-colour PNG path', async () => {

@@ -77,12 +77,10 @@ export async function hasLowColourCount(pipeline: Sharp): Promise<boolean> {
   }).raw().toBuffer({ resolveWithObject: true })
   const colours = new Set<number>()
   for (let offset = 0; offset < data.length; offset += info.channels) {
-    const red = data[offset] ?? 0
-    const green = info.channels < 3 ? red : data[offset + 1] ?? red
-    const blue = info.channels < 3 ? red : data[offset + 2] ?? red
-    const alpha = info.channels === 2
-      ? data[offset + 1] ?? 255
-      : info.channels === 4 ? data[offset + 3] ?? 255 : 255
+    const red = data.readUInt8(offset)
+    const green = data.readUInt8(offset + 1)
+    const blue = data.readUInt8(offset + 2)
+    const alpha = info.channels === 4 ? data.readUInt8(offset + 3) : 255
     colours.add(((red >> 3) << 15) | ((green >> 3) << 10) | ((blue >> 3) << 5) | (alpha >> 3))
     if (colours.size > LOW_COLOUR_LIMIT) return false
   }
@@ -183,8 +181,8 @@ export async function prepareMasterImage(
       const scale = Math.min(MIN_SCALE_STEP, sizeScale)
       const nextWidth = Math.max(1, Math.floor(width * scale))
       const nextHeight = Math.max(1, Math.floor(height * scale))
-      width = nextWidth === width && width > 1 ? width - 1 : nextWidth
-      height = nextHeight === height && height > 1 ? height - 1 : nextHeight
+      width = nextWidth
+      height = nextHeight
     }
   } catch (error) {
     if (error instanceof AttachmentError) throw error
