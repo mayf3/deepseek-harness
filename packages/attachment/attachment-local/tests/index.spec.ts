@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import LocalAttachmentStore, {
+  DEFAULT_CANONICAL_MAX_BYTES,
+  DEFAULT_CANONICAL_MAX_DIMENSION,
   DEFAULT_MAX_IMAGE_BYTES,
   DEFAULT_MAX_IMAGE_DIMENSION,
   DEFAULT_MAX_IMAGE_PIXELS,
@@ -15,7 +17,7 @@ import LocalAttachmentStore, {
 describe('local attachment service', () => {
   it('resolves every omitted admission limit explicitly', () => {
     const service = new LocalAttachmentStore(new Context(), {})
-    expect(DEFAULT_MAX_IMAGE_BYTES).toBe(3.5 * 1024 * 1024)
+    expect(DEFAULT_MAX_IMAGE_BYTES).toBe(32 * 1024 * 1024)
     expect(service.imageLimits).toEqual({
       maxImageBytes: DEFAULT_MAX_IMAGE_BYTES,
       maxImagesPerMessage: DEFAULT_MAX_IMAGES_PER_MESSAGE,
@@ -23,6 +25,10 @@ describe('local attachment service', () => {
       maxImagePixels: DEFAULT_MAX_IMAGE_PIXELS,
       maxImageDimension: DEFAULT_MAX_IMAGE_DIMENSION,
       mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+    })
+    expect(service.canonicalPolicy).toEqual({
+      maxDimension: DEFAULT_CANONICAL_MAX_DIMENSION,
+      maxBytes: DEFAULT_CANONICAL_MAX_BYTES,
     })
   })
 
@@ -34,7 +40,7 @@ describe('local attachment service', () => {
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
         'base64',
       ))
-      const ref = await service.saveImage({ data, mediaType: 'image/png' })
+      const { ref } = await service.saveImage({ data, mediaType: 'image/png' })
       await expect(service.readImage(ref)).resolves.toEqual({ ref, data })
     } finally {
       await rm(dshHome, { recursive: true, force: true })

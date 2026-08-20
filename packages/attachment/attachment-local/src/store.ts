@@ -15,6 +15,8 @@ import type {
   SavedImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
+import { canonicalizeImage } from './canonical.ts'
+import type { CanonicalImagePolicy } from './canonical.ts'
 import { detectImage, probeImage } from './image.ts'
 
 const ID_PATTERN = /^sha256:([a-f0-9]{64})$/
@@ -128,20 +130,26 @@ async function ensureDurableHome(path: string): Promise<string> {
 }
 
 /**
- * Save and verify immutable image bytes below a versioned attachment root.
+ * Save and verify one image below a versioned attachment root. Admission
+ * validates the submitted source, then stores its deterministic canonical
+ * encoding; the returned reference describes the stored canonical bytes while
+ * `source` preserves the submitted raster's facts.
  * @param root - absolute `DSH_HOME/attachments/v1` root.
  * @param input - encoded bytes and declared metadata.
- * @param limits - resolved storage policy.
+ * @param limits - resolved source admission policy.
+ * @param policy - resolved canonical encoding budget.
  * @returns durable content-addressed reference beside the submitted source facts.
  */
 export async function saveImageFile(
   root: string,
   input: SaveImageAttachment,
   limits: ImageAttachmentLimits,
+  policy: CanonicalImagePolicy,
 ): Promise<SavedImageAttachment> {
   if (input.data.byteLength > limits.maxImageBytes) throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
   const metadata = await inspectMetadata(input.data, input.mediaType, limits)
-  const sha256 = digest(input.data)
+  const canonical = await canonicalizeImage(input.data, metadata, policy)
+  const sha256 = digest(canonical.data)
   const bucket = join(root, 'objects', sha256.slice(0, 2))
   const staging = join(root, 'tmp')
   // Establish DSH_HOME itself against the filesystem root once per process.
@@ -155,7 +163,7 @@ export async function saveImageFile(
   let handle
   try {
     handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
-    await handle.writeFile(input.data)
+    await handle.writeFile(canonical.data)
     await handle.sync()
     await handle.close()
     handle = undefined
@@ -194,7 +202,10 @@ export async function saveImageFile(
   return {
     ref: {
       attachmentId: AttachmentId(`sha256:${sha256}`),
-      ...metadata,
+      mediaType: canonical.mediaType,
+      bytes: canonical.data.byteLength,
+      width: canonical.width,
+      height: canonical.height,
       ...(name !== undefined ? { name } : {}),
     },
     source: metadata,

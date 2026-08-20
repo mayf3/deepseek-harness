@@ -6,41 +6,50 @@ import z from '@deepseek-ai/schemastery'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, SavedImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import type { CanonicalImagePolicy } from './canonical.ts'
 import { readImageFile, saveImageFile, validateImageFile } from './store.ts'
 
+export { canonicalizeImage, isCanonical } from './canonical.ts'
+export type { CanonicalImage, CanonicalImagePolicy } from './canonical.ts'
 export { readImageFile, saveImageFile, validateImageFile } from './store.ts'
 
-/** Default maximum encoded bytes for one image. */
-export const DEFAULT_MAX_IMAGE_BYTES = 3.5 * 1024 * 1024
+/** Default maximum encoded bytes for one submitted image; oversized sources are refused, not shrunk. */
+export const DEFAULT_MAX_IMAGE_BYTES = 32 * 1024 * 1024
 /** Default maximum images in one prompt. */
 export const DEFAULT_MAX_IMAGES_PER_MESSAGE = 20
 /** Default maximum aggregate image bytes in one prompt. */
 export const DEFAULT_MAX_MESSAGE_IMAGE_BYTES = 100 * 1024 * 1024
-/** Default maximum intrinsic pixels for one image. */
-export const DEFAULT_MAX_IMAGE_PIXELS = 40_000_000
+/** Default maximum intrinsic pixels for one submitted image. */
+export const DEFAULT_MAX_IMAGE_PIXELS = 100_000_000
+/** Default per-side pixel cap for one submitted image. */
+export const DEFAULT_MAX_IMAGE_DIMENSION = 16384
 /**
- * Default maximum intrinsic width and height for one image. Deployed model
- * routes reject any request whose history carries an image with a side above
- * 2000px once the request holds many images, and an admitted image rides
- * every later request of its session, so admission refuses at the same line
- * to keep the durable history streamable.
+ * Default long-edge target of the stored canonical encoding. A larger source
+ * is admitted and downscaled to this edge, so admission bounds what rides
+ * every later model request without refusing ordinary large sources.
  */
-export const DEFAULT_MAX_IMAGE_DIMENSION = 2000
+export const DEFAULT_CANONICAL_MAX_DIMENSION = 2048
+/** Default byte target of the stored canonical encoding. */
+export const DEFAULT_CANONICAL_MAX_BYTES = 1024 * 1024
 
 /** Local attachment backend configuration. */
 export interface Config {
   /** Explicit harness home; omitted follows `DSH_HOME`, then `~/.dsh`. */
   dshHome?: string
-  /** Maximum encoded bytes accepted for one image. */
+  /** Maximum encoded bytes accepted for one submitted image. */
   maxImageBytes?: number
   /** Maximum image count accepted in one submitted message. */
   maxImagesPerMessage?: number
   /** Maximum aggregate encoded image bytes accepted in one submitted message. */
   maxMessageImageBytes?: number
-  /** Maximum intrinsic width multiplied by height accepted for one image. */
+  /** Maximum intrinsic width multiplied by height accepted for one submitted image. */
   maxImagePixels?: number
-  /** Maximum intrinsic width and maximum intrinsic height accepted for one image. */
+  /** Maximum intrinsic width and maximum intrinsic height accepted for one submitted image. */
   maxImageDimension?: number
+  /** Long-edge pixel target of the stored canonical encoding. */
+  canonicalMaxDimension?: number
+  /** Encoded-byte target of the stored canonical encoding. */
+  canonicalMaxBytes?: number
 }
 
 /** Persistent content-addressed local attachment store. */
@@ -52,11 +61,15 @@ export class LocalAttachmentStore extends AttachmentStore {
     maxMessageImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_MESSAGE_IMAGE_BYTES),
     maxImagePixels: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGE_PIXELS),
     maxImageDimension: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGE_DIMENSION),
+    canonicalMaxDimension: z.number().step(1).min(1).default(DEFAULT_CANONICAL_MAX_DIMENSION),
+    canonicalMaxBytes: z.number().step(1).min(1).default(DEFAULT_CANONICAL_MAX_BYTES),
   })
 
   /** Absolute versioned storage root. */
   readonly root: string
   readonly imageLimits: ImageAttachmentLimits
+  /** Resolved canonical encoding budget applied by every save. */
+  readonly canonicalPolicy: Readonly<CanonicalImagePolicy>
 
   constructor(ctx: Context, config: Config) {
     super(ctx)
@@ -69,6 +82,10 @@ export class LocalAttachmentStore extends AttachmentStore {
       maxImageDimension: config.maxImageDimension ?? DEFAULT_MAX_IMAGE_DIMENSION,
       mediaTypes: Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const),
     })
+    this.canonicalPolicy = Object.freeze({
+      maxDimension: config.canonicalMaxDimension ?? DEFAULT_CANONICAL_MAX_DIMENSION,
+      maxBytes: config.canonicalMaxBytes ?? DEFAULT_CANONICAL_MAX_BYTES,
+    })
   }
 
   async validateImage(input: SaveImageAttachment): Promise<void> {
@@ -76,7 +93,7 @@ export class LocalAttachmentStore extends AttachmentStore {
   }
 
   async saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment> {
-    return saveImageFile(this.root, input, this.imageLimits)
+    return saveImageFile(this.root, input, this.imageLimits, this.canonicalPolicy)
   }
 
   async readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment> {
