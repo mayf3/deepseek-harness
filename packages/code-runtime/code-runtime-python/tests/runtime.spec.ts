@@ -513,25 +513,22 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
 
   it('reports a CPU overrun under a dual-limit ulimit as a timeout, not a worker-exit', async () => {
     // `ulimit -t N` sets BOTH the soft and hard CPU limit to N. The kernel
-    // checks the hard limit in the same tick and SIGKILLs a busy loop directly,
-    // so SIGXCPU is never delivered — and the host classifies a CPU overrun
-    // ONLY on `signal === 'SIGXCPU'`, so the overrun would be misreported as a
-    // `worker-exit` instead of a timeout. `_clamped` now lowers a clamped
-    // soft==hard result by one unit (when hard >= 2), so SIGXCPU fires at the
-    // softer limit and the run reports a timeout. This drives a busy loop past
-    // the inherited cap and asserts the run classifies as a timeout.
+    // checks the hard limit and SIGKILLs a busy loop directly, so with
+    // soft == hard the SIGXCPU signal is never delivered — and the host
+    // classifies a CPU overrun ONLY on `signal === 'SIGXCPU'`, so the overrun
+    // would be misreported as a `worker-exit` instead of a timeout. `_clamped`
+    // now lowers a clamped soft==hard result by one unit (when hard >= 2), so
+    // the SIGXCPU signal fires at the softer limit and the run reports a
+    // timeout. This uses `ulimit -t 2` (hard == 2, so the soft is lowered to 1)
+    // and leaves SIGXCPU unhandled, so the kernel terminates the busy loop at
+    // 1 s with SIGXCPU and the host classifies it as a timeout.
     const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-dual-'))
     const wrapper = join(dir, 'python3-dual-capped')
-    // Both soft and hard CPU 1 s; configured cpuSeconds 30 s.
-    await writeFile(wrapper, '#!/bin/sh\nulimit -t 1\nexec python3 "$@"\n', { mode: 0o755 })
+    // Both soft and hard CPU 2 s; configured cpuSeconds 30 s.
+    await writeFile(wrapper, '#!/bin/sh\nulimit -t 2\nexec python3 "$@"\n', { mode: 0o755 })
     const { runtime } = await setup({ pythonBin: wrapper, cpuSeconds: 30, maxWallMs: 12_000 })
     const result = await runtime.run({
       program: [
-        'import signal',
-        // Trap SIGXCPU; with the soft limit one unit below the hard it fires at
-        // 1 s and the run is classified as a CPU timeout, not a worker-exit.
-        'signal.signal(signal.SIGXCPU, lambda *a: None)',
-        'end = 2.5',
         'while True:',
         '    pass',
         'return "unreachable"',
@@ -539,7 +536,7 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
       bindings: [],
     })
     expect(result.error?.kind).toBe('timeout')
-    expect(result.error?.message).toContain('SIGXCPU')
+    expect(result.error?.message).toContain('CPU time exhausted')
   }, 15_000)
 
   it('rechecks CPU at settlement against the effective inherited soft limit', async () => {
