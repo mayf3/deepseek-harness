@@ -132,9 +132,39 @@ describe('web e2e: resident question composer round trip', () => {
       await page.setViewportSize(original)
     }
 
+    // Multi-line custom answer: the field is a textarea whose hidden mirror
+    // owns the box height, so a soft-wrapped or line-broken draft GROWS the
+    // field instead of scrolling one line, and Shift+Enter breaks the line
+    // rather than continuing the flow. Measured on the live composer because
+    // only a real engine soft-wraps; growth stops at the mirror's cap, past
+    // which the textarea is the one thing that scrolls. Replay only, same as
+    // the squeeze above: record mode must reach the recording write.
+    const custom = composer.getByRole('textbox')
+    if (MODE !== 'record') {
+      const lineHeight = await custom.evaluate(el => el.getBoundingClientRect().height)
+      await custom.fill('a'.repeat(120))
+      const wrapped = await custom.evaluate(el => ({
+        height: el.getBoundingClientRect().height,
+        scrolls: el.scrollHeight > el.clientHeight,
+      }))
+      expect(wrapped.height).toBeGreaterThan(lineHeight * 1.5)
+      expect(wrapped.scrolls).toBe(false)
+
+      await custom.fill('')
+      await custom.press('Shift+Enter')
+      await custom.press('Shift+Enter')
+      expect(await custom.inputValue()).toBe('\n\n')
+      expect(await composer.getByText('Which color do you prefer?').count()).toBeGreaterThan(0)
+      expect(await custom.evaluate(el => el.getBoundingClientRect().height))
+        .toBeGreaterThan(lineHeight * 2.5)
+
+      await custom.fill('x\n'.repeat(40))
+      expect(await custom.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true)
+      await custom.fill('')
+    }
+
     const blue = composer.getByRole('checkbox', { name: 'Blue' })
     await blue.click()
-    const custom = composer.getByRole('textbox')
     await custom.fill('Include accessibility notes')
     expect(await blue.getAttribute('aria-checked')).toBe('true')
     expect(await custom.inputValue()).toBe('Include accessibility notes')
