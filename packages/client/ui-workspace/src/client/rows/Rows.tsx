@@ -392,7 +392,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onEditTags, onNewSession, onToggleUnread, drag, flat = false, t,
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onEditTags, onNewSession, onToggleUnread, drag, bulk, flat = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -412,6 +412,8 @@ export function SessionNodeItem({
   onToggleUnread?: ((id: SessionNode['id']) => void) | undefined
   /** Present only on draggable rows (workspace-group sessions outside search). */
   drag?: RowDragProps | undefined
+  /** Bulk-selection state and gesture; blank rows remain inert while this is present. */
+  bulk?: { selected: boolean; toggle: (shiftKey: boolean) => void } | undefined
   /** The row is rendered without a parent Workspace header. */
   flat?: boolean | undefined
   t: RowTranslate
@@ -426,10 +428,10 @@ export function SessionNodeItem({
   // Right-click menu anchor: the ellipsis trigger is gone, so the menu is
   // positioned at the cursor that opened it.
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
-  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [archiveArmed, setArchiveArmed] = useState(false)
   // Archive hides the row through the registry-global archive set and never
-  // touches the session log, so it is not styled as destructive and needs no
-  // confirmation dialog.
+  // touches the session log. The inline button requires a second click while
+  // it retains focus, avoiding a detached confirmation popover.
   const sessionMenuItems = [
     ...(onNewSession === undefined ? [] : [{ id: 'newSessionHere', label: t('menu.newSessionHere'), icon: <IconPlusOutline16 /> }]),
     ...(onToggleUnread === undefined ? [] : [{ id: 'unread', label: node.unread ? t('menu.markRead') : t('menu.markUnread'), icon: <span className={css.menuUnreadDot} aria-hidden="true" /> }]),
@@ -443,32 +445,42 @@ export function SessionNodeItem({
   const ownRow = (
     <div
       className={clsx(
-        css.sessionRow, selected && css.selected, menuOpen && css.menuOpen,
-        flat && !showStatus && css.flatSessionRowWithoutStatus,
-        drag?.marker === 'before' && css.dropBefore, drag?.marker === 'after' && css.dropAfter,
-        drag?.marker === 'on' && css.dropOn,
+        css.sessionRow, bulk === undefined && selected && css.selected, menuOpen && css.menuOpen,
+        bulk !== undefined && css.bulkSessionRow,
+        flat && !showStatus && bulk === undefined && css.flatSessionRowWithoutStatus,
+        bulk === undefined && drag?.marker === 'before' && css.dropBefore,
+        bulk === undefined && drag?.marker === 'after' && css.dropAfter,
+        bulk === undefined && drag?.marker === 'on' && css.dropOn,
       )}
       style={node.depth > 0 ? { paddingLeft: `${10 + node.depth * 16}px` } : undefined}
       role="treeitem"
-      aria-selected={selected}
+      aria-selected={bulk?.selected ?? selected}
       aria-level={node.depth + 1}
       data-session-id={node.id}
-      onClick={() => { onOpen(node.id) }}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        setMenuAt({ x: e.clientX, y: e.clientY })
-        setMenuOpen(true)
+      onClick={(event) => {
+        if (bulk !== undefined) {
+          if (!node.blank) bulk.toggle(event.shiftKey)
+          return
+        }
+        onOpen(node.id)
       }}
-      draggable={drag !== undefined}
-      onDragStart={drag === undefined
+      onContextMenu={bulk !== undefined
+        ? undefined
+        : (e) => {
+          e.preventDefault()
+          setMenuAt({ x: e.clientX, y: e.clientY })
+          setMenuOpen(true)
+        }}
+      draggable={bulk === undefined && drag !== undefined}
+      onDragStart={bulk !== undefined || drag === undefined
         ? undefined
         : (e) => {
           e.dataTransfer.effectAllowed = 'move'
           e.dataTransfer.setData('text/plain', node.id)
           drag.start()
         }}
-      onDragEnd={drag?.end}
-      onDragOver={drag === undefined
+      onDragEnd={bulk === undefined ? drag?.end : undefined}
+      onDragOver={bulk !== undefined || drag === undefined
         ? undefined
         : (e) => {
           if (!drag.active) return
@@ -476,7 +488,7 @@ export function SessionNodeItem({
           e.dataTransfer.dropEffect = 'move'
           drag.hover(rowHalf(e))
         }}
-      onDrop={drag === undefined
+      onDrop={bulk !== undefined || drag === undefined
         ? undefined
         : (e) => {
           if (!drag.active) return
@@ -487,11 +499,24 @@ export function SessionNodeItem({
       {/* Pending interaction and own or descendant activity outrank the
           finished-but-unviewed reminder, which returns after activity stops
           and is cleared by opening the session. */}
-      {(!flat || showStatus) && (
-        <span className={css.slot}>
-          {showStatus && <SessionStatusDots statuses={statuses} />}
-        </span>
-      )}
+      {bulk !== undefined && !row.blank
+        ? (
+          <span className={css.slot}>
+            <input
+              type="checkbox"
+              className={css.bulkCheckbox}
+              checked={bulk.selected}
+              readOnly
+              tabIndex={-1}
+              aria-label={t('bulk.selectSession', { name: title })}
+            />
+          </span>
+        )
+        : (!flat || showStatus) && (
+          <span className={css.slot}>
+            {showStatus && <SessionStatusDots statuses={statuses} />}
+          </span>
+        )}
       {node.depth > 0 && (
         <span className={css.waitingMark} aria-label={t('status.waitingOn')} title={t('status.waitingOn')}>
           <IconLinkOutline16 />
@@ -506,31 +531,32 @@ export function SessionNodeItem({
           (rename/fork/archive) would all act on content that does not
           exist — both trailing cells stay off until the first prompt. */}
       {!row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
-      {!row.blank && (
+      {!row.blank && bulk === undefined && (
         <span className={css.rowActions}>
-          {/* One-click row action: archive, behind a confirm step. */}
-          <Menu
-            open={archiveOpen}
-            onClose={() => { setArchiveOpen(false) }}
-            items={[{ id: 'archive', label: t('menu.archiveConfirm'), icon: <IconArchiveOutline20 size={16} />, danger: true }]}
-            onSelect={(id) => {
-              setArchiveOpen(false)
-              if (id === 'archive') onArchive(node.id)
+          <button
+            type="button"
+            className={clsx(css.iconButton, archiveArmed && css.archiveArmed)}
+            aria-label={archiveArmed ? t('menu.archiveConfirm') : t('menu.archiveSession')}
+            title={archiveArmed ? t('menu.archiveConfirm') : t('menu.archiveSession')}
+            onBlur={() => { setArchiveArmed(false) }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Escape') return
+              e.stopPropagation()
+              setArchiveArmed(false)
+              e.currentTarget.blur()
             }}
-            portal
-            align="end"
-            anchor={(
-              <button
-                type="button"
-                className={css.iconButton}
-                aria-label={t('menu.archiveSession')}
-                title={t('menu.archiveSession')}
-                onClick={(e) => { e.stopPropagation(); setArchiveOpen(v => !v) }}
-              >
-                <IconArchiveOutline20 size={16} />
-              </button>
-            )}
-          />
+            onClick={(e) => {
+              e.stopPropagation()
+              if (!archiveArmed) {
+                setArchiveArmed(true)
+                return
+              }
+              setArchiveArmed(false)
+              onArchive(node.id)
+            }}
+          >
+            <IconArchiveOutline20 size={16} />
+          </button>
           {/* The full row menu lives on right-click alone (no ellipsis). */}
           <Menu
             open={menuOpen}
@@ -560,7 +586,7 @@ export function SessionNodeItem({
     <HoverCard
       anchor={ownRow}
       content={<SessionHoverContent node={node} now={now} t={t} />}
-      disabled={menuOpen || drag?.active === true}
+      disabled={bulk !== undefined || menuOpen || drag?.active === true}
       copyText={row.blank ? undefined : row.title}
       copyLabel={t('copy')}
       copiedLabel={t('hover.copied')}

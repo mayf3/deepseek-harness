@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-workspace-bulk-archive-selection.md
+2026-08-20-workspace-bulk-archive-selection.md: 3cebdd9a4889da586b22782f37fb7111caad49db
+2026-08-20-workspace-bulk-archive-selection.zh.md: 2bfca914656942a0ebd65078f4e244a1939c72ff

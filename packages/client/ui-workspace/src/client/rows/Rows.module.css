@@ -128,6 +128,22 @@
   margin-left: 0;
 }
 
+.bulkSessionRow {
+  cursor: default;
+}
+
+.bulkSessionRow:hover {
+  background: transparent;
+}
+
+.bulkCheckbox {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--dsw-alias-state-business-primary);
+  pointer-events: none;
+}
+
 /* Waiting-on marker: a nested row waits for its parent task. */
 .waitingMark {
   flex: none;
@@ -384,6 +400,11 @@
 
 .iconButton:hover {
   color: var(--dsw-alias-label-primary);
+}
+
+.archiveArmed,
+.archiveArmed:hover {
+  color: var(--dsw-alias-state-error-primary);
 }
 
 /* Chevrons ride the caption grey (#ADB2B8); the folder glyph stays one step

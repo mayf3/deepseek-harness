@@ -39,7 +39,8 @@
 }
 
 /* Unread-only filter toggle: the dot fills with the brand color when on. */
-.unreadFilterOn {
+.unreadFilterOn,
+.bulkModeOn {
   color: var(--dsw-alias-state-business-primary);
   background: var(--dsw-alias-interactive-bg-hover);
 }
@@ -116,7 +117,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  max-width: 60px;
+  max-width: 92px;
   opacity: 1;
   overflow: hidden;
   visibility: visible;
@@ -458,6 +459,69 @@
   padding: 16px 12px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 13px;
+}
+
+.bulkToolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 36px;
+  margin: 4px 0 0 4px;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-specific-sidebar-fill);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.bulkCount,
+.bulkResult {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.bulkCount {
+  margin-right: auto;
+}
+
+.bulkResult {
+  flex-basis: 100%;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.bulkTextButton,
+.bulkArchiveButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 24px;
+  border: none;
+  border-radius: 6px;
+  padding: 0 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.bulkTextButton:hover,
+.bulkArchiveButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.bulkTextButton:disabled,
+.bulkArchiveButton:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+.bulkArchiveArmed,
+.bulkArchiveArmed:hover {
+  color: var(--dsw-alias-state-error-primary);
 }
 
 /* Rename dialog form (same figma dialog family as the create modals). */

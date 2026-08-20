@@ -451,7 +451,7 @@ describe('workspace browser rows', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  it('archives from the one-click row action behind a confirm step', () => {
+  it('archives from the in-place two-click row action and cancels on blur or Escape', () => {
     const onArchive = vi.fn()
     const node: SessionNode = {
       id: sid('s2'), title: 'Two', blank: false, running: false,
@@ -459,19 +459,59 @@ describe('workspace browser rows', () => {
     }
     render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
       onRename={vi.fn()} onFork={vi.fn()} onArchive={onArchive} onEditTags={vi.fn()} t={t} />)
-    // The only row button is the archive trigger.
-    const archiveButton = screen.getByRole('button', { name: '归档会话' })
     expect(screen.queryByRole('button', { name: /会话.*的操作/ })).toBeNull()
-    fireEvent.click(archiveButton)
-    // A single danger confirm row appears; selecting it archives.
-    expect(screen.getByRole('menuitem', { name: '确认归档' }).className).toMatch(/danger/)
+    fireEvent.click(screen.getByRole('button', { name: '归档会话' }))
     expect(onArchive).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('menuitem', { name: '确认归档' }))
+    const armed = screen.getByRole('button', { name: '确认归档' })
+    fireEvent.blur(armed)
+    expect(screen.getByRole('button', { name: '归档会话' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '归档会话' }))
+    fireEvent.keyDown(screen.getByRole('button', { name: '确认归档' }), { key: 'Escape' })
+    expect(screen.getByRole('button', { name: '归档会话' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '归档会话' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认归档' }))
     expect(onArchive).toHaveBeenCalledWith(node.id)
-    // Closing the confirm without selecting does nothing.
-    fireEvent.click(archiveButton)
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(onArchive).toHaveBeenCalledOnce()
+  })
+
+  it('uses inert checkboxes instead of status and actions in bulk mode', () => {
+    const onOpen = vi.fn()
+    const toggle = vi.fn()
+    const drag = dragProps()
+    const node: SessionNode = {
+      id: sid('bulk'), title: 'Bulk row', blank: false, running: true,
+      runningSubagentCount: 0, completed: false, updatedAt: 0, depth: 0, tags: [], unread: false,
+    }
+    render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onEditTags={vi.fn()}
+      drag={drag} bulk={{ selected: true, toggle }} t={t} />)
+    const row = screen.getByRole('treeitem')
+    expect(screen.getByRole('checkbox', { name: '选择会话“Bulk row”' }).checked).toBe(true)
+    expect(row.getAttribute('draggable')).toBe('false')
+    expect(row.querySelector('[data-state]')).toBeNull()
+    expect(screen.queryByRole('button', { name: '归档会话' })).toBeNull()
+    fireEvent.click(row, { shiftKey: true })
+    fireEvent.contextMenu(row)
+    fireEvent.dragStart(row, { dataTransfer })
+    expect(toggle).toHaveBeenCalledWith(true)
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(drag.start).not.toHaveBeenCalled()
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('does not select blank rows in bulk mode', () => {
+    const toggle = vi.fn()
+    const node: SessionNode = {
+      id: sid('blank-bulk'), title: 'ignored', blank: true, running: false,
+      runningSubagentCount: 0, completed: false, updatedAt: 0, depth: 0, tags: [], unread: false,
+    }
+    render(<SessionNodeItem node={node} currentId={node.id} now={0} onOpen={vi.fn()}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onEditTags={vi.fn()}
+      bulk={{ selected: false, toggle }} t={t} />)
+    fireEvent.click(screen.getByRole('treeitem'))
+    expect(toggle).not.toHaveBeenCalled()
+    expect(screen.queryByRole('checkbox')).toBeNull()
   })
 
 

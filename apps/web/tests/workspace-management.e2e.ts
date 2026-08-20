@@ -5,8 +5,8 @@
 // trip over the real wire (workspace.rename RPC + durable registry), the
 // duplicate-name pre-check, the
 // flat "In one list" view with its persisted group-by preference, the session
-// hover card and row action menu, and the session archive round trip (row
-// menu → workspace.archiveSession RPC → durable global set → row hidden
+// hover card and row action menu, and the session archive round trip (bulk
+// selection → workspace.archiveSession RPC → durable global set → row hidden
 // across reload). Zero model calls: workspace.create/rename/archiveSession
 // are host RPCs with no model involvement, and the one session row the
 // flat/hover/menu/archive scenarios need comes from a seeded fixture (the
@@ -572,10 +572,12 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     await expect.poll(() => sessionRows.count(), { timeout: 10_000 }).toBe(1)
     const sessionRow = sessionRows.first()
     const rowTitle = await sessionRow.locator('[class*="title"]').innerText()
-    // Row menu: hover reveals the actions button; Archive session commits
-    // without a confirmation dialog (non-destructive: log + accounting stay).
-    await clickHoverAction(sessionRow, `Session actions for ${rowTitle}`)
-    await page.getByRole('menuitem', { name: 'Archive session' }).click()
+    // Enter bulk selection, select the seeded row, then confirm on the same
+    // toolbar button. The operation remains non-destructive to log/accounting.
+    await page.getByRole('button', { name: 'Select sessions' }).click()
+    await sessionRow.getByRole('checkbox', { name: `Select session “${rowTitle}”` }).click()
+    await page.getByRole('button', { name: 'Archive', exact: true }).click()
+    await page.getByRole('button', { name: 'Confirm archive', exact: true }).click()
     // The row disappears on the archive-set echo; with no other visible
     // stray, the whole Ungrouped bucket withdraws.
     await expect.poll(() => page.getByText(rowTitle, { exact: true }).count(), { timeout: 10_000 }).toBe(0)
