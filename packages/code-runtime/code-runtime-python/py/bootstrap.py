@@ -899,11 +899,23 @@ async def _run(channel: ProtocolChannel) -> None:
     # have changed) or a dict ERROR frame (a rejection or the exception handler,
     # which carry no live model value). `send_done` posts whichever form: a string
     # is written verbatim via `write_encoded`, a dict is encoded by `send_sync`.
+    #
+    # The two channel methods are BOUND into locals here, before the program runs,
+    # and `send_done` invokes those bound locals — never a late `channel.X` look-up.
+    # The program runs as `__main__`, so `import __main__; __main__.ProtocolChannel
+    # .send_sync = boom` would otherwise re-resolve the send to a rebranded class
+    # method at call time and, when that replacement raises, skip the `done` frame
+    # and downgrade a settled verdict to a host-side worker-exit (the binding-all-
+    # names regression test pins this). Same reason `flush_out`/`flush_err`/
+    # `safe_model_traceback` are bound above.
+    write_encoded_bound = channel.write_encoded
+    send_sync_bound = channel.send_sync
+
     def send_done(payload: dict[str, Any] | str) -> None:
         if isinstance(payload, str):
-            channel.write_encoded(payload)
+            write_encoded_bound(payload)
         else:
-            channel.send_sync(payload)
+            send_sync_bound(payload)
 
     max_value_bytes = int(boot["maxValueBytes"])
     done: dict[str, Any] | str

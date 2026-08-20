@@ -1135,31 +1135,37 @@ export class PythonCodeRuntime extends CodeRuntime {
       function flushStray(stray: StrayBuffer, retainPartialTail?: boolean): void {
         if (stray.chunks.length === 0 && stray.blocks.length === 0) return
         const begun = stray.blocks.length > 0 ? [...stray.blocks, ...stray.chunks] : stray.chunks
-        const full = Buffer.concat(begun)
-        let drop = 0
-        // A budget flush landing exactly between a lead byte and its still-pending
-        // continuation requires the combined-cost threshold to trip on a specific
-        // mid-multibyte pipe boundary — not deterministically schedulable through
-        // the black-box seam, which observes only complete entries. v8 ignore keeps
-        // the retention branch honest (it is exercised by review reasoning over the
-        // `stray.utf8` state, not by an in-tree test).
-        /* v8 ignore next 8 -- mid-sequence budget-flush boundary is not schedulable from a test. */
+        let full = Buffer.concat(begun)
+        // A budget flush landing exactly between a lead byte and its
+        // still-pending continuation requires the combined-cost threshold to trip
+        // on a specific mid-multibyte pipe boundary — not deterministically
+        // schedulable through the black-box seam, which observes only complete
+        // entries. So the retention arm is v8-ignored (exercised by review
+        // reasoning over the `stray.utf8` state, not by an in-tree test): it
+        // withholds the lead-plus-consumed-continuations tail (≤3 bytes, via
+        // `stray.utf8.width - stray.utf8.expected`) from the decode, re-carries it
+        // for a later chunk, and re-accrues the pipe's cost/UTF-8 state over it;
+        // decoding here would render a LEGAL, unfinished character as U+FFFD in an
+        // admitted entry. Every retainPartialTail=false call (the `end`/closeDeadline
+        // paths) and a budget flush with no partial tail in flight (`expected === 0`)
+        // falls through with `keep` unset: the FULL residual is decoded — there a
+        // trailing incomplete sequence is real truncated input and the U+FFFD is the
+        // honest render.
+        let keep: Buffer | undefined
+        /* v8 ignore next 9 -- mid-sequence budget-flush boundary is not schedulable from a test. */
         if (retainPartialTail && stray.utf8.expected > 0) {
-          drop = stray.utf8.width - stray.utf8.expected
-          // Guard against a pathological width/expected mismatch: never drop more
-          // bytes than were captured, and never drop so many that decoding the
-          // admitted prefix would be empty because a single mid-sequence lead sat
-          // alone. A well-formed walk keeps `drop` ≤ 3, but a defensive clamp
-          // keeps the retention bounded.
-          drop = Math.min(drop, full.length)
+          const drop = Math.min(stray.utf8.width - stray.utf8.expected, full.length)
+          keep = full.subarray(full.length - drop)
+          full = full.subarray(0, full.length - drop)
+          stray.chunks = detachResidual(keep)
+          stray.cost = accrueStrayCost(keep, stray.utf8)
+        } else {
+          stray.chunks = []
+          stray.cost = 0
+          stray.utf8 = { expected: 0, width: 0, lowerFirst: 0, upperFirst: 0 }
         }
-        const keep = full.subarray(full.length - drop)
-        const emit = full.subarray(0, full.length - drop).toString('utf8')
-        stray.chunks = drop > 0 ? detachResidual(keep) : []
         stray.blocks = []
-        stray.cost = 0
-        stray.utf8 = { expected: 0, width: 0, lowerFirst: 0, upperFirst: 0 }
-        if (drop > 0) stray.cost = accrueStrayCost(keep, stray.utf8)
+        const emit = full.toString('utf8')
         admit(emit)
       }
       child.stdout.on('data', (chunk: Buffer) => { captureStray(strayOut, chunk) })
