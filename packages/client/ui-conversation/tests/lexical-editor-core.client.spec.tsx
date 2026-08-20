@@ -87,7 +87,7 @@ describe('ReferenceChipNode', () => {
       expect(chip.getTextContent()).toBe('@session:随意回复不调用工具')
       expect(chip.isInvalid()).toBe(false)
       expect(chip.isInline()).toBe(true)
-      expect(chip.isKeyboardSelectable()).toBe(true)
+      expect(chip.isKeyboardSelectable()).toBe(false)
       expect($isReferenceChipNode(chip)).toBe(true)
       expect($isReferenceChipNode($createTextNode('x'))).toBe(false)
     }, { discrete: true })

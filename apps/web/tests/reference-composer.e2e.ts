@@ -200,6 +200,35 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     expect(tripwire.warnings).toEqual([])
   })
 
+  it('arrows step across a chip in one move and Backspace removes it whole', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-keyboard'))
+    const input = page.locator('[data-composer-input]').first()
+    const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
+
+    await input.fill('@reference')
+    await menu.getByRole('option', { name: /File · reference\.txt/ }).click()
+    await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(1)
+
+    // First ArrowLeft crosses the trailing space; the second steps across the
+    // chip in one move — no keyboard-selected intermediate state — and typing
+    // continues normally on the far side.
+    await page.keyboard.press('ArrowLeft')
+    await page.keyboard.press('ArrowLeft')
+    await page.keyboard.type('pre')
+    await expect.poll(() => input.textContent()).toBe('prereference.txt ')
+    await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(1)
+
+    // ArrowRight steps back across the chip; Backspace directly behind it
+    // removes the whole chip in one keystroke.
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('Backspace')
+    await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(0)
+    await expect.poll(() => input.textContent()).toBe('pre ')
+
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  })
+
   it('renders the durable direct-message then recall order', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-order'))
     const group = page.getByRole('treeitem', { name: /Ungrouped/ })

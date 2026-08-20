@@ -133,9 +133,15 @@ export class ReferenceChipNode extends DecoratorNode<JSX.Element> {
     return true
   }
 
-  /** Arrow keys and Backspace address the chip as one unit. */
+  /**
+   * No keyboard-selected intermediate state: arrows step across the chip in
+   * one move and Backspace/Delete remove it whole (the placeholder semantics
+   * of the old textarea). `true` would put a NodeSelection between the
+   * keystroke and the caret — a state the plain-text binding's handlers all
+   * ignore, deadlocking arrows, typing, and deletion at the chip edge.
+   */
   override isKeyboardSelectable(): boolean {
-    return true
+    return false
   }
 
   /** Clipboard / persistence projection (native copy reads this). */

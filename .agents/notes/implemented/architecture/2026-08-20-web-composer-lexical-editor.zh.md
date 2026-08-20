@@ -58,3 +58,4 @@ mirror/backdrop 层及其 CSS 耦合规则；Safari 软换行修复（2026-08-13
 - 历史恢复（`UNDO_COMMAND`）在下一次 flush 才提交，不在 dispatch 内同步生效。
 - client bundle 需钉住 `production`/`development` exports 条件（tsdown preset 的 `inputOptions.resolve.conditionNames`）：lexical 的 `node` 条件文件用顶层 await 选择口味，CJS bundle 载不动。
 - `registerHistory` 的合并延时在调用时捕获 `Date.now`；fake-timer 测试要么在 shell 构造前装好 mock，要么推进越过窗口。
+- chip 的 `isKeyboardSelectable()` 必须为 **false**。取默认值 `true` 时，方向键落在 chip 边缘会创建 NodeSelection，其 DOM 投影坍塌为 element point，而 plain-text binding 的方向键/删除/插入 handler 全都对非 Range selection 直接放弃——方向键、打字与退格在 chip 边死锁，直到鼠标点击才能解除。false 恢复占位符语义：方向键一步跨过，Backspace/Delete 整颗删除（浏览器 lane e2e 钉住该手势；只有真实按键事件能复现——CDP 裸 keydown 不携带引擎默认行为）。
