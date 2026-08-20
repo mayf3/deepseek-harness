@@ -339,4 +339,70 @@ describe('per-record layout', () => {
     await backend.close()
     await chmod(path, 0o600)
   })
+
+  it('migrates a legacy whole-unit file once, new records win, then deletes it', async () => {
+    const root = await freshRoot()
+    // A legacy single-layout file for the same unit (any older version);
+    // the extra table is not declared and must be skipped.
+    await writeFile(join(root, 'recs.json'), JSON.stringify({
+      unit: { name: 'recs', version: 3 },
+      global: null,
+      tables: { t: { old1: { v: 1 }, old2: { v: 2 } }, undeclared: { k: { v: 0 } } },
+    }), 'utf8')
+    // A new per-record row that must win over its legacy namesake.
+    await mkdir(join(root, 'recs', 't'), { recursive: true })
+    await writeFile(join(root, 'recs', 't', 'old1.json'), JSON.stringify({ version: 2, record: { v: 9 } }), 'utf8')
+    const backend = new JsonStorageBackend(root)
+    const unit = await backend.kv.open(descriptor)
+    expect(await unit.loadAll()).toEqual({ tables: { t: { old1: { v: 9 }, old2: { v: 2 } } }, global: null })
+    // The legacy file was deleted; a reopen reads the migrated tree.
+    await expect(readFile(join(root, 'recs.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    await unit.close()
+    const unit2 = await backend.kv.open(descriptor)
+    expect(await unit2.loadAll()).toEqual({ tables: { t: { old1: { v: 9 }, old2: { v: 2 } } }, global: null })
+    await backend.close()
+  })
+
+  it('leaves a foreign, shapeless, or malformed legacy file alone', async () => {
+    const root = await freshRoot()
+    await writeFile(join(root, 'recs.json'), JSON.stringify({ unit: { name: 'other', version: 3 }, tables: {} }), 'utf8')
+    const backend = new JsonStorageBackend(root)
+    const unit = await backend.kv.open(descriptor)
+    expect(await unit.loadAll()).toEqual({ tables: { t: {} }, global: null })
+    await expect(readFile(join(root, 'recs.json'), 'utf8')).resolves.toContain('other')
+    await unit.close()
+    await backend.close()
+
+    const root2 = await freshRoot()
+    await writeFile(join(root2, 'recs.json'), JSON.stringify({ tables: { t: { k: { v: 1 } } } }), 'utf8')
+    const backend2 = new JsonStorageBackend(root2)
+    const unit2 = await backend2.kv.open(descriptor)
+    expect(await unit2.loadAll()).toEqual({ tables: { t: {} }, global: null })
+    await expect(readFile(join(root2, 'recs.json'), 'utf8')).resolves.toContain('tables')
+    await backend2.close()
+
+    const root3 = await freshRoot()
+    // A directory where the legacy file should be: the migration read fails loudly.
+    await mkdir(join(root3, 'recs.json'))
+    const backend3 = new JsonStorageBackend(root3)
+    const unit3 = await backend3.kv.open(descriptor)
+    await expect(unit3.loadAll()).rejects.toMatchObject({ code: 'EISDIR' })
+    await backend3.close()
+
+    const root4 = await freshRoot()
+    await writeFile(join(root4, 'recs.json'), 'not json at all', 'utf8')
+    const backend4 = new JsonStorageBackend(root4)
+    const unit4 = await backend4.kv.open(descriptor)
+    expect(await unit4.loadAll()).toEqual({ tables: { t: {} }, global: null })
+    await expect(readFile(join(root4, 'recs.json'), 'utf8')).resolves.toBe('not json at all')
+    await backend4.close()
+
+    const root5 = await freshRoot()
+    await writeFile(join(root5, 'recs.json'), JSON.stringify({ unit: { name: 'recs' }, tables: 'not an object' }), 'utf8')
+    const backend5 = new JsonStorageBackend(root5)
+    const unit5 = await backend5.kv.open(descriptor)
+    expect(await unit5.loadAll()).toEqual({ tables: { t: {} }, global: null })
+    await expect(readFile(join(root5, 'recs.json'), 'utf8')).resolves.toContain('not an object')
+    await backend5.close()
+  })
 })
