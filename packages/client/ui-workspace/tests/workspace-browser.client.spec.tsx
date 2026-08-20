@@ -95,6 +95,11 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
   b.view.rerender(<WorkspaceBrowser {...b.props} />)
 }
 
+/** Every tree row's text, group headers included, in render order. */
+function rowsOf(_b: ReturnType<typeof mount>): (string | null)[] {
+  return screen.getAllByRole('treeitem').map(row => row.textContent)
+}
+
 describe('WorkspaceBrowser', () => {
   it('workspace hover card shows a POSIX home descendant as ~', () => {
     vi.useFakeTimers()
@@ -466,6 +471,124 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('新会话')).toBeNull()
     fireEvent.change(screen.getByPlaceholderText('搜索会话…'), { target: { value: '新会话' } })
     expect(screen.queryByText('新会话')).toBeNull()
+  })
+
+  it('pins the current blank New Session row first in Last-updated mode (workspace view)', async () => {
+    const b = mount({
+      useSessions: hook(sessionState([
+        summary('old', 100),
+        summary('blank', 150, { blank: true }),
+        summary('mid', 200),
+      ])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['old', 'blank', 'mid'])])),
+    })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
+    await waitFor(() => { expect(b.store.getSnapshot().orderBy).toBe('updated') })
+    fireEvent.click(screen.getByText('alpha'))
+    await waitFor(() => { expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true }) })
+    // The stale blank is hidden while it is not the current session.
+    expect(rowsOf(b)).toEqual([
+      expect.stringContaining('alpha'),
+      expect.stringContaining('mid'),
+      expect.stringContaining('old'),
+    ])
+    // New Session reuses the blank: it becomes current and jumps to the top,
+    // even though its updatedAt (creation time) is older than mid's.
+    rerender(b, {
+      useSessions: hook(sessionState([
+        summary('old', 100),
+        summary('blank', 150, { blank: true }),
+        summary('mid', 200),
+      ], { current: sid('blank') })),
+    })
+    await waitFor(() => {
+      expect(rowsOf(b)).toEqual([
+        expect.stringContaining('alpha'),
+        expect.stringContaining('新会话'),
+        expect.stringContaining('mid'),
+        expect.stringContaining('old'),
+      ])
+    })
+  })
+
+  it('does not pin a non-blank current session in Last-updated mode', async () => {
+    const b = mount({
+      useSessions: hook(sessionState([
+        summary('old', 100),
+        summary('mid', 200),
+      ])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['old', 'mid'])])),
+    })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
+    await waitFor(() => { expect(b.store.getSnapshot().orderBy).toBe('updated') })
+    fireEvent.click(screen.getByText('alpha'))
+    await waitFor(() => { expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true }) })
+    // Opening an ordinary session is navigation, not a New Session gesture:
+    // the selected row stays at its recency position.
+    rerender(b, {
+      useSessions: hook(sessionState([
+        summary('old', 100),
+        summary('mid', 200),
+      ], { current: sid('old') })),
+    })
+    await waitFor(() => {
+      expect(rowsOf(b)).toEqual([
+        expect.stringContaining('alpha'),
+        expect.stringContaining('mid'),
+        expect.stringContaining('old'),
+      ])
+    })
+  })
+
+  it('pins the current blank first in the flat list too', async () => {
+    const b = mount({
+      useSessions: hook(sessionState([
+        summary('old', 100),
+        summary('blank', 150, { blank: true }),
+        summary('mid', 200),
+      ], { current: sid('blank') })),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['old', 'blank', 'mid'])])),
+    })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
+    await waitFor(() => { expect(b.store.getSnapshot().orderBy).toBe('updated') })
+    await waitFor(() => {
+      expect(rowsOf(b)).toEqual([
+        expect.stringContaining('新会话'),
+        expect.stringContaining('mid'),
+        expect.stringContaining('old'),
+      ])
+    })
+  })
+
+  it('pins the current blank first in manual mode too', async () => {
+    const b = mount({
+      useSessions: hook(sessionState([
+        summary('old', 100),
+        summary('blank', 150, { blank: true }),
+        summary('mid', 200),
+      ], { current: sid('blank') })),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['old', 'blank', 'mid'])])),
+    })
+    expect(b.store.getSnapshot().orderBy).toBe('manual')
+    // The current session's group auto-expands; the New Session being
+    // created renders first even though the manual account order holds it
+    // in its creation-time slot.
+    await waitFor(() => { expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true }) })
+    // Manual order follows the Workspace account [old, blank, mid]; the
+    // current blank is pinned first, the rest keeps the account order.
+    await waitFor(() => {
+      expect(rowsOf(b)).toEqual([
+        expect.stringContaining('alpha'),
+        expect.stringContaining('新会话'),
+        expect.stringContaining('old'),
+        expect.stringContaining('mid'),
+      ])
+    })
   })
 
   it('shows local metadata matches immediately, then clears back to the grouped tree', async () => {

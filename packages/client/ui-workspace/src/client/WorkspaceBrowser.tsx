@@ -103,7 +103,13 @@ function compareSessionRecency(a: SessionId, b: SessionId, byId: SessionListStat
   return a < b ? -1 : 1
 }
 
-/** Reconcile one editable order account and apply its activity-promotion policy. */
+/**
+ * Reconcile one editable order account and apply its activity-promotion
+ * policy. The blank session the user is currently in (the New Session being
+ * created) is pinned first in every mode: opening or reusing a blank never
+ * advances its `updatedAt`, so without the pin the row would keep its old
+ * creation-time position.
+ */
 function nextSessionOrderAccount({
   sessionIds, previousOrder, previousUpdatedAt, list, orderBy, sortByRecency,
 }: {
@@ -129,6 +135,12 @@ function nextSessionOrderAccount({
       const promotedIds = new Set(promoted)
       order = [...promoted, ...order.filter(id => !promotedIds.has(id))]
     }
+  }
+  // The New Session being created stays first in its account while it is the
+  // current selection, in both order modes.
+  const current = list.current
+  if (current !== undefined && list.byId[current]?.blank === true && sessionIds.includes(current)) {
+    order = [current, ...order.filter(id => id !== current)]
   }
   const updatedAt: Record<string, number> = {}
   for (const id of sessionIds) {
