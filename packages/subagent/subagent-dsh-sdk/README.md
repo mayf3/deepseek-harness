@@ -6,17 +6,40 @@ The SDK provider runs each subagent as a complete DeepSeek Harness runtime in a 
 
 ## Start and ownership
 
-`start(request)` resolves the child's working directory, spawns the runtime through `DeepSeekHarness`, and completes the `initialize` handshake (with the configured `provider`/`model` route and optional `maxTokens` output cap) before it fulfills. Fulfillment therefore means the child runtime is ready and ownership has transferred to the caller. A spawn, handshake, or pre-publication cancellation failure rejects only after the subprocess has been reaped; a working-directory resolution failure rejects before anything is spawned.
+`start(request)` resolves the child's working directory, spawns the runtime through `DeepSeekHarness`, and completes the `initialize` handshake (with the configured `provider`/`model` route and optional `maxTokens` output cap) before it fulfills. Fulfillment therefore means the child runtime is ready and ownership has transferred to the caller. A spawn, handshake, or pre-publication cancellation failure rejects only after the subprocess has been reaped; a working-directory resolution failure rejects before anything is spawned. Non-cancellation rejections expose only fixed provider, stage, and category facts in their Error message; the original SDK failure remains on the internal cause chain and in Host diagnostics.
 
 The working directory resolves exactly like the ACP backend, through the seam's shared out-of-process helpers ([`dsh-subagent`](../subagent/README.md)): the configured `cwd` override when set (validated once at load), else the delegating parent session's cwd — never the server process's own cwd. The resolved path becomes the child process cwd and the workspace cwd of its SDK session.
 
-The returned run id is minted in the parent namespace; the child runtime's session id exists only inside the child process. After publication the provider owns one SDK activity and reads the child's answer from its session events: the last complete non-empty `assistant/message` (an empty-content message that records usage is skipped), or the accumulated `text-delta` stream when no such message exists. Partial output remains available after cancellation or an error.
+The returned run id is minted in the parent namespace; the child runtime's session id exists only inside the child process. After publication the provider owns one SDK activity and reads the child's answer from its session events: the last complete non-empty `assistant/message` (an empty-content message that records usage is skipped), or the accumulated `text-delta` stream when no such message exists. Partial output remains available after cancellation or an error, separate from any `SubagentResult.diagnostic`.
 
 `dispose()` is idempotent: it settles the result locally as `aborted` (there is no wire-level prompt cancel), then closes the runtime — a bounded protocol `shutdown` request followed by the shared stdin-EOF → SIGTERM → SIGKILL ladder to actual exit.
 
 ## Stop-reason mapping
 
-The SDK client returns an owned child activity rather than a prompt result. The provider reads the last durable `turn/end` inside that activity and maps it into the seam vocabulary: `completed` → `completed`, `max-tokens` → `max-tokens`, `aborted` → `aborted`; everything else — `error`, `interrupted`, `disposed`, a future variant, or an activity with no turn — maps to `error`, so an unclean stop is never reported as success. Transport-level failures after publication flatten to `stopReason: 'error'` through the `onError` diagnostic sink (wired to `ctx.logger.warn`); the seam contract forbids `result` rejecting.
+The SDK client returns an owned child activity rather than a prompt result. The provider reads the last durable `turn/end` inside that activity and preserves the existing seam stop reason while adding detail only where it changes the next action.
+
+| Child turn reason | Harness | Additional diagnostic |
+|---|---|---|
+| `completed` | `completed` | None. |
+| `max-tokens` | `max-tokens` | None; the stop reason is already actionable. |
+| `aborted` | `aborted` | `child-disposed` only for the closed `disposed` cause; local parent cancellation never adds one. |
+| `blocked` | `error` | `child-blocked`. |
+| `error` | `error` | `child-error`; the child failure message/code is excluded. |
+| `interrupted` | `error` | `child-interrupted`. |
+| no `turn/end` | `error` | `missing-terminal`. |
+| unknown variant | `error` | Fixed `unknown`; the value is not copied. |
+
+## Failure diagnostics
+
+The first line follows the shared fixed form:
+
+```text
+Subagent failure (provider: DSH SDK; stage: <stage>; category: <category>; child reason: <reason>)
+```
+
+Unavailable optional fields are omitted, and the shared result boundary limits the complete text to 4096 UTF-8 bytes. The provider derives `initialize`, `session-run`, `process`, or `shutdown` at the operation that owns the failure. `SdkProtocolError` and JSON-RPC error responses map to `protocol`, `RequestTimeoutError` maps to `timeout`, `TransportClosedError` maps to `transport` (with `process` stage during a published child run), and other exceptions use `unknown`. Classification never reads an error message, so the stderr tail carried by `TransportClosedError`, paths, task content, environment values, credentials, and protocol payloads remain Host-only.
+
+Successful results and local cancellation omit diagnostics. Startup and shutdown rejections use the same safe line in their Error message while retaining the original cause internally. A diagnostic-bearing child `aborted` result remains `aborted`; the one-shot Job adapter classifies it as failed, while diagnostic-free local cancellation remains killed.
 
 ## Capabilities and context
 
@@ -79,7 +102,7 @@ Independent of the parent request cache. Each SDK child can reuse only prefixes 
 
 #### What the model sees
 
-Through `dsh-tool-subagent`, the parent receives only the child's final assistant text (or accumulated partial text) or that consumer's exact stop-reason error, not intermediate messages or tool traffic.
+Through `dsh-tool-subagent`, the parent receives only the child's final assistant text (or accumulated partial text) or that consumer's exact stop-reason error, not intermediate messages or tool traffic. A non-completed result presents the safe diagnostic before separately preserved partial assistant output; startup and shutdown errors expose the same fixed facts without raw SDK text.
 
 #### Token effect
 

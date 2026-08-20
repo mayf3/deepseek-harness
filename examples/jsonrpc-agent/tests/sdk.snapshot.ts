@@ -35,7 +35,10 @@ const liveConfig = join(testsDir, '..', 'cordis.yml')
 const replayConfig = join(testsDir, '..', 'cordis.snapshot.yml')
 const minimalLiveConfig = join(testsDir, '..', 'minimal.cordis.yml')
 const minimalReplayConfig = join(testsDir, '..', 'minimal.snapshot.cordis.yml')
+const diagnosticLiveConfig = join(testsDir, '..', 'subagent-dsh-sdk-diagnostic.cordis.yml')
+const diagnosticReplayConfig = join(testsDir, '..', 'subagent-dsh-sdk-diagnostic.snapshot.cordis.yml')
 const runtimeBin = fileURLToPath(new URL('../../../packages/examples/jsonrpc-demo/src/bin.ts', import.meta.url))
+const fakeSdkRuntime = fileURLToPath(new URL('../../../packages/sdk/client/tests/fake-runtime.ts', import.meta.url))
 const repoTsconfig = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
 
 const MINIMAL_SYSTEM_PROMPT = 'You are the environment-selected minimal software engineer.'
@@ -99,6 +102,14 @@ const SCENARIOS: SdkScenario[] = [
     prompt: "Use the subagent tool exactly once with description 'echo probe' and prompt: Reply with exactly: child answer 42. Then reply with the subagent's final answer verbatim.",
     sessionId: 'sdk-snapshot-subagent',
     children: 1,
+  },
+  {
+    name: 'subagent-dsh-sdk-diagnostic',
+    prompt: 'Observe the DSH SDK diagnostic twice with subagent_dsh_sdk. First call it in the foreground. Then call it in the background and collect subagent-1 with job_output using wait true. After both failures, reply with exactly PARENT_OBSERVED_DSH_SDK_DIAGNOSTIC. Do not call any other tools.',
+    sessionId: 'sdk-snapshot-dsh-sdk-diagnostic',
+    children: 0,
+    configs: { live: diagnosticLiveConfig, replay: diagnosticReplayConfig },
+    environment: { DSH_TEST_FAKE_SDK_RUNTIME: fakeSdkRuntime },
   },
   {
     name: 'persistent-tools',

@@ -3,20 +3,22 @@ import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 
 /**
- * Scripted model for the CHILD runtime: answers every request with its own
- * process cwd, so the driving e2e can prove the parent session's workspace
- * reached the child process across the SDK wire. `options` carries the
- * request; the reply depends only on process state.
+ * Scripted model for the CHILD runtime: normally answers with its process cwd;
+ * under DSH_TEST_CHILD_FAILURE it streams partial text and ends with a fixed
+ * provider failure so the parent can assert DSH SDK diagnostics.
  */
 class CwdEchoAdapter extends LlmAdapter {
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     void options
-    const reply = `child cwd: ${process.cwd()}`
+    const failure = process.env.DSH_TEST_CHILD_FAILURE === '1'
+    const reply = failure ? 'partial child loader answer' : `child cwd: ${process.cwd()}`
     yield { type: 'block-start', index: 0, blockType: 'text' }
     yield { type: 'text-delta', index: 0, text: reply }
     yield { type: 'block-end', index: 0, block: { type: 'text', text: reply } }
     yield { type: 'usage', usage: { inputTokens: 3, outputTokens: reply.length } }
-    yield { type: 'finish', reason: { kind: 'stop' } }
+    yield failure
+      ? { type: 'finish', reason: { kind: 'error', failure: { code: 'CHILD_TEST_FAILURE', message: 'child loader failure' } } }
+      : { type: 'finish', reason: { kind: 'stop' } }
   }
 }
 

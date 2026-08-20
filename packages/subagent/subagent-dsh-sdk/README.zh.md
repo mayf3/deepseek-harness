@@ -6,17 +6,40 @@ SDK 提供方会在全新的子进程中把每个 subagent 作为完整的 DeepS
 
 ## 启动与所有权
 
-`start(request)` 先解析子进程工作目录，通过 `DeepSeekHarness` spawn 运行时，并在履行前完成 `initialize` 握手（携带配置的 `provider`/`model` 路由及可选的 `maxTokens` 输出上限）。因此，履行意味着子运行时已就绪、所有权已移交给调用方。spawn、握手或发布前取消失败时，只会在子进程被回收后拒绝；工作目录解析失败则会在尚未 spawn 任何内容时拒绝。
+`start(request)` 先解析子进程工作目录，通过 `DeepSeekHarness` spawn 运行时，并在履行前完成 `initialize` 握手（携带配置的 `provider`/`model` 路由及可选的 `maxTokens` 输出上限）。因此，履行意味着子运行时已就绪、所有权已移交给调用方。spawn、握手或发布前取消失败时，只会在子进程被回收后拒绝；工作目录解析失败则会在尚未 spawn 任何内容时拒绝。非取消拒绝的 Error 消息只公开固定的 provider、stage 与 category 事实；原始 SDK 失败仍保留在内部 cause 链和 Host 诊断中。
 
 工作目录的解析与 ACP 后端完全一致，并使用 seam 共享的进程外辅助工具（[`dsh-subagent`](../subagent/README.zh.md)）：设置了 `cwd` 覆盖值时使用该值（加载时校验一次），否则使用发起委派的父会话 cwd，绝不使用服务器进程自身的 cwd。解析出的路径同时成为子进程 cwd 和其 SDK 会话的工作区 cwd。
 
-返回的 run id 在父级命名空间中生成；子运行时的会话 id 只存在于子进程内部。发布后，提供方拥有一段 SDK 活动，并从子会话事件中读取答案：最后一条完整且非空的 `assistant/message`（记录 usage 的空内容消息会被跳过）；若没有这类消息，则取累积的 `text-delta` 流。取消或发生错误后，部分输出仍然可用。
+返回的 run id 在父级命名空间中生成；子运行时的会话 id 只存在于子进程内部。发布后，提供方拥有一段 SDK 活动，并从子会话事件中读取答案：最后一条完整且非空的 `assistant/message`（记录 usage 的空内容消息会被跳过）；若没有这类消息，则取累积的 `text-delta` 流。取消或发生错误后，部分输出仍然可用，并与 `SubagentResult.diagnostic` 分开。
 
 `dispose()`（资源释放）是幂等的：先在本地把结果确定为 `aborted`（协议层面没有提示词取消机制），再关闭运行时，即先发出一次有界的协议 `shutdown` 请求，随后通过共享的 stdin-EOF → SIGTERM → SIGKILL 阶梯使进程实际退出。
 
 ## 停止原因映射
 
-SDK 客户端返回自有子活动，而不是提示词结果。提供方读取该活动内最后一个已持久化的 `turn/end`，并将其映射为 seam 词汇：`completed` → `completed`，`max-tokens` → `max-tokens`，`aborted` → `aborted`；其余情况，包括 `error`、`interrupted`、`disposed`、未来变体或不含轮次的活动，均映射为 `error`，因此非正常停止绝不会报告为成功。发布后的传输层失败会通过 `onError` 诊断接收器（连接到 `ctx.logger.warn`）压平为 `stopReason: 'error'`；seam 约定禁止 `result` 被拒绝。
+SDK 客户端返回自有子活动，而不是提示词结果。提供方读取该活动内最后一个已持久化的 `turn/end`，保留既有 seam 结束原因，并只在会改变下一步动作时附加细节。
+
+| 子轮次原因 | Harness | 附加诊断 |
+|---|---|---|
+| `completed` | `completed` | 无。 |
+| `max-tokens` | `max-tokens` | 无；结束原因本身已经可行动。 |
+| `aborted` | `aborted` | 只有闭集 `disposed` 原因会附加 `child-disposed`；父级本地取消绝不附加。 |
+| `blocked` | `error` | `child-blocked`。 |
+| `error` | `error` | `child-error`；不包含子失败消息或 code。 |
+| `interrupted` | `error` | `child-interrupted`。 |
+| 缺少 `turn/end` | `error` | `missing-terminal`。 |
+| 未知 variant | `error` | 固定 `unknown`，不复制原值。 |
+
+## 失败诊断
+
+首行遵循共享固定格式：
+
+```text
+Subagent failure (provider: DSH SDK; stage: <stage>; category: <category>; child reason: <reason>)
+```
+
+不可用的可选字段会被省略，共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。提供方从实际拥有失败的操作派生 `initialize`、`session-run`、`process` 或 `shutdown`。`SdkProtocolError` 与 JSON-RPC 错误响应映射为 `protocol`，`RequestTimeoutError` 映射为 `timeout`，`TransportClosedError` 映射为 `transport`（已发布子运行期间使用 `process` stage），其他异常使用 `unknown`。分类绝不读取错误消息，因此 `TransportClosedError` 携带的 stderr tail、路径、任务内容、环境值、凭证与协议 payload 都只留在 Host。
+
+成功结果与本地取消会省略诊断。启动和 shutdown 拒绝会在 Error 消息中使用同一安全行，同时把原始 cause 留在内部。带诊断的子 `aborted` 结果仍保持 `aborted`；一次性 Job adapter 会把它判为 failed，而不带诊断的本地取消仍是 killed。
 
 ## 能力与上下文
 
@@ -79,7 +102,7 @@ Provider 不宣告任何启动期能力（`outputSchema`/`depthLimit`/`toolFilte
 
 #### 模型看到的内容
 
-经由 `dsh-tool-subagent`，父级只会收到子运行时最终的 assistant 文本（或累积的部分文本），或该消费方给出的精确停止原因错误；不会收到中间消息或工具流量。
+经由 `dsh-tool-subagent`，父级只会收到子运行时最终的 assistant 文本（或累积的部分文本），或该消费方给出的精确停止原因错误；不会收到中间消息或工具流量。非完成结果会先呈现安全诊断，再单独呈现保留的部分 assistant 输出；启动与 shutdown 错误使用同一固定事实，不公开原始 SDK 文本。
 
 #### Token 影响
 

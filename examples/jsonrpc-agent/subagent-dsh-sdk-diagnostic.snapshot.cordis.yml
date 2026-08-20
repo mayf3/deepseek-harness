@@ -1,0 +1,30 @@
+# Keyless twin of subagent-dsh-sdk-diagnostic.cordis.yml: include the normal
+# JSON-RPC replay composition, then keep the real DSH SDK child process,
+# provider, and delegation tool.
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.snapshot.yml
+    patches:
+      - insert:
+          - id: subagent-dsh-sdk-diagnostic
+            name: '@deepseek-ai/dsh-subagent-dsh-sdk'
+            config:
+              providerName: dsh-sdk-diagnostic
+              command: !!js process.execPath
+              args:
+                - !!js process.env.DSH_TEST_FAKE_SDK_RUNTIME
+              provider: fake-provider
+              model: fake-model
+              env:
+                FAKE_TEXT: partial DSH SDK assistant text
+                FAKE_REASON_KIND: error
+          - id: tool-subagent-dsh-sdk-diagnostic
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: dsh-sdk-diagnostic
+              toolName: subagent_dsh_sdk
+              backgroundMode: one-shot
+              maxDepth: provider-managed
+          - id: tool-jobs-dsh-sdk-diagnostic
+            name: '@deepseek-ai/dsh-tool-jobs'

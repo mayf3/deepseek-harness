@@ -10,6 +10,7 @@
  * - `FAKE_TEXT`: assistant text for each turn (default `hello from fake runtime`).
  * - `FAKE_STATUS`: the `session.finished` status (default `ok`).
  * - `FAKE_REASON_KIND`: the `session.finished` reason kind (default `completed`; `none` omits the reason).
+ * - `FAKE_ABORT_REASON_KIND`: nested cause for an `aborted` turn (default `user`).
  * - `FAKE_SUBAGENT`: also emit a child session (subagent.started + child event + subagent.finished).
  * - `FAKE_ECHO_CWD`: prefix the assistant text with the process cwd.
  * - `FAKE_ECHO_ENV`: comma-separated env names to echo as `name=value` lines in the assistant text.
@@ -33,6 +34,8 @@
  *   arrives, then poll for the GO file before answering (deterministic
  *   cancel-during-handshake window).
  * - `FAKE_HANG_PROMPT`: never answer `session/prompt` (for timeout/dispose tests).
+ * - `FAKE_EXIT_DURING_PROMPT`: stream one partial chunk, then exit 17 while
+ *   the owned session run is waiting for its terminal state.
  * - `FAKE_STREAM_THEN_MALFORMED`: stream a text chunk for the prompt, then
  *   answer `{}` (no accepted) — same-pipe ordering makes the chunk arrive
  *   before the protocol failure (partial-output retention probe).
@@ -126,7 +129,12 @@ function runTurn(sessionId: string): void {
     },
   })
   const reasonKind = env.FAKE_REASON_KIND ?? 'completed'
-  event(sessionId, 'turn/end', { turn: 0, reason: { kind: reasonKind } })
+  if (reasonKind !== 'none') {
+    const reason = reasonKind === 'aborted'
+      ? { kind: 'aborted', reason: { kind: env.FAKE_ABORT_REASON_KIND ?? 'user' } }
+      : { kind: reasonKind }
+    event(sessionId, 'turn/end', { turn: 0, reason })
+  }
   if (env.FAKE_SUBAGENT !== undefined) {
     const childId = `${sessionId}-child`
     notify('subagent.started', { parentSessionId: sessionId, childSessionId: childId })
@@ -210,6 +218,27 @@ reader.on('line', (line) => {
       if (env.FAKE_STREAM_THEN_MALFORMED !== undefined) {
         event(sessionId, 'assistant/chunk', { turn: 0, step: 0, chunk: { type: 'text-delta', index: 0, text: 'streamed then cut short' } })
         respond({})
+        return
+      }
+      if (env.FAKE_EXIT_DURING_PROMPT !== undefined) {
+        const partial = env.FAKE_TEXT ?? 'partial before exit'
+        respond({ messageId })
+        event(sessionId, 'assistant/chunk', {
+          turn: 0,
+          step: 0,
+          chunk: { type: 'text-delta', index: 0, text: partial },
+        })
+        event(sessionId, 'assistant/message', {
+          turn: 0,
+          step: 0,
+          message: {
+            id: `fake-partial-${seq}`,
+            role: 'assistant',
+            content: [{ type: 'text', text: partial }],
+            source: { kind: 'model', provider: 'fake', model: 'fake' },
+          },
+        })
+        setImmediate(() => { process.exit(17) })
         return
       }
       if (env.FAKE_HANG_PROMPT !== undefined) return

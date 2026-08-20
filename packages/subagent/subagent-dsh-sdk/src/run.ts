@@ -12,7 +12,14 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { DeepSeekHarness, type HarnessNotification } from '@deepseek-ai/dsh-sdk-client'
+import {
+  DeepSeekHarness,
+  type HarnessNotification,
+  JsonRpcResponseError,
+  RequestTimeoutError,
+  SdkProtocolError,
+  TransportClosedError,
+} from '@deepseek-ai/dsh-sdk-client'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent, type TurnEndReason } from '@deepseek-ai/dsh-session'
 import type { SubagentResult, SubagentRun, SubagentStartRequest, SubagentStopReason } from '@deepseek-ai/dsh-subagent'
@@ -51,10 +58,9 @@ export interface SdkRunSpec {
   /** Termination confirmation window (ms), including forced exit on every platform. */
   disposeGraceMs: number
   /**
-   * Sink for a child-level failure that the run flattened into a stop reason
-   * (the seam contract forbids `result` rejecting). A throw from the sink
-   * itself is contained. Optional — omitted in unit tests that assert the
-   * stop reason directly.
+   * Host sink for startup, published-run, or shutdown failures. Model-visible
+   * text uses fixed safe facts, while this callback retains the original Error.
+   * A throw from the sink itself is contained.
    */
   onError?: (error: Error, stopReason: SubagentStopReason) => void
 }
@@ -67,6 +73,88 @@ export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
 /** Default bound on the protocol `shutdown` exchange during dispose. */
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 1_000
+
+type SdkFailureStage = 'initialize' | 'session-run' | 'process' | 'shutdown'
+
+type SdkFailureCategory =
+  | 'configuration'
+  | 'protocol'
+  | 'timeout'
+  | 'transport'
+  | 'child-error'
+  | 'child-interrupted'
+  | 'child-disposed'
+  | 'child-blocked'
+  | 'missing-terminal'
+  | 'unknown'
+
+interface SdkFailureFacts {
+  readonly stage: SdkFailureStage
+  readonly category: SdkFailureCategory
+  readonly childReason?: 'error' | 'interrupted' | 'disposed' | 'blocked' | 'missing' | 'unknown'
+}
+
+/** Fixed safe failure text derived only from provider-owned structured facts. */
+function failureDiagnostic(facts: SdkFailureFacts): string {
+  const fields = [
+    'provider: DSH SDK',
+    `stage: ${facts.stage}`,
+    `category: ${facts.category}`,
+  ]
+  if (facts.childReason !== undefined) fields.push(`child reason: ${facts.childReason}`)
+  return `Subagent failure (${fields.join('; ')})`
+}
+
+class SdkRunFailure extends Error {
+  constructor(readonly facts: SdkFailureFacts, cause: unknown) {
+    super(`subagent-dsh-sdk: ${failureDiagnostic(facts)}`, { cause })
+    this.name = 'SdkRunFailure'
+  }
+}
+
+/**
+ * Hide a pre-spawn workspace/configuration failure behind fixed safe facts.
+ * @param cause - original Host failure retained on the Error cause chain.
+ * @returns an Error whose message contains only the fixed DSH SDK failure line.
+ */
+export function sdkConfigurationFailure(cause: unknown): Error {
+  return new SdkRunFailure({ stage: 'initialize', category: 'configuration' }, cause)
+}
+
+/** Classify one SDK rejection without reading its message or stderr tail. */
+function sdkFailure(error: unknown, stage: SdkFailureStage): SdkRunFailure {
+  const facts: SdkFailureFacts = error instanceof TransportClosedError
+    ? { stage: stage === 'session-run' ? 'process' : stage, category: 'transport' }
+    : error instanceof RequestTimeoutError
+      ? { stage, category: 'timeout' }
+      : error instanceof SdkProtocolError || error instanceof JsonRpcResponseError
+        ? { stage, category: 'protocol' }
+        : { stage, category: 'unknown' }
+  return new SdkRunFailure(facts, error)
+}
+
+/** Map a child terminal reason to the optional diagnostic it needs. */
+function childDiagnostic(reason: TurnEndReason | undefined): string | undefined {
+  switch (reason?.kind) {
+    case 'completed':
+    case 'max-tokens':
+      return undefined
+    case 'aborted':
+      return reason.reason.kind === 'disposed'
+        ? failureDiagnostic({ stage: 'session-run', category: 'child-disposed', childReason: 'disposed' })
+        : undefined
+    case 'blocked':
+      return failureDiagnostic({ stage: 'session-run', category: 'child-blocked', childReason: 'blocked' })
+    case 'error':
+      return failureDiagnostic({ stage: 'session-run', category: 'child-error', childReason: 'error' })
+    case 'interrupted':
+      return failureDiagnostic({ stage: 'session-run', category: 'child-interrupted', childReason: 'interrupted' })
+    case undefined:
+      return failureDiagnostic({ stage: 'session-run', category: 'missing-terminal', childReason: 'missing' })
+    default:
+      return failureDiagnostic({ stage: 'session-run', category: 'unknown', childReason: 'unknown' })
+  }
+}
 
 /**
  * Map a child turn-end reason to a harness {@link SubagentStopReason}.
@@ -100,10 +188,20 @@ function toError(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value))
 }
 
+/** Report an original Host failure without letting the observation sink replace it. */
+function reportFailure(spec: SdkRunSpec, error: unknown): void {
+  try {
+    spec.onError?.(toError(error), 'error')
+  } catch {
+    // Host diagnostic logging cannot replace the child failure.
+  }
+}
+
 /**
  * Start and publish one SDK runtime child after its `initialize` handshake.
- * Child failures resolve through the run result; startup failures reject
- * after process reap. Disposal shuts the runtime down and reaps it.
+ * Child failures resolve through the run result; startup and shutdown failures
+ * reject with fixed safe facts after process reap, retaining original causes
+ * for Host observation. Disposal shuts the runtime down and reaps it.
  * @param request - the start request; its signal is the cancellation channel.
  * @param spec - the resolved spawn spec: command/args/cwd, the child's
  * provider/model route, env, timeouts, and the optional error sink.
@@ -157,9 +255,24 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
     if (flags.cancelled) throw new Error('subagent cancelled before the SDK child initialized')
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
-    await harness.close()
-    if (flags.cancelled) throw new Error('subagent request was aborted before the SDK child started')
-    throw toError(error)
+    const cancelledBeforeCleanup = flags.cancelled
+    const failure = sdkFailure(error, 'initialize')
+    if (!cancelledBeforeCleanup) reportFailure(spec, error)
+    try {
+      await harness.close()
+    } catch (cleanupError: unknown) {
+      reportFailure(spec, cleanupError)
+      const cleanupFailure = sdkFailure(cleanupError, 'shutdown')
+      if (cancelledBeforeCleanup) throw cleanupFailure
+      throw new AggregateError(
+        [failure, cleanupFailure],
+        `${failure.message}; ${cleanupFailure.message}`,
+      )
+    }
+    if (cancelledBeforeCleanup) {
+      throw new Error('subagent request was aborted before the SDK child started')
+    }
+    throw failure
   }
 
   const childSessionId = `session-${randomUUID().replaceAll('-', '')}`
@@ -174,19 +287,31 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
 
   // Race the child turn against local cancellation; the shared settlement
   // flattens failures under the seam's never-reject contract.
+  let diagnostic: string | undefined
   const result: Promise<SubagentResult> = settleRunResult({
     attempt: async () => {
-      const turn = await Promise.race([
-        harness.session(childSessionId).run(request.prompt, { onNotification: observe }),
-        cancelSettled.then(() => 'cancelled' as const),
-      ])
-      if (turn === 'cancelled') return { output: collectOutput(), stopReason: 'aborted' }
-      const lastEnd = turn.events.findLast(
-        (event): event is Extract<SessionEvent, { type: 'turn/end' }> => event.type === 'turn/end',
-      )
-      return { output: collectOutput(), stopReason: sdkStopReason(lastEnd?.data.reason) }
+      try {
+        const turn = await Promise.race([
+          harness.session(childSessionId).run(request.prompt, { onNotification: observe }),
+          cancelSettled.then(() => 'cancelled' as const),
+        ])
+        if (turn === 'cancelled') return { output: collectOutput(), stopReason: 'aborted' }
+        const lastEnd = turn.events.findLast(
+          (event): event is Extract<SessionEvent, { type: 'turn/end' }> => event.type === 'turn/end',
+        )
+        diagnostic = childDiagnostic(lastEnd?.data.reason)
+        return {
+          output: collectOutput(),
+          ...(diagnostic === undefined ? {} : { diagnostic }),
+          stopReason: sdkStopReason(lastEnd?.data.reason),
+        }
+      } catch (error: unknown) {
+        diagnostic = failureDiagnostic(sdkFailure(error, 'session-run').facts)
+        throw error
+      }
     },
     collectOutput,
+    collectDiagnostic: () => diagnostic,
     cancelled: () => flags.cancelled,
     onError: spec.onError,
     signal: request.signal,
@@ -201,6 +326,13 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
     signal: request.signal,
     onAbort,
     requestCancel,
-    teardown: () => harness.close(),
+    teardown: async () => {
+      try {
+        await harness.close()
+      } catch (error: unknown) {
+        reportFailure(spec, error)
+        throw sdkFailure(error, 'shutdown')
+      }
+    },
   })
 }

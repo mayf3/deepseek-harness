@@ -6,7 +6,7 @@
  * quiescent disposal are all exercised end to end. No model, no key.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -14,6 +14,11 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import {
+  DeepSeekHarness,
+  HarnessSession,
+  RequestTimeoutError,
+} from '@deepseek-ai/dsh-sdk-client'
 import * as sdk from '../src/index.ts'
 import {
   DEFAULT_DISPOSE_EOF_GRACE_MS,
@@ -56,6 +61,10 @@ function text(blocks: { type: string; text?: string }[]): string {
   return blocks.filter(b => b.type === 'text').map(b => b.text).join('')
 }
 
+function expectedFailure(fields: string): string {
+  return `Subagent failure (provider: DSH SDK; ${fields})`
+}
+
 /**
  * Poll until `file` exists (the fake touches it once the probed state is
  * reached), so cancel tests wait on a CONDITION rather than an arbitrary
@@ -92,6 +101,7 @@ describe('dsh-subagent-dsh-sdk provider', () => {
     expect(run.localAgent).toBeUndefined()
     const result = await run.result
     expect(result.stopReason).toBe('completed')
+    expect(result.diagnostic).toBeUndefined()
     expect(text(result.output)).toBe('hello from sdk child')
     // dispose is idempotent (one memoized teardown).
     const disposal = run.dispose()
@@ -150,7 +160,9 @@ describe('dsh-subagent-dsh-sdk provider', () => {
   it('maps a max-tokens child turn end', async () => {
     const ctx = await setup({ FAKE_REASON_KIND: 'max-tokens', FAKE_STATUS: 'error' })
     const run = await ctx.subagents.start('dsh-sdk', request())
-    expect((await run.result).stopReason).toBe('max-tokens')
+    const result = await run.result
+    expect(result.stopReason).toBe('max-tokens')
+    expect(result.diagnostic).toBeUndefined()
     await run.dispose()
     await ctx.fiber.dispose()
   })
@@ -160,6 +172,9 @@ describe('dsh-subagent-dsh-sdk provider', () => {
     const run = await ctx.subagents.start('dsh-sdk', request())
     const result = await run.result
     expect(result.stopReason).toBe('error')
+    expect(result.diagnostic).toBe(
+      expectedFailure('stage: session-run; category: child-error; child reason: error'),
+    )
     expect(text(result.output)).toBe('partial answer')
     await run.dispose()
     await ctx.fiber.dispose()
@@ -193,7 +208,115 @@ describe('dsh-subagent-dsh-sdk provider', () => {
   it('reports a settled-without-turn child as an error', async () => {
     const ctx = await setup({ FAKE_REASON_KIND: 'none', FAKE_STATUS: 'error' })
     const run = await ctx.subagents.start('dsh-sdk', request())
-    expect((await run.result).stopReason).toBe('error')
+    expect(await run.result).toMatchObject({
+      stopReason: 'error',
+      diagnostic: expectedFailure('stage: session-run; category: missing-terminal; child reason: missing'),
+    })
+    await run.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it.each([
+    ['interrupted', 'child-interrupted', 'interrupted'],
+    ['blocked', 'child-blocked', 'blocked'],
+  ] as const)('preserves the %s child terminal fact', async (reason, category, safeReason) => {
+    const ctx = await setup({ FAKE_REASON_KIND: reason })
+    const run = await ctx.subagents.start('dsh-sdk', request())
+    const result = await run.result
+    expect(result.stopReason).toBe('error')
+    expect(result.diagnostic).toBe(
+      expectedFailure(`stage: session-run; category: ${category}; child reason: ${safeReason}`),
+    )
+    await run.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('aggregates safe initialize and shutdown facts when startup rollback fails', async () => {
+    const rawCleanup = 'shutdown leaked /private/path SECRET_TOKEN'
+    const spy = vi.spyOn(DeepSeekHarness.prototype, 'close').mockImplementation(async function (this: DeepSeekHarness) {
+      spy.mockRestore()
+      await this.close()
+      throw new Error(rawCleanup)
+    })
+    try {
+      const ctx = await setup({ FAKE_MALFORMED: '1' })
+      const error = await ctx.subagents.start('dsh-sdk', request()).catch((cause: unknown) => cause)
+      expect(error).toBeInstanceOf(AggregateError)
+      expect((error as Error).message).toBe(
+        `subagent-dsh-sdk: ${expectedFailure('stage: initialize; category: protocol')}; `
+        + `subagent-dsh-sdk: ${expectedFailure('stage: shutdown; category: unknown')}`,
+      )
+      expect((error as Error).message).not.toContain(rawCleanup)
+      await ctx.fiber.dispose()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('reports only safe shutdown facts when cancelled startup rollback fails', async () => {
+    const rawCleanup = 'cancelled shutdown leaked SECRET_TOKEN'
+    const spy = vi.spyOn(DeepSeekHarness.prototype, 'close').mockImplementation(async function (this: DeepSeekHarness) {
+      spy.mockRestore()
+      await this.close()
+      throw new Error(rawCleanup)
+    })
+    try {
+      const controller = new AbortController()
+      const pending = startSdkRun(request('p', controller.signal), {
+        command: process.execPath,
+        args: [fakeRuntime],
+        cwd: process.cwd(),
+        provider: 'p',
+        model: 'm',
+        env: { FAKE_HANG_INIT: '1' },
+        shutdownTimeoutMs: 100,
+        disposeEofGraceMs: 100,
+        disposeGraceMs: 100,
+      })
+      controller.abort()
+      const error = await pending.catch((cause: unknown) => cause)
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toBe(
+        `subagent-dsh-sdk: ${expectedFailure('stage: shutdown; category: unknown')}`,
+      )
+      expect((error as Error).message).not.toContain(rawCleanup)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('preserves a disposed child cancellation without treating it as local cancellation', async () => {
+    const ctx = await setup({ FAKE_REASON_KIND: 'aborted', FAKE_ABORT_REASON_KIND: 'disposed' })
+    const run = await ctx.subagents.start('dsh-sdk', request())
+    const result = await run.result
+    expect(result.stopReason).toBe('aborted')
+    expect(result.diagnostic).toBe(
+      expectedFailure('stage: session-run; category: child-disposed; child reason: disposed'),
+    )
+    await run.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps an ordinary child abort diagnostic-free', async () => {
+    const ctx = await setup({ FAKE_REASON_KIND: 'aborted', FAKE_ABORT_REASON_KIND: 'user' })
+    const run = await ctx.subagents.start('dsh-sdk', request())
+    const result = await run.result
+    expect(result.stopReason).toBe('aborted')
+    expect(result.diagnostic).toBeUndefined()
+    await run.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('uses a fixed fallback for an unknown child terminal reason', async () => {
+    const rawReason = 'private/path/SECRET_TOKEN'
+    const ctx = await setup({ FAKE_REASON_KIND: rawReason })
+    const run = await ctx.subagents.start('dsh-sdk', request())
+    const result = await run.result
+    expect(result.stopReason).toBe('error')
+    expect(result.diagnostic).toBe(
+      expectedFailure('stage: session-run; category: unknown; child reason: unknown'),
+    )
+    expect(result.diagnostic).not.toContain(rawReason)
     await run.dispose()
     await ctx.fiber.dispose()
   })
@@ -205,6 +328,7 @@ describe('dsh-subagent-dsh-sdk provider', () => {
     controller.abort('test')
     const result = await run.result
     expect(result.stopReason).toBe('aborted')
+    expect(result.diagnostic).toBeUndefined()
     // The hung child streamed nothing, so the aborted result has no output.
     expect(result.output).toEqual([])
     await run.dispose()
@@ -251,9 +375,92 @@ describe('dsh-subagent-dsh-sdk provider', () => {
     const run = await ctx.subagents.start('dsh-sdk', request())
     const result = await run.result
     expect(result.stopReason).toBe('error')
+    expect(result.diagnostic).toBe(
+      expectedFailure('stage: session-run; category: protocol'),
+    )
     expect(result.output).toEqual([])
     await run.dispose()
     await ctx.fiber.dispose()
+  })
+
+  it('preserves partial output while hiding a transport error stderr tail', async () => {
+    const stderr = 'private/path SECRET_TOKEN must remain Host-only'
+    const ctx = await setup({
+      FAKE_EXIT_DURING_PROMPT: '1',
+      FAKE_TEXT: 'partial before transport exit',
+      FAKE_STDERR: stderr,
+    })
+    const run = await ctx.subagents.start('dsh-sdk', request())
+    const result = await run.result
+    expect(result.stopReason).toBe('error')
+    expect(result.output).toEqual([{ type: 'text', text: 'partial before transport exit' }])
+    expect(result.diagnostic).toBe(
+      expectedFailure('stage: process; category: transport'),
+    )
+    expect(result.diagnostic).not.toContain(stderr)
+    await run.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('classifies a typed SDK request timeout without copying its message', async () => {
+    const rawMessage = 'session path SECRET_TOKEN timed out'
+    const spy = vi.spyOn(HarnessSession.prototype, 'run')
+      .mockRejectedValue(new RequestTimeoutError(rawMessage))
+    try {
+      const ctx = await setup()
+      const run = await ctx.subagents.start('dsh-sdk', request())
+      const result = await run.result
+      expect(result).toEqual({
+        output: [],
+        diagnostic: expectedFailure('stage: session-run; category: timeout'),
+        stopReason: 'error',
+      })
+      expect(result.diagnostic).not.toContain(rawMessage)
+      await run.dispose()
+      await ctx.fiber.dispose()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('uses a fixed unknown category for an untyped SDK exception', async () => {
+    const rawMessage = 'unknown SDK failure at /private/path SECRET_TOKEN'
+    const spy = vi.spyOn(HarnessSession.prototype, 'run')
+      .mockRejectedValue(new Error(rawMessage))
+    try {
+      const ctx = await setup()
+      const run = await ctx.subagents.start('dsh-sdk', request())
+      const result = await run.result
+      expect(result.diagnostic).toBe(
+        expectedFailure('stage: session-run; category: unknown'),
+      )
+      expect(result.diagnostic).not.toContain(rawMessage)
+      await run.dispose()
+      await ctx.fiber.dispose()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('keeps child diagnostics isolated across concurrent runs', async () => {
+    const start = (reason: 'error' | 'interrupted') => startSdkRun(request(), {
+      command: process.execPath,
+      args: [fakeRuntime],
+      cwd: process.cwd(),
+      provider: 'p',
+      model: 'm',
+      env: { FAKE_REASON_KIND: reason },
+      shutdownTimeoutMs: 100,
+      disposeEofGraceMs: 200,
+      disposeGraceMs: 200,
+    })
+    const [errored, interrupted] = await Promise.all([start('error'), start('interrupted')])
+    const [errorResult, interruptedResult] = await Promise.all([errored.result, interrupted.result])
+    expect(errorResult.diagnostic).toContain('category: child-error')
+    expect(errorResult.diagnostic).not.toContain('child-interrupted')
+    expect(interruptedResult.diagnostic).toContain('category: child-interrupted')
+    expect(interruptedResult.diagnostic).not.toContain('child-error')
+    await Promise.all([errored.dispose(), interrupted.dispose()])
   })
 
   it('dispose cancels a hung child locally and reaps it', async () => {
@@ -291,14 +498,42 @@ describe('dsh-subagent-dsh-sdk provider', () => {
     }
   })
 
+  it('rejects a pre-aborted request through the registered provider before cwd resolution', async () => {
+    const ctx = await setup()
+    const controller = new AbortController()
+    controller.abort()
+    const parent = { id: 'parent', session: { header: {} } } as unknown as Agent
+    await expect(ctx.subagents.start('dsh-sdk', {
+      label: 'p',
+      prompt: [{ type: 'text' as const, text: 'p' }],
+      parent,
+      signal: controller.signal,
+    })).rejects.toThrow('subagent request was aborted before the SDK child started')
+    await ctx.fiber.dispose()
+  })
+
   it('rejects after reaping when the child dies before the handshake', async () => {
-    const ctx = await setup({ FAKE_EXIT_BEFORE_INIT: '1', FAKE_STDERR: 'scripted boot failure' })
+    const rawStderr = 'scripted boot failure at /private/path SECRET_TOKEN'
+    const ctx = await setup({ FAKE_EXIT_BEFORE_INIT: '1', FAKE_STDERR: rawStderr })
     const failure = await ctx.subagents.start('dsh-sdk', request()).then(
       () => { throw new Error('start unexpectedly succeeded') },
       (error: unknown) => error,
     )
-    expect(String(failure)).toContain('exit code: 3')
-    expect(String(failure)).toContain('scripted boot failure')
+    expect(String(failure)).toBe(
+      `SdkRunFailure: subagent-dsh-sdk: ${expectedFailure('stage: initialize; category: transport')}`,
+    )
+    expect(String(failure)).not.toContain(rawStderr)
+    await ctx.fiber.dispose()
+  })
+
+  it.each([
+    [{ FAKE_MALFORMED: '1' }, 'protocol'],
+    [{ FAKE_INIT_ERROR: '1' }, 'protocol'],
+  ] as const)('rejects an initialize failure with safe %s facts', async (env, category) => {
+    const ctx = await setup({ ...env })
+    await expect(ctx.subagents.start('dsh-sdk', request())).rejects.toThrow(
+      `subagent-dsh-sdk: ${expectedFailure(`stage: initialize; category: ${category}`)}`,
+    )
     await ctx.fiber.dispose()
   })
 
@@ -343,6 +578,9 @@ describe('dsh-subagent-dsh-sdk provider', () => {
     const run = await startSdkRun(request(), spec)
     const result = await run.result
     expect(result.stopReason).toBe('error')
+    expect(result.diagnostic).toBe(
+      expectedFailure('stage: session-run; category: protocol'),
+    )
     expect(seen).toHaveLength(1)
     await run.dispose()
   })
@@ -352,11 +590,37 @@ describe('dsh-subagent-dsh-sdk provider', () => {
     const warnings: string[] = []
     ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
     const run = await ctx.subagents.start('dsh-sdk', request())
-    expect((await run.result).stopReason).toBe('error')
+    expect(await run.result).toMatchObject({
+      stopReason: 'error',
+      diagnostic: expectedFailure('stage: session-run; category: protocol'),
+    })
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toContain('subagent-dsh-sdk "dsh-sdk": child run failed (error)')
     await run.dispose()
     await ctx.fiber.dispose()
+  })
+
+  it('wraps a shutdown rejection with safe facts after the runtime is reaped', async () => {
+    const rawCleanup = 'shutdown failed at /private/path SECRET_TOKEN'
+    const ctx = await setup()
+    const run = await ctx.subagents.start('dsh-sdk', request())
+    await run.result
+    const spy = vi.spyOn(DeepSeekHarness.prototype, 'close').mockImplementation(async function (this: DeepSeekHarness) {
+      spy.mockRestore()
+      await this.close()
+      throw new Error(rawCleanup)
+    })
+    try {
+      const error = await run.dispose().catch((cause: unknown) => cause)
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toBe(
+        `subagent-dsh-sdk: ${expectedFailure('stage: shutdown; category: unknown')}`,
+      )
+      expect((error as Error).message).not.toContain(rawCleanup)
+    } finally {
+      spy.mockRestore()
+      await ctx.fiber.dispose()
+    }
   })
 
   it('registers under the configured provider name and unregisters on fiber dispose (HMR safety)', async () => {
@@ -468,7 +732,9 @@ describe('dsh-subagent-dsh-sdk provider', () => {
     await expect(ctx.subagents.start('dsh-sdk', {
       label: 'p', prompt: [{ type: 'text' as const, text: 'p' }], parent, signal: new AbortController().signal,
     }))
-      .rejects.toThrow('no working directory for the child')
+      .rejects.toThrow(
+        `subagent-dsh-sdk: ${expectedFailure('stage: initialize; category: configuration')}`,
+      )
     await ctx.fiber.dispose()
   })
 
