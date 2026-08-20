@@ -56,7 +56,7 @@ The Chat builder keeps one mutable keyed store per Session. Content updates noti
 
 ## Trajectory request data
 
-Trajectory Definitions assemble one chronological, purpose-discriminated provider-request stream. Assistant requests always carry their numeric `turn` and `step`; compaction requests carry `step: 0` and a `turn` owner that may be `null`. That null owner means a manual compaction ran standalone between turns, not that it belongs to either adjacent turn. A `session/end-seed` boundary closes an unmatched compaction request as an error at the boundary time with `Compaction was interrupted before completion.`; a later start projects as an independent request instead of overwriting the orphan.
+Trajectory Definitions assemble one chronological, purpose-discriminated provider-request stream. Assistant requests always carry their numeric `turn` and `step`; compaction requests carry `step: 0` and a `turn` owner that may be `null`. That null owner means a manual compaction ran standalone between turns, not that it belongs to either adjacent turn. A cancellation-finalized `assistant/message` retains its durable result seq and provider provenance but does not complete the request; `step/end` classifies that request as an error. A `session/end-seed` boundary closes an unmatched compaction request as an error at the boundary time with `Compaction was interrupted before completion.`; a later start projects as an independent request instead of overwriting the orphan.
 
 ## Code Mode child-call tree
 
