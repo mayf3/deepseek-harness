@@ -130,6 +130,26 @@ export function $composerLayout(): ComposerLayout {
   }
 }
 
+/**
+ * Fold one clipboard-projection offset to its detect-projection twin.
+ * Offsets inside a chip's clipboard expansion snap to the chip's trailing
+ * edge; callers only pass boundaries that were once a document end (submit
+ * snapshots), which never split a chip.
+ * @param layout - the current walk product.
+ * @param clipboardOffset - offset into the clipboard projection.
+ * @returns the detect offset covering the same document position.
+ */
+export function detectOffsetOfClipboardOffset(layout: ComposerLayout, clipboardOffset: number): number {
+  for (const segment of layout.segments) {
+    const end = segment.clipboardStart + segment.clipboardLength
+    if (clipboardOffset > end) continue
+    if (clipboardOffset === end) return segment.detectStart + segment.detectLength
+    if (segment.kind === 'chip') return segment.detectStart + segment.detectLength
+    return segment.detectStart + (clipboardOffset - segment.clipboardStart)
+  }
+  return layout.detectLength
+}
+
 /** The published projection product consumed by the shell every update. */
 export interface EditorProjection {
   /** Trigger/TokenSpan coordinate text (chip = one U+FFFC). */
@@ -138,6 +158,8 @@ export interface EditorProjection {
   readonly clipboardText: string
   /** InputState-compatible occurrence view (clipboardText coordinates). */
   readonly occurrences: readonly Occurrence[]
+  /** Range selection in detect coordinates (ordered); null while absent or non-range. */
+  readonly selection: { readonly start: number; readonly end: number } | null
   /** Collapsed caret in detect coordinates; null while the selection is absent or ranged. */
   readonly caret: number | null
 }
@@ -190,13 +212,19 @@ export function $projectComposer(idOf: (key: NodeKey) => number): EditorProjecti
     })
   }
   const selection = $getSelection()
-  const caret = $isRangeSelection(selection) && selection.isCollapsed()
-    ? $detectOffsetOfPoint(layout, selection.anchor)
-    : null
+  let range: { start: number; end: number } | null = null
+  if ($isRangeSelection(selection)) {
+    const anchor = $detectOffsetOfPoint(layout, selection.anchor)
+    const focus = $detectOffsetOfPoint(layout, selection.focus)
+    if (anchor !== null && focus !== null) {
+      range = { start: Math.min(anchor, focus), end: Math.max(anchor, focus) }
+    }
+  }
   return {
     detectText: layout.detectText,
     clipboardText: layout.clipboardText,
     occurrences,
-    caret,
+    selection: range,
+    caret: range !== null && range.start === range.end ? range.start : null,
   }
 }

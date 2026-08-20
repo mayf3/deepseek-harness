@@ -1,0 +1,11 @@
+/* Editor-internal decoration styles: nodes Lexical mounts inside the
+   contenteditable (chip hosts get their look from ReferenceChip.module.css;
+   this sheet covers text-level decorations). */
+
+/* Plain-text reference: chip family colors over the draft's own glyphs.
+   clone keeps rounded ends on soft-wrap fragments. */
+.textRef {
+  color: var(--dsw-alias-state-business-primary);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}

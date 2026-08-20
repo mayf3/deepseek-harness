@@ -80,6 +80,16 @@ function selectSpan(layout: ComposerLayout, span: DetectSpan): RangeSelection | 
 }
 
 /**
+ * Select one detect span (collapsed spans place the caret). Exposed for the
+ * shell's caret placement and tests; the replace helpers below build on it.
+ * @param span - detect span to select.
+ * @returns whether both endpoints mapped.
+ */
+export function $selectDetectSpan(span: DetectSpan): boolean {
+  return selectSpan($composerLayout(), span) !== null
+}
+
+/**
  * Replace one detect span with plain text (empty text deletes the span).
  * The caret lands after the insertion.
  * @param span - detect span to replace.

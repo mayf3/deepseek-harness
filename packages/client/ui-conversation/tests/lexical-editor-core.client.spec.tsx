@@ -150,7 +150,7 @@ describe('ReferenceChipNode', () => {
       if (chip === undefined) return
       const el = chip.createDOM()
       expect(el.getAttribute('data-composer-chip')).toBe('session-reference')
-      expect(el.contentEditable).toBe('false')
+      expect(el.getAttribute('contenteditable')).toBe('false')
       expect(chip.updateDOM()).toBe(false)
     })
   })
