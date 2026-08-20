@@ -1,11 +1,11 @@
 /**
  * @deepseek-ai/dsh-host-frontend-static — SPA dist server over the webserver
- * fallback seat: serves the built frontend directory with the semantics the
- * Web shell locked at step1 — traversal outside the dist root is 403, any
- * miss falls back to index.html with HTTP 200 (SPA routing), unknown
- * extensions ship as octet-stream, non-GET/HEAD is 405. Every index response
- * runs through the webserver's index render (structured injection rows, then
- * raw taps). The dist location is workspace knowledge of the composing
+ * fallback seat: serves the built frontend directory with explicit index
+ * entry points. The dist root and configured index path render index.html;
+ * missing paths return 404, traversal outside the dist root is 403, unknown
+ * extensions ship as octet-stream, and non-GET/HEAD is 405. Every index
+ * response runs through the webserver's index render (structured injection
+ * rows, then raw taps). The dist location is workspace knowledge of the composing
  * application, so `distIndex` is typically supplied through a `!!js`
  * expression, never hardcoded by a deployment.
  * @module @deepseek-ai/dsh-host-frontend-static
@@ -44,14 +44,20 @@ const MIME: Record<string, string> = {
   '.webmanifest': 'application/manifest+json',
 }
 
+const STATIC_MISS_CODES: ReadonlySet<string | undefined> = new Set([
+  'ENOENT',
+  'EISDIR',
+  'ENOTDIR',
+])
+
 /**
  * Serve one GET/HEAD static request from the dist root.
  * @param pathname - decoded URL pathname of the request.
  * @param res - the node:http response to write.
  * @param distRoot - absolute dist root directory (resolved by the caller).
  * @param distIndex - absolute path of index.html inside distRoot.
- * @param renderIndex - produces the index.html body (injection rendering) for
- * `/` and every SPA fallback.
+ * @param renderIndex - produces the index.html body (structured injection rendering) for
+ * the dist root and configured index path.
  */
 export async function serveStatic(
   pathname: string, res: ServerResponse, distRoot: string, distIndex: string,
@@ -79,9 +85,12 @@ export async function serveStatic(
     const body = await readFile(target)
     res.writeHead(200, { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' })
     res.end(body)
-  } catch {
-    // Miss (ENOENT/EISDIR) falls back to index.html with 200 (SPA routing).
-    await serveIndex()
+  } catch (error) {
+    // Only absent or non-file targets are 404; other filesystem failures reach
+    // the webserver's request-failure handling.
+    if (!STATIC_MISS_CODES.has((error as NodeJS.ErrnoException).code)) throw error
+    res.writeHead(404)
+    res.end()
   }
 }
 
