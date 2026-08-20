@@ -203,9 +203,9 @@ export async function saveImageFile(
     ref: {
       attachmentId: AttachmentId(`sha256:${sha256}`),
       mediaType: canonical.mediaType,
-      bytes: canonical.data.byteLength,
       width: canonical.width,
       height: canonical.height,
+      bytes: canonical.data.byteLength,
       ...(name !== undefined ? { name } : {}),
     },
     source: metadata,
