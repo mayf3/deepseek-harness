@@ -23,7 +23,7 @@
  * contract and the same occupant.
  */
 import type { HostDescriptionSource } from '@deepseek-ai/dsh-client-connection/client'
-import type { HostObservable, PropsHooks, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { CommonKeyOf, HostObservable, PropsHooks, PropsRenderSlots, PropsRuntime, PropsStore, Translate } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pull the owner SlotMap merges into programs that resolve the
 // runtime shares below.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -31,6 +31,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   SessionId, SessionSearchResultItem, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
+import type { WorkspaceKey } from '../locales.ts'
+
+/** Workspace namespace plus shared common vocabulary. */
+export type WorkspaceTranslate = Translate<WorkspaceKey | CommonKeyOf>
 import type { createWorkspaceViewStore } from '../stores.ts'
 
 /**
@@ -52,6 +56,11 @@ export interface DirectoryFlowOwnerProps {
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    /** Workspace browsing, grouping, board, and pick/create flow copy. */
+    workspace: WorkspaceKey
+  }
+
   interface SlotMap {
     /** Directory-flow hole under the conversation empty-state picker (declared by the WorkspacePicker entry). */
     'conversation.hero.workspace.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
@@ -146,7 +155,7 @@ export type WorkspaceBrowserProps =
   & PropsStore<ReturnType<typeof createWorkspaceViewStore>>
   & Omit<WorkspaceBrowserInjected, 'hooks'>
   & PropsHooks<WorkspaceBrowserInjected['hooks']>
-  & PropsLocale<'workspace'>
+  & { t: WorkspaceTranslate }
 
 /**
  * Picker-private injected share. Pick semantics remain in the owner's onPick
@@ -168,4 +177,4 @@ export type WorkspacePickerProps =
   & PropsRenderSlots<'conversation.hero.workspace.directoryFlow'>
   & Omit<WorkspacePickerInjected, 'hooks'>
   & DirectoryPickingHooks
-  & PropsLocale<'workspace'>
+  & { t: WorkspaceTranslate }

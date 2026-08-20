@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-16-workspace-unread-and-tagview-actions.md) | 中文
 
+本决策部分被[独占分组与共享任务看板](2026-08-21-workspace-exclusive-groups-and-board.md)替代：tag 字段与 tag-view 表述停止生效；未读、深链滚动、归档按钮与通知相关决策继续有效。
+
 ## 问题
 
 工作区浏览器存在三个相关缺口。标签视图无法在所选行所属的工作区中创建会话，因为标签组没有工作区标识。会话没有由用户控制的未读状态。标签组展开状态也会重置，因为每当工作区基线变化时，工作区键修剪都会从 `groupExpansion` 中删除 `tag:*` 与 `UNTAGGED_KEY` 条目。

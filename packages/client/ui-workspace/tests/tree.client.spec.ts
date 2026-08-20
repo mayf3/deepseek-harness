@@ -3,9 +3,10 @@ import type {
   SessionId, SessionListState, SessionSummary, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  deriveFlat, deriveGroups, deriveSearchResults, deriveTagGroups, workspaceLabel, relativeTime,
+  deriveFlat, deriveGroups, deriveSearchResults, deriveUserGroups, workspaceLabel, relativeTime,
   UNGROUPED_KEY, UNGROUPED_LABEL,
 } from '../src/client/tree.ts'
+import { GROUP_SECTION_PREFIX, UNASSIGNED_GROUP_KEY } from '../src/client/group-keys.ts'
 import { createWorkspaceViewStore } from '../src/client/stores.ts'
 
 const sid = (id: string) => id as SessionId
@@ -27,15 +28,15 @@ const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView 
 const view = (
   expandedGroups: readonly string[] = [],
   ungroupedOrder?: readonly string[],
-  sessionMeta?: Readonly<Record<string, { tags?: string[]; parent?: string; unread?: boolean }>>,
-  knownTags?: readonly string[],
+  sessionMeta?: Readonly<Record<string, { group?: string; parent?: string; unread?: boolean }>>,
+  knownGroups?: readonly string[],
   unreadOnly = false,
 ) => ({
   expandedGroups,
   ...(unreadOnly ? { unreadOnly } : {}),
   ...(ungroupedOrder === undefined ? {} : { ungroupedOrder }),
   ...(sessionMeta === undefined ? {} : { sessionMeta }),
-  ...(knownTags === undefined ? {} : { knownTags }),
+  ...(knownGroups === undefined ? {} : { knownGroups }),
 })
 const noArchive: readonly SessionId[] = []
 const archived = (...ids: string[]): readonly SessionId[] => ids.map(sid)
@@ -288,9 +289,9 @@ describe('deriveFlat', () => {
     )
     expect(groups.map(g => g.key)).toEqual(['a'])
     expect(groups[0]!.sessions.map(s => s.id)).toEqual([sid('unread')])
-    // Tag view: empty tag sections (knownTags) are hidden too.
-    const tagGroups = deriveTagGroups(sessions, [], noArchive, view([], undefined, meta, ['前端'], true))
-    expect(tagGroups.map(g => (g.kind === 'tag' ? g.label : g.kind))).toEqual(['untagged'])
+    // Group view: empty known groups are hidden too.
+    const userGroups = deriveUserGroups(sessions, [], noArchive, view([], undefined, meta, ['前端'], true))
+    expect(userGroups.map(g => (g.kind === 'group' ? g.label : g.kind))).toEqual(['unassigned'])
     // Flat view: only unread rows survive.
     expect(deriveFlat(sessions, [], noArchive, meta, true).map(r => r.id)).toEqual([sid('unread')])
   })
@@ -494,81 +495,81 @@ describe('relativeTime', () => {
   })
 })
 
-describe('deriveTagGroups', () => {
-  const tagged = (id: string, updatedAt: number, tags?: string[]): SessionSummary => ({
+describe('deriveUserGroups', () => {
+  const withTodoTags = (id: string, updatedAt: number, tags?: string[]): SessionSummary => ({
     ...summary(id, updatedAt),
     projectionValues: {
       todos: [{ content: id, status: 'pending' as const, ...(tags === undefined ? {} : { tags }) }],
     },
   })
-  const meta = (entries: Record<string, { tags?: string[] }>) => entries
 
-  it('groups sessions under each distinct user tag and keeps untagged sessions separate', () => {
-    const sessions = list(
-      tagged('a', 3),
-      tagged('b', 2),
-      tagged('c', 1),
-    )
-    const groups = deriveTagGroups(sessions, [], noArchive, view(['tag:前端'], undefined, meta({
-      a: { tags: ['前端'] },
-      b: { tags: ['前端', '紧急'] },
-    })))
-    expect(groups.map(g => (g.kind === 'tag' ? g.label : g.kind))).toEqual(['前端', '紧急', 'untagged'])
-    const frontend = groups[0]!
-    expect(frontend.key).toBe('tag:前端')
-    expect(frontend.sessionCount).toBe(2)
-    expect(frontend.sessions.map(s => s.id)).toEqual([sid('a'), sid('b')])
-    // Folded groups keep their count but no session rows.
-    expect(groups[1]!.sessionCount).toBe(1)
-    expect(groups[1]!.sessions).toEqual([])
-    expect(groups[2]!.kind).toBe('untagged')
-    expect(groups[2]!.sessionCount).toBe(1)
+  it('places every session in exactly one user group or Unassigned', () => {
+    const sessions = list(summary('a', 3), summary('b', 2), summary('c', 1))
+    const groups = deriveUserGroups(sessions, [], noArchive, view([
+      GROUP_SECTION_PREFIX + '前端', UNASSIGNED_GROUP_KEY,
+    ], undefined, {
+      a: { group: '前端' },
+      b: { group: '紧急' },
+    }))
+    const frontend = groups.find(group => group.label === '前端')!
+    const urgent = groups.find(group => group.label === '紧急')!
+    const unassigned = groups.find(group => group.kind === 'unassigned')!
+    expect(frontend.sessions.map(row => row.id)).toEqual([sid('a')])
+    expect(urgent.sessionCount).toBe(1)
+    expect(urgent.sessions).toEqual([])
+    expect(unassigned.sessions.map(row => row.id)).toEqual([sid('c')])
+    expect(frontend.key).toBe(GROUP_SECTION_PREFIX + '前端')
   })
 
-  it('keeps a folded tag group empty of session rows', () => {
-    const sessions = list(tagged('a', 3))
-    const groups = deriveTagGroups(sessions, [], noArchive, view([], undefined, meta({ a: { tags: ['前端'] } })))
+  it('keeps a folded user group empty of session rows', () => {
+    const groups = deriveUserGroups(
+      list(summary('a', 3)), [], noArchive, view([], undefined, { a: { group: '前端' } }),
+    )
     expect(groups[0]!.expanded).toBe(false)
     expect(groups[0]!.sessions).toEqual([])
   })
 
   it('excludes archived and non-current blank sessions from every group', () => {
-    const sessions = list(tagged('a', 3), { ...tagged('b', 2), blank: true })
-    const groups = deriveTagGroups(sessions, [], archived('a'), view([], undefined, meta({
-      a: { tags: ['前端'] },
-      b: { tags: ['前端'] },
-    })))
+    const sessions = list(summary('a', 3), { ...summary('b', 2), blank: true })
+    const groups = deriveUserGroups(sessions, [], archived('a'), view([], undefined, {
+      a: { group: '前端' }, b: { group: '前端' },
+    }))
     expect(groups).toEqual([])
   })
 
-  it('ignores tags the model wrote into todos — only user metadata tags group', () => {
-    const sessions = list(tagged('a', 3, ['check-lint', 'setup']))
-    const groups = deriveTagGroups(sessions, [], noArchive, view([], undefined, meta({ a: { tags: ['手头'] } })))
-    expect(groups.map(g => (g.kind === 'tag' ? g.label : g.kind))).toEqual(['手头'])
+  it('ignores model-written todo tags and reads only the user group field', () => {
+    const sessions = list(withTodoTags('a', 3, ['check-lint', 'setup']))
+    const grouped = deriveUserGroups(
+      sessions, [], noArchive, view([GROUP_SECTION_PREFIX + '手头'], undefined, { a: { group: '手头' } }),
+    )
+    expect(grouped[0]!.label).toBe('手头')
+    const ungrouped = deriveUserGroups(sessions, [], noArchive, view([UNASSIGNED_GROUP_KEY]))
+    expect(ungrouped[0]!.kind).toBe('unassigned')
   })
 
-  it('keeps explicitly created empty tags visible as empty sections', () => {
+  it('keeps explicitly created empty groups visible', () => {
     const sessions = list(summary('a', 3))
-    const groups = deriveTagGroups(sessions, [], noArchive, view([], undefined, undefined, ['前端', '后端']))
-    expect(groups.map(g => (g.kind === 'tag' ? g.label : g.kind))).toEqual(['前端', '后端', 'untagged'])
-    expect(groups[1]!.sessionCount).toBe(0)
-    expect(groups[1]!.sessions).toEqual([])
+    const groups = deriveUserGroups(
+      sessions, [], noArchive, view([], undefined, undefined, ['前端', '后端']),
+    )
+    expect(groups.filter(group => group.kind === 'group').map(group => group.label)).toEqual(['前端', '后端'])
+    expect(groups.filter(group => group.kind === 'group').every(group => group.sessionCount === 0)).toBe(true)
+    expect(groups.at(-1)?.kind).toBe('unassigned')
   })
 
-  it('carries each row real Workspace id into tag sections plus the unread flag', () => {
+  it('carries Workspace id and unread into exclusive group rows', () => {
     const sessions = list(summary('a', 3), summary('b', 2))
-    const groups = deriveTagGroups(
+    const groups = deriveUserGroups(
       sessions,
       [workspace('proj', ['a']), workspace('other', ['b'])],
       noArchive,
-      view(['tag:前端'], undefined, {
-        a: { tags: ['前端'], unread: true },
-        b: { tags: ['前端'] },
+      view([GROUP_SECTION_PREFIX + '前端'], undefined, {
+        a: { group: '前端', unread: true },
+        b: { group: '前端' },
       }),
     )
-    expect(groups[0]!.sessions.map(s => [s.id, s.workspaceId, s.unread])).toEqual([
-      [sid('a'), wid('proj'), true],
-      [sid('b'), wid('other'), false],
+    expect(groups[0]!.sessions.map(row => [row.id, row.workspaceId, row.unread])).toEqual([
+      [sid('a'), wid('proj'), true], [sid('b'), wid('other'), false],
     ])
   })
 

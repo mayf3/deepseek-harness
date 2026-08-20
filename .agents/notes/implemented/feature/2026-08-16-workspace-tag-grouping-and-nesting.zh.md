@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-16-workspace-tag-grouping-and-nesting.md) | 中文
 
+本决策部分被[独占分组与共享任务看板](2026-08-21-workspace-exclusive-groups-and-board.md)替代：多标签元数据与标签分组停止生效；等待父任务、拖拽中段嵌套和右键菜单继续有效。
+
 ## 问题
 
 工作区浏览器只按 Host Workspace 对会话分组。跨目录组织依赖会话标题约定，任务之间无法表达一个任务正在等待另一个任务，行操作也隐藏在省略号按钮后。用户需要可配置的标签组、任务之间的等待关系，以及通过右键菜单直接访问行操作。

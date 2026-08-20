@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-16-workspace-unread-and-tagview-actions.zh.md)
 
+Partially superseded by [exclusive workspace groups and the shared task board](2026-08-21-workspace-exclusive-groups-and-board.md): tag fields and tag-view wording are replaced; unread state, deep-link scrolling, archive controls, and notifier decisions remain active.
+
 ## Problem
 
 The workspace browser has three related gaps. Tag view cannot create a session in the selected row's workspace because tag groups have no workspace identity. Sessions have no user-controlled unread state. Tag-group expansion also resets because workspace-key pruning removes `tag:*` and `UNTAGGED_KEY` entries from `groupExpansion` whenever the workspace baseline changes.

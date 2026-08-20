@@ -9,7 +9,7 @@
  * menu in between; the flow and its error dialog live in WorkspacePicker
  * (same package — direct composition, no slot between them).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Button, IconArchiveOutline20, IconCloseFill14, IconPersonalizationOutline16, IconPlusOutline16,
@@ -20,9 +20,11 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { WorkspaceBrowserProps } from './contract/slots.ts'
 import type { GroupNode, SessionNode, SessionOrderBy } from './tree.ts'
-import { deriveFlat, deriveGroups, deriveSearchResults, deriveTagGroups, TAG_GROUP_PREFIX, UNGROUPED_KEY } from './tree.ts'
+import { deriveFlat, deriveGroups, deriveSearchResults, deriveUserGroups, UNGROUPED_KEY } from './tree.ts'
+import { GROUP_SECTION_PREFIX } from './group-keys.ts'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './rows/Rows.tsx'
-import { FLAT_SESSION_ORDER_KEY, type SessionGroupBy, type SessionMeta } from './stores.ts'
+import { FLAT_SESSION_ORDER_KEY, normalizeGroupName, type SessionGroupBy, type SessionMeta } from './stores.ts'
+import { GroupBoard } from './GroupBoard.tsx'
 import { WorkspacePickFlow } from './WorkspacePicker.tsx'
 import css from './WorkspaceBrowser.module.css'
 
@@ -160,7 +162,7 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
         { type: 'label' as const, id: 'group-by', text: t('groupBy.label') },
         { id: 'workspace', label: t('groupBy.workspace') },
         { id: 'flat', label: t('groupBy.flat') },
-        { id: 'tag', label: t('groupBy.tag') },
+        { id: 'group', label: t('groupBy.group') },
         { type: 'separator' as const, id: 'order-by-separator' },
         { type: 'label' as const, id: 'order-by', text: t('orderBy.label') },
         { id: 'manual', label: t('orderBy.manual') },
@@ -168,7 +170,7 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
       ]}
       selectedIds={[groupBy, orderBy]}
       onSelect={(id) => {
-        if (id === 'workspace' || id === 'flat' || id === 'tag') onGroupPick(id)
+        if (id === 'workspace' || id === 'flat' || id === 'group') onGroupPick(id)
         else if (id === 'manual' || id === 'updated') onOrderPick(id)
         setOpen(false)
       }}
@@ -193,29 +195,27 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
   )
 }
 
-/** In-flight root-row drag: source identity plus the current insert marker. */
-/** Pending tag-inheritance holder shared by the two tree bodies. */
-interface InheritTagsHolder {
-  current: { workspaceId: WorkspaceId; tags: string[] } | null
+/** Pending group-inheritance holder shared by the two tree bodies. */
+interface InheritGroupHolder {
+  current: { workspaceId: WorkspaceId; group: string } | null
 }
 
 /**
- * Record a pending tag inheritance for a "new session in this workspace"
- * row action. The pending entry is applied only to the workspace's freshly
- * created blank session; a 5s timeout guarantees a stale pending never tags
- * a later unrelated blank.
+ * Record a pending group inheritance for a "new session in this workspace"
+ * row action. The entry applies only to the workspace's freshly created
+ * blank session; a 5s timeout prevents stale inheritance.
  * @param holder - the component's pending ref.
  * @param timer - the component's timeout ref (cleared on re-arm).
  * @param workspaceId - target workspace of the new session.
- * @param tags - source row tags to inherit.
+ * @param group - source row group to inherit.
  */
-function scheduleTagInheritance(
-  holder: InheritTagsHolder,
+function scheduleGroupInheritance(
+  holder: InheritGroupHolder,
   timer: { current: number | null },
   workspaceId: WorkspaceId,
-  tags: string[],
+  group: string | undefined,
 ): void {
-  holder.current = tags.length > 0 ? { workspaceId, tags } : null
+  holder.current = group === undefined ? null : { workspaceId, group }
   if (timer.current !== null) window.clearTimeout(timer.current)
   if (holder.current !== null) {
     timer.current = window.setTimeout(() => { holder.current = null }, 5000)
@@ -262,11 +262,15 @@ function isDescendantOf(
   return false
 }
 
-interface BulkRowsProps {
-  active: boolean
-  selected: ReadonlySet<SessionId>
-  toggle: (sessionId: SessionId, shiftKey: boolean) => void
-  reportVisible: (sessionIds: readonly SessionId[]) => void
+type BatchSelection = {
+  selectedIds: readonly SessionNode['id'][]
+  onToggle: (
+    sessionId: SessionNode['id'],
+    checked: boolean,
+    shiftKey: boolean,
+    visibleIds: readonly SessionNode['id'][],
+  ) => void
+  onVisibleIdsChange: (visibleIds: readonly SessionNode['id'][]) => void
 }
 
 type SessionTreeProps = Pick<
@@ -299,39 +303,40 @@ type SessionTreeProps = Pick<
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
   onSessionArchive: (sessionId: SessionNode['id']) => void
-  /** Open the tag editor for a session (row menu action). */
-  onEditTags: (sessionId: SessionNode['id'], currentTags: string[]) => void
+  /** Open the group editor for a session (row menu action). */
+  onEditGroup: (sessionId: SessionNode['id'], currentGroup: string | undefined) => void
   /** Start a new session in a row's Workspace (row menu action). */
   startSession: (workspaceId: WorkspaceId) => void
-  /** Browser-local organization metadata (tags + waiting-on parent). */
+  /** Browser-local organization metadata (group + waiting-on parent). */
   sessionMeta: Readonly<Record<string, SessionMeta>>
-  /** Explicitly created tags; empty tag sections stay visible. */
-  knownTags: readonly string[]
+  /** Explicitly created groups; empty sections stay visible. */
+  knownGroups: readonly string[]
   /** Persist a session's waiting-on parent (drag nest-under and menu picker). */
   setSessionParent: (sessionId: string, parent: string | undefined) => void
-  /** Persist a session's tags (tag-section drag drop and the tag editor). */
-  setSessionTags: (sessionId: string, tags: string[]) => void
+  /** Persist a session's exclusive group. */
+  setSessionGroup: (sessionId: string, group: string | undefined) => void
   /** Persist a session's unread flag (row menu action; cleared on open). */
   setSessionUnread: (sessionId: string, unread: boolean) => void
-  /** Delete a tag everywhere (tag-section row menu action). */
-  removeTag: (tag: string) => void
+  /** Delete a group everywhere (group-section row menu action). */
+  removeGroup: (group: string) => void
   /** Unread-only filter (hide rows without the unread flag). */
   unreadOnly: boolean
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
-  /** Grouping mode: workspace sections or tag sections (flat has its own body). */
-  groupBy: Extract<SessionGroupBy, 'workspace' | 'tag'>
-  bulk: BulkRowsProps
+  /** Grouping mode: workspace sections or user groups (flat has its own body). */
+  groupBy: Extract<SessionGroupBy, 'workspace' | 'group'>
+  /** Optional browser-owned batch-selection controller. */
+  batchSelection?: BatchSelection | undefined
 }
 
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
   useSessions, startSession, open, forkSession, workspaces, archivedSessionIds,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onEditTags,
-  sessionMeta, knownTags, setSessionParent, setSessionTags, setSessionUnread, removeTag, unreadOnly,
+  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onEditGroup,
+  sessionMeta, knownGroups, setSessionParent, setSessionGroup, setSessionUnread, removeGroup, unreadOnly,
   insertWorkspaceBefore, insertSessionBefore, orderBy, groupBy,
   groupExpansion, setGroupExpanded,
-  sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, bulk, t,
+  sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, batchSelection, t,
 }: SessionTreeProps) {
   const list = useSessions(s => s)
   const current = list.current
@@ -343,16 +348,16 @@ function SessionTree({
   const toggleUnread = (id: SessionNode['id']) => {
     setSessionUnread(id, !(sessionMeta[id]?.unread === true))
   }
-  // Tag inheritance: the "new session in this workspace" row action tags the
-  // freshly created (blank) session with the source row's tags once it
+  // Group inheritance: the "new session in this workspace" row action tags the
+  // freshly created (blank) session with the source row's group once it
   // becomes current (startSession opens without returning the new id).
-  const inheritTagsRef = useRef<{ workspaceId: WorkspaceId; tags: string[] } | null>(null)
-  const inheritTagsTimer = useRef<number | null>(null)
-  const inheritTags = (workspaceId: WorkspaceId, tags: string[]) => {
-    scheduleTagInheritance(inheritTagsRef, inheritTagsTimer, workspaceId, tags)
+  const inheritGroupRef = useRef<InheritGroupHolder['current']>(null)
+  const inheritGroupTimer = useRef<number | null>(null)
+  const inheritGroup = (workspaceId: WorkspaceId, group: string | undefined) => {
+    scheduleGroupInheritance(inheritGroupRef, inheritGroupTimer, workspaceId, group)
   }
   useEffect(() => {
-    const pending = inheritTagsRef.current
+    const pending = inheritGroupRef.current
     if (pending === null) return
     const current = list.current
     if (current === undefined) return
@@ -361,16 +366,16 @@ function SessionTree({
     const row = list.byId[current]
     if (row === undefined) return
     // Only the freshly created blank session inherits. Matching any session
-    // in the workspace would clobber the tags of a task the user opens
+    // in the workspace would clobber the group of a task the user opens
     // before the blank lands; a real task becoming current first drops the
     // pending instead.
     if (!row.blank) {
-      inheritTagsRef.current = null
+      inheritGroupRef.current = null
       return
     }
-    inheritTagsRef.current = null
-    setSessionTags(current, pending.tags)
-  }, [list, workspaces, setSessionTags])
+    inheritGroupRef.current = null
+    setSessionGroup(current, pending.group)
+  }, [list, workspaces, setSessionGroup])
   const [expandedSessionGroups, setExpandedSessionGroups] = useState<string[]>([])
   // Transient drag marker state; the selected mode owns the resulting order.
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -380,7 +385,7 @@ function SessionTree({
   const previousOrderBy = useRef(orderBy)
   const nativeDragActive = drag !== null || workspaceDrag !== null
   useNativeDragAcceptance(nativeDragActive)
-  const tagMode = groupBy === 'tag'
+  const groupMode = groupBy === 'group'
   const currentGroup = current === undefined
     ? undefined
     : (workspaces.find(w => w.sessionIds.includes(current))?.workspaceId as string | undefined)
@@ -389,15 +394,15 @@ function SessionTree({
     if (current === undefined || currentGroup === undefined || Object.hasOwn(groupExpansion, currentGroup)) return
     setGroupExpanded(currentGroup, true)
   }, [current, currentGroup, setGroupExpanded, groupExpansion])
-  // Reveal the current session's tag sections too, so a deep-linked session
-  // is never hidden behind a collapsed tag group in the tag view.
+  // Reveal the current session's user group so a deep-linked session is never
+  // hidden behind a collapsed group section.
   useEffect(() => {
-    if (current === undefined || !tagMode) return
-    for (const tag of sessionMeta[current]?.tags ?? []) {
-      const key = TAG_GROUP_PREFIX + tag
-      if (!Object.hasOwn(groupExpansion, key)) setGroupExpanded(key, true)
-    }
-  }, [current, tagMode, sessionMeta, setGroupExpanded, groupExpansion])
+    if (current === undefined || !groupMode) return
+    const group = sessionMeta[current]?.group
+    if (group === undefined) return
+    const key = GROUP_SECTION_PREFIX + group
+    if (!Object.hasOwn(groupExpansion, key)) setGroupExpanded(key, true)
+  }, [current, groupMode, sessionMeta, setGroupExpanded, groupExpansion])
   // Deep-link jumps (notifier clicks) open a session whose row may sit below
   // the fold; scroll the tree to the row once it renders.
   useEffect(() => {
@@ -463,8 +468,10 @@ function SessionTree({
     [sessionOrderByAccount, ungroupedSessionIds],
   )
   const groups = useMemo(
-    () => tagMode
-      ? deriveTagGroups(list, orderedWorkspaces, archivedSessionIds, { expandedGroups, sessionMeta, knownTags, unreadOnly })
+    () => groupMode
+      ? deriveUserGroups(list, orderedWorkspaces, archivedSessionIds, {
+        expandedGroups, sessionMeta, knownGroups, sessionOrderByAccount, unreadOnly,
+      })
       : deriveGroups(list, orderedWorkspaces, archivedSessionIds, {
         expandedGroups,
         sessionMeta,
@@ -473,35 +480,26 @@ function SessionTree({
           ? {}
           : { ungroupedOrder: sessionOrderByAccount[UNGROUPED_KEY] }),
       }),
-    [list, orderedWorkspaces, archivedSessionIds, expandedGroups, sessionMeta, knownTags, sessionOrderByAccount, unreadOnly, tagMode],
+    [list, orderedWorkspaces, archivedSessionIds, expandedGroups, sessionMeta, knownGroups, sessionOrderByAccount, unreadOnly, groupMode],
   )
-  const visibleSelectableIds = useMemo(
+  const visibleSessionIds = useMemo(
     () => groups.flatMap(group => (expandedSessionGroups.includes(group.key)
       ? group.sessions
-      : group.sessions.slice(0, COLLAPSED_SESSION_LIMIT))
+      : group.sessions.slice(0, COLLAPSED_SESSION_LIMIT)))
       .filter(node => !node.blank)
-      .map(node => node.id)),
+      .map(node => node.id),
     [expandedSessionGroups, groups],
   )
   useEffect(() => {
-    if (bulk.active) bulk.reportVisible(visibleSelectableIds)
-  }, [bulk.active, bulk.reportVisible, visibleSelectableIds])
+    batchSelection?.onVisibleIdsChange(visibleSessionIds)
+  }, [batchSelection?.onVisibleIdsChange, visibleSessionIds])
   const now = Date.now()
-  /** Tag-view section-header drop: apply (or clear, for the untagged bucket) the dragged session's tags. */
-  const commitTagDrop = (activeDrag: DragState, group: GroupNode): void => {
+  /** Group-view header drop: move the dragged session into that exclusive group. */
+  const commitGroupDrop = (activeDrag: DragState, group: GroupNode): void => {
     if (sessionDropCommitted.current) return
     sessionDropCommitted.current = true
     setDrag(null)
-    if (group.kind === 'untagged') {
-      setSessionTags(activeDrag.sessionId, [])
-      return
-    }
-    if (group.kind === 'tag') {
-      const current = sessionMeta[activeDrag.sessionId]?.tags ?? []
-      if (!current.includes(group.label)) {
-        setSessionTags(activeDrag.sessionId, [...current, group.label])
-      }
-    }
+    setSessionGroup(activeDrag.sessionId, group.kind === 'unassigned' ? undefined : group.label)
   }
   const commitSessionDrag = (activeDrag: DragState, over: NonNullable<DragState['over']>): void => {
     if (sessionDropCommitted.current) return
@@ -517,7 +515,7 @@ function SessionTree({
     }
     const group = groups.find(candidate => candidate.key === activeDrag.accountKey)
     if (group === undefined) return
-    // Tag sections are derived; dropping between their rows changes nothing.
+    // Group sections are derived; dropping between their rows changes nothing.
     if (group.kind !== undefined) return
     // Reordering a nested row detaches it from its waiting-on parent: dropping
     // between rows means "back to the flat list" for a nested session.
@@ -654,15 +652,15 @@ function SessionTree({
                     startSession(group.workspaceId)
                   }
                 }}
-                drag={bulk.active ? undefined : workspaceDragProps}
-                dropTarget={tagMode && group.kind !== undefined && drag !== null
+                drag={batchSelection === undefined ? workspaceDragProps : undefined}
+                dropTarget={groupMode && group.kind !== undefined && drag !== null
                   ? {
                     active: true,
-                    onDrop: () => { commitTagDrop(drag, group) },
+                    onDrop: () => { commitGroupDrop(drag, group) },
                   }
                   : undefined}
-                onDeleteTag={group.kind === 'tag'
-                  ? () => { removeTag(group.label) }
+                onDeleteGroup={group.kind === 'group'
+                  ? () => { removeGroup(group.label) }
                   : undefined}
                 actions={group.workspaceId === undefined
                   ? undefined
@@ -682,7 +680,7 @@ function SessionTree({
                 : group.sessions.slice(0, COLLAPSED_SESSION_LIMIT)
               ).map((node) => {
               // Session drag works in every grouped mode: workspace groups
-              // reorder and nest; tag sections nest and tag (drop on the
+              // reorder and nest; group sections nest and move (drop on the
               // section header), but never reorder (derived membership).
                 const sameGroupDrag = drag !== null && drag.accountKey === group.key
                 const dragProps = {
@@ -717,7 +715,7 @@ function SessionTree({
                     onRename={onSessionRename}
                     onFork={forkSession}
                     onArchive={onSessionArchive}
-                    onEditTags={onEditTags}
+                    onEditGroup={onEditGroup}
                     onNewSession={node.workspaceId === undefined
                       ? undefined
                       : () => {
@@ -725,14 +723,19 @@ function SessionTree({
                         // property, so tsc drops the ternary narrowing inside
                         // the arrow; the checked value is captured first.
                         const workspaceId = node.workspaceId as WorkspaceId
-                        inheritTags(workspaceId, node.tags)
+                        inheritGroup(workspaceId, node.group)
                         startSession(workspaceId)
                       }}
                     onToggleUnread={() => { toggleUnread(node.id) }}
-                    drag={bulk.active ? undefined : dragProps}
-                    bulk={bulk.active
-                      ? { selected: bulk.selected.has(node.id), toggle: (shiftKey) => { bulk.toggle(node.id, shiftKey) } }
-                      : undefined}
+                    selection={batchSelection === undefined || node.blank
+                      ? undefined
+                      : {
+                        checked: batchSelection.selectedIds.includes(node.id),
+                        onToggle: (checked, shiftKey) => {
+                          batchSelection.onToggle(node.id, checked, shiftKey, visibleSessionIds)
+                        },
+                      }}
+                    drag={batchSelection === undefined ? dragProps : undefined}
                     t={t}
                   />
                 )
@@ -760,9 +763,10 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  useSessions, startSession, open, forkSession, onSessionRename, onSessionArchive, onEditTags,
-  setSessionParent, setSessionUnread, setSessionTags, sessionMeta, workspaces, archivedSessionIds,
-  orderBy, unreadOnly, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, bulk, t,
+  useSessions, startSession, open, forkSession, onSessionRename, onSessionArchive, onEditGroup,
+  setSessionParent, setSessionUnread, setSessionGroup, sessionMeta, workspaces, archivedSessionIds,
+  orderBy, unreadOnly, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder,
+  batchSelection, t,
 }: Pick<
   SessionTreeProps,
   | 'useSessions'
@@ -771,10 +775,10 @@ function FlatList({
   | 'forkSession'
   | 'onSessionRename'
   | 'onSessionArchive'
-  | 'onEditTags'
+  | 'onEditGroup'
   | 'setSessionParent'
   | 'setSessionUnread'
-  | 'setSessionTags'
+  | 'setSessionGroup'
   | 'sessionMeta'
   | 'workspaces'
   | 'archivedSessionIds'
@@ -784,7 +788,7 @@ function FlatList({
   | 'sessionUpdatedAtByAccount'
   | 'syncSessionOrderAccount'
   | 'setSessionOrder'
-  | 'bulk'
+  | 'batchSelection'
   | 't'
 >) {
   const list = useSessions(s => s)
@@ -796,16 +800,16 @@ function FlatList({
   const toggleUnread = (id: SessionNode['id']) => {
     setSessionUnread(id, !(sessionMeta[id]?.unread === true))
   }
-  // Tag inheritance (same contract as SessionTree): the "new session in this
+  // Group inheritance (same contract as SessionTree): the "new session in this
   // workspace" row action tags the freshly created session with the source
   // row's tags once it becomes current.
-  const inheritTagsRef = useRef<{ workspaceId: WorkspaceId; tags: string[] } | null>(null)
-  const inheritTagsTimer = useRef<number | null>(null)
-  const inheritTags = (workspaceId: WorkspaceId, tags: string[]) => {
-    scheduleTagInheritance(inheritTagsRef, inheritTagsTimer, workspaceId, tags)
+  const inheritGroupRef = useRef<InheritGroupHolder['current']>(null)
+  const inheritGroupTimer = useRef<number | null>(null)
+  const inheritGroup = (workspaceId: WorkspaceId, group: string | undefined) => {
+    scheduleGroupInheritance(inheritGroupRef, inheritGroupTimer, workspaceId, group)
   }
   useEffect(() => {
-    const pending = inheritTagsRef.current
+    const pending = inheritGroupRef.current
     if (pending === null) return
     const current = list.current
     if (current === undefined) return
@@ -814,16 +818,16 @@ function FlatList({
     const row = list.byId[current]
     if (row === undefined) return
     // Only the freshly created blank session inherits. Matching any session
-    // in the workspace would clobber the tags of a task the user opens
+    // in the workspace would clobber the group of a task the user opens
     // before the blank lands; a real task becoming current first drops the
     // pending instead.
     if (!row.blank) {
-      inheritTagsRef.current = null
+      inheritGroupRef.current = null
       return
     }
-    inheritTagsRef.current = null
-    setSessionTags(current, pending.tags)
-  }, [list, workspaces, setSessionTags])
+    inheritGroupRef.current = null
+    setSessionGroup(current, pending.group)
+  }, [list, workspaces, setSessionGroup])
   const baseRows = useMemo(
     () => deriveFlat(list, workspaces, archivedSessionIds, sessionMeta, unreadOnly),
     [list, workspaces, archivedSessionIds, sessionMeta, unreadOnly],
@@ -874,10 +878,10 @@ function FlatList({
         return row === undefined ? [] : [row]
       })
   }, [baseRows, sessionOrderByAccount, sessionIds])
-  const visibleSelectableIds = useMemo(() => rows.filter(node => !node.blank).map(node => node.id), [rows])
+  const visibleSessionIds = useMemo(() => rows.filter(node => !node.blank).map(node => node.id), [rows])
   useEffect(() => {
-    if (bulk.active) bulk.reportVisible(visibleSelectableIds)
-  }, [bulk.active, bulk.reportVisible, visibleSelectableIds])
+    batchSelection?.onVisibleIdsChange(visibleSessionIds)
+  }, [batchSelection?.onVisibleIdsChange, visibleSessionIds])
   const [drag, setDrag] = useState<DragState | null>(null)
   const dropCommitted = useRef(false)
   useNativeDragAcceptance(drag !== null)
@@ -923,21 +927,26 @@ function FlatList({
               onRename={onSessionRename}
               onFork={forkSession}
               onArchive={onSessionArchive}
-              onEditTags={onEditTags}
+              onEditGroup={onEditGroup}
               onNewSession={node.workspaceId === undefined
                 ? undefined
                 : () => {
                   // Closure narrowing guard (same as SessionTree).
                   const workspaceId = node.workspaceId as WorkspaceId
-                  inheritTags(workspaceId, node.tags)
+                  inheritGroup(workspaceId, node.group)
                   startSession(workspaceId)
                 }}
               onToggleUnread={() => { toggleUnread(node.id) }}
+              selection={batchSelection === undefined || node.blank
+                ? undefined
+                : {
+                  checked: batchSelection.selectedIds.includes(node.id),
+                  onToggle: (checked, shiftKey) => {
+                    batchSelection.onToggle(node.id, checked, shiftKey, visibleSessionIds)
+                  },
+                }}
               flat
-              bulk={bulk.active
-                ? { selected: bulk.selected.has(node.id), toggle: (shiftKey) => { bulk.toggle(node.id, shiftKey) } }
-                : undefined}
-              drag={bulk.active ? undefined : {
+              drag={batchSelection === undefined ? {
                 start: () => {
                   dropCommitted.current = false
                   setDrag({ accountKey: FLAT_SESSION_ORDER_KEY, sessionId: node.id, over: null })
@@ -955,7 +964,7 @@ function FlatList({
                   else setDrag(null)
                   dropCommitted.current = false
                 },
-              }}
+              } : undefined}
               t={t}
             />
           )
@@ -1080,74 +1089,7 @@ export function WorkspaceBrowser({
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const sessionUpdatedAtByAccount = useStore(s => s.sessionUpdatedAtByAccount)
   const sessionMeta = useStore(s => s.sessionMeta)
-  const knownTags = useStore(s => s.knownTags)
-  const [bulkMode, setBulkMode] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<SessionId[]>([])
-  const [visibleIds, setVisibleIds] = useState<SessionId[]>([])
-  const visibleIdsRef = useRef<readonly SessionId[]>([])
-  const bulkAnchor = useRef<SessionId | null>(null)
-  const [bulkArchiveArmed, setBulkArchiveArmed] = useState(false)
-  const [bulkArchiving, setBulkArchiving] = useState(false)
-  const [bulkArchiveResult, setBulkArchiveResult] = useState<{ succeeded: number; failed: number } | null>(null)
-  const clearBulkSelection = useCallback(() => {
-    bulkAnchor.current = null
-    setSelectedIds([])
-    setBulkArchiveArmed(false)
-    setBulkArchiveResult(null)
-  }, [])
-  const exitBulkMode = useCallback(() => {
-    setBulkMode(false)
-    visibleIdsRef.current = []
-    setVisibleIds([])
-    clearBulkSelection()
-  }, [clearBulkSelection])
-  const reportVisible = useCallback((nextIds: readonly SessionId[]) => {
-    visibleIdsRef.current = nextIds
-    setVisibleIds(current => current.length === nextIds.length && current.every((id, index) => id === nextIds[index])
-      ? current
-      : [...nextIds])
-    const visible = new Set(nextIds)
-    setSelectedIds((current) => {
-      const next = current.filter(id => visible.has(id))
-      return next.length === current.length ? current : next
-    })
-    if (bulkAnchor.current !== null && !visible.has(bulkAnchor.current)) bulkAnchor.current = null
-  }, [])
-  const toggleBulkSession = useCallback((sessionId: SessionId, shiftKey: boolean) => {
-    setBulkArchiveArmed(false)
-    setBulkArchiveResult(null)
-    setSelectedIds((current) => {
-      const selected = new Set(current)
-      const anchor = bulkAnchor.current
-      if (shiftKey && anchor !== null) {
-        const anchorIndex = visibleIds.indexOf(anchor)
-        const targetIndex = visibleIds.indexOf(sessionId)
-        if (anchorIndex !== -1 && targetIndex !== -1) {
-          const start = Math.min(anchorIndex, targetIndex)
-          const end = Math.max(anchorIndex, targetIndex)
-          for (const id of visibleIds.slice(start, end + 1)) selected.add(id)
-        }
-      } else if (selected.has(sessionId)) {
-        selected.delete(sessionId)
-      } else {
-        selected.add(sessionId)
-      }
-      bulkAnchor.current = sessionId
-      return visibleIds.filter(id => selected.has(id))
-    })
-  }, [visibleIds])
-  const bulkRows = useMemo<BulkRowsProps>(() => ({
-    active: bulkMode,
-    selected: new Set(selectedIds),
-    toggle: toggleBulkSession,
-    reportVisible,
-  }), [bulkMode, reportVisible, selectedIds, toggleBulkSession])
-  const previousViewFilter = useRef({ groupBy, unreadOnly })
-  useEffect(() => {
-    const previous = previousViewFilter.current
-    previousViewFilter.current = { groupBy, unreadOnly }
-    if (previous.groupBy !== groupBy || previous.unreadOnly !== unreadOnly) clearBulkSelection()
-  }, [clearBulkSelection, groupBy, unreadOnly])
+  const knownGroups = useStore(s => s.knownGroups)
   useEffect(() => {
     if (workspacePhase !== 'ready') return
     actions.retainAccountKeys([
@@ -1160,7 +1102,15 @@ export function WorkspaceBrowser({
   // does not silently drop an in-progress filter.
   const [query, setQuery] = useState('')
   const [searchExpanded, setSearchExpanded] = useState(false)
+  const [boardOpen, setBoardOpen] = useState(false)
   const normalizedQuery = sanitizeSearchQuery(query).trim()
+  const [batchMode, setBatchMode] = useState(false)
+  const [selectedSessionIds, setSelectedSessionIds] = useState<SessionNode['id'][]>([])
+  const [visibleSessionIds, setVisibleSessionIds] = useState<readonly SessionNode['id'][]>([])
+  const batchAnchor = useRef<SessionNode['id'] | null>(null)
+  const [bulkConfirming, setBulkConfirming] = useState(false)
+  const [bulkArchiving, setBulkArchiving] = useState(false)
+  const [bulkResult, setBulkResult] = useState<string | null>(null)
   const [remoteSearch, setRemoteSearch] = useState<RemoteSearchState>({
     query: '',
     status: 'idle',
@@ -1247,6 +1197,90 @@ export function WorkspaceBrowser({
     }
   }, [normalizedQuery, searchSessions])
 
+  const clearBatchSelection = () => {
+    setSelectedSessionIds([])
+    batchAnchor.current = null
+    setBulkConfirming(false)
+    setBulkResult(null)
+  }
+  const exitBatchMode = () => {
+    clearBatchSelection()
+    setBatchMode(false)
+  }
+  useEffect(() => {
+    clearBatchSelection()
+  }, [groupBy, unreadOnly])
+  useEffect(() => {
+    if (normalizedQuery !== '') exitBatchMode()
+  }, [normalizedQuery])
+  useEffect(() => {
+    const visible = new Set(visibleSessionIds)
+    setSelectedSessionIds((current) => {
+      const next = current.filter(id => visible.has(id))
+      return next.length === current.length ? current : next
+    })
+  }, [visibleSessionIds])
+  const toggleBatchSelection: BatchSelection['onToggle'] = (sessionId, checked, shiftKey, orderedIds) => {
+    const anchor = batchAnchor.current
+    setBulkConfirming(false)
+    setBulkResult(null)
+    setSelectedSessionIds((current) => {
+      const next = new Set(current)
+      const anchorIndex = anchor === null ? -1 : orderedIds.indexOf(anchor)
+      const targetIndex = orderedIds.indexOf(sessionId)
+      if (shiftKey && anchorIndex !== -1 && targetIndex !== -1) {
+        const start = Math.min(anchorIndex, targetIndex)
+        const end = Math.max(anchorIndex, targetIndex)
+        for (const id of orderedIds.slice(start, end + 1)) {
+          if (checked) next.add(id)
+          else next.delete(id)
+        }
+      } else if (checked) next.add(sessionId)
+      else next.delete(sessionId)
+      return [...next]
+    })
+    batchAnchor.current = sessionId
+  }
+  const allVisibleSelected = visibleSessionIds.length > 0
+    && visibleSessionIds.every(id => selectedSessionIds.includes(id))
+  const toggleAllVisible = () => {
+    setBulkConfirming(false)
+    setBulkResult(null)
+    if (allVisibleSelected) {
+      const visible = new Set(visibleSessionIds)
+      setSelectedSessionIds(current => current.filter(id => !visible.has(id)))
+      batchAnchor.current = null
+    } else {
+      setSelectedSessionIds(current => [...new Set([...current, ...visibleSessionIds])])
+      batchAnchor.current = visibleSessionIds.at(-1) ?? null
+    }
+  }
+  const archiveSelected = () => {
+    if (bulkArchiving || selectedSessionIds.length === 0) return
+    if (!bulkConfirming) {
+      setBulkConfirming(true)
+      return
+    }
+    setBulkConfirming(false)
+    setBulkArchiving(true)
+    setBulkResult(null)
+    const targets = [...selectedSessionIds]
+    void Promise.allSettled(targets.map(sessionId => archiveSession(sessionId))).then((results) => {
+      const failed = targets.filter((_, index) => results[index]?.status === 'rejected')
+      for (const [index, result] of results.entries()) {
+        if (result.status === 'rejected') console.warn('session archive rejected:', targets[index], result.reason)
+      }
+      setBulkArchiving(false)
+      if (failed.length === 0) {
+        exitBatchMode()
+        return
+      }
+      setSelectedSessionIds(failed)
+      batchAnchor.current = failed[0] ?? null
+      setBulkResult(t('bulk.partialFailure', { succeeded: targets.length - failed.length, failed: failed.length }))
+    })
+  }
+
   // Rename dialog (browser-owned so it outlives row unmounts during collapse).
   const [renameTarget, setRenameTarget] = useState<{ workspaceId: WorkspaceId; currentTitle: string } | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
@@ -1308,41 +1342,33 @@ export function WorkspaceBrowser({
     setSessionRenameError(null)
   }
 
-  // Tag editor: browser-local metadata (persisted by the viewing store), so
-  // the commit is a store action — no host round trip, no dialog busy state.
-  const [tagTarget, setTagTarget] = useState<{ sessionId: SessionNode['id']; tags: string[] } | null>(null)
-  const [tagDraft, setTagDraft] = useState('')
-  const [tagCreateOpen, setTagCreateOpen] = useState(false)
-  const [tagCreateDraft, setTagCreateDraft] = useState('')
-  // Autocomplete source for tag inputs: every tag currently in use plus
-  // explicitly created empty tags, deduplicated and sorted.
-  const existingTags = useMemo(() => {
-    const seen = new Set(knownTags)
+  // Group editor: browser-local metadata, committed without a host round trip.
+  const [groupTarget, setGroupTarget] = useState<{ sessionId: SessionNode['id']; group: string | undefined } | null>(null)
+  const [groupDraft, setGroupDraft] = useState('')
+  const [groupCreateOpen, setGroupCreateOpen] = useState(false)
+  const [groupCreateDraft, setGroupCreateDraft] = useState('')
+  const existingGroups = useMemo(() => {
+    const seen = new Set(knownGroups)
     for (const entry of Object.values(sessionMeta)) {
-      for (const tag of entry.tags ?? []) seen.add(tag)
+      if (entry.group !== undefined) seen.add(entry.group)
     }
     return [...seen].sort((a, b) => a.localeCompare(b))
-  }, [knownTags, sessionMeta])
-  const confirmTagCreate = () => {
-    const tag = tagCreateDraft.trim()
-    if (tag === '') return
-    actions.addKnownTag(tag.slice(0, 32))
-    setTagCreateOpen(false)
-    setTagCreateDraft('')
+  }, [knownGroups, sessionMeta])
+  const confirmGroupCreate = () => {
+    const group = normalizeGroupName(groupCreateDraft)
+    if (group === undefined) return
+    actions.addKnownGroup(group)
+    setGroupCreateOpen(false)
+    setGroupCreateDraft('')
   }
-  const onEditTags = (sessionId: SessionNode['id'], currentTags: string[]) => {
-    setTagTarget({ sessionId, tags: currentTags })
-    setTagDraft(currentTags.join(', '))
+  const onEditGroup = (sessionId: SessionNode['id'], currentGroup: string | undefined) => {
+    setGroupTarget({ sessionId, group: currentGroup })
+    setGroupDraft(currentGroup ?? '')
   }
-  const confirmTags = () => {
-    if (tagTarget === null) return
-    const tags = tagDraft.split(/[,，]/)
-      .map(tag => tag.trim())
-      .filter(tag => tag.length > 0)
-      .filter((tag, index, all) => all.indexOf(tag) === index)
-      .slice(0, 8)
-    actions.setSessionTags(tagTarget.sessionId, tags)
-    setTagTarget(null)
+  const confirmGroup = () => {
+    if (groupTarget === null) return
+    actions.setSessionGroup(groupTarget.sessionId, normalizeGroupName(groupDraft))
+    setGroupTarget(null)
   }
 
   // Archive is dialog-free: not destructive (the log and the accounting slot
@@ -1352,30 +1378,6 @@ export function WorkspaceBrowser({
   const onSessionArchive = (sessionId: SessionNode['id']) => {
     archiveSession(sessionId).catch((reason: unknown) => {
       console.warn('session archive rejected:', reason)
-    })
-  }
-  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.includes(id))
-  const confirmBulkArchive = () => {
-    if (bulkArchiving || selectedIds.length === 0) return
-    if (!bulkArchiveArmed) {
-      setBulkArchiveArmed(true)
-      return
-    }
-    setBulkArchiveArmed(false)
-    setBulkArchiving(true)
-    setBulkArchiveResult(null)
-    const targets = [...selectedIds]
-    void Promise.allSettled(targets.map(async sessionId => archiveSession(sessionId))).then((results) => {
-      const failures = targets.filter((_, index) => results[index]?.status === 'rejected')
-      setBulkArchiving(false)
-      if (failures.length === 0) {
-        exitBulkMode()
-        return
-      }
-      const retainedFailures = failures.filter(id => visibleIdsRef.current.includes(id))
-      setSelectedIds(retainedFailures)
-      bulkAnchor.current = retainedFailures[retainedFailures.length - 1] ?? null
-      setBulkArchiveResult({ succeeded: targets.length - failures.length, failed: failures.length })
     })
   }
 
@@ -1419,7 +1421,7 @@ export function WorkspaceBrowser({
       <div className={css.sectionHeader}>
         {wide && (
           <span className={clsx(css.sectionLabel, css.wide, searchExpanded && css.sectionLabelHidden)}>
-            {groupBy === 'flat' || groupBy === 'tag' ? t('section.sessions') : t('section.workspaces')}
+            {groupBy === 'flat' || groupBy === 'group' ? t('section.sessions') : t('section.workspaces')}
           </span>
         )}
         {wide && (
@@ -1428,7 +1430,6 @@ export function WorkspaceBrowser({
               ref={searchRoot}
               className={clsx(css.search, searchExpanded && css.searchExpanded)}
               onClick={() => {
-                exitBulkMode()
                 setWsPickerOpen(false)
                 setSearchExpanded(true)
                 searchInput.current?.focus()
@@ -1441,7 +1442,7 @@ export function WorkspaceBrowser({
                   aria-label={t('search.sessions.aria')}
                   aria-expanded={searchExpanded}
                   onClick={() => {
-                    exitBulkMode()
+                    exitBatchMode()
                     setWsPickerOpen(false)
                     setSearchExpanded(true)
                   }}
@@ -1457,10 +1458,7 @@ export function WorkspaceBrowser({
                 maxLength={SEARCH_QUERY_MAX_CODE_UNITS}
                 value={query}
                 tabIndex={searchExpanded ? 0 : -1}
-                onChange={(e) => {
-                  exitBulkMode()
-                  setQuery(sanitizeSearchQuery(e.target.value))
-                }}
+                onChange={(e) => { setQuery(sanitizeSearchQuery(e.target.value)) }}
                 onKeyDown={(e) => {
                   if (e.key !== 'Escape') return
                   setQuery('')
@@ -1486,17 +1484,17 @@ export function WorkspaceBrowser({
         )}
         <div className={clsx(css.headerActions, wide && searchExpanded && css.headerActionsHidden)}>
           {wide && (
-            <Tooltip label={t('bulk.enter')} side="bottom" delayMs={500}>
+            <Tooltip label={t(batchMode ? 'bulk.exit' : 'bulk.enter')} side="bottom" delayMs={500}>
               <button
                 type="button"
-                className={clsx(css.iconButton, bulkMode && css.bulkModeOn)}
-                aria-label={t('bulk.enter')}
-                aria-pressed={bulkMode}
+                className={clsx(css.iconButton, batchMode && css.batchModeOn)}
+                aria-label={t(batchMode ? 'bulk.exit' : 'bulk.enter')}
+                aria-pressed={batchMode}
                 onClick={() => {
-                  if (bulkMode) exitBulkMode()
+                  if (batchMode) exitBatchMode()
                   else {
-                    setBulkMode(true)
-                    setBulkArchiveResult(null)
+                    clearBatchSelection()
+                    setBatchMode(true)
                   }
                 }}
               >
@@ -1508,7 +1506,7 @@ export function WorkspaceBrowser({
             <ViewOptionsMenu
               groupBy={groupBy}
               orderBy={orderBy}
-              onGroupPick={(mode) => { clearBulkSelection(); actions.setGroupBy(mode) }}
+              onGroupPick={(mode) => { actions.setGroupBy(mode) }}
               onOrderPick={(mode) => { actions.setOrderBy(mode) }}
               t={t}
             />
@@ -1520,7 +1518,7 @@ export function WorkspaceBrowser({
                 className={clsx(css.iconButton, unreadOnly && css.unreadFilterOn)}
                 aria-label={unreadOnly ? t('filter.all') : t('filter.unreadOnly')}
                 aria-pressed={unreadOnly}
-                onClick={() => { clearBulkSelection(); actions.setUnreadOnly(!unreadOnly) }}
+                onClick={() => { actions.setUnreadOnly(!unreadOnly) }}
               >
                 <svg width={14} height={14} viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
                   <circle cx="7" cy="7" r="4.5" />
@@ -1528,11 +1526,27 @@ export function WorkspaceBrowser({
               </button>
             </Tooltip>
           )}
+          {wide && !batchMode && (
+            <Tooltip label={t('board.open')} side="bottom" delayMs={500}>
+              <button
+                type="button"
+                className={css.iconButton}
+                aria-label={t('board.open')}
+                onClick={() => { setBoardOpen(true) }}
+              >
+                <svg width={15} height={15} viewBox="0 0 15 15" fill="none" aria-hidden="true">
+                  <rect x="1.5" y="2" width="3.5" height="11" rx="1" stroke="currentColor" />
+                  <rect x="5.75" y="2" width="3.5" height="7" rx="1" stroke="currentColor" />
+                  <rect x="10" y="2" width="3.5" height="9" rx="1" stroke="currentColor" />
+                </svg>
+              </button>
+            </Tooltip>
+          )}
           {/* Adding is the button's one action, so a composition with no
               picking affordance has nothing to offer here: the region hides the
-              button rather than leaving a dead one in the header. The tag view
-              swaps the workspace add for the tag add. */}
-          {directoryFlowAvailable && groupBy !== 'tag' && (
+              button rather than leaving a dead one in the header. The group view
+              swaps the workspace add for the group add. */}
+          {!batchMode && directoryFlowAvailable && groupBy !== 'group' && (
             <Tooltip label={t('workspace.add')} side="bottom" delayMs={500}>
               <button
                 ref={wsPlusRef}
@@ -1547,14 +1561,14 @@ export function WorkspaceBrowser({
               </button>
             </Tooltip>
           )}
-          {/* Tag view keeps a dedicated tag-creation entry beside the workspace add. */}
-          {groupBy === 'tag' && (
-            <Tooltip label={t('tags.add')} side="bottom" delayMs={500}>
+          {/* Group view keeps a dedicated group-creation entry beside the workspace add. */}
+          {!batchMode && groupBy === 'group' && (
+            <Tooltip label={t('groups.add')} side="bottom" delayMs={500}>
               <button
                 type="button"
                 className={css.iconButton}
-                aria-label={t('tags.add')}
-                onClick={() => { setTagCreateOpen(true) }}
+                aria-label={t('groups.add')}
+                onClick={() => { setGroupCreateOpen(true) }}
               >
                 <IconPlusOutline16 size={wide ? 16 : 18} />
               </button>
@@ -1588,7 +1602,6 @@ export function WorkspaceBrowser({
             className={css.searchButton}
             aria-label={t('search.sessions.aria')}
             onClick={() => {
-              exitBulkMode()
               setSearchExpanded(true)
               setSearchOnExpand(true)
               expandSidebar()
@@ -1620,10 +1633,10 @@ export function WorkspaceBrowser({
               <FlatList
                 useSessions={useSessions} open={open} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
-                onEditTags={onEditTags}
+                onEditGroup={onEditGroup}
                 setSessionParent={actions.setSessionParent}
                 setSessionUnread={actions.setSessionUnread}
-                setSessionTags={actions.setSessionTags}
+                setSessionGroup={actions.setSessionGroup}
                 sessionMeta={sessionMeta}
                 workspaces={workspaces}
                 unreadOnly={unreadOnly}
@@ -1634,7 +1647,13 @@ export function WorkspaceBrowser({
                 syncSessionOrderAccount={actions.syncSessionOrderAccount}
                 setSessionOrder={actions.setSessionOrder}
                 startSession={startSession}
-                bulk={bulkRows}
+                batchSelection={batchMode
+                  ? {
+                    selectedIds: selectedSessionIds,
+                    onToggle: toggleBatchSelection,
+                    onVisibleIdsChange: setVisibleSessionIds,
+                  }
+                  : undefined}
                 t={t}
               />
             )
@@ -1643,15 +1662,15 @@ export function WorkspaceBrowser({
                 useSessions={useSessions}
                 groupBy={groupBy}
                 sessionMeta={sessionMeta}
-                knownTags={knownTags}
+                knownGroups={knownGroups}
                 setSessionParent={actions.setSessionParent}
-                setSessionTags={actions.setSessionTags}
+                setSessionGroup={actions.setSessionGroup}
                 setSessionUnread={actions.setSessionUnread}
-                removeTag={actions.removeTag}
+                removeGroup={actions.removeGroup}
                 unreadOnly={unreadOnly}
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
-                onEditTags={onEditTags}
+                onEditGroup={onEditGroup}
                 forkSession={forkSession}
                 workspaces={workspaces}
                 groupExpansion={groupExpansion}
@@ -1667,7 +1686,13 @@ export function WorkspaceBrowser({
                 insertSessionBefore={insertSessionBefore}
                 orderBy={orderBy}
                 home={home}
-                bulk={bulkRows}
+                batchSelection={batchMode
+                  ? {
+                    selectedIds: selectedSessionIds,
+                    onToggle: toggleBatchSelection,
+                    onVisibleIdsChange: setVisibleSessionIds,
+                  }
+                  : undefined}
                 t={t}
                 onRenameRequest={(workspaceId, currentTitle) => {
                   setRenameTarget({ workspaceId, currentTitle })
@@ -1682,50 +1707,34 @@ export function WorkspaceBrowser({
             ))}
       </div>
 
-      {wide && bulkMode && (
-        <div className={css.bulkToolbar} role="toolbar" aria-label={t('bulk.toolbar')}>
-          <span className={css.bulkCount}>{t('bulk.selectedCount', { n: selectedIds.length })}</span>
+      {wide && batchMode && (
+        <div className={css.bulkBar} role="toolbar" aria-label={t('bulk.toolbar')}>
+          <div className={css.bulkSummary}>
+            <span>{t('bulk.selectedCount', { n: selectedSessionIds.length })}</span>
+            {bulkResult !== null && <span className={css.bulkResult} role="status">{bulkResult}</span>}
+          </div>
           <button
             type="button"
             className={css.bulkTextButton}
-            disabled={visibleIds.length === 0 || bulkArchiving}
-            onClick={() => {
-              setBulkArchiveArmed(false)
-              setBulkArchiveResult(null)
-              if (allVisibleSelected) clearBulkSelection()
-              else {
-                setSelectedIds([...visibleIds])
-                bulkAnchor.current = visibleIds[visibleIds.length - 1] ?? null
-              }
-            }}
+            disabled={bulkArchiving || visibleSessionIds.length === 0}
+            onClick={toggleAllVisible}
           >
-            {allVisibleSelected ? t('bulk.clearVisible') : t('bulk.selectVisible')}
+            {t(allVisibleSelected ? 'bulk.clearVisible' : 'bulk.selectVisible')}
           </button>
-          <button type="button" className={css.bulkTextButton} disabled={bulkArchiving} onClick={exitBulkMode}>
+          <button type="button" className={css.bulkTextButton} disabled={bulkArchiving} onClick={exitBatchMode}>
             {t('cancel')}
           </button>
           <button
             type="button"
-            className={clsx(css.bulkArchiveButton, bulkArchiveArmed && css.bulkArchiveArmed)}
-            disabled={selectedIds.length === 0 || bulkArchiving}
-            onBlur={() => { setBulkArchiveArmed(false) }}
-            onKeyDown={(event) => {
-              if (event.key !== 'Escape') return
-              setBulkArchiveArmed(false)
-              event.currentTarget.blur()
-            }}
-            onClick={confirmBulkArchive}
+            className={clsx(css.bulkArchiveButton, bulkConfirming && css.bulkArchiveConfirm)}
+            disabled={bulkArchiving || selectedSessionIds.length === 0}
+            onBlur={() => { if (!bulkArchiving) setBulkConfirming(false) }}
+            onClick={archiveSelected}
           >
-            <IconArchiveOutline20 size={14} />
             {bulkArchiving
               ? t('bulk.archiving')
-              : bulkArchiveArmed ? t('bulk.archiveConfirm') : t('bulk.archive')}
+              : t(bulkConfirming ? 'bulk.archiveConfirm' : 'bulk.archive', { n: selectedSessionIds.length })}
           </button>
-          {bulkArchiveResult !== null && (
-            <span className={css.bulkResult} role="status">
-              {t('bulk.partialFailure', bulkArchiveResult)}
-            </span>
-          )}
         </div>
       )}
 
@@ -1820,60 +1829,79 @@ export function WorkspaceBrowser({
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
       </Modal>
-      <datalist id="dsh-existing-tags">
-        {existingTags.map(tag => <option key={tag} value={tag} />)}
+      <GroupBoard
+        open={boardOpen}
+        onClose={() => { setBoardOpen(false) }}
+        useSessions={useSessions}
+        workspaces={workspaces}
+        archivedSessionIds={archivedSessionIds}
+        sessionMeta={sessionMeta}
+        knownGroups={knownGroups}
+        sessionOrderByAccount={sessionOrderByAccount}
+        setSessionGroup={actions.setSessionGroup}
+        setSessionOrder={actions.setSessionOrder}
+        removeGroup={actions.removeGroup}
+        onOpenSession={(sessionId) => {
+          actions.setSessionUnread(sessionId, false)
+          open(sessionId)
+        }}
+        onAddGroup={() => { setGroupCreateOpen(true) }}
+        t={t}
+      />
+      <datalist id="dsh-existing-groups">
+        {existingGroups.map(tag => <option key={tag} value={tag} />)}
       </datalist>
       <Modal
-        open={tagTarget !== null}
-        onClose={() => { setTagTarget(null) }}
+        open={groupTarget !== null}
+        onClose={() => { setGroupTarget(null) }}
         closeLabel={t('close')}
-        title={t('tags.title')}
+        title={t('groups.title')}
         footer={(
           <>
-            <Button variant="outline" onClick={() => { setTagTarget(null) }}>{t('cancel')}</Button>
-            <Button variant="primary" onClick={confirmTags}>{t('tags.save')}</Button>
+            <Button variant="outline" onClick={() => { setGroupTarget(null) }}>{t('cancel')}</Button>
+            <Button variant="primary" onClick={confirmGroup}>{t('groups.save')}</Button>
           </>
         )}
       >
         <input
           className={css.renameInput}
-          value={tagDraft}
-          list="dsh-existing-tags"
-          aria-label={t('tags.placeholder')}
-          placeholder={t('tags.placeholder')}
+          value={groupDraft}
+          list="dsh-existing-groups"
+          aria-label={t('groups.placeholder')}
+          placeholder={t('groups.placeholder')}
           autoFocus
-          onChange={(e) => { setTagDraft(e.target.value) }}
+          onChange={(e) => { setGroupDraft(e.target.value) }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); confirmTags() }
+            if (e.key === 'Enter') { e.preventDefault(); confirmGroup() }
           }}
         />
-        <div className={css.tagsHint}>{t('tags.hint')}</div>
+        <div className={css.groupsHint}>{t('groups.hint')}</div>
       </Modal>
       <Modal
-        open={tagCreateOpen}
-        onClose={() => { setTagCreateOpen(false) }}
+        open={groupCreateOpen}
+        onClose={() => { setGroupCreateOpen(false) }}
         closeLabel={t('close')}
-        title={t('tags.add.title')}
+        title={t('groups.add.title')}
         footer={(
           <>
-            <Button variant="outline" onClick={() => { setTagCreateOpen(false) }}>{t('cancel')}</Button>
-            <Button variant="primary" disabled={tagCreateDraft.trim() === ''} onClick={confirmTagCreate}>{t('tags.save')}</Button>
+            <Button variant="outline" onClick={() => { setGroupCreateOpen(false) }}>{t('cancel')}</Button>
+            <Button variant="primary" disabled={groupCreateDraft.trim() === ''} onClick={confirmGroupCreate}>{t('groups.save')}</Button>
           </>
         )}
       >
         <input
           className={css.renameInput}
-          value={tagCreateDraft}
-          list="dsh-existing-tags"
-          aria-label={t('tags.add.placeholder')}
-          placeholder={t('tags.add.placeholder')}
+          value={groupCreateDraft}
+          list="dsh-existing-groups"
+          aria-label={t('groups.add.placeholder')}
+          placeholder={t('groups.add.placeholder')}
           autoFocus
-          onChange={(e) => { setTagCreateDraft(e.target.value) }}
+          onChange={(e) => { setGroupCreateDraft(e.target.value) }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); confirmTagCreate() }
+            if (e.key === 'Enter') { e.preventDefault(); confirmGroupCreate() }
           }}
         />
-        <div className={css.tagsHint}>{t('tags.add.hint')}</div>
+        <div className={css.groupsHint}>{t('groups.add.hint')}</div>
       </Modal>
 
     </div>

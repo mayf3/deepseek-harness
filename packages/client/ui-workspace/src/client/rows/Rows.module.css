@@ -20,8 +20,8 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Tag-section header drop target: dropping a dragged session here applies
-   (or clears, for the untagged bucket) its tags. */
+/* Group-section header drop target: dropping a session here moves it into
+   that group (or clears its group for Unassigned). */
 .projectRow.dropTarget {
   background: var(--dsw-alias-fill-l2);
   box-shadow: inset 0 0 0 1px var(--dsw-alias-state-business-primary);

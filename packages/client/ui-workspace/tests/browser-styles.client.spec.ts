@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 const css = readFileSync(fileURLToPath(new URL('../src/client/WorkspaceBrowser.module.css', import.meta.url)), 'utf8')
 const rowsCss = readFileSync(fileURLToPath(new URL('../src/client/rows/Rows.module.css', import.meta.url)), 'utf8')
+const boardCss = readFileSync(fileURLToPath(new URL('../src/client/GroupBoard.module.css', import.meta.url)), 'utf8')
 
 /**
  * Declarations of one selector rule, keyed by property with whitespace collapsed.
@@ -112,5 +113,22 @@ describe('WorkspaceBrowser.module.css list', () => {
     expect(declarations('.rail .sectionHeader')?.get('justify-content')).toBe('flex-start')
     expect(declarations('.rail .iconButton')?.get('width')).toBe('36px')
     expect(declarations('.rail .search')?.get('width')).toBe('36px')
+  })
+})
+
+describe('GroupBoard.module.css', () => {
+  const boardDeclarations = (selector: string): Map<string, string> | undefined =>
+    declarationsFrom(boardCss, selector)
+
+  it('uses horizontal columns with independent vertical card scrolling', () => {
+    expect(boardDeclarations('.columns')?.get('overflow-x')).toBe('auto')
+    expect(boardDeclarations('.column')?.get('flex')).toBe('0 0 280px')
+    expect(boardDeclarations('.cards')?.get('overflow-y')).toBe('auto')
+  })
+
+  it('shows an explicit insertion marker while cards reorder', () => {
+    expect(boardDeclarations(".card[data-marker='true']::before")?.get('height')).toBe('2px')
+    expect(boardDeclarations(".card[data-marker='true']::before")?.get('background'))
+      .toBe('var(--dsw-alias-state-business-primary)')
   })
 })
