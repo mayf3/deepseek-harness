@@ -19,8 +19,9 @@ export type Uuid = `${string}-${string}-${string}-${string}-${string}`
 export function randomUUID(): Uuid {
   const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16))
   // RFC 9562 §5.4: version 4 in the high nibble of byte 6, variant 10 in byte 8.
-  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40
-  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80
-  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  const hex = Array.from(bytes, (byte, index) => {
+    const pinned = index === 6 ? (byte & 0x0f) | 0x40 : index === 8 ? (byte & 0x3f) | 0x80 : byte
+    return pinned.toString(16).padStart(2, '0')
+  }).join('')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
