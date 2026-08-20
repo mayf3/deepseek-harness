@@ -360,15 +360,27 @@ describe('SessionProjectionCache cold read', () => {
   it('discards a record bound to a different log lifecycle and refolds from the actual log', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
     roots.push(root)
-    const logs = new Map([['reborn', storedLog([['real']])]]) // stored header stamps createdAt 0
+    const logs = new Map([
+      // stored headers stamp createdAt 0
+      ['reborn', storedLog([['real']])],
+      ['reborn-stale', storedLog([['real']])],
+    ])
     // A checkpoint from a PRIOR lifecycle of the same id (different createdAt):
     // its rows pass every watermark check, but the identity does not match.
     await seedRecord(root, 'reborn', { 'cache-test/marks': { ver: 1, seq: 2, val: { marks: ['phantom'] } } }, { createdAt: 999 })
+    await seedRecord(root, 'reborn-stale', { 'cache-test/marks': { ver: 1, seq: 2, val: { marks: ['phantom'] } } }, { createdAt: 999 })
     const { cache, root: sameRoot } = await harness({ root, logs })
+    // Caller header agrees with the stored log (createdAt 0): the record is
+    // rejected at read, so the fold seeds from the log alone.
     const snapshot = await cache.coldSnapshot(headerOf(SessionId('reborn')))
     expect(snapshot.values['cache-test/marks']).toEqual({ marks: ['real'] })
-    // The write-back rebinds the record to the actual log's identity.
+    // Caller header matches the STALE record (createdAt 999): the record is
+    // read, then discarded whole because the log's identity disagrees.
+    const staleHeader = await cache.coldSnapshot(headerOf(SessionId('reborn-stale'), 999))
+    expect(staleHeader.values['cache-test/marks']).toEqual({ marks: ['real'] })
+    // The write-back rebinds each record to the actual log's identity.
     expect((await storedRecord(sameRoot, SessionId('reborn')))?.identity).toEqual({ createdAt: 0 })
+    expect((await storedRecord(sameRoot, SessionId('reborn-stale')))?.identity).toEqual({ createdAt: 0 })
   })
 
   it('cachedSnapshot returns undefined when every stored row is version-mismatched', async () => {
@@ -434,5 +446,33 @@ describe('SessionProjectionCache cold read', () => {
     await expect(ctx.sessionProjectionCache.coldSnapshot(headerOf(SessionId('absent')))).rejects.toThrow('not found')
     await expect(ctx.sessionProjectionCache.coldSnapshot(headerOf(SessionId('bare'))))
       .resolves.toEqual({ asOfSeq: 2, values: {} })
+  })
+
+  it('disables the durable cache for a backend without a per-session directory (sqlite)', async () => {
+    // locate() undefined = no per-session artifact: live writes no-op, cold
+    // reads fall to the full-log rung, and no write-back ever lands.
+    const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
+    roots.push(root)
+    const logs = new Map([['flat', storedLog([['a']])]])
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.sessionProjections.register(marksUnit())
+    ctx.provide('sessionPersistence', { ...fakePersistence(root, logs), locate: () => undefined } as never)
+    await ctx.plugin(SessionProjectionCache, { writeEveryEvents: 100, writeIntervalMs: 60_000 })
+    const cache = ctx.sessionProjectionCache
+    // A live mandatory-point write no-ops: no cache file lands.
+    const session = ctx.sessions.create(SessionId('flat'))
+    mark(session, ['live'])
+    endTurn(session)
+    await settle()
+    expect(await storedRows(root, session.id)).toBeUndefined()
+    // The cold read refolds the whole log with no write-back.
+    const snapshot = await cache.coldSnapshot(headerOf(SessionId('flat')))
+    expect(snapshot.values['cache-test/marks']).toEqual({ marks: ['a'] })
+    expect(await storedRecord(root, SessionId('flat'))).toBeUndefined()
+    // The listing read finds no usable row.
+    expect(await cache.cachedSnapshot(headerOf(SessionId('flat')))).toBeUndefined()
   })
 })

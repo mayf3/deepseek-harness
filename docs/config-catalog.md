@@ -632,7 +632,7 @@ Source: [`packages/fs/fs-sandbox/src/index.ts:49`](../packages/fs/fs-sandbox/src
 
 ## `@deepseek-ai/dsh-goal`
 
-Requires: `agents` · `sessionProjections`
+Requires: `agents`
 
 ```ts config-catalog
 /** Deployment defaults for goal creation. */
@@ -642,7 +642,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/goal/goal/src/index.ts:115`](../packages/goal/goal/src/index.ts)
+Source: [`packages/goal/goal/src/index.ts:116`](../packages/goal/goal/src/index.ts)
 
 <a id="deepseek-aidsh-headless"></a>
 
@@ -1398,7 +1398,7 @@ export interface PresetSpec {
 
 Depends on: [`ApprovalPolicy`](subsystems/approval.md) · [`SandboxMode`](subsystems/sandbox.md)
 
-Source: [`packages/interaction/permission-presets/src/index.ts:116`](../packages/interaction/permission-presets/src/index.ts)
+Source: [`packages/interaction/permission-presets/src/index.ts:112`](../packages/interaction/permission-presets/src/index.ts)
 
 <a id="deepseek-aidsh-persona"></a>
 
@@ -1702,7 +1702,7 @@ Source: [`packages/session/session-persistence-sqlite/src/index.ts:70`](../packa
 
 ## `@deepseek-ai/dsh-session-projection-cache`
 
-Requires: `storageDomain` · `sessionProjections` · `sessionPersistence` · `sessions`
+Requires: `sessionProjections` · `sessionPersistence` · `sessions`
 
 ```ts config-catalog
 /**
@@ -1719,13 +1719,13 @@ export interface Config {
 }
 ```
 
-Source: [`packages/session/session-projection-cache/src/index.ts:42`](../packages/session/session-projection-cache/src/index.ts)
+Source: [`packages/session/session-projection-cache/src/index.ts:47`](../packages/session/session-projection-cache/src/index.ts)
 
 <a id="deepseek-aidsh-session-query-sqlite"></a>
 
 ## `@deepseek-ai/dsh-session-query-sqlite`
 
-Requires: `sessions` · `sessionProjections`
+Requires: `sessions`
 
 ```ts config-catalog
 /** Combined session-query configuration backed by SQLite full-text search. */
@@ -1851,7 +1851,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/session/session-title/src/index.ts:54`](../packages/session/session-title/src/index.ts)
+Source: [`packages/session/session-title/src/index.ts:53`](../packages/session/session-title/src/index.ts)
 
 <a id="deepseek-aidsh-session-title-all-prompts-llm"></a>
 
@@ -2049,7 +2049,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/storage/storage-json/src/index.ts:27`](../packages/storage/storage-json/src/index.ts)
+Source: [`packages/storage/storage-json/src/index.ts:28`](../packages/storage/storage-json/src/index.ts)
 
 <a id="deepseek-aidsh-storage-sqlite"></a>
 

@@ -27,8 +27,6 @@ interface ProjectionDefinition<
   key: K
   /** Validates persisted state before it seeds a fold. */
   stateSchema: ZodType<S>
-  /** Persist a host-only unit. Client-visible units are always persisted. */
-  persist?: boolean
   /**
    * State for the empty log.
    * @returns the initial state.
@@ -70,15 +68,15 @@ The whole-value event rule is load-bearing: a state-carrying log event carries t
 
 ```ts type-equiv
 /**
- * One consistent read cut over every registered client-visible unit for one session.
+ * One consistent read cut over every registered unit for one session.
  * `asOfSeq` is the shared watermark — the seq of the last event every value
  * reflects (`-1` for an empty log, mirroring `session/subscribed.lastSeq`).
  */
 interface ProjectionSnapshot {
   /** Seq of the last event the values reflect; -1 for an empty log. */
   asOfSeq: number
-  /** Whole current client value per registered key. */
-  values: Partial<SessionProjectionMap>
+  /** Whole current value per registered key. */
+  values: Partial<ProjectionValues>
 }
 ```
 

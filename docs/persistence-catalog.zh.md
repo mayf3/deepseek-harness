@@ -117,7 +117,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/core/agent/src/types.ts:33`](../packages/core/agent/src/types.ts)
+来源：[`packages/core/agent/src/types.ts:40`](../packages/core/agent/src/types.ts)
 
 ### `agent-preset/*`
 
@@ -651,7 +651,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[SessionTitleEventData](subsystems/session-title.md)
 
-来源：[`packages/session/session-title/src/index.ts:75`](../packages/session/session-title/src/index.ts)
+来源：[`packages/session/session-title/src/index.ts:74`](../packages/session/session-title/src/index.ts)
 
 <a id="sessiontitle-llm-request--log-only"></a>
 

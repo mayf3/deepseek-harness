@@ -82,12 +82,15 @@ export class SessionProjectionCache extends Service {
 
   private readonly dirty = new Map<Session, DirtyState>()
 
+  /** In-flight durable writes, drained on disposal so a late flush can never land after teardown. */
+  private readonly inFlight = new Set<Promise<unknown>>()
+
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'sessionProjectionCache')
   }
 
   /** Install the write-behind listeners. */
-  protected async [Service.init](): Promise<void> {
+  protected [Service.init](): void {
     this.installWritePath()
   }
 
@@ -238,18 +241,18 @@ export class SessionProjectionCache extends Service {
     // one), count/interval throttle the in-turn stream.
     this.ctx.on('session/event', (session: Session, event: SessionEvent) => {
       if (event.type === 'turn/end') {
-        void this.flushSoft(session, 'turn/end')
+        this.flushSoft(session, 'turn/end')
         return
       }
       const state = this.dirty.get(session) ?? { pending: 0, timer: undefined }
       this.dirty.set(session, state)
       state.pending += 1
       if (state.pending >= this.config.writeEveryEvents) {
-        void this.flushSoft(session, 'count threshold')
+        this.flushSoft(session, 'count threshold')
         return
       }
       state.timer ??= setTimeout(() => {
-        void this.flushSoft(session, 'interval')
+        this.flushSoft(session, 'interval')
       }, this.config.writeIntervalMs)
     })
 
@@ -258,17 +261,20 @@ export class SessionProjectionCache extends Service {
     // flushSoft's synchronous prefix reads and resets the dirty state, so
     // dropping it (timer already cleared by markClean) right after is safe.
     this.ctx.on('session/disposed', (session: Session) => {
-      void this.flushSoft(session, 'detach')
+      this.flushSoft(session, 'detach')
       this.markClean(session)
       this.dirty.delete(session)
     })
 
-    // Clear pending timers with the plugin (their sessions outlive the cache).
+    // With the plugin (their sessions outlive the cache): clear pending
+    // timers, stop accepting new work, and drain in-flight durable writes so
+    // a late flush can never land after disposal (or overwrite a successor).
     this.ctx.effect(() => () => {
       for (const state of this.dirty.values()) {
         if (state.timer !== undefined) clearTimeout(state.timer)
       }
       this.dirty.clear()
+      return Promise.allSettled([...this.inFlight])
     }, 'sessionProjectionCache.timers')
   }
 
@@ -277,12 +283,16 @@ export class SessionProjectionCache extends Service {
    * the throttle triggers only fire dirty (markClean clears the timer with
    * the counter) and the two mandatory points write unconditionally.
    */
-  private async flushSoft(session: Session, trigger: string): Promise<void> {
-    try {
-      await this.write(session)
-    } catch (error) {
-      this.ctx.logger.warn(`session projection cache: ${trigger} write for "${session.id}" failed (cache stays stale): ${String(error)}`)
-    }
+  private flushSoft(session: Session, trigger: string): void {
+    const run = (async () => {
+      try {
+        await this.write(session)
+      } catch (error) {
+        this.ctx.logger.warn(`session projection cache: ${trigger} write for "${session.id}" failed (cache stays stale): ${String(error)}`)
+      }
+    })()
+    this.inFlight.add(run)
+    void run.finally(() => this.inFlight.delete(run))
   }
 
   /** Reset one session's dirty bookkeeping (its checkpoint is being written). */

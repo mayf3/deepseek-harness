@@ -115,7 +115,7 @@ Sources: [`packages/core/session/src/types.ts:336`](../packages/core/session/src
 }
 ```
 
-Source: [`packages/core/agent/src/types.ts:33`](../packages/core/agent/src/types.ts)
+Source: [`packages/core/agent/src/types.ts:40`](../packages/core/agent/src/types.ts)
 
 ### `agent-preset/*`
 
@@ -649,7 +649,7 @@ Source: [`packages/core/session/src/types.ts:332`](../packages/core/session/src/
 
 Types: [SessionTitleEventData](subsystems/session-title.md)
 
-Source: [`packages/session/session-title/src/index.ts:75`](../packages/session/session-title/src/index.ts)
+Source: [`packages/session/session-title/src/index.ts:74`](../packages/session/session-title/src/index.ts)
 
 <a id="sessiontitle-llm-request--log-only"></a>
 
