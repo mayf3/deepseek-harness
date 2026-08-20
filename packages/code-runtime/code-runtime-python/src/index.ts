@@ -1155,21 +1155,32 @@ export class PythonCodeRuntime extends CodeRuntime {
         // trailing incomplete sequence is real truncated input and the U+FFFD is the
         // honest render.
         let keep: Buffer | undefined
-        /* v8 ignore next 9 -- mid-sequence budget-flush boundary is not schedulable from a test. */
+        /* v8 ignore next 18 -- mid-sequence budget-flush boundary is not schedulable from a test. */
         if (retainPartialTail && stray.utf8.expected > 0) {
           const drop = Math.min(stray.utf8.width - stray.utf8.expected, full.length)
           keep = full.subarray(full.length - drop)
           full = full.subarray(0, full.length - drop)
           stray.chunks = detachResidual(keep)
+          // Re-accrue the withheld tail from a FRESH state: `stray.utf8` still
+          // holds the whole-pending state (`expected > 0`, i.e. the tail is
+          // mid-sequence), so metering `keep` against it would charge the carried
+          // LEAD byte as an illegal continuation. Reset, then walk `keep` so the
+          // resumed sequence re-claims its own lead.
+          stray.utf8 = { expected: 0, width: 0, lowerFirst: 0, upperFirst: 0 }
           stray.cost = accrueStrayCost(keep, stray.utf8)
+          stray.blocks = []
+          // Do not admit an EMPTY entry: when the whole residual is a single
+          // unfinished multibyte sequence, `full` was drained into `keep` and no
+          // complete byte stream remains to admit. `admit('')` would push a
+          // model-visible bogus empty line (logs are joined with '\n' downstream).
+          if (full.length > 0) admit(full.toString('utf8'))
         } else {
           stray.chunks = []
           stray.cost = 0
           stray.utf8 = { expected: 0, width: 0, lowerFirst: 0, upperFirst: 0 }
+          stray.blocks = []
+          admit(full.toString('utf8'))
         }
-        stray.blocks = []
-        const emit = full.toString('utf8')
-        admit(emit)
       }
       child.stdout.on('data', (chunk: Buffer) => { captureStray(strayOut, chunk) })
       child.stderr.on('data', (chunk: Buffer) => { captureStray(strayErr, chunk) })

@@ -897,25 +897,26 @@ async def _run(channel: ProtocolChannel) -> None:
     # the completion value was serialized at its validation point, inside the try,
     # so a later send never re-walks the live value a mutating daemon thread could
     # have changed) or a dict ERROR frame (a rejection or the exception handler,
-    # which carry no live model value). `send_done` posts whichever form: a string
-    # is written verbatim via `write_encoded`, a dict is encoded by `send_sync`.
+    # which carry no live model value). `send_done` posts whichever form, going
+    # DIRECTLY through a bound `_encode_json_plain` and a bound `write_encoded` —
+    # never through `channel.send_sync`, whose body re-resolves `self.write_encoded`
+    # and `self`'s module-level `_encode_json_plain` at call time.
     #
-    # The two channel methods are BOUND into locals here, before the program runs,
-    # and `send_done` invokes those bound locals — never a late `channel.X` look-up.
     # The program runs as `__main__`, so `import __main__; __main__.ProtocolChannel
-    # .send_sync = boom` would otherwise re-resolve the send to a rebranded class
-    # method at call time and, when that replacement raises, skip the `done` frame
-    # and downgrade a settled verdict to a host-side worker-exit (the binding-all-
-    # names regression test pins this). Same reason `flush_out`/`flush_err`/
-    # `safe_model_traceback` are bound above.
+    # .send_sync = boom` or `__main__._encode_json_plain = boom` would otherwise
+    # re-resolve the send/encode to a rebranded callable at call time and, when
+    # that replacement raises, skip the `done` frame and downgrade a settled
+    # verdict to a host-side worker-exit (the binding-all-names regression test
+    # pins this). Same reason `flush_out`/`flush_err`/`safe_model_traceback` are
+    # bound above.
+    encode_plain_bound = _encode_json_plain
     write_encoded_bound = channel.write_encoded
-    send_sync_bound = channel.send_sync
 
     def send_done(payload: dict[str, Any] | str) -> None:
         if isinstance(payload, str):
             write_encoded_bound(payload)
         else:
-            send_sync_bound(payload)
+            write_encoded_bound(encode_plain_bound(payload))
 
     max_value_bytes = int(boot["maxValueBytes"])
     done: dict[str, Any] | str
