@@ -1265,6 +1265,24 @@ describe('decorations', () => {
     expect(mark?.querySelector('svg')).not.toBeNull()
     expect(shell.snapshot.draft).toBe('see @src/components/')
   })
+
+  it('a plain-text reference keeps its nodes while earlier text shifts its offset', () => {
+    const { view, textarea, shell } = bench()
+    act(() => { shell.setDraft('see @src/components/ here') })
+    const backdrop = view.container.querySelector('[data-input-backdrop]')!
+    const mark = backdrop.querySelector('[data-decoration="text-ref"]')!
+    const icon = mark.querySelector('svg')!
+    act(() => { fireEvent.change(textarea, { target: { value: 'X see @src/components/ here' } }) })
+    // Node identity, not text: an offset-derived key remounts the mark and its
+    // icon on every keystroke landing ahead of the range.
+    expect(backdrop.querySelector('[data-decoration="text-ref"]')).toBe(mark)
+    expect(icon.isConnected).toBe(true)
+    expect(mark.textContent).toBe('@src/components/')
+    // A token edited out of match shape still loses its decoration.
+    act(() => { fireEvent.change(textarea, { target: { value: 'X see X@src/components/ here' } }) })
+    expect(backdrop.querySelector('[data-decoration="text-ref"]')).toBeNull()
+    expect(shell.snapshot.draft).toBe('X see X@src/components/ here')
+  })
 })
 
 describe('insertText (scoped event body)', () => {
