@@ -137,7 +137,7 @@ function permissionDiagnostic(permission: AcpPermissionDecision): string {
   return `ACP unattended decision (policy: ${permission.policy}; request: ${permission.request}; decision: ${permission.decision})`
 }
 
-/** Put the operation failure first, followed by the latest contributing permission fact. */
+/** Put the operation failure first, followed by the latest permission decision. */
 function diagnosticText(facts: AcpFailureFacts, permission?: AcpPermissionDecision): string {
   const failure = failureDiagnostic(facts)
   return permission === undefined ? failure : `${failure}\n${permissionDiagnostic(permission)}`
@@ -378,7 +378,7 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
     if (processOutcome !== undefined || child.pid <= 0) return processOutcome
     try {
       const exited = await child.waitForExit(
-        AbortSignal.timeout(Math.min(spec.disposeGraceMs, 100)),
+        AbortSignal.timeout(Math.ceil(spec.disposeGraceMs)),
       )
       if (exited) return await processDone
     } catch {
@@ -489,11 +489,16 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
     request.signal.removeEventListener('abort', onAbort)
     const cancelledBeforeCleanup = flags.cancelled
     // A child closing its protocol stream can precede whole-tree exit
-    // observation. Wait briefly for an already-ending process, but do not let a
-    // still-live transport failure delay rollback by a full teardown grace.
-    const startupOutcome = await observeProcessOutcome()
+    // observation. Local cancellation does not need the discarded startup
+    // classification; other failures use the configured process grace.
+    const startupOutcome = cancelledBeforeCleanup
+      ? processOutcome
+      : await observeProcessOutcome()
     const failure = startupFailure(error, startupStage, child, startupOutcome)
-    if (!cancelledBeforeCleanup) {
+    if (cancelledBeforeCleanup) {
+      // Local cancellation owns the startup outcome; only cleanup failure is
+      // reported below when teardown itself rejects.
+    } else {
       reportFailure(spec, error instanceof AcpRunFailure
         ? error.cause
         : error)

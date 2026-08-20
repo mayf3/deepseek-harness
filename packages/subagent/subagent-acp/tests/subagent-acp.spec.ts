@@ -635,6 +635,7 @@ describe('dsh-subagent-acp', () => {
     const ready = join(tmp, 'ready')
     const go = join(tmp, 'go')
     const rawCleanup = 'cancel rollback leaked SECRET_TOKEN'
+    const errors: string[] = []
     let realChild: SubprocessHandle | undefined
     try {
       const controller = new AbortController()
@@ -650,6 +651,7 @@ describe('dsh-subagent-acp', () => {
           realChild = spawnSubprocess(spec)
           return rejectFinalExitWait(realChild, rawCleanup)
         },
+        onError: (error) => { errors.push(error.message) },
       })
       await waitForFile(ready)
       controller.abort()
@@ -661,6 +663,7 @@ describe('dsh-subagent-acp', () => {
         `subagent-acp: ${expectedFailure('stage: teardown; category: unknown')}`,
       )
       expect((error as Error).message).not.toContain(rawCleanup)
+      expect(errors).toEqual([rawCleanup])
       await realChild?.done
     } finally {
       rmSync(tmp, { recursive: true, force: true })
