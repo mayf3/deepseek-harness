@@ -25,8 +25,9 @@ SDK 客户端返回自有子活动，而不是提示词结果。提供方读取�
 | `aborted` | `aborted` | 只有闭集 `disposed` 原因会附加 `child-disposed`；父级本地取消绝不附加。 |
 | `blocked` | `refusal` | 无；共享结束原因已经表示任务被拒绝。 |
 | `error` | `error` | `child-error`；不包含子失败消息或 code。 |
+| `interrupted` | `error` | 无；只有持久化修复会产生该原因，而本提供方创建全新会话。 |
 | 缺少 `turn/end` | `error` | `missing-terminal`。 |
-| 未知或不可达 variant | `error` | 固定 `child-unknown`，不复制原值。 |
+| 未知 variant | `error` | 固定 `child-unknown`，不复制原值。 |
 
 ## 失败诊断
 
@@ -36,7 +37,7 @@ SDK 客户端返回自有子活动，而不是提示词结果。提供方读取�
 Subagent failure (provider: DSH SDK; stage: <stage>; category: <category>)
 ```
 
-共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。提供方从实际拥有失败的操作派生 `initialize`、`session-run` 或 `shutdown`。`SdkProtocolError` 与 JSON-RPC 错误响应映射为 `protocol`，`TransportClosedError` 映射为 `transport`，其他异常使用 `unknown`。分类绝不读取错误消息，因此 `TransportClosedError` 携带的 stderr tail、路径、任务内容、环境值、凭证与协议 payload 都只留在 Host。请求超时分类会推迟到本提供方实际配置或传播 request timeout 时；当前 SDK launch 会无限等待普通请求。
+共享结果边界会把完整文本限制在 4096 个 UTF-8 字节以内。提供方从实际拥有失败的操作派生 `initialize`、`session-run` 或 `shutdown`。在 initialize 或 session run 期间，`SdkProtocolError` 与 JSON-RPC 错误响应映射为 `protocol`，`TransportClosedError` 映射为 `transport`，其他异常使用 `unknown`。shutdown 拒绝使用 `unknown`：SDK 客户端会把协议 shutdown 失败留在 Host 诊断中，因此只有运行时进程释放能让 `close()` 拒绝。分类绝不读取错误消息，因此 `TransportClosedError` 携带的 stderr tail、路径、任务内容、环境值、凭证与协议 payload 都只留在 Host。请求超时分类会推迟到本提供方实际配置或传播 request timeout 时；当前 SDK launch 会无限等待普通请求。
 
 成功结果与本地取消会省略诊断。启动和 shutdown 拒绝会在 Error 消息中使用同一安全行，同时把原始 cause 留在内部。带诊断的子 `aborted` 结果仍保持 `aborted`；一次性 Job adapter 会把它判为 failed，而不带诊断的本地取消仍是 killed。
 

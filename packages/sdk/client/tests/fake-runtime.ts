@@ -25,8 +25,9 @@
  * - `FAKE_MALFORMED_EVENT`: the turn's `session.event` carries a number as
  *   the event; `FAKE_MALFORMED_MESSAGE`: assistant/message content is not an
  *   array; `FAKE_MESSAGE_WITHOUT_DATA`: assistant/message with no data
- *   member; `FAKE_MALFORMED_REASON`: `session.finished` reason is a bare
- *   string (wire-validation probes).
+ *   member; `FAKE_MALFORMED_REASON`: the `turn/end` carries a bare reason
+ *   (`1`), an aborted reason without its cause (`aborted`), or no data member
+ *   (`no-data`) for wire-validation probes.
  * - `FAKE_EMPTY_MESSAGE`: the turn streams a text chunk, then records an empty
  *   assistant/message for a usage-only max-tokens step.
  * - `FAKE_HANG_INIT`: never answer `initialize` (mid-handshake cancel probe).
@@ -130,9 +131,19 @@ function runTurn(sessionId: string): void {
   })
   const reasonKind = env.FAKE_REASON_KIND ?? 'completed'
   if (reasonKind !== 'none') {
-    const reason = reasonKind === 'aborted'
-      ? { kind: 'aborted', reason: { kind: env.FAKE_ABORT_REASON_KIND ?? 'user' } }
-      : { kind: reasonKind }
+    if (env.FAKE_MALFORMED_REASON === 'no-data') {
+      notify('session.event', { sessionId, event: { type: 'turn/end', seq: seq++, time: 0 } })
+      return
+    }
+    const reason = env.FAKE_MALFORMED_REASON === 'aborted'
+      ? { kind: 'aborted' }
+      : env.FAKE_MALFORMED_REASON !== undefined
+        ? 'not-a-reason-envelope'
+        : reasonKind === 'aborted'
+          ? { kind: 'aborted', reason: { kind: env.FAKE_ABORT_REASON_KIND ?? 'user' } }
+          : reasonKind === 'error'
+            ? { kind: 'error', error: { message: 'scripted child error', code: 'UNKNOWN' } }
+            : { kind: reasonKind }
     event(sessionId, 'turn/end', { turn: 0, reason })
   }
   if (env.FAKE_SUBAGENT !== undefined) {

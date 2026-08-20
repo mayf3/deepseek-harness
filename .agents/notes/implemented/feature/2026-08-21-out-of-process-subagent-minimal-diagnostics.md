@@ -44,11 +44,11 @@ When an ACP permission request contributes to a non-completed result, a fixed li
 | --- | --- | --- |
 | `initialize` | Parent workspace resolution, SDK runtime spawn, and initialize handshake | `configuration`, `protocol`, `transport`, or `unknown` |
 | `session-run` | Prompt acceptance, session notifications, and final child reason | `child-error`, `child-disposed`, `child-unknown`, `missing-terminal`, `protocol`, `transport`, or `unknown` |
-| `shutdown` | Bounded SDK shutdown and runtime process release | The same typed SDK categories with shutdown stage |
+| `shutdown` | Bounded SDK shutdown and runtime process release | `unknown`; protocol-shutdown failures remain Host-only in the SDK client |
 
-Child `completed`, `max-tokens`, and ordinary `aborted` results keep their existing shared stop reasons without extra text. An `aborted` turn whose closed cause is `disposed` keeps `aborted` and adds `child-disposed`. `blocked` reuses `refusal`; `error` adds `child-error`. A missing terminal event adds `missing-terminal`; an unknown or unreachable reason uses `child-unknown` without copying the value or the child's structured failure message.
+Child `completed`, `max-tokens`, and ordinary `aborted` results keep their existing shared stop reasons without extra text. An `aborted` turn whose closed cause is `disposed` keeps `aborted` and adds `child-disposed`. `blocked` reuses `refusal`; `error` adds `child-error`. Persistence repair alone produces `interrupted`, so this fresh-session provider leaves it as generic `error` without a diagnostic. A missing terminal event adds `missing-terminal`; an unknown reason uses `child-unknown` without copying the value or the child's structured failure message.
 
-`SdkProtocolError` and JSON-RPC error responses map to `protocol`, and `TransportClosedError` maps to `transport`; the provider never reads their messages. Other exceptions use `unknown`. Request timeout classification remains deferred because this provider does not configure or propagate a request timeout.
+During initialize or session run, `SdkProtocolError` and JSON-RPC error responses map to `protocol`, and `TransportClosedError` maps to `transport`; the provider never reads their messages. Other exceptions and shutdown rejection use `unknown`. Request timeout classification remains deferred because this provider does not configure or propagate a request timeout.
 
 ### Ownership and lifecycle
 

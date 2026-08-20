@@ -18,13 +18,14 @@ import {
   DeepSeekHarness,
   HarnessClient,
   HarnessSession,
+  SdkProtocolError,
 } from '@deepseek-ai/dsh-sdk-client'
 import * as sdk from '../src/index.ts'
 import {
   DEFAULT_DISPOSE_EOF_GRACE_MS,
   DEFAULT_DISPOSE_GRACE_MS,
   DEFAULT_SHUTDOWN_TIMEOUT_MS,
-  sdkStopReason,
+  sdkChildOutcome,
   startSdkRun,
   type SdkRunSpec,
 } from '../src/run.ts'
@@ -78,19 +79,32 @@ async function waitForFile(file: string, timeoutMs = 5000): Promise<void> {
   }
 }
 
-describe('sdkStopReason', () => {
-  it('maps each child turn-end reason to the harness vocabulary', () => {
-    expect(sdkStopReason({ kind: 'completed' })).toBe('completed')
-    expect(sdkStopReason({ kind: 'max-tokens' })).toBe('max-tokens')
-    expect(sdkStopReason({ kind: 'aborted', reason: { kind: 'user' } })).toBe('aborted')
-    expect(sdkStopReason({ kind: 'error', error: { message: 'x', code: 'UNKNOWN' } })).toBe('error')
-    expect(sdkStopReason({ kind: 'interrupted' })).toBe('error')
-    expect(sdkStopReason({ kind: 'aborted', reason: { kind: 'disposed' } })).toBe('aborted')
+describe('sdkChildOutcome', () => {
+  it('maps each known child turn-end reason once', () => {
+    expect(sdkChildOutcome({ kind: 'completed' })).toEqual({ stopReason: 'completed' })
+    expect(sdkChildOutcome({ kind: 'max-tokens' })).toEqual({ stopReason: 'max-tokens' })
+    expect(sdkChildOutcome({ kind: 'aborted', reason: { kind: 'user' } })).toEqual({ stopReason: 'aborted' })
+    expect(sdkChildOutcome({ kind: 'aborted', reason: { kind: 'disposed' } })).toEqual({
+      stopReason: 'aborted',
+      diagnostic: expectedFailure('stage: session-run; category: child-disposed'),
+    })
+    expect(sdkChildOutcome({ kind: 'blocked', reason: { kind: 'policy' } })).toEqual({ stopReason: 'refusal' })
+    expect(sdkChildOutcome({ kind: 'error', error: { message: 'x', code: 'UNKNOWN' } })).toEqual({
+      stopReason: 'error',
+      diagnostic: expectedFailure('stage: session-run; category: child-error'),
+    })
+    expect(sdkChildOutcome({ kind: 'interrupted' })).toEqual({ stopReason: 'error' })
   })
 
   it('treats an absent or unknown reason as an error', () => {
-    expect(sdkStopReason(undefined)).toBe('error')
-    expect(sdkStopReason({ kind: 'something-new' } as never)).toBe('error')
+    expect(sdkChildOutcome(undefined)).toEqual({
+      stopReason: 'error',
+      diagnostic: expectedFailure('stage: session-run; category: missing-terminal'),
+    })
+    expect(sdkChildOutcome({ kind: 'something-new' } as never)).toEqual({
+      stopReason: 'error',
+      diagnostic: expectedFailure('stage: session-run; category: child-unknown'),
+    })
   })
 })
 
@@ -191,6 +205,20 @@ describe('dsh-subagent-dsh-sdk provider', () => {
     await ctx.fiber.dispose()
   })
 
+  it('classifies a malformed child turn reason as a protocol failure', async () => {
+    const ctx = await setup({ FAKE_MALFORMED_REASON: '1', FAKE_TEXT: 'partial before bad reason' })
+    const run = await ctx.subagents.start('dsh-sdk', request())
+    const result = await run.result
+
+    expect(result).toEqual({
+      output: [{ type: 'text', text: 'partial before bad reason' }],
+      diagnostic: expectedFailure('stage: session-run; category: protocol'),
+      stopReason: 'error',
+    })
+    await run.dispose()
+    await ctx.fiber.dispose()
+  })
+
   it('keeps streamed text when the terminal message is an empty usage-only step', async () => {
     // The child streams its answer, then emits an empty-content
     // assistant/message (the harness loop appends one to host usage on a
@@ -278,6 +306,34 @@ describe('dsh-subagent-dsh-sdk provider', () => {
       expect((error as Error).message).not.toContain(rawCleanup)
     } finally {
       spy.mockRestore()
+    }
+  })
+
+  it('keeps an initialize failure authoritative when a later abort flag is already set', async () => {
+    const rawFailure = new SdkProtocolError('scripted initialize rejection')
+    const start = vi.spyOn(DeepSeekHarness.prototype, 'start').mockRejectedValue(rawFailure)
+    const close = vi.spyOn(DeepSeekHarness.prototype, 'close').mockResolvedValue()
+    try {
+      const controller = new AbortController()
+      const pending = startSdkRun(request('p', controller.signal), {
+        command: 'unused',
+        args: [],
+        cwd: process.cwd(),
+        provider: 'p',
+        model: 'm',
+        env: {},
+        shutdownTimeoutMs: 100,
+        disposeEofGraceMs: 100,
+        disposeGraceMs: 100,
+      })
+      controller.abort()
+      await expect(pending).rejects.toThrow(
+        `subagent-dsh-sdk: ${expectedFailure('stage: initialize; category: protocol')}`,
+      )
+      expect(close).not.toHaveBeenCalled()
+    } finally {
+      start.mockRestore()
+      close.mockRestore()
     }
   })
 

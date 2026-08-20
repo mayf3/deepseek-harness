@@ -216,10 +216,12 @@ describe('DeepSeekHarness', () => {
     const close = vi.spyOn(HarnessClient.prototype, 'close').mockRejectedValue(cleanupError)
     try {
       const harness = new DeepSeekHarness({ launch: { command: 'unused' } })
+      const failedClient = harness.client
       const failure = await harness.start().catch((error: unknown) => error)
       expect(failure).toBeInstanceOf(AggregateError)
       expect((failure as AggregateError).errors).toEqual([initializeError, cleanupError])
       expect((failure as Error).message).toBe('DeepSeek Harness initialization and cleanup failed')
+      expect(harness.client).toBe(failedClient)
     } finally {
       start.mockRestore()
       initialize.mockRestore()
@@ -529,6 +531,11 @@ describe('wire payload validation', () => {
   it('rejects an assistant/message without a data member as a protocol error', async () => {
     const harness = harnessWith({ FAKE_MESSAGE_WITHOUT_DATA: '1' })
     await expect(harness.run('no-data')).rejects.toThrow(SdkProtocolError)
+  })
+
+  it.each(['1', 'aborted', 'no-data'])('rejects malformed turn/end input %s as a protocol error', async (mode) => {
+    const harness = harnessWith({ FAKE_MALFORMED_REASON: mode })
+    await expect(harness.run('bad-reason')).rejects.toThrow(SdkProtocolError)
   })
 
 })

@@ -126,49 +126,46 @@ function sdkFailure(error: unknown, stage: SdkFailureStage): SdkRunFailure {
   return new SdkRunFailure(facts, error)
 }
 
-/** Map a child terminal reason to the optional diagnostic it needs. */
-function childDiagnostic(reason: TurnEndReason | undefined): string | undefined {
-  switch (reason?.kind) {
-    case 'completed':
-    case 'max-tokens':
-      return undefined
-    case 'aborted':
-      return reason.reason.kind === 'disposed'
-        ? failureDiagnostic({ stage: 'session-run', category: 'child-disposed' })
-        : undefined
-    case 'blocked':
-      return undefined
-    case 'error':
-      return failureDiagnostic({ stage: 'session-run', category: 'child-error' })
-    case undefined:
-      return failureDiagnostic({ stage: 'session-run', category: 'missing-terminal' })
-    default:
-      return failureDiagnostic({ stage: 'session-run', category: 'child-unknown' })
-  }
-}
-
 /**
- * Map a child turn-end reason to a harness {@link SubagentStopReason}.
+ * Map one child terminal reason to its complete shared result outcome.
  * @param reason - the owned child run's final durable turn reason, or
  * `undefined` when it settled without running a turn.
- * @returns the harness equivalent; an absent or unknown reason maps to
- * `error`, so an unclean stop is never reported as `completed`.
+ * @returns the shared stop reason and any additional safe diagnostic.
  */
-export function sdkStopReason(reason: TurnEndReason | undefined): SubagentStopReason {
+export function sdkChildOutcome(
+  reason: TurnEndReason | undefined,
+): Pick<SubagentResult, 'stopReason' | 'diagnostic'> {
   switch (reason?.kind) {
     case 'completed':
-      return 'completed'
+      return { stopReason: 'completed' }
     case 'max-tokens':
-      return 'max-tokens'
+      return { stopReason: 'max-tokens' }
     case 'aborted':
-      return 'aborted'
+      return reason.reason.kind === 'disposed'
+        ? {
+          stopReason: 'aborted',
+          diagnostic: failureDiagnostic({ stage: 'session-run', category: 'child-disposed' }),
+        }
+        : { stopReason: 'aborted' }
     case 'blocked':
-      return 'refusal'
-    // error / interrupted / disposed / a future merged variant /
-    // no turn at all: the task did NOT finish cleanly — surface a generic
-    // failure so the consumer maps it to an isError result.
+      return { stopReason: 'refusal' }
+    case 'error':
+      return {
+        stopReason: 'error',
+        diagnostic: failureDiagnostic({ stage: 'session-run', category: 'child-error' }),
+      }
+    case 'interrupted':
+      return { stopReason: 'error' }
+    case undefined:
+      return {
+        stopReason: 'error',
+        diagnostic: failureDiagnostic({ stage: 'session-run', category: 'missing-terminal' }),
+      }
     default:
-      return 'error'
+      return {
+        stopReason: 'error',
+        diagnostic: failureDiagnostic({ stage: 'session-run', category: 'child-unknown' }),
+      }
   }
 }
 
@@ -201,7 +198,7 @@ function sdkStartupFailure(spec: SdkRunSpec, error: unknown): Error {
   reportFailure(spec, initializeError)
   reportFailure(spec, cleanupError)
   const initializeFailure = sdkFailure(initializeError, 'initialize')
-  const cleanupFailure = sdkFailure(cleanupError, 'shutdown')
+  const cleanupFailure = new SdkRunFailure({ stage: 'shutdown', category: 'unknown' }, cleanupError)
   return new AggregateError(
     [initializeFailure, cleanupFailure],
     `${initializeFailure.message}; ${cleanupFailure.message}`,
@@ -251,30 +248,30 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
   }
   const onAbort = (): void => { requestCancel() }
   request.signal.addEventListener('abort', onAbort, { once: true })
+  const cancelledStartup = new Error('subagent cancelled before the SDK child initialized')
 
   // Establish the child handshake before publishing a handle. Any failure
   // owns the still-private process and reaps it before rejecting.
   try {
     await Promise.race([
       harness.start(),
-      cancelSettled.then((): never => { throw new Error('subagent cancelled before the SDK child initialized') }),
+      cancelSettled.then((): never => { throw cancelledStartup }),
     ])
     // Defensive: an abort() is a macrotask and no user callback runs inside
     // the microtask drain between handshake fulfillment and this continuation,
     // so the recheck is not schedulable today; it guards future reentrancy.
     /* v8 ignore next */
-    if (flags.cancelled) throw new Error('subagent cancelled before the SDK child initialized')
+    if (flags.cancelled) throw cancelledStartup
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
-    const cancelledBeforeCleanup = flags.cancelled
-    if (!cancelledBeforeCleanup) {
+    if (error !== cancelledStartup) {
       throw sdkStartupFailure(spec, error)
     }
     try {
       await harness.close()
     } catch (cleanupError: unknown) {
       reportFailure(spec, cleanupError)
-      const cleanupFailure = sdkFailure(cleanupError, 'shutdown')
+      const cleanupFailure = new SdkRunFailure({ stage: 'shutdown', category: 'unknown' }, cleanupError)
       throw new AggregateError([cleanupFailure], cleanupFailure.message)
     }
     throw new Error('subagent request was aborted before the SDK child started')
@@ -289,6 +286,14 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
     fold.push(notification.params.event as SessionEvent)
   }
   const collectOutput = (): ContentBlock[] => fold.collect() ?? []
+  const teardown = async (): Promise<void> => {
+    try {
+      await harness.close()
+    } catch (error: unknown) {
+      reportFailure(spec, error)
+      throw new SdkRunFailure({ stage: 'shutdown', category: 'unknown' }, error)
+    }
+  }
 
   // Race the child turn against local cancellation; the shared settlement
   // flattens failures under the seam's never-reject contract.
@@ -304,11 +309,11 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
         const lastEnd = turn.events.findLast(
           (event): event is Extract<SessionEvent, { type: 'turn/end' }> => event.type === 'turn/end',
         )
-        diagnostic = childDiagnostic(lastEnd?.data.reason)
+        const outcome = sdkChildOutcome(lastEnd?.data.reason)
+        diagnostic = outcome.diagnostic
         return {
           output: collectOutput(),
-          ...(diagnostic === undefined ? {} : { diagnostic }),
-          stopReason: sdkStopReason(lastEnd?.data.reason),
+          ...outcome,
         }
       } catch (error: unknown) {
         diagnostic = failureDiagnostic(sdkFailure(error, 'session-run').facts)
@@ -331,13 +336,6 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
     signal: request.signal,
     onAbort,
     requestCancel,
-    teardown: async () => {
-      try {
-        await harness.close()
-      } catch (error: unknown) {
-        reportFailure(spec, error)
-        throw sdkFailure(error, 'shutdown')
-      }
-    },
+    teardown,
   })
 }

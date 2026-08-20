@@ -9,7 +9,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, TurnEndReason } from '@deepseek-ai/dsh-session'
 import { HarnessClient, isRecord, SdkProtocolError } from './client.ts'
 import type { ContentBlock, DeepSeekHarnessOptions, HarnessClientOptions, HarnessNotification, RunResult } from './types.ts'
 
@@ -54,11 +54,12 @@ export class DeepSeekHarness implements AsyncDisposable {
 
   /**
    * Start the subprocess and perform the `initialize` handshake once. On
-   * failure the runtime is reaped and a fresh client replaces it
-   * (`HarnessClient.close` is permanent), so a later call retries with a new
-   * subprocess — unless {@link close} already ended this harness. When both
-   * initialize and SDK-owned cleanup fail, rejects with an `AggregateError`
-   * whose ordered errors preserve both causes.
+   * failure, successful SDK-owned cleanup reaps the runtime and installs a
+   * fresh client (`HarnessClient.close` is permanent), so a later call retries
+   * with a new subprocess unless {@link close} already ended this harness. If
+   * cleanup also fails, rejects with an `AggregateError` whose ordered errors
+   * preserve both causes and retains the failed client rather than spawning
+   * alongside a process whose exit was not proved.
    * @returns settlement of the (memoized) handshake.
    */
   start(): Promise<void> {
@@ -212,6 +213,19 @@ export function normalizeInput(input: string | ContentBlock[]): ContentBlock[] {
   return typeof input === 'string' ? [{ type: 'text', text: input }] : input
 }
 
+/** Validate the provider-read fields of one wire turn-end reason. */
+function validatedTurnEndReason(value: unknown): TurnEndReason {
+  if (!isRecord(value) || typeof value.kind !== 'string') {
+    throw new SdkProtocolError(`turn/end carried no reason envelope: ${JSON.stringify(value)}`)
+  }
+  if (value.kind === 'aborted') {
+    if (!isRecord(value.reason) || typeof value.reason.kind !== 'string') {
+      throw new SdkProtocolError(`turn/end carried a malformed aborted reason: ${JSON.stringify(value)}`)
+    }
+  }
+  return value as unknown as TurnEndReason
+}
+
 /** Validate the fields in a wire `session.event` envelope before returning the typed result. */
 function validatedSessionEvent(value: unknown): SessionEvent {
   if (!isRecord(value) || typeof value.type !== 'string') {
@@ -226,6 +240,13 @@ function validatedSessionEvent(value: unknown): SessionEvent {
     if (!Array.isArray(content) || !content.every(block => isRecord(block) && typeof block.type === 'string')) {
       throw new SdkProtocolError(`assistant/message event carried malformed content: ${JSON.stringify(value)}`)
     }
+  }
+  if (value.type === 'turn/end') {
+    const data = isRecord(value.data) ? value.data : undefined
+    if (data === undefined) {
+      throw new SdkProtocolError(`turn/end event carried malformed data: ${JSON.stringify(value)}`)
+    }
+    validatedTurnEndReason(data.reason)
   }
   return value as unknown as SessionEvent
 }

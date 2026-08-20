@@ -44,11 +44,11 @@ Subagent failure (provider: <provider>; stage: <stage>; category: <category>; st
 | --- | --- | --- |
 | `initialize` | 父工作区解析、SDK 运行时 spawn 与 initialize 握手 | `configuration`、`protocol`、`transport` 或 `unknown` |
 | `session-run` | prompt 接受、会话通知与最终子轮次原因 | `child-error`、`child-disposed`、`child-unknown`、`missing-terminal`、`protocol`、`transport` 或 `unknown` |
-| `shutdown` | 有界 SDK shutdown 与运行时进程释放 | 使用 shutdown stage 的同一套 typed SDK category |
+| `shutdown` | 有界 SDK shutdown 与运行时进程释放 | `unknown`；协议 shutdown 失败仍留在 SDK 客户端的 Host 诊断中 |
 
-子 `completed`、`max-tokens` 与普通 `aborted` 结果保持既有共享结束原因，不附加文本。闭集原因是 `disposed` 的 `aborted` 轮次仍保持 `aborted`，并附加 `child-disposed`。`blocked` 复用 `refusal`；`error` 附加 `child-error`。缺失终态事件会附加 `missing-terminal`；未知或不可达原因使用 `child-unknown`，且不复制原值或子进程结构化失败消息。
+子 `completed`、`max-tokens` 与普通 `aborted` 结果保持既有共享结束原因，不附加文本。闭集原因是 `disposed` 的 `aborted` 轮次仍保持 `aborted`，并附加 `child-disposed`。`blocked` 复用 `refusal`；`error` 附加 `child-error`。只有持久化修复会产生 `interrupted`，因此本全新会话提供方把它保留为不带诊断的通用 `error`。缺失终态事件会附加 `missing-terminal`；未知原因使用 `child-unknown`，且不复制原值或子进程结构化失败消息。
 
-`SdkProtocolError` 与 JSON-RPC 错误响应映射为 `protocol`，`TransportClosedError` 映射为 `transport`；提供方绝不读取其消息。其他异常使用 `unknown`。由于本提供方没有配置或传播 request timeout，请求超时分类继续推迟。
+在 initialize 或 session run 期间，`SdkProtocolError` 与 JSON-RPC 错误响应映射为 `protocol`，`TransportClosedError` 映射为 `transport`；提供方绝不读取其消息。其他异常和 shutdown 拒绝使用 `unknown`。由于本提供方没有配置或传播 request timeout，请求超时分类继续推迟。
 
 ### 所有权与生命周期
 
