@@ -48,7 +48,7 @@ class MockDelegatingAdapter extends LlmAdapter {
     yield { type: 'block-start', index: 0, blockType: 'text' }
     yield { type: 'text-delta', index: 0, text: reply }
     yield { type: 'block-end', index: 0, block: { type: 'text', text: reply } }
-    yield { type: 'usage', usage: { inputTokens: 10, outputTokens: reply.length } }
+    yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 5 } }
     yield { type: 'finish', reason: { kind: 'stop' } }
   }
 }
