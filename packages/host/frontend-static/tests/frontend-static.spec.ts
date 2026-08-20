@@ -129,6 +129,16 @@ describe('real Loader composition', () => {
     untap()
     expect((await request(port, '/')).body).not.toContain('__T__')
 
+    // A missing configured index follows the same empty-404 contract for both
+    // of its public entry paths and for both supported methods.
+    await rm(join(root!, 'dist', 'index.html'))
+    for (const path of ['/', '/index.html']) {
+      const get = await request(port, path)
+      const head = await request(port, path, { method: 'HEAD' })
+      expect(get).toEqual({ status: 404, type: null, body: '' })
+      expect(head).toEqual(get)
+    }
+
     // Ordinary unknown paths and static-resource misses are empty 404s for
     // both GET and HEAD; neither class can be mistaken for the HTML shell.
     const ordinaryMisses = ['/no/such/route', '/api/no/such/route', '/empty', '/app.js/child']

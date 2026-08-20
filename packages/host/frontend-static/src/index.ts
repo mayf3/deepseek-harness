@@ -1,13 +1,13 @@
 /**
  * @deepseek-ai/dsh-host-frontend-static — SPA dist server over the webserver
  * fallback seat: serves the built frontend directory with explicit index
- * entry points. The dist root and configured index path render index.html;
- * missing paths return 404, traversal outside the dist root is 403, unknown
- * extensions ship as octet-stream, and non-GET/HEAD is 405. Every index
- * response runs through the webserver's index render (structured injection
- * rows, then raw taps). The dist location is workspace knowledge of the composing
- * application, so `distIndex` is typically supplied through a `!!js`
- * expression, never hardcoded by a deployment.
+ * entry points. A readable index renders at the dist root and configured index
+ * path; missing paths return 404, traversal outside the dist root is 403,
+ * unknown extensions ship as octet-stream, and non-GET/HEAD is 405. Every
+ * index response runs through the webserver's index render (structured
+ * injection rows, then raw taps). The dist location is workspace knowledge of
+ * the composing application, so `distIndex` is typically supplied through a
+ * `!!js` expression, never hardcoded by a deployment.
  * @module @deepseek-ai/dsh-host-frontend-static
  */
 
@@ -34,8 +34,10 @@ export const Config: z<Config> = z.object({
   distIndex: z.string().required(),
 })
 
+const HTML_MIME = 'text/html; charset=utf-8'
+
 const MIME: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
+  '.html': HTML_MIME,
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
@@ -56,8 +58,8 @@ const STATIC_MISS_CODES: ReadonlySet<string | undefined> = new Set([
  * @param res - the node:http response to write.
  * @param distRoot - absolute dist root directory (resolved by the caller).
  * @param distIndex - absolute path of index.html inside distRoot.
- * @param renderIndex - produces the index.html body (structured injection rendering) for
- * the dist root and configured index path.
+ * @param renderIndex - produces the index.html body (structured injection
+ * rendering) for the dist root and configured index path.
  */
 export async function serveStatic(
   pathname: string, res: ServerResponse, distRoot: string, distIndex: string,
@@ -72,26 +74,26 @@ export async function serveStatic(
     res.end()
     return
   }
-  const serveIndex = async (): Promise<void> => {
-    const body = await renderIndex()
-    res.writeHead(200, { 'content-type': MIME['.html'] })
-    res.end(body)
-  }
-  if (target === distRoot || target === distIndex) {
-    await serveIndex()
-    return
-  }
+  let body: string | Buffer
+  let type: string
   try {
-    const body = await readFile(target)
-    res.writeHead(200, { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' })
-    res.end(body)
+    if (target === distRoot || target === distIndex) {
+      body = await renderIndex()
+      type = HTML_MIME
+    } else {
+      body = await readFile(target)
+      type = MIME[extname(target)] ?? 'application/octet-stream'
+    }
   } catch (error) {
     // Only absent or non-file targets are 404; other filesystem failures reach
     // the webserver's request-failure handling.
     if (!STATIC_MISS_CODES.has((error as NodeJS.ErrnoException).code)) throw error
     res.writeHead(404)
     res.end()
+    return
   }
+  res.writeHead(200, { 'content-type': type })
+  res.end(body)
 }
 
 /**
