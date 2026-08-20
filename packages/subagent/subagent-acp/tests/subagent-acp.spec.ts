@@ -455,9 +455,9 @@ describe('dsh-subagent-acp', () => {
   })
 
   it.each([
-    ['max_tokens', 'max-tokens', 'remote-limit'],
-    ['refusal', 'refusal', 'remote-refusal'],
-  ] as const)('adds a permission fact to %s without changing its stop reason', async (remote, stopReason, category) => {
+    ['max_tokens', 'max-tokens'],
+    ['refusal', 'refusal'],
+  ] as const)('adds a permission fact to %s without changing its stop reason', async (remote, stopReason) => {
     const ctx = await setup({
       MOCK_PERMISSION: '1',
       MOCK_PERMISSION_IGNORE_DECISION: '1',
@@ -467,10 +467,7 @@ describe('dsh-subagent-acp', () => {
     const run = await ctx.subagents.start('acp', request())
     const result = await run.result
     expect(result.stopReason).toBe(stopReason)
-    expect(result.diagnostic).toBe(
-      `${expectedFailure(`stage: prompt; category: ${category}; stop reason: ${remote}`)}\n`
-      + expectedPermission('reject', 'read', 'denied'),
-    )
+    expect(result.diagnostic).toBe(expectedPermission('reject', 'read', 'denied'))
     await run.dispose()
   })
 
@@ -830,10 +827,7 @@ describe('dsh-subagent-acp', () => {
     const result = await run.result
     // The child asked permission, the backend rejected, the child returned cancelled.
     expect(result.stopReason).toBe('aborted')
-    expect(result.diagnostic).toBe(
-      `${expectedFailure('stage: prompt; category: permission; stop reason: cancelled')}\n`
-      + expectedPermission('reject', 'execute', 'denied'),
-    )
+    expect(result.diagnostic).toBe(expectedPermission('reject', 'execute', 'denied'))
     await run.dispose()
   })
 
@@ -854,10 +848,7 @@ describe('dsh-subagent-acp', () => {
     const run = await ctx.subagents.start('acp', request())
     const result = await run.result
     expect(result.stopReason).toBe('aborted')
-    expect(result.diagnostic).toBe(
-      `${expectedFailure('stage: prompt; category: permission; stop reason: cancelled')}\n`
-      + expectedPermission('allow', 'unknown', 'denied'),
-    )
+    expect(result.diagnostic).toBe(expectedPermission('allow', 'unknown', 'denied'))
     await run.dispose()
   })
 

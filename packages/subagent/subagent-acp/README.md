@@ -58,15 +58,15 @@ ACP advertises no start-time capabilities because this process cannot enforce th
 
 ## Failure diagnostics
 
-The first line has a fixed field order:
+Failure diagnostics for generic error paths have a fixed field order:
 
 ```text
 Subagent failure (provider: ACP; stage: <stage>; category: <category>; stop reason: <reason>; exit code: <code>; signal: <signal>)
 ```
 
-Unavailable optional fields are omitted. The provider derives `initialize`, `new-session`, `prompt`, `process`, or `teardown` at the operation that owns the failure. Categories distinguish configuration, protocol or transport failure, process start/exit, remote limits or refusal, permission-related cancellation, and the fixed unknown fallback. Exit code and signal come only from the managed subprocess outcome; stderr, exception messages, task text, tool input, paths, environment values, credentials, and protocol payloads never enter the diagnostic. The shared result boundary limits the complete text to 4096 UTF-8 bytes.
+Unavailable optional fields are omitted. The provider derives `initialize`, `new-session`, `prompt`, `process`, or `teardown` at the operation that owns the failure. Categories distinguish configuration, protocol or transport failure, process start/exit, remote limits, and the fixed unknown fallback. Exit code and signal come only from the managed subprocess outcome; stderr, exception messages, task text, tool input, paths, environment values, credentials, and protocol payloads never enter the diagnostic. The shared result boundary limits the complete text to 4096 UTF-8 bytes.
 
-When a run requested permission and did not complete, a second fixed line records the configured policy, the ACP closed tool kind, and whether the provider allowed or denied it. Tool titles, raw input, locations, and option text are excluded. Successful results and local cancellation omit both lines. A permission-diagnosed remote `aborted` result remains `aborted`; foreground presentation includes its diagnostic, while the one-shot Job adapter classifies that diagnostic-bearing remote abort as failed instead of conflating it with local cancellation.
+When a run requested permission and did not complete, a fixed permission line records the configured policy, the ACP closed tool kind, and whether the provider allowed or denied it. Tool titles, raw input, locations, and option text are excluded. For `max-tokens`, `refusal`, or remote `aborted`, this is the complete diagnostic because the public stop reason already carries the terminal fact; generic error paths put it after the failure line. Successful results and local cancellation omit it. A permission-diagnosed remote `aborted` result remains `aborted`; foreground presentation includes its diagnostic, while the one-shot Job adapter classifies that diagnostic-bearing remote abort as failed instead of conflating it with local cancellation.
 
 ## Process boundary
 
