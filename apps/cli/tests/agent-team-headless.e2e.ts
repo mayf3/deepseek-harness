@@ -8,7 +8,9 @@ import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 
 const dshBinScript = fileURLToPath(new URL('../src/bin.ts', import.meta.url))
 const tsconfigPath = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
-const fixturePlugin = pathToFileURL(fileURLToPath(new URL('./fixtures/team-llm.mjs', import.meta.url))).href
+const fixturePlugin = pathToFileURL(fileURLToPath(
+  new URL('../../../examples/headless-agent/tests/fixtures/team-llm.mjs', import.meta.url),
+)).href
 
 function records(content: string): Record<string, unknown>[] {
   return content.split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, unknown>)
