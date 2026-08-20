@@ -52,13 +52,16 @@ class GatedAdapter extends LlmAdapter {
 }
 
 // Each persistence-backed temp root cleans up by closing its handle before
-// removing the directory (Windows rmSync over a dir holding a still-open handle
-// fails with EPERM — the intermittent continuation native flake).
+// removing the directory: Windows rmSync over a dir holding a still-open handle
+// fails with EPERM.
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
+  const errors: unknown[] = []
   for (const cleanup of cleanups.splice(0)) {
-    try { await cleanup() } catch { /* keep cleaning the rest regardless */ }
+    try { await cleanup() } catch (error) { errors.push(error) }
   }
+  if (errors.length === 1) throw errors[0]
+  if (errors.length > 1) throw new AggregateError(errors, 'temp-root cleanup failed')
 })
 
 /** Boot the full continuable stack: loop, persistence, providers, and subagents. */
@@ -414,6 +417,9 @@ describe('SubagentRuntime.startContinuable', () => {
     const fresh = new Context()
     await mountAgentLoopTestDependencies(fresh)
     const freshPersistence = await fresh.plugin(JsonlSessionPersistence, { root: root! })
+    // This context opened a second handle on the same root; register it so
+    // afterEach closes it before removing the root (even on a failure path).
+    cleanups.push(async () => { await freshPersistence.dispose() })
     await fresh.plugin(AgentLoop, { agents: [] })
     await fresh.plugin(SubagentRuntime)
     await fresh.plugin(SubagentSpawn, { providerName: 'spawn' })
@@ -428,10 +434,6 @@ describe('SubagentRuntime.startContinuable', () => {
     expect(resumed.options.provider).toBeUndefined()
     expect(resumed.options.model).toBeUndefined()
     await drainManager(fresh)
-    // This context opened a second JsonlSessionPersistence handle on the same
-    // root; close it before the shared afterEach removes the root, so Windows
-    // rmSync does not hit a still-open handle.
-    await freshPersistence.dispose()
   })
 
   it('continues turn numbering after an inherited fork prefix and pre-turn descriptor', async () => {
