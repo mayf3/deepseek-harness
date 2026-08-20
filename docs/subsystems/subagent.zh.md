@@ -424,7 +424,7 @@ interface SubagentRun {
 
 ## 提供方约定：`SubagentProvider`
 
-每个提供方都是一个具名的子 agent 传输层，多个提供方可以共存。服务在 `start()` 之前校验请求的启动时能力，并拒绝在没有 `prepareContinuable` 的提供方上发起可继续 start。`inheritsParentContext` 仅描述对话种子注入（`fork`：true；`spawn` 和 `acp`：false），使消费方能生成准确的面向模型措辞，而不暗示继承了工具、服务或权限。如果某个提供方的一次性路由拥有提供方自有默认值，它会公开可选的同步 `resolveAgentOptions()` 钩子，使 Consumer 能够预检 `start()` 将实际应用的确切值。
+每个提供方都是一个具名的子 agent 传输层，多个提供方可以共存。服务在 `start()` 之前校验请求的启动时能力，并拒绝在没有 `prepareContinuable` 的提供方上发起可继续 start。`inheritsParentContext` 仅描述对话种子注入（`fork`：true；`spawn` 和 `acp`：false），使消费方能生成准确的面向模型措辞，而不暗示继承了工具、服务或权限。如果某个提供方的一次性路由拥有静态的提供方自有默认值，它会公开可选且不可变的 `agentRouteDefaults`，使 Consumer 能够在预检前以正确基线合并模型与工具覆盖。
 
 ```ts type-equiv
 /**
@@ -447,15 +447,12 @@ interface SubagentProvider {
    */
   readonly inheritsParentContext: boolean
   /**
-   * OPTIONAL provider-owned resolution for one-shot Agent options. A Consumer
-   * that preflights a selected route calls this synchronously and passes the
-   * returned value unchanged to {@link start}; direct callers remain valid
-   * because the provider applies the same resolution inside `start`.
-   * Implementations must be pure and declare `capabilities.agentOptions`.
-   * @param requested - request/config fields before provider-owned defaults.
-   * @returns the exact Agent options this provider will apply.
+   * Optional static provider-owned route defaults for one-shot Agent options.
+   * Consumers merge tool/model overrides over these values before preflight;
+   * providers whose missing route fields derive from the parent omit it.
+   * The value is detached immutable data and requires `agentOptions` support.
    */
-  resolveAgentOptions?(requested: AgentOptions | undefined): AgentOptions | undefined
+  readonly agentRouteDefaults?: Readonly<Pick<AgentOptions, 'provider' | 'model' | 'reasoningEffort'>>
   /**
    * Establish a ONE-SHOT child and return its handle after publication.
    * The service has already validated that every requested start-time

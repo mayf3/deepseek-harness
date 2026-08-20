@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import { appendFileSync } from 'node:fs'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { CallId, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 
@@ -10,6 +11,9 @@ import { CallId, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
  */
 class MockDelegatingAdapter extends LlmAdapter {
   override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    if (process.env.DSH_TEST_PARENT_MODEL_RECORD !== undefined) {
+      appendFileSync(process.env.DSH_TEST_PARENT_MODEL_RECORD, `${provider}/${model}\n`)
+    }
     return Promise.resolve({
       provider,
       id: model,

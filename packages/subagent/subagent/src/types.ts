@@ -309,15 +309,12 @@ export interface SubagentProvider {
    */
   readonly inheritsParentContext: boolean
   /**
-   * OPTIONAL provider-owned resolution for one-shot Agent options. A Consumer
-   * that preflights a selected route calls this synchronously and passes the
-   * returned value unchanged to {@link start}; direct callers remain valid
-   * because the provider applies the same resolution inside `start`.
-   * Implementations must be pure and declare `capabilities.agentOptions`.
-   * @param requested - request/config fields before provider-owned defaults.
-   * @returns the exact Agent options this provider will apply.
+   * Optional static provider-owned route defaults for one-shot Agent options.
+   * Consumers merge tool/model overrides over these values before preflight;
+   * providers whose missing route fields derive from the parent omit it.
+   * The value is detached immutable data and requires `agentOptions` support.
    */
-  resolveAgentOptions?(requested: AgentOptions | undefined): AgentOptions | undefined
+  readonly agentRouteDefaults?: Readonly<Pick<AgentOptions, 'provider' | 'model' | 'reasoningEffort'>>
   /**
    * Establish a ONE-SHOT child and return its handle after publication.
    * The service has already validated that every requested start-time

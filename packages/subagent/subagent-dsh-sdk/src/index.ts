@@ -112,10 +112,10 @@ const SDK_START_CAPABILITIES: SubagentCapabilities = Object.freeze({
 })
 
 /** Merge the request's supported route fields over this provider instance's defaults. */
-function resolveSdkAgentOptions(
-  config: ResolvedConfig,
-  requested: AgentOptions | undefined,
-): AgentOptions & { provider: string; model: string } {
+function resolveSdkRoute(config: ResolvedConfig, requested: AgentOptions | undefined): Pick<
+  SdkRunSpec,
+  'provider' | 'model' | 'reasoningEffort' | 'maxTokens'
+> {
   const maxTokens = requested?.maxTokens ?? config.maxTokens
   return {
     provider: requested?.provider ?? config.provider,
@@ -132,17 +132,16 @@ function resolveSdkAgentOptions(
  */
 class SdkSubagentProvider implements SubagentProvider {
   readonly capabilities = SDK_START_CAPABILITIES
+  readonly agentRouteDefaults: Readonly<Pick<AgentOptions, 'provider' | 'model'>>
   // Context contract: an out-of-process SDK child starts fresh — no parent conversation crosses the process boundary.
   readonly inheritsParentContext = false
 
-  constructor(readonly name: string, private readonly ctx: Context, private readonly config: ResolvedConfig) {}
-
-  resolveAgentOptions(requested: AgentOptions | undefined): AgentOptions & { provider: string; model: string } {
-    return resolveSdkAgentOptions(this.config, requested)
+  constructor(readonly name: string, private readonly ctx: Context, private readonly config: ResolvedConfig) {
+    this.agentRouteDefaults = Object.freeze({ provider: config.provider, model: config.model })
   }
 
   start(request: SubagentStartRequest) {
-    const route = this.resolveAgentOptions(request.agentOptions)
+    const route = resolveSdkRoute(this.config, request.agentOptions)
     const spec: SdkRunSpec = {
       ...this.config.dshBin === undefined ? {} : { dshBin: this.config.dshBin },
       profile: this.config.profile,

@@ -46,6 +46,7 @@ describe('SDK subagent dynamic routing through a real cordis.yml', () => {
 
     let events: SessionEvent[] = []
     let childEvents: SessionEvent[] = []
+    let parentResolvedRoutes: string[] = []
     let workspace = ''
     try {
       const { stderr } = await runLoaderSmoke({
@@ -63,6 +64,7 @@ describe('SDK subagent dynamic routing through a real cordis.yml', () => {
           DSH_TEST_CHILD_PATCHES: JSON.stringify([childPatch]),
           DSH_TEST_CHILD_HOME: childHome,
           DSH_TEST_CHILD_DEFAULT_ROUTE: '1',
+          DSH_TEST_PARENT_MODEL_RECORD: '.parent-model-routes',
         },
         inspect: async (cwd) => {
           // The child reports realpaths; canonicalize the temp workspace to match.
@@ -79,6 +81,7 @@ describe('SDK subagent dynamic routing through a real cordis.yml', () => {
           const childLogs = await jsonlFiles(childSessions)
           expect(childLogs).toHaveLength(1)
           childEvents = await sessionEvents(childLogs[0] as string)
+          parentResolvedRoutes = (await readFile(join(cwd, '.parent-model-routes'), 'utf8')).trim().split('\n')
         },
       })
       expect(stderr).not.toContain('UNHANDLED')
@@ -93,6 +96,7 @@ describe('SDK subagent dynamic routing through a real cordis.yml', () => {
         .map(block => block.text)
         .join('')
       expect(resultText).toBe(`child route: mock/mock-routed/max/777; cwd: ${workspace}`)
+      expect(parentResolvedRoutes).toContain('mock/mock-routed')
 
       // The child ran a real turn with the model-selected route and tool-configured cap.
       expect(childEvents.some(event => event.type === 'user/message')).toBe(true)
