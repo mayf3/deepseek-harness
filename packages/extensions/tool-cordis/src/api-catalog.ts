@@ -4506,7 +4506,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TodoItem',
-    declaration: 'export interface TodoItem {\n    content: string;\n    status: \'pending\' | \'in_progress\' | \'completed\';\n}',
+    declaration: 'export interface TodoItem {\n    content: string;\n    status: \'pending\' | \'in_progress\' | \'completed\';\n    tags?: string[] | undefined;\n}',
   },
   {
     name: 'TokenMeasurement',

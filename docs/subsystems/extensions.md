@@ -20,9 +20,12 @@ Registry and cross-page router behind the two model-facing inspect tools.
 
 ```ts cordis-catalog
 /**
- * Register one Host provider.
+ * Register one Host provider. Per-session plugins (e.g. tool-cordis in the
+ * cordis preset) register the same ids concurrently; later registrations
+ * shadow earlier ones for queries, and each disposer removes only its own
+ * entry, so sessions can mount and unmount independently.
  * @param registration - manifest and local query handler.
- * @returns idempotent disposer.
+ * @returns disposer that removes exactly this registration.
  */
 register(registration: HostCordisInspectProviderRegistration): () => void
 
@@ -33,7 +36,8 @@ register(registration: HostCordisInspectProviderRegistration): () => void
 syncClientManifest(providers: readonly CordisInspectProviderManifest[]): void
 
 /**
- * Return the complete known Host and Client provider directory.
+ * Return the complete known Host and Client provider directory. Host ids
+ * appear once, carrying the newest registration's manifest.
  * @returns Host providers followed by the Client providers.
  */
 list(): CordisInspectProviderView[]

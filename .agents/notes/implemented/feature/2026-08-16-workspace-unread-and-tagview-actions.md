@@ -1,33 +1,41 @@
-# Agent Note: Workspace unread flag, tag-view new-session action, and tag expansion persistence
+# Agent Note: Workspace unread state, tag-view session creation, and persistent expansion
 
 Status: implemented
 
-## 问题
+English | [中文](2026-08-16-workspace-unread-and-tagview-actions.zh.md)
 
-工作区浏览器的三个缺口：一是标签视图下会话行的右键菜单没有「在此工作区新建会话」（只有工作区视图有，因为菜单依赖分组头 `group.workspaceId`，而标签组没有工作区概念）；二是会话没有「未读」表达，用户想手动标记稍后再看；三是标签组的展开/折叠状态不持久——`retainAccountKeys` 在 Workspace 基线就绪时按工作区键修剪 `groupExpansion`，`tag:*` 与 `UNTAGGED_KEY` 键每次都被清掉，标签视图的展开状态在刷新或工作区变更后重置。
+## Problem
 
-## 决策
+The workspace browser has three related gaps. Tag view cannot create a session in the selected row's workspace because tag groups have no workspace identity. Sessions have no user-controlled unread state. Tag-group expansion also resets because workspace-key pruning removes `tag:*` and `UNTAGGED_KEY` entries from `groupExpansion` whenever the workspace baseline changes.
 
-**会话行的「在此工作区新建会话」改为按会话归属的工作区。** `SessionNode` 增加 `workspaceId?: WorkspaceId`（无归属工作区的行缺省）；`deriveGroups` 直接传分组工作区，`deriveTagGroups` 与 `deriveFlat` 增加 `workspaces` 参数并构建 session→workspace 映射。行菜单的 `onNewSession` 从 `group.workspaceId` 改为 `node.workspaceId`，标签/单列/工作区三种视图统一可用。菜单文案从「在此目录新建会话」改为「在此工作区新建会话」（两种视图下都准确）。
+## Decision
 
-**未读是浏览器本地元数据，随 `sessionMeta` 持久化。** `SessionMeta` 增加 `unread?: boolean`，新增 `setSessionUnread` action；`SessionNode.unread` 由派生填充；行标题前渲染 8px 品牌色圆点（`aria-label="未读"`）。右键菜单按当前状态显示「标记为未读/标为已读」；点击打开会话自动清除未读（`SessionTree`/`FlatList` 包装 `open`）。搜索行不做未读（瞬态表面）。
+**“New session in this workspace” follows the session row's workspace.** `SessionNode` carries an optional `workspaceId`. `deriveGroups` passes the group workspace directly, while `deriveTagGroups` and `deriveFlat` receive `workspaces` and build a session-to-workspace map. The row menu reads `node.workspaceId`, making the action available in workspace, tag, and flat views when ownership is known.
 
-**标签组展开状态跨修剪保留。** 把「保留 `tag:` 前缀键」下沉进 store action `retainAccountKeys`（`key.startsWith(TAG_GROUP_PREFIX)`），浏览器 effect 不新增依赖——先前把 `groupExpansion` 加进 effect deps 会因 retain 每次重建对象身份造成无限渲染循环（Maximum update depth exceeded），因此保留逻辑必须放在 action 内部而非调用方。
+**Unread state is browser-local metadata persisted in `sessionMeta`.** `SessionMeta` includes `unread?: boolean`, and `setSessionUnread` updates it. Derived rows expose `SessionNode.unread`; the title renders an 8 px brand-color dot with an accessible unread label. The context menu toggles the state, and opening a session clears it. Search results omit unread treatment because they are transient.
 
-**标签可整体删除，标签输入带已有标签下拉。** `removeTag(tag)` 从所有会话元数据、`knownTags` 与 `groupExpansion`（`tag:<name>` 键）中移除该标签；标签组头（`kind: 'tag'`）右键菜单显示 danger 的「删除标签」。两个标签输入框（会话标签编辑器与「新建标签」弹窗）通过 `<datalist id="dsh-existing-tags">` 提供已有标签自动补全（来源：`knownTags` + 所有会话元数据标签，去重排序）。
+**Tag-group expansion survives workspace pruning.** `retainAccountKeys` preserves keys with `TAG_GROUP_PREFIX`. The preservation belongs in the store action: adding `groupExpansion` to the browser effect dependencies would retrigger the effect whenever retention creates a new object identity.
 
-**行内「在此工作区新建会话」继承来源行的标签。** `startSession` 打开新会话但不回传新 id，因此 SessionTree/FlatList 在触发前把 `{workspaceId, tags}` 记入 ref，用 effect 等待目标工作区的（空白）会话成为 current 后一次性 `setSessionTags`，并清空 pending（工作区不符则不误标）。
+**Tags support whole-tag deletion and autocomplete.** `removeTag(tag)` removes the tag from all session metadata, `knownTags`, and the corresponding `tag:<name>` expansion key. Tag headings expose a destructive “Delete tag” context-menu action. Session-tag editing and new-tag dialogs share a datalist built from `knownTags` and session metadata, deduplicated and sorted.
 
-**「只看未读」过滤器 + 深链滚动定位。** `unreadOnly` 作为持久化视图状态；三种派生（workspace/tag/flat）过滤掉无 `unread` 标记的行，unreadOnly 下空分组/空标签组整体隐藏。会话行加 `data-session-id`，current 变化时（通知深链跳转）轮询该行并 `scrollIntoView(nearest)`；标签视图下 current 会话的标签组自动展开，保证行可见。
+**A row-created session inherits the source row's tags.** `startSession` does not return the new session id, so `SessionTree` and `FlatList` retain `{ workspaceId, tags }` before the call. An effect applies those tags once the blank session in that workspace becomes current, then clears the pending record; a session from another workspace is never tagged.
 
-**行操作从三点菜单改为「归档图标 + 右键」。** 会话行唯一的行内按钮是归档图标，点击弹出单项确认菜单（「确认归档」，danger）二次确认后直接归档；重命名/分叉/标签/未读/新建会话等其余操作全部移入右键菜单（`onContextMenu` 记录光标位置，Menu 以 `getAnchorRect` 定位在光标处，不再有省略号触发器）。
+**Unread filtering and deep-link scrolling are persistent view behavior.** `unreadOnly` is stored with the view state. Workspace, tag, and flat derivations remove read rows and hide empty groups while the filter is active. Session rows expose `data-session-id`; a current-session change polls for that row and calls `scrollIntoView({ block: 'nearest' })`. Tag view expands the current session's tag groups before scrolling.
 
-## 曾考虑的替代方案
+**The inline row action is archive; other operations use the context menu.** The archive icon opens a one-item destructive confirmation menu. Rename, fork, tags, unread state, and session creation remain in the row context menu, positioned from the recorded pointer coordinates.
 
-- 在调用方 effect 里把 tag 键并入 `retainAccountKeys` 参数（效果等价），但 deps 需要 `groupExpansion`，而 retain 每次生成新对象身份 → 死循环；用 ref 读取可绕开，但逻辑分散。
-- 未读存 host 会话属性：会话对象没有未读概念，且这是浏览器视图状态，与 tags/parent 同层最一致。
-- 打开会话自动清除未读 vs 手动清除：选择自动清除（与既有 `completed` 提醒打开即清的行为一致）。
+## Alternatives considered
 
-## 关联
+**Merge tag keys into `retainAccountKeys` in the caller effect.** Rejected because the effect would depend on `groupExpansion`, while retention creates a new object identity and can cause a maximum-update-depth loop. Keeping the rule in the store action preserves one update boundary.
 
-本决策是 [2026-08-16-workspace-tag-grouping-and-nesting.md](2026-08-16-workspace-tag-grouping-and-nesting.md) 的后续增量：行右键菜单机制与其共享，未取代其任何决策。
+**Store unread state on the Host session.** Rejected because the session model has no unread property and unread state is browser presentation metadata alongside tags and parent relationships.
+
+**Require users to clear unread state manually.** Rejected because opening the session is the acknowledgement point and matches completed-notification behavior.
+
+## Consequences
+
+The three workspace views share session creation and unread behavior, tag expansion persists across refreshes and workspace changes, and deep links reveal the selected row. These preferences remain local to the browser profile. Creating a tagged session relies on observing the newly current blank session because the creation API does not return its id.
+
+## Related
+
+This decision extends [workspace tag grouping and nesting](2026-08-16-workspace-tag-grouping-and-nesting.md). It reuses that decision's context-menu and local-metadata mechanisms without replacing them.
