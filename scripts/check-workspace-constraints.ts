@@ -163,8 +163,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-session-persistence-sqlite': ['resources/sql/**/*.sql'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   // tsdown shares the repository/pack code between the lib entry and the bin
-  // through a hashed chunk.
-  '@deepseek-ai/dsh-experimental-webworker-packer': ['lib/repository-*.js'],
+  // through a hashed chunk. The committed bin.js is the link target pnpm can
+  // resolve at install time, before the build produces lib/bin.js.
+  '@deepseek-ai/dsh-experimental-webworker-packer': ['bin.js', 'lib/repository-*.js'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
 }
 
