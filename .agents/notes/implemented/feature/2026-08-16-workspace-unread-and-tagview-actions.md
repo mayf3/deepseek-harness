@@ -22,7 +22,7 @@ The workspace browser has three related gaps. Tag view cannot create a session i
 
 **Unread filtering and deep-link scrolling are persistent view behavior.** `unreadOnly` is stored with the view state. Workspace, tag, and flat derivations remove read rows and hide empty groups while the filter is active. Session rows expose `data-session-id`; a current-session change polls for that row and calls `scrollIntoView({ block: 'nearest' })`. Tag view expands the current session's tag groups before scrolling.
 
-**The inline row action is archive; other operations use the context menu.** The archive icon opens a one-item destructive confirmation menu. Rename, fork, tags, unread state, and session creation remain in the row context menu, positioned from the recorded pointer coordinates.
+**The inline row action is archive; other operations use the context menu.** The archive icon uses the in-place two-click confirmation owned by [workspace bulk archive selection](2026-08-20-workspace-bulk-archive-selection.md). Rename, fork, tags, unread state, and session creation remain in the row context menu, positioned from the recorded pointer coordinates.
 
 ## Alternatives considered
 

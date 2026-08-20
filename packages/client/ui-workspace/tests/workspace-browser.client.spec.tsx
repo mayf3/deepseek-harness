@@ -584,6 +584,82 @@ describe('WorkspaceBrowser', () => {
     }
   })
 
+  it('selects visible rows with Shift ranges and bulk archives after two clicks', async () => {
+    const archiveSession = vi.fn(async () => {})
+    const sessions = sessionState([
+      summary('one', 4), summary('two', 3), summary('three', 2), summary('blank', 1, { blank: true }),
+    ])
+    mount({
+      useSessions: hook(sessions),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'three', 'blank'])])),
+      archiveSession,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByRole('button', { name: '批量选择会话' }))
+    await waitFor(() => { expect(screen.getAllByRole('checkbox')).toHaveLength(3) })
+    expect(screen.queryByRole('checkbox', { name: /新会话/ })).toBeNull()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择会话“one”' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择会话“three”' }), { shiftKey: true })
+    expect(screen.getByText('已选 3 个')).toBeTruthy()
+    expect(screen.getByRole('treeitem', { name: /one/ }).getAttribute('draggable')).toBe('false')
+
+    fireEvent.click(screen.getByRole('button', { name: '归档' }))
+    expect(archiveSession).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '确认归档' }))
+    await waitFor(() => { expect(archiveSession).toHaveBeenCalledTimes(3) })
+    expect(archiveSession.mock.calls.map(([sessionId]) => sessionId)).toEqual([sid('one'), sid('two'), sid('three')])
+    await waitFor(() => { expect(screen.queryByRole('toolbar', { name: '批量归档工具栏' })).toBeNull() })
+  })
+
+  it('retains only bulk archive failures and reports partial counts', async () => {
+    const archiveSession = vi.fn(async (sessionId: SessionId) => {
+      if (sessionId === sid('two')) throw new Error('two failed')
+    })
+    const b = mount({
+      useSessions: hook(sessionState([summary('one', 2), summary('two', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
+      archiveSession,
+    })
+    act(() => { b.store.actions.setGroupBy('flat') })
+    fireEvent.click(screen.getByRole('button', { name: '批量选择会话' }))
+    await waitFor(() => { expect(screen.getAllByRole('checkbox')).toHaveLength(2) })
+    fireEvent.click(screen.getByRole('button', { name: '选择可见项' }))
+    fireEvent.click(screen.getByRole('button', { name: '归档' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认归档' }))
+    await waitFor(() => { expect(screen.getByRole('status').textContent).toBe('已归档 1 个，1 个失败。') })
+    expect(screen.getByText('已选 1 个')).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: '选择会话“one”' }).checked).toBe(false)
+    expect(screen.getByRole('checkbox', { name: '选择会话“two”' }).checked).toBe(true)
+  })
+
+  it('reconciles bulk selection with visible rows and exits bulk mode for search', async () => {
+    const b = mount({
+      useSessions: hook(sessionState([summary('one', 2), summary('two', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByRole('button', { name: '批量选择会话' }))
+    await waitFor(() => { expect(screen.getAllByRole('checkbox')).toHaveLength(2) })
+    fireEvent.click(screen.getByRole('button', { name: '选择可见项' }))
+    expect(screen.getByText('已选 2 个')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('alpha'))
+    await waitFor(() => { expect(screen.getByText('已选 0 个')).toBeTruthy() })
+    fireEvent.click(screen.getByRole('button', { name: '只看未读' }))
+    expect(screen.getByText('已选 0 个')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '搜索会话' }))
+    expect(screen.queryByRole('toolbar', { name: '批量归档工具栏' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '清除搜索' }))
+
+    fireEvent.click(screen.getByRole('button', { name: '批量选择会话' }))
+    await waitFor(() => { expect(screen.getByRole('toolbar', { name: '批量归档工具栏' })).toBeTruthy() })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
+    expect(screen.getByText('已选 0 个')).toBeTruthy()
+    expect(b.store.getSnapshot().groupBy).toBe('flat')
+  })
+
   it('renders a fork child as a top-level row without a session twist', () => {
     const parent = summary('parent-s', 2)
     const child = { ...summary('child-s', 1), parentId: parent.id }

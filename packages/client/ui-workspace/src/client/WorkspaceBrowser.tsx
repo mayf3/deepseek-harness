@@ -9,10 +9,10 @@
  * menu in between; the flow and its error dialog live in WorkspacePicker
  * (same package — direct composition, no slot between them).
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCloseFill14, IconPersonalizationOutline16, IconPlusOutline16,
+  Button, IconArchiveOutline20, IconCloseFill14, IconPersonalizationOutline16, IconPlusOutline16,
   IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
@@ -262,6 +262,13 @@ function isDescendantOf(
   return false
 }
 
+interface BulkRowsProps {
+  active: boolean
+  selected: ReadonlySet<SessionId>
+  toggle: (sessionId: SessionId, shiftKey: boolean) => void
+  reportVisible: (sessionIds: readonly SessionId[]) => void
+}
+
 type SessionTreeProps = Pick<
   WorkspaceBrowserProps,
   'useSessions' | 'startSession' | 'open' | 'forkSession'
@@ -314,6 +321,7 @@ type SessionTreeProps = Pick<
   orderBy: SessionOrderBy
   /** Grouping mode: workspace sections or tag sections (flat has its own body). */
   groupBy: Extract<SessionGroupBy, 'workspace' | 'tag'>
+  bulk: BulkRowsProps
 }
 
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
@@ -323,7 +331,7 @@ function SessionTree({
   sessionMeta, knownTags, setSessionParent, setSessionTags, setSessionUnread, removeTag, unreadOnly,
   insertWorkspaceBefore, insertSessionBefore, orderBy, groupBy,
   groupExpansion, setGroupExpanded,
-  sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t,
+  sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, bulk, t,
 }: SessionTreeProps) {
   const list = useSessions(s => s)
   const current = list.current
@@ -467,6 +475,17 @@ function SessionTree({
       }),
     [list, orderedWorkspaces, archivedSessionIds, expandedGroups, sessionMeta, knownTags, sessionOrderByAccount, unreadOnly, tagMode],
   )
+  const visibleSelectableIds = useMemo(
+    () => groups.flatMap(group => (expandedSessionGroups.includes(group.key)
+      ? group.sessions
+      : group.sessions.slice(0, COLLAPSED_SESSION_LIMIT))
+      .filter(node => !node.blank)
+      .map(node => node.id)),
+    [expandedSessionGroups, groups],
+  )
+  useEffect(() => {
+    if (bulk.active) bulk.reportVisible(visibleSelectableIds)
+  }, [bulk.active, bulk.reportVisible, visibleSelectableIds])
   const now = Date.now()
   /** Tag-view section-header drop: apply (or clear, for the untagged bucket) the dragged session's tags. */
   const commitTagDrop = (activeDrag: DragState, group: GroupNode): void => {
@@ -635,7 +654,7 @@ function SessionTree({
                     startSession(group.workspaceId)
                   }
                 }}
-                drag={workspaceDragProps}
+                drag={bulk.active ? undefined : workspaceDragProps}
                 dropTarget={tagMode && group.kind !== undefined && drag !== null
                   ? {
                     active: true,
@@ -710,7 +729,10 @@ function SessionTree({
                         startSession(workspaceId)
                       }}
                     onToggleUnread={() => { toggleUnread(node.id) }}
-                    drag={dragProps}
+                    drag={bulk.active ? undefined : dragProps}
+                    bulk={bulk.active
+                      ? { selected: bulk.selected.has(node.id), toggle: (shiftKey) => { bulk.toggle(node.id, shiftKey) } }
+                      : undefined}
                     t={t}
                   />
                 )
@@ -740,7 +762,7 @@ function SessionTree({
 function FlatList({
   useSessions, startSession, open, forkSession, onSessionRename, onSessionArchive, onEditTags,
   setSessionParent, setSessionUnread, setSessionTags, sessionMeta, workspaces, archivedSessionIds,
-  orderBy, unreadOnly, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
+  orderBy, unreadOnly, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, bulk, t,
 }: Pick<
   SessionTreeProps,
   | 'useSessions'
@@ -762,6 +784,7 @@ function FlatList({
   | 'sessionUpdatedAtByAccount'
   | 'syncSessionOrderAccount'
   | 'setSessionOrder'
+  | 'bulk'
   | 't'
 >) {
   const list = useSessions(s => s)
@@ -851,6 +874,10 @@ function FlatList({
         return row === undefined ? [] : [row]
       })
   }, [baseRows, sessionOrderByAccount, sessionIds])
+  const visibleSelectableIds = useMemo(() => rows.filter(node => !node.blank).map(node => node.id), [rows])
+  useEffect(() => {
+    if (bulk.active) bulk.reportVisible(visibleSelectableIds)
+  }, [bulk.active, bulk.reportVisible, visibleSelectableIds])
   const [drag, setDrag] = useState<DragState | null>(null)
   const dropCommitted = useRef(false)
   useNativeDragAcceptance(drag !== null)
@@ -907,7 +934,10 @@ function FlatList({
                 }}
               onToggleUnread={() => { toggleUnread(node.id) }}
               flat
-              drag={{
+              bulk={bulk.active
+                ? { selected: bulk.selected.has(node.id), toggle: (shiftKey) => { bulk.toggle(node.id, shiftKey) } }
+                : undefined}
+              drag={bulk.active ? undefined : {
                 start: () => {
                   dropCommitted.current = false
                   setDrag({ accountKey: FLAT_SESSION_ORDER_KEY, sessionId: node.id, over: null })
@@ -1051,6 +1081,73 @@ export function WorkspaceBrowser({
   const sessionUpdatedAtByAccount = useStore(s => s.sessionUpdatedAtByAccount)
   const sessionMeta = useStore(s => s.sessionMeta)
   const knownTags = useStore(s => s.knownTags)
+  const [bulkMode, setBulkMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<SessionId[]>([])
+  const [visibleIds, setVisibleIds] = useState<SessionId[]>([])
+  const visibleIdsRef = useRef<readonly SessionId[]>([])
+  const bulkAnchor = useRef<SessionId | null>(null)
+  const [bulkArchiveArmed, setBulkArchiveArmed] = useState(false)
+  const [bulkArchiving, setBulkArchiving] = useState(false)
+  const [bulkArchiveResult, setBulkArchiveResult] = useState<{ succeeded: number; failed: number } | null>(null)
+  const clearBulkSelection = useCallback(() => {
+    bulkAnchor.current = null
+    setSelectedIds([])
+    setBulkArchiveArmed(false)
+    setBulkArchiveResult(null)
+  }, [])
+  const exitBulkMode = useCallback(() => {
+    setBulkMode(false)
+    visibleIdsRef.current = []
+    setVisibleIds([])
+    clearBulkSelection()
+  }, [clearBulkSelection])
+  const reportVisible = useCallback((nextIds: readonly SessionId[]) => {
+    visibleIdsRef.current = nextIds
+    setVisibleIds(current => current.length === nextIds.length && current.every((id, index) => id === nextIds[index])
+      ? current
+      : [...nextIds])
+    const visible = new Set(nextIds)
+    setSelectedIds((current) => {
+      const next = current.filter(id => visible.has(id))
+      return next.length === current.length ? current : next
+    })
+    if (bulkAnchor.current !== null && !visible.has(bulkAnchor.current)) bulkAnchor.current = null
+  }, [])
+  const toggleBulkSession = useCallback((sessionId: SessionId, shiftKey: boolean) => {
+    setBulkArchiveArmed(false)
+    setBulkArchiveResult(null)
+    setSelectedIds((current) => {
+      const selected = new Set(current)
+      const anchor = bulkAnchor.current
+      if (shiftKey && anchor !== null) {
+        const anchorIndex = visibleIds.indexOf(anchor)
+        const targetIndex = visibleIds.indexOf(sessionId)
+        if (anchorIndex !== -1 && targetIndex !== -1) {
+          const start = Math.min(anchorIndex, targetIndex)
+          const end = Math.max(anchorIndex, targetIndex)
+          for (const id of visibleIds.slice(start, end + 1)) selected.add(id)
+        }
+      } else if (selected.has(sessionId)) {
+        selected.delete(sessionId)
+      } else {
+        selected.add(sessionId)
+      }
+      bulkAnchor.current = sessionId
+      return visibleIds.filter(id => selected.has(id))
+    })
+  }, [visibleIds])
+  const bulkRows = useMemo<BulkRowsProps>(() => ({
+    active: bulkMode,
+    selected: new Set(selectedIds),
+    toggle: toggleBulkSession,
+    reportVisible,
+  }), [bulkMode, reportVisible, selectedIds, toggleBulkSession])
+  const previousViewFilter = useRef({ groupBy, unreadOnly })
+  useEffect(() => {
+    const previous = previousViewFilter.current
+    previousViewFilter.current = { groupBy, unreadOnly }
+    if (previous.groupBy !== groupBy || previous.unreadOnly !== unreadOnly) clearBulkSelection()
+  }, [clearBulkSelection, groupBy, unreadOnly])
   useEffect(() => {
     if (workspacePhase !== 'ready') return
     actions.retainAccountKeys([
@@ -1257,6 +1354,30 @@ export function WorkspaceBrowser({
       console.warn('session archive rejected:', reason)
     })
   }
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.includes(id))
+  const confirmBulkArchive = () => {
+    if (bulkArchiving || selectedIds.length === 0) return
+    if (!bulkArchiveArmed) {
+      setBulkArchiveArmed(true)
+      return
+    }
+    setBulkArchiveArmed(false)
+    setBulkArchiving(true)
+    setBulkArchiveResult(null)
+    const targets = [...selectedIds]
+    void Promise.allSettled(targets.map(async sessionId => archiveSession(sessionId))).then((results) => {
+      const failures = targets.filter((_, index) => results[index]?.status === 'rejected')
+      setBulkArchiving(false)
+      if (failures.length === 0) {
+        exitBulkMode()
+        return
+      }
+      const retainedFailures = failures.filter(id => visibleIdsRef.current.includes(id))
+      setSelectedIds(retainedFailures)
+      bulkAnchor.current = retainedFailures[retainedFailures.length - 1] ?? null
+      setBulkArchiveResult({ succeeded: targets.length - failures.length, failed: failures.length })
+    })
+  }
 
   // Delete dialog is separate from the row so a successful removal can
   // unmount that row without tearing down the in-flight confirmation state.
@@ -1307,6 +1428,7 @@ export function WorkspaceBrowser({
               ref={searchRoot}
               className={clsx(css.search, searchExpanded && css.searchExpanded)}
               onClick={() => {
+                exitBulkMode()
                 setWsPickerOpen(false)
                 setSearchExpanded(true)
                 searchInput.current?.focus()
@@ -1319,6 +1441,7 @@ export function WorkspaceBrowser({
                   aria-label={t('search.sessions.aria')}
                   aria-expanded={searchExpanded}
                   onClick={() => {
+                    exitBulkMode()
                     setWsPickerOpen(false)
                     setSearchExpanded(true)
                   }}
@@ -1334,7 +1457,10 @@ export function WorkspaceBrowser({
                 maxLength={SEARCH_QUERY_MAX_CODE_UNITS}
                 value={query}
                 tabIndex={searchExpanded ? 0 : -1}
-                onChange={(e) => { setQuery(sanitizeSearchQuery(e.target.value)) }}
+                onChange={(e) => {
+                  exitBulkMode()
+                  setQuery(sanitizeSearchQuery(e.target.value))
+                }}
                 onKeyDown={(e) => {
                   if (e.key !== 'Escape') return
                   setQuery('')
@@ -1360,10 +1486,29 @@ export function WorkspaceBrowser({
         )}
         <div className={clsx(css.headerActions, wide && searchExpanded && css.headerActionsHidden)}>
           {wide && (
+            <Tooltip label={t('bulk.enter')} side="bottom" delayMs={500}>
+              <button
+                type="button"
+                className={clsx(css.iconButton, bulkMode && css.bulkModeOn)}
+                aria-label={t('bulk.enter')}
+                aria-pressed={bulkMode}
+                onClick={() => {
+                  if (bulkMode) exitBulkMode()
+                  else {
+                    setBulkMode(true)
+                    setBulkArchiveResult(null)
+                  }
+                }}
+              >
+                <IconArchiveOutline20 size={14} />
+              </button>
+            </Tooltip>
+          )}
+          {wide && (
             <ViewOptionsMenu
               groupBy={groupBy}
               orderBy={orderBy}
-              onGroupPick={(mode) => { actions.setGroupBy(mode) }}
+              onGroupPick={(mode) => { clearBulkSelection(); actions.setGroupBy(mode) }}
               onOrderPick={(mode) => { actions.setOrderBy(mode) }}
               t={t}
             />
@@ -1375,7 +1520,7 @@ export function WorkspaceBrowser({
                 className={clsx(css.iconButton, unreadOnly && css.unreadFilterOn)}
                 aria-label={unreadOnly ? t('filter.all') : t('filter.unreadOnly')}
                 aria-pressed={unreadOnly}
-                onClick={() => { actions.setUnreadOnly(!unreadOnly) }}
+                onClick={() => { clearBulkSelection(); actions.setUnreadOnly(!unreadOnly) }}
               >
                 <svg width={14} height={14} viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
                   <circle cx="7" cy="7" r="4.5" />
@@ -1443,6 +1588,7 @@ export function WorkspaceBrowser({
             className={css.searchButton}
             aria-label={t('search.sessions.aria')}
             onClick={() => {
+              exitBulkMode()
               setSearchExpanded(true)
               setSearchOnExpand(true)
               expandSidebar()
@@ -1488,6 +1634,7 @@ export function WorkspaceBrowser({
                 syncSessionOrderAccount={actions.syncSessionOrderAccount}
                 setSessionOrder={actions.setSessionOrder}
                 startSession={startSession}
+                bulk={bulkRows}
                 t={t}
               />
             )
@@ -1520,6 +1667,7 @@ export function WorkspaceBrowser({
                 insertSessionBefore={insertSessionBefore}
                 orderBy={orderBy}
                 home={home}
+                bulk={bulkRows}
                 t={t}
                 onRenameRequest={(workspaceId, currentTitle) => {
                   setRenameTarget({ workspaceId, currentTitle })
@@ -1533,6 +1681,53 @@ export function WorkspaceBrowser({
               />
             ))}
       </div>
+
+      {wide && bulkMode && (
+        <div className={css.bulkToolbar} role="toolbar" aria-label={t('bulk.toolbar')}>
+          <span className={css.bulkCount}>{t('bulk.selectedCount', { n: selectedIds.length })}</span>
+          <button
+            type="button"
+            className={css.bulkTextButton}
+            disabled={visibleIds.length === 0 || bulkArchiving}
+            onClick={() => {
+              setBulkArchiveArmed(false)
+              setBulkArchiveResult(null)
+              if (allVisibleSelected) clearBulkSelection()
+              else {
+                setSelectedIds([...visibleIds])
+                bulkAnchor.current = visibleIds[visibleIds.length - 1] ?? null
+              }
+            }}
+          >
+            {allVisibleSelected ? t('bulk.clearVisible') : t('bulk.selectVisible')}
+          </button>
+          <button type="button" className={css.bulkTextButton} disabled={bulkArchiving} onClick={exitBulkMode}>
+            {t('cancel')}
+          </button>
+          <button
+            type="button"
+            className={clsx(css.bulkArchiveButton, bulkArchiveArmed && css.bulkArchiveArmed)}
+            disabled={selectedIds.length === 0 || bulkArchiving}
+            onBlur={() => { setBulkArchiveArmed(false) }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape') return
+              setBulkArchiveArmed(false)
+              event.currentTarget.blur()
+            }}
+            onClick={confirmBulkArchive}
+          >
+            <IconArchiveOutline20 size={14} />
+            {bulkArchiving
+              ? t('bulk.archiving')
+              : bulkArchiveArmed ? t('bulk.archiveConfirm') : t('bulk.archive')}
+          </button>
+          {bulkArchiveResult !== null && (
+            <span className={css.bulkResult} role="status">
+              {t('bulk.partialFailure', bulkArchiveResult)}
+            </span>
+          )}
+        </div>
+      )}
 
       <Modal
         open={renameTarget !== null}
