@@ -146,11 +146,27 @@ describe('SessionProjectionCache write policy', () => {
     const { ctx, root } = await harness()
     const session = ctx.sessions.create(SessionId('turn-end'))
     mark(session, ['a'])
-    expect(await storedRows(root, session.id)).toBeUndefined() // throttled: no write yet
+    // Creation already wrote the init cut; the mark is throttled, so the
+    // stored row is still the creation-time cut (no marks folded).
+    await settle()
+    expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1)
     const end = endTurn(session)
     await settle()
     const rows = await storedRows(root, session.id)
     expect(rows?.['cache-test/marks']).toEqual({ ver: 1, seq: end.seq, val: { marks: ['a'] } })
+  })
+
+  it('writes a checkpoint at session creation, capturing the seed-derived cut', async () => {
+    const { ctx, root } = await harness()
+    // A forked child seeded with its ancestor's title-like event: no
+    // conversation follows, yet the creation write must capture the fold so
+    // a crash or a live-held fork still lists the derived value.
+    const session = ctx.sessions.create(SessionId('seeded'), {
+      seed: [{ type: 'cache-test/mark', seq: 0, time: 1, data: { marks: ['seed'] } }] as SessionEvent[],
+    })
+    await settle()
+    expect((await storedRows(root, session.id))?.['cache-test/marks']?.val)
+      .toEqual({ marks: ['seed'] })
   })
 
   it('writes at session disposal (detach, the live-to-cold moment)', async () => {
@@ -173,7 +189,7 @@ describe('SessionProjectionCache write policy', () => {
     mark(session, ['1'])
     mark(session, ['2'])
     await settle()
-    expect(await storedRows(root, session.id)).toBeUndefined()
+    expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1) // still the creation cut
     mark(session, ['3'])
     await settle()
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['3'] })
@@ -184,7 +200,7 @@ describe('SessionProjectionCache write policy', () => {
     const session = ctx.sessions.create(SessionId('interval'))
     mark(session, ['slow'])
     await new Promise(resolve => setTimeout(resolve, 10)) // before the interval
-    expect(await storedRows(root, session.id)).toBeUndefined()
+    expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1) // still the creation cut
     await settle() // past the interval; the fire-and-forget write lands
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['slow'] })
   })
@@ -218,7 +234,8 @@ describe('SessionProjectionCache write policy', () => {
     await fiber.dispose()
     // The armed timer died with the plugin: advancing time writes nothing.
     await vi.advanceTimersByTimeAsync(10_000)
-    expect(await storedRows(root, armed.id)).toBeUndefined()
+    // Only the creation cut exists: the armed mark never wrote.
+    expect((await storedRows(root, armed.id))?.['cache-test/marks']?.seq).toBe(-1)
   })
 
   it('contains a durable write failure: logs a warning, event path unharmed, next write self-heals', async () => {
@@ -234,10 +251,11 @@ describe('SessionProjectionCache write policy', () => {
     ctx.sessionProjections.register(marksUnit())
     await ctx.plugin(SessionProjectionCache, { writeEveryEvents: 100, writeIntervalMs: 60_000 })
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
-    const session = ctx.sessions.create(SessionId('fail-soft'))
     // A directory where the record document must land makes the atomic
-    // rename fail on the first write...
-    await mkdir(recordPath(root, session.id), { recursive: true })
+    // rename fail — including the creation write, so no row ever lands.
+    const blocker = recordPath(root, SessionId('fail-soft'))
+    await mkdir(blocker, { recursive: true })
+    const session = ctx.sessions.create(SessionId('fail-soft'))
     mark(session, ['x'])
     endTurn(session)
     await settle()

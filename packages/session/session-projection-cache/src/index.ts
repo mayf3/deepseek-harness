@@ -37,8 +37,9 @@ declare module '@deepseek-ai/cordis' {
 /**
  * Plugin config. Both throttle triggers are deployment choices with no
  * universally correct value, so the composition states them explicitly
- * (cordis.yml); the two mandatory write points (`turn/end` and session
- * disposal) are policy, not tunables, and always fire.
+ * (cordis.yml); the three mandatory write points (session creation,
+ * `turn/end`, and session disposal) are policy, not tunables, and always
+ * fire.
  */
 export interface Config {
   /** Committed events per session that force a durable checkpoint write between mandatory points. */
@@ -63,8 +64,9 @@ interface DirtyState {
 /**
  * The persisted projection cache service. Opens the `session_projcache`
  * domain at init, checkpoints live sessions on a throttled write-behind
- * (count/interval triggers from {@link Config}) plus two mandatory points —
- * `turn/end` and session disposal (the live-to-cold moment) — and serves the
+ * (count/interval triggers from {@link Config}) plus three mandatory points —
+ * session creation, `turn/end`, and session disposal (the live-to-cold
+ * moment) — and serves the
  * cached rows for a session header. Every durable write is fail-soft:
  * failures log a warning and the cache self-heals on the next write.
  */
@@ -199,6 +201,15 @@ export class SessionProjectionCache extends Service {
       }, this.config.writeIntervalMs)
     })
 
+    // Creation is the FIRST mandatory point: a session that never talks (a
+    // forked child seeded with its ancestor's title, say) would otherwise
+    // get its first row only at detach — so a crash, or a fork held live in
+    // the store, would leave the seed-derived values (the title) unreadable
+    // on the cold list. The creation write captures the seed-derived cut.
+    this.ctx.on('session/created', (session: Session) => {
+      void this.flushSoft(session, 'create')
+    })
+
     // Detach (the live-to-cold moment): the second mandatory point. After
     // this write the cold-read ladder serves the session from the cache.
     // flushSoft's synchronous prefix reads and resets the dirty state, so
@@ -225,7 +236,7 @@ export class SessionProjectionCache extends Service {
   /**
    * One fail-soft durable checkpoint. Every caller has work by construction:
    * the throttle triggers only fire dirty (markClean clears the timer with
-   * the counter) and the two mandatory points write unconditionally.
+   * the counter) and the mandatory points write unconditionally.
    */
   private async flushSoft(session: Session, trigger: string): Promise<void> {
     try {

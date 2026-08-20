@@ -17,10 +17,11 @@ A stored row `(key → {ver, seq, val})` is a fold shortcut, never an authority:
 
 ## Write policy
 
-Two mandatory points, throttled in between:
+Three mandatory points, throttled in between:
 
 | Trigger | Nature |
 |---|---|
+| Session creation | Mandatory — the seed-derived cut (a forked child's inherited title, say) lands immediately, so a crash or a live-held session never loses it from the cold list. |
 | `turn/end` | Mandatory — the turn-final value is what listing reads want. |
 | Session disposal (detach) | Mandatory — the live-to-cold moment; after it the cache serves this session's final cut. |
 | `writeEveryEvents` committed events | Config throttle (count). |
