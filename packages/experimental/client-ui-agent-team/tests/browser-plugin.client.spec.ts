@@ -3,15 +3,20 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import type { TeamMemberView as TeamRosterMember, TeamTaskId } from '@deepseek-ai/dsh-team/client'
-import type {} from '@deepseek-ai/dsh-team/remote'
+import type { TeamMemberView as TeamRosterMember, TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team/client'
+import type {} from '@deepseek-ai/dsh-experimental-agent-team/remote'
+import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import { TeamAction, type TeamActionInjected } from '../src/client/TeamAction.tsx'
-import { apply, inject } from '../src/client/index.ts'
+import { inject, mountAgentTeamUi } from '../src/client/mount.ts'
 import { apply as nodeApply } from '../src/index.ts'
 
 const SESSION = 'team-session' as SessionId
 const CHILD = 'team-child' as SessionId
 const TASK_ID = 'task-1' as TeamTaskId
+const REMOTE: TypertRemoteContribution = {
+  package: '@deepseek-ai/dsh-experimental-agent-team',
+  descriptors: [],
+}
 
 async function bench(options: {
   addressed?: boolean
@@ -53,7 +58,7 @@ async function bench(options: {
       id: SESSION, name: 'lead', role: 'lead' as const, status: 'idle' as const, diagnostics: [],
     }], tasks: [task],
   }
-  ctx.provide('remote.teams', {
+  ctx.provide('remote.agentTeams', {
     view: (...args: unknown[]) => {
       calls.push({ method: 'teams/view', args })
       return Promise.resolve(options.remoteFailure === 'view'
@@ -111,9 +116,9 @@ async function bench(options: {
   }
   const fiber = options.registrationFailure === true
     ? ctx.plugin({ apply() {} })
-    : ctx.plugin({ inject: [...inject], apply })
+    : ctx.plugin({ inject: [...inject], apply: clientCtx => mountAgentTeamUi(clientCtx, REMOTE) })
   const activation: Promise<unknown> = options.registrationFailure === true
-    ? apply(ctx).catch((error: unknown) => error)
+    ? mountAgentTeamUi(ctx, REMOTE).catch((error: unknown) => error)
     : fiber.await()
   if (options.registrationFailure !== true) {
     await activation
@@ -144,6 +149,7 @@ describe('ui-team browser plugin', () => {
       locale: 'team',
     })
     expect(b.remote.mount).toHaveBeenCalledOnce()
+    expect(b.remote.mount).toHaveBeenCalledWith(REMOTE)
     const actions = (b.entry()!.inject as unknown as () => TeamActionInjected)()
     expect((await actions.load(SESSION)).ok).toBe(true)
     expect((await actions.createTask(SESSION, {
