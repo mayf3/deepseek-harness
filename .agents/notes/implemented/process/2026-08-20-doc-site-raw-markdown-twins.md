@@ -14,9 +14,11 @@ The documentation site serves rendered HTML only, so an agent reading the docs h
 
 One projection serves both trees because its site-internal links are relative. `./sibling.md` renders as a clean URL on the HTML site and resolves file-to-file in the raw tree, so the twins need no second link-rewriting mode. Every route is emitted, including the frontmatter-only locale homes, because published pages link to them and the raw tree must stay link-closed; a spec walks every emitted relative link to pin that closure.
 
+An index route renders as a directory URL, so "append `.md`" lands on `<dir>.md` once the trailing slash is dropped; each index route therefore also emits a parent-level alias twin at that path. The alias is not a copy — a copied `index.md` would carry its relative links one directory too high — but its own projection over the alias route, resolved against the canonical manifest so links keep targeting canonical twins. The root home has no parent to alias into; `/` is documented as `/index.md`. A twin or image may never overwrite a file the build already carries, such as a `public/` copy; a name collision fails the emission.
+
 `llms.txt` is generated from the publication manifest at the site root: both locale trees in sidebar order, one `- [label](<base><route>): <section>` row per page, links site-absolute under the deploy-time `DOCS_BASE`. Locale homes stay out — the file itself is the agent entry point.
 
-The dev server serves the same surface. A middleware in the doc-projector plugin projects `.md` requests from their canonical sources per hit and generates `llms.txt` on demand, so `docs:dev` matches production without a rebuild.
+The dev server serves the same surface for navigations and header-less clients. A middleware in the doc-projector plugin projects `.md` requests from their canonical sources per hit and generates `llms.txt` on demand, so `docs:dev` matches production without a rebuild; an in-page `fetch()` (`Sec-Fetch-Dest: empty`) deliberately still reaches Vite in dev, while production static hosting answers it with the raw file.
 
 `verify-doc-site-fragments`, the post-build gate, fails the build when any route's twin or `llms.txt` is missing from the output, so deleting the `buildEnd` wiring cannot pass CI.
 
@@ -28,8 +30,8 @@ The dev server serves the same surface. A middleware in the doc-projector plugin
 
 **Absolute links inside the twins.** platform.claude.com links absolutely because its host is fixed. This site's base varies between local `/` and the Pages subpath, and the projector's relative links resolve in both trees as they are, so absolute rewriting would add a second link grammar without improving resolution.
 
-**Skip locale homes in the raw tree.** Published pages link to `docs/user/index.md`, so omitting the home routes breaks link closure. Their full bodies (H1 plus guide links) cost nothing, and the redirect frontmatter means nothing outside VitePress.
+**Skip locale homes in the raw tree.** Published pages link to `docs/user/index.md`, so omitting the home routes breaks link closure. The body that survives chrome stripping (the H1) costs nothing, and the redirect frontmatter means nothing outside VitePress.
 
 ## Consequences
 
-Agents fetch any page as plain Markdown at `<page URL>.md` and discover the whole set at `/llms.txt`; the rendered site is unchanged. The build output carries one extra Markdown file per route plus image copies beside them — kilobytes against the bundled assets. Twin content keeps GitHub-style heading text while the rendered site slugs punctuation-heavy headings differently; agents resolve headings themselves, so no gate covers raw-tree fragments. Deferred as unneeded for the twins' audience: `llms-full.txt`, and a per-page "view as Markdown" control, which would require a theme directory the stock-theme site deliberately lacks.
+Agents fetch any page as plain Markdown by dropping the URL's trailing slash and appending `.md`, and discover the whole set at `/llms.txt`; the rendered site is unchanged. The build output carries one extra Markdown file per route, an alias per index route, and image copies beside them — kilobytes against the bundled assets. Twin content keeps GitHub-style heading text while the rendered site slugs punctuation-heavy headings differently; agents resolve headings themselves, so no gate covers raw-tree fragments. Deferred as unneeded for the twins' audience: `llms-full.txt`, and a per-page "view as Markdown" control, which would require a theme directory the stock-theme site deliberately lacks.

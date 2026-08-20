@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import type { DefaultTheme, PageData, SiteConfig } from 'vitepress'
 import type { ViteDevServer } from 'vite'
 import { withMermaid } from 'vitepress-plugin-mermaid'
-import { landingLink, orderedPages, routeLink, sectionSpec, type DocsLocale, type DocsPage, type DocsSidebar } from '../docs.ts'
+import { landingLink, localeCollections, orderedPages, routeLink, sectionSpec, type DocsLocale, type DocsPage, type DocsSidebar } from '../docs.ts'
 import { docsSourceFiles, emitRawMarkdownPages, llmsTxt, projectDocs, rawMarkdownRoute } from '../../scripts/project-doc-site.ts'
 
 projectDocs()
@@ -58,14 +58,14 @@ interface GuideModules {
  */
 const guideModules = {
   root: {
-    guide: 'zh-guide',
-    develop: { label: '开发', collection: 'zh-develop' },
-    reference: { label: '参考', collection: 'zh-reference' },
+    guide: localeCollections.root[0],
+    develop: { label: '开发', collection: localeCollections.root[1] },
+    reference: { label: '参考', collection: localeCollections.root[2] },
   },
   en: {
-    guide: 'en-guide',
-    develop: { label: 'Development', collection: 'en-develop' },
-    reference: { label: 'Reference', collection: 'en-reference' },
+    guide: localeCollections.en[0],
+    develop: { label: 'Development', collection: localeCollections.en[1] },
+    reference: { label: 'Reference', collection: localeCollections.en[2] },
   },
 } satisfies Record<DocsLocale, GuideModules>
 
@@ -125,7 +125,10 @@ function serveRawMarkdown(server: ViteDevServer): void {
     // The dev client imports page modules at these same `.md` URLs, and a
     // module script must reach Vite's transform. Browsers declare the purpose:
     // `script` for module imports, `document` for address-bar navigation.
-    // Header-less clients (curl, agents) read the raw twin.
+    // Header-less clients (curl, agents) read the raw twin. In-page fetch()
+    // (`empty`) also passes to Vite — a deliberate dev-only divergence that
+    // keeps Vite's own requests unbroken, while production static hosting
+    // answers such a fetch with the raw file.
     const fetchDest = req.headers['sec-fetch-dest']
     if (fetchDest !== undefined && fetchDest !== 'document') {
       next()

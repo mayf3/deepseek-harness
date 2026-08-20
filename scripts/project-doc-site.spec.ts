@@ -12,7 +12,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { docsPages, landingLink, routeLink, sectionSpec, type DocsPage } from '../website/docs.ts'
 import {
   addProjectionFrontmatter, emitRawMarkdownPages, llmsTxt, projectedPageContent, publishableImage,
-  rawMarkdownPageContent, rawMarkdownRoute, resolveRepositoryRef, rewriteMarkdown,
+  rawMarkdownFiles, rawMarkdownPageContent, rawMarkdownRoute, resolveRepositoryRef, rewriteMarkdown,
 } from './project-doc-site.ts'
 
 const roots: string[] = []
@@ -567,17 +567,21 @@ describe('rawMarkdownPageContent', () => {
   it('keeps the home body the rendered site omits and drops the VitePress frontmatter', () => {
     expect(rawMarkdownPageContent(
       '---\nlayout: false\nhead:\n  - - meta\n    - http-equiv: refresh\n      content: 0; url=./guide/quickstart\n---\n\n# Harness\n\nEnglish | [中文](./index.md)\n\nBody.\n',
+      'docs/user/index.zh.md',
     )).toBe('# Harness\n\nBody.\n')
   })
 
   it('drops the language switcher and repository badge like the rendered site', () => {
     const badge = '[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)'
-    expect(rawMarkdownPageContent(`# Guide\n\nEnglish | [中文](./x)\n\nBody.\n\n${badge}\n`))
+    expect(rawMarkdownPageContent(`# Guide\n\nEnglish | [中文](./x)\n\nBody.\n\n${badge}\n`, 'docs/guide.md'))
       .toBe('# Guide\n\nBody.\n')
   })
 
-  it('rejects unclosed frontmatter', () => {
-    expect(() => rawMarkdownPageContent('---\nlayout: false\n')).toThrow('unclosed YAML frontmatter')
+  it('rejects unclosed frontmatter and names the page', () => {
+    // The twin pass is the first place an ordinary page's frontmatter is
+    // parsed, so an anonymous error would leave 168 routes to search.
+    expect(() => rawMarkdownPageContent('---\nlayout: false\n', 'docs/broken.md'))
+      .toThrow('project-doc-site: "docs/broken.md" has unclosed YAML frontmatter')
   })
 })
 
@@ -616,6 +620,51 @@ describe('emitRawMarkdownPages', () => {
 
     expect(readFileSync(join(out, 'index.md'), 'utf8')).toBe('# Home\n\n[A](./a.md)\n')
   })
+
+  it('emits a parent-level alias for an index route with links recomputed', () => {
+    // A copied alias would carry the index page's relative links one directory
+    // too high, so the alias is its own projection over the alias route.
+    const { root, pages } = fixture()
+    writeFileSync(join(root, 'docs/c.md'), '# C\n\n[A](a.md)\n')
+    pages.push({
+      locale: 'root', contentLocale: 'en-US', source: 'docs/c.md', route: 'guide/index.md',
+      label: 'C', sidebar: 'zh-guide', section: 'Test', order: 3,
+    })
+    const out = mirrorDir()
+
+    emitRawMarkdownPages(out, { pages, repoRoot: root, repositoryRef: 'abc123' })
+
+    expect(readFileSync(join(out, 'guide/index.md'), 'utf8')).toBe('# C\n\n[A](../a.md)\n')
+    expect(readFileSync(join(out, 'guide.md'), 'utf8')).toBe('# C\n\n[A](./a.md)\n')
+  })
+
+  it('refuses to overwrite a file the build already carries', () => {
+    // The twin pass writes into a populated build directory, and VitePress has
+    // already copied `website/public/` there; a page image sharing one of
+    // those names must fail loud instead of silently replacing the site file.
+    const { root, pages } = fixture()
+    writeFileSync(join(root, 'docs/a.md'), '![logo](../packages/logo.svg)\n')
+    const out = mirrorDir()
+    writeFileSync(join(out, 'logo.svg'), 'public copy\n')
+
+    expect(() => {
+      emitRawMarkdownPages(out, { pages, repoRoot: realpathSync(root), repositoryRef: 'abc123' })
+    }).toThrow('would overwrite')
+    expect(readFileSync(join(out, 'logo.svg'), 'utf8')).toBe('public copy\n')
+  })
+})
+
+describe('rawMarkdownFiles', () => {
+  it('lists every route plus a parent alias per index route', () => {
+    const files = rawMarkdownFiles()
+    for (const page of docsPages) expect(files).toContain(page.route)
+    expect(files).toContain('reference.md')
+    expect(files).toContain('en/reference.md')
+    expect(files).toContain('en.md')
+    // The root home has no parent to alias into; `/` is documented as `/index.md`.
+    expect(files).not.toContain('.md')
+    expect(new Set(files).size).toBe(files.length)
+  })
 })
 
 describe('raw Markdown projection of the published manifest', () => {
@@ -630,9 +679,9 @@ describe('raw Markdown projection of the published manifest', () => {
     rmSync(mirror, { recursive: true, force: true })
   })
 
-  it('emits every published route', () => {
-    for (const page of docsPages) {
-      expect(existsSync(join(mirror, page.route)), page.route).toBe(true)
+  it('emits every published route and every index alias', () => {
+    for (const file of rawMarkdownFiles()) {
+      expect(existsSync(join(mirror, file)), file).toBe(true)
     }
   })
 

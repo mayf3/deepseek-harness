@@ -4,7 +4,8 @@
  * The generated tree is disposable: sources stay in their owning `docs/`
  * tier, while this adapter rewrites cross-source links for the public site.
  * The same projection also emits a raw-Markdown twin of every route into the
- * build output, so `<page URL>.md` serves the page as plain Markdown.
+ * build output, so a page's URL, minus any trailing slash, plus `.md` serves
+ * it as plain Markdown.
  */
 
 import {
@@ -15,7 +16,7 @@ import { fromMarkdown } from 'mdast-util-from-markdown'
 import { gfmFromMarkdown } from 'mdast-util-gfm'
 import { gfm } from 'micromark-extension-gfm'
 import type { Nodes } from 'mdast'
-import { docsPages, orderedPages, type DocsLocale, type DocsPage, type DocsSidebar } from '../website/docs.ts'
+import { docsPages, localeCollections, orderedPages, type DocsLocale, type DocsPage } from '../website/docs.ts'
 import {
   isExternalOrAbsoluteMarkdownUrl,
   markdownDestination,
@@ -333,11 +334,18 @@ function defaultProjectionContext(): ProjectionContext {
   return { pages: docsPages, repoRoot: root, repositoryRef: resolveRepositoryRef(process.env) }
 }
 
-/** Project every page and its images into one target tree. */
+/**
+ * Project every page and its images into one target tree.
+ *
+ * `entries` are what gets emitted; link resolution always reads the canonical
+ * `context.pages`, so an alias entry sharing a source with its index route
+ * emits at its own path while links keep targeting canonical routes.
+ */
 function projectPagesInto(
   targetRoot: string,
   context: ProjectionContext,
   pageContent: (markdown: string, page: DocsPage) => string,
+  entries: DocsPage[] = context.pages,
 ): void {
   const routes = new Set<string>()
   /** Projected path to the repository file that claimed it, pages and images alike. */
@@ -352,10 +360,19 @@ function projectPagesInto(
         + ` both project to ${relative(targetRoot, target).split(sep).join('/')}.`,
       )
     }
+    // A file the projection did not claim is another producer's output — in
+    // the twin pass, the build VitePress just wrote, including `public/`
+    // copies. Overwriting one would silently corrupt the site.
+    if (holder === undefined && existsSync(target)) {
+      throw new Error(
+        `project-doc-site: ${repoPath(sourceAbs, context.repoRoot)} would overwrite existing build file`
+        + ` ${relative(targetRoot, target).split(sep).join('/')}.`,
+      )
+    }
     claimed.set(target, sourceAbs)
   }
 
-  for (const page of context.pages) {
+  for (const page of entries) {
     if (routes.has(page.route)) throw new Error(`project-doc-site: duplicate route ${JSON.stringify(page.route)}.`)
     routes.add(page.route)
     const sourceAbs = resolve(context.repoRoot, page.source)
@@ -410,41 +427,81 @@ export function projectDocs(): void {
  * Strip the leading YAML frontmatter of a projected page.
  *
  * @param markdown Rewritten canonical Markdown content.
+ * @param source Repository-relative page source, named by the failure.
  * @returns The content after the frontmatter block, or the input when none opens it.
  */
-function withoutFrontmatter(markdown: string): string {
+function withoutFrontmatter(markdown: string, source: string): string {
   if (!markdown.startsWith('---\n')) return markdown
   const closingDelimiter = '\n---\n'
   const closing = markdown.indexOf(closingDelimiter, 4)
-  if (closing === -1) throw new Error('project-doc-site: page has unclosed YAML frontmatter.')
+  if (closing === -1) {
+    throw new Error(`project-doc-site: ${JSON.stringify(source)} has unclosed YAML frontmatter.`)
+  }
   return markdown.slice(closing + closingDelimiter.length).replace(/^\n+/, '')
 }
 
 /**
  * The raw-Markdown twin of one published page.
  *
- * Frontmatter is VitePress rendering configuration, so it is dropped rather
- * than truncated to: a locale home page keeps its body here even though the
- * rendered site replaces it with a redirect.
+ * Frontmatter is VitePress rendering configuration and is dropped. A locale
+ * home page therefore keeps its body here, while the rendered site truncates
+ * it to the frontmatter redirect.
  *
  * @param markdown Rewritten canonical Markdown content.
+ * @param source Repository-relative page source, named by frontmatter failures.
  * @returns Plain Markdown without frontmatter or repository chrome.
  */
-export function rawMarkdownPageContent(markdown: string): string {
-  return withoutRepositoryChrome(withoutFrontmatter(markdown))
+export function rawMarkdownPageContent(markdown: string, source: string): string {
+  return withoutRepositoryChrome(withoutFrontmatter(markdown, source))
+}
+
+/**
+ * Parent-level alias route of an index route, or `undefined` for other routes.
+ *
+ * The rendered site shows an index route as a directory URL, so "append
+ * `.md`" naturally lands on `<dir>.md` once the trailing slash is dropped.
+ * The root `index.md` has no parent to alias into.
+ */
+function indexAliasRoute(route: string): string | undefined {
+  const match = /^(.+)\/index\.md$/.exec(route)
+  return match?.[1] === undefined ? undefined : `${match[1]}.md`
+}
+
+/**
+ * Site-relative Markdown files the raw-Markdown projection emits: every
+ * route, plus one parent-level alias per index route.
+ *
+ * @param pages Pages to project, defaulting to the publication manifest.
+ * @returns The emitted paths, routes first.
+ */
+export function rawMarkdownFiles(pages: DocsPage[] = docsPages): string[] {
+  const aliases = pages.map(page => indexAliasRoute(page.route)).filter(alias => alias !== undefined)
+  return [...pages.map(page => page.route), ...aliases]
 }
 
 /**
  * Emit the raw-Markdown twin of every published route into a built site, so
- * static hosting serves `<page URL>.md` beside each rendered page. Referenced
- * images are copied beside the pages, keeping the same relative URLs valid in
- * both trees. Existing build files stay in place.
+ * static hosting serves the page's URL, minus any trailing slash, plus `.md`
+ * as plain Markdown. Each index route also emits a parent-level alias twin,
+ * projected over the alias route so its relative links stay correct.
+ * Referenced images are copied beside the pages, keeping the same relative
+ * URLs valid in both trees. Existing build files stay in place, and a name
+ * collision with one fails the emission.
  *
  * @param outDir Build output directory to emit into.
  * @param context Manifest and repository inputs, defaulting to this repository.
  */
 export function emitRawMarkdownPages(outDir: string, context: ProjectionContext = defaultProjectionContext()): void {
-  projectPagesInto(outDir, context, markdown => rawMarkdownPageContent(markdown))
+  const aliases = context.pages.flatMap((page) => {
+    const alias = indexAliasRoute(page.route)
+    return alias === undefined ? [] : [{ ...page, route: alias }]
+  })
+  projectPagesInto(
+    outDir,
+    context,
+    (markdown, page) => rawMarkdownPageContent(markdown, page.source),
+    [...context.pages, ...aliases],
+  )
 }
 
 /**
@@ -469,7 +526,7 @@ export function rawMarkdownRoute(route: string, context: ProjectionContext = def
     repoRoot: context.repoRoot,
     repositoryRef: context.repositoryRef,
     placeImage: absPath => `./${encodeURI(basename(absPath))}`,
-  }))
+  }), page.source)
 }
 
 /** Site identity written into llms.txt. */
@@ -483,9 +540,9 @@ export interface LlmsTxtSite {
 }
 
 /** Locale groups llms.txt lists, in the order the site's navigation presents them. */
-const llmsTxtLocales: readonly { heading: string; locale: DocsLocale; collections: readonly DocsSidebar[] }[] = [
-  { heading: '简体中文', locale: 'root', collections: ['zh-guide', 'zh-develop', 'zh-reference'] },
-  { heading: 'English', locale: 'en', collections: ['en-guide', 'en-develop', 'en-reference'] },
+const llmsTxtLocales: readonly { heading: string; locale: DocsLocale }[] = [
+  { heading: '简体中文', locale: 'root' },
+  { heading: 'English', locale: 'en' },
 ]
 
 /**
@@ -504,11 +561,11 @@ export function llmsTxt(site: LlmsTxtSite): string {
     '',
     `> ${site.description}`,
     '',
-    '每个页面的 URL 加 `.md` 后缀即为该页的原始 Markdown。Append `.md` to any page URL for its raw Markdown source.',
+    '页面 URL 去掉末尾斜杠再加 `.md` 即为该页原始 Markdown(根路径用 `/index.md`);下方列表是各页精确地址。Drop any trailing slash and append `.md` to a page URL for its raw Markdown (the site root is `/index.md`); the list below carries the exact addresses.',
   ]
-  for (const { heading, locale, collections } of llmsTxtLocales) {
+  for (const { heading, locale } of llmsTxtLocales) {
     lines.push('', `## ${heading}`, '')
-    for (const collection of collections) {
+    for (const collection of localeCollections[locale]) {
       for (const page of orderedPages(locale, collection)) {
         lines.push(`- [${page.label}](${site.base}${page.route}): ${page.section}`)
       }

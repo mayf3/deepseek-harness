@@ -11,7 +11,7 @@
 import { existsSync, globSync, readFileSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { JSDOM } from 'jsdom'
-import { docsPages } from '../website/docs.ts'
+import { rawMarkdownFiles } from './project-doc-site.ts'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -154,11 +154,12 @@ export function missingSiteFiles(distRoot: string, expected: readonly string[]):
 function main(): number {
   const distRoot = resolve(root, 'website/.dist')
   const report = inspectSiteFragments(distRoot)
-  const missing = missingSiteFiles(distRoot, [...docsPages.map(page => page.route), 'llms.txt'])
+  const expected = rawMarkdownFiles()
+  const missing = missingSiteFiles(distRoot, [...expected, 'llms.txt'])
   if (report.broken.length === 0 && missing.length === 0) {
     console.log(
       `verify-doc-site-fragments: ${report.checked} internal fragment reference(s) resolve;`
-      + ` ${docsPages.length} raw-Markdown route(s) and llms.txt emitted.`,
+      + ` ${expected.length} raw-Markdown file(s) and llms.txt emitted.`,
     )
     return 0
   }
