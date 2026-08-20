@@ -13,6 +13,13 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import SessionProjectionCache from '@deepseek-ai/dsh-session-projection-cache'
+import Storage from '@deepseek-ai/dsh-storage'
+import {
+  apply as storageJsonApply, Config as storageJsonConfig, inject as storageJsonInject, name as storageJsonName,
+} from '@deepseek-ai/dsh-storage-json'
+import {
+  apply as storageDomainApply, Config as storageDomainConfig, inject as storageDomainInject, name as storageDomainName,
+} from '@deepseek-ai/dsh-storage-domain'
 import SubagentRuntime, {
   SUBAGENT_DESCRIPTOR_VERSION,
   SubagentError,
@@ -46,7 +53,12 @@ async function setup(
   if (options.projectionCache === true) {
     const root = mkdtempSync(join(tmpdir(), 'dsh-subagent-projcache-'))
     projCacheRoots.push(root)
-    await ctx.plugin(SessionProjectionCache, { root, writeEveryEvents: 100, writeIntervalMs: 60_000 })
+    // The cache opens its domain through the storage stack; the json backend
+    // lands it under this tmp root.
+    await ctx.plugin(Storage)
+    await ctx.plugin({ name: storageJsonName, inject: storageJsonInject, apply: storageJsonApply, Config: storageJsonConfig }, { root })
+    await ctx.plugin({ name: storageDomainName, inject: storageDomainInject, apply: storageDomainApply, Config: storageDomainConfig }, { backend: 'json' })
+    await ctx.plugin(SessionProjectionCache, { writeEveryEvents: 100, writeIntervalMs: 60_000 })
   }
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
@@ -421,7 +433,7 @@ describe('SubagentRuntime.listChildren', () => {
     // seq 2 >= seedLength 0: the cached identity provably comes from the
     // child's own suffix, so it is final and the log is never re-read — the
     // divergent label proves the row, not the log, produced the entry.
-    ctx.sessionProjectionCache.cachedSnapshot = async () => ({
+    ctx.sessionProjectionCache.cachedSnapshot = () => ({
       asOfSeq: 2,
       values: { subagent: { mode: 'continuable', label: 'cached own', seq: 2 } },
     })
@@ -451,7 +463,7 @@ describe('SubagentRuntime.listChildren', () => {
     }, events)
     // A creation-window checkpoint carried the ANCESTOR identity: its seq 2
     // fails the own-suffix gate (< seedLength 4), so preparation rules.
-    ctx.sessionProjectionCache.cachedSnapshot = async () => ({
+    ctx.sessionProjectionCache.cachedSnapshot = () => ({
       asOfSeq: 2,
       values: { subagent: { mode: 'continuable', label: 'ancestor label', seq: 2 } },
     })
@@ -500,7 +512,7 @@ describe('SubagentRuntime.listChildren', () => {
       origin: 'subagent',
     }, childEvents(descriptorPayload('actually valid')))
     // A stale cached sentinel must not out-rank the authoritative re-fold.
-    ctx.sessionProjectionCache.cachedSnapshot = async () => ({ asOfSeq: 0, values: { subagent: null } })
+    ctx.sessionProjectionCache.cachedSnapshot = () => ({ asOfSeq: 0, values: { subagent: null } })
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
       kind: 'child', id: healthy, label: 'actually valid', mode: 'continuable',
@@ -772,8 +784,8 @@ describe('SubagentRuntime.listChildren', () => {
     // The child's turn/end and disposal are the cache's mandatory checkpoint
     // points; both writes are fail-soft asynchronous, so wait for the row.
     const header = (await ctx.sessionPersistence.list()).find(meta => meta.id === childId)
-    await vi.waitFor(async () => {
-      expect((await ctx.sessionProjectionCache.cachedSnapshot(header!))?.values.subagent).toBeDefined()
+    await vi.waitFor(() => {
+      expect(ctx.sessionProjectionCache.cachedSnapshot(header!)?.values.subagent).toBeDefined()
     }, { timeout: 5_000 })
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
@@ -799,7 +811,7 @@ describe('SubagentRuntime.listChildren', () => {
     expect(inspect).toHaveBeenCalledTimes(1)
     // A stored row whose cut predates the descriptor: the subagent key is
     // absent from the served values, and preparation still rules.
-    ctx.sessionProjectionCache.cachedSnapshot = async () => ({ asOfSeq: 0, values: {} })
+    ctx.sessionProjectionCache.cachedSnapshot = () => ({ asOfSeq: 0, values: {} })
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual(expected)
     expect(inspect).toHaveBeenCalledTimes(2)
   })
@@ -825,7 +837,7 @@ describe('SubagentRuntime.listChildren', () => {
       parentSession: parent.id,
       origin: 'subagent',
     }, childEvents(descriptorPayload('recovered child')))
-    ctx.sessionProjectionCache.cachedSnapshot = async () => {
+    ctx.sessionProjectionCache.cachedSnapshot = () => {
       // A poisoned stored row (any unit's) detonates at view time; the cache
       // is derived data, so its failure must not become a verdict.
       throw new Error('poisoned cache row')
