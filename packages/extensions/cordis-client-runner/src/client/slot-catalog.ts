@@ -1014,10 +1014,10 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     kind: 'single',
     scope: 'session',
     summary: 'One breadcrumb title and its lineage controls.',
-    doc: 'One breadcrumb title and its lineage controls. The owner supplies the\nordinary title as both slot currency and render fallback; an occupant\nmay replace it with one combined navigation control.',
+    doc: 'One breadcrumb title and its lineage controls. The render site keeps\nthe ordinary title as fallback; an occupant receives plain title data\nand may replace a subagent title with one combined navigation control.',
     registerOptions: [],
     ownerProps: [
-      '/** Breadcrumb-title content handed to the optional lineage renderer. */\nexport interface ConversationHeaderLineageOwnerProps {\n  /** Session represented by this breadcrumb title. */\n  lineageSessionId: SessionId\n  /** Ordinary breadcrumb-title node retained when no lineage renderer is installed. */\n  title: ReactNode\n  /** Display title available to a renderer that combines the title with a control. */\n  displayTitle: string\n  /** Navigate to an ancestor title when its combined control is clicked. */\n  openTitle?: () => void\n}',
+      '/** Plain breadcrumb data handed to the optional lineage renderer. */\nexport interface ConversationHeaderLineageOwnerProps {\n  /** Session represented by this breadcrumb title. */\n  lineageSessionId: SessionId\n  /** Display title available to a renderer that combines the title with a control. */\n  displayTitle: string\n  /** Navigate to an ancestor title when its combined control is clicked. */\n  openTitle?: () => void\n}',
     ],
     ownerPropsReferences: [
       'SessionId',

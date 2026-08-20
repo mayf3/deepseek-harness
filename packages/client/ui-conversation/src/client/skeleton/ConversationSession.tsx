@@ -103,16 +103,31 @@ export function ConversationSessionHeader({
                     </button>
                   )
                   const lineage = last || summary.subagent
+                  const lineageOwner = {
+                    lineageSessionId: summary.id,
+                    displayTitle: summary.displayTitle,
+                    ...last ? {} : { openTitle: () => { open(summary.id) } },
+                  }
                   return (
                     <span key={summary.id} className={css.crumbSeg}>
                       {index > 0 && <span className={css.crumbSep}>/</span>}
                       {lineage
-                        ? renderSlot('conversation.session.header.lineage', {
-                          lineageSessionId: summary.id,
-                          title,
-                          displayTitle: summary.displayTitle,
-                          ...last ? {} : { openTitle: () => { open(summary.id) } },
-                        }, { fallback: title })
+                        ? summary.subagent
+                          ? renderSlot(
+                            'conversation.session.header.lineage',
+                            lineageOwner,
+                            { fallback: title },
+                          )
+                          : (
+                            <>
+                              {title}
+                              {renderSlot(
+                                'conversation.session.header.lineage',
+                                lineageOwner,
+                                { fallback: null },
+                              )}
+                            </>
+                          )
                         : title}
                     </span>
                   )

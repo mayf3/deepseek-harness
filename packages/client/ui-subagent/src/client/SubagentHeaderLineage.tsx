@@ -530,13 +530,13 @@ function CatalogDropdown({
 
   useEffect(() => {
     if (
-      !ancestorSwitcher
+      variant !== 'switcher'
       || catalog !== undefined
       || requestedInitialCatalog.current === rootSessionId
     ) return
     requestedInitialCatalog.current = rootSessionId
     refresh(rootSessionId)
-  }, [ancestorSwitcher, catalog, refresh, rootSessionId])
+  }, [catalog, refresh, rootSessionId, variant])
 
   const observeCatalog = (parentSessionId: SessionId, next: boolean): void => {
     if (next) observedCatalogs.current.add(parentSessionId)
@@ -567,13 +567,17 @@ function CatalogDropdown({
   const changeOpen = (next: boolean, restoreFocus = false): void => {
     cancelHoverOpen()
     cancelHoverClose()
-    setOpen(next)
     if (next) {
-      setMenuPosition(catalogMenuPosition(triggerRef.current as HTMLButtonElement))
+      const trigger = triggerRef.current
+      /* v8 ignore next -- a queued callback can outlive the trigger */
+      if (trigger === null) return
+      setOpen(true)
+      setMenuPosition(catalogMenuPosition(trigger))
       setNow(Date.now())
       observeCatalog(rootSessionId, true)
     }
     else {
+      setOpen(false)
       setMenuPosition(undefined)
       closeAllCatalogs()
     }
@@ -641,7 +645,10 @@ function CatalogDropdown({
   useEffect(() => {
     if (!open) return
     const placeMenu = (): void => {
-      setMenuPosition(catalogMenuPosition(triggerRef.current as HTMLButtonElement))
+      const trigger = triggerRef.current
+      /* v8 ignore next -- native resize or scroll can outlive the trigger */
+      if (trigger === null) return
+      setMenuPosition(catalogMenuPosition(trigger))
     }
     window.addEventListener('resize', placeMenu)
     document.addEventListener('scroll', placeMenu, true)
@@ -676,7 +683,10 @@ function CatalogDropdown({
       || presentedCatalog.entries.length > 0
       || descendantCount > 0)
   useEffect(() => {
-    if (visible || !open) return
+    if (visible) return
+    cancelHoverOpen()
+    cancelHoverClose()
+    if (!open) return
     setOpen(false)
     closeAllCatalogs()
   }, [visible, open])
@@ -797,10 +807,10 @@ function CatalogDropdown({
 /**
  * Render one breadcrumb title together with its subagent navigation.
  * @param props - Breadcrumb title, session standard props, and catalog actions.
- * @returns The ordinary title plus descendant count, or a title-and-chevron sibling switcher.
+ * @returns An ordinary-title descendant count, or a title-and-chevron sibling switcher.
  */
 export function SubagentHeaderLineage({
-  lineageSessionId, title, displayTitle, openTitle,
+  lineageSessionId, displayTitle, openTitle,
   useSessions, openChild, refresh, setCatalogOpen, t,
 }: SubagentHeaderLineageProps) {
   const parentId = useSessions((state) => {
@@ -810,21 +820,19 @@ export function SubagentHeaderLineage({
   const shared = { useSessions, openChild, refresh, setCatalogOpen, t }
   if (parentId === undefined) {
     return (
-      <>
-        {title}
-        <CatalogDropdown
-          key={lineageSessionId}
-          rootSessionId={lineageSessionId}
-          variant="count"
-          separator
-          {...shared}
-        />
-      </>
+      <CatalogDropdown
+        key={lineageSessionId}
+        rootSessionId={lineageSessionId}
+        variant="count"
+        separator
+        {...shared}
+      />
     )
   }
   return (
     <>
       <CatalogDropdown
+        key={lineageSessionId}
         rootSessionId={parentId}
         currentSessionId={lineageSessionId}
         variant="switcher"

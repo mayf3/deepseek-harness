@@ -78,9 +78,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.session.header': { kind: 'single'; scope: 'session' }
     /**
-     * One breadcrumb title and its lineage controls. The owner supplies the
-     * ordinary title as both slot currency and render fallback; an occupant
-     * may replace it with one combined navigation control.
+     * One breadcrumb title and its lineage controls. The render site keeps
+     * the ordinary title as fallback; an occupant receives plain title data
+     * and may replace a subagent title with one combined navigation control.
      */
     'conversation.session.header.lineage': {
       kind: 'single'
@@ -315,12 +315,10 @@ export interface ConversationSessionOwnerProps {
 /** Header actions derive their state from the standard session/global kit. */
 export interface ConversationHeaderActionOwnerProps {}
 
-/** Breadcrumb-title content handed to the optional lineage renderer. */
+/** Plain breadcrumb data handed to the optional lineage renderer. */
 export interface ConversationHeaderLineageOwnerProps {
   /** Session represented by this breadcrumb title. */
   lineageSessionId: SessionId
-  /** Ordinary breadcrumb-title node retained when no lineage renderer is installed. */
-  title: ReactNode
   /** Display title available to a renderer that combines the title with a control. */
   displayTitle: string
   /** Navigate to an ancestor title when its combined control is clicked. */
