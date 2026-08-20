@@ -777,6 +777,31 @@ export function WorkspaceBrowser({
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const sessionUpdatedAtByAccount = useStore(s => s.sessionUpdatedAtByAccount)
+  const currentBlankSessionId = useSessions((state) => {
+    const current = state.current
+    return current !== undefined && state.byId[current]?.blank === true ? current : undefined
+  })
+  const currentBlankAccount = currentBlankSessionId === undefined
+    ? undefined
+    : (workspaces.find(workspace => workspace.sessionIds.includes(currentBlankSessionId))
+      ?.workspaceId as string | undefined) ?? UNGROUPED_KEY
+  const promotedBlank = useRef<{ sessionId: SessionId; accountKey: string } | undefined>(undefined)
+  useEffect(() => {
+    if (currentBlankSessionId === undefined || currentBlankAccount === undefined) {
+      promotedBlank.current = undefined
+      return
+    }
+    if (promotedBlank.current?.sessionId === currentBlankSessionId
+      && promotedBlank.current.accountKey === currentBlankAccount) return
+    promotedBlank.current = { sessionId: currentBlankSessionId, accountKey: currentBlankAccount }
+    for (const accountKey of new Set([currentBlankAccount, FLAT_SESSION_ORDER_KEY])) {
+      const previous = sessionOrderByAccount[accountKey] ?? []
+      actions.setSessionOrder(accountKey, [
+        currentBlankSessionId,
+        ...previous.filter(id => id !== currentBlankSessionId),
+      ])
+    }
+  }, [actions.setSessionOrder, currentBlankAccount, currentBlankSessionId, sessionOrderByAccount])
   useEffect(() => {
     if (workspacePhase !== 'ready') return
     actions.retainAccountKeys([
@@ -822,8 +847,13 @@ export function WorkspaceBrowser({
     searchInput.current?.focus({ preventScroll: true })
   }, [wide, searchExpanded, searchOnExpand])
 
+  // Outside-click dismissal stays off while the rail gesture is in flight
+  // (searchOnExpand): the rail click flips the shell wide and mounts this
+  // listener during its own dispatch, then keeps bubbling to document with
+  // the now-unmounted rail button as its target — outside searchRoot, so the
+  // listener would dismiss the search that click just opened.
   useEffect(() => {
-    if (!wide || !searchExpanded) return
+    if (!wide || !searchExpanded || searchOnExpand) return
     const onClick = (event: MouseEvent): void => {
       if (!(event.target instanceof Node) || searchRoot.current?.contains(event.target) === true) return
       searchInput.current?.blur()
@@ -832,7 +862,7 @@ export function WorkspaceBrowser({
     }
     document.addEventListener('click', onClick)
     return () => { document.removeEventListener('click', onClick) }
-  }, [normalizedQuery, wide, searchExpanded])
+  }, [normalizedQuery, wide, searchExpanded, searchOnExpand])
 
   useEffect(() => {
     if (normalizedQuery === '') {
