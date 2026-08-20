@@ -13,6 +13,10 @@ export const inboxProjectionSchema = z.object({
 export type InboxState = z.infer<typeof inboxProjectionSchema>
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    /** Pending agent input reconstructed from durable inbox splices. */
+    inbox: InboxState
+  }
   interface SessionProjectionMap {
     /** Pending agent input reconstructed from durable inbox splices. */
     inbox: InboxState

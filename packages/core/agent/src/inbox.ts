@@ -6,8 +6,9 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { MessageId } from '@deepseek-ai/dsh-llm'
+// Type-only: resolves ctx.sessionProjections for the required Inbox projection.
+import type {} from '@deepseek-ai/dsh-session-projection'
 import type { SessionEventMap, UserMessage } from '@deepseek-ai/dsh-session'
-import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import { agentEvents } from './dispatch.ts'
 import type { AgentEventDispatch } from './dispatch.ts'
 import { inboxProjectionSchema } from './inbox-projection.ts'
@@ -27,9 +28,9 @@ export class InboxService extends Service {
 
   constructor(ctx: Context) {
     super(ctx, 'inboxes')
-    ctx.sessionProjections.register({
+    ctx.sessionProjections.register<'inbox', InboxState>({
       key: 'inbox',
-      schema: inboxProjectionSchema,
+      stateSchema: inboxProjectionSchema,
       init: () => ({ 'next-turn': [], 'next-step': [] }),
       apply(state, event) {
         if (event.type !== 'agent/inbox/spliced') return state
@@ -43,9 +44,12 @@ export class InboxService extends Service {
           ? { 'next-turn': next, 'next-step': state['next-step'] }
           : { 'next-turn': state['next-turn'], 'next-step': next }
       },
-      view: state => state,
+      wire: {
+        viewSchema: inboxProjectionSchema,
+        view: state => state,
+      },
       stateVersion: 1,
-    } satisfies ProjectionDefinition<'inbox', InboxState>)
+    })
   }
 
   /**
