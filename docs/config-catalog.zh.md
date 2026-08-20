@@ -1752,8 +1752,9 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 /**
  * Plugin config. Both throttle triggers are deployment choices with no
  * universally correct value, so the composition states them explicitly
- * (cordis.yml); the two mandatory write points (`turn/end` and session
- * disposal) are policy, not tunables, and always fire.
+ * (cordis.yml); the three mandatory write points (session creation,
+ * `turn/end`, and session disposal) are policy, not tunables, and always
+ * fire.
  */
 export interface Config {
   /** Committed events per session that force a durable checkpoint write between mandatory points. */
@@ -1763,7 +1764,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/session/session-projection-cache/src/index.ts:43`](../packages/session/session-projection-cache/src/index.ts)
+来源：[`packages/session/session-projection-cache/src/index.ts:44`](../packages/session/session-projection-cache/src/index.ts)
 
 <a id="deepseek-aidsh-session-query-sqlite"></a>
 

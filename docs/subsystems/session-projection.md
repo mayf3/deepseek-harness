@@ -130,6 +130,17 @@ The persisted projection cache service. Opens the `session_projcache` domain at 
 cachedSnapshot(meta: SessionHeader): ProjectionSnapshot | undefined
 
 /**
+ * Durably checkpoint one live session NOW (both mandatory points call
+ * this; tests and carriers may too). The registry cut is snapshotted at
+ * this boundary (states are live references), then the session's record is
+ * replaced on the domain's write chain. NOT fail-soft — callers on the
+ * fail-soft paths contain it.
+ * @param session - the live session to checkpoint.
+ * @returns resolution after durability and event emission.
+ */
+async write(session: Session): Promise<void>
+
+/**
  * Cold-read one session's projections from its complete log. Each unit is
  * seeded from the identity-checked cached rows — the registry skips `apply`
  * for the already-folded prefix (events at or below the row's `seq`) — and
@@ -142,17 +153,6 @@ cachedSnapshot(meta: SessionHeader): ProjectionSnapshot | undefined
  * @returns the projection cut at the log end.
  */
 coldSnapshot(meta: SessionHeader, events: readonly SessionEvent[]): ProjectionSnapshot
-
-/**
- * Durably checkpoint one live session NOW (both mandatory points call
- * this; tests and carriers may too). The registry cut is snapshotted at
- * this boundary (states are live references), then the session's record is
- * replaced on the domain's write chain. NOT fail-soft — callers on the
- * fail-soft paths contain it.
- * @param session - the live session to checkpoint.
- * @returns resolution after durability and event emission.
- */
-async write(session: Session): Promise<void>
 ```
 
 Types: [Session](session.md) · [SessionEvent](session.md) · [SessionHeader](persistence.md)
