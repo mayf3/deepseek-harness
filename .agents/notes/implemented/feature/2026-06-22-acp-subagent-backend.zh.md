@@ -30,7 +30,7 @@ subagent seam（[seam Agent Note](2026-06-21-subagent-capability-seam.zh.md)）�
 
 ### StopReason 映射
 
-ACP `StopReason` → harness `SubagentStopReason`：`end_turn`→`completed`、`max_tokens`→`max-tokens`、`refusal`→`refusal`、`cancelled`→`aborted`、`max_turn_requests`→`error`（无对等语义，任务未完成）、未知→`error`。spawn/传输/RPC 失败时，结果为 `error`（如果已请求取消则为 `aborted`）；按 seam 约定，`result` 在子 agent 级别失败时从不 reject。非完成结果与生命周期失败只会附加[进程外诊断决策](2026-08-21-out-of-process-subagent-minimal-diagnostics.zh.md)定义的有界 provider stage、粗粒度 category、闭集权限决定和已观测进程事实；原始 ACP 错误与 stderr 仍只留在 Host。
+ACP `StopReason` → harness `SubagentStopReason`：`end_turn`→`completed`、`max_tokens`→`max-tokens`、`refusal`→`refusal`、`cancelled`→`aborted`、`max_turn_requests`→`error`（无对等语义，任务未完成）、未知→`error`。spawn、initialize 与会话创建失败会在提供方自有清理后、发布前拒绝 `start()`；发布后的 prompt/RPC/传输失败会把 `result` 确定为 `error`（本地取消后为 `aborted`），而 `result` 在子 agent 级别失败时绝不 reject。非完成结果与生命周期失败只会附加[进程外诊断决策](2026-08-21-out-of-process-subagent-minimal-diagnostics.zh.md)定义的有界 provider stage、粗粒度 category、闭集权限决定和已观测进程事实；原始 ACP 错误与 stderr 仍只留在 Host。
 
 ### 安全：清洗子进程环境
 

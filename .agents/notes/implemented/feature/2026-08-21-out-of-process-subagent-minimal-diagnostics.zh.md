@@ -61,7 +61,7 @@ Subagent failure (provider: <provider>; stage: <stage>; category: <category>; st
 | 诊断字节与呈现 | `dsh-subagent`、前台工具与 Job 运行时 | 前台和一次性后台模式都把同一份有界文本与 assistant 输出分开 |
 | 原始失败 | 子运行时、Error cause 链与 Host logger | 只供 Host 排障，绝不复制进父模型结果 |
 
-启动只有在提供方握手完成后才发布运行。启动失败会先把私有子进程回滚到完全停稳，再以安全事实拒绝。已发布运行的结果不会拒绝，而 `dispose()` 会独立报告安全 teardown 或 shutdown 事实，并继续使用后端既有的进程清理阶梯。
+启动只有在提供方握手完成后才发布运行。启动清理成功时，私有子进程会先回滚到完全停稳再拒绝；清理失败时，则保留有序的安全启动与 teardown/shutdown 事实，但不会宣称进程已经退出。已发布运行的结果不会拒绝，而 `dispose()` 会独立报告安全 teardown 或 shutdown 事实，并继续使用后端既有的进程清理阶梯。
 
 ## Verification
 

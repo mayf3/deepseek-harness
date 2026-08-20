@@ -30,7 +30,7 @@ The child's working directory is an explicit resolution, never the harness proce
 
 ### StopReason mapping
 
-ACP `StopReason` → harness `SubagentStopReason`: `end_turn`→`completed`, `max_tokens`→`max-tokens`, `refusal`→`refusal`, `cancelled`→`aborted`, `max_turn_requests`→`error` (no clean equivalent — the task did not finish), unknown→`error`. A spawn/transport/RPC failure resolves `error` (or `aborted` if a cancel was requested); `result` never rejects on a child-level failure, per the seam contract. Non-completed and lifecycle failures add only the bounded provider stage, coarse category, closed permission decision, and observed process facts defined by the [out-of-process diagnostics decision](2026-08-21-out-of-process-subagent-minimal-diagnostics.md); raw ACP errors and stderr remain Host-only.
+ACP `StopReason` → harness `SubagentStopReason`: `end_turn`→`completed`, `max_tokens`→`max-tokens`, `refusal`→`refusal`, `cancelled`→`aborted`, `max_turn_requests`→`error` (no clean equivalent — the task did not finish), unknown→`error`. Spawn, initialize, and session-creation failures reject `start()` before publication after provider-owned cleanup; prompt/RPC/transport failures after publication settle `result` as `error` (or `aborted` after local cancellation), and `result` never rejects on a child-level failure. Non-completed and lifecycle failures add only the bounded provider stage, coarse category, closed permission decision, and observed process facts defined by the [out-of-process diagnostics decision](2026-08-21-out-of-process-subagent-minimal-diagnostics.md); raw ACP errors and stderr remain Host-only.
 
 ### Security: scrubbed child environment
 

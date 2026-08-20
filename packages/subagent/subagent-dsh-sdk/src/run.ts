@@ -207,9 +207,10 @@ function sdkStartupFailure(spec: SdkRunSpec, error: unknown): Error {
 
 /**
  * Start and publish one SDK runtime child after its `initialize` handshake.
- * Child failures resolve through the run result; startup and shutdown failures
- * reject with fixed safe facts after process reap, retaining original causes
- * for Host observation. Disposal shuts the runtime down and reaps it.
+ * Child failures resolve through the run result. Startup rejects with fixed
+ * safe facts after SDK-owned cleanup; successful cleanup proves process reap,
+ * while cleanup failure preserves both causes without claiming quiescence.
+ * Disposal shuts the runtime down and reaps it.
  * @param request - the start request; its signal is the cancellation channel.
  * @param spec - the resolved spawn spec: command/args/cwd, the child's
  * provider/model route, env, timeouts, and the optional error sink.
