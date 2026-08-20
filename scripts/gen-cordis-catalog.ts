@@ -184,6 +184,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'system-prompt': 'system-prompt.md',
   'session-telemetry': 'session-telemetry.md',
   'tools': 'tools.md',
+  'webserver': 'web-server.md',
   'workflow': 'workflow.md',
 }
 
@@ -480,6 +481,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   PresetSpec: 'permission-presets.md',
   InvariantInstaller: 'invariants.md',
   WebRoute: 'web-server.md',
+  IndexInjection: 'web-server.md',
   StorageBackend: 'storage.md',
   StorageForms: 'storage.md',
   Domain: 'storage.md',
