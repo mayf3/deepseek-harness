@@ -21,12 +21,15 @@ export function textOnlyImageText(ref: ImageAttachmentRef): string {
 /**
  * Stable model-facing handle and coordinate description for one exact request preview.
  * @param version - exact request image shown beside the text.
+ * @param cropAvailable - whether the active request exposes `read_image_region`.
  * @returns attachment handle, preview dimensions, and crop-coordinate guidance.
  */
-export function requestImagePreviewText(version: RequestImageAttachment): string {
-  return `Image ${version.master.attachmentId}; preview ${version.width}x${version.height}px. `
-    + 'Crop coordinates use this preview. Call read_image_region with this attachment_id, '
-    + `preview_width=${version.width}, preview_height=${version.height}, x, y, width, and height.`
+export function requestImagePreviewText(version: RequestImageAttachment, cropAvailable: boolean): string {
+  const identity = `Image ${version.master.attachmentId}; preview ${version.width}x${version.height}px.`
+  return cropAvailable
+    ? `${identity} Crop coordinates use this preview. Call read_image_region with this attachment_id, `
+      + `preview_width=${version.width}, preview_height=${version.height}, x, y, width, and height.`
+    : identity
 }
 
 /**

@@ -29,6 +29,22 @@ const IMAGE_EXTENSIONS: Readonly<Record<string, ImageMediaType>> = {
   '.gif': 'image/gif',
 }
 
+const IMAGE_VALUE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: true,
+  properties: {
+    attachmentId: { type: 'string', required: true },
+    mediaType: { type: 'string', enum: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'], required: true },
+    bytes: { type: 'integer', required: true },
+    width: { type: 'integer', required: true },
+    height: { type: 'integer', required: true },
+    name: { type: 'string' },
+    sourceWidth: { type: 'integer' },
+    sourceHeight: { type: 'integer' },
+  },
+} as const
+
 /** The structured outcome declared by the `read_image` output schema. */
 export interface ImageReadValue {
   path: string
@@ -214,21 +230,7 @@ export function applyReadImageTool(ctx: Context): void {
         additionalProperties: false,
         properties: {
           path: { type: 'string', required: true },
-          image: {
-            type: 'object',
-            additionalProperties: false,
-            required: true,
-            properties: {
-              attachmentId: { type: 'string', required: true },
-              mediaType: { type: 'string', enum: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'], required: true },
-              bytes: { type: 'integer', required: true },
-              width: { type: 'integer', required: true },
-              height: { type: 'integer', required: true },
-              name: { type: 'string' },
-              sourceWidth: { type: 'integer' },
-              sourceHeight: { type: 'integer' },
-            },
-          },
+          image: IMAGE_VALUE_SCHEMA,
         },
       },
       render: (_args, value) => imageReadContent(value),
@@ -370,21 +372,7 @@ export function applyReadImageTool(ctx: Context): void {
               height: { type: 'integer', required: true },
             },
           },
-          image: {
-            type: 'object',
-            additionalProperties: false,
-            required: true,
-            properties: {
-              attachmentId: { type: 'string', required: true },
-              mediaType: { type: 'string', enum: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'], required: true },
-              bytes: { type: 'integer', required: true },
-              width: { type: 'integer', required: true },
-              height: { type: 'integer', required: true },
-              name: { type: 'string' },
-              sourceWidth: { type: 'integer' },
-              sourceHeight: { type: 'integer' },
-            },
-          },
+          image: IMAGE_VALUE_SCHEMA,
         },
       },
       render: (_args, value) => regionReadContent(value),

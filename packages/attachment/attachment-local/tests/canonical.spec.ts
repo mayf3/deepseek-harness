@@ -271,6 +271,23 @@ describe('hasLowColourCount', () => {
     await expect(hasLowColourCount(transparent)).resolves.toBe(true)
   })
 
+  it('reads grayscale-alpha samples without treating alpha or the next pixel as RGB', async () => {
+    const symbols: number[] = []
+    for (let first = 0; first < 32; first += 1) {
+      for (let second = 0; second < 32; second += 1) symbols.push(first, second)
+    }
+    const pixels = new Uint8Array(symbols.length * 2)
+    for (const [index, symbol] of symbols.entries()) {
+      pixels[index * 2] = symbol * 8
+      pixels[index * 2 + 1] = symbol * 8
+    }
+    const grayscaleAlpha = sharp(pixels, {
+      raw: { width: 128, height: 16, channels: 2 },
+    })
+
+    await expect(hasLowColourCount(grayscaleAlpha)).resolves.toBe(true)
+  })
+
   it('keeps an antialiased text screenshot readable on the low-colour PNG path', async () => {
     const source = new Uint8Array(await sharp(Buffer.from(`
       <svg width="1024" height="512" xmlns="http://www.w3.org/2000/svg">

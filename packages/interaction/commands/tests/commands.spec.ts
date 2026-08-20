@@ -486,6 +486,11 @@ describe('image attachments', () => {
           source: { mediaType: input.mediaType, bytes: 3, width: 1, height: 1 },
         })
       }),
+      validateImageBatch(inputs: readonly unknown[]) {
+        return (AttachmentStore.prototype as unknown as {
+          validateImageBatch(this: unknown, batch: readonly unknown[]): void
+        }).validateImageBatch.call(this, inputs)
+      },
       // The real base-class batch method over this double's limits and members.
       saveImages(inputs: readonly unknown[]) {
         return (AttachmentStore.prototype.saveImages as (this: unknown, batch: readonly unknown[]) => Promise<unknown[]>).call(this, inputs)

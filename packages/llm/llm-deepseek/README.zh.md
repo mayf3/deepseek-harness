@@ -23,6 +23,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
     maxRequestFilesBytes: 134217728 # optional positive integer; 128 MiB raw request-image default
     maxImagesPerRequest: 600       # provider request image-count limit
     imageOffloadByteQuantum: 67108864 # oldest-image removal advances in 64 MiB steps
+    imageOffloadCountQuantum: 20      # count overflow advances in 20-image steps
     fileExpiresAfterSeconds: 604800   # uploaded image lifetime; 1 hour to 30 days
     fileRefreshMarginSeconds: 3600    # replace ids with less lifetime remaining
     fileQuotaCleanupBatch: 100        # oldest harness-owned files deleted before one quota retry
@@ -48,13 +49,13 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
 
 该插件注册唯一提供方路由 `deepseek-official`，并一同注册解析后的 `retryPolicy`；省略时会解析为 normal 模式并重试五次。请求使用 `provider: deepseek-official` 选择该路由；其 `model` 会作为协议 `model` 字符串原样传递，因此更改 DeepSeek 模型不需要生命周期时注册。省略 `models` 会公布 `deepseek-v4-flash`、`deepseek-v4-pro` 与支持图片输入的 `deepseek-v4-flash-vision-exp`，三者的上下文窗口均为 1,000,000 token；显式列表会替换这些默认值，`models: []` 则不公布任何模型。Catalog 配置项通过 `ctx.llm.listModels('deepseek-official')` 公开给 ACP（Agent Client Protocol）编辑器和 Web 选择器等客户端，但仍只提供建议：未列出模型 id 仍原样传递，并按纯文本路由处理。省略配置项 name 默认为其 id，省略 `inputModalities` 则表示仅支持 `text`。
 
-支持图片的 catalog 配置项声明 `inputModalities: [text, image]`，并可设置 `imagePixelBudget`、`imageMaxBytes` 或 `imageDetail: low`。普通默认值为总像素 640,000、编码字节 1MiB；low detail 的默认总像素为 512×512。附件存储按 `min(1, sqrt(pixelBudget / (width * height)))` 缩放，并向预算内取整，确保总像素不超过硬上限。因此 2048×1024 主版本会得到约 1130×565 的请求版本，而不会被强制变成正方形。请求编码按需执行：低色数图片先尝试 PNG，只有不带 alpha 通道时才使用 palette，再尝试质量 85 和 80 的 WebP；其他透明图片依次尝试质量 85 和 80 的 WebP；其他非透明图片依次尝试质量 85 和 80 的 JPEG。两个质量档均超过 1MiB 时才缩小尺寸。同一 `variantId` 的并发生成共享一次变换。适配器通过 `POST /files` 上传确切的派生请求字节，再发送 `{type: "file", file_id}` 块，不会回退到内联 data URL。每张保留图片前都有稳定文本，写明完整附件 ID、实际请求尺寸，以及 `read_image_region` 所需的预览坐标参数。User、工具结果、agent loop、压缩和直接 `ctx.llm.stream` 请求都使用该投影。纯文本路由会收到稳定的附件占位文本，持久历史继续保留图片引用。
+支持图片的 catalog 配置项声明 `inputModalities: [text, image]`，并可设置 `imagePixelBudget`、`imageMaxBytes` 或 `imageDetail: low`。普通默认值为总像素 640,000、编码字节 1MiB；low detail 的默认总像素为 512×512。附件存储按 `min(1, sqrt(pixelBudget / (width * height)))` 缩放，并向预算内取整，确保总像素不超过硬上限。因此 2048×1024 主版本会得到约 1130×565 的请求版本，而不会被强制变成正方形。请求编码按需执行：低色数图片先尝试 PNG，只有不带 alpha 通道时才使用 palette，再尝试质量 85 和 80 的 WebP；其他透明图片依次尝试质量 85 和 80 的 WebP；其他非透明图片依次尝试质量 85 和 80 的 JPEG。两个质量档均超过 1MiB 时才缩小尺寸。同一 `variantId` 的并发生成共享一次变换。调用方可以单独取消等待，不会中断其他等待方；没有等待方时才会停止变换。适配器通过 `POST /files` 上传确切的派生请求字节，再发送 `{type: "file", file_id}` 块，不会回退到内联 data URL。每张保留图片前都有稳定文本，写明完整附件 ID 和实际请求尺寸。只有当前请求公开 `read_image_region` 时才会提供预览坐标参数。User、工具结果、agent loop、压缩和直接 `ctx.llm.stream` 请求都使用该投影。纯文本路由会收到稳定的附件占位文本，持久历史继续保留图片引用。
 
-`maxRequestFilesBytes` 和 `maxImagesPerRequest` 限制请求中保留的请求版本，默认值分别为 128MiB 和 600 张。字节数越过上限时，被移除的最旧前缀会越过下一个 64MiB 边界。由 1MiB 图片组成的历史达到 129MiB 时会移除最旧的 65 张并保留 64MiB；直到持久历史超过 192MiB，这个前缀才再次变化。图片数量超限时则按 `imageOffloadCountQuantum` 独立递增。移除的图片会变成固定模型可见占位文本 `[image omitted to keep the request within its image limit; older images are omitted first. If this image is still needed, read its file again when a path is available; otherwise ask the user to attach it again.]`。这种定量投影不会因每新增一张图片就改写较早的请求前缀。
+`maxRequestFilesBytes` 和 `maxImagesPerRequest` 限制请求中保留的请求版本，默认值分别为 128MiB 和 600 张。字节和数量步长不得超过对应上限。读取附件前，适配器以路由的请求版本字节上限作为保守上界，移除超预算的最旧前缀，只读取并转换保留的主版本。系统随后用确切派生长度再次检查，但不会重新加入已省略图片。字节数越过上限时，被移除的最旧前缀会越过下一个 64MiB 边界。由 1MiB 图片组成的历史达到 129MiB 时会移除最旧的 65 张并保留 64MiB；直到持久历史超过 192MiB，这个前缀才再次变化。图片数量超限时则按 `imageOffloadCountQuantum` 独立递增。移除的图片会变成固定模型可见占位文本 `[image omitted to keep the request within its image limit; older images are omitted first. If this image is still needed, read its file again when a path is available; otherwise ask the user to attach it again.]`。这种定量投影不会因每新增一张图片就改写较早的请求前缀。
 
 上传 ID 按端点和 API key 作用域以及请求 `variantId` 记录在 `DSH_HOME` 下。变体身份覆盖主附件 ID、变换策略版本、路由像素和字节预算、裁剪区域及编码参数，因此 Files API 和支持内联的适配器引用同一份确定性字节。上传默认请求 7 天有效期，并保存服务端返回的 `expires_at`。本地映射剩余时间不超过一小时时会在使用前替换；适配器不会在每次 chat 前查询远端文件。如果 chat 报告文件 ID 已过期、删除、缺失或无效，并指出本次请求使用的一个或多个 ID，适配器只删除这些映射。如果响应只说明文件状态失效而没有指出 ID，适配器会删除该次 chat 使用的全部文件映射。随后重新上传受影响的请求版本，并重试一次 chat。第二次 chat 仍报告文件失效时，适配器会按该响应清理映射并返回错误，不会发起第三次 chat。上传响应若没有完整文件对象、匹配的字节数和 `expires_at`，就不会写入索引；后续请求会再次上传，而不是信任不一致的本地状态。本地上传索引格式损坏时按空缓存处理，并由下一次成功上传替换；权限和文件系统 I/O 错误仍使请求失败。
 
-一次上传配额错误会触发删除配置数量的最旧 `dsh-` 文件，然后重试一次上传。`DeepSeekFilesClient.delete`、`DeepSeekFileStore.release` 和 `releaseAll` 提供主动远端空间回收。本包记录的当前提供方限制为 Files 单次上传 128MiB、chat 单图引用 32MiB、每个 API key 最多 10,000 个文件和 25GiB；默认 1MiB 请求版本低于两个单文件上限。
+同一作用域和 `variantId` 的并发解析共享一次 Files 上传，每个等待方可以单独取消。一次上传配额错误会先分页收集配置数量的最旧 `dsh-` 文件，再删除这些文件并重试一次上传。`DeepSeekFilesClient.delete`、`DeepSeekFileStore.release` 和 `releaseAll` 提供主动远端空间回收。本包记录的当前提供方限制为 Files 单次上传 128MiB、chat 单图引用 32MiB、每个 API key 最多 10,000 个文件和 25GiB；默认 1MiB 请求版本低于两个单文件上限。
 
 `contextWindow` 对每个已配置模型都可选，不会通过建议 catalog 公开。`ctx.llm.resolveModelInfo('deepseek-official', model).context` 先返回精确模型值，再对不含容量的配置项或未列出原样传递 id 返回 `defaultContextWindow`。适配器默认值为 1,000,000；因此，压力敏感插件可以获得由部署决定的容量，不会将模型 selector 视为权威。为 `deepseek-official` 注册另一个适配器会抛出 `LlmError('DUPLICATE_ADAPTER')`。
 
@@ -80,7 +81,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
 
 ## 应用归因
 
-每个请求都携带 dsh-llm `attributionHeaders()` 的共享归因标头，即用于识别 harness 的必需 `User-Agent` 基线（见 [dsh-llm § 应用归因](../llm/README.zh.md#app-attribution-attributionts)）。在该适配器约定（adapter contract）下，直接 DeepSeek 请求与 OpenAI 兼容 gateway 请求都不会获得提供方特定应用归因标头；OpenRouter 应用归因暂缓到未来的显式 OpenRouter 适配器或模式。`GenerateOptions.purpose` 为 `compaction` 的请求（dsh-compaction-basic 的辅助摘要调用）还会携带 `x-deepseek-harness-compact: 1`，让宿主可以将压缩流量与会话请求分开。
+每个 chat 和 Files API 请求都携带 dsh-llm `attributionHeaders()` 的共享归因标头，即用于识别 harness 的必需 `User-Agent` 基线（见 [dsh-llm § 应用归因](../llm/README.zh.md#app-attribution-attributionts)）。在该适配器约定（adapter contract）下，直接 DeepSeek 请求与 OpenAI 兼容 gateway 请求都不会获得提供方特定应用归因标头；OpenRouter 应用归因暂缓到未来的显式 OpenRouter 适配器或模式。`GenerateOptions.purpose` 为 `compaction` 的请求（dsh-compaction-basic 的辅助摘要调用）还会携带 `x-deepseek-harness-compact: 1`，让宿主可以将压缩流量与会话请求分开。
 
 DeepSeek 请求身份独立于应用归因。凭据解析成功后，每个提供方请求都会通过 `x-deepseek-harness-user-id` 携带来自 [`@deepseek-ai/dsh-anonymous-user-id`](../../identity/anonymous-user-id/README.zh.md) 的稳定匿名 id；携带 `GenerateOptions.sessionId` 的请求还会通过 `x-deepseek-harness-session-id` 发送该确切值，缺少会话的直接调用则省略会话标头。两个标头都会发送至解析后的 `baseURL`（包括已配置的 gateway），且不会进入请求正文或模型可见内容。
 

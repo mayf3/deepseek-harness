@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
-import type { AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentStore, ImageAttachmentRef, ImageRequestPolicy, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, CallId, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, createMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AssistantMessage, AssistantMessageEvent, Usage } from '@earendil-works/pi-ai'
@@ -58,6 +58,23 @@ function requestVersion(ref: ImageAttachmentRef): RequestImageAttachment {
   }
 }
 
+function attachmentStore(readImageRequest: (
+  ref: ImageAttachmentRef,
+  policy: ImageRequestPolicy,
+  signal?: AbortSignal,
+) => Promise<RequestImageAttachment>): AttachmentStore {
+  return {
+    readImageRequest,
+    readImageRequests: (
+      refs: readonly ImageAttachmentRef[],
+      policy: ImageRequestPolicy,
+      signal?: AbortSignal,
+    ) => Promise.all(
+      refs.map(ref => readImageRequest(ref, policy, signal)),
+    ),
+  } as unknown as AttachmentStore
+}
+
 describe('toPiContext', () => {
   it('maps system prompt, user text, and tools', () => {
     const context = toPiContext({
@@ -91,7 +108,9 @@ describe('toPiContext', () => {
       width: 1,
       height: 1,
     }
-    const readImageRequest = vi.fn((value: ImageAttachmentRef) => Promise.resolve(requestVersion(value)))
+    const readImageRequest = vi.fn((value: ImageAttachmentRef, _policy: ImageRequestPolicy) => (
+      Promise.resolve(requestVersion(value))
+    ))
     const context = await toPiContext({
       provider: 'openai',
       model: 'gpt-4.1',
@@ -99,11 +118,12 @@ describe('toPiContext', () => {
         content: [{ type: 'text', text: 'describe' }, { type: 'image', attachment }],
         source: { kind: 'plugin', plugin: 'test' },
       })],
-    }, { readImageRequest } as unknown as AttachmentStore)
+    }, attachmentStore(readImageRequest))
 
     expect(readImageRequest).toHaveBeenCalledWith(
       attachment,
       { maxPixels: 2048 * 2048, maxBytes: 1024 * 1024 },
+      undefined,
     )
     expect(context.messages[0]).toEqual({
       role: 'user',
@@ -124,7 +144,9 @@ describe('toPiContext', () => {
       width: 1,
       height: 1,
     }
-    const readImageRequest = vi.fn((value: ImageAttachmentRef) => Promise.resolve(requestVersion(value)))
+    const readImageRequest = vi.fn((value: ImageAttachmentRef, _policy: ImageRequestPolicy) => (
+      Promise.resolve(requestVersion(value))
+    ))
     const context = await toPiContext({
       provider: 'openai',
       model: 'gpt-4.1',
@@ -148,7 +170,7 @@ describe('toPiContext', () => {
         }],
         source: { kind: 'plugin', plugin: 'test' },
       })],
-    }, { readImageRequest } as unknown as AttachmentStore)
+    }, attachmentStore(readImageRequest))
 
     expect(context.messages).toEqual([{
       role: 'toolResult',

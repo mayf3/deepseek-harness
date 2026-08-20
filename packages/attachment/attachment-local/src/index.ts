@@ -71,21 +71,59 @@ export interface Config {
   imageCompressionConcurrency?: number
 }
 
-function waitForShared<T>(operation: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
-  if (signal === undefined) return operation
-  signal.throwIfAborted()
-  return new Promise<T>((resolve, reject) => {
-    const abort = (): void => {
-      const reason: unknown = signal.reason
-      reject(reason instanceof Error
-        ? reason
-        : new Error('Attachment request cancelled with a non-Error reason.', { cause: reason }))
-    }
-    signal.addEventListener('abort', abort, { once: true })
-    void operation.then(resolve, reject).finally(() => {
-      signal.removeEventListener('abort', abort)
+function abortReason(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason
+  return reason instanceof Error
+    ? reason
+    : new Error('Attachment request cancelled with a non-Error reason.', { cause: reason })
+}
+
+class SharedRequest<T> {
+  readonly controller = new AbortController()
+  readonly promise: Promise<T>
+  private settled = false
+  private waiters = 0
+
+  constructor(start: (signal: AbortSignal) => Promise<T>) {
+    this.promise = start(this.controller.signal).finally(() => {
+      this.settled = true
     })
-  })
+  }
+
+  wait(signal?: AbortSignal): Promise<T> {
+    signal?.throwIfAborted()
+    this.waiters += 1
+    if (signal === undefined) return this.promise.finally(() => this.release(false))
+    let released = false
+    const release = (cancelled: boolean): void => {
+      if (released) return
+      released = true
+      this.release(cancelled, signal)
+    }
+    return new Promise<T>((resolve, reject) => {
+      const abort = (): void => {
+        release(true)
+        reject(abortReason(signal))
+      }
+      signal.addEventListener('abort', abort, { once: true })
+      void this.promise.then((value) => {
+        signal.removeEventListener('abort', abort)
+        release(false)
+        resolve(value)
+      }, (error: unknown) => {
+        signal.removeEventListener('abort', abort)
+        release(false)
+        reject(error)
+      })
+    })
+  }
+
+  private release(cancelled: boolean, signal?: AbortSignal): void {
+    this.waiters -= 1
+    if (cancelled && this.waiters === 0 && !this.settled && signal !== undefined) {
+      this.controller.abort(abortReason(signal))
+    }
+  }
 }
 
 /** Persistent content-addressed local attachment store. */
@@ -111,7 +149,7 @@ export class LocalAttachmentStore extends AttachmentStore {
   /** Resolved instance-level compression limit. */
   readonly imageCompressionConcurrency: number
   private readonly compression: CompressionLimiter
-  private readonly requestInflight = new Map<string, Promise<RequestImageAttachment>>()
+  private readonly requestInflight = new Map<string, SharedRequest<RequestImageAttachment>>()
 
   constructor(ctx: Context, config: Config) {
     super(ctx)
@@ -191,18 +229,24 @@ export class LocalAttachmentStore extends AttachmentStore {
     const variantId = requestImageVariantId(ref, policy)
     const key = String(variantId)
     let operation = this.requestInflight.get(key)
+    if (operation?.controller.signal.aborted) {
+      this.requestInflight.delete(key)
+      operation = undefined
+    }
     if (operation === undefined) {
-      operation = this.compression.run(async () => readRequestImageFile(
+      const shared = new SharedRequest<RequestImageAttachment>(sharedSignal => this.compression.run(async () => readRequestImageFile(
         this.root,
-        master ?? await this.readImage(ref),
+        master ?? await this.readImage(ref, sharedSignal),
         policy,
-      ))
-      this.requestInflight.set(key, operation)
-      void operation.finally(() => {
-        if (this.requestInflight.get(key) === operation) this.requestInflight.delete(key)
+        sharedSignal,
+      )))
+      operation = shared
+      this.requestInflight.set(key, shared)
+      void shared.promise.finally(() => {
+        if (this.requestInflight.get(key) === shared) this.requestInflight.delete(key)
       }).catch(() => {})
     }
-    return waitForShared(operation, signal)
+    return operation.wait(signal)
   }
 
   override async cropImage(

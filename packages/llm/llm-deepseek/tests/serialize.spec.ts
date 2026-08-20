@@ -60,6 +60,7 @@ function imageOptions(
     resolveFileId,
     requestImages: new Map(refs.map(ref => [ref.attachmentId, requestVersion(ref)])),
     maxRequestFilesBytes,
+    cropAvailable: true,
   }
 }
 
@@ -376,6 +377,26 @@ describe('image serialization', () => {
         { type: 'file', file_id: 'file-api-image' },
       ],
     }])
+  })
+
+  it('does not advertise region reads when the request omits that tool', async () => {
+    const ref = imageRef()
+    const images = { ...imageOptions([ref]), cropAvailable: false }
+    const wire = await serializeRequestWithImages(request({
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: [{ type: 'image', attachment: ref }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }), images)
+
+    expect(wire.messages[0]).toMatchObject({
+      role: 'user',
+      content: [
+        { type: 'text', text: `Image ${ref.attachmentId}; preview 1x1px.` },
+        { type: 'file', file_id: 'file-api-image' },
+      ],
+    })
   })
 
   it('keeps tool content textual and groups consecutive tool-result images afterward', async () => {

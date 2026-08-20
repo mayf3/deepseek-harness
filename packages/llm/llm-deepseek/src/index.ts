@@ -291,9 +291,15 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
   if (!Number.isSafeInteger(imageOffloadByteQuantum) || imageOffloadByteQuantum <= 0) {
     throw new Error('llm-deepseek: imageOffloadByteQuantum must be a positive safe integer')
   }
+  if (imageOffloadByteQuantum > maxRequestFilesBytes) {
+    throw new Error('llm-deepseek: imageOffloadByteQuantum must not exceed maxRequestFilesBytes')
+  }
   const imageOffloadCountQuantum = config.imageOffloadCountQuantum ?? DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM
   if (!Number.isSafeInteger(imageOffloadCountQuantum) || imageOffloadCountQuantum <= 0) {
     throw new Error('llm-deepseek: imageOffloadCountQuantum must be a positive safe integer')
+  }
+  if (imageOffloadCountQuantum > maxImagesPerRequest) {
+    throw new Error('llm-deepseek: imageOffloadCountQuantum must not exceed maxImagesPerRequest')
   }
   const fileExpiresAfterSeconds = config.fileExpiresAfterSeconds ?? DEFAULT_FILE_EXPIRY_SECONDS
   if (!Number.isSafeInteger(fileExpiresAfterSeconds)

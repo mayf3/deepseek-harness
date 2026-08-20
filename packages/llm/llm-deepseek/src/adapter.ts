@@ -8,7 +8,7 @@
  * @module dsh-llm-deepseek/adapter
  */
 
-import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -510,14 +510,24 @@ export class DeepSeekAdapter extends LlmAdapter {
 
     const fileConnection = { baseURL: connection.baseURL, apiKey }
     const model = connection.models.find(entry => entry.id === options.model)
+    const policy = model === undefined ? undefined : resolveRequestImagePolicy(model)
+    const requestMessages = policy === undefined ? options.messages : offloadRequestImagesWithPolicy(options.messages, {
+      representation: 'raw',
+      maxBytes: connection.maxRequestFilesBytes,
+      maxImages: connection.maxImagesPerRequest,
+      byteQuantum: connection.imageOffloadByteQuantum,
+      countQuantum: connection.imageOffloadCountQuantum,
+      byteLength: ref => Math.min(ref.bytes, policy.maxBytes),
+    })
+    const requestOptions = requestMessages === options.messages ? options : { ...options, messages: [...requestMessages] }
     const requestImages = attachments === undefined || model === undefined
       ? new Map<AttachmentId, RequestImageAttachment>()
-      : await prepareRequestImages(options, attachments, model, signal)
+      : await prepareRequestImages(requestOptions, attachments, model, signal)
     for (let fileAttempt = 0; fileAttempt < 2; fileAttempt += 1) {
       const usedFiles: UsedRequestFile[] = []
       const body = attachments === undefined
-        ? serializeRequest(options, connection.defaults)
-        : await serializeRequestWithImages(options, {
+        ? serializeRequest(requestOptions, connection.defaults)
+        : await serializeRequestWithImages(requestOptions, {
           requestImages,
           resolveFileId: async (version, _block, location) => {
             const resolved = await this.files.ensureUploaded(
@@ -533,6 +543,7 @@ export class DeepSeekAdapter extends LlmAdapter {
           maxImagesPerRequest: connection.maxImagesPerRequest,
           byteQuantum: connection.imageOffloadByteQuantum,
           countQuantum: connection.imageOffloadCountQuantum,
+          cropAvailable: options.tools?.some(tool => tool.name === 'read_image_region') ?? false,
         }, connection.defaults)
       const payload = JSON.stringify(body)
 

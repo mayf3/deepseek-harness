@@ -48,6 +48,7 @@ function assertSupportedImageRoles(messages: readonly Message[]): void {
 async function userContent(
   blocks: readonly ContentBlock[],
   requestImages: ReadonlyMap<AttachmentId, RequestImageAttachment>,
+  cropAvailable: boolean,
 ): Promise<string | (TextContent | ImageContent)[]> {
   const content: (TextContent | ImageContent)[] = []
   for (const block of blocks) {
@@ -60,7 +61,7 @@ async function userContent(
         if (version === undefined) {
           throw new LlmError(`pi-ai request image ${block.attachment.attachmentId} was not prepared`, 'INVALID_REQUEST')
         }
-        content.push({ type: 'text', text: requestImagePreviewText(version) })
+        content.push({ type: 'text', text: requestImagePreviewText(version, cropAvailable) })
         content.push({
           type: 'image',
           data: Buffer.from(version.data).toString('base64'),
@@ -70,7 +71,7 @@ async function userContent(
       }
       case 'tool-result':
         {
-          const nested = await userContent(block.content, requestImages)
+          const nested = await userContent(block.content, requestImages, cropAvailable)
           if (typeof nested === 'string') {
             if (nested.length > 0) content.push({ type: 'text', text: nested })
           } else {
@@ -101,11 +102,16 @@ async function prepareRequestImages(
   messages: readonly Message[],
   attachments: AttachmentStore,
   policy: ImageRequestPolicy,
+  signal?: AbortSignal,
 ): Promise<Map<AttachmentId, RequestImageAttachment>> {
   const refs = new Map<AttachmentId, ImageAttachmentRef>()
   for (const message of messages) collectImageRefs(message.content, refs)
+  const orderedRefs = [...refs.values()]
+  const prepared = await attachments.readImageRequests(orderedRefs, policy, signal)
   const versions = new Map<AttachmentId, RequestImageAttachment>()
-  for (const [id, ref] of refs) versions.set(id, await attachments.readImageRequest(ref, policy))
+  for (const [index, ref] of orderedRefs.entries()) {
+    versions.set(ref.attachmentId, prepared[index] as RequestImageAttachment)
+  }
   return versions
 }
 
@@ -222,17 +228,24 @@ async function toPiContextWithImages(
   },
 ): Promise<PiContext> {
   assertSupportedImageRoles(options.messages)
-  const requestImages = await prepareRequestImages(options.messages, attachments, requestImagePolicy)
   const requestMessages = offloadRequestImagesWithPolicy(options.messages, {
+    representation: 'base64',
+    ...maxRequestImageBytes === undefined ? {} : { maxBytes: maxRequestImageBytes },
+    byteQuantum: 1,
+    byteLength: ref => Math.min(ref.bytes, requestImagePolicy.maxBytes),
+  })
+  const requestImages = await prepareRequestImages(requestMessages, attachments, requestImagePolicy, options.signal)
+  const exactMessages = offloadRequestImagesWithPolicy(requestMessages, {
     representation: 'base64',
     ...maxRequestImageBytes === undefined ? {} : { maxBytes: maxRequestImageBytes },
     byteQuantum: 1,
     byteLength: ref => requestImages.get(ref.attachmentId)?.bytes ?? ref.bytes,
   })
+  const cropAvailable = options.tools?.some(tool => tool.name === 'read_image_region') ?? false
   const toolNames = new Map<CallId, string>()
   const messages: PiMessage[] = []
 
-  for (const message of requestMessages) {
+  for (const message of exactMessages) {
     if (message.role === 'system') {
       // pi-ai has a single systemPrompt slot; in-history system messages are
       // folded into user messages to preserve order (rare in practice — the
@@ -250,7 +263,7 @@ async function toPiContextWithImages(
     }
     // user role: text + tool results (each result becomes its own message).
     const regular = message.content.filter(block => block.type !== 'tool-result')
-    const content = await userContent(regular, requestImages)
+    const content = await userContent(regular, requestImages, cropAvailable)
     const results = message.content.filter((block): block is Extract<ContentBlock, { type: 'tool-result' }> => (
       block.type === 'tool-result'
     ))
@@ -258,7 +271,7 @@ async function toPiContextWithImages(
       messages.push({ role: 'user', content, timestamp: 0 })
     }
     for (const result of results) {
-      const resultContent = await userContent(result.content, requestImages)
+      const resultContent = await userContent(result.content, requestImages, cropAvailable)
       messages.push({
         role: 'toolResult',
         toolCallId: result.toolCallId,

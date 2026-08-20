@@ -19,7 +19,7 @@ import { encodeFirstWithinLimit, isExhaustedEncoding } from './encoding.ts'
 import { detectImage, probeImage } from './image.ts'
 
 /** Transform version included in every cache and upload-index identity. */
-export const REQUEST_IMAGE_TRANSFORM_VERSION = 'request-image-v2'
+export const REQUEST_IMAGE_TRANSFORM_VERSION = 'request-image-v3'
 /** DeepSeek request versions normally fit at these two preferred qualities. */
 export const REQUEST_IMAGE_QUALITIES = [85, 80] as const
 
@@ -228,7 +228,7 @@ async function readCached(
 ): Promise<VerifiedRequestImage | undefined> {
   try {
     const data = new Uint8Array(await readFile(path, { signal }))
-    const detected = await detectImage(data)
+    const detected = await probeImage(data)
     const crop = policy.crop
     const maximum = requestImageDimensions(crop?.width ?? master.ref.width, crop?.height ?? master.ref.height, policy.maxPixels)
     if (data.byteLength > policy.maxBytes || detected.depth !== 'uchar' || detected.space !== 'srgb'
@@ -278,7 +278,7 @@ async function writeCached(path: string, data: Uint8Array): Promise<void> {
  * @param root - absolute versioned attachment storage root.
  * @param master - verified stored master bytes and reference.
  * @param policy - exact route request-image policy.
- * @param signal - optional cancellation for cache I/O.
+ * @param signal - optional cancellation for cache I/O and image transformation.
  * @returns verified request bytes and deterministic variant identity.
  */
 export async function readRequestImageFile(

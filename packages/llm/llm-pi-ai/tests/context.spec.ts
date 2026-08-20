@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
-import type { AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type {
+  AttachmentStore,
+  ImageAttachmentRef,
+  ImageRequestPolicy,
+  RequestImageAttachment,
+} from '@deepseek-ai/dsh-attachment'
 import { CallId, createMessage, createUserMessage, OFFLOADED_IMAGE_TEXT } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import { toPiContext } from '../src/context.ts'
@@ -30,11 +35,22 @@ function requestImage(value: ImageAttachmentRef, data: Uint8Array): RequestImage
 }
 
 function projectionStore(
-  readImageRequest = vi.fn((value: ImageAttachmentRef) => (
+  readImageRequest: (
+    value: ImageAttachmentRef,
+    policy: ImageRequestPolicy,
+    signal?: AbortSignal,
+  ) => Promise<RequestImageAttachment> = vi.fn((value: ImageAttachmentRef) => (
     Promise.resolve(requestImage(value, Uint8Array.of(1)))
   )),
 ): AttachmentStore {
-  return { readImageRequest } as unknown as AttachmentStore
+  return {
+    readImageRequest,
+    readImageRequests: (
+      refs: readonly ImageAttachmentRef[],
+      policy: Parameters<AttachmentStore['readImageRequest']>[1],
+      signal?: AbortSignal,
+    ) => Promise.all(refs.map(value => readImageRequest(value, policy, signal))),
+  } as unknown as AttachmentStore
 }
 
 const attachments = projectionStore()
@@ -268,6 +284,42 @@ describe('pi-ai request context conversion', () => {
     expect(readImageRequest).toHaveBeenCalledTimes(1)
   })
 
+  it('does not prepare an old image removed by the conservative request projection', async () => {
+    const old = { ...ref, attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`), bytes: 3 }
+    const recent = { ...ref, attachmentId: AttachmentId(`sha256:${'d'.repeat(64)}`), bytes: 3 }
+    const readImageRequest = vi.fn((value: ImageAttachmentRef) => {
+      if (value.attachmentId === old.attachmentId) throw new Error('old image must not be read')
+      return Promise.resolve(requestImage(value, Uint8Array.of(1, 2, 3)))
+    })
+
+    const context = await toPiContext(request([user([
+      { type: 'image', attachment: old },
+      { type: 'image', attachment: recent },
+    ])]), projectionStore(readImageRequest), undefined, 4)
+
+    expect(context.messages[0]).toMatchObject({
+      role: 'user',
+      content: [
+        { type: 'text', text: OFFLOADED_IMAGE_TEXT },
+        { type: 'text', text: expect.stringContaining(String(recent.attachmentId)) as string },
+        { type: 'image' },
+      ],
+    })
+    expect(readImageRequest).toHaveBeenCalledTimes(1)
+    expect(readImageRequest.mock.calls[0]?.[0]).toEqual(recent)
+  })
+
+  it('advertises region reads only when the request exposes the tool', async () => {
+    const withoutCrop = await toPiContext(request([user([{ type: 'image', attachment: ref }])]), attachments)
+    const withCrop = await toPiContext({
+      ...request([user([{ type: 'image', attachment: ref }])]),
+      tools: [{ name: 'read_image_region', description: 'crop', parameters: { type: 'object' } }],
+    }, attachments)
+
+    expect(JSON.stringify(withoutCrop.messages)).not.toContain('Call read_image_region')
+    expect(JSON.stringify(withCrop.messages)).toContain('Call read_image_region')
+  })
+
   it('keeps every image at exactly the payload bound and drops all of them when even the newest cannot fit', async () => {
     const sized: ImageAttachmentRef = { ...ref, bytes: 3 }
     const exact = await toPiContext(request([
@@ -298,7 +350,7 @@ describe('pi-ai request context conversion', () => {
     expect(oversized.messages).toEqual([
       { role: 'user', content: OFFLOADED_IMAGE_TEXT, timestamp: 0 },
     ])
-    expect(readImageRequest).toHaveBeenCalledTimes(1)
+    expect(readImageRequest).not.toHaveBeenCalled()
   })
 
   it('offloads repeated image-block occurrences by position rather than shared object identity', async () => {

@@ -36,6 +36,51 @@ interface FileStoreOptions {
   fetch?: typeof fetch
 }
 
+interface SharedUpload {
+  controller: AbortController
+  promise: Promise<DeepSeekFileReference>
+  settled: boolean
+  waiters: number
+}
+
+function abortReason(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason
+  return reason instanceof Error
+    ? reason
+    : new Error('DeepSeek file upload cancelled with a non-Error reason.', { cause: reason })
+}
+
+function waitForUpload(operation: SharedUpload, signal: AbortSignal | undefined): Promise<DeepSeekFileReference> {
+  signal?.throwIfAborted()
+  operation.waiters += 1
+  let released = false
+  const release = (cancelled: boolean): void => {
+    if (released) return
+    released = true
+    operation.waiters -= 1
+    if (cancelled && operation.waiters === 0 && !operation.settled) {
+      operation.controller.abort(signal === undefined ? undefined : abortReason(signal))
+    }
+  }
+  if (signal === undefined) return operation.promise.finally(() => release(false))
+  return new Promise<DeepSeekFileReference>((resolve, reject) => {
+    const abort = (): void => {
+      release(true)
+      reject(abortReason(signal))
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    void operation.promise.then((value) => {
+      signal.removeEventListener('abort', abort)
+      release(false)
+      resolve(value)
+    }, (error: unknown) => {
+      signal.removeEventListener('abort', abort)
+      release(false)
+      reject(error)
+    })
+  })
+}
+
 function extension(mediaType: RequestImageAttachment['mediaType']): 'png' | 'jpeg' | 'webp' | 'gif' {
   switch (mediaType) {
     case 'image/png': return 'png'
@@ -56,7 +101,7 @@ export class DeepSeekFileStore {
   private readonly index: DeepSeekUploadIndex
   private readonly now: () => number
   private readonly fetchImpl: typeof fetch | undefined
-  private readonly inflight = new Map<string, Promise<DeepSeekFileReference>>()
+  private readonly inflight = new Map<string, SharedUpload>()
 
   /**
    * @param options - testable index, clock, and transport boundaries.
@@ -76,11 +121,11 @@ export class DeepSeekFileStore {
   }
 
   /**
-   * Resolve or upload one deterministic request image. Concurrent calls in this process share one promise.
+   * Resolve or upload one deterministic request image. Concurrent calls share one upload while retaining independent waits.
    * @param version - deterministic model-request bytes and complete transformation identity.
    * @param connection - endpoint and API-key snapshot.
    * @param policy - expiry and quota-recovery policy.
-   * @param signal - request cancellation.
+   * @param signal - cancellation of this wait; shared transport stops when no waiter remains.
    * @returns a reusable file id and whether this call published a new upload.
    */
   ensureUploaded(
@@ -89,16 +134,34 @@ export class DeepSeekFileStore {
     policy: DeepSeekFilePolicy,
     signal?: AbortSignal,
   ): Promise<DeepSeekFileReference> {
+    signal?.throwIfAborted()
     const scope = deepSeekFileScope(connection.baseURL, connection.apiKey)
     const key = `${scope}\0${version.variantId}`
-    const active = this.inflight.get(key)
-    if (active !== undefined) return active
-    const operation = this.ensureUploadedOnce(version, connection, policy, signal)
-    this.inflight.set(key, operation)
-    void operation.finally(() => {
-      if (this.inflight.get(key) === operation) this.inflight.delete(key)
+    let active = this.inflight.get(key)
+    if (active?.controller.signal.aborted) {
+      this.inflight.delete(key)
+      active = undefined
+    }
+    if (active !== undefined) return waitForUpload(active, signal)
+    const controller = new AbortController()
+    const shared: SharedUpload = {
+      controller,
+      settled: false,
+      waiters: 0,
+      promise: undefined as never,
+    }
+    shared.promise = this.ensureUploadedOnce(version, connection, policy, controller.signal).then((value) => {
+      shared.settled = true
+      return value
+    }, (error: unknown) => {
+      shared.settled = true
+      throw error
+    })
+    this.inflight.set(key, shared)
+    void shared.promise.finally(() => {
+      if (this.inflight.get(key) === shared) this.inflight.delete(key)
     }).catch(() => {})
-    return operation
+    return waitForUpload(shared, signal)
   }
 
   private async ensureUploadedOnce(
@@ -218,8 +281,8 @@ export class DeepSeekFileStore {
   ): Promise<number> {
     const client = this.client(connection)
     let after: DeepSeekFileId | undefined
-    let deleted = 0
-    while (deleted < count) {
+    const owned: DeepSeekFileId[] = []
+    while (owned.length < count) {
       const page = await client.list({
         ...after === undefined ? {} : { after },
         limit: 1_000,
@@ -228,14 +291,14 @@ export class DeepSeekFileStore {
       })
       for (const file of page.data) {
         if (!file.filename.startsWith(OWNED_FILE_PREFIX)) continue
-        await client.delete(file.id, signal)
-        deleted += 1
-        if (deleted === count) break
+        owned.push(file.id)
+        if (owned.length === count) break
       }
       if (!page.hasMore || page.lastId === undefined || page.lastId === after) break
       after = page.lastId
     }
-    return deleted
+    for (const fileId of owned) await client.delete(fileId, signal)
+    return owned.length
   }
 
   /**

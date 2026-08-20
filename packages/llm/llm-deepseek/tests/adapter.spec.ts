@@ -206,6 +206,49 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(policies).toEqual([{ maxPixels: 640_000, maxBytes: 1024 * 1024 }])
   })
 
+  it('does not prepare an old image removed by request offload', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const old = { ...imageRef, attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`), bytes: 3 }
+    const recent = { ...imageRef, attachmentId: AttachmentId(`sha256:${'d'.repeat(64)}`), bytes: 3 }
+    const attachmentMocks = attachmentStoreOf((ref) => {
+      if (ref.attachmentId === old.attachmentId) throw new Error('old image must not be read')
+      return Promise.resolve(requestImage(ref))
+    })
+    const adapter = adapterOf({
+      baseURL: server.url,
+      models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }],
+      maxRequestFilesBytes: 4,
+      imageOffloadByteQuantum: 2,
+    }, attachmentMocks.store)
+
+    await drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: [
+          { type: 'image', attachment: old },
+          { type: 'image', attachment: recent },
+        ],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))
+
+    expect(attachmentMocks.readImageRequests).toHaveBeenCalledWith(
+      [recent],
+      { maxPixels: 640_000, maxBytes: 1024 * 1024 },
+      expect.any(AbortSignal),
+    )
+    const body = server.requests[0] as { messages: unknown[] }
+    expect(body.messages[0]).toMatchObject({
+      role: 'user',
+      content: [
+        { type: 'text', text: expect.stringContaining('older images are omitted first') as string },
+        { type: 'text', text: expect.stringContaining(String(recent.attachmentId)) as string },
+        { type: 'file', file_id: 'file-api-1' },
+      ],
+    })
+  })
+
   it('projects nested tool-result images with route-owned request budgets', async () => {
     const server = await mockServer([
       { kind: 'sse', events: textEvents },
@@ -1514,6 +1557,17 @@ describe('plugin registration and config', () => {
       expect(ctx.llm.listProviders()).toEqual([])
     },
   )
+
+  it('rejects offload quanta larger than their request bounds', () => {
+    expect(() => resolveAdapterOptions({
+      maxRequestFilesBytes: 10,
+      imageOffloadByteQuantum: 11,
+    })).toThrow(/imageOffloadByteQuantum must not exceed maxRequestFilesBytes/)
+    expect(() => resolveAdapterOptions({
+      maxImagesPerRequest: 10,
+      imageOffloadCountQuantum: 11,
+    })).toThrow(/imageOffloadCountQuantum must not exceed maxImagesPerRequest/)
+  })
 
   it.each([0, 1.5, Number.MAX_SAFE_INTEGER + 1])(
     'rejects invalid request file bound %s',

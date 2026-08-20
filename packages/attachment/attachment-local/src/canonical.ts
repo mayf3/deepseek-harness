@@ -78,8 +78,8 @@ export async function hasLowColourCount(pipeline: Sharp): Promise<boolean> {
   const colours = new Set<number>()
   for (let offset = 0; offset < data.length; offset += info.channels) {
     const red = data[offset] ?? 0
-    const green = data[offset + 1] ?? red
-    const blue = data[offset + 2] ?? red
+    const green = info.channels < 3 ? red : data[offset + 1] ?? red
+    const blue = info.channels < 3 ? red : data[offset + 2] ?? red
     const alpha = info.channels === 2
       ? data[offset + 1] ?? 255
       : info.channels === 4 ? data[offset + 3] ?? 255 : 255

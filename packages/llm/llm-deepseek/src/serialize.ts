@@ -37,7 +37,7 @@ export interface ImageSerializationOptions {
     block: Extract<ContentBlock, { type: 'image' }>,
     location: ImageWireLocation,
   ) => Promise<string>
-  /** Request versions prepared before offload selection, keyed by master attachment id. */
+  /** Request versions prepared for the conservatively retained masters, keyed by attachment id. */
   requestImages: ReadonlyMap<ImageAttachmentRef['attachmentId'], RequestImageAttachment>
   /** Positive bound on accumulated referenced image bytes. */
   maxRequestFilesBytes: number
@@ -47,6 +47,8 @@ export interface ImageSerializationOptions {
   byteQuantum?: number
   /** Image-count removal step applied after the request exceeds its count bound. */
   countQuantum?: number
+  /** Whether the active request exposes the region-read tool. */
+  cropAvailable?: boolean
 }
 
 /** Durable message and image ordinal used in provider diagnostics. */
@@ -115,10 +117,14 @@ function assertSupportedImageRoles(messages: readonly Message[]): void {
 }
 
 /** Describe the exact request preview and its model-callable coordinate system. */
-function imageHandle(version: RequestImageAttachment, precededByContent: boolean): WireTextContentPart {
+function imageHandle(
+  version: RequestImageAttachment,
+  precededByContent: boolean,
+  cropAvailable: boolean,
+): WireTextContentPart {
   return {
     type: 'text',
-    text: `${precededByContent ? '\n' : ''}${requestImagePreviewText(version)}`,
+    text: `${precededByContent ? '\n' : ''}${requestImagePreviewText(version, cropAvailable)}`,
   }
 }
 
@@ -137,7 +143,7 @@ async function imageParts(
     )
   }
   return [
-    imageHandle(version, precededByContent),
+    imageHandle(version, precededByContent, images.cropAvailable === true),
     { type: 'file', file_id: await images.resolveFileId(version, block, location) },
   ]
 }

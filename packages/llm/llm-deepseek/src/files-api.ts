@@ -1,6 +1,6 @@
 /** OpenAI-compatible DeepSeek Files API transport. @module dsh-llm-deepseek/files-api */
 
-import { LlmError } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, LlmError } from '@deepseek-ai/dsh-llm'
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { DeepSeekFileId } from './file-id.ts'
 import type { DeepSeekFileId as DeepSeekFileIdType } from './file-id.ts'
@@ -142,7 +142,8 @@ export class DeepSeekFilesClient {
   private async request(path: string, init: RequestInit, signal?: AbortSignal): Promise<Response> {
     let response: Response
     try {
-      const headers = new Headers(init.headers)
+      const headers = new Headers(attributionHeaders())
+      for (const [name, value] of new Headers(init.headers)) headers.set(name, value)
       headers.set('authorization', `Bearer ${this.apiKey}`)
       response = await this.fetchImpl(`${this.baseURL}${path}`, {
         ...init,

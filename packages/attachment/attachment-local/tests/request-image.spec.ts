@@ -206,4 +206,31 @@ describe('local request-image cache', () => {
     expect(run).toHaveBeenCalledTimes(1)
     run.mockRestore()
   })
+
+  it('aborts the underlying request transform after its only waiter cancels', async () => {
+    const attachments = await store()
+    const master = (await attachments.saveImage({
+      data: await image(2048, 1024), mediaType: 'image/png', name: 'cancelled.png',
+    })).ref
+    let readSignal: AbortSignal | undefined
+    const read = vi.spyOn(attachments, 'readImage').mockImplementation((_ref, signal) => {
+      readSignal = signal
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    })
+    const controller = new AbortController()
+    const request = attachments.readImageRequest(
+      master,
+      { maxPixels: 640_000, maxBytes: 1024 * 1024 },
+      controller.signal,
+    )
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1))
+
+    const reason = new Error('cancel only transform waiter')
+    controller.abort(reason)
+
+    await expect(request).rejects.toBe(reason)
+    expect(readSignal?.reason).toBe(reason)
+  })
 })

@@ -239,7 +239,11 @@ describe('PiAiAdapter provider routing', () => {
     }
     const readImage = vi.fn((_ref: ImageAttachmentRef): Promise<StoredImageAttachment> =>
       Promise.resolve({ ref, data: Uint8Array.of(1) }))
-    const readImageRequest = vi.fn((value: ImageAttachmentRef, _policy: ImageRequestPolicy): Promise<RequestImageAttachment> => (
+    const readImageRequest = vi.fn((
+      value: ImageAttachmentRef,
+      _policy: ImageRequestPolicy,
+      _signal?: AbortSignal,
+    ): Promise<RequestImageAttachment> => (
       Promise.resolve({
         variantId: ImageVariantId(`sha256:${'b'.repeat(64)}`),
         master: value,
@@ -276,8 +280,12 @@ describe('PiAiAdapter provider routing', () => {
         return readImage(value)
       }
 
-      override readImageRequest(value: ImageAttachmentRef, policy: ImageRequestPolicy): Promise<RequestImageAttachment> {
-        return readImageRequest(value, policy)
+      override readImageRequest(
+        value: ImageAttachmentRef,
+        policy: ImageRequestPolicy,
+        signal?: AbortSignal,
+      ): Promise<RequestImageAttachment> {
+        return readImageRequest(value, policy, signal)
       }
     }
 
@@ -301,7 +309,7 @@ describe('PiAiAdapter provider routing', () => {
     expect(readImageRequest).toHaveBeenCalledWith(ref, {
       maxPixels: 2048 * 2048,
       maxBytes: 1024 * 1024,
-    })
+    }, expect.any(AbortSignal))
     expect(server.paths).toEqual(['/v1/responses'])
   })
 

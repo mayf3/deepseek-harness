@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -10,6 +10,11 @@ const ATTACHMENT = AttachmentId(`sha256:${'a'.repeat(64)}`)
 const VARIANT = ImageVariantId(`sha256:${'b'.repeat(64)}`)
 
 describe('DeepSeekUploadIndex', () => {
+  it('normalizes trailing endpoint slashes in the credential scope', () => {
+    expect(deepSeekFileScope('https://api.deepseek.com///', 'key'))
+      .toBe(deepSeekFileScope('https://api.deepseek.com', 'key'))
+  })
+
   it('isolates API-key namespaces and reuses only records above the refresh margin', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsh-upload-index-'))
     const index = new DeepSeekUploadIndex(join(dir, 'index.json'))
@@ -69,5 +74,107 @@ describe('DeepSeekUploadIndex', () => {
     await expect(index.commit(record, 1, 1)).resolves.toEqual({ record, accepted: true })
     await expect(index.get(scope, VARIANT, 1, 1)).resolves.toEqual(record)
     expect(JSON.parse(await readFile(path, 'utf8'))).toMatchObject({ formatVersion: 2 })
+  })
+
+  it.each([
+    'null',
+    '[]',
+    '{}',
+    '{"formatVersion":1,"records":[]}',
+    '{"formatVersion":2,"records":null}',
+    '{"formatVersion":2,"records":[null]}',
+    '{"formatVersion":2,"records":[[]]}',
+    '{"formatVersion":2,"records":[{}]}',
+    `{"formatVersion":2,"records":[${JSON.stringify({
+      scope: 'x'.repeat(64), masterAttachmentId: ATTACHMENT, variantId: VARIANT,
+      fileId: 'file-api-one', bytes: 3, createdAt: 1, expiresAt: 10_000,
+    })}]}`,
+    `{"formatVersion":2,"records":[${JSON.stringify({
+      scope: 'a'.repeat(64), masterAttachmentId: 'wrong', variantId: VARIANT,
+      fileId: 'file-api-one', bytes: 3, createdAt: 1, expiresAt: 10_000,
+    })}]}`,
+    `{"formatVersion":2,"records":[${JSON.stringify({
+      scope: 'a'.repeat(64), masterAttachmentId: ATTACHMENT, variantId: 'wrong',
+      fileId: 'file-api-one', bytes: 3, createdAt: 1, expiresAt: 10_000,
+    })}]}`,
+    `{"formatVersion":2,"records":[${JSON.stringify({
+      scope: 'a'.repeat(64), masterAttachmentId: ATTACHMENT, variantId: VARIANT,
+      fileId: '', bytes: 3, createdAt: 1, expiresAt: 10_000,
+    })}]}`,
+    `{"formatVersion":2,"records":[${JSON.stringify({
+      scope: 'a'.repeat(64), masterAttachmentId: ATTACHMENT, variantId: VARIANT,
+      fileId: 'file-api-one', bytes: -1, createdAt: 1, expiresAt: 10_000,
+    })}]}`,
+    `{"formatVersion":2,"records":[${JSON.stringify({
+      scope: 'a'.repeat(64), masterAttachmentId: ATTACHMENT, variantId: VARIANT,
+      fileId: 'file-api-one', bytes: 1.5, createdAt: 1, expiresAt: 10_000,
+    })}]}`,
+    `{"formatVersion":2,"records":[${JSON.stringify({
+      scope: 'a'.repeat(64), masterAttachmentId: ATTACHMENT, variantId: VARIANT,
+      fileId: 'file-api-one', bytes: 3, createdAt: -1, expiresAt: 10_000,
+    })}]}`,
+    `{"formatVersion":2,"records":[${JSON.stringify({
+      scope: 'a'.repeat(64), masterAttachmentId: ATTACHMENT, variantId: VARIANT,
+      fileId: 'file-api-one', bytes: 3, createdAt: 1.5, expiresAt: 10_000,
+    })}]}`,
+    `{"formatVersion":2,"records":[${JSON.stringify({
+      scope: 'a'.repeat(64), masterAttachmentId: ATTACHMENT, variantId: VARIANT,
+      fileId: 'file-api-one', bytes: 3, createdAt: 1, expiresAt: -1,
+    })}]}`,
+    `{"formatVersion":2,"records":[${JSON.stringify({
+      scope: 'a'.repeat(64), masterAttachmentId: ATTACHMENT, variantId: VARIANT,
+      fileId: 'file-api-one', bytes: 3, createdAt: 1, expiresAt: 1.5,
+    })}]}`,
+  ])('treats an invalid persisted index as empty %#', async (text) => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-upload-index-'))
+    const path = join(dir, 'index.json')
+    await writeFile(path, text, 'utf8')
+    const index = new DeepSeekUploadIndex(path)
+    await expect(index.get(
+      deepSeekFileScope('https://api.deepseek.com', 'key'), VARIANT, 1, 1,
+    )).resolves.toBeUndefined()
+  })
+
+  it('rejects duplicate persisted mappings as a corrupt cache', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-upload-index-'))
+    const path = join(dir, 'index.json')
+    const scope = deepSeekFileScope('https://api.deepseek.com', 'key')
+    const record = {
+      scope, masterAttachmentId: ATTACHMENT, variantId: VARIANT,
+      fileId: DeepSeekFileId('file-api-one'), bytes: 3, createdAt: 1, expiresAt: 10_000,
+    }
+    await writeFile(path, JSON.stringify({ formatVersion: 2, records: [record, record] }), 'utf8')
+    const index = new DeepSeekUploadIndex(path)
+    await expect(index.get(scope, VARIANT, 1, 1)).resolves.toBeUndefined()
+  })
+
+  it('drops expired records on commit and clears only the selected namespace', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-upload-index-'))
+    const index = new DeepSeekUploadIndex(join(dir, 'index.json'))
+    const first = deepSeekFileScope('https://api.deepseek.com', 'first')
+    const second = deepSeekFileScope('https://api.deepseek.com', 'second')
+    const expired = {
+      scope: first, masterAttachmentId: ATTACHMENT, variantId: VARIANT,
+      fileId: DeepSeekFileId('file-api-expired'), bytes: 3, createdAt: 1, expiresAt: 2,
+    }
+    const live = {
+      ...expired, scope: second, fileId: DeepSeekFileId('file-api-live'), expiresAt: 10_000,
+    }
+    await index.commit(expired, 0, 0)
+    await index.commit(live, 3, 1)
+    await index.clear(first)
+    await index.clear(second)
+    await expect(index.get(second, VARIANT, 3, 1)).resolves.toBeUndefined()
+    await index.clear(second)
+  })
+
+  it('propagates non-cache filesystem read failures', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-upload-index-'))
+    const path = join(dir, 'directory')
+    await mkdir(path)
+    const index = new DeepSeekUploadIndex(path)
+    await expect(index.get(
+      deepSeekFileScope('https://api.deepseek.com', 'key'), VARIANT, 1, 1,
+    )).rejects.toBeInstanceOf(Error)
   })
 })
