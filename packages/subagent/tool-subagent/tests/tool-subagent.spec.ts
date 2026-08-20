@@ -220,10 +220,8 @@ describe('dsh-tool-subagent', () => {
     expect(text(result)).toContain('abnormally')
   })
 
-  it('forwards configured agentOptions into the start request', async () => {
-    // Cover the `config.agentOptions ? … : {}` spread: a provider that captures
-    // the request lets us assert the agentOptions reached it.
-    let seen: { agentOptions?: { model?: string } } | undefined
+  it('preflights and starts with provider-resolved Agent options', async () => {
+    let seen: { agentOptions?: { provider?: string; model?: string; maxTokens?: number } } | undefined
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(SystemPrompt)
@@ -233,6 +231,7 @@ describe('dsh-tool-subagent', () => {
       name: 'capture',
       capabilities: { agentOptions: true, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
       inheritsParentContext: false,
+      resolveAgentOptions: requested => ({ provider: 'alpha', maxTokens: 321, ...requested }),
       start: async (request) => {
         seen = request
         return {
@@ -246,12 +245,14 @@ describe('dsh-tool-subagent', () => {
     ctx.llm.registerAdapter(['alpha'], new MockAdapter([]))
     await ctx.plugin(tool, {
       provider: 'capture',
-      agentOptions: { provider: 'alpha', model: 'child-model' },
+      agentOptions: { model: 'child-model' },
       maxDepth: 'provider-managed',
     })
 
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
-    expect(seen?.agentOptions).toEqual({ provider: 'alpha', model: 'child-model' })
+    expect(ctx.tools.schemas().find(schema => schema.name === 'subagent')?.description)
+      .toContain('this provider\'s route defaults')
+    expect(seen?.agentOptions).toEqual({ provider: 'alpha', model: 'child-model', maxTokens: 321 })
   })
 
   it('defaults toolName and omits agentOptions when apply() is called directly (schema bypass)', async () => {

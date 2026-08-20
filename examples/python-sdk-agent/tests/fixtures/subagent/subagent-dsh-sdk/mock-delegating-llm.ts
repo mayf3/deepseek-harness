@@ -29,12 +29,13 @@ class MockDelegatingAdapter extends LlmAdapter {
       .join('') ?? ''
 
     if (toolResultText.length === 0) {
+      const selectedRoute = process.env.DSH_TEST_CHILD_DEFAULT_ROUTE === '1'
+        ? { reasoning_effort: 'max' }
+        : { provider: 'mock', model: 'mock-routed', reasoning_effort: 'max' }
       const args = JSON.stringify({
         description: 'route probe',
         prompt: 'report your route and workspace',
-        provider: 'mock',
-        model: 'mock-routed',
-        reasoning_effort: 'max',
+        ...selectedRoute,
       })
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
       yield { type: 'tool-call-delta', index: 0, id: CallId('call-delegate'), name: 'subagent', argumentsDelta: args }

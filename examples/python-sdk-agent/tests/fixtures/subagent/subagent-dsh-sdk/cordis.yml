@@ -19,10 +19,8 @@
     profile: sdk
     patches: !!js JSON.parse(process.env.DSH_TEST_CHILD_PATCHES ?? '[]')
     dshHome: !!js process.env.DSH_TEST_CHILD_HOME
-    # These defaults are intentionally unavailable in the child composition;
-    # the model-selected route must replace them before initialize.
-    provider: unavailable-default
-    model: unavailable-default
+    provider: mock
+    model: mock-routed
     env:
       DSH_TELEMETRY_DISABLED: '1'
 

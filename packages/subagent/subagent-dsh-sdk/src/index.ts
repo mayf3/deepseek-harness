@@ -112,10 +112,10 @@ const SDK_START_CAPABILITIES: SubagentCapabilities = Object.freeze({
 })
 
 /** Merge the request's supported route fields over this provider instance's defaults. */
-function resolveSdkRoute(config: ResolvedConfig, requested: AgentOptions | undefined): Pick<
-  SdkRunSpec,
-  'provider' | 'model' | 'reasoningEffort' | 'maxTokens'
-> {
+function resolveSdkAgentOptions(
+  config: ResolvedConfig,
+  requested: AgentOptions | undefined,
+): AgentOptions & { provider: string; model: string } {
   const maxTokens = requested?.maxTokens ?? config.maxTokens
   return {
     provider: requested?.provider ?? config.provider,
@@ -137,8 +137,12 @@ class SdkSubagentProvider implements SubagentProvider {
 
   constructor(readonly name: string, private readonly ctx: Context, private readonly config: ResolvedConfig) {}
 
+  resolveAgentOptions(requested: AgentOptions | undefined): AgentOptions & { provider: string; model: string } {
+    return resolveSdkAgentOptions(this.config, requested)
+  }
+
   start(request: SubagentStartRequest) {
-    const route = resolveSdkRoute(this.config, request.agentOptions)
+    const route = this.resolveAgentOptions(request.agentOptions)
     const spec: SdkRunSpec = {
       ...this.config.dshBin === undefined ? {} : { dshBin: this.config.dshBin },
       profile: this.config.profile,

@@ -62,6 +62,7 @@ describe('SDK subagent dynamic routing through a real cordis.yml', () => {
         env: {
           DSH_TEST_CHILD_PATCHES: JSON.stringify([childPatch]),
           DSH_TEST_CHILD_HOME: childHome,
+          DSH_TEST_CHILD_DEFAULT_ROUTE: '1',
         },
         inspect: async (cwd) => {
           // The child reports realpaths; canonicalize the temp workspace to match.

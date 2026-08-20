@@ -420,7 +420,7 @@ A local one-shot run MUST publish an ordinary child agent/session before `start(
 
 ## The provider contract: `SubagentProvider`
 
-Each provider is a named child-agent transport, and multiple providers may coexist. The service validates requested start-time capabilities before `start()`, and rejects a continuable start on a provider without `prepareContinuable`. `inheritsParentContext` describes only conversation seeding (`fork`: true; `spawn` and `acp`: false), allowing consumers to generate accurate model-facing wording without implying inherited tools, services, or authority.
+Each provider is a named child-agent transport, and multiple providers may coexist. The service validates requested start-time capabilities before `start()`, and rejects a continuable start on a provider without `prepareContinuable`. `inheritsParentContext` describes only conversation seeding (`fork`: true; `spawn` and `acp`: false), allowing consumers to generate accurate model-facing wording without implying inherited tools, services, or authority. A provider whose one-shot route has provider-owned defaults exposes the optional synchronous `resolveAgentOptions()` hook, allowing a Consumer to preflight the exact value that `start()` will apply.
 
 ```ts type-equiv
 /**
@@ -442,6 +442,16 @@ interface SubagentProvider {
    * It says nothing about tool registration, injected services, or authority inheritance.
    */
   readonly inheritsParentContext: boolean
+  /**
+   * OPTIONAL provider-owned resolution for one-shot Agent options. A Consumer
+   * that preflights a selected route calls this synchronously and passes the
+   * returned value unchanged to {@link start}; direct callers remain valid
+   * because the provider applies the same resolution inside `start`.
+   * Implementations must be pure and declare `capabilities.agentOptions`.
+   * @param requested - request/config fields before provider-owned defaults.
+   * @returns the exact Agent options this provider will apply.
+   */
+  resolveAgentOptions?(requested: AgentOptions | undefined): AgentOptions | undefined
   /**
    * Establish a ONE-SHOT child and return its handle after publication.
    * The service has already validated that every requested start-time
