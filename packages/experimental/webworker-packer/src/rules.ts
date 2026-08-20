@@ -44,9 +44,10 @@ export const EXCLUDE_WORKSPACE: readonly string[] = [
  * A package's `lib/client.js` is its browser bundle behind the `./client`
  * export: the page's own module system evaluates it with its own wrapper,
  * which has no ambient-store parameter. Transforming those bodies would
- * inject calls the page cannot resolve, so they ship verbatim — and the
- * manifest's all-or-nothing claim stays true, because the worker loader never
- * evaluates them (the tunnel serves them as bytes).
+ * inject calls the page cannot resolve, so they ship untransformed — their
+ * only change is the trailing debugger-name line every JavaScript entry
+ * gains — and the manifest's all-or-nothing claim stays true, because the
+ * worker loader never evaluates them (the tunnel serves them as bytes).
  */
 export const PAGE_ASSETS: readonly string[] = [
   'node_modules/*/lib/client.js',

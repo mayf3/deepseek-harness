@@ -167,6 +167,9 @@ export class WorkerTunnel {
   /**
    * `loadBundle` seam: take one client bundle through the tunnel and execute it
    * as a classic script, exactly like the shell's same-origin `<script src>`.
+   * The image packs each bundle with a trailing `sourceURL` naming its image
+   * path, so the blob shows under that name in the debugger instead of as an
+   * anonymous blob entry.
    * @param url - graph row url (`/plugins/<id>/client.js?rev=...`).
    */
   async loadBundle(url: string): Promise<void> {

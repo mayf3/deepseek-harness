@@ -105,7 +105,7 @@ export interface PackResult {
   readonly missing: readonly string[]
   /** Executable scripts dropped from the image. */
   readonly executables: readonly string[]
-  /** Page bundles left verbatim, and so out of the transform. */
+  /** Page bundles left out of the transform; like every JavaScript entry they carry the trailing debugger name. */
   readonly pageBundles: readonly string[]
   /** JavaScript entries the image carries. */
   readonly javascriptEntries: number
@@ -282,6 +282,53 @@ interface SweepOutcome {
  * @param root - Virtual root the candidates mount under.
  * @returns The final entries plus the sweep's counts.
  */
+/** Trailing `sourceMappingURL` comment; the image carries no `.map` files. */
+const DANGLING_SOURCE_MAP = /\n\/\/# sourceMappingURL=\S+\s*$/
+
+/**
+ * Name one JavaScript entry for the debugger: append the `sourceURL` magic
+ * comment V8 stacks and DevTools read, so the entry shows under its
+ * repository path instead of as an anonymous VM script (worker `new Function`
+ * bodies) or blob entry (page bundles). A trailing `sourceMappingURL` comment
+ * is stripped first — its `.map` never ships, and once the script has a name
+ * the debugger would resolve the reference against it and report a load
+ * failure per script. Only the final line is touched, so every other line
+ * keeps its number; evaluation cost stays at pack time, where the names are
+ * already deterministic.
+ * @param bytes - Entry body as the image would otherwise hold it.
+ * @param name - Debugger name for the entry.
+ * @param decoder - Shared UTF-8 decoder.
+ * @param encoder - Shared UTF-8 encoder.
+ * @returns The named body.
+ */
+function nameForDebugger(bytes: Uint8Array, name: string, decoder: TextDecoder, encoder: TextEncoder): Uint8Array {
+  const source = decoder.decode(bytes).replace(DANGLING_SOURCE_MAP, '\n')
+  return encoder.encode(`${source}\n//# sourceURL=${name}`)
+}
+
+/**
+ * Debugger names for image entries: a workspace or vendored package file is
+ * named by its repository path (`packages/<group>/<pkg>/lib/index.js`), the
+ * shape a reader navigates; an external package file keeps its image key —
+ * it has no repository path, and its pnpm store path would name a hash.
+ * @param workspaces - Package name → absolute repository directory.
+ * @param resolveFrom - Repository root the names are relative to.
+ * @returns Mapper from an image key to the entry's debugger name.
+ */
+function debuggerNamer(workspaces: ReadonlyMap<string, string>, resolveFrom: string): (key: string) => string {
+  const repoDirs = new Map(
+    [...workspaces].map(([name, directory]) => [name, relative(resolveFrom, directory).replaceAll('\\', '/')]),
+  )
+  return (key: string): string => {
+    if (!key.startsWith('node_modules/')) return key
+    const rest = key.slice('node_modules/'.length)
+    const segments = rest.split('/')
+    const packageName = segments[0]?.startsWith('@') === true ? segments.slice(0, 2).join('/') : segments[0] ?? ''
+    const directory = repoDirs.get(packageName)
+    return directory === undefined ? key : `${directory}${rest.slice(packageName.length)}`
+  }
+}
+
 function sweepImage(
   files: ImageFiles,
   options: PackOptions,
@@ -317,7 +364,7 @@ function sweepImage(
       continue
     }
     // Every non-wildcard face is a root; a face resolving onto a page asset is
-    // kept verbatim below rather than excluded here.
+    // kept untransformed below rather than excluded here.
     const subpaths = manifest.exports === undefined
       ? ['.']
       : Object.keys(manifest.exports).filter(key => key.startsWith('.') && !key.includes('*'))
@@ -379,12 +426,13 @@ function sweepImage(
   }
 
   const swept: ImageFiles = {}
+  const debuggerName = debuggerNamer(options.workspaces, options.resolveFrom)
   let javascriptEntries = 0
   let dropped = 0
   for (const [name, bytes] of Object.entries(files)) {
     const isJs = /\.[cm]?js$/.test(name)
     if (!isJs || pageAsset(name)) {
-      swept[name] = bytes
+      swept[name] = isJs ? nameForDebugger(bytes, debuggerName(name), decoder, encoder) : bytes
       if (isJs) javascriptEntries += 1
       continue
     }
@@ -393,7 +441,7 @@ function sweepImage(
       dropped += 1
       continue
     }
-    swept[name] = kept
+    swept[name] = nameForDebugger(kept, debuggerName(name), decoder, encoder)
     javascriptEntries += 1
   }
   return {

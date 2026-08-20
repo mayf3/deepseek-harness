@@ -75,6 +75,27 @@ const archive = async (): Promise<Uint8Array> =>
     expect(result.transform.rewritten).toBeGreaterThan(0)
   })
 
+  it('names every JavaScript entry for the debugger, workspace files by repository path', () => {
+    const result = packed()
+    const decoder = new TextDecoder()
+    const entries = Object.keys(result.files).filter(name => /\.[cm]?js$/.test(name))
+    expect(entries.length).toBeGreaterThan(0)
+    for (const name of entries) {
+      const lines = decoder.decode(result.files[name]).split('\n')
+      // V8 stacks and DevTools read the trailing comment, so worker
+      // `new Function` bodies and page blobs alike show under a stable name
+      // instead of as anonymous VM or blob entries.
+      expect(lines.at(-1)).toMatch(/^\/\/# sourceURL=\S+$/)
+      // A dangling map reference would make the debugger report one load
+      // failure per named script; the packer ships no `.map` files.
+      expect(lines.at(-2) ?? '').not.toContain('sourceMappingURL')
+    }
+    // A workspace entry is named by the path a reader navigates in this
+    // repository, not by its image mount.
+    const subject = decoder.decode(result.files[`node_modules/${SUBJECT}/lib/index.js`])
+    expect(subject.endsWith('\n//# sourceURL=packages/util/timeout/lib/index.js')).toBe(true)
+  })
+
   it('writes one gzip member whose header records no build facts', () => {
     const image = packed().image
     // RFC 1952 §2.3: magic, deflate, then the flag byte — no FNAME (0x08) or
