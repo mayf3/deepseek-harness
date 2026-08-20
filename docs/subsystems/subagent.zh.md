@@ -35,7 +35,7 @@ interface SubagentCapabilities {
 
 ## 单次启动请求
 
-工具层根据模型输入和自身配置构建此请求；服务在 `start` 之前针对指定提供方进行校验。必填的 `parent` 提供会话 cwd、谱系与委派深度。可选的 Agent 提供方、模型、推理强度与 token 覆盖、output schema、depth、工具过滤器和 persona 需要对应的能力 flag 匹配。进程内后端会把 `agentOptions` 合并到父 Agent 选项之上，将 filter 和 persona 的作用域限定在子 agent 创建阶段，并通过强制 capture 工具实现所支持的 object-rooted schema。当前进程外提供方会在启动其传输前拒绝 `agentOptions`。
+工具层根据模型输入和自身配置构建此请求；服务在 `start` 之前针对指定提供方进行校验。必填的 `parent` 提供会话 cwd、谱系与委派深度。可选的 Agent 提供方、模型、推理强度与 token 覆盖、output schema、depth、工具过滤器和 persona 需要对应的能力 flag 匹配。进程内后端会把 `agentOptions` 合并到父 Agent 选项之上，将 filter 和 persona 的作用域限定在子 agent 创建阶段，并通过强制 capture 工具实现所支持的 object-rooted schema。DSH SDK 后端会把四个 Agent 路由字段合并到实例默认值之上，并在子运行时初始化期间校验；ACP、Codex 与 Claude Code 会在启动传输前拒绝 `agentOptions`。
 
 ```ts type-equiv
 /**
@@ -68,7 +68,8 @@ interface SubagentStartRequest {
    * Optional host-Agent provider, model, reasoning-effort, and output-token
    * overrides. Requires {@link SubagentCapabilities.agentOptions}; in-process
    * providers merge them over the parent Agent's options when they create the
-   * child.
+   * child, while the DSH SDK provider merges them over its instance defaults
+   * before initializing the separate child runtime.
    */
   readonly agentOptions?: AgentOptions
   /**

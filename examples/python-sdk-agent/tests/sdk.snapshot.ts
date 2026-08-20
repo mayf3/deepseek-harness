@@ -45,6 +45,10 @@ const replayPlugin = fileURLToPath(new URL(
     : '../../../packages/test-support/llm-replay/src/index.ts',
   import.meta.url,
 ))
+const dshSdkFixtureDir = join(testsDir, 'fixtures', 'subagent', 'subagent-dsh-sdk')
+const dshSdkSnapshotConfig = join(dshSdkFixtureDir, 'snapshot.cordis.yml')
+const dshSdkChildConfig = join(dshSdkFixtureDir, 'child.cordis.yml')
+const dshSdkChildMockPath = join(dshSdkFixtureDir, 'child-mock-llm.ts')
 
 const MINIMAL_SYSTEM_PROMPT = 'You are the environment-selected minimal software engineer.'
 const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
@@ -71,7 +75,7 @@ interface SdkScenario {
   prompt: string
   /** Fixed SDK session id, so fixtures and replay binding stay stable. */
   sessionId: string
-  /** How many child sessions the turn persists (subagent scenarios). */
+  /** How many additional session logs the scenario persists. */
   children: number
   /** Optional scenario-specific live and replay compositions. */
   configs?: { live: string; replay: string }
@@ -79,6 +83,14 @@ interface SdkScenario {
   additionalPatches?: { live: readonly string[]; replay: readonly string[] }
   /** Environment overrides passed to the runtime subprocess. */
   environment?: Readonly<Record<string, string>>
+  /** SDK initialization route for the root runtime. */
+  sdkRoute?: { provider: string; model: string }
+  /** Separate DSH SDK child process and the route its persisted request must prove. */
+  dshSdkChild?: {
+    config: string
+    sessionRoot: string
+    expectedRoute: Readonly<Record<string, unknown>>
+  }
   /** Cwd-relative files whose final contents are part of the scenario contract. */
   expectedFiles?: Readonly<Record<string, string>>
   /** Assembled model-facing tool names and required argument keys. */
@@ -110,6 +122,24 @@ const SCENARIOS: SdkScenario[] = [
     prompt: "Use the subagent tool exactly once with description 'echo probe' and prompt: Reply with exactly: child answer 42. Then reply with the subagent's final answer verbatim.",
     sessionId: 'sdk-snapshot-subagent',
     children: 1,
+  },
+  {
+    name: 'subagent-dsh-sdk-dynamic-route',
+    prompt: 'Delegate once using the requested child route.',
+    sessionId: 'sdk-snapshot-dsh-sdk',
+    children: 1,
+    configs: { live: dshSdkSnapshotConfig, replay: dshSdkSnapshotConfig },
+    sdkRoute: { provider: 'mock', model: 'mock-delegate' },
+    dshSdkChild: {
+      config: dshSdkChildConfig,
+      sessionRoot: '.child-dsh/sessions',
+      expectedRoute: {
+        provider: 'mock',
+        model: 'mock-routed',
+        reasoningEffort: 'max',
+        maxTokens: 777,
+      },
+    },
   },
   {
     name: 'persistent-tools',
@@ -191,6 +221,17 @@ function assembledSystem(log: PersistedLog): string {
   const system = event?.data?.header?.system
   if (typeof system !== 'string') throw new Error('session log has no request/header system')
   return system
+}
+
+function assembledRequestConfig(log: PersistedLog): Record<string, unknown> {
+  const event = log.content.trimEnd().split('\n')
+    .map(line => JSON.parse(line) as { type?: string; data?: { header?: { config?: unknown } } })
+    .find(candidate => candidate.type === 'request/header')
+  const config = event?.data?.header?.config
+  if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+    throw new Error('session log has no request/header config')
+  }
+  return config as Record<string, unknown>
 }
 
 function assembledRuntimeContexts(log: PersistedLog): string[] {
@@ -300,6 +341,18 @@ async function runScenario(scenario: SdkScenario): Promise<{
     ? scenario.additionalPatches?.live ?? []
     : scenario.additionalPatches?.replay ?? []
   const [parentFixture, ...childFixtures] = replayFixtures
+  let childEnvironment: Record<string, string> = {}
+  if (scenario.dshSdkChild !== undefined) {
+    const childHome = join(cwd, '.child-dsh')
+    const childPatch = join(childHome, 'child.cordis.yml')
+    await mkdir(childHome, { recursive: true })
+    await writeFile(childPatch, (await readFile(scenario.dshSdkChild.config, 'utf8'))
+      .replace("'./child-mock-llm.ts'", JSON.stringify(pathToFileURL(dshSdkChildMockPath).href)))
+    childEnvironment = {
+      DSH_TEST_CHILD_PATCHES: JSON.stringify([childPatch]),
+      DSH_TEST_CHILD_HOME: childHome,
+    }
+  }
   const env: Record<string, string> = {
     ...Object.fromEntries(Object.entries(process.env).filter(([, value]) => value !== undefined)) as Record<string, string>,
     DSH_SNAPSHOT: mode,
@@ -310,6 +363,7 @@ async function runScenario(scenario: SdkScenario): Promise<{
       ...childFixtures.length > 0 ? { DSH_SNAPSHOT_CHILD_FILES: childFixtures.join(delimiter) } : {},
     },
     ...scenario.environment,
+    ...childEnvironment,
   }
 
   const harness = new DeepSeekHarness({
@@ -324,8 +378,8 @@ async function runScenario(scenario: SdkScenario): Promise<{
     env,
     requestTimeoutMs: 110_000,
     cwd,
-    provider: 'deepseek-official',
-    model: 'deepseek-v4-flash',
+    provider: scenario.sdkRoute?.provider ?? 'deepseek-official',
+    model: scenario.sdkRoute?.model ?? 'deepseek-v4-flash',
   })
   try {
     const notifications: HarnessNotification[] = []
@@ -334,7 +388,12 @@ async function runScenario(scenario: SdkScenario): Promise<{
       onNotification: (notification) => { notifications.push(notification) },
     })
     await harness.close()
-    const logs = await persistedLogs(sessionsRoot)
+    const logs = (await Promise.all([
+      persistedLogs(sessionsRoot),
+      ...(scenario.dshSdkChild === undefined
+        ? []
+        : [persistedLogs(join(cwd, scenario.dshSdkChild.sessionRoot))]),
+    ])).flat()
     const observedFiles = Object.fromEntries(await Promise.all(
       Object.keys(scenario.expectedFiles ?? {}).map(async (path): Promise<[string, string | MissingFile]> => [
         path,
@@ -350,6 +409,10 @@ async function runScenario(scenario: SdkScenario): Promise<{
 
 /** Order logs parent-first, children by creation time (fixture layout order). */
 function orderLogs(logs: PersistedLog[], scenario: SdkScenario): PersistedLog[] {
+  if (scenario.dshSdkChild !== undefined) {
+    expect(logs).toHaveLength(scenario.children + 1)
+    return logs
+  }
   const parents = logs.filter(log => typeof log.header.parentSession !== 'string')
   const children = logs.filter(log => typeof log.header.parentSession === 'string')
     .sort((left, right) => Number(left.header.createdAt) - Number(right.header.createdAt))
@@ -480,7 +543,12 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
           for (const clause of scenario.runtimeContext.includes) expect(system).not.toContain(clause)
         }
       }
-      if (scenario.children > 0) {
+      if (scenario.dshSdkChild !== undefined) {
+        const child = ordered[1]
+        if (child === undefined) throw new Error(`${scenario.name} has no child session log`)
+        expect(assembledRequestConfig(child)).toEqual(scenario.dshSdkChild.expectedRoute)
+      }
+      if (scenario.children > 0 && scenario.dshSdkChild === undefined) {
         expect(notifications.some(n => n.method === 'subagent.started')).toBe(true)
         expect(notifications.some(n => n.method === 'subagent.finished')).toBe(true)
       }

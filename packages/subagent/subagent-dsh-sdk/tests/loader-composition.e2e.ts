@@ -1,12 +1,9 @@
 /**
- * Keyless REAL-composition coverage for parent-session cwd inheritance across
- * the SDK wire: a test-only cordis.yml boots the headless app through the
- * Loader with the SDK backend's `cwd` omitted, a scripted model delegates
- * once, and the child — a COMPLETE second harness runtime booted from its own
- * cordis.yml and driven over stdio JSON-RPC — echoes where it actually ran.
- * Both the parent's tool result and the child's own persisted session log
- * must carry the parent session's cwd. Mock-only composition, so only this
- * keyless tier applies (the with-key tier lives in subagent-sdk.e2e.ts).
+ * Keyless REAL-composition coverage for dynamic child routing and parent cwd
+ * inheritance across the SDK wire. A test-only cordis.yml boots through the
+ * Loader, a scripted model selects provider/model/reasoning, tool config adds
+ * maxTokens, and a COMPLETE second harness runtime echoes the effective route
+ * and cwd. The child's persisted request header must carry all four values.
  */
 
 import { existsSync, realpathSync } from 'node:fs'
@@ -40,8 +37,8 @@ async function sessionEvents(log: string): Promise<SessionEvent[]> {
   return lines.slice(1).map(line => JSON.parse(line) as SessionEvent)
 }
 
-describe('SDK subagent cwd inheritance through a real cordis.yml', () => {
-  it('runs the child runtime in the parent session workspace', async () => {
+describe('SDK subagent dynamic routing through a real cordis.yml', () => {
+  it('runs the selected child route in the parent session workspace', async () => {
     const childHome = await mkdtemp(join(tmpdir(), 'dsh-sdk-subagent-home-'))
     const childPatch = join(childHome, 'child.cordis.yml')
     await writeFile(childPatch, (await readFile(childConfigPath, 'utf8'))
@@ -94,10 +91,19 @@ describe('SDK subagent cwd inheritance through a real cordis.yml', () => {
         .filter(block => block.type === 'text')
         .map(block => block.text)
         .join('')
-      expect(resultText).toBe(`child cwd: ${workspace}`)
+      expect(resultText).toBe(`child route: mock/mock-routed/max/777; cwd: ${workspace}`)
 
-      // The child ran a real turn of its own: user message in, assistant out.
+      // The child ran a real turn with the model-selected route and tool-configured cap.
       expect(childEvents.some(event => event.type === 'user/message')).toBe(true)
+      const childHeader = childEvents.find(
+        (event): event is Extract<SessionEvent, { type: 'request/header' }> => event.type === 'request/header',
+      )
+      expect(childHeader?.data.header.config).toEqual({
+        provider: 'mock',
+        model: 'mock-routed',
+        reasoningEffort: 'max',
+        maxTokens: 777,
+      })
       const childAnswers = childEvents.filter(event => event.type === 'assistant/message')
       expect(childAnswers.length).toBeGreaterThan(0)
     } finally {

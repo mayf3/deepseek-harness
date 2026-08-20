@@ -1,0 +1,51 @@
+# JSON-RPC snapshot root: a deterministic parent model selects a route for a
+# separate SDK child runtime. Both runtimes persist their own request headers.
+- id: sdk-jsonrpc-server
+  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+
+- id: mock-llm
+  name: './mock-delegating-llm.ts'
+
+- id: subagent
+  name: '@deepseek-ai/dsh-subagent'
+
+- id: subagent-dsh-sdk
+  name: '@deepseek-ai/dsh-subagent-dsh-sdk'
+  config:
+    profile: sdk
+    patches: !!js JSON.parse(process.env.DSH_TEST_CHILD_PATCHES ?? '[]')
+    dshHome: !!js process.env.DSH_TEST_CHILD_HOME
+    provider: unavailable-default
+    model: unavailable-default
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+
+- id: tool-subagent
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: dsh-sdk
+    toolName: subagent
+    enableRunInBackground: false
+    agentOptions:
+      maxTokens: 777
+    maxDepth: 'provider-managed'
+
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    persona: 'Test SDK subagent dynamic routing.'
+    workspaceContext: false
+    skills:
+      enabled: false
+    toolBash:
+      enableRunInBackground: false
+    toolJobs: false
+
+- id: sessions
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js process.env.DSH_SESSION_ROOT
+    compression: none
+
+- id: session-checkpoints
+  name: '@deepseek-ai/dsh-session-checkpoint-policy'

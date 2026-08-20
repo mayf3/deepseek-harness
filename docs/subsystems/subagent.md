@@ -35,7 +35,7 @@ interface SubagentCapabilities {
 
 ## The one-shot start request
 
-The tool layer builds this request from the model input and its own config; the service validates it against the named provider before `start`. Required `parent` supplies the session cwd, lineage, and delegation depth. Optional Agent provider, model, reasoning-effort, and token overrides, output schema, depth, tool filter, and persona require matching capability flags. In-process backends merge `agentOptions` over the parent Agent's options, scope filters and personas to child creation, and implement the supported object-rooted schema with a forced capture tool. Current out-of-process providers reject `agentOptions` before starting their transport.
+The tool layer builds this request from the model input and its own config; the service validates it against the named provider before `start`. Required `parent` supplies the session cwd, lineage, and delegation depth. Optional Agent provider, model, reasoning-effort, and token overrides, output schema, depth, tool filter, and persona require matching capability flags. In-process backends merge `agentOptions` over the parent Agent's options, scope filters and personas to child creation, and implement the supported object-rooted schema with a forced capture tool. The DSH SDK backend merges the four Agent route fields over its instance defaults and validates them in the child runtime's initialization; ACP, Codex, and Claude Code reject `agentOptions` before starting their transports.
 
 ```ts type-equiv
 /**
@@ -68,7 +68,8 @@ interface SubagentStartRequest {
    * Optional host-Agent provider, model, reasoning-effort, and output-token
    * overrides. Requires {@link SubagentCapabilities.agentOptions}; in-process
    * providers merge them over the parent Agent's options when they create the
-   * child.
+   * child, while the DSH SDK provider merges them over its instance defaults
+   * before initializing the separate child runtime.
    */
   readonly agentOptions?: AgentOptions
   /**

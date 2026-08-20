@@ -90,6 +90,7 @@ dsh_home = Path("/absolute/path/to/example-dsh-home").resolve()
 with DeepSeekHarness(
     provider="deepseek-official",
     model="deepseek-v4-flash",
+    reasoning_effort="max",
     max_tokens=49_152,
     cwd=str(workspace),
     dsh_home=str(dsh_home),
