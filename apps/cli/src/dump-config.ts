@@ -2,7 +2,8 @@
  * Config-dump entry for `dsh --profile <name> --dump-config`: compose the
  * profile's patch layers through the include plugin's patch algorithm without
  * booting or evaluating `!!js`, with one source layer per bundle, the
- * profile's own patch file, and each `--patch` overlay.
+ * profile's own patch file, each `--patch` overlay, and the launcher-derived
+ * shipped agent-preset root.
  * @module @deepseek-ai/dsh/dump-config
  */
 
@@ -14,7 +15,7 @@ import {
   renderConfigDump,
   type ConfigDumpLayer,
 } from '@deepseek-ai/dsh-app-boot'
-import { homePatchPath, prepareProfile, PROFILE_ROOT_FILENAME } from './profile-boot.ts'
+import { composeRows, homePatchPath, prepareProfile, PROFILE_ROOT_FILENAME, resolveShippedPresetPatch } from './profile-boot.ts'
 
 const NAME = 'dsh'
 
@@ -46,6 +47,15 @@ export function runDumpConfig(profile: string, defaultOnly: boolean, patches: re
       const absolute = resolve(file)
       layers.push({ label: absolute, patches: loadOverlayPatches(NAME, absolute) })
     }
+  }
+  // The launcher derives one more layer no file carries: the shipped
+  // agent-preset root, prepended to whatever roots the layers configured.
+  // Included so the dump composes the roster row exactly as it boots. (The
+  // telemetry hard-disable switch stays out: it is an environment fact of the
+  // booting process, not part of the profile composition.)
+  const presetPatch = resolveShippedPresetPatch(composeRows(layers.map(layer => layer.patches)))
+  if (presetPatch !== undefined) {
+    layers.push({ label: `${NAME} launcher (shipped agent-preset root)`, patches: [presetPatch] })
   }
   // The dump anchors on the same empty root file the boot includes.
   process.stdout.write(renderConfigDump(NAME, join(loaded.dir, PROFILE_ROOT_FILENAME), layers))

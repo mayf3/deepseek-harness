@@ -434,10 +434,10 @@
 # as shell access because a preset IS a composition.
 #
 # Only the SHIPPED root is an assembly fact: it sits beside the installed app's
-# own config, so `apps/cli`'s `composeProfile` resolves and patches it in — the
-# same treatment `distIndex` gets on the webserver row. The writable root is
-# `dsh-agent-presets`' own default (`includeUserRoot`), so a composition that
-# never reaches that patch still finds a person's presets.
+# own config, so `apps/cli`'s launcher derives a patch per composition that
+# PREPENDS it to whatever `roots` the user layers configured here. The writable
+# root is `dsh-agent-presets`' own default (`includeUserRoot`), so a
+# composition that never reaches that patch still finds a person's presets.
 - insert:
     - id: agent-presets
       name: '@deepseek-ai/dsh-agent-presets'
