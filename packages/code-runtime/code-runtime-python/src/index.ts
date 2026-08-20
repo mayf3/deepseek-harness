@@ -1475,13 +1475,20 @@ export class PythonCodeRuntime extends CodeRuntime {
       const drainReplies = async (): Promise<void> => {
         if (draining) return
         draining = true
+        let head = 0
         try {
-          while (replyQueue.length > 0) {
+          while (head < replyQueue.length) {
             // Needs the run to settle between two queued frames. Measured queue
             // depths reach 11 without the wall clock landing inside that window.
             /* v8 ignore next -- see above; not schedulable from a test. */
             if (settled) break
-            const payload = replyQueue.shift() as ReplyMessage
+            // Read by index, not `shift()`: a large `asyncio.gather` of wide
+            // bindings awaiting fd 3's `drain` can queue many frames, and each
+            // `shift()` re-slices the remaining array (O(n) per pop, O(n²) over
+            // the whole drain). A head cursor keeps the cost linear; the `finally`
+            // below discards everything consumed once the drain ends.
+            const payload = replyQueue[head] as ReplyMessage
+            head += 1
             // Encode inside the loop, not up front: a queued reply the run no
             // longer needs is dropped by the `settled` check above without ever
             // being serialized.
