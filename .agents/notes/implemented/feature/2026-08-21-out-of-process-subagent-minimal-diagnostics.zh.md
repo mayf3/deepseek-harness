@@ -30,10 +30,10 @@ Subagent failure (provider: <provider>; stage: <stage>; category: <category>; st
 
 | Stage | 归属操作 | 安全 category 与事实 |
 | --- | --- | --- |
-| `initialize` | 父工作区解析、spawn 与 ACP initialize | `configuration`、`transport`、`process-start` 或 `process-exit` |
+| `initialize` | 父工作区解析与 ACP initialize | `configuration`、`transport` 或 `process-exit` |
 | `new-session` | ACP `session/new` 与返回 session id 校验 | `protocol`、`transport` 或 `process-exit` |
 | `prompt` | ACP prompt 请求、远端结束原因与权限回调 | `remote-limit`、`transport`、`unknown` 或仅权限诊断 |
-| `process` | 受管子进程先于 prompt 终态响应退出 | `process-exit`，以及分别观测到的退出码与信号 |
+| `process` | 子进程 spawn 失败，或受管子进程先于 prompt 终态响应退出 | `process-start`，或 `process-exit` 以及分别观测到的退出码与信号 |
 | `teardown` | EOF 停稳与受管进程树终止 | 固定 teardown 事实；原始清理失败仍留在内部 |
 
 `max_turn_requests` 继续映射到共享 `error`，并附加 `remote-limit`。未知结束原因继续映射到 `error`，category 固定为 `unknown`，不会复制原值。`max_tokens`、`refusal` 与 `cancelled` 保持既有共享结束原因；只有需要解释权限决定时才会附加诊断。

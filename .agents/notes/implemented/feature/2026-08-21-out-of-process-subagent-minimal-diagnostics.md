@@ -30,10 +30,10 @@ When an ACP permission request contributes to a non-completed result, a fixed li
 
 | Stage | Owned operation | Safe categories and facts |
 | --- | --- | --- |
-| `initialize` | Parent workspace resolution, spawn, and ACP initialize | `configuration`, `transport`, `process-start`, or `process-exit` |
+| `initialize` | Parent workspace resolution and ACP initialize | `configuration`, `transport`, or `process-exit` |
 | `new-session` | ACP `session/new` and returned session-id validation | `protocol`, `transport`, or `process-exit` |
 | `prompt` | ACP prompt request, remote stop reason, and permission callback | `remote-limit`, `transport`, `unknown`, or a permission-only diagnostic |
-| `process` | Managed child exits before a prompt terminal response | `process-exit` plus independently observed exit code and signal |
+| `process` | Child-process spawn failure, or a managed child exits before a prompt terminal response | `process-start`, or `process-exit` plus independently observed exit code and signal |
 | `teardown` | EOF quiescence and managed process-tree termination | Fixed teardown facts; the original cleanup failure remains internal |
 
 `max_turn_requests` remains the shared `error` stop reason and adds `remote-limit`. An unknown stop reason remains `error` and becomes the fixed `unknown` category without copying the value. `max_tokens`, `refusal`, and `cancelled` keep their existing shared stop reasons; they add a diagnostic only when a permission decision must be explained.
