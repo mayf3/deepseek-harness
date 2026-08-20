@@ -89,6 +89,36 @@ export interface StoredSessionSource<TornMarker> {
   readEvents(options?: StoredEventReadOptions): StoredEventRead<TornMarker>
 }
 
+/**
+ * Build the standard lazy event stream and EOF metadata around one backend
+ * read, shared by every first-party backend.
+ * @param load - revision-checked batch loader owned by the backend.
+ * @param include - whether one loaded event belongs in this physical read.
+ * @param signal - optional cancellation checked between yielded events.
+ * @returns an independently consumable event read.
+ */
+export function createStoredEventRead<TornMarker>(
+  load: () => Promise<{ readonly events: readonly unknown[]; readonly tornMarker?: TornMarker }>,
+  include: (event: unknown) => boolean,
+  signal?: AbortSignal,
+): StoredEventRead<TornMarker> {
+  const completed = Promise.withResolvers<StoredEventReadCompletion<TornMarker>>()
+  const events = (async function* (): AsyncIterable<unknown> {
+    try {
+      const batch = await load()
+      for (const event of batch.events) {
+        signal?.throwIfAborted()
+        if (include(event)) yield event
+      }
+      completed.resolve(batch.tornMarker === undefined ? {} : { tornMarker: batch.tornMarker })
+    } catch (error: unknown) {
+      completed.reject(error)
+      throw error
+    }
+  })()
+  return { events, completed: completed.promise }
+}
+
 /** One decoded current-format read bound to an exact stored revision. */
 export interface DecodedSession<TornMarker> {
   /** Validated current-format header. */

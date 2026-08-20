@@ -15,6 +15,7 @@ import {
   type SessionHeader,
 } from '@deepseek-ai/dsh-session'
 import {
+  createStoredEventRead,
   decodeStoredSessionHeader,
   SessionPersistenceRevision,
   SessionPersistenceRevisionConflictError,
@@ -22,7 +23,6 @@ import {
   type SessionPersistenceRevision as PersistenceRevision,
   type SessionPersistenceSnapshot,
   type StoredEventRead,
-  type StoredEventReadCompletion,
   type StoredEventReadOptions,
   type StoredSessionSource,
 } from '@deepseek-ai/dsh-session-persistence'
@@ -69,36 +69,6 @@ interface SqliteStoredSuffix {
   readonly meta: SessionHeader
   readonly events: SessionEvent[]
   readonly revision: PersistenceRevision
-}
-
-/**
- * Build the standard lazy event stream and EOF metadata around one backend
- * read, mirroring the service's protected helper for standalone stores.
- * @param load - revision-checked batch loader owned by the backend.
- * @param include - whether one loaded event belongs in this physical read.
- * @param signal - optional cancellation checked between yielded events.
- * @returns an independently consumable event read.
- */
-function createStoredEventRead<TornMarker>(
-  load: () => Promise<{ readonly events: readonly unknown[]; readonly tornMarker?: TornMarker }>,
-  include: (event: unknown) => boolean,
-  signal?: AbortSignal,
-): StoredEventRead<TornMarker> {
-  const completed = Promise.withResolvers<StoredEventReadCompletion<TornMarker>>()
-  const events = (async function* (): AsyncIterable<unknown> {
-    try {
-      const batch = await load()
-      for (const event of batch.events) {
-        signal?.throwIfAborted()
-        if (include(event)) yield event
-      }
-      completed.resolve(batch.tornMarker === undefined ? {} : { tornMarker: batch.tornMarker })
-    } catch (error: unknown) {
-      completed.reject(error)
-      throw error
-    }
-  })()
-  return { events, completed: completed.promise }
 }
 
 /** SQLite implementation of the coordinator's physical backend hooks. */
@@ -180,6 +150,12 @@ export class SqliteStore implements PersistenceBackend<number> {
     }
   }
 
+  /**
+   * Load one row's complete validated prefix at a single snapshot.
+   * @param id - persisted session id to resolve.
+   * @param signal - optional cancellation for backend read work.
+   * @returns the stored prefix, or `undefined` when the session has no stored row.
+   */
   async loadStored(id: SessionId, signal?: AbortSignal): Promise<SqliteStoredPrefix | undefined> {
     await this.observe(signal)
     const snapshot = this.readTransaction(() => {
@@ -206,6 +182,13 @@ export class SqliteStore implements PersistenceBackend<number> {
     return row === undefined ? undefined : sqliteRevision(this.storeIdentity, row)
   }
 
+  /**
+   * Load one row's physical suffix at or past a sequence at a single snapshot.
+   * @param id - persisted session id to resolve.
+   * @param fromSeq - first physical event sequence to include.
+   * @param signal - optional cancellation for backend read work.
+   * @returns the stored suffix, or `undefined` when the session has no stored row.
+   */
   async loadStoredFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<SqliteStoredSuffix | undefined> {
     await this.observe(signal)
     const snapshot = this.readTransaction(() => {
@@ -373,18 +356,7 @@ export class SqliteStore implements PersistenceBackend<number> {
       this.db.prepare(sql('delete-events-from')).run(meta.id, 0)
       const insert = this.insertStatement()
       for (const record of records) this.insertRecord(insert, meta.id, bindRecord(record))
-      this.db.prepare(sql('upsert-session')).run(
-        meta.id,
-        meta.version,
-        meta.createdAt,
-        meta.cwd ?? null,
-        meta.parentSession ?? null,
-        meta.seedLength ?? null,
-        meta.origin ?? null,
-        meta.delegationDepth ?? null,
-        meta.agentPreset ?? null,
-        randomUUID(),
-      )
+      this.writeRow(meta)
       this.incrementRevision(meta.id)
       this.db.exec(sql('commit'))
     } catch (error: unknown) {

@@ -8,7 +8,7 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import { SessionPreparation, type SessionEvent, type SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
 import type { SessionPersistenceRevision } from './revision.ts'
-import type { StoredEventRead, StoredEventReadCompletion } from './format-decoder.ts'
+import { createStoredEventRead, type StoredEventRead } from './format-decoder.ts'
 
 // Re-export the metadata vocabulary so Consumers import it from the Service Definition.
 export type { SessionHeader } from '@deepseek-ai/dsh-session'
@@ -53,6 +53,7 @@ export type {
   PersistenceCoordinatorOptions,
 } from './coordinator.ts'
 export {
+  createStoredEventRead,
   decodeStoredSessionHeader,
   SessionFormatUnsupportedError,
   sessionFormatVersionRefusal,
@@ -98,21 +99,7 @@ export abstract class SessionPersistence extends Service {
     include: (event: unknown) => boolean,
     signal?: AbortSignal,
   ): StoredEventRead<TornMarker> {
-    const completed = Promise.withResolvers<StoredEventReadCompletion<TornMarker>>()
-    const events = (async function* (): AsyncIterable<unknown> {
-      try {
-        const batch = await load()
-        for (const event of batch.events) {
-          signal?.throwIfAborted()
-          if (include(event)) yield event
-        }
-        completed.resolve(batch.tornMarker === undefined ? {} : { tornMarker: batch.tornMarker })
-      } catch (error: unknown) {
-        completed.reject(error)
-        throw error
-      }
-    })()
-    return { events, completed: completed.promise }
+    return createStoredEventRead(load, include, signal)
   }
 
   /**

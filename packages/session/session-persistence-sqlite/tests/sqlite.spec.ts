@@ -871,7 +871,7 @@ describe('SessionPersistenceSqlite stored-source and replacement primitives', ()
     const removed = await store.openStored(m.id)
     if (removed === undefined) throw new Error('test session must remain materialized')
     const db = (store as unknown as { db: DatabaseSync }).db
-    db.prepare('DELETE FROM sessions WHERE id = ?').run(m.id)
+    db.prepare(testSql('delete-session-by-id')).run(m.id)
     const removedRead = removed.readEvents({ fromSeq: 1 })
     const removedCompletion = removedRead.completed.catch((error: unknown) => error)
     await expect((async () => { for await (const _event of removedRead.events) { /* consume */ } })())
@@ -896,7 +896,7 @@ describe('SessionPersistenceSqlite stored-source and replacement primitives', ()
     })
     await expect(store.loadStoredFrom(m.id, 1)).rejects.toThrow('simulated suffix SELECT failure')
     spy.mockRestore()
-    expect((db.prepare('SELECT COUNT(*) AS n FROM events WHERE session_id = ?').get(m.id) as { n: number }).n)
+    expect((db.prepare(testSql('count-session-events')).get(m.id) as { n: number }).n)
       .toBe(oneTurnLog().length)
     await store.close()
   })
@@ -944,11 +944,11 @@ describe('SessionPersistenceSqlite stored-source and replacement primitives', ()
     const db = (store as unknown as { db: DatabaseSync }).db
     const changesDuringStaging = (async function* (): AsyncIterable<SessionEvent> {
       yield* oneTurnLog()
-      db.prepare('UPDATE sessions SET cwd = ? WHERE id = ?').run('/raced', m.id)
+      db.prepare(testSql('update-session-cwd')).run('/raced', m.id)
     })()
     await expect(store.replaceStored(source.revision, m, changesDuringStaging))
       .rejects.toThrow(/changes its stored identity/)
-    expect((db.prepare('SELECT COUNT(*) AS n FROM events WHERE session_id = ?').get(m.id) as { n: number }).n)
+    expect((db.prepare(testSql('count-session-events')).get(m.id) as { n: number }).n)
       .toBe(oneTurnLog().length)
     await store.close()
   })
@@ -963,12 +963,12 @@ describe('SessionPersistenceSqlite stored-source and replacement primitives', ()
     const db = (store as unknown as { db: DatabaseSync }).db
     const changesDuringStaging = (async function* (): AsyncIterable<SessionEvent> {
       yield* oneTurnLog()
-      db.prepare('UPDATE sessions SET revision = revision + 1 WHERE id = ?').run(m.id)
+      db.prepare(testSql('update-session-revision')).run(m.id)
     })()
 
     await expect(store.replaceStored(source.revision, m, changesDuringStaging))
       .rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
-    expect((db.prepare('SELECT COUNT(*) AS n FROM events WHERE session_id = ?').get(m.id) as { n: number }).n)
+    expect((db.prepare(testSql('count-session-events')).get(m.id) as { n: number }).n)
       .toBe(oneTurnLog().length)
     await store.close()
   })
@@ -981,18 +981,12 @@ describe('SessionPersistenceSqlite stored-source and replacement primitives', ()
     const source = await store.openStored(m.id)
     if (source === undefined) throw new Error('test session must be materialized')
     const db = (store as unknown as { db: DatabaseSync }).db
-    db.exec(`
-      CREATE TEMP TRIGGER fail_format_replace
-      BEFORE UPDATE ON sessions
-      BEGIN
-        SELECT RAISE(ABORT, 'simulated format replacement failure');
-      END
-    `)
+    db.exec(testSql('create-temp-replace-trigger'))
 
     await expect(
       store.replaceStored(source.revision, m, replacementEvents([])),
     ).rejects.toThrow(/simulated format replacement failure/)
-    db.exec('DROP TRIGGER fail_format_replace')
+    db.exec(testSql('drop-temp-replace-trigger'))
 
     expect((await store.loadStored(m.id))?.events).toEqual(oneTurnLog())
     await store.close()
