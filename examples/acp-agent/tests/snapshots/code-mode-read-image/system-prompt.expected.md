@@ -363,6 +363,8 @@ interface ToolOutputMap {
       width: number;
       height: number;
       name?: string;
+      sourceWidth?: number;
+      sourceHeight?: number;
     };
   };
   send_message: {
