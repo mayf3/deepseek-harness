@@ -1,5 +1,5 @@
 # Keyless twin of subagent-acp-diagnostic.cordis.yml: keep the real ACP child
-# process/provider/tool and replace only the external parent model adapter.
+# permission-denial path and replace only the external parent model adapter.
 - id: base
   name: '@deepseek-ai/cordis-plugin-include'
   config:
@@ -27,7 +27,6 @@
                 - !!js process.env.DSH_TEST_MOCK_ACP_SERVER
               permission: reject
               env:
-                MOCK_TEXT: partial ACP assistant text
                 MOCK_PERMISSION: '1'
                 MOCK_TOOL_KIND: execute
           - id: tool-subagent-acp-diagnostic
