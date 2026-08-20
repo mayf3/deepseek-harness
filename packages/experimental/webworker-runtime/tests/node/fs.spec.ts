@@ -208,7 +208,7 @@ check('a directory reports the creation-default mode in the bigint shape', Numbe
 // into place, then the provider stats the result).
 // ---------------------------------------------------------------------------
 
-const plainMode = (path: string): number => Number((fs.statSync(path) as VfsStats).mode) & 0o777
+const plainMode = (path: string): number => (fs.statSync(path) as VfsStats).mode & 0o777
 
 fs.writeFileSync('/dsh/secrets.tmp', 'k: v\n', { mode: 0o600, flag: 'wx' })
 fs.renameSync('/dsh/secrets.tmp', '/dsh/secrets.yaml')

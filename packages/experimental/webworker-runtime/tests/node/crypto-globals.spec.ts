@@ -24,13 +24,13 @@ describe('installCryptoGlobals', () => {
     const bare = { getRandomValues: globalThis.crypto.getRandomValues.bind(globalThis.crypto) }
     vi.stubGlobal('crypto', bare)
     installCryptoGlobals()
-    expect((globalThis.crypto as Crypto).randomUUID()).toMatch(V4_SHAPE)
+    expect(globalThis.crypto.randomUUID()).toMatch(V4_SHAPE)
   })
 
   it('leaves a platform that already provides randomUUID untouched', () => {
     const platform = (): string => 'platform-owned'
     vi.stubGlobal('crypto', { randomUUID: platform })
     installCryptoGlobals()
-    expect(globalThis.crypto.randomUUID).toBe(platform)
+    expect(Reflect.get(globalThis.crypto, 'randomUUID')).toBe(platform)
   })
 })

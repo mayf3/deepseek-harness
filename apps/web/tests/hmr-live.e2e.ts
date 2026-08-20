@@ -2,6 +2,7 @@
 
 import { existsSync, globSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
@@ -114,7 +115,7 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
     await page.goto(baseUrl, { waitUntil: 'load' })
     await page.getByText(oldText, { exact: true }).waitFor({ timeout: 15_000 })
     const pageIdentity = await page.evaluate(() => {
-      const identity = crypto.randomUUID()
+      const identity = randomUUID()
       Object.defineProperty(window, '__dshHmrPageIdentity', { value: identity })
       return identity
     })

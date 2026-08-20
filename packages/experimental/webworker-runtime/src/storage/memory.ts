@@ -131,7 +131,8 @@ export class MemoryVfs {
       this.writeFileSync(path, data, options)
     },
     appendFile: async (path: string, data: string | Uint8Array): Promise<void> => { this.appendFileSync(path, data) },
-    mkdir: async (path: string, options?: { recursive?: boolean; mode?: number }): Promise<string | undefined> => this.mkdirSync(path, options),
+    mkdir: async (path: string, options?: { recursive?: boolean; mode?: number }): Promise<string | undefined> =>
+      this.mkdirSync(path, options),
     readdir: async (path: string, options?: { withFileTypes?: boolean }): Promise<string[] & VfsDirent[]> =>
       this.readdirSync(path, options),
     stat: async (path: string, options?: VfsStatOptions): Promise<VfsStats | VfsBigIntStats> => this.statSync(path, options),
@@ -441,7 +442,7 @@ export class MemoryVfs {
     const merged = new Uint8Array(existing.bytes.length + addition.length)
     merged.set(existing.bytes)
     merged.set(addition, existing.bytes.length)
-    this.files.set(target, { bytes: merged, mtimeMs: this.touch(target), mode: existing?.mode ?? DEFAULT_FILE_MODE })
+    this.files.set(target, { bytes: merged, mtimeMs: this.touch(target), mode: existing.mode })
   }
 
   /**
