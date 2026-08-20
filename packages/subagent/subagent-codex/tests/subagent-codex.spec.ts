@@ -833,6 +833,7 @@ describe('CodexAppServerWire', () => {
       ['contextWindowExceeded', 'limit', 'max-tokens'],
       ['sessionBudgetExceeded', 'limit', 'error'],
       ['cyberPolicy', 'access-policy', 'error'],
+      ['misalignmentPolicyViolation', 'access-policy', 'error'],
       ['serverOverloaded', 'service', 'error'],
       ['badRequest', 'product-error', 'error'],
       ['sandboxError', 'access-policy', 'error'],

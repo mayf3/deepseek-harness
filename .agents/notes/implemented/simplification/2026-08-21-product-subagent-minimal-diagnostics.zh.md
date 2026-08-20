@@ -53,7 +53,7 @@ Codex 诊断会保留 `initialize`、`thread-start`、`turn-start`、`turn`、`p
 
 ## Verification
 
-Claude Code 包测试覆盖全部粗粒度类别、四个阶段、未知结构化值、权限顺序、原始文本排除、成功与取消时省略、并发运行隔离，以及彼此独立的退出码与信号字段。真实 Agent SDK 0.3.241 与 Claude Code 2.1.241 fixture 会产生实际 max-turns 限制、进程失败、权限拒绝、严格最终答案、取消与整棵进程树完全停稳。Codex 包测试覆盖全部粗粒度类别、六个阶段、适用 HTTP status、结构化权限顺序、stderr 排除、成功与取消时省略、并发及清理聚合。真实 0.148.0 app-server fixture 会产生服务、访问策略、进程、最终答案、模型隔离、取消与完全停稳证据。Loader 与无密钥产品组合继续公开静态工具，不增加诊断解析器或模型可见类别输入。
+Claude Code 包测试覆盖全部粗粒度类别、四个阶段、未知结构化值、权限顺序、原始文本排除、成功与取消时省略、并发运行隔离，以及彼此独立的退出码与信号字段。真实 Agent SDK 0.3.241 与 Claude Code 2.1.241 fixture 会产生实际 max-turns 限制、进程失败、权限拒绝、严格最终答案、取消与整棵进程树完全停稳。Codex 包测试覆盖全部粗粒度类别、六个阶段、适用 HTTP status、结构化权限顺序、stderr 排除、成功与取消时省略、并发及清理聚合。真实 0.148.0 app-server fixture 会产生服务、产品错误、进程、最终答案、模型隔离、取消与完全停稳证据。Loader 与无密钥产品组合继续公开静态工具，不增加诊断解析器或模型可见类别输入。
 
 ## Alternatives considered
 

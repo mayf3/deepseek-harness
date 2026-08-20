@@ -129,6 +129,7 @@ function failureInfo(turn: JsonObject): ParsedFailureInfo {
       case 'internalServerError':
         return { category: 'service' }
       case 'cyberPolicy':
+      case 'misalignmentPolicyViolation':
       case 'unauthorized':
         return { category: 'access-policy' }
       case 'badRequest':

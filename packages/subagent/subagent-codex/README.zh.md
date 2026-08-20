@@ -36,7 +36,7 @@
 | `approve-for-me` | `approvalPolicy: on-request`、`approvalsReviewer: auto_review`、`sandbox: workspace-write` | 由 Codex 自动评审权限请求，不等待人工。 |
 | `dangerously-bypass-approvals-and-sandbox` | `approvalPolicy: never`、`sandbox: danger-full-access` | 跳过审批与 sandbox；必须显式选择该值。 |
 
-生产环境会解析锁定的 `@openai/codex@0.148.0` 依赖所声明的 `codex` bin，并使用当前 Node 可执行文件启动该 JavaScript wrapper。Wrapper 会选择匹配的原生平台载荷；提供方既不检查也不回退 `PATH` 中的宿主 `codex`。父会话 cwd、`HOME` 与 `CODEX_HOME` 继续让原生 Codex 配置和身份验证保持权威。已配置的 `model` 会原样传给每个临时 `thread/start`；省略时不设置该字段，且提供方不会发现模型、改写别名、选择 `modelProvider` 或 `serviceTier`，也不会设置 fallback。所选权限模式是另一项线程级覆盖。本插件不创建 `CODEX_HOME`、不执行登录，也不探测账户。子进程 seam 会先移除具有凭证特征的环境变量，再应用显式 `env` 覆盖。
+生产环境会解析锁定的 `@openai/codex@0.148.0` 依赖所声明的 `codex` bin，并使用当前 Node 可执行文件启动该 JavaScript wrapper。Wrapper 会选择匹配的原生平台载荷；提供方既不检查也不回退 `PATH` 中的宿主 `codex`。父会话 cwd、`HOME` 与 `CODEX_HOME` 继续让原生 Codex 配置和身份验证保持权威。已配置的 `model` 会原样传给每个临时 `thread/start`；省略时不设置该字段，且提供方不会发现模型、改写别名、选择 `modelProvider` 或 `serviceTier`，也不会设置 fallback。所选权限模式仍是唯一的另一项线程级覆盖。本插件不创建 `CODEX_HOME`、不执行登录，也不探测账户。子进程 seam 会先移除具有凭证特征的环境变量，再应用显式 `env` 覆盖。
 
 本包是可选的 Profile Bundle。将它安装进目标 Profile 后重启该 Profile；安装会把官方 wrapper 与一个兼容的原生平台载荷带入该 Profile，而包所声明的 `cordis.patch.yml` 层只注册休眠的 `codex` Host provider，不会启动 Codex 进程。移除该包后，下一次 Profile 启动会撤回这一 provider 及其私有运行时闭包。
 
