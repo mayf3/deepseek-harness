@@ -27,8 +27,6 @@ interface ProjectionDefinition<
   key: K
   /** Validates persisted state before it seeds a fold. */
   stateSchema: ZodType<S>
-  /** Persist a host-only unit. Client-visible units are always persisted. */
-  persist?: boolean
   /**
    * State for the empty log.
    * @returns the initial state.
