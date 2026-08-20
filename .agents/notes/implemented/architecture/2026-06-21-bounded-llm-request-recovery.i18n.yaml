@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-06-21-bounded-llm-request-recovery.md
 2026-06-21-bounded-llm-request-recovery.md: c847b4b4da802bfd4beb59d4d27b5ce57b34fd27
-2026-06-21-bounded-llm-request-recovery.zh.md: e24c6aafa413cfb0ba6baa7317d2a808ae435518
+2026-06-21-bounded-llm-request-recovery.zh.md: b31918386f2c35f9f9b8ac3fe8d336644c7a6578
