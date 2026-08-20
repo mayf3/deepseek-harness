@@ -27,7 +27,7 @@ npx @deepseek-ai/dsh web
 如需从仓库源码运行：
 
 ```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
+git clone https://github.com/mayf3/deepseek-harness.git
 cd deepseek-harness
 pnpm install
 pnpm run build
@@ -35,6 +35,19 @@ pnpm dsh web
 ```
 
 `pnpm run build` 会准备仓库产物。`pnpm dsh web` 会直接使用这些已构建产物，不会重新构建。
+
+### 此 fork 的 Web 增强
+
+增强后的 Session 侧边栏属于此 fork 的源码，因此从源码构建即可获得标签分组、等待状态嵌套、行菜单、归档、搜索和只看未读。浏览器工作台与鲸鱼娘属于外部 Web Profile Bundle；Git 不会复制用户的 `${DSH_HOME:-$HOME/.dsh}/profiles/web` 目录，所以每位 clone 用户都需要安装一次：
+
+```sh
+pnpm dsh plugin --profile web add dsh-better-sidebar@latest github:keleus/deepseek-pet
+pnpm dsh web
+```
+
+安装后请硬刷新页面。[`dsh-better-sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar) 提供文件浏览、编辑器、终端、Git 和浏览器工作台；[`deepseek-pet`](https://github.com/keleus/deepseek-pet) 会跟随聚焦 Session 与 agent 状态，支持拖动、缩放、最小化以及审批和提问交互，并把展示偏好保存在当前浏览器中。
+
+维护者的本机 Profile 还包含私有文件依赖 `@dsh-user/ui-side-panel`，用于任务／详情面板、宠物窝、成长、喂食和自定义背景。该包不在本仓库中，也不会由上述命令安装；公开的工作台与鲸鱼娘不依赖它即可使用。
 
 ## 社区与支持
 
