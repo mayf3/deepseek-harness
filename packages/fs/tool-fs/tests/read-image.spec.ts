@@ -438,6 +438,11 @@ describe('image admission failures', () => {
     expect(storageFault.isError).toBe(true)
     expect(text(storageFault)).toContain('Unable to persist image attachment.')
 
+    FailingStore.failure = new AttachmentError('Image cannot be encoded within the configured canonical byte target.', 'IMAGE_TOO_LARGE')
+    const overBudget = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
+    expect(overBudget.isError).toBe(true)
+    expect(text(overBudget)).toContain('cannot be stored within the deployment\'s byte limits; downscale the image and read the smaller copy')
+
     FailingStore.failure = new Error('unrelated infrastructure failure')
     const unrelated = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
     expect(unrelated.isError).toBe(true)
@@ -528,6 +533,13 @@ describe('image admission failures', () => {
     const result = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
     expect(result.isError).toBe(false)
     expect(text(result)).toContain('image/png image, 2x1 px, 7 bytes (downscaled from 4x2 px; multiply coordinates by 2.00 to locate features in the original file)')
+  })
+
+  it('names per-axis multipliers when integer rounding makes the ratios differ', () => {
+    const envelope = formatImageReadOutput('/img/photo.jpg', {
+      attachmentId: 'sha256:feed', mediaType: 'image/jpeg', bytes: 9, width: 2, height: 1, sourceWidth: 5, sourceHeight: 2,
+    })
+    expect(envelope).toContain('downscaled from 5x2 px; multiply x coordinates by 2.50 and y coordinates by 2.00 to locate features in the original file')
   })
 })
 

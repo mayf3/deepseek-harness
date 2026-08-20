@@ -7,8 +7,14 @@ import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
 /** Decoded metadata from a supported image. */
 export interface DetectedImage {
   mediaType: ImageMediaType
+  /** Intrinsic width with EXIF orientation applied — the width a viewer perceives. */
   width: number
+  /** Intrinsic height with EXIF orientation applied — the height a viewer perceives. */
   height: number
+  /** Whether the container carries more than one frame. */
+  animated: boolean
+  /** Whether the bytes carry EXIF/XMP/IPTC metadata or a non-default orientation. */
+  carriesMetadata: boolean
 }
 
 const MEDIA_TYPES: Readonly<Record<string, ImageMediaType>> = {
@@ -24,7 +30,18 @@ async function imageMetadata(image: Sharp): Promise<DetectedImage> {
   if (mediaType === undefined) {
     throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE')
   }
-  return { mediaType, width: metadata.width, height: metadata.height }
+  // EXIF orientations 5-8 transpose the stored raster; report the perceived
+  // axes so limits, source facts, and coordinate advice all share them.
+  const transposed = metadata.orientation !== undefined && metadata.orientation >= 5
+  return {
+    mediaType,
+    width: transposed ? metadata.height : metadata.width,
+    height: transposed ? metadata.width : metadata.height,
+    animated: (metadata.pages ?? 1) > 1,
+    // orientation is EXIF-derived for every whitelisted format, so exif
+    // presence already covers a non-default orientation.
+    carriesMetadata: metadata.exif !== undefined || metadata.xmp !== undefined || metadata.iptc !== undefined,
+  }
 }
 
 /**

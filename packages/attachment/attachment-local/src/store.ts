@@ -13,11 +13,13 @@ import type {
   ImageAttachmentRef,
   SaveImageAttachment,
   SavedImageAttachment,
+  SourceImageInfo,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import { canonicalizeImage } from './canonical.ts'
 import type { CanonicalImagePolicy } from './canonical.ts'
 import { detectImage, probeImage } from './image.ts'
+import type { DetectedImage } from './image.ts'
 
 const ID_PATTERN = /^sha256:([a-f0-9]{64})$/
 const durableHomes = new Set<string>()
@@ -50,24 +52,35 @@ async function inspectMetadata(
   data: Uint8Array,
   declaredMediaType: ImageAttachmentRef['mediaType'],
   limits: ImageAttachmentLimits,
-): Promise<Omit<ImageAttachmentRef, 'attachmentId' | 'name'>> {
+): Promise<{ detected: DetectedImage; source: SourceImageInfo }> {
   if (data.byteLength === 0) throw new AttachmentError('Image is empty.', 'INVALID_IMAGE')
   const detected = await detectImage(data, { maxPixels: limits.maxImagePixels, maxDimension: limits.maxImageDimension })
   if (detected.mediaType !== declaredMediaType) throw new AttachmentError('Declared image type does not match its bytes.', 'IMAGE_TYPE_MISMATCH')
-  return { ...detected, bytes: data.byteLength }
+  return {
+    detected,
+    source: { mediaType: detected.mediaType, bytes: data.byteLength, width: detected.width, height: detected.height },
+  }
 }
 
 /**
- * Run the full admission policy for one image without touching storage.
+ * Run the full admission policy for one image without touching storage,
+ * including a canonical-encoding dry run: a batch whose members all validate
+ * cannot later be refused mid-write by the canonical byte target.
  * @param input - encoded bytes and declared metadata.
- * @param limits - resolved storage policy.
- * @returns completion after the encoded raster has been fully decoded.
+ * @param limits - resolved source admission policy.
+ * @param policy - resolved canonical encoding budget.
+ * @returns completion after the raster has been fully decoded and its canonical encoding proven to fit.
  */
-export async function validateImageFile(input: SaveImageAttachment, limits: ImageAttachmentLimits): Promise<void> {
+export async function validateImageFile(
+  input: SaveImageAttachment,
+  limits: ImageAttachmentLimits,
+  policy: CanonicalImagePolicy,
+): Promise<void> {
   if (input.data.byteLength > limits.maxImageBytes) {
     throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
   }
-  await inspectMetadata(input.data, input.mediaType, limits)
+  const { detected } = await inspectMetadata(input.data, input.mediaType, limits)
+  await canonicalizeImage(input.data, detected, policy)
 }
 
 /**
@@ -147,8 +160,8 @@ export async function saveImageFile(
   policy: CanonicalImagePolicy,
 ): Promise<SavedImageAttachment> {
   if (input.data.byteLength > limits.maxImageBytes) throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
-  const metadata = await inspectMetadata(input.data, input.mediaType, limits)
-  const canonical = await canonicalizeImage(input.data, metadata, policy)
+  const { detected, source } = await inspectMetadata(input.data, input.mediaType, limits)
+  const canonical = await canonicalizeImage(input.data, detected, policy)
   const sha256 = digest(canonical.data)
   const bucket = join(root, 'objects', sha256.slice(0, 2))
   const staging = join(root, 'tmp')
@@ -208,7 +221,7 @@ export async function saveImageFile(
       bytes: canonical.data.byteLength,
       ...(name !== undefined ? { name } : {}),
     },
-    source: metadata,
+    source,
   }
 }
 

@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决定
 
-`AttachmentStore.saveImage` 解析为 `SavedImageAttachment`：描述实际存储字节的持久 `ref`，加上所提交光栅的 `source` 事实。本地存储按宽松的源图上限（32 MiB、1 亿像素、单边 16384px）校验，然后持久保存确定性的规范编码：EXIF 方向落实到像素、剥离元数据、长边等比缩放到 `canonicalMaxDimension`（默认 2048px），带透明通道或源自 PNG/GIF 的图片编码为 palette PNG，摄影类图片编码为 JPEG，并沿固定质量阶梯（85/75/60/45）递降直到满足 `canonicalMaxBytes`（默认 1 MiB）。已在预算内的 PNG/JPEG/WebP 源图按字节原样存储，相同原图保持同一个内容地址；GIF 一律转为首帧 PNG，在准入时固化提供方实际采用的首帧语义。编码器参数固定而不可配置，因为参数变化会悄悄割裂内容寻址空间；部署只选择源图上限与规范预算。规范 ref 保持原有字段顺序（`mediaType`、`width`、`height`、`bytes`），已记录的引用保持字节一致。存储缩小了文件时，`read_image` 会报告磁盘上的原始尺寸和坐标换算倍率。
+`AttachmentStore.saveImage` 解析为 `SavedImageAttachment`：描述实际存储字节的持久 `ref`，加上所提交光栅的 `source` 事实。本地存储按宽松的源图上限（32 MiB、1 亿像素、单边 16384px）校验，然后持久保存确定性的规范编码：EXIF 方向落实到像素、剥离元数据、长边等比缩放到 `canonicalMaxDimension`（默认 2048px），带透明通道或源自 PNG/GIF 的图片编码为 palette PNG，摄影类图片编码为 JPEG，并沿固定质量阶梯（85/75/60/45）递降直到满足 `canonicalMaxBytes`（默认 1 MiB）。已在预算内的 PNG/JPEG/WebP 源图只有在单帧且不携带 EXIF/XMP/IPTC 元数据、方向为默认值时才按字节原样直通，相同原图保持同一个内容地址，位置与设备元数据绝不越过准入；GIF 以及任何动图或携带元数据的源图都会重编码，GIF 一律转为首帧 PNG，在准入时固化提供方实际采用的首帧语义。编码器参数固定而不可配置，因为参数变化会悄悄割裂内容寻址空间；部署只选择源图上限与规范预算。`SourceImageInfo` 记录应用方向之后的尺寸，使源图与存储光栅共享坐标轴；`validateImage` 包含规范编码干跑，通过校验的批次绝不会在写入中途被字节目标拒绝。规范 ref 保持原有字段顺序（`mediaType`、`width`、`height`、`bytes`），已记录的引用保持字节一致。存储缩小了文件时，`read_image` 会报告磁盘上的原始尺寸和坐标换算倍率，取整使两轴比例不一致时分轴给出。
 
 ## 考虑过的替代方案
 

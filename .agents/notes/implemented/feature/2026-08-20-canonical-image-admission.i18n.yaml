@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-canonical-image-admission.md
-2026-08-20-canonical-image-admission.md: bae3ce8b93b7fbfc4d3233cb3ed019f6ab09c0b4
-2026-08-20-canonical-image-admission.zh.md: a8c55383eb0c8b244dc1fefe1186004e2b869d3e
+2026-08-20-canonical-image-admission.md: a30031ef72942a61865525b9ed22f97afd71e18b
+2026-08-20-canonical-image-admission.zh.md: d5402a6e7bfd2d8c7de6e2a7ce611c74ec2843d2

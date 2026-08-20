@@ -65,9 +65,9 @@ export interface SourceImageInfo {
   mediaType: ImageMediaType
   /** Exact submitted encoded byte length. */
   bytes: number
-  /** Intrinsic width of the submitted raster in pixels. */
+  /** Perceived source width in pixels, with any EXIF orientation applied, so it shares axes with the stored raster. */
   width: number
-  /** Intrinsic height of the submitted raster in pixels. */
+  /** Perceived source height in pixels, with any EXIF orientation applied, so it shares axes with the stored raster. */
   height: number
 }
 

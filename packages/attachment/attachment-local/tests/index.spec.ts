@@ -47,6 +47,24 @@ describe('local attachment service', () => {
     }
   })
 
+  it('refuses a batch during validation when a member cannot meet the canonical byte target, before any write', async () => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-attachment-batch-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome, canonicalMaxBytes: 10 })
+      const valid = Uint8Array.from(Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        'base64',
+      ))
+      await expect(service.saveImages([
+        { data: valid, mediaType: 'image/png' },
+        { data: valid, mediaType: 'image/png' },
+      ])).rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
+      expect(existsSync(service.root)).toBe(false)
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
   it('validates without persisting: a rejected image leaves no storage root behind', async () => {
     const dshHome = await mkdtemp(join(tmpdir(), 'dsh-attachment-validate-'))
     try {

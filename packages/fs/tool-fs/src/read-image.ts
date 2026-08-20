@@ -104,9 +104,17 @@ export function imageRefFromValue(image: ImageReadValue['image']): ImageAttachme
  * @returns the model-facing envelope; the image itself rides the adjacent image block.
  */
 export function formatImageReadOutput(displayPath: string, image: ImageReadValue['image']): string {
-  const scaled = image.sourceWidth !== undefined && image.sourceHeight !== undefined
-    ? ` (downscaled from ${image.sourceWidth}x${image.sourceHeight} px; multiply coordinates by ${(image.sourceWidth / image.width).toFixed(2)} to locate features in the original file)`
-    : ''
+  let scaled = ''
+  if (image.sourceWidth !== undefined && image.sourceHeight !== undefined) {
+    // Integer rounding can give the two axes slightly different ratios, so the
+    // advice names one multiplier only when both round to the same value.
+    const x = (image.sourceWidth / image.width).toFixed(2)
+    const y = (image.sourceHeight / image.height).toFixed(2)
+    const advice = x === y
+      ? `multiply coordinates by ${x}`
+      : `multiply x coordinates by ${x} and y coordinates by ${y}`
+    scaled = ` (downscaled from ${image.sourceWidth}x${image.sourceHeight} px; ${advice} to locate features in the original file)`
+  }
   return `<path>${displayPath}</path>
 <type>image</type>
 <content>
@@ -216,6 +224,12 @@ export function applyReadImageTool(ctx: Context): void {
         if (error.code === 'IMAGE_TOO_MANY_PIXELS') {
           throw new Error(
             `cannot read "${target.displayPath}": the image exceeds the ${attachments.imageLimits.maxImagePixels}-pixel decoded-size limit; downscale the image and read the smaller copy`,
+            { cause: error },
+          )
+        }
+        if (error.code === 'IMAGE_TOO_LARGE') {
+          throw new Error(
+            `cannot read "${target.displayPath}": the image cannot be stored within the deployment's byte limits; downscale the image and read the smaller copy`,
             { cause: error },
           )
         }

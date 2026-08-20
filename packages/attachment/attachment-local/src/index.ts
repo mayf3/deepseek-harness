@@ -89,7 +89,7 @@ export class LocalAttachmentStore extends AttachmentStore {
   }
 
   async validateImage(input: SaveImageAttachment): Promise<void> {
-    await validateImageFile(input, this.imageLimits)
+    await validateImageFile(input, this.imageLimits, this.canonicalPolicy)
   }
 
   async saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment> {

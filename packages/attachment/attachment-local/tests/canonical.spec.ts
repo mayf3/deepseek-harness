@@ -30,11 +30,14 @@ async function flatImage(width: number, height: number, format: 'png' | 'jpeg' |
 }
 
 describe('isCanonical', () => {
-  it('accepts an in-budget PNG/JPEG/WebP and refuses GIF, oversized edges, and oversized bytes', () => {
-    expect(isCanonical({ mediaType: 'image/png', width: 2048, height: 4 }, 100, POLICY)).toBe(true)
-    expect(isCanonical({ mediaType: 'image/gif', width: 4, height: 4 }, 100, POLICY)).toBe(false)
-    expect(isCanonical({ mediaType: 'image/jpeg', width: 2049, height: 4 }, 100, POLICY)).toBe(false)
-    expect(isCanonical({ mediaType: 'image/webp', width: 4, height: 4 }, POLICY.maxBytes + 1, POLICY)).toBe(false)
+  it('accepts an in-budget clean PNG/JPEG/WebP and refuses GIF, animation, metadata, oversized edges, and oversized bytes', () => {
+    const clean = { animated: false, carriesMetadata: false }
+    expect(isCanonical({ mediaType: 'image/png', width: 2048, height: 4, ...clean }, 100, POLICY)).toBe(true)
+    expect(isCanonical({ mediaType: 'image/gif', width: 4, height: 4, ...clean }, 100, POLICY)).toBe(false)
+    expect(isCanonical({ mediaType: 'image/webp', width: 4, height: 4, animated: true, carriesMetadata: false }, 100, POLICY)).toBe(false)
+    expect(isCanonical({ mediaType: 'image/jpeg', width: 4, height: 4, animated: false, carriesMetadata: true }, 100, POLICY)).toBe(false)
+    expect(isCanonical({ mediaType: 'image/jpeg', width: 2049, height: 4, ...clean }, 100, POLICY)).toBe(false)
+    expect(isCanonical({ mediaType: 'image/webp', width: 4, height: 4, ...clean }, POLICY.maxBytes + 1, POLICY)).toBe(false)
   })
 })
 
@@ -56,7 +59,7 @@ describe('canonicalizeImage', () => {
     const canonical = await canonicalizeImage(data, detected, { maxDimension: 5, maxBytes: POLICY.maxBytes })
 
     expect(canonical).toMatchObject({ mediaType: 'image/png', width: 5, height: 3 })
-    await expect(detectImage(canonical.data)).resolves.toEqual({ mediaType: 'image/png', width: 5, height: 3 })
+    await expect(detectImage(canonical.data)).resolves.toEqual({ mediaType: 'image/png', width: 5, height: 3, animated: false, carriesMetadata: false })
     const again = await canonicalizeImage(data, detected, { maxDimension: 5, maxBytes: POLICY.maxBytes })
     expect(again.data).toEqual(canonical.data)
   })
@@ -77,7 +80,7 @@ describe('canonicalizeImage', () => {
     const canonical = await canonicalizeImage(data, detected, POLICY)
 
     expect(canonical.mediaType).toBe('image/png')
-    await expect(detectImage(canonical.data)).resolves.toEqual({ mediaType: 'image/png', width: 6, height: 4 })
+    await expect(detectImage(canonical.data)).resolves.toEqual({ mediaType: 'image/png', width: 6, height: 4, animated: false, carriesMetadata: false })
   })
 
   it('keeps alpha sources on PNG when the budget holds', async () => {
@@ -132,8 +135,24 @@ describe('canonicalizeImage', () => {
       .rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
   })
 
+  it('re-encodes an in-budget oriented JPEG, baking rotation and stripping metadata', async () => {
+    const data = new Uint8Array(await sharp({
+      create: { width: 4, height: 2, channels: 3, background: { r: 1, g: 2, b: 3 } },
+    }).jpeg().withMetadata({ orientation: 6 }).toBuffer())
+    const detected = await detectImage(data)
+    // Orientation 6 rotates 90°: the perceived source is 2x4.
+    expect(detected).toMatchObject({ width: 2, height: 4, carriesMetadata: true })
+
+    const canonical = await canonicalizeImage(data, detected, POLICY)
+
+    expect(canonical.data).not.toBe(data)
+    expect(canonical).toMatchObject({ width: 2, height: 4 })
+    await expect(detectImage(canonical.data)).resolves.toMatchObject({ width: 2, height: 4, carriesMetadata: false })
+  })
+
   it('maps an encoder fault on undecodable bytes to a storage failure', async () => {
-    await expect(canonicalizeImage(Uint8Array.of(1, 2, 3), { mediaType: 'image/png', width: 5000, height: 5000 }, POLICY))
+    const detected = { mediaType: 'image/png', width: 5000, height: 5000, animated: false, carriesMetadata: false } as const
+    await expect(canonicalizeImage(Uint8Array.of(1, 2, 3), detected, POLICY))
       .rejects.toMatchObject({ code: 'ATTACHMENT_WRITE_FAILED' })
   })
 })

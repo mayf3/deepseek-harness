@@ -38,18 +38,26 @@ async function encode(pipeline: Sharp, mediaType: 'image/png' | 'image/jpeg'): P
 
 /**
  * Whether stored bytes may be the submitted bytes unchanged. Byte-identical
- * passthrough is preferred whenever the source already fits the budget: it
- * keeps re-submissions of the same original deduplicating to the same object
- * and never re-encodes what no policy requires changing. GIF is excluded —
- * only its first frame is model-visible, so admission pins that meaning into
- * the stored object instead of letting each provider drop frames differently.
- * @param detected - verified source format and dimensions.
+ * passthrough is preferred whenever the source already fits the budget and
+ * carries nothing the canonical form forbids: it keeps re-submissions of the
+ * same original deduplicating to the same object and never re-encodes what no
+ * policy requires changing. Excluded from passthrough — and therefore always
+ * re-encoded — are GIF and any animated container (only the first frame is
+ * model-visible, so admission pins that meaning instead of letting each
+ * provider drop frames differently) and any source carrying EXIF/XMP/IPTC
+ * metadata or a non-default orientation (stored objects ride every later
+ * request, so location and device metadata must not survive admission, and a
+ * stored orientation would let the recorded dimensions diverge from the
+ * pixels a model perceives).
+ * @param detected - verified source format, dimensions, and metadata facts.
  * @param bytes - submitted encoded byte length.
  * @param policy - resolved canonical budget.
  * @returns whether the submitted encoding already is canonical.
  */
 export function isCanonical(detected: DetectedImage, bytes: number, policy: CanonicalImagePolicy): boolean {
   return detected.mediaType !== 'image/gif'
+    && !detected.animated
+    && !detected.carriesMetadata
     && bytes <= policy.maxBytes
     && Math.max(detected.width, detected.height) <= policy.maxDimension
 }
