@@ -88,7 +88,7 @@ describe('sdkChildOutcome', () => {
       stopReason: 'aborted',
       diagnostic: expectedFailure('stage: session-run; category: child-disposed'),
     })
-    expect(sdkChildOutcome({ kind: 'blocked', reason: { kind: 'policy' } })).toEqual({ stopReason: 'refusal' })
+    expect(sdkChildOutcome({ kind: 'blocked' })).toEqual({ stopReason: 'refusal' })
     expect(sdkChildOutcome({ kind: 'error', error: { message: 'x', code: 'UNKNOWN' } })).toEqual({
       stopReason: 'error',
       diagnostic: expectedFailure('stage: session-run; category: child-error'),
