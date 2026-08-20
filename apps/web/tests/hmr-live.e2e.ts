@@ -2,7 +2,6 @@
 
 import { existsSync, globSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
@@ -115,7 +114,9 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
     await page.goto(baseUrl, { waitUntil: 'load' })
     await page.getByText(oldText, { exact: true }).waitFor({ timeout: 15_000 })
     const pageIdentity = await page.evaluate(() => {
-      const identity = randomUUID()
+      // In-page code: an import would not survive serialization, and the page
+      // entropy source available in every context is getRandomValues.
+      const identity = Array.from(crypto.getRandomValues(new Uint8Array(8)), byte => byte.toString(16).padStart(2, '0')).join('')
       Object.defineProperty(window, '__dshHmrPageIdentity', { value: identity })
       return identity
     })
