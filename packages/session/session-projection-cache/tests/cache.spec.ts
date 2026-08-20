@@ -35,6 +35,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     'cache-test/marks': MarksState
     'cache-test/marks2': Map<string, string>
+    'cache-test/count': number
   }
   interface SessionProjectionMap {
     'cache-test/marks': { marks: string[] }
@@ -309,5 +310,68 @@ describe('SessionProjectionCache listing read', () => {
     await writeFile(path, 'not json at all')
     const { cache } = await harness({ root })
     expect(cache.cachedSnapshot(headerOf(SessionId('malformed')))).toBeUndefined()
+  })
+})
+
+describe('SessionProjectionCache cold-read seeding', () => {
+  it('coldSnapshot traverses the full log but applies only the events after each cached watermark', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
+    roots.push(root)
+    // A cached row covering the prefix through seq 2 (three applies folded).
+    await seedRecord(root, 'cold-snap', {
+      'cache-test/count': { ver: 1, seq: 2, val: 3 },
+    }, { createdAt: 9 })
+    const { cache, ctx } = await harness({ root })
+    const apply = vi.fn((_state: number, _event: SessionEvent) => 1)
+    ctx.sessionProjections.register({
+      key: 'cache-test/count',
+      stateSchema: z.number().int().nonnegative(),
+      init: () => 0,
+      apply,
+      stateVersion: 1,
+    } satisfies ProjectionDefinition<'cache-test/count', number>)
+    const meta = headerOf(SessionId('cold-snap'), 9)
+    const events = Array.from({ length: 5 }, (_, seq) => ({
+      type: 'cache-test/mark', seq, time: seq, data: { marks: [`m${seq}`] },
+    })) as SessionEvent[]
+    const snapshot = cache.coldSnapshot(meta, events)
+    // The full log was traversed, but the fold applied only seqs 3 and 4.
+    expect(apply).toHaveBeenCalledTimes(2)
+    expect(apply.mock.calls.map(call => call[1].seq)).toEqual([3, 4])
+    expect(snapshot.asOfSeq).toBe(4)
+    // Host-only unit: folded but not served; the refreshed row is written
+    // back (fail-soft, fire-and-forget) once the write lands.
+    expect(Object.keys(snapshot.values)).not.toContain('cache-test/count')
+    await settle()
+    expect((await storedRows(root, meta.id))?.['cache-test/count']?.seq).toBe(4)
+    // No cached row yet: the first cold read folds from init over the full
+    // log and creates the cache row (the `?? {}` seed path).
+    const fresh = headerOf(SessionId('cold-fresh'), 10)
+    cache.coldSnapshot(fresh, events)
+    expect(apply).toHaveBeenCalledTimes(7) // 2 tail + 5 full
+    await settle()
+    expect((await storedRows(root, fresh.id))?.['cache-test/count']?.seq).toBe(4)
+  })
+
+  it('coldSnapshot write-back is fail-soft: a failed durable write logs and never throws', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
+    roots.push(root)
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(Storage)
+    await ctx.plugin({ name: storageJsonName, inject: storageJsonInject, apply: storageJsonApply, Config: storageJsonConfig }, { root })
+    await ctx.plugin({ name: storageDomainName, inject: storageDomainInject, apply: storageDomainApply, Config: storageDomainConfig }, { backend: 'json' })
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.sessionProjections.register(marksUnit())
+    await ctx.plugin(SessionProjectionCache, { writeEveryEvents: 100, writeIntervalMs: 60_000 })
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    // A directory where the record document must land makes the write-back
+    // fail; the cold read itself still succeeds and never throws.
+    const meta = headerOf(SessionId('cold-fail'))
+    await mkdir(recordPath(root, meta.id), { recursive: true })
+    expect(ctx.sessionProjectionCache.coldSnapshot(meta, [])).toBeDefined()
+    await settle()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('cold-read write-back for "cold-fail" failed'))
   })
 })

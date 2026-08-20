@@ -15,6 +15,7 @@ import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -103,6 +104,9 @@ describe('sessions.list cold merge', () => {
         }
         return undefined
       },
+      // The detached cold-history path calls the cache's coldSnapshot; this
+      // listing harness never detaches, so it is inert here.
+      coldSnapshot: () => undefined,
     } as never)
     const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
@@ -538,6 +542,45 @@ describe('subagent ownership fence', () => {
     expect(resume).not.toHaveBeenCalled()
     expect(ctx.agents.get(sessionId)).toBeUndefined()
     expect(inspect).toHaveBeenCalledTimes(3)
+  })
+
+  it('hands the detached cold history to the cache, which owns the seeded fold and write-back', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(UserQuestionService)
+    await ctx.plugin(SessionProjectionRegistry)
+    const sessionId = sid('seeded-cold')
+    const meta = header(sessionId, 1)
+    const events = [
+      { type: 'user/message', seq: 0, time: 1, data: { content: [{ type: 'text', text: 'm0' }], source: { kind: 'user' } } },
+      { type: 'user/message', seq: 1, time: 2, data: { content: [{ type: 'text', text: 'm1' }], source: { kind: 'user' } } },
+      { type: 'user/message', seq: 2, time: 3, data: { content: [{ type: 'text', text: 'm2' }], source: { kind: 'user' } } },
+    ] as SessionEvent[]
+    const inspect = vi.fn(() => Promise.resolve({ meta, events }))
+    ctx.provide('sessionPersistence', {
+      list: () => Promise.resolve([meta]),
+      inspect,
+      locate: () => undefined,
+    } as never)
+    // The cache owns the cold-read recipe (seed, prefix-skip, write-back);
+    // the carrier's only job is to hand it the stored header and the full log.
+    const coldSnapshot = vi.fn((_meta: SessionHeader, _events: readonly SessionEvent[]) =>
+      ({ asOfSeq: 2, values: { 'test/last-user': { text: 'm2' } } }))
+    ctx.provide('sessionProjectionCache', {
+      cachedSnapshot: () => undefined,
+      coldSnapshot,
+    } as never)
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+
+    const history = await api.sessions.history(request({ sessionId }))
+    expect(history.result.ok).toBe(true)
+    if (!history.result.ok) throw new Error('unreachable')
+    expect(history.result.value.projections?.values['test/last-user']).toEqual({ text: 'm2' })
+    // The full log (all events) was handed to the cache's cold snapshot.
+    expect(coldSnapshot).toHaveBeenCalledTimes(1)
+    expect(coldSnapshot.mock.calls[0]?.[0]?.id).toBe(sessionId)
+    expect(coldSnapshot.mock.calls[0]?.[1]?.map(event => event.seq)).toEqual([0, 1, 2])
   })
 
   it('no longer treats a descriptor-only cold child without origin as subagent-owned', async () => {
