@@ -276,8 +276,8 @@ export async function startCodexRun(
   const disposeProcess = async (): Promise<void> => {
     try {
       await disposeCodexChild(wire, child)
-      // Let stderr already queued by the process close reach both bounded
-      // diagnostic consumers before their listeners are detached.
+      // Let stderr already queued by the process close reach the Host before
+      // its forwarding listeners are detached.
       await new Promise<void>((resolve) => { setImmediate(resolve) })
     } finally {
       child.stderr?.off('data', onStderr)
@@ -389,14 +389,14 @@ export async function startCodexRun(
           publishedProcessFailure,
         ])
         if (terminal.stopReason === 'completed') return terminal
-        // Let stderr already queued with the terminal frame contribute its
-        // fixed permission fact before the non-completed result is snapshotted.
+        // Let stderr already queued with the terminal frame reach the Host
+        // before the non-completed result settles.
         await new Promise<void>((resolve) => { setImmediate(resolve) })
         const facts = withProcessOutcome(wire.collectFailure())
         return { ...terminal, diagnostic: recordFailureDiagnostic(facts) }
       } catch (error: unknown) {
-        // Give stderr data already queued in Node one turn to reach the wire
-        // before settlement snapshots the diagnostic.
+        // Give stderr data already queued in Node one turn to reach the Host
+        // before error settlement.
         await new Promise<void>((resolve) => { setImmediate(resolve) })
         const endedBeforeTerminal = wire.endedBeforeTerminal()
         if (
