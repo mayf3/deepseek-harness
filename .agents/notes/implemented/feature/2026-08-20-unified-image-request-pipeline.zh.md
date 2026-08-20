@@ -14,7 +14,7 @@ Status: implemented
 
 ### 提供方无关的主版本
 
-准入在可配置的 32MiB、1 亿像素和单边 16384px 源图范围内完整解码每张图片。处理会应用 EXIF 方向，删除元数据和色彩配置文件，转换为 8-bit sRGB/sRGBA，并保持宽高比把长边限制到 `masterMaxDimension`，默认 2048px。处理缩小光栅时，`sourceWidth` 和 `sourceHeight` 记录应用方向后的源尺寸。
+每条消息最多准入 20 张图片，源图编码字节总量不超过 200MiB。每张源图会在可配置的 20MiB、64,000,000 像素和单边 8192px 限制内完整解码。处理会应用 EXIF 方向，删除元数据和色彩配置文件，转换为 8-bit sRGB/sRGBA，并保持宽高比把长边限制到 `masterMaxDimension`，默认 2048px。处理缩小光栅时，`sourceWidth` 和 `sourceHeight` 记录应用方向后的源尺寸。
 
 主版本有独立的 `masterMaxBytes` 安全上限，默认 4MiB。透明通道绝不铺平。系统通过 nearest-neighbour 对有界样本判断色彩复杂度，不会通过像素平均把高频图片误判为低色数。确认的低色数输入先尝试 PNG，只有不带 alpha 通道时才使用 palette，随后依次尝试质量 85、80、75 的 WebP；其他透明输入依次尝试这些质量的 WebP；其他非透明输入依次尝试这些质量的 JPEG。候选按顺序执行，首个不超过上限的结果会立即返回。同一尺寸的候选全部超限后才会缩小尺寸。源扩展名不会把 PNG 归类为低色数图片。处于两个主版本上限内的干净、单帧、8-bit sRGB/sRGBA PNG、JPEG 或 WebP 按字节原样直通，并保留内容寻址去重。GIF、动图、元数据、方向、16-bit PNG 和不兼容色彩空间都会触发转换。源图和转换输出各完整解码一次；输出的格式、尺寸、位深、色彩空间和透明通道事实通过校验后，其摘要才会进入引用。
 
@@ -42,7 +42,7 @@ Status: implemented
 
 16-bit RGB 或 RGBA PNG 属于普通可接纳输入，会转换为 8-bit sRGB/sRGBA。本地转换失败时，`read_image` 会写明路径、检测到的 16-bit PNG、所需规范形式和手工转换方法。如果 DeepSeek 拒绝已规范化请求版本，主错误会写明附件 ID 或显示名称、持久消息和图片位置、规范化媒体类型、8-bit sRGB/sRGBA 位深、尺寸和提供方消息。多图片错误无法确定对象时会列出全部候选图片。原始提供方正文保留为错误 cause，不会成为唯一可见消息。
 
-持久附件对象之后缺失或无法通过完整性校验时，系统仍会明确失败。持久隔离和经校验恢复需要新增会话事件，由[隔离不可读历史附件](../../proposed/bug-fix/2026-08-20-attachment-read-quarantine.md)继续跟踪。
+持久附件对象之后缺失或无法通过完整性校验时，系统仍会明确失败。持久隔离和经校验恢复需要新增会话事件，由[隔离不可读历史附件](../../proposed/bug-fix/2026-08-20-attachment-read-quarantine.zh.md)继续跟踪。
 
 ## Alternatives considered
 

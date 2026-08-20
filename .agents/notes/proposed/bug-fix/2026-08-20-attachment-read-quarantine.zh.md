@@ -6,7 +6,7 @@ Status: proposed
 
 ## 问题
 
-已接纳的 `ImageAttachmentRef` 会留在持久历史中，因此在被压缩替换前都会参与之后的每次请求。引用对象丢失、完整性校验失败或无法读取时，`AttachmentStore.readImage()` 会返回 `ATTACHMENT_NOT_FOUND`、`ATTACHMENT_CORRUPT` 或 `ATTACHMENT_READ_FAILED`。未变化的历史随后会让之后每次模型请求在同一对象上失败，使会话无法继续，即使其余消息仍可使用。这是[可重建请求](../../implemented/architecture/2026-07-05-reconstructable-requests.md)保留为明确失败的对象不可用情况。
+已接纳的 `ImageAttachmentRef` 会留在持久历史中，因此在被压缩替换前都会参与之后的每次请求。引用对象丢失、完整性校验失败或无法读取时，`AttachmentStore.readImage()` 会返回 `ATTACHMENT_NOT_FOUND`、`ATTACHMENT_CORRUPT` 或 `ATTACHMENT_READ_FAILED`。未变化的历史随后会让之后每次模型请求在同一对象上失败，使会话无法继续，即使其余消息仍可使用。这是[可重建请求](../../implemented/architecture/2026-07-05-reconstructable-requests.zh.md)保留为明确失败的对象不可用情况。
 
 ## 提案
 

@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/bug-fix/2026-08-20-attachment-read-quarantine.md
 2026-08-20-attachment-read-quarantine.md: 28e0f26cee2ec1e257fd4d43b4edc4300e2c6f23
-2026-08-20-attachment-read-quarantine.zh.md: bdc1d580a5159edcd288552e1bde9d80ea1eafd8
+2026-08-20-attachment-read-quarantine.zh.md: 7f4ceae4e1fe9e656ed762de9828e14145976dc3

@@ -52,6 +52,8 @@ interface ImageAttachmentLimits {
 }
 ```
 
+The local backend admits at most 20 images and 200 MiB of encoded source data per message. One source may use up to 20 MiB, 64,000,000 pixels, and 8192 pixels on either side. These source limits precede the independent 2048-pixel, 4 MiB master preparation stage.
+
 The reference records intrinsic dimensions and encoded length so clients can lay out history without decoding first, while every authoritative read still re-checks digest, media signature, dimensions, and metadata against the object.
 
 ## Commit and verified-read payloads

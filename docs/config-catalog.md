@@ -327,15 +327,15 @@ Source: [`packages/core/agent-tool-presentation/src/index.ts:38`](../packages/co
 export interface Config {
   /** Explicit harness home; omitted follows `DSH_HOME`, then `~/.dsh`. */
   dshHome?: string
-  /** Maximum encoded bytes accepted for one submitted image. */
+  /** Maximum encoded bytes accepted for one submitted image. Default: 20 MiB. */
   maxImageBytes?: number
-  /** Maximum image count accepted in one submitted message. */
+  /** Maximum image count accepted in one submitted message. Default: 20. */
   maxImagesPerMessage?: number
-  /** Maximum aggregate encoded image bytes accepted in one submitted message. */
+  /** Maximum aggregate encoded image bytes accepted in one submitted message. Default: 200 MiB. */
   maxMessageImageBytes?: number
-  /** Maximum intrinsic width multiplied by height accepted for one submitted image. */
+  /** Maximum intrinsic width multiplied by height accepted for one submitted image. Default: 64,000,000. */
   maxImagePixels?: number
-  /** Maximum intrinsic width and maximum intrinsic height accepted for one submitted image. */
+  /** Maximum intrinsic width and maximum intrinsic height accepted for one submitted image. Default: 8192px. */
   maxImageDimension?: number
   /** Long-edge pixel cap of the stored provider-independent master version. */
   masterMaxDimension?: number
@@ -413,7 +413,7 @@ export interface ConnectionConfig {
    * that is not a bare, canonical authority fails the plugin load.
    */
   trustedHosts?: string[]
-  /** Maximum buffered JSON body for every `/api` request. */
+  /** Maximum buffered JSON body for every `/api` request. Default: 300 MiB. */
   maxRequestBodyBytes?: number
 }
 ```
