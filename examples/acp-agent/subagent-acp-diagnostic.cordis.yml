@@ -1,0 +1,31 @@
+# Add the real ACP provider behind a one-shot delegation tool. The snapshot
+# scenario supplies the absolute protocol fixture path through
+# DSH_TEST_MOCK_ACP_SERVER; the child returns a remote limit after a denied
+# execute permission and streams partial assistant output first.
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.yml
+    patches:
+      - insert:
+          - id: subagent-acp-diagnostic
+            name: '@deepseek-ai/dsh-subagent-acp'
+            config:
+              providerName: acp-diagnostic
+              command: !!js process.execPath
+              args:
+                - !!js process.env.DSH_TEST_MOCK_ACP_SERVER
+              permission: reject
+              env:
+                MOCK_TEXT: partial ACP assistant text
+                MOCK_STOP: max_turn_requests
+                MOCK_PERMISSION: '1'
+                MOCK_PERMISSION_IGNORE_DECISION: '1'
+                MOCK_TOOL_KIND: execute
+          - id: tool-subagent-acp-diagnostic
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: acp-diagnostic
+              toolName: subagent_acp
+              backgroundMode: one-shot
+              maxDepth: provider-managed

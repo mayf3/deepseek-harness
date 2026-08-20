@@ -84,6 +84,13 @@ const PRODUCT_SUBAGENT_BOTH_CONFIG = fileURLToPath(new URL('../product-subagent-
 const PRODUCT_SUBAGENT_RESULT_DIAGNOSTIC_CONFIG = fileURLToPath(
   new URL('../subagent-result-diagnostic.cordis.yml', import.meta.url),
 )
+const SUBAGENT_ACP_DIAGNOSTIC_CONFIG = fileURLToPath(
+  new URL('../subagent-acp-diagnostic.cordis.yml', import.meta.url),
+)
+const SUBAGENT_ACP_MOCK_SERVER = fileURLToPath(new URL(
+  '../../../packages/subagent/subagent-acp/tests/mock-acp-server.ts',
+  import.meta.url,
+))
 const FS_DIFF_BOUND_CONFIG = fileURLToPath(new URL('./fs-diff-bound.cordis.yml', import.meta.url))
 const SNAPSHOTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'snapshots')
 const PACKED_CHUNKS_SOURCE = 'hook-cc-pretool-deny'
@@ -191,6 +198,17 @@ const SCENARIOS: Scenario[] = [
     headerClass: 'product-subagent-result-diagnostic',
     systemPromptSource: 'product-subagent-codex',
     configPath: PRODUCT_SUBAGENT_RESULT_DIAGNOSTIC_CONFIG,
+  },
+  {
+    name: 'subagent-acp-diagnostic',
+    hasModelTurn: true,
+    recorded: false,
+    overridden: true,
+    pinsHeader: true,
+    headerClass: 'subagent-acp-diagnostic',
+    systemPromptSource: 'product-subagent-codex',
+    configPath: SUBAGENT_ACP_DIAGNOSTIC_CONFIG,
+    env: { DSH_TEST_MOCK_ACP_SERVER: SUBAGENT_ACP_MOCK_SERVER },
   },
   {
     name: 'session-title-after-turn',
