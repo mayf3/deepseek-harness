@@ -357,7 +357,7 @@ async function resolveColdIdentity(
   if (cache !== undefined) {
     let cached: SubagentIdentityProjection | null | undefined
     try {
-      cached = (await cache.cachedSnapshot(header))?.values.subagent
+      cached = cache.cachedSnapshot(header)?.values.subagent
     } catch {
       // Unlike the preparation fold below, a throwing cache read renders no
       // verdict: the cache is derived data, so its damage (a poisoned stored

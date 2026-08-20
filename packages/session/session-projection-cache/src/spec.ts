@@ -1,13 +1,18 @@
 /**
- * The projection-cache record schema: one `projection_cache.json` per
- * session, stored under the cache's own root tree at
- * `<root>/<session-id>/projection_cache.json` (independent of session
- * persistence). The file holds the session's full projection checkpoint
- * (`key → {ver, seq, val}` rows) plus the log identity it was folded from.
+ * The projection-cache domain declaration: one `sessions` table keyed by
+ * {@link SessionId}, each record the full projection checkpoint for one
+ * session (`key → {ver, seq, val}` rows). The spec object is the single
+ * source of the domain's identity, version, layout, and record schema; the
+ * storage-domain routing decides the medium (the shipped composition's json
+ * backend stores the domain `per-record`: one document per session under
+ * `<root>/session_projcache/sessions/`, so a checkpoint write rewrites one
+ * session's document instead of the whole unit).
  * @module @deepseek-ai/dsh-session-projection-cache/src/spec
  */
 
 import { z } from 'zod'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 
 /**
  * One persisted checkpoint row (the RFC's `(sessionId, key, ver, seq, val)`
@@ -53,3 +58,17 @@ export const checkpointRecord = z.object({
 
 /** One stored per-session checkpoint record, inferred from {@link checkpointRecord}. */
 export type CheckpointRecord = z.infer<typeof checkpointRecord>
+
+/**
+ * The session-projcache domain spec. The `per-record` layout scopes version
+ * bumps per session: after a bump, a stale session document is discarded on
+ * open (cache semantics — a stale or unreadable cache costs a longer tail
+ * replay, never a wrong value) while the rest of the domain stays usable,
+ * instead of rejecting the whole medium.
+ */
+export const projectionCacheDomainSpec = defineDomain({
+  name: 'session_projcache',
+  version: 4,
+  layout: 'per-record',
+  tables: { sessions: domainTable<SessionId, CheckpointRecord>(checkpointRecord) },
+})

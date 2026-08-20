@@ -800,15 +800,15 @@ function projectionsFor(ctx: Context, session: Session): SessionProjectionsBlock
  * empty value set — yields an absent block: a listing without projections
  * is degraded, never broken.
  */
-async function listProjectionsFor(
+function listProjectionsFor(
   ctx: Context,
   meta: SessionHeader,
   session: Session | undefined,
-): Promise<SessionProjectionsBlock | undefined> {
+): SessionProjectionsBlock | undefined {
   try {
     const block = session !== undefined
       ? ctx.get('sessionProjections')?.snapshot(session)
-      : await ctx.get('sessionProjectionCache')?.cachedSnapshot(meta)
+      : ctx.get('sessionProjectionCache')?.cachedSnapshot(meta)
     return block !== undefined && Object.keys(block.values).length > 0 ? block : undefined
   } catch (error) {
     ctx.logger.warn(`session.list: projection column for "${meta.id}" failed (serving the row without it): ${String(error)}`)
@@ -1674,15 +1674,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
    */
   async function listVisibleSessionSummaries(signal?: AbortSignal): Promise<SessionSummary[]> {
     signal?.throwIfAborted()
-    const summarizeAttached = async (session: Session): Promise<SessionSummary> => {
+    const summarizeAttached = (session: Session): SessionSummary => {
       const agent = ctx.agents.get(session.id)
-      const projections = await listProjectionsFor(ctx, session.header, session)
+      const projections = listProjectionsFor(ctx, session.header, session)
       return {
         ...summarize(session, agent?.status === 'running'),
         ...projections === undefined ? {} : { projections },
       }
     }
-    const items = await Promise.all(ctx.sessions.list().map(summarizeAttached))
+    const items = ctx.sessions.list().map(summarizeAttached)
     signal?.throwIfAborted()
     const attached = new Set(items.map(item => item.sessionId))
     const persistence = ctx.get('sessionPersistence')
@@ -1697,7 +1697,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           batch.map(async (meta) => {
             // Projection hints remain optional. Blank verification may read
             // this Session's artifact only when it passes the configured size check.
-            const projections = await listProjectionsFor(ctx, meta, undefined)
+            const projections = listProjectionsFor(ctx, meta, undefined)
             const summary = await summarizeCold(
               ctx,
               persistence,

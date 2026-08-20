@@ -27,7 +27,10 @@
       "path": "../../runtime-diagnostics/invariants"
     },
     {
-      "path": "../../util/atomic-write"
+      "path": "../../storage/storage"
+    },
+    {
+      "path": "../../storage/storage-domain"
     }
   ]
 }
