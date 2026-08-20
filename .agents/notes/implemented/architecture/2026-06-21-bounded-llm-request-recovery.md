@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-06-21-bounded-llm-request-recovery.zh.md)
 
-The [per-provider request retry policy](../feature/2026-07-24-provider-retry-policies.md) extends this foundation with exact-provider configuration and an explicit unbounded mode. This note continues to own structured failure facts, the closed-step recovery boundary, normal mode's transient defaults, visible single attempts, and durable retry status. [Terminal LLM stream failures](2026-07-29-terminal-llm-stream-failures.md) supersedes its thrown-error identity and stream-sidecar mechanism.
+The [per-provider request retry policy](../feature/2026-07-24-provider-retry-policies.md) extends this foundation with exact-provider configuration and an explicit unbounded mode. This note continues to own structured failure facts, the failed-attempt recovery boundary, normal mode's transient defaults, visible single attempts, and durable retry status. [Terminal LLM stream failures](2026-07-29-terminal-llm-stream-failures.md) supersedes its thrown-error identity and stream-sidecar mechanism.
 
 ## Problem
 
@@ -52,7 +52,7 @@ The shared transient-code set is intentionally small: adapter mappings for `RATE
 
 `@deepseek-ai/dsh-llm-retry` is a function plugin that listens to `agent/request-error`. It introduces no service or new loop branch; the agent-loop package changes only the data carried through its existing failed-step recovery control flow.
 
-The `agent/request-error` waterfall carries the current `LlmFailure`, an immutable list of prior failures that authorized retry turns in the consecutive recovery sequence, and the serving registration's immutable retry policy. The loop transports but does not interpret that policy, owns the consecutive failure history, and clears it after a successful model request. Normal `dsh-llm-retry` policy counts durable retry records scheduled by the same exact-provider policy, while `dsh-compaction-basic` keeps its own context-overflow budget. Alternating transient and context-overflow failures therefore consume their owning finite budgets independently; the maximum request count is one plus the sum of the loaded finite budgets.
+The `agent/request-error` waterfall carries the current `LlmFailure`, an immutable list of prior failures that authorized retries in the consecutive recovery sequence, and the serving registration's immutable retry policy. The loop transports but does not interpret that policy, owns the consecutive failure history, and clears it after a successful model request. Normal `dsh-llm-retry` policy counts durable retry records scheduled by the same exact-provider policy, while `dsh-compaction-basic` keeps its own context-overflow budget. Alternating transient and context-overflow failures therefore consume their owning finite budgets independently; the maximum request count is one plus the sum of the loaded finite budgets.
 
 The [provider-policy decision](../feature/2026-07-24-provider-retry-policies.md) owns the current configuration shape. Provider adapters register their nested `retryPolicy`; omission uses normal defaults: two transient retries, a 500 millisecond initial delay, a 10 second delay cap, 10 percent jitter, and the five transient codes above. The count and delay bounds match the conservative edge of the inspected implementations: [OpenCode uses two request retries with 500 ms/10 s bounds](https://github.com/anomalyco/opencode/blob/9976269ab1accfc9f9dc98a4a688c516934de422/%70ackages/llm/src/route/executor.ts#L36-L39), [Pi separates three agent-level retries from provider retries and defaults provider retries to zero](https://github.com/earendil-works/pi/blob/3da591ab74ab9ab407e72ed882600b2c851fae21/%70ackages/coding-agent/docs/settings.md#L139-L147), and [Codex uses finite request/stream budgets plus a five-minute idle timeout](https://github.com/openai/codex/blob/0fb559f0f6e231a88ac02ea002d3ecd248e2b515/codex-rs/model-provider-info/src/lib.rs#L25-L33). Ten percent follows [Codex's bounded jitter](https://github.com/openai/codex/blob/0fb559f0f6e231a88ac02ea002d3ecd248e2b515/codex-rs/codex-client/src/retry.rs#L40-L47).
 
@@ -68,7 +68,7 @@ The agent-spine demo bundle loads the plugin so the shared stdio/TUI, one-shot C
 
 ### Make one layer own visible attempts
 
-Adapters perform one provider request per `stream()` call. The pi-ai adapter removes public `maxRetries` and `maxRetryDelayMs` profile fields and disables library retries; the hand-written adapter keeps its current single-attempt behavior. This prevents an SDK budget from multiplying the agent budget and ensures every transient retry is represented by a closed failed step plus `llm/retry`.
+Adapters perform one provider request per `stream()` call. The pi-ai adapter removes public `maxRetries` and `maxRetryDelayMs` profile fields and disables library retries; the hand-written adapter keeps its current single-attempt behavior. This prevents an SDK budget from multiplying the agent budget and ensures every transient retry is represented by its recorded failed attempt plus `llm/retry`.
 
 `ctx.llm.stream()` remains the raw one-attempt waterfall. Direct callers such as compaction summarization receive the structured failure but do not gain automatic retry, because they have no agent step boundary or general durable place to separate attempts. A future direct-call consumer may justify a buffering helper that retries only before emitting a chunk; this decision adds no such helper.
 
@@ -122,7 +122,7 @@ If recovery is exhausted, the final failure is stored once on `turn/end.reason` 
 
 ## Consequences
 
-- Every retry attempt is visible as a closed failed turn plus `llm/retry`, and adapter-level single-attempt behavior prevents hidden SDK retries from multiplying policy decisions. A retry can still duplicate provider billing even when no chunk arrived; normal mode limits that risk, while explicit always mode accepts it until cancellation or success.
+- Every retry attempt is visible inside its owning turn as the failed attempt's chunks plus `llm/retry`, and adapter-level single-attempt behavior prevents hidden SDK retries from multiplying policy decisions. A retry can still duplicate provider billing even when no chunk arrived; normal mode limits that risk, while explicit always mode accepts it until cancellation or success.
 - Provider SDKs may hide status or retry headers. Those adapters retain the stable facts they expose and otherwise use a coarse code rather than letting recovery policy parse fragile text.
 - Durable retry events expand the session protocol and UI state machine. Shipping the event and its consumer together prevents an unused telemetry vocabulary, but later schema changes still require persistence and replay work.
 - Clearing a failed step's live chunks can visibly retract output. That is preferable to presenting discarded text or partial tool JSON as committed history, and snapshots pin the transition.

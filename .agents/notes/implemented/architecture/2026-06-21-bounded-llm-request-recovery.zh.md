@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-06-21-bounded-llm-request-recovery.md) | 中文
 
-[按提供方配置的请求重试策略](../feature/2026-07-24-provider-retry-policies.zh.md)在此基础上增加了确切提供方配置与显式无界 mode。本说明继续负责结构化失败事实、已关闭步骤的恢复边界、normal mode 的暂时性默认值、可见的单次尝试和持久重试状态。[LLM（大语言模型）流的终止失败](2026-07-29-terminal-llm-stream-failures.zh.md)取代了其中关于抛出错误身份和流 sidecar 的机制。
+[按提供方配置的请求重试策略](../feature/2026-07-24-provider-retry-policies.zh.md)在此基础上增加了确切提供方配置与显式无界 mode。本说明继续负责结构化失败事实、失败尝试的恢复边界、normal mode 的暂时性默认值、可见的单次尝试和持久重试状态。[LLM（大语言模型）流的终止失败](2026-07-29-terminal-llm-stream-failures.zh.md)取代了其中关于抛出错误身份和流 sidecar 的机制。
 
 ## 问题
 
@@ -52,7 +52,7 @@ agent loop（智能体循环）会将终止 finish 的 `LlmFailure` 传给 `agen
 
 `@deepseek-ai/dsh-llm-retry` 是监听 `agent/request-error` 的函数插件。它不引入服务或新的循环分支；agent-loop 包仅会更改通过现有失败步骤恢复控制流携带的数据。
 
-`agent/request-error` waterfall 携带当前 `LlmFailure`、在连续恢复序列中授权重试轮次的不可变先前失败列表，以及提供服务的注册项所携带的不可变重试策略。循环只传递而不解释该策略；它拥有连续失败历史，并在模型请求成功后清除。`dsh-llm-retry` 的 normal 策略统计由同一项确切提供方策略安排的持久重试记录，`dsh-compaction-basic` 则维护自己的上下文溢出预算。因此，暂时性失败与上下文溢出交替出现时，会各自独立消耗其有限预算；最大请求数等于 1 加上所有已加载有限预算之和。
+`agent/request-error` waterfall 携带当前 `LlmFailure`、在连续恢复序列中授权重试的不可变先前失败列表，以及提供服务的注册项所携带的不可变重试策略。循环只传递而不解释该策略；它拥有连续失败历史，并在模型请求成功后清除。`dsh-llm-retry` 的 normal 策略统计由同一项确切提供方策略安排的持久重试记录，`dsh-compaction-basic` 则维护自己的上下文溢出预算。因此，暂时性失败与上下文溢出交替出现时，会各自独立消耗其有限预算；最大请求数等于 1 加上所有已加载有限预算之和。
 
 当前配置形状由[提供方策略决策](../feature/2026-07-24-provider-retry-policies.zh.md)规定。提供方适配器会注册嵌套的 `retryPolicy`；省略时使用 normal 默认值：两次暂时性重试、500 毫秒初始延迟、10 秒延迟上限、10% 抖动，以及上述五个暂时性 code。计数与延迟边界参考了所调查实现中较保守的一端：[OpenCode 使用两次请求重试，延迟边界为 500 毫秒／10 秒](https://github.com/anomalyco/opencode/blob/9976269ab1accfc9f9dc98a4a688c516934de422/%70ackages/llm/src/route/executor.ts#L36-L39)；[Pi 将三次 agent 级重试与提供方重试分开，且提供方重试默认为零](https://github.com/earendil-works/pi/blob/3da591ab74ab9ab407e72ed882600b2c851fae21/%70ackages/coding-agent/docs/settings.md#L139-L147)；[Codex 使用有限请求／流预算以及五分钟空闲超时](https://github.com/openai/codex/blob/0fb559f0f6e231a88ac02ea002d3ecd248e2b515/codex-rs/model-provider-info/src/lib.rs#L25-L33)。10% 抖动参考 [Codex 的有界抖动](https://github.com/openai/codex/blob/0fb559f0f6e231a88ac02ea002d3ecd248e2b515/codex-rs/codex-client/src/retry.rs#L40-L47)。
 
@@ -68,7 +68,7 @@ agent-spine 演示组合包加载该插件，因此共享的 stdio/TUI、一次�
 
 ### 由单一层负责可见的尝试
 
-适配器每次调用 `stream()` 只执行一次提供方请求。pi-ai 适配器移除公开的 `maxRetries` 和 `maxRetryDelayMs` profile 字段，并禁用库内部重试；手写适配器保持现有的单次尝试行为。这样既避免 SDK 预算成倍放大 agent 预算，又能确保每次暂时性重试都由一个已关闭的失败步骤加 `llm/retry` 表示。
+适配器每次调用 `stream()` 只执行一次提供方请求。pi-ai 适配器移除公开的 `maxRetries` 和 `maxRetryDelayMs` profile 字段，并禁用库内部重试；手写适配器保持现有的单次尝试行为。这样既避免 SDK 预算成倍放大 agent 预算，又能确保每次暂时性重试都由其记录在案的失败尝试加 `llm/retry` 表示。
 
 `ctx.llm.stream()` 仍是原始的单次尝试 waterfall。压缩（compaction）摘要等直接调用方会收到结构化失败，但不会自动获得重试，因为它们没有 agent 步骤边界，也没有可供分隔尝试的通用持久位置。未来的直接调用消费方可能会需要一个缓冲辅助函数，仅在尚未发出任何分片时重试；本决策不增加此类辅助函数。
 
@@ -122,7 +122,7 @@ agent-spine 演示组合包加载该插件，因此共享的 stdio/TUI、一次�
 
 ## 后果
 
-- 每次重试尝试都以一个已关闭失败轮次加 `llm/retry` 的形式可见，适配器级的单次尝试行为会防止隐藏的 SDK 重试成倍增加策略决策。即使没有分片到达，重试仍可能造成提供方重复计费；normal mode 会限制此风险，而显式 always mode 会接受它，直至取消或成功。
+- 每次重试尝试都在其所属轮次内以失败尝试的分片加 `llm/retry` 的形式可见，适配器级的单次尝试行为会防止隐藏的 SDK 重试成倍增加策略决策。即使没有分片到达，重试仍可能造成提供方重复计费；normal mode 会限制此风险，而显式 always mode 会接受它，直至取消或成功。
 - 提供方 SDK 可能隐藏状态或重试标头。适配器会保留 SDK 公开的稳定事实，否则使用粗粒度 code，而不会让恢复策略解析脆弱的文本。
 - 持久重试事件扩展了会话协议和 UI 状态机。事件与其消费方一同交付，可避免产生无人使用的遥测词汇；但以后更改 schema 仍需要同步完成持久化和回放工作。
 - 清除失败步骤的实时分片可能会明显撤回输出。与把丢弃的文本或不完整工具 JSON 呈现为已提交历史相比，这是更好的选择；快照固定这一转换。
