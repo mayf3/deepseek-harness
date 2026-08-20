@@ -134,28 +134,6 @@ export class SessionProjectionCache extends Service {
   }
 
   /**
-   * Cold-read one session's projections from its complete log. Each unit is
-   * seeded from the identity-checked cached rows — the registry skips `apply`
-   * for the already-folded prefix (events at or below the row's `seq`) — and
-   * the refreshed checkpoint is written back (fail-soft, fire-and-forget), so
-   * the first cold read creates the cache row and later ones seed from it.
-   * The caller supplies the complete log in seq order: this service never
-   * consults the persistence layer.
-   * @param meta - the stored session header (identity witness).
-   * @param events - the session's complete log, in seq order.
-   * @returns the projection cut at the log end.
-   */
-  coldSnapshot(meta: SessionHeader, events: readonly SessionEvent[]): ProjectionSnapshot {
-    const restored = this.ctx.sessionProjections.restore(this.recordFor(meta.id, identityOf(meta))?.rows ?? {}, events, 0)
-    // Refresh the row so the next cold read seeds from it; fail-soft and
-    // fire-and-forget — a failed write-back only costs a longer tail replay.
-    void this.put(meta.id, identityOf(meta), restored.checkpoint).catch((error: unknown) => {
-      this.ctx.logger.warn(`session projection cache: cold-read write-back for "${meta.id}" failed (cache stays stale): ${String(error)}`)
-    })
-    return restored.snapshot
-  }
-
-  /**
    * Durably checkpoint one live session NOW (both mandatory points call
    * this; tests and carriers may too). The registry cut is snapshotted at
    * this boundary (states are live references), then the session's record is
@@ -177,6 +155,29 @@ export class SessionProjectionCache extends Service {
     if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
     await this.put(session.id, identityOf(session.header), rows)
   }
+
+  /**
+   * Cold-read one session's projections from its complete log. Each unit is
+   * seeded from the identity-checked cached rows — the registry skips `apply`
+   * for the already-folded prefix (events at or below the row's `seq`) — and
+   * the refreshed checkpoint is written back (fail-soft, fire-and-forget), so
+   * the first cold read creates the cache row and later ones seed from it.
+   * The caller supplies the complete log in seq order: this service never
+   * consults the persistence layer.
+   * @param meta - the stored session header (identity witness).
+   * @param events - the session's complete log, in seq order.
+   * @returns the projection cut at the log end.
+   */
+  coldSnapshot(meta: SessionHeader, events: readonly SessionEvent[]): ProjectionSnapshot {
+    const restored = this.ctx.sessionProjections.restore(this.recordFor(meta.id, identityOf(meta))?.rows ?? {}, events, 0)
+    // Refresh the row so the next cold read seeds from it; fail-soft and
+    // fire-and-forget — a failed write-back only costs a longer tail replay.
+    void this.put(meta.id, identityOf(meta), restored.checkpoint).catch((error: unknown) => {
+      this.ctx.logger.warn(`session projection cache: cold-read write-back for "${meta.id}" failed (cache stays stale): ${String(error)}`)
+    })
+    return restored.snapshot
+  }
+
 
   // --- write-behind (throttle + mandatory points) ---
 
