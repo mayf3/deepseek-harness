@@ -1,25 +1,23 @@
-/**
- * The workspace browser's viewing store: the session-list grouping mode,
- * persisted across reloads. Module level exports the factory only (a
- * module-level handle would pin the store identity across plugin reloads);
- * register() receives the factory and the browser derives its PropsStore
- * share from the return type.
- */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
-import { TAG_GROUP_PREFIX } from './tree.ts'
+import { GROUP_SECTION_PREFIX, UNASSIGNED_GROUP_KEY } from './group-keys.ts'
 
 /** Browser-local order account for the hierarchy-free flat Session list. */
 export const FLAT_SESSION_ORDER_KEY = '__flat_session_order__'
 
-/** Session-list grouping mode: workspace sections, tag sections, or one flat recency list. */
-export type SessionGroupBy = 'workspace' | 'flat' | 'tag'
+const PERSIST_KEY = 'dsh.workspace.view.v7'
+const LEGACY_PERSIST_KEY = 'dsh.workspace.view.v6'
+const LEGACY_GROUP_PREFIX = 'tag:'
+const LEGACY_UNASSIGNED_KEY = 'tag:\u0000untagged'
+
+/** Session-list grouping mode: workspace sections, user groups, or one flat list. */
+export type SessionGroupBy = 'workspace' | 'flat' | 'group'
 /** Session order: user-arranged only, or user-arranged plus activity promotion. */
 export type SessionOrderBy = 'manual' | 'updated'
 
 /** Browser-local organization metadata for one session row. */
 export type SessionMeta = {
-  /** Free-form labels; shown as tag sections in the tag view. */
-  tags?: string[]
+  /** Exclusive user-managed group; absent means Unassigned. */
+  group?: string
   /** Id of the session this one waits on (rendered nested under its parent). */
   parent?: string
   /** Manually set unread flag; cleared when the session is opened. */
@@ -32,22 +30,18 @@ type WorkspaceViewState = {
   orderBy: SessionOrderBy
   /** Unread-only filter: rows without the unread flag are hidden. */
   unreadOnly: boolean
-  /** Explicit zero-or-five-session state keyed by Workspace group identity. */
+  /** Explicit expansion state keyed by Workspace/group identity. */
   groupExpansion: Record<string, boolean>
-  /** Shared editable order per Workspace group plus the browser-local flat-list account. */
+  /** Shared editable order per Workspace/group plus the flat-list account. */
   sessionOrderByAccount: Record<string, string[]>
-  /** Last observed update timestamps per order account for one-time promotion events. */
+  /** Last observed timestamps per order account for one-time activity promotion. */
   sessionUpdatedAtByAccount: Record<string, Record<string, number>>
-  /** Session-id-keyed organization metadata (tags + waiting-on parent). */
+  /** Session-id-keyed organization metadata. */
   sessionMeta: Record<string, SessionMeta>
-  /** Explicitly created tags with no session yet (empty tag sections stay visible). */
-  knownTags: string[]
+  /** Explicitly created groups with no session yet (empty columns stay visible). */
+  knownGroups: string[]
 }
 
-/**
- * Annotation twin of the actions literal below (the export needs a declared
- * return type); drift fails assignability at the defineStore call.
- */
 type WorkspaceViewActions = {
   setGroupBy: (draft: WorkspaceViewState, mode: SessionGroupBy) => void
   setOrderBy: (draft: WorkspaceViewState, mode: SessionOrderBy) => void
@@ -61,12 +55,123 @@ type WorkspaceViewActions = {
     updatedAt: Record<string, number>,
   ) => void
   setSessionOrder: (draft: WorkspaceViewState, accountKey: string, order: string[]) => void
-  setSessionTags: (draft: WorkspaceViewState, sessionId: string, tags: string[]) => void
+  setSessionGroup: (draft: WorkspaceViewState, sessionId: string, group: string | undefined) => void
   setSessionParent: (draft: WorkspaceViewState, sessionId: string, parent: string | undefined) => void
   setSessionUnread: (draft: WorkspaceViewState, sessionId: string, unread: boolean) => void
-  /** Delete a tag everywhere: strip it from sessions, knownTags, and the tag-group expansion key. */
-  removeTag: (draft: WorkspaceViewState, tag: string) => void
-  addKnownTag: (draft: WorkspaceViewState, tag: string) => void
+  removeGroup: (draft: WorkspaceViewState, group: string) => void
+  addKnownGroup: (draft: WorkspaceViewState, group: string) => void
+}
+
+/**
+ * Normalize a user group name for storage and matching.
+ * @param value - raw group name.
+ * @returns trimmed, NUL-free, 32-character name; undefined when empty.
+ */
+export function normalizeGroupName(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.replaceAll('\0', '').trim().slice(0, 32)
+  return normalized === '' ? undefined : normalized
+}
+
+function defaultState(): WorkspaceViewState {
+  return {
+    groupBy: 'workspace',
+    orderBy: 'updated',
+    unreadOnly: false,
+    groupExpansion: {},
+    sessionOrderByAccount: {},
+    sessionUpdatedAtByAccount: {},
+    sessionMeta: {},
+    knownGroups: [],
+  }
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
+}
+
+function stringOrders(value: unknown): Record<string, string[]> {
+  const source = record(value)
+  if (source === undefined) return {}
+  return Object.fromEntries(Object.entries(source).flatMap(([key, entry]) => {
+    if (!Array.isArray(entry)) return []
+    return [[key, entry.filter((id): id is string => typeof id === 'string')]]
+  }))
+}
+
+function timestampOrders(value: unknown): Record<string, Record<string, number>> {
+  const source = record(value)
+  if (source === undefined) return {}
+  return Object.fromEntries(Object.entries(source).flatMap(([key, entry]) => {
+    const timestamps = record(entry)
+    if (timestamps === undefined) return []
+    return [[key, Object.fromEntries(Object.entries(timestamps).filter((pair): pair is [string, number] =>
+      typeof pair[1] === 'number' && Number.isFinite(pair[1])))]]
+  }))
+}
+
+function migrateExpansion(value: unknown): Record<string, boolean> {
+  const source = record(value)
+  if (source === undefined) return {}
+  return Object.fromEntries(Object.entries(source).flatMap(([key, expanded]) => {
+    if (typeof expanded !== 'boolean') return []
+    if (key === LEGACY_UNASSIGNED_KEY) return [[UNASSIGNED_GROUP_KEY, expanded]]
+    if (!key.startsWith(LEGACY_GROUP_PREFIX)) return [[key, expanded]]
+    const group = normalizeGroupName(key.slice(LEGACY_GROUP_PREFIX.length))
+    return group === undefined ? [] : [[GROUP_SECTION_PREFIX + group, expanded]]
+  }))
+}
+
+function migrateSessionMeta(value: unknown): Record<string, SessionMeta> {
+  const source = record(value)
+  if (source === undefined) return {}
+  return Object.fromEntries(Object.entries(source).flatMap(([id, entry]) => {
+    const legacy = record(entry)
+    if (legacy === undefined) return []
+    const tags = Array.isArray(legacy.tags) ? legacy.tags : []
+    const group = tags.map(normalizeGroupName).find((item): item is string => item !== undefined)
+    const meta: SessionMeta = {
+      ...(group === undefined ? {} : { group }),
+      ...(typeof legacy.parent === 'string' ? { parent: legacy.parent } : {}),
+      ...(typeof legacy.unread === 'boolean' ? { unread: legacy.unread } : {}),
+    }
+    return [[id, meta]]
+  }))
+}
+
+/** Write one idempotent v6→v7 migration before persistence rehydrates v7. */
+function migrateLegacyState(): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    if (localStorage.getItem(PERSIST_KEY) !== null) return
+    const raw = localStorage.getItem(LEGACY_PERSIST_KEY)
+    if (raw === null) return
+    const legacy = record(JSON.parse(raw))
+    if (legacy === undefined) return
+    const known = Array.isArray(legacy.knownTags) ? legacy.knownTags : []
+    const knownGroups = [...new Set(known.map(normalizeGroupName).filter((item): item is string => item !== undefined))]
+    const migrated: WorkspaceViewState = {
+      groupBy: legacy.groupBy === 'tag' ? 'group'
+        : legacy.groupBy === 'flat' ? 'flat'
+          : 'workspace',
+      orderBy: legacy.orderBy === 'manual' ? 'manual' : 'updated',
+      unreadOnly: legacy.unreadOnly === true,
+      groupExpansion: migrateExpansion(legacy.groupExpansion),
+      sessionOrderByAccount: stringOrders(legacy.sessionOrderByAccount),
+      sessionUpdatedAtByAccount: timestampOrders(legacy.sessionUpdatedAtByAccount),
+      sessionMeta: migrateSessionMeta(legacy.sessionMeta),
+      knownGroups,
+    }
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(migrated))
+  } catch {
+    // Invalid or unavailable legacy storage leaves the v7 defaults intact.
+  }
+}
+
+function isGroupAccount(key: string): boolean {
+  return key.startsWith(GROUP_SECTION_PREFIX)
 }
 
 /**
@@ -74,18 +179,10 @@ type WorkspaceViewActions = {
  * @returns the store handle (spec + type + identity + factory in one).
  */
 export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState, WorkspaceViewActions> {
+  migrateLegacyState()
   return defineStore({
-    init: (): WorkspaceViewState => ({
-      groupBy: 'workspace',
-      orderBy: 'updated',
-      unreadOnly: false,
-      groupExpansion: {},
-      sessionOrderByAccount: {},
-      sessionUpdatedAtByAccount: {},
-      sessionMeta: {},
-      knownTags: [],
-    }),
-    persist: 'dsh.workspace.view.v6',
+    init: defaultState,
+    persist: PERSIST_KEY,
     actions: {
       setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
       setOrderBy: (d, mode: SessionOrderBy) => { d.orderBy = mode },
@@ -93,18 +190,13 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
       setGroupExpanded: (d, key: string, expanded: boolean) => { d.groupExpansion[key] = expanded },
       retainAccountKeys: (d, workspaceKeys: readonly string[]) => {
         const retained = new Set(workspaceKeys)
-        // Tag-view sections are not Workspace accounts; keep their persisted
-        // expansion state across Workspace changes (otherwise tag groups
-        // reset to collapsed on every reload or Workspace mutation).
-        const keep = (key: string) => retained.has(key) || key.startsWith(TAG_GROUP_PREFIX)
-        d.groupExpansion = Object.fromEntries(
-          Object.entries(d.groupExpansion).filter(([key]) => keep(key)),
-        )
+        const keep = (key: string) => retained.has(key) || isGroupAccount(key)
+        d.groupExpansion = Object.fromEntries(Object.entries(d.groupExpansion).filter(([key]) => keep(key)))
         d.sessionOrderByAccount = Object.fromEntries(
-          Object.entries(d.sessionOrderByAccount).filter(([key]) => retained.has(key)),
+          Object.entries(d.sessionOrderByAccount).filter(([key]) => keep(key)),
         )
         d.sessionUpdatedAtByAccount = Object.fromEntries(
-          Object.entries(d.sessionUpdatedAtByAccount).filter(([key]) => retained.has(key)),
+          Object.entries(d.sessionUpdatedAtByAccount).filter(([key]) => keep(key)),
         )
       },
       syncSessionOrderAccount: (d, accountKey: string, order: string[], updatedAt: Record<string, number>) => {
@@ -114,8 +206,15 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
       setSessionOrder: (d, accountKey: string, order: string[]) => {
         d.sessionOrderByAccount[accountKey] = order
       },
-      setSessionTags: (d, sessionId: string, tags: string[]) => {
-        d.sessionMeta[sessionId] = { ...d.sessionMeta[sessionId], tags }
+      setSessionGroup: (d, sessionId: string, value: string | undefined) => {
+        const group = normalizeGroupName(value)
+        if (group === undefined) {
+          const { group: _drop, ...rest } = d.sessionMeta[sessionId] ?? {}
+          void _drop
+          d.sessionMeta[sessionId] = rest
+        } else {
+          d.sessionMeta[sessionId] = { ...d.sessionMeta[sessionId], group }
+        }
       },
       setSessionParent: (d, sessionId: string, parent: string | undefined) => {
         if (parent === undefined) {
@@ -129,18 +228,28 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
       setSessionUnread: (d, sessionId: string, unread: boolean) => {
         d.sessionMeta[sessionId] = { ...d.sessionMeta[sessionId], unread }
       },
-      addKnownTag: (d, tag: string) => {
-        if (!d.knownTags.includes(tag)) d.knownTags = [...d.knownTags, tag]
+      addKnownGroup: (d, value: string) => {
+        const group = normalizeGroupName(value)
+        if (group !== undefined && !d.knownGroups.includes(group)) d.knownGroups = [...d.knownGroups, group]
       },
-      removeTag: (d, tag: string) => {
-        d.knownTags = d.knownTags.filter(t => t !== tag)
+      removeGroup: (d, value: string) => {
+        const group = normalizeGroupName(value)
+        if (group === undefined) return
+        d.knownGroups = d.knownGroups.filter(item => item !== group)
         for (const [id, entry] of Object.entries(d.sessionMeta)) {
-          if (entry.tags?.includes(tag) === true) {
-            d.sessionMeta[id] = { ...entry, tags: entry.tags.filter(t => t !== tag) }
+          if (entry.group === group) {
+            const { group: _drop, ...rest } = entry
+            void _drop
+            d.sessionMeta[id] = rest
           }
         }
-        d.groupExpansion = Object.fromEntries(
-          Object.entries(d.groupExpansion).filter(([key]) => key !== TAG_GROUP_PREFIX + tag),
+        const account = GROUP_SECTION_PREFIX + group
+        d.groupExpansion = Object.fromEntries(Object.entries(d.groupExpansion).filter(([key]) => key !== account))
+        d.sessionOrderByAccount = Object.fromEntries(
+          Object.entries(d.sessionOrderByAccount).filter(([key]) => key !== account),
+        )
+        d.sessionUpdatedAtByAccount = Object.fromEntries(
+          Object.entries(d.sessionUpdatedAtByAccount).filter(([key]) => key !== account),
         )
       },
     },

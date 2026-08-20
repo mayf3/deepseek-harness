@@ -142,13 +142,34 @@ describe('WorkspaceBrowser', () => {
   it('keeps tag-view group expansion across Workspace baseline pruning', async () => {
     const b = mount({ useWorkspaces: hook(workspaceState([])) })
     act(() => {
-      b.store.actions.setGroupExpanded('tag:前端', true)
+      b.store.actions.setGroupExpanded('group:前端', true)
       b.store.actions.setGroupExpanded('deleted', true)
     })
     rerender(b, { useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
     await waitFor(() => {
-      expect(b.store.getSnapshot().groupExpansion).toEqual({ 'tag:前端': true })
+      expect(b.store.getSnapshot().groupExpansion).toEqual({ 'group:前端': true })
     })
+  })
+
+  it('opens the full task board from the header and opens a card session', () => {
+    const open = vi.fn()
+    const b = mount({
+      useSessions: hook(sessionState([summary('one', 2), summary('two', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
+      open,
+    })
+    act(() => {
+      b.store.actions.setSessionGroup('one', '前端')
+      b.store.actions.addKnownGroup('后端')
+    })
+    fireEvent.click(screen.getByRole('button', { name: '看板' }))
+    expect(screen.getByRole('dialog', { name: '任务看板' })).toBeTruthy()
+    expect(screen.getByText('前端')).toBeTruthy()
+    expect(screen.getByText('后端')).toBeTruthy()
+    expect(screen.getByText('未分组')).toBeTruthy()
+    fireEvent.click(screen.getByText('one'))
+    expect(open).toHaveBeenCalledWith(sid('one'))
+    expect(screen.queryByRole('dialog', { name: '任务看板' })).toBeNull()
   })
 
   it('renders the grouped tree by default and switches to the flat list via Group by', () => {
@@ -166,7 +187,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('分组方式')).toBeTruthy() // the menu heading label
     expect(screen.getByRole('separator')).toBeTruthy()
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      '按工作区', '单列表', '按标签', '手动排序', '最近更新',
+      '按工作区', '单列表', '按分组', '手动排序', '最近更新',
     ])
     expect(screen.getByRole('menuitem', { name: '按工作区' }).querySelector('svg')).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '手动排序' }).querySelector('svg')).toBeTruthy()
@@ -192,19 +213,19 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().groupBy).toBe('workspace')
   })
 
-  it('switches to tag grouping and renders tagged sections plus the untagged bucket', async () => {
+  it('switches to grouping by user group and renders exclusive groups plus the Unassigned bucket', async () => {
     const plain = summary('plain-s', 2)
     const b = mount({
       useSessions: hook(sessionState([summary('tagged-s', 3), plain])),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['tagged-s', 'plain-s'])])),
     })
-    act(() => { b.store.actions.setSessionTags('tagged-s', ['前端']) })
+    act(() => { b.store.actions.setSessionGroup('tagged-s', '前端') })
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '按标签' }))
-    expect(b.store.getSnapshot().groupBy).toBe('tag')
+    fireEvent.click(screen.getByRole('menuitem', { name: '按分组' }))
+    expect(b.store.getSnapshot().groupBy).toBe('group')
     expect(screen.getByText('前端')).toBeTruthy()
-    expect(screen.getByText('未打标')).toBeTruthy()
-    // Expanding the tag section reveals its session row.
+    expect(screen.getByText('未分组')).toBeTruthy()
+    // Expanding the group section reveals its session row.
     fireEvent.click(screen.getByText('前端'))
     expect(screen.getByText('tagged-s')).toBeTruthy()
   })
@@ -233,42 +254,42 @@ describe('WorkspaceBrowser', () => {
     expect(oneRow.style.paddingLeft).toBe('26px')
   })
 
-  it('drops a session on a tag section header to apply that tag, and on Untagged to clear tags', async () => {
+  it('drops a session on a group section header to apply that tag, and on Unassigned to clear tags', async () => {
     const sessions = sessionState([summary('one', 3), summary('two', 2), summary('three', 1)])
     const b = mount({
       useSessions: hook(sessions),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
     })
-    // Tag session one through the row menu (workspace view), then switch to tags.
+    // Group session one through the row menu (workspace view), then switch to groups.
     fireEvent.click(screen.getByText('alpha'))
     fireEvent.contextMenu(screen.getByText('one').closest('[role="treeitem"]') as HTMLElement)
-    fireEvent.click(screen.getByRole('menuitem', { name: '设置标签…' }))
-    const input = screen.getByPlaceholderText('输入标签，用逗号分隔')
+    fireEvent.click(screen.getByRole('menuitem', { name: '设置分组…' }))
+    const input = screen.getByPlaceholderText('输入或选择一个分组')
     // The tag input autocompletes from existing tags via a datalist.
-    expect(input.getAttribute('list')).toBe('dsh-existing-tags')
+    expect(input.getAttribute('list')).toBe('dsh-existing-groups')
     fireEvent.change(input, { target: { value: '前端' } })
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
-    expect(b.store.getSnapshot().sessionMeta.one?.tags).toEqual(['前端'])
+    expect(b.store.getSnapshot().sessionMeta.one?.group).toBe('前端')
     // The saved tag now appears in the datalist options.
-    expect(document.getElementById('dsh-existing-tags')?.querySelector('option[value="前端"]')).toBeTruthy()
+    expect(document.getElementById('dsh-existing-groups')?.querySelector('option[value="前端"]')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '按标签' }))
-    // Expand both sections: the 前端 group (one) and the Untagged bucket (two).
+    fireEvent.click(screen.getByRole('menuitem', { name: '按分组' }))
+    // Expand both sections: the 前端 group (one) and the Unassigned bucket (two).
     fireEvent.click(screen.getByText('前端'))
-    fireEvent.click(screen.getByText('未打标'))
+    fireEvent.click(screen.getByText('未分组'))
     const two = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
     fireEvent.dragStart(two, { dataTransfer: dragData() })
     const header = screen.getByText('前端').closest('[role="treeitem"]') as HTMLElement
     fireEvent.dragOver(header, { dataTransfer: { effectAllowed: '', dropEffect: '' } })
     fireEvent.drop(header, { dataTransfer: { effectAllowed: '', dropEffect: '' } })
-    expect(b.store.getSnapshot().sessionMeta.two?.tags).toEqual(['前端'])
-    // Dropping on the Untagged bucket clears the tags (re-query: two moved groups).
+    expect(b.store.getSnapshot().sessionMeta.two?.group).toBe('前端')
+    // Dropping on the Unassigned bucket clears the tags (re-query: two moved groups).
     const twoTagged = screen.getByText('two').closest('[role="treeitem"]') as HTMLElement
     fireEvent.dragStart(twoTagged, { dataTransfer: dragData() })
-    const untagged = screen.getByText('未打标').closest('[role="treeitem"]') as HTMLElement
+    const untagged = screen.getByText('未分组').closest('[role="treeitem"]') as HTMLElement
     fireEvent.drop(untagged, { dataTransfer: { effectAllowed: '', dropEffect: '' } })
-    expect(b.store.getSnapshot().sessionMeta.two?.tags).toEqual([])
+    expect(b.store.getSnapshot().sessionMeta.two?.group).toBeUndefined()
   })
 
   it('deletes a whole tag from the tag-section row menu', async () => {
@@ -278,21 +299,21 @@ describe('WorkspaceBrowser', () => {
       useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
     })
     act(() => {
-      b.store.actions.setSessionTags('one', ['前端'])
-      b.store.actions.setSessionTags('two', ['前端'])
-      b.store.actions.addKnownTag('前端')
-      b.store.actions.setGroupExpanded('tag:前端', true)
+      b.store.actions.setSessionGroup('one', '前端')
+      b.store.actions.setSessionGroup('two', '前端')
+      b.store.actions.addKnownGroup('前端')
+      b.store.actions.setGroupExpanded('group:前端', true)
     })
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '按标签' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '按分组' }))
     const header = screen.getByText('前端').closest('[role="treeitem"]') as HTMLElement
     fireEvent.contextMenu(header)
-    fireEvent.click(screen.getByRole('menuitem', { name: '删除标签' }))
-    // The tag is stripped from every session, knownTags, and its expansion key.
-    expect(b.store.getSnapshot().sessionMeta.one?.tags).toEqual([])
-    expect(b.store.getSnapshot().sessionMeta.two?.tags).toEqual([])
-    expect(b.store.getSnapshot().knownTags).toEqual([])
-    expect(b.store.getSnapshot().groupExpansion).not.toHaveProperty('tag:前端')
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除分组' }))
+    // The group is cleared from every session, knownGroups, and its expansion key.
+    expect(b.store.getSnapshot().sessionMeta.one?.group).toBeUndefined()
+    expect(b.store.getSnapshot().sessionMeta.two?.group).toBeUndefined()
+    expect(b.store.getSnapshot().knownGroups).toEqual([])
+    expect(b.store.getSnapshot().groupExpansion).not.toHaveProperty('group:前端')
   })
 
   it('tags a new session with the source row tags when created via the row menu', async () => {
@@ -301,7 +322,7 @@ describe('WorkspaceBrowser', () => {
       useSessions: hook(sessions),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'blank'])])),
     })
-    act(() => { b.store.actions.setSessionTags('one', ['前端']) })
+    act(() => { b.store.actions.setSessionGroup('one', '前端') })
     fireEvent.click(screen.getByText('alpha'))
     const row = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
     fireEvent.contextMenu(row)
@@ -313,7 +334,7 @@ describe('WorkspaceBrowser', () => {
     )
     rerender(b, { useSessions: hook(next) })
     await waitFor(() => {
-      expect(b.store.getSnapshot().sessionMeta.blank?.tags).toEqual(['前端'])
+      expect(b.store.getSnapshot().sessionMeta.blank?.group).toBe('前端')
     })
   })
 
@@ -325,7 +346,7 @@ describe('WorkspaceBrowser', () => {
       useSessions: hook(sessions),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'blank'])])),
     })
-    act(() => { b.store.actions.setSessionTags('one', ['前端']) })
+    act(() => { b.store.actions.setSessionGroup('one', '前端') })
     fireEvent.click(screen.getByText('alpha'))
     const row = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
     fireEvent.contextMenu(row)
@@ -337,14 +358,14 @@ describe('WorkspaceBrowser', () => {
       { current: sid('two') },
     )
     rerender(b, { useSessions: hook(next) })
-    expect(b.store.getSnapshot().sessionMeta.two?.tags).toBeUndefined()
+    expect(b.store.getSnapshot().sessionMeta.two?.group).toBeUndefined()
     // And the blank no longer inherits either (pending was cleared).
     const afterBlank = sessionState(
       [summary('one', 3), summary('two', 2), { ...summary('blank', 1), blank: true }],
       { current: sid('blank') },
     )
     rerender(b, { useSessions: hook(afterBlank) })
-    expect(b.store.getSnapshot().sessionMeta.blank?.tags).toBeUndefined()
+    expect(b.store.getSnapshot().sessionMeta.blank?.group).toBeUndefined()
   })
 
   it('filters the tree to unread sessions via the header toggle', async () => {
@@ -542,7 +563,7 @@ describe('WorkspaceBrowser', () => {
   })
 
   it('archives a session from the row menu and hides archived rows in both modes', async () => {
-    const archiveSession = vi.fn(async () => {})
+    const archiveSession = vi.fn(async (_sessionId: SessionId) => {})
     const b = mount({
       useSessions: hook(sessionState([summary('kept-s', 2), summary('gone-s', 1)])),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['kept-s', 'gone-s'])])),
@@ -585,7 +606,7 @@ describe('WorkspaceBrowser', () => {
   })
 
   it('selects visible rows with Shift ranges and bulk archives after two clicks', async () => {
-    const archiveSession = vi.fn(async () => {})
+    const archiveSession = vi.fn(async (_sessionId: SessionId) => {})
     const sessions = sessionState([
       summary('one', 4), summary('two', 3), summary('three', 2), summary('blank', 1, { blank: true }),
     ])
@@ -629,8 +650,8 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认归档' }))
     await waitFor(() => { expect(screen.getByRole('status').textContent).toBe('已归档 1 个，1 个失败。') })
     expect(screen.getByText('已选 1 个')).toBeTruthy()
-    expect(screen.getByRole('checkbox', { name: '选择会话“one”' }).checked).toBe(false)
-    expect(screen.getByRole('checkbox', { name: '选择会话“two”' }).checked).toBe(true)
+    expect(screen.getByRole('checkbox', { name: '选择会话“one”' })).toHaveProperty('checked', false)
+    expect(screen.getByRole('checkbox', { name: '选择会话“two”' })).toHaveProperty('checked', true)
   })
 
   it('reconciles bulk selection with visible rows and exits bulk mode for search', async () => {
@@ -699,8 +720,8 @@ describe('WorkspaceBrowser', () => {
     })
     // The loose session's group is UNGROUPED_KEY: expanded by the effect.
     expect(screen.getByText('loose')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '工作区“未分组”的操作' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '在“未分组”中新建会话' }))
+    expect(screen.queryByRole('button', { name: '工作区“未归属工作区”的操作' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '在“未归属工作区”中新建会话' }))
     expect(startSession).not.toHaveBeenCalled()
   })
 
@@ -1170,7 +1191,7 @@ describe('WorkspaceBrowser', () => {
       useWorkspaces: hook(workspaceState([])),
       insertSessionBefore,
     })
-    fireEvent.click(screen.getByText('未分组'))
+    fireEvent.click(screen.getByText('未归属工作区'))
 
     const dragAfter = (sourceTitle: string, targetTitle: string): void => {
       const source = screen.getByText(sourceTitle).closest('[role="treeitem"]') as HTMLElement

@@ -551,8 +551,8 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
-/* Tag editor and waiting-on parent picker dialogs. */
-.tagsHint {
+/* Group editor and waiting-on parent picker dialogs. */
+.groupsHint {
   margin-top: 8px;
   font-size: 12px;
   line-height: 18px;

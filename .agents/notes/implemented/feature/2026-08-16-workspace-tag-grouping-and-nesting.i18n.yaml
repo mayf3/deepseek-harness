@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-16-workspace-tag-grouping-and-nesting.md
-2026-08-16-workspace-tag-grouping-and-nesting.md: c187ca2038ecb494f2d983243a75e22642e138c2
-2026-08-16-workspace-tag-grouping-and-nesting.zh.md: 68c9f16af1c4f1a094b5ae993ee5c4207dd2a8e4
+2026-08-16-workspace-tag-grouping-and-nesting.md: 86a836acf056dfb84dedee45f85f0f5f1a22ac01
+2026-08-16-workspace-tag-grouping-and-nesting.zh.md: a1fcbca9f1cf12d82854900c3b08e2983fafea2e

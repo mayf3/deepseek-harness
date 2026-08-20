@@ -116,27 +116,27 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
  * @param props.t - the browser root's locale seat.
  * @returns the row element.
  */
-export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteTag, drag, dropTarget, home, t }: {
+export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteGroup, drag, dropTarget, home, t }: {
   group: GroupNode
   onToggle: () => void
   onCreate: () => void
   /** Real-Workspace actions; absent for the ungrouped bucket (no menu shown). */
   actions?: { rename: () => void; delete: () => void } | undefined
-  /** Delete the whole tag group (tag-view sections only). */
-  onDeleteTag?: (() => void) | undefined
+  /** Delete the whole user group (group-view sections only). */
+  onDeleteGroup?: (() => void) | undefined
   /** Present only for real Workspace rows in the grouped view. */
   drag?: WorkspaceRowDragProps | undefined
-  /** Tag-view drop target: dropping the dragged session on the section header applies/clears tags. */
+  /** Group-view drop target: dropping a session on the section header moves it into/out of that group. */
   dropTarget?: { active: boolean; onDrop: () => void } | undefined
   /** Host account home; POSIX home-rooted hover paths display as `~`. */
   home?: string | undefined
   t: RowTranslate
 }) {
   const row = group
-  // Tag sections show the tag name; the untagged bucket and the ungrouped
+  // User-group sections show the group name; Unassigned and Ungrouped
   // bucket have dictionary copy (no backing Workspace title).
-  const label = row.kind === 'tag' ? row.label
-    : row.kind === 'untagged' ? t('group.untagged')
+  const label = row.kind === 'group' ? row.label
+    : row.kind === 'unassigned' ? t('group.unassigned')
       : row.workspaceId === undefined ? t('group.ungrouped')
         : row.label
   const active = group.expanded && group.containsCurrent
@@ -145,10 +145,10 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteTag
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
     { id: 'delete', label: t('delete.workspace'), icon: <IconTrashOutline16 />, danger: true },
   ]
-  const tagMenuItems = onDeleteTag === undefined ? [] : [
-    { id: 'deleteTag', label: t('menu.deleteTag'), icon: <IconTrashOutline16 />, danger: true },
+  const groupMenuItems = onDeleteGroup === undefined ? [] : [
+    { id: 'deleteGroup', label: t('menu.deleteGroup'), icon: <IconTrashOutline16 />, danger: true },
   ]
-  const menuItems = actions !== undefined ? workspaceMenuItems : tagMenuItems
+  const menuItems = actions !== undefined ? workspaceMenuItems : groupMenuItems
   const ownRow = (
     <div
       className={clsx(css.projectRow, menuOpen && css.menuOpen, dropTarget?.active && css.dropTarget)}
@@ -191,7 +191,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteTag
         <span className={css.title}>{label}</span>
       </span>
       <span className={css.rowActions}>
-        {(actions !== undefined || onDeleteTag !== undefined) && (
+        {(actions !== undefined || onDeleteGroup !== undefined) && (
           <Menu
             open={menuOpen}
             onClose={() => { setMenuOpen(false) }}
@@ -200,7 +200,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteTag
               setMenuOpen(false)
               if (actions !== undefined && id === 'rename') actions.rename()
               else if (actions !== undefined && id === 'delete') actions.delete()
-              else if (onDeleteTag !== undefined && id === 'deleteTag') onDeleteTag()
+              else if (onDeleteGroup !== undefined && id === 'deleteGroup') onDeleteGroup()
             }}
             portal
             closeOnPointerLeave
@@ -392,7 +392,8 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onEditTags, onNewSession, onToggleUnread, drag, bulk, flat = false, t,
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onEditGroup, onNewSession, onToggleUnread,
+  selection, drag, flat = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -404,16 +405,19 @@ export function SessionNodeItem({
   onFork: (id: SessionNode['id']) => void
   /** Archive this session (row menu action; commits without a dialog). */
   onArchive: (id: SessionNode['id']) => void
-  /** Open the tag editor for this session (row menu action). */
-  onEditTags: (id: SessionNode['id'], currentTags: string[]) => void
+  /** Open the group editor for this session (row menu action). */
+  onEditGroup: (id: SessionNode['id'], currentGroup: string | undefined) => void
   /** Start a new session in this row's Workspace (row menu action; absent outside directory view). */
   onNewSession?: (() => void) | undefined
   /** Toggle this session's unread flag (row menu action; absent on non-actionable rows). */
   onToggleUnread?: ((id: SessionNode['id']) => void) | undefined
+  /** Batch-selection state; while present, row gestures select instead of opening or dragging. */
+  selection?: {
+    checked: boolean
+    onToggle: (checked: boolean, shiftKey: boolean) => void
+  } | undefined
   /** Present only on draggable rows (workspace-group sessions outside search). */
   drag?: RowDragProps | undefined
-  /** Bulk-selection state and gesture; blank rows remain inert while this is present. */
-  bulk?: { selected: boolean; toggle: (shiftKey: boolean) => void } | undefined
   /** The row is rendered without a parent Workspace header. */
   flat?: boolean | undefined
   t: RowTranslate
@@ -421,6 +425,7 @@ export function SessionNodeItem({
   const row = node
   const title = displayTitle(node, t)
   const selected = node.id === currentId
+  const batchSelected = selection?.checked === true
   const statuses = sessionStatuses(node, t)
   const primaryStatus = statuses[0]
   const showStatus = primaryStatus.state !== 'done' || row.completed
@@ -428,16 +433,15 @@ export function SessionNodeItem({
   // Right-click menu anchor: the ellipsis trigger is gone, so the menu is
   // positioned at the cursor that opened it.
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
-  const [archiveArmed, setArchiveArmed] = useState(false)
-  // Archive hides the row through the registry-global archive set and never
-  // touches the session log. The inline button requires a second click while
-  // it retains focus, avoiding a detached confirmation popover.
+  const [archiveConfirming, setArchiveConfirming] = useState(false)
+  // Archive keeps confirmation in the row action's original position instead
+  // of opening a dialog or popover.
   const sessionMenuItems = [
     ...(onNewSession === undefined ? [] : [{ id: 'newSessionHere', label: t('menu.newSessionHere'), icon: <IconPlusOutline16 /> }]),
     ...(onToggleUnread === undefined ? [] : [{ id: 'unread', label: node.unread ? t('menu.markRead') : t('menu.markUnread'), icon: <span className={css.menuUnreadDot} aria-hidden="true" /> }]),
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
     { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
-    { id: 'tags', label: t('menu.editTags'), icon: <IconEditOutline16 /> },
+    { id: 'group', label: t('menu.editGroup'), icon: <IconEditOutline16 /> },
     // 20-native glyph in the menu's 16px icon slot (Menu.module.css .itemIcon).
     { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} /> },
   ]
@@ -445,42 +449,38 @@ export function SessionNodeItem({
   const ownRow = (
     <div
       className={clsx(
-        css.sessionRow, bulk === undefined && selected && css.selected, menuOpen && css.menuOpen,
-        bulk !== undefined && css.bulkSessionRow,
-        flat && !showStatus && bulk === undefined && css.flatSessionRowWithoutStatus,
-        bulk === undefined && drag?.marker === 'before' && css.dropBefore,
-        bulk === undefined && drag?.marker === 'after' && css.dropAfter,
-        bulk === undefined && drag?.marker === 'on' && css.dropOn,
+        css.sessionRow, selected && css.selected, batchSelected && css.batchSelected,
+        (menuOpen || archiveConfirming) && css.menuOpen,
+        flat && !showStatus && css.flatSessionRowWithoutStatus,
+        drag?.marker === 'before' && css.dropBefore, drag?.marker === 'after' && css.dropAfter,
+        drag?.marker === 'on' && css.dropOn,
       )}
       style={node.depth > 0 ? { paddingLeft: `${10 + node.depth * 16}px` } : undefined}
       role="treeitem"
-      aria-selected={bulk?.selected ?? selected}
+      aria-selected={selection === undefined ? selected : batchSelected}
       aria-level={node.depth + 1}
       data-session-id={node.id}
-      onClick={(event) => {
-        if (bulk !== undefined) {
-          if (!node.blank) bulk.toggle(event.shiftKey)
-          return
-        }
-        onOpen(node.id)
+      onClick={(e) => {
+        if (selection === undefined) onOpen(node.id)
+        else selection.onToggle(!selection.checked, e.shiftKey)
       }}
-      onContextMenu={bulk !== undefined
-        ? undefined
-        : (e) => {
+      onContextMenu={selection === undefined
+        ? (e) => {
           e.preventDefault()
           setMenuAt({ x: e.clientX, y: e.clientY })
           setMenuOpen(true)
-        }}
-      draggable={bulk === undefined && drag !== undefined}
-      onDragStart={bulk !== undefined || drag === undefined
+        }
+        : undefined}
+      draggable={selection === undefined && drag !== undefined}
+      onDragStart={selection !== undefined || drag === undefined
         ? undefined
         : (e) => {
           e.dataTransfer.effectAllowed = 'move'
           e.dataTransfer.setData('text/plain', node.id)
           drag.start()
         }}
-      onDragEnd={bulk === undefined ? drag?.end : undefined}
-      onDragOver={bulk !== undefined || drag === undefined
+      onDragEnd={selection === undefined ? drag?.end : undefined}
+      onDragOver={selection !== undefined || drag === undefined
         ? undefined
         : (e) => {
           if (!drag.active) return
@@ -488,7 +488,7 @@ export function SessionNodeItem({
           e.dataTransfer.dropEffect = 'move'
           drag.hover(rowHalf(e))
         }}
-      onDrop={bulk !== undefined || drag === undefined
+      onDrop={selection !== undefined || drag === undefined
         ? undefined
         : (e) => {
           if (!drag.active) return
@@ -499,30 +499,31 @@ export function SessionNodeItem({
       {/* Pending interaction and own or descendant activity outrank the
           finished-but-unviewed reminder, which returns after activity stops
           and is cleared by opening the session. */}
-      {bulk !== undefined && !row.blank
-        ? (
-          <span className={css.slot}>
-            <input
-              type="checkbox"
-              className={css.bulkCheckbox}
-              checked={bulk.selected}
-              readOnly
-              tabIndex={-1}
-              aria-label={t('bulk.selectSession', { name: title })}
-            />
-          </span>
-        )
-        : (!flat || showStatus) && (
+      {selection === undefined
+        ? (!flat || showStatus) && (
           <span className={css.slot}>
             {showStatus && <SessionStatusDots statuses={statuses} />}
           </span>
+        )
+        : (
+          <input
+            type="checkbox"
+            className={css.batchCheckbox}
+            checked={selection.checked}
+            aria-label={t('bulk.selectSession', { name: title })}
+            onClick={(e) => {
+              e.stopPropagation()
+              selection.onToggle(!selection.checked, e.shiftKey)
+            }}
+            readOnly
+          />
         )}
-      {node.depth > 0 && (
+      {selection === undefined && node.depth > 0 && (
         <span className={css.waitingMark} aria-label={t('status.waitingOn')} title={t('status.waitingOn')}>
           <IconLinkOutline16 />
         </span>
       )}
-      {node.unread && (
+      {selection === undefined && node.unread && (
         <span className={css.unreadDot} aria-label={t('status.unread')} title={t('status.unread')} />
       )}
       <span className={css.title}>{title}</span>
@@ -530,29 +531,28 @@ export function SessionNodeItem({
           happened in it yet, so a "now" timestamp and the row verbs
           (rename/fork/archive) would all act on content that does not
           exist — both trailing cells stay off until the first prompt. */}
-      {!row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
-      {!row.blank && bulk === undefined && (
+      {!row.blank && selection === undefined && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
+      {!row.blank && selection === undefined && (
         <span className={css.rowActions}>
+          {/* The first click arms the same button; the second archives. */}
           <button
             type="button"
-            className={clsx(css.iconButton, archiveArmed && css.archiveArmed)}
-            aria-label={archiveArmed ? t('menu.archiveConfirm') : t('menu.archiveSession')}
-            title={archiveArmed ? t('menu.archiveConfirm') : t('menu.archiveSession')}
-            onBlur={() => { setArchiveArmed(false) }}
+            className={clsx(css.iconButton, archiveConfirming && css.archiveConfirm)}
+            aria-label={t(archiveConfirming ? 'menu.archiveConfirm' : 'menu.archiveSession')}
+            title={t(archiveConfirming ? 'menu.archiveConfirm' : 'menu.archiveSession')}
+            onBlur={() => { setArchiveConfirming(false) }}
             onKeyDown={(e) => {
-              if (e.key !== 'Escape') return
-              e.stopPropagation()
-              setArchiveArmed(false)
-              e.currentTarget.blur()
+              if (e.key === 'Escape') {
+                e.stopPropagation()
+                setArchiveConfirming(false)
+              }
             }}
             onClick={(e) => {
               e.stopPropagation()
-              if (!archiveArmed) {
-                setArchiveArmed(true)
-                return
-              }
-              setArchiveArmed(false)
-              onArchive(node.id)
+              if (archiveConfirming) {
+                setArchiveConfirming(false)
+                onArchive(node.id)
+              } else setArchiveConfirming(true)
             }}
           >
             <IconArchiveOutline20 size={16} />
@@ -569,7 +569,7 @@ export function SessionNodeItem({
               if (id === 'rename') onRename(node.id, row.title)
               if (id === 'fork') onFork(node.id)
               if (id === 'archive') onArchive(node.id)
-              if (id === 'tags') onEditTags(node.id, node.tags)
+              if (id === 'group') onEditGroup(node.id, node.group)
             }}
             portal
             anchor={<span aria-hidden="true" />}
@@ -586,7 +586,7 @@ export function SessionNodeItem({
     <HoverCard
       anchor={ownRow}
       content={<SessionHoverContent node={node} now={now} t={t} />}
-      disabled={bulk !== undefined || menuOpen || drag?.active === true}
+      disabled={selection !== undefined || menuOpen || archiveConfirming || drag?.active === true}
       copyText={row.blank ? undefined : row.title}
       copyLabel={t('copy')}
       copiedLabel={t('hover.copied')}

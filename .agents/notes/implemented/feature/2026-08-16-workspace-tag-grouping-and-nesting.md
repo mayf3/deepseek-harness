@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-16-workspace-tag-grouping-and-nesting.zh.md)
 
+Partially superseded by [exclusive workspace groups and the shared task board](2026-08-21-workspace-exclusive-groups-and-board.md): multi-tag metadata and tag grouping are replaced; waiting-parent nesting, middle-zone attachment, and context menus remain active.
+
 ## Problem
 
 The workspace browser groups sessions only by Host Workspace. Cross-directory organization depends on session-title conventions, dependencies between tasks cannot express that one task is waiting on another, and row actions are hidden behind an ellipsis button. Users need configurable tag groups, waiting relationships between tasks, and direct access to row actions through a context menu.

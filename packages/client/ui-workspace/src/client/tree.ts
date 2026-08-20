@@ -8,6 +8,7 @@ import {
   type SessionSearchResultItem, type SessionSummary, type SubagentDescendantSummary,
   type WorkspaceId, type WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
+import { GROUP_SECTION_PREFIX, UNASSIGNED_GROUP_KEY } from './group-keys.ts'
 import type { SessionMeta } from './stores.ts'
 
 /** Group key for Sessions outside every Workspace. */
@@ -15,12 +16,6 @@ export const UNGROUPED_KEY = ''
 
 /** Display label for the ungrouped bucket row. */
 export const UNGROUPED_LABEL = 'Ungrouped'
-
-/** Group-key prefix for tag-view sections; the tag name follows. */
-export const TAG_GROUP_PREFIX = 'tag:'
-
-/** Group key for tag-view sessions without any tag (a NUL can't appear in tags). */
-export const UNTAGGED_KEY = 'tag:\u0000untagged'
 
 /** One top-level session row in a group or the flat list. */
 export interface SessionNode {
@@ -39,8 +34,8 @@ export interface SessionNode {
   updatedAt: number
   /** Nesting level from browser-local waiting-on parents (0 = top-level row). */
   depth: number
-  /** Effective tags for this row (todo tags plus browser-local metadata tags). */
-  tags: string[]
+  /** Exclusive user-managed group; absent means Unassigned. */
+  group?: string
   /** Backing Workspace of this session; absent when it belongs to no Workspace. */
   workspaceId?: WorkspaceId
   /** Manually marked unread; the row shows a dot until the session is opened. */
@@ -67,8 +62,8 @@ export interface GroupNode {
   containsCurrent: boolean
   /** Visible session rows (empty while the group is folded). */
   sessions: readonly SessionNode[]
-  /** Tag-view group flavor; absent for workspace groups and the ungrouped bucket. */
-  kind?: 'tag' | 'untagged'
+  /** User-group flavor; absent for workspace groups and the ungrouped bucket. */
+  kind?: 'group' | 'unassigned'
 }
 
 /** One flat search row combining list metadata with an optional content match. */
@@ -97,10 +92,12 @@ export interface TreeView {
   expandedGroups: readonly string[]
   /** Browser-local order for Sessions without a backing Workspace account. */
   ungroupedOrder?: readonly string[]
-  /** Browser-local organization metadata (tags + waiting-on parent). */
+  /** Browser-local organization metadata (exclusive group + waiting-on parent). */
   sessionMeta?: Readonly<Record<string, SessionMeta>>
-  /** Explicitly created tags; empty sections stay visible in the tag view. */
-  knownTags?: readonly string[]
+  /** Explicitly created groups; empty sections stay visible. */
+  knownGroups?: readonly string[]
+  /** User-arranged card/session order per group account. */
+  sessionOrderByAccount?: Readonly<Record<string, readonly string[]>>
   /** Unread-only filter: rows without the unread flag are hidden. */
   unreadOnly?: boolean
 }
@@ -246,10 +243,9 @@ function sessionNode(
   meta: Readonly<Record<string, SessionMeta>> | undefined,
   workspaceId: WorkspaceId | undefined,
 ): SessionNode {
-  // Only user-managed tags (browser-local metadata) feed the tag view; tags
-  // the model writes into todos stay out so agents can't pollute the sidebar.
+  // Only the browser-local group feeds grouping; model-written todo tags stay
+  // separate so agents cannot reorganize the sidebar or board.
   const entry = meta?.[s.id]
-  const tags = [...(entry?.tags ?? [])]
   return {
     id: s.id,
     title: sessionTitle(s),
@@ -259,8 +255,8 @@ function sessionNode(
     completed: s.completed === true,
     updatedAt: s.updatedAt,
     depth,
-    tags: [...tags],
     unread: entry?.unread === true,
+    ...(entry?.group === undefined ? {} : { group: entry.group }),
     ...(workspaceId === undefined ? {} : { workspaceId }),
     ...(s.pendingInteraction === undefined ? {} : { pendingInteraction: s.pendingInteraction }),
   }
@@ -353,22 +349,16 @@ export function deriveGroups(
 }
 
 /**
- * Derive the tag-grouped session list ("By tag" mode): every visible session
- * under each user-managed tag (browser-local metadata plus explicitly created
- * empty tags), plus an untagged bucket for sessions without any tag. A
- * session with several tags appears in every matching group. Tags written
- * into todos by the model are intentionally not shown. Tag groups and the
- * untagged bucket have no backing Workspace, so their rows are not draggable
- * and show no workspace actions; the renderer keys off `kind` for labels.
- * Rows still carry their real Workspace id so the context menu can start a
- * new session in the same Workspace.
+ * Derive exclusive user-group sections. Every visible session appears in
+ * exactly one named group or the Unassigned bucket; model-written todo tags
+ * never participate. Group and board views share the same per-group order.
  * @param list - sessions list snapshot.
  * @param workspaces - real Workspaces (session membership → workspace id).
  * @param archivedSessionIds - registry-global archive set.
- * @param view - local expansion arrays.
- * @returns tag group sections in tag-name order, then the untagged bucket.
+ * @param view - persisted expansion, grouping metadata, and order accounts.
+ * @returns named groups in locale order, then the Unassigned bucket.
  */
-export function deriveTagGroups(
+export function deriveUserGroups(
   list: SessionListState,
   workspaces: readonly WorkspaceView[],
   archivedSessionIds: readonly SessionId[],
@@ -385,66 +375,61 @@ export function deriveTagGroups(
       if (!workspaceBySession.has(sessionId)) workspaceBySession.set(sessionId, workspace.workspaceId)
     }
   }
-  const keep = (summary: SessionSummary) =>
-    !unreadOnly || meta?.[summary.id]?.unread === true
-  const byTag = new Map<string, SessionSummary[]>()
-  const untagged: SessionSummary[] = []
+  const byGroup = new Map<string, SessionSummary[]>()
+  const unassigned: SessionSummary[] = []
   for (const id of list.ids) {
     const session = list.byId[id]
-    if (session === undefined || !sessionVisible(session, list.current, archived) || !keep(session)) continue
-    const tags = new Set(meta?.[id]?.tags ?? [])
-    if (tags.size === 0) {
-      untagged.push(session)
-      continue
-    }
-    for (const tag of tags) {
-      const members = byTag.get(tag)
-      if (members === undefined) byTag.set(tag, [session])
+    if (session === undefined || !sessionVisible(session, list.current, archived)) continue
+    if (unreadOnly && meta?.[id]?.unread !== true) continue
+    const group = meta?.[id]?.group
+    if (group === undefined) {
+      unassigned.push(session)
+    } else {
+      const members = byGroup.get(group)
+      if (members === undefined) byGroup.set(group, [session])
       else members.push(session)
     }
   }
   const groups: GroupNode[] = []
-  const allTags = new Set([...byTag.keys(), ...(view.knownTags ?? [])])
-  for (const tag of [...allTags].sort((a, b) => a.localeCompare(b))) {
-    const members = byTag.get(tag) ?? []
-    members.sort(byRecency)
-    // Unread-only mode hides empty tag sections (including knownTags).
+  const names = new Set([...byGroup.keys(), ...(view.knownGroups ?? [])])
+  for (const name of [...names].sort((a, b) => a.localeCompare(b))) {
+    const key = GROUP_SECTION_PREFIX + name
+    const members = orderedUngrouped(byGroup.get(name) ?? [], view.sessionOrderByAccount?.[key] ?? [])
     if (unreadOnly && members.length === 0) continue
-    const key = TAG_GROUP_PREFIX + tag
     const expanded = expandedGroups.has(key)
     groups.push({
       key,
       workspaceId: undefined,
       cwd: undefined,
       createdAt: undefined,
-      label: tag,
+      label: name,
       sessionCount: members.length,
       expanded,
       containsCurrent: members.some(session => session.id === list.current),
       sessions: expanded
         ? waitingOrder(members, meta).map(row =>
-          sessionNode(row.session, descendants, row.depth, view.sessionMeta, workspaceBySession.get(row.session.id)))
+          sessionNode(row.session, descendants, row.depth, meta, workspaceBySession.get(row.session.id)))
         : [],
-      kind: 'tag',
+      kind: 'group',
     })
   }
-  if (untagged.length > 0) {
-    untagged.sort(byRecency)
-    const expanded = expandedGroups.has(UNTAGGED_KEY)
+  if (unassigned.length > 0) {
+    const members = orderedUngrouped(unassigned, view.sessionOrderByAccount?.[UNASSIGNED_GROUP_KEY] ?? [])
+    const expanded = expandedGroups.has(UNASSIGNED_GROUP_KEY)
     groups.push({
-      key: UNTAGGED_KEY,
+      key: UNASSIGNED_GROUP_KEY,
       workspaceId: undefined,
       cwd: undefined,
       createdAt: undefined,
       label: '',
-      sessionCount: untagged.length,
+      sessionCount: members.length,
       expanded,
-      containsCurrent: untagged.some(session => session.id === list.current),
+      containsCurrent: members.some(session => session.id === list.current),
       sessions: expanded
-        ? waitingOrder(untagged, meta).map(row =>
-          sessionNode(row.session, descendants, row.depth, view.sessionMeta, workspaceBySession.get(row.session.id)))
+        ? waitingOrder(members, meta).map(row =>
+          sessionNode(row.session, descendants, row.depth, meta, workspaceBySession.get(row.session.id)))
         : [],
-      kind: 'untagged',
+      kind: 'unassigned',
     })
   }
   return groups
