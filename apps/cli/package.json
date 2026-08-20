@@ -18,6 +18,11 @@
     "lib/*.js",
     "config"
   ],
+  "dsh": {
+    "configTrees": [
+      { "mount": "config/agent-presets", "path": "config/agent-presets", "scanRoster": true }
+    ]
+  },
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/cordis-plugin-hmr": "workspace:^",
