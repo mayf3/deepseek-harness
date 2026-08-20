@@ -430,6 +430,14 @@ describe('Issue lifecycle workflow', () => {
     expect(lifecycle.on).toHaveProperty('pull_request')
     expect(lifecycle.on).toHaveProperty('pull_request_review')
     expect(lifecycleJob.if).toBeUndefined()
+    // Keep the subscription-type gates: issue-lifecycle does not re-subscribe
+    // ready_for_review (issue-policy owns that) and only reacts to submitted
+    // review events.
+    const lifecyclePullRequest = workflowEvent(lifecycle, 'pull_request')
+    const lifecycleReview = workflowEvent(lifecycle, 'pull_request_review')
+    expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
+    expect(lifecyclePullRequest.types).toContain('review_requested')
+    expect(lifecycleReview.types).toEqual(['submitted'])
     const gated = "${{ github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested' }}"
     const steps = lifecycleJob.steps.filter(isRecord)
     const tokenStep = steps.find(s => s.name === 'Create project token')
