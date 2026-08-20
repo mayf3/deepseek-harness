@@ -162,7 +162,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
 
   it.skipIf(MODE !== 'record')('records the two-turn seed live through the composer', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-record'))
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     let sessionId: Awaited<ReturnType<WebScaffold['whenTurnSettled']>> | undefined
     for (const prompt of [PROMPT_TURN1, PROMPT_TURN2]) {
@@ -346,7 +346,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     await ensureSeedOpen(observer)
 
     try {
-      const input = page.locator('textarea').first()
+      const input = page.locator('[data-composer-input]').first()
       const slashDownloadPromise = page.waitForEvent('download', { timeout: 30_000 })
       await input.fill('/export')
       await page.getByRole('option', { name: /export/u }).waitFor({ timeout: 10_000 })

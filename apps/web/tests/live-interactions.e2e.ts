@@ -106,7 +106,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
    * can act mid-turn (the cancel scenario's whole point).
    */
   async function sendPrompt(timeoutMs?: number): Promise<{ settled: ReturnType<WebScaffold['whenTurnSettled']> }> {
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     const settled = scaffold!.whenTurnSettled(timeoutMs)
     await input.fill(PROMPT)
@@ -146,7 +146,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     // Composer recovered; no streaming node lingers. The host settled first
     // (awaited above), but the abort frame reaches the browser over SSE — the
     // frozen-partial swap is eventually consistent, so poll rather than count.
-    await expect.poll(() => page.locator('textarea').first().isEnabled(), { timeout: 10_000 }).toBe(true)
+    await expect.poll(() => page.locator('[data-composer-input]').first().isEnabled(), { timeout: 10_000 }).toBe(true)
     await expect.poll(() => page.locator('[data-streaming="true"]').count(), { timeout: 10_000 }).toBe(0)
     // Golden of the aborted end-state: the prompt bubble plus the frozen
     // partial ('partial' is the hang entry's replayed prefix) and no more.
@@ -166,7 +166,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     expect(turnEndReasons(sessionEvents).at(-1)).toBe('error')
     // AUTH is outside llm-retry's retryable set: no retry record.
     expect(sessionEvents.filter(e => e.type === 'llm/retry').length).toBe(0)
-    await expect.poll(() => page.locator('textarea').first().isEnabled(), { timeout: 10_000 }).toBe(true)
+    await expect.poll(() => page.locator('[data-composer-input]').first().isEnabled(), { timeout: 10_000 }).toBe(true)
     expect(await page.locator('[data-streaming="true"]').count()).toBe(0)
     const errorStatus = page.getByRole('status').filter({ hasText: 'This turn failed' })
     await errorStatus.waitFor({ timeout: 10_000 })

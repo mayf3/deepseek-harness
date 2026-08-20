@@ -59,7 +59,7 @@ export function probeFreePort(): Promise<number> {
  * until the live composer unlocks. A fresh world has no Workspace, so the boot
  * lands in the Workspace-trigger view state (startup auto-selection has nothing to
  * select); every scenario that types into the composer must connect one
- * first. With nothing to list, activating the textarea raises the dialog directly —
+ * first. With nothing to list, activating the composer surface raises the dialog directly —
  * adding a workspace is the picker's only entry. The directory is staged here
  * and adopted through the path editor, which is idempotent across the repeated
  * connects a scenario may make; creating a folder from inside the dialog (the
@@ -83,7 +83,7 @@ export async function connectFreshWorkspace(page: Page, root: string, name = 'wo
   await dialog.getByRole('button', { name: 'Open', exact: true }).click()
   // The pick connected the workspace: the blank session's live composer
   // replaces the locked placeholder and enables.
-  await page.locator('textarea:enabled[placeholder="Describe what you want to build"]')
+  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build"]')
     .waitFor({ timeout: 15_000 })
 }
 
@@ -106,7 +106,7 @@ export async function connectFreshWorkspaceZh(page: Page, root: string, name = '
   await pathInput.fill(join(root, name))
   await pathInput.press('Enter')
   await dialog.getByRole('button', { name: '打开', exact: true }).click()
-  await page.locator('textarea:enabled[placeholder="描述你想要构建的内容"]')
+  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="描述你想要构建的内容"]')
     .waitFor({ timeout: 15_000 })
 }
 

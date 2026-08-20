@@ -94,7 +94,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     const parent = scaffold.ctx.agents.roots()[0]
     if (parent === undefined) throw new Error('fresh workspace did not publish its parent Agent')
     const parentSettled = scaffold.whenTurnSettled()
-    const parentInput = page.locator('textarea:enabled').first()
+    const parentInput = page.locator('[data-composer-input][contenteditable="true"]').first()
     await parentInput.fill(PARENT_PROMPT)
     await parentInput.press('Enter')
     expect(await parentSettled).toBe(parent.id)
@@ -468,7 +468,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await sessions.getByRole('treeitem', { name: /Ask a research subagent to/ }).click()
     await page.getByRole('button', { name: '3 subagents' }).click()
     await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
-    await page.locator('textarea:enabled').first().waitFor()
+    await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor()
     expect(scaffold.ctx.agents.get(childId)).toBeUndefined()
 
     const forkResponse = page.waitForResponse(response =>
@@ -485,7 +485,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await sessions.getByRole('treeitem', { name: /Ask a research subagent to/ }).click()
     await page.getByRole('button', { name: '3 subagents' }).click()
     await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
-    const input = page.locator('textarea:enabled').first()
+    const input = page.locator('[data-composer-input][contenteditable="true"]').first()
     await input.waitFor()
     const promptResponse = page.waitForResponse(response =>
       new URL(response.url()).pathname === '/api/subagent.prompt')

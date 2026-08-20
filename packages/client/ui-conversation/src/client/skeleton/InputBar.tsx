@@ -415,7 +415,9 @@ export function InputBar({
               data-phase={input?.phase ?? 'inert'}
               aria-disabled={editorDisabled || undefined}
               data-placeholder={placeholderText}
-              aria-label={workspaceTrigger ? t('hero.chooseWorkspace') : undefined}
+              // The placeholder was the textarea's accessible name; a div's
+              // data attribute is not, so the label restores it.
+              aria-label={workspaceTrigger ? t('hero.chooseWorkspace') : placeholderText}
               aria-haspopup={workspaceTrigger ? 'menu' : undefined}
               aria-expanded={workspaceTrigger ? workspacePickerOpen : undefined}
               tabIndex={workspaceTrigger ? 0 : undefined}

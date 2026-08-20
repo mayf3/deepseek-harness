@@ -153,7 +153,7 @@ describe('web e2e: startup auto-selection', () => {
     await page.waitForSelector(ROOT_PHASE, { timeout: 15_000 })
     expect(await page.locator(ROOT_PHASE).first().getAttribute('data-phase')).toBe('hero')
     expect(await page.getByText('Into the Unknown').isVisible()).toBe(true)
-    expect(await page.locator('textarea').first().isVisible()).toBe(true)
+    expect(await page.locator('[data-composer-input]').first().isVisible()).toBe(true)
 
     releaseHistory()
     await page.locator('textarea:enabled[placeholder="Describe what you want to build"]')

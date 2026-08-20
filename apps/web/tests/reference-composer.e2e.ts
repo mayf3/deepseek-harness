@@ -136,7 +136,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
   it('groups both sources and projects files and sessions as structured inline icon labels', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-composer'))
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
 
     await input.fill('@')
@@ -152,17 +152,20 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
     await input.fill('@reference')
     await menu.getByRole('option', { name: /File \u00b7 reference\.txt/ }).click()
-    const fileReference = page.locator('[data-reference-appearance="file"]')
-    await expect.poll(() => fileReference.textContent()).toBe('@reference.txt')
+    // The pick lands an atomic chip: a real DOM capsule carrying the domain
+    // icon and the label (the canonical reference text lives on the node and
+    // expands on submit; the surface text is the label plus the separator).
+    const fileReference = page.locator('[data-composer-chip]').last()
+    await expect.poll(() => fileReference.textContent()).toBe('reference.txt')
     await expect.poll(() => fileReference.locator('svg').count()).toBe(1)
-    await expect.poll(() => input.inputValue()).toBe('@reference.txt ')
+    await expect.poll(() => input.textContent()).toBe('reference.txt ')
 
     await input.fill('@Research')
     await menu.getByRole('option', { name: /Session \u00b7 Research notes/ }).click()
-    const sessionReference = page.locator('[data-reference-appearance="session"]')
-    await expect.poll(() => sessionReference.textContent()).toBe('@Research notes')
+    const sessionReference = page.locator('[data-composer-chip]').last()
+    await expect.poll(() => sessionReference.textContent()).toBe('Research notes')
     await expect.poll(() => sessionReference.locator('svg').count()).toBe(1)
-    await expect.poll(() => input.inputValue()).toBe('@Research notes ')
+    await expect.poll(() => input.textContent()).toBe('Research notes ')
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

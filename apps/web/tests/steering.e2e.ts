@@ -96,7 +96,7 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
       // both the opening prompt and the later same-turn steer.
       expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT, STEER])
     }
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     const settled = scaffold.whenTurnSettled(MODE === 'record' ? 180_000 : 30_000)
     await input.fill(PROMPT)
@@ -200,7 +200,7 @@ describe('web e2e: composer shortcut steers directly', () => {
   it.skipIf(MODE === 'record')('uses Cmd+Enter without creating a Queue row', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-composer-steering'))
     expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT, STEER])
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     const settled = scaffold.whenTurnSettled(30_000)
     await input.fill(PROMPT)
@@ -263,7 +263,7 @@ describe('web e2e: composer shortcut follows the swapped busy behavior', () => {
     await dialog.getByRole('button', { name: 'Steer' }).waitFor({ timeout: 10_000 })
     await page.keyboard.press('Escape')
 
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     const settled = scaffold.whenTurnSettled(30_000)
     await input.fill(PROMPT)
     await input.press('Enter')
@@ -323,7 +323,7 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
 
   it.skipIf(MODE === 'record')('queues two messages, then flushes both with an empty-draft Cmd+Enter', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-steer-all'))
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     const settled = scaffold.whenTurnSettled(30_000)
 

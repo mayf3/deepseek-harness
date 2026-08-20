@@ -216,7 +216,7 @@ describe('web e2e: continuous conversation grown through the composer', () => {
 
   it.skipIf(MODE === 'record')('keeps twelve generated turns and tool rows bound to one live session', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-chat-continuous-conversation'))
-    const composer = page.locator('textarea:enabled').last()
+    const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
     await composer.waitFor({ timeout: 15_000 })
     let sessionId: SessionId | undefined
 

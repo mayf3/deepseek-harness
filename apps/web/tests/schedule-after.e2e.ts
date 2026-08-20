@@ -357,7 +357,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     const atSession = page.getByRole('treeitem', { name: /Explicit local-time reminder/ })
     await atSession.waitFor({ timeout: 15_000 })
     await atSession.click()
-    const composer = page.locator('textarea:enabled').last()
+    const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
     await composer.fill(AT_USER_PROMPT)
     const settled = scaffold.whenTurnSettled(60_000)
     await page.getByRole('button', { name: 'Send message', exact: true }).click()

@@ -389,6 +389,7 @@ export class SessionInputShell implements SessionInput {
    * The live selection as a detect-coordinate span (menu-launcher synthetic
    * hits replace it on pick); an absent selection answers a collapsed span at
    * the document end.
+   * @returns the ordered [start, end) span in detect coordinates.
    */
   caretSpan(): { start: number; end: number } {
     if (this.projection.selection !== null) return this.projection.selection

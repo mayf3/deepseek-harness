@@ -235,7 +235,7 @@ describe('web e2e: agent-preset selection', () => {
     // Continues the previous case: the chip has already applied `minimal` to
     // the blank session, and this one reads the menu that switch left behind.
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-preset-slash-catalog'))
-    const composer = page.locator('textarea:enabled').last()
+    const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
 
     // `minimal` mounts neither the compaction group nor plan mode nor local
     // skill discovery, so the catalog the composer warmed under the

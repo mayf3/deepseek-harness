@@ -148,7 +148,7 @@ describe('ReferenceChipNode', () => {
         'getChildren' in block ? (block as ParagraphNode).getChildren() : []).find($isReferenceChipNode)
       expect(chip).toBeDefined()
       if (chip === undefined) return
-      const el = chip.createDOM()
+      const el = chip.createDOM({ namespace: 'core-spec', theme: {} } as never)
       expect(el.getAttribute('data-composer-chip')).toBe('session-reference')
       expect(el.getAttribute('contenteditable')).toBe('false')
       expect(chip.updateDOM()).toBe(false)

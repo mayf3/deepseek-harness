@@ -208,8 +208,8 @@ describe('prompt rejection through the assembled composer', () => {
     const composer = view.container.querySelector<HTMLDivElement>('[data-composer-input]')!
     // Write through the assembled input resolver (contenteditable change
     // events carry no value; the resolver is the public draft write path).
-    const conversation = runtime.ctx.get('conversation') as { input: InputHub }
-    const shell = conversation.input.shell(SID)
+    const conversation = runtime.ctx.get('conversation') as { input: unknown }
+    const shell = (conversation.input as InputHub).shell(SID)
     act(() => { shell.setDraft('do not lose this') })
     fireEvent.keyDown(composer, { key: 'Enter' })
     await waitFor(() => { expect(prompt).toHaveBeenCalledOnce() })

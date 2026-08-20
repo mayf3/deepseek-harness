@@ -222,10 +222,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /**
      * The default composer body: a single slot rendered as the composer
      * chain's fallback (a real entry, not a chain rider, so a
-     * takeover election hides rather than unmounts it and the textarea DOM
+     * takeover election hides rather than unmounts it and the composer DOM
      * survives). Session-maybe: the bar stays mounted across the
      * no-session/session transition — the no-workspace hero renders the SAME
-     * textarea DOM as a read-only Workspace-picker trigger instead of a
+     * composer surface as a read-only Workspace-picker trigger instead of a
      * parallel inert tree — with the machine hooks absent until a session is
      * current. InputBar registers
      * here from this package's apply; its machine state arrives through the

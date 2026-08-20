@@ -130,7 +130,7 @@ describe('web e2e: the composer model switch is the default for later sessions',
 
   it('goes inert when the route the default names stops being served', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-default-model-blocked'))
-    const box = page.locator('textarea[data-input-phase], textarea').first()
+    const box = page.locator('[data-composer-input]').first()
     await expect.poll(async () => box.isEnabled(), { timeout: 10_000 }).toBe(true)
 
     // What removing the provider on the Models page leaves behind: the saved

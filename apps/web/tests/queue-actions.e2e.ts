@@ -86,7 +86,7 @@ describe('web e2e: queue row actions', () => {
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
     onTestFailed(() => saveFailureShot(page, 'web-e2e-queue-actions'))
 
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     const firstSettled = scaffold.whenTurnSettled()
     await input.fill(ACTIVE_PROMPT)
     await input.press('Enter')
@@ -196,7 +196,7 @@ describe('web e2e: queue row actions', () => {
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
     onTestFailed(() => saveFailureShot(page, 'web-e2e-context-layout'))
 
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     const settled = scaffold.whenTurnSettled()
     await input.fill('/goal Keep the composer context panels aligned')
     await input.press('Enter')
