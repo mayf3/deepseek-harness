@@ -61,9 +61,11 @@ export interface AcpRunSpec {
    */
   disposeEofGraceMs: number
   /**
-   * Termination-escalation grace (ms) in {@link SubagentRun.dispose}; POSIX
-   * waits this long after `SIGTERM` before `SIGKILL`, while Windows
-   * force-terminates directly. The plugin fills it from `disposeGraceMs`.
+   * Process-observation and termination-escalation grace (ms). Failure
+   * classification waits at most this long for structured exit facts; POSIX
+   * dispose also waits this long after `SIGTERM` before `SIGKILL`, while
+   * Windows force-terminates directly. The plugin fills it from
+   * `disposeGraceMs`.
    */
   disposeGraceMs: number
   /**
@@ -282,7 +284,6 @@ function startupFailure(
   child: SubprocessHandle,
   outcome: SubprocessOutcome | undefined,
 ): AcpRunFailure {
-  if (error instanceof AcpRunFailure) return error
   if (child.pid <= 0) {
     return new AcpRunFailure({ stage: 'process', category: 'process-start' }, error)
   }
@@ -374,11 +375,12 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
   )
   spawnFailed.catch(() => { /* observed by the startup race; never unhandled */ })
 
-  const observeProcessOutcome = async (): Promise<SubprocessOutcome | undefined> => {
+  const observeProcessOutcome = async (signal?: AbortSignal): Promise<SubprocessOutcome | undefined> => {
     if (processOutcome !== undefined || child.pid <= 0) return processOutcome
     try {
+      const timeout = AbortSignal.timeout(Math.ceil(spec.disposeGraceMs))
       const exited = await child.waitForExit(
-        AbortSignal.timeout(Math.ceil(spec.disposeGraceMs)),
+        signal === undefined ? timeout : AbortSignal.any([signal, timeout]),
       )
       if (exited) return await processDone
     } catch {
@@ -495,7 +497,9 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
       ? { kind: 'cancelled' } as const
       : {
         kind: 'failed',
-        failure: startupFailure(error, startupStage, child, await observeProcessOutcome()),
+        failure: error instanceof AcpRunFailure
+          ? error
+          : startupFailure(error, startupStage, child, await observeProcessOutcome()),
       } as const
     if (startup.kind === 'cancelled') {
       // Local cancellation owns the startup outcome; only cleanup failure is
@@ -550,7 +554,7 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
         }
       } catch (error: unknown) {
         if (!flags.cancelled) {
-          const outcome = await observeProcessOutcome()
+          const outcome = await observeProcessOutcome(request.signal)
           const facts = outcome === undefined
             ? { stage: 'prompt', category: 'transport' } as const
             : { stage: 'process', category: 'process-exit', outcome } as const
