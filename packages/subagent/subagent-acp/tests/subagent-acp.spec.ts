@@ -573,6 +573,23 @@ describe('dsh-subagent-acp', () => {
     )
   })
 
+  it('reports initialize-stage transport when the child closes the protocol but stays alive', async () => {
+    const error = await startAcpRun(request(), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_CLOSE_PROTOCOL_ON_INITIALIZE: '1' },
+      disposeEofGraceMs: 50,
+      disposeGraceMs: 50,
+      spawn: spawnSubprocess,
+    }).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe(
+      `subagent-acp: ${expectedFailure('stage: initialize; category: transport')}`,
+    )
+  })
+
   it('reaps a child whose session/new response omits the session id', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'acp-malformed-session-'))
     const flushed = join(tmp, 'flushed')
