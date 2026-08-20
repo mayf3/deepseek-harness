@@ -178,7 +178,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
         })],
         maxTokens: 100,
       })
-      expect(result.finish.kind).toBe('stop')
+      expect(result.finish).toMatchObject({ kind: 'stop' })
       expect(textOf(result).trim().length).toBeGreaterThan(0)
       expect(uploadedFile).toMatch(/^file-api-/u)
     } finally {
