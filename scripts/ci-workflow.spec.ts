@@ -417,20 +417,20 @@ describe('Python release workflows', () => {
 })
 
 describe('Issue lifecycle workflow', () => {
-  it('uses explicit review handoff events without rerunning when a draft becomes ready', () => {
+  it('runs the lifecycle job on every PR/review event so it passes instead of skipping', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
-    const lifecyclePullRequest = workflowEvent(lifecycle, 'pull_request')
-    const lifecycleReview = workflowEvent(lifecycle, 'pull_request_review')
-    const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
     const policy = loadWorkflow('.github/workflows/issue-policy.yml')
-    const policyPullRequest = workflowEvent(policy, 'pull_request')
+    const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
 
-    expect(lifecyclePullRequest.types).not.toContain('ready_for_review')
-    expect(lifecyclePullRequest.types).toContain('review_requested')
-    expect(lifecycleReview.types).toEqual(['submitted'])
-    expect(lifecycleJob.if).toBe(
-      "${{ github.event_name != 'pull_request_review' || (github.event.action == 'submitted' && github.event.review.state == 'changes_requested') }}",
-    )
+    // The lifecycle job has no workflow-level `if`, so it is listed on every
+    // pull_request / pull_request_review event and reports success (the handler
+    // no-ops for non-changes-requested reviews) instead of a gray "skipped" check.
+    expect(lifecycle.on).toHaveProperty('pull_request')
+    expect(lifecycle.on).toHaveProperty('pull_request_review')
+    expect(lifecycleJob.if).toBeUndefined()
+
+    // issue-policy owns PR validation; it is read-only and a real gate.
+    const policyPullRequest = workflowEvent(policy, 'pull_request')
     expect(policyPullRequest.types).toContain('ready_for_review')
   })
 })
