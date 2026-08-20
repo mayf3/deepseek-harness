@@ -41,13 +41,8 @@ function limitSubagentDiagnostic(diagnostic: string): string {
     + DIAGNOSTIC_TRUNCATION_SUFFIX
 }
 
-/** Enforce success omission and the byte limit on a provider-returned result. */
+/** Enforce the byte limit on a provider-returned diagnostic. */
 function normalizeSubagentDiagnostic(result: SubagentResult): SubagentResult {
-  if (result.stopReason === 'completed') {
-    const normalized = { ...result }
-    Reflect.deleteProperty(normalized, 'diagnostic')
-    return normalized
-  }
   return result.diagnostic === undefined
     ? result
     : { ...result, diagnostic: limitSubagentDiagnostic(result.diagnostic) }
@@ -188,8 +183,8 @@ export interface RunResultSettlement {
  * rejects after publication. A normally completed or rejected attempt resolves
  * as `aborted` when cancellation already settled locally; another rejection is
  * flattened to `stopReason: 'error'` through the contained diagnostic sink.
- * Provider-returned diagnostics use the same byte limit, and completed results
- * omit them. The abort listener is removed on every path.
+ * Provider-returned diagnostics use the same byte limit. The abort listener is
+ * removed on every path.
  * @param parts - the attempt, output snapshot, cancellation state, sink, and signal wiring.
  * @returns the terminal result (never a rejection).
  */
