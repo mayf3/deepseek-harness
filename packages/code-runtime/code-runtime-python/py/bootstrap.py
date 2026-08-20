@@ -727,6 +727,15 @@ def _clamped(which: int, soft: int, hard: int) -> tuple[int, int]:
 
 
 async def _run(channel: ProtocolChannel) -> None:
+    # The exception class every `except` clause in this function catches is bound
+    # into a LOCAL at the very top, before any model code runs. This bootstrap IS
+    # `__main__`, so `__main__.BaseException = RuntimeError` would otherwise
+    # rebind the module global the `except BaseException` clauses resolve at
+    # runtime — and a program exception that no longer matches would escape `_run`
+    # with no done frame, misreporting the run as a `worker-exit`. A frame local
+    # is not reachable by `__main__._X = ...`, so the catch is immune.
+    _BaseException = BaseException
+
     # 1. Boot handshake.
     boot = channel.read_frame()
     if boot is None or boot.get("type") != "boot":
@@ -786,7 +795,7 @@ async def _run(channel: ProtocolChannel) -> None:
                         "lower the budget or raise the inherited address-space limit"
                         % (_budget_key, effective_soft)
                     )
-    except BaseException as exc:  # noqa: BLE001 -- report every failure to host
+    except _BaseException as exc:  # noqa: BLE001 -- report every failure to host; `_BaseException` is a pre-program local
         channel.send_sync(
             {
                 "type": "done",
@@ -998,15 +1007,6 @@ async def _run(channel: ProtocolChannel) -> None:
     _os_write_local = _os_write
     _memoryview_local = _memoryview
     _fallback_frame_local = _FALLBACK_DONE_FRAME
-    # The exception class the outer try/except catches is bound into a LOCAL
-    # here, before the program runs. This bootstrap is `__main__`, so
-    # `__main__.BaseException = RuntimeError` would otherwise rebind the module
-    # global `BaseException` the `except BaseException` clause resolves at
-    # runtime, and a subsequent `ValueError` would then not match the clause —
-    # escaping `_run` with no `done` frame and misreporting the run as a
-    # `worker-exit`. Binding the class into a local makes the catch immune to a
-    # one-line rebind.
-    _BaseException = BaseException
 
     def send_done(payload: dict[str, Any] | str) -> None:
         try:
@@ -1106,7 +1106,7 @@ async def _run(channel: ProtocolChannel) -> None:
     for _flush in (flush_out, flush_err):
         try:
             _flush()
-        except BaseException:  # noqa: BLE001 -- swallow ONLY the log tail; `done` must reach the host
+        except _BaseException:  # noqa: BLE001 -- swallow ONLY the log tail; `done` must reach the host; `_BaseException` is a pre-program local
             pass
     reply_task.cancel()
     send_done(done)
@@ -2159,11 +2159,18 @@ def _make_failure_reporter() -> Any:
     cap_message = _cap_message
     model_traceback = _model_traceback
     unrenderable = _UNRENDERABLE_DIAGNOSTIC
+    # The exception class the guards below catch is bound into a closure cell
+    # here, at import time, before model code runs. `safe_model_traceback` runs
+    # AFTER the program (which is `__main__`) may have rebound the module global
+    # `BaseException`, so `except BaseException` would resolve the rebound class
+    # and a render-time throw could escape — losing the done frame. A closure cell
+    # is not reachable by `__main__._X = ...`, so the catch is immune.
+    _BaseException = BaseException
 
     def safe_model_traceback(exc: BaseException, max_bytes: int) -> str:
         try:
             return cap_message(model_traceback(exc, max_bytes), max_bytes)
-        except BaseException:  # noqa: BLE001 -- a throw here would cost the done frame
+        except _BaseException:  # noqa: BLE001 -- a throw here would cost the done frame
             pass
         try:
             raw_name = type(exc).__name__
@@ -2176,14 +2183,14 @@ def _make_failure_reporter() -> Any:
             # code-unit prefix, which bounds the bytes at 4x, and the following
             # `cap_message` still applies the exact byte cap.
             name = raw_name[:_MAX_FALLBACK_NAME_CHARS] if type(raw_name) is str else "<unknown>"
-        except BaseException:  # noqa: BLE001 -- a raising __name__ must not cost the done frame
+        except _BaseException:  # noqa: BLE001 -- a raising __name__ must not cost the done frame
             name = "<unknown>"
         # Wrapped for the same reason: `cap_message` encodes, and its allocation
         # is the only step left that can still fail. The fixed literal needs no
         # budget, so it can always be delivered.
         try:
             return cap_message(f"{name}: {unrenderable}", max_bytes)
-        except BaseException:  # noqa: BLE001 -- the done frame outranks the diagnostic's detail
+        except _BaseException:  # noqa: BLE001 -- the done frame outranks the diagnostic's detail
             return unrenderable
 
     return safe_model_traceback
