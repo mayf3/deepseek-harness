@@ -8,6 +8,7 @@ import AttachmentStore, { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
+  SavedImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
@@ -43,8 +44,11 @@ class StaticAttachmentStore extends AttachmentStore {
     return Promise.resolve()
   }
 
-  saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
-    return Promise.resolve(IMAGE_REF)
+  saveImage(_input: SaveImageAttachment): Promise<SavedImageAttachment> {
+    return Promise.resolve({
+      ref: IMAGE_REF,
+      source: { mediaType: IMAGE_REF.mediaType, bytes: IMAGE_REF.bytes, width: IMAGE_REF.width, height: IMAGE_REF.height },
+    })
   }
 
   readImage(ref: ImageAttachmentRef, _signal?: AbortSignal): Promise<StoredImageAttachment> {

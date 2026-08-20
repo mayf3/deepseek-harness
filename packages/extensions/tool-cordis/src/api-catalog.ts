@@ -443,10 +443,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'durable references in the exact input order.',
       },
       {
-        signature: 'abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>',
-        description: 'Validate and durably commit one image before its owning session event is appended.',
+        signature: 'abstract saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment>',
+        description: 'Validate and durably commit one image before its owning session event is appended. Implementations may store a canonical re-encoding of the submitted raster; the returned reference always describes the stored bytes, while `source` preserves the submitted raster\'s intrinsic facts for callers that report or map coordinates against the original.',
         parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
-        returns: 'a durable content-addressed reference.',
+        returns: 'the durable content-addressed reference beside the submitted source facts.',
       },
       {
         signature: 'abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>',
@@ -4001,6 +4001,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SandboxPolicyRequest {\n    session?: Session;\n    mode?: SandboxMode;\n}',
   },
   {
+    name: 'SavedImageAttachment',
+    declaration: 'export interface SavedImageAttachment {\n    ref: ImageAttachmentRef;\n    source: SourceImageInfo;\n}',
+  },
+  {
     name: 'SaveImageAttachment',
     declaration: 'export interface SaveImageAttachment {\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    name?: string;\n}',
   },
@@ -4403,6 +4407,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SkillViewOptions',
     declaration: 'export interface SkillViewOptions extends SkillLookupOptions {\n    readonly scope?: ScopeKey | undefined;\n}',
+  },
+  {
+    name: 'SourceImageInfo',
+    declaration: 'export interface SourceImageInfo {\n    mediaType: ImageMediaType;\n    bytes: number;\n    width: number;\n    height: number;\n}',
   },
   {
     name: 'SpawnTeammateRequest',

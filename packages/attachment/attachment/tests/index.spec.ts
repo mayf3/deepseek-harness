@@ -7,6 +7,7 @@ import AttachmentStore, {
   type ImageAttachmentRef,
   type ImageMediaType,
   type SaveImageAttachment,
+  type SavedImageAttachment,
   type StoredImageAttachment,
 } from '../src/index.ts'
 
@@ -31,17 +32,20 @@ class RecordingStore extends AttachmentStore {
     if (value === this.rejectValidationAt) throw new Error(`invalid:${value}`)
   }
 
-  async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+  async saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment> {
     const value = input.data[0] ?? 0
     this.calls.push(`save:${value}`)
     if (value === this.rejectSaveAt) throw new Error(`write:${value}`)
     return {
-      attachmentId: AttachmentId(`sha256:${String(value).padStart(64, '0')}`),
-      mediaType: input.mediaType,
-      bytes: input.data.byteLength,
-      width: 1,
-      height: 1,
-      ...input.name === undefined ? {} : { name: input.name },
+      ref: {
+        attachmentId: AttachmentId(`sha256:${String(value).padStart(64, '0')}`),
+        mediaType: input.mediaType,
+        bytes: input.data.byteLength,
+        width: 1,
+        height: 1,
+        ...input.name === undefined ? {} : { name: input.name },
+      },
+      source: { mediaType: input.mediaType, bytes: input.data.byteLength, width: 1, height: 1 },
     }
   }
 

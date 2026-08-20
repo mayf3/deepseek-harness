@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, SavedImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { readImageFile, saveImageFile, validateImageFile } from './store.ts'
 
@@ -75,7 +75,7 @@ export class LocalAttachmentStore extends AttachmentStore {
     await validateImageFile(input, this.imageLimits)
   }
 
-  async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+  async saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment> {
     return saveImageFile(this.root, input, this.imageLimits)
   }
 

@@ -58,3 +58,23 @@ export interface StoredImageAttachment {
   ref: ImageAttachmentRef
   data: Uint8Array
 }
+
+/** Intrinsic facts of the submitted source raster, before any canonical re-encoding. */
+export interface SourceImageInfo {
+  /** Media type verified from the submitted bytes. */
+  mediaType: ImageMediaType
+  /** Exact submitted encoded byte length. */
+  bytes: number
+  /** Intrinsic width of the submitted raster in pixels. */
+  width: number
+  /** Intrinsic height of the submitted raster in pixels. */
+  height: number
+}
+
+/** Commit result pairing the durable reference with the submitted source raster it was derived from. */
+export interface SavedImageAttachment {
+  /** Durable reference describing the stored bytes. */
+  ref: ImageAttachmentRef
+  /** Submitted source raster facts; equals the `ref` fields when the store kept the submitted bytes. */
+  source: SourceImageInfo
+}

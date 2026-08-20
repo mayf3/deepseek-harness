@@ -21,7 +21,7 @@ import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import * as FsPolicy from '@deepseek-ai/dsh-fs-observation-policy'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { AttachmentError, AttachmentId, AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, SavedImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import {
   applyReadImageTool,
@@ -344,7 +344,7 @@ describe('argument and service preconditions', () => {
         throw new Error('unreachable: admission refuses before validation')
       }
 
-      saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+      saveImage(_input: SaveImageAttachment): Promise<SavedImageAttachment> {
         throw new Error('unreachable: admission refuses before save')
       }
 
@@ -421,7 +421,7 @@ describe('image admission failures', () => {
         return Promise.resolve()
       }
 
-      async saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+      async saveImage(_input: SaveImageAttachment): Promise<SavedImageAttachment> {
         throw FailingStore.failure
       }
 
@@ -475,8 +475,11 @@ describe('image admission failures', () => {
         return Promise.resolve()
       }
 
-      async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
-        return { attachmentId: AttachmentId('sha256:feed'), mediaType: input.mediaType, bytes: input.data.length, width: 1, height: 1 }
+      async saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment> {
+        return {
+          ref: { attachmentId: AttachmentId('sha256:feed'), mediaType: input.mediaType, bytes: input.data.length, width: 1, height: 1 },
+          source: { mediaType: input.mediaType, bytes: input.data.length, width: 1, height: 1 },
+        }
       }
 
       readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {

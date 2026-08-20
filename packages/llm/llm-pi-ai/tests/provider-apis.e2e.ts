@@ -5,6 +5,7 @@ import { AttachmentId, AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
+  SavedImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
@@ -78,7 +79,7 @@ async function harness(image?: StoredImageAttachment): Promise<Context> {
         return Promise.reject(new Error('e2e attachment fixture is read-only'))
       }
 
-      saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+      saveImage(_input: SaveImageAttachment): Promise<SavedImageAttachment> {
         return Promise.reject(new Error('e2e attachment fixture is read-only'))
       }
 

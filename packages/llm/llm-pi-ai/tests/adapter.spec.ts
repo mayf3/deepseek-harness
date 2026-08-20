@@ -4,6 +4,7 @@ import { AttachmentId, AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
+  SavedImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
@@ -227,7 +228,7 @@ describe('PiAiAdapter provider routing', () => {
         return Promise.reject(new Error('not used'))
       }
 
-      saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+      saveImage(_input: SaveImageAttachment): Promise<SavedImageAttachment> {
         return Promise.reject(new Error('not used'))
       }
 

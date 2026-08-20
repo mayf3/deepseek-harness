@@ -134,12 +134,15 @@ describe('Web session model selection', () => {
     const { ctx, agent, sessionId } = await harness()
     const validateImage = vi.fn((_input: { data: Uint8Array }) => Promise.resolve())
     const saveImage = vi.fn((input: { data: Uint8Array; mediaType: 'image/png'; name?: string }) => Promise.resolve({
-      attachmentId: `att-${String(input.data[0])}`,
-      mediaType: input.mediaType,
-      bytes: input.data.byteLength,
-      width: 1,
-      height: 1,
-      ...input.name === undefined ? {} : { name: input.name },
+      ref: {
+        attachmentId: `att-${String(input.data[0])}`,
+        mediaType: input.mediaType,
+        bytes: input.data.byteLength,
+        width: 1,
+        height: 1,
+        ...input.name === undefined ? {} : { name: input.name },
+      },
+      source: { mediaType: input.mediaType, bytes: input.data.byteLength, width: 1, height: 1 },
     }))
     const attachments = {
       imageLimits: {

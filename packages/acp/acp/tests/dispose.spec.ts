@@ -30,7 +30,7 @@ describe('ACP connection ownership', () => {
   it('disposal drains asynchronous assistant image delivery before releasing sessions', async () => {
     const script: StreamChunk[][] = []
     harness = await makeBridgeHarness({ script })
-    const ref = await harness.attachments!.saveImage({ data: Uint8Array.of(4), mediaType: 'image/png' })
+    const { ref } = await harness.attachments!.saveImage({ data: Uint8Array.of(4), mediaType: 'image/png' })
     script.push([
       { type: 'block-start', index: 0, blockType: 'image' },
       { type: 'block-end', index: 0, block: { type: 'image', attachment: ref } },

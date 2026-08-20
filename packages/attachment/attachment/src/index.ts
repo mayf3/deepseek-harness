@@ -6,6 +6,7 @@ import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
   SaveImageAttachment,
+  SavedImageAttachment,
   StoredImageAttachment,
 } from './types.ts'
 
@@ -20,6 +21,8 @@ export type {
   ImageAttachmentRef,
   ImageMediaType,
   SaveImageAttachment,
+  SavedImageAttachment,
+  SourceImageInfo,
   StoredImageAttachment,
 } from './types.ts'
 
@@ -71,16 +74,20 @@ export abstract class AttachmentStore extends Service {
     for (const input of inputs) await this.validateImage(input)
 
     const refs: ImageAttachmentRef[] = []
-    for (const input of inputs) refs.push(await this.saveImage(input))
+    for (const input of inputs) refs.push((await this.saveImage(input)).ref)
     return refs
   }
 
   /**
    * Validate and durably commit one image before its owning session event is appended.
+   * Implementations may store a canonical re-encoding of the submitted raster;
+   * the returned reference always describes the stored bytes, while `source`
+   * preserves the submitted raster's intrinsic facts for callers that report
+   * or map coordinates against the original.
    * @param input - encoded bytes, declared media type, and optional display name.
-   * @returns a durable content-addressed reference.
+   * @returns the durable content-addressed reference beside the submitted source facts.
    */
-  abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
+  abstract saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment>
 
   /**
    * Read one image and verify that bytes still match the recorded reference.

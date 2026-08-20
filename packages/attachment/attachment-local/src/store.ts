@@ -12,6 +12,7 @@ import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
   SaveImageAttachment,
+  SavedImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import { detectImage, probeImage } from './image.ts'
@@ -131,9 +132,13 @@ async function ensureDurableHome(path: string): Promise<string> {
  * @param root - absolute `DSH_HOME/attachments/v1` root.
  * @param input - encoded bytes and declared metadata.
  * @param limits - resolved storage policy.
- * @returns durable content-addressed reference.
+ * @returns durable content-addressed reference beside the submitted source facts.
  */
-export async function saveImageFile(root: string, input: SaveImageAttachment, limits: ImageAttachmentLimits): Promise<ImageAttachmentRef> {
+export async function saveImageFile(
+  root: string,
+  input: SaveImageAttachment,
+  limits: ImageAttachmentLimits,
+): Promise<SavedImageAttachment> {
   if (input.data.byteLength > limits.maxImageBytes) throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
   const metadata = await inspectMetadata(input.data, input.mediaType, limits)
   const sha256 = digest(input.data)
@@ -187,9 +192,12 @@ export async function saveImageFile(root: string, input: SaveImageAttachment, li
   }
   const name = displayName(input.name)
   return {
-    attachmentId: AttachmentId(`sha256:${sha256}`),
-    ...metadata,
-    ...(name !== undefined ? { name } : {}),
+    ref: {
+      attachmentId: AttachmentId(`sha256:${sha256}`),
+      ...metadata,
+      ...(name !== undefined ? { name } : {}),
+    },
+    source: metadata,
   }
 }
 

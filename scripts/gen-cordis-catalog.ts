@@ -294,6 +294,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   EncodedImageAttachment: 'attachment.md',
   ImageAttachmentRef: 'attachment.md',
   SaveImageAttachment: 'attachment.md',
+  SavedImageAttachment: 'attachment.md',
+  SourceImageInfo: 'attachment.md',
   StoredImageAttachment: 'attachment.md',
   ShellExecRequest: 'shell.md',
   ShellExecSpec: 'shell.md',

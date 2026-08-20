@@ -120,10 +120,14 @@ async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly Image
 
 /**
  * Validate and durably commit one image before its owning session event is appended.
+ * Implementations may store a canonical re-encoding of the submitted raster;
+ * the returned reference always describes the stored bytes, while `source`
+ * preserves the submitted raster's intrinsic facts for callers that report
+ * or map coordinates against the original.
  * @param input - encoded bytes, declared media type, and optional display name.
- * @returns a durable content-addressed reference.
+ * @returns the durable content-addressed reference beside the submitted source facts.
  */
-abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
+abstract saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment>
 
 /**
  * Read one image and verify that bytes still match the recorded reference.
