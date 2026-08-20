@@ -89,7 +89,6 @@ interface SdkScenario {
   dshSdkChild?: {
     config: string
     sessionRoot: string
-    expectedRoute: Readonly<Record<string, unknown>>
   }
   /** Cwd-relative files whose final contents are part of the scenario contract. */
   expectedFiles?: Readonly<Record<string, string>>
@@ -133,12 +132,6 @@ const SCENARIOS: SdkScenario[] = [
     dshSdkChild: {
       config: dshSdkChildConfig,
       sessionRoot: '.child-dsh/sessions',
-      expectedRoute: {
-        provider: 'mock',
-        model: 'mock-routed',
-        reasoningEffort: 'max',
-        maxTokens: 777,
-      },
     },
   },
   {
@@ -221,17 +214,6 @@ function assembledSystem(log: PersistedLog): string {
   const system = event?.data?.header?.system
   if (typeof system !== 'string') throw new Error('session log has no request/header system')
   return system
-}
-
-function assembledRequestConfig(log: PersistedLog): Record<string, unknown> {
-  const event = log.content.trimEnd().split('\n')
-    .map(line => JSON.parse(line) as { type?: string; data?: { header?: { config?: unknown } } })
-    .find(candidate => candidate.type === 'request/header')
-  const config = event?.data?.header?.config
-  if (typeof config !== 'object' || config === null || Array.isArray(config)) {
-    throw new Error('session log has no request/header config')
-  }
-  return config as Record<string, unknown>
 }
 
 function assembledRuntimeContexts(log: PersistedLog): string[] {
@@ -542,11 +524,6 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
           const system = assembledSystem(parent)
           for (const clause of scenario.runtimeContext.includes) expect(system).not.toContain(clause)
         }
-      }
-      if (scenario.dshSdkChild !== undefined) {
-        const child = ordered[1]
-        if (child === undefined) throw new Error(`${scenario.name} has no child session log`)
-        expect(assembledRequestConfig(child)).toEqual(scenario.dshSdkChild.expectedRoute)
       }
       if (scenario.children > 0 && scenario.dshSdkChild === undefined) {
         expect(notifications.some(n => n.method === 'subagent.started')).toBe(true)

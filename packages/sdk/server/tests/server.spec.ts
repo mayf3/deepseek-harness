@@ -885,26 +885,23 @@ describe('HarnessSdkJsonRpcServer', () => {
     },
   )
 
-  it.each(['', 42])(
-    'rejects invalid initialize reasoningEffort %j at the wire boundary',
-    async (reasoningEffort) => {
-      const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-invalid-reasoning-'))
-      const ctx = await makeHarness(storageDir)
-      try {
-        const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+  it('rejects malformed initialize reasoningEffort values at the wire boundary', async () => {
+    const ctx = new Context()
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+    try {
+      for (const reasoningEffort of ['', 42]) {
         await expect(server.handleRequest('initialize', {
-          cwd: storageDir,
+          cwd: '.',
           provider: 'deepseek-official',
           model: 'model',
           reasoningEffort,
         })).rejects.toThrow('initialize reasoningEffort must be a non-empty string')
-        await server.shutdown()
-      } finally {
-        await ctx.fiber.dispose()
-        await rm(storageDir, { recursive: true, force: true })
       }
-    },
-  )
+      await server.shutdown()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
 
   it('rejects an unavailable exact model during initialize', async () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-invalid-route-'))
