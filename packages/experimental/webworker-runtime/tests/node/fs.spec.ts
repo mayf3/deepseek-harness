@@ -24,7 +24,7 @@ import { MemoryVfs } from '@deepseek-ai/dsh-experimental-webworker-runtime/src/s
 import { setActiveVfs } from '@deepseek-ai/dsh-experimental-webworker-runtime/src/storage/active.ts'
 import * as fs from '@deepseek-ai/dsh-experimental-webworker-runtime/src/node/builtin_modules/implemented/fs.ts'
 import * as fsp from '@deepseek-ai/dsh-experimental-webworker-runtime/src/node/builtin_modules/implemented/fs/promises.ts'
-import type { VfsBigIntStats } from '@deepseek-ai/dsh-experimental-webworker-runtime/src/storage/types.ts'
+import type { VfsBigIntStats, VfsStats } from '@deepseek-ai/dsh-experimental-webworker-runtime/src/storage/types.ts'
 
 const vfs = new MemoryVfs()
 setActiveVfs(vfs)
@@ -208,15 +208,17 @@ check('a directory reports the creation-default mode in the bigint shape', Numbe
 // into place, then the provider stats the result).
 // ---------------------------------------------------------------------------
 
+const plainMode = (path: string): number => Number((fs.statSync(path) as VfsStats).mode) & 0o777
+
 fs.writeFileSync('/dsh/secrets.tmp', 'k: v\n', { mode: 0o600, flag: 'wx' })
 fs.renameSync('/dsh/secrets.tmp', '/dsh/secrets.yaml')
-check('a wx write with mode 600 stats as 600 after rename', fs.statSync('/dsh/secrets.yaml').mode & 0o777, 0o600)
+check('a wx write with mode 600 stats as 600 after rename', plainMode('/dsh/secrets.yaml'), 0o600)
 fs.writeFileSync('/dsh/secrets.yaml', 'k: w\n')
-check('a rewrite keeps the creation bits', fs.statSync('/dsh/secrets.yaml').mode & 0o777, 0o600)
+check('a rewrite keeps the creation bits', plainMode('/dsh/secrets.yaml'), 0o600)
 fs.chmodSync('/dsh/secrets.yaml', 0o640)
-check('chmod reads back exactly what was set', fs.statSync('/dsh/secrets.yaml').mode & 0o777, 0o640)
+check('chmod reads back exactly what was set', plainMode('/dsh/secrets.yaml'), 0o640)
 await fsp.chmod('/dsh/secrets.yaml', 0o600)
 check('promises.chmod reads back through the bigint shape', Number(bigStats('/dsh/secrets.yaml').mode & 0o777n), 0o600)
 fs.mkdirSync('/dsh/vault', { mode: 0o700 })
-check('mkdir honours its mode option', fs.statSync('/dsh/vault').mode & 0o777, 0o700)
+check('mkdir honours its mode option', plainMode('/dsh/vault'), 0o700)
 check('promises.stat forwards the bigint option', typeof (await fsp.stat('/dsh/config', { bigint: true })).mode, 'bigint')
