@@ -106,7 +106,7 @@ describe('spawnInheritedJobProcess', () => {
 
   it('restores already-enabled stdio and closes the Job when inheritance setup fails', () => {
     let calls = 0
-    const closeHandle = vi.fn(() => 1)
+    const closeHandle = vi.fn((_handle: NativePtr) => 1)
     const setHandleInformation = vi.fn((_handle: NativePtr, _mask: number, flags: number) => {
       if (flags === 0) return 1
       calls += 1
@@ -160,7 +160,7 @@ describe('spawnInheritedJobProcess', () => {
   })
 
   it('terminates the suspended process and closes the Job when CreateProcessAsUserW returns a null thread handle', () => {
-    const closeHandle = vi.fn(() => 1)
+    const closeHandle = vi.fn((_handle: NativePtr) => 1)
     const terminateProcess = vi.fn(() => 1)
     const { api } = inheritedApi({
       closeHandle,
@@ -187,7 +187,7 @@ describe('spawnInheritedJobProcess', () => {
   })
 
   it('terminates the suspended child before closing handles when Job assignment fails', () => {
-    const closeHandle = vi.fn(() => 1)
+    const closeHandle = vi.fn((_handle: NativePtr) => 1)
     const terminateProcess = vi.fn(() => 1)
     const { api } = inheritedApi({
       assignProcessToJobObject: vi.fn(() => 0),
@@ -205,7 +205,7 @@ describe('spawnInheritedJobProcess', () => {
   })
 
   it('closes the assigned Job and process when ResumeThread fails', () => {
-    const closeHandle = vi.fn(() => 1)
+    const closeHandle = vi.fn((_handle: NativePtr) => 1)
     const { api } = inheritedApi({
       resumeThread: vi.fn(() => 0xFFFFFFFF),
       closeHandle,
