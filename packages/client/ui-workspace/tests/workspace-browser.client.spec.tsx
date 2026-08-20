@@ -96,7 +96,7 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
 }
 
 /** Every tree row's text, group headers included, in render order. */
-function rowsOf(_b: ReturnType<typeof mount>): (string | null)[] {
+function rowsOf(): (string | null)[] {
   return screen.getAllByRole('treeitem').map(row => row.textContent)
 }
 
@@ -488,7 +488,7 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByText('alpha'))
     await waitFor(() => { expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true }) })
     // The stale blank is hidden while it is not the current session.
-    expect(rowsOf(b)).toEqual([
+    expect(rowsOf()).toEqual([
       expect.stringContaining('alpha'),
       expect.stringContaining('mid'),
       expect.stringContaining('old'),
@@ -503,7 +503,7 @@ describe('WorkspaceBrowser', () => {
       ], { current: sid('blank') })),
     })
     await waitFor(() => {
-      expect(rowsOf(b)).toEqual([
+      expect(rowsOf()).toEqual([
         expect.stringContaining('alpha'),
         expect.stringContaining('新会话'),
         expect.stringContaining('mid'),
@@ -534,7 +534,7 @@ describe('WorkspaceBrowser', () => {
       ], { current: sid('old') })),
     })
     await waitFor(() => {
-      expect(rowsOf(b)).toEqual([
+      expect(rowsOf()).toEqual([
         expect.stringContaining('alpha'),
         expect.stringContaining('mid'),
         expect.stringContaining('old'),
@@ -557,7 +557,7 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
     await waitFor(() => { expect(b.store.getSnapshot().orderBy).toBe('updated') })
     await waitFor(() => {
-      expect(rowsOf(b)).toEqual([
+      expect(rowsOf()).toEqual([
         expect.stringContaining('新会话'),
         expect.stringContaining('mid'),
         expect.stringContaining('old'),
@@ -582,11 +582,97 @@ describe('WorkspaceBrowser', () => {
     // Manual order follows the Workspace account [old, blank, mid]; the
     // current blank is pinned first, the rest keeps the account order.
     await waitFor(() => {
-      expect(rowsOf(b)).toEqual([
+      expect(rowsOf()).toEqual([
         expect.stringContaining('alpha'),
         expect.stringContaining('新会话'),
         expect.stringContaining('old'),
         expect.stringContaining('mid'),
+      ])
+    })
+  })
+
+  it('skips drags masked by the pinned New Session row without reordering or writing Host', async () => {
+    const insertSessionBefore = vi.fn(async () => {})
+    const b = mount({
+      useSessions: hook(sessionState([
+        summary('one', 3),
+        summary('blank', 2, { blank: true }),
+        summary('three', 1),
+      ], { current: sid('blank') })),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'blank', 'three'])])),
+      insertSessionBefore,
+    })
+    // The current session's group auto-expands, exposing the pinned rows.
+    await waitFor(() => {
+      expect(b.store.getSnapshot().sessionOrderByAccount['alpha']).toEqual(['one', 'blank', 'three'])
+    })
+    await waitFor(() => {
+      expect(rowsOf()).toEqual([
+        expect.stringContaining('alpha'),
+        expect.stringContaining('新会话'),
+        expect.stringContaining('one'),
+        expect.stringContaining('three'),
+      ])
+    })
+    const blankRow = screen.getByText('新会话').closest('[role="treeitem"]') as HTMLElement
+    const one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    const three = screen.getByText('three').closest('[role="treeitem"]') as HTMLElement
+    three.getBoundingClientRect = () => ({
+      top: 150, bottom: 184, left: 0, right: 200, width: 200, height: 34, x: 0, y: 150, toJSON: () => ({}),
+    })
+    // Dragging the pinned New Session row to the end would render unchanged
+    // (the pin returns it to the front): the whole commit is skipped.
+    fireEvent.dragStart(blankRow, { dataTransfer: dragData() })
+    fireDrag(three, 'drop', 180)
+    expect(b.store.getSnapshot().sessionOrderByAccount['alpha']).toEqual(['one', 'blank', 'three'])
+    expect(insertSessionBefore).not.toHaveBeenCalled()
+    // Parking the row directly below the pinned blank above it is masked the
+    // same way: no browser reorder and no Host write.
+    blankRow.getBoundingClientRect = () => ({
+      top: 100, bottom: 134, left: 0, right: 200, width: 200, height: 34, x: 0, y: 100, toJSON: () => ({}),
+    })
+    fireEvent.dragStart(one, { dataTransfer: dragData() })
+    fireDrag(blankRow, 'drop', 105)
+    expect(b.store.getSnapshot().sessionOrderByAccount['alpha']).toEqual(['one', 'blank', 'three'])
+    expect(insertSessionBefore).not.toHaveBeenCalled()
+  })
+
+  it('releases the pin when the current New Session stops being blank', async () => {
+    const b = mount({
+      useSessions: hook(sessionState([
+        summary('one', 3),
+        summary('blank', 2, { blank: true }),
+        summary('three', 1),
+      ], { current: sid('blank') })),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'blank', 'three'])])),
+    })
+    // The current session's group auto-expands, exposing the pinned rows.
+    await waitFor(() => {
+      expect(rowsOf()).toEqual([
+        expect.stringContaining('alpha'),
+        expect.stringContaining('新会话'),
+        expect.stringContaining('one'),
+        expect.stringContaining('three'),
+      ])
+    })
+    // The pin is a render-time effect only: the persisted account order
+    // keeps the blank in its creation-time slot throughout.
+    expect(b.store.getSnapshot().sessionOrderByAccount['alpha']).toEqual(['one', 'blank', 'three'])
+    // Sending the first prompt turns the blank into a real session; the pin
+    // is released and the row returns to its stored slot.
+    rerender(b, {
+      useSessions: hook(sessionState([
+        summary('one', 3),
+        summary('blank', 2, { blank: false }),
+        summary('three', 1),
+      ], { current: sid('blank') })),
+    })
+    await waitFor(() => {
+      expect(rowsOf()).toEqual([
+        expect.stringContaining('alpha'),
+        expect.stringContaining('one'),
+        expect.stringContaining('blank'),
+        expect.stringContaining('three'),
       ])
     })
   })

@@ -95,6 +95,32 @@ function reconciledSessionOrder(sessionIds: readonly SessionId[], stored: readon
   return ordered
 }
 
+/**
+ * Render-time pin: the blank Session the user is currently in (the New
+ * Session being created) renders first in its account in both order modes.
+ * Opening or reusing a blank never advances its `updatedAt` (the Host derives
+ * it from `createdAt` and `lastPromptAt`), so without the pin a reused blank
+ * would keep its old creation-time position. The pin applies only to this
+ * derived render order — it is never written back to the persisted account
+ * order, so the stored position returns as soon as the Session stops being
+ * the current blank.
+ * @param order - account order before pinning.
+ * @param list - sessions list snapshot (`current` and `byId` decide the pin).
+ * @returns `order` with the current blank moved to the front, otherwise `order` unchanged.
+ */
+function pinCurrentBlank<T extends string>(order: readonly T[], list: SessionListState): T[] {
+  const current = list.current
+  if (current === undefined || list.byId[current]?.blank !== true) return [...order]
+  const key = current as unknown as T
+  if (!order.includes(key)) return [...order]
+  return [key, ...order.filter(id => id !== key)]
+}
+
+/** True when two orders hold the same ids at the same indexes. */
+function sameOrder(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index])
+}
+
 /** Newest update first with stable Session identity as the tie-break. */
 function compareSessionRecency(a: SessionId, b: SessionId, byId: SessionListState['byId']): number {
   const aUpdatedAt = byId[a]?.updatedAt ?? Number.NEGATIVE_INFINITY
@@ -103,13 +129,7 @@ function compareSessionRecency(a: SessionId, b: SessionId, byId: SessionListStat
   return a < b ? -1 : 1
 }
 
-/**
- * Reconcile one editable order account and apply its activity-promotion
- * policy. The blank session the user is currently in (the New Session being
- * created) is pinned first in every mode: opening or reusing a blank never
- * advances its `updatedAt`, so without the pin the row would keep its old
- * creation-time position.
- */
+/** Reconcile one editable order account and apply its activity-promotion policy. */
 function nextSessionOrderAccount({
   sessionIds, previousOrder, previousUpdatedAt, list, orderBy, sortByRecency,
 }: {
@@ -135,12 +155,6 @@ function nextSessionOrderAccount({
       const promotedIds = new Set(promoted)
       order = [...promoted, ...order.filter(id => !promotedIds.has(id))]
     }
-  }
-  // The New Session being created stays first in its account while it is the
-  // current selection, in both order modes.
-  const current = list.current
-  if (current !== undefined && list.byId[current]?.blank === true && sessionIds.includes(current)) {
-    order = [current, ...order.filter(id => id !== current)]
   }
   const updatedAt: Record<string, number> = {}
   for (const id of sessionIds) {
@@ -324,20 +338,20 @@ function SessionTree({
   const orderedWorkspaces = useMemo(() => {
     return workspaces.map((workspace) => {
       const stored = sessionOrderByAccount[workspace.workspaceId as string]
-      const sessionIds = reconciledSessionOrder(workspace.sessionIds, stored)
+      const sessionIds = pinCurrentBlank(reconciledSessionOrder(workspace.sessionIds, stored), list)
       return { ...workspace, sessionIds }
     })
-  }, [sessionOrderByAccount, workspaces])
+  }, [list, sessionOrderByAccount, workspaces])
   const orderedUngroupedSessionIds = useMemo(
-    () => reconciledSessionOrder(ungroupedSessionIds, sessionOrderByAccount[UNGROUPED_KEY]),
-    [sessionOrderByAccount, ungroupedSessionIds],
+    () => pinCurrentBlank(reconciledSessionOrder(ungroupedSessionIds, sessionOrderByAccount[UNGROUPED_KEY]), list),
+    [sessionOrderByAccount, ungroupedSessionIds, list],
   )
   const groups = useMemo(
     () => deriveGroups(list, orderedWorkspaces, archivedSessionIds, {
       expandedGroups,
       ...(sessionOrderByAccount[UNGROUPED_KEY] === undefined
         ? {}
-        : { ungroupedOrder: sessionOrderByAccount[UNGROUPED_KEY] }),
+        : { ungroupedOrder: pinCurrentBlank(sessionOrderByAccount[UNGROUPED_KEY], list) }),
     }),
     [list, orderedWorkspaces, archivedSessionIds, expandedGroups, sessionOrderByAccount],
   )
@@ -364,6 +378,11 @@ function SessionTree({
     const nextOrder = accountSessionIds.filter(id => id !== activeDrag.sessionId)
     const insertAt = anchor === undefined ? nextOrder.length : nextOrder.indexOf(anchor)
     nextOrder.splice(insertAt === -1 ? nextOrder.length : insertAt, 0, activeDrag.sessionId)
+    // The render-time pin cancels drags whose committed order would render
+    // unchanged (dragging the pinned New Session row, or parking another row
+    // into the pinned slot). Skip the whole commit so neither the browser
+    // account nor the Host account records a move the user never saw.
+    if (sameOrder(accountSessionIds, pinCurrentBlank(nextOrder, list))) return
     setSessionOrder(activeDrag.accountKey, nextOrder.map(id => id as string))
     if (orderBy === 'updated' || activeDrag.accountKey === UNGROUPED_KEY) return
     insertSessionBefore(activeDrag.accountKey as WorkspaceId, activeDrag.sessionId, anchor).catch((reason: unknown) => {
@@ -603,12 +622,12 @@ function FlatList({
   }, [list, orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, sessionIds, syncSessionOrderAccount])
   const rows = useMemo(() => {
     const byId = new Map(baseRows.map(row => [row.id, row]))
-    return reconciledSessionOrder(sessionIds, sessionOrderByAccount[FLAT_SESSION_ORDER_KEY])
+    return pinCurrentBlank(reconciledSessionOrder(sessionIds, sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]), list)
       .flatMap((id) => {
         const row = byId.get(id)
         return row === undefined ? [] : [row]
       })
-  }, [baseRows, sessionOrderByAccount, sessionIds])
+  }, [baseRows, list, sessionOrderByAccount, sessionIds])
   const [drag, setDrag] = useState<DragState | null>(null)
   const dropCommitted = useRef(false)
   useNativeDragAcceptance(drag !== null)
@@ -626,6 +645,9 @@ function FlatList({
     const nextOrder = rows.map(row => row.id).filter(id => id !== activeDrag.sessionId)
     const insertAt = anchor === undefined ? nextOrder.length : nextOrder.indexOf(anchor)
     nextOrder.splice(insertAt === -1 ? nextOrder.length : insertAt, 0, activeDrag.sessionId)
+    // The render-time pin masks drags of the pinned New Session row, which
+    // would render unchanged; skip the commit entirely.
+    if (sameOrder(rows.map(row => row.id), pinCurrentBlank(nextOrder, list))) return
     setSessionOrder(FLAT_SESSION_ORDER_KEY, nextOrder.map(id => id as string))
   }
   const now = Date.now()
