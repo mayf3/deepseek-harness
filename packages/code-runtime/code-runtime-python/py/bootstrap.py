@@ -998,6 +998,15 @@ async def _run(channel: ProtocolChannel) -> None:
     _os_write_local = _os_write
     _memoryview_local = _memoryview
     _fallback_frame_local = _FALLBACK_DONE_FRAME
+    # The exception class the outer try/except catches is bound into a LOCAL
+    # here, before the program runs. This bootstrap is `__main__`, so
+    # `__main__.BaseException = RuntimeError` would otherwise rebind the module
+    # global `BaseException` the `except BaseException` clause resolves at
+    # runtime, and a subsequent `ValueError` would then not match the clause —
+    # escaping `_run` with no `done` frame and misreporting the run as a
+    # `worker-exit`. Binding the class into a local makes the catch immune to a
+    # one-line rebind.
+    _BaseException = BaseException
 
     def send_done(payload: dict[str, Any] | str) -> None:
         try:
@@ -1061,7 +1070,7 @@ async def _run(channel: ProtocolChannel) -> None:
         flush_out()
         flush_err()
         done = _done_with_value(value, max_value_bytes)
-    except BaseException as exc:  # noqa: BLE001 -- report every failure to host
+    except _BaseException as exc:  # noqa: BLE001 -- report every failure to host; `_BaseException` is a pre-program local, not a rebindable module global
         done = {
             "type": "done",
             "error": {

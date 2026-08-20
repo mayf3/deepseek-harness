@@ -848,7 +848,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
 
   it('bounds a control-char-dense native residual by serialized cost, not raw length', async () => {
     // A newline-free NUL flood passes the cheap `length + 3` lower bound at a
-    // raw length well under the budget, but each NUL serializes to `\x00` (6
+    // raw length well under the budget, but each NUL serializes to `\^@` (6
     // bytes), so the true JSON cost is ~6x. The ledger must charge that
     // serialized cost — and `jsonStringCostUpTo` must measure it WITHOUT
     // allocating the escaped copy, so a near-budget line under a large
@@ -1505,6 +1505,29 @@ describe('PythonCodeRuntime — programs and bindings', () => {
         '__main__._os_write = boom',
         '__main__._memoryview = boom',
         '__main__._FALLBACK_DONE_FRAME = boom',
+        'raise ValueError("real failure")',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.kind).not.toBe('worker-exit')
+  }, 15_000)
+
+  it('still reports a model exception when the program rebinds BaseException', async () => {
+    // `_run`'s outer try/except catches the program's failure and builds a
+    // `done` frame. The clause previously used the module-global `BaseException`,
+    // which the program (running as `__main__`) can rebind: `__main__.BaseException
+    // = RuntimeError` makes the `except BaseException` resolve to `RuntimeError`,
+    // so a subsequent `ValueError` does not match and escapes `_run` with no
+    // `done` frame — misreporting the run as a `worker-exit`. The exception class
+    // is now bound into a `_run` LOCAL before the program runs, so the rebind
+    // cannot change which class the clause catches; the run must still report an
+    // `exception`, not a `worker-exit`.
+    const { runtime } = await setup({ maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'import __main__',
+        '__main__.BaseException = RuntimeError',
         'raise ValueError("real failure")',
       ].join('\n'),
       bindings: [],
@@ -3269,7 +3292,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
   }, 20_000)
 
   it('rejects a control-heavy oversized completion on its length, not its escaped copy', async () => {
-    // Every "\x00" escapes to the six bytes "\x00", so the escaped form of a
+    // Every "\x00" escapes to the six bytes "\^@", so the escaped form of a
     // 40 MB string is ~240 MB. The walk must refuse on the cheap
     // `len(current) + 2` lower bound; the 384 MiB address space holds the raw
     // string but not its escaped expansion, so a pre-escape check dies on
@@ -3523,7 +3546,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
 
   it('caps a control-heavy exception diagnostic by its serialized cost, not raw bytes', async () => {
     // The diagnostic crosses fd 3 inside a JSON frame where a control character
-    // escapes sixfold (a NUL is one raw byte, six as `\x00`). Capping by raw
+    // escapes sixfold (a NUL is one raw byte, six as `\^@`). Capping by raw
     // UTF-8 length would let a NUL-heavy message near maxValueBytes serialize to
     // ~6x that and breach the frame ceiling — the silent worker-exit inversion
     // the load-time cap check exists to prevent. The child meters the diagnostic
@@ -4157,7 +4180,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
   it('drops a forged oversized log frame on its code-unit lower bound, before escaping it', async () => {
     // A forged `log` frame carrying a control-heavy string sits below the
     // 256 MiB fd-3 frame ceiling but escapes several-fold: 24 MiB of NULs
-    // becomes ~144 MiB of `\x00`. Charging it required building that escaped
+    // becomes ~144 MiB of `\^@`. Charging it required building that escaped
     // copy first, so a 32-byte maxLogBytes could still force a
     // hundreds-of-megabytes host allocation. The cheap `length + 3` lower bound
     // truncates it instead. The host's own heap is what is under test, so keep
