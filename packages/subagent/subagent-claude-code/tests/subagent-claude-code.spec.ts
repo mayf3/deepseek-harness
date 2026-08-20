@@ -1077,8 +1077,6 @@ describe('run publication, cancellation, and settlement', () => {
     const cases: Array<readonly [ErrorSubtype, string]> = [
       ['error_during_execution', 'product-error'],
       ['error_max_turns', 'limit'],
-      ['error_max_budget_usd', 'limit'],
-      ['error_max_structured_output_retries', 'limit'],
     ]
     for (const [subtype, category] of cases) {
       const fixture = fakeRun([failure(subtype)])

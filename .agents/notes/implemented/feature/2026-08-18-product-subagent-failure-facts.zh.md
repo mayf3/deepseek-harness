@@ -28,14 +28,7 @@ Product subagent failure (product: <product>; stage: <stage>; category: <categor
 
 ### Claude Code 事实
 
-Agent SDK 0.3.237 会提供结构化错误 subtype，但 Claude Code 提供方只公开由[最小诊断决策](../simplification/2026-08-21-product-subagent-minimal-diagnostics.zh.md)负责的行动类别：限制使用 `limit`，一般执行失败使用 `product-error`，标记为错误、内容空白或缺失的结果使用 `invalid-result`，CLI 提前退出使用 `process`，无法识别的值或异常则使用 `unknown`，且不会复制该值。
-
-| 阶段 | 归属操作 | 可观察失败 |
-| --- | --- | --- |
-| `query-start` | SDK query 构造、原生平台载荷启动与未发布回滚 | `start()` 以固定安全事实和回滚前已观测到的进程结果拒绝 |
-| `query-run` | 已发布 SDK 消息迭代与严格终态结果校验 | 运行以 `error` 兑现，并携带 `limit`、`product-error`、`invalid-result` 或 `unknown` |
-| `process` | SDK 提供终态结果之前受管 CLI 已退出 | 运行以 `error` 兑现，并携带 `process` 以及可用的退出码和信号 |
-| `teardown` | Query 关闭与受管进程树释放 | `dispose()` 独立拒绝并携带固定安全事实，同时清理仍会完成最终退出等待 |
+[最小诊断决策](../simplification/2026-08-21-product-subagent-minimal-diagnostics.zh.md)独占负责 Agent SDK 0.3.237 与 Claude Code 2.1.237 的 Claude Code 类别、阶段、进程事实、权限顺序与验证。本说明不再承载独立的 Claude 类别约定。
 
 ### Codex 事实
 
@@ -56,7 +49,7 @@ Codex app-server 0.147.0 定义十一种字符串类别与五种对象 variant�
 
 | 事实或资源 | Owner | 消费方行为 |
 | --- | --- | --- |
-| 产品错误类别 | 产品提供方及其锁定的官方运行时 | Claude Code 派生最小行动类别；Codex 保留当前结构化类别，并在已识别集合之外使用 `unknown` |
+| Codex 错误类别 | Codex 提供方及其锁定的官方 app-server | 提供方保留当前结构化类别，并在已识别集合之外使用 `unknown` |
 | 当前失败阶段 | 产品提供方操作 | 只在失败点派生；绝不持久化，也不作为恢复状态 |
 | 退出码与信号 | `dsh-subprocess` 进程句柄 | 提供方展示已观测值，不推测缺失值 |
 | 诊断字节与送达 | `dsh-subagent`、前台工具与 Job 运行时 | 两种调度模式都把同一份有界文本与 assistant 输出分开呈现 |
@@ -64,7 +57,7 @@ Codex app-server 0.147.0 定义十一种字符串类别与五种对象 variant�
 
 ## Verification
 
-Claude Code 包测试固定五种最小类别、未知值与异常、四个阶段、相互独立的退出码与信号字段、权限事实顺序、脱敏、成功结果与取消时省略诊断、并发运行隔离和清理完成。Codex 包测试固定当前全部十六种 error-info variant、HTTP status 存在与缺失、六个阶段、unknown 回退、终止原因保持不变、权限顺序、脱敏、取消、并发与清理聚合。真实 SDK/CLI fixture 会产生真实的 Claude max-turns 限制，真实 app-server fixture 会产生真实的 Codex `internalServerError`；两个 fixture 都覆盖进程／协议失败与整棵进程树完全停稳。无密钥 ACP snapshot 会在前台错误输出、后台完成通知和 `job_output` 中记录两个产品各自的诊断。
+Claude Code 验证由[最小诊断决策](../simplification/2026-08-21-product-subagent-minimal-diagnostics.zh.md)负责。Codex 包测试固定当前全部十六种 error-info variant、HTTP status 存在与缺失、六个阶段、unknown 回退、终止原因保持不变、权限顺序、脱敏、取消、并发与清理聚合。真实 app-server fixture 会产生实际 Codex `internalServerError`，并覆盖进程／协议失败与整棵进程树完全停稳。无密钥 ACP snapshot 会在前台错误输出、后台完成通知和 `job_output` 中记录 Codex 诊断。
 
 ## Alternatives considered
 
@@ -80,7 +73,7 @@ Claude Code 包测试固定五种最小类别、未知值与异常、四个阶�
 
 ## Consequences
 
-父 agent 可以区分粗粒度的 Claude Code 限制、产品失败、无效结果、进程退出与未知失败，而 Codex 仍会区分当前预算、用量、服务、策略、请求、连接、stream、回滚、sandbox 与 active-turn 类别。二者都不会收到原始产品文本；前台与后台调度会保留同一事实，因为二者都消费同一个 `SubagentResult`。
+父 agent 可以区分当前 Codex 的预算、用量、服务、策略、请求、连接、stream、回滚、sandbox 与 active-turn 类别，而不会收到原始产品文本。[最小诊断决策](../simplification/2026-08-21-product-subagent-minimal-diagnostics.zh.md)负责对应的 Claude 结果。前台与后台调度会保留同一事实，因为二者都消费同一个 `SubagentResult`。
 
 诊断只是展示文本，不是新的公开协议。调用方可以呈现它，但不得根据其标点或产品私有类别名称进行分支。锁定产品版本升级时必须重新验证提供方映射与证据，但不要求每个官方错误成员都继续模型可见。
 

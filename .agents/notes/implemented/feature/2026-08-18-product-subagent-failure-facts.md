@@ -28,14 +28,7 @@ Successful results and local cancellation expose no failure fact. Raw product er
 
 ### Claude Code facts
 
-Agent SDK 0.3.237 supplies structured error subtypes, but the Claude Code Provider exposes only the action categories owned by the [minimal-diagnostics decision](../simplification/2026-08-21-product-subagent-minimal-diagnostics.md): limits use `limit`, general execution failures use `product-error`, error-marked, blank, or missing results use `invalid-result`, an early CLI exit uses `process`, and unrecognized values or exceptions use `unknown` without copying the value.
-
-| Stage | Owned operation | Observable failure |
-| --- | --- | --- |
-| `query-start` | SDK query construction, native platform-payload startup, and unpublished rollback | `start()` rejects with fixed safe facts and any process outcome observed before rollback |
-| `query-run` | Published SDK message iteration and strict terminal-result validation | The run resolves as `error` with `limit`, `product-error`, `invalid-result`, or `unknown` |
-| `process` | Managed CLI exits before the SDK supplies a terminal result | The run resolves as `error` with `process` and the available exit code and signal |
-| `teardown` | Query close and managed process-tree release | `dispose()` rejects independently with fixed safe facts after cleanup still reaches its final exit wait |
+The [minimal-diagnostics decision](../simplification/2026-08-21-product-subagent-minimal-diagnostics.md) exclusively owns Claude Code categories, stages, process facts, permission ordering, and verification for Agent SDK 0.3.237 and Claude Code 2.1.237. This note carries no separate Claude category contract.
 
 ### Codex facts
 
@@ -56,7 +49,7 @@ Codex app-server 0.147.0 defines eleven string categories and five object varian
 
 | Fact or resource | Owner | Consumer behavior |
 | --- | --- | --- |
-| Product error category | Product Provider over its pinned official runtime | Claude Code derives a minimal action category; Codex preserves its current structured category and uses `unknown` outside the recognized set |
+| Codex error category | Codex Provider over its pinned official app-server | The Provider preserves its current structured category and uses `unknown` outside the recognized set |
 | Current failure stage | Product Provider operation | Derived at the failure site; never persisted or used as a recovery state |
 | Exit code and signal | `dsh-subprocess` process handle | The Provider displays observed values without inferring missing ones |
 | Diagnostic bytes and delivery | `dsh-subagent`, foreground tool, and Job runtime | The same bounded text is presented separately from assistant output in both scheduling modes |
@@ -64,7 +57,7 @@ Codex app-server 0.147.0 defines eleven string categories and five object varian
 
 ## Verification
 
-Claude Code package tests pin the five minimal categories, unknown values and exceptions, all four stages, independent exit code and signal fields, permission-fact ordering, sanitization, successful-result and cancellation omission, concurrent-run isolation, and cleanup completion. Codex package tests pin all sixteen current error-info variants, HTTP status presence and absence, all six stages, unknown fallback, stop-reason preservation, permission ordering, sanitization, cancellation, concurrency, and cleanup aggregation. The real SDK/CLI fixture produces an actual Claude max-turns limit; the real app-server fixture produces an actual Codex `internalServerError`; both fixtures cover process/protocol failure and whole-tree quiescence. The keyless ACP snapshot records each product's diagnostic in foreground error output, a background completion notice, and `job_output`.
+Claude Code verification is owned by the [minimal-diagnostics decision](../simplification/2026-08-21-product-subagent-minimal-diagnostics.md). Codex package tests pin all sixteen current error-info variants, HTTP status presence and absence, all six stages, unknown fallback, stop-reason preservation, permission ordering, sanitization, cancellation, concurrency, and cleanup aggregation. The real app-server fixture produces an actual Codex `internalServerError` and covers process/protocol failure and whole-tree quiescence. The keyless ACP snapshot records the Codex diagnostic in foreground error output, a background completion notice, and `job_output`.
 
 ## Alternatives considered
 
@@ -80,7 +73,7 @@ Claude Code package tests pin the five minimal categories, unknown values and ex
 
 ## Consequences
 
-The parent can distinguish coarse Claude Code limits, product failures, invalid results, process exits, and unknown failures while Codex still distinguishes its current budget, usage, service, policy, request, connection, stream, rollback, sandbox, and active-turn categories. Neither receives raw product text, and foreground and background scheduling preserve the same fact because both consume one `SubagentResult`.
+The parent can distinguish the current Codex budget, usage, service, policy, request, connection, stream, rollback, sandbox, and active-turn categories without receiving raw product text. The [minimal-diagnostics decision](../simplification/2026-08-21-product-subagent-minimal-diagnostics.md) owns the corresponding Claude result. Foreground and background scheduling preserve the same fact because both consume one `SubagentResult`.
 
 The diagnostic is display text rather than a new public protocol. Callers may present it but must not branch on its punctuation or product-private category names. A pinned product-version upgrade revalidates the Provider mapping and evidence without requiring every official error member to remain model-visible.
 
