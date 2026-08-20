@@ -132,7 +132,7 @@ function resolveSdkRoute(config: ResolvedConfig, requested: AgentOptions | undef
  */
 class SdkSubagentProvider implements SubagentProvider {
   readonly capabilities = SDK_START_CAPABILITIES
-  readonly agentRouteDefaults: Readonly<Pick<AgentOptions, 'provider' | 'model'>>
+  readonly agentRouteDefaults: Readonly<{ provider: string; model: string }>
   // Context contract: an out-of-process SDK child starts fresh — no parent conversation crosses the process boundary.
   readonly inheritsParentContext = false
 

@@ -6,7 +6,7 @@
 
 ## 提供方选择与生命周期
 
-每个插件实例把一个 subagent 传输 `provider` 绑定到一个 `toolName`；模型不能改变该传输。如需公开另一种传输，请加载另一个名称不同的实例。`enableModelSelection: true`，或 `modelSelectionSettings: true` 时已启用的 Host 偏好，都要求该提供方具备子级 `agentOptions` 能力，并且无需额外路由配置即可公开可选的子 agent LLM `provider`、`model` 与 `reasoning_effort` 字段。调用可以提供完整的提供方／模型对；当配置值、父 Agent 值或提供方持有的默认值能够提供生效路由时，也可以只提供推理强度。静态的 `provider.agentRouteDefaults` 在存在时构成 provider／model／reasoning 基线；工具配置与模型字段会在路由相关强度合并和确切路由预检前覆盖它。没有这些默认值的提供方会从父 Agent 最新记录的请求选择中保留兼容的缺失值；首个请求之前回退到其创建选项，并保留其中配置的 `maxTokens`。如果更换提供方或模型但没有指定强度，则清除下层路由所属的强度，使所选模型解析自己的默认值。
+每个插件实例把一个 subagent 传输 `provider` 绑定到一个 `toolName`；模型不能改变该传输。如需公开另一种传输，请加载另一个名称不同的实例。`enableModelSelection: true`，或 `modelSelectionSettings: true` 时已启用的 Host 偏好，都要求该提供方具备子级 `agentOptions` 能力，并且无需额外路由配置即可公开可选的子 agent LLM `provider`、`model` 与 `reasoning_effort` 字段。调用可以提供完整的提供方／模型对；当配置值、父 Agent 值或提供方持有的路由默认值能够提供生效路由时，也可以只提供推理强度。静态的 `provider.agentRouteDefaults` 在存在时构成 provider／model 基线；工具配置与模型字段会在路由相关强度合并和确切路由预检前覆盖它。没有这些默认值的提供方会从父 Agent 最新记录的请求选择中保留兼容的缺失值；首个请求之前回退到其创建选项，并保留其中配置的 `maxTokens`。如果更换提供方或模型但没有指定强度，则清除下层路由所属的强度，使所选模型解析自己的默认值。
 
 委派工具只在其 subagent 提供方存在时注册，从而避免对同级加载顺序和提供方重新加载的依赖。启用模型选择时，即使没有 `ctx.llm`，可选字段仍然可见；选择路由的调用会在该服务缺失时失败。禁用时，schema 会省略这些字段，执行阶段也会拒绝强制传入的选择。配置的 `agentOptions` 仍是部署方所有的子级默认值，不受这个面向模型的开关影响。adapter 目录和拓扑变化不会改写或重新注册工具。工具描述遵循 `provider.inheritsParentContext`：新建子 agent（智能体）需要独立提示词，而 fork 子 agent 已能看到父级已完成轮次。
 

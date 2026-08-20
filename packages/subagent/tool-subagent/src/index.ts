@@ -412,7 +412,7 @@ export function apply(ctx: Context, config: Config): void {
             reasoning_effort: {
               type: 'string' as const,
               description: providerRouteDefaults !== undefined
-                ? 'Adapter-owned reasoning effort for the effective child route. Omit to use a compatible configured/provider effort or the selected model\'s default.'
+                ? 'Adapter-owned reasoning effort for the effective child route. Omit to use a compatible configured effort or the selected model\'s default.'
                 : 'Adapter-owned reasoning effort for the effective child route. Omit to inherit a compatible configured/parent effort or use a newly selected model\'s default.',
             },
           } : {},
