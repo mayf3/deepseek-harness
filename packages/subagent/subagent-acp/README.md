@@ -31,7 +31,7 @@ ACP advertises no start-time capabilities because this process cannot enforce th
 | `permission` | `reject` | Auto-answer permission requests by rejecting or choosing the first `allow_once` or `allow_always` option. |
 | `env` | `{}` | Explicit child environment layered over a credential-scrubbed parent environment. |
 | `disposeEofGraceMs` | `6000` | Positive grace after stdin EOF before platform termination; it cannot exceed [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md). |
-| `disposeGraceMs` | `3000` | Positive POSIX grace after SIGTERM before SIGKILL (Windows force-terminates directly); it cannot exceed [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md). |
+| `disposeGraceMs` | `3000` | Positive bound for observing structured process facts after failure and, on POSIX, the SIGTERM-to-SIGKILL grace (Windows force-terminates directly); it cannot exceed [`MAX_TIMER_DELAY_MS`](../../util/timeout/README.md). |
 
 ```yaml
 - id: subagent-acp

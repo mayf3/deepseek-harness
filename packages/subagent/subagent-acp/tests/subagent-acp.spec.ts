@@ -105,6 +105,22 @@ function rejectFinalExitWaitAfterExit(child: SubprocessHandle, message: string):
   }
 }
 
+function tapBoundedExitWait(child: SubprocessHandle, onWait: () => void): SubprocessHandle {
+  return {
+    pid: child.pid,
+    stdin: child.stdin,
+    stdout: child.stdout,
+    stderr: child.stderr,
+    collected: child.collected,
+    done: child.done,
+    terminate: () => { child.terminate() },
+    waitForExit: (signal?: AbortSignal) => {
+      if (signal !== undefined) onWait()
+      return child.waitForExit(signal)
+    },
+  }
+}
+
 describe('acpStopReason', () => {
   it('maps each ACP stop reason to the harness vocabulary', () => {
     expect(acpStopReason('end_turn')).toBe('completed')
@@ -593,6 +609,7 @@ describe('dsh-subagent-acp', () => {
   it('reaps a child whose session/new response omits the session id', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'acp-malformed-session-'))
     const flushed = join(tmp, 'flushed')
+    let boundedWaits = 0
     try {
       await expect(startAcpRun(request(), {
         command: process.execPath,
@@ -606,13 +623,14 @@ describe('dsh-subagent-acp', () => {
         },
         disposeEofGraceMs: 1000,
         disposeGraceMs: 100,
-        spawn: spawnSubprocess,
+        spawn: spec => tapBoundedExitWait(spawnSubprocess(spec), () => { boundedWaits += 1 }),
       })).rejects.toThrow(
         `subagent-acp: ${expectedFailure('stage: new-session; category: protocol')}`,
       )
       // Startup rejects only after its private child reaches quiescence. The
       // marker proves rollback closed stdin and allowed the child's EOF flush.
       expect(existsSync(flushed)).toBe(true)
+      expect(boundedWaits).toBe(1)
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
@@ -936,6 +954,30 @@ describe('dsh-subagent-acp', () => {
       stopReason: 'error',
     })
     expect(result.diagnostic).not.toContain('private prompt text')
+    await run.dispose()
+  })
+
+  it('lets local cancellation interrupt prompt-failure process observation', async () => {
+    const controller = new AbortController()
+    const observing = Promise.withResolvers<undefined>()
+    const run = await startAcpRun(request('p', controller.signal), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_CLOSE_PROTOCOL_ON_PROMPT: '1' },
+      disposeEofGraceMs: 100,
+      disposeGraceMs: 5000,
+      spawn: spec => tapBoundedExitWait(spawnSubprocess(spec), () => { observing.resolve(undefined) }),
+    })
+    await observing.promise
+    controller.abort()
+    await expect(Promise.race([
+      run.result,
+      new Promise<never>((_resolve, reject) => {
+        setTimeout(() => { reject(new Error('cancellation waited for process observation')) }, 500)
+      }),
+    ])).resolves.toEqual({ output: [], stopReason: 'aborted' })
     await run.dispose()
   })
 

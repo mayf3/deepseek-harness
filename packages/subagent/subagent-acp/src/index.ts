@@ -59,7 +59,7 @@ export interface Config {
    * `MAX_TIMER_DELAY_MS`.
    */
   disposeEofGraceMs?: number
-  /** Termination-escalation grace (ms); must not exceed `MAX_TIMER_DELAY_MS`. */
+  /** Failure-observation and termination-escalation grace (ms); must not exceed `MAX_TIMER_DELAY_MS`. */
   disposeGraceMs?: number
 }
 
@@ -74,7 +74,7 @@ export const Config: z<Config> = z.object({
   disposeGraceMs: z.number().default(DEFAULT_DISPOSE_GRACE_MS),
 })
 
-/** A dispose grace must fit the single Node timer that owns its teardown tier. */
+/** A process grace must fit every Node timer that observes or terminates the child. */
 function assertPositiveFinite(name: string, value: number): void {
   if (!Number.isFinite(value) || value <= 0 || value > MAX_TIMER_DELAY_MS) {
     throw new Error(`subagent-acp: ${name} must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`)
