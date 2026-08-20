@@ -250,10 +250,10 @@ const SCENARIOS: Scenario[] = [
     toolSchemasSource: 'read-image',
     configPath: IMAGE_TEXT_ROUTE_CONFIG,
   },
-  // Authored keyless replay of the oversized-image refusal: admission rejects
-  // the 2001x1 fixture at the default 2000px per-side limit, the model sees a
-  // recoverable tool error, and the turn still completes — the image never
-  // enters durable history.
+  // Authored keyless replay of wide-image admission: the 2001x1 fixture sits
+  // inside the wide source envelope and the canonical budget, so read_image
+  // succeeds and the attachment keeps the source bytes byte-identically —
+  // the same read the pre-canonicalization 2000px admission cap refused.
   {
     name: 'read-image-dimension',
     hasModelTurn: true,
