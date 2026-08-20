@@ -31,7 +31,7 @@ Codex 会把 app-server 失败映射为八种类别：
 | 类别 | 安全输入 |
 | --- | --- |
 | `limit` | 上下文、会话预算或用量限制 |
-| `access-policy` | 身份验证、网络安全策略或 sandbox 失败 |
+| `access-policy` | 身份验证、网络安全策略、产品策略或 sandbox 失败 |
 | `service` | 过载或内部服务失败 |
 | `transport` | HTTP 与响应 stream 连接失败或尝试耗尽 |
 | `product-error` | 无效请求、回滚、活动轮次或其他产品失败 |

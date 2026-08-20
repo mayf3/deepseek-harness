@@ -31,7 +31,7 @@ Codex maps app-server failures into eight categories:
 | Category | Safe input |
 | --- | --- |
 | `limit` | Context, session-budget, or usage limits |
-| `access-policy` | Authentication, cyber-policy, or sandbox failures |
+| `access-policy` | Authentication, cyber-policy, product-policy, or sandbox failures |
 | `service` | Overload or internal service failures |
 | `transport` | HTTP and response-stream connection failures or exhausted attempts |
 | `product-error` | Invalid requests, rollback, active-turn, or other product failures |
