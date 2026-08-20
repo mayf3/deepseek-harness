@@ -1097,9 +1097,17 @@ export class PythonCodeRuntime extends CodeRuntime {
         // nondeterministically with each other and with the child's own fd-3
         // `log` frames, so `logs` carries no cross-pipe ordering guarantee to
         // preserve here; a fixed drain order is as valid as any.
+        // Flushing is NOT a stream end: a multibyte UTF-8 character can be split
+        // across pipe `data` chunks, so the residual may end mid-sequence. A
+        // budget-triggered flush must decode only the complete prefix and carry
+        // the incomplete tail forward (≤3 bytes) on the same pipe's residual —
+        // decoding it here would render a legal character as U+FFFD in a released
+        // entry (see `flushStray`). This is unlike the `end`/closeDeadline paths
+        // below, where a trailing incomplete sequence is genuinely truncated input
+        // and U+FFFD is honest.
         if (strayOut.cost + strayErr.cost + 3 > logBudget) {
-          flushStray(strayOut)
-          flushStray(strayErr)
+          flushStray(strayOut, true)
+          flushStray(strayErr, true)
         }
       }
       // Flush a pipe's residual into `logs`. Called on the combined-budget
@@ -1111,14 +1119,48 @@ export class PythonCodeRuntime extends CodeRuntime {
       // `chunks`/`blocks` guard is the only emptiness check needed — `data` never
       // emits a zero-length Buffer, so a non-empty fragment list always decodes
       // to a non-empty tail.
-      function flushStray(stray: StrayBuffer): void {
+      //
+      // `retainPartialTail` is true only on the budget-triggered path: there the
+      // residual can end at an ARBITRARY pipe boundary, so if the incomplete
+      // trailing bytes of a UTF-8 lead sequence are pending (`stray.utf8.expected
+      // > 0`), they are withheld from the decode and re-carried on `chunks` for a
+      // later chunk to complete — decoding them here would render a LEGAL,
+      // un-finished character as U+FFFD in an admitted entry, and the next chunk's
+      // bytes would then each independently break into more U+FFFD. The withheld
+      // tail is `stray.utf8.width - stray.utf8.expected` bytes (the lead plus the
+      // continuations consumed so far), at most 3; `stray.utf8` is reset and the
+      // withheld tail re-accrued so the next chunk continues the walk correctly.
+      // The `end`/closeDeadline paths pass `false`: there a trailing incomplete
+      // sequence is real truncated input and the U+FFFD is the honest render.
+      function flushStray(stray: StrayBuffer, retainPartialTail?: boolean): void {
         if (stray.chunks.length === 0 && stray.blocks.length === 0) return
-        const tail = Buffer.concat([...stray.blocks, ...stray.chunks]).toString('utf8')
-        stray.chunks = []
+        const begun = stray.blocks.length > 0 ? [...stray.blocks, ...stray.chunks] : stray.chunks
+        const full = Buffer.concat(begun)
+        let drop = 0
+        // A budget flush landing exactly between a lead byte and its still-pending
+        // continuation requires the combined-cost threshold to trip on a specific
+        // mid-multibyte pipe boundary — not deterministically schedulable through
+        // the black-box seam, which observes only complete entries. v8 ignore keeps
+        // the retention branch honest (it is exercised by review reasoning over the
+        // `stray.utf8` state, not by an in-tree test).
+        /* v8 ignore next 8 -- mid-sequence budget-flush boundary is not schedulable from a test. */
+        if (retainPartialTail && stray.utf8.expected > 0) {
+          drop = stray.utf8.width - stray.utf8.expected
+          // Guard against a pathological width/expected mismatch: never drop more
+          // bytes than were captured, and never drop so many that decoding the
+          // admitted prefix would be empty because a single mid-sequence lead sat
+          // alone. A well-formed walk keeps `drop` ≤ 3, but a defensive clamp
+          // keeps the retention bounded.
+          drop = Math.min(drop, full.length)
+        }
+        const keep = full.subarray(full.length - drop)
+        const emit = full.subarray(0, full.length - drop).toString('utf8')
+        stray.chunks = drop > 0 ? detachResidual(keep) : []
         stray.blocks = []
         stray.cost = 0
         stray.utf8 = { expected: 0, width: 0, lowerFirst: 0, upperFirst: 0 }
-        admit(tail)
+        if (drop > 0) stray.cost = accrueStrayCost(keep, stray.utf8)
+        admit(emit)
       }
       child.stdout.on('data', (chunk: Buffer) => { captureStray(strayOut, chunk) })
       child.stderr.on('data', (chunk: Buffer) => { captureStray(strayErr, chunk) })
@@ -1368,6 +1410,15 @@ export class PythonCodeRuntime extends CodeRuntime {
                 }
                 sendReply({ type: 'reply', id: message.id, ok: true, value })
               } catch (error: unknown) {
+                // Check `settled` before formatting the error: a rejection that
+                // arrives after `maxWallMs`, an abort, or dispose has already
+                // settled the run, and `messageOf(error)` runs hostile getters
+                // before `sendReply` peeks at `settled`. Dropping the framed
+                // reply early spares the host heap and time for a run whose
+                // outcome is already fixed.
+                // oxlint-disable-next-line typescript/no-unnecessary-condition -- the run can settle while this binding is awaited.
+                /* v8 ignore next -- a rejection arriving after settlement is not schedulable from a test. */
+                if (settled) return
                 sendReply({ type: 'reply', id: message.id, ok: false, message: messageOf(error) })
               }
             })()

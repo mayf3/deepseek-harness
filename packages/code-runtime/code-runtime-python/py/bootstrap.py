@@ -506,12 +506,24 @@ class ProtocolChannel:
         (dispatch raises the lossless-JSON message).
         """
 
-        payload = (_encode_json_plain(message) + "\n").encode("utf-8")
-        # Full-write loop under the writer lock: one os.write may consume only
-        # part of a frame beyond PIPE_BUF (64 KiB logs / 32 KiB completions /
-        # uncapped call args exceed it), and a partial or interleaved frame is
-        # dropped host-side as malformed JSON — the run would then hang to the
-        # wall clock.
+        self.write_encoded(_encode_json_plain(message))
+
+    def write_encoded(self, frame: str) -> None:
+        """Write a frame that is ALREADY encoded to its JSON string form.
+
+        Appends the frame's trailing newline and full-write-loops the bytes
+        under the writer lock, identically to :meth:`send_sync`. The consumer
+        supplies the encoded JSON (a ``"done"`` frame carrying a completion
+        value that was serialized at its validation point — see
+        :func:`_done_with_value`); the channel does not re-encode it, so the
+        bytes written are exactly what was validated with no second traversal
+        of a live object.
+        """
+
+        payload = (frame + "\n").encode("utf-8")
+        # Full-write loop under the writer lock (same rationale as send_sync):
+        # one os.write may consume only part of a frame beyond PIPE_BUF, and a
+        # partial or interleaved frame is dropped host-side as malformed JSON.
         with self._write_lock:
             view = memoryview(payload)
             while view:
@@ -881,9 +893,20 @@ async def _run(channel: ProtocolChannel) -> None:
     safe_model_traceback = _SAFE_MODEL_TRACEBACK
     flush_out = out_stream.flush_line
     flush_err = err_stream.flush_line
-    send_done = channel.send_sync
+    # `done` is either a pre-encoded frame STRING (a `_done_with_value` success:
+    # the completion value was serialized at its validation point, inside the try,
+    # so a later send never re-walks the live value a mutating daemon thread could
+    # have changed) or a dict ERROR frame (a rejection or the exception handler,
+    # which carry no live model value). `send_done` posts whichever form: a string
+    # is written verbatim via `write_encoded`, a dict is encoded by `send_sync`.
+    def send_done(payload: dict[str, Any] | str) -> None:
+        if isinstance(payload, str):
+            channel.write_encoded(payload)
+        else:
+            channel.send_sync(payload)
+
     max_value_bytes = int(boot["maxValueBytes"])
-    done: dict[str, Any]
+    done: dict[str, Any] | str
     try:
         module = ast.parse(program)
         wrapper = ast.AsyncFunctionDef(
@@ -908,7 +931,8 @@ async def _run(channel: ProtocolChannel) -> None:
         die_if_cpu_exhausted(cpu_seconds)
         # Flush the log buffers BEFORE metering and framing the completion value.
         # `_done_with_value` materializes the value's escaped JSON form to meter
-        # it, and `send_done` encodes the frame — several copies of a near-budget
+        # it and then pre-encodes the admitted value into its frame (see its
+        # docstring for the TOCTOU rationale) — several copies of a near-budget
         # value live at once (see OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE).
         # Any unflushed log pending would add its own bytes to that peak, so a
         # `maxLogBytes` and a `maxValueBytes` each admitted alone by the load gate
@@ -1477,6 +1501,14 @@ def _check_done_value(value: Any, max_bytes: int):
     Returns ``("invalid-output", message)`` for a non-lossless value,
     ``("output-limit", message)`` once the size crosses ``max_bytes``, or
     ``None`` when the value is lossless JSON within budget.
+
+    Metering and validation interleave in this single traversal: each member is
+    costed the moment it is visited, and it is rejected the moment it trips
+    either check. A value that holds BOTH an over-budget member and an
+    invalid-typed member therefore resolves to whichever tripped FIRST in
+    visit order — both are rejects, and neither kind claims priority over the
+    other, so that first-trip order is not part of the seam contract; the
+    host side independently re-measures the value it receives.
     """
 
     js_safe = 2**53 - 1
@@ -2056,7 +2088,7 @@ def _join_bounded(lines, max_bytes: int) -> str:
     return "".join(chunks)
 
 
-def _done_with_value(value: Any, max_value_bytes: int) -> dict[str, Any]:
+def _done_with_value(value: Any, max_value_bytes: int) -> dict[str, Any] | str:
     """Build the terminal done frame under the seam's lossless-JSON contract.
 
     A completion value returned by the program (``None`` when it returns
@@ -2065,20 +2097,38 @@ def _done_with_value(value: Any, max_value_bytes: int) -> dict[str, Any]:
     Substituting a ``repr`` or truncated string would be a silent lie about
     what the program computed, so both paths refuse instead (mirroring the
     worker backend's contract). ``None`` crosses as an exact JSON ``null``.
+
+    The SUCCESS path returns the whole ``"done"`` frame as an ALREADY-ENCODED
+    JSON string: the admitted value is serialized here, at its validation
+    point, rather than handed to ``send_sync`` to re-walk later. The program
+    can keep mutating the returned list/dict from a daemon thread or signal
+    handler after it returns, so a second traversal held at a later point
+    would be a TOCTOU — a mutation into a non-JSON type would let that later
+    encode throw outside the settlement handler and downgrade the run
+    host-side to ``worker-exit``. Serializing once, inside the try that wraps
+    this call, closes the window: if a concurrent mutation makes the encode
+    throw, the exception handler classifies it as ``exception``, and once the
+    string is produced the frame is sent verbatim with no further touching of
+    the live value. Returns a ``dict`` only for a rejection (an error frame
+    carries no live model value and is safe to send via ``send_sync``).
     """
 
     # One bounded walk folds the losslessness check and the byte meter (mirrors
     # the host's checkDoneValue): the former split ran the full losslessness
     # walk first, materializing one tuple per element for a wide completion
     # before the size cap could reject it — an RLIMIT_AS death on a value the
-    # meter would have refused. send_sync later encodes the admitted value,
-    # whose size the walk proved within budget. Iterative like the encoder, so a
+    # meter would have refused. The value's escaped JSON is then produced in the
+    # SAME call, so the admitted value is serialized exactly once (see above);
+    # its size the walk proved within budget. Iterative like the encoder, so a
     # valid completion deeper than the recursion limit still checks.
     rejection = _check_done_value(value, max_value_bytes)
     if rejection is not None:
         kind, message = rejection
         return {"type": "done", "error": {"kind": kind, "message": message}}
-    return {"type": "done", "value": value}
+    # Pre-encode the value at the validation point (not in `_run`'s later send,
+    # which is outside the try): see the TOCTOU note in the docstring. The value
+    # is JSON-plain by construction, so `_encode_json_plain` is the encoder.
+    return '{"type": "done", "value": ' + _encode_json_plain(value) + "}"
 
 
 def main() -> None:
