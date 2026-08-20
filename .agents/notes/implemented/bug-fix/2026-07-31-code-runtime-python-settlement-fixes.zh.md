@@ -92,7 +92,7 @@ Status: implemented
 
 `_clamped` 还会把钳制出的、与硬限制相等的 RLIMIT_CPU 软限制降低一个单位（当硬限制至少为 2 时）。`ulimit -t N` 会同时设置两者，而当 soft == hard 时，内核会在同一 tick 检查硬限制并直接 SIGKILL 一个忙循环，因此 SIGXCPU 永远不会送达——而宿主只在 `signal === 'SIGXCPU'` 时把 CPU 超限分类为超时，所以一次确定的预算耗尽会被误报为 `worker-exit`。把软限制降低一个单位给 SIGXCPU 一个触发窗口，因此超限会被报告为超时。这仅限定于 RLIMIT_CPU（在 RLIMIT_AS 上的一字节软差异只会让子进程实际应用的限制与宿主预算门失步，没有需要保留的信号）。`hard >= 2` 守卫留下了 `hard == 1` 盲区——一个 1 秒的双限制无法把软限制降到 0，因此那里的确定超限仍被报告为 `worker-exit`。
 
-`send_done` 将其 encode+write 包进 try，任何来自被重绑的传递名（`_dump_scalar`/`os`）的抛出都会写入一条固定的预编码 done 帧，经由 `_run` 局部绑定的 `_os_write`/`_memoryview`/`_FALLBACK_DONE_FRAME`——因此一个已结算的 `exception` 判决绝不会被降级为 `worker-exit`，宿主仍会拿到一个判决。回复队列的头游标排空会清除每个已消费槽位，因此一个已写出的宽 payload 会被立即释放，把宿主内存限制在持续的 fd-3 背压下的当前积压量。
+`send_done` 将其 encode+write 包进 try，任何来自被重绑的传递名（`_dump_scalar`/`os`）的抛出都会写入一条固定的预编码 done 帧，经由 `_run` 局部绑定的 `_os_write`/`_memoryview`/`_FALLBACK_DONE_FRAME`——因此一个已结算的 `exception` 判决绝不会被降级为 `worker-exit`，宿主仍会拿到一个判决。回复队列的头游标排空会清除每个已消费槽位，因此一个已写出的宽 payload 会被立即释放，把宿主内存限制在持续的 fd-3 背压下的当前积压量。 结算路径各 `except` 子句所捕获的异常类同样被绑定进 `_run` 的局部（`_BaseException`、`_RuntimeError`）与 `_make_failure_reporter` 的闭包单元，在任何模型代码运行之前——重绑 `__main__.BaseException` 或 `__main__.RuntimeError` 无法让程序异常逃出处理器、丢失 `done` 帧。
 
 ## Testing
 

@@ -735,6 +735,11 @@ async def _run(channel: ProtocolChannel) -> None:
     # with no done frame, misreporting the run as a `worker-exit`. A frame local
     # is not reachable by `__main__._X = ...`, so the catch is immune.
     _BaseException = BaseException
+    # `RuntimeError` is likewise bound into a local for the reply pump's catch:
+    # a rebind of `__main__.RuntimeError` would otherwise make the pump's
+    # `except RuntimeError` not match a closed-loop scheduling failure, killing
+    # the pump and stranding every later reply.
+    _RuntimeError = RuntimeError
 
     # 1. Boot handshake.
     boot = channel.read_frame()
@@ -1159,7 +1164,7 @@ async def _pump_replies(
         message = frame.get("message")
         try:
             loop.call_soon_threadsafe(complete, fut, ok, value, message)
-        except RuntimeError:
+        except _RuntimeError:  # `_RuntimeError` is a pre-program local, not a rebindable module global
             # The Future's loop has already closed — the thread that ran
             # `asyncio.run(tools.x(...))` finished (its coroutine was cancelled
             # or it exited) before this reply arrived, so nothing awaits the
