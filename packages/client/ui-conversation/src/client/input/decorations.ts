@@ -22,18 +22,6 @@ export interface TextRefRange {
   readonly appearance?: 'folder'
 }
 
-/** Decoration product: claim token range + chip instructions + text-ref ranges + the ghost hint. */
-export interface DraftDecorations {
-  /** Claim token range while claimed/submitting and the prefix watch holds; null otherwise. */
-  readonly token: TokenRange | null
-  /** Chip render instructions in draft order (occurrence table is offset-sorted). */
-  readonly chips: readonly ChipRender[]
-  /** Scan-derived lexicon tokens and syntax-recognizable folder ranges. */
-  readonly textRefs: readonly TextRefRange[]
-  /** Ghost hint shown while the claim's args are blank; null otherwise. */
-  readonly hint: string | null
-}
-
 /** Token matcher: a trigger char at line start or after whitespace, then a word-ish name (never crosses \n). */
 const TEXT_REF_RE = /(^|\s)([/@])([\w-]+)/g
 const FOLDER_REF_RE = /(^|\s)(@(?:"[^"\n]*\/|[^\s"]+\/))/g

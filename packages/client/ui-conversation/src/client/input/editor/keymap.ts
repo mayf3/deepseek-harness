@@ -41,6 +41,7 @@ export interface ComposerKeymapHandlers {
 /** Composition state a keydown can trust (see the module doc's Safari note). */
 function isComposingEvent(event: KeyboardEvent, recentlyComposing: () => boolean): boolean {
   // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
+  // oxlint-disable-next-line typescript/no-deprecated
   return event.isComposing || event.keyCode === 229 || recentlyComposing()
 }
 
@@ -87,9 +88,8 @@ export function registerComposerKeymap(editor: LexicalEditor, handlers: Composer
       // Escape layering: an open overlay closes; claimed without an overlay
       // does NOT release (backspacing the token is the only exit gesture).
       handlers.dismissPopup()
-      const inComposition = event !== null && isComposingEvent(event, recentlyComposing)
-      if (handlers.arbitrate('escape', inComposition) === 'consumed') {
-        event?.preventDefault()
+      if (handlers.arbitrate('escape', isComposingEvent(event, recentlyComposing)) === 'consumed') {
+        event.preventDefault()
         return true
       }
       return false

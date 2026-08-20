@@ -335,7 +335,7 @@ export function InputBar({
   // token draft). The translated per-command hint wins over the claim's own.
   const claimActive = (input?.phase === 'claimed' || input?.phase === 'submitting')
     && input.claim !== undefined && draft.startsWith(input.claim.token)
-  const rawHint = claimActive && input.claim?.hint !== undefined
+  const rawHint = claimActive && input.claim.hint !== undefined
     && draft.slice(input.claim.token.length).trim() === ''
     ? input.claim.hint
     : null
