@@ -40,6 +40,10 @@ export interface ImageReadValue {
     width: number
     height: number
     name?: string
+    /** Intrinsic width of the file on disk; present only when storage downscaled it. */
+    sourceWidth?: number
+    /** Intrinsic height of the file on disk; present only when storage downscaled it. */
+    sourceHeight?: number
   }
 }
 
@@ -93,15 +97,20 @@ export function imageRefFromValue(image: ImageReadValue['image']): ImageAttachme
 
 /**
  * Format an image read as the model-facing envelope beside its image block.
+ * A downscaled read names the on-disk dimensions and the multiplier that maps
+ * coordinates measured on the attached image back onto the original file.
  * @param displayPath - the backend-resolved path rendered in the envelope's `<path>` element.
  * @param image - the canonical image metadata to summarize.
  * @returns the model-facing envelope; the image itself rides the adjacent image block.
  */
 export function formatImageReadOutput(displayPath: string, image: ImageReadValue['image']): string {
+  const scaled = image.sourceWidth !== undefined && image.sourceHeight !== undefined
+    ? ` (downscaled from ${image.sourceWidth}x${image.sourceHeight} px; multiply coordinates by ${(image.sourceWidth / image.width).toFixed(2)} to locate features in the original file)`
+    : ''
   return `<path>${displayPath}</path>
 <type>image</type>
 <content>
-${image.mediaType} image, ${image.width}x${image.height} px, ${image.bytes} bytes
+${image.mediaType} image, ${image.width}x${image.height} px, ${image.bytes} bytes${scaled}
 </content>`
 }
 
@@ -150,6 +159,8 @@ export function applyReadImageTool(ctx: Context): void {
               width: { type: 'integer', required: true },
               height: { type: 'integer', required: true },
               name: { type: 'string' },
+              sourceWidth: { type: 'integer' },
+              sourceHeight: { type: 'integer' },
             },
           },
         },
@@ -186,8 +197,11 @@ export function applyReadImageTool(ctx: Context): void {
       // Persist before returning: the image block must reference a durably
       // committed object by the time the tool/result event is appended.
       let ref: ImageAttachmentRef
+      let source: { width: number; height: number }
       try {
-        ref = (await attachments.saveImage({ data, mediaType, name: basename(target.displayPath) })).ref
+        const saved = await attachments.saveImage({ data, mediaType, name: basename(target.displayPath) })
+        ref = saved.ref
+        source = saved.source
       } catch (error: unknown) {
         if (!(error instanceof AttachmentError)) throw error
         // Dimension refusals stay recoverable tool errors: an oversized image
@@ -213,6 +227,7 @@ export function applyReadImageTool(ctx: Context): void {
         )
       }
       ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
+      const downscaled = source.width !== ref.width || source.height !== ref.height
       const value: ImageReadValue = {
         path: target.displayPath,
         image: {
@@ -222,6 +237,7 @@ export function applyReadImageTool(ctx: Context): void {
           width: ref.width,
           height: ref.height,
           ...ref.name === undefined ? {} : { name: ref.name },
+          ...downscaled ? { sourceWidth: source.width, sourceHeight: source.height } : {},
         },
       }
       return value

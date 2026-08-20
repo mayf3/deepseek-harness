@@ -494,6 +494,41 @@ describe('image admission failures', () => {
     const image = result.content[1] as { attachment: ImageAttachmentRef }
     expect(image.attachment.name).toBeUndefined()
   })
+
+  it('names the on-disk dimensions and coordinate multiplier when storage downscales', async () => {
+    /** Store whose canonical encoding halves the source on both sides. */
+    class DownscalingStore extends AttachmentStore {
+      readonly imageLimits: ImageAttachmentLimits = Object.freeze({
+        maxImageBytes: 1024,
+        maxImagesPerMessage: 1,
+        maxMessageImageBytes: 1024,
+        maxImagePixels: 100,
+        maxImageDimension: 2000,
+        mediaTypes: Object.freeze(['image/png'] as const),
+      })
+
+      validateImage(_input: SaveImageAttachment): Promise<void> {
+        return Promise.resolve()
+      }
+
+      async saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment> {
+        return {
+          ref: { attachmentId: AttachmentId('sha256:feed'), mediaType: input.mediaType, bytes: 7, width: 2, height: 1 },
+          source: { mediaType: input.mediaType, bytes: input.data.length, width: 4, height: 2 },
+        }
+      }
+
+      readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
+        throw new Error('unreachable in this test')
+      }
+    }
+    await writeFile(join(dir, 'red.png'), PNG_1X1)
+    const ctx = await setup({ attachments: false })
+    await ctx.plugin(DownscalingStore)
+    const result = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
+    expect(result.isError).toBe(false)
+    expect(text(result)).toContain('image/png image, 2x1 px, 7 bytes (downscaled from 4x2 px; multiply coordinates by 2.00 to locate features in the original file)')
+  })
 })
 
 describe('registration surface', () => {
