@@ -6,9 +6,9 @@
 
 ## 功能
 
-注册一个工具 `todo_write(todos: [{ content, status }])` 到 `ctx.tools`。模型每次调用都会发送完整列表，不存在部分更新或单项编辑。每次调用都会向调用 agent 的会话日志追加 `todo/write` 事件（完整列表快照），具体调用 `agent.session.append('todo/write', { todos })`；当前列表是最新的该类事件（回放时后写覆盖先写）。
+注册一个工具 `todo_write(todos: [{ content, status, tags? }])` 到 `ctx.tools`。模型每次调用都会发送完整列表，不存在部分更新或单项编辑。每次调用都会向调用 agent 的会话日志追加 `todo/write` 事件（完整列表快照），具体调用 `agent.session.append('todo/write', { todos })`；当前列表是最新的该类事件（回放时后写覆盖先写）。
 
-`status` 是 `pending`、`in_progress` 或 `completed` 之一。
+`status` 是 `pending`、`in_progress` 或 `completed` 之一。可选 `tags` 是用于跨领域组织的短自由格式标签（每项最多 8 个，每个最多 32 个字符）；工作区浏览器的分组标签仍由用户管理，不显示模型写入的 todo 标签。
 
 ## 单一所有者
 
@@ -22,7 +22,7 @@
 
 ## 验证
 
-除 schema 的类型／必填／枚举检查外，`execute` 还会拒绝空或重复的 `content`，以及 `content`/`status` 之外的任何条目键——扩展条目形状（id、嵌套）会明确报错而不是被静默压平，保证落日志的快照与模型自认为写入的内容一致。同时可以有多少任务处于 `in_progress` 由部署决定（见 § 配置）：选择 `true` 的组合允许并行工作（并发 subagent、后台命令）同时将多个任务标记为 `in_progress`。列表的顺序及及时更新由模型依照工具描述负责。
+除 schema 的类型／必填／枚举检查外，`execute` 还会拒绝空或重复的 `content`，以及 `content`/`status`/`tags` 之外的任何条目键——扩展条目形状（id、嵌套）会明确报错而不是被静默压平，保证落日志的快照与模型自认为写入的内容一致。标签会经过首尾空白清理、去重和数量限制；过长标签会被拒绝。同时可以有多少任务处于 `in_progress` 由部署决定（见「配置」）：选择 `true` 的组合允许并行工作（并发 subagent、后台命令）同时将多个任务标记为 `in_progress`。列表的顺序及及时更新由模型依照工具描述负责。
 
 ## 渲染
 
@@ -69,5 +69,5 @@ token 用量会随模型每次提交的完整列表增长，且这些调用参�
 ## 已知限制与暂缓事项
 
 - **仅单一所有者 scope**：列表属于唯一调用 agent 会话；subagent／共享／swarm scope 是有意设置的限制（参见「单一所有者」一节），非 agent 调用方会被拒绝。
-- **条目形状有意保持最小**：`content` 加三态 `status`；整表替换不需要稳定 id、优先级或 active-form 字段。
+- **条目形状有意保持最小**：`content` 加三态 `status` 与可选 `tags`；整表替换不需要稳定 id、优先级或 active-form 字段。
 - **整表替换是唯一操作**：没有部分更新，也没有回读工具；模型每次调用都必须重新发送完整列表。

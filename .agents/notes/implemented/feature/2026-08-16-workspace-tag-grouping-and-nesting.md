@@ -2,22 +2,28 @@
 
 Status: implemented
 
-## 问题
+English | [中文](2026-08-16-workspace-tag-grouping-and-nesting.zh.md)
 
-左侧工作区浏览器（ui-workspace）只按 Host Workspace 分组：会话按目录归类，跨目录的组织（标签）只能靠会话标题命名，任务之间的依赖关系（「这个任务在等那个任务」）没有表达方式，行操作也只有一个不明显的省略号按钮。产品需要：任务可配置标签并按标签分组；任务可挂到另一个任务下表示等待关系；行操作能通过右键直达。
+## Problem
 
-## 决策
+The workspace browser groups sessions only by Host Workspace. Cross-directory organization depends on session-title conventions, dependencies between tasks cannot express that one task is waiting on another, and row actions are hidden behind an ellipsis button. Users need configurable tag groups, waiting relationships between tasks, and direct access to row actions through a context menu.
 
-**标签与等待关系是浏览器本地元数据，不写进会话日志。** `WorkspaceViewState` 增加 `sessionMeta: Record<sessionId, { tags?: string[]; parent?: string }>` 与 `knownTags: string[]`（显式创建的空标签组），随既有 `persist` 键自动持久化。标签分组（`deriveTagGroups`）只读用户元数据；模型通过 `todo_write` 写入 todo 的 `tags` 不参与分组，避免模型噪音污染侧栏。等待关系通过 `waitingOrder` 把子会话排到父会话之后并嵌套（`SessionNode.depth`），环由未放置成员兜底断开。
+## Decision
 
-**挂接与打标签都有拖拽与菜单两条路径。** 会话行拖拽的中间区域（行的 30%–70%）表示「挂到该任务下」，上下边缘保留排序语义；把嵌套行拖到行间即脱离父任务。标签视图下拖到标签组标题 = 打标签，拖到「未打标」桶 = 清空标签；`ProjectRowItem` 接收 `dropTarget` 并高亮。菜单保留「设置标签…」入口，去掉选择器式「挂到任务下」（拖拽已覆盖）。
+**Tags and waiting relationships are browser-local metadata and do not enter the session log.** `WorkspaceViewState` stores `sessionMeta: Record<sessionId, { tags?: string[]; parent?: string }>` and `knownTags: string[]` for explicitly created empty tag groups under the existing persistence key. `deriveTagGroups` reads only user metadata; tags written by the model through `todo_write` do not affect grouping. `waitingOrder` places a child session after its parent and assigns `SessionNode.depth`; any members left by a cycle are placed as roots.
 
-**右键菜单。** 会话行与工作区行都响应 `onContextMenu`（阻止默认菜单）打开同一行菜单；会话行菜单新增「在此目录新建会话」（仅目录视图，标签视图无工作区概念）。
+**Attachment and tagging each support drag-and-drop and menu paths.** Dropping on the middle 30%–70% of a session row attaches the dragged session beneath that task, while the upper and lower edges retain ordering semantics. Dropping a nested row between rows detaches it. In tag view, dropping on a tag heading adds that tag and dropping on the untagged bucket clears tags; `ProjectRowItem` receives and highlights the `dropTarget`. The menu retains “Set tags…” while attachment stays a drag interaction.
 
-**`todo_write` 支持可选 `tags`。** `TodoItem` 增加 `tags?: string[]`，工具 schema/描述/投影同步更新，规范化（trim、去空、去重、限 8 个、每个 32 字符）；数据层保留供未来使用，UI 当前不展示。
+**Session and workspace rows share a context-menu path.** Both handle `onContextMenu`, suppress the browser menu, and open the row menu. Session rows also offer “New session in this workspace” when their workspace is known.
 
-## 曾考虑的替代方案
+**`todo_write` accepts optional `tags`.** `TodoItem` includes `tags?: string[]`; the tool schema, description, and projection preserve the field. Writes trim, remove empty and duplicate labels, accept at most eight labels, and limit each label to 32 characters. The data remains available for consumers, while workspace grouping stays user-managed.
 
-**把标签写入会话日志（`TodoItem.tags` 进入事件）。** 不采用：模型会主动写标签产生噪音（实测 check/setup/tests），且前端无法安全地 append 会话事件；浏览器本地元数据已满足「用户主动配置」的需求且零 Host 改动。
+## Alternatives considered
 
-**把「挂到任务下」做成目录式嵌套视图。** 不采用：拖拽中间区域 + 组内嵌套是既有行模型的最小扩展；独立树视图需要新的渲染骨架。
+**Derive workspace groups from `TodoItem.tags` in the session log.** Rejected because model-authored labels add incidental groups and the client cannot safely append session events. Browser-local metadata represents explicit user organization without changing the Host.
+
+**Build a separate directory-style dependency tree.** Rejected because middle-row attachment and nested rows extend the existing row model, while another tree would duplicate its rendering and interaction structure.
+
+## Consequences
+
+Workspace organization persists locally and remains independent of replayed model output. Users can group sessions and express waiting relationships without changing session-log semantics, but those relationships do not synchronize through the Host and model-written todo tags do not reorganize the browser.

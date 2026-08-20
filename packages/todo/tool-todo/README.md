@@ -8,10 +8,7 @@ The model-facing `todo_write` tool: the agent's whole task list, replaced wholes
 
 Registers one tool, `todo_write(todos: [{ content, status, tags? }])`, on `ctx.tools`. The model sends the ENTIRE list every call — there are no partial updates or per-item edits. Each call appends a `todo/write` event (the full list snapshot) to the calling agent's session log via `agent.session.append('todo/write', { todos })`; the current list is the most recent such event (last-write-wins on replay).
 
-`status` is one of `pending`, `in_progress`, or `completed`. Optional `tags` are
-short free-form labels (max 8 per item, each max 32 characters) for cross-cutting
-organization; the workspace browser currently keeps its grouping tags user-managed
-and does not display model-written todo tags.
+`status` is one of `pending`, `in_progress`, or `completed`. Optional `tags` are short free-form labels (max 8 per item, each max 32 characters) for cross-cutting organization; the workspace browser keeps its grouping tags user-managed and does not display model-written todo tags.
 
 ## Single owner
 

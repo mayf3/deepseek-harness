@@ -2030,7 +2030,7 @@ All ten tools are scoped to implicit Team Leads and durable teammates. The shipp
 
 ### `todo_write`
 
-Record and update a structured task list for the current work. Send the ENTIRE list every call — it REPLACES the previous list (there are no partial updates, no per-item edits). Use it to plan multi-step work and show progress: add one todo per concrete step before you start. Mark every todo being actively worked on `in_progress` — several at once when work genuinely runs in parallel (e.g. concurrent subagents or background commands), one for sequential work; while work remains, at least one task should be `in_progress`. Mark a todo `completed` the moment it is done (do not batch completions), and allow no `in_progress` item only once all work is complete. Skip the list for trivial single-step tasks. Statuses: `pending` (not started), `in_progress` (being worked on now), `completed` (finished).
+Record and update a structured task list for the current work. Send the ENTIRE list every call — it REPLACES the previous list (there are no partial updates, no per-item edits). Use it to plan multi-step work and show progress: add one todo per concrete step before you start. Mark every todo being actively worked on `in_progress` — several at once when work genuinely runs in parallel (e.g. concurrent subagents or background commands), one for sequential work; while work remains, at least one task should be `in_progress`. Mark a todo `completed` the moment it is done (do not batch completions), and allow no `in_progress` item only once all work is complete. Skip the list for trivial single-step tasks. Statuses: `pending` (not started), `in_progress` (being worked on now), `completed` (finished). Optional `tags` are short labels (max 8 per todo, each max 32 chars) for cross-cutting organization — e.g. grouping related tasks across sessions — the sidebar can group by them.
 
 ```json
 {
@@ -2055,6 +2055,13 @@ Record and update a structured task list for the current work. Send the ENTIRE l
               "in_progress",
               "completed"
             ]
+          },
+          "tags": {
+            "type": "array",
+            "description": "Optional short labels (max 8, each max 32 chars) for cross-cutting organization; the workspace browser can group by them.",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [

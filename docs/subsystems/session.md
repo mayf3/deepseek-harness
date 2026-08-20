@@ -132,7 +132,7 @@ interface SessionEventMap {
 
 ### `TodoItem` — one todo-list entry
 
-The unit of the `todo/write` event's whole-list snapshot. Deliberately minimal — a `content` line and a three-state `status` (no id, priority, or `activeForm`): the list is replaced wholesale on every write, so entries need no stable identity. See the [todo_write Agent Note](../../.agents/notes/implemented/feature/2026-06-29-todo-write-tool.md).
+The unit of the `todo/write` event's whole-list snapshot. Deliberately minimal — a `content` line, a three-state `status`, and optional `tags` (no id, priority, or `activeForm`): the list is replaced wholesale on every write, so entries need no stable identity. See the [todo_write Agent Note](../../.agents/notes/implemented/feature/2026-06-29-todo-write-tool.md).
 
 ```ts type-equiv
 /**
@@ -150,6 +150,12 @@ interface TodoItem {
   content: string
   /** Lifecycle state. `in_progress` marks a task being worked now; parallel work may mark several. */
   status: 'pending' | 'in_progress' | 'completed'
+  /**
+   * Optional free-form labels for cross-cutting organization. The workspace
+   * browser can group sessions by these tags; the model sets them through
+   * `todo_write`. Canonical writes omit the key when the list is empty.
+   */
+  tags?: string[] | undefined
 }
 ```
 

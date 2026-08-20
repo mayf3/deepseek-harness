@@ -132,7 +132,7 @@ interface SessionEventMap {
 
 ### `TodoItem`：一条待办项
 
-这是 `todo/write` 事件全量列表快照中的单元。它有意保持精简：一行 `content` 加一个三态 `status`（没有 id、优先级或 `activeForm`）；列表在每次写入时整体替换，因此条目无需稳定标识。见 [todo_write Agent Note](../../.agents/notes/implemented/feature/2026-06-29-todo-write-tool.md)。
+这是 `todo/write` 事件全量列表快照中的单元。它有意保持精简：一行 `content`、一个三态 `status` 与可选 `tags`（没有 id、优先级或 `activeForm`）；列表在每次写入时整体替换，因此条目无需稳定标识。见 [todo_write Agent Note](../../.agents/notes/implemented/feature/2026-06-29-todo-write-tool.md)。
 
 ```ts type-equiv
 /**
@@ -150,6 +150,12 @@ interface TodoItem {
   content: string
   /** Lifecycle state. `in_progress` marks a task being worked now; parallel work may mark several. */
   status: 'pending' | 'in_progress' | 'completed'
+  /**
+   * Optional free-form labels for cross-cutting organization. The workspace
+   * browser can group sessions by these tags; the model sets them through
+   * `todo_write`. Canonical writes omit the key when the list is empty.
+   */
+  tags?: string[] | undefined
 }
 ```
 
