@@ -61,7 +61,7 @@ During initialize or session run, `SdkProtocolError` and JSON-RPC error response
 | Diagnostic bytes and presentation | `dsh-subagent`, foreground tool, and Job runtime | The same bounded text stays separate from assistant output in foreground and one-shot background modes |
 | Raw failure | Child runtime, Error cause chain, and Host logger | Available for Host diagnosis only, never copied into the parent model result |
 
-Startup publishes no run until the provider's handshake completes. Successful startup cleanup rolls the private child back to quiescence before rejection. Cleanup failure preserves startup plus teardown/shutdown for an ordinary failure, or cleanup alone after cancellation, without claiming process exit. A published run settles its result without rejection, and `dispose()` independently reports safe teardown or shutdown facts while still using the backend's existing process cleanup ladder.
+Startup publishes no run until the provider's handshake completes. Successful startup cleanup rolls the private child back to quiescence before rejection. Cleanup failure preserves startup plus teardown/shutdown for an ordinary failure, or cleanup alone after cancellation, without claiming complete managed-process quiescence. A published run settles its result without rejection, and `dispose()` independently reports safe teardown or shutdown facts while still using the backend's existing process cleanup ladder.
 
 ## Verification
 
