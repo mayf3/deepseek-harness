@@ -2,9 +2,12 @@
 // over the real Host Typert Remote flow.
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import * as yaml from 'js-yaml'
+import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
@@ -15,11 +18,28 @@ import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './suppor
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/agent-team-panel', import.meta.url))
 const PANEL_EXPECTED = join(SNAPSHOT_DIR, 'task.expected.md')
 const OVERLAY = fileURLToPath(new URL('./agent-team-panel.overlay.yml', import.meta.url))
+const HOST_PATCH = fileURLToPath(new URL('../../../packages/experimental/agent-team-profile/cordis.patch.yml', import.meta.url))
+const WEB_PATCH = fileURLToPath(new URL('../../../packages/experimental/agent-team-web-profile/cordis.patch.yml', import.meta.url))
 const INSTALL_ANCHORS = [
   fileURLToPath(new URL('../../../packages/experimental/agent-team-profile/package.json', import.meta.url)),
   fileURLToPath(new URL('../../../packages/experimental/agent-team-web-profile/package.json', import.meta.url)),
 ]
 const MODE = webSnapshotMode()
+
+function profileEntries(path: string): unknown[] {
+  const parsed = yaml.load(readFileSync(path, 'utf8'), { schema: entryListSchema })
+  if (!Array.isArray(parsed)) throw new Error(`profile layer at ${path} must be a list`)
+  return parsed
+}
+
+describe('Agent Teams panel overlay', () => {
+  it('matches the shipped Host and Web profile layers', () => {
+    expect(profileEntries(OVERLAY)).toEqual([
+      ...profileEntries(HOST_PATCH),
+      ...profileEntries(WEB_PATCH),
+    ])
+  })
+})
 
 describe('web e2e: Agent Teams panel', () => {
   let scaffold: WebScaffold

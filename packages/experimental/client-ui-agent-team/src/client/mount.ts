@@ -2,7 +2,6 @@
 
 import type {
   TeamMemberView as TeamRosterMember,
-  TeamTaskView as TeamTask,
   TeamView,
 } from '@deepseek-ai/dsh-experimental-agent-team/client'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team/remote'
@@ -11,7 +10,9 @@ import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/c
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
-import { TeamAction, type TeamActionInjected, type TeamActionResult } from './TeamAction.tsx'
+import {
+  TeamAction, type TeamActionInjected, type TeamActionResult, type TeamTaskActionResult,
+} from './TeamAction.tsx'
 import { en, zh, type TeamKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -25,7 +26,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const inject = ['sessions', 'remote', 'slots', 'locale']
 
 function registerUi(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register('team', { zh, en }), 'ui-team: dictionaries')
+  ctx.effect(() => ctx.locale.register('team', { zh, en }), 'client-ui-agent-team: dictionaries')
   const sessions = ctx.sessions
   const leadSessionId = (sessionId: SessionId): SessionId => {
     const address = sessions.binding(sessionId)?.session.getSnapshot().subagent?.address
@@ -36,7 +37,7 @@ function registerUi(ctx: ClientContext): void {
     async load(sessionId): Promise<TeamActionResult<TeamView>> {
       return await ctx.remote.agentTeams.view(leadSessionId(sessionId))
     },
-    async createTask(sessionId, input): Promise<TeamActionResult<TeamTask>> {
+    async createTask(sessionId, input): Promise<TeamTaskActionResult> {
       return await ctx.remote.agentTeams.createTask(leadSessionId(sessionId), input)
     },
     async updateTask(sessionId, input) {

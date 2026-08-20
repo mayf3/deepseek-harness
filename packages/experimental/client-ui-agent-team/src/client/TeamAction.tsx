@@ -32,7 +32,7 @@ export interface TeamActionInjected {
     description: string
     blockedBy: TeamTaskId[]
     writeScopes: string[]
-  }) => Promise<TeamActionResult<TeamTask>>
+  }) => Promise<TeamTaskActionResult>
   updateTask: (sessionId: SessionId, input: {
     taskId: TeamTaskId
     expectedRevision: number
@@ -81,19 +81,6 @@ function statusKey(status: TeamTask['status']): TeamKey {
   }
 }
 
-function loadedView(current: TeamView | null, update: (view: TeamView) => TeamView): TeamView | null {
-  /* v8 ignore next -- task controls and forms render only after a Team view exists. */
-  if (current === null) return null
-  return update(current)
-}
-
-function replaceTask(tasks: TeamTask[], task: TeamTask): TeamTask[] {
-  const index = tasks.findIndex(candidate => candidate.id === task.id)
-  /* v8 ignore next -- mutation responses preserve the requested task id. */
-  if (index < 0) return tasks
-  return tasks.with(index, task)
-}
-
 /** Render the live Team roster and compare-and-set task board. */
 export function TeamAction({
   sessionId, load, createTask, updateTask, openTeammate, t,
@@ -106,7 +93,7 @@ export function TeamAction({
   const [createDraft, setCreateDraft] = useState<Draft>(EMPTY_DRAFT)
   const [editing, setEditing] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<Draft>(EMPTY_DRAFT)
-  const [pendingTask, setPendingTask] = useState<string | null>(null)
+  const [pendingTasks, setPendingTasks] = useState<ReadonlySet<string>>(() => new Set())
   const sessionRef = useRef(sessionId)
   const refreshGeneration = useRef(0)
   sessionRef.current = sessionId
@@ -121,7 +108,7 @@ export function TeamAction({
     setCreateDraft(EMPTY_DRAFT)
     setEditing(null)
     setEditDraft(EMPTY_DRAFT)
-    setPendingTask(null)
+    setPendingTasks(new Set())
   }, [sessionId])
 
   const refresh = useCallback(async (): Promise<boolean> => {
@@ -148,37 +135,42 @@ export function TeamAction({
 
   const settleTask = useCallback(async (
     taskId: string,
-    operation: Promise<TeamTaskActionResult>,
+    operation: () => Promise<TeamTaskActionResult>,
   ): Promise<TeamTask | undefined> => {
     const requestedSession = sessionId
-    setPendingTask(taskId)
-    const result = await operation
-    if (sessionRef.current !== requestedSession) return undefined
-    setPendingTask(null)
-    if (!result.ok) {
-      setError(failureText(result.error))
-      return undefined
-    }
-    if (!result.value.ok) {
-      if (result.value.error.code === 'team-task-conflict') {
-        const reloaded = await refresh()
-        if (sessionRef.current !== requestedSession) return undefined
-        if (reloaded) setError(t('conflict'))
-      } else {
-        setError(failureText(result.value.error))
-      }
-      return undefined
-    }
-    const task = result.value.value
     invalidateRefresh()
-    setError(null)
-    setView(current => loadedView(current, loaded => ({
-      ...loaded,
-      tasks: task.status === 'deleted'
-        ? loaded.tasks.filter(candidate => candidate.id !== task.id)
-        : replaceTask(loaded.tasks, task),
-    })))
-    return task
+    setPendingTasks(current => new Set(current).add(taskId))
+    try {
+      const result = await operation()
+      if (sessionRef.current !== requestedSession) return undefined
+      if (!result.ok) {
+        setError(failureText(result.error))
+        return undefined
+      }
+      if (!result.value.ok) {
+        if (result.value.error.code === 'team-task-conflict') {
+          const reloaded = await refresh()
+          if (sessionRef.current !== requestedSession) return undefined
+          if (reloaded) setError(t('conflict'))
+        } else {
+          setError(failureText(result.value.error))
+        }
+        return undefined
+      }
+      const task = result.value.value
+      setError(null)
+      await refresh()
+      if (sessionRef.current !== requestedSession) return undefined
+      return task
+    } finally {
+      if (sessionRef.current === requestedSession) {
+        setPendingTasks((current) => {
+          const next = new Set(current)
+          next.delete(taskId)
+          return next
+        })
+      }
+    }
   }, [invalidateRefresh, refresh, sessionId, t])
 
   const submitCreate = async (): Promise<void> => {
@@ -186,28 +178,15 @@ export function TeamAction({
     const description = createDraft.description.trim()
     /* v8 ignore next -- TaskForm disables Save while either normalized field is empty. */
     if (subject === '' || description === '') return
-    setPendingTask('create')
-    const requestedSession = sessionId
-    const result = await createTask(requestedSession, {
+    const created = await settleTask('create', () => createTask(sessionId, {
       subject,
       description,
       blockedBy: taskIds(createDraft.blockers),
       writeScopes: items(createDraft.scopes),
-    })
-    if (sessionRef.current !== requestedSession) return
-    setPendingTask(null)
-    if (!result.ok) {
-      setError(failureText(result.error))
-      return
-    }
-    invalidateRefresh()
-    setView(current => loadedView(current, loaded => ({
-      ...loaded,
-      tasks: [...loaded.tasks, result.value],
-    })))
+    }))
+    if (created === undefined) return
     setCreateDraft(EMPTY_DRAFT)
     setCreating(false)
-    setError(null)
   }
 
   const startEdit = (task: TeamTask): void => {
@@ -222,7 +201,7 @@ export function TeamAction({
 
   const submitEdit = async (task: TeamTask): Promise<void> => {
     const requestedSession = sessionId
-    const edited = await settleTask(task.id, updateTask(requestedSession, {
+    const edited = await settleTask(task.id, () => updateTask(requestedSession, {
       taskId: task.id,
       expectedRevision: task.revision,
       action: 'edit',
@@ -237,35 +216,13 @@ export function TeamAction({
       setEditing(null)
       return
     }
-    setPendingTask(task.id)
-    const dependencyResult = await updateTask(requestedSession, {
+    const dependencyTask = await settleTask(task.id, () => updateTask(requestedSession, {
       taskId: task.id,
       expectedRevision: edited.revision,
       action: 'set_dependencies',
       blockedBy,
-    })
-    if (sessionRef.current !== requestedSession) return
-    setPendingTask(null)
-    if (!dependencyResult.ok) {
-      setError(failureText(dependencyResult.error))
-      return
-    }
-    if (!dependencyResult.value.ok) {
-      if (dependencyResult.value.error.code === 'team-task-conflict') {
-        const reloaded = await refresh()
-        if (sessionRef.current !== requestedSession) return
-        if (reloaded) setError(t('conflict'))
-      } else {
-        setError(failureText(dependencyResult.value.error))
-      }
-      return
-    }
-    const dependencyTask = dependencyResult.value.value
-    invalidateRefresh()
-    setView(current => loadedView(current, loaded => ({
-      ...loaded,
-      tasks: replaceTask(loaded.tasks, dependencyTask),
-    })))
+    }))
+    if (dependencyTask === undefined) return
     setEditing(null)
   }
 
@@ -339,7 +296,7 @@ export function TeamAction({
                   <TaskForm
                     draft={createDraft}
                     setDraft={setCreateDraft}
-                    pending={pendingTask === 'create'}
+                    pending={pendingTasks.has('create')}
                     onSave={() => { void submitCreate() }}
                     onCancel={() => { setCreating(false) }}
                     t={t}
@@ -353,7 +310,7 @@ export function TeamAction({
                         key={task.id}
                         draft={editDraft}
                         setDraft={setEditDraft}
-                        pending={pendingTask === task.id}
+                        pending={pendingTasks.has(task.id)}
                         onSave={() => { void submitEdit(task) }}
                         onCancel={() => { setEditing(null) }}
                         t={t}
@@ -378,10 +335,10 @@ export function TeamAction({
                             {t('owner')}
                             <select
                               value={task.ownerName ?? ''}
-                              disabled={pendingTask === task.id || task.status === 'completed'}
+                              disabled={pendingTasks.has(task.id) || task.status === 'completed'}
                               onChange={(event: ChangeEvent<HTMLSelectElement>) => {
                                 const owner = event.target.value
-                                void settleTask(task.id, updateTask(sessionId, {
+                                void settleTask(task.id, () => updateTask(sessionId, {
                                   taskId: task.id,
                                   expectedRevision: task.revision,
                                   action: 'reassign',
@@ -393,25 +350,25 @@ export function TeamAction({
                               {assignable.map(member => <option key={member.id} value={member.name}>{member.name}</option>)}
                             </select>
                           </label>
-                          <button type="button" onClick={() => { startEdit(task) }} disabled={pendingTask === task.id}>
+                          <button type="button" onClick={() => { startEdit(task) }} disabled={pendingTasks.has(task.id)}>
                             <IconEditOutline16 size={13} /> {t('edit')}
                           </button>
                           {task.status === 'in_progress' && (
-                            <button type="button" disabled={pendingTask === task.id} onClick={() => {
-                              void settleTask(task.id, updateTask(sessionId, {
+                            <button type="button" disabled={pendingTasks.has(task.id)} onClick={() => {
+                              void settleTask(task.id, () => updateTask(sessionId, {
                                 taskId: task.id, expectedRevision: task.revision, action: 'complete',
                               }))
                             }}><IconCheckOutline14 /> {t('complete')}</button>
                           )}
                           {task.status === 'completed' && (
-                            <button type="button" disabled={pendingTask === task.id} onClick={() => {
-                              void settleTask(task.id, updateTask(sessionId, {
+                            <button type="button" disabled={pendingTasks.has(task.id)} onClick={() => {
+                              void settleTask(task.id, () => updateTask(sessionId, {
                                 taskId: task.id, expectedRevision: task.revision, action: 'reopen',
                               }))
                             }}>{t('reopen')}</button>
                           )}
-                          <button type="button" disabled={pendingTask === task.id} onClick={() => {
-                            void settleTask(task.id, updateTask(sessionId, {
+                          <button type="button" disabled={pendingTasks.has(task.id)} onClick={() => {
+                            void settleTask(task.id, () => updateTask(sessionId, {
                               taskId: task.id, expectedRevision: task.revision, action: 'delete',
                             }))
                           }}><IconTrashOutline16 size={13} /> {t('delete')}</button>

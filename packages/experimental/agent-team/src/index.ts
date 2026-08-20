@@ -242,11 +242,11 @@ export class TeamService extends TypertRemoteService {
    * Create one shared task through the generated Remote API.
    * @param agent - exact live Team member creating the task.
    * @param request - task text, blockers, and advisory write scopes.
-   * @returns the revision-one task view.
+   * @returns the revision-one task or a typed Team rejection.
    */
   @Remote('createTask')
-  remoteCreateTask(agent: Agent, request: CreateTeamTaskRequest): Promise<TeamTaskView> {
-    return this.createTask(agent, request)
+  remoteCreateTask(agent: Agent, request: CreateTeamTaskRequest): Promise<TeamTaskMutationResult> {
+    return this.taskMutationResult(this.createTask(agent, request))
   }
 
   /**
@@ -256,9 +256,14 @@ export class TeamService extends TypertRemoteService {
    * @returns the committed task or a typed Team rejection.
    */
   @Remote('updateTask')
-  async remoteUpdateTask(agent: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskMutationResult> {
+  remoteUpdateTask(agent: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskMutationResult> {
+    return this.taskMutationResult(this.updateTask(agent, request))
+  }
+
+  /** Preserve Team task rejections while allowing unexpected failures to reject the Remote call. */
+  private async taskMutationResult(operation: Promise<TeamTaskView>): Promise<TeamTaskMutationResult> {
     try {
-      return { ok: true, value: await this.updateTask(agent, request) }
+      return { ok: true, value: await operation }
     } catch (error) {
       if (!(error instanceof TeamError)) throw error
       return {
