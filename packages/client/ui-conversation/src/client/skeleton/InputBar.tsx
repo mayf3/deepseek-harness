@@ -24,6 +24,7 @@ import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ComposerBarProps } from '../contract/slots.ts'
 import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
+import type { EditRange } from '../input/contract.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
 import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
 import { ContextMeter } from './ContextMeter.tsx'
@@ -33,6 +34,31 @@ import css from './InputBar.module.css'
 
 /** Decoration product of the no-session state (no machine, empty draft). */
 const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: [], hint: null }
+
+/** The selection a `beforeinput` recorded, with the draft length it applied to. */
+interface PendingEdit {
+  readonly start: number
+  readonly end: number
+  readonly draftLength: number
+}
+
+/**
+ * Resolve one edit's range from the selection recorded before it applied.
+ * The recorded selection IS the replaced range, so the inserted length is
+ * whatever the draft grew by once that range is accounted for.
+ * @param pending - selection recorded at `beforeinput`, null when none was seen.
+ * @param prevLength - length of the draft the edit applied to.
+ * @param nextLength - length of the resulting draft.
+ * @returns the exact range, or undefined when the record cannot describe this
+ * edit and the machine's diff scan has to recover it.
+ */
+function editRangeOf(pending: PendingEdit | null, prevLength: number, nextLength: number): EditRange | undefined {
+  if (pending === null || pending.draftLength !== prevLength) return undefined
+  const { start, end } = pending
+  if (start > end || end > prevLength) return undefined
+  const insertedLength = nextLength - prevLength + (end - start)
+  return insertedLength < 0 ? undefined : { start, end, insertedLength }
+}
 
 export type InputBarProps = ComposerBarProps
 
@@ -277,6 +303,27 @@ export function InputBar({
   })
   /* oxlint-enable typescript/no-unnecessary-condition */
 
+  // The machine's occurrence math needs the edit's real range, and a controlled
+  // textarea's change event carries only the resulting string. `beforeinput`
+  // fires while the element still holds the pre-edit selection, which is
+  // exactly the range about to be replaced; a textarea exposes it no other way
+  // (`getTargetRanges()` is empty for form controls). Recovering the range by
+  // diffing the two drafts instead is ambiguous whenever the typed text repeats
+  // what it lands against — typing the trigger char before a reference reads as
+  // landing inside that reference, which drops it. One lifetime, like the wheel
+  // listener above: the textarea is never unmounted.
+  const pendingEditRef = useRef<PendingEdit | null>(null)
+  useEffect(() => {
+    const el = inputRef.current
+    if (el === null) return
+    const onBeforeInput = (): void => {
+      const { start, end } = selectionOf(el)
+      pendingEditRef.current = { start, end, draftLength: el.value.length }
+    }
+    el.addEventListener('beforeinput', onBeforeInput)
+    return () => { el.removeEventListener('beforeinput', onBeforeInput) }
+  }, [])
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (workspaceTrigger) {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -371,8 +418,10 @@ export function InputBar({
     if (keyboard === undefined || locked) return // disabled/read-only states cannot edit the draft
     if (machineBusy) return // submitting is the read-only span; adjudicating holds the pending lock
     const next = e.target.value
+    const pending = pendingEditRef.current
+    pendingEditRef.current = null
     safariNativeShrinkRef.current = safari && next.length < draft.length
-    keyboard.setDraft(next)
+    keyboard.setDraft(next, editRangeOf(pending, draft.length, next.length))
     // selectionStart is number|null in lib.dom; the type-aware lint program narrows it.
     // oxlint-disable-next-line typescript/no-unnecessary-condition
     keyboard.track(next, e.target.selectionStart ?? next.length)
