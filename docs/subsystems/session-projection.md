@@ -112,27 +112,29 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.sessionProjectionCache` — `SessionProjectionCache`
 
-The persisted projection cache service. Checkpoints live sessions on a throttled write-behind (count/interval triggers from Config) plus two mandatory points — `turn/end` and session disposal (the live-to-cold moment) — and serves the cached rows for a session header. Every durable write is fail-soft: failures log a warning and the cache self-heals on the next write. The cache owns its directory tree and never consults the persistence layer.
+The persisted projection cache service. Opens the `session_projcache` domain at init, checkpoints live sessions on a throttled write-behind (count/interval triggers from Config) plus two mandatory points — `turn/end` and session disposal (the live-to-cold moment) — and serves the cached rows for a session header. Every durable write is fail-soft: failures log a warning and the cache self-heals on the next write.
 
 ```ts cordis-catalog
 /**
- * The listing read: whole values viewed straight from the stored rows
- * (version-matching keys only), each cut carried with its watermark so a
- * client value store can seed under its higher-seq-wins rule — as stale as
- * the last durable checkpoint but never wrong, and never from an unrelated
- * log (the caller's header is the identity witness).
+ * The zero-I/O listing read: whole values viewed straight from the stored
+ * rows (version-matching keys only), each cut carried with its watermark so
+ * a client value store can seed under its higher-seq-wins rule — as stale
+ * as the last durable checkpoint but never wrong, and never from an
+ * unrelated log (the caller's header is the identity witness). Fresher
+ * paths (the history tail baseline) supersede these values whenever a
+ * session is actually opened.
  * @param meta - the listed session's header (identity witness; no log read).
  * @returns the cut (`asOfSeq` = lowest served-row watermark), or
  *   `undefined` when no usable row exists for this lifecycle.
  */
-async cachedSnapshot(meta: SessionHeader): Promise<ProjectionSnapshot | undefined>
+cachedSnapshot(meta: SessionHeader): ProjectionSnapshot | undefined
 
 /**
  * Durably checkpoint one live session NOW (both mandatory points call
  * this; tests and carriers may too). The registry cut is snapshotted at
- * this boundary (states are live references), then the session's cache
- * file is replaced. NOT fail-soft — callers on the fail-soft paths contain
- * it.
+ * this boundary (states are live references), then the session's record is
+ * replaced on the domain's write chain. NOT fail-soft — callers on the
+ * fail-soft paths contain it.
  * @param session - the live session to checkpoint.
  * @returns resolution after durability and event emission.
  */
@@ -141,7 +143,7 @@ async write(session: Session): Promise<void>
 
 Types: [Session](session.md) · [SessionHeader](persistence.md)
 
-Source: [`packages/session/session-projection-cache/src/index.ts:80`](../../packages/session/session-projection-cache/src/index.ts)
+Source: [`packages/session/session-projection-cache/src/index.ts:71`](../../packages/session/session-projection-cache/src/index.ts)
 
 <a id="ctxsessionprojections--sessionprojectionregistry"></a>
 

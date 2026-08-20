@@ -1698,7 +1698,7 @@ Source: [`packages/session/session-persistence-sqlite/src/index.ts:70`](../packa
 
 ## `@deepseek-ai/dsh-session-projection-cache`
 
-Requires: `sessionProjections` · `sessions`
+Requires: `storageDomain` · `sessionProjections` · `sessions`
 
 ```ts config-catalog
 /**
@@ -1708,8 +1708,6 @@ Requires: `sessionProjections` · `sessions`
  * disposal) are policy, not tunables, and always fire.
  */
 export interface Config {
-  /** Directory holding one `<session-id>/projection_cache.json` per session. */
-  root: string
   /** Committed events per session that force a durable checkpoint write between mandatory points. */
   writeEveryEvents: number
   /** Longest time (milliseconds) a dirty checkpoint may stay unwritten between mandatory points. */
@@ -1717,7 +1715,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/session/session-projection-cache/src/index.ts:48`](../packages/session/session-projection-cache/src/index.ts)
+Source: [`packages/session/session-projection-cache/src/index.ts:43`](../packages/session/session-projection-cache/src/index.ts)
 
 <a id="deepseek-aidsh-session-query-sqlite"></a>
 
@@ -2042,12 +2040,12 @@ Requires: `storage`
  * location explicitly.
  */
 export interface Config {
-  /** Directory holding one `<unit>.json` file per unit. */
+  /** Directory holding one `<unit>.json` file (or `<unit>/` tree) per unit. */
   root: string
 }
 ```
 
-Source: [`packages/storage/storage-json/src/index.ts:27`](../packages/storage/storage-json/src/index.ts)
+Source: [`packages/storage/storage-json/src/index.ts:28`](../packages/storage/storage-json/src/index.ts)
 
 <a id="deepseek-aidsh-storage-sqlite"></a>
 

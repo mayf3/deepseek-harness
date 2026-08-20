@@ -1700,7 +1700,7 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 ## `@deepseek-ai/dsh-session-projection-cache`
 
-需要：`sessionProjections` · `sessions`
+需要：`storageDomain` · `sessionProjections` · `sessions`
 
 ```ts config-catalog
 /**
@@ -1710,8 +1710,6 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
  * disposal) are policy, not tunables, and always fire.
  */
 export interface Config {
-  /** Directory holding one `<session-id>/projection_cache.json` per session. */
-  root: string
   /** Committed events per session that force a durable checkpoint write between mandatory points. */
   writeEveryEvents: number
   /** Longest time (milliseconds) a dirty checkpoint may stay unwritten between mandatory points. */
@@ -1719,7 +1717,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/session/session-projection-cache/src/index.ts:48`](../packages/session/session-projection-cache/src/index.ts)
+来源：[`packages/session/session-projection-cache/src/index.ts:43`](../packages/session/session-projection-cache/src/index.ts)
 
 <a id="deepseek-aidsh-session-query-sqlite"></a>
 
@@ -2044,12 +2042,12 @@ export interface Config {
  * location explicitly.
  */
 export interface Config {
-  /** Directory holding one `<unit>.json` file per unit. */
+  /** Directory holding one `<unit>.json` file (or `<unit>/` tree) per unit. */
   root: string
 }
 ```
 
-来源：[`packages/storage/storage-json/src/index.ts:27`](../packages/storage/storage-json/src/index.ts)
+来源：[`packages/storage/storage-json/src/index.ts:28`](../packages/storage/storage-json/src/index.ts)
 
 <a id="deepseek-aidsh-storage-sqlite"></a>
 
