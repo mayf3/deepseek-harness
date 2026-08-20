@@ -119,7 +119,7 @@ describe('DeepSeekFilesClient', () => {
     const client = new DeepSeekFilesClient({
       baseURL: 'https://api.deepseek.com',
       apiKey: 'key',
-      fetch: vi.fn(() => Promise.resolve(new Response('not-json', { status }))) as typeof fetch,
+      fetch: vi.fn(() => Promise.resolve(new Response('not-json', { status }))),
     })
     await expect(client.retrieve(DeepSeekFileId('missing'))).rejects.toMatchObject({
       name: 'DeepSeekFilesError',
@@ -139,7 +139,7 @@ describe('DeepSeekFilesClient', () => {
     const client = new DeepSeekFilesClient({
       baseURL: 'https://api.deepseek.com',
       apiKey: 'key',
-      fetch: vi.fn(() => Promise.resolve(new Response(JSON.stringify(body), { status: 400 }))) as typeof fetch,
+      fetch: vi.fn(() => Promise.resolve(new Response(JSON.stringify(body), { status: 400 }))),
     })
     const error = await client.retrieve(DeepSeekFileId('missing')).catch((caught: unknown) => caught)
     expect(error).toBeInstanceOf(DeepSeekFilesError)
@@ -151,7 +151,7 @@ describe('DeepSeekFilesClient', () => {
     const client = new DeepSeekFilesClient({
       baseURL: 'https://api.deepseek.com',
       apiKey: 'key',
-      fetch: vi.fn(() => Promise.reject(transport)) as typeof fetch,
+      fetch: vi.fn(() => Promise.reject(transport)),
     })
     await expect(client.retrieve(DeepSeekFileId('one'))).rejects.toMatchObject({
       code: 'TRANSPORT',
@@ -183,7 +183,7 @@ describe('DeepSeekFilesClient', () => {
     const client = new DeepSeekFilesClient({
       baseURL: 'https://api.deepseek.com',
       apiKey: 'key',
-      fetch: vi.fn(() => Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))) as typeof fetch,
+      fetch: vi.fn(() => Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))),
     })
     await expect(client.retrieve(DeepSeekFileId('one'))).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
   })
@@ -224,7 +224,7 @@ describe('DeepSeekFilesClient', () => {
     const client = new DeepSeekFilesClient({
       baseURL: 'https://api.deepseek.com',
       apiKey: 'key',
-      fetch: vi.fn(() => Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))) as typeof fetch,
+      fetch: vi.fn(() => Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))),
     })
     await expect(client.list()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
   })
@@ -253,7 +253,7 @@ describe('DeepSeekFilesClient', () => {
     const client = new DeepSeekFilesClient({
       baseURL: 'https://api.deepseek.com',
       apiKey: 'key',
-      fetch: vi.fn(() => Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))) as typeof fetch,
+      fetch: vi.fn(() => Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))),
     })
     await expect(client.delete(DeepSeekFileId('file-api-one'))).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
   })

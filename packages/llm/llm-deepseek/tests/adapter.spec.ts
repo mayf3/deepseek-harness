@@ -176,6 +176,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     await drain(adapter.stream({
       provider: 'deepseek-official',
       model: 'deepseek-v4-flash-vision-exp',
+      tools: [{ name: 'read_image_region', description: 'crop', parameters: { type: 'object' } }],
       messages: [createUserMessage({
         content: [
           { type: 'text', text: 'describe ' },
@@ -191,7 +192,7 @@ describe('DeepSeekAdapter against a mock server', () => {
         role: 'user',
         content: [
           { type: 'text', text: 'describe ' },
-          { type: 'text', text: expect.stringContaining(`Image ${imageRef.attachmentId}`) as string },
+          { type: 'text', text: expect.stringContaining('Call read_image_region') as string },
           { type: 'file', file_id: 'file-api-1' },
         ],
       }],
@@ -1499,6 +1500,23 @@ describe('plugin registration and config', () => {
       .toThrow(/maxTokens must be a positive integer/)
   })
 
+  it('rejects image request limits on a text-only catalog model', () => {
+    expect(() => resolveAdapterOptions({
+      models: [{ id: 'text-only', inputModalities: ['text'], imagePixelBudget: 1 }],
+    })).toThrow(/text-only catalog model .* cannot declare image request limits/)
+  })
+
+  it.each([
+    ['imagePixelBudget', 0, /imagePixelBudget must be a positive safe integer/],
+    ['imagePixelBudget', Number.MAX_SAFE_INTEGER + 1, /imagePixelBudget must be a positive safe integer/],
+    ['imageMaxBytes', 0, /imageMaxBytes must be a positive safe integer/],
+    ['imageMaxBytes', 1.5, /imageMaxBytes must be a positive safe integer/],
+  ] as const)('rejects per-model %s=%s', (field, value, message) => {
+    expect(() => resolveAdapterOptions({
+      models: [{ id: 'vision', inputModalities: ['image'], [field]: value }],
+    })).toThrow(message)
+  })
+
   it('prefers a model\'s own output cap over the profile default', async () => {
     // The profile default stays what an unlisted or uncapped model resolves
     // to, so adding a per-model cap changes one model rather than the route.
@@ -1567,6 +1585,23 @@ describe('plugin registration and config', () => {
       maxImagesPerRequest: 10,
       imageOffloadCountQuantum: 11,
     })).toThrow(/imageOffloadCountQuantum must not exceed maxImagesPerRequest/)
+  })
+
+  it.each([
+    ['maxImagesPerRequest', 0, /maxImagesPerRequest must be a positive safe integer/],
+    ['maxImagesPerRequest', 1.5, /maxImagesPerRequest must be a positive safe integer/],
+    ['imageOffloadByteQuantum', 0, /imageOffloadByteQuantum must be a positive safe integer/],
+    ['imageOffloadByteQuantum', Number.MAX_SAFE_INTEGER + 1, /imageOffloadByteQuantum must be a positive safe integer/],
+    ['imageOffloadCountQuantum', 0, /imageOffloadCountQuantum must be a positive safe integer/],
+    ['imageOffloadCountQuantum', 1.5, /imageOffloadCountQuantum must be a positive safe integer/],
+    ['fileExpiresAfterSeconds', 3_599, /fileExpiresAfterSeconds must be an integer from 3600 through 2592000/],
+    ['fileExpiresAfterSeconds', 2_592_001, /fileExpiresAfterSeconds must be an integer from 3600 through 2592000/],
+    ['fileRefreshMarginSeconds', -1, /fileRefreshMarginSeconds must be a non-negative integer/],
+    ['fileRefreshMarginSeconds', 604_800, /fileRefreshMarginSeconds must be a non-negative integer/],
+    ['fileQuotaCleanupBatch', 0, /fileQuotaCleanupBatch must be an integer from 1 through 1000/],
+    ['fileQuotaCleanupBatch', 1_001, /fileQuotaCleanupBatch must be an integer from 1 through 1000/],
+  ] as const)('rejects %s=%s', (field, value, message) => {
+    expect(() => resolveAdapterOptions({ [field]: value })).toThrow(message)
   })
 
   it.each([0, 1.5, Number.MAX_SAFE_INTEGER + 1])(

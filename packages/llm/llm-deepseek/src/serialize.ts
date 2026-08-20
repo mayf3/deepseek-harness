@@ -317,7 +317,7 @@ export async function serializeMessagesWithImages(
       wire.push({
         role: 'tool',
         tool_call_id: result.toolCallId,
-        content: text || (fileParts.length > 0 ? '(see attached image)' : '(no output)'),
+        content: text || '(no output)',
       })
       pendingToolImages.push(...fileParts)
     }

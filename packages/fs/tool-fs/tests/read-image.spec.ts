@@ -251,6 +251,33 @@ describe('read_image_region', () => {
     expect(result.isError).toBe(false)
   })
 
+  it('continues across an earlier session message without the requested image', async () => {
+    const ctx = await setup()
+    const source = await ctx.attachments.saveImage({ data: PNG_3X3, mediaType: 'image/png' })
+    const history = [
+      createUserMessage({
+        content: [{ type: 'text', text: 'before image' }],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+      createUserMessage({
+        content: [{ type: 'image', attachment: source.ref }],
+        source: { kind: 'plugin', plugin: 'test' },
+      }),
+    ]
+
+    const result = await call(ctx, 'read_image_region', {
+      attachment_id: source.ref.attachmentId,
+      preview_width: 3,
+      preview_height: 3,
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+    }, agentOn('vision-model', 'visual', history))
+
+    expect(result.isError).toBe(false)
+  })
+
   it('rejects a missing session, empty id, and invalid coordinate arguments', async () => {
     const ctx = await setup()
     const base = {

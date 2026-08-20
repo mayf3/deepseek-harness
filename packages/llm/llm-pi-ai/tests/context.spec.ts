@@ -428,4 +428,14 @@ describe('pi-ai request context conversion', () => {
       history('assistant', [{ type: 'image', attachment: ref }]),
     )).toThrow(/assistant image output/)
   })
+
+  it('rejects an attachment service that omits a requested image version', async () => {
+    const store = {
+      readImageRequests: vi.fn(() => Promise.resolve([])),
+    } as unknown as AttachmentStore
+    await expect(toPiContext(
+      request([user([{ type: 'image', attachment: ref }])]),
+      store,
+    )).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+  })
 })

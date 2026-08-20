@@ -986,6 +986,18 @@ describe('LlmRuntime', () => {
       type: 'text',
       text: '[image omitted because this model accepts text only; attachment sha256:aaaaaaaa]',
     }])
+
+    const frozen = Object.freeze({
+      provider: 'route',
+      model: 'text-only',
+      messages: [createUserMessage({
+        content: [{ type: 'image', attachment }],
+        source: { kind: 'plugin' as const, plugin: 'test' },
+      })],
+    })
+    await collect(ctx.llm.stream(frozen))
+    expect(Object.isFrozen(seen[1])).toBe(true)
+    expect(Object.isFrozen(seen[1]?.messages)).toBe(true)
   })
 
   it('passes cancellation through exact-model resolution', async () => {

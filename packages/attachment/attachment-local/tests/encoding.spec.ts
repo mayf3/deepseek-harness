@@ -83,6 +83,7 @@ describe('CompressionLimiter', () => {
 
   it('normalizes a non-Error rejection and releases its slot', async () => {
     const limiter = new CompressionLimiter(1)
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Native bindings can reject non-Error values.
     const failed = limiter.run(() => Promise.reject('native failure'))
     const next = limiter.run(() => Promise.resolve('next'))
 

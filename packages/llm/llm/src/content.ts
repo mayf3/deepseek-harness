@@ -74,7 +74,9 @@ function collectImageLengths(
 ): void {
   for (const block of blocks) {
     if (block.type === 'image') {
-      const bytes = policy.byteLength?.(block.attachment) ?? block.attachment.bytes
+      const bytes = policy.byteLength === undefined
+        ? block.attachment.bytes
+        : policy.byteLength(block.attachment)
       lengths.push(policy.representation === 'base64' ? base64Length(bytes) : bytes)
     } else if (block.type === 'tool-result') {
       collectImageLengths(block.content, lengths, policy)

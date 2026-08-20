@@ -50,33 +50,44 @@ function abortReason(signal: AbortSignal): Error {
     : new Error('DeepSeek file upload cancelled with a non-Error reason.', { cause: reason })
 }
 
+function uploadFailure(error: unknown): Error {
+  return error instanceof Error
+    ? error
+    : new Error('DeepSeek file upload failed with a non-Error reason.', { cause: error })
+}
+
 function waitForUpload(operation: SharedUpload, signal: AbortSignal | undefined): Promise<DeepSeekFileReference> {
   signal?.throwIfAborted()
   operation.waiters += 1
   let released = false
-  const release = (cancelled: boolean): void => {
+  const release = (cancelledReason?: Error): void => {
     if (released) return
     released = true
     operation.waiters -= 1
-    if (cancelled && operation.waiters === 0 && !operation.settled) {
-      operation.controller.abort(signal === undefined ? undefined : abortReason(signal))
+    if (cancelledReason !== undefined && operation.waiters === 0 && !operation.settled) {
+      operation.controller.abort(cancelledReason)
     }
   }
-  if (signal === undefined) return operation.promise.finally(() => release(false))
+  if (signal === undefined) {
+    return operation.promise.finally(() => {
+      release()
+    })
+  }
   return new Promise<DeepSeekFileReference>((resolve, reject) => {
     const abort = (): void => {
-      release(true)
-      reject(abortReason(signal))
+      const reason = abortReason(signal)
+      release(reason)
+      reject(reason)
     }
     signal.addEventListener('abort', abort, { once: true })
     void operation.promise.then((value) => {
       signal.removeEventListener('abort', abort)
-      release(false)
+      release()
       resolve(value)
     }, (error: unknown) => {
       signal.removeEventListener('abort', abort)
-      release(false)
-      reject(error)
+      release()
+      reject(uploadFailure(error))
     })
   })
 }
@@ -155,7 +166,7 @@ export class DeepSeekFileStore {
       return value
     }, (error: unknown) => {
       shared.settled = true
-      throw error
+      throw uploadFailure(error)
     })
     this.inflight.set(key, shared)
     void shared.promise.finally(() => {
@@ -168,7 +179,7 @@ export class DeepSeekFileStore {
     version: RequestImageAttachment,
     connection: DeepSeekFileConnection,
     policy: DeepSeekFilePolicy,
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ): Promise<DeepSeekFileReference> {
     if (version.bytes > MAX_CHAT_IMAGE_BYTES) {
       throw new LlmError('DeepSeek chat image exceeds the 32 MiB per-image limit.', 'INVALID_REQUEST')
@@ -186,9 +197,9 @@ export class DeepSeekFileStore {
         mediaType: version.mediaType,
         filename: filename(version),
         expiresAfterSeconds: policy.expiresAfterSeconds,
-        ...signal === undefined ? {} : { signal },
+        signal,
       })
-      if (remote.bytes !== version.data.byteLength || remote.expiresAt === undefined) {
+      if (remote.bytes !== version.data.byteLength) {
         throw new LlmError('DeepSeek Files API upload response does not match the submitted image.', 'INVALID_RESPONSE')
       }
       return {

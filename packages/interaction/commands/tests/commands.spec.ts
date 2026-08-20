@@ -487,9 +487,10 @@ describe('image attachments', () => {
         })
       }),
       validateImageBatch(inputs: readonly unknown[]) {
-        return (AttachmentStore.prototype as unknown as {
+        const validate = AttachmentStore.prototype as unknown as {
           validateImageBatch(this: unknown, batch: readonly unknown[]): void
-        }).validateImageBatch.call(this, inputs)
+        }
+        validate.validateImageBatch.call(this, inputs)
       },
       // The real base-class batch method over this double's limits and members.
       saveImages(inputs: readonly unknown[]) {

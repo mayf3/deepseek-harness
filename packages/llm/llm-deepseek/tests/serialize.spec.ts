@@ -399,6 +399,14 @@ describe('image serialization', () => {
     })
   })
 
+  it('rejects an image whose prepared request version is absent', async () => {
+    const ref = imageRef()
+    await expect(serializeMessagesWithImages([createUserMessage({
+      content: [{ type: 'image', attachment: ref }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })], imageOptions([]))).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+  })
+
   it('keeps tool content textual and groups consecutive tool-result images afterward', async () => {
     const messages = [
       createUserMessage({
@@ -559,6 +567,17 @@ describe('image serialization', () => {
     })
     expect(resolveFileId).toHaveBeenCalledTimes(1)
     expect(resolveFileId.mock.calls[0]?.[0]).toMatchObject({ master: { mediaType: 'image/jpeg' } })
+  })
+
+  it('rejects an unprepared image while computing exact request bytes', async () => {
+    const ref = imageRef()
+    await expect(serializeRequestWithImages(request({
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: [{ type: 'image', attachment: ref }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }), imageOptions([]))).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
   })
 
   it.each(['system', 'assistant'] as const)('rejects an image in %s history before reading attachments', async (role) => {

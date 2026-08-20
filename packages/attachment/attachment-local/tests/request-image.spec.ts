@@ -340,7 +340,9 @@ describe('local request-image cache', () => {
     const read = vi.spyOn(attachments, 'readImage').mockImplementation((_ref, signal) => {
       readSignal = signal
       return new Promise((_resolve, reject) => {
-        signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+        signal?.addEventListener('abort', () => {
+          reject(new Error('request transform aborted', { cause: signal.reason }))
+        }, { once: true })
       })
     })
     const controller = new AbortController()
@@ -349,7 +351,9 @@ describe('local request-image cache', () => {
       { maxPixels: 640_000, maxBytes: 1024 * 1024 },
       controller.signal,
     )
-    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => {
+      expect(read).toHaveBeenCalledTimes(1)
+    })
 
     const reason = new Error('cancel only transform waiter')
     controller.abort(reason)
@@ -369,7 +373,9 @@ describe('local request-image cache', () => {
       calls += 1
       if (calls === 1) {
         return new Promise((_resolve, reject) => {
-          signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+          signal?.addEventListener('abort', () => {
+            reject(new Error('request transform aborted', { cause: signal.reason }))
+          }, { once: true })
         })
       }
       return actualRead(ref, signal)
@@ -377,7 +383,9 @@ describe('local request-image cache', () => {
     const controller = new AbortController()
     const policy = { maxPixels: 640_000, maxBytes: 1024 * 1024 }
     const cancelled = attachments.readImageRequest(master, policy, controller.signal)
-    await vi.waitFor(() => expect(calls).toBe(1))
+    await vi.waitFor(() => {
+      expect(calls).toBe(1)
+    })
 
     controller.abort('cancelled')
     const replacement = attachments.readImageRequest(master, policy)
@@ -389,4 +397,5 @@ describe('local request-image cache', () => {
     await expect(replacement).resolves.toMatchObject({ width: 1130, height: 565 })
     expect(calls).toBe(2)
   })
+
 })

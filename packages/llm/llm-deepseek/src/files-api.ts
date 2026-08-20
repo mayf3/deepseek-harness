@@ -143,7 +143,6 @@ export class DeepSeekFilesClient {
     let response: Response
     try {
       const headers = new Headers(attributionHeaders())
-      for (const [name, value] of new Headers(init.headers)) headers.set(name, value)
       headers.set('authorization', `Bearer ${this.apiKey}`)
       response = await this.fetchImpl(`${this.baseURL}${path}`, {
         ...init,
@@ -180,7 +179,7 @@ export class DeepSeekFilesClient {
     filename: string
     expiresAfterSeconds: number
     signal?: AbortSignal
-  }): Promise<DeepSeekFileObject> {
+  }): Promise<DeepSeekFileObject & { expiresAt: number }> {
     if (input.data.byteLength > MAX_FILE_UPLOAD_BYTES) {
       throw new LlmError('DeepSeek Files API upload exceeds 128 MiB.', 'INVALID_REQUEST')
     }
@@ -197,7 +196,7 @@ export class DeepSeekFilesClient {
     const response = await this.request('/files', { method: 'POST', body: form }, input.signal)
     const file = parseFileObject(await response.json(), 'upload')
     if (file.expiresAt === undefined) throw invalidResponse('upload')
-    return file
+    return { ...file, expiresAt: file.expiresAt }
   }
 
   /**

@@ -93,7 +93,11 @@ class SharedRequest<T> {
   wait(signal?: AbortSignal): Promise<T> {
     signal?.throwIfAborted()
     this.waiters += 1
-    if (signal === undefined) return this.promise.finally(() => this.release(false))
+    if (signal === undefined) {
+      return this.promise.finally(() => {
+        this.release(false)
+      })
+    }
     let released = false
     const release = (cancelled: boolean): void => {
       if (released) return
@@ -113,6 +117,8 @@ class SharedRequest<T> {
       }, (error: unknown) => {
         signal.removeEventListener('abort', abort)
         release(false)
+        // CompressionLimiter normalizes task rejections before this handler.
+        // oxlint-disable-next-line typescript/prefer-promise-reject-errors
         reject(error)
       })
     })
