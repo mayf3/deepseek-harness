@@ -16,7 +16,7 @@ Both question shapes answer into one `AnswerField`: a `<textarea rows={1}>` shar
 
 The mirror sits in normal flow and so sizes the grid row; the textarea stretches to that row, and `rows={1}` keeps the control's own intrinsic height out of the row sizing, leaving the mirror the only input to the height. Soft wraps are invisible to a `'\n'` count, so the mirror is what makes a wrapped answer grow the box rather than scroll one line. The trailing newline covers the last line the textarea's caret can reach and the block container drops. Mirror and textarea must keep identical type, padding, and wrapping rules; a divergence sizes the box wrong for the text being typed.
 
-Growth stops at the mirror's `max-height` of eight lines, and past that the textarea scrolls itself. It is the only scrollport in the stack: unlike the chat composer, this field paints its own glyphs, so there is no second layer whose scroll offset would have to match.
+Growth stops at the mirror's `max-height` of six lines, and past that the textarea scrolls itself. The mirror takes `box-sizing: content-box` against the card-wide `border-box` so that cap counts text lines rather than text plus padding: the optionless variant carries 16px of vertical padding, which under `border-box` spends two thirds of a line and delivers the last one as an 8px sliver, while the inline variant has no padding and would land on a different line count from the same declaration. It is the only scrollport in the stack: unlike the chat composer, this field paints its own glyphs, so there is no second layer whose scroll offset would have to match.
 
 Enter continues the flow and submits the batch on the last question, Shift+Enter breaks the line, and the IME guard is unchanged — Enter during composition confirms the candidate without advancing. The `variant` prop names which of the two looks the field takes, so the field owns both and neither caller assembles one out of class names.
 
@@ -32,9 +32,11 @@ Enter continues the flow and submits the batch on the last question, Shift+Enter
 
 **Uncapped growth.** Rejected because the card tops out at `min(60vh, 520px)` and still owes that budget to the title, the option rows, and the footer actions; an unbounded field pushes the choices the answer belongs to out of view.
 
+**A per-variant cap that absorbs each variant's padding.** Rejected because it couples the line count to a padding value: changing `.customBlock`'s inset would silently change how many lines the field grows to. `content-box` states the intent once, in the units the cap is written in.
+
 ## Testing
 
-Component tests pin the round trip: both shapes render a textarea, the mirror follows the draft, Shift+Enter never advances the flow, and line breaks reach the answer batch verbatim. The assembled `question-composer` web e2e measures the live engine — a soft-wrapped draft grows the field without scrolling it, two Shift+Enter presses leave `"\n\n"` in a taller field with the question still open, and a draft past the cap scrolls instead of growing.
+Component tests pin the round trip: both shapes render a textarea, the mirror follows the draft, Shift+Enter never advances the flow, and line breaks reach the answer batch verbatim. The assembled `question-composer` web e2e measures the live engine — a soft-wrapped draft grows the field without scrolling it, two Shift+Enter presses leave `"\n\n"` in a taller field with the question still open, and a draft past the cap scrolls instead of growing at exactly six text lines in both variants.
 
 ## Consequences
 
