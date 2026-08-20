@@ -2263,10 +2263,12 @@ Source: [`packages/subagent/subagent-acp/src/index.ts:27`](../packages/subagent/
 Requires: `subagents` · `subprocess`
 
 ```ts config-catalog
-/** Deployment-owned permission, environment, and process-release settings. */
+/** Deployment-owned model, permission, environment, and process-release settings. */
 export interface Config {
   /** Provider name on `ctx.subagents` (default `claude-code`). */
   providerName?: string
+  /** Native Claude model fixed for this instance; omitted to inherit Claude settings. */
+  model?: string
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.
