@@ -41,6 +41,22 @@ from protocol import PROTOCOL_FD, log_truncation_marker  # noqa: E402
 # simply takes more reads. 64 KiB matches the usual pipe capacity.
 _READ_CHUNK_BYTES = 65536
 
+# Captured primitive for the done-frame LAST-resort fallback. This bootstrap IS
+# ``__main__``, so ``import __main__; __main__.os = ...`` would rebind ``os.write``
+# at call time inside ``ProtocolChannel.write_encoded``. ``os_write`` is a closure
+# cell captured at import, before model code runs, so a one-line rebind cannot
+# change which write the fallback uses. See ``send_done``'s try/except below.
+_os_write = os.write
+
+# A fixed, pre-encoded done frame for the fallback. It carries no live model
+# value, so it can always be written even when a transitive name (a ``_dump_*``
+# helper or ``os``) has been rebound and the normal encode/write threw. The
+# message is the same fixed literal the failure reporter uses for an
+# unrenderable diagnostic; the host renders the run as an exception rather than
+# a worker-exit, which is the honest verdict for a settled run whose reporting
+# was sabotaged. The bytes are JSON-valid and newline-terminated.
+_FALLBACK_DONE_FRAME = b'{"type":"done","error":{"kind":"exception","message":"<unrenderable>"}}\n'
+
 # Code-unit ceiling on the exception class name interpolated into the LAST-resort
 # failure diagnostic. A metaclass `__name__` property can return any length, and
 # that construction runs outside the guard that would otherwise absorb a
@@ -179,6 +195,16 @@ class _LogStream(io.TextIOBase):
         # ``print("x", end="")`` must not concatenate quadratically.
         self._pending: list[str] = []
         self._pending_chars = 0
+        # A newline-free drip must not accumulate one list slot per ``write``:
+        # under a large ``maxLogBytes`` the list-of-fragments pointer array and
+        # the per-fragment str objects cost host memory well before the byte
+        # budget is reached, and a 25 M single-character drip would OOM on its
+        # own accounting (plus the same-size list ``_push_bounded_prefix`` then
+        # builds). Past this many fragments the chunks are sealed into one
+        # joined block (the character count is unchanged), bounding the live
+        # fragment count exactly as the host-side ``captureStray`` does with its
+        # ``MAX_PENDING_CHUNKS``.
+        self._PENDING_MAX_CHUNKS = 1024
 
     def writable(self) -> bool:  # noqa: D401 -- inherited contract
         return True
@@ -292,6 +318,18 @@ class _LogStream(io.TextIOBase):
         else:
             self._pending.append(text)
             self._pending_chars += len(text)
+            # Seal the fragment list past the chunk cap: a newline-free drip
+            # appends one fragment per write, so a 25 M single-character flood
+            # would accumulate that many list slots (and str objects) long before
+            # the byte budget is met — the pointer array alone being ~25 M slots.
+            # Joining the fragments into one block keeps the SAME character count
+            # (`_pending_chars` is unchanged) while bounding the live fragment
+            # count, mirroring the host-side `captureStray` seal. The join is
+            # only as large as the buffered characters, which the budget already
+            # bounds; the fragments are otherwise un-sealable mid-newline because
+            # a newline never starts a multi-byte sequence.
+            if len(self._pending) >= self._PENDING_MAX_CHUNKS:
+                self._pending = ["".join(self._pending)]
         # A newline-free flood must hit the budget while running, not at
         # settlement: once the buffered tail alone can no longer fit the
         # ledger (chars lower-bound the serialized cost), push it through — LogBuffer
@@ -640,7 +678,21 @@ def _clamped(which: int, soft: int, hard: int) -> tuple[int, int]:
     # invert them (a finite inherited soft below the clamped hard is fine, but a
     # requested hard below the inherited soft would leave soft > hard), so pin
     # soft under hard as the final step; the stricter hard ceiling wins.
-    return (min(clamped_soft, clamped_hard), clamped_hard)
+    result_soft = min(clamped_soft, clamped_hard)
+    result_hard = clamped_hard
+    # A soft limit EQUAL to the hard limit leaves the kernel no window to send
+    # SIGXCPU: it checks the hard limit in the same tick and SIGKILLs directly
+    # (a `ulimit -t N` sets both, and a busy loop then dies by SIGKILL, not
+    # SIGXCPU). The host classifies a CPU overrun ONLY on ``signal ===
+    # 'SIGXCPU'``, so a definite budget exhaustion would be misreported as a
+    # `worker-exit`. Lowering the soft limit one unit below the hard (when the
+    # hard is at least 2, so soft stays positive) keeps the stricter-of-the-two
+    # containment semantics while giving SIGXCPU a window to fire — the CPU
+    # overrun is then reported as a timeout, not a worker-exit. For RLIMIT_AS
+    # this is one byte stricter, harmless.
+    if result_soft == result_hard and result_hard >= 2:
+        result_soft = result_hard - 1
+    return (result_soft, result_hard)
 
 
 # ---------------------------------------------------------------------------
@@ -913,10 +965,28 @@ async def _run(channel: ProtocolChannel) -> None:
     write_encoded_bound = channel.write_encoded
 
     def send_done(payload: dict[str, Any] | str) -> None:
-        if isinstance(payload, str):
-            write_encoded_bound(payload)
-        else:
-            write_encoded_bound(encode_plain_bound(payload))
+        try:
+            if isinstance(payload, str):
+                write_encoded_bound(payload)
+            else:
+                write_encoded_bound(encode_plain_bound(payload))
+        except BaseException:  # noqa: BLE001 -- a rebind must not cost the done frame
+            # `encode_plain_bound`/`write_encoded_bound` are bound callables, but
+            # their BODIES still resolve transitive module globals at call time —
+            # `_encode_json_plain` reaches `_dump_scalar`/`_dump_string`/`json.dumps`,
+            # `write_encoded` reaches `os.write` (via the `os` module). This
+            # bootstrap is `__main__`, so `__main__._dump_scalar = boom` (or
+            # `__main__.os = ...`) makes the error-frame encode/write throw AFTER
+            # the `except` block, which would drop the `done` frame and downgrade a
+            # settled `exception` verdict to a host-side `worker-exit`. Write a fixed
+            # literal done frame with the captured `_os_write` (itself immune to a
+            # rebind) so the host still gets a verdict. The literal is JSON-valid
+            # and newline-terminated; the lock is the channel's, so the write is
+            # serialized against any concurrent writer.
+            with channel._write_lock:
+                view = memoryview(_FALLBACK_DONE_FRAME)
+                while view:
+                    view = view[_os_write(channel._fd, view):]
 
     max_value_bytes = int(boot["maxValueBytes"])
     done: dict[str, Any] | str

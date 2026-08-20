@@ -511,6 +511,37 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     expect(result.value).toBe(5)
   }, 15_000)
 
+  it('reports a CPU overrun under a dual-limit ulimit as a timeout, not a worker-exit', async () => {
+    // `ulimit -t N` sets BOTH the soft and hard CPU limit to N. The kernel
+    // checks the hard limit in the same tick and SIGKILLs a busy loop directly,
+    // so SIGXCPU is never delivered — and the host classifies a CPU overrun
+    // ONLY on `signal === 'SIGXCPU'`, so the overrun would be misreported as a
+    // `worker-exit` instead of a timeout. `_clamped` now lowers a clamped
+    // soft==hard result by one unit (when hard >= 2), so SIGXCPU fires at the
+    // softer limit and the run reports a timeout. This drives a busy loop past
+    // the inherited cap and asserts the run classifies as a timeout.
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-dual-'))
+    const wrapper = join(dir, 'python3-dual-capped')
+    // Both soft and hard CPU 1 s; configured cpuSeconds 30 s.
+    await writeFile(wrapper, '#!/bin/sh\nulimit -t 1\nexec python3 "$@"\n', { mode: 0o755 })
+    const { runtime } = await setup({ pythonBin: wrapper, cpuSeconds: 30, maxWallMs: 12_000 })
+    const result = await runtime.run({
+      program: [
+        'import signal',
+        // Trap SIGXCPU; with the soft limit one unit below the hard it fires at
+        // 1 s and the run is classified as a CPU timeout, not a worker-exit.
+        'signal.signal(signal.SIGXCPU, lambda *a: None)',
+        'end = 2.5',
+        'while True:',
+        '    pass',
+        'return "unreachable"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('timeout')
+    expect(result.error?.message).toContain('SIGXCPU')
+  }, 15_000)
+
   it('rechecks CPU at settlement against the effective inherited soft limit', async () => {
     // The settlement-time CPU recheck must compare against the EFFECTIVE soft
     // limit (`_clamped` may have lowered it to a stricter inherited value), not
@@ -791,6 +822,31 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs.at(-1)).toBe(logTruncationMarker(4096))
     // The retained output is bounded by the budget, not the 2 MB flood.
     expect(result.logs.join('').length).toBeLessThan(4096)
+  })
+
+  it('bounds a newline-free single-character Python write drip by the fragment cap, not OOM', async () => {
+    // The child-side `_LogStream` buffers one fragment per `write` (so
+    // `print("x", end="")` does not concatenate quadratically). A newline-free
+    // drip of one character per call past a large `maxLogBytes` would otherwise
+    // accumulate one list slot (and one str object) per call — 25 M calls =
+    // ~25 M slots, which OOMs the host on its own accounting before the byte
+    // budget is reached. The stream seals the fragment list past
+    // `_PENDING_MAX_CHUNKS` into one joined block (character count unchanged),
+    // bounding the live fragment count exactly as the host-side `captureStray`
+    // seal does. This drives well past the cap and asserts the run still
+    // completes with a truncation marker rather than a MemoryError.
+    const { runtime } = await setup({ maxLogBytes: 4096 })
+    const result = await runtime.run({
+      program: [
+        'import sys',
+        'for _ in range(200_000):',
+        '    sys.stdout.write("x")',
+        'return None',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs.at(-1)).toBe(logTruncationMarker(4096))
   })
 
   it('bounds a control-char-dense native residual by serialized cost, not raw length', async () => {
@@ -1425,6 +1481,34 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.error?.kind).toBe('exception')
     expect(result.error?.message).toContain('ValueError: real failure')
     expect(result.error?.message).not.toContain('hijacked')
+  }, 15_000)
+
+  it('still delivers a done frame when a transitive encode name is rebound', async () => {
+    // `send_done` binds `_encode_json_plain` and `ProtocolChannel.write_encoded`
+    // into locals, but those callables' BODIES still resolve transitive module
+    // globals at call time: `_encode_json_plain` reaches `_dump_scalar`/`_dump_string`/
+    // `json.dumps`, and `write_encoded` reaches `os.write`. This bootstrap is
+    // `__main__`, so rebinding `__main__._dump_scalar` to a raising function makes
+    // the error-frame encode throw AFTER the `except` block. `send_done` catches
+    // that and writes a fixed literal done frame (kind `exception`) with the
+    // captured `os.write`, so the host still gets a verdict — the run must be an
+    // `exception`, never a `worker-exit`. The real message is lost (the literal
+    // carries a fixed `<unrenderable>` text), which is acceptable: the verdict
+    // outranks the diagnostic detail.
+    const { runtime } = await setup({ maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'import __main__',
+        'def boom(*a, **k):',
+        '    raise RuntimeError("hijacked")',
+        '__main__._dump_scalar = boom',
+        '__main__.os = boom',
+        'raise ValueError("real failure")',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.kind).not.toBe('worker-exit')
   }, 15_000)
 
   it('bounds an over-cap exception-group nesting on the copy', async () => {

@@ -1486,8 +1486,15 @@ export class PythonCodeRuntime extends CodeRuntime {
             // bindings awaiting fd 3's `drain` can queue many frames, and each
             // `shift()` re-slices the remaining array (O(n) per pop, O(n²) over
             // the whole drain). A head cursor keeps the cost linear; the `finally`
-            // below discards everything consumed once the drain ends.
+            // below discards everything consumed once the drain ends. The consumed
+            // slot is CLEARED here (not just advanced past) so a wide payload the
+            // pipe has already taken is released immediately: under sustained
+            // backpressure the drain loop can live across many `await drain`
+            // ticks, and leaving the slot set would pin the written value's bytes
+            // in `replyQueue` for the whole busy period, making host memory grow
+            // with cumulative processing rather than the current backlog.
             const payload = replyQueue[head] as ReplyMessage
+            replyQueue[head] = undefined as unknown as ReplyMessage
             head += 1
             // Encode inside the loop, not up front: a queued reply the run no
             // longer needs is dropped by the `settled` check above without ever
