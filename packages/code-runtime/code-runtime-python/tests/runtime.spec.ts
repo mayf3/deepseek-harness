@@ -1488,7 +1488,8 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     // `__main__`, so rebinding `__main__._dump_scalar` to a raising function makes
     // the error-frame encode throw AFTER the `except` block. `send_done` catches
     // that and writes a fixed literal done frame (kind `exception`) with the
-    // captured `os.write`, so the host still gets a verdict — the run must be an
+    // LOCALLY-BOUND `_os_write`/`_memoryview`/`_FALLBACK_DONE_FRAME` captured
+    // before the program runs, so the host still gets a verdict — the run must be an
     // `exception`, never a `worker-exit`. The real message is lost (the literal
     // carries a fixed `<unrenderable>` text), which is acceptable: the verdict
     // outranks the diagnostic detail.
@@ -1500,6 +1501,10 @@ describe('PythonCodeRuntime — programs and bindings', () => {
         '    raise RuntimeError("hijacked")',
         '__main__._dump_scalar = boom',
         '__main__.os = boom',
+        // The fallback must also survive a rebind of its own primitives.
+        '__main__._os_write = boom',
+        '__main__._memoryview = boom',
+        '__main__._FALLBACK_DONE_FRAME = boom',
         'raise ValueError("real failure")',
       ].join('\n'),
       bindings: [],

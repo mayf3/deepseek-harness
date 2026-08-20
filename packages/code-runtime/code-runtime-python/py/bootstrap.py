@@ -986,6 +986,15 @@ async def _run(channel: ProtocolChannel) -> None:
     # bound above.
     encode_plain_bound = _encode_json_plain
     write_encoded_bound = channel.write_encoded
+    # The fallback primitives are bound into LOCALS here, before the program
+    # runs, so `send_done`'s except arm does not read module globals at call
+    # time. This bootstrap is `__main__`, so `__main__._os_write = boom` (or
+    # `__main__._FALLBACK_DONE_FRAME`, `__main__._memoryview`) would otherwise
+    # rebind exactly the names the fallback reads, reopening the single-line-
+    # rebind hole the fallback exists to close.
+    _os_write_local = _os_write
+    _memoryview_local = _memoryview
+    _fallback_frame_local = _FALLBACK_DONE_FRAME
 
     def send_done(payload: dict[str, Any] | str) -> None:
         try:
@@ -993,7 +1002,7 @@ async def _run(channel: ProtocolChannel) -> None:
                 write_encoded_bound(payload)
             else:
                 write_encoded_bound(encode_plain_bound(payload))
-        except BaseException:  # noqa: BLE001 -- a rebind must not cost the done frame
+        except:  # noqa: BLE001, E722 -- a rebind must not cost the done frame; bare except avoids naming BaseException
             # `encode_plain_bound`/`write_encoded_bound` are bound callables, but
             # their BODIES still resolve transitive module globals at call time —
             # `_encode_json_plain` reaches `_dump_scalar`/`_dump_string`/`json.dumps`,
@@ -1002,16 +1011,16 @@ async def _run(channel: ProtocolChannel) -> None:
             # `__main__.os = ...`) makes the error-frame encode/write throw AFTER
             # the `except` block, which would drop the `done` frame and downgrade a
             # settled `exception` verdict to a host-side `worker-exit`. Write a fixed
-            # literal done frame with the import-time captured `_os_write` and
-            # `_memoryview` (module-level names captured before model code runs, so
-            # a one-line rebind cannot change them) so the host still gets a
-            # verdict. The literal is JSON-valid and newline-terminated; the lock
+            # literal done frame with the LOCALLY-BOUND `_os_write_local` and
+            # `_memoryview_local` (captured before the program runs, so a one-line
+            # rebind of the module global cannot change them) so the host still gets
+            # a verdict. The literal is JSON-valid and newline-terminated; the lock
             # is the channel's, so the write is serialized against any concurrent
             # writer.
             with channel._write_lock:
-                view = _memoryview(_FALLBACK_DONE_FRAME)
+                view = _memoryview_local(_fallback_frame_local)
                 while view:
-                    view = view[_os_write(channel._fd, view):]
+                    view = view[_os_write_local(channel._fd, view):]
 
     max_value_bytes = int(boot["maxValueBytes"])
     done: dict[str, Any] | str
