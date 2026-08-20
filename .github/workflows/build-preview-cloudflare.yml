@@ -162,6 +162,9 @@ jobs:
             echo "preview URL already commented: $existing"
             exit 0
           fi
-          gh pr comment "$PR" --body \
-            "$marker \
-             [Preview for #$PR](https://pr-$PR.${CF_PROJECT}.pages.dev) (requires Cloudflare Access sign-in)"
+          # The marker sits on its own line: markdown renders no link on a
+          # line that opens with a raw HTML comment.
+          printf '%s\n\n%s\n' \
+            "$marker" \
+            "[Preview for #$PR](https://pr-$PR.${CF_PROJECT}.pages.dev) (requires Cloudflare Access sign-in)" \
+            | gh pr comment "$PR" --body-file -
