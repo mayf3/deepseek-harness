@@ -209,7 +209,7 @@ describe('web e2e: composer shortcut steers directly', () => {
 
     await input.fill(STEER)
     await input.press('Meta+Enter')
-    await expect.poll(() => input.inputValue(), { timeout: 5_000 }).toBe('')
+    await expect.poll(() => input.textContent(), { timeout: 5_000 }).toBe('')
     expect(await page.locator('[data-queue-dock]').count()).toBe(0)
 
     const composer = page.locator('[data-question-key]')

@@ -279,7 +279,7 @@ describe('web e2e: long Chat interaction contract', () => {
     expect(await settled).toBe(child.session.id)
     await page.getByText(CONTINUE_DONE, { exact: false }).last().waitFor({ timeout: 15_000 })
     await expect.poll(() => page.locator('[data-streaming="true"]').count(), { timeout: 15_000 }).toBe(0)
-    expect(await composer.inputValue()).toBe('')
+    expect(await composer.textContent()).toBe('')
     expect(await composer.isEnabled()).toBe(true)
     expect(source.session.events.some(event => carries(event, CONTINUE_PROMPT))).toBe(false)
     expect(child.session.events.filter(event => (

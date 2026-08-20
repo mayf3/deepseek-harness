@@ -222,10 +222,10 @@ describe('web e2e: continuous conversation grown through the composer', () => {
 
     for (const spec of specs) {
       const eventStart = sessionEvents.length
-      expect(await composer.inputValue()).toBe('')
+      expect(await composer.textContent()).toBe('')
       expect(await composer.isEnabled()).toBe(true)
       await composer.fill(spec.prompt)
-      expect(await composer.inputValue()).toBe(spec.prompt)
+      expect(await composer.textContent()).toBe(spec.prompt)
 
       const settled = scaffold.whenTurnSettled(60_000)
       await page.getByRole('button', { name: 'Send message', exact: true }).click()
@@ -257,7 +257,7 @@ describe('web e2e: continuous conversation grown through the composer', () => {
 
       await expect.poll(() => page.locator('[data-streaming="true"]').count(), { timeout: 15_000 }).toBe(0)
       await page.getByText(spec.doneMarker, { exact: false }).last().waitFor({ timeout: 15_000 })
-      await expect.poll(() => composer.inputValue(), { timeout: 10_000 }).toBe('')
+      await expect.poll(() => composer.textContent(), { timeout: 10_000 }).toBe('')
       await expect.poll(() => composer.isEnabled(), { timeout: 10_000 }).toBe(true)
 
       const turnEvents = sessionEvents.slice(eventStart)

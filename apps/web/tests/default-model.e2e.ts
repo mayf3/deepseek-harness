@@ -140,7 +140,7 @@ describe('web e2e: the composer model switch is the default for later sessions',
     await scaffold.ctx.settings.replace(settingsNamespace('llm-pi-ai'), { providers: {} })
 
     await expect.poll(async () => box.isEnabled(), { timeout: 15_000 }).toBe(false)
-    expect(await box.getAttribute('placeholder')).toBe('当前模型不可用，请先选择模型')
+    expect(await box.getAttribute('data-placeholder')).toBe('当前模型不可用，请先选择模型')
 
     // The block is an affordance; the refusal is the Host's. A client that
     // never disabled anything still cannot start a turn on a dead route.

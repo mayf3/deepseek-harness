@@ -81,7 +81,7 @@ describe('web e2e: startup auto-selection', () => {
         workspaceChip: document.querySelector('[aria-label="Choose workspace"]'),
         scrollBody: document.querySelector('[data-conversation-scroll]'),
         composerSeat: document.querySelector('[data-composer-seat]'),
-        textarea: document.querySelector('textarea'),
+        composer: document.querySelector('[data-composer-input]'),
       }
       if (Object.values(refs).some(node => node === null)) throw new Error('incomplete initial Hero tree')
       ;(window as unknown as { __heroTree: typeof refs }).__heroTree = refs
@@ -99,8 +99,8 @@ describe('web e2e: startup auto-selection', () => {
         workspaceChip: document.querySelector('[aria-label="Choose workspace"]') === before.workspaceChip,
         scrollBody: document.querySelector('[data-conversation-scroll]') === before.scrollBody,
         composerSeat: document.querySelector('[data-composer-seat]') === before.composerSeat,
-        textarea: document.querySelector('textarea') === before.textarea,
-        textareaEnabled: !(document.querySelector('textarea') as HTMLTextAreaElement).disabled,
+        composer: document.querySelector('[data-composer-input]') === before.composer,
+        composerEnabled: document.querySelector('[data-composer-input]')?.getAttribute('aria-disabled') !== 'true',
       }
     })).toEqual({
       phase: 'hero',
@@ -108,8 +108,8 @@ describe('web e2e: startup auto-selection', () => {
       workspaceChip: true,
       scrollBody: true,
       composerSeat: true,
-      textarea: true,
-      textareaEnabled: true,
+      composer: true,
+      composerEnabled: true,
     })
     expect(tripwire.pageErrors).toEqual([])
   }, 120_000)
@@ -156,7 +156,7 @@ describe('web e2e: startup auto-selection', () => {
     expect(await page.locator('[data-composer-input]').first().isVisible()).toBe(true)
 
     releaseHistory()
-    await page.locator('textarea:enabled[placeholder="Describe what you want to build"]')
+    await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build"]')
       .waitFor({ timeout: 15_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningsBefore)
 

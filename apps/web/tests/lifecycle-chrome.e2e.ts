@@ -108,14 +108,14 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       const menu = activePage.getByRole('listbox', { name: 'Trigger suggestions' })
       await menu.waitFor({ timeout: 10_000 })
       await menu.getByRole('option', { name: 'plan Enter or leave plan mode' }).click()
-      await expect.poll(() => input.inputValue()).toBe('/plan ')
+      await expect.poll(() => input.textContent()).toBe('/plan ')
       await input.press('Enter')
       const planButton = activePage.getByRole('button', { name: 'Plan mode on, press to turn off' })
       await planButton.waitFor({ timeout: 10_000 })
       // The golden encodes an empty composer, and the button arriving does not
       // mean the submitted text is gone yet: under load the capture can catch
       // a textbox still holding `/plan`.
-      await expect.poll(() => input.inputValue(), { timeout: 10_000 }).toBe('')
+      await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
       const planSnapshot = await captureStableAria(activePage, '[class*="frame"]', activeScaffold.workspaceCwd)
       await compareOrRefreshGolden(PLAN_ACTIVE_EXPECTED, planSnapshot, MODE)
       const planStyle = await planButton.evaluate((element) => {

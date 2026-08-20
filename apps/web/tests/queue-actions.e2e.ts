@@ -93,6 +93,8 @@ describe('web e2e: queue row actions', () => {
     await expect.poll(() => existsSync(readyFile), { timeout: 15_000 }).toBe(true)
 
     for (const text of [REMOVE, EDIT]) {
+      // A just-submitted composer is read-only for the prompt round-trip.
+      await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 10_000 })
       await input.fill(text)
       await input.press('Enter')
     }
@@ -198,6 +200,7 @@ describe('web e2e: queue row actions', () => {
 
     const input = page.locator('[data-composer-input]').first()
     const settled = scaffold.whenTurnSettled()
+    await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 10_000 })
     await input.fill('/goal Keep the composer context panels aligned')
     await input.press('Enter')
     await expect.poll(() => existsSync(readyFile), { timeout: 15_000 }).toBe(true)
