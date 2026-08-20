@@ -1122,6 +1122,12 @@ async def _pump_replies(
     pending: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Future[Any]]],
     pending_lock: "threading.Lock",
 ) -> None:
+    # The exception class the closed-loop catch below resolves is bound into a
+    # LOCAL here. This bootstrap IS `__main__`, so `__main__.RuntimeError = ...`
+    # would otherwise rebind the module global the `except RuntimeError` clause
+    # resolves at runtime, and a closed-loop scheduling failure would then escape
+    # the catch, killing the pump and stranding every later reply.
+    _RuntimeError = RuntimeError
     """Background task: read reply frames and settle pending futures.
 
     Cancelled after ``done`` is posted. Unknown ids and post-settlement replies
