@@ -41,22 +41,25 @@ from protocol import PROTOCOL_FD, log_truncation_marker  # noqa: E402
 # simply takes more reads. 64 KiB matches the usual pipe capacity.
 _READ_CHUNK_BYTES = 65536
 
-# Captured primitives for the done-frame LAST-resort fallback. This bootstrap IS
+# Module-level captures for the done-frame LAST-resort fallback. This bootstrap IS
 # ``__main__``, so ``import __main__; __main__.os = ...`` would rebind ``os.write``
-# at call time inside ``ProtocolChannel.write_encoded``. ``_os_write`` and
-# ``_memoryview`` are module-level names captured at import, before model code
-# runs, so a one-line rebind cannot change which write the fallback uses. See
-# ``send_done``'s try/except below.
+# at call time inside ``ProtocolChannel.write_encoded``. These module-level names
+# are the RAW primitive for the fallback; they are BOUND INTO ``_run`` LOCALS
+# before the program runs (see ``send_done``), which is what makes a one-line
+# rebind unable to change which write the fallback uses — the module global here
+# is itself reachable by ``__main__._os_write = boom``, so the immunity lives in
+# the ``_run`` frame-local binding, not in the module global.
 _os_write = os.write
 _memoryview = memoryview
 
 # A fixed, pre-encoded done frame for the fallback. It carries no live model
 # value, so it can always be written even when a transitive name (a ``_dump_*``
 # helper or ``os``) has been rebound and the normal encode/write threw. The
-# message is the same fixed literal the failure reporter uses for an
-# unrenderable diagnostic; the host renders the run as an exception rather than
-# a worker-exit, which is the honest verdict for a settled run whose reporting
-# was sabotaged. The bytes are JSON-valid and newline-terminated.
+# message is the fixed literal ``<unrenderable>`` — distinct from the failure
+# reporter's ``_UNRENDERABLE_DIAGNOSTIC`` text; the host renders the run as an
+# exception rather than a worker-exit, which is the honest verdict for a settled
+# run whose reporting was sabotaged. The bytes are JSON-valid and
+# newline-terminated.
 _FALLBACK_DONE_FRAME = b'{"type":"done","error":{"kind":"exception","message":"<unrenderable>"}}\n'
 
 # Code-unit ceiling on the exception class name interpolated into the LAST-resort
