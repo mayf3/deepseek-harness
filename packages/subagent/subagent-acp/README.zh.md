@@ -6,7 +6,7 @@ ACP（Agent Client Protocol）提供方会在全新的子进程中运行每个 s
 
 ## 启动与所有权
 
-`start(request)` 先解析子 agent 的工作目录，再依次执行 `spawn` → ACP `initialize` → `newSession`，然后才兑现。因此，兑现表示远程会话已就绪，所有权也已转移给调用方。spawn 失败、初始化失败、新建会话失败或因发布前取消而失败时，通常会在子进程已回收后拒绝；若清理自身也拒绝，有序的安全 startup/teardown 事实会保留两项失败，但不会宣称进程已经退出。工作目录解析失败则会在尚未 spawn 任何进程时拒绝。非取消拒绝的 Error 消息只公开固定的 provider、stage 与 category 事实；原始失败仍保留在内部 cause 链和 Host 诊断中。
+`start(request)` 先解析子 agent 的工作目录，再依次执行 `spawn` → ACP `initialize` → `newSession`，然后才兑现。因此，兑现表示远程会话已就绪，所有权也已转移给调用方。spawn 失败、初始化失败、新建会话失败或因发布前取消而失败时，通常会在子进程已回收后拒绝；若清理自身也拒绝，有序的安全事实会在普通失败时保留 startup 与 teardown，在取消后只保留 teardown，且不会宣称进程已经退出。工作目录解析失败则会在尚未 spawn 任何进程时拒绝。非取消拒绝的 Error 消息只公开固定的 provider、stage 与 category 事实；原始失败仍保留在内部 cause 链和 Host 诊断中。
 
 工作目录优先使用已配置的 `cwd` 覆盖值，否则使用执行委派的父会话 cwd，绝不使用服务器进程自身的 cwd，因为同一个服务器进程会服务来自多个工作区的会话。从父级取得的值必须是绝对路径，指向 harness 可以进入的目录（具备搜索权限，这是子进程 cwd 的要求）；解析后的同一路径同时作为子进程 cwd 和 ACP `session/new` 工作区。
 
