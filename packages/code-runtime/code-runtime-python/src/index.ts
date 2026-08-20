@@ -1425,9 +1425,13 @@ export class PythonCodeRuntime extends CodeRuntime {
                 // before `sendReply` peeks at `settled`. Dropping the framed
                 // reply early spares the host heap and time for a run whose
                 // outcome is already fixed.
-                // oxlint-disable-next-line typescript/no-unnecessary-condition -- the run can settle while this binding is awaited.
+                // (oxlint block-disable so both `v8 ignore next` and the rule
+                // suppression land on the `if`: `settled` flips true mid-wait,
+                // invisible to the type-aware lint, which narrows it to false.)
+                /* oxlint-disable typescript/no-unnecessary-condition */
                 /* v8 ignore next -- a rejection arriving after settlement is not schedulable from a test. */
                 if (settled) return
+                /* oxlint-enable typescript/no-unnecessary-condition */
                 sendReply({ type: 'reply', id: message.id, ok: false, message: messageOf(error) })
               }
             })()
