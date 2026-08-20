@@ -218,12 +218,18 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await expect.poll(() => input.textContent()).toBe('prereference.txt ')
     await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(1)
 
+    // A collapsed Backspace directly ahead of the chip removes the typed
+    // character only; the chip's identity is untouched (#2814's gesture).
+    await page.keyboard.press('Backspace')
+    await expect.poll(() => input.textContent()).toBe('prreference.txt ')
+    await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(1)
+
     // ArrowRight steps back across the chip; Backspace directly behind it
     // removes the whole chip in one keystroke.
     await page.keyboard.press('ArrowRight')
     await page.keyboard.press('Backspace')
     await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(0)
-    await expect.poll(() => input.textContent()).toBe('pre ')
+    await expect.poll(() => input.textContent()).toBe('pr ')
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
