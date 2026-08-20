@@ -948,7 +948,7 @@ async function continueConversation(
     const composerFill = await measure(cdp, async () => {
       await composer.fill(spec.prompt)
       await expect.poll(() => composer.textContent()).toBe(spec.prompt)
-      return (await composer.textContent()).length
+      return ((await composer.textContent()) ?? '').length
     })
     expect(composerFill.value).toBe(spec.prompt.length)
 
@@ -1068,7 +1068,7 @@ async function measurePostSoakUserRender(
   const composerFill = await measure(cdp, async () => {
     await composer.fill(spec.prompt)
     await expect.poll(() => composer.textContent()).toBe(spec.prompt)
-    return (await composer.textContent()).length
+    return ((await composer.textContent()) ?? '').length
   })
   expect(composerFill.value).toBe(spec.prompt.length)
 
