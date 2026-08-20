@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import LlmRuntime, { createUserMessage,
+import LlmRuntime, { CallId, createUserMessage,
   CONTEXT_WINDOW_EXCEEDED_CODE,
   ProviderRequestId,
   QUOTA_EXCEEDED_CODE,
@@ -18,7 +18,7 @@ import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/d
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
-import { httpErrorCode } from '../src/adapter.ts'
+import { httpErrorCode, resolveRequestImagePolicy } from '../src/adapter.ts'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 import type { Behavior } from './mock-server.ts'
@@ -109,6 +109,25 @@ function attachmentStoreOf(
   }
 }
 
+describe('request image policy', () => {
+  it.each([
+    [
+      { id: 'default' },
+      { maxPixels: 640_000, maxBytes: 1024 * 1024 },
+    ],
+    [
+      { id: 'low', imageDetail: 'low' as const },
+      { maxPixels: 512 * 512, maxBytes: 1024 * 1024 },
+    ],
+    [
+      { id: 'custom', imagePixelBudget: 320_000, imageMaxBytes: 512_000 },
+      { maxPixels: 320_000, maxBytes: 512_000 },
+    ],
+  ])('resolves route-owned defaults and overrides for %s', (model, expected) => {
+    expect(resolveRequestImagePolicy(model)).toEqual(expected)
+  })
+})
+
 describe('DeepSeekAdapter against a mock server', () => {
   it('streams a text generation end to end through the assembler', async () => {
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
@@ -187,6 +206,54 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(policies).toEqual([{ maxPixels: 640_000, maxBytes: 1024 * 1024 }])
   })
 
+  it('projects nested tool-result images with route-owned request budgets', async () => {
+    const server = await mockServer([
+      { kind: 'sse', events: textEvents },
+      { kind: 'sse', events: textEvents },
+    ])
+    const attachmentMocks = attachmentStoreOf(ref => Promise.resolve(requestImage(ref)))
+    const adapter = adapterOf({
+      baseURL: server.url,
+      models: [
+        {
+          id: 'vision-low',
+          inputModalities: ['text', 'image'],
+          imageDetail: 'low',
+          imageMaxBytes: 512_000,
+        },
+        {
+          id: 'vision-custom',
+          inputModalities: ['text', 'image'],
+          imagePixelBudget: 320_000,
+        },
+      ],
+    }, attachmentMocks.store)
+    const nested = createUserMessage({
+      content: [{
+        type: 'tool-result',
+        toolCallId: CallId('image-result'),
+        content: [{ type: 'image', attachment: imageRef }],
+      }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })
+
+    await drain(adapter.stream({ provider: 'deepseek-official', model: 'vision-low', messages: [nested] }))
+    await drain(adapter.stream({ provider: 'deepseek-official', model: 'vision-custom', messages: [nested] }))
+
+    expect(attachmentMocks.readImageRequests).toHaveBeenNthCalledWith(
+      1,
+      [imageRef],
+      { maxPixels: 512 * 512, maxBytes: 512_000 },
+      expect.any(AbortSignal),
+    )
+    expect(attachmentMocks.readImageRequests).toHaveBeenNthCalledWith(
+      2,
+      [imageRef],
+      { maxPixels: 320_000, maxBytes: 1024 * 1024 },
+      expect.any(AbortSignal),
+    )
+  })
+
   it('reuses the exact request version between agent and compaction calls', async () => {
     const server = await mockServer([
       { kind: 'sse', events: textEvents },
@@ -219,7 +286,7 @@ describe('DeepSeekAdapter against a mock server', () => {
   })
 
   it('explains a provider rejection of a normalized image and retains the raw response as cause', async () => {
-    const raw = JSON.stringify({ error: { message: 'unsupported image payload' } })
+    const raw = JSON.stringify({ error: { message: 'unsupported image payload for file-api-1' } })
     const server = await mockServer([{ kind: 'http-error', status: 400, body: raw }])
     const attachments = attachmentStoreOf(ref => Promise.resolve(requestImage(ref))).store
     const adapter = adapterOf({
@@ -248,11 +315,72 @@ describe('DeepSeekAdapter against a mock server', () => {
       cause: { message: raw },
     })
     expect((failure as Error).message).toContain('image/png, 8-bit sRGBA, 1x1')
-    expect((failure as Error).message).toContain('unsupported image payload')
+    expect((failure as Error).message).toContain('unsupported image payload for file-api-1')
     expect((failure as Error).message).not.toBe(raw)
   })
 
+  it('identifies the sole image when a normalized rejection omits its file id', async () => {
+    const raw = JSON.stringify({ error: { message: 'unsupported image payload' } })
+    const server = await mockServer([{ kind: 'http-error', status: 400, body: raw }])
+    const attachments = attachmentStoreOf(ref => Promise.resolve(requestImage(ref))).store
+    const adapter = adapterOf({
+      baseURL: server.url,
+      models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }],
+    }, attachments)
+
+    await expect(drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: [{ type: 'image', attachment: imageRef }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))).rejects.toMatchObject({
+      message: expect.stringContaining(`normalized image "${imageRef.attachmentId}"`) as string,
+    })
+  })
+
+  it('lists every candidate when a normalized multi-image rejection names no file id', async () => {
+    const secondRef: ImageAttachmentRef = {
+      ...imageRef,
+      attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`),
+    }
+    const raw = JSON.stringify({ error: { message: 'unsupported image payload' } })
+    const server = await mockServer([{ kind: 'http-error', status: 400, body: raw }])
+    const attachments = attachmentStoreOf((ref) => {
+      const first = ref.attachmentId === imageRef.attachmentId
+      return Promise.resolve({
+        ...requestImage(ref),
+        variantId: ImageVariantId(`sha256:${(first ? 'b' : 'd').repeat(64)}`),
+        master: first ? { ...ref, name: 'diagram.png' } : ref,
+        hasAlpha: false,
+      })
+    }).store
+    const adapter = adapterOf({
+      baseURL: server.url,
+      models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }],
+    }, attachments)
+
+    await expect(drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: [
+          { type: 'image', attachment: imageRef },
+          { type: 'image', attachment: secondRef },
+        ],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+      message: expect.stringContaining('Candidate images: "diagram.png"') as string,
+      cause: { message: raw },
+    })
+  })
+
   it.each([
+    'file-api-1 expired',
+    'file_id file-api-10 invalid; file_id file-api-1 expired',
     'file_id file-api-1 expired',
     'file_not_found',
     'file_id file-api-1 deleted',
@@ -330,6 +458,71 @@ describe('DeepSeekAdapter against a mock server', () => {
       .toEqual([{ type: 'file', file_id: 'file-api-1' }, { type: 'file', file_id: 'file-api-2' }])
     expect(retries[1]?.messages[0]?.content.filter(block => block.type === 'file'))
       .toEqual([{ type: 'file', file_id: 'file-api-1' }, { type: 'file', file_id: 'file-api-3' }])
+  })
+
+  it('invalidates every listed missing file id and preserves unlisted mappings', async () => {
+    const secondRef: ImageAttachmentRef = {
+      ...imageRef,
+      attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`),
+    }
+    const thirdRef: ImageAttachmentRef = {
+      ...imageRef,
+      attachmentId: AttachmentId(`sha256:${'e'.repeat(64)}`),
+    }
+    const server = await mockServer([
+      {
+        kind: 'http-error',
+        status: 400,
+        body: JSON.stringify({
+          error: {
+            message: 'path.to.object[index]: the following file_ids do not exist or are not created under your account: '
+              + 'file-api-1, file-api-3, file-api-unknown',
+          },
+        }),
+      },
+      { kind: 'sse', events: textEvents },
+    ])
+    const attachments = attachmentStoreOf((ref) => {
+      let digest = 'f'
+      if (ref.attachmentId === imageRef.attachmentId) digest = 'b'
+      else if (ref.attachmentId === secondRef.attachmentId) digest = 'd'
+      return Promise.resolve({
+        ...requestImage(ref),
+        variantId: ImageVariantId(`sha256:${digest.repeat(64)}`),
+      })
+    }).store
+    const adapter = adapterOf({
+      baseURL: server.url,
+      models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }],
+    }, attachments)
+
+    await drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: [
+          { type: 'image', attachment: imageRef },
+          { type: 'image', attachment: secondRef },
+          { type: 'image', attachment: thirdRef },
+        ],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))
+
+    expect(server.fileRequests.filter(request => request.method === 'POST')).toHaveLength(5)
+    const retries = server.requests as Array<{ messages: Array<{ content: Array<{ type: string; file_id?: string }> }> }>
+    expect(retries[0]?.messages[0]?.content.filter(block => block.type === 'file'))
+      .toEqual([
+        { type: 'file', file_id: 'file-api-1' },
+        { type: 'file', file_id: 'file-api-2' },
+        { type: 'file', file_id: 'file-api-3' },
+      ])
+    expect(retries[1]?.messages[0]?.content.filter(block => block.type === 'file'))
+      .toEqual([
+        { type: 'file', file_id: 'file-api-4' },
+        { type: 'file', file_id: 'file-api-2' },
+        { type: 'file', file_id: 'file-api-5' },
+      ])
   })
 
   it('invalidates every used mapping when a stale-file response does not identify one file id', async () => {
@@ -641,6 +834,20 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(result.finish).toEqual({
       kind: 'error',
       failure: { message: `failed with ${status}`, code, status },
+    })
+  })
+
+  it('uses the HTTP status as the cause when an error response has no body', async () => {
+    const server = await mockServer([{ kind: 'http-error', status: 500, body: '' }])
+    const adapter = adapterOf({ baseURL: server.url })
+
+    await expect(drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+      messages: [],
+    }))).rejects.toMatchObject({
+      code: 'SERVER',
+      cause: { message: 'DeepSeek HTTP 500' },
     })
   })
 

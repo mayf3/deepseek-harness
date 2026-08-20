@@ -171,13 +171,22 @@ function collectImageRefs(
   }
 }
 
-function requestImagePolicy(model: DeepSeekCatalogModel): ImageRequestPolicy {
+/**
+ * Resolve the request-image budgets owned by one DeepSeek model route.
+ * @param model - Advertised model route and its optional image overrides.
+ * @returns Complete pixel and encoded-byte budgets.
+ * @internal
+ */
+export function resolveRequestImagePolicy(model: DeepSeekCatalogModel): ImageRequestPolicy {
+  let maxPixels: number
+  if (model.imagePixelBudget !== undefined) maxPixels = model.imagePixelBudget
+  else if (model.imageDetail === 'low') maxPixels = DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET
+  else maxPixels = DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET
   return {
-    maxPixels: model.imagePixelBudget
-      ?? (model.imageDetail === 'low'
-        ? DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET
-        : DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET),
-    maxBytes: model.imageMaxBytes ?? DEFAULT_REQUEST_IMAGE_MAX_BYTES,
+    maxPixels,
+    maxBytes: model.imageMaxBytes === undefined
+      ? DEFAULT_REQUEST_IMAGE_MAX_BYTES
+      : model.imageMaxBytes,
   }
 }
 
@@ -189,7 +198,7 @@ async function prepareRequestImages(
 ): Promise<Map<AttachmentId, RequestImageAttachment>> {
   const refs = new Map<AttachmentId, ImageAttachmentRef>()
   for (const message of options.messages) collectImageRefs(message.content, refs)
-  const policy = requestImagePolicy(model)
+  const policy = resolveRequestImagePolicy(model)
   const orderedRefs = [...refs.values()]
   const projected = await attachments.readImageRequests(orderedRefs, policy, signal)
   return new Map(orderedRefs.map((ref, index) => (
@@ -211,7 +220,7 @@ interface UsedRequestFile {
 
 function providerRejectedFileId(detail: string): boolean {
   const file = /\bfile(?:[_ -]?(?:id|api|not[_ -]?found|deleted|expired))?/iu.test(detail)
-  const missing = /(?:expired|not[_ -]?found|deleted|does not exist)/iu.test(detail)
+  const missing = /(?:expired|not[_ -]?found|deleted|do(?:es)? not exist|not created under (?:this|your) account)/iu.test(detail)
   const invalidId = /(?:invalid.{0,20}file[_ -]?(?:id|api)|file[_ -]?(?:id|api).{0,20}invalid)/iu.test(detail)
   return file && (missing || invalidId)
 }
