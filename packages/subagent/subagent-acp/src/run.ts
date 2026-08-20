@@ -491,11 +491,13 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
     // A child closing its protocol stream can precede whole-tree exit
     // observation. Local cancellation does not need the discarded startup
     // classification; other failures use the configured process grace.
-    const startupOutcome = cancelledBeforeCleanup
-      ? processOutcome
-      : await observeProcessOutcome()
-    const failure = startupFailure(error, startupStage, child, startupOutcome)
-    if (cancelledBeforeCleanup) {
+    const startup = cancelledBeforeCleanup
+      ? { kind: 'cancelled' } as const
+      : {
+        kind: 'failed',
+        failure: startupFailure(error, startupStage, child, await observeProcessOutcome()),
+      } as const
+    if (startup.kind === 'cancelled') {
       // Local cancellation owns the startup outcome; only cleanup failure is
       // reported below when teardown itself rejects.
     } else {
@@ -512,18 +514,18 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
         category: processOutcome === undefined ? 'unknown' : 'process-exit',
         ...(processOutcome === undefined ? {} : { outcome: processOutcome }),
       }, cleanupError)
-      if (cancelledBeforeCleanup) {
+      if (startup.kind === 'cancelled') {
         throw new AggregateError([cleanupFailure], cleanupFailure.message)
       }
       throw new AggregateError(
-        [failure, cleanupFailure],
-        `${failure.message}; ${cleanupFailure.message}`,
+        [startup.failure, cleanupFailure],
+        `${startup.failure.message}; ${cleanupFailure.message}`,
       )
     }
-    if (cancelledBeforeCleanup) {
+    if (startup.kind === 'cancelled') {
       throw new Error('subagent request was aborted before the ACP child started')
     }
-    throw failure
+    throw startup.failure
   }
   // The startup transaction validates the returned id before it can fulfill.
   // This assertion carries that cross-closure invariant into TypeScript.

@@ -23,6 +23,8 @@
  *                        provider's fixed permission fact.
  * - `MOCK_CRASH_ON_INITIALIZE` — exit while the unpublished initialize
  *                        operation is active.
+ * - `MOCK_CLOSE_PROTOCOL_ON_INITIALIZE` — close stdout while keeping the
+ *                        process alive, producing initialize-stage transport.
  * - `MOCK_CLOSE_PROTOCOL_ON_PROMPT` — close stdout while keeping the process
  *                        alive, producing a prompt-stage transport failure.
  * - `MOCK_CRASH_AFTER_CHUNK` — exit after streaming the assistant chunk, so
@@ -94,6 +96,7 @@ const IGNORE_PERMISSION_DECISION = process.env.MOCK_PERMISSION_IGNORE_DECISION =
 const NO_ALLOW = process.env.MOCK_NO_ALLOW === '1'
 const THOUGHT = process.env.MOCK_THOUGHT === '1'
 const CRASH_ON_INITIALIZE = process.env.MOCK_CRASH_ON_INITIALIZE === '1'
+const CLOSE_PROTOCOL_ON_INITIALIZE = process.env.MOCK_CLOSE_PROTOCOL_ON_INITIALIZE === '1'
 const CRASH_ON_CANCEL = process.env.MOCK_CRASH_ON_CANCEL === '1'
 const CRASH_ON_PROMPT = process.env.MOCK_CRASH_ON_PROMPT === '1'
 const CLOSE_PROTOCOL_ON_PROMPT = process.env.MOCK_CLOSE_PROTOCOL_ON_PROMPT === '1'
@@ -118,6 +121,11 @@ function makeAgent(conn: AgentSideConnection): Agent {
   return {
     initialize(_params: InitializeRequest): Promise<InitializeResponse> {
       if (CRASH_ON_INITIALIZE) process.exit(11)
+      if (CLOSE_PROTOCOL_ON_INITIALIZE) {
+        process.stdout.end()
+        setInterval(() => { /* keep the process alive after protocol EOF */ }, 1000)
+        return new Promise<InitializeResponse>(() => {})
+      }
       return Promise.resolve({
         protocolVersion: PROTOCOL_VERSION,
         agentCapabilities: { loadSession: false, promptCapabilities: { image: false, audio: false, embeddedContext: false } },
