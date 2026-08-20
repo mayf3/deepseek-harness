@@ -41,12 +41,14 @@ from protocol import PROTOCOL_FD, log_truncation_marker  # noqa: E402
 # simply takes more reads. 64 KiB matches the usual pipe capacity.
 _READ_CHUNK_BYTES = 65536
 
-# Captured primitive for the done-frame LAST-resort fallback. This bootstrap IS
+# Captured primitives for the done-frame LAST-resort fallback. This bootstrap IS
 # ``__main__``, so ``import __main__; __main__.os = ...`` would rebind ``os.write``
-# at call time inside ``ProtocolChannel.write_encoded``. ``os_write`` is a closure
-# cell captured at import, before model code runs, so a one-line rebind cannot
-# change which write the fallback uses. See ``send_done``'s try/except below.
+# at call time inside ``ProtocolChannel.write_encoded``. ``_os_write`` and
+# ``_memoryview`` are module-level names captured at import, before model code
+# runs, so a one-line rebind cannot change which write the fallback uses. See
+# ``send_done``'s try/except below.
 _os_write = os.write
+_memoryview = memoryview
 
 # A fixed, pre-encoded done frame for the fallback. It carries no live model
 # value, so it can always be written even when a transitive name (a ``_dump_*``
@@ -194,17 +196,25 @@ class _LogStream(io.TextIOBase):
         # list-of-chunks, joined only at a newline or flush: repeated
         # ``print("x", end="")`` must not concatenate quadratically.
         self._pending: list[str] = []
+        self._pending_blocks: list[str] = []
         self._pending_chars = 0
         # A newline-free drip must not accumulate one list slot per ``write``:
         # under a large ``maxLogBytes`` the list-of-fragments pointer array and
         # the per-fragment str objects cost host memory well before the byte
         # budget is reached, and a 25 M single-character drip would OOM on its
         # own accounting (plus the same-size list ``_push_bounded_prefix`` then
-        # builds). Past this many fragments the chunks are sealed into one
-        # joined block (the character count is unchanged), bounding the live
-        # fragment count exactly as the host-side ``captureStray`` does with its
-        # ``MAX_PENDING_CHUNKS``.
+        # builds). Past this many fragments the chunks are SEALED into a
+        # ``_pending_blocks`` entry (the character count is unchanged), bounding
+        # the live fragment count exactly as the host-side ``captureStray`` does
+        # with its ``MAX_PENDING_CHUNKS``. The seal is INCREMENTAL: only the
+        # current ``_pending`` fragments (≤ cap) are joined into one block, not
+        # the whole accumulated buffer, so a large drip stays O(B) rather than
+        # re-copying the growing block O(B²/cap) times.
         self._PENDING_MAX_CHUNKS = 1024
+
+    def _pending_parts(self) -> list[str]:
+        """The sealed blocks followed by the current fragments, for joining."""
+        return [*self._pending_blocks, *self._pending]
 
     def writable(self) -> bool:  # noqa: D401 -- inherited contract
         return True
@@ -243,7 +253,7 @@ class _LogStream(io.TextIOBase):
             # timeout instead of the promised truncation marker).
             length = len(text)
             pos = 0
-            if self._pending:
+            if self._pending or self._pending_blocks:
                 newline = text.index("\n")
                 if self._pending_chars + newline + 3 > self._logs.remaining:
                     # The reconstructed first line cannot fit the ledger, so
@@ -257,8 +267,9 @@ class _LogStream(io.TextIOBase):
                     self._push_bounded_prefix(text[: min(newline, self._logs.remaining + 4)])
                 else:
                     self._pending.append(text[:newline])
-                    line = "".join(self._pending)
+                    line = "".join(self._pending_parts())
                     self._pending = []
+                    self._pending_blocks = []
                     self._pending_chars = 0
                     self._logs.push(line)
                 pos = newline + 1
@@ -322,14 +333,16 @@ class _LogStream(io.TextIOBase):
             # appends one fragment per write, so a 25 M single-character flood
             # would accumulate that many list slots (and str objects) long before
             # the byte budget is met — the pointer array alone being ~25 M slots.
-            # Joining the fragments into one block keeps the SAME character count
-            # (`_pending_chars` is unchanged) while bounding the live fragment
-            # count, mirroring the host-side `captureStray` seal. The join is
-            # only as large as the buffered characters, which the budget already
-            # bounds; the fragments are otherwise un-sealable mid-newline because
-            # a newline never starts a multi-byte sequence.
+            # Past the cap the current fragments are joined into ONE block and
+            # moved to `_pending_blocks` (character count unchanged), bounding the
+            # live fragment count exactly as the host-side `captureStray` seal
+            # does. The join is only the ≤cap current fragments, never the whole
+            # accumulated buffer, so a large drip stays O(B) rather than
+            # re-copying the growing block O(B²/cap) times; a newline never starts
+            # a multi-byte sequence, so the fragments are un-sealable mid-line.
             if len(self._pending) >= self._PENDING_MAX_CHUNKS:
-                self._pending = ["".join(self._pending)]
+                self._pending_blocks.append("".join(self._pending))
+                self._pending = []
         # A newline-free flood must hit the budget while running, not at
         # settlement: once the buffered tail alone can no longer fit the
         # ledger (chars lower-bound the serialized cost), push it through — LogBuffer
@@ -367,7 +380,7 @@ class _LogStream(io.TextIOBase):
         limit = self._logs.remaining + 4
         parts: list[str] = []
         total = 0
-        for chunk in self._pending:
+        for chunk in self._pending_parts():
             parts.append(chunk[: limit - total])
             total += len(parts[-1])
             if total >= limit:
@@ -377,6 +390,7 @@ class _LogStream(io.TextIOBase):
             # `extra` is the one remaining source of text.
             parts.append(extra[: limit - total])
         self._pending = []
+        self._pending_blocks = []
         self._pending_chars = 0
         self._logs.push("".join(parts))
 
@@ -400,15 +414,16 @@ class _LogStream(io.TextIOBase):
         # ``_pending`` and the ledger, so this read-and-clear must be atomic
         # against them.
         with self._logs.lock:
-            if self._pending:
+            if self._pending or self._pending_blocks:
                 # Join, drop the chunks, THEN push — the same join-clear-push order
                 # as `_write_locked`'s newline branch. Pushing before the clear would keep the
                 # pending chunks alive through `_push_locked`'s `text.encode`, so
                 # the chunks, their join, and the encode copy would all be live at
                 # once; dropping the chunks first leaves only the join and its
                 # encode, matching that path's peak.
-                line = "".join(self._pending)
+                line = "".join(self._pending_parts())
                 self._pending = []
+                self._pending_blocks = []
                 self._pending_chars = 0
                 self._logs.push(line)
 
@@ -680,17 +695,25 @@ def _clamped(which: int, soft: int, hard: int) -> tuple[int, int]:
     # soft under hard as the final step; the stricter hard ceiling wins.
     result_soft = min(clamped_soft, clamped_hard)
     result_hard = clamped_hard
-    # A soft limit EQUAL to the hard limit leaves the kernel no window to send
-    # SIGXCPU: it checks the hard limit in the same tick and SIGKILLs directly
-    # (a `ulimit -t N` sets both, and a busy loop then dies by SIGKILL, not
-    # SIGXCPU). The host classifies a CPU overrun ONLY on ``signal ===
-    # 'SIGXCPU'``, so a definite budget exhaustion would be misreported as a
+    # For RLIMIT_CPU, a soft limit EQUAL to the hard limit leaves the kernel no
+    # window to send SIGXCPU: it checks the hard limit in the same tick and
+    # SIGKILLs directly (a `ulimit -t N` sets both, and a busy loop then dies by
+    # SIGKILL, not SIGXCPU). The host classifies a CPU overrun ONLY on ``signal
+    # === 'SIGXCPU'``, so a definite budget exhaustion would be misreported as a
     # `worker-exit`. Lowering the soft limit one unit below the hard (when the
     # hard is at least 2, so soft stays positive) keeps the stricter-of-the-two
     # containment semantics while giving SIGXCPU a window to fire — the CPU
-    # overrun is then reported as a timeout, not a worker-exit. For RLIMIT_AS
-    # this is one byte stricter, harmless.
-    if result_soft == result_hard and result_hard >= 2:
+    # overrun is then reported as a timeout, not a worker-exit. This is scoped to
+    # RLIMIT_CPU: for RLIMIT_AS a one-byte soft differential would only misalign
+    # the child's applied limit with the host-side budget gate, with no signal to
+    # preserve. The ``hard >= 2`` guard leaves the ``hard == 1`` blind spot
+    # (a 1-second dual limit cannot lower soft to 0) — a definite CPU overrun
+    # there is still reported as `worker-exit`; see the settlement note.
+    if (
+        which == resource.RLIMIT_CPU
+        and result_soft == result_hard
+        and result_hard >= 2
+    ):
         result_soft = result_hard - 1
     return (result_soft, result_hard)
 
@@ -979,12 +1002,14 @@ async def _run(channel: ProtocolChannel) -> None:
             # `__main__.os = ...`) makes the error-frame encode/write throw AFTER
             # the `except` block, which would drop the `done` frame and downgrade a
             # settled `exception` verdict to a host-side `worker-exit`. Write a fixed
-            # literal done frame with the captured `_os_write` (itself immune to a
-            # rebind) so the host still gets a verdict. The literal is JSON-valid
-            # and newline-terminated; the lock is the channel's, so the write is
-            # serialized against any concurrent writer.
+            # literal done frame with the import-time captured `_os_write` and
+            # `_memoryview` (module-level names captured before model code runs, so
+            # a one-line rebind cannot change them) so the host still gets a
+            # verdict. The literal is JSON-valid and newline-terminated; the lock
+            # is the channel's, so the write is serialized against any concurrent
+            # writer.
             with channel._write_lock:
-                view = memoryview(_FALLBACK_DONE_FRAME)
+                view = _memoryview(_FALLBACK_DONE_FRAME)
                 while view:
                     view = view[_os_write(channel._fd, view):]
 
