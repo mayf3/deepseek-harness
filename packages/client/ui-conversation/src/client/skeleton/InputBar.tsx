@@ -535,10 +535,10 @@ export function InputBar({
     }
     type Boundary =
       | { at: number; kind: 'chip'; chip: (typeof deco.chips)[number] }
-      | { at: number; kind: 'text-ref'; ref: (typeof deco.textRefs)[number] }
+      | { at: number; kind: 'text-ref'; ref: (typeof deco.textRefs)[number]; ordinal: number }
     const boundaries: Boundary[] = [
       ...deco.chips.map(chip => ({ at: chip.offset, kind: 'chip' as const, chip })),
-      ...deco.textRefs.map(ref => ({ at: ref.start, kind: 'text-ref' as const, ref })),
+      ...deco.textRefs.map((ref, ordinal) => ({ at: ref.start, kind: 'text-ref' as const, ref, ordinal })),
     ].sort((a, b) => a.at - b.at)
     for (const b of boundaries) {
       if (b.at < cursor) continue // claim-token overlap: the leading mark wins
@@ -570,9 +570,14 @@ export function InputBar({
       } else {
         // Plain-range highlight: the glyphs stay the
         // textarea's (advance untouched); the mark paints the chip look.
+        // The key is the draft-order ordinal: a fresh scan derives these
+        // ranges every render, so none of them carries identity past its
+        // position, and a draft-offset key would unmount the mark and its
+        // icon for every character typed ahead of it. Structured references
+        // key by occurrenceId, the identity their occurrence table owns.
         const text = draft.slice(b.ref.start, b.ref.end)
         backdrop.push(
-          <mark key={`ref-${b.ref.start}`} className={css.textRef} data-decoration="text-ref">
+          <mark key={`ref-${b.ordinal}`} className={css.textRef} data-decoration="text-ref">
             {b.ref.appearance === 'folder'
               ? (
                 <>
