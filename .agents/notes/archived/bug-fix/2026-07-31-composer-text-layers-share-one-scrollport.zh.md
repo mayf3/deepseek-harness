@@ -1,6 +1,7 @@
 # Agent Note: composer 的两层文本共用同一个滚动容器
 
 Status: implemented
+Archived: 2026-08-20
 
 [English](2026-07-31-composer-text-layers-share-one-scrollport.md) | 中文
 

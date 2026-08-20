@@ -12,8 +12,8 @@ import type { ClientContext, ObservableSnapshot, SnapshotStore } from '@deepseek
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { LexicalEditor, NodeKey } from 'lexical'
 import {
-  $createParagraphNode, $createTextNode, $getRoot, $getSelection, $isRangeSelection,
-  CLEAR_HISTORY_COMMAND, createEditor, HISTORY_MERGE_TAG,
+  $addUpdateTag, $createParagraphNode, $createTextNode, $getRoot, $getSelection, $isRangeSelection,
+  CLEAR_HISTORY_COMMAND, createEditor, HISTORY_MERGE_TAG, PASTE_TAG,
 } from 'lexical'
 import { registerPlainText } from '@lexical/plain-text'
 import { createEmptyHistoryState, registerHistory } from '@lexical/history'
@@ -87,6 +87,16 @@ function guardOf(phase: InputState['phase']): 'plain' | 'claimed' | 'frozen' {
   }
 }
 
+/** Whether two projections differ in content (selection and caret excluded). */
+function projectionContentChanged(prev: EditorProjection, next: EditorProjection): boolean {
+  if (prev.clipboardText !== next.clipboardText || prev.detectText !== next.detectText) return true
+  if (prev.occurrences.length !== next.occurrences.length) return true
+  return next.occurrences.some((occ, i) => {
+    const old = prev.occurrences[i]
+    return old === undefined || old.occurrenceId !== occ.occurrenceId || old.invalid !== occ.invalid
+  })
+}
+
 const EMPTY_QUEUE: readonly QueuedMessage[] = []
 
 /** No-pipeline lexicon: zero text-ref decorations. */
@@ -153,7 +163,7 @@ export class SessionInputShell implements SessionInput {
       registerHistory(this.editor, createEmptyHistoryState(), HISTORY_MERGE_DELAY_MS),
       this.editor.registerUpdateListener(() => { this.onEditorUpdate() }),
       registerClaimDecoration(this.editor, () => this.activeClaimToken()),
-      registerTextRefDecoration(this.editor, () => this.lexicon.getSnapshot()),
+      registerTextRefDecoration(this.editor, () => this.lexicon.getSnapshot(), () => this.activeClaimToken()),
       () => { this.lexiconOff?.() },
     )
     this.state = createSnapshotStore<InputState>(this.compose())
@@ -171,12 +181,15 @@ export class SessionInputShell implements SessionInput {
    * the body runs directly and the outer update commits it.
    * @param fn - the $-edit body.
    */
-  private applyEdit(fn: () => void): void {
+  private applyEdit(fn: () => void, tag?: string): void {
     if (this.editor._updating) {
+      // Nested application joins the enclosing update (the PASTE_COMMAND
+      // dispatch path always lands here), so the tag attaches to that update.
+      if (tag !== undefined) $addUpdateTag(tag)
       fn()
       return
     }
-    this.editor.update(fn, { discrete: true })
+    this.editor.update(fn, { discrete: true, ...(tag === undefined ? {} : { tag }) })
   }
 
 
@@ -196,10 +209,17 @@ export class SessionInputShell implements SessionInput {
   /** Re-project, run the claim watch, publish, and feed trigger tracking after every editor commit. */
   private onEditorUpdate(): void {
     this.ensureLexiconSubscription()
-    this.rev += 1
+    const prev = this.projection
     this.projection = this.editor.getEditorState().read(() =>
       $projectComposer(key => this.occurrenceIdOf(key)))
-    this.dispatchRun(({ type: 'draft-changed', draft: this.projection.clipboardText }))
+    // Selection-only commits advance neither the revision nor the published
+    // state: menus still track the caret below, while draftRev moves only
+    // with content so a snapshot-built span (apply.ts) stays CAS-valid across
+    // caret motion and subscribers do not re-render per caret move.
+    if (projectionContentChanged(prev, this.projection)) {
+      this.rev += 1
+      this.dispatchRun(({ type: 'draft-changed', draft: this.projection.clipboardText }))
+    }
     const caret = this.projection.caret
     if (caret !== null) {
       this.deps.inputTriggers?.()?.track(
@@ -288,7 +308,8 @@ export class SessionInputShell implements SessionInput {
   /**
    * Insert pasted plain text over the current editor selection
    * (placeholder-sanitized). The paste event's own default is suppressed by
-   * the caller; history groups the paste as one undoable step.
+   * the caller; PASTE_TAG makes the paste its own history boundary, so one
+   * undo never removes both the paste and typing inside the merge window.
    * @param text - pasted plain text.
    */
   paste(text: string): void {
@@ -305,7 +326,7 @@ export class SessionInputShell implements SessionInput {
       const root = $getRoot()
       if (root.getChildrenSize() === 0) root.append($createParagraphNode())
       root.selectEnd().insertText(clean)
-    })
+    }, PASTE_TAG)
   }
 
   /**

@@ -167,7 +167,7 @@ export interface Occurrence {
   readonly appearance?: ReferenceInsert['appearance']
   /** Clipboard / persistence projection, e.g. `/name` (insert-time cache, never the model form). */
   readonly clipboardText: string
-  /** Owner-resolution failure flag: chip renders invalid; serialization must fail. */
+  /** Owner-resolution failure flag: the chip renders the failure treatment. */
   readonly invalid?: boolean
 }
 

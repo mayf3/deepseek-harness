@@ -144,7 +144,7 @@ export class ReferenceChipNode extends DecoratorNode<JSX.Element> {
   }
 
   /**
-   * Flip the owner-resolution failure bit (set-invalid application).
+   * Flip the owner-resolution failure bit.
    * @param invalid - next bit; no-op writes are the caller's concern.
    */
   setInvalid(invalid: boolean): void {

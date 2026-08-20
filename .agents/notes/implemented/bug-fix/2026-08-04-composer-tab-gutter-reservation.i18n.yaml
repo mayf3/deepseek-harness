@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-04-composer-tab-gutter-reservation.md
-2026-08-04-composer-tab-gutter-reservation.md: 8bd9fb2d86982d82b44a82c55b7303fcd9a5bf4d
-2026-08-04-composer-tab-gutter-reservation.zh.md: d3a9691f5f5fb095fc53b4cf6b627025220a8148
+2026-08-04-composer-tab-gutter-reservation.md: 6e122b37b16c0e19cf7951b146d9093c377a7e84
+2026-08-04-composer-tab-gutter-reservation.zh.md: 830d7e35d504ec69580205f5f2af3d3e1ee5764c

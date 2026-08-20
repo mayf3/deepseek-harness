@@ -32,6 +32,9 @@ The mirror/backdrop layers and their CSS coupling rules; the Safari soft-wrap re
 - Chip deletion follows the engine's native decorator gesture; jsdom lacks `Selection.modify`, so the keyboard path is asserted in the browser lane only.
 - Folder text-refs keep the `@` glyph beside the folder appearance attribute instead of overpainting the trigger character.
 - The composer's accessible name is an explicit `aria-label` mirroring the placeholder (a div's `data-placeholder` does not name it the way a textarea's placeholder did) — caught by the reference-composer aria golden.
+- Caret-only commits publish nothing: the shell advances `draftRev` and re-publishes `InputState` only when the projection's content changes. Caret motion still feeds menu tracking, but it neither invalidates snapshot-built CAS spans (apply.ts builds spans from the published `draftRev`) nor re-renders subscribers. The first cut re-published on every commit; review caught the drift from the old machine's text-only revision.
+- A paste is its own undo boundary: the custom PASTE_COMMAND handler consumes the event before `@lexical/plain-text` could tag the update, so the shell attaches `PASTE_TAG` itself (via `$addUpdateTag` — the dispatch path always runs nested inside the command update). Without it, history merged a paste with typing inside the 1s window and one undo removed both.
+- The claim decoration outranks text-ref entities on the leading-token seat: a claimed command name that is also on the trigger lexicon stays a plain warn-styled TextNode, because Lexical transforms register per concrete node class and an entity capture would silently drop the claim color (probe-confirmed before the guard: the entity node won and the style was lost).
 
 ## Alternatives considered
 

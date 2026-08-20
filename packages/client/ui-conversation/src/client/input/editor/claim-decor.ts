@@ -31,9 +31,7 @@ export function registerClaimDecoration(editor: LexicalEditor, activeToken: () =
     if (first === null || node.getKey() !== first.getKey()) {
       // Off the token seat: clear a stale token style (a node can move here
       // by paragraph merges).
-      if (node.getStyle() === TOKEN_STYLE && (first === null || node.getKey() !== first.getKey())) {
-        node.setStyle('')
-      }
+      if (node.getStyle() === TOKEN_STYLE) node.setStyle('')
       return
     }
     const token = activeToken()

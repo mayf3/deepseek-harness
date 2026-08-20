@@ -588,7 +588,7 @@ describe('Enter semantics', () => {
     expect(sink).not.toHaveBeenCalled()
   })
 
-  it('platform undo/redo chords route to the machine, never the browser stack', () => {
+  it('platform undo/redo chords drive the Lexical history stack, never the browser one', () => {
     const { textarea, shell } = bench({ draft: '' })
     vi.useFakeTimers()
     onTestFinished(() => { vi.useRealTimers() })
@@ -611,6 +611,51 @@ describe('Enter semantics', () => {
     fireEvent.keyDown(textarea, { key: 'z', keyCode: 90, ctrlKey: true, shiftKey: true })
     flush()
     expect(shell.snapshot.draft).toBe('first second')
+  })
+
+  it('a paste inside the typing merge window is its own undo step', async () => {
+    const { textarea, shell } = bench({ draft: '' })
+    vi.useFakeTimers()
+    onTestFinished(() => { vi.useRealTimers() })
+    writeDraft(shell, 'typed')
+    vi.advanceTimersByTime(1100) // separate the seed from the typing step
+    act(() => {
+      shell.editor.update(() => {
+        const first = $getRoot().getAllTextNodes()[0]
+        if ($isTextNode(first)) first.select(5, 5).insertText(' one')
+      }, { discrete: true })
+    })
+    // No timer advance: the paste lands inside the history merge window, and
+    // PASTE_TAG still gives it its own undo entry. The paste commits inside
+    // the PASTE_COMMAND update, a microtask away.
+    fireEvent.paste(textarea, {
+      clipboardData: { items: [], getData: () => ' two' },
+    })
+    await vi.waitFor(() => { expect(shell.snapshot.draft).toBe('typed one two') })
+    const flush = (): void => { act(() => { shell.editor.update(() => {}, { discrete: true }) }) }
+    fireEvent.keyDown(textarea, { key: 'z', keyCode: 90, ctrlKey: true })
+    flush()
+    expect(shell.snapshot.draft).toBe('typed one')
+  })
+
+  it('caret-only commits advance neither draftRev nor the published state', () => {
+    const { shell } = bench({ draft: 'hello' })
+    const before = shell.snapshot
+    act(() => {
+      shell.editor.update(() => {
+        const first = $getRoot().getAllTextNodes()[0]
+        if ($isTextNode(first)) first.select(1, 1)
+      }, { discrete: true })
+    })
+    expect(shell.snapshot).toBe(before) // publish skipped: the snapshot reference is unchanged
+    act(() => {
+      shell.editor.update(() => {
+        const first = $getRoot().getAllTextNodes()[0]
+        if ($isTextNode(first)) first.select(1, 1).insertText('x')
+      }, { discrete: true })
+    })
+    expect(shell.snapshot.draftRev).toBe(before.draftRev + 1)
+    expect(shell.snapshot.draft).toBe('hxello')
   })
 
   it('composition Enter never sends: ref guard, isComposing, and keyCode 229 paths', () => {

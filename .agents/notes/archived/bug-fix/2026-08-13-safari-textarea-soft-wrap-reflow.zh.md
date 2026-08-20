@@ -1,6 +1,7 @@
 # Agent Note: Safari textarea 软换行收缩恢复
 
 Status: implemented
+Archived: 2026-08-20
 
 [English](2026-08-13-safari-textarea-soft-wrap-reflow.md) | 中文
 

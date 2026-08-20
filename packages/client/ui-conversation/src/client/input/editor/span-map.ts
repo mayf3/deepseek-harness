@@ -2,8 +2,8 @@
  * Detect-coordinate span application: the one place that maps a TokenSpan's
  * numeric [start, end) back onto Lexical points and applies an edit there.
  * Every slash/input-* event (begin-command, insert-reference, insert-text,
- * consume-token) and the paste-upgrade path land through here; revision CAS
- * stays with the caller — this module only maps and edits. All functions
+ * consume-token) lands through here; revision CAS stays with the caller —
+ * this module only maps and edits. All functions
  * must run inside `editor.update()`.
  */
 import type { LexicalNode, RangeSelection } from 'lexical'

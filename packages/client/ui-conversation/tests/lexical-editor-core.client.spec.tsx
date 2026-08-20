@@ -16,6 +16,8 @@ import type { ReferenceInsert } from '@deepseek-ai/dsh-client-ui-input-trigger/c
 import {
   $createReferenceChipNode, $isReferenceChipNode, ReferenceChipNode,
 } from '../src/client/input/editor/chip-node.tsx'
+import { registerClaimDecoration } from '../src/client/input/editor/claim-decor.ts'
+import { registerTextRefDecoration, TextRefNode } from '../src/client/input/editor/text-ref.ts'
 import type { SerializedReferenceChipNode } from '../src/client/input/editor/chip-node.tsx'
 import {
   $composerLayout, $detectOffsetOfPoint, $projectComposer, ATOMIC_CHAR,
@@ -42,7 +44,7 @@ const SKILL_REF: ReferenceInsert = {
 function makeEditor(): LexicalEditor {
   return createHeadlessEditor({
     namespace: 'core-spec',
-    nodes: [ReferenceChipNode],
+    nodes: [ReferenceChipNode, TextRefNode],
     onError: (error) => { throw error },
   })
 }
@@ -122,10 +124,6 @@ describe('ReferenceChipNode', () => {
   it('flips the invalid bit through the writable transaction', () => {
     const editor = makeEditor()
     const chipKey = seedMixed(editor)
-    editor.update(() => {
-      const node = $getRoot().getAllTextNodes() // force nothing; address via key map below
-      void node
-    }, { discrete: true })
     editor.update(() => {
       const chip = [...$getRoot().getChildren()].flatMap(block =>
         'getChildren' in block ? (block as ParagraphNode).getChildren() : []).find($isReferenceChipNode)
@@ -424,5 +422,47 @@ describe('detect-span application', () => {
       expect(projection.clipboardText).toBe('')
       expect(projection.occurrences).toEqual([])
     })
+  })
+})
+
+describe('claim precedence over text-ref entities', () => {
+  const TOKEN_STYLE = 'color: var(--dsw-alias-state-warn-label)'
+  const LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map([['/', ['plan']]])
+
+  it('keeps a claimed lexicon-listed token plain and warn-styled until release', () => {
+    const editor = makeEditor()
+    let claim: string | null = '/plan'
+    registerClaimDecoration(editor, () => claim)
+    registerTextRefDecoration(editor, () => LEXICON, () => claim)
+    editor.update(() => {
+      const paragraph = $createParagraphNode()
+      paragraph.append($createTextNode('/plan rest'))
+      $getRoot().clear().append(paragraph)
+    }, { discrete: true })
+    const leaf = (): { type: string; style: string; text: string } | null =>
+      editor.getEditorState().read(() => {
+        const first = ($getRoot().getFirstChild() as ParagraphNode).getFirstChild()
+        return first === null ? null : {
+          type: first.getType(),
+          style: $isTextNode(first) ? first.getStyle() : '',
+          text: first.getTextContent(),
+        }
+      })
+    // Claimed: the entity transform yields the seat, the claim transform styles it.
+    expect(leaf()).toEqual({ type: 'text', style: TOKEN_STYLE, text: '/plan' })
+    // Released (the shell's refresh nudges the seat dirty): the entity captures it.
+    claim = null
+    editor.update(() => {
+      const first = ($getRoot().getFirstChild() as ParagraphNode).getFirstChild()
+      if ($isTextNode(first)) first.markDirty()
+    }, { discrete: true })
+    expect(leaf()).toEqual({ type: 'composer-text-ref', style: '', text: '/plan' })
+    // Re-claimed: the entity reverts to plain text and the warn style returns.
+    claim = '/plan'
+    editor.update(() => {
+      const first = ($getRoot().getFirstChild() as ParagraphNode).getFirstChild()
+      if ($isTextNode(first)) first.markDirty()
+    }, { discrete: true })
+    expect(leaf()).toEqual({ type: 'text', style: TOKEN_STYLE, text: '/plan' })
   })
 })

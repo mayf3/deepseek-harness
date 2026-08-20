@@ -1,14 +1,18 @@
 // @vitest-environment jsdom
-/** Probe: does a synthetic keydown at the contenteditable reach the keymap commands? */
+/**
+ * Keymap routing at the DOM boundary: synthetic keydowns on the
+ * contenteditable reach the registered composer commands (the jsdom lane's
+ * gesture entry, below the full component bench).
+ */
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent } from '@testing-library/react'
 import { createEditor } from 'lexical'
 import { registerPlainText } from '@lexical/plain-text'
 import { registerComposerKeymap } from '../src/client/input/editor/keymap.ts'
 
-describe('keydown probe', () => {
+describe('keymap keydown routing', () => {
   it('routes Enter to the keymap submit handler', () => {
-    const editor = createEditor({ namespace: 'probe', onError: (e) => { throw e } })
+    const editor = createEditor({ namespace: 'keymap-routing', onError: (e) => { throw e } })
     const root = document.createElement('div')
     root.contentEditable = 'true'
     document.body.appendChild(root)

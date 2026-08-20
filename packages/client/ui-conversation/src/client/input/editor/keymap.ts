@@ -97,7 +97,6 @@ export function registerComposerKeymap(editor: LexicalEditor, handlers: Composer
     editor.registerCommand(KEY_SPACE_COMMAND, (event) => {
       if (isComposingEvent(event, recentlyComposing)) return false
       const consumed = handlers.space()
-      console.log('[probe] space() ->', consumed)
       if (consumed) {
         event.preventDefault() // claim token already carries the trailing separator
         return true

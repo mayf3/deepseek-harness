@@ -171,6 +171,35 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     expect(tripwire.warnings).toEqual([])
   })
 
+  it('typing a trigger directly ahead of a chip inserts without disturbing it', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-type-ahead'))
+    const input = page.locator('[data-composer-input]').first()
+    const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
+
+    await input.fill('@reference')
+    await menu.getByRole('option', { name: /File · reference\.txt/ }).click()
+    await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(1)
+
+    // The #2813 gesture: collapse the caret to the document start, directly
+    // ahead of the chip, and open the trigger menu there.
+    await input.click()
+    await page.keyboard.press('ControlOrMeta+A')
+    await page.keyboard.press('ArrowLeft')
+    await page.keyboard.type('@Research')
+    await menu.getByRole('option', { name: /Session · Research notes/ }).click()
+
+    // Both chips survive the boundary insert: the session chip lands ahead of
+    // the intact file chip.
+    const chips = input.locator('[data-composer-chip]')
+    await expect.poll(() => chips.count()).toBe(2)
+    await expect.poll(() => chips.first().textContent()).toBe('Research notes')
+    await expect.poll(() => chips.last().textContent()).toBe('reference.txt')
+    await expect.poll(() => input.textContent()).toBe('Research notes reference.txt ')
+
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  })
+
   it('renders the durable direct-message then recall order', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-order'))
     const group = page.getByRole('treeitem', { name: /Ungrouped/ })
