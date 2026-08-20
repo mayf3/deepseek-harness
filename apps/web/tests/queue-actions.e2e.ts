@@ -217,6 +217,8 @@ describe('web e2e: queue row actions', () => {
     await page.locator('[data-testid="todo-panel"]').waitFor({ timeout: 10_000 })
 
     for (const text of ['Layout queue first', 'Layout queue second']) {
+      // A just-submitted composer is read-only for the prompt round-trip.
+      await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 10_000 })
       await input.fill(text)
       await input.press('Enter')
     }

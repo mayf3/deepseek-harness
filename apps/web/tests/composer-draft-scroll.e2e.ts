@@ -251,9 +251,12 @@ describe('web e2e: composer draft scrolling', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-composer-draft-scroll-typing'))
     const input = surface(page)
     // Put the caret at the very end, scroll the view away from it, then type:
-    // the browser's own caret reveal must bring the end back on screen.
+    // the editor's own caret reveal must bring the end back on screen.
+    // Select-all + ArrowRight lands the caret at the document end on every
+    // platform (Cmd/Ctrl+End is not a caret move in mac contenteditable).
     await input.click()
-    await page.keyboard.press('ControlOrMeta+End')
+    await page.keyboard.press('ControlOrMeta+KeyA')
+    await page.keyboard.press('ArrowRight')
     await input.hover()
     await page.mouse.wheel(0, -2000)
     await expect.poll(async () => (await measureComposer(page)).scrollTop, { timeout: 10_000 }).toBe(0)
