@@ -1134,8 +1134,11 @@ export class PythonCodeRuntime extends CodeRuntime {
       // sequence is real truncated input and the U+FFFD is the honest render.
       function flushStray(stray: StrayBuffer, retainPartialTail?: boolean): void {
         if (stray.chunks.length === 0 && stray.blocks.length === 0) return
-        const begun = stray.blocks.length > 0 ? [...stray.blocks, ...stray.chunks] : stray.chunks
-        let full = Buffer.concat(begun)
+        // Concatenate the sealed blocks and the current-chunk residual together
+        // unconditionally (no `blocks.length > 0` ternary): a flush can run with
+        // either or both present, and a branch on their presence would need a
+        // test that flushes exactly at a seal boundary.
+        let full = Buffer.concat([...stray.blocks, ...stray.chunks])
         // A budget flush landing exactly between a lead byte and its
         // still-pending continuation requires the combined-cost threshold to trip
         // on a specific mid-multibyte pipe boundary — not deterministically
