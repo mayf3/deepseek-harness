@@ -160,6 +160,8 @@ sequenceDiagram
 
 此顺序让最终的 agent 和会话事件能使用匹配的作用域监听器，并使持久化观察者在最终刷新完成前保持附加。作用域 dispose 放在最后，因为注册撤销是外部可见的生命期边界。
 
+<a id="session-append-materialize-validate-commit-notify"></a>
+
 ## 会话追加：物化、验证、提交、通知
 
 会话事件跨越持久化边界，因此追加操作拥有其数据。算法的其余部分使用一条已附加的注册表条目和一个提交点。

@@ -44,9 +44,9 @@ Codex 默认使用 `never`，并接受 Codex 0.147.0 公开的三种原生非交
 
 ### 失败诊断
 
-`SubagentResult` 携带可选的 `diagnostic`，用于提供方产生且不属于 assistant 内容的失败说明。提供方在生成它之前会排除工具输入、文件内容、环境值、凭证与原始协议载荷。共享的进程外结果边界会把完整文本限制在 4096 个 UTF-8 字节以内，并在不切断字符的前提下标记截断。
+`SubagentResult` 携带可选的 `diagnostic`，用于提供方产生且不属于 assistant 内容的失败说明。提供方在生成它之前会排除工具输入、文件内容、环境值、凭证与原始协议载荷。共享的进程外结果边界会把完整文本限制在 4096 个 UTF-8 字节以内，并在不切断字符的前提下标记截断。[结构化失败事实决策](2026-08-18-product-subagent-failure-facts.zh.md)负责由同一字段承载的非权限产品类别、生命周期阶段与进程结果。
 
-每个产品都只记录有效模式、请求类别、无人值守决定与固定的安全原因。Claude Code 从 SDK 回调和 `permission_denied` 消息取得这些事实。Codex 从 app-server 请求、被拒绝的 item、`sandboxError` 与每次运行有界 stderr 尾部中的两个固定权限签名取得事实；原始 stderr 仍会转发给 Host，但绝不会复制进诊断。成功结果只返回严格的最终答案；本地取消仍以 `aborted` 结算且不附带权限说明；未发布的启动失败仍会拒绝 `start()`。当一项权限事实参与了已经发布、最终以 `error` 结算的运行时，提供方会附加诊断，但不会把它写入 assistant 输出、结构化输出或 `subagent/end.lastAssistantMessage`。
+每个产品的权限事实都只包含有效模式、请求类别、无人值守决定与固定的安全原因。Claude Code 从 SDK 回调和 `permission_denied` 消息取得这些事实。Codex 从 app-server 请求、被拒绝的 item、`sandboxError` 与每次运行有界 stderr 尾部中的两个固定权限签名取得事实；原始 stderr 仍会转发给 Host，但绝不会复制进诊断。两个提供方都会把结构化失败行放在最新参与失败的权限事实之前。成功结果只返回严格的最终答案；本地取消仍以 `aborted` 结算且不附带权限说明；未发布的启动失败仍会拒绝 `start()`。提供方绝不会把任一诊断事实写入 assistant 输出、结构化输出或 `subagent/end.lastAssistantMessage`。
 
 前台消费方依次呈现终止原因标题、可选诊断和任何部分 assistant 输出。一次性后台适配器会在失败 Job 的 detail 中，把同一诊断与终止原因一起保存。没有填写该字段的提供方保持原有行为。
 
@@ -63,7 +63,7 @@ Codex 默认使用 `never`，并接受 Codex 0.147.0 公开的三种原生非交
 
 ## Verification
 
-包测试固定所有允许与拒绝的 Config 值、准确的 SDK 与 app-server 字段映射、危险确认、无人值守终态、诊断脱敏与 UTF-8 上限、成功结果不携带诊断、并发运行隔离、前台顺序、Job detail、stderr observer 释放和进程清理。真实 Claude Agent SDK/CLI fixture 证明其安全默认、受限拒绝、显式 bypass 与整棵进程树完全停稳。真实 Codex app-server fixture 证明线程级 `never` 覆盖环境中的 `on-request`、自动评审可以启动、危险绕过只在测试拥有的临时存储中写入、固定 stderr 签名产生安全诊断，而且 wrapper／native 进程树会退出。Loader 组装证明非默认模式可以在不启动任一产品的情况下发布；无密钥 ACP snapshot 则记录共享诊断呈现，同时面向模型的产品工具 schema 不包含权限参数。
+包测试固定所有允许与拒绝的 Config 值、准确的 SDK 与 app-server 字段映射、危险确认、无人值守终态、诊断脱敏与 UTF-8 上限、成功结果不携带诊断、并发运行隔离、前台顺序、Job detail、stderr observer 释放和进程清理。真实 Claude Agent SDK/CLI fixture 证明其安全默认、受限拒绝、显式 bypass 与整棵进程树完全停稳。真实 Codex app-server fixture 证明线程级 `never` 覆盖环境中的 `on-request`、自动评审可以启动、危险绕过只在测试拥有的临时存储中写入、固定 stderr 签名产生安全诊断，而且 wrapper／native 进程树会退出。Loader 组装证明非默认模式可以在不启动任一产品的情况下发布；无密钥 ACP snapshot 则记录每个产品的失败诊断如何经过前台与 Job 呈现，同时面向模型的产品工具 schema 不包含权限参数。
 
 ## Alternatives considered
 
@@ -83,6 +83,6 @@ Codex 默认使用 `never`，并接受 Codex 0.147.0 公开的三种原生非交
 
 Profile 可以在提供方启动前选择各产品原生的受限、自动、在产品支持时仅规划／编辑放行，或 bypass 行为，而两个安全默认值都绝不会询问人员。更宽松的模式仍是显式部署选择，并保留其原生沙箱后果。
 
-权限失败会同时到达前台父 agent 和一次性后台 Job，且不会把基础设施文本伪装成 assistant 回答。该诊断可以沿普通消费路径进入模型上下文、Job 通知、API 投影与 Job UI，因此提供方必须在结果结算前完成脱敏和限长。
+权限失败会同时到达前台父 agent 和一次性后台 Job，且不会把基础设施文本伪装成 assistant 回答。同一字段还可以承载由另一项决策负责的结构化失败事实。它可以沿普通消费路径进入模型上下文、Job 通知、API 投影与 Job UI，因此提供方必须在结果结算前对完整文本完成脱敏和限长。
 
 本改动不增加产品会话持久化、人工审批通道、动态权限操作、进度流、重试策略或回滚。其他提供方无需产生诊断或公开权限模式 Config，仍然保持合法。

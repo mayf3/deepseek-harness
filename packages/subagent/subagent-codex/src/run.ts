@@ -21,13 +21,18 @@ import {
   type SubagentStartRequest,
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
-import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { CodexAppServerWire } from './wire.ts'
+import type {
+  SubprocessHandle,
+  SubprocessOutcome,
+  SubprocessSpawnSpec,
+} from '@deepseek-ai/dsh-subprocess'
+import {
+  CodexAppServerWire,
+  type CodexWireFailureFacts,
+} from './wire.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
-/** Bounded stderr tail retained only to recognize the wrapper's payload error. */
-const CODEX_STDERR_TAIL_BYTES = 16 * 1024
 
 interface CodexPackageManifest {
   readonly bin: {
@@ -46,23 +51,6 @@ const CODEX_PACKAGE_BIN = resolve(
   codexPackageManifest.bin.codex,
 )
 
-function missingPayloadDiagnostic(stderr: string): string | undefined {
-  const platformPackage = /Missing optional dependency (@openai\/codex-[a-z0-9-]+)/
-    .exec(stderr)?.[1]
-  return platformPackage === undefined
-    ? undefined
-    : `Missing optional dependency ${platformPackage}`
-}
-
-function withMissingPayloadDiagnostic(
-  error: Error,
-  stderr: string,
-): Error {
-  const diagnostic = missingPayloadDiagnostic(stderr)
-  if (diagnostic === undefined || error.message.includes(diagnostic)) return error
-  return new Error(`${error.message}: ${diagnostic}`, { cause: error })
-}
-
 /** Profile-selectable non-interactive Codex permission mode. */
 export type CodexPermissionMode =
   | 'never'
@@ -78,6 +66,64 @@ export const CODEX_PERMISSION_MODES = [
 
 /** Safe default for unattended Codex runs. */
 export const DEFAULT_CODEX_PERMISSION_MODE: CodexPermissionMode = 'never'
+
+type CodexFailureStage =
+  | 'initialize'
+  | 'thread-start'
+  | CodexWireFailureFacts['stage']
+  | 'process'
+  | 'teardown'
+
+interface CodexFailureFacts {
+  readonly stage: CodexFailureStage
+  readonly category: string
+  readonly httpStatus?: number | undefined
+  readonly outcome?: SubprocessOutcome | undefined
+}
+
+function failureDiagnostic(facts: CodexFailureFacts): string {
+  const fields = [
+    'product: Codex',
+    `stage: ${facts.stage}`,
+    `category: ${facts.category}`,
+  ]
+  if (facts.httpStatus !== undefined) {
+    fields.push(`HTTP status: ${facts.httpStatus}`)
+  }
+  const processFields = [
+    ['exit code', facts.outcome?.exitCode],
+    ['signal', facts.outcome?.signal],
+  ] as const
+  for (const [label, value] of processFields) {
+    if (value !== null && value !== undefined) fields.push(`${label}: ${value}`)
+  }
+  return `Product subagent failure (${fields.join('; ')})`
+}
+
+class CodexRunFailure extends Error {
+  constructor(
+    readonly facts: CodexFailureFacts,
+    cause?: unknown,
+  ) {
+    super(
+      `subagent-codex: ${failureDiagnostic(facts)}`,
+      cause === undefined ? undefined : { cause },
+    )
+    this.name = 'CodexRunFailure'
+  }
+}
+
+/**
+ * Hide an unpublished Host failure behind fixed safe startup facts.
+ * @param cause Original Host failure retained for internal diagnostics.
+ * @returns A startup failure whose message contains only fixed safe facts.
+ */
+export function codexStartupFailure(cause: unknown): Error {
+  return new CodexRunFailure({
+    stage: 'initialize',
+    category: 'unknown',
+  }, cause)
+}
 
 /**
  * Fixed package-local app-server command, independent of the host `PATH`.
@@ -141,18 +187,33 @@ export async function disposeCodexChild(
   child: SubprocessHandle,
 ): Promise<void> {
   wire.close()
-  if (child.pid <= 0) {
+
+  if (child.pid > 0) {
+    let outcome: SubprocessOutcome | undefined
+    void child.done.then(
+      (value) => { outcome = value },
+      /* v8 ignore next -- a positive pid excludes spawn-level done rejection. */
+      () => {},
+    )
+    try {
+      child.stdin?.end()
+    } catch {
+      // A concurrently closed stdin does not change tree ownership below.
+    }
+    child.terminate()
+    try {
+      await child.waitForExit()
+    } catch (error: unknown) {
+      throw new CodexRunFailure({
+        stage: 'teardown',
+        category: 'unknown',
+        outcome,
+      }, thrown(error))
+    }
+    await child.done
+  } else {
     await child.done.catch(() => {})
-    return
   }
-  try {
-    child.stdin?.end()
-  } catch {
-    // A concurrently closed stdin does not change tree ownership below.
-  }
-  child.terminate()
-  await child.waitForExit()
-  await child.done
 }
 
 /**
@@ -170,26 +231,29 @@ export async function startCodexRun(
     throw new Error('subagent-codex: request was aborted before app-server startup')
   }
 
-  const child = spec.spawn({
-    argv: codexAppServerArgv(),
-    cwd: spec.cwd,
-    stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
-    graceMs: spec.disposeGraceMs,
-    env: spec.env,
-  })
+  let child: SubprocessHandle
+  try {
+    child = spec.spawn({
+      argv: codexAppServerArgv(),
+      cwd: spec.cwd,
+      stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
+      graceMs: spec.disposeGraceMs,
+      env: spec.env,
+    })
+  } catch (error: unknown) {
+    throw new CodexRunFailure({
+      stage: 'initialize',
+      category: 'unknown',
+    }, thrown(error))
+  }
 
   const wire = new CodexAppServerWire(
     child.stdout as NonNullable<SubprocessHandle['stdout']>,
     child.stdin as NonNullable<SubprocessHandle['stdin']>,
     spec.permissionMode,
   )
-  let stderrTail = Buffer.alloc(0)
   const onStderr = (chunk: Buffer | string): void => {
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
-    const combined = Buffer.concat([stderrTail, bytes])
-    stderrTail = combined.length > CODEX_STDERR_TAIL_BYTES
-      ? Buffer.from(combined.subarray(combined.length - CODEX_STDERR_TAIL_BYTES))
-      : combined
     wire.observeStderr(bytes.toString())
     try {
       // Synchronous fd forwarding preserves byte order without owning a
@@ -217,15 +281,26 @@ export async function startCodexRun(
     }
   }
 
-  const processFailure: Promise<never> = child.done.then(
-    outcome => Promise.reject(new Error(
-      'subagent-codex: app-server exited before the run settled '
-      + `(code ${String(outcome.exitCode)}, signal ${String(outcome.signal)})`,
-    )),
-    (error: unknown) => Promise.reject(thrown(error)),
+  let processFailureFacts: CodexFailureFacts | undefined
+  const processFailure: Promise<never> = child.done.then<never>(
+    (outcome) => {
+      processFailureFacts = {
+        stage: 'process',
+        category: 'process-exit',
+        outcome,
+      }
+      throw new CodexRunFailure(processFailureFacts)
+    },
+    (error: unknown) => {
+      processFailureFacts = {
+        stage: 'process',
+        category: 'unknown',
+      }
+      throw new CodexRunFailure(processFailureFacts, thrown(error))
+    },
   )
-  // A normal post-result dispose also closes the process. Keep that expected
-  // late rejection observed after the result race has already settled.
+  // A normal post-result dispose also closes the process. Keep its expected
+  // late rejection observed when the terminal result settles first.
   processFailure.catch(() => {})
 
   const runAbort = new AbortController()
@@ -237,44 +312,116 @@ export async function startCodexRun(
   const onAbort = (): void => { requestCancel() }
   request.signal.addEventListener('abort', onAbort, { once: true })
 
+  let startupStage: 'initialize' | 'thread-start' = 'initialize'
   try {
     wire.start()
     await Promise.race([wire.initialize(request.signal), processFailure])
+    startupStage = 'thread-start'
     await Promise.race([wire.startThread(spec.cwd, request.signal), processFailure])
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
-    const startupCause = thrown(error)
+    const cancelledBeforeCleanup = runAbort.signal.aborted
+    if (!(error instanceof CodexRunFailure) && !cancelledBeforeCleanup) {
+      // Node reports stdout EOF before the child close that owns its outcome.
+      // Let an already-exiting process publish those facts before rollback.
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+    }
+    const failure = new CodexRunFailure({
+      stage: startupStage,
+      category: 'unknown',
+      outcome: error instanceof CodexRunFailure
+        ? error.facts.outcome
+        : processFailureFacts?.outcome,
+    }, thrown(error))
     try {
       await disposeProcess()
     } catch (disposeError: unknown) {
+      const cleanupFailure = thrown(disposeError)
       throw new AggregateError(
-        [withMissingPayloadDiagnostic(startupCause, stderrTail.toString()), thrown(disposeError)],
-        'subagent-codex: startup failed and app-server cleanup also failed',
+        [failure, cleanupFailure],
+        `${failure.message}; ${cleanupFailure.message}`,
       )
     }
-    if (runAbort.signal.aborted) {
+    if (cancelledBeforeCleanup) {
       throw new Error('subagent-codex: request was aborted before run publication')
     }
-    throw withMissingPayloadDiagnostic(startupCause, stderrTail.toString())
+    try {
+      request.signal.throwIfAborted()
+    } catch {
+      throw new Error('subagent-codex: request was aborted before run publication')
+    }
+    throw failure
   }
 
   const collectOutput = (): ContentBlock[] => wire.collectOutput()
+  let diagnostic: string | undefined
+  const recordFailureDiagnostic = (facts: CodexFailureFacts): string => {
+    const failure = failureDiagnostic(facts)
+    const permission = wire.collectDiagnostic()
+    diagnostic = permission === undefined
+      ? failure
+      : `${failure}\n${permission}`
+    return diagnostic
+  }
+  const withProcessOutcome = (facts: CodexFailureFacts): CodexFailureFacts => {
+    const outcome = processFailureFacts?.outcome
+    return outcome === undefined
+      ? facts
+      : { ...facts, outcome }
+  }
+  const publishedProcessFailure = processFailure.catch(
+    async (error: unknown): Promise<never> => {
+      // Frames already queued by the exiting app-server remain authoritative.
+      // One I/O turn lets them settle before process exit ends the run.
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      throw error
+    },
+  )
   const result: Promise<SubagentResult> = settleRunResult({
     attempt: async () => {
       try {
-        return await Promise.race([
+        const terminal = await Promise.race([
           wire.runTurn(texts, runAbort.signal),
-          processFailure,
+          publishedProcessFailure,
         ])
+        if (terminal.stopReason === 'completed') return terminal
+        // Let stderr already queued with the terminal frame contribute its
+        // fixed permission fact before the non-completed result is snapshotted.
+        await new Promise<void>((resolve) => { setImmediate(resolve) })
+        const facts = withProcessOutcome(wire.collectFailure())
+        return { ...terminal, diagnostic: recordFailureDiagnostic(facts) }
       } catch (error: unknown) {
         // Give stderr data already queued in Node one turn to reach the wire
-        // before settlement snapshots the diagnostic; later OS data is best-effort.
+        // before settlement snapshots the diagnostic.
         await new Promise<void>((resolve) => { setImmediate(resolve) })
-        throw withMissingPayloadDiagnostic(thrown(error), stderrTail.toString())
+        const endedBeforeTerminal = wire.endedBeforeTerminal()
+        if (
+          endedBeforeTerminal
+          && processFailureFacts === undefined
+          && !runAbort.signal.aborted
+        ) {
+          try {
+            const exited = await child.waitForExit(
+              AbortSignal.timeout(Math.ceil(spec.disposeGraceMs)),
+            )
+            if (exited) await child.done
+          } catch {
+            // The wire failure remains authoritative when exit observation fails.
+          }
+        }
+        const facts = error instanceof CodexRunFailure
+          ? error.facts
+          : endedBeforeTerminal && processFailureFacts !== undefined
+            ? processFailureFacts
+            : withProcessOutcome(wire.collectFailure())
+        recordFailureDiagnostic(facts)
+        throw error instanceof CodexRunFailure
+          ? error
+          : new CodexRunFailure(facts, thrown(error))
       }
     },
     collectOutput,
-    collectDiagnostic: () => wire.collectDiagnostic(),
+    collectDiagnostic: () => diagnostic,
     cancelled: () => runAbort.signal.aborted,
     onError: spec.onError,
     signal: request.signal,
