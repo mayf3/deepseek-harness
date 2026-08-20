@@ -402,8 +402,8 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.archiveArmed,
-.archiveArmed:hover {
+.archiveConfirm,
+.archiveConfirm:hover {
   color: var(--dsw-alias-state-error-primary);
 }
 

@@ -97,6 +97,11 @@ describe('WorkspaceBrowser.module.css list', () => {
     }
   })
 
+  it('uses the error token for the armed archive control', () => {
+    expect(rowDeclarations('.archiveConfirm')?.get('color')).toBe('var(--dsw-alias-state-error-primary)')
+    expect(rowDeclarations('.archiveConfirm:hover')?.get('color')).toBe('var(--dsw-alias-state-error-primary)')
+  })
+
   it('keeps the compact fade, overflow control, search field, and row heights', () => {
     expect(declarations('.fade')?.get('height')).toBe('24px')
     expect(declarations('.sessionOverflowButton')?.get('height')).toBe('28px')
