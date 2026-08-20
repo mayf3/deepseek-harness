@@ -105,11 +105,11 @@ The entity in this domain is a **release family**: a set of packages sharing one
 
 The dsh family applies the repository's publication payload policy, which rejects sources and declaration maps. The vendored family keeps upstream's payload, because those manifests export `./src/*` and dropping `src` would publish an export map pointing at absent files.
 
-### Workflow shape: pack everything at once, then publish as one set
+### Workflow shape: pack on PR/push, publish from a manual dispatch workflow
 
-The `pack` job walks the whole release set once, packing each member into one directory, writes the upload order, and uploads that directory as one artifact; the `publish` job downloads that artifact and publishes each entry in order. The release set is one unit — half the packages can never reach the registry while the other half is still building.
+The `pack` job walks the whole release set once, packing each member into one directory, writes the upload order, and uploads that directory as one artifact; it lives in `release.yml` / `release-vendor.yml`. The release set is one unit — half the packages can never reach the registry while the other half is still building.
 
-`pack` carries no credentials and runs on every pull request and master push, so a pull request proves the release set still packs. `publish` is a manual dispatch, sits behind the `npm-publish` environment for human approval, and neither builds nor rebuilds — it uploads the bytes pack produced. Pack runs are grouped per ref so concurrent pull requests do not displace each other; the publish job carries the global group, because dist-tags are shared registry state.
+`pack` carries no credentials and runs on every pull request and master push, so a pull request proves the release set still packs. Publication lives in a separate `release-publish.yml` / `release-vendor-publish.yml` workflow that is `workflow_dispatch`-only (so it never appears as a PR check): it repacks the current tree and then publishes each entry in order, behind the `npm-publish` environment for human approval. Pack runs are grouped per ref so concurrent pull requests do not displace each other; the publish workflow carries the global `Release-publish` group, because dist-tags are shared registry state.
 
 A dsh verification installs the vendored family's pack output too. The harness packages declare the vendored framework as a peer, those packages live in another sequence, and the credential-free job cannot fetch them from a private registry — so `release.yml` packs the vendored family for verification while publishing only its own set.
 

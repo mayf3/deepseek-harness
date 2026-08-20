@@ -105,11 +105,11 @@ registry 的两个行为决定了「怎么尝试一次发布」。写入之间�
 
 dsh 族套用仓库的发布 payload 策略（拒绝源码与声明映射）。vendored 族保留上游 payload，因为那些 manifest 导出 `./src/*`，去掉 `src` 会发出一个导出映射指向不存在文件的包。
 
-### workflow 形状：一次性 pack 全部，再统一 publish
+### workflow 形状：PR/push 上 pack，从手动 dispatch 工作流发布
 
-`pack` job 一趟遍历整个发布集，把每个成员打进同一个目录，写出上传顺序，整个目录作为一份 artifact 上传；`publish` job 下载那一份 artifact，按顺序逐个发布。发布集是一个整体——绝不会出现一半的包已经上了 registry、另一半还在构建。
+`pack` job 一趟遍历整个发布集，把每个成员打进同一个目录，写出上传顺序，整个目录作为一份 artifact 上传；它位于 `release.yml` / `release-vendor.yml`。发布集是一个整体——绝不会出现一半的包已经上了 registry、另一半还在构建。
 
-`pack` 无凭据，在每个 pull request 和每次 master push 上跑，所以一个 pull request 就能证明发布集仍能完整打出来。`publish` 是手动 dispatch，挂在 `npm-publish` environment 后面等人工审批，且既不构建也不重建——它上传的就是 pack 产出的字节。pack 的 run 按 ref 分组，并发的 pull request 不会互相顶掉；全局分组落在 publish job 上，因为 dist-tag 是共享的 registry 状态。
+`pack` 无凭据，在每个 pull request 和每次 master push 上跑，所以一个 pull request 就能证明发布集仍能完整打出来。发布则位于独立的 `release-publish.yml` / `release-vendor-publish.yml` 工作流，仅 `workflow_dispatch`（因此不会作为 PR check 出现）：它重新打包当前树，再按顺序逐个发布，挂在 `npm-publish` environment 后面等人工审批。pack 的 run 按 ref 分组，并发的 pull request 不会互相顶掉；全局 `Release-publish` 分组落在发布工作流上，因为 dist-tag 是共享的 registry 状态。
 
 dsh 的验证会一并安装 vendored 族的 pack 产物。harness 的包把 vendored 框架声明成 peer，而那些包属于另一条序列，无凭据的 job 无法从私有 registry 取到——所以 `release.yml` 为验证而打包 vendored 族，发布的仍只有自己那一份。
 
