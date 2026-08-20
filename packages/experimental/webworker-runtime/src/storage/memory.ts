@@ -17,7 +17,15 @@ const encoder = new TextEncoder()
 interface FileNode {
   bytes: Uint8Array
   mtimeMs: number
+  /** Permission bits (`0o777` mask), set at creation and changed only by `chmod`. */
+  mode: number
 }
+
+/** Creation default for files, Node's `0o666` under the classic `022` umask. */
+const DEFAULT_FILE_MODE = 0o644
+
+/** Creation default for directories, Node's `0o777` under the classic `022` umask. */
+const DEFAULT_DIRECTORY_MODE = 0o755
 
 function fail(code: string, syscall: string, path: string, detail?: string): never {
   const error = new Error(`${code}: ${detail ?? syscall} failed, ${syscall} '${path}'`) as VfsError
@@ -33,15 +41,17 @@ function encodingOf(options: VfsReadOptions): VfsEncoding | undefined {
   return options.encoding ?? undefined
 }
 
-// Owner-only permission bits (600/700), here and in the BigInt shape below:
-// the VFS has one owner, and dsh-credentials-local refuses to start over a
-// secrets file readable beyond its owner.
-function statsOf(size: number, mtimeMs: number, directory: boolean): VfsStats {
+// Permission bits are entry state: creation takes the caller's mode (or the
+// umask-free default), `chmod` changes it, and both stat shapes report the
+// stored value — the round-trip consumers like dsh-credentials-local's
+// owner-only check rely on. The bits are never enforced: a single-owner
+// filesystem reads and writes as its owner regardless, like root.
+function statsOf(size: number, mtimeMs: number, directory: boolean, mode: number): VfsStats {
   return {
     size,
     mtimeMs,
     mtime: new Date(mtimeMs),
-    mode: directory ? 0o040700 : 0o100600,
+    mode: (directory ? 0o040000 : 0o100000) | (mode & 0o777),
     isFile: () => !directory,
     isDirectory: () => directory,
     isSymbolicLink: () => false,
@@ -62,15 +72,16 @@ function statsOf(size: number, mtimeMs: number, directory: boolean): VfsStats {
  * @param mtimeMs - Modification time the entry carries.
  * @param directory - Whether the entry is a directory.
  * @param ino - Identity of the entry at this path.
+ * @param mode - Stored permission bits of the entry.
  * @returns Stats in the shape Node returns under `{ bigint: true }`.
  */
-function bigIntStatsOf(size: number, mtimeMs: number, directory: boolean, ino: bigint): VfsBigIntStats {
+function bigIntStatsOf(size: number, mtimeMs: number, directory: boolean, ino: bigint, mode: number): VfsBigIntStats {
   const milliseconds = BigInt(Math.trunc(mtimeMs))
   const nanoseconds = milliseconds * 1_000_000n
   const time = new Date(mtimeMs)
   return {
     size: BigInt(size),
-    mode: directory ? 0o040700n : 0o100600n,
+    mode: BigInt((directory ? 0o040000 : 0o100000) | (mode & 0o777)),
     dev: 1n,
     ino,
     nlink: 1n,
@@ -104,6 +115,8 @@ function bigIntStatsOf(size: number, mtimeMs: number, directory: boolean, ino: b
 export class MemoryVfs {
   private readonly files = new Map<string, FileNode>()
   private readonly directories = new Set<string>([SEP])
+  /** Directory permission bits; absence means {@link DEFAULT_DIRECTORY_MODE}. */
+  private readonly directoryModes = new Map<string, number>()
   private temporaries = 0
   // Identity per path, assigned on first stat and dropped when the path goes:
   // the filesystem service builds its version token from `ino` plus the
@@ -118,7 +131,7 @@ export class MemoryVfs {
       this.writeFileSync(path, data, options)
     },
     appendFile: async (path: string, data: string | Uint8Array): Promise<void> => { this.appendFileSync(path, data) },
-    mkdir: async (path: string, options?: { recursive?: boolean }): Promise<string | undefined> => this.mkdirSync(path, options),
+    mkdir: async (path: string, options?: { recursive?: boolean; mode?: number }): Promise<string | undefined> => this.mkdirSync(path, options),
     readdir: async (path: string, options?: { withFileTypes?: boolean }): Promise<string[] & VfsDirent[]> =>
       this.readdirSync(path, options),
     stat: async (path: string, options?: VfsStatOptions): Promise<VfsStats | VfsBigIntStats> => this.statSync(path, options),
@@ -130,7 +143,7 @@ export class MemoryVfs {
     mkdtemp: async (prefix: string): Promise<string> => this.mkdtempSync(prefix),
     link: async (existing: string, next: string): Promise<void> => { this.linkSync(existing, next) },
     truncate: async (path: string, length?: number): Promise<void> => { this.truncateSync(path, length) },
-    chmod: async (): Promise<void> => {},
+    chmod: async (path: string, mode: number): Promise<void> => { this.chmodSync(path, mode) },
     opendir: async (path: string): Promise<VfsDir> => this.opendir(path),
     open: async (path: string, flags?: string, mode?: number): Promise<VfsFileHandle> => this.open(path, flags, mode),
     /** Resolves for any existing path: the VFS grants read and write to everything it holds. */
@@ -181,14 +194,14 @@ export class MemoryVfs {
   statSync(path: string, options?: VfsStatOptions): VfsStats | VfsBigIntStats {
     const target = this.key(path)
     const node = this.files.get(target)
-    const [size, mtimeMs, directory] = node !== undefined
-      ? [node.bytes.length, node.mtimeMs, false] as const
+    const [size, mtimeMs, directory, mode] = node !== undefined
+      ? [node.bytes.length, node.mtimeMs, false, node.mode] as const
       : this.directories.has(target)
-        ? [0, 0, true] as const
+        ? [0, 0, true, this.directoryModes.get(target) ?? DEFAULT_DIRECTORY_MODE] as const
         : fail('ENOENT', 'stat', target)
     return options?.bigint === true
-      ? bigIntStatsOf(size, mtimeMs, directory, this.identityOf(target))
-      : statsOf(size, mtimeMs, directory)
+      ? bigIntStatsOf(size, mtimeMs, directory, this.identityOf(target), mode)
+      : statsOf(size, mtimeMs, directory, mode)
   }
 
   /** @returns Stats in the plain shape, for internal callers that read `size`/`mtimeMs`. */
@@ -285,7 +298,7 @@ export class MemoryVfs {
    * @param options - `recursive` creates missing parents.
    * @returns First created path when recursive, otherwise undefined.
    */
-  mkdirSync(path: string, options?: { recursive?: boolean }): string | undefined {
+  mkdirSync(path: string, options?: { recursive?: boolean; mode?: number }): string | undefined {
     const target = this.key(path)
     if (this.files.has(target)) fail('EEXIST', 'mkdir', target)
     if (this.directories.has(target)) {
@@ -298,6 +311,7 @@ export class MemoryVfs {
       this.mkdirSync(parent, options)
     }
     this.directories.add(target)
+    if (options?.mode !== undefined) this.directoryModes.set(target, options.mode & 0o777)
     return target
   }
 
@@ -314,7 +328,10 @@ export class MemoryVfs {
     const flag = options?.flag ?? 'w'
     if (flag.startsWith('wx') && this.files.has(target)) fail('EEXIST', 'open', target)
     if (flag.startsWith('a')) {  this.appendFileSync(target, data); return }
-    this.files.set(target, { bytes: typeof data === 'string' ? encoder.encode(data) : data, mtimeMs: this.touch(target) })
+    // POSIX open(O_CREAT): the mode applies at creation only; a rewrite keeps
+    // the entry's bits.
+    const mode = this.files.get(target)?.mode ?? (options?.mode !== undefined ? options.mode & 0o777 : DEFAULT_FILE_MODE)
+    this.files.set(target, { bytes: typeof data === 'string' ? encoder.encode(data) : data, mtimeMs: this.touch(target), mode })
   }
 
   /**
@@ -345,11 +362,10 @@ export class MemoryVfs {
    * Open a file handle.
    * @param path - File path.
    * @param flags - Node open flags; `r` requires the file, `wx` refuses an existing one.
-   * @param mode - Accepted and ignored: the VFS has no permission bits.
+   * @param mode - Permission bits applied when the open creates the file.
    * @returns File handle.
    */
   open(path: string, flags = 'r', mode?: number): VfsFileHandle {
-    void mode
     const target = this.key(path)
     // Durable writers fsync the parent directory by opening it read-only.
     if (this.directories.has(target)) {
@@ -366,9 +382,10 @@ export class MemoryVfs {
     if (flags.startsWith('r') && !exists) fail('ENOENT', 'open', target)
     if (flags.startsWith('wx') && exists) fail('EEXIST', 'open', target)
     if (!flags.startsWith('r') && !this.directories.has(dirname(target))) fail('ENOENT', 'open', target)
-    if (flags.startsWith('w') && !flags.startsWith('wx')) this.writeFileSync(target, new Uint8Array())
-    if (flags.startsWith('wx')) this.writeFileSync(target, new Uint8Array(), { flag: 'wx' })
-    if (flags.startsWith('a') && !exists) this.writeFileSync(target, new Uint8Array())
+    const creation = mode === undefined ? {} : { mode }
+    if (flags.startsWith('w') && !flags.startsWith('wx')) this.writeFileSync(target, new Uint8Array(), creation)
+    if (flags.startsWith('wx')) this.writeFileSync(target, new Uint8Array(), { flag: 'wx', ...creation })
+    if (flags.startsWith('a') && !exists) this.writeFileSync(target, new Uint8Array(), creation)
     const appending = flags.startsWith('a')
     return {
       write: async (data: string | Uint8Array): Promise<{ bytesWritten: number }> => {
@@ -387,7 +404,7 @@ export class MemoryVfs {
       truncate: async (length = 0): Promise<void> => {
         const node = this.files.get(target)
         if (node === undefined) fail('ENOENT', 'ftruncate', target)
-        this.files.set(target, { bytes: node.bytes.slice(0, length), mtimeMs: this.touch(target) })
+        this.files.set(target, { bytes: node.bytes.slice(0, length), mtimeMs: this.touch(target), mode: node.mode })
       },
       ...this.handleTail(target),
     }
@@ -424,7 +441,7 @@ export class MemoryVfs {
     const merged = new Uint8Array(existing.bytes.length + addition.length)
     merged.set(existing.bytes)
     merged.set(addition, existing.bytes.length)
-    this.files.set(target, { bytes: merged, mtimeMs: this.touch(target) })
+    this.files.set(target, { bytes: merged, mtimeMs: this.touch(target), mode: existing?.mode ?? DEFAULT_FILE_MODE })
   }
 
   /**
@@ -453,8 +470,12 @@ export class MemoryVfs {
     }
     for (const candidate of [...this.directories]) {
       if (!candidate.startsWith(prefix) && candidate !== source) continue
+      const moved = candidate === source ? destination : join(destination, candidate.slice(prefix.length))
       this.directories.delete(candidate)
-      this.directories.add(candidate === source ? destination : join(destination, candidate.slice(prefix.length)))
+      this.directories.add(moved)
+      const bits = this.directoryModes.get(candidate)
+      this.directoryModes.delete(candidate)
+      if (bits !== undefined) this.directoryModes.set(moved, bits)
     }
     this.forgetIdentity(source)
     this.forgetIdentity(destination)
@@ -488,7 +509,26 @@ export class MemoryVfs {
     const target = this.key(path)
     const node = this.files.get(target)
     if (node === undefined) fail('ENOENT', 'truncate', target)
-    this.files.set(target, { bytes: node.bytes.slice(0, length), mtimeMs: this.touch(target) })
+    this.files.set(target, { bytes: node.bytes.slice(0, length), mtimeMs: this.touch(target), mode: node.mode })
+  }
+
+  /**
+   * Change an entry's permission bits; stat reads back exactly what was set.
+   * @param path - File or directory path.
+   * @param mode - New permission bits (`0o777` mask).
+   */
+  chmodSync(path: string, mode: number): void {
+    const target = this.key(path)
+    const node = this.files.get(target)
+    if (node !== undefined) {
+      node.mode = mode & 0o777
+      return
+    }
+    if (this.directories.has(target)) {
+      this.directoryModes.set(target, mode & 0o777)
+      return
+    }
+    fail('ENOENT', 'chmod', target)
   }
 
   /**
@@ -516,8 +556,13 @@ export class MemoryVfs {
       if (options?.recursive !== true) fail('ERR_FS_EISDIR', 'rm', target)
       const prefix = `${target}${SEP}`
       for (const candidate of [...this.files.keys()]) if (candidate.startsWith(prefix)) this.files.delete(candidate)
-      for (const candidate of [...this.directories]) if (candidate.startsWith(prefix)) this.directories.delete(candidate)
+      for (const candidate of [...this.directories]) {
+        if (!candidate.startsWith(prefix)) continue
+        this.directories.delete(candidate)
+        this.directoryModes.delete(candidate)
+      }
       this.directories.delete(target)
+      this.directoryModes.delete(target)
       this.forgetIdentity(target)
       return
     }
@@ -540,19 +585,23 @@ export class MemoryVfs {
    * Seed a file and its parent directories, for image loading and tests.
    * @param path - File path.
    * @param data - Text or bytes.
+   * @param mode - Permission bits recorded for the entry.
    */
-  seed(path: string, data: string | Uint8Array): void {
+  seed(path: string, data: string | Uint8Array, mode = DEFAULT_FILE_MODE): void {
     const target = this.key(path)
     this.mkdirSync(dirname(target), { recursive: true })
-    this.files.set(target, { bytes: typeof data === 'string' ? encoder.encode(data) : data, mtimeMs: this.touch(target) })
+    this.files.set(target, { bytes: typeof data === 'string' ? encoder.encode(data) : data, mtimeMs: this.touch(target), mode: mode & 0o777 })
   }
 
   /**
    * Create a directory and its parents.
    * @param path - Directory path.
+   * @param mode - Permission bits recorded for the directory itself.
    */
-  seedDirectory(path: string): void {
-    this.mkdirSync(this.key(path), { recursive: true })
+  seedDirectory(path: string, mode = DEFAULT_DIRECTORY_MODE): void {
+    const target = this.key(path)
+    this.mkdirSync(target, { recursive: true })
+    if (mode !== DEFAULT_DIRECTORY_MODE) this.directoryModes.set(target, mode & 0o777)
   }
 
   /**
@@ -586,10 +635,10 @@ export function loadVfsImage(image: Uint8Array, root = '/dsh', vfs = new MemoryV
     }
     const target = join(root, relativeName)
     if (entry.directory) {
-      vfs.seedDirectory(target)
+      vfs.seedDirectory(target, entry.mode)
       continue
     }
-    vfs.seed(target, entry.bytes)
+    vfs.seed(target, entry.bytes, entry.mode)
   }
   return vfs
 }

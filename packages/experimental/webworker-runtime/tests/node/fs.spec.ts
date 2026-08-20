@@ -168,7 +168,7 @@ fs.writeFileSync('/dsh/versioned.txt', 'one')
 {
   const stats = bigStats('/dsh/versioned.txt')
   check('bigint stat reports mode as a BigInt', typeof stats.mode, 'bigint')
-  check('bigint mode masks to an owner-only file permission', Number(stats.mode & 0o777n), 0o600)
+  check('bigint mode masks to the creation-default file permission', Number(stats.mode & 0o777n), 0o644)
   check('bigint stat reports the identity fields the version token needs', [
     typeof stats.dev, typeof stats.ino, typeof stats.size, typeof stats.mtimeNs, typeof stats.ctimeNs,
   ], ['bigint', 'bigint', 'bigint', 'bigint', 'bigint'])
@@ -199,5 +199,24 @@ fs.writeFileSync('/dsh/versioned.txt', 'one')
   check('a removed and recreated path reports a new identity', bigStats('/dsh/versioned.txt').ino !== first, true)
 }
 
-check('a directory reports owner-only directory mode in the bigint shape', Number(bigStats('/dsh/config').mode & 0o777n), 0o700)
+check('a directory reports the creation-default mode in the bigint shape', Number(bigStats('/dsh/config').mode & 0o777n), 0o755)
+
+// ---------------------------------------------------------------------------
+// Permission bits round-trip: creation takes the caller's mode, chmod changes
+// it, stat reads back the stored value. dsh-credentials-local's owner-only
+// check reads exactly this (writeFileAtomic writes `wx` + mode 600, renames
+// into place, then the provider stats the result).
+// ---------------------------------------------------------------------------
+
+fs.writeFileSync('/dsh/secrets.tmp', 'k: v\n', { mode: 0o600, flag: 'wx' })
+fs.renameSync('/dsh/secrets.tmp', '/dsh/secrets.yaml')
+check('a wx write with mode 600 stats as 600 after rename', fs.statSync('/dsh/secrets.yaml').mode & 0o777, 0o600)
+fs.writeFileSync('/dsh/secrets.yaml', 'k: w\n')
+check('a rewrite keeps the creation bits', fs.statSync('/dsh/secrets.yaml').mode & 0o777, 0o600)
+fs.chmodSync('/dsh/secrets.yaml', 0o640)
+check('chmod reads back exactly what was set', fs.statSync('/dsh/secrets.yaml').mode & 0o777, 0o640)
+await fsp.chmod('/dsh/secrets.yaml', 0o600)
+check('promises.chmod reads back through the bigint shape', Number(bigStats('/dsh/secrets.yaml').mode & 0o777n), 0o600)
+fs.mkdirSync('/dsh/vault', { mode: 0o700 })
+check('mkdir honours its mode option', fs.statSync('/dsh/vault').mode & 0o777, 0o700)
 check('promises.stat forwards the bigint option', typeof (await fsp.stat('/dsh/config', { bigint: true })).mode, 'bigint')

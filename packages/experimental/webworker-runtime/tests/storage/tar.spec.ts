@@ -21,6 +21,10 @@ describe('tar codec', () => {
     expect([...byName.keys()].sort()).toEqual(Object.keys(files).sort())
     expect([...byName.get('node_modules/pkg/lib/index.js')!.bytes]).toEqual([...payload])
     expect(byName.get('home/')!.bytes.byteLength).toBe(0)
+    // The header mode field carries the packed permission bits: normal
+    // 644/755, which the VFS mount reports back through stat.
+    expect(byName.get('node_modules/pkg/lib/index.js')!.mode).toBe(0o644)
+    expect(byName.get('home/')!.mode).toBe(0o755)
   })
 
   it('mounts as a VFS with directories synthesized along file paths', () => {

@@ -20,6 +20,8 @@ export interface TarEntry {
   readonly name: string
   readonly bytes: Uint8Array
   readonly directory: boolean
+  /** Permission bits from the header's mode field (`0o777` mask). */
+  readonly mode: number
 }
 
 /** Write an octal field: zero-padded digits with a terminating NUL. */
@@ -123,13 +125,14 @@ export function parseTar(archive: Uint8Array): TarEntry[] {
     const prefix = readField(header, 345, 155)
     const name = prefix === '' ? short : `${prefix}/${short}`
     const size = Number.parseInt(readField(header, 124, 12).trim() || '0', 8)
+    const mode = Number.parseInt(readField(header, 100, 8).trim() || '0', 8) & 0o777
     const typeflag = header[156]
     const directory = typeflag === 0x35 || name.endsWith('/')
     if (typeflag !== 0x30 && typeflag !== 0 && typeflag !== 0x35) {
       throw new Error(`vfs tar: unsupported entry type ${String.fromCharCode(typeflag ?? 0)} for "${name}"`)
     }
     const dataStart = offset + BLOCK
-    entries.push({ name, bytes: archive.subarray(dataStart, dataStart + size), directory })
+    entries.push({ name, bytes: archive.subarray(dataStart, dataStart + size), directory, mode })
     offset = dataStart + Math.ceil(size / BLOCK) * BLOCK
   }
   return entries

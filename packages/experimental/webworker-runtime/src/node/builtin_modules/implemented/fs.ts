@@ -6,7 +6,7 @@
  */
 import { requireActiveVfs } from '../../../storage/active.ts'
 import type { MemoryVfs } from '../../../storage/memory.ts'
-import type { VfsBigIntStats, VfsStatOptions, VfsStats } from '../../../storage/types.ts'
+import type { VfsBigIntStats, VfsStatOptions, VfsStats, VfsWriteOptions } from '../../../storage/types.ts'
 import { Buffer } from 'buffer'
 import { dirname } from './path.ts'
 
@@ -116,9 +116,10 @@ export function readFileSync(path: PathArg, options?: EncodingOption): Buffer | 
  * Write a file.
  * @param path - file path.
  * @param data - bytes or text.
+ * @param options - write flag and creation mode, forwarded to the VFS.
  */
-export function writeFileSync(path: PathArg, data: string | Uint8Array): void {
-  vfs().writeFileSync(asPath(path), data)
+export function writeFileSync(path: PathArg, data: string | Uint8Array, options?: VfsWriteOptions): void {
+  vfs().writeFileSync(asPath(path), data, options)
 }
 
 /**
@@ -147,6 +148,15 @@ export function existsSync(path: PathArg): boolean {
  */
 export function statSync(path: PathArg, options?: VfsStatOptions): VfsStats | VfsBigIntStats {
   return vfs().statSync(asPath(path), options)
+}
+
+/**
+ * Change an entry's permission bits; stat reads back exactly what was set.
+ * @param path - the path.
+ * @param mode - new permission bits (`0o777` mask), numeric or Node's octal string form.
+ */
+export function chmodSync(path: PathArg, mode: number | string): void {
+  vfs().chmodSync(asPath(path), typeof mode === 'string' ? Number.parseInt(mode, 8) : mode)
 }
 
 /**
@@ -190,7 +200,7 @@ export function readdirSync(
  * @param options - `recursive` creates parents.
  * @returns the first created path when recursive, else undefined.
  */
-export function mkdirSync(path: PathArg, options?: { recursive?: boolean }): string | undefined {
+export function mkdirSync(path: PathArg, options?: { recursive?: boolean; mode?: number }): string | undefined {
   return vfs().mkdirSync(asPath(path), options)
 }
 
@@ -489,19 +499,20 @@ export const promises = {
   writeFile: async (
     path: PathArg,
     data: string | Uint8Array,
-    options?: { flag?: string } | BufferEncoding | null,
+    options?: { flag?: string; mode?: number } | BufferEncoding | null,
   ): Promise<void> => {
     const flag = typeof options === 'object' && options !== null ? options.flag : undefined
+    const mode = typeof options === 'object' && options !== null ? options.mode : undefined
     if (flag !== undefined && flag.includes('x') && existsSync(path)) {
       const error = new Error(`EEXIST: file already exists, open '${asPath(path)}'`) as Error & { code: string }
       error.code = 'EEXIST'
       throw error
     }
     if (flag !== undefined && flag.startsWith('a')) appendFileSync(path, data)
-    else writeFileSync(path, data)
+    else writeFileSync(path, data, { ...flag === undefined ? {} : { flag }, ...mode === undefined ? {} : { mode } })
   },
   appendFile: async (path: PathArg, data: string | Uint8Array): Promise<void> => { appendFileSync(path, data) },
-  mkdir: async (path: PathArg, options?: { recursive?: boolean }): Promise<string | undefined> => mkdirSync(path, options),
+  mkdir: async (path: PathArg, options?: { recursive?: boolean; mode?: number }): Promise<string | undefined> => mkdirSync(path, options),
   mkdtemp: async (prefix: string): Promise<string> => mkdtempSync(prefix),
   readdir: async (
     path: PathArg,
@@ -514,8 +525,7 @@ export const promises = {
   unlink: async (path: PathArg): Promise<void> => { unlinkSync(path) },
   rename: async (from: PathArg, to: PathArg): Promise<void> => { renameSync(from, to) },
   access: async (path: PathArg): Promise<void> => { accessSync(path) },
-  // Permission bits have no meaning in the VFS; callers only ever relax them.
-  chmod: async (): Promise<void> => { /* no permission model */ },
+  chmod: async (path: PathArg, mode: number | string): Promise<void> => { chmodSync(path, mode) },
   cp: async (from: PathArg, to: PathArg): Promise<void> => {
     const source = asPath(from)
     const target = asPath(to)
@@ -567,7 +577,7 @@ type NodeFace = Partial<Omit<typeof import('node:fs'), OwnSignature>>
 /** CommonJS default export: the members `require()` hands a caller of this module. */
 export default {
   constants, promises, Dirent,
-  readFileSync, writeFileSync, appendFileSync, existsSync, statSync, lstatSync, realpathSync,
+  readFileSync, writeFileSync, appendFileSync, existsSync, statSync, lstatSync, realpathSync, chmodSync,
   readdirSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, renameSync, accessSync, opendirSync,
   openHandleSync, linkSync,
   openSync, readSync, writeSync, closeSync, watchFile, unwatchFile,
