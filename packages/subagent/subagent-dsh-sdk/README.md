@@ -23,21 +23,20 @@ The SDK client returns an owned child activity rather than a prompt result. The 
 | `completed` | `completed` | None. |
 | `max-tokens` | `max-tokens` | None; the stop reason is already actionable. |
 | `aborted` | `aborted` | `child-disposed` only for the closed `disposed` cause; local parent cancellation never adds one. |
-| `blocked` | `error` | `child-blocked`. |
+| `blocked` | `refusal` | None; the shared stop reason already identifies a declined task. |
 | `error` | `error` | `child-error`; the child failure message/code is excluded. |
-| `interrupted` | `error` | `child-interrupted`. |
 | no `turn/end` | `error` | `missing-terminal`. |
-| unknown variant | `error` | Fixed `unknown`; the value is not copied. |
+| unknown or unreachable variant | `error` | Fixed `child-unknown`; the value is not copied. |
 
 ## Failure diagnostics
 
 The first line follows the shared fixed form:
 
 ```text
-Subagent failure (provider: DSH SDK; stage: <stage>; category: <category>; child reason: <reason>)
+Subagent failure (provider: DSH SDK; stage: <stage>; category: <category>)
 ```
 
-Unavailable optional fields are omitted, and the shared result boundary limits the complete text to 4096 UTF-8 bytes. The provider derives `initialize`, `session-run`, `process`, or `shutdown` at the operation that owns the failure. `SdkProtocolError` and JSON-RPC error responses map to `protocol`, `RequestTimeoutError` maps to `timeout`, `TransportClosedError` maps to `transport` (with `process` stage during a published child run), and other exceptions use `unknown`. Classification never reads an error message, so the stderr tail carried by `TransportClosedError`, paths, task content, environment values, credentials, and protocol payloads remain Host-only.
+The shared result boundary limits the complete text to 4096 UTF-8 bytes. The provider derives `initialize`, `session-run`, or `shutdown` at the operation that owns the failure. `SdkProtocolError` and JSON-RPC error responses map to `protocol`, `TransportClosedError` maps to `transport`, and other exceptions use `unknown`. Classification never reads an error message, so the stderr tail carried by `TransportClosedError`, paths, task content, environment values, credentials, and protocol payloads remain Host-only. Request timeout classification is deferred until this provider configures or propagates a request timeout; the current SDK launch waits indefinitely for ordinary requests.
 
 Successful results and local cancellation omit diagnostics. Startup and shutdown rejections use the same safe line in their Error message while retaining the original cause internally. A diagnostic-bearing child `aborted` result remains `aborted`; the one-shot Job adapter classifies it as failed, while diagnostic-free local cancellation remains killed.
 

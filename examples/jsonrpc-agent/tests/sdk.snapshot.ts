@@ -105,7 +105,7 @@ const SCENARIOS: SdkScenario[] = [
   },
   {
     name: 'subagent-dsh-sdk-diagnostic',
-    prompt: 'Observe the DSH SDK diagnostic twice with subagent_dsh_sdk. First call it in the foreground. Then call it in the background and collect subagent-1 with job_output using wait true. After both failures, reply with exactly PARENT_OBSERVED_DSH_SDK_DIAGNOSTIC. Do not call any other tools.',
+    prompt: 'Observe the DSH SDK diagnostic twice. First call subagent_dsh_sdk in the foreground. Then call subagent_dsh_sdk_background in the background and collect subagent-1 with job_output using wait true. After both failures, reply with exactly PARENT_OBSERVED_DSH_SDK_DIAGNOSTIC. Do not call any other tools.',
     sessionId: 'sdk-snapshot-dsh-sdk-diagnostic',
     children: 0,
     configs: { live: diagnosticLiveConfig, replay: diagnosticReplayConfig },

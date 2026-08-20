@@ -12,7 +12,6 @@
           - id: llm-replay
             name: '@deepseek-ai/dsh-llm-replay'
             config:
-              paceMs: 100
               providers:
                 - id: deepseek-official
                   name: DeepSeek
@@ -37,5 +36,28 @@
               toolName: subagent_dsh_sdk
               backgroundMode: one-shot
               maxDepth: provider-managed
+          - id: subagent-dsh-sdk-diagnostic-background
+            name: '@deepseek-ai/dsh-subagent-dsh-sdk'
+            config:
+              providerName: dsh-sdk-diagnostic-background
+              command: !!js process.execPath
+              args:
+                - !!js process.env.DSH_TEST_FAKE_SDK_RUNTIME
+              provider: fake-provider
+              model: fake-model
+              env:
+                FAKE_TEXT: partial DSH SDK assistant text
+                FAKE_REASON_KIND: error
+                FAKE_INIT_READY: .dsh-sdk-background-ready
+                FAKE_INIT_GO: .dsh-sdk-background-release
+          - id: tool-subagent-dsh-sdk-diagnostic-background
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: dsh-sdk-diagnostic-background
+              toolName: subagent_dsh_sdk_background
+              backgroundMode: one-shot
+              maxDepth: provider-managed
           - id: tool-jobs-dsh-sdk-diagnostic
             name: '@deepseek-ai/dsh-tool-jobs'
+          - id: release-dsh-sdk-background-on-job-output
+            name: './tests/fixtures/subagent-dsh-sdk-release-on-job-output.ts'

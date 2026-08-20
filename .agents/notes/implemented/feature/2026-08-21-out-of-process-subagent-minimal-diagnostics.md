@@ -42,14 +42,13 @@ When an ACP permission request contributes to a non-completed result, a second f
 
 | Stage | Owned operation | Safe categories and facts |
 | --- | --- | --- |
-| `initialize` | Parent workspace resolution, SDK runtime spawn, and initialize handshake | `configuration`, `protocol`, `timeout`, `transport`, or `unknown` |
-| `session-run` | Prompt acceptance, session notifications, and final child reason | `child-error`, `child-interrupted`, `child-disposed`, `child-blocked`, `missing-terminal`, `protocol`, `timeout`, or `unknown` |
-| `process` | SDK transport closes during a published child run | `transport`; the Error message and its stderr tail stay internal |
+| `initialize` | Parent workspace resolution, SDK runtime spawn, and initialize handshake | `configuration`, `protocol`, `transport`, or `unknown` |
+| `session-run` | Prompt acceptance, session notifications, and final child reason | `child-error`, `child-disposed`, `child-unknown`, `missing-terminal`, `protocol`, `transport`, or `unknown` |
 | `shutdown` | Bounded SDK shutdown and runtime process release | The same typed SDK categories with shutdown stage |
 
-Child `completed`, `max-tokens`, and ordinary `aborted` results keep their existing shared stop reasons without extra text. An `aborted` turn whose closed cause is `disposed` keeps `aborted` and adds `child-disposed`. `blocked`, `error`, and `interrupted` remain `error` and add their fixed categories. A missing terminal event adds `missing-terminal`; an unknown reason uses `unknown` without copying the value or the child's structured failure message.
+Child `completed`, `max-tokens`, and ordinary `aborted` results keep their existing shared stop reasons without extra text. An `aborted` turn whose closed cause is `disposed` keeps `aborted` and adds `child-disposed`. `blocked` reuses `refusal`; `error` adds `child-error`. A missing terminal event adds `missing-terminal`; an unknown or unreachable reason uses `child-unknown` without copying the value or the child's structured failure message.
 
-`SdkProtocolError` and JSON-RPC error responses map to `protocol`, `RequestTimeoutError` maps to `timeout`, and `TransportClosedError` maps to `transport`; the provider never reads their messages. Other exceptions use `unknown`.
+`SdkProtocolError` and JSON-RPC error responses map to `protocol`, and `TransportClosedError` maps to `transport`; the provider never reads their messages. Other exceptions use `unknown`. Request timeout classification remains deferred because this provider does not configure or propagate a request timeout.
 
 ### Ownership and lifecycle
 
@@ -66,7 +65,7 @@ Startup publishes no run until the provider's handshake completes. A startup fai
 
 ## Verification
 
-ACP package tests drive a real stdio protocol child and pin every stop-reason mapping, remote-limit and unknown fallbacks, permission allow/deny facts, configuration, initialize, new-session, prompt, process, and teardown stages, startup rollback, successful-result and local-cancellation omission, partial output, concurrent-run isolation, Host-only raw errors, process quiescence, and the shared multibyte diagnostic limit. DSH SDK package tests drive the real SDK client against its stdio fake runtime and pin every child reason, typed SDK category, all four stages, startup and shutdown aggregation, partial output, cancellation omission, concurrency, sanitization, and quiescence. Loader compositions prove each real configured provider reaches the model-visible foreground result. Keyless ACP and JSON-RPC snapshots pin each provider's exact foreground and one-shot background diagnostic text.
+ACP package tests drive a real stdio protocol child and pin every stop-reason mapping, remote-limit and unknown fallbacks, permission allow/deny facts, configuration, initialize, new-session, prompt, process, and teardown stages, startup rollback, successful-result and local-cancellation omission, partial output, concurrent-run isolation, Host-only raw errors, process quiescence, and the shared multibyte diagnostic limit. DSH SDK package tests drive the real SDK client against its stdio fake runtime and pin every reachable child reason, current typed SDK category, initialize/session-run/shutdown stages, SDK-owned failed-start cleanup, cancellation cleanup, partial output, concurrency, sanitization, and quiescence. Loader compositions prove each real configured provider reaches the model-visible foreground result. Keyless ACP and JSON-RPC snapshots pin each provider's exact foreground and one-shot background diagnostic text.
 
 ## Alternatives considered
 
@@ -82,6 +81,6 @@ ACP package tests drive a real stdio protocol child and pin every stop-reason ma
 
 ## Consequences
 
-The parent can distinguish an ACP remote limit or permission decision and a DSH child-turn, protocol, timeout, transport/process, or shutdown failure without receiving child-controlled text. Startup and cleanup errors use the same safe facts as published results, while Host observation retains the original cause.
+The parent can distinguish an ACP remote limit or permission decision and a DSH child-turn, protocol, transport, or shutdown failure without receiving child-controlled text. Startup and cleanup errors use the same safe facts as published results, while Host observation retains the original cause.
 
 The diagnostic remains display text rather than a public protocol. Consumers may present it but must not branch on its format. This decision adds no retry policy, recovery controller, shared provider-error enum, stderr classifier, authentication taxonomy, session persistence, progress stream, or new ACP capability.

@@ -42,14 +42,13 @@ Subagent failure (provider: <provider>; stage: <stage>; category: <category>; st
 
 | Stage | 归属操作 | 安全 category 与事实 |
 | --- | --- | --- |
-| `initialize` | 父工作区解析、SDK 运行时 spawn 与 initialize 握手 | `configuration`、`protocol`、`timeout`、`transport` 或 `unknown` |
-| `session-run` | prompt 接受、会话通知与最终子轮次原因 | `child-error`、`child-interrupted`、`child-disposed`、`child-blocked`、`missing-terminal`、`protocol`、`timeout` 或 `unknown` |
-| `process` | 已发布子运行期间 SDK 传输关闭 | `transport`；Error 消息及其中的 stderr tail 仍留在内部 |
+| `initialize` | 父工作区解析、SDK 运行时 spawn 与 initialize 握手 | `configuration`、`protocol`、`transport` 或 `unknown` |
+| `session-run` | prompt 接受、会话通知与最终子轮次原因 | `child-error`、`child-disposed`、`child-unknown`、`missing-terminal`、`protocol`、`transport` 或 `unknown` |
 | `shutdown` | 有界 SDK shutdown 与运行时进程释放 | 使用 shutdown stage 的同一套 typed SDK category |
 
-子 `completed`、`max-tokens` 与普通 `aborted` 结果保持既有共享结束原因，不附加文本。闭集原因是 `disposed` 的 `aborted` 轮次仍保持 `aborted`，并附加 `child-disposed`。`blocked`、`error` 与 `interrupted` 继续映射到 `error`，并附加各自固定 category。缺失终态事件会附加 `missing-terminal`；未知原因使用 `unknown`，且不复制原值或子进程结构化失败消息。
+子 `completed`、`max-tokens` 与普通 `aborted` 结果保持既有共享结束原因，不附加文本。闭集原因是 `disposed` 的 `aborted` 轮次仍保持 `aborted`，并附加 `child-disposed`。`blocked` 复用 `refusal`；`error` 附加 `child-error`。缺失终态事件会附加 `missing-terminal`；未知或不可达原因使用 `child-unknown`，且不复制原值或子进程结构化失败消息。
 
-`SdkProtocolError` 与 JSON-RPC 错误响应映射为 `protocol`，`RequestTimeoutError` 映射为 `timeout`，`TransportClosedError` 映射为 `transport`；提供方绝不读取其消息。其他异常使用 `unknown`。
+`SdkProtocolError` 与 JSON-RPC 错误响应映射为 `protocol`，`TransportClosedError` 映射为 `transport`；提供方绝不读取其消息。其他异常使用 `unknown`。由于本提供方没有配置或传播 request timeout，请求超时分类继续推迟。
 
 ### 所有权与生命周期
 
@@ -66,7 +65,7 @@ Subagent failure (provider: <provider>; stage: <stage>; category: <category>; st
 
 ## Verification
 
-ACP 包测试通过真实 stdio 协议子进程固定全部结束原因映射、远端限制与 unknown 回退、权限 allow/deny 事实、configuration、initialize、new-session、prompt、process 与 teardown stage、启动回滚、成功结果与本地取消省略、部分输出、并发运行隔离、仅 Host 可见的原始错误、进程完全停稳，以及共享多字节诊断限制。DSH SDK 包测试通过真实 SDK 客户端驱动其 stdio 伪运行时，固定全部子轮次原因、typed SDK category、四个 stage、启动与 shutdown 聚合、部分输出、取消省略、并发、脱敏与停稳。Loader 组合证明两个真实配置的提供方都能到达模型可见前台结果。无密钥 ACP 与 JSON-RPC snapshot 会固定各自提供方的准确前台与一次性后台诊断文本。
+ACP 包测试通过真实 stdio 协议子进程固定全部结束原因映射、远端限制与 unknown 回退、权限 allow/deny 事实、configuration、initialize、new-session、prompt、process 与 teardown stage、启动回滚、成功结果与本地取消省略、部分输出、并发运行隔离、仅 Host 可见的原始错误、进程完全停稳，以及共享多字节诊断限制。DSH SDK 包测试通过真实 SDK 客户端驱动其 stdio 伪运行时，固定全部可达子轮次原因、当前 typed SDK category、initialize/session-run/shutdown stage、SDK 自有失败启动清理、本地取消清理、部分输出、并发、脱敏与停稳。Loader 组合证明两个真实配置的提供方都能到达模型可见前台结果。无密钥 ACP 与 JSON-RPC snapshot 会固定各自提供方的准确前台与一次性后台诊断文本。
 
 ## Alternatives considered
 
@@ -82,6 +81,6 @@ ACP 包测试通过真实 stdio 协议子进程固定全部结束原因映射、
 
 ## Consequences
 
-父 agent 可以区分 ACP 远端限制或权限决定，以及 DSH 子轮次、协议、超时、传输/进程或 shutdown 失败，同时不会接收子进程控制的文本。启动和清理错误与已发布结果使用同一套安全事实，而 Host 观测仍保留原始 cause。
+父 agent 可以区分 ACP 远端限制或权限决定，以及 DSH 子轮次、协议、传输或 shutdown 失败，同时不会接收子进程控制的文本。启动和清理错误与已发布结果使用同一套安全事实，而 Host 观测仍保留原始 cause。
 
 诊断仍是展示文本，不是公共协议。消费方可以呈现它，但不得按格式分支。本决策不增加重试策略、恢复控制器、共享提供方错误 enum、stderr 分类器、认证分类、会话持久化、进度流或新的 ACP 能力。

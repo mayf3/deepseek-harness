@@ -56,7 +56,9 @@ export class DeepSeekHarness implements AsyncDisposable {
    * Start the subprocess and perform the `initialize` handshake once. On
    * failure the runtime is reaped and a fresh client replaces it
    * (`HarnessClient.close` is permanent), so a later call retries with a new
-   * subprocess — unless {@link close} already ended this harness.
+   * subprocess — unless {@link close} already ended this harness. When both
+   * initialize and SDK-owned cleanup fail, rejects with an `AggregateError`
+   * whose ordered errors preserve both causes.
    * @returns settlement of the (memoized) handshake.
    */
   start(): Promise<void> {
@@ -71,7 +73,14 @@ export class DeepSeekHarness implements AsyncDisposable {
         })
       } catch (error) {
         this.initialized = undefined
-        await this.clientInstance.close()
+        try {
+          await this.clientInstance.close()
+        } catch (cleanupError: unknown) {
+          throw new AggregateError(
+            [error, cleanupError],
+            'DeepSeek Harness initialization and cleanup failed',
+          )
+        }
         if (!this.closed) this.clientInstance = new HarnessClient(this.launch)
         throw error
       }

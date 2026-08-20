@@ -16,7 +16,6 @@ import {
   DeepSeekHarness,
   type HarnessNotification,
   JsonRpcResponseError,
-  RequestTimeoutError,
   SdkProtocolError,
   TransportClosedError,
 } from '@deepseek-ai/dsh-sdk-client'
@@ -74,24 +73,21 @@ export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 /** Default bound on the protocol `shutdown` exchange during dispose. */
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 1_000
 
-type SdkFailureStage = 'initialize' | 'session-run' | 'process' | 'shutdown'
+type SdkFailureStage = 'initialize' | 'session-run' | 'shutdown'
 
 type SdkFailureCategory =
   | 'configuration'
   | 'protocol'
-  | 'timeout'
   | 'transport'
   | 'child-error'
-  | 'child-interrupted'
   | 'child-disposed'
-  | 'child-blocked'
+  | 'child-unknown'
   | 'missing-terminal'
   | 'unknown'
 
 interface SdkFailureFacts {
   readonly stage: SdkFailureStage
   readonly category: SdkFailureCategory
-  readonly childReason?: 'error' | 'interrupted' | 'disposed' | 'blocked' | 'missing' | 'unknown'
 }
 
 /** Fixed safe failure text derived only from provider-owned structured facts. */
@@ -101,7 +97,6 @@ function failureDiagnostic(facts: SdkFailureFacts): string {
     `stage: ${facts.stage}`,
     `category: ${facts.category}`,
   ]
-  if (facts.childReason !== undefined) fields.push(`child reason: ${facts.childReason}`)
   return `Subagent failure (${fields.join('; ')})`
 }
 
@@ -124,12 +119,10 @@ export function sdkConfigurationFailure(cause: unknown): Error {
 /** Classify one SDK rejection without reading its message or stderr tail. */
 function sdkFailure(error: unknown, stage: SdkFailureStage): SdkRunFailure {
   const facts: SdkFailureFacts = error instanceof TransportClosedError
-    ? { stage: stage === 'session-run' ? 'process' : stage, category: 'transport' }
-    : error instanceof RequestTimeoutError
-      ? { stage, category: 'timeout' }
-      : error instanceof SdkProtocolError || error instanceof JsonRpcResponseError
-        ? { stage, category: 'protocol' }
-        : { stage, category: 'unknown' }
+    ? { stage, category: 'transport' }
+    : error instanceof SdkProtocolError || error instanceof JsonRpcResponseError
+      ? { stage, category: 'protocol' }
+      : { stage, category: 'unknown' }
   return new SdkRunFailure(facts, error)
 }
 
@@ -141,18 +134,16 @@ function childDiagnostic(reason: TurnEndReason | undefined): string | undefined 
       return undefined
     case 'aborted':
       return reason.reason.kind === 'disposed'
-        ? failureDiagnostic({ stage: 'session-run', category: 'child-disposed', childReason: 'disposed' })
+        ? failureDiagnostic({ stage: 'session-run', category: 'child-disposed' })
         : undefined
     case 'blocked':
-      return failureDiagnostic({ stage: 'session-run', category: 'child-blocked', childReason: 'blocked' })
+      return undefined
     case 'error':
-      return failureDiagnostic({ stage: 'session-run', category: 'child-error', childReason: 'error' })
-    case 'interrupted':
-      return failureDiagnostic({ stage: 'session-run', category: 'child-interrupted', childReason: 'interrupted' })
+      return failureDiagnostic({ stage: 'session-run', category: 'child-error' })
     case undefined:
-      return failureDiagnostic({ stage: 'session-run', category: 'missing-terminal', childReason: 'missing' })
+      return failureDiagnostic({ stage: 'session-run', category: 'missing-terminal' })
     default:
-      return failureDiagnostic({ stage: 'session-run', category: 'unknown', childReason: 'unknown' })
+      return failureDiagnostic({ stage: 'session-run', category: 'child-unknown' })
   }
 }
 
@@ -171,6 +162,8 @@ export function sdkStopReason(reason: TurnEndReason | undefined): SubagentStopRe
       return 'max-tokens'
     case 'aborted':
       return 'aborted'
+    case 'blocked':
+      return 'refusal'
     // error / interrupted / disposed / a future merged variant /
     // no turn at all: the task did NOT finish cleanly — surface a generic
     // failure so the consumer maps it to an isError result.
@@ -195,6 +188,24 @@ function reportFailure(spec: SdkRunSpec, error: unknown): void {
   } catch {
     // Host diagnostic logging cannot replace the child failure.
   }
+}
+
+/** Map an SDK-owned failed-start aggregate into safe initialize/shutdown lines. */
+function sdkStartupFailure(spec: SdkRunSpec, error: unknown): Error {
+  if (!(error instanceof AggregateError) || error.errors.length < 2) {
+    reportFailure(spec, error)
+    return sdkFailure(error, 'initialize')
+  }
+  const initializeError: unknown = error.errors[0]
+  const cleanupError: unknown = error.errors[1]
+  reportFailure(spec, initializeError)
+  reportFailure(spec, cleanupError)
+  const initializeFailure = sdkFailure(initializeError, 'initialize')
+  const cleanupFailure = sdkFailure(cleanupError, 'shutdown')
+  return new AggregateError(
+    [initializeFailure, cleanupFailure],
+    `${initializeFailure.message}; ${cleanupFailure.message}`,
+  )
 }
 
 /**
@@ -256,23 +267,17 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
   } catch (error: unknown) {
     request.signal.removeEventListener('abort', onAbort)
     const cancelledBeforeCleanup = flags.cancelled
-    const failure = sdkFailure(error, 'initialize')
-    if (!cancelledBeforeCleanup) reportFailure(spec, error)
+    if (!cancelledBeforeCleanup) {
+      throw sdkStartupFailure(spec, error)
+    }
     try {
       await harness.close()
     } catch (cleanupError: unknown) {
       reportFailure(spec, cleanupError)
       const cleanupFailure = sdkFailure(cleanupError, 'shutdown')
-      if (cancelledBeforeCleanup) throw cleanupFailure
-      throw new AggregateError(
-        [failure, cleanupFailure],
-        `${failure.message}; ${cleanupFailure.message}`,
-      )
+      throw new AggregateError([cleanupFailure], cleanupFailure.message)
     }
-    if (cancelledBeforeCleanup) {
-      throw new Error('subagent request was aborted before the SDK child started')
-    }
-    throw failure
+    throw new Error('subagent request was aborted before the SDK child started')
   }
 
   const childSessionId = `session-${randomUUID().replaceAll('-', '')}`

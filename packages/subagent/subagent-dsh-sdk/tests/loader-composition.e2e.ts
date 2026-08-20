@@ -128,7 +128,7 @@ describe('SDK subagent cwd inheritance through a real cordis.yml', () => {
     expect(stderr).not.toContain('UNHANDLED')
     expect(toolResultText(events)).toBe(
       'Error: subagent run failed\n'
-      + 'Diagnostic: Subagent failure (provider: DSH SDK; stage: session-run; category: child-error; child reason: error)\n'
+      + 'Diagnostic: Subagent failure (provider: DSH SDK; stage: session-run; category: child-error)\n'
       + 'Partial output before the run ended:\npartial child loader answer',
     )
   }, 135_000)
