@@ -121,7 +121,7 @@ collectIndexInjections(): IndexInjection[]
 renderIndex(html: string): string
 ```
 
-Source: [`packages/host/webserver/src/index.ts:73`](../../packages/host/webserver/src/index.ts)
+Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)
 
 <a id="webserver-events"></a>
 
@@ -144,5 +144,5 @@ Collect the structured index injection table. Emitted on every index render and 
 'webserver/index-inject'(table: IndexInjection[]): void
 ```
 
-Source: [`packages/host/webserver/src/index.ts:34`](../../packages/host/webserver/src/index.ts)
+Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)
 <!-- END GENERATED cordis-surface -->
