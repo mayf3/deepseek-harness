@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-文档站只提供渲染后的 HTML，agent 读文档要么抓取 VitePress 标记，要么退回仓库源文件，而后者的链接和图片引用跟随源码布局而非公开路由。Claude 平台文档确立了本特性采纳的约定：任意页面 URL 加 `.md` 后缀即得到该页的原始 Markdown，站根 `llms.txt` 作为面向 agent 的索引。[站点投影](2026-07-13-documentation-site-projection.md)本就为公开站点重写每页链接，缺的只是把这份投影以纯 Markdown 形式对外提供。
+文档站只提供渲染后的 HTML，agent 读文档要么抓取 VitePress 标记，要么退回仓库源文件，而后者的链接和图片引用跟随源码布局而非公开路由。Claude 平台文档确立了本特性采纳的约定：任意页面 URL 加 `.md` 后缀即得到该页的原始 Markdown，站根 `llms.txt` 作为面向 agent 的索引。[站点投影](2026-07-13-documentation-site-projection.zh.md)本就为公开站点重写每页链接，缺的只是把这份投影以纯 Markdown 形式对外提供。
 
 ## Decision
 

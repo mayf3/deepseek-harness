@@ -670,10 +670,12 @@ describe('rawMarkdownFiles', () => {
 describe('raw Markdown projection of the published manifest', () => {
   let mirror: string
 
+  // Coverage instrumentation on a loaded CI runner stretches the full-manifest
+  // emission and the 181-file link walk past vitest's 5s default.
   beforeAll(() => {
     mirror = mkdtempSync(join(tmpdir(), 'dsh-doc-mirror-real-'))
     emitRawMarkdownPages(mirror, { pages: docsPages, repoRoot: repositoryRoot, repositoryRef: 'master' })
-  })
+  }, 60_000)
 
   afterAll(() => {
     rmSync(mirror, { recursive: true, force: true })
@@ -693,7 +695,7 @@ describe('raw Markdown projection of the published manifest', () => {
     }
   })
 
-  it('resolves every relative link inside the emitted tree', () => {
+  it('resolves every relative link inside the emitted tree', { timeout: 60_000 }, () => {
     // Raw pages are read outside the site, so a relative target that only the
     // rendered site serves would strand every agent following it.
     const broken: string[] = []
