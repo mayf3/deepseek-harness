@@ -95,11 +95,6 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
   b.view.rerender(<WorkspaceBrowser {...b.props} />)
 }
 
-/** Every tree row's text, group headers included, in render order. */
-function rowsOf(): (string | null)[] {
-  return screen.getAllByRole('treeitem').map(row => row.textContent)
-}
-
 describe('WorkspaceBrowser', () => {
   it('workspace hover card shows a POSIX home descendant as ~', () => {
     vi.useFakeTimers()
@@ -473,207 +468,69 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('新会话')).toBeNull()
   })
 
-  it('pins the current blank New Session row first in Last-updated mode (workspace view)', async () => {
+  it('promotes the blank selected by New Session in its grouped and flat orders', async () => {
+    const items = [
+      summary('old', 100),
+      summary('blank', 150, { blank: true }),
+      summary('mid', 200),
+    ]
+    const startSession = vi.fn()
     const b = mount({
-      useSessions: hook(sessionState([
-        summary('old', 100),
-        summary('blank', 150, { blank: true }),
-        summary('mid', 200),
-      ])),
+      useSessions: hook(sessionState(items)),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['old', 'blank', 'mid'])])),
-    })
-    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
-    await waitFor(() => { expect(b.store.getSnapshot().orderBy).toBe('updated') })
-    fireEvent.click(screen.getByText('alpha'))
-    await waitFor(() => { expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true }) })
-    // The stale blank is hidden while it is not the current session.
-    expect(rowsOf()).toEqual([
-      expect.stringContaining('alpha'),
-      expect.stringContaining('mid'),
-      expect.stringContaining('old'),
-    ])
-    // New Session reuses the blank: it becomes current and jumps to the top,
-    // even though its updatedAt (creation time) is older than mid's.
-    rerender(b, {
-      useSessions: hook(sessionState([
-        summary('old', 100),
-        summary('blank', 150, { blank: true }),
-        summary('mid', 200),
-      ], { current: sid('blank') })),
+      startSession,
     })
     await waitFor(() => {
-      expect(rowsOf()).toEqual([
-        expect.stringContaining('alpha'),
-        expect.stringContaining('新会话'),
-        expect.stringContaining('mid'),
-        expect.stringContaining('old'),
-      ])
+      expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['old', 'blank', 'mid'])
+    })
+    startSession.mockImplementation(() => {
+      rerender(b, { useSessions: hook(sessionState(items, { current: sid('blank') })) })
+    })
+    fireEvent.click(screen.getByRole('button', { name: '在“alpha”中新建会话' }))
+    expect(startSession).toHaveBeenCalledWith(wid('alpha'))
+    await waitFor(() => {
+      expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['blank', 'old', 'mid'])
+      expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toEqual(['blank'])
+    })
+    b.store.actions.setGroupBy('flat')
+    await waitFor(() => {
+      expect(b.store.getSnapshot().sessionOrderByAccount[FLAT_SESSION_ORDER_KEY]).toEqual(['blank', 'mid', 'old'])
     })
   })
 
-  it('does not pin a non-blank current session in Last-updated mode', async () => {
-    const b = mount({
-      useSessions: hook(sessionState([
-        summary('old', 100),
-        summary('mid', 200),
-      ])),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['old', 'mid'])])),
-    })
-    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
-    await waitFor(() => { expect(b.store.getSnapshot().orderBy).toBe('updated') })
-    fireEvent.click(screen.getByText('alpha'))
-    await waitFor(() => { expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true }) })
-    // Opening an ordinary session is navigation, not a New Session gesture:
-    // the selected row stays at its recency position.
-    rerender(b, {
-      useSessions: hook(sessionState([
-        summary('old', 100),
-        summary('mid', 200),
-      ], { current: sid('old') })),
-    })
-    await waitFor(() => {
-      expect(rowsOf()).toEqual([
-        expect.stringContaining('alpha'),
-        expect.stringContaining('mid'),
-        expect.stringContaining('old'),
-      ])
-    })
-  })
-
-  it('pins the current blank first in the flat list too', async () => {
-    const b = mount({
-      useSessions: hook(sessionState([
-        summary('old', 100),
-        summary('blank', 150, { blank: true }),
-        summary('mid', 200),
-      ], { current: sid('blank') })),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['old', 'blank', 'mid'])])),
-    })
-    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
-    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
-    await waitFor(() => { expect(b.store.getSnapshot().orderBy).toBe('updated') })
-    await waitFor(() => {
-      expect(rowsOf()).toEqual([
-        expect.stringContaining('新会话'),
-        expect.stringContaining('mid'),
-        expect.stringContaining('old'),
-      ])
-    })
-  })
-
-  it('pins the current blank first in manual mode too', async () => {
-    const b = mount({
-      useSessions: hook(sessionState([
-        summary('old', 100),
-        summary('blank', 150, { blank: true }),
-        summary('mid', 200),
-      ], { current: sid('blank') })),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['old', 'blank', 'mid'])])),
-    })
-    expect(b.store.getSnapshot().orderBy).toBe('manual')
-    // The current session's group auto-expands; the New Session being
-    // created renders first even though the manual account order holds it
-    // in its creation-time slot.
-    await waitFor(() => { expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true }) })
-    // Manual order follows the Workspace account [old, blank, mid]; the
-    // current blank is pinned first, the rest keeps the account order.
-    await waitFor(() => {
-      expect(rowsOf()).toEqual([
-        expect.stringContaining('alpha'),
-        expect.stringContaining('新会话'),
-        expect.stringContaining('old'),
-        expect.stringContaining('mid'),
-      ])
-    })
-  })
-
-  it('skips drags masked by the pinned New Session row without reordering or writing Host', async () => {
+  it('does not repeat blank promotion after a manual drag or the first prompt', async () => {
     const insertSessionBefore = vi.fn(async () => {})
     const b = mount({
       useSessions: hook(sessionState([
-        summary('one', 3),
-        summary('blank', 2, { blank: true }),
-        summary('three', 1),
+        summary('old', 100),
+        summary('blank', 150, { blank: true }),
+        summary('mid', 200),
       ], { current: sid('blank') })),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'blank', 'three'])])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['old', 'blank', 'mid'])])),
       insertSessionBefore,
     })
-    // The current session's group auto-expands, exposing the pinned rows.
     await waitFor(() => {
-      expect(b.store.getSnapshot().sessionOrderByAccount['alpha']).toEqual(['one', 'blank', 'three'])
+      expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['blank', 'old', 'mid'])
     })
-    await waitFor(() => {
-      expect(rowsOf()).toEqual([
-        expect.stringContaining('alpha'),
-        expect.stringContaining('新会话'),
-        expect.stringContaining('one'),
-        expect.stringContaining('three'),
-      ])
-    })
-    const blankRow = screen.getByText('新会话').closest('[role="treeitem"]') as HTMLElement
-    const one = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
-    const three = screen.getByText('three').closest('[role="treeitem"]') as HTMLElement
-    three.getBoundingClientRect = () => ({
+    const blank = screen.getByText('新会话').closest('[role="treeitem"]') as HTMLElement
+    const mid = screen.getByText('mid').closest('[role="treeitem"]') as HTMLElement
+    mid.getBoundingClientRect = () => ({
       top: 150, bottom: 184, left: 0, right: 200, width: 200, height: 34, x: 0, y: 150, toJSON: () => ({}),
     })
-    // Dragging the pinned New Session row to the end would render unchanged
-    // (the pin returns it to the front): the whole commit is skipped.
-    fireEvent.dragStart(blankRow, { dataTransfer: dragData() })
-    fireDrag(three, 'drop', 180)
-    expect(b.store.getSnapshot().sessionOrderByAccount['alpha']).toEqual(['one', 'blank', 'three'])
-    expect(insertSessionBefore).not.toHaveBeenCalled()
-    // Parking the row directly below the pinned blank above it is masked the
-    // same way: no browser reorder and no Host write.
-    blankRow.getBoundingClientRect = () => ({
-      top: 100, bottom: 134, left: 0, right: 200, width: 200, height: 34, x: 0, y: 100, toJSON: () => ({}),
-    })
-    fireEvent.dragStart(one, { dataTransfer: dragData() })
-    fireDrag(blankRow, 'drop', 105)
-    expect(b.store.getSnapshot().sessionOrderByAccount['alpha']).toEqual(['one', 'blank', 'three'])
-    expect(insertSessionBefore).not.toHaveBeenCalled()
-  })
+    fireEvent.dragStart(blank, { dataTransfer: dragData() })
+    fireDrag(mid, 'drop', 180)
+    expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['old', 'mid', 'blank'])
+    expect(insertSessionBefore).toHaveBeenCalledWith(wid('alpha'), sid('blank'), undefined)
 
-  it('releases the pin when the current New Session stops being blank', async () => {
-    const b = mount({
-      useSessions: hook(sessionState([
-        summary('one', 3),
-        summary('blank', 2, { blank: true }),
-        summary('three', 1),
-      ], { current: sid('blank') })),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'blank', 'three'])])),
-    })
-    // The current session's group auto-expands, exposing the pinned rows.
-    await waitFor(() => {
-      expect(rowsOf()).toEqual([
-        expect.stringContaining('alpha'),
-        expect.stringContaining('新会话'),
-        expect.stringContaining('one'),
-        expect.stringContaining('three'),
-      ])
-    })
-    // The pin is a render-time effect only: the persisted account order
-    // keeps the blank in its creation-time slot throughout.
-    expect(b.store.getSnapshot().sessionOrderByAccount['alpha']).toEqual(['one', 'blank', 'three'])
-    // Sending the first prompt turns the blank into a real session; the pin
-    // is released and the row returns to its stored slot.
     rerender(b, {
       useSessions: hook(sessionState([
-        summary('one', 3),
-        summary('blank', 2, { blank: false }),
-        summary('three', 1),
+        summary('old', 100),
+        summary('blank', 150),
+        summary('mid', 200),
       ], { current: sid('blank') })),
     })
     await waitFor(() => {
-      expect(rowsOf()).toEqual([
-        expect.stringContaining('alpha'),
-        expect.stringContaining('one'),
-        expect.stringContaining('blank'),
-        expect.stringContaining('three'),
-      ])
+      expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['old', 'mid', 'blank'])
     })
   })
 
