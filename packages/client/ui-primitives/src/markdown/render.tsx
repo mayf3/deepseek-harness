@@ -400,14 +400,22 @@ function renderTable(node: Md.Table, key: Key, context: MarkdownRenderContext): 
   const align = node.align ?? null
   const [headRow, ...bodyRows] = node.children
   const columns = align === null ? headRow?.children.length ?? 0 : align.length
-  // Four or more columns read as a comparison matrix: the wrapper keeps the
+  // Four or more columns read as a comparison matrix: the block keeps the
   // table at natural width and exposes the stable `md-table-wide` hook so a
   // hosting layout (the chat transcript) can widen it past the message
   // column. Narrower tables — and any table inside a blockquote — fill the
   // column and wrap instead (deepsuite chat TableWrapper parity).
   const wide = columns >= 4 && context.inBlockquote !== true
   return (
-    <div key={key} className={clsx(css.tableScroll, wide ? 'md-table-wide' : css.tableFill)}>
+    // Wide tables rest with overflow-x hidden (the hover-revealed bar in
+    // MarkdownText.module.css), which drops Chromium's implicit scroller
+    // focusability — the explicit tabindex keeps them keyboard-reachable,
+    // and :focus-visible restores scrolling.
+    <div
+      key={key}
+      className={clsx(css.tableScroll, wide ? 'md-table-wide' : css.tableFill)}
+      tabIndex={wide ? 0 : undefined}
+    >
       <table>
         {headRow !== undefined && <thead>{renderTableRow(headRow, 'th', align, 0, context)}</thead>}
         {bodyRows.length > 0 && (

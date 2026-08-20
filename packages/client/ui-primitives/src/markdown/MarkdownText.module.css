@@ -177,6 +177,26 @@
   overscroll-behavior-x: contain;
 }
 
+/* Wide tables reveal their horizontal bar on hover (or keyboard focus)
+   instead of keeping it painted. Chromium never repaints state-conditioned
+   scrollbar STYLES (neither hover-conditioned `::-webkit-scrollbar*` rules
+   nor a :hover `scrollbar-color` change reaches the painted bar), so the
+   toggle is `overflow-x` itself — a layout change repaints reliably. The
+   resting padding matches the themed bar's height, so on an overflowing
+   table the appearing bar exactly replaces it and nothing below shifts.
+   Wheel and trackpad scrolling need the pointer over the table, which is
+   already the hover that re-enables `auto`. */
+.tableScroll:global(.md-table-wide) {
+  overflow-x: hidden;
+  padding-bottom: var(--dsh-scrollbar-width, 8px);
+}
+
+.tableScroll:global(.md-table-wide):hover,
+.tableScroll:global(.md-table-wide):focus-visible {
+  overflow-x: auto;
+  padding-bottom: 0;
+}
+
 /* Chromium keyboard-focuses scrollable containers by default; the ring uses
    the sheet's link focus color. */
 .tableScroll:focus-visible {

@@ -26,7 +26,7 @@ Status: implemented
 
 ## 后果
 
-普通宽表原地换行阅读；多列表格保持可读的自然宽度，在布局有空余处横跨整个转录区，剩余部分滚动——无需任何交互，也没有状态要恢复。Chromium 默认让可滚动容器可键盘聚焦，因此包裹层无需附加属性即可键盘滚动（`:focus-visible` 有焦点圈）。两个需要知道的点：ChatView `.scroll` 上的 `container-type: inline-size` 使它成为转录区内后续使用容器单位的最近查询容器；不足四列的表格现在总是拉伸到整列宽（deepsuite chat 行为），而不是按内容收缩。
+普通宽表原地换行阅读；多列表格保持可读的自然宽度，在布局有空余处横跨整个转录区，剩余部分滚动——无需任何交互，也没有状态要恢复。宽表的横向滚动条悬停才出现、不再常驻：Chromium 从不重绘状态条件化的滚动条样式（悬停条件化的 `::-webkit-scrollbar*` 规则和 `:hover` 下的 `scrollbar-color` 变化都到不了已绘制的滚动条——有头与无头模式均已实测），因此显隐切换的是 `overflow-x` 本身（静止 `hidden`，悬停或聚焦 `auto`），静止时的 `padding-bottom` 与主题滚动条高度一致，出现的滚动条恰好顶替它、下方内容不动。静止的 `overflow-x: hidden` 会失去 Chromium 对滚动容器的隐式可聚焦性，因此宽表包裹层带显式 `tabindex="0"`（`:focus-visible` 有焦点圈，聚焦后方向键可滚）。两个需要知道的点：ChatView `.scroll` 上的 `container-type: inline-size` 使它成为转录区内后续使用容器单位的最近查询容器；不足四列的表格现在总是拉伸到整列宽（deepsuite chat 行为），而不是按内容收缩。
 
 ## 测试
 
