@@ -44,8 +44,9 @@ export class DeepSeekHarness implements AsyncDisposable {
 
   /**
    * The underlying JSON-RPC client (exposed for low-level access). A failed
-   * handshake reaps its runtime and swaps in a fresh instance, so do not
-   * cache this across a failed {@link start}.
+   * handshake swaps in a fresh instance only after cleanup proves the runtime
+   * exited; cleanup failure retains this client, so do not cache it across a
+   * failed {@link start}.
    * @returns the client currently owning the runtime subprocess.
    */
   get client(): HarnessClient {
@@ -221,6 +222,20 @@ function validatedTurnEndReason(value: unknown): TurnEndReason {
   if (value.kind === 'aborted') {
     if (!isRecord(value.reason) || typeof value.reason.kind !== 'string') {
       throw new SdkProtocolError(`turn/end carried a malformed aborted reason: ${JSON.stringify(value)}`)
+    }
+    switch (value.reason.kind) {
+      case 'user':
+      case 'parent':
+      case 'disposed':
+      case 'legacy':
+        break
+      case 'hook':
+        if (typeof value.reason.reason !== 'string') {
+          throw new SdkProtocolError(`turn/end carried a malformed hook abort reason: ${JSON.stringify(value)}`)
+        }
+        break
+      default:
+        throw new SdkProtocolError(`turn/end carried an unknown abort reason: ${JSON.stringify(value)}`)
     }
   }
   return value as unknown as TurnEndReason

@@ -533,9 +533,16 @@ describe('wire payload validation', () => {
     await expect(harness.run('no-data')).rejects.toThrow(SdkProtocolError)
   })
 
-  it.each(['1', 'aborted', 'no-data'])('rejects malformed turn/end input %s as a protocol error', async (mode) => {
+  it.each(['1', 'aborted', 'abort-unknown', 'hook', 'no-data'])('rejects malformed turn/end input %s as a protocol error', async (mode) => {
     const harness = harnessWith({ FAKE_MALFORMED_REASON: mode })
     await expect(harness.run('bad-reason')).rejects.toThrow(SdkProtocolError)
+  })
+
+  it('accepts the complete hook cancellation cause', async () => {
+    const harness = harnessWith({ FAKE_REASON_KIND: 'aborted', FAKE_ABORT_REASON_KIND: 'hook' })
+    const result = await harness.run('hook-abort')
+    const end = result.events.findLast(event => event.type === 'turn/end')
+    expect(end?.data.reason).toEqual({ kind: 'aborted', reason: { kind: 'hook', reason: 'scripted hook abort' } })
   })
 
 })

@@ -26,8 +26,9 @@
  *   the event; `FAKE_MALFORMED_MESSAGE`: assistant/message content is not an
  *   array; `FAKE_MESSAGE_WITHOUT_DATA`: assistant/message with no data
  *   member; `FAKE_MALFORMED_REASON`: the `turn/end` carries a bare reason
- *   (`1`), an aborted reason without its cause (`aborted`), or no data member
- *   (`no-data`) for wire-validation probes.
+ *   (`1`), an aborted reason without its cause (`aborted`), an unknown abort
+ *   cause (`abort-unknown`), a hook cause without its reason (`hook`), or no
+ *   data member (`no-data`) for wire-validation probes.
  * - `FAKE_EMPTY_MESSAGE`: the turn streams a text chunk, then records an empty
  *   assistant/message for a usage-only max-tokens step.
  * - `FAKE_HANG_INIT`: never answer `initialize` (mid-handshake cancel probe).
@@ -137,13 +138,22 @@ function runTurn(sessionId: string): void {
     }
     const reason = env.FAKE_MALFORMED_REASON === 'aborted'
       ? { kind: 'aborted' }
-      : env.FAKE_MALFORMED_REASON !== undefined
-        ? 'not-a-reason-envelope'
-        : reasonKind === 'aborted'
-          ? { kind: 'aborted', reason: { kind: env.FAKE_ABORT_REASON_KIND ?? 'user' } }
-          : reasonKind === 'error'
-            ? { kind: 'error', error: { message: 'scripted child error', code: 'UNKNOWN' } }
-            : { kind: reasonKind }
+      : env.FAKE_MALFORMED_REASON === 'abort-unknown'
+        ? { kind: 'aborted', reason: { kind: 'future' } }
+        : env.FAKE_MALFORMED_REASON === 'hook'
+          ? { kind: 'aborted', reason: { kind: 'hook' } }
+          : env.FAKE_MALFORMED_REASON !== undefined
+            ? 'not-a-reason-envelope'
+            : reasonKind === 'aborted'
+              ? {
+                kind: 'aborted',
+                reason: env.FAKE_ABORT_REASON_KIND === 'hook'
+                  ? { kind: 'hook', reason: 'scripted hook abort' }
+                  : { kind: env.FAKE_ABORT_REASON_KIND ?? 'user' },
+              }
+              : reasonKind === 'error'
+                ? { kind: 'error', error: { message: 'scripted child error', code: 'UNKNOWN' } }
+                : { kind: reasonKind }
     event(sessionId, 'turn/end', { turn: 0, reason })
   }
   if (env.FAKE_SUBAGENT !== undefined) {

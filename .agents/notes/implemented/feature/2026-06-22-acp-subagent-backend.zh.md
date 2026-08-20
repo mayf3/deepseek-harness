@@ -42,6 +42,7 @@ ACP `StopReason` → harness `SubagentStopReason`：`end_turn`→`completed`、`
 - **无需密钥的 Loader 组合测试：** 仅用于测试的 cordis.yml 通过真实 Loader 启动 stdio 应用，并省略后端的 `cwd`；脚本化模型委派一次，脚本化子进程则证明它在父会话工作区中运行，且 ACP 也对外公布了该工作区，从而端到端覆盖 cwd 继承分支。
 - **需要密钥的 e2e 测试：** 后端 spawn 真实的 ACP 示例；其模型回答 `PONG`，写入 `proof.txt`，父进程验证该文件。
 - **无密钥快照：** ACP 示例通过 Loader 支持的回放启动真实提供方与脚本化子进程，固定前台和一次性后台诊断，同时保持子进程、权限决定、部分输出与清理生命周期确定。
+- **快照缺口：** 每个 ACP 子 agent 仍拥有自己的回放会话；`TODO(acp-subagent-replay)` 继续跟踪父进程对回放中子 harness 的回放，而不是诊断场景使用的脚本化协议子进程。
 
 ## 曾考虑的替代方案
 

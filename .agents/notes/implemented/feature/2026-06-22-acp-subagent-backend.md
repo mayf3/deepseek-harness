@@ -42,6 +42,7 @@ The child is a separate process, so it inherits an environment. Credential-shape
 - **Keyless Loader composition:** A test-only cordis.yml boots the stdio app through the real Loader with the backend's `cwd` omitted; a scripted model delegates once and the scripted child proves it ran in — and was announced — the parent session's workspace (the cwd-inheritance branch end to end).
 - **With-key e2e:** The backend spawns the real ACP example; its model answers `PONG`, writes `proof.txt`, and the parent verifies the file.
 - **Keyless snapshot:** The ACP example boots the real provider and scripted child through Loader-backed replay, pinning foreground and one-shot background diagnostics while keeping the child process, permission decision, partial output, and cleanup lifecycle deterministic.
+- **Snapshot gap:** Each ACP child still has its own replay session; `TODO(acp-subagent-replay)` continues to track parent replay against a replaying child harness rather than the scripted protocol child used by the diagnostic scenario.
 
 ## Alternatives considered
 
