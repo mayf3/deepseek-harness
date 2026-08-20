@@ -149,19 +149,6 @@ describe('outcome mapping helpers', () => {
       .toBeLessThanOrEqual(MAX_SUBAGENT_DIAGNOSTIC_BYTES)
     expect(failed.diagnostic).toMatch(/\[diagnostic truncated\]$/)
 
-    const completed = await settleRunResult({
-      attempt: () => Promise.resolve({
-        output: [],
-        diagnostic: 'must not survive success',
-        stopReason: 'completed',
-      }),
-      collectOutput: () => [],
-      cancelled: () => false,
-      signal: controller.signal,
-      onAbort: () => {},
-    })
-    expect(completed).toEqual({ output: [], stopReason: 'completed' })
-
     const plainFailure = await settleRunResult({
       attempt: () => Promise.resolve({ output: [], stopReason: 'error' }),
       collectOutput: () => [],

@@ -658,7 +658,8 @@ describe('dsh-subagent-acp', () => {
       controller.abort()
       writeFileSync(go, 'go')
       const error = await starting.catch((cause: unknown) => cause)
-      expect(error).toBeInstanceOf(Error)
+      expect(error).toBeInstanceOf(AggregateError)
+      expect((error as AggregateError).errors).toHaveLength(1)
       expect((error as Error).message).toBe(
         `subagent-acp: ${expectedFailure('stage: teardown; category: unknown')}`,
       )
@@ -950,6 +951,28 @@ describe('dsh-subagent-acp', () => {
       `subagent-acp: ${expectedFailure('stage: process; category: process-start')}`,
     )
     expect((error as Error).message).not.toContain(privateCommand)
+  })
+
+  it('sanitizes a synchronous subprocess-provider spawn rejection', async () => {
+    const rawMessage = 'spawn rejected /private/path SECRET_TOKEN'
+    const errors: string[] = []
+    const error = await startAcpRun(request(), {
+      command: 'unused',
+      args: [],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: {},
+      disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS,
+      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+      spawn: () => { throw new Error(rawMessage) },
+      onError: (failure) => { errors.push(failure.message) },
+    }).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe(
+      `subagent-acp: ${expectedFailure('stage: process; category: process-start')}`,
+    )
+    expect((error as Error).message).not.toContain(rawMessage)
+    expect(errors).toEqual([rawMessage])
   })
 
   it('plugin-config dispose graces reach the run (SIGKILL escalation through the provider)', async () => {

@@ -28,9 +28,7 @@
               permission: reject
               env:
                 MOCK_TEXT: partial ACP assistant text
-                MOCK_STOP: max_turn_requests
                 MOCK_PERMISSION: '1'
-                MOCK_PERMISSION_IGNORE_DECISION: '1'
                 MOCK_TOOL_KIND: execute
           - id: tool-subagent-acp-diagnostic
             name: '@deepseek-ai/dsh-tool-subagent'
