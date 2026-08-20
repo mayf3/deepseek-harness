@@ -24,7 +24,6 @@ export interface CodexWireFailureFacts {
     | 'service'
     | 'transport'
     | 'product-error'
-    | 'process'
     | 'invalid-result'
     | 'unknown'
   readonly httpStatus?: number | undefined

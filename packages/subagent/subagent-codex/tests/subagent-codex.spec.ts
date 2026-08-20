@@ -1811,6 +1811,8 @@ describe('run lifecycle and quiescence', () => {
       diagnostic: expectedFailureDiagnostic('turn', 'product-error'),
       stopReason: 'error',
     })
+    expect(Buffer.concat(hostStderrWrite.chunks).toString())
+      .toContain('approval policy is Never; reject command')
     await run.dispose()
     hostStderrWrite.capture = false
   })

@@ -74,9 +74,11 @@ type CodexFailureStage =
   | 'process'
   | 'teardown'
 
+type CodexFailureCategory = CodexWireFailureFacts['category'] | 'process'
+
 interface CodexFailureFacts {
   readonly stage: CodexFailureStage
-  readonly category: CodexWireFailureFacts['category']
+  readonly category: CodexFailureCategory
   readonly httpStatus?: number | undefined
   readonly outcome?: SubprocessOutcome | undefined
 }
