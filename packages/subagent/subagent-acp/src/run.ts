@@ -324,8 +324,9 @@ function terminalFailure(
  * Start and publish one ACP child after initialization and session creation.
  * Child failures resolve through the run result. Startup rejects with fixed
  * safe facts after provider-owned cleanup; successful cleanup proves process
- * reap, while cleanup failure preserves both causes without claiming
- * quiescence. Disposal cancels, kills, and reaps the child.
+ * reap. Cleanup failure preserves startup plus teardown facts for an ordinary
+ * failure, or teardown alone after cancellation, without claiming quiescence.
+ * Disposal cancels, kills, and reaps the child.
  * @param request - the start request; its signal is the cancellation channel.
  * @param spec - the resolved spawn spec: command/args/cwd, env, permission
  * policy, dispose graces, and the optional error sink.
