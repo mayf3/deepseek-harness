@@ -35,18 +35,21 @@ import css from './InputBar.module.css'
 /** Decoration product of the no-session state (no machine, empty draft). */
 const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: [], hint: null }
 
-/** The selection a `beforeinput` recorded, with the draft length it applied to. */
+/** The selection and edit family a `beforeinput` recorded, with the draft length it applied to. */
 interface PendingEdit {
   readonly start: number
   readonly end: number
   readonly draftLength: number
+  readonly inputType: string
 }
 
 /**
- * Resolve one edit's range from the selection recorded before it applied.
- * The recorded selection IS the replaced range, so the inserted length is
- * whatever the draft grew by once that range is accounted for.
- * @param pending - selection recorded at `beforeinput`, null when none was seen.
+ * Resolve one edit's range from the record taken before it applied.
+ * A selection the edit replaces is the range outright. A caret delete replaces
+ * nothing and reports the bare caret, so the removed span is whatever the draft
+ * lost, on the side `inputType` names — measured, because one caret gesture can
+ * remove a multi-unit grapheme, a word, or a line.
+ * @param pending - record taken at `beforeinput`, null when none was seen.
  * @param prevLength - length of the draft the edit applied to.
  * @param nextLength - length of the resulting draft.
  * @returns the exact range, or undefined when the record cannot describe this
@@ -54,10 +57,21 @@ interface PendingEdit {
  */
 function editRangeOf(pending: PendingEdit | null, prevLength: number, nextLength: number): EditRange | undefined {
   if (pending === null || pending.draftLength !== prevLength) return undefined
-  const { start, end } = pending
+  const { start, end, inputType } = pending
+  // A DOM selection cannot invert; the check keeps that a precondition of the
+  // math below rather than an assumption about the element.
   if (start > end || end > prevLength) return undefined
   const insertedLength = nextLength - prevLength + (end - start)
-  return insertedLength < 0 ? undefined : { start, end, insertedLength }
+  if (insertedLength >= 0) return { start, end, insertedLength }
+  if (start !== end) return undefined
+  const removed = prevLength - nextLength
+  if (inputType.endsWith('Backward')) {
+    return removed <= start ? { start: start - removed, end: start, insertedLength: 0 } : undefined
+  }
+  if (inputType.endsWith('Forward')) {
+    return start + removed <= prevLength ? { start, end: start + removed, insertedLength: 0 } : undefined
+  }
+  return undefined
 }
 
 export type InputBarProps = ComposerBarProps
@@ -316,9 +330,16 @@ export function InputBar({
   useEffect(() => {
     const el = inputRef.current
     if (el === null) return
-    const onBeforeInput = (): void => {
+    const onBeforeInput = (e: InputEvent): void => {
+      // Only the families whose reported selection describes the edit. A
+      // history replay reports wherever the caret happens to sit, which would
+      // survive every check in editRangeOf while naming the wrong span.
+      if (!e.inputType.startsWith('insert') && !e.inputType.startsWith('delete')) {
+        pendingEditRef.current = null
+        return
+      }
       const { start, end } = selectionOf(el)
-      pendingEditRef.current = { start, end, draftLength: el.value.length }
+      pendingEditRef.current = { start, end, draftLength: el.value.length, inputType: e.inputType }
     }
     el.addEventListener('beforeinput', onBeforeInput)
     return () => { el.removeEventListener('beforeinput', onBeforeInput) }

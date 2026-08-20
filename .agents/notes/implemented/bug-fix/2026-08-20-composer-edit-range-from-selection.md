@@ -18,13 +18,19 @@ This became reachable when references [became literal inline text](../feature/20
 
 ## Decision
 
-`InputBar` records the textarea's selection during `beforeinput` and passes the resulting range to `setDraft`, which the machine already accepts and prefers over its own scan. `beforeinput` fires while the element still holds the selection the edit is about to replace, and that selection is the range; the inserted length is whatever the draft grew by once the replaced range is accounted for. A textarea exposes this no other way — `getTargetRanges()` is empty for form controls.
+`InputBar` records the textarea's selection and `inputType` during `beforeinput` and passes the resulting range to `setDraft`, which the machine already accepts and prefers over its own scan. A textarea exposes the edit no other way — `getTargetRanges()` is empty for form controls.
 
-The record is consumed once and cleared. A record whose draft length disagrees with the draft the change reports, an inverted selection, a selection past the draft, or a negative inserted length all yield no range, and the machine falls back to its scan. Paste and the boundary Backspace and Delete gestures already supplied their own ranges and are untouched.
+An edit that replaces a selection reports that selection, and it is the range outright; the inserted length is whatever the draft grew by once the replaced range is accounted for. A caret delete replaces nothing and reports the bare caret, so its range comes from the direction `inputType` names and the number of characters the draft actually lost. The count is measured rather than assumed to be one, because a single caret gesture removes a multi-unit grapheme, a word, or a line just as readily. Chromium, WebKit, and Firefox all report the collapsed caret for `deleteContentBackward` and `deleteContentForward`, and all three derive the same range from it.
+
+Only the `insert` and `delete` families are recorded. A history replay reports wherever the caret happens to sit, which would survive every check while naming the wrong span; ignoring it leaves that path on the scan.
+
+The record is consumed once and cleared. A record whose draft length disagrees with the draft the change reports, a selection past the draft, a shrinking edit over a selection the caret cannot explain, or an undirected delete all yield no range, and the machine falls back to its scan. Paste and the boundary Backspace and Delete gestures already supplied their own ranges and are untouched.
 
 ## Testing
 
-Component tests type the trigger character immediately before a reference and delete the character in front of one, asserting in both cases that the occurrence survives at the shifted offset. Both fail against the scan-recovered range.
+Component tests cover the trigger character typed in front of a reference, a caret Backspace, a caret Delete, a caret word delete, and a delete over a selection, asserting in each case that the occurrence survives at the shifted offset. The caret cases fail against the scan-recovered range, and the word case fails against a fixed one-character step.
+
+An assembled browser scenario drives the same gestures as real key presses against the shipped composition, which is the only place the range an engine reports for them can be observed; its golden projects the backdrop's segments, since the decoration layer is aria-hidden and the accessibility tree cannot see the chip. A real composition driven through the browser's IME path reports the composing segment as the selection at every intermediate state, and the reference survives each one.
 
 ## Alternatives considered
 
@@ -36,6 +42,6 @@ Component tests type the trigger character immediately before a reference and de
 
 ## Consequences
 
-Every draft mutation the composer performs now names the range it applied to, so occurrence offsets follow the edit that actually happened rather than one consistent with the resulting characters. The machine keeps its scan for callers that cannot supply a range.
+Every native textarea edit that reaches `onChange` now names the range it applied to, so occurrence offsets follow the edit that actually happened rather than one merely consistent with the resulting characters. Draft writes that originate in the facade rather than the DOM — `insertText` and the command-token splices among them — still carry no range and keep the scan, as do the fallbacks above.
 
-The composer now depends on `beforeinput` preceding each value change. Any future edit path that mutates the value without it silently returns to the scan rather than breaking, which keeps the failure mode the old behavior instead of a wrong range.
+The composer now depends on `beforeinput` preceding each value change, and on `inputType` naming the direction of a caret delete. Any future edit path that mutates the value without either silently returns to the scan rather than breaking, which keeps the failure mode the old behavior instead of a wrong range.
