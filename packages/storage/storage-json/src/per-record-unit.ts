@@ -211,6 +211,7 @@ export class PerRecordJsonUnit implements KvUnit {
     await this.tracked(this.writeDocument(join(this.dir, 'global.json'), value))
   }
 
+  /* jscpd:ignore-start -- the two unit classes are standalone; the drain/guard lifecycle mirrors the shared KvUnit contract */
   /** Drain in-flight writes and release the unit. Idempotent. */
   async close(): Promise<void> {
     if (this.closed) {
@@ -227,6 +228,7 @@ export class PerRecordJsonUnit implements KvUnit {
       throw new StorageError('closed', `unit '${this.descriptor.name}' is closed`)
     }
   }
+  /* jscpd:ignore-end */
 
   /** Resolve a declared table's directory; an undeclared table is a caller bug and throws. */
   private tableDir(table: string): string {

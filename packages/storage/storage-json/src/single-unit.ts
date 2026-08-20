@@ -111,6 +111,7 @@ class SingleJsonUnit implements KvUnit {
     })
   }
 
+  /* jscpd:ignore-start -- the two unit classes are standalone; the drain/guard lifecycle mirrors the shared KvUnit contract */
   async close(): Promise<void> {
     if (this.closed) {
       await Promise.allSettled(this.inFlight)
@@ -126,6 +127,7 @@ class SingleJsonUnit implements KvUnit {
       throw new StorageError('closed', `unit '${this.descriptor.name}' is closed`)
     }
   }
+  /* jscpd:ignore-end */
 
   private records(table: string): Map<string, unknown> {
     const records = this.state.tables.get(table)
