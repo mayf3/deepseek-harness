@@ -89,6 +89,7 @@ describe('PiAiAdapter provider routing', () => {
     ctx.llm.registerAdapter(['deepseek'], new PiAiAdapter({
       profiles: () => resolveProfiles(providers),
       resolveApiKey: () => Promise.resolve('test-key'),
+      auth: memoryAuth(),
     }))
 
     const prepared = await ctx.llm.prepareCall({ provider: 'deepseek', model: 'deepseek-v4-flash' })

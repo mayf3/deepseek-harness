@@ -456,7 +456,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['the signal reason when aborted, or a storage error when verification fails.'],
       },
       {
-        signature: 'async readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<RequestImageAttachment>',
+        signature: 'readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<RequestImageAttachment>',
         description: 'Generate or read one deterministic model-request version from the stored master image.',
         parameters: [{ name: 'ref', description: 'durable provider-independent master reference.' }, { name: 'policy', description: 'exact route pixel and encoded-byte budget.' }, { name: 'signal', description: 'optional cancellation.' }],
         returns: 'request bytes and the cache/upload identity covering every transform input.',
@@ -468,7 +468,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'request versions in the same order as `refs`.',
       },
       {
-        signature: 'async cropImage( ref: ImageAttachmentRef, crop: PreviewImageCrop, signal?: AbortSignal, ): Promise<SavedImageAttachment>',
+        signature: 'cropImage( ref: ImageAttachmentRef, crop: PreviewImageCrop, signal?: AbortSignal, ): Promise<SavedImageAttachment>',
         description: 'Crop the stored master by coordinates measured on a model request preview and persist the result.',
         parameters: [{ name: 'ref', description: 'session-authorized master attachment.' }, { name: 'crop', description: 'preview dimensions and preview-coordinate rectangle.' }, { name: 'signal', description: 'optional cancellation.' }],
         returns: 'a new durable attachment reference suitable for a logged tool result.',
