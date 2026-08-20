@@ -48,6 +48,12 @@ const windowsUnsupportedTests = process.platform === 'win32'
       // Windows. The worker always speaks POSIX; the Linux lanes hold the diff.
       'packages/experimental/webworker-runtime/tests/node/path-diff.spec.ts',
       'packages/experimental/webworker-runtime/tests/node/shim-diff.spec.ts',
+      // The subprocess ladder over the worker's child_process face: its kill
+      // rung reaches the in-worker process table through `process.kill`,
+      // which the ladder's win32 branch replaces with taskkill-by-real-pid —
+      // undeliverable to a table pid. The worker host always reports 'linux',
+      // so the Linux lanes hold the ladder.
+      'packages/experimental/webworker-runtime/tests/node/child-process.spec.ts',
     ]
   : []
 

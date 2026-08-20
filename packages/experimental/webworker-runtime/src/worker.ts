@@ -20,16 +20,32 @@ import { installAsyncContextHooks } from './polyfill/async-context/async-context
 import { createNodeBuiltins, REPLACED_PREFIXES } from './node/builtins.ts'
 import { whenRequestListener } from './node/builtin_modules/implemented/http.ts'
 import { installTimerGlobals } from './node/globals/timers.ts'
+import { installProcessGlobal } from './node/globals/process.ts'
+import { isShellStartFrame } from './shell/process/protocol.ts'
+import { runShellProcess } from './shell/process/host.ts'
 
 // Before the timer globals, so the wrappers close over the patched platform.
 installAsyncContextHooks()
 installTimerGlobals()
 
 let host: { handleMessage(data: unknown): void } | undefined
+let shellRole = false
 const pending: unknown[] = []
 
 self.addEventListener('message', (event: MessageEvent) => {
   const data = event.data as Record<string, unknown> | null
+  // Role, decided by the first frame: a worker started by the host's shell
+  // runs one command and closes. It mounts no image and boots no tree, so the
+  // whole assembly below never happens in it.
+  if (host === undefined && isShellStartFrame(data)) {
+    shellRole = true
+    // The command's own directory and environment are the only `process` facts
+    // a shell process needs; bundled code that reads the global (picomatch's
+    // platform check) must not find it missing.
+    installProcessGlobal({ cwd: data.cwd, env: data.env })
+    runShellProcess(data, self)
+    return
+  }
   if (host === undefined && data !== null && typeof data === 'object' && data.t === 'init') {
     if (typeof data.image !== 'string') {
       throw new Error('webworker: init frame needs a string image url')
@@ -54,6 +70,10 @@ self.addEventListener('message', (event: MessageEvent) => {
     return
   }
   if (host === undefined) {
+    // A shell-role worker's later frames (fs replies, signals) belong to
+    // runShellProcess's own listener; parking them here would hold every
+    // file body until the worker exits.
+    if (shellRole) return
     pending.push(event.data)
     return
   }

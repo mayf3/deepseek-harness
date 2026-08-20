@@ -37,6 +37,7 @@ import * as nodeUrl from './builtin_modules/implemented/url.ts'
 import * as nodeUtil from './builtin_modules/implemented/util.ts'
 import * as nodeUtilTypes from './builtin_modules/implemented/util/types.ts'
 import * as nodeZlib from './builtin_modules/implemented/zlib.ts'
+import * as nodeChildProcess from './builtin_modules/implemented/child_process.ts'
 import * as nodeNet from './builtin_modules/mock/net.ts'
 import * as nodeSqlite from './builtin_modules/mock/sqlite.ts'
 import * as nodeStream from './builtin_modules/mock/stream.ts'
@@ -57,6 +58,7 @@ import type { StaticModuleFactory } from '../module-system/module-loader.ts'
 const BUILTINS: Record<string, StaticModuleFactory> = {
   async_hooks: () => nodeAsyncHooks,
   buffer: () => nodeBuffer,
+  child_process: () => nodeChildProcess,
   crypto: () => nodeCrypto,
   events: () => nodeEvents,
   fs: () => nodeFs,

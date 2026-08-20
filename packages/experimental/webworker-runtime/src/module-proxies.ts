@@ -51,6 +51,9 @@ export const MODULE_PROXIES: Record<string, string> = {
   'node:perf_hooks': './node/builtin_modules/implemented/perf_hooks.ts',
   // Real zstd codec: session-log appends compress on every write.
   'node:zlib': './node/builtin_modules/implemented/zlib.ts',
+  // The worker's own process layer: `bash -c` and the command table run against
+  // the VFS, because a browser worker has no processes to fork.
+  'node:child_process': './node/builtin_modules/implemented/child_process.ts',
   // Structural mocks: every symbol exists, every call throws.
   'node:net': './node/builtin_modules/mock/net.ts',
   'node:stream': './node/builtin_modules/mock/stream.ts',
