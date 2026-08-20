@@ -22,7 +22,7 @@ Every committed session-format fixture uses the canonical packed physical layout
 
 ### Replay derives the model script from the log
 
-`llm-replay` short-circuits the provider-agnostic `llm/stream` waterfall. `deriveReplayScript()` splits recorded `assistant/chunk` events at terminal `finish` chunks and uses `(turn, step)` changes to reject an unterminated prior call. A `compact/summary` with `llmStreamCall: true` contributes one call at its durable log position: replay reconstructs canonical block boundaries from `rawOutput`, retains recorded usage when present, and supplies a terminal `stop`. The marker distinguishes that local call from template or remote summaries whose retained `rawOutput` did not consume this context's adapter.
+`llm-replay` short-circuits the provider-agnostic `llm/stream` waterfall. `deriveReplayScript()` splits recorded `assistant/chunk` events at terminal `finish` chunks and uses `(turn, step)` changes to reject an unterminated prior call. A `compaction/summary` with `llmStreamCall: true` contributes one call at its durable log position: replay reconstructs canonical block boundaries from `rawOutput`, retains recorded usage when present, and supplies a terminal `stop`. The marker distinguishes that local call from template or remote summaries whose retained `rawOutput` did not consume this context's adapter.
 
 ### The in-memory replay entry honors the full LLM contract
 
@@ -46,9 +46,9 @@ Recording runs the scenario with the real `llm-deepseek` adapter and the JSONL p
 
 Replay uses a `cordis.snapshot.yml` overlay that replaces the real adapter with `llm-replay` while retaining the live composition. Recording uses the ordinary config and a harness-supplied persistence root. Replay mode skips `.env` loading, so a stray API key cannot trigger a live call. See the [single-source config Agent Note](../../archived/testing/2026-07-04-single-source-acp-replay-config.md).
 
-### Two surfaces: normalize, then compare
+### Two outputs: normalize, then compare
 
-A snapshot run asserts **two** normalized surfaces, because the harness's external surfaces are distinct:
+A snapshot run asserts **two** normalized outputs, because the harness's external APIs are distinct:
 
 1. The **stdout transcript** — the framed ACP JSON-RPC responses and committed-message updates an automation client receives. It catches regressions in the transport contract and is compared against a committed `stdout.expected.jsonl`.
 2. The **re-persisted session JSONL**, normalized and compared with `session.jsonl`. The same fixture is both replay source and expected log. Prompt and tool bulk are scrubbed; one scenario per header class pins the remaining header sequence. The pin owns readable prompt and tool-schema sidecars by default, or names another pin as either source when the complete sequence is identical, so each distinct sidecar version is committed once. Fixture guards reject duplicate sidecar content, and record/refresh rejects shared claimants that generate different bytes. The original header-pinning rationale is preserved in the [header-pinning Agent Note](../../archived/testing/2026-07-06-pin-request-header-content-in-one-scenario.md). Override scenarios derive model behavior solely from their sidecar.

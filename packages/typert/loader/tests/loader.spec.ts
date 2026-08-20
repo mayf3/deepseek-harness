@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
-import Loader from '@cordisjs/plugin-loader'
+import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import * as typertLoader from '@deepseek-ai/dsh-typert-loader'
 import { validateTypertManifest } from '@deepseek-ai/dsh-typert-loader'
@@ -356,7 +356,7 @@ describe('typert loader', () => {
     await ctx.loader.create({ name: '@fixture/export-primitive' })
     await ctx.loader.await()
 
-    await expect(mountTypertLoader(ctx)).rejects.toThrow('unsupported shape')
+    await expect(mountTypertLoader(ctx)).rejects.toThrow('must be a string or an object with a string default')
   })
 
   it('caches a negative verdict for loader entries without a package root', LOADER_TEST_TIMEOUT, async () => {
@@ -398,9 +398,10 @@ describe('typert loader', () => {
 
     await ctx.loader.create({ name: '@fixture/steady-failure' })
     await ctx.loader.await()
-    await new Promise(resolve => setTimeout(resolve, 20))
-
-    expect(logged).toHaveBeenCalledWith(expect.objectContaining({ message: 'register failed' }))
+    // The failing contributor's error is reported on the post-await flush.
+    await vi.waitFor(() => {
+      expect(logged).toHaveBeenCalledWith(expect.objectContaining({ message: 'register failed' }))
+    }, { timeout: 10_000 })
     expect(ctx.typert.getPackage('@fixture/steady-failure')).toBeUndefined()
   })
 })
@@ -430,7 +431,7 @@ describe('validateTypertManifest', () => {
       package: 'pkg',
       face: 'host',
       schemas: [],
-      model: { services: [{ key: 'tools', exportName: 'ToolRegistry', tags: [], members: 'x', types: [] }], events: [], objects: [] },
+      model: { services: [{ key: 'tools', exportName: 'ToolRuntime', tags: [], members: 'x', types: [] }], events: [], objects: [] },
     })).toThrow('service "tools".members must be an array')
   })
 

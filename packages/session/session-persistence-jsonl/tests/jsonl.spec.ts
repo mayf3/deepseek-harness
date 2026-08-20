@@ -1,12 +1,12 @@
 import { MessageId, createUserMessage, createMessage } from '@deepseek-ai/dsh-llm'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { appendFile, mkdtemp, mkdir, rm, readFile, writeFile, readdir, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
-import SessionPersistenceJsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {
   encodeSegment, eventLines, logPath, projectDir, projectKey, scanLog, sessionDir, SessionLogScanner, toHeaderLine,
 } from '../src/format.ts'
@@ -104,7 +104,7 @@ runPersistenceContract('jsonl-none', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-jsonl-'))
   const ctx = new Context()
   await ctx.plugin(SessionStore)
-  const fiber = await ctx.plugin(SessionPersistenceJsonl, { root: dir, compression: 'none' })
+  const fiber = await ctx.plugin(JsonlSessionPersistence, { root: dir, compression: 'none' })
   return {
     persistence: ctx.sessionPersistence,
     dispose: async () => {
@@ -120,7 +120,7 @@ runCoordinatorContract('jsonl-none', async (): Promise<CoordinatorFixture> => {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-jsonl-coord-'))
   return {
     mount: async (ctx) => {
-      const fiber = await ctx.plugin(SessionPersistenceJsonl, { root: dir, compression: 'none' })
+      const fiber = await ctx.plugin(JsonlSessionPersistence, { root: dir, compression: 'none' })
       return fiber
     },
     corruptTail: async (id, cwd) => {
@@ -133,7 +133,7 @@ runCoordinatorContract('jsonl-none', async (): Promise<CoordinatorFixture> => {
   }
 })
 
-describe('SessionPersistenceJsonl: format helpers', () => {
+describe('JsonlSessionPersistence: format helpers', () => {
   it('encodeSegment neutralizes traversal, separators, and absolute paths', () => {
     expect(encodeSegment('..')).toBe('~002E~002E')
     expect(encodeSegment('.')).toBe('~002E')
@@ -174,7 +174,7 @@ describe('SessionPersistenceJsonl: format helpers', () => {
     const absoluteRoot = await freshRoot()
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin(SessionPersistenceJsonl, {
+    const fiber = await ctx.plugin(JsonlSessionPersistence, {
       root: relative(process.cwd(), absoluteRoot),
       compression: 'none',
       writeBatchMaxDelayMs: 1,
@@ -186,15 +186,85 @@ describe('SessionPersistenceJsonl: format helpers', () => {
     })
     await fiber.dispose()
   })
+
+  it('refuses a structurally foreign future header as unsupported, not corrupt', async () => {
+    const absoluteRoot = await freshRoot()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const fiber = await ctx.plugin(JsonlSessionPersistence, { root: absoluteRoot, compression: 'none' })
+    // A future format need not satisfy today's header shape at all (no
+    // createdAt, unknown fields): the version must be refused before shape
+    // validation, so the user sees the upgrade direction.
+    const id = SessionId('future-shape')
+    const path = rawLogPath(resolve(absoluteRoot), '/work', id)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, `${JSON.stringify({ type: 'session', version: 42, id, futureOnly: true })}\n{"future":"row"}\n`)
+    const failure = await ctx.sessionPersistence.load(id).then(() => undefined, (error: unknown) => error as Error)
+    expect(failure?.name).toBe('SessionFormatUnsupportedError')
+    expect(failure?.message).toMatch(/written by a newer harness.*upgrade the harness/)
+    expect(failure?.message).toContain(`(raw log: ${path})`)
+    await fiber.dispose()
+  })
+
+  it('keeps a non-object header line a corruption, not a format refusal', async () => {
+    const absoluteRoot = await freshRoot()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const fiber = await ctx.plugin(JsonlSessionPersistence, { root: absoluteRoot, compression: 'none' })
+    // Valid JSON that is no object carries no version to compare, so the
+    // version guard must pass it through to the corruption diagnostics.
+    const id = SessionId('scalar-header')
+    const path = rawLogPath(resolve(absoluteRoot), '/work', id)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, '42\n')
+    const failure = await ctx.sessionPersistence.load(id).then(() => undefined, (error: unknown) => error as Error)
+    expect(failure?.name).not.toBe('SessionFormatUnsupportedError')
+    expect(failure?.message).toContain('first line is not a session header')
+    await fiber.dispose()
+  })
+
+  it('names a foreign-version header by its stringified non-string id', async () => {
+    const absoluteRoot = await freshRoot()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const fiber = await ctx.plugin(JsonlSessionPersistence, { root: absoluteRoot, compression: 'none' })
+    // A future header's id field is as untrusted as the rest of its shape:
+    // the refusal must still name the session it read, not crash on the type.
+    const id = SessionId('numeric-id')
+    const path = rawLogPath(resolve(absoluteRoot), '/work', id)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, `${JSON.stringify({ type: 'session', version: 42, id: 123 })}\n`)
+    const failure = await ctx.sessionPersistence.load(id).then(() => undefined, (error: unknown) => error as Error)
+    expect(failure?.name).toBe('SessionFormatUnsupportedError')
+    expect(failure?.message).toContain('session "123" uses log format v42')
+    await fiber.dispose()
+  })
+
+  it('points a format refusal at the raw log path', async () => {
+    const absoluteRoot = await freshRoot()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const fiber = await ctx.plugin(JsonlSessionPersistence, { root: absoluteRoot, compression: 'none' })
+    const m = { ...meta('newer-format', '/work'), version: 7 }
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, [
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      { type: 'turn/end', seq: 1, time: 2, data: { turn: 1, reason: { kind: 'completed' } } },
+    ])
+    const failure = await ctx.sessionPersistence.load(m.id).then(() => undefined, (error: unknown) => error as Error)
+    expect(failure?.name).toBe('SessionFormatUnsupportedError')
+    expect(failure?.message).toContain(`(raw log: ${rawLogPath(resolve(absoluteRoot), '/work', m.id)})`)
+    await fiber.dispose()
+  })
 })
 
-describe('SessionPersistenceJsonl: durability and crash semantics', () => {
+describe('JsonlSessionPersistence: durability and crash semantics', () => {
   let ctx: Context
   beforeEach(async () => {
     root = await freshRoot()
     ctx = new Context()
     await ctx.plugin(SessionStore)
-    await ctx.plugin(SessionPersistenceJsonl, { root, compression: 'none' })
+    await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
   })
   afterEach(async () => { await ctx.fiber.dispose() })
 
@@ -215,6 +285,46 @@ describe('SessionPersistenceJsonl: durability and crash semantics', () => {
     expect((await stat(dir)).isDirectory()).toBe(true)
     expect((await stat(rawLogPath(root, '/work', m.id))).isFile()).toBe(true)
     expect((await ctx.sessionPersistence.list()).map(h => h.id)).toContain(m.id)
+  })
+
+  it('readRaw returns the stored artifact text verbatim with its original filename', async () => {
+    const m = meta('raw-read', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    const raw = await ctx.sessionPersistence.readRaw(m.id)
+    expect(raw).toBeDefined()
+    expect(raw!.filename).toBe('session.jsonl')
+    expect(raw!.meta.id).toBe(m.id)
+    // Byte-identical to the physical file — never a reconstruction.
+    expect(raw!.content).toBe(await readFile(rawLogPath(root, '/work', m.id), 'utf8'))
+    expect(raw!.content.split('\n')[0]).toBe(JSON.stringify(toHeaderLine(m)))
+    const scanned = scanLog(Buffer.from(raw!.content))
+    expect(scanned.events.map(event => event.type)).toEqual(oneTurnLog().map(event => event.type))
+  })
+
+  it('readRaw is undefined for an absent session', async () => {
+    const m = meta('raw-missing', '/work')
+    expect(await ctx.sessionPersistence.readRaw(m.id)).toBeUndefined()
+  })
+
+  it('readRaw rejects a corrupt header line instead of exporting it', async () => {
+    const m = meta('raw-corrupt', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    await writeFile(rawLogPath(root, '/work', m.id), 'not a header line\n{"type":"turn/start","seq":0}\n')
+    await expect(ctx.sessionPersistence.readRaw(m.id)).rejects.toThrow(/corrupt session log/)
+  })
+
+  it('readRaw retries when the file revision changes during the read', async () => {
+    const m = meta('raw-revision-race', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    statRace.path = rawLogPath(root, '/work', m.id)
+
+    const raw = await ctx.sessionPersistence.readRaw(m.id)
+    expect(raw).toBeDefined()
+    // Two stat calls per iteration; the mocked revision change forces a retry.
+    expect(statRace.reads).toBe(4)
   })
 
   it('keeps the same location on resume and gives a fork its own location', async () => {
@@ -272,13 +382,13 @@ describe('SessionPersistenceJsonl: durability and crash semantics', () => {
 
     const reopenedCtx = new Context()
     await reopenedCtx.plugin(SessionStore)
-    await reopenedCtx.plugin(SessionPersistenceJsonl, { root, compression: 'none' })
+    await reopenedCtx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
     expect((await reopenedCtx.sessionPersistence.listSnapshots())[0]?.revision).toBe(revision)
 
     const otherRoot = await freshRoot()
     const otherCtx = new Context()
     await otherCtx.plugin(SessionStore)
-    await otherCtx.plugin(SessionPersistenceJsonl, { root: otherRoot, compression: 'none' })
+    await otherCtx.plugin(JsonlSessionPersistence, { root: otherRoot, compression: 'none' })
     await otherCtx.sessionPersistence.create(m)
     await otherCtx.sessionPersistence.append(m.id, oneTurnLog())
     expect((await otherCtx.sessionPersistence.listSnapshots())[0]?.revision).not.toBe(revision)
@@ -291,7 +401,7 @@ describe('SessionPersistenceJsonl: durability and crash semantics', () => {
     const m = meta('stored-prefix-revision')
     await ctx.sessionPersistence.create(m)
     await ctx.sessionPersistence.append(m.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as SessionPersistenceJsonl
+    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
 
     const stored = await persistence.loadStored(m.id)
     expect(stored?.revision).toBe(await persistence.readStoredRevision(m.id))
@@ -302,7 +412,7 @@ describe('SessionPersistenceJsonl: durability and crash semantics', () => {
     const m = meta('stored-prefix-revision-race')
     await ctx.sessionPersistence.create(m)
     await ctx.sessionPersistence.append(m.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as SessionPersistenceJsonl
+    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
     statRace.path = rawLogPath(root, m.cwd, m.id)
 
     await expect(persistence.loadStored(m.id)).resolves.toMatchObject({ events: oneTurnLog() })
@@ -313,7 +423,7 @@ describe('SessionPersistenceJsonl: durability and crash semantics', () => {
     const m = meta('stored-revision-race')
     await ctx.sessionPersistence.create(m)
     await ctx.sessionPersistence.append(m.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as SessionPersistenceJsonl
+    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
     const internals = persistence as unknown as {
       findLog(id: SessionId, signal?: AbortSignal): Promise<string | undefined>
     }
@@ -670,12 +780,12 @@ describe('SessionPersistenceJsonl: durability and crash semantics', () => {
   })
 })
 
-describe('SessionPersistenceJsonl: write path (session/event → flush)', () => {
+describe('JsonlSessionPersistence: write path (session/event → flush)', () => {
   it('concurrent sessions do not cross buffers', async () => {
     root = await freshRoot()
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    await ctx.plugin(SessionPersistenceJsonl, { root, compression: 'none' })
+    await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
 
     const a = ctx.sessions.create(SessionId('sa'))
     const b = ctx.sessions.create(SessionId('sb'))
@@ -704,7 +814,7 @@ describe('SessionPersistenceJsonl: write path (session/event → flush)', () => 
 })
 
 
-describe('SessionPersistenceJsonl: scanLog unit', () => {
+describe('JsonlSessionPersistence: scanLog unit', () => {
   it('requires exactly one newline-terminated header record', () => {
     const header = JSON.stringify(toHeaderLine(meta('scanner-header')))
     expect(() => new SessionLogScanner(Buffer.alloc(0))).toThrow(/header-less/)
@@ -817,6 +927,27 @@ describe('SessionPersistenceJsonl: scanLog unit', () => {
     expect(() => scanLog(Buffer.from(log))).toThrow(/session header/)
   })
 
+  it('round-trips the agent preset a session was composed from', () => {
+    const line = toHeaderLine({
+      version: 0,
+      id: SessionId('composed'),
+      createdAt: 1,
+      delegationDepth: 0,
+      agentPreset: 'minimal',
+    })
+    const log = `${JSON.stringify(line)}\n`
+
+    // The preset decides the resumed session's tools and prompt; dropping it
+    // on disk would restore a composition the logged history contradicts.
+    expect(scanLog(Buffer.from(log)).meta.agentPreset).toBe('minimal')
+  })
+
+  it('rejects a session header whose agentPreset is not a string', () => {
+    const log = '{"type":"session","version":0,"id":"bad-preset","createdAt":1,"delegationDepth":0,"agentPreset":7}\n'
+
+    expect(() => scanLog(Buffer.from(log))).toThrow(/session header/)
+  })
+
   it('a seq gap after the last turn/end bounds the preserved tail (torn fragment tolerated)', () => {
     const log = [
       JSON.stringify({ type: 'session', version: 0, id: 'g', createdAt: 1, delegationDepth: 0 }),
@@ -881,7 +1012,7 @@ describe('SessionPersistenceJsonl: scanLog unit', () => {
   })
 })
 
-describe('SessionPersistenceJsonl: default packed chunk rows', () => {
+describe('JsonlSessionPersistence: default packed chunk rows', () => {
   let ctx: Context
   beforeEach(async () => {
     root = await freshRoot()
@@ -889,7 +1020,7 @@ describe('SessionPersistenceJsonl: default packed chunk rows', () => {
     await ctx.plugin(SessionStore)
     // compression: 'none' — these tests assert the textual storage-record layout
     // (row tags per line); packing is orthogonal to the physical encoding.
-    await ctx.plugin(SessionPersistenceJsonl, { root, compression: 'none' })
+    await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
   })
   afterEach(async () => { await ctx.fiber.dispose() })
 
@@ -939,7 +1070,7 @@ describe('SessionPersistenceJsonl: default packed chunk rows', () => {
     const unpackedRoot = await freshRoot()
     const unpacked = new Context()
     await unpacked.plugin(SessionStore)
-    await unpacked.plugin(SessionPersistenceJsonl, {
+    await unpacked.plugin(JsonlSessionPersistence, {
       root: unpackedRoot,
       packChunks: false,
       compression: 'none',
@@ -1032,13 +1163,13 @@ describe('SessionPersistenceJsonl: default packed chunk rows', () => {
   })
 })
 
-describe('SessionPersistenceJsonl: edge cases', () => {
+describe('JsonlSessionPersistence: edge cases', () => {
   let ctx: Context
   beforeEach(async () => {
     root = await freshRoot()
     ctx = new Context()
     await ctx.plugin(SessionStore)
-    await ctx.plugin(SessionPersistenceJsonl, { root, compression: 'none' })
+    await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
   })
   afterEach(async () => { await ctx.fiber.dispose() })
 
@@ -1252,7 +1383,7 @@ describe('SessionPersistenceJsonl: edge cases', () => {
     // stored cwd check rejects instead of grafting no-cwd events onto that log.
     const ctx2 = new Context()
     await ctx2.plugin(SessionStore)
-    await ctx2.plugin(SessionPersistenceJsonl, { root, compression: 'none' })
+    await ctx2.plugin(JsonlSessionPersistence, { root, compression: 'none' })
     let b!: Session
     await ctx2.plugin(Object.assign((inner: Context) => {
       b = inner.sessions.create(SessionId('x')) // no cwd
@@ -1310,7 +1441,7 @@ describe('SessionPersistenceJsonl: edge cases', () => {
   it('list returns nothing when the root directory does not exist', async () => {
     const ctx2 = new Context()
     await ctx2.plugin(SessionStore)
-    await ctx2.plugin(SessionPersistenceJsonl, {
+    await ctx2.plugin(JsonlSessionPersistence, {
       root: join(root, 'does-not-exist-yet'),
       compression: 'none',
     })
@@ -1323,7 +1454,7 @@ describe('SessionPersistenceJsonl: edge cases', () => {
     await writeFile(filePath, 'x')
     const ctx2 = new Context()
     await ctx2.plugin(SessionStore)
-    await expect(ctx2.plugin(SessionPersistenceJsonl, { root: filePath, compression: 'none' })).rejects.toThrow(/ENOTDIR/)
+    await expect(ctx2.plugin(JsonlSessionPersistence, { root: filePath, compression: 'none' })).rejects.toThrow(/ENOTDIR/)
     await ctx2.fiber.dispose()
   })
 
@@ -1346,7 +1477,7 @@ describe('SessionPersistenceJsonl: edge cases', () => {
     const cwd = '/x'
     const ctx2 = new Context()
     await ctx2.plugin(SessionStore)
-    await ctx2.plugin(SessionPersistenceJsonl, { root, compression: 'none' })
+    await ctx2.plugin(JsonlSessionPersistence, { root, compression: 'none' })
     await writeFile(projectDir(root, cwd), 'x') // project path is now a file
     let s!: Session
     await ctx2.plugin(Object.assign((inner: Context) => {
@@ -1369,7 +1500,7 @@ describe('SessionPersistenceJsonl: edge cases', () => {
     // that the same append then performs before writing.
     const ctx2 = new Context()
     await ctx2.plugin(SessionStore)
-    await ctx2.plugin(SessionPersistenceJsonl, { root, compression: 'none' })
+    await ctx2.plugin(JsonlSessionPersistence, { root, compression: 'none' })
     await ctx2.sessionPersistence.append(m.id, [
       { type: 'turn/start', seq: 6, time: 9, data: { turn: 2 } },
       { type: 'turn/end', seq: 7, time: 10, data: { turn: 2, reason: { kind: 'completed' } } },
@@ -1405,7 +1536,7 @@ describe('SessionPersistenceJsonl: edge cases', () => {
     // nondeterministic. create scans every project, not just meta.cwd's.
     const ctx2 = new Context()
     await ctx2.plugin(SessionStore)
-    await ctx2.plugin(SessionPersistenceJsonl, { root, compression: 'none' })
+    await ctx2.plugin(JsonlSessionPersistence, { root, compression: 'none' })
     await expect(ctx2.sessionPersistence.create(meta('dup-id', '/projB')))
       .rejects.toThrow(/already has a persisted log on disk/)
     await ctx2.fiber.dispose()
@@ -1415,7 +1546,7 @@ describe('SessionPersistenceJsonl: edge cases', () => {
     root = await freshRoot()
     const ctx2 = new Context()
     await ctx2.plugin(SessionStore)
-    await ctx2.plugin(SessionPersistenceJsonl, { root, compression: 'none' })
+    await ctx2.plugin(JsonlSessionPersistence, { root, compression: 'none' })
     const session = ctx2.sessions.create(SessionId('flush-fail'))
     // A full turn lands in the write-behind buffer.
     session.append('turn/start', { turn: 1 })

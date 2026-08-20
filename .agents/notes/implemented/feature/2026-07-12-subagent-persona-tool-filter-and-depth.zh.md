@@ -22,7 +22,7 @@ subagent 启动有三个独立的组合控制：`persona`、`toolFilter` 和 `ma
 | `toolFilter` | 部署全局工具中哪些进入该子 agent 的可见工具视图？ | 一个有作用域的限制在添加子 agent 局部工具之前过滤全局工具 |
 | `maxDepth` | 这棵委派树最深可以长到多少层？ | 子 agent 深度超过绝对上限时，启动请求被拒绝 |
 
-`dsh-tool-subagent` 将这些控制作为插件配置暴露，并复制到它创建的每个请求中。直接调用 `SubagentService` 的调用方可以按请求选择这些控制。提供方的能力描述符仍然是后端能否兑现各字段的真源。
+`dsh-tool-subagent` 将这些控制作为插件配置暴露，并复制到它创建的每个请求中。直接调用 `SubagentRuntime` 的调用方可以按请求选择这些控制。提供方的能力描述符仍然是后端能否兑现各字段的真源。
 
 ### 人设是有作用域的遮蔽
 
@@ -32,9 +32,11 @@ subagent 启动有三个独立的组合控制：`persona`、`toolFilter` 和 `ma
 
 这使用的是常规的系统提示词注册机制，而非第二条人设通道。因此第一次提示词看到的命名贡献与后续提示词和提示词检查工具看到的一致。
 
+<a id="tool-filtering-is-one-live-global-view-rule"></a>
+
 ### 工具过滤是一条作用于实时全局视图的规则
 
-工具过滤同时控制能力可见性和可执行查找。进程内提供方在发布前于子 agent 作用域中安装 `ToolRegistry.restrict()`，注册表的单一解析器对协议格式（wire format）的工具 schema、查找、执行和 Code Mode SDK 生成施加相同的结果。独立注册的系统提示词段落不在 `ToolRegistry` 内，因此过滤一个工具不会移除该插件的独立指导文本。
+工具过滤同时控制能力可见性和可执行查找。进程内提供方在发布前于子 agent 作用域中安装 `ToolRuntime.restrict()`，注册表的单一解析器对协议格式（wire format）的工具 schema、查找、执行和 Code Mode SDK 生成施加相同的结果。独立注册的系统提示词段落不在 `ToolRuntime` 内，因此过滤一个工具不会移除该插件的独立指导文本。
 
 解析遵循以下规则：
 
@@ -53,13 +55,13 @@ subagent 启动有三个独立的组合控制：`persona`、`toolFilter` 和 `ma
 
 有效父级深度取持久 `SessionHeader.delegationDepth` 与运行时 `AgentOptions.subagentDepth` 中的较大值。进程内子 agent 把推导出的深度记录在会话 header 中，恢复时会重新载入该 header，因此重启无法降低递归计数。
 
-每个公开入口都自行验证值域，而非依赖单一的面向模型配置路径。负值、小数、负零、非有限值、不安全整数、格式错误的存储父级深度以及推导溢出均被拒绝。直接的 `SubagentStartRequest` 可以省略上限，让此机制不约束深度；经 loader 解析的 `dsh-tool-subagent` 配置则默认值为 `3`、接受数值覆盖，并使用显式的 `'provider-managed'` 来省略由进程外提供方部署拥有递归预算时的上限。三是一个较小的有限默认值，仍允许 root 加三代后代：[SDK 辅助函数生成的 subagent 条目](../../../../packages/scaffold/helper/src/features/builtin/index.ts)和 [JSON-RPC 示例](../../../../examples/jsonrpc-agent/cordis.yml)采用这项通用策略，而已交付的交互式 ACP、headless 和 REPL 示例固定为一。提供方缺少 `depthLimit` 时，数值工具上限会在提供方挂载阶段失败。
+每个公开入口都自行验证值域，而非依赖单一的面向模型配置路径。负值、小数、负零、非有限值、不安全整数、格式错误的存储父级深度以及推导溢出均被拒绝。直接的 `SubagentStartRequest` 可以省略上限，让此机制不约束深度；经 loader 解析的 `dsh-tool-subagent` 配置则默认值为 `3`、接受数值覆盖，并使用显式的 `'provider-managed'` 来省略由进程外提供方部署拥有递归预算时的上限。三是一个较小的有限默认值，仍允许 root 加三代后代：[JSON-RPC 示例](../../../../examples/jsonrpc-agent/cordis.yml)采用这项通用策略，而 ACP 与 headless 示例固定为一。提供方缺少 `depthLimit` 时，数值工具上限会在提供方挂载阶段失败。
 
 部署可以组合深度与过滤，但数值上限不会合成过滤器。委派工具在上限处仍然可见，因为授权可能依赖运行时状态；每次尝试启动都会检查调用方 agent 当前的持久与运行时深度，被拒绝的启动返回错误工具结果，且不发布子 agent。可见性策略固定的部署可以另外在子 agent 中 deny 委派工具。两种选择都不改变提供方的对话历史行为。
 
 ### 能力门控保持提供方诚实
 
-能力将请求的功能与提供方实现分离。`SubagentCapabilities` 声明 `persona`、`toolFilter` 和 `depthLimit`；`SubagentService.start()` 在调用提供方之前，对照这些标志检查请求中每个存在的字段。
+能力将请求的功能与提供方实现分离。`SubagentCapabilities` 声明 `persona`、`toolFilter` 和 `depthLimit`；`SubagentRuntime.start()` 在调用提供方之前，对照这些标志检查请求中每个存在的字段。
 
 这使 spawn 和 fork 提供方可以共享进程内实现，而外部提供方只声明自己能强制执行的部分。请求永远不会静默降级：选择不受支持的控制会产生 `UNSUPPORTED_CAPABILITY`，不会有运行或生命周期事件存在。
 

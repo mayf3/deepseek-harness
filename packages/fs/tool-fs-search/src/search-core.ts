@@ -6,7 +6,7 @@
  * and workdir-relative path display.
  *
  * Both tools execute as ordinary foreground spawns through `ctx.subprocess` —
- * never `ctx.bash`, never `ctx.bash.start()`, never a model-visible background
+ * never `ctx.shell`, never `ctx.shell.start()`, never a model-visible background
  * task. The ripgrep binary ships inside the npm package, so no system `rg`
  * install is required, and no shell layer exists between the argv vector and
  * ripgrep, so no shell quoting is involved. Raw `rg` stdout is an internal
@@ -19,11 +19,12 @@
  * @module @deepseek-ai/dsh-tool-fs-search/search-core
  */
 
+import { existsSync } from 'node:fs'
 import { isAbsolute, relative, sep } from 'node:path'
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
-import { ItemRetainer, TextRetainer } from '@deepseek-ai/dsh-retention'
-import type { RetainedItems } from '@deepseek-ai/dsh-retention'
+import { ItemRetainer, TextRetainer } from '@deepseek-ai/dsh-output-retention'
+import type { RetainedItems } from '@deepseek-ai/dsh-output-retention'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessOutputRead, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -37,7 +38,7 @@ export const RAW_OUTPUT_MAX_BYTES = 20_000_000
 /**
  * Default cooperative tool-call timeout budget in milliseconds (the `timeoutMs`
  * config), attached to both tool definitions for
- * `@deepseek-ai/dsh-timeout-policy` to enforce through `exec.signal`.
+ * `@deepseek-ai/dsh-tool-call-timeout-policy` to enforce through `exec.signal`.
  */
 export const SEARCH_TIMEOUT_MS = 30_000
 
@@ -82,7 +83,7 @@ export type SearchErrorCode =
 
 /**
  * Typed search failure. Extends {@link HarnessError} so it carries a stable
- * {@link SearchErrorCode} and chains `cause`; the tool registry surfaces
+ * {@link SearchErrorCode} and chains `cause`; the tool registry exposes
  * `{ name, code }` on `isError` results so retry/permission/UI layers can
  * branch without parsing messages.
  */
@@ -158,18 +159,21 @@ let rgPathPromise: Promise<string> | undefined
 /**
  * The packaged ripgrep binary path, resolved lazily once per process.
  *
- * `@vscode/ripgrep` resolves its platform package (`@vscode/ripgrep-<platform>
- * -<arch>`) at module evaluation, so a static import would turn a missing or
- * corrupt platform package (`pnpm install --omit=optional`, partial install)
- * into a failure of the whole Loader composition. Resolving at the call
- * boundary keeps that failure at the first search call as `SEARCH_FAILED` —
- * the package's documented no-load-time-probe contract.
+ * A single-file runtime uses the executable's `-rg` sidecar because a native
+ * helper cannot be spawned from pkg's virtual filesystem. Node-mode builds
+ * fall back to the platform package selected by `@vscode/ripgrep`. Resolving
+ * at the call boundary keeps a missing or corrupt binary at the first search
+ * call as `SEARCH_FAILED`, rather than failing the Loader composition.
  *
  * @returns the packaged binary's absolute path; the memoized promise rejects
  *   when the platform package cannot be resolved.
  */
 export function resolveRgPath(): Promise<string> {
-  rgPathPromise ??= import('@vscode/ripgrep').then(module => module.rgPath)
+  rgPathPromise ??= Promise.resolve().then(async () => {
+    const executableSidecar = `${process.execPath}-rg`
+    if ('pkg' in process && existsSync(executableSidecar)) return executableSidecar
+    return (await import('@vscode/ripgrep')).rgPath
+  })
   return rgPathPromise
 }
 
@@ -178,7 +182,7 @@ export function resolveRgPath(): Promise<string> {
  * complete raw stdout. The working directory is the calling agent's session
  * cwd (`exec.agent.session.header.cwd`) when available, else
  * `process.cwd()`. `exec.signal` is forwarded so the cooperative tool timeout
- * (`@deepseek-ai/dsh-timeout-policy`) and caller cancellation terminate the
+ * (`@deepseek-ai/dsh-tool-call-timeout-policy`) and caller cancellation terminate the
  * process tree.
  *
  * The spawn is unconfined (a plain `ctx.subprocess` call), so `--no-config`

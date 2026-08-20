@@ -7,16 +7,16 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { delimiter, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import SubagentService from '@deepseek-ai/dsh-subagent'
+import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
-import LocalSubprocessService from '@deepseek-ai/dsh-subprocess-local'
+import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
 import {
   startDeepSeekResponsesBridge,
@@ -24,12 +24,12 @@ import {
 } from './deepseek-responses-bridge.ts'
 
 const execFileAsync = promisify(execFile)
-const packageRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
-const codexBinDir = join(packageRoot, 'node_modules', '.bin')
+const codexPackageJson = createRequire(import.meta.url).resolve('@openai/codex/package.json')
 const codexPackage = JSON.parse(readFileSync(
-  join(packageRoot, 'node_modules', '@openai', 'codex', 'package.json'),
+  codexPackageJson,
   'utf8',
-)) as { version: string }
+)) as { version: string; bin: { codex: string } }
+const codexEntry = resolve(dirname(codexPackageJson), codexPackage.bin.codex)
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -88,7 +88,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)(
         CODEX_HOME: codexHome,
         HOME: root,
         XDG_CONFIG_HOME: join(root, 'xdg-config'),
-        PATH: `${codexBinDir}${delimiter}${process.env.PATH ?? ''}`,
+        PATH: root,
         HTTP_PROXY: '',
         HTTPS_PROXY: '',
         ALL_PROXY: '',
@@ -96,8 +96,8 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)(
       }
       const ctx = new Context()
       contexts.push(ctx)
-      await ctx.plugin(SubagentService)
-      await ctx.plugin(LocalSubprocessService)
+      await ctx.plugin(SubagentRuntime)
+      await ctx.plugin(LocalSubprocessRuntime)
       const handles: SubprocessHandle[] = []
       const spawn = ctx.subprocess.spawn.bind(ctx.subprocess)
       vi.spyOn(ctx.subprocess, 'spawn').mockImplementation((spec) => {
@@ -106,7 +106,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)(
         return handle
       })
       await ctx.plugin(codex, { env, disposeGraceMs: 2_000 })
-      const version = await execFileAsync(join(codexBinDir, 'codex'), ['--version'], {
+      const version = await execFileAsync(process.execPath, [codexEntry, '--version'], {
         env: { ...process.env, ...env },
       })
       expect(codexPackage.version).toBe('0.147.0')

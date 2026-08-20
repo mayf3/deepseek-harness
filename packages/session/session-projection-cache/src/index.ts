@@ -1,6 +1,6 @@
 /**
  * Persisted projection cache (`ctx.sessionProjectionCache`): durable
- * checkpoints of every registered projection unit's state, one record per
+ * checkpoints of every client-visible or explicitly persisted projection unit's state, one record per
  * session on the domain data form (`session_projcache` domain — the shipped
  * json backend lands it beside `workspace.json`). The cache is a fold
  * shortcut, never an authority: a row is possibly stale (its `seq`
@@ -12,8 +12,8 @@
  * @module @deepseek-ai/dsh-session-projection-cache
  */
 
-import { Context, Service } from 'cordis'
-import z from 'schemastery'
+import { Context, Service } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 // Empty type import: applies the package's cordis Context merge
@@ -27,7 +27,7 @@ import type { CheckpointIdentity, CheckpointRecord } from './spec.ts'
 export { checkpointIdentity, checkpointRecord, checkpointRow, projectionCacheDomainSpec } from './spec.ts'
 export type { CheckpointIdentity, CheckpointRecord } from './spec.ts'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     sessionProjectionCache: SessionProjectionCache
   }
@@ -185,10 +185,9 @@ export class SessionProjectionCache extends Service {
       if (!related) throw new Error('unrelated log identity')
       restored = this.ctx.sessionProjections.restore(cached, tail.events, floor)
     } catch {
-      // The recoverable restore failures: an unrelated record, or a row
-      // overreaching the stored log end (or predating the floor). Both imply
-      // floor > 0 (baseSeq-0 restores never throw and an unrelated record
-      // still carried a usable watermark), so the full log is a fresh read.
+      // Recoverable failures are an unrelated record, a row outside the
+      // supplied suffix or log end, and stateSchema rejection. The full read
+      // removes every checkpoint seed and lets each unit refold from init.
       const whole = await persistence.readFrom(id, 0, signal)
       restored = this.ctx.sessionProjections.restore({}, whole.events, 0)
     }

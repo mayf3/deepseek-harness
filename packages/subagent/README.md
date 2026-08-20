@@ -7,9 +7,9 @@ This family lets an agent delegate work to child agents. Multiple named provider
 | Package | Role | ctx key |
 |---|---|---|
 | [`subagent/`](subagent/README.md) | Defines provider registration, delegation, and continuation | `ctx.subagents` |
-| [`subagent-inprocess/`](subagent-inprocess/README.md) | Provides the shared in-process run driver | — |
-| [`subagent-spawn/`](subagent-spawn/README.md) | Starts a fresh in-process child | registers on `ctx.subagents` |
-| [`subagent-fork/`](subagent-fork/README.md) | Starts an in-process child from the parent's completed history | registers on `ctx.subagents` |
+| [`subagent-inprocess/`](subagent-in-process-driver/README.md) | Provides the shared in-process run driver | — |
+| [`subagent-spawn-in-process/`](subagent-spawn-in-process/README.md) | Starts a fresh in-process child | registers on `ctx.subagents` |
+| [`subagent-fork-in-process/`](subagent-fork-in-process/README.md) | Starts an in-process child from the parent's completed history | registers on `ctx.subagents` |
 | [`subagent-acp/`](subagent-acp/README.md) | Starts an out-of-process child over ACP | registers on `ctx.subagents` |
 | [`subagent-codex/`](subagent-codex/README.md) | Starts a real Codex app-server child | registers on `ctx.subagents` |
 | [`subagent-claude-code/`](subagent-claude-code/README.md) | Starts a real Claude Code child through the official Claude Agent SDK | registers on `ctx.subagents` |
@@ -17,6 +17,8 @@ This family lets an agent delegate work to child agents. Multiple named provider
 | [`tool-subagent/`](tool-subagent/README.md) | Exposes delegation to the model | registers on `ctx.tools` |
 | [`tool-subagent-control/`](tool-subagent-control/README.md) | Exposes child messaging and listing to the model | registers on `ctx.tools` |
 | [`tool-subagent-report/`](tool-subagent-report/README.md) | Provides the child-to-parent report channel | registers in child scopes |
+
+The Codex and Claude Code packages are independent optional Profile Bundles. Install either or both with `dsh plugin --profile <name> add @deepseek-ai/dsh-subagent-codex @deepseek-ai/dsh-subagent-claude-code`, then restart that Profile; each package registers only its dormant Host provider. To grant a tool, copy a complete Agent Preset, remove `disabled` from each matching tool row, and start a new Session. Removing one package withdraws only that provider and its private runtime closure on the next Profile start.
 
 See the decisions for the [capability family](../../.agents/notes/implemented/feature/2026-06-21-subagent-capability-seam.md), [continuable children](../../.agents/notes/implemented/feature/2026-07-21-continuable-background-subagents.md), and [control tools](../../.agents/notes/implemented/simplification/2026-07-26-merge-subagent-control-service.md).
 

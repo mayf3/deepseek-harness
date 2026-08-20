@@ -3,59 +3,51 @@
  * @module @deepseek-ai/dsh-commands
  */
 
-import { Context, Service } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
+import type { EncodedImageAttachment } from '@deepseek-ai/dsh-attachment/types'
+import type { ImageBlock } from '@deepseek-ai/dsh-llm'
 import { NamedEntries, ScopedLayers } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer } from '@deepseek-ai/dsh-scope'
 import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
+import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { CommandId } from './brand.ts'
+import type {
+  CommandDescriptor,
+  CommandExecution,
+  CommandInputDescriptor,
+  CommandResult,
+} from './types.ts'
 
 export { CommandId } from './brand.ts'
-export type { CommandSource, CommandSourceMap } from './types.ts'
+export type * from './types.ts'
 
 export const name = 'commands'
 
 const COMMAND_NAME = /^[a-z][a-z0-9_-]*$/u
 
-/** Immutable metadata for a command's optional unstructured input. */
-export interface CommandInputDescriptor {
-  /** Placeholder shown before the user supplies free-form input. */
-  readonly hint: string
-}
+/** Shared frozen attachments value for image-free invocations. */
+const NO_ATTACHMENTS: readonly ImageBlock[] = Object.freeze([])
 
 /** Invocation passed to one registered command handler. */
 export interface CommandInvocation {
   /** Pairing id already written to this invocation's `command/run` event. */
   readonly commandId: CommandId
-  /** Exact agent whose human-facing surface received the command. */
+  /** Exact agent whose UI received the command. */
   readonly agent: Agent
   /** Exact text following the registered command name, including separator whitespace. */
   readonly rawInput: string
+  /**
+   * Durably admitted image blocks accompanying this invocation, in submission
+   * order; empty unless the definition declares `input.images`. The handler
+   * owns their model-visible use — the registry never schedules them itself —
+   * and a handler whose grammar cannot use them in this invocation returns an
+   * error so the dispatching composer retains the originals.
+   */
+  readonly attachments: readonly ImageBlock[]
   /** Cancellation signal owned by the dispatching UI request. */
   readonly signal: AbortSignal
-}
-
-/** Expected command outcome rendered directly by the dispatching UI. */
-export type CommandResult =
-  | {
-    readonly kind: 'success'
-    readonly text?: string
-    /** Earlier authoritative domain event that owns a richer presentation. */
-    readonly sourceEventSeq?: number
-  }
-  | { readonly kind: 'error'; readonly text: string }
-
-/**
- * One settled command execution: the handler's normalized result plus the
- * lifecycle pairing id minted for its `command/run`/`command/done` records,
- * so a dispatching surface can correlate the RPC-level acknowledgment with
- * the flow node those events produce.
- */
-export interface CommandExecution {
-  /** Pairing id carried by this execution's lifecycle events. */
-  readonly commandId: CommandId
-  /** The handler's normalized outcome. */
-  readonly result: CommandResult
 }
 
 /** Plugin-owned command registration. */
@@ -74,16 +66,6 @@ export interface CommandDefinition {
   readonly recordInput?: boolean
   /** Execute against the receiving agent without sending the command to the model. */
   readonly handler: (invocation: CommandInvocation) => CommandResult | Promise<CommandResult>
-}
-
-/** Handler-free immutable command view returned to UI adapters. */
-export interface CommandDescriptor {
-  /** Lowercase command name without the leading slash. */
-  readonly name: string
-  /** Human-readable summary used in discovery UI. */
-  readonly description: string
-  /** Optional free-form input hint advertised to capable clients. */
-  readonly input?: CommandInputDescriptor
 }
 
 /** Syntactically valid slash command before registry resolution. */
@@ -119,19 +101,9 @@ class CommandLayer implements ScopeLayer {
   }
 }
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
-    commands: CommandService
-  }
-
-  interface Events {
-    /**
-     * A command was registered or unregistered. This is an unfiltered registry
-     * notification because a global or scoped change may affect any UI view.
-     * Observer failures are contained and cannot veto the registry mutation.
-     * @mode emit
-     */
-    'commands/change'(): void
+    commands: CommandRuntime
   }
 }
 
@@ -154,6 +126,11 @@ export function parseCommand(line: string): ParsedCommand | undefined {
 function abortError(signal: AbortSignal): Error {
   if (signal.reason instanceof Error) return signal.reason
   return new Error(typeof signal.reason === 'string' ? signal.reason : 'command aborted')
+}
+
+/** The signal's normalized abort error when it is already aborted. */
+function cancellationOf(signal: AbortSignal): Error | undefined {
+  return signal.aborted ? abortError(signal) : undefined
 }
 
 /** Render arbitrary thrown values without trusting their string coercion. */
@@ -213,7 +190,13 @@ function normalizeDefinition(definition: CommandDefinition): RegisteredCommand {
     if (rawInput.hint.trim().length === 0) {
       throw new TypeError(`command "${definition.name}" input hint must not be empty`)
     }
-    input = Object.freeze({ hint: rawInput.hint })
+    if ('images' in rawInput && rawInput.images !== undefined && typeof rawInput.images !== 'boolean') {
+      throw new TypeError(`command "${definition.name}" input images flag must be a boolean`)
+    }
+    input = Object.freeze({
+      hint: rawInput.hint,
+      ...('images' in rawInput && rawInput.images === true) ? { images: true } : {},
+    })
   }
   const normalized = Object.freeze({
     name: definition.name,
@@ -264,7 +247,7 @@ function normalizeResult(command: string, value: unknown): CommandResult {
  * registered through a command-injected child of an agent context shadow
  * globals for that agent.
  */
-export class CommandService extends Service {
+export class CommandRuntime extends TypertRemoteService {
   private readonly layers = new ScopedLayers(
     scope => new CommandLayer(scope),
     () => { this.notifyChange() },
@@ -298,6 +281,7 @@ export class CommandService extends Service {
    * @param agent - exact receiving agent and scoped-layer key.
    * @returns name-sorted descriptors after scoped shadowing.
    */
+  @Remote
   list(agent: Agent): readonly CommandDescriptor[] {
     return Object.freeze([...this.view(agent).values()]
       .map(command => command.descriptor)
@@ -328,15 +312,24 @@ export class CommandService extends Service {
    * handler-failure path is contained so the handler's own error stays the
    * reported failure.
    *
+   * Image admission is enforced here, not in the composer: images sent to a
+   * command that does not declare `input.images`, an absent attachment store,
+   * and an exceeded attachment limit each settle as an error result before
+   * the handler runs, and a rejected batch publishes no durable object.
+   *
    * @param agent - exact receiving agent.
    * @param line - complete slash-command line.
+   * @param images - base64-encoded composer images accompanying the line, in
+   *   submission order; empty for a plain invocation.
    * @param signal - cancellation signal owned by the UI request.
    * @returns the settled execution (result + lifecycle pairing id), or
    *   `undefined` when syntax or name does not resolve.
    */
+  @Remote
   async execute(
     agent: Agent,
     line: string,
+    images: readonly EncodedImageAttachment[],
     signal: AbortSignal,
   ): Promise<CommandExecution | undefined> {
     const parsed = parseCommand(line)
@@ -351,30 +344,67 @@ export class CommandService extends Service {
       ...command.definition.recordInput === false ? {} : { args: parsed.rawInput },
       source: { kind: 'user' },
     })
-    const invocation = Object.freeze({ commandId, agent, rawInput: parsed.rawInput, signal })
+    const settle = (result: CommandResult): CommandExecution => {
+      this.appendLifecycle(agent.session, 'command/done', {
+        commandId, kind: result.kind,
+        ...result.text === undefined ? {} : { text: result.text },
+        ...result.kind === 'success' && result.sourceEventSeq !== undefined
+          ? { sourceEventSeq: result.sourceEventSeq }
+          : {},
+      })
+      return Object.freeze({ commandId, result: Object.freeze(result) })
+    }
+    let attachments: readonly ImageBlock[] = NO_ATTACHMENTS
+    if (images.length > 0) {
+      if (command.definition.input?.images !== true) {
+        return settle({ kind: 'error', text: `/${parsed.name} does not accept image attachments` })
+      }
+      const store = this.ctx.get('attachments')
+      if (store === undefined) {
+        return settle({ kind: 'error', text: `/${parsed.name}: image attachments are unavailable because no attachment store is composed` })
+      }
+      try {
+        const refs = await admitEncodedImages(store, images)
+        attachments = Object.freeze(refs.map(ref => Object.freeze({ type: 'image' as const, attachment: ref })))
+      } catch (error: unknown) {
+        if (error instanceof AttachmentError) {
+          return settle({ kind: 'error', text: error.message })
+        }
+        this.settleThrown(agent.session, parsed.name, commandId, error)
+        throw error
+      }
+      // Cancellation must be honored BEFORE the handler runs: admission may
+      // await slow storage, and a handler entered after the caller cancelled
+      // would mutate state the retrying caller then duplicates. (The committed
+      // image objects stay unreferenced and are deferred-GC territory.)
+      const cancelledDuringAdmission = cancellationOf(signal)
+      if (cancelledDuringAdmission !== undefined) {
+        this.settleThrown(agent.session, parsed.name, commandId, cancelledDuringAdmission)
+        throw cancelledDuringAdmission
+      }
+    }
+    const invocation = Object.freeze({ commandId, agent, rawInput: parsed.rawInput, attachments, signal })
     let result: CommandResult
     try {
       const output = command.definition.handler(invocation)
       result = normalizeResult(parsed.name, await withAbort(Promise.resolve(output), signal))
     } catch (error: unknown) {
-      try {
-        this.appendLifecycle(agent.session, 'command/done', {
-          commandId, kind: 'error',
-          text: error instanceof Error ? error.message : renderThrown(error),
-        })
-      } catch (appendError: unknown) {
-        this.ctx.logger.warn(`command "${parsed.name}": command/done append failed: ${renderThrown(appendError)}`)
-      }
+      this.settleThrown(agent.session, parsed.name, commandId, error)
       throw error
     }
-    this.appendLifecycle(agent.session, 'command/done', {
-      commandId, kind: result.kind,
-      ...result.text === undefined ? {} : { text: result.text },
-      ...result.kind === 'success' && result.sourceEventSeq !== undefined
-        ? { sourceEventSeq: result.sourceEventSeq }
-        : {},
-    })
-    return Object.freeze({ commandId, result })
+    return settle(result)
+  }
+
+  /** Contained `command/done` error append for a thrown handler or admission failure. */
+  private settleThrown(session: Session, command: string, commandId: CommandId, error: unknown): void {
+    try {
+      this.appendLifecycle(session, 'command/done', {
+        commandId, kind: 'error',
+        text: error instanceof Error ? error.message : renderThrown(error),
+      })
+    } catch (appendError: unknown) {
+      this.ctx.logger.warn(`command "${command}": command/done append failed: ${renderThrown(appendError)}`)
+    }
   }
 
   /** Mint the next pairing id (monotonic; instance-token-prefixed so a resumed log never repeats one). */
@@ -424,4 +454,4 @@ export class CommandService extends Service {
   }
 }
 
-export default CommandService
+export default CommandRuntime

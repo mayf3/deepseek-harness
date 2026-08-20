@@ -9,6 +9,7 @@
 // The block union's defining home is runtime (fold-product types); this
 // contract only forwards it (type-definition authority stays with the layer
 // that produces the values).
+import { abbreviateHomePath } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ToolCallBlock, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
 
 export type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
@@ -25,7 +26,15 @@ export const VARIANT_TITLES: Record<ToolRowVariant, string> = {
   write: 'Write', edit: 'Edit', code: 'Code', others: 'Tool call',
 }
 
-/** Known tool name -> variant. */
+/**
+ * Known tool name -> variant.
+ *
+ * `cordis_define` is deliberately absent: ui-cordis registers a keyed
+ * `tool.call.toolview` entry for it, and a keyed hit REPLACES the generic row
+ * (this table is only reached through GenericToolCard, the dispatch fallback in
+ * ToolCallTree). An entry here would be unreachable, and a second title for the
+ * same call would be a second answer to a question the card already owns.
+ */
 const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   bash: 'bash',
   // The PowerShell twin is a shell tool: the bash row family (icon, colors)
@@ -39,16 +48,24 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   write: 'write',
   edit: 'edit',
   run_code: 'code',
-  cordis_inspect: 'read',
-  cordis_mount: 'code',
-  cordis_unmount: 'others',
+  cordis_package_inspect: 'read',
+  cordis_runtime_inspect: 'read',
+  // The three run-control verbs take one package id and produce a receipt, so
+  // the generic row is the decided intent, not an unclassified default: there is
+  // no program to show (that is `cordis_define`'s card) and no file to open. The
+  // id lands in the summary slot, and the titles below name the act.
+  cordis_run: 'others',
+  cordis_stop: 'others',
+  cordis_undefine: 'others',
 }
 
 /** Tool-owned titles that refine a generic row variant without replacing it. */
 const TOOL_TITLES: Record<string, string> = {
-  cordis_inspect: 'Inspect',
-  cordis_mount: 'Mount temporary Plugin',
-  cordis_unmount: 'Unmount temporary Plugin',
+  cordis_package_inspect: 'Inspect',
+  cordis_runtime_inspect: 'Inspect',
+  cordis_run: 'Run Cordis Plugin',
+  cordis_stop: 'Stop Cordis Plugin',
+  cordis_undefine: 'Remove Cordis Plugin',
   pwsh: 'Pwsh',
 }
 
@@ -150,6 +167,10 @@ function deriveSummary(variant: ToolRowVariant, argsRaw: string): string {
   const parsed = parseArgs(argsRaw)
   if (typeof parsed !== 'object' || parsed === null) return firstLine(argsRaw)
   const args = parsed as Record<string, unknown>
+  if (variant === 'search' && Array.isArray(args.queries)) {
+    const queries = args.queries.filter((query): query is string => typeof query === 'string' && query !== '')
+    if (queries.length > 0) return queries.map(firstLine).join(', ')
+  }
   const picked = pickString(args, SUMMARY_KEYS[variant])
   if (picked !== undefined) return firstLine(picked)
   for (const v of Object.values(args)) {
@@ -190,16 +211,19 @@ function deriveBody(variant: ToolRowVariant, argsRaw: string): string | null {
  * @param toolName - wire tool name (dispatch-supplied; survives windowless results).
  * @param block - RunningToolCall or ToolResultNode off the snapshot caches.
  * @param cwd - session workspace root; workspace-rooted path summaries display relative to it.
+ * @param home - host account home; a leftover POSIX home path displays as `~`.
  * @returns the row model.
  */
-export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: string): ToolRowModel {
+export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: string, home?: string): ToolRowModel {
   const variant = classifyTool(toolName)
   const done = 'kind' in block
   const argsRaw = (done ? block.call?.argsRaw : block.argsRaw) ?? ''
   const state: ToolRowState = !done ? 'running'
     : block.error?.code === 'interrupted' ? 'stopped'
       : block.isError ? 'error' : 'ok'
-  const base = argsRaw === '' ? block.callId : relativizeToCwd(deriveSummary(variant, argsRaw), cwd)
+  const base = argsRaw === ''
+    ? block.callId
+    : abbreviateHomePath(relativizeToCwd(deriveSummary(variant, argsRaw), cwd), home)
   const toolTitle = TOOL_TITLES[toolName]
   // Others keeps the static "Tool call" title (figma literal); the real tool
   // name rides the mutable summary slot unless the tool owns a specific title.

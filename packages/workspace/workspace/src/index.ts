@@ -1,5 +1,5 @@
 /**
- * Workspace entity registry (`ctx.workspace`): durable workspace records,
+ * Workspace entity registry (`ctx.workspaceRegistry`): durable workspace records,
  * stable registry order, and header-validated session membership over the
  * domain data form.
  * @module @deepseek-ai/dsh-workspace
@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { basename } from 'node:path'
-import { Context, Service } from 'cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { DomainGlobal, KvTable } from '@deepseek-ai/dsh-storage-domain'
@@ -52,10 +52,21 @@ export class WorkspaceUnknownSessionError extends Error {
   }
 }
 
+/** A workspace reorder named a source or anchor absent from the durable registry order. */
+export class WorkspaceOrderInvalidError extends Error {
+  /**
+   * @param workspaceId - Missing source or anchor id.
+   */
+  constructor(readonly workspaceId: WorkspaceId) {
+    super(`cannot reorder unknown workspace '${workspaceId}'`)
+    this.name = 'WorkspaceOrderInvalidError'
+  }
+}
 
-declare module 'cordis' {
+
+declare module '@deepseek-ai/cordis' {
   interface Context {
-    workspace: WorkspaceRegistry
+    workspaceRegistry: WorkspaceRegistry
   }
 }
 
@@ -101,7 +112,7 @@ export class WorkspaceRegistry extends Service {
   }
 
   constructor(ctx: Context) {
-    super(ctx, 'workspace')
+    super(ctx, 'workspaceRegistry')
   }
 
   /** Open the domain, finish bootstrap when required, and rebuild the ordered cache. */
@@ -139,6 +150,11 @@ export class WorkspaceRegistry extends Service {
    * @param title - Display title used only when a new record is created.
    * @returns the existing or newly durable workspace.
    */
+  // TODO: `title` lost its last production caller when the gateway's
+  // create-by-name branch was deleted
+  // (.agents/notes/implemented/simplification/2026-07-31-one-route-to-add-a-workspace.md);
+  // drop the parameter with its @param clause and the `create(path, title?)`
+  // lines in this package's README pair.
   async create(path: string, title?: string): Promise<Workspace> {
     const canonical = await realpathNormalize(path)
     if (!(await stat(canonical)).isDirectory()) {
@@ -182,6 +198,30 @@ export class WorkspaceRegistry extends Service {
    */
   delete(id: WorkspaceId): Promise<boolean> {
     return this.enqueueOperation(() => this.deleteKnown(id))
+  }
+
+  /**
+   * Move one workspace within the durable display order, DOM-insertBefore-like.
+   * With an anchor it lands before that workspace; without one it appends.
+   * @param id - Workspace to move.
+   * @param beforeId - Workspace anchor; omitted appends.
+   * @returns the complete committed workspace order.
+   */
+  insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly WorkspaceId[]> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (!state.workspaceIds.includes(id)) throw new WorkspaceOrderInvalidError(id)
+      if (beforeId !== undefined && !state.workspaceIds.includes(beforeId)) {
+        throw new WorkspaceOrderInvalidError(beforeId)
+      }
+      if (beforeId === id) return state.workspaceIds
+      const without = state.workspaceIds.filter(workspaceId => workspaceId !== id)
+      const at = beforeId === undefined ? without.length : without.indexOf(beforeId)
+      const workspaceIds = [...without.slice(0, at), id, ...without.slice(at)]
+      if (sameIds(workspaceIds, state.workspaceIds)) return state.workspaceIds
+      await this.setState({ ...state, workspaceIds })
+      return workspaceIds
+    })
   }
 
   /**

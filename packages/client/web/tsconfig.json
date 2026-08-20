@@ -24,16 +24,10 @@
       "path": "../ui-primitives"
     },
     {
-      "path": "../schema-form"
+      "path": "../ui-renderer"
     },
     {
-      "path": "../web-react"
-    },
-    {
-      "path": "../runtime"
-    },
-    {
-      "path": "../../support/invariants"
+      "path": "../../runtime-diagnostics/invariants"
     }
   ],
   "exclude": [

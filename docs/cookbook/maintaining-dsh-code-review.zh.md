@@ -1,8 +1,8 @@
-# 维护 dsh-code-review skill（技能）
+# 维护 dsh-code-review skill
 
 [English](maintaining-dsh-code-review.md) | 中文
 
-[`dsh-code-review`](../../.agents/skills/dsh-code-review/SKILL.md) skill 由一名指定操作员通过私有的周期维护工具持续更新。本实操手册既是该操作员和接任者的入口，也帮助仓库贡献者理解为何 skill 更新会以小型周期 PR（Pull Request）的形式出现，而不是一次性审计。工作流本身由[人工评审 skill 维护 Agent Note](../../.agents/notes/proposed/process/2026-07-13-human-review-skill-maintenance.md)规定。
+[`dsh-code-review`](../../.agents/skills/dsh-code-review/SKILL.md) skill（技能）由一名指定操作员通过私有的周期维护工具持续更新。本实操手册既是该操作员和接任者的入口，也帮助仓库贡献者理解为何 skill 更新会以小型周期 PR（Pull Request）的形式出现，而不是一次性审计。工作流本身由[人工评审 skill 维护 Agent Note](../../.agents/notes/proposed/process/2026-07-13-human-review-skill-maintenance.zh.md)规定。
 
 ## 维护者会收到什么
 
@@ -20,7 +20,7 @@
 
 某次运行产出候选版本时，macOS 会发出一条带 `dsh-code-review-promote <timestamp>` 提示的通知。
 
-1. **根据 diff 本身作出判断。** 不要因为「评审者已经批准」就直接接受：维护者约定规定最终判断由操作员作出。检查清单是否膨胀、是否有历史叙述、是否根据单次事件作出无依据的外推，以及是否与现有 skill 或权威文档重复。
+1. **根据 diff 本身作出判断。** 不要因为「评审者已经批准」就直接接受；维护者约定规定由操作员作出最终决定。检查清单是否膨胀、是否有历史叙述、是否根据单次事件作出无依据的外推，以及是否与现有 skill 或权威文档重复。
 
    ```sh
    ls ~/dsh-code-review-outputs/                         # every candidate ever produced

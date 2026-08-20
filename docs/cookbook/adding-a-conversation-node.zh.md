@@ -4,7 +4,7 @@
 
 本教程为 Web Client Chat 视图添加一行由业务自行拥有的内容。完成后的插件会把一个持久 Session 事件族关联成一个 Context，增量构造业务 State，发布类型化 Step 数据，再渲染 keyed Chat Node；整个过程不扫描 Session 窗口或其他已渲染节点。本教程假设 Host 已经记录这些事件，且该 Client 插件已组装进 Web bundle；Host 侧外部 UI 和 Trajectory 等额外视图目标不在本文范围内。
 
-[Conversation Node 组装决策](../../.agents/notes/implemented/architecture/2026-08-09-client-conversation-node-assembly.md)记录完整的引擎模型和设计理由；本文只说明实现路径。
+[Conversation Node 组装决策](../../.agents/notes/implemented/architecture/2026-08-09-client-conversation-node-assembly.zh.md)记录完整的引擎模型和设计理由；本文只说明实现路径。
 
 ## 1. 设计可回放的事件族
 
@@ -120,6 +120,7 @@ function viewData(state: ReviewState): ReviewChatData {
 
 const reviewDefinition: ConversationNodeDefinition<ReviewState> = {
   kind: 'review-job',
+  target: 'chat',
   match: (event) => {
     if (event.type === 'review/start') {
       return { id: String(event.data.reviewId), role: 'start' }
@@ -161,8 +162,8 @@ const reviewDefinition: ConversationNodeDefinition<ReviewState> = {
       value: viewData(context.state),
     }
   },
-  buildViewNode: (context, target) => {
-    if (target !== 'chat' || context.state === undefined) return null
+  buildViewNode: (context) => {
+    if (context.state === undefined) return null
     return {
       key: context.key,
       kind: 'review-job',
@@ -196,7 +197,7 @@ export function apply(ctx: ClientContext): void {
 
 `buildLocationData(context, scope)` 可以把 Definition 拥有的数据发布到引擎拥有的 Turn 或 Step 上。通过 declaration merging 为每个 key 指定精确 value 类型。同一 Location 内的另一个 Node 可以使用受限 slot hook（例如 `useTurnData(key)`）读取该值，无须取得 Session，也无须扫描 `snapshot.chat.nodes`。
 
-`buildViewNode(context, target)` 物化最终的目标专用 Node。把 `context.key` 保留为 React 侧身份，根据持久排序证据选择 `anchorSeq`，并且只返回 renderer 可以直接使用的数据。某个 target Node 一旦发布，就要继续返回同一个 key；需要暂时离开可见流时使用 `visibility: 'hidden'`，不要改为返回 `null` 撤回它。
+`target` 与 `buildViewNode(context)` 必须同时声明一项由 target 拥有的渲染贡献。把 `context.key` 保留为 React 侧身份，根据持久排序证据选择 `anchorSeq`，并且只返回 renderer 可以直接使用的数据。某个 target Node 一旦发布，就要继续返回同一个 key；需要暂时离开可见流时使用 `visibility: 'hidden'`，不要改为返回 `null` 撤回它。
 
 ## 3. 只在 start 时查询更早的业务 Context
 

@@ -16,7 +16,7 @@ Status: implemented
 
 一次成功的 `send()` 创建一个独立的 FIFO 队列项。该队列项如果运行，就是所在轮次中唯一的普通消息。队列项可能在启动前被丢弃，因此精确保证是最多一个轮次，而不是必定一个轮次；两次 send 绝不会被悄悄合并。
 
-消息插入之前，`send()` 会检查 agent 状态，并接受已有标识且经过深度冻结的值。持久化 splice 与 `agent/inbox/inserted { message }` 会保留其 `MessageId`；在驱动器领取或丢弃该消息之前，可以通过 `Inbox.replace()` 与 `Inbox.remove()` 寻址。当前生命周期由[已领取 pre-step inbox 决策](../architecture/2026-07-31-claimed-pre-step-inbox-lifecycle.md)规定。
+消息插入之前，`send()` 会检查 agent 状态，并接受已有标识且经过深度冻结的值。持久化 splice 与 `agent/inbox/inserted { message }` 会保留其 `MessageId`；在驱动器领取或丢弃该消息之前，可以通过 `Inbox.replace()` 与 `Inbox.remove()` 寻址。当前生命周期由[已领取 pre-step inbox 决策](../architecture/2026-07-31-claimed-pre-step-inbox-lifecycle.zh.md)规定。
 
 如果消息 A、B 都进入处理，B 的轮次只能在 A 记录 `turn/end` 且 A 的持久性检查点处理结束后开始。因此，B 的请求能看到 A 在同一会话日志中留下的已关闭结果。检查点错误会照常报告，但处理结束只表示解除这道顺序屏障，不表示失败的写入已经持久化。面向整个 agent 的 `cancel()`、dispose（资源释放）或 `turn/start` 之前的失败也可能丢弃尚未启动的队列项，而不打开一个空轮次。
 
@@ -24,7 +24,7 @@ Status: implemented
 
 上述不合批规则只适用于普通 follow-up 输入。`steer()` 会把输入放入 next-step inbox 并唤醒驱动器。在轮次期间，循环可以在后续步骤边界领取它；agent 空闲时，这个会唤醒的 next-step 批次会启动一个新轮次。批次被领取后才到达的输入会等待后续边界，而取消或 dispose 可以将其丢弃。
 
-`inject()` 继续添加面向模型的上下文，但不提交普通输入，也不唤醒驱动器。即使 agent 空闲，它也始终在 next-step inbox 中等待后续 pre-step；AgentLoop 只会在 enter 决策于轮次内返回它时，将其记录为 `user/message`。`cancel()` 仍是面向整个 agent 的操作，可以清空所有尚未启动的普通输入、steering 和注入，并中止当前步骤。`status` 和 `whenIdle()` 描述的也是整个 agent，而不是某一条消息。
+`inject()` 继续添加面向模型的上下文，但不提交普通输入，也不唤醒驱动器。即使 agent 空闲，它也始终在 next-step inbox 中等待后续 pre-step；AgentLoop 只会在 enter 决策于轮次内返回它时，将其记录为 `user/message`。`cancel()` 仍是面向整个 agent 的操作，可以清空所有尚未启动的普通输入、steering（中途引导）和注入，并中止当前步骤。`status` 和 `whenIdle()` 描述的也是整个 agent，而不是某一条消息。
 
 ## 曾考虑的替代方案
 
@@ -34,7 +34,7 @@ Status: implemented
 
 - 单元测试和基于属性的测试从同一调用栈、相邻微任务、不同生产方和重入回调提交 send；每条消息都会得到一个按 FIFO 排序的独立轮次。
 - stdio 构建产物测试提交两行输入，并观察到两个模型请求和两个轮次边界。
-- 延迟和拒绝第一个轮次的检查点，都能让下一个轮次保持等待，并证明其请求可以看到前一条助手结果。
+- 延迟和拒绝第一个轮次的检查点，都能让下一个轮次保持等待，并证明其请求会看到前一条助手结果。
 - 失败路径测试覆盖 pre-step 拒绝、监听器失败、面向整个 agent 的取消、dispose 和 `turn/start` 之前的失败；首次 pre-step 的各种退出都会关闭边界平衡的无步骤轮次，消息不会合并，之后仍需处理的工作也能继续清空。
 - 其他测试分别覆盖轮次打开时、轮次失败后和空闲时的 `steer()`，以及待处理的 `inject()`、面向整个 agent 的状态和 `whenIdle()`。
 

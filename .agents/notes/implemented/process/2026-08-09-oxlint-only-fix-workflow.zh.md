@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-[仓库 linter 迁移](2026-07-29-oxlint-linter.md)保留了一次仅用于格式化的 ESLint 调用，因为当时认为 Oxlint 的 JavaScript 插件桥接层只能用于校验。固定版本的 Oxlint 工具链能够执行 `@stylistic/eslint-plugin` 提供的安全修复，因此单独的格式化器重复引入了配置边界、命令启动过程，以及对 `eslint` 和 `@typescript-eslint/parser` 的直接依赖。
+[仓库 linter 迁移](2026-07-29-oxlint-linter.zh.md)保留了一次仅用于格式化的 ESLint 调用，因为当时认为 Oxlint 的 JavaScript 插件桥接层只能用于校验。固定版本的 Oxlint 工具链能够执行 `@stylistic/eslint-plugin` 提供的安全修复，因此单独的格式化器重复引入了配置边界、命令启动过程，以及对 `eslint` 和 `@typescript-eslint/parser` 的直接依赖。
 
 单次调用 Oxlint 并不能实现等价替代。相互重叠的插件修复可能先应用一项变更，却留下由此新暴露的诊断；仓库中包含 `semi` 和 `object-curly-spacing` 违规的 fixture（测试前置数据）需要运行第二轮才能完全修复。工作流必须重试这种情况，同时不得打印第一轮中已经失效的诊断。
 
@@ -18,7 +18,7 @@ Status: implemented
 
 ## 验证
 
-可执行 lint 约定将一项特意构造、修复相互重叠的样式违规交给仓库运行器处理，并要求运行器成功退出且最终字节完全一致。同一约定还会固定完整的 Stylistic 规则集、不加载项目时对 TypeGraph fixture 的覆盖、包脚本、暂存文件钩子命令、已删除的格式化器配置，以及 ESLint 解析器和运行器不存在直接依赖这一事实。现有的可执行探针继续覆盖 Stylistic 和 SonarJS 兼容插件、不加载项目的暂存文件校验，以及类型感知的项目发现。
+可执行 lint 约定将一项特意构造、会触发重叠修复的样式违规交给仓库运行器处理，并要求运行器成功退出且最终字节完全一致。同一约定还会固定完整的 Stylistic 规则集、不加载项目时对 TypeGraph fixture 的覆盖、包脚本、暂存文件钩子命令、已删除的格式化器配置，以及 ESLint 解析器和运行器不存在直接依赖这一事实。现有的可执行探针继续覆盖 Stylistic 和 SonarJS 兼容插件、不加载项目的暂存文件校验，以及类型感知的项目发现。
 
 ## 考虑过的替代方案
 

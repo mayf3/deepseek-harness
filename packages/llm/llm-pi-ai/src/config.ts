@@ -14,19 +14,44 @@
  * @module dsh-llm-pi-ai/config
  */
 
-import type { CacheRetention, ModelThinkingLevel, Provider, ThinkingBudgets, Transport } from '@earendil-works/pi-ai'
-import z from 'schemastery'
+import type { CacheRetention, ChatTemplateKwargValue, ModelThinkingLevel, Provider, ThinkingBudgets, Transport } from '@earendil-works/pi-ai'
+import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
-import { resolveRouteModels, SUPPORTED_THINKING_FORMATS, THINKING_LEVELS } from './catalog.ts'
-import type { PiAiCompatProfile, PiAiModelOverride, PiAiModelProfile, PiAiReasoningEfforts } from './catalog.ts'
+import {
+  CACHE_CONTROL_FORMATS,
+  CHAT_TEMPLATE_VARS,
+  MAX_TOKENS_FIELDS,
+  MODALITIES,
+  resolveRouteModels,
+  SUPPORTED_THINKING_FORMATS,
+  THINKING_LEVELS,
+} from './catalog.ts'
+import type {
+  PiAiCompatProfile,
+  PiAiModality,
+  PiAiModelOverride,
+  PiAiModelProfile,
+  PiAiReasoningEfforts,
+} from './catalog.ts'
 import { buildProvider, supportedProtocols } from './provider.ts'
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
+
+/**
+ * Default request-level bound on base64-encoded image payload. Every image in
+ * history is re-encoded into every request body, so an unbounded conversation
+ * eventually exceeds a provider or gateway request-size cap and the session
+ * can never complete another request. The 20MiB default admits four images at
+ * the attachment store's 3.5MiB raw-image default after base64 expansion and
+ * reserves request capacity for system prompts, history, tools, and JSON.
+ * Deployments behind stricter gateways lower it per route.
+ */
+export const DEFAULT_MAX_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
 
 /** Context capacity assumed for a model neither configuration nor the catalog sizes. */
 export const DEFAULT_CONTEXT_WINDOW = 262_144
@@ -34,8 +59,21 @@ export const DEFAULT_CONTEXT_WINDOW = 262_144
 /** Output capability assumed for a model neither configuration nor the catalog sizes. */
 export const DEFAULT_MAX_TOKENS = 32_768
 
+/**
+ * Modalities assumed for a model neither configuration nor the catalog
+ * declares. Text is the floor every supported protocol certainly carries, so
+ * this is the absence of a declaration rather than a guess at the endpoint:
+ * nothing can interrogate a gateway for its modalities, and the two wrong
+ * answers do not cost the same. Under-claiming refuses the image before it is
+ * attached, naming the model. Over-claiming admits one the provider then
+ * rejects mid-turn, after the message is durable, leaving the session
+ * repeating a request that cannot succeed.
+ */
+export const DEFAULT_INPUT: readonly PiAiModality[] = ['text']
+
 export type {
   PiAiCompatProfile,
+  PiAiModality,
   PiAiModelOverride,
   PiAiModelProfile,
   PiAiReasoningEfforts,
@@ -72,10 +110,11 @@ export interface PiAiProviderProfile {
    */
   modelOverrides?: Record<string, PiAiModelOverride>
   /**
-   * Reasoning-dispatch switches for every `openai-completions` model on this
-   * route; each model's own `compat` overrides per field. What neither sets
-   * keeps the installed catalog entry's value, then pi-ai's baseURL-derived
-   * detection.
+   * pi-ai wire-compatibility switches defaulting every model on this route
+   * whose protocol declares them; each model's own `compat` overrides per
+   * field. What neither sets keeps the installed catalog entry's value, then
+   * pi-ai's own detection. A switch no model on the route could read is
+   * refused rather than left looking applied.
    */
   compat?: PiAiCompatProfile
   /**
@@ -90,6 +129,17 @@ export interface PiAiProviderProfile {
    * never becomes a per-request cap on its own.
    */
   defaultMaxTokens?: number
+  /**
+   * Request modalities for a model this route lists that neither its entry's
+   * {@link PiAiModelProfile.input} nor the installed catalog declares (default
+   * `[text]`). A fallback like the capacities above, not an override: a
+   * catalog model keeps the modalities the catalog records for it, and this
+   * value never narrows one. A gateway serving vision models the catalog does
+   * not describe declares `[text, image]` once here instead of on every entry.
+   * Unlike an entry's list, this one may not be empty — nothing sits below it
+   * to answer instead.
+   */
+  defaultInput?: PiAiModality[]
   /** Provider request headers; Harness attribution wins reserved names. */
   headers?: Record<string, string>
   /** Provider-neutral pi-ai reasoning level. */
@@ -106,7 +156,14 @@ export interface PiAiProviderProfile {
   websocketConnectTimeoutMs?: number
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs?: number
-  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  /**
+   * Maximum base64-encoded image payload per request. When a request's
+   * accumulated images exceed it, the oldest images are replaced by text
+   * placeholders until the request fits, so a long session keeps completing
+   * requests instead of being rejected by a request-size cap.
+   */
+  maxRequestImageBytes?: number
+  /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
 
@@ -121,6 +178,8 @@ export interface ResolvedPiAiProviderProfile
   apiKeyEnv?: CredentialRef
   /** Positive finite provider-idle interval after defaulting. */
   streamIdleTimeoutMs: number
+  /** Positive request-level base64 image payload bound after defaulting. */
+  maxRequestImageBytes: number
   /** Immutable retry policy captured with this provider route. */
   retryPolicy: ResolvedRetryPolicy
   /**
@@ -155,20 +214,54 @@ const thinkingBudgets = z.object({
   high: z.number(),
 })
 
+/**
+ * One `chat_template_kwargs` value. The `$var` member is pi-ai's placeholder
+ * for a value dispatch fills from the request's thinking state, which is what
+ * makes a chat-template gateway configurable without restating its template.
+ */
+const chatTemplateKwarg: z<ChatTemplateKwargValue> = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.const(null),
+  z.object({
+    $var: z.union(CHAT_TEMPLATE_VARS).required(),
+    omitWhenOff: z.boolean(),
+  }),
+])
+
 const compatProfile: z<PiAiCompatProfile> = z.object({
-  thinkingFormat: z.union(SUPPORTED_THINKING_FORMATS),
+  supportsStore: z.boolean(),
+  supportsDeveloperRole: z.boolean(),
   supportsReasoningEffort: z.boolean(),
+  supportsUsageInStreaming: z.boolean(),
+  maxTokensField: z.union(MAX_TOKENS_FIELDS),
+  requiresToolResultName: z.boolean(),
+  requiresAssistantAfterToolResult: z.boolean(),
+  requiresThinkingAsText: z.boolean(),
+  requiresReasoningContentOnAssistantMessages: z.boolean(),
+  thinkingFormat: z.union(SUPPORTED_THINKING_FORMATS),
+  chatTemplateKwargs: z.dict(chatTemplateKwarg),
+  supportsStrictMode: z.boolean(),
+  cacheControlFormat: z.union(CACHE_CONTROL_FORMATS),
+  supportsLongCacheRetention: z.boolean(),
+  supportsEagerToolInputStreaming: z.boolean(),
+  supportsCacheControlOnTools: z.boolean(),
+  supportsTemperature: z.boolean(),
+  forceAdaptiveThinking: z.boolean(),
+  allowEmptySignature: z.boolean(),
+  supportsStrictTools: z.boolean(),
 })
 
 /**
  * Keys are the offered levels, values their wire spellings. A valueless key
  * (`off:`) survives validation because schemastery passes nullable data
- * through before any member schema runs — `z.const(null)` only shapes the
- * error for non-null wrong values and what a configuration surface renders.
+ * through before any member schema runs — `z.const(null)` only controls the
+ * error for non-null wrong values and what a configuration UI renders.
  * Only resolution decides which levels may leave the value empty, so the
  * diagnostic can name the route and model. The assertion narrows
  * schemastery's `Dict`, which types every literal key as required; dict
- * validation is per-present-key, so the runtime shape is the partial record.
+ * validation checks only present keys, so the runtime value is a partial record.
  */
 const reasoningEfforts = z.dict(
   z.union([z.string(), z.const(null)]),
@@ -180,6 +273,10 @@ const modelFields = {
   name: z.string(),
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
+  // No explicit default, unlike the route's `defaultInput`: schemastery
+  // materializes `[]` for an absent array, and resolution reads that as "no
+  // answer here" so the catalog entry below still applies.
+  input: z.array(z.union(MODALITIES)),
   // The union, not a bare dict: schemastery materializes an absent dict as
   // `{}`, and absent must stay distinguishable — it means "inherit the
   // installed catalog's capability", while `false` disables reasoning.
@@ -205,6 +302,7 @@ const profile = z.object({
   compat: compatProfile,
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
   defaultMaxTokens: z.number().step(1).min(1).default(DEFAULT_MAX_TOKENS),
+  defaultInput: z.array(z.union(MODALITIES)).default([...DEFAULT_INPUT]),
   headers: z.dict(z.string()),
   reasoning: z.union(THINKING_LEVELS),
   thinkingBudgets,
@@ -213,6 +311,7 @@ const profile = z.object({
   timeoutMs: z.natural(),
   websocketConnectTimeoutMs: z.natural(),
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
+  maxRequestImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_REQUEST_IMAGE_BYTES),
   retryPolicy: RetryPolicySchema,
 })
 
@@ -237,7 +336,7 @@ export function assertServiceable(config: Config): void {
   resolveProfiles(config.providers)
 }
 
-/** Reject a pre-release profile shape, naming the replacement. */
+/** Reject removed pre-release profile fields and name their replacements. */
 function rejectRemovedFields(provider: string, source: PiAiProviderProfile): void {
   const legacy = source as PiAiProviderProfile & {
     provider?: unknown
@@ -288,6 +387,19 @@ export function resolveProfiles(
         `llm-pi-ai: provider "${provider}" streamIdleTimeoutMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`,
       )
     }
+    const maxRequestImageBytes = source.maxRequestImageBytes ?? DEFAULT_MAX_REQUEST_IMAGE_BYTES
+    if (!Number.isInteger(maxRequestImageBytes) || maxRequestImageBytes <= 0) {
+      throw new Error(`llm-pi-ai: provider "${provider}" maxRequestImageBytes must be a positive integer`)
+    }
+    // Detached from the configuration object because pi-ai types `Model.input`
+    // mutable. The schema's explicit default covers an absent key, so an empty
+    // list here is always one someone typed — and unlike an entry's, nothing
+    // below it can answer instead — so it is refused rather than read as "no
+    // answer".
+    const defaultInput = [...source.defaultInput ?? DEFAULT_INPUT]
+    if (defaultInput.length === 0) {
+      throw new Error(`llm-pi-ai: provider "${provider}" defaultInput must name at least one modality`)
+    }
     // The route key, not the installed provider's own name: the directory has
     // always shown route keys, and a catalog route must not silently rename
     // itself on every configuration surface just because it gained a profile.
@@ -299,6 +411,7 @@ export function resolveProfiles(
       ...source.models === undefined ? {} : { models: source.models },
       ...source.modelOverrides === undefined ? {} : { modelOverrides: source.modelOverrides },
       ...source.compat === undefined ? {} : { compat: source.compat },
+      defaultInput,
       defaultContextWindow: source.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
       defaultMaxTokens: source.defaultMaxTokens ?? DEFAULT_MAX_TOKENS,
     })
@@ -309,6 +422,7 @@ export function resolveProfiles(
       displayName,
       ...apiKeyEnv === undefined ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
       streamIdleTimeoutMs,
+      maxRequestImageBytes,
       retryPolicy: resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
       ...rest.headers === undefined ? {} : { headers: { ...rest.headers } },
       ...rest.thinkingBudgets === undefined ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },

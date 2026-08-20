@@ -6,7 +6,7 @@
  * `@deepseek-ai/dsh-spill-local` (host filesystem) is the first.
  *
  * The Service Definition is deliberately minimal: `saveText` and nothing else. It owns NO
- * retention policy (that is `@deepseek-ai/dsh-retention`), NO tool-result
+ * retention policy (that is `@deepseek-ai/dsh-output-retention`), NO tool-result
  * replacement (that is `@deepseek-ai/dsh-spill-policy`), and NO retrieval or
  * search API. The backend supplies the locator and retrieval hint appropriate
  * for its storage substrate.
@@ -14,13 +14,13 @@
  * @module @deepseek-ai/dsh-spill
  */
 
-import { Context, Service } from 'cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import type { SaveTextSpill, SpillRef } from './types.ts'
 
 export { SpillLocator } from './types.ts'
 export type { SaveTextSpill, SpillOwner, SpillRef, SpillSource } from './types.ts'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     spillStore: SpillStore
   }

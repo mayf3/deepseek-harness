@@ -6,12 +6,16 @@
  * (machine.ts) is package-private and never exported.
  */
 import type { ClientContext, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Branded } from '@deepseek-ai/dsh-brand'
 import type {
   ArbitrateKey, ArbitrateOutcome, CommandClaim, ConsumeTokenRequest, PickOutcome,
   ReferenceInsert, SubmitOutcome, TokenSpan,
-} from '@deepseek-ai/dsh-client-ui-slash/client'
+} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { QueueRow } from '../contract/queue.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
+
+/** Browser-runtime identity of one unsent image draft. */
+export type DraftAttachmentId = Branded<'DraftAttachmentId'>
 
 /**
  * The scoped-event application verbs: the hub's bail listeners call these,
@@ -29,6 +33,12 @@ export interface InputTarget {
 export interface SessionInput extends InputTarget {
   /** Single write path for draft text (all mutation rides machine events). */
   setDraft(text: string): void
+  /** Append ordered browser-owned image ids; busy admission phases refuse. */
+  addImages(ids: readonly DraftAttachmentId[]): boolean
+  /** Remove one browser-owned image id; busy admission phases refuse. */
+  removeImage(id: DraftAttachmentId): void
+  /** Drop ids whose browser-owned objects no longer exist. */
+  pruneImages(ids: readonly DraftAttachmentId[]): void
   /**
    * THE complexity sink: enter adjudication, submit transaction, and the default sink live inside.
    * @param mode - delivery intent retained through asynchronous adjudication and serialization.
@@ -37,7 +47,7 @@ export interface SessionInput extends InputTarget {
   /**
    * Surface a notice outside the machine's own effect stream: detached
    * command results and business notifications render through here.
-   * Session-routed — resolving the facade via InputService.for(actx) lands
+   * Session-routed — resolving the facade via SessionInputResolver.for(actx) lands
    * the notice on that session's composer, so a result arriving after a
    * session switch still reaches its own session.
    * @param level - severity tier.
@@ -49,7 +59,7 @@ export interface SessionInput extends InputTarget {
 }
 
 /** Session-addressed access to the per-session input facade. */
-export interface InputService {
+export interface SessionInputResolver {
   /** Resolve the facade for one session-scope ctx. */
   for(actx: ClientContext): SessionInput
 }
@@ -63,6 +73,12 @@ export interface InputService {
 export interface InputActions {
   /** Single public draft write path (full next draft; occurrence math via diff scan). */
   setDraft(text: string): void
+  /** Append ordered browser-owned image ids; busy admission phases refuse. */
+  addImages(ids: readonly DraftAttachmentId[]): boolean
+  /** Remove one browser-owned image id; busy admission phases refuse. */
+  removeImage(id: DraftAttachmentId): void
+  /** Drop ids whose browser-owned objects no longer exist. */
+  pruneImages(ids: readonly DraftAttachmentId[]): void
   /** Enter submission (adjudication / claim transaction / default sink inside). */
   submit(): void
 }
@@ -88,6 +104,12 @@ export interface ComposerKeyboard {
   setDraft(text: string, editRange?: EditRange): void
   /** Submit with an explicit delivery mode resolved by the keyboard policy. */
   submit(mode: InputSubmitMode): void
+  /**
+   * Steer every still-pending queued message into the running turn (the
+   * empty-draft accelerated-Enter gesture; the queue dock's per-row steer
+   * button is the same operation applied to the whole queue).
+   */
+  steerQueue(): void
   undo(): void
   redo(): void
   /** Paste over the selection (sync components ride the same transaction). */
@@ -127,9 +149,9 @@ export interface EditRange extends EditSelection {
 }
 
 /**
- * One reference chip occurrence, backing exactly one U+FFFC placeholder in
- * the draft. Identity is occurrenceId — same-named
- * references stay independently addressable. label/clipboardText are the
+ * One reference occurrence backed by its complete inline display text in the
+ * draft. Identity is occurrenceId — same-named
+ * references stay independently addressable. label/appearance/clipboardText are the
  * owner's insert-time projections, cached so the chip survives owner loss
  * (invalid flips instead of dropping the occurrence).
  */
@@ -140,10 +162,14 @@ export interface Occurrence {
   readonly source: string
   /** Owner-scoped reference id. */
   readonly ref: string
-  /** Placeholder offset in the draft; the occurrence occupies exactly [offset, offset+1). */
+  /** Display-text offset in the draft. */
   readonly offset: number
-  /** Chip display label (insert-time cache). */
+  /** Display-text length; the occurrence occupies exactly [offset, offset+length). */
+  readonly length: number
+  /** Inline display label (insert-time cache). */
   readonly label: string
+  /** Optional domain glyph (insert-time cache). */
+  readonly appearance?: ReferenceInsert['appearance']
   /** Clipboard / persistence projection, e.g. `/name` (insert-time cache, never the model form). */
   readonly clipboardText: string
   /** Owner-resolution failure flag: chip renders invalid; serialization must fail. */
@@ -186,12 +212,14 @@ export interface InputMachineOptions {
 /** Published input state (the currency; per-session). */
 export interface InputState {
   readonly draft: string
+  /** Ordered runtime-only image ids; bytes and URLs stay in ConversationController. */
+  readonly imageIds: readonly DraftAttachmentId[]
   /** Monotonic draft revision (span CAS compares against this). */
   readonly draftRev: number
   readonly phase: 'plain' | 'adjudicating' | 'claimed' | 'submitting'
   /** Present exactly while claimed/submitting (claim snapshot during flight; submit closure withheld). */
-  readonly claim?: { readonly token: string; readonly hint?: string }
-  /** Chip occurrence table, sorted by offset (one U+FFFC per entry). */
+  readonly claim?: { readonly token: string; readonly hint?: string; readonly images?: boolean }
+  /** Reference occurrence table, sorted by offset. */
   readonly occurrences: readonly Occurrence[]
   /** Live paste-match attempt (absent when no paste is matchable). */
   readonly paste?: PasteAttemptState
@@ -208,7 +236,7 @@ export interface InputState {
 export interface SubmitAttempt {
   readonly seq: number
   readonly signal: AbortSignal
-  /** Draft at enter time; rollback restores it only while the live draft still equals it. */
+  /** Draft at enter time; settlement clears it only after acceptance. */
   readonly draftSnapshot: string
   /** Default-message delivery intent retained while slash adjudication is pending. */
   readonly mode: InputSubmitMode
@@ -224,7 +252,7 @@ export type InputEvent =
   /** Full next draft from the textarea; editRange narrows the occurrence math (absent → diff scan). */
   | { readonly type: 'draft-changed'; readonly draft: string; readonly editRange?: EditRange }
   | { readonly type: 'begin-command'; readonly claim: CommandClaim; readonly span: TokenSpan }
-  /** Place one U+FFFC at the span and mint the occurrence (scoped insert-reference event payload). */
+  /** Place one inline reference at the span and mint the occurrence (scoped insert-reference event payload). */
   | { readonly type: 'insert-ref'; readonly reference: ReferenceInsert; readonly span: TokenSpan }
   /** Delete a settled command token; success is observable as a draftRev advance. */
   | { readonly type: 'consume-token'; readonly guard: ConsumeTokenGuard }
@@ -247,10 +275,7 @@ export type InputEvent =
   | { readonly type: 'adjudicated'; readonly attempt: SubmitAttempt; readonly outcome: PickOutcome }
   | { readonly type: 'adjudication-failed'; readonly attempt: SubmitAttempt; readonly message: string }
   | { readonly type: 'submit-settled'; readonly attempt: SubmitAttempt; readonly ok: boolean; readonly outcome?: SubmitOutcome; readonly message?: string }
-  /**
-   * An ordinary (default-sink) send was accepted: clear the draft as a COMMIT —
-   * undo must not resurrect sent content (mirrors submit-settled's success arm).
-   */
+  /** Commit an image-only send whose empty draft did not need an attempt. */
   | { readonly type: 'send-committed' }
   | { readonly type: 'release' }
 
@@ -262,5 +287,5 @@ export type InputEvent =
 export type InputEffect =
   | { readonly type: 'adjudicate'; readonly attempt: SubmitAttempt; readonly draft: string }
   | { readonly type: 'begin-submit'; readonly attempt: SubmitAttempt; readonly claim: CommandClaim; readonly args: string }
-  | { readonly type: 'default-sink'; readonly draft: string; readonly mode: InputSubmitMode }
+  | { readonly type: 'default-sink'; readonly attempt: SubmitAttempt; readonly draft: string; readonly mode: InputSubmitMode }
   | { readonly type: 'notice'; readonly level: 'info' | 'error'; readonly text: string }

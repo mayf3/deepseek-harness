@@ -25,7 +25,7 @@ Status: proposed
 
 这里定义的是一个触发方式，不是一组产品启发式规则。agent 会显式调用 `show_task_surface`。用户可以通过普通语言要求 agent 使用 Task Surface。产品不会根据工具名称或任务主题打开专用面板；重复使用也不会自动把 Task Surface 转为插件。
 
-简短的阻塞式问题仍由 [`ask_user_question`](../../implemented/feature/2026-07-29-ask-question-web-presentation.md) 处理。纯文本说明仍留在聊天中。跨会话导航、后台行为、新服务或持久自定义 UI 则属于 Generated Client Plugin 工作流。
+简短的阻塞式问题仍由 [`ask_user_question`](../../implemented/feature/2026-07-29-ask-question-web-presentation.zh.md) 处理。纯文本说明仍留在聊天中。跨会话导航、后台行为、新服务或持久自定义 UI 则属于 Generated Client Plugin 工作流。
 
 ## 声明式模型
 
@@ -83,7 +83,7 @@ Task Surface 服务通过受 schema 校验的配置定义限制。初始默认�
 
 工具定义省略 `isConcurrencySafe`。根据现有工具注册表约定，省略该字段会将每次调用归类为独占排序屏障，无需新增 `ToolDefinition` 字段。该工具只会组装到同时挂载 Host 服务和 Web 渲染器的 Web profile 中。版本 1 支持 `native` 和 `both` 工具模式；仅支持 `code` 的 profile 不会向模型公布该工具，因为 Code Mode 分发属于嵌套调用，无法把呈现元数据传到外层结果。
 
-浏览器安全的领域包从 `@deepseek-ai/dsh-brand` 以仅类型方式导入 `Branded` 原语，并拥有全部三个 Task Surface ID。根据[规范工具输出约定](../../implemented/architecture/2026-07-20-canonical-tool-output-contract.md)，规范值仅存在于本次执行中。因此，回放通过 `output.presentationMeta(args, value)` 将以下带标签的载荷随 `tool/result.meta` 一并持久化：
+浏览器安全的领域包从 `@deepseek-ai/dsh-brand` 以仅类型方式导入 `Branded` 原语，并拥有全部三个 Task Surface ID。根据[规范工具输出约定](../../implemented/architecture/2026-07-20-canonical-tool-output-contract.zh.md)，规范值仅存在于本次执行中。因此，回放通过 `output.presentationMeta(args, value)` 将以下带标签的载荷随 `tool/result.meta` 一并持久化：
 
 ```ts
 import type { Branded } from '@deepseek-ai/dsh-brand'
@@ -100,9 +100,9 @@ interface TaskSurfacePresentationMeta {
 }
 ```
 
-该工具保留通用 [render intent](../../implemented/architecture/2026-07-02-tool-render-intent-union.md)。带 key 的 Web 行读取 `ToolResultNode` 上已经保留的带标签元数据，无需新增 render-intent 分支或呈现注册表。不支持 Task Surface 的客户端会渲染普通结果内容。
+该工具保留通用 [render intent](../../implemented/architecture/2026-07-02-tool-render-intent-union.zh.md)。带 key 的 Web 行读取 `ToolResultNode` 上已经保留的带标签元数据，无需新增 render-intent 分支或呈现注册表。不支持 Task Surface 的客户端会渲染普通结果内容。
 
-Web 插件按照 [toolview](../../implemented/architecture/2026-07-23-toolview-dissolution.md) 和 [slot 注册](../../implemented/architecture/2026-07-22-slot-type-chain-implementation.md)约定，提供两个静态的会话作用域注册项。一个以 `show_task_surface` 为 key 的 `conversation.chat.toolview` 条目将持久 transcript（文本记录）调用实例渲染为简洁摘要和只读回放。现有 `conversation.input.dock` 中的一个 `TaskSurfaceDock` 条目是唯一可操作的挂载点：它读取活动投影，针对确切身份调用 `getActive`，并拥有字段、草稿、提交和关闭操作。Dock 与 transcript 分页相互独立，因此即使 `ToolResultNode` 位于已加载历史窗口之外，活动 Surface 仍可操作。
+Web 插件按照 [toolview](../../implemented/architecture/2026-07-23-toolview-dissolution.zh.md) 和 [slot 注册](../../implemented/architecture/2026-07-22-slot-type-chain-implementation.zh.md)约定，提供两个静态的会话作用域注册项。一个以 `show_task_surface` 为 key 的 `conversation.chat.toolview` 条目将持久 transcript（文本记录）调用实例渲染为简洁摘要和只读回放。现有 `conversation.input.dock` 中的一个 `TaskSurfaceDock` 条目是唯一可操作的挂载点：它读取活动投影，针对确切身份调用 `getActive`，并拥有字段、草稿、提交和关闭操作。Dock 与 transcript 分页相互独立，因此即使 `ToolResultNode` 位于已加载历史窗口之外，活动 Surface 仍可操作。
 
 Dock 遵循现有 composer chain 的回退语义。任何 `conversation.composer` 接管都会隐藏包括 `TaskSurfaceDock` 在内的回退 composer 栈，但不会将其卸载；接管结束后，同一个草稿所有者会重新出现。接管方不会获得 Task Surface 操作，也不会创建另一个编辑器。
 
@@ -178,7 +178,7 @@ interface TaskSurfaceUserMessageSource {
 }
 ```
 
-`session/queue` 线上的条目已经携带完整 `Message`。客户端投影会显式扩展以保留其来源，不再丢失关联信息：
+`session/queue` 协议条目已经携带完整 `Message`。客户端投影会显式扩展以保留其来源，不再丢失关联信息：
 
 ```ts ignore-check
 interface QueuedMessage {
@@ -206,7 +206,7 @@ Task Surface 服务将已接受提交的协调状态记录为 `pending.phase: 'q
 
 ## 生命周期与恢复
 
-会话日志是真源。现有[会话投影系统](../architecture/2026-07-27-session-projection-and-command-log.md)中的一个小型 `taskSurface` 单元会折叠成功调用的 Surface 结果元数据和后续用户消息来源，得到以下状态：
+会话日志是真源。现有[会话投影系统](../architecture/2026-07-27-session-projection-and-command-log.zh.md)中的一个小型 `taskSurface` 单元会折叠成功调用的 Surface 结果元数据和后续用户消息来源，得到以下状态：
 
 ```ts ignore-check
 interface TaskSurfaceProjection {
@@ -226,7 +226,7 @@ Web 插件将未提交值保存在一个有界、按会话持久化的 slot stor
 
 | 包 | 职责 |
 |---|---|
-| `packages/core/agent` 和 `packages/core/agent-loop` | 为已认领的下一轮 inbox 调用实例提供通用终态结果，让 Host 观察方无需使用 Task Surface 专用类型，即可区分持久接纳和丢弃 |
+| `packages/core/agent` 和 `packages/core/agent-loop` | 为已认领的下一轮 inbox 条目提供通用终态结果，让 Host 观察方无需使用 Task Surface 专用类型，即可区分持久接纳和丢弃 |
 | `packages/task-surface/task-surface` | 浏览器安全的模型、带品牌类型的 ID、关联和待处理类型、解析器、限制、提交校验器／格式化器、会话事件扩展、投影单元，以及 Host 服务约定 |
 | `packages/task-surface/tool-task-surface` | `show_task_surface`、规范输出、呈现元数据、通用 render intent、活动 Surface 检查和 `concludeTurn()` 行为 |
 | `packages/client/runtime` | 通用排队消息 `source` 投影和会话作用域的活动投影访问 |
@@ -242,7 +242,7 @@ Web 插件将未提交值保存在一个有界、按会话持久化的 slot stor
 
 1. 实现模型／解析器、`MarkdownText` 模型 URL 策略、投影单元、`show_task_surface`、呈现元数据、只读 Web 行、静态 `TaskSurfaceDock`、活动 Surface 读取，以及带只读块的通用回退。
 2. 增加字段、持久化草稿、经 Host 校验的提交／关闭、带品牌类型的关联信息、客户端排队来源传递、Task Surface `queued`/`claiming` 协调、已认领调用实例的终态报告、队列操作限制，以及可见用户消息接纳。
-3. 只增加有实际任务依据，并且拥有至少两个消费方或明确通用回退的组件类型。一个单独的显式用户操作可以启动生成式插件编写工作流，但只会创建候选项，绝不会直接推广代码。
+3. 只增加有实际任务依据，并且拥有至少两个消费方或明确通用回退的组件类型。一个单独的显式用户操作可以启动生成客户端插件的编写工作流，但只会创建一个候选方案，绝不会直接将代码转为正式实现。
 
 ## 考虑过的替代方案
 
@@ -263,10 +263,10 @@ Web 插件将未提交值保存在一个有界、按会话持久化的 slot stor
 - 在 `native` 或 `both` 工具模式下，真实模型可以调用一个稳定的 `show_task_surface` schema；调用结束当前轮次；具备相应能力的 Web 客户端在实时运行和回放后都能渲染同一份规范化模型；仅支持 `code` 的模式不会向模型公布该工具。
 - 静态 `TaskSurfaceDock` 是唯一的编辑器，即使活动结果位于已加载历史窗口之外也仍可操作；带 key 的 toolview 始终是 transcript 的只读摘要和回放。composer 接管会隐藏仍处于挂载状态的 Dock、保留其草稿，并在接管释放后重新显示同一个所有者。
 - 每个 `submissionId` 的提交操作恰好生成一条可见用户消息，通过普通队列接纳开始下一轮，并在保留 `source.kind: 'user'` 的同时维持带品牌类型的确切调用实例关联；关闭操作记录一条日志事件，且不启动轮次。
-- 客户端排队行保留已关联的消息来源。`getActive` 可在同一进程的重新连接前后公开 `queued` 或 `claiming`；提交会关闭投影，显式丢弃则会清除待处理状态并让 Surface 保持打开。队列行消失本身不会改变任何 UI 状态。系统会拒绝编辑和 steering，且移除操作只能在认领前成功。
+- 客户端排队行保留已关联的消息来源。`getActive` 可在同一进程的重新连接前后公开 `queued` 或 `claiming`；持久化完成后会关闭投影，显式丢弃则会清除待处理状态并让 Surface 保持打开。队列行消失本身不会改变任何 UI 状态。系统会拒绝编辑和 steering，且移除操作只能在认领前成功。
 - 刷新、重新连接、会话切换、fork 和回退都生成日志所决定的生命周期状态；`getActive` 可以恢复历史尾段之外的模型和待处理阶段，任何面板、待处理状态或草稿都不会泄漏到其他会话。
 - 不受支持的版本、格式错误的元数据以及客户端能力缺失时，系统回退到带普通消息绕过路径的可读工具结果内容；嵌套调用以及已有另一个活动 Surface 时发起的调用都无法打开 Surface，并以失败结束。
-- 线上的 schema 会校验 ID 字符串，领域 API 始终公开带品牌类型的 ID。模型解析器会在面板可交互前强制校验带标签的布局形态、字段值，以及配置的字节数和数量限制。浏览器测试证明：图片语法会变成替代文本，原始 HTML 和嵌入式媒体不会渲染，而且在用户显式操作前不会请求模型提供的 URL。
+- 协议 schema 会校验 ID 字符串，领域 API 始终公开带品牌类型的 ID。模型解析器会在面板可交互前强制校验带标签的布局形态、字段值，以及配置的字节数和数量限制。浏览器测试证明：图片语法会变成替代文本，原始 HTML 和嵌入式媒体不会渲染，而且在用户显式操作前不会请求模型提供的 URL。
 - 组件测试覆盖纯键盘操作、焦点恢复、无障碍名称、窄屏布局、两种主题，以及中英文产品界面。
 - 无密钥浏览器组合测试覆盖显示、Dock 与只读行的职责归属、窗口外恢复、编辑、接纳被拒后的重试、从 `queued` 到 `claiming` 的转换、丢弃、没有可编辑空档的持久交接、禁止的队列操作、关闭、重新连接和双重提交幂等性。
 - 前缀快照表明：无论任务特定模型如何变化，都只存在一个稳定的工具定义；只有调用参数和后续用户结论发生变化。

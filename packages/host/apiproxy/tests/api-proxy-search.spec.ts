@@ -5,13 +5,13 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { stat } from 'node:fs/promises'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
-import UserInteractionService from '@deepseek-ai/dsh-user-interaction'
+import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import {
   SessionQueryError,
   type SessionSearchHit,
@@ -27,7 +27,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 })
 
 const sid = (value: string): SessionId => value as SessionId
-const defaults = { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp', workspaceRoot: '/tmp' }
+const defaults = { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' }
 
 function request(query: string): RpcRequest<{ query: string }> {
   return { rpcId: RpcId(`search-${query}`), payload: { query } }
@@ -63,7 +63,7 @@ async function baseContext(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
-  await ctx.plugin(UserInteractionService)
+  await ctx.plugin(UserQuestionService)
   return ctx
 }
 

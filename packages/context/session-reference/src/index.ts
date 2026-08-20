@@ -5,10 +5,11 @@
  * @module @deepseek-ai/dsh-session-reference
  */
 
-import { Context, Service } from 'cordis'
-import z from 'schemastery'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionSurfaceSnapshot, SessionTitleObservationResult } from '@deepseek-ai/dsh-session-query'
@@ -21,7 +22,11 @@ import {
 } from './config.ts'
 import { retainReferencedSession, type ReferenceRetentionStats, type ReferencedSessionData } from './projection.ts'
 import { stringifyTagSafeJson } from './serialization.ts'
-import type { PreparedReferencedMessage, SessionReferenceCandidate, SessionReferenceInput, SessionReferenceSource } from './types.ts'
+import type {
+  PreparedReferencedMessage, SessionReferenceCandidate, SessionReferenceInput,
+  SessionReferenceMentionCandidate, SessionReferenceSource,
+} from './types.ts'
+import { formatSessionReferenceMention, parseSessionReferenceText } from './uri.ts'
 
 export type * from './types.ts'
 export type { Config, SessionReferenceErrorCode } from './config.ts'
@@ -50,9 +55,9 @@ user explicitly repeats them.
 `
 const PROMPT_SUFFIX = '\n</referenced-sessions>'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
-    sessionReferences: SessionReferenceService
+    sessionReferenceResolver: SessionReferenceResolver
   }
 }
 
@@ -67,7 +72,7 @@ interface RenderedSource {
 }
 
 /** Exact-read consumer that prepares immutable cross-session message context. */
-export class SessionReferenceService extends Service {
+export class SessionReferenceResolver extends TypertRemoteService {
   static inject = ['sessionQuery']
   static Config: z<Config> = z.object({
     maxReferences: z.number().step(1).min(1).max(MAX_REFERENCES).default(MAX_REFERENCES),
@@ -78,7 +83,7 @@ export class SessionReferenceService extends Service {
   private readonly config: Required<Config>
 
   constructor(ctx: Context, config: Config = {}) {
-    super(ctx, 'sessionReferences')
+    super(ctx, 'sessionReferenceResolver')
     this.config = {
       maxReferences: config.maxReferences ?? MAX_REFERENCES,
       candidateLimit: config.candidateLimit ?? DEFAULT_CANDIDATE_LIMIT,
@@ -98,6 +103,48 @@ export class SessionReferenceService extends Service {
         'SESSION_REFERENCE_INVALID_CONFIG',
       )
     }
+    ctx.on('agent/pre-step', async ({ agent, signal }, next): Promise<PreStepDecision> => {
+      const decision = await next()
+      if (decision.kind === 'reject') return decision
+      return {
+        kind: 'enter',
+        messages: await this.prepareDirectMessages(agent, decision.messages, signal),
+      }
+    }, { prepend: true })
+  }
+
+  /**
+   * Replace canonical mentions in direct user messages and place each prepared
+   * snapshot immediately after the message that cited it.
+   * @param agent - agent entering the model step.
+   * @param messages - messages accepted by downstream pre-step listeners.
+   * @param signal - active turn cancellation.
+   * @returns direct messages followed by their session-reference context in citation order.
+   */
+  private async prepareDirectMessages(
+    agent: Agent,
+    messages: readonly UserMessage[],
+    signal: AbortSignal,
+  ): Promise<UserMessage[]> {
+    const prepared = await Promise.all(messages.map(async (message): Promise<UserMessage[]> => {
+      if (message.source.kind !== 'user') return [message]
+      const references: SessionReferenceInput[] = []
+      const content = message.content.map((block): ContentBlock => {
+        if (block.type !== 'text') return block
+        const parsed = parseSessionReferenceText(block.text)
+        references.push(...parsed.references)
+        return { type: 'text', text: parsed.text }
+      })
+      if (references.length === 0) return [message]
+      const resolved = await this.prepare(agent, content, references, signal)
+      const direct = freezeMessage({ ...message, content: resolved.content })
+      /* v8 ignore if -- a parsed canonical mention always leaves one normalized reference */
+      if (resolved.additionalContext === undefined) {
+        throw new Error('session-reference preparation omitted context for a canonical mention')
+      }
+      return [direct, resolved.additionalContext]
+    }))
+    return prepared.flat()
   }
 
   /**
@@ -159,11 +206,33 @@ export class SessionReferenceService extends Service {
   }
 
   /**
-   * Snapshot all references before enqueue and return one aggregated durable context.
+   * Remote face of {@link listCandidates}: the configured candidate limit
+   * applies, and every candidate carries the canonical mention a host inserts
+   * into the prompt draft.
+   * @param agent - target agent; self is excluded and its cwd drives ranking.
+   * @param query - optional case-insensitive session-id/cwd/title substring.
+   * @param signal - caller cancellation.
+   * @returns mention-carrying candidates in rank order.
+   */
+  @Remote('candidates')
+  async remoteExportCandidates(
+    agent: Agent,
+    query: string,
+    signal: AbortSignal,
+  ): Promise<SessionReferenceMentionCandidate[]> {
+    const candidates = await this.listCandidates(agent, query, this.config.candidateLimit, signal)
+    return candidates.map(candidate => ({
+      ...candidate,
+      mention: formatSessionReferenceMention({ sessionId: candidate.sessionId, label: candidate.label }),
+    }))
+  }
+
+  /**
+   * Snapshot all references for one accepted direct message and return one aggregated durable context.
    * @param agent - target agent; references to it are rejected.
    * @param content - already host-normalized readable message content.
    * @param references - structured source sessions in mention order.
-   * @param signal - optional cancellation boundary for host request teardown.
+   * @param signal - optional cancellation boundary for the active turn.
    * @returns detached content and optional referenced-session context.
    */
   async prepare(
@@ -300,4 +369,4 @@ function cancelled(signal: AbortSignal): SessionReferenceError {
   return new SessionReferenceError('session reference preparation was cancelled', 'SESSION_REFERENCE_CANCELLED', { cause: signal.reason })
 }
 
-export default SessionReferenceService
+export default SessionReferenceResolver

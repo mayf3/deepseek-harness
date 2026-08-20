@@ -9,6 +9,12 @@
   ],
   "references": [
     {
+      "path": "../../attachment/attachment"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
       "path": "../../../vendor/cordis"
     },
     {
@@ -16,9 +22,6 @@
     },
     {
       "path": "../ui-primitives"
-    },
-    {
-      "path": "../web-react"
     },
     {
       "path": "../runtime"
@@ -36,6 +39,9 @@
       "path": "../../session/session-projection"
     },
     {
+      "path": "../../session/session-stats"
+    },
+    {
       "path": "../../llm/token-meter"
     },
     {
@@ -51,7 +57,7 @@
       "path": "../../todo/tool-todo"
     },
     {
-      "path": "../ui-slash"
+      "path": "../ui-input-trigger"
     },
     {
       "path": "../ui-layout"
@@ -60,10 +66,16 @@
       "path": "../locale"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../settings/settings"
     },
     {
-      "path": "../../interaction/permission"
+      "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../../interaction/permission-presets"
+    },
+    {
+      "path": "../ui-settings"
     }
   ],
   "exclude": [

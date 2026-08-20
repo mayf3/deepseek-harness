@@ -7,7 +7,7 @@
 // yet) and a non-read result render the summary row alone: the read intent is
 // result-side only, so there is no running-state read card to draw.
 
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import { IconBrowseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
@@ -24,9 +24,9 @@ type ReadRowProps = ToolCallViewProps & PropsLocale<'conversation'>
  * read card as the row's collapsed-by-default card body. The summary path is an
  * openable host link when the row names a single file.
  */
-export function ReadRow({ toolName, block, cwd, openFile, inspect, t }: ReadRowProps) {
-  const model = toolRowModel(toolName, block, cwd)
-  const read = readCardModel(block, cwd)
+export function ReadRow({ toolName, block, cwd, home, openFile, inspect, t }: ReadRowProps) {
+  const model = toolRowModel(toolName, block, cwd, home)
+  const read = readCardModel(block, cwd, home)
   return (
     <ToolRow
       t={t}

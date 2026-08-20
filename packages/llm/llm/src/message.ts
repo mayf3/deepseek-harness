@@ -2,7 +2,7 @@
 
 import { MessageId, type CallId } from './brand.ts'
 import { deepFreeze } from './call-config.ts'
-import type { ContentBlock, ToolResultBlock } from './types.ts'
+import type { ContentBlock, StreamChunk, ToolResultBlock } from './types.ts'
 
 /** Provider/model identity and adapter-private replay data for an assistant message. */
 export interface AssistantProvenance {
@@ -12,7 +12,7 @@ export interface AssistantProvenance {
   model: string
   /**
    * Lossless-JSON adapter state needed to replay the provider response.
-   * `LlmService` exposes it to a target adapter only when that adapter instance
+   * `LlmRuntime` exposes it to a target adapter only when that adapter instance
    * currently owns both this historical provider and the target provider.
    */
   replayState?: unknown
@@ -30,8 +30,8 @@ export interface ToolMessageSource {
 }
 
 /**
- * What SHAPE of information a producer-supplied context carries, declared by
- * the producer beside the source fields it supplied.
+ * The kind of information in producer-supplied context, declared by the
+ * producer beside its provenance.
  *
  * `MessageSource.kind` answers *who produced this*; `form` answers *what kind
  * of thing it is*, and the two axes are deliberately independent — several
@@ -69,10 +69,10 @@ export interface ContextSnapshotSection {
 
 /**
  * Producer-declared {@link ContextForm} and the fields that form requires,
- * mixed into the source shapes that carry one.
+ * mixed into the source types that carry one.
  *
- * Discriminated by `form` so a producer cannot declare a shape without the
- * facts that shape is presented from: a `notice` must record its one-line
+ * Discriminated by `form` so a producer cannot select a form without the
+ * fields needed to present it: a `notice` must record its one-line
  * account, a `snapshot` its sections. Omitting `form` stays valid — an
  * undeclared context is the documented default.
  */
@@ -238,4 +238,24 @@ export function createToolResultMessage(input: ToolResultMessageInput): ToolResu
       isError: input.isError,
     }],
   })
+}
+
+/**
+ * Whether a stream chunk carries visible model output (the first-token
+ * boundary shared by client step timing and the whole-log sessionStats
+ * projection). Empty deltas (heartbeats, empty tool-call frames) do not count
+ * as a first token.
+ * @param chunk - the stream chunk to test.
+ * @returns true when the chunk contains a non-empty text/reasoning/tool delta.
+ */
+export function isTokenDelta(chunk: StreamChunk): boolean {
+  switch (chunk.type) {
+    case 'text-delta':
+    case 'reasoning-delta':
+      return chunk.text !== ''
+    case 'tool-call-delta':
+      return chunk.argumentsDelta !== '' || chunk.name !== undefined
+    default:
+      return false
+  }
 }

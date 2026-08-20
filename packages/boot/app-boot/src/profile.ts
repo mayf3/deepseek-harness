@@ -24,12 +24,12 @@
 
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import type { EntryOptions } from '@cordisjs/plugin-loader'
-import { applyEntryPatches, type PatchOptions } from '@cordisjs/plugin-include'
-import { resolveDshHome } from '@deepseek-ai/dsh-paths'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { loadOverlayPatches } from './index.ts'
 
 /** Directory under the Harness home holding every profile. */
@@ -51,14 +51,13 @@ export interface DshProfileManifest {
 }
 
 /**
- * The `dsh`-owned manifest section of a package.json. The nested key names
- * the manifest kind: a bundle package declares `bundle`, a profile directory
- * declares `profile`; nothing declares both.
+ * The profile-launcher slice of the `dsh`-owned package.json section. A
+ * manifest may declare both roles; other consumers own additional keys.
  */
 export interface DshManifestSection {
-  /** Present on bundle packages only. */
+  /** Bundle metadata consumed by the profile launcher. */
   bundle?: DshBundleManifest
-  /** Present on profile manifests only. */
+  /** Profile metadata consumed by the profile launcher. */
   profile?: DshProfileManifest
 }
 
@@ -183,7 +182,9 @@ function ensureSymlink(link: string, target: string): void {
       throw new Error(`dsh: ${link} exists and is not a symlink; remove it so dsh can manage the installation fallback`)
     }
     if (readlinkSync(link) === target) return
-    rmSync(link)
+    // unlink deletes the reparse point itself on Windows too; rmSync treats a
+    // junction as a directory and throws EISDIR unless recursive.
+    unlinkSync(link)
   }
   try {
     symlinkSync(target, link, 'junction')
@@ -191,7 +192,7 @@ function ensureSymlink(link: string, target: string): void {
     // Concurrent launches heal the same fallback; losing the race to a
     // process writing the identical link is success, anything else is not.
     // The window between the lstat miss above and this write cannot be
-    // staged deterministically from the public surface.
+    // staged deterministically from the public API.
     /* v8 ignore next 4 */
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST'
       || !lstatSync(link).isSymbolicLink() || readlinkSync(link) !== target) {
@@ -209,8 +210,8 @@ function ensureSymlink(link: string, target: string): void {
  * resolves without pnpm ever managing it — the exact "bundles come from the
  * installation" contract. The closure (not just direct dependencies) is
  * required for out-of-tree plugins: their peer dependencies name Service
- * Definition packages (`dsh-compact`, `dsh-invariants`, ...) that the app
- * reaches only through its Service provider packages. Symlinked packages
+ * Definition packages (`dsh-compaction`, `dsh-invariants`, ...) that the app
+ * reaches only through its Service Provider packages. Symlinked packages
  * resolve their own dependencies from their real directories (Node's default
  * symlink-following), so each package needs only its one flat link.
  * Idempotent: correct links are kept and moved installations are
@@ -232,7 +233,7 @@ export function healProfilesModuleFallback(installAnchor: string, home: string =
   const queue: { anchor: string; manifest: ProfileManifest }[] = [{ anchor: installAnchor, manifest: appManifest }]
   for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
     // Peer dependencies participate: Service Definition packages (dsh-subprocess,
-    // dsh-compact, ...) are peers of their implementations, never plain
+    // dsh-compaction, ...) are peers of their implementations, never plain
     // dependencies, yet out-of-tree plugins import them directly.
     /* v8 ignore next -- a real app manifest always declares dependencies */
     for (const dep of [...Object.keys(next.manifest.dependencies ?? {}), ...Object.keys(next.manifest.peerDependencies ?? {})]) {
@@ -267,7 +268,7 @@ export function readProfileManifest(binName: string, dir: string): ProfileManife
   } catch (error) {
     throw new Error(`${binName}: failed to read profile manifest ${path}: ${String(error)}`)
   }
-  // File boundary: the shape check below validates what the parse type asserts.
+  // The field checks below validate the file data before trusting the parse type.
   const parsed = JSON.parse(raw) as ProfileManifest | null
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(`${binName}: profile manifest ${path} must hold a JSON object`)

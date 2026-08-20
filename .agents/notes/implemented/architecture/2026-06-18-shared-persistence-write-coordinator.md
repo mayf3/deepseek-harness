@@ -16,6 +16,10 @@ Composition, not inheritance. The coordinator is a concrete class the backend ho
 
 The coordinator holds one lifecycle entry for each exact live `Session`: initialization plus a package-private write controller that owns pending events, a fixed batching deadline, the active write, failure retention, and the shared flush barrier. Each `session/event` enters that bounded write path, and `session/flush` bypasses the wait to observe quiescence. The [flush-controller simplification](../simplification/2026-07-23-collapse-persistence-flush-state.md) owns controller consolidation; the [bounded batching decision](2026-08-08-bounded-session-persistence-write-batching.md) owns scheduling cadence.
 
+Creation borrows the exact `Session.events` snapshot as its persistence seed. `Session` has already detached, validated, and deeply frozen every event, and the snapshot array remains stable when later appends replace the cached view. The coordinator and its backend hooks only read this typed in-process value, so cloning the complete log again would duplicate the ownership work described by the [agent-scope runtime decision](2026-07-12-agent-scope-runtime-design.md#session-append-materialize-validate-commit-notify). Public persistence `append()` still snapshots caller-owned input at its API boundary.
+
+Prepared-session suffixes and events admitted to the write-behind queue retain their existing copies. Those paths establish asynchronous queue ownership one suffix or event at a time and have no measured whole-log clone cost; removing their copies remains a separate ownership audit rather than part of creation-seed borrowing.
+
 The coordinator retires a session from `session/disposed`: it waits for the controller's initialization and current flush, serializes a final drain, and removes the controller and owned per-id state only after success. A failure leaves the controller discoverable for backend teardown to retry. Settled per-id chain tails remove themselves only when they are still current, so a completion cannot erase a newer operation for the same id. Backend teardown unregisters write-path listeners, flushes every remaining controller, awaits per-id operations, and then closes the backend.
 
 ### The hook interface (`PersistenceBackend<TornMarker>`)
@@ -40,7 +44,7 @@ The shared `runPersistenceContract` (public-API contract) runs for every backend
 ## Alternatives considered
 
 - **A base class the backends extend** — rejected for composition: a backend exposes only the hooks, cannot reach the coordinator's private orchestration state, and a third-party backend may still implement the abstract service directly without the coordinator at all.
-- **A wider hook surface** — each candidate hook folds away: there is no scope-specific live lookup because `loadStored` plus the coordinator's cwd check preserves the collision boundary, no storage-locator generic because validated JSONL metadata reproduces its path while SQLite is already id-bound, no separate `materialize` hook because the first batch must commit atomically with materialization, no separate create-collision probe because it is `loadStored(id) !== undefined`, and no coordinator pass-through for `list()` because listing needs none of the orchestration.
+- **A wider hook API** — each candidate hook folds away: there is no scope-specific live lookup because `loadStored` plus the coordinator's cwd check preserves the collision boundary, no storage-locator generic because validated JSONL metadata reproduces its path while SQLite is already id-bound, no separate `materialize` hook because the first batch must commit atomically with materialization, no separate create-collision probe because it is `loadStored(id) !== undefined`, and no coordinator pass-through for `list()` because listing needs none of the orchestration.
 
 ## Consequences
 

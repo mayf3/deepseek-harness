@@ -3,6 +3,11 @@
     - button "Ask a research subagent to"
     - text: /
     - button "event-sourcing researcher" [disabled]
+  - img
+  - text: Standard mode
+  - button "Session log":
+    - text: Session log
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -18,6 +23,6 @@
 - textbox "Parent session offline; sending is unavailable but you can still stop the run" [disabled]
 - button "Commands" [disabled]:
   - img
-- 'button "Access mode, current: Workspace Write" [disabled]': Workspace Write
+- 'button "Access mode, current: Custom" [disabled]': Custom
 - button "Stop generating"
 - button "Send message" [disabled]

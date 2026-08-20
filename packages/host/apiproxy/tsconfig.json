@@ -30,6 +30,9 @@
       "path": "../../util/brand"
     },
     {
+      "path": "../../attachment/attachment"
+    },
+    {
       "path": "../../llm/llm"
     },
     {
@@ -37,6 +40,9 @@
     },
     {
       "path": "../../core/agent-default-model"
+    },
+    {
+      "path": "../../preset/agent-presets"
     },
     {
       "path": "../../core/session"
@@ -69,13 +75,19 @@
       "path": "../../skill/skill"
     },
     {
+      "path": "../../jobs/jobs"
+    },
+    {
       "path": "../../interaction/commands"
+    },
+    {
+      "path": "../../interaction/permission-presets"
     },
     {
       "path": "../../interaction/user-approval"
     },
     {
-      "path": "../../interaction/user-interaction"
+      "path": "../../interaction/user-questions"
     },
     {
       "path": "../../workspace/workspace"
@@ -84,7 +96,10 @@
       "path": "../directory-picker"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../extensions/cordis-host-runner"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     },
     {
       "path": "../../util/native-command"

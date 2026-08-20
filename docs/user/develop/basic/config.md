@@ -9,8 +9,8 @@ Accept configuration supplied through `cordis.yml`.
 Export a `Config` type and a same-named Schemastery schema. Put defaults directly on the schema fields:
 
 ```ts
-import type { Context } from 'cordis'
-import Schema from 'schemastery'
+import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 
 export const name = 'my-plugin'
 
@@ -49,8 +49,8 @@ When loading the plugin, Cordis uses the exported schema to validate configurati
 Use Schemastery to express stricter validation:
 
 ```ts
-import type { Context } from 'cordis'
-import Schema from 'schemastery'
+import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 
 export const name = 'validated-plugin'
 
@@ -102,5 +102,5 @@ A configuration edit hot-replaces the plugin: the framework unloads the old inst
 ## Next steps
 
 - [Package and install a plugin](./publish.md) — ship the plugin as an installable package
-- [Plugins and lifecycle](../framework/) — understand the full plugin lifecycle
+- [Plugins and lifecycle](../framework/index.md) — understand the full plugin lifecycle
 - [Services and dependencies](../framework/service.md) — provide a service to other plugins

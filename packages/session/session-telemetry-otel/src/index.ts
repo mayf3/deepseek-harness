@@ -1,11 +1,10 @@
 /**
- * OpenTelemetry Service provider for the DeepSeek Harness telemetry capability.
+ * OpenTelemetry Service Provider for the DeepSeek Harness telemetry capability.
  *
  * Composes the OTel JS SDK as-is — a `LoggerProvider` with a
  * `BatchLogRecordProcessor` and an OTLP/HTTP log exporter — and maps each
- * record handed over by the capture coordinator onto `logger.emit()`. Per the Service Definition's
- * boundary axiom, everything downstream of that call (batching, retry,
- * queueing, loss policy) is the SDK's documented behavior, configured
+ * record handed over by the capture coordinator onto `logger.emit()`. After that call,
+ * batching, retry, queueing, and loss policy use the SDK's documented behavior, configured
  * verbatim through the `exporter`/`processor` passthroughs. This package owns
  * capture mode and an outer shutdown deadline: the SDK's export timeout does
  * not bound its preceding `forceFlush()` wait.
@@ -14,18 +13,19 @@
  */
 
 import { createRequire } from 'node:module'
-import z from 'schemastery'
-import type { Context } from 'cordis'
+import z from '@deepseek-ai/schemastery'
+import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-command-feedback'
 import {
-  Telemetry,
-  TelemetryCoordinator,
-  type TelemetryBackend,
-  type TelemetryRecord,
-  type TelemetrySeverity,
+  SessionTelemetryBackend,
+  SessionTelemetryCoordinator,
+  type SessionTelemetrySink,
+  type SessionTelemetryRecord,
+  type SessionTelemetrySeverity,
+  type SessionTelemetrySharingStatus,
 } from '@deepseek-ai/dsh-session-telemetry'
 import { APP_IDENTITY } from '@deepseek-ai/dsh-llm'
-import { getOrCreateAnonymousUserId } from './user-id.ts'
+import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import {
   BatchLogRecordProcessor,
   LoggerProvider,
@@ -41,26 +41,26 @@ import { resourceFromAttributes } from '@opentelemetry/resources'
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string }
 
 /** Session-sharing policy selected by {@link Config.mode}. */
-export enum TelemetryMode {
+export enum SessionTelemetryMode {
   FULL = 'FULL',
   FEEDBACK_ONLY = 'FEEDBACK_ONLY',
   DISABLED = 'DISABLED',
 }
 
 /** Default session-sharing policy for schema and direct construction. */
-export const DEFAULT_TELEMETRY_MODE = TelemetryMode.FULL
+export const DEFAULT_TELEMETRY_MODE = SessionTelemetryMode.DISABLED
 
 const DISABLED_FEEDBACK_WARNING = 'session telemetry is DISABLED; nothing will be shared and this feedback remains local'
 const NON_CANONICAL_FEEDBACK_WARNING = 'session telemetry ignored a feedback event absent from the canonical session log'
-const DROP_RECORD: TelemetryBackend['emit'] = () => {}
+const DROP_RECORD: SessionTelemetrySink['emit'] = () => {}
 
 /** Resolve the default and reject unknown runtime values before transport setup. */
-function resolveMode(mode: TelemetryMode | undefined): TelemetryMode {
+function resolveMode(mode: SessionTelemetryMode | undefined): SessionTelemetryMode {
   const resolved = mode ?? DEFAULT_TELEMETRY_MODE
   switch (resolved) {
-    case TelemetryMode.FULL:
-    case TelemetryMode.FEEDBACK_ONLY:
-    case TelemetryMode.DISABLED:
+    case SessionTelemetryMode.FULL:
+    case SessionTelemetryMode.FEEDBACK_ONLY:
+    case SessionTelemetryMode.DISABLED:
       return resolved
     default:
       return assertNever(resolved)
@@ -72,14 +72,25 @@ function assertNever(value: never): never {
   throw new Error(`session-telemetry-otel: unsupported mode ${JSON.stringify(value)}`)
 }
 
+/** Map the serialized mode onto the seam's backend-independent sharing vocabulary. */
+function sharingStatusFor(mode: SessionTelemetryMode): SessionTelemetrySharingStatus {
+  switch (mode) {
+    case SessionTelemetryMode.FULL: return 'full'
+    case SessionTelemetryMode.FEEDBACK_ONLY: return 'feedback-only'
+    case SessionTelemetryMode.DISABLED: return 'disabled'
+    /* v8 ignore next 2 -- resolveMode already rejected unknown values before this switch; the closed enum cannot reach the default. */
+    default: return assertNever(mode)
+  }
+}
+
 /**
- * Plugin configuration: one sharing policy, two verbatim SDK option shapes,
+ * Plugin configuration: one sharing policy, two verbatim SDK option objects,
  * and one DSH-owned shutdown bound. Uploading modes validate their endpoint
  * and shutdown deadline at plugin load; `DISABLED` reads neither.
  */
 export interface Config {
-  /** Sharing policy; defaults to immediate `FULL` delivery. */
-  mode?: TelemetryMode
+  /** Sharing policy; defaults to local-only `DISABLED` behavior. */
+  mode?: SessionTelemetryMode
   /**
    * Passed verbatim to the SDK's OTLP/HTTP log exporter — the complete
    * `OTLPExporterNodeConfigBase` shape (`headers`, `timeoutMillis`,
@@ -101,14 +112,13 @@ export interface Config {
 
 /**
  * Schemastery validator for {@link Config}; cordis runs it before the plugin
- * starts. Shape-level only — load-bearing value checks live in the constructor
- * so their errors name the fields. Both SDK slots are opaque passthroughs:
- * the SDK owns their shapes and validates its own options;
- * re-declaring them field-by-field here would violate the boundary axiom
- * (and silently drop every field not re-declared).
+ * starts. It checks only the top-level fields; value checks live in the constructor
+ * so their errors name the fields. Both SDK option objects pass through unchanged:
+ * the SDK defines and validates their fields. Re-declaring them here would
+ * silently drop every field this plugin did not repeat.
  */
 export const Config: z<Config> = z.object({
-  mode: z.union(Object.values(TelemetryMode)).default(DEFAULT_TELEMETRY_MODE),
+  mode: z.union(Object.values(SessionTelemetryMode)).default(DEFAULT_TELEMETRY_MODE),
   exporter: z.any(),
   processor: z.any(),
   shutdownTimeoutMillis: z.number(),
@@ -122,7 +132,7 @@ export const DEFAULT_SHUTDOWN_TIMEOUT_MILLIS = 3_000
 const MAX_TIMER_DELAY_MILLIS = 2_147_483_647
 
 /** Severity mapping from the Service Definition's three-level vocabulary to OTel severity numbers. */
-const SEVERITY: Record<TelemetrySeverity, { severityNumber: SeverityNumber; severityText: string }> = {
+const SEVERITY: Record<SessionTelemetrySeverity, { severityNumber: SeverityNumber; severityText: string }> = {
   info: { severityNumber: SeverityNumber.INFO, severityText: 'INFO' },
   warn: { severityNumber: SeverityNumber.WARN, severityText: 'WARN' },
   error: { severityNumber: SeverityNumber.ERROR, severityText: 'ERROR' },
@@ -131,21 +141,23 @@ const SEVERITY: Record<TelemetrySeverity, { severityNumber: SeverityNumber; seve
 /**
  * The backend plugin — the only entry a deployment loads. It always registers
  * the `telemetry` service (duplicate load throws). Uploading modes wire the SDK
- * pipeline and compose {@link TelemetryCoordinator}; `DISABLED` constructs no
+ * pipeline and compose {@link SessionTelemetryCoordinator}; `DISABLED` constructs no
  * SDK state and listens only to warn when recorded feedback stays local.
  */
-export class TelemetryOtel extends Telemetry {
+export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
   static inject = ['sessions']
   static Config = Config
 
-  private readonly directEmit: TelemetryBackend['emit']
+  private readonly directEmit: SessionTelemetrySink['emit']
   private readonly provider: LoggerProvider | undefined
   private readonly shutdownTimeoutMillis: number
+  override readonly sharing: SessionTelemetrySharingStatus
 
   constructor(ctx: Context, config: Config) {
     const mode = resolveMode(config.mode)
     super(ctx)
-    if (mode === TelemetryMode.DISABLED) {
+    this.sharing = sharingStatusFor(mode)
+    if (mode === SessionTelemetryMode.DISABLED) {
       this.directEmit = DROP_RECORD
       this.provider = undefined
       this.shutdownTimeoutMillis = DEFAULT_SHUTDOWN_TIMEOUT_MILLIS
@@ -206,7 +218,7 @@ export class TelemetryOtel extends Telemetry {
     })
     const ledger = this.provider.getLogger('@deepseek-ai/dsh-session-telemetry-otel', version)
     const ops = this.provider.getLogger('@deepseek-ai/dsh-session-telemetry-otel/ops', version)
-    const enqueue: TelemetryBackend['emit'] = (record) => {
+    const enqueue: SessionTelemetrySink['emit'] = (record) => {
       const logger: Logger = record.channel === 'ops' ? ops : ledger
       logger.emit({
         timestamp: record.time,
@@ -218,17 +230,17 @@ export class TelemetryOtel extends Telemetry {
         attributes: record.attributes,
       })
     }
-    const backend: TelemetryBackend = {
+    const backend: SessionTelemetrySink = {
       emit: enqueue,
       shutdown: () => this.shutdown(),
     }
-    if (mode === TelemetryMode.FULL) {
+    if (mode === SessionTelemetryMode.FULL) {
       this.directEmit = enqueue
-      new TelemetryCoordinator(ctx, backend, 'live')
+      new SessionTelemetryCoordinator(ctx, backend, 'live')
       return
     }
     this.directEmit = DROP_RECORD
-    const coordinator = new TelemetryCoordinator(ctx, backend, 'on-demand')
+    const coordinator = new SessionTelemetryCoordinator(ctx, backend, 'on-demand')
     ctx.on('session/event', (session, event) => {
       if (event.type !== 'feedback/record') return
       // Consent is the committed record, not an independently emitted bus value.
@@ -246,7 +258,7 @@ export class TelemetryOtel extends Telemetry {
    * backend capability created only for the canonical feedback listener.
    * @param record - the logical record offered directly to the service.
    */
-  emit(record: TelemetryRecord): void {
+  emit(record: SessionTelemetryRecord): void {
     this.directEmit(record)
   }
 
@@ -286,4 +298,4 @@ export class TelemetryOtel extends Telemetry {
   }
 }
 
-export default TelemetryOtel
+export default OpenTelemetrySessionBackend

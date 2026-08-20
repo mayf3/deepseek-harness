@@ -16,15 +16,16 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
+import { removeFixtureSafely, unlinkFixtureLinks } from './test-fixture-cleanup.ts'
 
 const installer = fileURLToPath(new URL('./install-lefthook.mjs', import.meta.url))
 const pairingMergeDriver = 'scripts/merge-translation-pairing-driver.sh %O %A %B %P'
 const scriptsDirectory = fileURLToPath(new URL('.', import.meta.url))
 const tsxPackageDirectory = dirname(fileURLToPath(import.meta.resolve('tsx/package.json')))
 const fixtures: string[] = []
-// Multi-worktree cases spawn several Git and Node subprocesses; coverage concurrency can
-// legitimately exceed Vitest's default deadline without changing the installer behavior.
-const MULTI_PROCESS_TEST_TIMEOUT_MS = 20_000
+// Multi-worktree cases spawn several Git and Node subprocesses; native Windows
+// coverage concurrency can delay them without changing installer behavior.
+const MULTI_PROCESS_TEST_TIMEOUT_MS = 30_000
 
 interface Fixture {
   container: string
@@ -40,7 +41,7 @@ interface CommandResult {
 }
 
 afterEach(() => {
-  for (const fixture of fixtures.splice(0)) rmSync(fixture, { recursive: true, force: true })
+  for (const fixture of fixtures.splice(0)) removeFixtureSafely(fixture)
 })
 
 function commandResult(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): CommandResult {
@@ -183,7 +184,7 @@ function installLockPath(fixture: Fixture): string {
 }
 
 async function waitForPath(path: string): Promise<void> {
-  const deadline = Date.now() + 5_000
+  const deadline = Date.now() + 10_000
   while (!existsSync(path)) {
     if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`)
     await new Promise(resolveWait => setTimeout(resolveWait, 10))
@@ -210,7 +211,7 @@ function runInstaller(
   })
 }
 
-describe('worktree-local Lefthook installer', { timeout: 15_000 }, () => {
+describe('worktree-local Lefthook installer', { timeout: 30_000 }, () => {
   for (const [label, extraEnv] of [
     ['CI', { CI: 'true' }],
     ['GitHub Actions', { GITHUB_ACTIONS: 'true' }],
@@ -282,6 +283,10 @@ describe('worktree-local Lefthook installer', { timeout: 15_000 }, () => {
     expect(gitResult(fixture, fixture.main, ['config', '--file', commonConfig, '--get', 'core.bare']).status).toBe(1)
 
     const mainHookBeforeRemoval = readFileSync(join(mainHooks, 'pre-commit'), 'utf8')
+    // Windows Git follows the fixture's MOUNT_POINT junctions into their real
+    // targets while removing a worktree; unlink them first so the removal
+    // cannot delete the repository's scripts/ or tsx package.
+    unlinkFixtureLinks(fixture.linked)
     git(fixture, fixture.main, ['worktree', 'remove', '--force', fixture.linked])
     expect(readFileSync(join(mainHooks, 'pre-commit'), 'utf8')).toBe(mainHookBeforeRemoval)
     expect(readFileSync(legacyHook, 'utf8')).toBe('#!/bin/sh\n# legacy hook\n')
@@ -524,7 +529,12 @@ describe('worktree-local Lefthook installer', { timeout: 15_000 }, () => {
     const lockPath = installLockPath(fixture)
     const runningPath = join(hooksPath(fixture, fixture.main), '.fake-lefthook-running')
     const install = runInstaller(fixture, fixture.main, { DSH_TEST_LEFTHOOK_DELAY_MS: '250' })
-    await waitForPath(runningPath)
+    try {
+      await waitForPath(runningPath)
+    } catch (error) {
+      await install
+      throw error
+    }
     const replacementRecord = 'replacement owner\n'
     writeFileSync(lockPath, replacementRecord)
 

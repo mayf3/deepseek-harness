@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { Session, SessionId, isJsonValue } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import {
@@ -68,6 +68,8 @@ interface CoordinatorInternals {
  * durable behavior is covered by the JSONL and SQLite backends.
  */
 class MemoryPersistence extends SessionPersistence implements PersistenceBackend<never> {
+  override readonly supportsRawArtifacts = false
+
   static inject = ['sessions']
 
   override readonly name = 'session-persistence-memory'
@@ -85,7 +87,7 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
     this.coordinator = new PersistenceCoordinator<never>(this.ctx, this)
   }
 
-  // --- service surface (delegated to the coordinator) ---
+  // --- Service API (delegated to the coordinator) ---
 
   locate(_meta: SessionHeader): undefined {
     return undefined
@@ -178,6 +180,7 @@ class ControlledBackend implements PersistenceBackend<never> {
   readonly name = 'session-persistence-controlled'
   readonly store: MemoryStore = new Map()
   readonly lifecycle: string[] = []
+  lastAppendedBatch: readonly SessionEvent[] | undefined
   appendAttempts = 0
   loadAttempts = 0
   repairAttempts = 0
@@ -210,6 +213,7 @@ class ControlledBackend implements PersistenceBackend<never> {
   }
 
   async appendBatch(m: SessionHeader, events: readonly SessionEvent[], _isMaterialized: boolean): Promise<void> {
+    this.lastAppendedBatch = events
     const attempt = ++this.appendAttempts
     await this.beforeAppend?.(attempt)
     const entry = this.store.get(m.id)
@@ -246,6 +250,27 @@ runPersistenceContract('memory', async () => {
   }
 })
 
+describe('the inherited readRaw default', () => {
+  it('rejects unsupported reads distinctly from absence and honors an aborted signal', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(MemoryPersistence)
+    expect(ctx.sessionPersistence.supportsRawArtifacts).toBe(false)
+    await expect(
+      ctx.sessionPersistence.readRaw(SessionId('any-session')),
+    ).rejects.toThrow('does not expose raw artifacts')
+    await expect(
+      ctx.sessionPersistence.readRaw(SessionId('any-session'), AbortSignal.abort()),
+    ).rejects.toThrow()
+    // A non-Error abort reason falls back to a wrapped Error rejection.
+    const controller = new AbortController()
+    controller.abort('boom')
+    await expect(
+      ctx.sessionPersistence.readRaw(SessionId('any-session'), controller.signal),
+    ).rejects.toThrow('aborted')
+  })
+})
+
 // Each fixture shares one map across mounts. No `corruptTail` is supplied because map writes are
 // atomic; the suite asserts that skip while JSONL and SQLite cover the repair branch.
 runCoordinatorContract('memory', async (): Promise<CoordinatorFixture> => {
@@ -254,6 +279,28 @@ runCoordinatorContract('memory', async (): Promise<CoordinatorFixture> => {
     mount: async ctx => ctx.plugin(MemoryPersistence, { store }),
     cleanup: async () => { store.clear() },
   }
+})
+
+describe('PersistenceCoordinator seed ownership', () => {
+  it('retains the immutable session seed without cloning it', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      const session = ctx.sessions.create(SessionId('shared-seed'), { seed: oneTurnLog() })
+      const seed = session.events
+      await ctx.sessions.flush(session)
+
+      expect(backend.lastAppendedBatch).toBe(seed)
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
 })
 
 describe('PersistenceCoordinator bounded writes', () => {

@@ -7,12 +7,13 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
-import { hasTypeRTRemoteNavigation, isForbiddenPublicationFile } from './publication-payload.ts'
+import { pathToFileURL } from 'node:url'
+import { hasTypertRemoteNavigation, isForbiddenPublicationFile } from './publication-payload.ts'
 import { collectProjectReferenceFaceViolations } from './project-reference-faces.ts'
 
 const root = resolve(import.meta.dirname, '..')
 // vendor/* is single-level; packages/<group>/<pkg> nests one level deeper
-// (the group dirs — core/llm/bash/… — are pure containers with no manifest).
+// (the group dirs — core/llm/shell/… — are pure containers with no manifest).
 const workspaceGlobs = [
   { dir: 'vendor', depth: 1 },
   { dir: 'packages', depth: 2 },
@@ -21,15 +22,15 @@ const workspaceGlobs = [
   { dir: 'apps', depth: 1 },
 ] as const
 const vendoredPackages = new Set([
-  'cordis',
-  'cosmokit',
-  'schemastery',
-  '@cordisjs/plugin-loader',
-  '@cordisjs/plugin-include',
-  '@cordisjs/plugin-group',
-  '@cordisjs/plugin-timer',
-  '@cordisjs/plugin-hmr',
-  '@cordisjs/plugin-logger-console',
+  '@deepseek-ai/cordis',
+  '@deepseek-ai/cosmokit',
+  '@deepseek-ai/schemastery',
+  '@deepseek-ai/cordis-plugin-loader',
+  '@deepseek-ai/cordis-plugin-include',
+  '@deepseek-ai/cordis-plugin-group',
+  '@deepseek-ai/cordis-plugin-timer',
+  '@deepseek-ai/cordis-plugin-hmr',
+  '@deepseek-ai/cordis-plugin-logger-console',
 ])
 const publicLandlockPackages = new Set([
   '@deepseek-ai/node-addon-landlock-run',
@@ -41,15 +42,29 @@ const publicationSourceAllowlist: Readonly<Record<string, readonly string[]>> = 
   '@deepseek-ai/node-addon-landlock-run': ['src/main.c'],
 }
 const repositoryUrl = 'git+https://github.com/deepseek-harness/deepseek-harness.git'
+/**
+ * Source home the published packages point consumers at. It differs from
+ * {@link repositoryUrl}, which the Landlock packages keep because npm resolves
+ * their trusted publishing against the repository that runs the workflow.
+ */
+const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harness.git'
+/** Private packages that participate in workspace checks but not releases. */
+const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
+/** npm namespace reserved for private experimental packages. */
+const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
+/** Directories whose packages this repository publishes: one release member each. */
+const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/[^/]+|vendor\/[^/]+)$/
 
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js', 'config'],
-  '@deepseek-ai/dsh-frontend': ['dist'],
+  // The Web build emits sourcemaps for browser debugging; publishing them is
+  // what the payload policy forbids, so the bundle ships without them.
+  '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map'],
 }
 
 /** The subset of package.json fields this constraint check cares about. */
-interface PackageManifest {
+export interface PackageManifest {
   name?: string
   version?: string
   private?: boolean
@@ -72,10 +87,17 @@ interface PackageManifest {
   repository?: { type?: string; url?: string; directory?: string }
   peerDependencies?: Record<string, string>
   devDependencies?: Record<string, string>
+  dependencies?: Record<string, string>
+  optionalDependencies?: Record<string, string>
+  dsh?: {
+    bundle?: {
+      patch?: string
+    }
+  }
 }
 
 /** One workspace manifest and its repo-relative path. */
-interface WorkspaceManifest {
+export interface WorkspaceManifest {
   dir: string
   manifest: PackageManifest
 }
@@ -119,19 +141,27 @@ function workspaceManifests(): WorkspaceManifest[] {
 }
 
 const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
-  // Profile bundles publish their dsh.bundle.patch layer beside the lib.
-  '@deepseek-ai/dsh-base': ['cordis.patch.yml'],
-  '@deepseek-ai/dsh-web-app': ['cordis.patch.yml'],
-  '@deepseek-ai/dsh-headless': ['cordis.patch.yml'],
+  // Statically linked client libraries keep their stylesheets next to the emitted
+  // JavaScript, which imports them by relative path: the compile shell runs
+  // them through its own CSS pipeline, so the sheets are published artifacts.
+  // The glob covers whichever sheets a package emits; sourcemaps stay
+  // unpublished, as everywhere else in the repository.
+  '@deepseek-ai/dsh-client-ui-primitives': ['lib/**/*.css'],
+  '@deepseek-ai/dsh-client-web': ['lib/**/*.css'],
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
-  '@deepseek-ai/dsh-helper': ['lib/assets'],
+  // The CPython side ships as source .py files, published as-is rather than built.
+  '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
+  // The Python runtime uses a distinct closed-resolution bin; the public CLI
+  // keeps config-owned bare-package resolution through lib/bin.js.
+  '@deepseek-ai/dsh-sdk-jsonrpc-demo': ['lib/packaged-bin.js'],
+  // The argv-prefix runner entry ships beside the lib as its own bundle;
+  // sandbox-local resolves it through the package's ./runner export. tsdown
+  // also shares its generated FFI code through a hashed runtime chunk.
+  '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
+  // SQLite loads every statement from immutable package resources at runtime.
+  '@deepseek-ai/dsh-session-persistence-sqlite': ['resources/sql/**/*.sql'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
-  '@deepseek-ai/dsh-scripts': [
-    'lib/dev/tsdown-config.js',
-    'lib/local-plugin-loader-hooks.js',
-    'lib/assets',
-  ],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {
@@ -139,8 +169,12 @@ function sameStringList(actual: readonly string[] | undefined, expected: readonl
 }
 
 function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
-  const extras = manifest.name ? packageFileExtras[manifest.name] ?? [] : []
-  const typeRTRemoteNavigation = hasTypeRTRemoteNavigation(manifest)
+  const declaredPatch = manifest.dsh?.bundle?.patch
+  const bundleFiles = declaredPatch === undefined ? [] : [declaredPatch.replace(/^\.\//, '')]
+  const extras = [
+    ...bundleFiles,
+    ...(manifest.name ? packageFileExtras[manifest.name] ?? [] : []),
+  ]
   return [
     'lib/index.js',
     // Every package publishes its invariant ownership companion as a separate
@@ -155,8 +189,11 @@ function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
     ...exportDefault(manifest, './client') === './lib/client.js' ? ['lib/client.js'] : [],
     // runtime's shell-held loader subpath ships as its own bundle beside the client half.
     ...exportDefault(manifest, './loader') === './lib/loader.js' ? ['lib/loader.js'] : [],
-    // web-react's store subpath ships its own bundle (single-entry builds; no shared chunk).
+    // A store subpath ships its own bundle (single-entry builds; no shared chunk).
     ...exportDefault(manifest, './store') === './lib/store/index.js' ? ['lib/store/index.js'] : [],
+    // A surface bundle's startup row is its own bundle: the Loader imports it
+    // as a row module, so it cannot ride inside the package entry.
+    ...exportDefault(manifest, './startup') === './lib/startup.js' ? ['lib/startup.js'] : [],
     ...extras,
     // Subpaths whose runtime default is the tsc-emitted tree (lib/types/*.js —
     // browser-safe source channels rehomed off src so plain Node can import
@@ -170,13 +207,8 @@ function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
     ...hasExportPair(manifest, './client/typert', './lib/typert.client.d.ts', './lib/typert.client.js')
       ? ['lib/typert.client.js', 'lib/typert.client.d.ts']
       : [],
-    ...typeRTRemoteNavigation
-      ? [
-        'lib/typert.remote-client.js',
-        'lib/typert.remote-client.d.ts',
-        'lib/typert.remote-client.d.ts.map',
-        'src',
-      ]
+    ...hasTypertRemoteNavigation(manifest)
+      ? ['lib/typert.remote-client.js', 'lib/typert.remote-client.d.ts']
       : [],
   ]
 }
@@ -209,8 +241,21 @@ function usesEmittedTreeDefaults(manifest: PackageManifest): boolean {
     exportDefault(manifest, subpath)?.startsWith('./lib/types/') === true)
 }
 
-function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
+/** Experimental manifest requirements enforced independently from release metadata. */
+export function checkExperimentalManifest({ dir, manifest }: WorkspaceManifest): string[] {
+  if (!experimentalPackageDirectory.test(dir)) return []
+  const label = manifest.name ?? dir
   const errors: string[] = []
+  if (manifest.name?.startsWith(experimentalPackageNamePrefix) !== true) {
+    errors.push(`${label}: experimental package name must start with ${JSON.stringify(experimentalPackageNamePrefix)}`)
+  }
+  if (manifest.private !== true) errors.push(`${label}: experimental package must set "private": true`)
+  if (manifest.publishConfig !== undefined) errors.push(`${label}: experimental package must omit publishConfig`)
+  return errors
+}
+
+function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
+  const errors = checkExperimentalManifest({ dir, manifest })
   const label = manifest.name ?? dir
   const isLandlockPackageDir = dir.startsWith('native/landlock-run/packages/')
   const isPublicLandlockPackage = isLandlockPackageDir
@@ -230,7 +275,29 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
       || manifest.repository.directory !== expectedDirectory) {
       errors.push(`${label}: published Landlock package repository must use ${repositoryUrl} with directory ${expectedDirectory} for trusted publishing`)
     }
-  } else if (manifest.private !== true) {
+  } else if (releaseMemberDirectory.test(dir)) {
+    // Release members state that they are publishable: npm refuses a private
+    // package, and the repository field is how a consumer finds the source of
+    // the package it installed.
+    //
+    // Access is per release sequence, not per scope: the vendored framework and
+    // the Landlock packages publish publicly because outside consumers install
+    // them, while the dsh family stays restricted until its own sequence goes
+    // public. A mixed scope is why no publish path passes `--access` — one flag
+    // cannot serve both, so each packed manifest decides
+    // ([rationale](../.agents/notes/implemented/process/2026-08-13-public-vendor-and-native-sequences.md)).
+    if (manifest.private === true) {
+      errors.push(`${label}: release member must not set "private": true`)
+    }
+    if (manifest.publishConfig?.access !== 'public') {
+      errors.push(`${label}: release member must set publishConfig.access to "public"`)
+    }
+    if (manifest.repository?.type !== 'git'
+      || manifest.repository.url !== publishedRepositoryUrl
+      || manifest.repository.directory !== dir) {
+      errors.push(`${label}: release member repository must use ${publishedRepositoryUrl} with directory ${dir}`)
+    }
+  } else if (!experimentalPackageDirectory.test(dir) && manifest.private !== true) {
     errors.push(`${label}: package.json must set "private": true`)
   }
 
@@ -240,9 +307,8 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
 
   if (manifest.name?.startsWith('@deepseek-ai/')) {
     const allowedSources = publicationSourceAllowlist[manifest.name] ?? []
-    const publicationPolicy = { typeRTRemoteNavigation: hasTypeRTRemoteNavigation(manifest) }
     for (const file of manifest.files ?? []) {
-      if (isForbiddenPublicationFile(file, publicationPolicy) && !allowedSources.includes(file)) {
+      if (isForbiddenPublicationFile(file) && !allowedSources.includes(file)) {
         errors.push(`${label}: package.json files must not publish ${JSON.stringify(file)}`)
       }
     }
@@ -267,13 +333,13 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
   }
 
   if (dir.startsWith('packages/') && manifest.name?.startsWith('@deepseek-ai/dsh-')) {
-    const peer = manifest.peerDependencies?.cordis
-    const dev = manifest.devDependencies?.cordis
+    const peer = manifest.peerDependencies?.['@deepseek-ai/cordis']
+    const dev = manifest.devDependencies?.['@deepseek-ai/cordis']
 
-    if (!peer) errors.push(`${label}: cordis must be a peerDependency`)
-    if (!dev) errors.push(`${label}: cordis must also be a devDependency`)
+    if (!peer) errors.push(`${label}: @deepseek-ai/cordis must be a peerDependency`)
+    if (!dev) errors.push(`${label}: @deepseek-ai/cordis must also be a devDependency`)
     if (peer && dev && peer !== dev) {
-      errors.push(`${label}: cordis peer (${peer}) and dev (${dev}) ranges must match`)
+      errors.push(`${label}: @deepseek-ai/cordis peer (${peer}) and dev (${dev}) ranges must match`)
     }
     if (manifest.version !== repositoryVersion) {
       errors.push(`${label}: package.json version must match root version ${repositoryVersion ?? '(missing)'}`)
@@ -342,17 +408,83 @@ function checkHierarchyShape(): string[] {
 }
 
 function checkRepositoryVersion(): string[] {
-  if (repositoryVersion && /^\d+\.\d+\.\d+$/.test(repositoryVersion)) return []
-  return ['package.json: version must be stable X.Y.Z']
+  // The root carries the dsh release family's version, so a prerelease such as
+  // 0.0.1-rc.1 is a valid state between `release:dsh` and its publication.
+  if (repositoryVersion && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(repositoryVersion)) return []
+  return ['package.json: version must be X.Y.Z with an optional prerelease segment']
 }
 
-const errors = [
-  ...checkRepositoryVersion(),
-  ...workspaceManifests().flatMap(checkWorkspace),
-  ...checkHierarchyShape(),
-  ...collectProjectReferenceFaceViolations(root),
-]
-if (errors.length > 0) {
-  console.error(errors.join('\n'))
-  process.exitCode = 1
+/** Dependency sections whose ranges reach a published tarball or a local install. */
+const dependencySections = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const
+/** Dependency sections present in an installed runtime. */
+const runtimeDependencySections = ['dependencies', 'optionalDependencies', 'peerDependencies'] as const
+
+/**
+ * Prevent an official runtime from requiring a package its release omits.
+ * @param manifests - release, private experimental, and deployment-root manifests.
+ * @returns One error for each forbidden runtime dependency.
+ */
+export function checkExperimentalDependencyIsolation(manifests: readonly WorkspaceManifest[]): string[] {
+  const experimentalNames = new Set(manifests
+    .filter(entry => experimentalPackageDirectory.test(entry.dir))
+    .map(entry => entry.manifest.name)
+    .filter(name => name !== undefined))
+  const errors: string[] = []
+  for (const { dir, manifest } of manifests) {
+    if (!releaseMemberDirectory.test(dir) && dir !== 'python/sdk-runtime') continue
+    for (const section of runtimeDependencySections) {
+      for (const name of Object.keys(manifest[section] ?? {})) {
+        if (!experimentalNames.has(name)) continue
+        errors.push(`${manifest.name ?? dir}: ${section}.${name} must not reference an experimental package`)
+      }
+    }
+  }
+  return errors
 }
+
+/**
+ * Require the `workspace:` protocol for every reference to a workspace member.
+ *
+ * A hand-written range says nothing about the version the workspace actually
+ * carries, and `pnpm pack` leaves it alone: `^0.0.1` published from version
+ * `0.0.2` names a version that does not exist. The protocol makes pack
+ * substitute the member's real version, so no release step rewrites ranges.
+ * @param manifests - every workspace manifest.
+ * @returns One error per reference that names a workspace member without the protocol.
+ */
+function checkWorkspaceProtocol(manifests: readonly WorkspaceManifest[]): string[] {
+  const members = new Set(manifests.map(entry => entry.manifest.name).filter(name => name !== undefined))
+  const errors: string[] = []
+  for (const { dir, manifest } of manifests) {
+    for (const section of dependencySections) {
+      for (const [name, range] of Object.entries(manifest[section] ?? {})) {
+        if (!members.has(name) || range.startsWith('workspace:')) continue
+        errors.push(`${manifest.name ?? dir}: ${section}.${name} must use the workspace: protocol, got ${range}`)
+      }
+    }
+  }
+  return errors
+}
+
+/** Run the repository constraint gate. */
+export function main(): void {
+  const manifests = workspaceManifests()
+  const dependencyManifests = [
+    ...manifests,
+    { dir: 'python/sdk-runtime', manifest: readJson(join(root, 'python/sdk-runtime/package.json')) },
+  ]
+  const errors = [
+    ...checkRepositoryVersion(),
+    ...manifests.flatMap(checkWorkspace),
+    ...checkWorkspaceProtocol(manifests),
+    ...checkExperimentalDependencyIsolation(dependencyManifests),
+    ...checkHierarchyShape(),
+    ...collectProjectReferenceFaceViolations(root),
+  ]
+  if (errors.length > 0) {
+    console.error(errors.join('\n'))
+    process.exitCode = 1
+  }
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main()

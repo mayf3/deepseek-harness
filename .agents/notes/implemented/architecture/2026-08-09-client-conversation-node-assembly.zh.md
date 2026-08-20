@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-08-09-client-conversation-node-assembly.md) | 中文
 
-## Problem
+## 问题
 
 Client Session 既维护传输窗口、连接状态和待处理交互，也在中心化 transcript fold 中解释 Assistant、Tool、消息、命令、压缩、重试及 turn tail 等业务事件。每增加一种业务节点，都要修改 Session 的 switch、历史 replay、索引、缓存和 React 分组；业务 identity、状态演进与最终展示没有独立所有者。
 
@@ -12,7 +12,7 @@ Client Session 既维护传输窗口、连接状态和待处理交互，也在�
 
 业务事件之间的关联方式并不统一。Tool 有 call ID，Assistant 以 turn/step 关联，Compaction 有独立生命周期和 checkpoint，Inbox splice 则表示一个连续状态的瞬间。把这些差异继续塞进统一 fold，会让任一业务变化都经过全局查表并使无关缓存失效。
 
-## Decision
+## 决策
 
 Client Runtime 提供 target-neutral 的 Conversation Node 组装引擎，业务插件注册 Event Definition，视图插件注册 per-Session View Builder。`ui-conversation` 注册第一批内建 Definition 和 `chat` builder；Session 只负责把当前连续事件窗口送入引擎并发布它的 snapshot，不再解释具体 conversation 业务。
 
@@ -148,7 +148,7 @@ Assembler 校验 Node `key === context.key` 且 Node `target === target`。业�
 
 `current` 让 Definition 区分“从未生成”与“已经生成后需要隐藏”。Assistant retry 和 Turn Error suppression 使用它避免非法的 Node 撤回。
 
-Definition 可以针对 target 分支构造不同 data，但匹配、Context identity 和 State 保持 target-neutral。本次只注册 `chat` builder；在拥有注册 target 之前，Trajectory 继续使用独立的 `session-history` fold。
+一个 Definition 最多拥有一个 view target；仅维护状态的 Definition 同时省略 `target` 与 `buildViewNode()`。即使 Chat 与 Trajectory 识别同一持久 Event 族，它们也分别注册自己的业务 Definition；共享 Assembler 则为两个 target 提供相同的匹配、replay、Location 与发布机制。
 
 #### 不提供通用 `end()`
 
@@ -263,7 +263,7 @@ Chat `order` 的结构性变化仍可能重排当前可见 key；纯 data 更新
 | Assistant / `assistant-step` | `turn:step` | `step/start` | `assistant/chunk`、final `assistant/message`、同 step Retry | 聚合 blocks、usage、首 token 时间、final 和 retry 隐藏状态，并发布同 key Step data |
 | Tool / `tool-call` | root call ID | root `tool/call` | root result、Code Dispatch start/result | 聚合 root、children 和 parent Map；Dispatch Event 用 `rootCallId` 精确路由 |
 | Command / `command` | command ID | `command/run` | `command/done`、带 source command ID 的 compact lifecycle/checkpoint | 聚合 command outcome 和手动压缩证据 |
-| Automatic Compaction / `compaction` | compaction ID | 无 source command ID 的 `compact/start` | summary、end、replacement checkpoint | 聚合 summary/checkpoint；checkpoint 足够时可在缺 start 下 fallback |
+| Automatic Compaction / `compaction` | compaction ID | 无 source command ID 的 `compaction/start` | summary、end、replacement checkpoint | 聚合 summary/checkpoint；checkpoint 足够时可在缺 start 下 fallback |
 | Retry / `model-retry` | retry ID | attempt 1 的 `llm/retry` | 后续 `llm/retry` 与 `llm/retry-started` | 聚合同一 RetryId 的 attempts 与 scheduled/started 状态 |
 | Turn Error / `turn-error` | turn number | `turn/start` | error `turn/end` 与该 turn Retry Events | 聚合 terminal failure，并用 Retry 证据决定隐藏 |
 | Turn Tail / `turn-tail` | turn number | `turn/start` | Assistant、Retry、`step/end`、`turn/end` | 保存 turn end，读取各 Step 的 Assistant data，发布 Turn data；完整 Matches 用于选择视觉尾部 anchor |
@@ -326,11 +326,13 @@ Assistant streaming 到 final、Tool running 到 settled 只更新同一个 Seat
 
 业务主动把已发布 Node 改成 hidden 时，它会退出 visible order，恢复 visible 时会重新 mount。这是明确的业务撤显语义，与 running→settled 的稳定 Seat 保证不同。
 
-具体 Tool renderer 仍由 [`ui-tool ownership decision`](2026-08-08-client-tool-presentation-ownership.md) 约束。Tool Definition 只交付递归 root/subcall data，`ui-tool` 再按 Tool name keyed slot 分发具体表现。
+具体 Tool renderer 仍由 [`ui-tool ownership decision`](2026-08-08-client-tool-presentation-ownership.zh.md) 约束。Tool Definition 只交付递归 root/subcall data，`ui-tool` 再按 Tool name keyed slot 分发具体表现。
 
-Trajectory 尚未注册 target，也不消费 Chat Builder 的 legacy slice。它已激活的 `SessionHistoryInspection` 继续维护独立 history fold，而普通 Session snapshot 不再运行第二套 transcript fold。Chat Builder 为 StatsLine 和顶层公共兼容字段保留 legacy slice；未来迁移 Trajectory 不改变 Event Definition、Context、Reader 或 Location 契约。
+Trajectory 针对与 Chat 相同的 Assembler 和 Session 事件窗口注册自己的 target 与业务 Definition。它的 target builder 保留 stage-oriented read model，既不消费 Chat Builder 的 legacy slice，也不运行独立 history fold。Chat Builder 为 StatsLine 和顶层公共兼容字段保留 legacy slice；target 专属 Definition 不改变共享的 Context、Reader 或 Location 契约。
 
-## Runtime and render path
+target 专属 Trajectory Definition、保留的 stage model、Steering 适配、复杂度上界与表现层热点由 [Trajectory Context 组装决策](2026-08-11-trajectory-conversation-context-assembly.zh.md)负责。
+
+## 运行时与渲染链路
 
 ```text
 Session Event window
@@ -339,20 +341,17 @@ Session Event window
        -> Context matches + State + Location
        -> Definition.buildLocationData(step -> turn)
             -> StepLocation.data / TurnLocation.data
-       -> Definition.buildViewNode(target = chat)
-  -> ChatSnapshotBuilder
-       -> order[] + keyed Node store + Location index + timeline
-  -> ChatView
-       -> ChatNodeSeat(key)
-       -> conversation.chat.node(entryKey = node.kind, hookContext = key)
-            -> slot-level useTurnData(businessKey)
+       -> Definition.buildViewNode() for its declared target
+  -> target View Builder
+       -> chat: ChatSnapshotBuilder -> ChatView -> keyed ChatNodeSeat
+       -> trajectory: TrajectorySnapshotBuilder -> stages/layout/table
 ```
 
-## Verification
+## 验证
 
 Runtime tests 固定 Definition 生命周期注册、exact-ID append、update-before-start 收集与 start 后正序 replay、prepend identity、Reader window-gap 修复、传递依赖、Location closure、Step→Turn data phase order、Location data replacement、publication cadence、非法撤回和 per-target Builder。
 
-Conversation tests 覆盖全部内建 Definition、Assistant Step data、Turn Tail 与 Deliverables Turn data、Chat 排序和结构共享、selector isolation、Assistant/Tool running-to-settled identity、nested Code Dispatch、steering、Compaction、Retry、interruption、load-older anchoring 和 slot dispatch。
+Conversation tests 覆盖全部内建 Chat Definition、Assistant Step data、Turn Tail 与 Deliverables Turn data、Chat 排序和结构共享、selector isolation、Assistant/Tool running-to-settled identity、nested Code Dispatch、steering、Compaction、Retry、interruption、load-older anchoring 和 slot dispatch。Trajectory tests 则覆盖它独立注册的 Message、Assistant、Tool、Compaction、Request-header 与 boundary Definition，以及继续保留的 stage-oriented view model。
 
 Slot type/runtime tests 固定父注册必须提供声明的 common inject、`hookContext` 类型、不同 Node context 的 Hook 隔离、factory/Hook identity 稳定，以及无关 Session publication 不重渲染业务 renderer。原 entry-owned Observable Hook 测试继续固定未使用 contextual factory 的路径。
 
@@ -360,7 +359,7 @@ Assembled Web snapshot、GUI 和浏览器场景覆盖真实 plugin graph。浏�
 
 历史链路验证同时覆盖完整 replace、非重叠 prepend、重叠 seq 去重、空页 `hasMore` 收敛和 live append。相同 Event 窗口通过不同摄入路径得到相同业务 State 与最终 Node。
 
-## Alternatives considered
+## 考虑过的替代方案
 
 **保留中心化 Session transcript fold，只抽 helper。** 拒绝：业务 identity、历史 replay 和 cache invalidation 仍属于一个闭合 switch，移动函数不会产生独立所有权。
 
@@ -382,15 +381,15 @@ Assembled Web snapshot、GUI 和浏览器场景覆盖真实 plugin graph。浏�
 
 **增加通用 `end()`、prepared 或 window reset 生命周期。** 拒绝：不同业务完成条件不同，分页缺口也不是业务生命周期。业务 Event 更新 State，Location close 触发 replay/build，Reader dependency 负责补页失效。
 
-**为 Chat 与 Trajectory 注册两套 Event Definition。** 拒绝：identity、State 和 Location 与 target 无关。视图差异由 `buildViewNode(target)` 和各自 Builder 表达；Trajectory 在注册自己的 Builder 之前继续使用独立 history fold。
+**在同一个 Event Definition 内通过 `buildViewNode(target)` 为 Chat 与 Trajectory 分支。** 拒绝：两种视图需要不同的业务 State 与中间记录，共用 Definition 会迫使每个 package 携带另一边的条件与 payload。target 自有的 Definition 把这些选择留在本地，同时复用 Assembler 的摄入与生命周期约定。
 
 **在最终业务 Node 上再叠一层通用 layout model。** 拒绝：activity、tail candidacy 和 layout enum 会把当前 Chat 的业务语义重新集中到引擎。最终 Node 直接携带 renderer 所需 data，只共享 identity、排序和 Location 事实。
 
-**只在 Assistant renderer 注册 Turn data Hook。** 拒绝：访问当前 Node Location 是 `conversation.chat.node` slot 的公共能力，不属于某个业务 renderer。父 Chat entry 注册一次 common inject，所有 keyed renderer 共享同一强类型契约。
+**只在 Assistant renderer 注册 Turn data Hook。** 拒绝：访问当前 Node Location 是 `conversation.chat.node` slot 的公共能力，不属于某个业务 renderer。父 Chat entry 注册一次 common inject，所有 keyed renderer 共享同一强类型约定。
 
 **把 running Assistant 或 Tool 保留在独立 tail container。** 拒绝：结算时会跨 React parent 移动，稳定业务 key 也无法阻止 remount。统一 keyed order 允许 data 和排序位置改变，但不改变 Seat identity。
 
-## Consequences
+## 后果
 
 新增业务节点可以局部注册自己的 matcher、State 转换、可选 Location data、最终 target Node 和 renderer，不再修改 Session 的业务 switch。`ChatNodeDataMap` 和 Location data maps 允许业务 package 通过 declaration merging 合入强类型 data；所有相关 Event 仍须暴露可单 Event 推导的稳定 ID。
 
@@ -406,4 +405,4 @@ Step/Turn 成为业务间共享聚合的稳定宿主。Turn Tail 和 Deliverable
 
 代价是 Runtime 新增 Registry、Assembler、Location data、依赖重放和 per-target Builder 契约，UI Slots 也新增 parent-owned common inject 与 per-occurrence `hookContext`。Definition 作者必须理解稳定 ID、唯一 start、正序 replay、Step→Turn 发布顺序、只读 Reader 和 Node 不撤回规则。
 
-`useTurnData()` 不撤销 session-scoped renderer 的标准 `useSession`，因此该边界依靠 API 引导和测试，而不是能力隔离。Registry 变化仍是低频完整 rebuild；Chat Builder 继续为 StatsLine 和顶层公共字段维护 legacy slice，Trajectory 继续拥有独立 history fold，内建 Definitions 暂时集中在 `ui-conversation`。这些是兼容边界，不把业务解释权交还给 Session。
+`useTurnData()` 不撤销 session-scoped renderer 的标准 `useSession`，因此该边界依靠 API 引导和测试，而不是能力隔离。Registry 变化仍是低频完整 rebuild；Chat Builder 继续为 StatsLine 和顶层公共字段维护 legacy slice，Trajectory 则在共享 Session 窗口上拥有 target 专属 Definition 与 Builder。内建 Definition 分别留在所属 UI package；这些兼容边界不把业务解释权交还给 Session。

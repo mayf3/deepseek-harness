@@ -2,13 +2,13 @@
 
 English | [中文](settings.zh.md)
 
-The user-settings seam of [dsh-settings](../../packages/settings/settings) holds one user-owned document of per-namespace sections and resolves each registered namespace as schema defaults, then the registrant's composition `base`, then the user section. Providers such as [dsh-settings-local](../../packages/settings/settings-local) store the raw document and push external edits; consumer plugins register a schema and read or observe the resolved value. Composition config stays in `cordis.yml` — a namespace carries only the user-editable subset.
+The user-settings seam of [dsh-settings](../../packages/settings/settings) holds one user-owned document of per-namespace sections and resolves each registered namespace as schema defaults, then the registrant's composition `base`, then the user section. Providers such as [dsh-settings-file](../../packages/settings/settings-file) store the raw document and push external edits; consumer plugins register a schema and read or observe the resolved value. Composition config stays in `cordis.yml` — a namespace carries only the user-editable subset.
 
 Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/settings/src/index.ts)
 
 ## Identity
 
-A namespace names one plugin-owned section of the user document. The brand keeps namespaces from mixing with other cross-boundary ids; construction validates the lowercase kebab-case shape.
+A namespace names one plugin-owned section of the user document. The brand prevents callers from mixing settings namespaces with other ids passed between packages or processes; construction validates lowercase kebab-case syntax.
 
 ```ts type-equiv
 /** Nominal id of one registered settings namespace. */
@@ -79,14 +79,14 @@ interface SettingsScope<T> {
   watch(callback: (next: T, prev: T) => void | Promise<void>): () => void
   /**
    * Merge a partial patch into this namespace's user layer and persist it.
-   * @param patch - plain-object patch over the user section; JSON-shaped data
+   * @param patch - plain-object patch over the user section; JSON-compatible data
    * only (non-JSON values reject with their path before anything persists).
    */
   update(patch: object): Promise<void>
   /**
    * Replace this namespace's user section wholesale; absent keys re-inherit
    * the composition `base` and schema defaults (`replace({})` resets all).
-   * @param section - the complete next user section; JSON-shaped data only,
+   * @param section - the complete next user section; JSON-compatible data only,
    * as for {@link update}.
    */
   replace(section: object): Promise<void>
@@ -141,7 +141,7 @@ type SettingsPathOp =
 ```
 
 ```ts type-equiv
-/** Options for {@link Settings.describe}. */
+/** Options for {@link SettingsProvider.describe}. */
 interface SettingsDescribeOptions {
   /**
    * Strip `role('secret')` fields from `value`/`base`/`user` and enumerate
@@ -165,13 +165,13 @@ type SettingsUpdateSource = 'update' | 'provider'
 
 <a id="cordis-surface"></a>
 
-## Cordis surface
+## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` surface lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
-<a id="ctxsettings--settings-abstract-seam"></a>
+<a id="ctxsettings--settingsprovider-abstract-seam"></a>
 
-### `ctx.settings` — `Settings` (abstract seam)
+### `ctx.settings` — `SettingsProvider` (abstract seam)
 
 Abstract settings service. Providers implement raw-document storage (`load`/`persist`) and push external changes through Settings.publish; the base class owns namespace registration, resolution, validation, change detection, and the `settings/updated` commit event.
 
@@ -279,7 +279,7 @@ One registered namespace's RAW user section changed, whether or not the resolved
 'settings/document-updated'(ns: SettingsNamespace, revision: number): void
 ```
 
-Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/settings/src/index.ts)
+Source: [`packages/settings/settings/src/types.ts`](../../packages/settings/settings/src/types.ts)
 
 <a id="settingsupdated--emit"></a>
 
@@ -306,5 +306,5 @@ Committed change to one registered namespace's resolved value. Emitted after the
 'settings/updated'(ns: SettingsNamespace, next: unknown, prev: unknown, source: SettingsUpdateSource): void
 ```
 
-Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/settings/src/index.ts)
+Source: [`packages/settings/settings/src/types.ts`](../../packages/settings/settings/src/types.ts)
 <!-- END GENERATED cordis-surface -->

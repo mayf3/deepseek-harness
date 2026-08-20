@@ -40,7 +40,7 @@ ctx.on('my-plugin/ready', ({ id }) => {
 
 ### bail — short circuit
 
-Listeners run in order; the first non-`undefined` result becomes the final result:
+Listeners run in order; the first result other than `null`, `false`, or `undefined` becomes the final result:
 
 ```ts ignore-check
 // Dispatch
@@ -49,13 +49,13 @@ const result = ctx.bail('some-check', input)
 // Listen: a returned value stops later listeners.
 ctx.on('some-check', (input) => {
   if (shouldBlock(input)) return 'blocked'
-  // Return undefined to continue to the next listener.
+  // Return null, false, or undefined to continue to the next listener.
 })
 ```
 
 ### serial — ordered execution
 
-Listeners run in registration order and asynchronous results are awaited. The first listener to return a non-empty value stops further execution:
+Listeners run in registration order and asynchronous results are awaited. The first result other than `null`, `false`, or `undefined` stops further execution:
 
 ```ts ignore-check
 await ctx.serial('setup-phase', context)
@@ -85,9 +85,9 @@ A waterfall listener **must call `next()`**. Omitting it short-circuits the pipe
 Harness uses TypeScript declaration merging for type-safe events:
 
 ```ts
-import 'cordis'
+import '@deepseek-ai/cordis'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Events {
     'my-plugin/ready': (payload: { id: string }) => void
     'my-plugin/check': (input: string) => boolean | undefined
@@ -103,7 +103,7 @@ declare module 'cordis' {
 
 Harness Cordis events use `namespace/action` names, including `agent/step`, `agent/request`, `agent/request-error`, `tools/result`, and `session/event`. The generated `cordis-surface` regions on the [subsystem pages](../../../subsystems/core.md) record complete signatures and modes.
 
-`turn/*`, `step/*`, `tool/call`, `tool/result`, and `compact/*` are durable session-event types, not same-named Cordis events. To observe them, listen to `session/event` and inspect `event.type`.
+`turn/*`, `step/*`, `tool/call`, `tool/result`, and `compaction/*` are durable session-event types, not same-named Cordis events. To observe them, listen to `session/event` and inspect `event.type`.
 
 ## Event listeners are effects
 
@@ -121,7 +121,7 @@ export function apply(ctx: Context) {
 This plugin logs tool calls and results:
 
 ```ts
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import '@deepseek-ai/dsh-tools'
 
 export const name = 'tool-logger'
@@ -139,5 +139,5 @@ export function apply(ctx: Context) {
 
 ## Next steps
 
-- [Capability layering](../practice/) — understand events within capability interfaces
+- [Capability layering](../practice/index.md) — understand events within capability interfaces
 - [LLM adapters](../practice/llm-adapter.md) — implement a complete LLM backend

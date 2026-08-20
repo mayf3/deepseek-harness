@@ -6,14 +6,14 @@
  * @module @deepseek-ai/dsh-session
  */
 
-import { Context, Service } from 'cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { isAbsolute } from 'node:path'
 import { deepFreeze } from '@deepseek-ai/dsh-llm'
 import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionId } from './types.ts'
-import type { TypeRTLookup } from '@deepseek-ai/dsh-type-meta'
+import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
 import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType } from './types.ts'
 import { snapshotJsonValue } from './json.ts'
 import { deriveEventMessage, SurfaceManager } from './surface.ts'
@@ -26,35 +26,15 @@ export type { SessionPreparationOptions } from './preparation.ts'
 export type { AssistantMessage, ToolResultMessage, UserMessage } from '@deepseek-ai/dsh-llm'
 export { isJsonValue, snapshotJsonValue } from './json.ts'
 export type { JsonValue } from './json.ts'
-export { interruptedTurnClosers, lastActivityTime, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from './repair.ts'
+export { interruptedTurnClosers, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from './repair.ts'
 export { decodeStorageRecord, packChunkRuns } from './chunk-rows.ts'
 export type { ChunkRow, StorageRecord } from './chunk-rows.ts'
 export type { SessionSurface, SurfaceFoldReplacement, SurfaceFoldResult } from './surface.ts'
 export { deriveEventMessage, foldSurface, isAppendSurfaceEvent, isReplacementSurfaceEvent, isSurfaceEvent, isSurfaceEligibleType } from './surface.ts'
 export { canonicalHeader, foldRequestHeader, headerEquals } from './request-header.ts'
+export { KNOWN_SESSION_EVENT_TYPES } from './known-event-types.ts'
 
-/**
- * Find the latest closed turn that entered at least one model step, ignoring
- * balanced no-step turns produced by rejection, empty input, or cancellation.
- * @param events - session events, or an owned suffix, to inspect.
- * @returns the latest matching turn end, or `undefined`.
- */
-export function findLastMessageTurnEnd(
-  events: readonly SessionEvent[],
-): SessionEvent<'turn/end'> | undefined {
-  const steppedTurns = new Set<number>()
-  let latest: SessionEvent<'turn/end'> | undefined
-  for (const event of events) {
-    if (event.type === 'step/start') {
-      steppedTurns.add(event.data.turn)
-      continue
-    }
-    if (event.type === 'turn/end' && steppedTurns.delete(event.data.turn)) latest = event
-  }
-  return latest
-}
-
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     sessions: SessionStore
   }
@@ -106,9 +86,9 @@ declare module 'cordis' {
   }
 }
 
-declare module '@deepseek-ai/dsh-type-meta' {
-  interface TypeRTLookupMap {
-    session: TypeRTLookup<Session, SessionId>
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface TypertLookupMap {
+    session: TypertLookup<Session, SessionId>
   }
 }
 
@@ -148,6 +128,9 @@ function validateSessionHeader(id: SessionId, input: unknown): SessionHeader {
   if (record.delegationDepth !== undefined
     && (typeof record.delegationDepth !== 'number' || !Number.isSafeInteger(record.delegationDepth) || record.delegationDepth < 0)) {
     throw new Error('session header delegationDepth must be a non-negative safe integer')
+  }
+  if (record.agentPreset !== undefined && typeof record.agentPreset !== 'string') {
+    throw new Error('session header agentPreset must be a string')
   }
   return deepFreeze(record as unknown as SessionHeader)
 }
@@ -240,6 +223,7 @@ function assertSessionEventEnvelope(value: Record<string, unknown>, index: numbe
       case 'data':
       case 'surfaceOp':
       case 'sourceEventSeqs':
+      case 'ignorable':
         break
       default:
         throw new Error(`seed event at index ${index} has an invalid event envelope`)
@@ -251,7 +235,8 @@ function assertSessionEventEnvelope(value: Record<string, unknown>, index: numbe
   if (typeof type !== 'string'
     || typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq < 0
     || typeof time !== 'number' || !Number.isSafeInteger(time)
-    || event['data'] === undefined) {
+    || event['data'] === undefined
+    || (event['ignorable'] !== undefined && event['ignorable'] !== true)) {
     throw new Error(`seed event at index ${index} has an invalid event envelope`)
   }
   switch (type) {
@@ -500,8 +485,8 @@ export class Session {
 
   /**
    * Restore a detached session by taking ownership of fresh persistence values.
-   * Storage shape, event envelopes, sequence continuity, surface transitions,
-   * and header fields are validated before the graphs are frozen in place.
+   * The storage format, event envelopes, sequence continuity, surface transitions,
+   * and header fields are validated before the restored objects are frozen.
    * @param id - restored session identity.
    * @param seed - fresh detached events whose ownership is transferred.
    * @param header - fresh detached metadata whose ownership is transferred.
@@ -898,6 +883,7 @@ export class SessionStore extends Service {
       ...meta?.seedLength === undefined ? {} : { seedLength: meta.seedLength },
       ...meta?.origin === undefined ? {} : { origin: meta.origin },
       ...meta?.delegationDepth === undefined ? {} : { delegationDepth: meta.delegationDepth },
+      ...meta?.agentPreset === undefined ? {} : { agentPreset: meta.agentPreset },
     }
     return Session.create(sessionId, seed, header)
   }
@@ -1024,7 +1010,7 @@ export class SessionStore extends Service {
    * Dispatch the awaited `session/flush` durability checkpoint for `session`,
    * with the carrier captured at {@link enter}. THE flush entry point: the
    * store owns the carrier, so callers (the checkpoint policy's per-request
-   * barrier, goal-session's idle checkpoint, teardown drains, and consumers
+   * barrier, goal-round-driver's idle checkpoint, teardown drains, and consumers
    * that flush themselves before reading storage) must come through here
    * rather than dispatch a raw `ctx.parallel('session/flush', …)` — one owner,
    * one spelling, and the scoped-dispatch invariant can pin it.

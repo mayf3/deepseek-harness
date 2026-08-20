@@ -1,5 +1,5 @@
-import { EntryTree, isJsExpr, type EntryOptions } from '@cordisjs/plugin-loader'
-import { Context, Service } from 'cordis'
+import { EntryGroup, EntryTree, isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { extname } from 'node:path'
 import { access, constants, readFile, rename, writeFile } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -173,6 +173,13 @@ export namespace Include {
 /** Loader entry tree backed by a YAML or JSON file. */
 export class Include extends EntryTree {
   static inject = ['loader']
+
+  // Tree-carrier marker (the Group plugin declares the same): this config is
+  // entry and patch lists, so the Loader's `internal/config` interpolation
+  // keeps it literal — a `!!js` expression inside a nested row's config
+  // belongs to that row's fiber, resolving lazily in the row's own context.
+  // Include's own fields (`path`, `enableLogs`) therefore stay literal too.
+  static readonly [EntryGroup.key] = true
 
   public filename: string
   private type?: string

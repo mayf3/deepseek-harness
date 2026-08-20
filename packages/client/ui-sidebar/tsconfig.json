@@ -18,9 +18,6 @@
       "path": "../ui-primitives"
     },
     {
-      "path": "../web-react"
-    },
-    {
       "path": "../runtime"
     },
     {
@@ -30,7 +27,7 @@
       "path": "../locale"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }
