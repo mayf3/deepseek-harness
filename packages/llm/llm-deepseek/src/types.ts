@@ -41,14 +41,14 @@ export interface WireTextContentPart {
   text: string
 }
 
-/** Base64 data URL part inside a multimodal user message. */
-export interface WireImageContentPart {
-  type: 'image_url'
-  image_url: { url: string }
+/** Files API reference inside a multimodal user message. */
+export interface WireFileContentPart {
+  type: 'file'
+  file_id: string
 }
 
 /** Ordered input part accepted by a multimodal user message. */
-export type WireUserContentPart = WireTextContentPart | WireImageContentPart
+export type WireUserContentPart = WireTextContentPart | WireFileContentPart
 
 /** User-role message: text-only string or ordered multimodal input. */
 export interface WireUserMessage {

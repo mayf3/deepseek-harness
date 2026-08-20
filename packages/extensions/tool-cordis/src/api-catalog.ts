@@ -438,13 +438,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>',
-        description: 'Validate one ordered image batch before committing any member. Validation failures start no writes; storage failures return no partial references, although already published content-addressed objects may stay unreachable until a future retention policy collects them.',
-        parameters: [{ name: 'inputs', description: 'encoded images in their owning message order.' }],
-        returns: 'durable references in the exact input order.',
+        description: 'Validate and durably commit one ordered image batch.',
+        parameters: [{ name: 'inputs', description: 'encoded images in owning-message order.' }],
+        returns: 'durable master references in the same order after every member succeeds.',
       },
       {
         signature: 'abstract saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment>',
-        description: 'Validate and durably commit one image before its owning session event is appended. Implementations may store a canonical re-encoding of the submitted raster; the returned reference always describes the stored bytes, while `source` preserves the submitted raster\'s intrinsic facts for callers that report or map coordinates against the original.',
+        description: 'Validate and durably commit one image before its owning session event is appended. Implementations may store a prepared master version of the submitted raster; the returned reference always describes the stored bytes, while `source` preserves the submitted raster\'s intrinsic facts for callers that report or map coordinates against the original.',
         parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
         returns: 'the durable content-addressed reference beside the submitted source facts.',
       },
@@ -452,8 +452,26 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>',
         description: 'Read one image and verify that bytes still match the recorded reference.',
         parameters: [{ name: 'ref', description: 'durable reference from the session log.' }, { name: 'signal', description: 'optional cancellation for backend read and verification work.' }],
-        returns: 'the verified bytes and canonical reference.',
+        returns: 'the verified bytes and master reference.',
         throws: ['the signal reason when aborted, or a storage error when verification fails.'],
+      },
+      {
+        signature: 'async readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<RequestImageAttachment>',
+        description: 'Generate or read one deterministic model-request version from the stored master image.',
+        parameters: [{ name: 'ref', description: 'durable provider-independent master reference.' }, { name: 'policy', description: 'exact route pixel and encoded-byte budget.' }, { name: 'signal', description: 'optional cancellation.' }],
+        returns: 'request bytes and the cache/upload identity covering every transform input.',
+      },
+      {
+        signature: 'async readImageRequests( refs: readonly ImageAttachmentRef[], policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<readonly RequestImageAttachment[]>',
+        description: 'Generate or read an ordered batch of deterministic model-request versions. Implementations may use their own bounded transform concurrency while preserving input order.',
+        parameters: [{ name: 'refs', description: 'durable provider-independent master references in request order.' }, { name: 'policy', description: 'exact route pixel and encoded-byte budget shared by the batch.' }, { name: 'signal', description: 'optional cancellation.' }],
+        returns: 'request versions in the same order as `refs`.',
+      },
+      {
+        signature: 'async cropImage( ref: ImageAttachmentRef, crop: PreviewImageCrop, signal?: AbortSignal, ): Promise<SavedImageAttachment>',
+        description: 'Crop the stored master by coordinates measured on a model request preview and persist the result.',
+        parameters: [{ name: 'ref', description: 'session-authorized master attachment.' }, { name: 'crop', description: 'preview dimensions and preview-coordinate rectangle.' }, { name: 'signal', description: 'optional cancellation.' }],
+        returns: 'a new durable attachment reference suitable for a logged tool result.',
       },
     ],
   },
@@ -3450,7 +3468,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ImageAttachmentRef',
-    declaration: 'export interface ImageAttachmentRef {\n    attachmentId: AttachmentId;\n    mediaType: ImageMediaType;\n    bytes: number;\n    width: number;\n    height: number;\n    name?: string;\n}',
+    declaration: 'export interface ImageAttachmentRef {\n    attachmentId: AttachmentId;\n    mediaType: ImageMediaType;\n    bytes: number;\n    width: number;\n    height: number;\n    name?: string;\n    sourceWidth?: number;\n    sourceHeight?: number;\n}',
   },
   {
     name: 'ImageBlock',
@@ -3459,6 +3477,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ImageMediaType',
     declaration: 'export type ImageMediaType = \'image/png\' | \'image/jpeg\' | \'image/webp\' | \'image/gif\';',
+  },
+  {
+    name: 'ImageRequestPolicy',
+    declaration: 'export interface ImageRequestPolicy {\n    maxPixels: number;\n    maxBytes: number;\n    crop?: MasterImageCrop;\n}',
+  },
+  {
+    name: 'ImageVariantId',
+    declaration: 'export type ImageVariantId = Branded<\'ImageVariantId\'>;',
   },
   {
     name: 'Inbox',
@@ -3586,7 +3612,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmAdapter',
-    declaration: 'export abstract class LlmAdapter {\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+    declaration: 'export abstract class LlmAdapter {\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
     name: 'LlmCallConfig',
@@ -3683,6 +3709,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'MasterImageCrop',
+    declaration: 'export interface MasterImageCrop {\n    x: number;\n    y: number;\n    width: number;\n    height: number;\n}',
   },
   {
     name: 'Message',
@@ -3805,8 +3835,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PostToolDecision = {\n    kind: \'accept\';\n    content?: ContentBlock[];\n    value?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'accept\';\n    value: JsonValue;\n    content?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'block\';\n    feedback: ContentBlock[];\n    additionalContexts?: UserMessage[];\n};',
   },
   {
+    name: 'PreparedAdapterCall',
+    declaration: 'export interface PreparedAdapterCall {\n    readonly model: LlmResolvedModelInfo;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+  },
+  {
     name: 'PreparedLlmCall',
-    declaration: 'export interface PreparedLlmCall {\n    readonly config: LlmCallConfig;\n    readonly retryPolicy: ResolvedRetryPolicy;\n    readonly context?: LlmModelContext;\n    readonly adapterDefaults: LlmCallConfigAdapterDefaults;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+    declaration: 'export interface PreparedLlmCall {\n    readonly config: LlmCallConfig;\n    readonly retryPolicy: ResolvedRetryPolicy;\n    readonly context?: LlmModelContext;\n    readonly inputModalities?: readonly ModelModality[];\n    readonly adapterDefaults: LlmCallConfigAdapterDefaults;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
     name: 'PreparedReferencedMessage',
@@ -3835,6 +3869,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PreToolDecision',
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
+  },
+  {
+    name: 'PreviewImageCrop',
+    declaration: 'export interface PreviewImageCrop {\n    previewWidth: number;\n    previewHeight: number;\n    x: number;\n    y: number;\n    width: number;\n    height: number;\n}',
   },
   {
     name: 'ProjectionChangeListener',
@@ -3915,6 +3953,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RequestHeaderReason',
     declaration: 'export type RequestHeaderReason = \'initial\' | \'resume\' | \'change\';',
+  },
+  {
+    name: 'RequestImageAttachment',
+    declaration: 'export interface RequestImageAttachment {\n    variantId: ImageVariantId;\n    master: ImageAttachmentRef;\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    bytes: number;\n    width: number;\n    height: number;\n    depth: \'uchar\';\n    space: \'srgb\';\n    hasAlpha: boolean;\n    crop?: MasterImageCrop;\n}',
   },
   {
     name: 'RequestRunOutcome',

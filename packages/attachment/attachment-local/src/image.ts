@@ -13,8 +13,14 @@ export interface DetectedImage {
   height: number
   /** Whether the container carries more than one frame. */
   animated: boolean
-  /** Whether the bytes carry EXIF/XMP/IPTC metadata or a non-default orientation. */
+  /** Whether the bytes carry descriptive metadata, a color profile, or orientation. */
   carriesMetadata: boolean
+  /** Sharp sample depth reported for the decoded channels. */
+  depth: string
+  /** Sharp colour space reported for the decoded pixels. */
+  space: string
+  /** Whether decoded pixels carry an alpha channel. */
+  hasAlpha: boolean
 }
 
 const MEDIA_TYPES: Readonly<Record<string, ImageMediaType>> = {
@@ -22,6 +28,17 @@ const MEDIA_TYPES: Readonly<Record<string, ImageMediaType>> = {
   jpeg: 'image/jpeg',
   webp: 'image/webp',
   gif: 'image/gif',
+}
+
+function carriesRetainedMetadata(metadata: Awaited<ReturnType<Sharp['metadata']>>): boolean {
+  return metadata.exif !== undefined
+    || metadata.xmp !== undefined
+    || metadata.iptc !== undefined
+    || metadata.icc !== undefined
+    || metadata.hasProfile
+    || metadata.tifftagPhotoshop !== undefined
+    || metadata.comments !== undefined
+    || metadata.orientation !== undefined
 }
 
 async function imageMetadata(image: Sharp): Promise<DetectedImage> {
@@ -38,9 +55,10 @@ async function imageMetadata(image: Sharp): Promise<DetectedImage> {
     width: transposed ? metadata.height : metadata.width,
     height: transposed ? metadata.width : metadata.height,
     animated: (metadata.pages ?? 1) > 1,
-    // orientation is EXIF-derived for every whitelisted format, so exif
-    // presence already covers a non-default orientation.
-    carriesMetadata: metadata.exif !== undefined || metadata.xmp !== undefined || metadata.iptc !== undefined,
+    carriesMetadata: carriesRetainedMetadata(metadata),
+    depth: metadata.depth,
+    space: metadata.space,
+    hasAlpha: metadata.hasAlpha,
   }
 }
 

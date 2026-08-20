@@ -18,7 +18,7 @@ describe('raster decoding', () => {
       ['gif', 'image/gif'],
     ] as const) {
       await expect(detectImage(await raster(format)))
-        .resolves.toEqual({ mediaType, width: 3, height: 2, animated: false, carriesMetadata: false })
+        .resolves.toMatchObject({ mediaType, width: 3, height: 2, animated: false, carriesMetadata: false, depth: 'uchar', space: 'srgb' })
     }
   })
 
@@ -31,7 +31,7 @@ describe('raster decoding', () => {
     await expect(detectImage(await raster('png'), { maxDimension: 2 }))
       .rejects.toMatchObject({ code: 'IMAGE_DIMENSION_TOO_LARGE' })
     await expect(detectImage(await raster('png'), { maxDimension: 3 }))
-      .resolves.toEqual({ mediaType: 'image/png', width: 3, height: 2, animated: false, carriesMetadata: false })
+      .resolves.toMatchObject({ mediaType: 'image/png', width: 3, height: 2, animated: false, carriesMetadata: false, depth: 'uchar', space: 'srgb' })
   })
 
   it('rejects malformed bytes and truncated payloads with readable headers', async () => {
@@ -56,16 +56,28 @@ describe('raster decoding', () => {
     const oriented = new Uint8Array(await sharp({
       create: { width: 4, height: 2, channels: 3, background: { r: 1, g: 2, b: 3 } },
     }).jpeg().withMetadata({ orientation: 6 }).toBuffer())
-    await expect(detectImage(oriented)).resolves.toEqual({
+    await expect(detectImage(oriented)).resolves.toMatchObject({
       mediaType: 'image/jpeg', width: 2, height: 4, animated: false, carriesMetadata: true,
     })
 
     const flipped = new Uint8Array(await sharp({
       create: { width: 4, height: 2, channels: 3, background: { r: 1, g: 2, b: 3 } },
     }).jpeg().withMetadata({ orientation: 3 }).toBuffer())
-    await expect(detectImage(flipped)).resolves.toEqual({
+    await expect(detectImage(flipped)).resolves.toMatchObject({
       mediaType: 'image/jpeg', width: 4, height: 2, animated: false, carriesMetadata: true,
     })
+  })
+
+  it('reports color profiles and encoder metadata as metadata', async () => {
+    const profiled = new Uint8Array(await sharp({
+      create: { width: 4, height: 2, channels: 3, background: { r: 1, g: 2, b: 3 } },
+    }).png().withIccProfile('p3').toBuffer())
+    await expect(detectImage(profiled)).resolves.toMatchObject({ carriesMetadata: true })
+
+    const commented = new Uint8Array(await sharp({
+      create: { width: 4, height: 2, channels: 3, background: { r: 1, g: 2, b: 3 } },
+    }).png().withMetadata().toBuffer())
+    await expect(detectImage(commented)).resolves.toMatchObject({ carriesMetadata: true })
   })
 
   it('probes malformed bytes and unsupported formats into the same stable error', async () => {

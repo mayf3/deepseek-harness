@@ -1,6 +1,6 @@
 /** Durable attachment vocabulary. @module @deepseek-ai/dsh-attachment/types */
 
-import type { AttachmentId } from './brand.ts'
+import type { AttachmentId, ImageVariantId } from './brand.ts'
 
 export type { AttachmentId } from './brand.ts'
 
@@ -21,6 +21,10 @@ export interface ImageAttachmentRef {
   height: number
   /** Optional display name stripped of local path information. */
   name?: string
+  /** Perceived source width before master-version downscaling; present only when it differs from {@link width}. */
+  sourceWidth?: number
+  /** Perceived source height before master-version downscaling; present only when it differs from {@link height}. */
+  sourceHeight?: number
 }
 
 /** Deployment-resolved limits used by upload admission and request buffering. */
@@ -59,7 +63,57 @@ export interface StoredImageAttachment {
   data: Uint8Array
 }
 
-/** Intrinsic facts of the submitted source raster, before any canonical re-encoding. */
+/** Pixel rectangle in the oriented 2048px master-version coordinate system. */
+export interface MasterImageCrop {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** Deterministic request-image policy selected by one exact model route. */
+export interface ImageRequestPolicy {
+  /** Maximum width multiplied by height after aspect-preserving projection. */
+  maxPixels: number
+  /** Encoded-byte cap before base64 expansion or Files API upload. */
+  maxBytes: number
+  /** Optional master-coordinate crop applied before pixel-budget scaling. */
+  crop?: MasterImageCrop
+}
+
+/** Cached request version derived from one provider-independent master attachment. */
+export interface RequestImageAttachment {
+  /** Cache and upload-index key over the master id, policy, crop, and fixed encoder parameters. */
+  variantId: ImageVariantId
+  /** Durable master reference from which this request version was derived. */
+  master: ImageAttachmentRef
+  /** Encoded request bytes. */
+  data: Uint8Array
+  mediaType: ImageMediaType
+  bytes: number
+  width: number
+  height: number
+  /** Provider-compatible sample depth proven after request encoding. */
+  depth: 'uchar'
+  /** Provider-compatible color space proven after request encoding. */
+  space: 'srgb'
+  /** Whether the encoded request version retains an alpha channel. */
+  hasAlpha: boolean
+  /** Applied master-coordinate crop, when present. */
+  crop?: MasterImageCrop
+}
+
+/** Crop coordinates measured by a model on the request preview it received. */
+export interface PreviewImageCrop {
+  previewWidth: number
+  previewHeight: number
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** Intrinsic facts of the submitted source raster, before master-version preparation. */
 export interface SourceImageInfo {
   /** Media type verified from the submitted bytes. */
   mediaType: ImageMediaType

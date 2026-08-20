@@ -16,8 +16,8 @@ import type {
   SourceImageInfo,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import { canonicalizeImage } from './canonical.ts'
-import type { CanonicalImagePolicy } from './canonical.ts'
+import { prepareMasterImage } from './canonical.ts'
+import type { MasterImagePolicy } from './canonical.ts'
 import { detectImage, probeImage } from './image.ts'
 import type { DetectedImage } from './image.ts'
 
@@ -64,23 +64,60 @@ async function inspectMetadata(
 
 /**
  * Run the full admission policy for one image without touching storage,
- * including a canonical-encoding dry run: a batch whose members all validate
- * cannot later be refused mid-write by the canonical byte target.
+ * including master-version preparation: a batch whose members all validate
+ * cannot later be refused by the master byte cap during publication.
  * @param input - encoded bytes and declared metadata.
  * @param limits - resolved source admission policy.
- * @param policy - resolved canonical encoding budget.
- * @returns completion after the raster has been fully decoded and its canonical encoding proven to fit.
+ * @param policy - resolved master-version storage policy.
+ * @returns completion after the raster has been decoded and its master version proven to fit.
  */
 export async function validateImageFile(
   input: SaveImageAttachment,
   limits: ImageAttachmentLimits,
-  policy: CanonicalImagePolicy,
+  policy: MasterImagePolicy,
 ): Promise<void> {
+  await prepareImageFile(input, limits, policy)
+}
+
+/** Fully prepared master object, verified before any batch member is persisted. */
+export interface PreparedImageFile extends SavedImageAttachment {
+  /** Deterministic master bytes whose digest is {@link ref.attachmentId}. */
+  data: Uint8Array
+}
+
+/**
+ * Decode, normalize, and verify one submitted image without touching storage.
+ * @param input - submitted encoded bytes and declared media type.
+ * @param limits - source admission policy.
+ * @param policy - independent master-version storage policy.
+ * @returns immutable reference facts beside bytes ready for atomic publication.
+ */
+export async function prepareImageFile(
+  input: SaveImageAttachment,
+  limits: ImageAttachmentLimits,
+  policy: MasterImagePolicy,
+): Promise<PreparedImageFile> {
   if (input.data.byteLength > limits.maxImageBytes) {
     throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
   }
-  const { detected } = await inspectMetadata(input.data, input.mediaType, limits)
-  await canonicalizeImage(input.data, detected, policy)
+  const { detected, source } = await inspectMetadata(input.data, input.mediaType, limits)
+  const master = await prepareMasterImage(input.data, detected, policy)
+  const sha256 = digest(master.data)
+  const name = displayName(input.name)
+  const downscaled = source.width !== master.width || source.height !== master.height
+  return {
+    data: master.data,
+    ref: {
+      attachmentId: AttachmentId(`sha256:${sha256}`),
+      mediaType: master.mediaType,
+      width: master.width,
+      height: master.height,
+      bytes: master.data.byteLength,
+      ...(name !== undefined ? { name } : {}),
+      ...downscaled ? { sourceWidth: source.width, sourceHeight: source.height } : {},
+    },
+    source,
+  }
 }
 
 /**
@@ -143,26 +180,20 @@ async function ensureDurableHome(path: string): Promise<string> {
 }
 
 /**
- * Save and verify one image below a versioned attachment root. Admission
- * validates the submitted source, then stores its deterministic canonical
- * encoding; the returned reference describes the stored canonical bytes while
- * `source` preserves the submitted raster's facts.
+ * Publish one already verified master below a versioned attachment root.
  * @param root - absolute `DSH_HOME/attachments/v1` root.
- * @param input - encoded bytes and declared metadata.
- * @param limits - resolved source admission policy.
- * @param policy - resolved canonical encoding budget.
+ * @param prepared - deterministic master bytes, reference, and source facts.
  * @returns durable content-addressed reference beside the submitted source facts.
  */
-export async function saveImageFile(
+export async function commitPreparedImageFile(
   root: string,
-  input: SaveImageAttachment,
-  limits: ImageAttachmentLimits,
-  policy: CanonicalImagePolicy,
+  prepared: PreparedImageFile,
 ): Promise<SavedImageAttachment> {
-  if (input.data.byteLength > limits.maxImageBytes) throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
-  const { detected, source } = await inspectMetadata(input.data, input.mediaType, limits)
-  const canonical = await canonicalizeImage(input.data, detected, policy)
-  const sha256 = digest(canonical.data)
+  const master = prepared.data
+  const sha256 = ensureReference(prepared.ref)
+  if (digest(master) !== sha256 || master.byteLength !== prepared.ref.bytes) {
+    throw new AttachmentError('Prepared attachment bytes do not match their reference.', 'ATTACHMENT_CORRUPT')
+  }
   const bucket = join(root, 'objects', sha256.slice(0, 2))
   const staging = join(root, 'tmp')
   // Establish DSH_HOME itself against the filesystem root once per process.
@@ -176,7 +207,7 @@ export async function saveImageFile(
   let handle
   try {
     handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
-    await handle.writeFile(canonical.data)
+    await handle.writeFile(master)
     await handle.sync()
     await handle.close()
     handle = undefined
@@ -211,18 +242,24 @@ export async function saveImageFile(
     if (error instanceof AttachmentError) throw error
     throw new AttachmentError('Unable to persist image attachment.', 'ATTACHMENT_WRITE_FAILED', { cause: error })
   }
-  const name = displayName(input.name)
-  return {
-    ref: {
-      attachmentId: AttachmentId(`sha256:${sha256}`),
-      mediaType: canonical.mediaType,
-      width: canonical.width,
-      height: canonical.height,
-      bytes: canonical.data.byteLength,
-      ...(name !== undefined ? { name } : {}),
-    },
-    source,
-  }
+  return { ref: prepared.ref, source: prepared.source }
+}
+
+/**
+ * Decode and normalize one image once, then publish the prepared object.
+ * @param root - absolute `DSH_HOME/attachments/v1` root.
+ * @param input - submitted encoded bytes and declared media type.
+ * @param limits - resolved source admission policy.
+ * @param policy - resolved master-version storage policy.
+ * @returns durable content-addressed reference beside submitted source facts.
+ */
+export async function saveImageFile(
+  root: string,
+  input: SaveImageAttachment,
+  limits: ImageAttachmentLimits,
+  policy: MasterImagePolicy,
+): Promise<SavedImageAttachment> {
+  return commitPreparedImageFile(root, await prepareImageFile(input, limits, policy))
 }
 
 /**

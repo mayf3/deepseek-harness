@@ -12,8 +12,8 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
-import { CallId, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { CallId, createUserMessage, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import type { Config as ToolConfig } from '@deepseek-ai/dsh-tools'
@@ -122,12 +122,13 @@ async function setup(options: SetupOptions = {}) {
 }
 
 /** A fake calling agent pinned to one routed provider/model. */
-function agentOn(model: string | undefined, provider = 'visual'): object {
+function agentOn(model: string | undefined, provider = 'visual', messages: readonly Message[] = []): object {
   return {
     options: {},
     session: {
       header: { cwd: dir },
       requestHeader: () => (model === undefined ? undefined : { config: { provider, model } }),
+      deriveMessages: () => [...messages],
       append: () => undefined,
     },
   }
@@ -169,6 +170,61 @@ describe('imageRefFromValue', () => {
     const base = { attachmentId: 'sha256:00', mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1 }
     expect(imageRefFromValue(base)).toEqual(base)
     expect(imageRefFromValue({ ...base, name: 'a.png' })).toEqual({ ...base, name: 'a.png' })
+    expect(imageRefFromValue({ ...base, sourceWidth: 4, sourceHeight: 2 }))
+      .toEqual({ ...base, sourceWidth: 4, sourceHeight: 2 })
+  })
+})
+
+describe('read_image_region', () => {
+  it('crops a session-visible attachment and returns a new logged image reference', async () => {
+    const ctx = await setup()
+    const attachments = ctx.attachments
+    const source = await attachments.saveImage({ data: PNG_3X3, mediaType: 'image/png', name: 'grid.png' })
+    const history = [createUserMessage({
+      content: [{ type: 'image', attachment: source.ref }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })]
+
+    const result = await call(ctx, 'read_image_region', {
+      attachment_id: source.ref.attachmentId,
+      preview_width: 3,
+      preview_height: 3,
+      x: 1,
+      y: 0,
+      width: 2,
+      height: 2,
+    }, agentOn('vision-model', 'visual', history))
+
+    expect(result.isError).toBe(false)
+    expect(result.content[0]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('crop x=1, y=0, width=2, height=2') as string,
+    })
+    expect(result.content[1]).toMatchObject({
+      type: 'image',
+      attachment: { width: 2, height: 2, name: 'grid-crop.png' },
+    })
+    const cropped = result.content[1]
+    if (cropped?.type !== 'image') throw new Error('expected cropped image block')
+    await expect(attachments.readImage(cropped.attachment)).resolves.toMatchObject({
+      ref: { attachmentId: cropped.attachment.attachmentId },
+    })
+  })
+
+  it('refuses an attachment that is absent from the current session', async () => {
+    const ctx = await setup()
+    const result = await call(ctx, 'read_image_region', {
+      attachment_id: `sha256:${'f'.repeat(64)}`,
+      preview_width: 800,
+      preview_height: 800,
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+    }, agentOn('vision-model'))
+
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('not referenced by the current session')
   })
 })
 
@@ -438,6 +494,15 @@ describe('image admission failures', () => {
     expect(storageFault.isError).toBe(true)
     expect(text(storageFault)).toContain('Unable to persist image attachment.')
 
+    FailingStore.failure = new AttachmentError(
+      'The 16-bit PNG could not be converted to the canonical 8-bit sRGB form.',
+      'ATTACHMENT_WRITE_FAILED',
+    )
+    const sixteenBit = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
+    expect(text(sixteenBit)).toContain(
+      `cannot read "${join(dir, 'red.png')}": the 16-bit PNG could not be converted to the canonical 8-bit sRGB form; convert it to an 8-bit PNG/JPEG/WebP and retry`,
+    )
+
     FailingStore.failure = new AttachmentError('Image cannot be encoded within the configured canonical byte target.', 'IMAGE_TOO_LARGE')
     const overBudget = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
     expect(overBudget.isError).toBe(true)
@@ -501,7 +566,7 @@ describe('image admission failures', () => {
   })
 
   it('names the on-disk dimensions and coordinate multiplier when storage downscales', async () => {
-    /** Store whose canonical encoding halves the source on both sides. */
+    /** Store whose image master halves the source on both sides. */
     class DownscalingStore extends AttachmentStore {
       readonly imageLimits: ImageAttachmentLimits = Object.freeze({
         maxImageBytes: 1024,
@@ -553,7 +618,7 @@ describe('registration surface', () => {
     const attachmentsFiber = await ctx.plugin(LocalAttachmentStore, { dshHome: home })
     const toolFsFiber = await ctx.plugin(ToolFs)
     const names = () => ctx.tools.schemas().map(schema => schema.name).sort()
-    expect(names()).toEqual(['edit', 'read', 'read_image', 'write'])
+    expect(names()).toEqual(['edit', 'read', 'read_image', 'read_image_region', 'write'])
 
     // Disposing only the attachment store tears down the scoped inject fiber:
     // read_image withdraws while the unconditional tools stay registered.
@@ -562,7 +627,7 @@ describe('registration surface', () => {
 
     // Remounting the store restores the conditional registration.
     const remounted = await ctx.plugin(LocalAttachmentStore, { dshHome: home })
-    expect(names()).toEqual(['edit', 'read', 'read_image', 'write'])
+    expect(names()).toEqual(['edit', 'read', 'read_image', 'read_image_region', 'write'])
 
     // Disposing the whole plugin withdraws every tool, read_image included.
     await toolFsFiber.dispose()
@@ -581,6 +646,12 @@ describe('registration surface', () => {
       kind: 'read',
       locations: [{ path: 'shot.png' }],
     })
+    expect(ctx.tools.executionMode({
+      signal: testToolSignal,
+      callId: CallId('region-parallel'),
+      name: 'read_image_region',
+      arguments: { attachment_id: 'sha256:a', preview_width: 1, preview_height: 1, x: 0, y: 0, width: 1, height: 1 },
+    })).toEqual({ kind: 'parallel' })
   })
 })
 

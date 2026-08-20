@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import { CallId, createUserMessage, OFFLOADED_IMAGE_TEXT, offloadRequestImages } from '../src/index.ts'
+import { CallId, createUserMessage, OFFLOADED_IMAGE_TEXT, offloadRequestImages, offloadRequestImagesWithPolicy } from '../src/index.ts'
 import type { ContentBlock } from '../src/index.ts'
 
 const source = { kind: 'plugin' as const, plugin: 'test' }
@@ -85,5 +85,35 @@ describe('offloadRequestImages', () => {
       nested,
       { type: 'text', text: OFFLOADED_IMAGE_TEXT },
     ])
+  })
+})
+
+describe('offloadRequestImagesWithPolicy', () => {
+  it('drops 129 MiB to 64 MiB and keeps the removed prefix stable through 192 MiB', () => {
+    const mib = 1024 * 1024
+    const project = (count: number) => offloadRequestImagesWithPolicy([
+      createUserMessage({ content: Array.from({ length: count }, () => image(mib)), source }),
+    ], {
+      representation: 'raw',
+      maxBytes: 128 * mib,
+      byteQuantum: 64 * mib,
+    })[0]?.content
+
+    expect(project(128)?.filter(block => block.type === 'image')).toHaveLength(128)
+    expect(project(129)?.filter(block => block.type === 'text')).toHaveLength(65)
+    expect(project(192)?.filter(block => block.type === 'text')).toHaveLength(65)
+    expect(project(193)?.filter(block => block.type === 'text')).toHaveLength(129)
+  })
+
+  it('rounds a count excess up to a 20-image removal step', () => {
+    const projected = offloadRequestImagesWithPolicy([
+      createUserMessage({ content: Array.from({ length: 601 }, () => image(1)), source }),
+    ], {
+      representation: 'raw',
+      maxImages: 600,
+      countQuantum: 20,
+    })
+    expect(projected[0]?.content.filter(block => block.type === 'text')).toHaveLength(20)
+    expect(projected[0]?.content.filter(block => block.type === 'image')).toHaveLength(581)
   })
 })

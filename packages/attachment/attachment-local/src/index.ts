@@ -4,14 +4,27 @@ import { join, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, SavedImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type {
+  ImageAttachmentLimits,
+  ImageAttachmentRef,
+  ImageRequestPolicy,
+  PreviewImageCrop,
+  RequestImageAttachment,
+  SaveImageAttachment,
+  SavedImageAttachment,
+  StoredImageAttachment,
+} from '@deepseek-ai/dsh-attachment'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import type { CanonicalImagePolicy } from './canonical.ts'
-import { readImageFile, saveImageFile, validateImageFile } from './store.ts'
+import type { MasterImagePolicy } from './canonical.ts'
+import { CompressionLimiter } from './compression-limiter.ts'
+import { commitPreparedImageFile, prepareImageFile, readImageFile, validateImageFile } from './store.ts'
+import { previewCropToMaster, readRequestImageFile, requestImageVariantId } from './request-image.ts'
 
-export { canonicalizeImage, isCanonical } from './canonical.ts'
-export type { CanonicalImage, CanonicalImagePolicy } from './canonical.ts'
-export { readImageFile, saveImageFile, validateImageFile } from './store.ts'
+export { isMasterImage, prepareMasterImage } from './canonical.ts'
+export type { MasterImage, MasterImagePolicy } from './canonical.ts'
+export { commitPreparedImageFile, prepareImageFile, readImageFile, saveImageFile, validateImageFile } from './store.ts'
+export type { PreparedImageFile } from './store.ts'
+export { previewCropToMaster, readRequestImageFile, requestImageDimensions, requestImageVariantId } from './request-image.ts'
 
 /** Default maximum encoded bytes for one submitted image; oversized sources are refused, not shrunk. */
 export const DEFAULT_MAX_IMAGE_BYTES = 32 * 1024 * 1024
@@ -24,13 +37,17 @@ export const DEFAULT_MAX_IMAGE_PIXELS = 100_000_000
 /** Default per-side pixel cap for one submitted image. */
 export const DEFAULT_MAX_IMAGE_DIMENSION = 16384
 /**
- * Default long-edge target of the stored canonical encoding. A larger source
+ * Default long-edge target of the stored image master. A larger source
  * is admitted and downscaled to this edge, so admission bounds what rides
  * every later model request without refusing ordinary large sources.
  */
-export const DEFAULT_CANONICAL_MAX_DIMENSION = 2048
-/** Default byte target of the stored canonical encoding. */
-export const DEFAULT_CANONICAL_MAX_BYTES = 1024 * 1024
+export const DEFAULT_MASTER_MAX_DIMENSION = 2048
+/** Default independent safety cap for one stored master version. */
+export const DEFAULT_MASTER_MAX_BYTES = 4 * 1024 * 1024
+/** Conservative default number of simultaneous native image transformations per store. */
+export const DEFAULT_IMAGE_COMPRESSION_CONCURRENCY = 2
+/** Maximum configurable native image transformations per store. */
+export const MAX_IMAGE_COMPRESSION_CONCURRENCY = 8
 
 /** Local attachment backend configuration. */
 export interface Config {
@@ -46,10 +63,29 @@ export interface Config {
   maxImagePixels?: number
   /** Maximum intrinsic width and maximum intrinsic height accepted for one submitted image. */
   maxImageDimension?: number
-  /** Long-edge pixel target of the stored canonical encoding. */
-  canonicalMaxDimension?: number
-  /** Encoded-byte target of the stored canonical encoding. */
-  canonicalMaxBytes?: number
+  /** Long-edge pixel cap of the stored provider-independent master version. */
+  masterMaxDimension?: number
+  /** Encoded-byte safety cap of the stored provider-independent master version. */
+  masterMaxBytes?: number
+  /** Maximum simultaneous master or request-image transformations in this service instance. */
+  imageCompressionConcurrency?: number
+}
+
+function waitForShared<T>(operation: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (signal === undefined) return operation
+  signal.throwIfAborted()
+  return new Promise<T>((resolve, reject) => {
+    const abort = (): void => {
+      const reason: unknown = signal.reason
+      reject(reason instanceof Error
+        ? reason
+        : new Error('Attachment request cancelled with a non-Error reason.', { cause: reason }))
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    void operation.then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', abort)
+    })
+  })
 }
 
 /** Persistent content-addressed local attachment store. */
@@ -61,15 +97,21 @@ export class LocalAttachmentStore extends AttachmentStore {
     maxMessageImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_MESSAGE_IMAGE_BYTES),
     maxImagePixels: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGE_PIXELS),
     maxImageDimension: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGE_DIMENSION),
-    canonicalMaxDimension: z.number().step(1).min(1).default(DEFAULT_CANONICAL_MAX_DIMENSION),
-    canonicalMaxBytes: z.number().step(1).min(1).default(DEFAULT_CANONICAL_MAX_BYTES),
+    masterMaxDimension: z.number().step(1).min(1).default(DEFAULT_MASTER_MAX_DIMENSION),
+    masterMaxBytes: z.number().step(1).min(1).default(DEFAULT_MASTER_MAX_BYTES),
+    imageCompressionConcurrency: z.number().step(1).min(1).max(MAX_IMAGE_COMPRESSION_CONCURRENCY)
+      .default(DEFAULT_IMAGE_COMPRESSION_CONCURRENCY),
   })
 
   /** Absolute versioned storage root. */
   readonly root: string
   readonly imageLimits: ImageAttachmentLimits
-  /** Resolved canonical encoding budget applied by every save. */
-  readonly canonicalPolicy: Readonly<CanonicalImagePolicy>
+  /** Resolved provider-independent master-version storage policy. */
+  readonly masterPolicy: Readonly<MasterImagePolicy>
+  /** Resolved instance-level compression limit. */
+  readonly imageCompressionConcurrency: number
+  private readonly compression: CompressionLimiter
+  private readonly requestInflight = new Map<string, Promise<RequestImageAttachment>>()
 
   constructor(ctx: Context, config: Config) {
     super(ctx)
@@ -82,22 +124,106 @@ export class LocalAttachmentStore extends AttachmentStore {
       maxImageDimension: config.maxImageDimension ?? DEFAULT_MAX_IMAGE_DIMENSION,
       mediaTypes: Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const),
     })
-    this.canonicalPolicy = Object.freeze({
-      maxDimension: config.canonicalMaxDimension ?? DEFAULT_CANONICAL_MAX_DIMENSION,
-      maxBytes: config.canonicalMaxBytes ?? DEFAULT_CANONICAL_MAX_BYTES,
+    this.masterPolicy = Object.freeze({
+      maxDimension: config.masterMaxDimension ?? DEFAULT_MASTER_MAX_DIMENSION,
+      maxBytes: config.masterMaxBytes ?? DEFAULT_MASTER_MAX_BYTES,
     })
+    const compressionConcurrency = config.imageCompressionConcurrency ?? DEFAULT_IMAGE_COMPRESSION_CONCURRENCY
+    if (!Number.isSafeInteger(compressionConcurrency)
+      || compressionConcurrency < 1
+      || compressionConcurrency > MAX_IMAGE_COMPRESSION_CONCURRENCY) {
+      throw new Error(
+        `attachment-local: imageCompressionConcurrency must be an integer from 1 through ${MAX_IMAGE_COMPRESSION_CONCURRENCY}`,
+      )
+    }
+    this.imageCompressionConcurrency = compressionConcurrency
+    this.compression = new CompressionLimiter(compressionConcurrency)
   }
 
   async validateImage(input: SaveImageAttachment): Promise<void> {
-    await validateImageFile(input, this.imageLimits, this.canonicalPolicy)
+    await this.compression.run(() => validateImageFile(input, this.imageLimits, this.masterPolicy))
+  }
+
+  override async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]> {
+    this.validateImageBatch(inputs)
+    const prepared = await Promise.all(inputs.map(input => this.compression.run(
+      () => prepareImageFile(input, this.imageLimits, this.masterPolicy),
+    )))
+    const refs: ImageAttachmentRef[] = []
+    for (const image of prepared) refs.push((await commitPreparedImageFile(this.root, image)).ref)
+    return refs
   }
 
   async saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment> {
-    return saveImageFile(this.root, input, this.imageLimits, this.canonicalPolicy)
+    const prepared = await this.compression.run(
+      () => prepareImageFile(input, this.imageLimits, this.masterPolicy),
+    )
+    return commitPreparedImageFile(this.root, prepared)
   }
 
   async readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment> {
     return readImageFile(this.root, ref, signal)
+  }
+
+  override async readImageRequest(
+    ref: ImageAttachmentRef,
+    policy: ImageRequestPolicy,
+    signal?: AbortSignal,
+  ): Promise<RequestImageAttachment> {
+    return this.requestVersion(ref, policy, undefined, signal)
+  }
+
+  override async readImageRequests(
+    refs: readonly ImageAttachmentRef[],
+    policy: ImageRequestPolicy,
+    signal?: AbortSignal,
+  ): Promise<readonly RequestImageAttachment[]> {
+    return Promise.all(refs.map(ref => this.requestVersion(ref, policy, undefined, signal)))
+  }
+
+  private requestVersion(
+    ref: ImageAttachmentRef,
+    policy: ImageRequestPolicy,
+    master: StoredImageAttachment | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<RequestImageAttachment> {
+    signal?.throwIfAborted()
+    const variantId = requestImageVariantId(ref, policy)
+    const key = String(variantId)
+    let operation = this.requestInflight.get(key)
+    if (operation === undefined) {
+      operation = this.compression.run(async () => readRequestImageFile(
+        this.root,
+        master ?? await this.readImage(ref),
+        policy,
+      ))
+      this.requestInflight.set(key, operation)
+      void operation.finally(() => {
+        if (this.requestInflight.get(key) === operation) this.requestInflight.delete(key)
+      }).catch(() => {})
+    }
+    return waitForShared(operation, signal)
+  }
+
+  override async cropImage(
+    ref: ImageAttachmentRef,
+    crop: PreviewImageCrop,
+    signal?: AbortSignal,
+  ): Promise<SavedImageAttachment> {
+    const master = await this.readImage(ref, signal)
+    const region = previewCropToMaster(ref.width, ref.height, crop)
+    const version = await this.requestVersion(ref, {
+      maxPixels: region.width * region.height,
+      maxBytes: this.masterPolicy.maxBytes,
+      crop: region,
+    }, master, signal)
+    signal?.throwIfAborted()
+    const stem = ref.name?.replace(/\.[^.]+$/u, '') ?? String(ref.attachmentId).slice(0, 15)
+    return this.saveImage({
+      data: version.data,
+      mediaType: version.mediaType,
+      name: `${stem}-crop.${version.mediaType.slice('image/'.length).replace('jpeg', 'jpg')}`,
+    })
   }
 }
 

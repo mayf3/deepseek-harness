@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest'
 import AttachmentStore, {
   AttachmentError,
   AttachmentId,
+  ImageVariantId,
   isImageAdmissionError,
   type ImageAttachmentRef,
   type ImageMediaType,
+  type ImageRequestPolicy,
+  type RequestImageAttachment,
   type SaveImageAttachment,
   type SavedImageAttachment,
   type StoredImageAttachment,
@@ -51,6 +54,25 @@ class RecordingStore extends AttachmentStore {
 
   readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
     throw new Error('not used')
+  }
+
+  override readImageRequest(
+    ref: ImageAttachmentRef,
+    _policy: ImageRequestPolicy,
+  ): Promise<RequestImageAttachment> {
+    this.calls.push(`request:${ref.name}`)
+    return Promise.resolve({
+      variantId: ImageVariantId(`sha256:${String(ref.bytes).padStart(64, '0')}`),
+      master: ref,
+      data: Uint8Array.of(ref.bytes),
+      mediaType: ref.mediaType,
+      bytes: 1,
+      width: ref.width,
+      height: ref.height,
+      depth: 'uchar',
+      space: 'srgb',
+      hasAlpha: false,
+    })
   }
 }
 
@@ -98,6 +120,19 @@ describe('AttachmentStore.saveImages', () => {
     await expect(store.saveImages([image(1), image(2)]))
       .rejects.toThrow('write:2')
     expect(store.calls).toEqual(['validate:1', 'validate:2', 'save:1', 'save:2'])
+  })
+})
+
+describe('AttachmentStore.readImageRequests', () => {
+  it('uses the default serial projection and preserves input order', async () => {
+    const store = new RecordingStore(new Context())
+    const refs = await store.saveImages([image(1), image(2)])
+    store.calls.length = 0
+
+    const versions = await store.readImageRequests(refs, { maxPixels: 1, maxBytes: 1 })
+
+    expect(store.calls).toEqual(['request:1.png', 'request:2.png'])
+    expect(versions.map(version => version.master.name)).toEqual(['1.png', '2.png'])
   })
 })
 

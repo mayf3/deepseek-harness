@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import sharp from 'sharp'
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
-import type { CanonicalImagePolicy } from '../src/canonical.ts'
+import type { MasterImagePolicy } from '../src/canonical.ts'
 import { readImageFile, saveImageFile } from '../src/store.ts'
 
 const fsControl = vi.hoisted(() => ({
@@ -35,11 +35,11 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 })
 
 const PNG = Uint8Array.from(Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgZGIGAAAOAAeCcsnOAAAAAElFTkSuQmCC',
   'base64',
 ))
 
-const POLICY: CanonicalImagePolicy = { maxDimension: 2048, maxBytes: 1024 * 1024 }
+const POLICY: MasterImagePolicy = { maxDimension: 2048, maxBytes: 1024 * 1024 }
 
 const LIMITS: ImageAttachmentLimits = {
   maxImageBytes: 1024,
@@ -139,7 +139,7 @@ describe('local attachment store', () => {
     await expect(readImageFile(storageRoot, first.ref)).resolves.toEqual({ ref: first.ref, data: PNG })
   })
 
-  it('stores the canonical encoding of an oversized source and reads it back verified', async () => {
+  it('stores the image master of an oversized source and reads it back verified', async () => {
     const storageRoot = await root()
     const oversized = new Uint8Array(await sharp({
       create: { width: 4, height: 4, channels: 3, background: { r: 9, g: 9, b: 9 } },

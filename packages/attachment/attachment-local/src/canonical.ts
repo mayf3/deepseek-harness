@@ -1,111 +1,201 @@
-/**
- * Deterministic canonical image encoding. Admission stores this encoding, so
- * the same source bytes always publish the same content address on one
- * runtime: encoder parameters are fixed here, never configurable, because a
- * parameter change would silently split the content-addressed space. The
- * deployment chooses only the canonical budget (long edge and byte target).
- */
+/** Deterministic provider-independent master-image encoding. */
 
 import sharp, { type Sharp } from 'sharp'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import { encodeFirstWithinLimit, isExhaustedEncoding } from './encoding.ts'
+import { detectImage } from './image.ts'
 import type { DetectedImage } from './image.ts'
 
-/** Deployment-resolved canonical encoding budget. */
-export interface CanonicalImagePolicy {
-  /** Long-edge target in pixels; a larger source is downscaled proportionally. */
+/** Deployment-resolved storage policy for the provider-independent master version. */
+export interface MasterImagePolicy {
+  /** Long-edge cap in pixels; larger sources are downscaled proportionally. */
   maxDimension: number
-  /** Encoded-byte target; a larger encoding falls down the fixed quality ladder. */
+  /** Independent safety cap for encoded master bytes. */
   maxBytes: number
 }
 
-/** Canonical bytes beside the facts a durable reference records about them. */
-export interface CanonicalImage {
+/** Master bytes beside the facts recorded by a durable reference. */
+export interface MasterImage {
   data: Uint8Array
   mediaType: ImageMediaType
   width: number
   height: number
 }
 
-/** JPEG quality ladder tried in order once the preferred encoding exceeds the byte target. */
-const JPEG_QUALITIES = [85, 75, 60, 45] as const
+const MASTER_QUALITIES = [85, 80, 75] as const
+const LOW_COLOUR_SAMPLE_EDGE = 128
+const LOW_COLOUR_LIMIT = 256
+const MIN_SCALE_STEP = 0.9
 
-/** Encode one prepared pipeline and report the exact output facts. */
-async function encode(pipeline: Sharp, mediaType: 'image/png' | 'image/jpeg'): Promise<CanonicalImage> {
-  const { data, info } = await pipeline.toBuffer({ resolveWithObject: true })
+/** Encode one prepared pipeline and report exact output facts. */
+async function encode(
+  pipeline: Sharp,
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp',
+  quality?: number,
+  palette = true,
+): Promise<MasterImage> {
+  const encoded = mediaType === 'image/png'
+    ? pipeline.png({ compressionLevel: 9, palette })
+    : mediaType === 'image/webp'
+      ? pipeline.webp({ quality })
+      : pipeline.jpeg({ quality })
+  const { data, info } = await encoded.toBuffer({ resolveWithObject: true })
   return { data: new Uint8Array(data), mediaType, width: info.width, height: info.height }
 }
 
 /**
- * Whether stored bytes may be the submitted bytes unchanged. Byte-identical
- * passthrough is preferred whenever the source already fits the budget and
- * carries nothing the canonical form forbids: it keeps re-submissions of the
- * same original deduplicating to the same object and never re-encodes what no
- * policy requires changing. Excluded from passthrough — and therefore always
- * re-encoded — are GIF and any animated container (only the first frame is
- * model-visible, so admission pins that meaning instead of letting each
- * provider drop frames differently) and any source carrying EXIF/XMP/IPTC
- * metadata or a non-default orientation (stored objects ride every later
- * request, so location and device metadata must not survive admission, and a
- * stored orientation would let the recorded dimensions diverge from the
- * pixels a model perceives).
- * @param detected - verified source format, dimensions, and metadata facts.
- * @param bytes - submitted encoded byte length.
- * @param policy - resolved canonical budget.
- * @returns whether the submitted encoding already is canonical.
+ * Whether bytes already satisfy the master-version storage contract.
+ * @param detected - fully decoded source facts.
+ * @param bytes - encoded source length.
+ * @param policy - resolved master limits.
+ * @returns whether the source can pass through byte-identically.
  */
-export function isCanonical(detected: DetectedImage, bytes: number, policy: CanonicalImagePolicy): boolean {
+export function isMasterImage(detected: DetectedImage, bytes: number, policy: MasterImagePolicy): boolean {
   return detected.mediaType !== 'image/gif'
     && !detected.animated
     && !detected.carriesMetadata
+    && detected.depth === 'uchar'
+    && detected.space === 'srgb'
     && bytes <= policy.maxBytes
     && Math.max(detected.width, detected.height) <= policy.maxDimension
 }
 
 /**
- * Produce the canonical encoding of one fully validated source raster.
- * Passthrough returns the submitted array; every re-encode bakes EXIF
- * orientation into pixels, strips metadata, downscales to the policy's long
- * edge, and encodes with fixed parameters: PNG (palette) for sources that
- * carry alpha or were PNG/GIF, JPEG for photographic sources, falling down
- * one fixed JPEG quality ladder until the byte target holds.
- * @param data - submitted encoded bytes, already fully decoded by admission.
- * @param detected - verified source format and dimensions.
- * @param policy - resolved canonical budget.
- * @returns canonical bytes and their reference facts.
- * @throws AttachmentError `IMAGE_TOO_LARGE` when the smallest ladder step still exceeds the byte target.
+ * Classify a bounded pixel sample without assuming that a PNG source is a screenshot.
+ * @param pipeline - oriented sRGB source pipeline before output resizing.
+ * @returns whether the nearest-neighbour sample stays within the low-color threshold.
  */
-export async function canonicalizeImage(
+export async function hasLowColourCount(pipeline: Sharp): Promise<boolean> {
+  const { data, info } = await pipeline.clone().resize({
+    width: LOW_COLOUR_SAMPLE_EDGE,
+    height: LOW_COLOUR_SAMPLE_EDGE,
+    fit: 'inside',
+    withoutEnlargement: true,
+    kernel: sharp.kernel.nearest,
+    fastShrinkOnLoad: false,
+  }).raw().toBuffer({ resolveWithObject: true })
+  const colours = new Set<number>()
+  for (let offset = 0; offset < data.length; offset += info.channels) {
+    const red = data[offset] ?? 0
+    const green = data[offset + 1] ?? red
+    const blue = data[offset + 2] ?? red
+    const alpha = info.channels === 2
+      ? data[offset + 1] ?? 255
+      : info.channels === 4 ? data[offset + 3] ?? 255 : 255
+    colours.add(((red >> 3) << 15) | ((green >> 3) << 10) | ((blue >> 3) << 5) | (alpha >> 3))
+    if (colours.size > LOW_COLOUR_LIMIT) return false
+  }
+  return true
+}
+
+/** Assert that a re-encoded master is an 8-bit sRGB/sRGBA single-frame image with matching facts. */
+async function verifyMaster(image: MasterImage, expectedAlpha: boolean | undefined): Promise<MasterImage> {
+  const detected = await detectImage(image.data)
+  if (detected.mediaType !== image.mediaType
+    || detected.width !== image.width
+    || detected.height !== image.height
+    || detected.animated
+    || detected.carriesMetadata
+    || detected.depth !== 'uchar'
+    || detected.space !== 'srgb'
+    || (expectedAlpha !== undefined && detected.hasAlpha !== expectedAlpha)) {
+    throw new AttachmentError(
+      'Canonical image conversion did not produce a single-frame 8-bit sRGB image with matching metadata.',
+      'ATTACHMENT_WRITE_FAILED',
+    )
+  }
+  return image
+}
+
+/** Build one fixed-size, oriented, metadata-free sRGB pipeline from submitted bytes. */
+function preparedPipeline(data: Uint8Array, width: number, height: number): Sharp {
+  return sharp(data, { failOn: 'error', limitInputPixels: false })
+    .rotate()
+    .toColourspace('srgb')
+    .resize({ width, height, fit: 'inside', withoutEnlargement: true })
+}
+
+/** Dimensions after the long edge is capped without changing aspect ratio. */
+function initialDimensions(detected: DetectedImage, maxDimension: number): { width: number; height: number } {
+  const scale = Math.min(1, maxDimension / Math.max(detected.width, detected.height))
+  return {
+    width: Math.max(1, Math.round(detected.width * scale)),
+    height: Math.max(1, Math.round(detected.height * scale)),
+  }
+}
+
+/** Lazy encoding order for one size, separated by sampled colour complexity and alpha. */
+function encodingAttemptsAtSize(
+  data: Uint8Array,
+  width: number,
+  height: number,
+  hasAlpha: boolean,
+  lowColour: boolean,
+): Array<() => Promise<MasterImage>> {
+  const prepared = preparedPipeline(data, width, height)
+  const webp = MASTER_QUALITIES.map(quality => (
+    () => encode(prepared.clone(), 'image/webp', quality)
+  ))
+  if (lowColour) {
+    return [() => encode(prepared.clone(), 'image/png', undefined, !hasAlpha), ...webp]
+  }
+  if (hasAlpha) return webp
+  return MASTER_QUALITIES.map(quality => (
+    () => encode(prepared.clone(), 'image/jpeg', quality)
+  ))
+}
+
+/**
+ * Produce the 2048px provider-independent master version of one fully decoded source.
+ * The source is passed through only when it is already clean, single-frame, 8-bit sRGB/sRGBA,
+ * and inside both master limits. Re-encoding never removes transparency. After the fixed
+ * quality floor is reached, dimensions continue shrinking until the independent byte cap holds.
+ * @param data - complete admitted source bytes.
+ * @param detected - fully decoded source facts.
+ * @param policy - resolved independent master limits.
+ * @returns verified provider-independent master bytes and metadata.
+ */
+export async function prepareMasterImage(
   data: Uint8Array,
   detected: DetectedImage,
-  policy: CanonicalImagePolicy,
-): Promise<CanonicalImage> {
-  if (isCanonical(detected, data.byteLength, policy)) {
+  policy: MasterImagePolicy,
+): Promise<MasterImage> {
+  if (isMasterImage(detected, data.byteLength, policy)) {
     return { data, mediaType: detected.mediaType, width: detected.width, height: detected.height }
   }
   try {
-    const source = sharp(data, { failOn: 'error', limitInputPixels: false })
-    const { hasAlpha } = await source.metadata()
-    const prepared = source.rotate().resize({
-      width: policy.maxDimension,
-      height: policy.maxDimension,
-      fit: 'inside',
-      withoutEnlargement: true,
-    })
-    const preferPng = hasAlpha || detected.mediaType === 'image/png' || detected.mediaType === 'image/gif'
-    if (preferPng) {
-      const png = await encode(prepared.clone().png({ compressionLevel: 9, palette: true }), 'image/png')
-      if (png.data.byteLength <= policy.maxBytes) return png
-    }
-    for (const quality of JPEG_QUALITIES) {
-      const jpeg = await encode(
-        prepared.clone().flatten({ background: '#ffffff' }).jpeg({ quality }),
-        'image/jpeg',
+    let { width, height } = initialDimensions(detected, policy.maxDimension)
+    const classificationPipeline = sharp(data, { failOn: 'error', limitInputPixels: false })
+      .rotate()
+      .toColourspace('srgb')
+    const lowColour = await hasLowColourCount(classificationPipeline)
+    for (;;) {
+      const encoded = await encodeFirstWithinLimit(
+        encodingAttemptsAtSize(data, width, height, detected.hasAlpha, lowColour),
+        policy.maxBytes,
       )
-      if (jpeg.data.byteLength <= policy.maxBytes) return jpeg
+      if (!isExhaustedEncoding(encoded)) {
+        return await verifyMaster(encoded, detected.mediaType === 'image/gif' ? undefined : detected.hasAlpha)
+      }
+      if (width === 1 && height === 1) break
+      const sizeScale = Math.sqrt(policy.maxBytes / encoded.smallest.data.byteLength) * 0.95
+      const scale = Math.min(MIN_SCALE_STEP, sizeScale)
+      const nextWidth = Math.max(1, Math.floor(width * scale))
+      const nextHeight = Math.max(1, Math.floor(height * scale))
+      width = nextWidth === width && width > 1 ? width - 1 : nextWidth
+      height = nextHeight === height && height > 1 ? height - 1 : nextHeight
     }
   } catch (error) {
-    throw new AttachmentError('Unable to canonicalize image attachment.', 'ATTACHMENT_WRITE_FAILED', { cause: error })
+    if (error instanceof AttachmentError) throw error
+    const source = detected.mediaType === 'image/png' && detected.depth !== 'uchar'
+      ? `${detected.depth === 'ushort' ? '16-bit' : detected.depth} PNG`
+      : `${detected.depth} ${detected.mediaType.slice('image/'.length).toUpperCase()}`
+    throw new AttachmentError(
+      `The ${source} could not be converted to the canonical 8-bit sRGB form.`,
+      'ATTACHMENT_WRITE_FAILED',
+      { cause: error },
+    )
   }
-  throw new AttachmentError('Image cannot be encoded within the configured canonical byte target.', 'IMAGE_TOO_LARGE')
+  throw new AttachmentError('Image cannot be encoded within the configured master-image byte cap.', 'IMAGE_TOO_LARGE')
 }

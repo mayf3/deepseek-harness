@@ -130,6 +130,23 @@ interface ToolArgsMap {
     /** Path to the image file, resolved by the filesystem backend. */
     file_path: string;
   } & Record<string, JsonValue>;
+  /** Crop a region from an image attachment already visible in this session. Coordinates use the preview dimensions supplied beside that image. */
+  read_image_region: {
+    /** Complete attachment id shown beside the image. */
+    attachment_id: string;
+    /** Width of the preview shown to the model. */
+    preview_width: number;
+    /** Height of the preview shown to the model. */
+    preview_height: number;
+    /** Left edge in preview pixels. */
+    x: number;
+    /** Top edge in preview pixels. */
+    y: number;
+    /** Crop width in preview pixels. */
+    width: number;
+    /** Crop height in preview pixels. */
+    height: number;
+  } & Record<string, JsonValue>;
   /** Send a message to a background subagent by its subagent id, continuing the same conversation. It becomes the subagent's next turn: if it is still working, the message waits until its current turn finishes, so it cannot redirect work already underway. This call returns no answer from the subagent — only confirmation that the message was delivered — so use it to give it more work. A failure means the message was NOT delivered. */
   send_message: {
     /** The subagent id returned when the background subagent was started. */
@@ -356,6 +373,29 @@ interface ToolOutputMap {
   };
   read_image: {
     path: string;
+    image: {
+      attachmentId: string;
+      mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+      bytes: number;
+      width: number;
+      height: number;
+      name?: string;
+      sourceWidth?: number;
+      sourceHeight?: number;
+    };
+  };
+  read_image_region: {
+    sourceAttachmentId: string;
+    preview: {
+      width: number;
+      height: number;
+    };
+    crop: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
     image: {
       attachmentId: string;
       mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";

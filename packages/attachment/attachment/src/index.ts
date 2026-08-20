@@ -5,12 +5,15 @@ import { AttachmentError } from './error.ts'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
+  ImageRequestPolicy,
+  PreviewImageCrop,
+  RequestImageAttachment,
   SaveImageAttachment,
   SavedImageAttachment,
   StoredImageAttachment,
 } from './types.ts'
 
-export { AttachmentId } from './brand.ts'
+export { AttachmentId, ImageVariantId } from './brand.ts'
 export { AttachmentError, isImageAdmissionError } from './error.ts'
 export type { AttachmentErrorCode, ImageAdmissionErrorCode } from './error.ts'
 export { admitEncodedImages } from './admission.ts'
@@ -19,7 +22,11 @@ export type {
   EncodedImageAttachment,
   ImageAttachmentLimits,
   ImageAttachmentRef,
+  ImageRequestPolicy,
   ImageMediaType,
+  MasterImageCrop,
+  PreviewImageCrop,
+  RequestImageAttachment,
   SaveImageAttachment,
   SavedImageAttachment,
   SourceImageInfo,
@@ -57,7 +64,7 @@ export abstract class AttachmentStore extends Service {
    * @param inputs - encoded images in their owning message order.
    * @returns durable references in the exact input order.
    */
-  async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]> {
+  protected validateImageBatch(inputs: readonly SaveImageAttachment[]): void {
     const { maxImagesPerMessage, maxMessageImageBytes, mediaTypes } = this.imageLimits
     if (inputs.length > maxImagesPerMessage) {
       throw new AttachmentError('Image batch exceeds the configured image-count limit.', 'TOO_MANY_IMAGES')
@@ -71,6 +78,15 @@ export abstract class AttachmentStore extends Service {
         throw new AttachmentError(`Image type ${input.mediaType} is not accepted by this deployment.`, 'UNSUPPORTED_IMAGE_TYPE')
       }
     }
+  }
+
+  /**
+   * Validate and durably commit one ordered image batch.
+   * @param inputs - encoded images in owning-message order.
+   * @returns durable master references in the same order after every member succeeds.
+   */
+  async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]> {
+    this.validateImageBatch(inputs)
     for (const input of inputs) await this.validateImage(input)
 
     const refs: ImageAttachmentRef[] = []
@@ -80,7 +96,7 @@ export abstract class AttachmentStore extends Service {
 
   /**
    * Validate and durably commit one image before its owning session event is appended.
-   * Implementations may store a canonical re-encoding of the submitted raster;
+   * Implementations may store a prepared master version of the submitted raster;
    * the returned reference always describes the stored bytes, while `source`
    * preserves the submitted raster's intrinsic facts for callers that report
    * or map coordinates against the original.
@@ -93,10 +109,70 @@ export abstract class AttachmentStore extends Service {
    * Read one image and verify that bytes still match the recorded reference.
    * @param ref - durable reference from the session log.
    * @param signal - optional cancellation for backend read and verification work.
-   * @returns the verified bytes and canonical reference.
+   * @returns the verified bytes and master reference.
    * @throws the signal reason when aborted, or a storage error when verification fails.
    */
   abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
+
+  /**
+   * Generate or read one deterministic model-request version from the stored master image.
+   * @param ref - durable provider-independent master reference.
+   * @param policy - exact route pixel and encoded-byte budget.
+   * @param signal - optional cancellation.
+   * @returns request bytes and the cache/upload identity covering every transform input.
+   */
+  readImageRequest(
+    ref: ImageAttachmentRef,
+    policy: ImageRequestPolicy,
+    signal?: AbortSignal,
+  ): Promise<RequestImageAttachment> {
+    signal?.throwIfAborted()
+    void ref
+    void policy
+    return Promise.reject(new AttachmentError(
+      'The mounted attachment provider cannot derive model-request images.',
+      'ATTACHMENT_PROJECTION_UNSUPPORTED',
+    ))
+  }
+
+  /**
+   * Generate or read an ordered batch of deterministic model-request versions.
+   * Implementations may use their own bounded transform concurrency while preserving input order.
+   * @param refs - durable provider-independent master references in request order.
+   * @param policy - exact route pixel and encoded-byte budget shared by the batch.
+   * @param signal - optional cancellation.
+   * @returns request versions in the same order as `refs`.
+   */
+  async readImageRequests(
+    refs: readonly ImageAttachmentRef[],
+    policy: ImageRequestPolicy,
+    signal?: AbortSignal,
+  ): Promise<readonly RequestImageAttachment[]> {
+    const versions: RequestImageAttachment[] = []
+    for (const ref of refs) versions.push(await this.readImageRequest(ref, policy, signal))
+    return versions
+  }
+
+  /**
+   * Crop the stored master by coordinates measured on a model request preview and persist the result.
+   * @param ref - session-authorized master attachment.
+   * @param crop - preview dimensions and preview-coordinate rectangle.
+   * @param signal - optional cancellation.
+   * @returns a new durable attachment reference suitable for a logged tool result.
+   */
+  cropImage(
+    ref: ImageAttachmentRef,
+    crop: PreviewImageCrop,
+    signal?: AbortSignal,
+  ): Promise<SavedImageAttachment> {
+    signal?.throwIfAborted()
+    void ref
+    void crop
+    return Promise.reject(new AttachmentError(
+      'The mounted attachment provider cannot crop stored images.',
+      'ATTACHMENT_PROJECTION_UNSUPPORTED',
+    ))
+  }
 }
 
 export default AttachmentStore

@@ -4,9 +4,11 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import sharp from 'sharp'
 import LocalAttachmentStore, {
-  DEFAULT_CANONICAL_MAX_BYTES,
-  DEFAULT_CANONICAL_MAX_DIMENSION,
+  DEFAULT_MASTER_MAX_BYTES,
+  DEFAULT_MASTER_MAX_DIMENSION,
+  DEFAULT_IMAGE_COMPRESSION_CONCURRENCY,
   DEFAULT_MAX_IMAGE_BYTES,
   DEFAULT_MAX_IMAGE_DIMENSION,
   DEFAULT_MAX_IMAGE_PIXELS,
@@ -26,10 +28,19 @@ describe('local attachment service', () => {
       maxImageDimension: DEFAULT_MAX_IMAGE_DIMENSION,
       mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
     })
-    expect(service.canonicalPolicy).toEqual({
-      maxDimension: DEFAULT_CANONICAL_MAX_DIMENSION,
-      maxBytes: DEFAULT_CANONICAL_MAX_BYTES,
+    expect(service.masterPolicy).toEqual({
+      maxDimension: DEFAULT_MASTER_MAX_DIMENSION,
+      maxBytes: DEFAULT_MASTER_MAX_BYTES,
     })
+    expect(service.imageCompressionConcurrency).toBe(DEFAULT_IMAGE_COMPRESSION_CONCURRENCY)
+  })
+
+  it('resolves and validates the instance image-compression concurrency', () => {
+    expect(new LocalAttachmentStore(new Context(), { imageCompressionConcurrency: 1 }).imageCompressionConcurrency).toBe(1)
+    for (const imageCompressionConcurrency of [0, 1.5, 9]) {
+      expect(() => new LocalAttachmentStore(new Context(), { imageCompressionConcurrency }))
+        .toThrow(/imageCompressionConcurrency must be an integer from 1 through 8/)
+    }
   })
 
   it('saves and reads through the service boundary', async () => {
@@ -37,7 +48,7 @@ describe('local attachment service', () => {
     try {
       const service = new LocalAttachmentStore(new Context(), { dshHome })
       const data = Uint8Array.from(Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgZGIGAAAOAAeCcsnOAAAAAElFTkSuQmCC',
         'base64',
       ))
       const { ref } = await service.saveImage({ data, mediaType: 'image/png' })
@@ -47,12 +58,31 @@ describe('local attachment service', () => {
     }
   })
 
-  it('refuses a batch during validation when a member cannot meet the canonical byte target, before any write', async () => {
+  it.each([3, 4] as const)('admits a 16-bit %s-channel PNG as an 8-bit master object', async (channels) => {
+    const dshHome = await mkdtemp(join(tmpdir(), 'dsh-attachment-16-bit-'))
+    try {
+      const service = new LocalAttachmentStore(new Context(), { dshHome })
+      const source = new Uint8Array(await sharp({
+        create: { width: 7, height: 5, channels, background: { r: 12, g: 34, b: 56, alpha: 0.5 } },
+      }).toColourspace('rgb16').png().toBuffer())
+
+      const saved = await service.saveImage({ data: source, mediaType: 'image/png' })
+      const stored = await service.readImage(saved.ref)
+      const metadata = await sharp(stored.data).metadata()
+
+      expect(stored.data).not.toEqual(source)
+      expect(metadata).toMatchObject({ depth: 'uchar', space: 'srgb', hasAlpha: channels === 4 })
+    } finally {
+      await rm(dshHome, { recursive: true, force: true })
+    }
+  })
+
+  it('prepares every batch member before any write', async () => {
     const dshHome = await mkdtemp(join(tmpdir(), 'dsh-attachment-batch-'))
     try {
-      const service = new LocalAttachmentStore(new Context(), { dshHome, canonicalMaxBytes: 10 })
+      const service = new LocalAttachmentStore(new Context(), { dshHome, masterMaxBytes: 1 })
       const valid = Uint8Array.from(Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgZGIGAAAOAAeCcsnOAAAAAElFTkSuQmCC',
         'base64',
       ))
       await expect(service.saveImages([
@@ -72,7 +102,7 @@ describe('local attachment service', () => {
       await expect(service.validateImage({ data: Uint8Array.of(1, 2, 3), mediaType: 'image/png' }))
         .rejects.toThrow(/Unsupported or malformed image data/)
       const valid = Uint8Array.from(Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgZGIGAAAOAAeCcsnOAAAAAElFTkSuQmCC',
         'base64',
       ))
       const limited = new LocalAttachmentStore(new Context(), { dshHome, maxImageBytes: 1 })
