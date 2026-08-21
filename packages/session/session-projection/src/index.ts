@@ -440,12 +440,10 @@ export class SessionProjectionRegistry extends Service {
         )
       }
       let state = usable ? def.stateSchema.parse(row.val) : def.init()
-      // The events are seq-ordered: slice off the already-folded prefix
-      // (events at or below the seed watermark) and fold only the tail.
       const from = usable ? row.seq : baseSeq - 1
-      const tailStart = events.findIndex(event => event.seq > from)
-      const tail = tailStart === -1 ? [] : events.slice(tailStart)
-      for (const event of tail) state = def.apply(state, event)
+      for (const event of events) {
+        if (event.seq > from) state = def.apply(state, event)
+      }
       if (def.wire !== undefined) values[def.key] = def.wire.viewSchema.parse(def.wire.view(state))
       refreshed[def.key] = { ver: def.stateVersion, seq: endSeq, val: state }
     }
