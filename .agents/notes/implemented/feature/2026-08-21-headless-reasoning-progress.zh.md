@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-`headless-runner` 在启动工作完全停稳后、提交任务前，观察其创建的精确 Session。自身持有的区间以 `turn/start` 打开后，每个非空的 `assistant/chunk.reasoning-delta` 都会立即写入 stderr。一段连续推理以独占一行的 `dsh: reasoning:` 开始；各分片保持提供方顺序，不添加 token 边界装饰。之后出现首个非推理分片、新轮次或 listener dispose（资源释放）时，如果提供方没有输出末尾换行，runner 会用一个换行终止该段。
+`headless-runner` 在启动工作完全停稳后、提交任务前，观察其创建的精确 Session。自身持有的区间以 `turn/start` 打开后，每个非空的 `assistant/chunk.reasoning-delta` 都会立即写入 stderr。一段连续推理以独占一行的 `dsh: reasoning:` 开始；各分片保持提供方顺序，不添加 token 边界装饰。推理块边界与用量元数据会保持该段打开；之后出现非推理块或输出分片、流结束、新轮次或 listener dispose（资源释放）时，如果提供方没有输出末尾换行，runner 会用一个换行终止该段。
 
 该输出是既有持久化会话事件流的瞬时投影。runner 仍从 flush 后的日志而不是进度呈现状态推导最终文本与退出状态。LLM（大语言模型）适配器、agent loop（智能体循环）、Session 事件类型、持久化格式与 SDK 投影均不改变。
 

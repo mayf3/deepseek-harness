@@ -20,4 +20,5 @@ None; the runner adds nothing to the request prefix.
 
 - **One submitted task only** — the runner has no interactive follow-up surface; it waits through any work the Agent completes before returning to idle and prints the last non-empty assistant message in that interval.
 - **No pre-token heartbeat** — stderr remains silent until the provider emits a non-empty reasoning delta; a provider that delays its first streamed token exposes no earlier progress signal.
+- **Reasoning enters stderr logs** — redirection and supervisors may retain substantially more and potentially sensitive model output; route stderr to a controlled sink when that content must not be collected.
 - **`ctx.appExit` is launcher-owned** — booting the headless profile outside the `dsh` launcher fails loud at activation until the host provides the exit request.

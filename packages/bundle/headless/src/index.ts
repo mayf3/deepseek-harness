@@ -123,7 +123,15 @@ function streamReasoning(
       endsWithNewline = chunk.text.endsWith('\n')
       return
     }
-    if (chunk.type === 'block-start' && chunk.blockType === 'reasoning') return
+    if (chunk.type === 'block-start') {
+      if (chunk.blockType !== 'reasoning') close()
+      return
+    }
+    if (chunk.type === 'block-end') {
+      if (chunk.block.type !== 'reasoning') close()
+      return
+    }
+    if (chunk.type === 'usage') return
     close()
   })
   return () => {

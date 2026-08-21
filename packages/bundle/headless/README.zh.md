@@ -20,4 +20,5 @@ Loader 结算后，runner 读取共享的 [`ctx.agentDefaultModel`](../../core/a
 
 - **只提交一个任务**：runner 没有用于交互式后续输入的 surface；它会等待 Agent 在返回 idle 前完成的所有工作，并打印该区间内最后一条非空 assistant 消息。
 - **首个 token 前没有心跳**：在提供方发出非空推理分片前，stderr 保持静默；如果提供方延迟首个流式 token，系统不会提供更早的进度信号。
+- **推理会进入 stderr 日志**：重定向与监督进程可能保留明显更多且可能敏感的模型输出；不得收集该内容时，应将 stderr 送往受控目标。
 - **`ctx.appExit` 由启动器持有**：在 `dsh` 启动器之外启动 headless profile 会在激活时明确报错，直到宿主提供该退出请求。

@@ -173,12 +173,42 @@ describe('headless runner', () => {
           step: 1,
           chunk: { type: 'reasoning-delta', index: 0, text: ' safely\n' },
         })
+        session.append('assistant/chunk', {
+          turn: 1,
+          step: 1,
+          chunk: { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'checking the workspace safely\n' } },
+        })
+        session.append('assistant/chunk', {
+          turn: 1,
+          step: 1,
+          chunk: { type: 'usage', usage: { inputTokens: 1, outputTokens: 2, reasoningTokens: 2 } },
+        })
+        session.append('assistant/chunk', {
+          turn: 1,
+          step: 1,
+          chunk: { type: 'block-start', index: 1, blockType: 'reasoning' },
+        })
+        session.append('assistant/chunk', {
+          turn: 1,
+          step: 1,
+          chunk: { type: 'reasoning-delta', index: 1, text: 'second pass\n' },
+        })
         reasoningAppended.resolve(undefined)
         await release.promise
         session.append('assistant/chunk', {
           turn: 1,
           step: 1,
-          chunk: { type: 'block-start', index: 1, blockType: 'text' },
+          chunk: { type: 'block-start', index: 2, blockType: 'text' },
+        })
+        session.append('assistant/chunk', {
+          turn: 1,
+          step: 1,
+          chunk: { type: 'text-delta', index: 2, text: 'done' },
+        })
+        session.append('assistant/chunk', {
+          turn: 1,
+          step: 1,
+          chunk: { type: 'block-end', index: 2, block: { type: 'text', text: 'done' } },
         })
         session.append('assistant/message', {
           turn: 1,
@@ -207,13 +237,13 @@ describe('headless runner', () => {
     const result = await running
     expect(streamed).toEqual({
       out: '',
-      err: 'dsh: reasoning:\nchecking the workspace safely\n',
+      err: 'dsh: reasoning:\nchecking the workspace safely\nsecond pass\n',
       order: [],
     })
     expect(result).toEqual({
       code: 0,
       out: 'done\n',
-      err: 'dsh: reasoning:\nchecking the workspace safely\n',
+      err: 'dsh: reasoning:\nchecking the workspace safely\nsecond pass\n',
       order: ['flush', 'exit'],
     })
     await test.ctx.fiber.dispose()
