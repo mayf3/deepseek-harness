@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-21-deepseek-files-inline-fallback.md
-2026-08-21-deepseek-files-inline-fallback.md: c58b3e2257b426f1b5df8a4d6952e890a2bd2982
-2026-08-21-deepseek-files-inline-fallback.zh.md: 34625c6250d52a73ccaac3e33adbd2ed099aab5b
+2026-08-21-deepseek-files-inline-fallback.md: 7442089038e2cf47f37661c0f098054d03f67aef
+2026-08-21-deepseek-files-inline-fallback.zh.md: 0534514f9bc52f7871f43c288466643cebc7d69c

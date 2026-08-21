@@ -348,7 +348,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     await pending
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
-    expect(String(fetchSpy.mock.calls[0]?.[1]?.body)).toContain('image_url')
+    expect(fetchSpy.mock.calls[0]?.[1]?.body).toEqual(expect.stringContaining('image_url'))
     fetchSpy.mockRestore()
   })
 
@@ -1397,7 +1397,6 @@ describe('DeepSeekAdapter against a mock server', () => {
     })
     const adapter = adapterOf({
       baseURL: 'https://example.invalid',
-      filesApiTimeoutMs: 50,
       streamIdleTimeoutMs: 100,
     })
     try {
@@ -1432,7 +1431,6 @@ describe('DeepSeekAdapter against a mock server', () => {
     })
     const adapter = adapterOf({
       baseURL: 'https://example.invalid',
-      filesApiTimeoutMs: 50,
       streamIdleTimeoutMs: 100,
     })
     try {
@@ -2028,7 +2026,7 @@ describe('plugin registration and config', () => {
     })).rejects.toThrow(/streamIdleTimeoutMs/)
   })
 
-  it('rejects invalid Files API timeout bounds for direct and plugin composition', async () => {
+  it('validates Files API timeout bounds independently of the stream idle deadline', async () => {
     expect(() => resolveAdapterOptions({ filesApiTimeoutMs: Number.POSITIVE_INFINITY }))
       .toThrow(/filesApiTimeoutMs.*positive finite/)
     expect(() => resolveAdapterOptions({ filesApiTimeoutMs: MAX_TIMER_DELAY_MS + 1 }))
@@ -2044,8 +2042,8 @@ describe('plugin registration and config', () => {
       baseURL: 'http://127.0.0.1:1',
       filesApiTimeoutMs: MAX_TIMER_DELAY_MS + 1,
     })).rejects.toThrow(/filesApiTimeoutMs/)
-    expect(() => resolveAdapterOptions({ filesApiTimeoutMs: 100, streamIdleTimeoutMs: 100 }))
-      .toThrow(/filesApiTimeoutMs must be below streamIdleTimeoutMs/)
+    expect(resolveAdapterOptions({ filesApiTimeoutMs: 100, streamIdleTimeoutMs: 100 }))
+      .toMatchObject({ filesApiTimeoutMs: 100, streamIdleTimeoutMs: 100 })
   })
 
   it('rejects invalid nested retryPolicy before registering the provider', async () => {

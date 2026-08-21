@@ -336,9 +336,6 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
       `llm-deepseek: filesApiTimeoutMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`,
     )
   }
-  if (filesApiTimeoutMs >= streamIdleTimeoutMs) {
-    throw new Error('llm-deepseek: filesApiTimeoutMs must be below streamIdleTimeoutMs')
-  }
   const fileExpiresAfterSeconds = config.fileExpiresAfterSeconds ?? DEFAULT_FILE_EXPIRY_SECONDS
   if (!Number.isSafeInteger(fileExpiresAfterSeconds)
     || fileExpiresAfterSeconds < 3_600

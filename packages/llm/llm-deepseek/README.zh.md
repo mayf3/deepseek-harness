@@ -26,7 +26,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
     imageOffloadByteQuantum: 67108864 # oldest-image removal advances in 64 MiB steps
     inlineImageOffloadByteQuantum: 10485760 # fallback removal advances in 10 MiB steps
     imageOffloadCountQuantum: 20      # count overflow advances in 20-image steps
-    filesApiTimeoutMs: 60000           # per-image Files resolution deadline; below streamIdleTimeoutMs
+    filesApiTimeoutMs: 60000           # per-image Files resolution deadline; one-minute default
     fileExpiresAfterSeconds: 604800   # uploaded image lifetime; 1 hour to 30 days
     fileRefreshMarginSeconds: 3600    # replace ids with less lifetime remaining
     fileQuotaCleanupBatch: 100        # oldest harness-owned files deleted before one quota retry
@@ -58,7 +58,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
 
 内联回退使用独立的 base64 预算。`maxInlineRequestImageBytes` 默认为 20MiB，`inlineImageOffloadByteQuantum` 默认为 10MiB，因此由 21 个 1MiB base64 负载组成的历史会移除最旧的 11 个并保留 10MiB。计算使用 base64 膨胀后的长度。系统逐字节复用已经准备好的请求版本；回退不会再次解码或压缩图片。前面图片已经成功写入的上传映射会保留，供后续请求复用。
 
-上传 ID 按端点和 API key 作用域以及请求 `variantId` 记录在 `DSH_HOME` 下。变体身份覆盖规范化附件 ID、变换策略版本、路由像素和字节预算及编码参数，因此 Files API 和内联回退引用同一份确定性字节。上传默认请求 7 天有效期，并保存服务端返回的 `expires_at`。本地映射剩余时间不超过一小时时会在使用前替换；适配器不会在每次 chat 前查询远端文件。如果 chat 报告文件 ID 已过期、删除、缺失或无效，并指出本次请求使用的一个或多个 ID，适配器只删除这些映射。如果响应只说明文件状态失效而没有指出 ID，适配器会删除该次 chat 使用的全部文件映射。随后重新上传受影响的请求版本，并重试一次 chat。第二次 chat 仍报告文件失效时，适配器会按该响应清理映射并返回错误，不会发起第三次 chat。上传响应若没有完整文件对象、匹配的字节数和 `expires_at`，就不会写入索引；后续请求会再次上传，而不是信任不一致的本地状态。本地上传索引格式损坏时按空缓存处理，并由下一次成功上传替换。文件解析包括本地索引访问和远端上传，默认每张图片的时限为一分钟，且必须小于 `streamIdleTimeoutMs`。每次成功解析都会刷新外层 idle watchdog。任何解析失败都会把该请求切换到内联模式；显式公共文件管理操作仍会报告自身错误。
+上传 ID 按端点和 API key 作用域以及请求 `variantId` 记录在 `DSH_HOME` 下。变体身份覆盖规范化附件 ID、变换策略版本、路由像素和字节预算及编码参数，因此 Files API 和内联回退引用同一份确定性字节。上传默认请求 7 天有效期，并保存服务端返回的 `expires_at`。本地映射剩余时间不超过一小时时会在使用前替换；适配器不会在每次 chat 前查询远端文件。如果 chat 报告文件 ID 已过期、删除、缺失或无效，并指出本次请求使用的一个或多个 ID，适配器只删除这些映射。如果响应只说明文件状态失效而没有指出 ID，适配器会删除该次 chat 使用的全部文件映射。随后重新上传受影响的请求版本，并重试一次 chat。第二次 chat 仍报告文件失效时，适配器会按该响应清理映射并返回错误，不会发起第三次 chat。上传响应若没有完整文件对象、匹配的字节数和 `expires_at`，就不会写入索引；后续请求会再次上传，而不是信任不一致的本地状态。本地上传索引格式损坏时按空缓存处理，并由下一次成功上传替换。文件解析包括本地索引访问和远端上传，默认每张图片的时限为一分钟。默认的 stream idle 时限为五分钟，因此通常有时间执行内联回退；部署可以设置更短的 stream idle 时限，让外层时限先终止请求。每次成功解析都会刷新外层 idle watchdog。任何解析失败都会把该请求切换到内联模式；显式公共文件管理操作仍会报告自身错误。
 
 同一作用域和 `variantId` 的并发解析共享一次 Files 上传，每个等待方可以单独取消。一次上传配额错误会先分页收集配置数量的最旧 `dsh-` 文件，再删除这些文件并重试一次上传。`DeepSeekFilesClient.delete`、`DeepSeekFileStore.release` 和 `releaseAll` 提供主动远端空间回收。本包记录的当前提供方限制为 Files 单次上传 128MiB、chat 单图引用 32MiB、每个 API key 最多 10,000 个文件和 25GiB；默认 1MiB 请求版本低于两个单文件上限。
 

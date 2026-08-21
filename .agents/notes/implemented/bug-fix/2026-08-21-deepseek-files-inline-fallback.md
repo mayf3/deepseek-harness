@@ -10,7 +10,7 @@ The direct DeepSeek vision route uses provider file ids so repeated requests do 
 
 ## Decision
 
-Files remains the preferred transport. Each request-image file resolution has the configurable `filesApiTimeoutMs` deadline, one minute by default and always below `streamIdleTimeoutMs`. Successful resolutions refresh the outer idle watchdog. Caller cancellation and the outer stream deadline remain terminal outcomes.
+Files remains the preferred transport. Each request-image file resolution has the configurable `filesApiTimeoutMs` deadline, one minute by default. The stream idle deadline defaults to five minutes, so the Files deadline normally leaves time for inline fallback. A deployment may configure the stream idle deadline to expire first. Successful resolutions refresh the outer idle watchdog. Caller cancellation and the outer stream deadline remain terminal outcomes.
 
 A file resolution failure discards the transient file parts assembled for that chat attempt and rebuilds the complete image request with base64 data URLs. Every retained image uses the already prepared deterministic `RequestImageAttachment`; the fallback performs no additional decode, resize, or encode, and a chat request never mixes file ids with inline images. Upload mappings committed before a later image fails remain available to later requests. The next request tries Files again, so recovery requires no process-wide outage state.
 
@@ -30,7 +30,7 @@ Provider chat errors keep their existing classifications. A stale file id is inv
 
 ## Verification
 
-Serializer tests cover file and data-URL representations over the same request versions, all supported media types, tool-result placement, and 20-to-10 base64 offload. Adapter tests cover immediate resolution failure, failure after a partial set of file ids, deadline-triggered fallback, stale-id replacement failure, all-inline request bodies, caller cancellation without fallback, and generic chat failure without a transport switch. Configuration tests cover both inline bounds and the Files deadline relationship.
+Serializer tests cover file and data-URL representations over the same request versions, all supported media types, tool-result placement, and 20-to-10 base64 offload. Adapter tests cover immediate resolution failure, failure after a partial set of file ids, deadline-triggered fallback, stale-id replacement failure, all-inline request bodies, caller cancellation without fallback, and generic chat failure without a transport switch. Configuration tests cover both inline bounds and independent Files and stream idle deadlines.
 
 ## Consequences
 
