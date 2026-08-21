@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-20-derive-shipped-preset-root-per-composition.md
-2026-08-20-derive-shipped-preset-root-per-composition.md: ecf852ade3720cbf5f5f99efa073cc6e3a352fec
-2026-08-20-derive-shipped-preset-root-per-composition.zh.md: 718bddd6e4159b32db63262bb40a1e0ce38227ac

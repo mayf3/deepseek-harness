@@ -748,12 +748,6 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
         '      - id: personal',
         '        provider: personal-provider',
         '        model: personal-model',
-        '- id: agent-presets',
-        '  config:',
-        '    default: standard',
-        '    roots:',
-        `      - path: ${join(home, 'team-presets')}`,
-        '        trust: user',
         '- id: absent-row',
         '  config:',
         '    x: 1',
@@ -778,13 +772,6 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(stdout).not.toContain('personal-provider')
       // Both layers patched the row; the comment lists them in application order.
       expect(stdout).toContain(`patched by ${profilePatch}, ${overlay}`)
-      // The dump composes the launcher-derived roster layer too: the shipped
-      // preset root is prepended to the user layer's roots, not replacing them.
-      expect(stdout).toContain('dsh launcher (shipped agent-preset root)')
-      const shippedRootAt = stdout.search(/config[\\/]+agent-presets/)
-      const configuredRootAt = stdout.search(/team-presets/)
-      expect(shippedRootAt).toBeGreaterThanOrEqual(0)
-      expect(configuredRootAt).toBeGreaterThan(shippedRootAt)
       expect(stderr).toContain('patch: entry "absent-row" not found')
     }, 30_000)
   })

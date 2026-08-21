@@ -11,8 +11,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { resolveSessionPreset, SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-agent-presets'
-import { composeProfilePatches } from '../src/profile-boot.ts'
+import { resolveSessionPreset, SETTINGS_NAMESPACE, SHIPPED_PRESET_ROOT } from '@deepseek-ai/dsh-agent-presets'
 import { applyChildComposition, childSessionMeta } from '@deepseek-ai/dsh-subagent'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-compaction-basic'
@@ -22,7 +21,6 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-token-meter'
 
-const CONFIG_DIR = fileURLToPath(new URL('../config/', import.meta.url))
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 /** The shipped Web surface: the dsh-base and dsh-web-app bundle patches over an empty preset root. */
 const BASE_PATCH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
@@ -99,8 +97,8 @@ async function bootWeb(
     // Pin the roster away from the developer's machine: `includeUserRoot`
     // false keeps `~/.dsh/.agent-presets` from changing a test's outcome.
     // `default` here is the COMPOSITION default — the base layer the settings
-    // document overrides. No `roots` entry: the launcher's real derivation
-    // below prepends the shipped root, exactly as `runProfile` composes it.
+    // document overrides. No `roots` entry: the plugin bundles the shipped
+    // presets itself and prepends their root.
     { id: 'agent-presets', config: { default: 'standard', includeUserRoot: false } },
     ...extra,
   ]
@@ -137,10 +135,7 @@ async function bootWeb(
   }
   const rootConfig = join(profileDir, 'cordis.yml')
   await writeFile(rootConfig, '[]\n')
-  // The shipped preset root arrives the way the real launcher delivers it:
-  // derived over these same layers, appended after every override.
-  const patches = composeProfilePatches([bundlePatches, overrides])
-  return await boot('dsh-test', rootConfig, patches, (bootCtx) => {
+  return await boot('dsh-test', rootConfig, [...bundlePatches, ...overrides], (bootCtx) => {
     provideCmdline(bootCtx, { args: [], exit: () => {} })
   })
 }
@@ -363,7 +358,7 @@ describe('the shipped Web composition', () => {
     // The preset's skill root is derived from its own `baseUrl`, so the skill
     // travels with the directory wherever the preset is installed.
     const skill = join(
-      CONFIG_DIR, 'agent-presets', 'cordis', 'skills', 'editing-cordis-compositions', 'SKILL.md',
+      SHIPPED_PRESET_ROOT, 'cordis', 'skills', 'editing-cordis-compositions', 'SKILL.md',
     )
 
     expect((await readFile(skill, 'utf8')).startsWith('---\nname: editing-cordis-compositions')).toBe(true)
@@ -435,7 +430,7 @@ describe('the shipped Web composition', () => {
     // agent down disposes its whole subtree. Inherited, that rewrote the
     // shipped composition — truncating it to `[]` the first time a session
     // ended — so `PresetTree` refuses to write at all.
-    const path = join(CONFIG_DIR, 'agent-presets', 'standard', 'agent.cordis.yml')
+    const path = join(SHIPPED_PRESET_ROOT, 'standard', 'agent.cordis.yml')
     const before = await readFile(path, 'utf8')
 
     const handle = await ctx.agents.create({
@@ -463,7 +458,7 @@ describe('product Bundle and user-preset intersection', () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-product-presets-'))
     const userRoot = join(root, 'presets')
     const settingsFile = join(root, 'settings.yaml')
-    const standard = await readFile(join(CONFIG_DIR, 'agent-presets', 'standard', 'agent.cordis.yml'), 'utf8')
+    const standard = await readFile(join(SHIPPED_PRESET_ROOT, 'standard', 'agent.cordis.yml'), 'utf8')
     await writeFile(settingsFile, '{}\n')
     for (const id of presetIds) {
       let composition = standard
@@ -490,7 +485,7 @@ describe('product Bundle and user-preset intersection', () => {
         id: 'agent-presets',
         config: {
           default: 'standard',
-          // The shipped root is bootWeb's derivation, prepended before this.
+          // The shipped root is the plugin's own, prepended before this.
           roots: [{ path: userRoot, trust: 'user' }],
           includeUserRoot: false,
         },
@@ -726,7 +721,7 @@ describe('a launcher that configures no writable root', () => {
     )
     const settingsFile = join(await mkdtemp(join(tmpdir(), 'dsh-preset-derived-settings-')), 'settings.yaml')
     await writeFile(settingsFile, '{}\n')
-    // No configured roots: the shipped one is bootWeb's derivation, and the
+    // No configured roots: the shipped one is the plugin's own, and the
     // writable one is the roster's own default rather than this patch's job.
     derivedCtx = await bootWeb(settingsFile, [{
       id: 'agent-presets',
@@ -774,8 +769,8 @@ describe('authoring a preset on the shipped composition', () => {
       config: {
         default: 'standard',
         // The root does not exist yet: a deployment whose user has authored
-        // nothing is the normal first-run state. The shipped root is bootWeb's
-        // derivation, prepended before this.
+        // nothing is the normal first-run state. The shipped root is the
+        // plugin's own, prepended before this.
         roots: [{ path: userRoot, trust: 'user' }],
         includeUserRoot: false,
       },
@@ -895,14 +890,14 @@ describe('a composition that configures its own preset roots', () => {
     // A workspace-shared root beside the deployment: one preset of its own,
     // plus a directory that claims a shipped id.
     teamRoot = join(home, 'team-presets')
-    const minimalComposition = await readFile(join(CONFIG_DIR, 'agent-presets', 'minimal', 'agent.cordis.yml'), 'utf8')
+    const minimalComposition = await readFile(join(SHIPPED_PRESET_ROOT, 'minimal', 'agent.cordis.yml'), 'utf8')
     for (const id of ['team-spec', 'minimal']) {
       await mkdir(join(teamRoot, id), { recursive: true })
       await writeFile(join(teamRoot, id, 'agent.cordis.yml'), minimalComposition)
     }
     // The user layer of the reported regression: a profile's cordis.patch.yml
-    // configuring a shared preset root. The derivation must EXTEND it with
-    // the shipped root, never replace it.
+    // configuring a shared preset root. The plugin must EXTEND it with its
+    // own shipped root, never lose it.
     rootsCtx = await bootWeb(settingsFile, [{
       id: 'agent-presets',
       config: {
@@ -919,7 +914,7 @@ describe('a composition that configures its own preset roots', () => {
 
   it('keeps configured roots alongside the always-prepended shipped root', async () => {
     expect(rootsCtx.agentPresets.roots.map(root => root.path)).toEqual([
-      expect.stringContaining(join('config', 'agent-presets')),
+      SHIPPED_PRESET_ROOT,
       teamRoot,
     ])
 

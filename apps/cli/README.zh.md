@@ -37,7 +37,6 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 - `dsh.profile.bundles` 中各组合包的 patch
 - profile 自身的 `cordis.patch.yml`，然后是 home 级的 `$DSH_HOME/cordis.patch.yml`
 - `--patch` 指定的覆盖层
-- 组合挂载预设 roster 时，启动器再派生一个补丁，把内置 agent-preset 根目录前置到已配置的 `roots` 之前
 
 `dsh.profile.bundles` 中列出的组合包先从 dsh 安装目录解析（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-headless`），再从 profile 自身的 `node_modules` 解析；pnpm 会将树外插件安装到该目录。
 

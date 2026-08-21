@@ -15,8 +15,7 @@
     "dsh": "lib/bin.js"
   },
   "files": [
-    "lib/*.js",
-    "config"
+    "lib/*.js"
   ],
   "license": "MIT",
   "dependencies": {
