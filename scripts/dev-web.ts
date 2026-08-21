@@ -37,7 +37,7 @@ import type { TsdownBundle } from 'tsdown'
 import {
   CLIENT_BUILD_PROFILE_SELECTOR,
   clientBuildProcessEnvironment,
-  readClientBuildRecord,
+  repositoryClientBuildEnvironment,
 } from './client-build-environment.ts'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -55,16 +55,16 @@ const SHELL_PACKAGE = '@deepseek-ai/dsh-web-frontend'
 const TEST_INFRASTRUCTURE_PREFIX = 'packages/test-support/'
 
 /**
- * Reuse the last complete build's public metadata for every long-lived watcher.
- * @param root - repository root containing the verified client build record.
- * @param environment - watcher launch environment whose public values are replaced.
+ * Sample one local public environment for every long-lived watcher stage.
+ * @param root - repository root supplying version and Git metadata.
+ * @param environment - watcher launch environment supplying public extensions.
  * @returns process environment shared by tsdown and spawned watcher stages.
  */
 export function devWebBuildEnvironment(
   root: string,
   environment: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-  return clientBuildProcessEnvironment(environment, readClientBuildRecord(root).environment)
+  return clientBuildProcessEnvironment(environment, repositoryClientBuildEnvironment(root, environment))
 }
 
 /**
