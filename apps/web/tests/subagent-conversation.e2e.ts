@@ -58,6 +58,18 @@ async function waitForAgentToSettle(scaffold: WebScaffold, id: SessionId): Promi
   }
 }
 
+/** Poll until the cold-read write-back of {@link coldSnapshot} lands a visible row. */
+async function waitForCacheRow(
+  scaffold: WebScaffold,
+  header: SessionHeader,
+): Promise<void> {
+  const deadline = Date.now() + 10_000
+  while (scaffold.ctx.sessionProjectionCache.cachedSnapshot(header) === undefined) {
+    if (Date.now() >= deadline) throw new Error(`cache row for "${header.id}" did not land`)
+    await new Promise<void>(resolve => setTimeout(resolve, 10))
+  }
+}
+
 describe('web e2e: persisted subagent conversation and human continuation', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -123,7 +135,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       delegationDepth: 1,
     }
     await scaffold.ctx.sessionPersistence.create(oneShotHeader)
-    await scaffold.ctx.sessionPersistence.append(oneShotId, [
+    const oneShotEvents: SessionEvent[] = [
       {
         type: 'turn/start',
         seq: 0,
@@ -154,7 +166,10 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
         time: oneShotAt + oneShotDurationMs,
         data: { turn: 1, reason: { kind: 'completed' } },
       },
-    ] as SessionEvent[])
+    ]
+    await scaffold.ctx.sessionPersistence.append(oneShotId, oneShotEvents)
+    scaffold.ctx.sessionProjectionCache.coldSnapshot(oneShotHeader, oneShotEvents)
+    await waitForCacheRow(scaffold, oneShotHeader)
     grandchildId = sessionId('recorded-grandchild')
     const authoredAt = Date.now()
     const grandchildHeader: SessionHeader = {
@@ -167,7 +182,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       delegationDepth: 2,
     }
     await scaffold.ctx.sessionPersistence.create(grandchildHeader)
-    await scaffold.ctx.sessionPersistence.append(grandchildId, [
+    const grandchildEvents: SessionEvent[] = [
       {
         type: 'turn/start',
         seq: 0,
@@ -198,7 +213,10 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
         time: authoredAt + 3,
         data: { turn: 1, reason: { kind: 'completed' } },
       },
-    ] as SessionEvent[])
+    ]
+    await scaffold.ctx.sessionPersistence.append(grandchildId, grandchildEvents)
+    scaffold.ctx.sessionProjectionCache.coldSnapshot(grandchildHeader, grandchildEvents)
+    await waitForCacheRow(scaffold, grandchildHeader)
     expect(scaffold.ctx.agents.get(childId)).toBeUndefined()
     expect(scaffold.ctx.agents.get(oneShotId)).toBeUndefined()
     expect(scaffold.ctx.agents.get(grandchildId)).toBeUndefined()
