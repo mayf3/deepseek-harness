@@ -121,9 +121,9 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配标识�
 这些限制说明 seam 不能做什么；它们是当前包约束，不是任务积压。
 
 - **`run()` 是一次性的**——`logs` 只有在 `CodeRunResult` resolve 后才能获得；seam 不提供正在运行的程序所产生输出的流式日志或进度接口。
-- **运行之间不保留状态**——每次请求都在全新环境中运行；持久 REPL 风格内核在某个后端带来自己的日志方案之前保持延期。
-- **目前只发布 worker 线程后端**——`'process'` 与 `'container'` 是已经声明但没有实现的已知 `isolation` 值；强安全边界需要等待容器后端。
-- **中间绑定值没有字节上限**——实现仍受 structured-clone 成本与进程内存约束，而提供方可能已经应用自己的获取上限。
+- **持久 REPL 风格内核已记录为未来工作**——在持久内核后端带来自己的日志方案前，运行之间不保留状态的约定继续有效（参见 [Code Mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-code-mode.zh.md)）。
+- **目前提供 worker 线程与 Python（process）后端；`'container'` 是未来工作**——`'process'` 由 `dsh-code-runtime-python` 后端实现，而 `'container'` 仍是已声明但没有实现的已知 `isolation` 值；强安全边界需要等待容器后端。
+- **中间绑定值没有字节上限**——实现仍受 structured-clone 成本与进程内存约束，而提供方或执行器可能已经应用自己的获取上限。
 
 <a id="dev-note"></a>
 ### 开发备注
