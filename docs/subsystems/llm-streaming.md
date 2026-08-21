@@ -298,7 +298,8 @@ One keep/drop decision covers content and metadata together: a `max-tokens` fini
  * {@link ContentBlock}s and a final assistant {@link Message}.
  *
  * The agent loop feeds it while logging raw chunks for replay fidelity, then
- * reads `blocks()` / `message()` / `usage` / `finish` once the stream ends.
+ * reads `blocks()` / `message()` / `usage` / `finish` once the stream ends,
+ * or `interruptedBlocks()` when cancellation cut the stream short.
  *
  * Tolerant of delta-only protocols (no block-start/end); deltas arriving for
  * an index already closed by `block-end` are ignored (malformed stream) so a
@@ -317,6 +318,14 @@ declare class BlockAssembler {
    *   its accumulated deltas (an unknown block type never closed by `block-end` throws).
    */
   blocks(): ContentBlock[];
+  /**
+   * Assemble the prefix an interrupted stream can safely finalize: closed and
+   * open text/reasoning blocks with non-whitespace content, in stream order.
+   * Tool calls are omitted because interruption precedes dispatch; retaining
+   * one would require a fabricated result. Open unknown blocks are also omitted.
+   * @returns the kept blocks; empty when nothing streamed before the interruption.
+   */
+  interruptedBlocks(): ContentBlock[];
   /** Usage from the `usage` chunk; undefined until one arrives. */
   get usage(): TokenUsage | undefined;
   /** Finish reason from the `finish` chunk; `{kind: 'stop'}` when the stream ended without one. */
@@ -738,7 +747,7 @@ declare abstract class LlmAdapter {
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxllm--llmruntime"></a>
 
@@ -864,7 +873,7 @@ async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<Prepared
 stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 ```
 
-Source: [`packages/llm/llm/src/index.ts:284`](../../packages/llm/llm/src/index.ts)
+Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 
 <a id="llm-events"></a>
 
@@ -889,7 +898,7 @@ The provider topology changed: an adapter registered or unregistered routes, or 
 'llm/adapters-updated'(): void
 ```
 
-Source: [`packages/llm/llm/src/types.ts:23`](../../packages/llm/llm/src/types.ts)
+Source: [`packages/llm/llm/src/types.ts`](../../packages/llm/llm/src/types.ts)
 
 <a id="llmstream--waterfall"></a>
 
@@ -913,5 +922,5 @@ Waterfall around every streaming model call (retry, replay, routing). Bound to t
 'llm/stream'(this: LlmRuntime, options: GenerateOptions, next: () => AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk>
 ```
 
-Source: [`packages/llm/llm/src/index.ts:64`](../../packages/llm/llm/src/index.ts)
+Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 <!-- END GENERATED cordis-surface -->

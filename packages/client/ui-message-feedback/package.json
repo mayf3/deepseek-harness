@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-message-feedback",
   "description": "Per-message feedback controls contributed to the assistant-message action strip, backed by the messageFeedback Host Remote",
-  "version": "0.1.0-rc.7",
+  "version": "0.1.0-rc.8",
   "publishConfig": {
     "access": "public"
   },
@@ -71,6 +71,7 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@testing-library/react": "^16.1.0",
     "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

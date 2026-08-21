@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-07-06-parallel-pre-push-gates.md
 2026-07-06-parallel-pre-push-gates.md: 22d69478f0fe664b91c4ada2c5c97e7c61ee7deb
-2026-07-06-parallel-pre-push-gates.zh.md: bed13531cb43545c42b7580f5144c993a6a59d90
+2026-07-06-parallel-pre-push-gates.zh.md: 98de527688399b8f6c09e91f55916361bf79d12d

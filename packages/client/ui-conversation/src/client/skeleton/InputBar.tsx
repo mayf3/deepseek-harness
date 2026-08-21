@@ -24,7 +24,9 @@ import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ComposerBarProps } from '../contract/slots.ts'
 import { deriveDecorations } from '../input/decorations.ts'
 import type { DraftDecorations } from '../input/decorations.ts'
+import type { EditRange } from '../input/contract.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
+import { ReferenceIcon } from '../reference/ReferenceIcon.tsx'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
 import { isSafariBrowser, repairSafariTextareaLayout } from './safari.ts'
@@ -32,6 +34,45 @@ import css from './InputBar.module.css'
 
 /** Decoration product of the no-session state (no machine, empty draft). */
 const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: [], hint: null }
+
+/** The selection and edit family a `beforeinput` recorded, with the draft length it applied to. */
+interface PendingEdit {
+  readonly start: number
+  readonly end: number
+  readonly draftLength: number
+  readonly inputType: string
+}
+
+/**
+ * Resolve one edit's range from the record taken before it applied.
+ * A selection the edit replaces is the range outright. A caret delete replaces
+ * nothing and reports the bare caret, so the removed span is whatever the draft
+ * lost, on the side `inputType` names — measured, because one caret gesture can
+ * remove a multi-unit grapheme, a word, or a line.
+ * @param pending - record taken at `beforeinput`, null when none was seen.
+ * @param prevLength - length of the draft the edit applied to.
+ * @param nextLength - length of the resulting draft.
+ * @returns the exact range, or undefined when the record cannot describe this
+ * edit and the machine's diff scan has to recover it.
+ */
+function editRangeOf(pending: PendingEdit | null, prevLength: number, nextLength: number): EditRange | undefined {
+  if (pending === null || pending.draftLength !== prevLength) return undefined
+  const { start, end, inputType } = pending
+  // A DOM selection cannot invert; the check keeps that a precondition of the
+  // math below rather than an assumption about the element.
+  if (start > end || end > prevLength) return undefined
+  const insertedLength = nextLength - prevLength + (end - start)
+  if (insertedLength >= 0) return { start, end, insertedLength }
+  if (start !== end) return undefined
+  const removed = prevLength - nextLength
+  if (inputType.endsWith('Backward')) {
+    return removed <= start ? { start: start - removed, end: start, insertedLength: 0 } : undefined
+  }
+  if (inputType.endsWith('Forward')) {
+    return start + removed <= prevLength ? { start, end: start + removed, insertedLength: 0 } : undefined
+  }
+  return undefined
+}
 
 export type InputBarProps = ComposerBarProps
 
@@ -268,6 +309,42 @@ export function InputBar({
     return () => { el.removeEventListener('wheel', onWheel) }
   }, [])
 
+  // selectionStart/End are number|null in lib.dom; the type-aware lint program narrows them.
+  /* oxlint-disable typescript/no-unnecessary-condition */
+  const selectionOf = (el: HTMLTextAreaElement) => ({
+    start: el.selectionStart ?? 0,
+    end: el.selectionEnd ?? el.selectionStart ?? 0,
+  })
+  /* oxlint-enable typescript/no-unnecessary-condition */
+
+  // The machine's occurrence math needs the edit's real range, and a controlled
+  // textarea's change event carries only the resulting string. `beforeinput`
+  // fires while the element still holds the pre-edit selection, which is
+  // exactly the range about to be replaced; a textarea exposes it no other way
+  // (`getTargetRanges()` is empty for form controls). Recovering the range by
+  // diffing the two drafts instead is ambiguous whenever the typed text repeats
+  // what it lands against — typing the trigger char before a reference reads as
+  // landing inside that reference, which drops it. One lifetime, like the wheel
+  // listener above: the textarea is never unmounted.
+  const pendingEditRef = useRef<PendingEdit | null>(null)
+  useEffect(() => {
+    const el = inputRef.current
+    if (el === null) return
+    const onBeforeInput = (e: InputEvent): void => {
+      // Only the families whose reported selection describes the edit. A
+      // history replay reports wherever the caret happens to sit, which would
+      // survive every check in editRangeOf while naming the wrong span.
+      if (!e.inputType.startsWith('insert') && !e.inputType.startsWith('delete')) {
+        pendingEditRef.current = null
+        return
+      }
+      const { start, end } = selectionOf(el)
+      pendingEditRef.current = { start, end, draftLength: el.value.length, inputType: e.inputType }
+    }
+    el.addEventListener('beforeinput', onBeforeInput)
+    return () => { el.removeEventListener('beforeinput', onBeforeInput) }
+  }, [])
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (workspaceTrigger) {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -278,13 +355,31 @@ export function InputBar({
     }
     // Absent machine without a Workspace recovery action stays disabled; the
     // guard narrows the faces for the paths below.
-    if (keyboard === undefined || inputActions === undefined) return
+    if (input === undefined || keyboard === undefined || inputActions === undefined) return
     // Shift+Enter is the native newline UNCONDITIONALLY — decided before the
     // IME guard so a composition-closing Shift+Enter still breaks the line.
     if (e.key === 'Enter' && e.shiftKey) return
     // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
     // oxlint-disable-next-line typescript/no-deprecated
     const composing = composingRef.current || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229
+    if (!composing && !machineBusy && !locked
+      && (e.key === 'Backspace' || e.key === 'Delete')) {
+      const selection = selectionOf(e.currentTarget)
+      if (selection.start === selection.end) {
+        const occurrence = input.occurrences.find(o => e.key === 'Backspace'
+          ? o.offset + o.length === selection.start
+          : o.offset === selection.start)
+        if (occurrence !== undefined) {
+          e.preventDefault()
+          const start = occurrence.offset
+          const end = occurrence.offset + occurrence.length
+          keyboard.setDraft(draft.slice(0, start) + draft.slice(end), { start, end, insertedLength: 0 })
+          restoreCaret(e.currentTarget, start)
+          keyboard.track(keyboard.snapshot.draft, start)
+          return
+        }
+      }
+    }
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       if (keyboard.arbitrate(e.key === 'ArrowUp' ? 'up' : 'down', composing) === 'consumed') e.preventDefault()
       return
@@ -344,52 +439,41 @@ export function InputBar({
     if (keyboard === undefined || locked) return // disabled/read-only states cannot edit the draft
     if (machineBusy) return // submitting is the read-only span; adjudicating holds the pending lock
     const next = e.target.value
+    const pending = pendingEditRef.current
+    pendingEditRef.current = null
     safariNativeShrinkRef.current = safari && next.length < draft.length
-    keyboard.setDraft(next)
+    keyboard.setDraft(next, editRangeOf(pending, draft.length, next.length))
     // selectionStart is number|null in lib.dom; the type-aware lint program narrows it.
     // oxlint-disable-next-line typescript/no-unnecessary-condition
     keyboard.track(next, e.target.selectionStart ?? next.length)
   }
-
-  // ---- chip atomicity (DOM layer; the machine sees only transactions) ----
-  // Placeholders occupy exactly one char, so caret positions are always
-  // BETWEEN them — what needs normalizing is deletion (whole chip per
-  // Backspace/Delete via native single-char semantics, which U+FFFC already
-  // gives us) and selection endpoints: Shift-extension snapping is native
-  // too (one char = one step). Mouse selection of a chip is handled in the
-  // backdrop click handler below. Undo/redo must NOT reach the browser: the
-  // machine owns the transaction log.
-  // selectionStart/End are number|null in lib.dom; the type-aware lint program narrows them.
-  /* oxlint-disable typescript/no-unnecessary-condition */
-  const selectionOf = (el: HTMLTextAreaElement) => ({
-    start: el.selectionStart ?? 0,
-    end: el.selectionEnd ?? el.selectionStart ?? 0,
-  })
-  /* oxlint-enable typescript/no-unnecessary-condition */
 
   const onCopyOrCut = (e: React.ClipboardEvent<HTMLTextAreaElement>, cut: boolean): void => {
     if (input === undefined || keyboard === undefined) return // absent machine: no draft can be copied or cut
     const el = e.currentTarget
     const { start, end } = selectionOf(el)
     if (start === end) return
-    const slice = draft.slice(start, end)
-    const touched = input.occurrences.filter(o => o.offset >= start && o.offset < end)
+    const touched = input.occurrences.filter(o => o.offset < end && o.offset + o.length > start)
     if (touched.length === 0 && !cut) return // plain copy of plain text: native path is fine
     e.preventDefault()
-    // Expand placeholders to their owner clipboard projections.
+    const copyStart = touched.reduce((value, o) => Math.min(value, o.offset), start)
+    const copyEnd = touched.reduce((value, o) => Math.max(value, o.offset + o.length), end)
+    // Expand structured ranges to their owner clipboard projections.
     let text = ''
-    let cursor = start
+    let cursor = copyStart
     for (const o of touched) {
       text += draft.slice(cursor, o.offset) + o.clipboardText
-      cursor = o.offset + 1
+      cursor = o.offset + o.length
     }
-    text += draft.slice(cursor, end)
+    text += draft.slice(cursor, copyEnd)
     e.clipboardData.setData('text/plain', text)
     if (cut && !machineBusy && !locked) {
-      keyboard.setDraft(draft.slice(0, start) + draft.slice(end), { start, end, insertedLength: 0 })
-      restoreCaret(el, start)
+      keyboard.setDraft(
+        draft.slice(0, copyStart) + draft.slice(copyEnd),
+        { start: copyStart, end: copyEnd, insertedLength: 0 },
+      )
+      restoreCaret(el, copyStart)
     }
-    void slice
   }
 
   const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>): void => {
@@ -496,16 +580,15 @@ export function InputBar({
     ? null
     : <PermissionSelect key={sessionId} value={permissions} locked={locked} command={command} t={t} />
 
-  // Mirror-layer decorations: a visible backdrop with transparent text. The
-  // claim token highlights through behind the textarea glyphs; each U+FFFC
-  // placeholder renders as a chip (the textarea's own glyph is invisible, the
-  // backdrop chip supplies the visual); the claim hint is ghost text.
+  // Mirror-layer decorations: a visible backdrop with transparent textarea
+  // text. Claim tokens and references retain the draft's own glyph metrics,
+  // so their decoration cannot drift from wrapping, selection, or the caret.
   const deco = input === undefined ? INERT_DECORATIONS : deriveDecorations(input, lexicon)
   const backdrop: ReactNode[] = []
   {
-    // Segment boundaries: the token range end, every chip offset, and every
-    // text-ref range — merged in draft order (the sources never
-    // overlap: chips sit on placeholders, text-refs on plain tokens, the
+    // Segment boundaries: the token range end, every structured-reference
+    // offset, and every text-ref range — merged in draft order (the sources never
+    // overlap: structured references own their ranges, text-refs own plain tokens, the
     // claim token only leads).
     let cursor = 0
     const pushPlain = (upTo: number): void => {
@@ -522,10 +605,10 @@ export function InputBar({
     }
     type Boundary =
       | { at: number; kind: 'chip'; chip: (typeof deco.chips)[number] }
-      | { at: number; kind: 'text-ref'; ref: (typeof deco.textRefs)[number] }
+      | { at: number; kind: 'text-ref'; ref: (typeof deco.textRefs)[number]; ordinal: number }
     const boundaries: Boundary[] = [
       ...deco.chips.map(chip => ({ at: chip.offset, kind: 'chip' as const, chip })),
-      ...deco.textRefs.map(ref => ({ at: ref.start, kind: 'text-ref' as const, ref })),
+      ...deco.textRefs.map((ref, ordinal) => ({ at: ref.start, kind: 'text-ref' as const, ref, ordinal })),
     ].sort((a, b) => a.at - b.at)
     for (const b of boundaries) {
       if (b.at < cursor) continue // claim-token overlap: the leading mark wins
@@ -533,27 +616,49 @@ export function InputBar({
       if (b.kind === 'chip') {
         const chip = b.chip
         backdrop.push(
-          // The cell's ::before renders U+FFFC itself so its advance equals the
-          // textarea's placeholder exactly (same char, same font); the label is
-          // a clipped overlay that never affects layout.
           <span
             key={`chip-${chip.occurrenceId}`}
             className={clsx(css.chip, chip.invalid && css.chipInvalid)}
             data-decoration="chip"
+            data-reference-appearance={chip.appearance}
             data-occurrence={chip.occurrenceId}
             data-invalid={chip.invalid || undefined}
             title={chip.label}
           >
-            <span className={css.chipLabel}>{chip.label}</span>
+            {chip.appearance === undefined
+              ? chip.text[0]
+              : (
+                <span className={css.chipTrigger}>
+                  <span className={css.chipTriggerGlyph}>{chip.text[0]}</span>
+                  <ReferenceIcon kind={chip.appearance} size={16} className={css.chipIcon} />
+                </span>
+              )}
+            <span>{chip.text.slice(1)}</span>
           </span>,
         )
-        cursor = chip.offset + 1 // the placeholder char the chip stands for
+        cursor = chip.offset + chip.length
       } else {
         // Plain-range highlight: the glyphs stay the
         // textarea's (advance untouched); the mark paints the chip look.
+        // The key is the draft-order ordinal: a fresh scan derives these
+        // ranges every render, so none of them carries identity past its
+        // position, and a draft-offset key would unmount the mark and its
+        // icon for every character typed ahead of it. Structured references
+        // key by occurrenceId, the identity their occurrence table owns.
+        const text = draft.slice(b.ref.start, b.ref.end)
         backdrop.push(
-          <mark key={`ref-${b.ref.start}`} className={css.textRef} data-decoration="text-ref">
-            {draft.slice(b.ref.start, b.ref.end)}
+          <mark key={`ref-${b.ordinal}`} className={css.textRef} data-decoration="text-ref">
+            {b.ref.appearance === 'folder'
+              ? (
+                <>
+                  <span className={css.textRefTrigger}>
+                    <span className={css.textRefTriggerGlyph}>{text[0]}</span>
+                    <ReferenceIcon kind="folder" size={16} className={css.textRefIcon} />
+                  </span>
+                  {text.slice(1)}
+                </>
+              )
+              : text}
           </mark>,
         )
         cursor = b.ref.end
@@ -621,7 +726,14 @@ export function InputBar({
             which a compositor-driven gesture outruns and leaves the words trailing the caret. */}
         <div ref={scrollRef} className={css.scroll} data-input-scroll>
           <div className={css.grow}>
-            <div aria-hidden className={css.backdrop} data-input-backdrop>{backdrop}</div>
+            <div
+              aria-hidden
+              className={clsx(css.backdrop, textareaDisabled && css.backdropDisabled)}
+              data-input-backdrop
+              data-disabled={textareaDisabled || undefined}
+            >
+              {backdrop}
+            </div>
             <textarea
               ref={inputRef}
               className={css.input}

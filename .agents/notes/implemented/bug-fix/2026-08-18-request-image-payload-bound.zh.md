@@ -10,7 +10,7 @@ pi-ai 适配器把会话历史中的每张图片 base64 内联进每一个模型
 
 ## Decision
 
-pi-ai provider profile 增加 `maxRequestImageBytes`（默认 `DEFAULT_MAX_REQUEST_IMAGE_BYTES = 20MiB`，正整数，按路由生效，可从 cordis.yml 与 `llm-pi-ai` settings 段修改）。请求转换时，`toPiContext` 由 `ImageAttachmentRef.bytes` 推算每张历史图片的 base64 长度（无需读取数据）求和，总和超过上限时从最老的图片开始替换为一段固定的模型可见占位文本。占位文本要求模型在有路径时重新读取文件，否则请用户重新附上图片。越新的图片越晚被省略；单张图片本身超过上限时也会被省略。offload 位置用消息与嵌套块的索引表示，不依赖对象身份，因此重放同一份 JSON 日志会产生相同请求。被 offload 的图片不会从附件存储读取。`classifyPiAiError` 把 413 与明确的请求体上限措辞归类为 `INVALID_REQUEST`（原样重发不可能成功）。四张按附件存储默认上限准入的 3.5MiB 原始图片，经 base64 膨胀后最多占 18.67MiB。20MiB 请求图片默认上限因此可保留四张这样的图片，并在 32MiB 请求内为系统提示词、历史、工具与 JSON 保留其余容量。网关更严格的部署按路由调低该值。
+pi-ai provider profile 与直接 DeepSeek 适配器都提供 `maxRequestImageBytes`（默认 `DEFAULT_MAX_REQUEST_IMAGE_BYTES = 20MiB`，正整数，可从 cordis.yml 与 settings 修改）。提供方无关的 `offloadRequestImages` 转换由 `ImageAttachmentRef.bytes` 推算每张历史图片的 base64 长度（无需读取数据）求和，总和超过上限时从最老的图片出现位置开始替换为一段固定的模型可见占位文本。占位文本要求模型在有路径时重新读取文件，否则请用户重新附上图片。越新的图片越晚被省略；单张图片本身超过上限时也会被省略。按出现顺序替换不依赖对象身份，因此重放同一份 JSON 日志会产生相同请求。被 offload 的图片不会从附件存储读取。两个适配器都把 413 归类为 `INVALID_REQUEST`；pi-ai 还会识别明确的请求体上限措辞。四张按附件存储默认上限准入的 3.5MiB 原始图片，经 base64 膨胀后最多占 18.67MiB。20MiB 默认上限因此可保留四张这样的图片，并在直接 API 的 30MiB 请求上限下留出余量；网关更严格的部署则按路由调低该值。
 
 ## offload 是转换而非历史
 
@@ -21,11 +21,12 @@ pi-ai provider profile 增加 `maxRequestImageBytes`（默认 `DEFAULT_MAX_REQUE
 - **在上限处直接报错而不 offload。** 模型知情，但会话仍然卡死：用户无法从持久历史中删除图片，越线即永久失败。offload 让会话保持可用，这正是本修复的目标。
 - **图片上传一次、按 URL / file id 引用。** 从结构上消除请求体线性增长，是正确的中期形态（各提供方与内部网关都有 Files 路径），但要跨提供方管理上传生命周期，远超 P0 热修复范围。
 - **统计完整请求体而非只统计图片。** 文本与工具占比很小，且其大小要到按协议完整序列化后才可知；对主导项设上限并留出显式余量，对所修故障足够精确且简单得多。留到路由能力设计中再议。
-- **改在准入侧裁剪。** 准入看不到未来的累积，只有组装后的请求知道自己的总量。准入侧上限（单边尺寸、字节）作为第一层保留，归[尺寸上限笔记](2026-08-17-image-dimension-admission-limit.md)所有。
+- **改在准入侧裁剪。** 准入看不到未来的累积，只有组装后的请求知道自己的总量。准入侧上限（单边尺寸、字节）作为第一层保留，归[尺寸上限笔记](2026-08-17-image-dimension-admission-limit.zh.md)所有。
 
 ## Related
 
-- [图片单边尺寸准入上限](2026-08-17-image-dimension-admission-limit.md)，准入层的配套修复；两者合起来封住已观测到的两类会话毒化故障（400 尺寸、413 请求体）。
+- [图片单边尺寸准入上限](2026-08-17-image-dimension-admission-limit.zh.md)，准入层的配套修复；两者合起来封住已观测到的两类会话毒化故障（400 尺寸、413 请求体）。
+- [直接 DeepSeek 视觉输入](../feature/2026-08-19-direct-deepseek-vision-input.zh.md)把这项提供方无关转换应用于官方多模态路由。
 
 ## Consequences
 
