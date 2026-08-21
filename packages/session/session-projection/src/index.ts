@@ -529,8 +529,10 @@ export class SessionProjectionRegistry extends Service {
         registration.cells.set(session, cell)
       }
       if (cell.observedSeq >= event.seq) continue
-      for (const prior of session.events.slice(cell.observedSeq + 1, event.seq)) {
-        this.applyToCell(registration, session, cell, prior)
+      if (cell.observedSeq + 1 < event.seq) {
+        for (const prior of session.events.slice(cell.observedSeq + 1, event.seq)) {
+          this.applyToCell(registration, session, cell, prior)
+        }
       }
       this.applyToCell(registration, session, cell, event)
     }
