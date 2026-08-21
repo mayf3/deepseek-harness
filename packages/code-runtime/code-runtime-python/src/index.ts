@@ -969,7 +969,14 @@ export class PythonCodeRuntime extends CodeRuntime {
       const logs: string[] = []
 
       // One host-side ledger covers normal frames, forged frames, and stray stdout bytes.
-      let logBudget = this.config.maxLogBytes
+      // The ledger starts one byte below maxLogBytes: each entry is charged its
+      // JSON-string cost plus one separator byte, and the serialized outer logs
+      // array adds one more byte of envelope (two brackets and n-1 commas over n
+      // entries' separators), so a result that exactly exhausts the ledger would
+      // serialize to maxLogBytes + 1. Reserving that byte keeps an admitted
+      // result within the configured cap; the truncation-marker entry is
+      // envelope, not payload, and rides uncharged.
+      let logBudget = this.config.maxLogBytes - 1
       let logsTruncated = false
       const admit = (text: string): void => {
         // Post-truncation admits are no-ops: once the ledger has truncated, the

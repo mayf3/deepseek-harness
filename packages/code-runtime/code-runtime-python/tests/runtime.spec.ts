@@ -539,6 +539,33 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     expect(result.error?.message).toContain('CPU time exhausted')
   }, 15_000)
 
+  it('reports a timeout when a program masks SIGXCPU and returns past the soft limit', async () => {
+    // A program can mask SIGXCPU (pthread_sigmask SIG_BLOCK), burn past the
+    // soft CPU limit, and return during the soft-to-hard gap. The settlement
+    // recheck (`die_if_cpu_exhausted`) must UNBLOCK the signal before
+    // re-delivering it, or the SIGXCPU stays pending and the child exits
+    // normally with a success result. With the unblock, the re-delivered
+    // SIGXCPU (default disposition) terminates the child and the host
+    // classifies the run as a timeout. Fail-before: without the unblock the
+    // run reports `value: "escaped"` and no error. The masking is guarded by
+    // hasattr so the case is a no-op on platforms without pthread_sigmask.
+    const { runtime } = await setup({ cpuSeconds: 1, maxWallMs: 12_000 })
+    const result = await runtime.run({
+      program: [
+        'import signal, time',
+        'if hasattr(signal, "pthread_sigmask"):',
+        '    signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGXCPU})',
+        'end = time.perf_counter() + 1.05',
+        'while time.perf_counter() < end:',
+        '    pass',
+        'return "escaped"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('timeout')
+    expect(result.value).toBeUndefined()
+  }, 20_000)
+
   it('rechecks CPU at settlement against the effective inherited soft limit', async () => {
     // The settlement-time CPU recheck must compare against the EFFECTIVE soft
     // limit (`_clamped` may have lowered it to a stricter inherited value), not
@@ -848,7 +875,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
 
   it('bounds a control-char-dense native residual by serialized cost, not raw length', async () => {
     // A newline-free NUL flood passes the cheap `length + 3` lower bound at a
-    // raw length well under the budget, but each NUL serializes to `\^@` (6
+    // raw length well under the budget, but each NUL serializes to `\u0000` (6
     // bytes), so the true JSON cost is ~6x. The ledger must charge that
     // serialized cost — and `jsonStringCostUpTo` must measure it WITHOUT
     // allocating the escaped copy, so a near-budget line under a large
@@ -1294,6 +1321,10 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     })
     expect(result.error?.kind).toBe('exception')
     expect(result.error?.message).toContain('SyntaxError')
+    // The parse-time diagnostic must carry the same source label as compile and
+    // runtime tracebacks (ast.parse passes filename="<model>"); a stale
+    // "<unknown>" label would leak an inconsistent origin to the model.
+    expect(result.error?.message).toContain('File \"<model>\"')
     expect(result.value).toBeUndefined()
   })
 
@@ -1529,6 +1560,35 @@ describe('PythonCodeRuntime — programs and bindings', () => {
         'import __main__',
         '__main__.BaseException = RuntimeError',
         'raise ValueError("real failure")',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('exception')
+    expect(result.error?.kind).not.toBe('worker-exit')
+  }, 15_000)
+
+  it('still reports the exception when BaseException and the traceback reporter are rebound together', async () => {
+    // The two rebind families compose: `__main__.BaseException = ValueError`
+    // must not change which class the `_run` catch resolves (it is a pre-program
+    // local), and a rebound reporter (`_SAFE_MODEL_TRACEBACK`/`_cap_message`/
+    // `_model_traceback`/`_UNRENDERABLE_DIAGNOSTIC`) must not break the done
+    // frame — `safe_model_traceback` holds its primitives as import-time closure
+    // cells. A `KeyError` (not a `ValueError` subclass) escapes a catch that
+    // resolves to the rebound class, so without the local binding the run would
+    // misreport as `worker-exit`; with it, the run reports the exception and the
+    // fallback reporter still produces the fixed literal.
+    const { runtime } = await setup({ maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'import __main__',
+        'def boom(*a, **k):',
+        '    raise RuntimeError("hijacked")',
+        '__main__.BaseException = ValueError',
+        '__main__._SAFE_MODEL_TRACEBACK = boom',
+        '__main__._cap_message = boom',
+        '__main__._model_traceback = boom',
+        '__main__._UNRENDERABLE_DIAGNOSTIC = boom',
+        'raise KeyError("real failure")',
       ].join('\n'),
       bindings: [],
     })
@@ -3360,7 +3420,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
   }, 20_000)
 
   it('rejects a control-heavy oversized completion on its length, not its escaped copy', async () => {
-    // Every "\x00" escapes to the six bytes "\^@", so the escaped form of a
+    // Every "\x00" escapes to the six bytes "\u0000", so the escaped form of a
     // 40 MB string is ~240 MB. The walk must refuse on the cheap
     // `len(current) + 2` lower bound; the 384 MiB address space holds the raw
     // string but not its escaped expansion, so a pre-escape check dies on
@@ -3614,7 +3674,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
 
   it('caps a control-heavy exception diagnostic by its serialized cost, not raw bytes', async () => {
     // The diagnostic crosses fd 3 inside a JSON frame where a control character
-    // escapes sixfold (a NUL is one raw byte, six as `\^@`). Capping by raw
+    // escapes sixfold (a NUL is one raw byte, six as `\u0000`). Capping by raw
     // UTF-8 length would let a NUL-heavy message near maxValueBytes serialize to
     // ~6x that and breach the frame ceiling — the silent worker-exit inversion
     // the load-time cap check exists to prevent. The child meters the diagnostic
@@ -3801,7 +3861,8 @@ describe('PythonCodeRuntime — hostile peer', () => {
 
   it('marks a dropped tail when the ledger lands on exactly zero remaining', async () => {
     // One 100-character line costs 103 serialized bytes (quotes + separator),
-    // consuming a 103-byte budget EXACTLY. Landing on zero never trips
+    // consuming a 104-byte budget minus the 1-byte array-envelope reservation
+    // (104 - 1 = 103) EXACTLY. Landing on zero never trips
     // LogBuffer's "cost > remaining" branch, so `_truncated` stays unset and the
     // stream's own `remaining > 0` guard silently discarded the unscanned tail —
     // the run reported a complete log while dropping text. The tail must be
@@ -3810,8 +3871,10 @@ describe('PythonCodeRuntime — hostile peer', () => {
     // buffered-empty path used to force the marker out incidentally.) A single
     // wide line is used rather than many narrow ones so the CHILD ledger is the
     // one that lands on zero: the host's identical ledger truncates first when
-    // many small entries precede the long marker text.
-    const { runtime } = await setup({ maxLogBytes: 103, maxWallMs: 10_000 })
+    // many small entries precede the long marker text. `["y"*100]` serializes to
+    // exactly 104 bytes (103 payload + 1 envelope), so 104 is the smallest
+    // budget that admits the entry.
+    const { runtime } = await setup({ maxLogBytes: 104, maxWallMs: 10_000 })
     const result = await runtime.run({
       program: ['print("y" * 100 + "\\n" + "z" * 10, end="")', 'return "done"'].join('\n'),
       bindings: [],
@@ -3822,6 +3885,34 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.logs.filter(line => line.includes('log capture truncated'))).toHaveLength(1)
     // The dropped tail is not retained, but its loss is now reported.
     expect(result.logs.some(line => line.includes('z'))).toBe(false)
+  }, 15_000)
+
+  it('keeps an admitted log within the serialized array envelope at the exact limit', async () => {
+    // Each entry is charged its JSON-string cost plus one separator byte, and
+    // the serialized outer logs array adds one more byte of envelope (two
+    // brackets and n-1 commas). The ledgers reserve that byte, so a result that
+    // exactly exhausts the ledger still serializes within the configured cap:
+    // `["a"]` is 5 bytes, and `maxLogBytes: 5` admits it (ledger 4 = the 3-byte
+    // quoted entry + 1 separator), while `maxLogBytes: 4` (ledger 3) truncates
+    // to the marker alone.
+    const { runtime } = await setup({ maxLogBytes: 5, maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: ['print("a")', 'return "done"'].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs).toContain('a')
+    expect(result.logs.some(line => line.includes('log capture truncated'))).toBe(false)
+
+    const tight = await setup({ maxLogBytes: 4, maxWallMs: 10_000 })
+    const result2 = await tight.runtime.run({
+      program: ['print("a")', 'return "done"'].join('\n'),
+      bindings: [],
+    })
+    expect(result2.error).toBeUndefined()
+    expect(result2.logs).not.toContain('a')
+    expect(result2.logs.some(line => line.includes('log capture truncated'))).toBe(true)
   }, 15_000)
 
   it('charges the JSON-escaped cost of control characters against the log ledger', async () => {
@@ -4248,7 +4339,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
   it('drops a forged oversized log frame on its code-unit lower bound, before escaping it', async () => {
     // A forged `log` frame carrying a control-heavy string sits below the
     // 256 MiB fd-3 frame ceiling but escapes several-fold: 24 MiB of NULs
-    // becomes ~144 MiB of `\^@`. Charging it required building that escaped
+    // becomes ~144 MiB of `\u0000`. Charging it required building that escaped
     // copy first, so a 32-byte maxLogBytes could still force a
     // hundreds-of-megabytes host allocation. The cheap `length + 3` lower bound
     // truncates it instead. The host's own heap is what is under test, so keep

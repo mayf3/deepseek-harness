@@ -98,7 +98,15 @@ class LogBuffer:
 
     def __init__(self, max_bytes: int, sink) -> None:
         self._max_bytes = max_bytes
-        self._remaining = max_bytes
+        # The ledger starts one byte below max_bytes: each entry is charged its
+        # JSON-string cost plus one separator byte, and the serialized outer
+        # logs array adds one more byte of envelope (two brackets and n-1 commas
+        # over n entries' separators), so a result that exactly exhausts the
+        # ledger would serialize to max_bytes + 1. Reserving that byte keeps an
+        # admitted result within the configured cap; the truncation-marker entry
+        # is envelope, not payload, and rides uncharged (``_max_bytes`` stays the
+        # configured value for the marker's message text).
+        self._remaining = max_bytes - 1
         self._truncated = False
         # Re-entrant so a caller may hold it across a compound read-modify-write
         # (``_LogStream.write`` reads ``remaining`` several times and then calls
@@ -1044,7 +1052,12 @@ async def _run(channel: ProtocolChannel) -> None:
     max_value_bytes = int(boot["maxValueBytes"])
     done: dict[str, Any] | str
     try:
-        module = ast.parse(program)
+        # filename="<model>" keeps the source label consistent with the later
+        # compile(wrapped, "<model>", ...) and the runtime traceback filtering
+        # (safe_model_traceback drops frames whose filename is not "<model>");
+        # the default "<unknown>" would leak a different label into model-visible
+        # syntax diagnostics.
+        module = ast.parse(program, filename="<model>")
         wrapper = ast.AsyncFunctionDef(
             name="__dsh_main__",
             args=ast.arguments(
@@ -1941,6 +1954,12 @@ def _make_cpu_enforcer() -> Any:
     sigxcpu = signal.SIGXCPU
     kill = os.kill
     getpid = os.getpid
+    # SIGXCPU unmasking primitives for the re-raise below: a program can mask
+    # the signal and return past the soft limit, so the re-delivered signal
+    # must be unblocked first. Captured here (import time) so a rebind cannot
+    # defeat them; ``None`` on platforms without ``pthread_sigmask`` (Windows).
+    pthread_sigmask = getattr(signal, "pthread_sigmask", None)
+    sig_unblock = getattr(signal, "SIG_UNBLOCK", None)
 
     def die_if_cpu_exhausted(cpu_seconds: int) -> None:
         """Die by re-delivered SIGXCPU when the CPU budget is already spent.
@@ -1992,6 +2011,16 @@ def _make_cpu_enforcer() -> Any:
         kids = getrusage(rusage_children)
         spent = own.ru_utime + own.ru_stime + kids.ru_utime + kids.ru_stime
         if spent >= cpu_seconds:
+            # A program can mask SIGXCPU (``pthread_sigmask(SIG_BLOCK, ...)``),
+            # burn past the soft limit, and return during the soft-to-hard gap;
+            # the re-delivered SIGXCPU below would then stay PENDING and the
+            # child would exit normally with a success result. Unblock it on the
+            # current thread before re-raising, so the signal is delivered and
+            # the host sees the kernel-authoritative timeout classification. On
+            # platforms without ``pthread_sigmask`` (Windows) the signal is not
+            # maskable this way, so the call is guarded.
+            if pthread_sigmask is not None:
+                pthread_sigmask(sig_unblock, (sigxcpu,))
             set_signal(sigxcpu, sig_dfl)
             kill(getpid(), sigxcpu)
 
