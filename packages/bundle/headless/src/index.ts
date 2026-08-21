@@ -14,7 +14,7 @@ import z from '@deepseek-ai/schemastery'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { assertNever, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 // Empty type imports carry the loader Context merge for the settlement await
@@ -113,26 +113,33 @@ function streamReasoning(
     }
     if (!started || event.type !== 'assistant/chunk') return
     const chunk = event.data.chunk
-    if (chunk.type === 'reasoning-delta') {
-      if (chunk.text === '') return
-      if (!open) {
-        stderr.write('dsh: reasoning:\n')
-        open = true
-      }
-      stderr.write(chunk.text)
-      endsWithNewline = chunk.text.endsWith('\n')
-      return
+    switch (chunk.type) {
+      case 'reasoning-delta':
+        if (chunk.text === '') return
+        if (!open) {
+          stderr.write('dsh: reasoning:\n')
+          open = true
+        }
+        stderr.write(chunk.text)
+        endsWithNewline = chunk.text.endsWith('\n')
+        return
+      case 'block-start':
+        if (chunk.blockType !== 'reasoning') close()
+        return
+      case 'block-end':
+        if (chunk.block.type !== 'reasoning') close()
+        return
+      case 'usage':
+        return
+      case 'text-delta':
+      case 'tool-call-delta':
+      case 'finish':
+        close()
+        return
+      /* v8 ignore next -- closed-union exhaustiveness guard */
+      default:
+        return assertNever(chunk, 'headless reasoning stream')
     }
-    if (chunk.type === 'block-start') {
-      if (chunk.blockType !== 'reasoning') close()
-      return
-    }
-    if (chunk.type === 'block-end') {
-      if (chunk.block.type !== 'reasoning') close()
-      return
-    }
-    if (chunk.type === 'usage') return
-    close()
   })
   return () => {
     dispose()
