@@ -1,6 +1,6 @@
-/** Static adjacent-version Session format steps shipped by this build. */
+/** Static adjacent-version Session format migrations shipped by this build. */
 
-import type { SessionFormatStep } from '../format-decoder.ts'
+import type { SessionFormatMigration } from '../format-decoder.ts'
 
-/** Ordered durable format steps; format v0 is current, so the chain is empty. */
-export const SESSION_FORMAT_STEPS: readonly SessionFormatStep[] = Object.freeze([])
+/** Ordered durable format migrations; format v0 is current, so the chain is empty. */
+export const SESSION_FORMAT_MIGRATIONS: readonly SessionFormatMigration[] = Object.freeze([])

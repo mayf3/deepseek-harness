@@ -6,8 +6,7 @@ import {
   SessionPersistenceRevisionConflictError,
 } from '../src/revision.ts'
 import type {
-  SessionFormatContext,
-  SessionFormatStep,
+  SessionFormatMigration,
   StoredEventReadCompletion,
   StoredSessionSource,
 } from '../src/format-decoder.ts'
@@ -15,6 +14,7 @@ import { sessionFormatVersionRefusal } from '../src/format-decoder.ts'
 import { unversionedFormatCompatibility } from '../src/format-v0-compat.ts'
 
 const id = SessionId('format-migration')
+type SessionFormatMigrationInstance = InstanceType<SessionFormatMigration>
 
 function eventLog(): SessionEvent[] {
   return [
@@ -72,47 +72,69 @@ function storedSource(
   }
 }
 
+function defineMigration(
+  from: number,
+  create: () => SessionFormatMigrationInstance,
+  to = from + 1,
+): SessionFormatMigration {
+  return class implements SessionFormatMigrationInstance {
+    static readonly from = from
+    static readonly to = to
+
+    private readonly delegate = create()
+
+    header(meta: unknown): unknown {
+      return this.delegate.header(meta)
+    }
+
+    event(value: unknown): unknown {
+      return this.delegate.event(value)
+    }
+
+    finish(): void {
+      this.delegate.finish?.()
+    }
+  }
+}
+
 function migration(
   from: number,
   calls: string[],
-): SessionFormatStep {
-  return {
-    from,
-    to: from + 1,
-    migrateHeader(meta) {
-      calls.push(`header:${from}`)
-      return { ...(meta as Record<string, unknown>), version: from + 1 }
-    },
-    migrateEvents(events) {
-      return (async function* (): AsyncIterable<unknown> {
-        let observedInput = false
-        for await (const value of events) {
-          if (!observedInput) {
-            calls.push(`events:${from}`)
-            observedInput = true
-          }
-          const event = value as SessionEvent
-          const data = event.data as Record<string, unknown>
-          const migrationPath = Array.isArray(data['migrationPath'])
-            ? data['migrationPath'] as unknown[]
-            : []
-          yield {
-            ...event,
-            data: {
-              ...data,
-              [`migratedFrom${from}`]: true,
-              migrationPath: [...migrationPath, from],
-            },
-          }
+  to = from + 1,
+): SessionFormatMigration {
+  return defineMigration(from, () => {
+    let observedInput = false
+    return {
+      header(meta) {
+        calls.push(`header:${from}`)
+        return { ...(meta as Record<string, unknown>), version: to }
+      },
+      event(value) {
+        if (!observedInput) {
+          calls.push(`events:${from}`)
+          observedInput = true
         }
-      })()
-    },
-  }
+        const event = value as SessionEvent
+        const data = event.data as Record<string, unknown>
+        const migrationPath = Array.isArray(data['migrationPath'])
+          ? data['migrationPath'] as unknown[]
+          : []
+        return {
+          ...event,
+          data: {
+            ...data,
+            [`migratedFrom${from}`]: true,
+            migrationPath: [...migrationPath, from],
+          },
+        }
+      },
+    }
+  }, to)
 }
 
 async function configuredDecoder(
   currentVersion: number,
-  migrations: readonly SessionFormatStep[],
+  migrations: readonly SessionFormatMigration[],
   calls: string[] = [],
 ): Promise<{
   decodeStoredSession: typeof import('../src/format-decoder.ts')['decodeStoredSession']
@@ -143,7 +165,7 @@ async function configuredDecoder(
     }
   })
   vi.doMock('../src/format-migrations/index.ts', () => ({
-    SESSION_FORMAT_STEPS: migrations,
+    SESSION_FORMAT_MIGRATIONS: migrations,
   }))
   const decoder = await import('../src/format-decoder.ts')
   return {
@@ -196,21 +218,20 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
   })
 
   it('lets an old-format suffix migration use facts from events before fromSeq', async () => {
-    const step: SessionFormatStep = {
-      from: 0,
-      to: 1,
-      migrateHeader: meta => ({ ...(meta as Record<string, unknown>), version: 1 }),
-      migrateEvents: events => (async function* (): AsyncIterable<unknown> {
-        let previousSeq: number | undefined
-        for await (const value of events) {
+    const step = defineMigration(0, () => {
+      let previousSeq: number | undefined
+      return {
+        header: meta => ({ ...(meta as Record<string, unknown>), version: 1 }),
+        event(value) {
           const event = value as SessionEvent
-          yield previousSeq === undefined
+          const migrated = previousSeq === undefined
             ? event
             : { ...event, data: { ...event.data, previousSeq } }
           previousSeq = event.seq
-        }
-      })(),
-    }
+          return migrated
+        },
+      }
+    })
     const { decodeStoredSession } = await configuredDecoder(1, [step])
     const stored = storedSource(0, eventLog())
 
@@ -329,34 +350,59 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
     expect(events[0]?.data).toMatchObject({ migrationPath: [1] })
   })
 
-  it('passes the stable stored identity to every header and event step', async () => {
-    const contexts: SessionFormatContext[] = []
-    const step: SessionFormatStep = {
-      from: 0,
-      to: 1,
-      migrateHeader(meta, context) {
-        contexts.push(context)
-        return { ...(meta as Record<string, unknown>), version: 1 }
-      },
-      migrateEvents(events, context) {
-        contexts.push(context)
-        return events
-      },
-    }
-    const { decodeStoredSession } = await configuredDecoder(1, [step])
+  it('retains instance state from the header through events and finishes at EOF', async () => {
+    const calls: string[] = []
+    const Migration = defineMigration(0, () => {
+      let headerId: SessionId | undefined
+      let migratedEvents = 0
+      return {
+        header(meta) {
+          calls.push('header')
+          headerId = SessionId((meta as Record<string, unknown>)['id'] as string)
+          return { ...(meta as Record<string, unknown>), version: 1 }
+        },
+        event(value) {
+          calls.push(`event:${migratedEvents}`)
+          migratedEvents += 1
+          return {
+            ...(value as SessionEvent),
+            data: { ...(value as SessionEvent).data, headerId, migratedEvents },
+          }
+        },
+        finish() {
+          calls.push(`finish:${migratedEvents}`)
+        },
+      }
+    })
+    const { decodeStoredSession } = await configuredDecoder(1, [Migration])
 
     const decoded = decodeStoredSession(storedSource(0, eventLog()).source, id)
-    await collectEvents(decoded.events)
+    expect(calls).toEqual(['header'])
+    const events = await collectEvents(decoded.events)
     await decoded.completed
 
-    expect(contexts).toEqual([{ sessionId: id }, { sessionId: id }])
+    expect(calls).toEqual(['header', 'event:0', 'event:1', 'finish:2'])
+    expect(events.map(event => event.data)).toMatchObject([
+      { headerId: id, migratedEvents: 1 },
+      { headerId: id, migratedEvents: 2 },
+    ])
   })
 
   it('migrates and validates a header without requiring an event source', async () => {
     const calls: string[] = []
+    const first = defineMigration(0, () => ({
+      header(meta) {
+        calls.push('header:0')
+        return { ...(meta as Record<string, unknown>), version: 1 }
+      },
+      event: value => value,
+      finish() {
+        calls.push('finish:0')
+      },
+    }))
     const { decodeStoredSessionHeader } = await configuredDecoder(
       2,
-      [migration(0, calls), migration(1, calls)],
+      [first, migration(1, calls)],
       calls,
     )
 
@@ -366,18 +412,35 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
     expect(calls).toEqual(['header:0', 'header:1', 'validate-header'])
   })
 
-  it('applies event migration before the current event vocabulary check', async () => {
-    const step: SessionFormatStep = {
-      from: 0,
-      to: 1,
-      migrateHeader: meta => ({ ...(meta as Record<string, unknown>), version: 1 }),
-      migrateEvents: events => (async function* (): AsyncIterable<unknown> {
-        for await (const value of events) {
-          const event = value as Record<string, unknown>
-          yield { ...event, type: 'turn/start', data: { turn: 1 } }
-        }
-      })(),
+  it('allows a migration instance without finish', async () => {
+    class MigrationWithoutFinish implements SessionFormatMigrationInstance {
+      static readonly from = 0
+      static readonly to = 1
+
+      header(meta: unknown): unknown {
+        return { ...(meta as Record<string, unknown>), version: 1 }
+      }
+
+      event(value: unknown): unknown {
+        return value
+      }
     }
+    const { decodeStoredSession } = await configuredDecoder(1, [MigrationWithoutFinish])
+
+    const decoded = decodeStoredSession(storedSource(0, eventLog()).source, id)
+
+    await expect(collectEvents(decoded.events)).resolves.toEqual(eventLog())
+    await expect(decoded.completed).resolves.toEqual({})
+  })
+
+  it('applies event migration before the current event vocabulary check', async () => {
+    const step = defineMigration(0, () => ({
+      header: meta => ({ ...(meta as Record<string, unknown>), version: 1 }),
+      event(value) {
+        const event = value as Record<string, unknown>
+        return { ...event, type: 'turn/start', data: { turn: 1 } }
+      },
+    }))
     const { decodeStoredSession } = await configuredDecoder(1, [step])
     const stored = storedSource(0, [
       { type: 'legacy/turn-begin', seq: 0, time: 1, data: { legacyTurn: 1 } },
@@ -750,13 +813,11 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
     await expect(decoded.completed).resolves.toEqual({})
   })
 
-  it('rejects a step that returns the wrong header version', async () => {
-    const bad: SessionFormatStep = {
-      from: 0,
-      to: 1,
-      migrateHeader: meta => ({ ...(meta as Record<string, unknown>), version: 0 }),
-      migrateEvents: events => events,
-    }
+  it('rejects a migration that returns the wrong header version', async () => {
+    const bad = defineMigration(0, () => ({
+      header: meta => ({ ...(meta as Record<string, unknown>), version: 0 }),
+      event: value => value,
+    }))
     const first = await configuredDecoder(1, [bad])
 
     expect(() => first.decodeStoredSession(storedSource(0, []).source, id))
@@ -764,12 +825,10 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
     expect(first.validateHeader).not.toHaveBeenCalled()
 
     const calls: string[] = []
-    const badSecond: SessionFormatStep = {
-      from: 1,
-      to: 2,
-      migrateHeader: meta => ({ ...(meta as Record<string, unknown>), version: 1 }),
-      migrateEvents: events => events,
-    }
+    const badSecond = defineMigration(1, () => ({
+      header: meta => ({ ...(meta as Record<string, unknown>), version: 1 }),
+      event: value => value,
+    }))
     const second = await configuredDecoder(2, [migration(0, calls), badSecond], calls)
     const stored = storedSource(0, [])
     expect(() => second.decodeStoredSession(stored.source, id))
@@ -779,23 +838,19 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
     expect(stored.reads).toEqual([])
   })
 
-  it('rejects a step that changes the session id or cwd storage identity', async () => {
-    const changedId: SessionFormatStep = {
-      from: 0,
-      to: 1,
-      migrateHeader: meta => ({ ...(meta as Record<string, unknown>), version: 1, id: 'other' }),
-      migrateEvents: events => events,
-    }
+  it('rejects a migration that changes the session id or cwd storage identity', async () => {
+    const changedId = defineMigration(0, () => ({
+      header: meta => ({ ...(meta as Record<string, unknown>), version: 1, id: 'other' }),
+      event: value => value,
+    }))
     const first = await configuredDecoder(1, [changedId])
     expect(() => first.decodeStoredSession(storedSource(0, []).source, id))
       .toThrow(/changed session storage identity/)
 
-    const changedCwd: SessionFormatStep = {
-      from: 0,
-      to: 1,
-      migrateHeader: meta => ({ ...(meta as Record<string, unknown>), version: 1, cwd: '/other' }),
-      migrateEvents: events => events,
-    }
+    const changedCwd = defineMigration(0, () => ({
+      header: meta => ({ ...(meta as Record<string, unknown>), version: 1, cwd: '/other' }),
+      event: value => value,
+    }))
     const second = await configuredDecoder(1, [changedCwd])
     const stored = storedSource(0, [])
     stored.meta['cwd'] = '/work'
@@ -805,12 +860,10 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
 
   it('wraps a header migration failure with the failing version step', async () => {
     const cause = new Error('bad legacy header')
-    const step: SessionFormatStep = {
-      from: 0,
-      to: 1,
-      migrateHeader: () => { throw cause },
-      migrateEvents: events => events,
-    }
+    const step = defineMigration(0, () => ({
+      header: () => { throw cause },
+      event: value => value,
+    }))
     const { decodeStoredSession } = await configuredDecoder(1, [step])
 
     let failure: unknown
@@ -827,14 +880,10 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
 
   it('mirrors an event migration failure through the stream and completion promise', async () => {
     const cause = new Error('bad legacy event')
-    const step: SessionFormatStep = {
-      from: 0,
-      to: 1,
-      migrateHeader: meta => ({ ...(meta as Record<string, unknown>), version: 1 }),
-      migrateEvents: () => (async function* (): AsyncIterable<unknown> {
-        throw cause
-      })(),
-    }
+    const step = defineMigration(0, () => ({
+      header: meta => ({ ...(meta as Record<string, unknown>), version: 1 }),
+      event: () => { throw cause },
+    }))
     const { decodeStoredSession } = await configuredDecoder(1, [step])
     const decoded = decodeStoredSession(storedSource(0, eventLog()).source, id)
     const completion = decoded.completed.catch((error: unknown) => error)
@@ -843,23 +892,35 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
     const [streamFailure, completionFailure] = await Promise.all([consumption, completion])
     expect(streamFailure).toBe(completionFailure)
     expect(streamFailure).toMatchObject({
-      message: `session "${id}" event migration v0 -> v1 failed`,
+      message: `session "${id}" event migration v0 -> v1 failed at seq 0`,
       cause,
     })
   })
 
-  it('runs current event validation on the migrated output', async () => {
-    const step: SessionFormatStep = {
-      from: 0,
-      to: 1,
-      migrateHeader: meta => ({ ...(meta as Record<string, unknown>), version: 1 }),
-      migrateEvents: events => (async function* (): AsyncIterable<unknown> {
-        for await (const value of events) {
-          const event = value as SessionEvent
-          yield { ...event, seq: event.seq + 1 }
-        }
-      })(),
-    }
+  it('mirrors a finish failure through the stream and completion promise', async () => {
+    const cause = new Error('unclosed legacy state')
+    const Migration = defineMigration(0, () => ({
+      header: meta => ({ ...(meta as Record<string, unknown>), version: 1 }),
+      event: value => value,
+      finish: () => { throw cause },
+    }))
+    const { decodeStoredSession } = await configuredDecoder(1, [Migration])
+
+    const failure = await decodedFailure(decodeStoredSession(storedSource(0, eventLog()).source, id))
+    expect(failure).toMatchObject({
+      message: `session "${id}" event migration v0 -> v1 failed at EOF`,
+      cause,
+    })
+  })
+
+  it('rejects a migration that changes an event sequence number', async () => {
+    const step = defineMigration(0, () => ({
+      header: meta => ({ ...(meta as Record<string, unknown>), version: 1 }),
+      event(value) {
+        const event = value as SessionEvent
+        return { ...event, seq: event.seq + 1 }
+      },
+    }))
     const { decodeStoredSession } = await configuredDecoder(1, [step])
     const decoded = decodeStoredSession(storedSource(0, eventLog()).source, id)
     const completion = decoded.completed.catch((error: unknown) => error)
@@ -867,21 +928,30 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
 
     const [streamFailure, completionFailure] = await Promise.all([consumption, completion])
     expect(streamFailure).toBe(completionFailure)
-    expect((streamFailure as Error).message).toMatch(/expected 0, got 1/)
+    expect((streamFailure as Error).message).toMatch(/changed event seq 0 to 1/)
+  })
+
+  it('rejects a non-contiguous current-format event sequence', async () => {
+    const { decodeStoredSession } = await configuredDecoder(0, [])
+    const stored = storedSource(0, [
+      { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } },
+    ])
+
+    const failure = await decodedFailure(decodeStoredSession(stored.source, id))
+
+    expect(failure.message).toContain(`session "${id}" event seq mismatch: expected 0, got 1`)
   })
 
   it('runs current header validation only after the final header step', async () => {
     const calls: string[] = []
-    const finalStep: SessionFormatStep = {
-      from: 1,
-      to: 2,
-      migrateHeader(meta) {
+    const finalStep = defineMigration(1, () => ({
+      header(meta) {
         calls.push('header:1')
         const { createdAt: _createdAt, ...rest } = meta as Record<string, unknown>
         return { ...rest, version: 2 }
       },
-      migrateEvents: events => events,
-    }
+      event: value => value,
+    }))
     const { decodeStoredSession } = await configuredDecoder(
       2,
       [migration(0, calls), finalStep],
@@ -898,23 +968,19 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
   it('detaches stored header and event objects before a mutating migration runs', async () => {
     const originalEvents = eventLog()
     const eventSnapshot = structuredClone(originalEvents)
-    const step: SessionFormatStep = {
-      from: 0,
-      to: 1,
-      migrateHeader(meta) {
+    const step = defineMigration(0, () => ({
+      header(meta) {
         const record = meta as Record<string, unknown>
         record['version'] = 1
         return record
       },
-      migrateEvents: events => (async function* (): AsyncIterable<unknown> {
-        for await (const value of events) {
-          const event = value as SessionEvent
-          const data = event.data as Record<string, unknown>
-          data['mutated'] = true
-          yield event
-        }
-      })(),
-    }
+      event(value) {
+        const event = value as SessionEvent
+        const data = event.data as Record<string, unknown>
+        data['mutated'] = true
+        return event
+      },
+    }))
     const { decodeStoredSession } = await configuredDecoder(1, [step])
     const stored = storedSource(0, originalEvents)
 
@@ -930,23 +996,16 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
   it('rejects duplicate, invalid, and future-targeting static registries at initialization', async () => {
     const calls: string[] = []
     await expect(configuredDecoder(1, [migration(0, calls), migration(0, calls)]))
-      .rejects.toThrow(/duplicate Session format step/)
+      .rejects.toThrow(/duplicate Session format migration/)
 
     await expect(configuredDecoder(1, [migration(-1, calls)]))
       .rejects.toThrow(/adjacent non-negative version/)
 
-    const nonAdjacent: SessionFormatStep = {
-      ...migration(0, calls),
-      to: 2,
-    }
+    const nonAdjacent = migration(0, calls, 2)
     await expect(configuredDecoder(2, [nonAdjacent]))
       .rejects.toThrow(/adjacent non-negative version/)
 
-    const fractional: SessionFormatStep = {
-      ...migration(0, calls),
-      from: 0.5,
-      to: 1.5,
-    }
+    const fractional = migration(0.5, calls, 1.5)
     await expect(configuredDecoder(2, [fractional]))
       .rejects.toThrow(/adjacent non-negative version/)
 

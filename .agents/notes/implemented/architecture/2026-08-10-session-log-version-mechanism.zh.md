@@ -14,11 +14,11 @@ Session log 在发布后必须能升级格式，而最先发布的运行时决�
 
 **升不升版本由写入方决定，与读取方能力无关。**当且仅当老运行时无法在语义上完全正确地处理新日志时才必须升版本。"解析不报错"不是标准：静默跳过影响重建的内容就是读错。只有结构性变更够得上这条线：header 形状、事件信封、核心事件语义、surface 机制（`SurfaceEventType` 集合、`SurfaceOp` 变体）。拿不准就升：近似恒等的升级器几乎没有成本，漏升一次会让老读取器静默读坏。
 
-**读取规则按方向区分。**版本相等：正常解码。比读取器新：拒绝，说明方向（"由更新的 harness 写入，请升级"），并给出原始日志文件的路径，用户仍能看到文本（`SessionFormatUnsupportedError`，与 `SessionPersistenceCorruptionError` 区分，因为数据没有损坏）。比读取器旧：要求静态 n→n+1 `SessionFormatStep` 组成完整链路，缺失任何一步都会拒绝并指出断点。注册表属于 build 而不是 Cordis composition，因此同一个 build 在任何插件组合下都具有相同的持久化读取能力。
+**读取规则按方向区分。**版本相等：正常解码。比读取器新：拒绝，说明方向（"由更新的 harness 写入，请升级"），并给出原始日志文件的路径，用户仍能看到文本（`SessionFormatUnsupportedError`，与 `SessionPersistenceCorruptionError` 区分，因为数据没有损坏）。比读取器旧：要求静态 n→n+1 `SessionFormatMigration` 类组成完整链路，缺失任何 migration 都会拒绝并指出断点。注册表属于 build 而不是 Cordis composition，因此同一个 build 在任何插件组合下都具有相同的持久化读取能力。
 
-**格式迁移就是 decoder，不是 Coordinator 的修复分支。**后端通过可重复读取的 `StoredSessionSource` 把解析后的持久化数据作为 `unknown` 暴露：一个原始 header、一个精确 revision，以及每次产生独立 `AsyncIterable` 且绑定该 revision 的 `readEvents()` factory。每一步实现 `migrateHeader()` 和惰性的 `migrateEvents()` 转换，只能前进一个版本，也不能改变 Session id 或 cwd。只要发生版本转换，就读取完整事件流，并在所有步骤完成后才应用请求的 suffix；版本相等时仍保留 backend suffix seek。Decoder 验证每一步输出的 header version，完整链路结束后才执行当前 `SessionHeader` 和 `SessionEvent` 校验。
+**格式迁移就是 decoder，不是 Coordinator 的修复分支。**后端通过可重复读取的 `StoredSessionSource` 把解析后的持久化数据作为 `unknown` 暴露：一个原始 header、一个精确 revision，以及每次产生独立 `AsyncIterable` 且绑定该 revision 的 `readEvents()` factory。每个 migration class 用静态且相邻的 `from`／`to` 标识版本。每次 decode 都创建一个新实例：`header()` 调用一次；`event()` 把每条输入记录映射为一条 seq 相同、可无损表示为 JSON 的输出；可选的 `finish()` 在 EOF 后验证累计状态。实例字段可以保留 header 与之前事件的事实，而不会在 Session、并发读取或 revision retry 之间共享状态。只读 header 时在 `header()` 后结束，绝不调用 `finish()`，因此该方法用于验证 EOF 状态而不是释放资源。只要发生版本转换，就读取完整事件流，并在所有 migration 完成后才应用请求的 suffix；版本相等时仍保留 backend suffix seek。Decoder 验证每一步输出的 header version 和每个 migration 是否保持 seq，完整链路结束后才执行当前 `SessionHeader` 和 `SessionEvent` 校验。
 
-**以后每次 format bump 只增加一个格式步骤。**改动新增 `format-migrations/vN-to-vN+1.ts`，把该步骤导出到静态 `SESSION_FORMAT_STEPS` 数组，并递增 `SESSION_FORMAT_VERSION`。这一步自己负责它接受的所有旧 header 和 event 变体、iterator 转换中的跨事件状态，以及对畸形输入的明确失败。Backend 和 Coordinator 不增加版本特判。没有改变版本号的历史变体继续隔离在 format-v0 compatibility decoder 中，不作为后续版本步骤的模板。该 decoder 将历史 `compact/start`、`compact/summary`、`compact/end`、`compact/prune` 名称映射为规范的 `compaction/*` 事件，并保留每条记录的其余内容。
+**以后每次 format bump 只增加一个格式 migration。**改动新增 `format-migrations/vN-to-vN+1.ts`，把它的 class 导出到静态 `SESSION_FORMAT_MIGRATIONS` 数组，并递增 `SESSION_FORMAT_VERSION`。Migration 自己负责它接受的所有旧 header 和 event 变体、实例状态，以及对畸形输入的明确失败。它不能增加、删除、重排事件或重编号：持久引用以 seq 作为事件身份。如果格式变化影响了某个 projection 消费的事实，就递增该 projection 的 `stateVersion`；未受影响的 projection 保留 cache 记录。Backend 和 Coordinator 不增加版本特判。没有改变版本号的历史变体继续隔离在 format-v0 compatibility decoder 中，不作为后续版本 migration 的模板。该 decoder 将历史 `compact/start`、`compact/summary`、`compact/end`、`compact/prune` 名称映射为规范的 `compaction/*` 事件，并保留每条记录的其余内容。
 
 **Recovery 和写回只消费当前格式数据。**`inspect()` 和 `readFrom()` 只在内存中解码。Cold `prepare()`/`load()` 先解码完整 source，补充当前 recovery closers，再用完整、平衡的当前格式 stream 替换精确的旧 revision。Live HMR adoption 在 seed 校验后使用同一个 replacement primitive，但不会为仍由 live Session 掌握的 turn 合成 closer。替换成功或 revision 冲突后都会丢弃 prepared object，重新打开持久化 source 后再继续。
 
@@ -36,6 +36,6 @@ Format v0 包含：分方向的拒绝并带原始日志路径；基于生成的�
 - **未知事件默认可忽略**：把忘写标记的后果从可见的过度拒绝反转成静默损坏。
 - **查看时自动迁移落盘**：打开即改写把读操作变成破坏性写操作，转换器的 bug 会在浏览时损坏日志，同目录的旧版本运行时也会因为新版本只是看了一眼就失去访问能力。
 - **插件运行时注册已知事件类型**：会让已知集依赖插件组合，同版本的精简组合会拒绝完整组合写出的日志。生成的全仓库清单保证同版本读取行为一致；仓库外插件的事件按构造就在清单之外，为它们提供注册表面推迟到真有这样的消费者时再做。
-- **把 migration 物化为 header 和 event 数组**：即使每步转换只依赖单条 record，也会让框架内存占用与完整日志大小成正比。可重复、绑定 revision 的 reader 加 iterator 转换保留重试语义，又不强制这笔分配。
+- **把 migration 物化为 header 和 event 数组**：即使每步转换只依赖单条 record，也会让框架内存占用与完整日志大小成正比。可重复、绑定 revision 的 reader 加逐事件转换保留重试语义，又不强制这笔分配。
 - **在 `PersistenceCoordinator` 内写版本转换**：会把格式解码和各操作不同的 crash recovery 混在一起，并在 inspect、suffix read、cold continuation 和 live adoption 间复制行为。共享 decoder 只产出当前格式数据，各 consumer 保留自己的 recovery intent。
 - **每次升级都强制永久备份**：原子性不依赖永久副本，而且 JSONL 与 SQLite 无法承诺相同的物理表示。Backend 可以把恢复副本作为独立产品策略加入，不需要修改 migration。

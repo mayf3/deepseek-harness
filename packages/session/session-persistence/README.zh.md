@@ -18,7 +18,7 @@
 | `prepare(id, signal?): Promise<SessionPreparation>` | 预留恢复所使用的那个未发布 Session。协调器会尽可能复用之前的检查结果、提交待处理恢复，并在 dispose（资源释放）时将未发布 reservation 释放回有界缓存。 |
 | `load(id): Promise<{ meta; events }>` | 沿受支持的格式路径解码，并提交格式替换与冷恢复后，返回不可变、平衡的逻辑日志。实时 load 先 flush 其快照，并在轮次开放时拒绝；冷 load 保留中断的最终轮次，并用合成 `tool/result`/`step/end?`/`turn/end {interrupted}` 事件持久关闭它。只丢弃撕裂尾部碎片；已提交损坏和格式错误的记录以 `SessionPersistenceCorruptionError` 拒绝，不支持的格式 `version` 或本构建不认识且信封未带 `ignorable` 标记的事件类型以 `SessionFormatUnsupportedError` 拒绝，消息说明拒绝方向，并在后端为每个会话保留独立文件时给出原始日志路径。 |
 | `inspect(id, signal?): Promise<{ meta; events }>` | 返回已经升级、验证和深度冻结的逻辑视图，但不提交恢复或发布 Session。冷视图会获得仅存在于内存的合成恢复 closer，物理撕裂尾部保持不变；实时状态下的视图则是当前不可变快照，可能包含开放的轮次。基于协调器的实现会在有界 LRU 中保留该冷状态下未发布的 Session 本身，供后续 `prepare` 使用，但已存储修订值变化后会丢弃并重新读取。同 id 检查共享进行中的读取。 |
-| `readFrom(id, fromSeq, signal?): Promise<{ meta; events }>` | 返回 `seq >= fromSeq` 的有效已存储事件，不进入 preparation 缓存、不截断、不合成 closer，也不发布协调器状态。`fromSeq` 达到或超过已存储末尾时返回空事件列表；负数或非安全整数 `fromSeq` 会被拒绝。当前格式读取向后端请求 suffix；存在格式步骤时则读取完整 source，迁移后才应用 `fromSeq`。顺序介质可能仍需扫描物理 framing 后再过滤，可寻址介质则可不读取更早的记录。供 checkpoint 消费方只应用已存序号之后的事件。 |
+| `readFrom(id, fromSeq, signal?): Promise<{ meta; events }>` | 返回 `seq >= fromSeq` 的有效已存储事件，不进入 preparation 缓存、不截断、不合成 closer，也不发布协调器状态。`fromSeq` 达到或超过已存储末尾时返回空事件列表；负数或非安全整数 `fromSeq` 会被拒绝。当前格式读取向后端请求 suffix；存在格式迁移时则读取完整 source，迁移后才应用 `fromSeq`。顺序介质可能仍需扫描物理 framing 后再过滤，可寻址介质则可不读取更早的记录。供 checkpoint 消费方只应用已存序号之后的事件。 |
 | `list(signal?): Promise<SessionHeader[]>` | 从元数据轻量列出，不解析完整日志。可选信号取消后端列表工作。零事件延迟实体化会话不在 `list` 中。 |
 | `listSnapshots(signal?): Promise<SessionPersistenceSnapshot[]>` | 返回轻量元数据和每份日志一个不透明、带品牌类型的修订值，不加载事件日志。日志及其后端存储不变时，修订保持相等；append 或变更性 load 修复后会改变；不会仅因两个存储使用相同本地计数器而冲突。可选信号请求取消后端发现工作；第一方后端会先等待所有已启动的列出工作结束，再予以拒绝，因此调用返回拒绝时，相关工作已完全停稳。 |
 
@@ -39,11 +39,11 @@
 
 ## 格式解码与升级
 
-每次逻辑读取都会打开可重复使用的 `StoredSessionSource`，其中包含不可信 header、精确 revision 和 `readEvents()` factory。静态 decoder 选择完整的相邻版本路径，以流式方式执行各个 `migrateEvents()` 转换，最后按当前格式验证 header 与事件。`inspect()` 和 `readFrom()` 不写存储；冷 continuation 与实时接管通过后端的 revision compare-and-swap 替换已转换 source，然后重新打开。并发变更会丢弃解码结果，并从新 source 重新开始。[Session log 版本机制 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md)规定其原因和拒绝规则。
+每次逻辑读取都会打开可重复使用的 `StoredSessionSource`，其中包含不可信 header、精确 revision 和 `readEvents()` factory。静态 decoder 选择完整的相邻版本路径，为每个版本创建一个 migration 实例，调用一次 `header()`，为每条输入记录调用一次 `event()`，并在 EOF 后调用可选的 `finish()`，最后按当前格式验证 header 与事件。`inspect()` 和 `readFrom()` 不写存储；冷 continuation 与实时接管通过后端的 revision compare-and-swap 替换已转换 source，然后重新打开。并发变更会丢弃解码结果，并从新 source 重新开始。[Session log 版本机制 Agent Note](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md)规定其原因和拒绝规则。
 
-以后新增 vN→vN+1 时，在 `src/format-migrations/vN-to-vN+1.ts` 添加步骤，从静态 `SESSION_FORMAT_STEPS` 数组导出，并递增 `SESSION_FORMAT_VERSION`。该步骤验证它接受的所有 vN header/event 变体，保持 id 与 cwd 不变，返回 version 为 N+1 的 header，并把跨事件状态保留在自己的 iterator 中。后端和协调器不增加版本特判。
+以后新增 vN→vN+1 时，在 `src/format-migrations/vN-to-vN+1.ts` 添加 class，从静态 `SESSION_FORMAT_MIGRATIONS` 数组导出，并递增 `SESSION_FORMAT_VERSION`。静态 `from`／`to` 标识相邻版本，实例字段保留 header 和跨事件状态。`header()` 验证并转换旧 header；`event()` 只返回一条可无损表示为 JSON 且 seq 与输入相同的事件；可选的 `finish()` 验证只能在 EOF 时结算的状态。只读 header 时不调用 `finish()`。如果 migration 改变了某个 projection 消费的事实，还要递增该 projection 的 `stateVersion`；persistence 不统一作废所有 projection cache 记录。后端和协调器不增加版本特判。
 
-v0 decoder 还识别[消息标识机制引入前的消息](../../../.agents/notes/implemented/bug-fix/2026-07-28-load-pre-identity-session-messages.md)与 [react-loop 引入前会话](../../../.agents/notes/implemented/bug-fix/2026-08-04-load-pre-react-loop-sessions.md)决策所限定的版本机制建立前变体，并将历史 `compact/start`、`compact/summary`、`compact/end`、`compact/prune` 名称归一化为规范的 `compaction/*` 名称。这些兼容转换不是版本步骤。
+v0 decoder 还识别[消息标识机制引入前的消息](../../../.agents/notes/implemented/bug-fix/2026-07-28-load-pre-identity-session-messages.md)与 [react-loop 引入前会话](../../../.agents/notes/implemented/bug-fix/2026-08-04-load-pre-react-loop-sessions.md)决策所限定的版本机制建立前变体，并将历史 `compact/start`、`compact/summary`、`compact/end`、`compact/prune` 名称归一化为规范的 `compaction/*` 名称。这些兼容转换不是格式迁移。
 
 活动会话发出 `session/disposed` 时，协调器等待其 controller，以串行方式执行最终 drain，然后释放该精确 `Session` 对象拥有的状态。失败退役会将 controller 保留在活动会话 map 中，使后端拆卸可重试。后端拆卸先停止事件接纳，flush 每个剩余 controller，等待每 id 操作，最后才关闭存储句柄。
 

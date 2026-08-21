@@ -19,37 +19,45 @@ import {
 import type { UnversionedFormatCompatibility } from './format-v0-compat.ts'
 import { asStoredRecord, assertNoRetiredSessionEvent, readStoredEventEnvelope } from './format-json.ts'
 import type { SessionLocation } from './index.ts'
-import { SESSION_FORMAT_STEPS } from './format-migrations/index.ts'
-import { SessionPersistenceRevisionConflictError, type SessionPersistenceRevision } from './revision.ts'
+import { SESSION_FORMAT_MIGRATIONS } from './format-migrations/index.ts'
+import type { SessionPersistenceRevision } from './revision.ts'
 
-/** Stable facts available to one format step invocation. */
-export interface SessionFormatContext {
-  /** Session identity read from the source header. */
-  readonly sessionId: SessionId
+/** One single-use adjacent-version migration instance. */
+interface SessionFormatMigrationInstance {
+  /**
+   * Transform and validate the header fields understood by this migration.
+   * The detached result must carry the constructor's `to` version and preserve
+   * the source id and cwd.
+   * @param meta - detached input header for the constructor's `from` version.
+   * @returns detached header JSON carrying the constructor's `to` version.
+   */
+  header(meta: unknown): unknown
+  /**
+   * Transform exactly one event while retaining its sequence number. Instance
+   * fields may accumulate facts from the header and earlier events.
+   * @param event - detached input event in durable sequence order.
+   * @returns exactly one detached event for the same sequence number.
+   */
+  event(event: unknown): unknown
+  /**
+   * Validate accumulated state after the complete input stream reaches EOF.
+   * Header-only reads do not call this method; it cannot emit another event.
+   */
+  finish?(): void
 }
 
-/** One static adjacent-version transform in the durable format decoder. */
-export interface SessionFormatStep {
+/** Static identity and constructor for one adjacent-version migration. */
+export interface SessionFormatMigration {
   /** Input Session format version. */
   readonly from: number
   /** Output Session format version; must equal `from + 1`. */
   readonly to: number
   /**
-   * Transform and validate the header fields understood by this step. The
-   * detached result must carry {@link to} and preserve the source id and cwd.
-   * @param meta - detached input header for {@link from}.
-   * @param context - stable session identity.
-   * @returns detached header JSON carrying {@link to}.
+   * Create fresh state for one header decode and its optional complete event
+   * stream. Instances are never shared across sessions or decode attempts.
+   * @returns a single-use migration instance.
    */
-  migrateHeader(meta: unknown, context: SessionFormatContext): unknown
-  /**
-   * Lazily transform and validate events understood by this step. The output
-   * must be detached, losslessly JSON-serializable, and contiguous by seq.
-   * @param events - detached input records in durable sequence order.
-   * @param context - stable session identity.
-   * @returns a lazy output stream in the next format.
-   */
-  migrateEvents(events: AsyncIterable<unknown>, context: SessionFormatContext): AsyncIterable<unknown>
+  new(): SessionFormatMigrationInstance
 }
 
 /** Options for one physical event read. */
@@ -123,7 +131,7 @@ export function createStoredEventRead<TornMarker>(
 export interface DecodedSession<TornMarker> {
   /** Validated current-format header. */
   readonly meta: SessionHeader
-  /** Version observed before any format step ran. */
+  /** Version observed before any format migration ran. */
   readonly sourceVersion: number
   /** Exact backend revision represented by this source. */
   readonly revision: SessionPersistenceRevision
@@ -161,33 +169,37 @@ export function sessionFormatVersionRefusal(id: string, version: number): string
     : `session "${id}" uses log format v${version}, older than the supported v${SESSION_FORMAT_VERSION}, and this build ships no upgrade path for it`
 }
 
-function buildStepIndex(steps: readonly SessionFormatStep[]): ReadonlyMap<number, SessionFormatStep> {
-  const byFrom = new Map<number, SessionFormatStep>()
-  for (const step of steps) {
-    if (!Number.isSafeInteger(step.from) || step.from < 0 || step.to !== step.from + 1) {
-      throw new TypeError(`Session format step must be an adjacent non-negative version, got v${step.from} -> v${step.to}`)
+function buildMigrationIndex(
+  migrations: readonly SessionFormatMigration[],
+): ReadonlyMap<number, SessionFormatMigration> {
+  const byFrom = new Map<number, SessionFormatMigration>()
+  for (const Migration of migrations) {
+    if (!Number.isSafeInteger(Migration.from) || Migration.from < 0 || Migration.to !== Migration.from + 1) {
+      throw new TypeError(`Session format migration must be an adjacent non-negative version, got v${Migration.from} -> v${Migration.to}`)
     }
-    if (byFrom.has(step.from)) {
-      throw new TypeError(`duplicate Session format step from v${step.from}`)
+    if (byFrom.has(Migration.from)) {
+      throw new TypeError(`duplicate Session format migration from v${Migration.from}`)
     }
-    if (step.to > SESSION_FORMAT_VERSION) {
-      throw new TypeError(`Session format step v${step.from} -> v${step.to} targets a version newer than this build's v${SESSION_FORMAT_VERSION}`)
+    if (Migration.to > SESSION_FORMAT_VERSION) {
+      throw new TypeError(`Session format migration v${Migration.from} -> v${Migration.to} targets a version newer than this build's v${SESSION_FORMAT_VERSION}`)
     }
-    byFrom.set(step.from, step)
+    byFrom.set(Migration.from, Migration)
   }
-  // A missing step is a per-session concern, decided by planSteps() at decode
+  // A missing migration is a per-session concern, decided by planMigrations() at decode
   // time: it refuses sessions at or below the gap, while later versions whose
   // path to the current version is complete still upgrade. Initialization
-  // therefore checks only step legality and duplicates here.
+  // therefore checks only migration legality and duplicates here.
   return byFrom
 }
 
-const STEP_BY_FROM = buildStepIndex(SESSION_FORMAT_STEPS)
+const MIGRATION_BY_FROM = buildMigrationIndex(SESSION_FORMAT_MIGRATIONS)
+
+type PlannedMigration = readonly [SessionFormatMigration, SessionFormatMigrationInstance]
 
 interface DecodedHeader {
   readonly meta: SessionHeader
   readonly sourceVersion: number
-  readonly steps: readonly SessionFormatStep[]
+  readonly migrations: readonly PlannedMigration[]
   readonly unversionedCompatibility?: UnversionedFormatCompatibility
 }
 
@@ -229,23 +241,23 @@ function readSourceHeader(
   return { meta, version, id }
 }
 
-function planSteps(
+function planMigrations(
   source: StoredHeaderSource,
   id: SessionId,
   fromVersion: number,
-): readonly SessionFormatStep[] {
-  const steps: SessionFormatStep[] = []
+): readonly SessionFormatMigration[] {
+  const migrations: SessionFormatMigration[] = []
   for (let version = fromVersion; version < SESSION_FORMAT_VERSION; version++) {
-    const step = STEP_BY_FROM.get(version)
-    if (step === undefined) {
+    const Migration = MIGRATION_BY_FROM.get(version)
+    if (Migration === undefined) {
       throw unsupported(
         source,
         `session "${id}" uses log format v${fromVersion}, older than the supported v${SESSION_FORMAT_VERSION}, and this build has no upgrade path to it: missing v${version} -> v${version + 1}`,
       )
     }
-    steps.push(step)
+    migrations.push(Migration)
   }
-  return steps
+  return migrations
 }
 
 function decodeHeader(
@@ -253,35 +265,37 @@ function decodeHeader(
   expectedId: SessionId,
 ): DecodedHeader {
   const stored = readSourceHeader(source, expectedId)
-  const steps = planSteps(source, stored.id, stored.version)
+  const migrations: PlannedMigration[] = []
   let meta: unknown = stored.meta
-  for (const step of steps) {
-    const context: SessionFormatContext = { sessionId: stored.id }
+  for (const Migration of planMigrations(source, stored.id, stored.version)) {
+    let instance: SessionFormatMigrationInstance
     try {
-      meta = snapshotJsonValue(step.migrateHeader(meta, context))
+      instance = new Migration()
+      meta = snapshotJsonValue(instance.header(meta))
     } catch (error: unknown) {
       throw new Error(
-        `session "${stored.id}" header migration v${step.from} -> v${step.to} failed`,
+        `session "${stored.id}" header migration v${Migration.from} -> v${Migration.to} failed`,
         { cause: error },
       )
     }
     const record = asStoredRecord(meta)
     const actual = record?.['version']
-    if (actual !== step.to) {
-      throw new Error(`Session format step v${step.from} -> v${step.to} returned header version ${String(actual)}`)
+    if (actual !== Migration.to) {
+      throw new Error(`Session format migration v${Migration.from} -> v${Migration.to} returned header version ${String(actual)}`)
     }
     if (record === undefined
       || record['id'] !== stored.id
       || record['cwd'] !== stored.meta['cwd']) {
-      throw new Error(`Session format step v${step.from} -> v${step.to} changed session storage identity`)
+      throw new Error(`Session format migration v${Migration.from} -> v${Migration.to} changed session storage identity`)
     }
+    migrations.push([Migration, instance])
   }
   const current = Session.create(stored.id, undefined, meta as SessionHeader).header
   const compatibility = unversionedFormatCompatibility(stored.version)
   return {
     meta: current,
     sourceVersion: stored.version,
-    steps,
+    migrations,
     ...(compatibility === undefined ? {} : { unversionedCompatibility: compatibility }),
   }
 }
@@ -339,28 +353,41 @@ async function* decodeCurrentEvents<TornMarker>(
   }
 }
 
-function transformEvents(
+async function* transformEvents(
   events: AsyncIterable<unknown>,
-  steps: readonly SessionFormatStep[],
+  migrations: readonly PlannedMigration[],
   id: SessionId,
 ): AsyncIterable<unknown> {
-  let transformed = events
-  for (const step of steps) {
-    const input = transformed
-    const context: SessionFormatContext = { sessionId: id }
-    transformed = (async function* (): AsyncIterable<unknown> {
+  for await (let value of events) {
+    for (const [Migration, instance] of migrations) {
+      const sourceSeq = asStoredRecord(value)?.['seq']
+      let output: unknown
       try {
-        yield* step.migrateEvents(input, context)
+        output = instance.event(value)
       } catch (error: unknown) {
-        if (error instanceof SessionPersistenceRevisionConflictError) throw error
         throw new Error(
-          `session "${id}" event migration v${step.from} -> v${step.to} failed`,
+          `session "${id}" event migration v${Migration.from} -> v${Migration.to} failed at seq ${String(sourceSeq)}`,
           { cause: error },
         )
       }
-    })()
+      const targetSeq = asStoredRecord(output)?.['seq']
+      if (targetSeq !== sourceSeq) {
+        throw new Error(`session "${id}" event migration v${Migration.from} -> v${Migration.to} changed event seq ${String(sourceSeq)} to ${String(targetSeq)}`)
+      }
+      value = output
+    }
+    yield value
   }
-  return transformed
+  for (const [Migration, instance] of migrations) {
+    try {
+      instance.finish?.()
+    } catch (error: unknown) {
+      throw new Error(
+        `session "${id}" event migration v${Migration.from} -> v${Migration.to} failed at EOF`,
+        { cause: error },
+      )
+    }
+  }
 }
 
 async function* snapshotStoredEvents(
@@ -385,7 +412,7 @@ function decodedRead<TornMarker>(
   readonly completed: Promise<StoredEventReadCompletion<TornMarker>>
 } {
   const completion = Promise.withResolvers<StoredEventReadCompletion<TornMarker>>()
-  const migrating = header.steps.length > 0
+  const migrating = header.migrations.length > 0
   const compatibility = header.unversionedCompatibility
   let physical: StoredEventRead<TornMarker> | undefined
 
@@ -420,7 +447,7 @@ function decodedRead<TornMarker>(
         : compatibility.canonicalizeEvents(storedEvents, header.meta.id)
       const transformed = transformEvents(
         canonicalEvents,
-        header.steps,
+        header.migrations,
         header.meta.id,
       )
       const current = decodeCurrentEvents(source, header.meta, transformed, physicalFromSeq)
@@ -438,9 +465,9 @@ function decodedRead<TornMarker>(
 }
 
 /**
- * Decode one backend source through the static adjacent-version
- * steps and the current header/event validators. Format selection is complete
- * before any consumer-specific recovery runs.
+ * Decode one backend source through the static adjacent-version migrations and
+ * the current header/event validators. Format selection is complete before any
+ * consumer-specific recovery runs.
  * @param source - backend-owned header, revision, and event reader factory.
  * @param expectedId - session identity selected by the caller.
  * @param fromSeq - first current-format event sequence to return.

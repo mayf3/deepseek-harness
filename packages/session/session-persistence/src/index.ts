@@ -259,8 +259,7 @@ export abstract class SessionPersistence extends Service {
 export default SessionPersistence
 
 export type {
-  SessionFormatContext,
-  SessionFormatStep,
+  SessionFormatMigration,
   StoredEventRead,
   StoredEventReadCompletion,
   StoredEventReadOptions,
