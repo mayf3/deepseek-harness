@@ -10,8 +10,7 @@ import type { MessageId } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { Session, SessionEventMap, UserMessage } from '@deepseek-ai/dsh-session'
 import type { AgentEventDispatch } from './dispatch.ts'
-import type { InboxState } from './inbox-projection.ts'
-import type { InboxTarget } from './types.ts'
+import type { InboxState, InboxTarget } from './types.ts'
 
 /** Agent-owned command facade over the standard durable Inbox projection. */
 export class Inbox {

@@ -4,7 +4,9 @@
 # 事件生产方与消费方矩阵
 
 [English](event-producer-consumer.md) | 中文
+
 本矩阵展示哪些包会派发各个 harness 自有事件，以及哪些包会监听这些事件。事件之间存在多对多关系，因此密集的关系数据以表格而非一张大型关系图呈现。接收方和事件名称类型还涵盖有意绕过 `ctx.emit` 的内含派发位置，例如 subagent 生命周期封装。
+
 | 事件 | 模式 | 声明位置 | 派发方 | 监听方 |
 | --- | --- | --- | --- | --- |
 | `agent-loop/config-start-failed` | `emit` | [`packages/core/agent-loop/src/index.ts:183`](../packages/core/agent-loop/src/index.ts) | [`agent-loop`](../packages/core/agent-loop) (`events.dispatch`) | - |
@@ -22,6 +24,7 @@
 | `agent/status` | `emit` | [`packages/core/agent/src/runtime-types.ts:178`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`emit`) | [`agent`](../packages/core/agent), `agent-team`, `apiproxy`, [`compaction-basic`](../packages/compaction/compaction-basic), [`goal-round-driver`](../packages/goal/goal-round-driver), [`schedule`](../packages/schedule/schedule), `server` |
 | `agent/turn-stopping` | `serial` | [`packages/core/agent/src/runtime-types.ts:278`](../packages/core/agent/src/runtime-types.ts) | [`agent-loop`](../packages/core/agent-loop) (`serial`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex) |
 | `approval/request` | `waterfall` | [`packages/interaction/user-approval/src/index.ts:30`](../packages/interaction/user-approval/src/index.ts) | [`user-approval`](../packages/interaction/user-approval) (`waterfall`) | [`acp`](../packages/acp/acp), `apiproxy` |
+| `authorization/settled` | `emit` | [`packages/credentials/authorization/src/index.ts:57`](../packages/credentials/authorization/src/index.ts) | [`authorization`](../packages/credentials/authorization) (`events.dispatch`) | [`authorization`](../packages/credentials/authorization) |
 | `commands/change` | `emit` | [`packages/interaction/commands/src/types.ts:80`](../packages/interaction/commands/src/types.ts) | [`commands`](../packages/interaction/commands) (`events.dispatch`) | `apiproxy` |
 | `cordis/dynamic-package` | `emit` | [`packages/extensions/cordis-host-runner/src/types.ts:379`](../packages/extensions/cordis-host-runner/src/types.ts) | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) (`emit`) | `apiproxy` |
 | `cordis/dynamic-retract` | `emit` | [`packages/extensions/cordis-host-runner/src/types.ts:385`](../packages/extensions/cordis-host-runner/src/types.ts) | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) (`emit`) | `apiproxy` |
@@ -29,7 +32,8 @@
 | `cordis/inspect-query-resolved` | `emit` | [`packages/extensions/cordis-host-runner/src/types.ts:397`](../packages/extensions/cordis-host-runner/src/types.ts) | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) (`emit`) | `apiproxy` |
 | `cordis/request-run` | `emit` | [`packages/extensions/cordis-host-runner/src/types.ts:367`](../packages/extensions/cordis-host-runner/src/types.ts) | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) (`emit`) | `apiproxy` |
 | `cordis/request-run-resolved` | `emit` | [`packages/extensions/cordis-host-runner/src/types.ts:373`](../packages/extensions/cordis-host-runner/src/types.ts) | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) (`emit`) | `apiproxy` |
-| `credentials/updated` | `emit` | [`packages/credentials/credentials/src/types.ts:29`](../packages/credentials/credentials/src/types.ts) | [`credentials`](../packages/credentials/credentials) (`events.dispatch`) | `apiproxy`, [`credentials`](../packages/credentials/credentials) |
+| `credentials/record-updated` | `emit` | [`packages/credentials/credentials/src/types.ts:87`](../packages/credentials/credentials/src/types.ts) | [`credentials`](../packages/credentials/credentials) (`events.dispatch`) | [`authorization`](../packages/credentials/authorization) |
+| `credentials/reference-updated` | `emit` | [`packages/credentials/credentials/src/types.ts:75`](../packages/credentials/credentials/src/types.ts) | [`credentials`](../packages/credentials/credentials) (`events.dispatch`) | `apiproxy`, [`credentials`](../packages/credentials/credentials) |
 | `domain/changed` | `emit` | [`packages/storage/storage-domain/src/events.ts:46`](../packages/storage/storage-domain/src/events.ts) | [`storage-domain`](../packages/storage/storage-domain) (`emit`) | `apiproxy`, [`storage-domain`](../packages/storage/storage-domain), [`workspace`](../packages/workspace/workspace) |
 | `fs/edit-intent` | `waterfall` | [`packages/fs/fs/src/index.ts:66`](../packages/fs/fs/src/index.ts) | [`tool-fs`](../packages/fs/tool-fs) (`waterfall`), [`tool-str-replace-editor`](../packages/fs/tool-str-replace-editor) (`waterfall`) | [`fs-observation-policy`](../packages/fs/fs-observation-policy) |
 | `fs/observed` | `emit` | [`packages/fs/fs/src/index.ts:76`](../packages/fs/fs/src/index.ts) | [`tool-fs`](../packages/fs/tool-fs) (`emit`), [`tool-str-replace-editor`](../packages/fs/tool-str-replace-editor) (`emit`) | [`fs-observation-policy`](../packages/fs/fs-observation-policy), [`skill-filesystem`](../packages/skill/skill-filesystem) |
@@ -57,6 +61,7 @@
 | `tools/post-execute` | `waterfall` | [`packages/core/tools/src/index.ts:175`](../packages/core/tools/src/index.ts) | [`tools`](../packages/core/tools) (`waterfall`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex), [`repeat-tool-reminder`](../packages/guard/repeat-tool-reminder), [`spill-policy`](../packages/spill/spill-policy), [`tool-fs-search`](../packages/fs/tool-fs-search) |
 | `tools/pre-execute` | `waterfall` | [`packages/core/tools/src/index.ts:152`](../packages/core/tools/src/index.ts) | [`tools`](../packages/core/tools) (`waterfall`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex), [`tool-jobs`](../packages/jobs/tool-jobs) |
 | `tools/result` | `emit` | [`packages/core/tools/src/index.ts:197`](../packages/core/tools/src/index.ts) | [`tools`](../packages/core/tools) (`events.dispatch`) | [`agent-instructions`](../packages/context/agent-instructions), [`subagent-in-process-driver`](../packages/subagent/subagent-in-process-driver) |
+| `webserver/index-inject` | `emit` | [`packages/host/webserver/src/index.ts:34`](../packages/host/webserver/src/index.ts) | `webserver` (`emit`) | - |
 | `workflow/agent-end` | `emit` | [`packages/workflow/workflow/src/index.ts:79`](../packages/workflow/workflow/src/index.ts) | [`workflow`](../packages/workflow/workflow) (`events.dispatch`) | [`tool-workflow`](../packages/workflow/tool-workflow), [`workflow`](../packages/workflow/workflow) |
 | `workflow/agent-start` | `emit` | [`packages/workflow/workflow/src/index.ts:68`](../packages/workflow/workflow/src/index.ts) | [`workflow`](../packages/workflow/workflow) (`events.dispatch`) | [`tool-workflow`](../packages/workflow/tool-workflow), [`workflow`](../packages/workflow/workflow) |
 | `workflow/end` | `emit` | [`packages/workflow/workflow/src/index.ts:89`](../packages/workflow/workflow/src/index.ts) | [`workflow`](../packages/workflow/workflow) (`events.dispatch`) | [`workflow`](../packages/workflow/workflow) |

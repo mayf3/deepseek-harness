@@ -75,7 +75,7 @@ async function harness(withRegistry: boolean): Promise<{ ctx: Context; session: 
     inbox: { nextTurn: [], nextStep: [], hasPending: false } as never,
     status: 'idle',
     ctx,
-  } as Agent
+  } as unknown as Agent
   if (withRegistry) Object.assign(agent, { inbox: new Inbox(ctx, agent.session, agentEvents(ctx, agent)) })
   ctx.agents.register(agent)
   return { ctx, session }

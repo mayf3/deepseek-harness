@@ -3,15 +3,13 @@
 import type { UserMessage } from '@deepseek-ai/dsh-llm/types'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import { z } from 'zod'
+import type { InboxState } from './types.ts'
 
 /** Wire validation for pending agent input reconstructed from durable inbox splices. */
 export const inboxProjectionSchema = z.object({
   'next-turn': z.array(z.custom<UserMessage>()).readonly(),
   'next-step': z.array(z.custom<UserMessage>()).readonly(),
 }).readonly()
-
-/** Complete pending Inbox value reconstructed from durable splices. */
-export type InboxState = z.infer<typeof inboxProjectionSchema>
 
 /** Standard fold that reconstructs pending agent input from durable splices. */
 export const inboxProjectionDefinition = {
@@ -36,14 +34,3 @@ export const inboxProjectionDefinition = {
   },
   stateVersion: 1,
 } satisfies ProjectionDefinition<'inbox', InboxState>
-
-declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionStateMap {
-    /** Pending agent input reconstructed from durable inbox splices. */
-    inbox: InboxState
-  }
-  interface SessionProjectionMap {
-    /** Pending agent input reconstructed from durable inbox splices. */
-    inbox: InboxState
-  }
-}

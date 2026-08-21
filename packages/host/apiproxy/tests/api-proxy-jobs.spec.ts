@@ -56,7 +56,7 @@ async function harness(withRegistry: boolean): Promise<{ ctx: Context; session: 
   const session = ctx.sessions.create()
   const agent = {
     id: session.id, session, inbox: { nextTurn: [], nextStep: [], hasPending: false }, status: 'idle', ctx,
-  } as Agent
+  } as unknown as Agent
   ctx.agents.register(agent)
   return { ctx, session, agent }
 }
