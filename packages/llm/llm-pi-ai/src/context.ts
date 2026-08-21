@@ -4,7 +4,7 @@
  * @module dsh-llm-pi-ai/context
  */
 
-import { CallId, contentHasImage, LlmError, offloadRequestImagesWithPolicy, requestImagePreviewText } from '@deepseek-ai/dsh-llm'
+import { CallId, contentHasImage, LlmError, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type {
   AttachmentId,
@@ -48,7 +48,6 @@ function assertSupportedImageRoles(messages: readonly Message[]): void {
 async function userContent(
   blocks: readonly ContentBlock[],
   requestImages: ReadonlyMap<AttachmentId, RequestImageAttachment>,
-  cropAvailable: boolean,
 ): Promise<string | (TextContent | ImageContent)[]> {
   const content: (TextContent | ImageContent)[] = []
   for (const block of blocks) {
@@ -61,7 +60,7 @@ async function userContent(
         if (version === undefined) {
           throw new LlmError(`pi-ai request image ${block.attachment.attachmentId} was not prepared`, 'INVALID_REQUEST')
         }
-        content.push({ type: 'text', text: requestImagePreviewText(version, cropAvailable) })
+        content.push({ type: 'text', text: requestImageHandleText(version) })
         content.push({
           type: 'image',
           data: Buffer.from(version.data).toString('base64'),
@@ -71,7 +70,7 @@ async function userContent(
       }
       case 'tool-result':
         {
-          const nested = await userContent(block.content, requestImages, cropAvailable)
+          const nested = await userContent(block.content, requestImages)
           if (typeof nested === 'string') {
             if (nested.length > 0) content.push({ type: 'text', text: nested })
           } else {
@@ -241,7 +240,6 @@ async function toPiContextWithImages(
     byteQuantum: 1,
     byteLength: ref => requestImages.get(ref.attachmentId)?.bytes ?? ref.bytes,
   })
-  const cropAvailable = options.tools?.some(tool => tool.name === 'read_image_region') ?? false
   const toolNames = new Map<CallId, string>()
   const messages: PiMessage[] = []
 
@@ -263,7 +261,7 @@ async function toPiContextWithImages(
     }
     // user role: text + tool results (each result becomes its own message).
     const regular = message.content.filter(block => block.type !== 'tool-result')
-    const content = await userContent(regular, requestImages, cropAvailable)
+    const content = await userContent(regular, requestImages)
     const results = message.content.filter((block): block is Extract<ContentBlock, { type: 'tool-result' }> => (
       block.type === 'tool-result'
     ))
@@ -271,7 +269,7 @@ async function toPiContextWithImages(
       messages.push({ role: 'user', content, timestamp: 0 })
     }
     for (const result of results) {
-      const resultContent = await userContent(result.content, requestImages, cropAvailable)
+      const resultContent = await userContent(result.content, requestImages)
       messages.push({
         role: 'toolResult',
         toolCallId: result.toolCallId,

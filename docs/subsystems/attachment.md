@@ -90,43 +90,19 @@ interface StoredImageAttachment {
 ```
 
 ```ts type-equiv
-/** Pixel rectangle in the oriented 2048px master-version coordinate system. */
-interface MasterImageCrop {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-```
-
-```ts type-equiv
 /** Deterministic request-image policy selected by one exact model route. */
 interface ImageRequestPolicy {
   /** Maximum width multiplied by height after aspect-preserving projection. */
   maxPixels: number
   /** Encoded-byte cap before base64 expansion or Files API upload. */
   maxBytes: number
-  /** Optional master-coordinate crop applied before pixel-budget scaling. */
-  crop?: MasterImageCrop
-}
-```
-
-```ts type-equiv
-/** Crop coordinates measured by a model on the request preview it received. */
-interface PreviewImageCrop {
-  previewWidth: number
-  previewHeight: number
-  x: number
-  y: number
-  width: number
-  height: number
 }
 ```
 
 ```ts type-equiv
 /** Cached request version derived from one provider-independent master attachment. */
 interface RequestImageAttachment {
-  /** Cache and upload-index key over the master id, policy, crop, and fixed encoder parameters. */
+  /** Cache and upload-index key over the master id, policy, and fixed encoder parameters. */
   variantId: ImageVariantId
   /** Durable master reference from which this request version was derived. */
   master: ImageAttachmentRef
@@ -142,12 +118,10 @@ interface RequestImageAttachment {
   space: 'srgb'
   /** Whether the encoded request version retains an alpha channel. */
   hasAlpha: boolean
-  /** Applied master-coordinate crop, when present. */
-  crop?: MasterImageCrop
 }
 ```
 
-`saveImage()` prepares a provider-independent 2048px, 4MiB master and atomically commits it before returning its reference. `saveImages()` prepares every validated master once before publishing the batch, so validation rejection leaves no partial objects and publication does not repeat decoding or quality selection. `admitEncodedImages()` is the wire entry for base64 uploads and delegates count, aggregate-byte, and ordered batch admission to `saveImages()`. `readImage()` verifies a master from an authorized session path. `readImageRequest()` derives and caches one request version under an exact route pixel and byte budget; new entries are fully decoded before publication, while cache hits use a bounded metadata probe. `readImageRequests()` lets an implementation apply its configured transform concurrency to an ordered batch. The local implementation lazily encodes preferred candidates, singleflights equal request identities, lets each waiter cancel independently, stops shared work when no waiter remains, and defaults to two simultaneous transformations. `cropImage()` maps model preview coordinates back to the master and returns another durable attachment. The service is retention-neutral: resumed and forked sessions may share objects, so reference-aware garbage collection is deferred rather than tied to one session's deletion.
+`saveImage()` prepares a provider-independent 2048px, 4MiB master and atomically commits it before returning its reference. `saveImages()` prepares every validated master once before publishing the batch, so validation rejection leaves no partial objects and publication does not repeat decoding or quality selection. `admitEncodedImages()` is the wire entry for base64 uploads and delegates count, aggregate-byte, and ordered batch admission to `saveImages()`. `readImage()` verifies a master from an authorized session path. `readImageRequest()` derives and caches one request version under an exact route pixel and byte budget; new entries are fully decoded before publication, while cache hits use a bounded metadata probe. `readImageRequests()` lets an implementation apply its configured transform concurrency to an ordered batch. The local implementation lazily encodes preferred candidates, singleflights equal request identities, lets each waiter cancel independently, stops shared work when no waiter remains, and defaults to two simultaneous transformations. The service is retention-neutral: resumed and forked sessions may share objects, so reference-aware garbage collection is deferred rather than tied to one session's deletion.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -217,15 +191,6 @@ readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: 
  * @returns request versions in the same order as `refs`.
  */
 async readImageRequests( refs: readonly ImageAttachmentRef[], policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<readonly RequestImageAttachment[]>
-
-/**
- * Crop the stored master by coordinates measured on a model request preview and persist the result.
- * @param ref - session-authorized master attachment.
- * @param crop - preview dimensions and preview-coordinate rectangle.
- * @param signal - optional cancellation.
- * @returns a new durable attachment reference suitable for a logged tool result.
- */
-cropImage( ref: ImageAttachmentRef, crop: PreviewImageCrop, signal?: AbortSignal, ): Promise<SavedImageAttachment>
 ```
 
 Source: [`packages/attachment/attachment/src/index.ts`](../../packages/attachment/attachment/src/index.ts)

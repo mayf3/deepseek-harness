@@ -932,17 +932,7 @@
     },
     {
       "doc": "docs/subsystems/attachment.md",
-      "symbol": "MasterImageCrop",
-      "source": "packages/attachment/attachment/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/attachment.md",
       "symbol": "ImageRequestPolicy",
-      "source": "packages/attachment/attachment/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/attachment.md",
-      "symbol": "PreviewImageCrop",
       "source": "packages/attachment/attachment/src/types.ts"
     },
     {

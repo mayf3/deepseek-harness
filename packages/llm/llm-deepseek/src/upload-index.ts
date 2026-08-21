@@ -15,7 +15,7 @@ export interface DeepSeekUploadRecord {
   scope: DeepSeekFileScopeType
   /** Provider-independent master attachment from which the uploaded request version was derived. */
   masterAttachmentId: AttachmentId
-  /** Complete request transformation identity, including crop and encoder parameters. */
+  /** Complete request transformation identity, including route budgets and encoder parameters. */
   variantId: ImageVariantIdType
   fileId: DeepSeekFileIdType
   bytes: number

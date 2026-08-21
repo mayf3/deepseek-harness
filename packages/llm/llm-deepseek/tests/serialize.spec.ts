@@ -60,7 +60,6 @@ function imageOptions(
     resolveFileId,
     requestImages: new Map(refs.map(ref => [ref.attachmentId, requestVersion(ref)])),
     maxRequestFilesBytes,
-    cropAvailable: true,
   }
 }
 
@@ -353,14 +352,14 @@ describe('image serialization', () => {
       role: 'user',
       content: [
         { type: 'text', text: 'before' },
-        { type: 'text', text: expect.stringContaining(`Image ${ref.attachmentId}; preview 1x1px`) as string },
+        { type: 'text', text: expect.stringContaining(`Image ${ref.attachmentId}; request image 1x1px`) as string },
         { type: 'file', file_id: 'file-api-image' },
         { type: 'text', text: 'after' },
       ],
     }])
   })
 
-  it('gives image-only input a stable handle and preview coordinate system', async () => {
+  it('gives image-only input a stable handle and request dimensions', async () => {
     const ref = imageRef()
     const wire = await serializeRequestWithImages(request({
       model: 'deepseek-v4-flash-vision-exp',
@@ -373,30 +372,10 @@ describe('image serialization', () => {
     expect(wire.messages).toEqual([{
       role: 'user',
       content: [
-        { type: 'text', text: expect.stringContaining('Call read_image_region') as string },
+        { type: 'text', text: `Image ${ref.attachmentId}; request image 1x1px.` },
         { type: 'file', file_id: 'file-api-image' },
       ],
     }])
-  })
-
-  it('does not advertise region reads when the request omits that tool', async () => {
-    const ref = imageRef()
-    const images = { ...imageOptions([ref]), cropAvailable: false }
-    const wire = await serializeRequestWithImages(request({
-      model: 'deepseek-v4-flash-vision-exp',
-      messages: [createUserMessage({
-        content: [{ type: 'image', attachment: ref }],
-        source: { kind: 'plugin', plugin: 'test' },
-      })],
-    }), images)
-
-    expect(wire.messages[0]).toMatchObject({
-      role: 'user',
-      content: [
-        { type: 'text', text: `Image ${ref.attachmentId}; preview 1x1px.` },
-        { type: 'file', file_id: 'file-api-image' },
-      ],
-    })
   })
 
   it('rejects an image whose prepared request version is absent', async () => {
@@ -528,14 +507,14 @@ describe('image serialization', () => {
       {
         role: 'tool',
         tool_call_id: 'before-system',
-        content: expect.stringContaining('Call read_image_region') as string,
+        content: expect.stringContaining('request image 1x1px') as string,
       },
       expect.objectContaining({ role: 'user' }),
       { role: 'system', content: 'system history' },
       {
         role: 'tool',
         tool_call_id: 'before-assistant',
-        content: expect.stringContaining('Call read_image_region') as string,
+        content: expect.stringContaining('request image 1x1px') as string,
       },
       expect.objectContaining({ role: 'user' }),
       { role: 'assistant', content: 'assistant history' },

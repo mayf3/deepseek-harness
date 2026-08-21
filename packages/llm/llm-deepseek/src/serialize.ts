@@ -6,7 +6,7 @@
  * @module dsh-llm-deepseek/serialize
  */
 
-import { contentHasImage, LlmError, offloadRequestImagesWithPolicy, requestImagePreviewText } from '@deepseek-ai/dsh-llm'
+import { contentHasImage, LlmError, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type {
@@ -47,8 +47,6 @@ export interface ImageSerializationOptions {
   byteQuantum?: number
   /** Image-count removal step applied after the request exceeds its count bound. */
   countQuantum?: number
-  /** Whether the active request exposes the region-read tool. */
-  cropAvailable?: boolean
 }
 
 /** Durable message and image ordinal used in provider diagnostics. */
@@ -120,11 +118,10 @@ function assertSupportedImageRoles(messages: readonly Message[]): void {
 function imageHandle(
   version: RequestImageAttachment,
   precededByContent: boolean,
-  cropAvailable: boolean,
 ): WireTextContentPart {
   return {
     type: 'text',
-    text: `${precededByContent ? '\n' : ''}${requestImagePreviewText(version, cropAvailable)}`,
+    text: `${precededByContent ? '\n' : ''}${requestImageHandleText(version)}`,
   }
 }
 
@@ -143,7 +140,7 @@ async function imageParts(
     )
   }
   return [
-    imageHandle(version, precededByContent, images.cropAvailable === true),
+    imageHandle(version, precededByContent),
     { type: 'file', file_id: await images.resolveFileId(version, block, location) },
   ]
 }

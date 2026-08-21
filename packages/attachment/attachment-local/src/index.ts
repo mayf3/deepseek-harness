@@ -8,7 +8,6 @@ import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
-  PreviewImageCrop,
   RequestImageAttachment,
   SaveImageAttachment,
   SavedImageAttachment,
@@ -18,13 +17,13 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { MasterImagePolicy } from './canonical.ts'
 import { CompressionLimiter } from './compression-limiter.ts'
 import { commitPreparedImageFile, prepareImageFile, readImageFile, validateImageFile } from './store.ts'
-import { previewCropToMaster, readRequestImageFile, requestImageVariantId } from './request-image.ts'
+import { readRequestImageFile, requestImageVariantId } from './request-image.ts'
 
 export { isMasterImage, prepareMasterImage } from './canonical.ts'
 export type { MasterImage, MasterImagePolicy } from './canonical.ts'
 export { commitPreparedImageFile, prepareImageFile, readImageFile, saveImageFile, validateImageFile } from './store.ts'
 export type { PreparedImageFile } from './store.ts'
-export { previewCropToMaster, readRequestImageFile, requestImageDimensions, requestImageVariantId } from './request-image.ts'
+export { readRequestImageFile, requestImageDimensions, requestImageVariantId } from './request-image.ts'
 
 /** Default maximum encoded bytes for one submitted image; oversized sources are refused, not shrunk. */
 export const DEFAULT_MAX_IMAGE_BYTES = 20 * 1024 * 1024
@@ -255,26 +254,6 @@ export class LocalAttachmentStore extends AttachmentStore {
     return operation.wait(signal)
   }
 
-  override async cropImage(
-    ref: ImageAttachmentRef,
-    crop: PreviewImageCrop,
-    signal?: AbortSignal,
-  ): Promise<SavedImageAttachment> {
-    const master = await this.readImage(ref, signal)
-    const region = previewCropToMaster(ref.width, ref.height, crop)
-    const version = await this.requestVersion(ref, {
-      maxPixels: region.width * region.height,
-      maxBytes: this.masterPolicy.maxBytes,
-      crop: region,
-    }, master, signal)
-    signal?.throwIfAborted()
-    const stem = ref.name?.replace(/\.[^.]+$/u, '') ?? String(ref.attachmentId).slice(0, 15)
-    return this.saveImage({
-      data: version.data,
-      mediaType: version.mediaType,
-      name: `${stem}-crop.${version.mediaType.slice('image/'.length).replace('jpeg', 'jpg')}`,
-    })
-  }
 }
 
 export default LocalAttachmentStore

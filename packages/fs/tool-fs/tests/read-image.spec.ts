@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
-import { CallId, createUserMessage, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
+import { CallId, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmModelInfo, LlmResolvedModelInfo, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
@@ -172,214 +172,6 @@ describe('imageRefFromValue', () => {
     expect(imageRefFromValue({ ...base, name: 'a.png' })).toEqual({ ...base, name: 'a.png' })
     expect(imageRefFromValue({ ...base, sourceWidth: 4, sourceHeight: 2 }))
       .toEqual({ ...base, sourceWidth: 4, sourceHeight: 2 })
-  })
-})
-
-describe('read_image_region', () => {
-  it('crops a session-visible attachment and returns a new logged image reference', async () => {
-    const ctx = await setup()
-    const attachments = ctx.attachments
-    const source = await attachments.saveImage({ data: PNG_3X3, mediaType: 'image/png', name: 'grid.png' })
-    const history = [createUserMessage({
-      content: [{ type: 'image', attachment: source.ref }],
-      source: { kind: 'plugin', plugin: 'test' },
-    })]
-
-    const result = await call(ctx, 'read_image_region', {
-      attachment_id: source.ref.attachmentId,
-      preview_width: 3,
-      preview_height: 3,
-      x: 1,
-      y: 0,
-      width: 2,
-      height: 2,
-    }, agentOn('vision-model', 'visual', history))
-
-    expect(result.isError).toBe(false)
-    expect(result.content[0]).toMatchObject({
-      type: 'text',
-      text: expect.stringContaining('crop x=1, y=0, width=2, height=2') as string,
-    })
-    expect(result.content[1]).toMatchObject({
-      type: 'image',
-      attachment: { width: 2, height: 2, name: 'grid-crop.png' },
-    })
-    const cropped = result.content[1]
-    if (cropped?.type !== 'image') throw new Error('expected cropped image block')
-    await expect(attachments.readImage(cropped.attachment)).resolves.toMatchObject({
-      ref: { attachmentId: cropped.attachment.attachmentId },
-    })
-  })
-
-  it('refuses an attachment that is absent from the current session', async () => {
-    const ctx = await setup()
-    const result = await call(ctx, 'read_image_region', {
-      attachment_id: `sha256:${'f'.repeat(64)}`,
-      preview_width: 800,
-      preview_height: 800,
-      x: 0,
-      y: 0,
-      width: 100,
-      height: 100,
-    }, agentOn('vision-model'))
-
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain('not referenced by the current session')
-  })
-
-  it('finds images nested in tool results after skipping a non-matching nested result', async () => {
-    const ctx = await setup()
-    const source = await ctx.attachments.saveImage({ data: PNG_3X3, mediaType: 'image/png' })
-    const history = [createUserMessage({
-      content: [
-        { type: 'tool-result', toolCallId: CallId('unrelated'), content: [{ type: 'text', text: 'none' }] },
-        { type: 'tool-result', toolCallId: CallId('nested'), content: [{ type: 'image', attachment: source.ref }] },
-      ],
-      source: { kind: 'plugin', plugin: 'test' },
-    })]
-
-    const result = await call(ctx, 'read_image_region', {
-      attachment_id: source.ref.attachmentId,
-      preview_width: 3,
-      preview_height: 3,
-      x: 0,
-      y: 0,
-      width: 1,
-      height: 1,
-    }, agentOn('vision-model', 'visual', history))
-
-    expect(result.isError).toBe(false)
-  })
-
-  it('continues across an earlier session message without the requested image', async () => {
-    const ctx = await setup()
-    const source = await ctx.attachments.saveImage({ data: PNG_3X3, mediaType: 'image/png' })
-    const history = [
-      createUserMessage({
-        content: [{ type: 'text', text: 'before image' }],
-        source: { kind: 'plugin', plugin: 'test' },
-      }),
-      createUserMessage({
-        content: [{ type: 'image', attachment: source.ref }],
-        source: { kind: 'plugin', plugin: 'test' },
-      }),
-    ]
-
-    const result = await call(ctx, 'read_image_region', {
-      attachment_id: source.ref.attachmentId,
-      preview_width: 3,
-      preview_height: 3,
-      x: 0,
-      y: 0,
-      width: 1,
-      height: 1,
-    }, agentOn('vision-model', 'visual', history))
-
-    expect(result.isError).toBe(false)
-  })
-
-  it('rejects a missing session, empty id, and invalid coordinate arguments', async () => {
-    const ctx = await setup()
-    const base = {
-      attachment_id: `sha256:${'f'.repeat(64)}`,
-      preview_width: 1,
-      preview_height: 1,
-      x: 0,
-      y: 0,
-      width: 1,
-      height: 1,
-    }
-    const noSession = await call(ctx, 'read_image_region', base)
-    expect(text(noSession)).toContain('requires an active agent session')
-
-    const empty = await call(ctx, 'read_image_region', { ...base, attachment_id: ' ' }, agentOn('vision-model'))
-    expect(text(empty)).toContain('attachment_id must be a non-empty string')
-
-    const source = await ctx.attachments.saveImage({ data: PNG_1X1, mediaType: 'image/png' })
-    const history = [createUserMessage({
-      content: [{ type: 'image', attachment: source.ref }],
-      source: { kind: 'plugin', plugin: 'test' },
-    })]
-    const agent = agentOn('vision-model', 'visual', history)
-    for (const [field, value, expected] of [
-      ['preview_width', 0, 'preview_width must be a positive integer'],
-      ['preview_height', 0, 'preview_height must be a positive integer'],
-      ['x', -1, 'x must be a non-negative integer'],
-      ['y', -1, 'y must be a non-negative integer'],
-      ['width', 0, 'width must be a positive integer'],
-      ['height', 0, 'height must be a positive integer'],
-    ] as const) {
-      const result = await call(ctx, 'read_image_region', {
-        ...base,
-        attachment_id: source.ref.attachmentId,
-        [field]: value,
-      }, agent)
-      expect(text(result)).toContain(expected)
-    }
-  })
-
-  it('projects optional crop metadata from a provider result', async () => {
-    class CropMetadataStore extends AttachmentStore {
-      readonly imageLimits: ImageAttachmentLimits = {
-        maxImageBytes: 1024,
-        maxImagesPerMessage: 1,
-        maxMessageImageBytes: 1024,
-        maxImagePixels: 100,
-        maxImageDimension: 100,
-        mediaTypes: ['image/png'],
-      }
-
-      validateImage(): Promise<void> { return Promise.resolve() }
-      saveImage(): Promise<SavedImageAttachment> { throw new Error('not used') }
-      readImage(): Promise<StoredImageAttachment> { throw new Error('not used') }
-      override cropImage(ref: ImageAttachmentRef): Promise<SavedImageAttachment> {
-        return Promise.resolve({
-          ref: { ...ref, sourceWidth: 2, sourceHeight: 2 },
-          source: { mediaType: ref.mediaType, bytes: ref.bytes, width: 2, height: 2 },
-        })
-      }
-    }
-    const ctx = await setup({ attachments: false })
-    await ctx.plugin(CropMetadataStore)
-    const ref: ImageAttachmentRef = {
-      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
-      mediaType: 'image/png', bytes: 1, width: 1, height: 1,
-    }
-    const history = [createUserMessage({
-      content: [{ type: 'image', attachment: ref }],
-      source: { kind: 'plugin', plugin: 'test' },
-    })]
-
-    const result = await call(ctx, 'read_image_region', {
-      attachment_id: ref.attachmentId,
-      preview_width: 1,
-      preview_height: 1,
-      x: 0,
-      y: 0,
-      width: 1,
-      height: 1,
-    }, agentOn('vision-model', 'visual', history))
-
-    expect(result.content[1]).toMatchObject({
-      type: 'image',
-      attachment: { sourceWidth: 2, sourceHeight: 2 },
-    })
-    expect(result.content[1]).not.toHaveProperty('attachment.name')
-  })
-
-  it('declares a generic read presentation for image-region calls', async () => {
-    const ctx = await setup()
-
-    expect(ctx.tools.get('read_image_region')?.presentCall?.({
-      attachment_id: 'sha256:abc',
-      preview_width: 1,
-      preview_height: 1,
-      x: 0,
-      y: 0,
-      width: 1,
-      height: 1,
-    }))
-      .toEqual({ card: 'generic', title: 'Read image region sha256:abc', kind: 'read' })
   })
 })
 
@@ -773,7 +565,7 @@ describe('registration surface', () => {
     const attachmentsFiber = await ctx.plugin(LocalAttachmentStore, { dshHome: home })
     const toolFsFiber = await ctx.plugin(ToolFs)
     const names = () => ctx.tools.schemas().map(schema => schema.name).sort()
-    expect(names()).toEqual(['edit', 'read', 'read_image', 'read_image_region', 'write'])
+    expect(names()).toEqual(['edit', 'read', 'read_image', 'write'])
 
     // Disposing only the attachment store tears down the scoped inject fiber:
     // read_image withdraws while the unconditional tools stay registered.
@@ -782,7 +574,7 @@ describe('registration surface', () => {
 
     // Remounting the store restores the conditional registration.
     const remounted = await ctx.plugin(LocalAttachmentStore, { dshHome: home })
-    expect(names()).toEqual(['edit', 'read', 'read_image', 'read_image_region', 'write'])
+    expect(names()).toEqual(['edit', 'read', 'read_image', 'write'])
 
     // Disposing the whole plugin withdraws every tool, read_image included.
     await toolFsFiber.dispose()
@@ -801,12 +593,6 @@ describe('registration surface', () => {
       kind: 'read',
       locations: [{ path: 'shot.png' }],
     })
-    expect(ctx.tools.executionMode({
-      signal: testToolSignal,
-      callId: CallId('region-parallel'),
-      name: 'read_image_region',
-      arguments: { attachment_id: 'sha256:a', preview_width: 1, preview_height: 1, x: 0, y: 0, width: 1, height: 1 },
-    })).toEqual({ kind: 'parallel' })
   })
 })
 

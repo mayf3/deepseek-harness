@@ -63,27 +63,17 @@ export interface StoredImageAttachment {
   data: Uint8Array
 }
 
-/** Pixel rectangle in the oriented 2048px master-version coordinate system. */
-export interface MasterImageCrop {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
 /** Deterministic request-image policy selected by one exact model route. */
 export interface ImageRequestPolicy {
   /** Maximum width multiplied by height after aspect-preserving projection. */
   maxPixels: number
   /** Encoded-byte cap before base64 expansion or Files API upload. */
   maxBytes: number
-  /** Optional master-coordinate crop applied before pixel-budget scaling. */
-  crop?: MasterImageCrop
 }
 
 /** Cached request version derived from one provider-independent master attachment. */
 export interface RequestImageAttachment {
-  /** Cache and upload-index key over the master id, policy, crop, and fixed encoder parameters. */
+  /** Cache and upload-index key over the master id, policy, and fixed encoder parameters. */
   variantId: ImageVariantId
   /** Durable master reference from which this request version was derived. */
   master: ImageAttachmentRef
@@ -99,18 +89,6 @@ export interface RequestImageAttachment {
   space: 'srgb'
   /** Whether the encoded request version retains an alpha channel. */
   hasAlpha: boolean
-  /** Applied master-coordinate crop, when present. */
-  crop?: MasterImageCrop
-}
-
-/** Crop coordinates measured by a model on the request preview it received. */
-export interface PreviewImageCrop {
-  previewWidth: number
-  previewHeight: number
-  x: number
-  y: number
-  width: number
-  height: number
 }
 
 /** Intrinsic facts of the submitted source raster, before master-version preparation. */

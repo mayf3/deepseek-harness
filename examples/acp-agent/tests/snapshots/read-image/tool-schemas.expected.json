@@ -246,7 +246,7 @@
     },
     {
       "name": "read_image",
-      "description": "Read a PNG/JPEG/WebP/GIF file and return the image itself. Requires the current model to accept image input.",
+      "description": "Read a PNG/JPEG/WebP/GIF file and return the image itself. Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect an image. Independent files may be read concurrently in small batches. Requires the current model to accept image input.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -257,52 +257,6 @@
         },
         "required": [
           "file_path"
-        ]
-      }
-    },
-    {
-      "name": "read_image_region",
-      "description": "Crop a region from an image attachment already visible in this session. Coordinates use the preview dimensions supplied beside that image.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "attachment_id": {
-            "type": "string",
-            "description": "Complete attachment id shown beside the image."
-          },
-          "preview_width": {
-            "type": "integer",
-            "description": "Width of the preview shown to the model."
-          },
-          "preview_height": {
-            "type": "integer",
-            "description": "Height of the preview shown to the model."
-          },
-          "x": {
-            "type": "integer",
-            "description": "Left edge in preview pixels."
-          },
-          "y": {
-            "type": "integer",
-            "description": "Top edge in preview pixels."
-          },
-          "width": {
-            "type": "integer",
-            "description": "Crop width in preview pixels."
-          },
-          "height": {
-            "type": "integer",
-            "description": "Crop height in preview pixels."
-          }
-        },
-        "required": [
-          "attachment_id",
-          "preview_width",
-          "preview_height",
-          "x",
-          "y",
-          "width",
-          "height"
         ]
       }
     },

@@ -151,22 +151,15 @@ describe('AttachmentStore.readImageRequests', () => {
     expect(versions.map(version => version.master.name)).toEqual(['1.png', '2.png'])
   })
 
-  it('reports unsupported request projection and crop operations, preserving cancellation', async () => {
+  it('reports unsupported request projection while preserving cancellation', async () => {
     const store = new UnsupportedProjectionStore(new Context())
     const ref = (await new RecordingStore(new Context()).saveImage(image(1))).ref
     await expect(store.readImageRequest(ref, { maxPixels: 1, maxBytes: 1 }))
       .rejects.toMatchObject({ code: 'ATTACHMENT_PROJECTION_UNSUPPORTED' })
-    await expect(store.cropImage(ref, {
-      previewWidth: 1, previewHeight: 1, x: 0, y: 0, width: 1, height: 1,
-    })).rejects.toMatchObject({ code: 'ATTACHMENT_PROJECTION_UNSUPPORTED' })
-
     const controller = new AbortController()
     const reason = new Error('cancel unsupported projection')
     controller.abort(reason)
     expect(() => store.readImageRequest(ref, { maxPixels: 1, maxBytes: 1 }, controller.signal)).toThrow(reason)
-    expect(() => store.cropImage(ref, {
-      previewWidth: 1, previewHeight: 1, x: 0, y: 0, width: 1, height: 1,
-    }, controller.signal)).toThrow(reason)
   })
 })
 

@@ -1,7 +1,5 @@
 /**
- * The model-facing image tools: `read_image` commits a PNG/JPEG/WebP/GIF file,
- * while `read_image_region` crops a session-authorized durable attachment by
- * coordinates measured on the exact preview shown to the model.
+ * The model-facing `read_image` tool commits a PNG/JPEG/WebP/GIF file.
  *
  * The route gate is deliberately stricter than the host upload preflight. An
  * image-reading tool is useful only when the exact calling route can inspect
@@ -13,7 +11,7 @@
 import { basename, extname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef, ImageMediaType, PreviewImageCrop } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -60,14 +58,6 @@ export interface ImageReadValue {
     /** Intrinsic height of the file on disk; present only when storage downscaled it. */
     sourceHeight?: number
   }
-}
-
-/** Structured result of cropping a session-authorized image attachment. */
-export interface ImageRegionReadValue {
-  sourceAttachmentId: string
-  preview: { width: number; height: number }
-  crop: { x: number; y: number; width: number; height: number }
-  image: ImageReadValue['image']
 }
 
 /**
@@ -118,55 +108,6 @@ export function imageRefFromValue(image: ImageReadValue['image']): ImageAttachme
     ...image.sourceWidth === undefined ? {} : { sourceWidth: image.sourceWidth },
     ...image.sourceHeight === undefined ? {} : { sourceHeight: image.sourceHeight },
   }
-}
-
-function findImageRef(
-  content: readonly ContentBlock[],
-  attachmentId: string,
-): ImageAttachmentRef | undefined {
-  for (const block of content) {
-    if (block.type === 'image' && block.attachment.attachmentId === attachmentId) return block.attachment
-    if (block.type === 'tool-result') {
-      const nested = findImageRef(block.content, attachmentId)
-      if (nested !== undefined) return nested
-    }
-  }
-  return undefined
-}
-
-function sessionImageRef(exec: ToolExecution, attachmentId: string): ImageAttachmentRef {
-  const session = exec.agent?.session
-  if (session === undefined) {
-    throw new Error('read_image_region requires an active agent session')
-  }
-  for (const message of session.deriveMessages()) {
-    const ref = findImageRef(message.content, attachmentId)
-    if (ref !== undefined) return ref
-  }
-  throw new Error(`attachment "${attachmentId}" is not referenced by the current session`)
-}
-
-function positiveInteger(value: number, name: string): number {
-  if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer`)
-  return value
-}
-
-function nonNegativeInteger(value: number, name: string): number {
-  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer`)
-  return value
-}
-
-function regionReadContent(value: ImageRegionReadValue): ContentBlock[] {
-  return [
-    {
-      type: 'text',
-      text: `<attachment>${value.sourceAttachmentId}</attachment>\n<type>image-region</type>\n<content>\n`
-        + `preview ${value.preview.width}x${value.preview.height} px; crop `
-        + `x=${value.crop.x}, y=${value.crop.y}, width=${value.crop.width}, height=${value.crop.height}; `
-        + `result ${value.image.width}x${value.image.height} px\n</content>`,
-    },
-    { type: 'image', attachment: imageRefFromValue(value.image) },
-  ]
 }
 
 /**
@@ -220,7 +161,9 @@ function imageReadContent(value: ImageReadValue): ContentBlock[] {
 export function applyReadImageTool(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'read_image',
-    description: 'Read a PNG/JPEG/WebP/GIF file and return the image itself. Requires the current model to accept image input.',
+    description: 'Read a PNG/JPEG/WebP/GIF file and return the image itself. '
+      + 'Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect an image. '
+      + 'Independent files may be read concurrently in small batches. Requires the current model to accept image input.',
     parameters: {
       file_path: { type: 'string', required: true, description: 'Path to the image file, resolved by the filesystem backend.' },
     },
@@ -330,89 +273,6 @@ export function applyReadImageTool(ctx: Context): void {
         title: `Read image ${args.file_path}`,
         kind: 'read',
         locations: [{ path: args.file_path }],
-      }
-    },
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'read_image_region',
-    description: 'Crop a region from an image attachment already visible in this session. Coordinates use the preview dimensions supplied beside that image.',
-    parameters: {
-      attachment_id: { type: 'string', required: true, description: 'Complete attachment id shown beside the image.' },
-      preview_width: { type: 'integer', required: true, description: 'Width of the preview shown to the model.' },
-      preview_height: { type: 'integer', required: true, description: 'Height of the preview shown to the model.' },
-      x: { type: 'integer', required: true, description: 'Left edge in preview pixels.' },
-      y: { type: 'integer', required: true, description: 'Top edge in preview pixels.' },
-      width: { type: 'integer', required: true, description: 'Crop width in preview pixels.' },
-      height: { type: 'integer', required: true, description: 'Crop height in preview pixels.' },
-    },
-    output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          sourceAttachmentId: { type: 'string', required: true },
-          preview: {
-            type: 'object',
-            additionalProperties: false,
-            required: true,
-            properties: {
-              width: { type: 'integer', required: true },
-              height: { type: 'integer', required: true },
-            },
-          },
-          crop: {
-            type: 'object',
-            additionalProperties: false,
-            required: true,
-            properties: {
-              x: { type: 'integer', required: true },
-              y: { type: 'integer', required: true },
-              width: { type: 'integer', required: true },
-              height: { type: 'integer', required: true },
-            },
-          },
-          image: IMAGE_VALUE_SCHEMA,
-        },
-      },
-      render: (_args, value) => regionReadContent(value),
-    },
-    isConcurrencySafe: () => true,
-    async execute(args, exec) {
-      const attachmentId = args.attachment_id.trim()
-      if (attachmentId.length === 0) throw new Error('attachment_id must be a non-empty string')
-      const ref = sessionImageRef(exec, attachmentId)
-      await assertImageCapableRoute(ctx, exec, attachmentId)
-      const crop: PreviewImageCrop = {
-        previewWidth: positiveInteger(args.preview_width, 'preview_width'),
-        previewHeight: positiveInteger(args.preview_height, 'preview_height'),
-        x: nonNegativeInteger(args.x, 'x'),
-        y: nonNegativeInteger(args.y, 'y'),
-        width: positiveInteger(args.width, 'width'),
-        height: positiveInteger(args.height, 'height'),
-      }
-      const saved = await ctx.attachments.cropImage(ref, crop, exec.signal)
-      return {
-        sourceAttachmentId: ref.attachmentId,
-        preview: { width: crop.previewWidth, height: crop.previewHeight },
-        crop: { x: crop.x, y: crop.y, width: crop.width, height: crop.height },
-        image: {
-          attachmentId: saved.ref.attachmentId,
-          mediaType: saved.ref.mediaType,
-          bytes: saved.ref.bytes,
-          width: saved.ref.width,
-          height: saved.ref.height,
-          ...saved.ref.name === undefined ? {} : { name: saved.ref.name },
-          ...saved.ref.sourceWidth === undefined ? {} : { sourceWidth: saved.ref.sourceWidth },
-          ...saved.ref.sourceHeight === undefined ? {} : { sourceHeight: saved.ref.sourceHeight },
-        },
-      }
-    },
-    presentCall(args): GenericCallView {
-      return {
-        card: 'generic',
-        title: `Read image region ${args.attachment_id}`,
-        kind: 'read',
       }
     },
   }))

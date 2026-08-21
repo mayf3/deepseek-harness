@@ -5,7 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import sharp from 'sharp'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CompressionLimiter } from '../src/compression-limiter.ts'
-import LocalAttachmentStore, { previewCropToMaster, requestImageDimensions } from '../src/index.ts'
+import LocalAttachmentStore, { requestImageDimensions } from '../src/index.ts'
 
 const homes: string[] = []
 
@@ -51,23 +51,6 @@ describe('request image dimensions', () => {
     expect(requestImageDimensions(2, 4, 5)).toEqual({ width: 1, height: 2 })
   })
 
-  it('rejects invalid preview dimensions, origins, sizes, and bounds', () => {
-    expect(() => previewCropToMaster(0, 10, {
-      previewWidth: 10, previewHeight: 10, x: 0, y: 0, width: 1, height: 1,
-    })).toThrow('Master image width must be a positive integer')
-    expect(() => previewCropToMaster(10, 10, {
-      previewWidth: 0, previewHeight: 10, x: 0, y: 0, width: 1, height: 1,
-    })).toThrow('Preview width must be a positive integer')
-    expect(() => previewCropToMaster(10, 10, {
-      previewWidth: 10, previewHeight: 10, x: -1, y: 0, width: 1, height: 1,
-    })).toThrow('Preview crop origin must use non-negative integer pixels')
-    expect(() => previewCropToMaster(10, 10, {
-      previewWidth: 10, previewHeight: 10, x: 0, y: 0, width: 0, height: 1,
-    })).toThrow('Preview crop width must be a positive integer')
-    expect(() => previewCropToMaster(10, 10, {
-      previewWidth: 10, previewHeight: 10, x: 9, y: 0, width: 2, height: 1,
-    })).toThrow('Preview crop extends beyond the image shown to the model')
-  })
 })
 
 describe('local request-image cache', () => {
@@ -85,7 +68,7 @@ describe('local request-image cache', () => {
     expect(batch.map(value => value.master.attachmentId)).toEqual([first.attachmentId, second.attachmentId])
   })
 
-  it('rejects invalid request policies and master crop bounds', async () => {
+  it('rejects invalid request policies', async () => {
     const attachments = await store()
     const master = (await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })).ref
 
@@ -93,15 +76,6 @@ describe('local request-image cache', () => {
       .rejects.toThrow('Image request maxPixels must be a positive integer')
     await expect(attachments.readImageRequest(master, { maxPixels: 100, maxBytes: 0 }))
       .rejects.toThrow('Image request maxBytes must be a positive integer')
-    await expect(attachments.readImageRequest(master, {
-      maxPixels: 100, maxBytes: 100, crop: { x: -1, y: 0, width: 1, height: 1 },
-    })).rejects.toThrow('Image crop origin must use non-negative integer pixels')
-    await expect(attachments.readImageRequest(master, {
-      maxPixels: 100, maxBytes: 100, crop: { x: 0, y: 0, width: 0, height: 1 },
-    })).rejects.toThrow('Image crop width must be a positive integer')
-    await expect(attachments.readImageRequest(master, {
-      maxPixels: 100, maxBytes: 100, crop: { x: 7, y: 0, width: 2, height: 1 },
-    })).rejects.toThrow('Image crop extends beyond the stored master image')
   })
 
   it('refuses a one-pixel request that cannot meet the encoded-byte budget', async () => {
@@ -176,51 +150,6 @@ describe('local request-image cache', () => {
     expect(Buffer.from(repeated.data).toString('base64')).toBe(Buffer.from(wideRequest.data).toString('base64'))
     expect(low.variantId).not.toBe(wideRequest.variantId)
     expect(low.width * low.height).toBeLessThanOrEqual(512 * 512 + low.width)
-  })
-
-  it('maps preview coordinates to the 2048px master and crops the master instead of the preview', async () => {
-    const attachments = await store()
-    const pixels = Buffer.alloc(2048 * 1024 * 3)
-    for (let y = 0; y < 1024; y += 1) {
-      for (let x = 0; x < 2048; x += 1) {
-        const offset = (y * 2048 + x) * 3
-        pixels[offset] = x < 1024 ? 255 : 0
-        pixels[offset + 1] = x < 1024 ? 0 : 255
-        pixels[offset + 2] = 0
-      }
-    }
-    const source = new Uint8Array(await sharp(pixels, { raw: { width: 2048, height: 1024, channels: 3 } }).png().toBuffer())
-    const master = (await attachments.saveImage({ data: source, mediaType: 'image/png', name: 'halves.png' })).ref
-    const preview = await attachments.readImageRequest(master, { maxPixels: 640_000, maxBytes: 1024 * 1024 })
-    const previewCrop = {
-      previewWidth: preview.width,
-      previewHeight: preview.height,
-      x: Math.floor(preview.width / 2),
-      y: 0,
-      width: preview.width - Math.floor(preview.width / 2),
-      height: preview.height,
-    }
-    const mapped = previewCropToMaster(master.width, master.height, previewCrop)
-
-    const cropped = await attachments.cropImage(master, previewCrop)
-    const stored = await attachments.readImage(cropped.ref)
-    const pixel = await sharp(stored.data).resize(1, 1).removeAlpha().raw().toBuffer()
-
-    expect(mapped).toEqual({ x: 1024, y: 0, width: 1024, height: 1024 })
-    expect(cropped.ref.width).toBe(mapped.width)
-    expect(cropped.ref.height).toBe(mapped.height)
-    expect(pixel[1]).toBeGreaterThan(pixel[0] ?? 0)
-  })
-
-  it('names a crop from an unnamed attachment id', async () => {
-    const attachments = await store()
-    const master = (await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })).ref
-
-    const cropped = await attachments.cropImage(master, {
-      previewWidth: 8, previewHeight: 4, x: 0, y: 0, width: 4, height: 4,
-    })
-
-    expect(cropped.ref.name).toMatch(/^sha256:[0-9a-f]{8}-crop\.(?:png|webp|jpg)$/u)
   })
 
   it('classifies opaque PNG pixels and preserves alpha while enforcing the request budget', async () => {

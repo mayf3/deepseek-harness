@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-**面向模型的文件系统工具**（`read`、`read_image`、`read_image_region`、`write`、`edit`）及其**执行器**。这是文件系统栈的消费方层：拥有工具名称、JSON Schema、参数校验、提示词段、**读取窗口逻辑**和结果格式化。它**直接**通过 `ctx.fs` 提供方约定（[`@deepseek-ai/dsh-fs`](../fs)）读取、写入和编辑。新鲜度与观察策略由独立插件（[`@deepseek-ai/dsh-fs-observation-policy`](../fs-observation-policy)）通过 `fs/*` 事件门禁贡献；工具不与其方法耦合。使用施加沙箱限制的提供方时，逐会话执行需要共享沙箱策略服务，工具还会为文件系统变更提供升权路径。
+**面向模型的文件系统工具**（`read`、`read_image`、`write`、`edit`）及其**执行器**。这是文件系统栈的消费方层：拥有工具名称、JSON Schema、参数校验、提示词段、**读取窗口逻辑**和结果格式化。它**直接**通过 `ctx.fs` 提供方约定（[`@deepseek-ai/dsh-fs`](../fs)）读取、写入和编辑。新鲜度与观察策略由独立插件（[`@deepseek-ai/dsh-fs-observation-policy`](../fs-observation-policy)）通过 `fs/*` 事件门禁贡献；工具不与其方法耦合。使用施加沙箱限制的提供方时，逐会话执行需要共享沙箱策略服务，工具还会为文件系统变更提供升权路径。
 
 ```ts ignore-check
 // Default deployment: a ctx.fs provider, the policy plugin, then the tools.
@@ -14,7 +14,7 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 `@deepseek-ai/dsh-fs-observation-policy` 是**可选的**：省略时，工具直接使用裸提供方（无条件写入/覆盖/编辑，无已观察状态）。加载这些工具的部署也应加载该插件，从而提供写入/编辑前读取行为。
 
-`read_image` 和 `read_image_region` 只在持久 `ctx.attachments` 服务已挂载时注册。执行时还要求确切路由的模型声明 `image` 输入，通过 `ctx.llm.resolveModelInfo` 从会话最新请求 header 解析，缺失时回退到 agent 选项。`read_image_region` 只接受调用会话已经引用的完整附件 ID，因此可以裁剪没有文件路径的用户上传图片，但不能越过会话范围。
+`read_image` 只在持久 `ctx.attachments` 服务已挂载时注册。执行时还要求确切路由的模型声明 `image` 输入，通过 `ctx.llm.resolveModelInfo` 依次从会话最新请求 header 和 agent 选项解析。
 
 ## 配置
 
@@ -32,14 +32,13 @@ await ctx.plugin(ToolFs)                                  // this package — re
 | 工具 | 参数 | 行为 |
 |---|---|---|
 | `read` | `file_path`、`offset?`、`limit?` | 带行号的 UTF-8 内容和分页 footer。`offset` 从 1 开始；`limit` 默认为配置的 `readLimit`（2000），上限也为该值。 |
-| `read_image` | `file_path` | 通过有界字节 seam 读取 PNG/JPEG/WebP/GIF 文件，经 `ctx.attachments.saveImage` 持久保存，并在小型元数据信封旁返回图像块。只有确切路由的模型声明图像输入时才会成功。 |
-| `read_image_region` | `attachment_id`、`preview_width`、`preview_height`、`x`、`y`、`width`、`height` | 解析会话有权访问的图片，把预览坐标矩形映射到存储主版本，持久保存裁剪结果并返回新图片块。 |
+| `read_image` | `file_path` | 通过有界字节 seam 读取 PNG/JPEG/WebP/GIF 文件，经 `ctx.attachments.saveImage` 持久保存，并在小型元数据信封旁返回图像块。Harness 会在下一次模型请求前校验并缩小受支持的大图，因此模型可以直接读取源文件，无需先创建缩略图。只有确切路由的模型声明图像输入时才会成功。 |
 | `write` | `file_path`、`content` | 创建文件或完整替换文件。有策略插件时：覆盖现有文件要求先在未变版本上执行 `read`；创建新文件不需要。没有插件时：无条件执行。 |
 | `edit` | `file_path`、非空 `old_string`、`new_string`、`replace_all?` | 字面量替换；除非 `replace_all` 为 true，否则要求唯一匹配。有策略插件时：要求先执行 `read`（任何窗口），且文件此后未变。没有插件时：无条件执行。 |
 
 字段名使用 snake_case，与 Claude Code 和现有 harness 工具 schema 一致。
 
-结构化成功值分别为：`read` → `{ path, offset, lines: [{ number, text }], totalLines }`，`read_image` → `{ path, image: { attachmentId, mediaType, bytes, width, height, name?, sourceWidth?, sourceHeight? } }`，`read_image_region` → `{ sourceAttachmentId, preview, crop, image }`，`write` → `{ path, operation: 'create' | 'update', before: string | null, after }`，`edit` → `{ path, before, after }`。图片 source 字段只在主版本准备缩小了提交光栅时出现。原生渲染器会保留下方带行号的读取结果和变更确认。`write` 和 `edit` 从这些值派生可回放的 diff 卡片元数据，`read` 派生可回放的读取卡片窗口 `{ path, offset, lines, totalLines, lang? }`；仅用于执行的结构化值不会添加到 `tool/result`，图片渲染器则会发出由结果记录的持久图片块。
+结构化成功值分别为：`read` → `{ path, offset, lines: [{ number, text }], totalLines }`，`read_image` → `{ path, image: { attachmentId, mediaType, bytes, width, height, name?, sourceWidth?, sourceHeight? } }`，`write` → `{ path, operation: 'create' | 'update', before: string | null, after }`，`edit` → `{ path, before, after }`。图片 source 字段只在主版本准备缩小了提交光栅时出现。原生渲染器会保留下方带行号的读取结果和变更确认。`write` 和 `edit` 从这些值派生可回放的 diff 卡片元数据，`read` 派生可回放的读取卡片窗口 `{ path, offset, lines, totalLines, lang? }`；仅用于执行的结构化值不会添加到 `tool/result`，图片渲染器则会发出由结果记录的持久图片块。
 
 ## 工具就是执行器；策略是事件门禁
 
@@ -47,7 +46,6 @@ await ctx.plugin(ToolFs)                                  // this package — re
 
 - **read**：一次 `ctx.fs.stat`（用于类型、大小路由和版本），随后调用 `readText`/`streamText`，构建行窗口，再发出 `fs/observed`，使用普通 `ctx.emit`。（1 次 stat。）
 - **read_image**：在任何 I/O 之前校验参数、扩展名、附件可用性、部署接受的媒体类型和图像路由；随后一次 `ctx.fs.stat`（目标缺失时与 `read` 一样记录 `absent` 观察）、以 `imageLimits.maxImageBytes` 与 `imageLimits.maxMessageImageBytes` 中较小者为上限的有界 `ctx.fs.readBytes`（结果是携带一张图像的一条消息）、`attachments.saveImage`（内容寻址，因此在 `tool/result` 事件追加时图像块引用的对象已持久提交），最后发出 `fs/observed`。（1 次 stat。）
-- **read_image_region**：只从当前会话消息解析完整附件 ID，校验整数预览坐标，通过 `attachments.cropImage` 把矩形映射到存储主版本，并把持久裁剪结果作为图片块返回。它不执行文件系统路径操作，也不发出 `fs/observed` 事件。
 - **write**：调用 `ctx.waterfall('fs/write-intent', target, exec, () => undefined)` 取得可选防护，然后调用 `ctx.fs.writeText(target, content, intent)`，再发出 `fs/observed`。（0 次 stat。）
 - **edit**：调用 `ctx.waterfall('fs/edit-intent', target, exec, () => undefined)` 取得可选防护，然后调用 `ctx.fs.editText(target, edit, intent)`，再发出 `fs/observed`。（0 次 stat。）
 
@@ -101,7 +99,7 @@ Use the edit tool for targeted changes to existing UTF-8 text files. It replaces
 
 #### 模型看到的内容
 
-模型会看到已生成的 [`read`、`read_image`、`read_image_region`、`write` 和 `edit` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-fs)，参数使用 snake_case。图片工具只在持久附件存储已挂载时出现；schema 本身与路由无关，严格门禁在执行时拒绝。作用域工具限制可以为某个 agent 移除任一定义。
+模型会看到已生成的 [`read`、`read_image`、`write` 和 `edit` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-fs)，参数使用 snake_case。图片工具只在持久附件存储已挂载时出现；schema 本身与路由无关，严格门禁在执行时拒绝。作用域工具限制可以为某个 agent 移除任一定义。
 
 #### Token 影响
 
@@ -129,7 +127,7 @@ Use the edit tool for targeted changes to existing UTF-8 text files. It replaces
 
 #### 模型看到的内容
 
-成功的 `read_image` 返回 `<path><displayPath></path>`、`<type>image</type>` 和写明媒体类型、主版本尺寸与字节数的 `<content>` 信封，随后是作为原生图像块的图像本身。成功的 `read_image_region` 返回 `image-region` 信封，写明源附件、提交的预览尺寸和矩形及结果尺寸，随后是作为原生图像块的裁剪结果。新持久引用会随结果写入会话日志，然后才进入下一次模型请求。请求适配器从主版本派生预览，因此之后的局部读取不会从已经缩小的预览继续裁剪。
+成功的 `read_image` 返回 `<path><displayPath></path>`、`<type>image</type>` 和写明媒体类型、主版本尺寸与字节数的 `<content>` 信封，随后是作为原生图像块的图像本身。结果会随持久引用写入会话日志，然后才进入下一次模型请求。
 
 #### Token 影响
 
@@ -157,7 +155,7 @@ Use the edit tool for targeted changes to existing UTF-8 text files. It replaces
 
 #### 模型看到的内容
 
-失败会规范化为 `Error: <message>`。本包稳定的校验和读取消息是 `file_path must be a non-empty string`、`limit must be less than or equal to <max>`、`old_string must be a non-empty string`、`old_string and new_string must differ`、`cannot read "<path>": not found`、`cannot read "<path>": not a regular file`、`offset <offset> is out of range for "<path>" (<total> lines)`、`cannot read "<path>": read_image only accepts PNG/JPEG/WebP/GIF paths`、`cannot read "<path>" as an image: model "<model>" does not declare image input; switch to an image-capable model to read images`，以及类型不匹配的修复消息 `cannot read "<path>": the <ext> extension declares <type>, but the bytes use a different image format; rename the file to match its actual format if it is PNG/JPEG/WebP/GIF, or convert it to one of those formats`。16-bit 转换失败会报告 `cannot read "<path>": the 16-bit PNG could not be converted to the canonical 8-bit sRGB form; convert it to an 8-bit PNG/JPEG/WebP and retry`。局部读取会在改变存储前拒绝空白或超出会话范围的附件 ID 以及无效预览矩形。提供方和策略模板在各自包的 README 中逐字列出。防护变更失败还会在消息中携带恢复指令，由本包面向模型的错误包装追加：`FS_STALE_VERSION` 追加 `re-read the file, then retry`，`FS_NOT_OBSERVED` 追加 `read the file, then retry`；结构化错误码保持不变。该次重新读取确认缺失后，edit 会报告 `FS_NOT_FOUND`，不会重复陈旧恢复指令；write 则使用带防护的创建。
+失败会规范化为 `Error: <message>`。本包稳定的校验和读取消息是 `file_path must be a non-empty string`、`limit must be less than or equal to <max>`、`old_string must be a non-empty string`、`old_string and new_string must differ`、`cannot read "<path>": not found`、`cannot read "<path>": not a regular file`、`offset <offset> is out of range for "<path>" (<total> lines)`、`cannot read "<path>": read_image only accepts PNG/JPEG/WebP/GIF paths`、`cannot read "<path>" as an image: model "<model>" does not declare image input; switch to an image-capable model to read images`，以及类型不匹配的修复消息 `cannot read "<path>": the <ext> extension declares <type>, but the bytes use a different image format; rename the file to match its actual format if it is PNG/JPEG/WebP/GIF, or convert it to one of those formats`。16-bit 转换失败会报告 `cannot read "<path>": the 16-bit PNG could not be converted to the canonical 8-bit sRGB form; convert it to an 8-bit PNG/JPEG/WebP and retry`。提供方和策略模板在各自包的 README 中逐字列出。防护变更失败还会在消息中携带恢复指令，由本包面向模型的错误包装追加：`FS_STALE_VERSION` 追加 `re-read the file, then retry`，`FS_NOT_OBSERVED` 追加 `read the file, then retry`；结构化错误码保持不变。该次重新读取确认缺失后，edit 会报告 `FS_NOT_FOUND`，不会重复陈旧恢复指令；write 则使用带防护的创建。
 
 #### Token 影响
 
@@ -173,4 +171,5 @@ Use the edit tool for targeted changes to existing UTF-8 text files. It replaces
 - **`read` 只处理 UTF-8 文本文件**：图像使用独立的、按扩展名路由的 `read_image` 工具；PDF、音频和视频仍延期处理。目录目标为 `FS_NOT_REGULAR_FILE`。
 - **媒体类型按扩展名声明**：扩展名选择声明类型，附件存储的魔数校验保持权威；扩展名错误但格式正确的图像会得到改名修复提示，而不是被嗅探接受。
 - **工具结果卡片没有内嵌图像预览**：UI 表面以通用形式渲染图像结果（持久引用而非像素）；内嵌渲染延后到 UI 包处理。
+- **没有附件局部读取工具**：图片具有文件路径时，agent 可以用其他可用工具裁剪。粘贴或拖入但没有路径的图片无法按更高分辨率重新读取。
 - **没有超时接口**：`read`/`write`/`edit` 不接受超时参数，也不声明 `timeout-policy` 预算；取消只通过 `exec.signal` 传递（见[提供方理由](../README.zh.md#no-timeouts-on-file-io)）。

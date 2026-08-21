@@ -1,4 +1,4 @@
-/** Deterministic cached image versions for model requests and region reads. */
+/** Deterministic cached image versions for model requests. */
 
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
@@ -9,8 +9,6 @@ import type {
   ImageMediaType,
   ImageAttachmentRef,
   ImageRequestPolicy,
-  MasterImageCrop,
-  PreviewImageCrop,
   RequestImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
@@ -80,22 +78,6 @@ function checkedInteger(value: number, name: string): number {
 function validatePolicy(policy: ImageRequestPolicy): void {
   checkedInteger(policy.maxPixels, 'Image request maxPixels')
   checkedInteger(policy.maxBytes, 'Image request maxBytes')
-  if (policy.crop !== undefined) {
-    if (!Number.isSafeInteger(policy.crop.x) || policy.crop.x < 0
-      || !Number.isSafeInteger(policy.crop.y) || policy.crop.y < 0) {
-      throw new AttachmentError('Image crop origin must use non-negative integer pixels.', 'INVALID_ATTACHMENT_REF')
-    }
-    checkedInteger(policy.crop.width, 'Image crop width')
-    checkedInteger(policy.crop.height, 'Image crop height')
-  }
-}
-
-function checkedCrop(master: StoredImageAttachment, crop: MasterImageCrop | undefined): MasterImageCrop | undefined {
-  if (crop === undefined) return undefined
-  if (crop.x + crop.width > master.ref.width || crop.y + crop.height > master.ref.height) {
-    throw new AttachmentError('Image crop extends beyond the stored master image.', 'INVALID_ATTACHMENT_REF')
-  }
-  return crop
 }
 
 function descriptor(master: ImageAttachmentRef, policy: ImageRequestPolicy): string {
@@ -104,7 +86,6 @@ function descriptor(master: ImageAttachmentRef, policy: ImageRequestPolicy): str
     masterAttachmentId: master.attachmentId,
     routePixelBudget: policy.maxPixels,
     encodedByteBudget: policy.maxBytes,
-    crop: policy.crop ?? null,
     encoding: {
       png: { compressionLevel: 9, palette: 'opaque-only' },
       webpQualities: REQUEST_IMAGE_QUALITIES,
@@ -118,7 +99,7 @@ function descriptor(master: ImageAttachmentRef, policy: ImageRequestPolicy): str
 /**
  * Complete deterministic identity for one master and route-owned request policy.
  * @param master - provider-independent durable master reference.
- * @param policy - route-owned pixel, byte, and crop policy.
+ * @param policy - route-owned pixel and byte policy.
  * @returns branded digest over every request transform input.
  */
 export function requestImageVariantId(
@@ -128,20 +109,13 @@ export function requestImageVariantId(
   return ImageVariantId(`sha256:${digest(descriptor(master, policy))}`)
 }
 
-function pipeline(master: StoredImageAttachment, crop: MasterImageCrop | undefined, width: number, height: number): Sharp {
-  return sourcePipeline(master, crop)
+function pipeline(master: StoredImageAttachment, width: number, height: number): Sharp {
+  return sourcePipeline(master)
     .resize({ width, height, fit: 'inside', withoutEnlargement: true })
 }
 
-function sourcePipeline(master: StoredImageAttachment, crop: MasterImageCrop | undefined): Sharp {
-  let image = sharp(master.data, { failOn: 'error', limitInputPixels: false }).toColourspace('srgb')
-  if (crop !== undefined) image = image.extract({
-    left: crop.x,
-    top: crop.y,
-    width: crop.width,
-    height: crop.height,
-  })
-  return image
+function sourcePipeline(master: StoredImageAttachment): Sharp {
+  return sharp(master.data, { failOn: 'error', limitInputPixels: false }).toColourspace('srgb')
 }
 
 async function encoded(
@@ -161,13 +135,12 @@ async function encoded(
 
 function encodingAttempts(
   master: StoredImageAttachment,
-  crop: MasterImageCrop | undefined,
   width: number,
   height: number,
   hasAlpha: boolean,
   lowColour: boolean,
 ): Array<() => Promise<EncodedRequestImage>> {
-  const prepared = pipeline(master, crop, width, height)
+  const prepared = pipeline(master, width, height)
   const webp = REQUEST_IMAGE_QUALITIES.map(quality => (
     () => encoded(prepared.clone(), 'image/webp', quality)
   ))
@@ -183,12 +156,8 @@ async function createRequestImage(
   policy: ImageRequestPolicy,
   hasAlpha: boolean,
 ): Promise<EncodedRequestImage> {
-  const crop = checkedCrop(master, policy.crop)
-  const sourceWidth = crop?.width ?? master.ref.width
-  const sourceHeight = crop?.height ?? master.ref.height
-  let dimensions = requestImageDimensions(sourceWidth, sourceHeight, policy.maxPixels)
-  if (crop === undefined
-    && dimensions.width === master.ref.width
+  let dimensions = requestImageDimensions(master.ref.width, master.ref.height, policy.maxPixels)
+  if (dimensions.width === master.ref.width
     && dimensions.height === master.ref.height
     && master.data.byteLength <= policy.maxBytes) {
     return {
@@ -198,10 +167,10 @@ async function createRequestImage(
       height: master.ref.height,
     }
   }
-  const lowColour = await hasLowColourCount(sourcePipeline(master, crop))
+  const lowColour = await hasLowColourCount(sourcePipeline(master))
   for (;;) {
     const encodedVersion = await encodeFirstWithinLimit(
-      encodingAttempts(master, crop, dimensions.width, dimensions.height, hasAlpha, lowColour),
+      encodingAttempts(master, dimensions.width, dimensions.height, hasAlpha, lowColour),
       policy.maxBytes,
     )
     if (!isExhaustedEncoding(encodedVersion)) return encodedVersion
@@ -229,8 +198,7 @@ async function readCached(
   try {
     const data = new Uint8Array(await readFile(path, { signal }))
     const detected = await probeImage(data)
-    const crop = policy.crop
-    const maximum = requestImageDimensions(crop?.width ?? master.ref.width, crop?.height ?? master.ref.height, policy.maxPixels)
+    const maximum = requestImageDimensions(master.ref.width, master.ref.height, policy.maxPixels)
     if (data.byteLength > policy.maxBytes || detected.depth !== 'uchar' || detected.space !== 'srgb'
       || detected.width > maximum.width || detected.height > maximum.height
       || detected.hasAlpha !== expectedAlpha) return undefined
@@ -285,7 +253,6 @@ export async function readRequestImageFile(
 ): Promise<RequestImageAttachment> {
   signal?.throwIfAborted()
   validatePolicy(policy)
-  checkedCrop(master, policy.crop)
   const source = await probeImage(master.data)
   const variantId = requestImageVariantId(master.ref, policy)
   const hash = String(variantId).slice('sha256:'.length)
@@ -308,42 +275,5 @@ export async function readRequestImageFile(
     depth: 'uchar',
     space: 'srgb',
     hasAlpha: version.hasAlpha,
-    ...policy.crop === undefined ? {} : { crop: policy.crop },
-  }
-}
-
-/**
- * Map a preview-coordinate rectangle to the oriented stored master.
- * @param masterWidth - stored master width.
- * @param masterHeight - stored master height.
- * @param crop - rectangle measured on the model-visible preview.
- * @returns covering integer rectangle in master coordinates.
- */
-export function previewCropToMaster(
-  masterWidth: number,
-  masterHeight: number,
-  crop: PreviewImageCrop,
-): MasterImageCrop {
-  checkedInteger(masterWidth, 'Master image width')
-  checkedInteger(masterHeight, 'Master image height')
-  checkedInteger(crop.previewWidth, 'Preview width')
-  checkedInteger(crop.previewHeight, 'Preview height')
-  if (!Number.isSafeInteger(crop.x) || crop.x < 0 || !Number.isSafeInteger(crop.y) || crop.y < 0) {
-    throw new AttachmentError('Preview crop origin must use non-negative integer pixels.', 'INVALID_ATTACHMENT_REF')
-  }
-  checkedInteger(crop.width, 'Preview crop width')
-  checkedInteger(crop.height, 'Preview crop height')
-  if (crop.x + crop.width > crop.previewWidth || crop.y + crop.height > crop.previewHeight) {
-    throw new AttachmentError('Preview crop extends beyond the image shown to the model.', 'INVALID_ATTACHMENT_REF')
-  }
-  const x = Math.floor(crop.x * masterWidth / crop.previewWidth)
-  const y = Math.floor(crop.y * masterHeight / crop.previewHeight)
-  const right = Math.ceil((crop.x + crop.width) * masterWidth / crop.previewWidth)
-  const bottom = Math.ceil((crop.y + crop.height) * masterHeight / crop.previewHeight)
-  return {
-    x,
-    y,
-    width: Math.max(1, Math.min(masterWidth, right) - x),
-    height: Math.max(1, Math.min(masterHeight, bottom) - y),
   }
 }

@@ -6,14 +6,13 @@ English | [中文](2026-08-10-minimal-read-image-tool.zh.md)
 
 ## Problem
 
-The multimodal attachment work gave user uploads a complete durable path, but the model itself had no way to inspect an image on disk or crop a durable user upload that had no path. `read` rejects binary content by contract, so an agent asked about a screenshot or rendered chart either failed or used a lossy workaround. A standalone attempt in PR #598 combined the tool with loop-level route scoping, per-route schema visibility, and new session-log concepts. Those features were not required to publish a logged image tool result.
+The multimodal attachment work gave user uploads a complete durable path, but the model itself had no way to inspect an image on disk. `read` rejects binary content by contract, so an agent asked about a screenshot or rendered chart either failed or used a lossy workaround. A standalone attempt in PR #598 combined the tool with loop-level route scoping, per-route schema visibility, and new session-log concepts. Those features were not required to publish a logged image tool result.
 
 ## Decision
 
 Both image-reading operations live in `dsh-tool-fs` and publish ordinary logged tool results over existing extension points.
 
 - **`read_image` reads a filesystem path.** Extension selects the declared PNG/JPEG/WebP/GIF media type; the attachment store's magic-byte and pixel validation stays authoritative. Bytes travel `ctx.fs.stat` → bounded `ctx.fs.readBytes` → `ctx.attachments.saveImage` → `fs/observed`. The tool result contains metadata and an `ImageBlock`.
-- **`read_image_region` crops a durable session attachment.** The request names the complete attachment id, current preview dimensions, and a preview-coordinate rectangle. The tool authorizes the id against images already referenced by the calling session, maps the rectangle to the durable master, crops that master, and persists the result as a new attachment. Its result contains the cropped `ImageBlock`, so the model-visible crop is reconstructable from the log. This is the path for pasted or dragged images that have no filesystem location.
 - **`FileSystem.readBytes(target, signal, maxBytes)`** is a new required provider primitive: the byte bound lives at the seam so no backend can buffer an unbounded file, with the stat-size short-circuit and a one-byte-past-cap stream guard against post-stat growth (`FS_TOO_LARGE`).
 - **Registration is composition-conditional, execution is route-gated.** The tools register only under `ctx.inject(['attachments'], …)`. Before I/O, the strict gate resolves the calling route through `ctx.llm.resolveModelInfo` and requires `image` in `inputModalities`; unknown capability refuses. A text-only route can still consume prior durable images because the shared LLM runtime projects them to placeholders at request assembly.
 - **Code Mode forwards the image out-of-band**: a nested dispatch returns the canonical value (execution-local, no image block) and defers a `user`-role context message carrying the envelope and image, so the picture still reaches the next request.
@@ -29,6 +28,5 @@ Both image-reading operations live in `dsh-tool-fs` and publish ordinary logged 
 ## Consequences
 
 - The tools refuse execution on a text-only route, while existing images in session history are represented by request-local placeholders.
-- Pasted and dragged images can be cropped without exposing local paths. Session reference authorization prevents access to attachments outside the current session.
 - Repeated image results accumulate request cost until request projection or compaction removes them; content addressing deduplicates durable bytes.
 - The tool-result card renders the durable reference, not pixels; inline preview is deferred to the UI packages.

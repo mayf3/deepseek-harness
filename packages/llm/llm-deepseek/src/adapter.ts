@@ -543,7 +543,6 @@ export class DeepSeekAdapter extends LlmAdapter {
           maxImagesPerRequest: connection.maxImagesPerRequest,
           byteQuantum: connection.imageOffloadByteQuantum,
           countQuantum: connection.imageOffloadCountQuantum,
-          cropAvailable: options.tools?.some(tool => tool.name === 'read_image_region') ?? false,
         }, connection.defaults)
       const payload = JSON.stringify(body)
 

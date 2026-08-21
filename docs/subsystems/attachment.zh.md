@@ -90,43 +90,19 @@ interface StoredImageAttachment {
 ```
 
 ```ts type-equiv
-/** Pixel rectangle in the oriented 2048px master-version coordinate system. */
-interface MasterImageCrop {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-```
-
-```ts type-equiv
 /** Deterministic request-image policy selected by one exact model route. */
 interface ImageRequestPolicy {
   /** Maximum width multiplied by height after aspect-preserving projection. */
   maxPixels: number
   /** Encoded-byte cap before base64 expansion or Files API upload. */
   maxBytes: number
-  /** Optional master-coordinate crop applied before pixel-budget scaling. */
-  crop?: MasterImageCrop
-}
-```
-
-```ts type-equiv
-/** Crop coordinates measured by a model on the request preview it received. */
-interface PreviewImageCrop {
-  previewWidth: number
-  previewHeight: number
-  x: number
-  y: number
-  width: number
-  height: number
 }
 ```
 
 ```ts type-equiv
 /** Cached request version derived from one provider-independent master attachment. */
 interface RequestImageAttachment {
-  /** Cache and upload-index key over the master id, policy, crop, and fixed encoder parameters. */
+  /** Cache and upload-index key over the master id, policy, and fixed encoder parameters. */
   variantId: ImageVariantId
   /** Durable master reference from which this request version was derived. */
   master: ImageAttachmentRef
@@ -142,12 +118,10 @@ interface RequestImageAttachment {
   space: 'srgb'
   /** Whether the encoded request version retains an alpha channel. */
   hasAlpha: boolean
-  /** Applied master-coordinate crop, when present. */
-  crop?: MasterImageCrop
 }
 ```
 
-`saveImage()` 准备提供方无关的 2048px、4MiB 主版本，并在返回引用前以原子方式提交。`saveImages()` 在发布批次前为每个成员各准备一次经过验证的主版本，因此校验拒绝不会留下部分对象，发布也不会重复解码或选择质量。`admitEncodedImages()` 是面向 base64 上传的 wire 入口，把张数、聚合字节和有序批量准入交给 `saveImages()`。`readImage()` 校验来自已授权会话路径的主版本。`readImageRequest()` 按确切路由的像素和字节预算派生并缓存请求版本；新条目在发布前完整解码，缓存命中只做有界元数据探测。`readImageRequests()` 允许实现按自身配置的变换并发处理有序批次。本地实现按需编码首选候选、合并相同请求身份的并发任务、允许每个等待方单独取消、没有等待方时停止共享任务，默认同时执行两项变换。`cropImage()` 把模型预览坐标映射回主版本，并返回另一个持久附件。该服务不规定保留策略：恢复和 fork 后的会话可能共享对象，因此基于引用的垃圾回收会延期实现，不与单个会话的删除绑定。
+`saveImage()` 准备提供方无关的 2048px、4MiB 主版本，并在返回引用前以原子方式提交。`saveImages()` 在发布批次前为每个成员各准备一次经过验证的主版本，因此校验拒绝不会留下部分对象，发布也不会重复解码或选择质量。`admitEncodedImages()` 是面向 base64 上传的 wire 入口，把张数、聚合字节和有序批量准入交给 `saveImages()`。`readImage()` 校验来自已授权会话路径的主版本。`readImageRequest()` 按确切路由的像素和字节预算派生并缓存请求版本；新条目在发布前完整解码，缓存命中只做有界元数据探测。`readImageRequests()` 允许实现按自身配置的变换并发处理有序批次。本地实现按需编码首选候选、合并相同请求身份的并发任务、允许每个等待方单独取消、没有等待方时停止共享任务，默认同时执行两项变换。该服务不规定保留策略：恢复和 fork 后的会话可能共享对象，因此基于引用的垃圾回收会延期实现，不与单个会话的删除绑定。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -217,15 +191,6 @@ readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: 
  * @returns request versions in the same order as `refs`.
  */
 async readImageRequests( refs: readonly ImageAttachmentRef[], policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<readonly RequestImageAttachment[]>
-
-/**
- * Crop the stored master by coordinates measured on a model request preview and persist the result.
- * @param ref - session-authorized master attachment.
- * @param crop - preview dimensions and preview-coordinate rectangle.
- * @param signal - optional cancellation.
- * @returns a new durable attachment reference suitable for a logged tool result.
- */
-cropImage( ref: ImageAttachmentRef, crop: PreviewImageCrop, signal?: AbortSignal, ): Promise<SavedImageAttachment>
 ```
 
 Source: [`packages/attachment/attachment/src/index.ts`](../../packages/attachment/attachment/src/index.ts)

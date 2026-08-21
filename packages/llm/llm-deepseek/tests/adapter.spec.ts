@@ -176,7 +176,6 @@ describe('DeepSeekAdapter against a mock server', () => {
     await drain(adapter.stream({
       provider: 'deepseek-official',
       model: 'deepseek-v4-flash-vision-exp',
-      tools: [{ name: 'read_image_region', description: 'crop', parameters: { type: 'object' } }],
       messages: [createUserMessage({
         content: [
           { type: 'text', text: 'describe ' },
@@ -192,7 +191,7 @@ describe('DeepSeekAdapter against a mock server', () => {
         role: 'user',
         content: [
           { type: 'text', text: 'describe ' },
-          { type: 'text', text: expect.stringContaining('Call read_image_region') as string },
+          { type: 'text', text: expect.stringContaining(`Image ${imageRef.attachmentId}; request image 1x1px.`) as string },
           { type: 'file', file_id: 'file-api-1' },
         ],
       }],

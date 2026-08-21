@@ -467,12 +467,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'refs', description: 'durable provider-independent master references in request order.' }, { name: 'policy', description: 'exact route pixel and encoded-byte budget shared by the batch.' }, { name: 'signal', description: 'optional cancellation.' }],
         returns: 'request versions in the same order as `refs`.',
       },
-      {
-        signature: 'cropImage( ref: ImageAttachmentRef, crop: PreviewImageCrop, signal?: AbortSignal, ): Promise<SavedImageAttachment>',
-        description: 'Crop the stored master by coordinates measured on a model request preview and persist the result.',
-        parameters: [{ name: 'ref', description: 'session-authorized master attachment.' }, { name: 'crop', description: 'preview dimensions and preview-coordinate rectangle.' }, { name: 'signal', description: 'optional cancellation.' }],
-        returns: 'a new durable attachment reference suitable for a logged tool result.',
-      },
     ],
   },
   {
@@ -3480,7 +3474,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ImageRequestPolicy',
-    declaration: 'export interface ImageRequestPolicy {\n    maxPixels: number;\n    maxBytes: number;\n    crop?: MasterImageCrop;\n}',
+    declaration: 'export interface ImageRequestPolicy {\n    maxPixels: number;\n    maxBytes: number;\n}',
   },
   {
     name: 'ImageVariantId',
@@ -3711,10 +3705,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
   },
   {
-    name: 'MasterImageCrop',
-    declaration: 'export interface MasterImageCrop {\n    x: number;\n    y: number;\n    width: number;\n    height: number;\n}',
-  },
-  {
     name: 'Message',
     declaration: 'export interface Message {\n    readonly id: MessageId;\n    readonly role: \'system\' | \'user\' | \'assistant\';\n    readonly content: ContentBlock[];\n    readonly source: MessageSource;\n}',
   },
@@ -3871,10 +3861,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
   },
   {
-    name: 'PreviewImageCrop',
-    declaration: 'export interface PreviewImageCrop {\n    previewWidth: number;\n    previewHeight: number;\n    x: number;\n    y: number;\n    width: number;\n    height: number;\n}',
-  },
-  {
     name: 'ProjectionChangeListener',
     declaration: 'export type ProjectionChangeListener = (session: Session, key: Extract<keyof SessionProjectionMap, string>, value: unknown, seq: number) => void;',
   },
@@ -3956,7 +3942,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RequestImageAttachment',
-    declaration: 'export interface RequestImageAttachment {\n    variantId: ImageVariantId;\n    master: ImageAttachmentRef;\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    bytes: number;\n    width: number;\n    height: number;\n    depth: \'uchar\';\n    space: \'srgb\';\n    hasAlpha: boolean;\n    crop?: MasterImageCrop;\n}',
+    declaration: 'export interface RequestImageAttachment {\n    variantId: ImageVariantId;\n    master: ImageAttachmentRef;\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    bytes: number;\n    width: number;\n    height: number;\n    depth: \'uchar\';\n    space: \'srgb\';\n    hasAlpha: boolean;\n}',
   },
   {
     name: 'RequestRunOutcome',

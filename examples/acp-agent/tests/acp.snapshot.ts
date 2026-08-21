@@ -807,8 +807,7 @@ it('pins native DeepSeek Files image offload in the request sent by the assemble
       {
         type: 'text',
         text: '\nImage sha256:b1ff9c8ea3a780bad09b346c423d2d0e46815926879b18e841d928376a946640; '
-          + 'preview 1x1px. Crop coordinates use this preview. Call read_image_region with this attachment_id, '
-          + 'preview_width=1, preview_height=1, x, y, width, and height.',
+          + 'request image 1x1px.',
       },
       { type: 'file', file_id: 'file-api-snapshot-1' },
       { type: 'text', text: ', then use read_image on red.png and reply with DONE.' },
@@ -852,9 +851,7 @@ it('pins native DeepSeek Files image offload in the request sent by the assemble
         role: 'tool',
         tool_call_id: 'native-read-image',
         content: '<path>{{cwd}}/red.png</path>\n<type>image</type>\n<content>\nimage/png image, 1x1 px, 69 bytes\n'
-          + '</content>\nImage sha256:b1ff9c8ea3a780bad09b346c423d2d0e46815926879b18e841d928376a946640; preview 1x1px. '
-          + 'Crop coordinates use this preview. Call read_image_region with this attachment_id, preview_width=1, '
-          + 'preview_height=1, x, y, width, and height.',
+          + '</content>\nImage sha256:b1ff9c8ea3a780bad09b346c423d2d0e46815926879b18e841d928376a946640; request image 1x1px.',
       },
       {
         role: 'user',

@@ -309,17 +309,6 @@ describe('pi-ai request context conversion', () => {
     expect(readImageRequest.mock.calls[0]?.[0]).toEqual(recent)
   })
 
-  it('advertises region reads only when the request exposes the tool', async () => {
-    const withoutCrop = await toPiContext(request([user([{ type: 'image', attachment: ref }])]), attachments)
-    const withCrop = await toPiContext({
-      ...request([user([{ type: 'image', attachment: ref }])]),
-      tools: [{ name: 'read_image_region', description: 'crop', parameters: { type: 'object' } }],
-    }, attachments)
-
-    expect(JSON.stringify(withoutCrop.messages)).not.toContain('Call read_image_region')
-    expect(JSON.stringify(withCrop.messages)).toContain('Call read_image_region')
-  })
-
   it('keeps every image at exactly the payload bound and drops all of them when even the newest cannot fit', async () => {
     const sized: ImageAttachmentRef = { ...ref, bytes: 3 }
     const exact = await toPiContext(request([

@@ -6,7 +6,6 @@ import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
-  PreviewImageCrop,
   RequestImageAttachment,
   SaveImageAttachment,
   SavedImageAttachment,
@@ -24,8 +23,6 @@ export type {
   ImageAttachmentRef,
   ImageRequestPolicy,
   ImageMediaType,
-  MasterImageCrop,
-  PreviewImageCrop,
   RequestImageAttachment,
   SaveImageAttachment,
   SavedImageAttachment,
@@ -153,26 +150,6 @@ export abstract class AttachmentStore extends Service {
     return versions
   }
 
-  /**
-   * Crop the stored master by coordinates measured on a model request preview and persist the result.
-   * @param ref - session-authorized master attachment.
-   * @param crop - preview dimensions and preview-coordinate rectangle.
-   * @param signal - optional cancellation.
-   * @returns a new durable attachment reference suitable for a logged tool result.
-   */
-  cropImage(
-    ref: ImageAttachmentRef,
-    crop: PreviewImageCrop,
-    signal?: AbortSignal,
-  ): Promise<SavedImageAttachment> {
-    signal?.throwIfAborted()
-    void ref
-    void crop
-    return Promise.reject(new AttachmentError(
-      'The mounted attachment provider cannot crop stored images.',
-      'ATTACHMENT_PROJECTION_UNSUPPORTED',
-    ))
-  }
 }
 
 export default AttachmentStore
