@@ -210,7 +210,7 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.buildRevision {
+.buildVersion {
   display: inline-flex;
   align-items: center;
   height: 16px;

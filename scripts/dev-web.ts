@@ -34,6 +34,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execa } from 'execa'
 import { build } from 'tsdown'
 import type { TsdownBundle } from 'tsdown'
+import {
+  CLIENT_BUILD_PROFILE_SELECTOR,
+  clientBuildProcessEnvironment,
+  readClientBuildRecord,
+} from './client-build-environment.ts'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
@@ -48,6 +53,19 @@ const SHELL_PACKAGE = '@deepseek-ai/dsh-web-frontend'
  * shell's module graph, so it is not a dev-loop artifact.
  */
 const TEST_INFRASTRUCTURE_PREFIX = 'packages/test-support/'
+
+/**
+ * Reuse the last complete build's public metadata for every long-lived watcher.
+ * @param root - repository root containing the verified client build record.
+ * @param environment - watcher launch environment whose public values are replaced.
+ * @returns process environment shared by tsdown and spawned watcher stages.
+ */
+export function devWebBuildEnvironment(
+  root: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return clientBuildProcessEnvironment(environment, readClientBuildRecord(root).environment)
+}
 
 /**
  * Discover the watch workspace by declaration: every packages/<group>/<name>
@@ -175,6 +193,16 @@ interface StageHandle {
 const invokedPath = process.argv[1]
 const isMain = invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href
 if (isMain) {
+  const buildEnvironment = devWebBuildEnvironment(repoRoot, process.env)
+  for (const name of Object.keys(process.env)) {
+    if (name === CLIENT_BUILD_PROFILE_SELECTOR || name.startsWith('DSH_CLIENT_')) {
+      Reflect.deleteProperty(process.env, name)
+    }
+  }
+  for (const [name, value] of Object.entries(buildEnvironment)) {
+    if (name.startsWith('DSH_CLIENT_') && value !== undefined) process.env[name] = value
+  }
+
   const pluginDirs = discoverPluginDirs()
   const libraryDirs = discoverLibraryDirs()
   if (pluginDirs.length === 0) {

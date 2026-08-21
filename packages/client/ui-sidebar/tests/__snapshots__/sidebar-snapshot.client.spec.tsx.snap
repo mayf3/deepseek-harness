@@ -140,12 +140,12 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
               <span
                 class="fallbackBrandName"
               >
-                DSH Local Build
+                DSH
               </span>
               <span
-                class="buildRevision"
+                class="buildVersion"
               >
-                abc1234
+                1.2.3-rc.4-abc1234-dirty
               </span>
             </div>
           </span>
@@ -266,12 +266,12 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
               <span
                 class="fallbackBrandName"
               >
-                DSH 本地构建
+                DSH
               </span>
               <span
-                class="buildRevision"
+                class="buildVersion"
               >
-                abc1234
+                1.2.3-rc.4-abc1234-dirty
               </span>
             </div>
           </span>
