@@ -245,6 +245,7 @@ describe('SubagentHeaderLineage', () => {
     await advance(1)
     const tree = screen.getByRole('tree')
     expect(tree.style.top).toBe('45px')
+    expect(tree.style.left).toBe('50px')
     triggerRect.mockReturnValue({ bottom: 60, left: 70 } as DOMRect)
     fireEvent.resize(window)
     expect(tree.style.top).toBe('65px')
