@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-experimental-webworker-packer",
   "description": "Build-time packer for the browser runtime's VFS image: materializes a profile's package closure into one gzip-compressed tar the worker mounts, with every module body pre-transformed",
-  "version": "0.1.0-rc.8",
+  "version": "0.1.1-rc.2",
   "private": true,
   "repository": {
     "type": "git",
