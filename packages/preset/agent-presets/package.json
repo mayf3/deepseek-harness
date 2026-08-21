@@ -32,9 +32,9 @@
   "files": [
     "lib/index.js",
     "lib/invariant.js",
+    "presets",
     "lib/types/**/*.js",
-    "lib/types/**/*.d.ts",
-    "presets"
+    "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "peerDependencies": {
