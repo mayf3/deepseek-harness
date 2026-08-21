@@ -88,6 +88,7 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   // product data, not a package reference. Renaming it changed which preset
   // the creator flow stages and which id the roster reports.
   { file: 'packages/client/ui-agent-preset/src/client/AgentPresetSection.tsx', upstream: ['cordis'] },
+  { file: 'packages/preset/agent-presets/tests/shipped-root.spec.ts', upstream: ['cordis'] },
   { file: 'packages/client/ui-agent-preset/src/client/index.ts', upstream: ['cordis'] },
   { file: 'packages/client/ui-agent-preset/tests/apply.client.spec.ts', upstream: ['cordis'] },
   { file: 'packages/client/ui-agent-preset/tests/locales.client.spec.ts', upstream: ['cordis'] },
@@ -194,23 +195,6 @@ const EXACT_EDITS: readonly ExactEdit[] = [
     if (!dev) errors.push(\`\${label}: @deepseek-ai/cordis must also be a devDependency\`)
     if (peer && dev && peer !== dev) {
       errors.push(\`\${label}: @deepseek-ai/cordis peer (\${peer}) and dev (\${dev}) ranges must match\`)`,
-    expect: 1,
-  },
-  {
-    // The rescoped name is already covered by the `@deepseek-ai/.+` pattern beside it.
-    id: 'knip-logger-console',
-    file: 'knip.json',
-    find: `      "ignoreDependencies": [
-        "@cordisjs/plugin-logger-console",
-        "@deepseek-ai/.+"
-      ]
-    },
-    "packages/util/home": {`,
-    replace: `      "ignoreDependencies": [
-        "@deepseek-ai/.+"
-      ]
-    },
-    "packages/util/home": {`,
     expect: 1,
   },
   {
@@ -348,7 +332,7 @@ const VENDORED_LIBRARY = /^@deepseek-ai\\/(cosmokit|schemastery)(\\/|$)/
     id: 'vendoring-cookbook-name-invariant-zh',
     file: 'docs/cookbook/adding-a-vendored-package.zh.md',
     find: '保留上游的 `name`/`version`/`exports`/`type`',
-    replace: '改写 `name` 的 scope（[映射](../rescope.md)），保留上游的 `version`/`exports`/`type`',
+    replace: '改写 `name` 的 scope（[映射](../rescope.zh.md)），保留上游的 `version`/`exports`/`type`',
     expect: 1,
   },
   {
