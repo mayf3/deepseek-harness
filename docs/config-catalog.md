@@ -632,7 +632,7 @@ Source: [`packages/fs/fs-sandbox/src/index.ts:49`](../packages/fs/fs-sandbox/src
 
 ## `@deepseek-ai/dsh-goal`
 
-Requires: `agents`
+Requires: `agents` · `sessionProjections`
 
 ```ts config-catalog
 /** Deployment defaults for goal creation. */
@@ -642,7 +642,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/goal/goal/src/index.ts:116`](../packages/goal/goal/src/index.ts)
+Source: [`packages/goal/goal/src/index.ts:121`](../packages/goal/goal/src/index.ts)
 
 <a id="deepseek-aidsh-headless"></a>
 
@@ -2340,7 +2340,7 @@ Source: [`packages/core/system-prompt/src/index.ts:186`](../packages/core/system
 
 ## `@deepseek-ai/dsh-team`
 
-Requires: `agents` · `sessions` · `sessionPersistence` · `subagents`
+Requires: `agents` · `sessions` · `sessionPersistence` · `sessionProjections` · `subagents`
 
 ```ts config-catalog
 /** Team-service deployment limits. */
