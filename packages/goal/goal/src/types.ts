@@ -84,7 +84,7 @@ export interface GoalView extends GoalSnapshot {
 
 /**
  * The `goal` projection value: the current durable goal with its replay
- * counters, exactly as the latest `goal/change` event carried them.
+ * counters, including admitted goal rounds.
  * Activation is process-local (never persisted) and deliberately absent —
  * the projection reflects durable phase only.
  */
@@ -105,10 +105,10 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   }
   interface SessionProjectionMap {
     /**
-     * The session's current goal (the latest `goal/change` whole value), or
+     * The session's current goal and admitted-round count, or
      * `null` before the first create and after a clear tombstone.
-     * Whole-value rule: every goal change carries the complete post-change
-     * state, so the fold is last-wins.
+     * `goal/change` supplies the whole lifecycle value; matching admitted
+     * `user/message` events advance `roundsStarted`.
      */
     goal: GoalProjection | null
   }

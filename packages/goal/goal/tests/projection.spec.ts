@@ -17,8 +17,8 @@ import type { UserMessage } from '@deepseek-ai/dsh-session'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import GoalService, { applyGoalProjection, foldGoal } from '@deepseek-ai/dsh-goal'
-import type { GoalRef } from '@deepseek-ai/dsh-goal'
+import GoalService, { GoalId, applyGoalProjection, foldGoal } from '@deepseek-ai/dsh-goal'
+import type { GoalProjection, GoalRef } from '@deepseek-ai/dsh-goal'
 
 interface Bench {
   ctx: Context
@@ -149,9 +149,22 @@ describe('goal projection unit', () => {
       source: { kind: 'user' },
     })
     const user = { type: 'user/message', seq: 0, time: 1, data: plainUser } as never
-    const state = { goal: { id: 'g1', revision: 1, objective: 'x', phase: 'active', maxGoalRounds: 4 }, roundsStarted: 0, createdAt: 1, updatedAt: 1 } as never
+    const state: GoalProjection = {
+      goal: { id: GoalId('g1'), revision: 1, objective: 'x', phase: 'active', maxGoalRounds: 4 },
+      roundsStarted: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    }
     const empty = null
     expect(applyGoalProjection(empty, user)).toBe(empty)
+    const admittedRound = {
+      type: 'user/message', seq: 1, time: 2,
+      data: createUserMessage({
+        content: [{ type: 'text', text: 'continue' }],
+        source: { kind: 'goal', goalId: 'g1', revision: 1, round: 1 } as never,
+      }),
+    } as never
+    expect(applyGoalProjection(state, admittedRound)).toEqual({ ...state, roundsStarted: 1 })
     const queuedUser = {
       type: 'agent/inbox/spliced', seq: 1, time: 2,
       data: { target: 'next-step', start: 0, inserted: [plainUser] },
