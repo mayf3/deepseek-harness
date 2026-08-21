@@ -69,6 +69,7 @@ describe('gate graph validation', () => {
     'ci-windows-observational',
     'node-compat',
     'check-all',
+    'hygiene',
     'doc-sync',
   ] as const)('constructs and executes preflight for a valid non-empty %s graph', async (mode) => {
     const subject = withPnpmEntrypoint(() => gatesForMode(mode))
@@ -81,6 +82,30 @@ describe('gate graph validation', () => {
     const ids = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
 
     expect(ids).toContain('public-repository-links')
+  })
+
+  it('keeps the hygiene aggregate aligned with the package script checks', () => {
+    const ids = withPnpmEntrypoint(() => gatesForMode('hygiene').map(subject => subject.id))
+
+    expect(ids).toEqual([
+      'rescope-vendor', 'knip', 'publint', 'constraints', 'dsh-package-licenses',
+      'package-invariants', 'built-package-invariants', 'node-next-types',
+      'optional-dependency-imports', 'client-packages', 'cordis-config',
+      'runtime-closure', 'vendored-links',
+    ])
+    expect(defaultConcurrency('hygiene', ids.length, 8)).toEqual({
+      workers: 4,
+      source: '8 available CPU(s), hygiene cap 4',
+    })
+  })
+
+  it('schedules the longest documentation leaves before short checks', () => {
+    const ids = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
+
+    expect(ids.slice(0, 10)).toEqual([
+      'doc-typecheck', 'docs-site-build', 'doc-graphs', 'markdown-links', 'type-equivalence',
+      'cordis-catalog', 'mermaid', 'scoped-events', 'translation-pairing', 'markdown-wrap',
+    ])
   })
 
   it('launches a native pnpm entrypoint directly', () => {

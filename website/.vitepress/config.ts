@@ -384,11 +384,29 @@ export default withMermaid({
     config(md) {
       const renderText = md.renderer.rules.text
       const renderCode = md.renderer.rules.code_inline
-      if (renderText === undefined || renderCode === undefined) {
-        throw new Error('VitePress Markdown renderer is missing its text or inline-code rule.')
-      }
+      const renderFence = md.renderer.rules.fence
+      if (renderText === undefined) throw new Error('VitePress Markdown renderer is missing the text rendering rule.')
+      if (renderCode === undefined) throw new Error('VitePress Markdown renderer is missing the inline-code rendering rule.')
+      if (renderFence === undefined) throw new Error('VitePress Markdown renderer is missing the fence rendering rule.')
       md.renderer.rules.text = (...args) => escapeVueInterpolation(renderText(...args))
       md.renderer.rules.code_inline = (...args) => escapeVueInterpolation(renderCode(...args))
+      const renderedFences = new Map<string, string>()
+      md.renderer.rules.fence = (...args) => {
+        const [tokens, index] = args
+        const token = tokens[index]
+        if (token === undefined) throw new Error('VitePress code-fence renderer received no token.')
+        // Mermaid output embeds the token position, and VitePress snippets resolve source files during rendering.
+        if (['mermaid', 'mmd'].includes(token.info.trim().split(/\s+/, 1)[0] ?? '')) return renderFence(...args)
+        if (Reflect.get(token, 'src') !== undefined) return renderFence(...args)
+        // Keep the cache build-local; a dev renderer can survive many HMR updates.
+        if (process.env.NODE_ENV !== 'production') return renderFence(...args)
+        const key = JSON.stringify([token.content, token.info, token.markup, token.attrs])
+        const cached = renderedFences.get(key)
+        if (cached !== undefined) return cached
+        const html = renderFence(...args)
+        renderedFences.set(key, html)
+        return html
+      }
     },
   },
   mermaid: {},
