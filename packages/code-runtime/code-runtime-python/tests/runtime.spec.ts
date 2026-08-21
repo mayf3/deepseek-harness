@@ -3100,6 +3100,51 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.value).toBe('released')
   }, 15_000)
 
+  it('keeps the reply pump alive when RuntimeError is rebound before the program runs', async () => {
+    // `_pump_replies` catches a closed-loop scheduling failure with `except
+    // _RuntimeError`. If that name were bound as a pump BODY local, it would be
+    // captured at pump-start — but `_run` reaches the model's top-level
+    // statements (which run before the pump's first step, since there is no
+    // suspension point between `create_task` and `await __dsh_main__`) with the
+    // rebind already applied, so `_RuntimeError` would capture the REBOUND class
+    // and the closed-loop `RuntimeError` would escape, killing the pump. Binding
+    // it as a DEF-TIME default argument captures the original before any model
+    // code runs. This rebinds `__main__.RuntimeError` as the very first program
+    // statement and drives the closed-loop worker pattern: the pump must survive
+    // the dead-loop reply and deliver the later binding.
+    let releaseSlow!: () => void
+    const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve })
+    const { runtime } = await setup({ maxWallMs: 6_000 })
+    const result = await runtime.run({
+      program: [
+        'import __main__',
+        '__main__.RuntimeError = ValueError',
+        'import asyncio, threading',
+        'closed = threading.Event()',
+        'def worker():',
+        '    async def body():',
+        '        try:',
+        '            await asyncio.wait_for(tools.slow({}), timeout=0.1)',
+        '        except asyncio.TimeoutError:',
+        '            pass',
+        '    asyncio.run(body())',
+        '    closed.set()',
+        't = threading.Thread(target=worker)',
+        't.start()',
+        'while not closed.is_set():',
+        '    await asyncio.sleep(0.02)',
+        'after = await tools.release({})',
+        'return after',
+      ].join('\n'),
+      bindings: tools({
+        slow: async () => { await slowGate; return 'late' },
+        release: async () => { releaseSlow(); await new Promise(resolve => setImmediate(resolve)); return 'released' },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('released')
+  }, 15_000)
+
   it('round-trips an exactly representable large integer through a binding echo', async () => {
     // The reply serializer must print BigInt digits for a beyond-safe
     // integral double: String(2**60) emits a rounded form, and the child

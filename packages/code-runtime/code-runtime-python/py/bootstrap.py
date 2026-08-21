@@ -1115,6 +1115,19 @@ async def _pump_replies(
     channel: ProtocolChannel,
     pending: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Future[Any]]],
     pending_lock: "threading.Lock",
+    # Bound as DEFAULT ARGUMENTS so they are captured at def/import time, before
+    # ANY model code runs. This bootstrap IS `__main__`, so `__main__.RuntimeError
+    # = ...` (or `__main__._BindingRejection`, `__main__.str`, `__main__.bool`)
+    # as a program top-level statement would otherwise rebind the module globals
+    # these clauses resolve at runtime. A body-local `X = X` binding is too late:
+    # `_run` reaches `await __dsh_main__` (whose top-level statements run first)
+    # with no suspension point after `create_task`, so the model's rebind executes
+    # before the pump body. Defaults are evaluated in the enclosing scope at def
+    # time, truly before the program.
+    _RuntimeError: Any = RuntimeError,
+    _BindingRejection: Any = _BindingRejection,
+    _str: Any = str,
+    _bool: Any = bool,
 ) -> None:
     """Background task: read reply frames and settle pending futures.
 
@@ -1131,14 +1144,6 @@ async def _pump_replies(
     so a reply cannot race the claim that registers its id.
     """
 
-    # The exception class the closed-loop catch below resolves is bound into a
-    # LOCAL here, after the docstring, before any model code runs. This bootstrap
-    # IS `__main__`, so `__main__.RuntimeError = ...` would otherwise rebind the
-    # module global the `except RuntimeError` clause resolves at runtime, and a
-    # closed-loop scheduling failure would then escape the catch, killing the
-    # pump and stranding every later reply.
-    _RuntimeError = RuntimeError
-
     def complete(fut: asyncio.Future[Any], ok: bool, value: Any, message: Any) -> None:
         # Runs on the Future's own loop. `done()` re-checked here because
         # cancellation or a duplicate reply may have settled it between the pop
@@ -1148,7 +1153,7 @@ async def _pump_replies(
         if ok:
             fut.set_result(value)
         else:
-            fut.set_exception(_BindingRejection(str(message)))
+            fut.set_exception(_BindingRejection(_str(message)))
 
     while True:
         frame = await channel.read_frame_async()
@@ -1161,7 +1166,7 @@ async def _pump_replies(
         if entry is None:
             continue
         loop, fut = entry
-        ok = bool(frame.get("ok"))
+        ok = _bool(frame.get("ok"))
         value = frame.get("value")
         message = frame.get("message")
         try:
