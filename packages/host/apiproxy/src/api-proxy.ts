@@ -805,11 +805,7 @@ function projectionsFor(ctx: Context, session: Session): SessionProjectionsBlock
  * empty value set — yields an absent block: a listing without projections
  * is degraded, never broken.
  */
-function listProjectionsFor(
-  ctx: Context,
-  meta: SessionHeader,
-  session: Session | undefined,
-): SessionProjectionsBlock | undefined {
+function listProjectionsFor(ctx: Context, meta: SessionHeader, session: Session | undefined): SessionProjectionsBlock | undefined {
   try {
     const block = session !== undefined
       ? ctx.get('sessionProjections')?.snapshot(session)
