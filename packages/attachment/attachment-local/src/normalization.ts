@@ -4,7 +4,7 @@ import sharp, { type Sharp } from 'sharp'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { encodeFirstWithinLimit, isExhaustedEncoding } from './encoding.ts'
-import { detectImage } from './image.ts'
+import { detectImage, encodedAlphaIsCompatible } from './image.ts'
 import type { DetectedImage } from './image.ts'
 
 /** Deployment-resolved policy for the persisted normalized attachment. */
@@ -104,7 +104,7 @@ async function verifyNormalizedImage(
     || detected.carriesMetadata
     || detected.depth !== 'uchar'
     || detected.space !== 'srgb'
-    || (expectedAlpha !== undefined && detected.hasAlpha !== expectedAlpha)) {
+    || !encodedAlphaIsCompatible(expectedAlpha, detected)) {
     throw new AttachmentError(
       'Image normalization did not produce a single-frame 8-bit sRGB image with matching metadata.',
       'ATTACHMENT_WRITE_FAILED',

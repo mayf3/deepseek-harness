@@ -112,18 +112,29 @@ describe('normalizeImage', () => {
     expect(normalized).toMatchObject({ mediaType: 'image/png', width: 4, height: 2 })
   })
 
-  it('retains an all-opaque alpha channel while converting a low-colour image', async () => {
-    const data = new Uint8Array(await sharp({
-      create: { width: 10, height: 6, channels: 4, background: { r: 12, g: 200, b: 64, alpha: 1 } },
+  it('accepts WebP output that omits an all-opaque source alpha plane', async () => {
+    const width = 64
+    const height = 32
+    const rgb = noisePixels(width, height)
+    const rgba = new Uint8Array(width * height * 4)
+    for (let pixel = 0; pixel < width * height; pixel += 1) {
+      rgba[pixel * 4] = rgb[pixel * 3] ?? 0
+      rgba[pixel * 4 + 1] = rgb[pixel * 3 + 1] ?? 0
+      rgba[pixel * 4 + 2] = rgb[pixel * 3 + 2] ?? 0
+      rgba[pixel * 4 + 3] = 255
+    }
+    const data = new Uint8Array(await sharp(rgba, {
+      raw: { width, height, channels: 4 },
     }).png().toBuffer())
+    await expect(detectImage(data)).resolves.toMatchObject({ hasAlpha: true })
 
     const normalized = await normalizeImage(data, await detectImage(data), {
-      maxDimension: 5,
+      maxDimension: 32,
       maxBytes: POLICY.maxBytes,
     })
 
-    expect(normalized).toMatchObject({ mediaType: 'image/png', width: 5, height: 3 })
-    await expect(detectImage(normalized.data)).resolves.toMatchObject({ hasAlpha: true })
+    expect(normalized).toMatchObject({ mediaType: 'image/webp', width: 32, height: 16 })
+    await expect(detectImage(normalized.data)).resolves.toMatchObject({ hasAlpha: false })
   })
 
   it('keeps transparency when the byte cap requires another encoding and smaller dimensions', async () => {

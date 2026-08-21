@@ -14,7 +14,7 @@ import type {
 } from '@deepseek-ai/dsh-attachment'
 import { hasLowColourCount } from './normalization.ts'
 import { encodeFirstWithinLimit, isExhaustedEncoding } from './encoding.ts'
-import { detectImage, probeImage } from './image.ts'
+import { detectImage, encodedAlphaIsCompatible, probeImage } from './image.ts'
 
 /** Transform version included in every cache and upload-index identity. */
 export const REQUEST_IMAGE_TRANSFORM_VERSION = 'request-image-v4'
@@ -201,7 +201,7 @@ async function readCached(
     const maximum = requestImageDimensions(attachment.ref.width, attachment.ref.height, policy.maxPixels)
     if (data.byteLength > policy.maxBytes || detected.depth !== 'uchar' || detected.space !== 'srgb'
       || detected.width > maximum.width || detected.height > maximum.height
-      || detected.hasAlpha !== expectedAlpha) return undefined
+      || !encodedAlphaIsCompatible(expectedAlpha, detected)) return undefined
     return { data, mediaType: detected.mediaType, width: detected.width, height: detected.height, hasAlpha: detected.hasAlpha }
   } catch (error: unknown) {
     if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') return undefined
@@ -217,7 +217,7 @@ async function verifyRequestImage(
   const detected = await detectImage(image.data)
   if (detected.depth !== 'uchar' || detected.space !== 'srgb'
     || detected.width !== image.width || detected.height !== image.height
-    || detected.mediaType !== image.mediaType || detected.hasAlpha !== expectedAlpha) {
+    || detected.mediaType !== image.mediaType || !encodedAlphaIsCompatible(expectedAlpha, detected)) {
     throw new AttachmentError(
       'Encoded model-request image does not match its verified 8-bit sRGB metadata.',
       'ATTACHMENT_WRITE_FAILED',

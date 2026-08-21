@@ -21,6 +21,23 @@ async function image(width: number, height: number): Promise<Uint8Array> {
   }).png().toBuffer())
 }
 
+async function complexOpaqueAlphaImage(width: number, height: number): Promise<Uint8Array> {
+  const pixels = new Uint8Array(width * height * 4)
+  let state = 0x2545f491
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    for (let channel = 0; channel < 3; channel += 1) {
+      state ^= state << 13
+      state ^= state >>> 17
+      state ^= state << 5
+      pixels[offset + channel] = state & 0xff
+    }
+    pixels[offset + 3] = 255
+  }
+  return new Uint8Array(await sharp(pixels, {
+    raw: { width, height, channels: 4 },
+  }).png().toBuffer())
+}
+
 afterEach(async () => {
   await Promise.all(homes.splice(0).map(home => rm(home, { recursive: true, force: true })))
 })
@@ -208,16 +225,15 @@ describe('local request-image cache', () => {
     })
   })
 
-  it('retains an all-opaque alpha channel in a resized request version', async () => {
+  it('accepts a resized WebP request version that omits an all-opaque alpha plane', async () => {
     const attachments = await store()
-    const source = new Uint8Array(await sharp({
-      create: { width: 64, height: 32, channels: 4, background: { r: 12, g: 34, b: 56, alpha: 1 } },
-    }).png().toBuffer())
+    const source = await complexOpaqueAlphaImage(64, 32)
     const attachment = await attachments.saveImage({ data: source, mediaType: 'image/png' })
 
     const request = await attachments.readImageRequest(attachment, { maxPixels: 16 * 16, maxBytes: 1024 * 1024 })
 
-    await expect(sharp(request.data).metadata()).resolves.toMatchObject({ hasAlpha: true })
+    expect(request.mediaType).toBe('image/webp')
+    await expect(sharp(request.data).metadata()).resolves.toMatchObject({ hasAlpha: false })
   })
 
   it('keeps a complex 640,000-pixel request version below 1 MiB', async () => {

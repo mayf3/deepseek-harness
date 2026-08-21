@@ -23,6 +23,24 @@ export interface DetectedImage {
   hasAlpha: boolean
 }
 
+/**
+ * Check alpha metadata for bytes produced by this package's encoders.
+ * Sharp/libvips may omit an all-opaque alpha plane from WebP output; every
+ * other addition or removal indicates that the encoded result is incompatible
+ * with its source facts.
+ * @param sourceHasAlpha - whether the source bytes declare an alpha plane, or undefined when the source frame is unspecified.
+ * @param output - decoded media type and alpha metadata from the encoded result.
+ * @returns whether the output alpha metadata is compatible with the source.
+ */
+export function encodedAlphaIsCompatible(
+  sourceHasAlpha: boolean | undefined,
+  output: Pick<DetectedImage, 'mediaType' | 'hasAlpha'>,
+): boolean {
+  return sourceHasAlpha === undefined
+    || output.hasAlpha === sourceHasAlpha
+    || (sourceHasAlpha && !output.hasAlpha && output.mediaType === 'image/webp')
+}
+
 const MEDIA_TYPES: Readonly<Record<string, ImageMediaType>> = {
   png: 'image/png',
   jpeg: 'image/jpeg',
