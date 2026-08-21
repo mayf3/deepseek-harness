@@ -30,7 +30,7 @@ mirror/backdrop 层及其 CSS 耦合规则；Safari 软换行修复（2026-08-13
 - 已认领命令的 args 现以剪贴板形式到达 source（引用为规范文本而非展示标签）——可解析的那种形式。
 - `InputState.draft` 是剪贴板投影（原为展示文本）。跨包读方只消费 phase/queue 级字段；occurrence 表的外部读方为零。
 - chip 删除遵循引擎的原生 decorator 手势；jsdom 缺 `Selection.modify`，键盘路径只在浏览器 lane 断言。
-- 文件夹纯文本引用保留 `@` 字形并携带 appearance 属性，不再覆盖 trigger 字符。
+- 文件夹纯文本引用在完整字面 token 前渲染文件夹图标前缀（气泡同款资产的 currentcolor mask）；旧 backdrop 是覆盖绘制 trigger 字符，而 Lexical 文本节点无法表达这种覆盖。
 - 输入框的可访问名称改为显式 `aria-label` 镜像 placeholder（div 的 `data-placeholder` 不像 textarea 的 placeholder 那样参与命名）——由 reference-composer 的 aria golden 逮出。
 - 纯光标 commit 不发布任何东西：shell 只在投影内容变化时推进 `draftRev` 并重发布 `InputState`。光标移动仍然喂给菜单 tracking，但既不会使快照构造的 CAS span 失效（apply.ts 用已发布的 `draftRev` 构造 span），也不会触发订阅者重渲染。第一版每次 commit 都重发布；review 逮出了与旧机器「仅文本推进版本号」语义的漂移。
 - 粘贴是独立的 undo 边界：自定义 PASTE_COMMAND handler 在 `@lexical/plain-text` 有机会打 tag 之前就消费了事件，因此 shell 自己补上 `PASTE_TAG`（经 `$addUpdateTag`——dispatch 路径必然嵌套在命令 update 内部执行）。没有它，history 会把粘贴与 1 秒窗内的输入合并，一次 undo 同时撤销两者。
