@@ -959,7 +959,8 @@ describe('dsh-subagent-acp', () => {
 
   it('lets local cancellation interrupt prompt-failure process observation', async () => {
     const controller = new AbortController()
-    const observing = Promise.withResolvers<undefined>()
+    const protocolEnded = Promise.withResolvers<undefined>()
+    let boundedExitWaits = 0
     const run = await startAcpRun(request('p', controller.signal), {
       command: process.execPath,
       args: [mockServer],
@@ -968,9 +969,14 @@ describe('dsh-subagent-acp', () => {
       env: { MOCK_CLOSE_PROTOCOL_ON_PROMPT: '1' },
       disposeEofGraceMs: 100,
       disposeGraceMs: 5000,
-      spawn: spec => tapBoundedExitWait(spawnSubprocess(spec), () => { observing.resolve(undefined) }),
+      spawn: (spec) => {
+        const child = spawnSubprocess(spec)
+        child.stdout?.once('end', () => { protocolEnded.resolve(undefined) })
+        return tapBoundedExitWait(child, () => { boundedExitWaits += 1 })
+      },
     })
-    await observing.promise
+    await protocolEnded.promise
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
     controller.abort()
     await expect(Promise.race([
       run.result,
@@ -978,6 +984,7 @@ describe('dsh-subagent-acp', () => {
         setTimeout(() => { reject(new Error('cancellation waited for process observation')) }, 500)
       }),
     ])).resolves.toEqual({ output: [], stopReason: 'aborted' })
+    expect(boundedExitWaits).toBe(0)
     await run.dispose()
   })
 
