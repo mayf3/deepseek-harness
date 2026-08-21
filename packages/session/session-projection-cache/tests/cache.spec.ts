@@ -138,7 +138,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 40))
 afterEach(async () => {
   vi.useRealTimers()
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
-  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })))
 })
 
 describe('SessionProjectionCache write policy', () => {

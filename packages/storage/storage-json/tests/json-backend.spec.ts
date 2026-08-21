@@ -327,7 +327,7 @@ describe('per-record layout', () => {
     await backend.close()
   })
 
-  it('reads an unreadable record document as absent (per-record contract)', async () => {
+  it.skipIf(process.platform === 'win32')('reads an unreadable record document as absent (per-record contract)', async () => {
     const root = await freshRoot()
     const path = recordPath(root, 'locked')
     await mkdir(join(root, 'recs', 't'), { recursive: true })
