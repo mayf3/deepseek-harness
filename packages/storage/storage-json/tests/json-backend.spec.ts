@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -327,17 +327,15 @@ describe('per-record layout', () => {
     await backend.close()
   })
 
-  it.skipIf(process.platform === 'win32')('reads an unreadable record document as absent (per-record contract)', async () => {
+  it('reads an unreadable record document as absent (per-record contract)', async () => {
     const root = await freshRoot()
-    const path = recordPath(root, 'locked')
-    await mkdir(join(root, 'recs', 't'), { recursive: true })
-    await writeFile(path, JSON.stringify({ version: 2, record: { v: 1 } }), 'utf8')
-    await chmod(path, 0o000)
+    // A directory where the record document should be: readFile fails with
+    // EISDIR on every platform (permission bits are unenforceable on win32).
+    await mkdir(join(root, 'recs', 't', 'locked.json'), { recursive: true })
     const backend = new JsonStorageBackend(root)
     const unit = await backend.kv.open(descriptor)
     expect(await unit.loadAll()).toEqual({ tables: { t: {} }, global: null })
     await backend.close()
-    await chmod(path, 0o600)
   })
 
   it('migrates a legacy whole-unit file once, new records win, then deletes it', async () => {

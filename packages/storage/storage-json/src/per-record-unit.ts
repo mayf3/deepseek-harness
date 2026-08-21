@@ -143,7 +143,7 @@ async function migrateLegacyUnit(descriptor: KvUnitDescriptor, dir: string, stat
 /** Read one declared table's record documents into `records`. */
 async function loadTableRecords(records: Map<string, unknown>, version: number, dir: string): Promise<void> {
   for (const file of await readdir(dir, { withFileTypes: true })) {
-    if (!file.isFile() || !file.name.endsWith('.json')) continue
+    if (!file.name.endsWith('.json')) continue
     const key = file.name.slice(0, -'.json'.length)
     if (!SAFE_KEY_RE.test(key)) continue
     const record = await readRecord(join(dir, file.name), version)
