@@ -288,6 +288,7 @@ describe('Python release workflows', () => {
     }
 
     expect(dispatch.inputs.publish).toMatchObject({ type: 'boolean', default: false })
+    if (!isRecord(workflow.on)) throw new TypeError('python-release workflow must define on')
     expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch'])
     expect(build).toMatchObject({
       if: "github.event_name == 'workflow_dispatch'",
