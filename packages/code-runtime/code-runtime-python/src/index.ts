@@ -227,6 +227,20 @@ const MAX_PENDING_CHUNKS = 1024
 const FRAME_ENVELOPE_BYTES = 64
 
 /**
+ * Smallest `maxLogBytes` the backend can honor. The log ledger's truncation
+ * marker (`logTruncationMarker`) plus the serialized outer-array envelope must
+ * fit the budget, or a truncated run returns more than the configured cap: the
+ * marker text is `[dsh-code-runtime-python] log capture truncated at <N>
+ * bytes` — 49 fixed characters plus the digits of N plus 6 — serialized with
+ * quotes and brackets adds 4, so the smallest N that admits its own marker is
+ * 61 (49 + 2 + 6 + 4); 62 is the floor with one byte of room. `maxValueBytes`
+ * has no floor beyond the positive-integer requirement: a completion can be as
+ * small as a single byte (`1`), and the done-frame envelope is seam protocol
+ * cost, not the advertised completion budget.
+ */
+const MIN_LOG_BYTES = 62
+
+/**
  * Extra time added to `graceMs` before the post-kill close-deadline force-settles
  * a run whose `close` never fires (a setsid-escaped orphan holds our inherited
  * stdio; see the `closeDeadline` arm in {@link PythonCodeRuntime.execute}). It
@@ -766,6 +780,12 @@ export class PythonCodeRuntime extends CodeRuntime {
       const limit = FRAME_CEILING_BYTES - FRAME_ENVELOPE_BYTES
       if (this.config[key] > limit) {
         throw new Error(`dsh-code-runtime-python: config.${key} must not exceed ${limit} (a payload that large cannot cross the ${FRAME_CEILING_BYTES}-byte fd-3 frame ceiling, so the run would fail as worker-exit rather than output-limit), got ${String(this.config[key])}`)
+      }
+      // Reject a log budget too small to honor: the ledger must fit its
+      // truncation marker plus the serialized outer-array envelope, or a
+      // truncated run returns more than the configured cap.
+      if (key === 'maxLogBytes' && this.config[key] < MIN_LOG_BYTES) {
+        throw new Error(`dsh-code-runtime-python: config.maxLogBytes must be at least ${MIN_LOG_BYTES} (a smaller budget cannot serialize the truncation marker plus the outer-array envelope, so the run would return more than the configured cap), got ${String(this.config[key])}`)
       }
     }
     // The child builds, charges, and frames a `maxLogBytes` log entry or a

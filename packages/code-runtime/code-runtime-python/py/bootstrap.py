@@ -1957,7 +1957,9 @@ def _make_cpu_enforcer() -> Any:
     # SIGXCPU unmasking primitives for the re-raise below: a program can mask
     # the signal and return past the soft limit, so the re-delivered signal
     # must be unblocked first. Captured here (import time) so a rebind cannot
-    # defeat them; ``None`` on platforms without ``pthread_sigmask`` (Windows).
+    # defeat them. The ``getattr``/``None`` guard is defensive against a
+    # stripped CPython build (the host refuses win32 at construction, so every
+    # platform this backend actually starts on has ``pthread_sigmask``).
     pthread_sigmask = getattr(signal, "pthread_sigmask", None)
     sig_unblock = getattr(signal, "SIG_UNBLOCK", None)
 
@@ -2014,14 +2016,20 @@ def _make_cpu_enforcer() -> Any:
             # A program can mask SIGXCPU (``pthread_sigmask(SIG_BLOCK, ...)``),
             # burn past the soft limit, and return during the soft-to-hard gap;
             # the re-delivered SIGXCPU below would then stay PENDING and the
-            # child would exit normally with a success result. Unblock it on the
-            # current thread before re-raising, so the signal is delivered and
-            # the host sees the kernel-authoritative timeout classification. On
-            # platforms without ``pthread_sigmask`` (Windows) the signal is not
-            # maskable this way, so the call is guarded.
+            # child would exit normally with a success result. Restore the
+            # default disposition BEFORE unblocking: a program that installed a
+            # custom handler AND masked the signal has that pending handler run
+            # the moment the signal is unblocked (CPython delivers it at the next
+            # eval-breaker checkpoint in model code), and it could re-mask or
+            # raise — so the disposition must already be SIG_DFL when the signal
+            # is released. With SIG_DFL restored first, the pending signal kills
+            # the process inside the kernel with no bytecode window; the ``kill``
+            # below is the fallback for the never-pending case. ``pthread_sigmask``
+            # is ``None``-guarded defensively (every platform this backend starts
+            # on has it; the host refuses win32 at construction).
+            set_signal(sigxcpu, sig_dfl)
             if pthread_sigmask is not None:
                 pthread_sigmask(sig_unblock, (sigxcpu,))
-            set_signal(sigxcpu, sig_dfl)
             kill(getpid(), sigxcpu)
 
     return die_if_cpu_exhausted

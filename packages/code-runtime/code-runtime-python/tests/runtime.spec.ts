@@ -566,6 +566,36 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     expect(result.value).toBeUndefined()
   }, 20_000)
 
+  it('reports a timeout when a program traps AND masks SIGXCPU and returns past the soft limit', async () => {
+    // The mask-only case exercises the unblock; the trap+mask combination is
+    // the harder one: a program that installed a custom handler AND masked the
+    // signal has that PENDING handler run the moment the signal is unblocked
+    // (CPython delivers it at the next eval-breaker checkpoint in model code),
+    // and the handler re-masks — so the settlement recheck must restore the
+    // default disposition BEFORE unblocking. With SIG_DFL restored first, the
+    // pending signal kills the process inside the kernel with no bytecode
+    // window; without it, the handler re-blocks and the child exits normally
+    // with a success value. Fail-before: the run reports `value: "escaped"`.
+    const { runtime } = await setup({ cpuSeconds: 1, maxWallMs: 12_000 })
+    const result = await runtime.run({
+      program: [
+        'import signal, time',
+        'if hasattr(signal, "pthread_sigmask"):',
+        '    def h(signum, frame):',
+        '        signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGXCPU})',
+        '    signal.signal(signal.SIGXCPU, h)',
+        '    signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGXCPU})',
+        '    end = time.perf_counter() + 1.05',
+        '    while time.perf_counter() < end:',
+        '        pass',
+        'return "escaped"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('timeout')
+    expect(result.value).toBeUndefined()
+  }, 20_000)
+
   it('rechecks CPU at settlement against the effective inherited soft limit', async () => {
     // The settlement-time CPU recheck must compare against the EFFECTIVE soft
     // limit (`_clamped` may have lowered it to a stricter inherited value), not
@@ -2884,7 +2914,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
   it('truncates host-side logs once the budget is exhausted and emits the marker', async () => {
     // Set a tiny host-side budget; the Python side has a much larger one, so
     // its LogBuffer will not truncate — the host ledger fires first.
-    const { runtime } = await setup({ maxLogBytes: 32 })
+    const { runtime } = await setup({ maxLogBytes: 128 })
     const result = await runtime.run({
       program: [
         'for _ in range(50):',
@@ -2894,7 +2924,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
       bindings: [],
     })
     expect(result.error).toBeUndefined()
-    const markers = result.logs.filter(line => line.includes('log capture truncated at 32 bytes'))
+    const markers = result.logs.filter(line => line.includes('log capture truncated at 128 bytes'))
     expect(markers.length).toBeGreaterThanOrEqual(1)
   })
 
@@ -3891,28 +3921,31 @@ describe('PythonCodeRuntime — hostile peer', () => {
     // Each entry is charged its JSON-string cost plus one separator byte, and
     // the serialized outer logs array adds one more byte of envelope (two
     // brackets and n-1 commas). The ledgers reserve that byte, so a result that
-    // exactly exhausts the ledger still serializes within the configured cap:
-    // `["a"]` is 5 bytes, and `maxLogBytes: 5` admits it (ledger 4 = the 3-byte
-    // quoted entry + 1 separator), while `maxLogBytes: 4` (ledger 3) truncates
-    // to the marker alone.
-    const { runtime } = await setup({ maxLogBytes: 5, maxWallMs: 10_000 })
+    // exactly exhausts the ledger still serializes within the configured cap.
+    // At the 64-byte floor: ledger 63, a 60-character line serializes as
+    // `"aaa...a"` (62 bytes) + 1 separator = 63, exactly exhausting the ledger
+    // and serializing as `["aaa...a"]` = 64 = the cap; a 61-character line
+    // costs 64 > 63 and truncates to the marker alone.
+    const { runtime } = await setup({ maxLogBytes: 64, maxWallMs: 10_000 })
     const result = await runtime.run({
-      program: ['print("a")', 'return "done"'].join('\n'),
+      program: ['print("a" * 60 + "\\n" + "b" * 61, end="")', 'return "done"'].join('\n'),
       bindings: [],
     })
     expect(result.error).toBeUndefined()
     expect(result.value).toBe('done')
-    expect(result.logs).toContain('a')
-    expect(result.logs.some(line => line.includes('log capture truncated'))).toBe(false)
+    // The 60-character line was admitted; the 61-character line was not (a
+    // single 'b' would also match the marker's "bytes", so check for the line).
+    expect(result.logs).toContain('a'.repeat(60))
+    expect(result.logs.some(line => line.includes('b'.repeat(61)))).toBe(false)
+    expect(result.logs.some(line => line.includes('log capture truncated'))).toBe(true)
+  }, 15_000)
 
-    const tight = await setup({ maxLogBytes: 4, maxWallMs: 10_000 })
-    const result2 = await tight.runtime.run({
-      program: ['print("a")', 'return "done"'].join('\n'),
-      bindings: [],
-    })
-    expect(result2.error).toBeUndefined()
-    expect(result2.logs).not.toContain('a')
-    expect(result2.logs.some(line => line.includes('log capture truncated'))).toBe(true)
+  it('rejects a log budget too small to serialize the truncation marker', async () => {
+    // A maxLogBytes below 62 cannot serialize the truncation marker plus the
+    // outer-array envelope; it is rejected at construction so a tiny config
+    // cannot report more than the public cap. maxValueBytes keeps no floor
+    // beyond the positive-integer requirement (a completion can be 1 byte).
+    await expect(setup({ maxLogBytes: 61, maxWallMs: 10_000 })).rejects.toThrow(/must be at least 62/)
   }, 15_000)
 
   it('charges the JSON-escaped cost of control characters against the log ledger', async () => {
@@ -4344,7 +4377,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
     // hundreds-of-megabytes host allocation. The cheap `length + 3` lower bound
     // truncates it instead. The host's own heap is what is under test, so keep
     // the child's address space generous enough to BUILD the frame.
-    const { runtime } = await setup({ maxLogBytes: 32, addressSpaceMb: 1024, maxWallMs: 60_000 })
+    const { runtime } = await setup({ maxLogBytes: 128, addressSpaceMb: 1024, maxWallMs: 60_000 })
     const before = process.memoryUsage().heapUsed
     const result = await runtime.run({
       program: [
@@ -4358,7 +4391,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.error).toBeUndefined()
     expect(result.value).toBe('settled')
     // The frame was dropped as one truncation marker, not retained.
-    expect(result.logs).toEqual([logTruncationMarker(32)])
+    expect(result.logs).toEqual([logTruncationMarker(128)])
     // The escaped copy (~144 MiB) was never materialized.
     expect(process.memoryUsage().heapUsed - before).toBeLessThan(256 * 1024 * 1024)
   }, 90_000)
@@ -4368,7 +4401,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
     // control-heavy frame clears it and must still be charged what it costs on
     // the wire. Ten NULs are 13 against the 32-byte lower bound but 63 escaped
     // (six bytes each, two quotes, one separator), so the full charge truncates.
-    const { runtime } = await setup({ maxLogBytes: 32 })
+    const { runtime } = await setup({ maxLogBytes: 63 })
     const result = await runtime.run({
       program: [
         'import os',
@@ -4379,7 +4412,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
     })
     expect(result.error).toBeUndefined()
     expect(result.value).toBe('settled')
-    expect(result.logs).toEqual([logTruncationMarker(32)])
+    expect(result.logs).toEqual([logTruncationMarker(63)])
   }, 8000)
 
   it('caps a forged done error.message from its code-unit prefix, never encoding the whole message', async () => {
