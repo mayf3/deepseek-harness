@@ -605,9 +605,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
         if (first === undefined) continue // empty/half-written file
         const rawMeta = parseStoredHeaderMeta(first)
         if (rawMeta === undefined) continue // not a session header
-        const rawId = typeof rawMeta === 'object' && rawMeta !== null
-          ? (rawMeta as Record<string, unknown>)['id']
-          : undefined
+        const rawId = rawMeta['id']
         const expectedId = typeof rawId === 'string'
           ? SessionId(rawId)
           : SessionId('')
