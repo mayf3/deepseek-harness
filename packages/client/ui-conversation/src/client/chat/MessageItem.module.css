@@ -26,6 +26,10 @@
   font-size: 16px;
   line-height: 24px;
   color: var(--dsw-alias-label-primary);
+  /* The projected user text is inline runs; the bubble owns wrapping so a
+     decorated single-line message stays one line. */
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .referenceSummary {
@@ -273,19 +277,3 @@
   }
 }
 
-/* Inline references use domain glyphs and business-color text without another
-   container inside the user bubble. */
-.refChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin: 0 2px;
-  color: var(--dsw-alias-state-business-primary);
-  font-weight: 500;
-  white-space: nowrap;
-  vertical-align: baseline;
-}
-
-.refIcon {
-  flex: none;
-}

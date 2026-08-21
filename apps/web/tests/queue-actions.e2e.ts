@@ -133,7 +133,7 @@ describe('web e2e: queue row actions', () => {
     expect(queueRightInset).toBeCloseTo(composerMetrics.dockInset, 1)
     await page.setViewportSize({ width: 1680, height: 1000 })
 
-    const editRow = page.getByText(EDIT, { exact: true }).locator('..')
+    const editRow = page.locator('[data-queue-dock] li', { hasText: EDIT })
     await editRow.getByRole('button', { name: 'Edit queued message' }).click()
     const editor = page.getByRole('textbox', { name: 'Edit queued message' })
     await editor.fill(EDITED)
@@ -142,7 +142,7 @@ describe('web e2e: queue row actions', () => {
     await page.getByRole('button', { name: 'Save queued message' }).click()
     await page.getByText(EDITED, { exact: true }).waitFor()
 
-    const removeRow = page.getByText(REMOVE, { exact: true }).locator('..')
+    const removeRow = page.locator('[data-queue-dock] li', { hasText: REMOVE })
     await removeRow.getByRole('button', { name: 'Remove queued message' }).click()
     await expect.poll(() => page.getByText(REMOVE, { exact: true }).count()).toBe(0)
 
