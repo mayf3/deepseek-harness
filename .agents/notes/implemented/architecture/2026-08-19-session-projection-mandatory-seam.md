@@ -16,7 +16,7 @@ This decision builds on the split between host projection state and client views
 
 The registry provides `stateOf(session, key)` for one typed host state and keeps `snapshot()` for batch carriers. Client views contain only consumed fields; host readers use `stateOf` for richer state.
 
-`onChanged` publishes client-visible value changes only. Unit registration and removal remain effect-scoped registry lifecycle; they do not create a second Host event stream or client tombstone protocol. A later authoritative history or list baseline reflects the active key set.
+`onChanged` publishes client-visible value changes only. Unit registration and removal remain effect-scoped registry lifecycle; `register()` returns the exact Cordis disposer so a composite domain owner can finish cleanup against projected state before removing its unit. Registration changes do not create a second Host event stream or client tombstone protocol. A later authoritative history or list baseline reflects the active key set.
 
 ## Alternatives considered
 

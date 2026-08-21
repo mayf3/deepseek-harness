@@ -273,6 +273,23 @@ describe('SessionProjectionRegistry drive', () => {
     expect(ctx.sessionProjections.snapshot(session).values['test/marks']).toEqual({ marks: ['cached'] })
   })
 
+  it('returns the exact disposer so a composite owner can read state before unregistering', async () => {
+    const { ctx, session } = await harness()
+    mark(session, ['cleanup'])
+    let cleanupState: MarksState | undefined
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      inner.effect(function* () {
+        yield inner.sessionProjections.register(marksUnit())
+        yield () => { cleanupState = inner.sessionProjections.stateOf(session, 'test/marks') }
+      }, 'projection cleanup ordering fixture')
+    }, { inject: ['sessionProjections'] }))
+
+    await fiber.dispose()
+
+    expect(cleanupState).toEqual({ marks: ['cleanup'] })
+    expect(ctx.sessionProjections.stateOf(session, 'test/marks')).toBeUndefined()
+  })
+
   it('removes registrations and change listeners when their owning fiber unloads (HMR safety)', async () => {
     const { ctx, session } = await harness()
     const notifications: string[] = []

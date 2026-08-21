@@ -263,7 +263,7 @@ export class SessionProjectionRegistry extends Service {
         if (live.refs === 0) this.registrations.delete(key)
       }
     }.bind(this), 'sessionProjections.register()')
-    return () => void dispose()
+    return dispose
   }
 
   /**

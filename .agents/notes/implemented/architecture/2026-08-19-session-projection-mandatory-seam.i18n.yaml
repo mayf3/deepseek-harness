@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-19-session-projection-mandatory-seam.md
-2026-08-19-session-projection-mandatory-seam.md: 9edbece131cdc014f2cdf2ed0199b492b46b3ed1
-2026-08-19-session-projection-mandatory-seam.zh.md: e49081759682315f3503ee3114bebbf60c2d82e9
+2026-08-19-session-projection-mandatory-seam.md: eb76ac90fa760108cbeff1033c8ec2db71c7fa11
+2026-08-19-session-projection-mandatory-seam.zh.md: d0fcb2d903b08b71d8f4c9af62d3739c9ec6970b

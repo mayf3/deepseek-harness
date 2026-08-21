@@ -15,7 +15,8 @@ import SqliteSessionPersistence from '@deepseek-ai/dsh-session-persistence-sqlit
 import SubagentService, { seedDescriptorTurn, snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
-import TeamService, { foldTeam, TeamId, TeamMessageId } from '../src/index.ts'
+import TeamService, { TeamId, TeamMessageId } from '../src/index.ts'
+import { emptyTeamState, teamProjectionDefinition } from '../src/projection.ts'
 import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '../src/index.ts'
 
 const SIGNAL = new AbortController().signal
@@ -23,17 +24,21 @@ const PERSISTENCE_TEST_TIMEOUT_MS = 15_000
 const roots: string[] = []
 const contexts = new Set<Context>()
 
-/** Detached durable Team read: the service exposes views, so assertions fold the Lead log. */
+/** Detached durable Team read through the same projection definition as the service. */
 function durable(agent: Agent): {
   members: TeamMemberSnapshot[]
   tasks: TeamTaskSnapshot[]
   pendingMessages: TeamMessageSnapshot[]
 } {
-  const state = foldTeam(agent.id, agent.session.events)
+  let projected = teamProjectionDefinition.init()
+  for (const event of agent.session.events) projected = teamProjectionDefinition.apply(projected, event)
+  const selected = projected.teams.find(team => team.id === TeamId(agent.id))
+  if (selected?.failure !== undefined) throw new Error(selected.failure)
+  const state = selected ?? emptyTeamState(agent.id)
   return {
-    members: [...state.members.values()],
-    tasks: [...state.tasks.values()],
-    pendingMessages: [...state.messages.values()].filter(message => !state.delivered.has(message.id)),
+    members: state.members,
+    tasks: state.tasks,
+    pendingMessages: state.messages.filter(message => !state.delivered.includes(message.id)),
   }
 }
 

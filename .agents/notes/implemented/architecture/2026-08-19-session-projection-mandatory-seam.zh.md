@@ -16,7 +16,7 @@ Status: implemented
 
 注册表提供 `stateOf(session, key)` 来读取一个类型化 host 状态，并为批量 carrier 保留 `snapshot()`。客户端 view 只包含消费方使用的字段；host 读取方通过 `stateOf` 取得更丰富的状态。
 
-`onChanged` 只发布客户端可见值的变化。单元注册和移除仍是绑定 effect 的注册表生命周期；它们不创建第二条 Host 事件流或客户端 tombstone 协议。后续权威 history 或 list 基线会反映活跃 key 集。
+`onChanged` 只发布客户端可见值的变化。单元注册和移除仍是绑定 effect 的注册表生命周期；`register()` 返回 Cordis 的原始 disposer，使组合式领域 owner 可以先依据投影状态完成清理，再移除自身单元。注册变化不会创建第二条 Host 事件流或客户端 tombstone 协议。后续权威 history 或 list 基线会反映活跃 key 集。
 
 ## 考虑过的替代方案
 

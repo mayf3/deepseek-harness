@@ -1,9 +1,7 @@
-/** Package-owned relational checks for Agent Teams durable records. */
+/** Agent Teams runtime invariant companion. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { applyTeamEvent, foldTeam, isTeamEvent } from './fold.ts'
+import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-team'
 
@@ -12,22 +10,8 @@ export const name = 'team-invariant'
 /** Invariant registry required by the companion. */
 export const inject = ['invariants']
 
-/** Validate candidate Team events against the committed prefix before append. */
-const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
-  ctx.on('internal/dispatch', (_mode, eventName, args) => {
-    if (eventName !== 'session/event') return
-    const [session, event] = args as [Session, SessionEvent]
-    if (!isTeamEvent(event)) return
-    try {
-      const state = foldTeam(session.id, session.events)
-      applyTeamEvent(state, event)
-    } catch (error: unknown) {
-      /* v8 ignore next -- the strict Team fold throws Error instances. */
-      const message = error instanceof Error ? error.message : String(error)
-      fail(`session event ${event.seq} violates the Agent Teams stream: ${message}`)
-    }
-  }, { global: true })
-}, { inject: ['sessions'] })
+/** No runtime invariant: the Team projection owns event decoding and relational state transitions. */
+const install: InvariantInstaller = () => {}
 
 /** Register the package invariant companion. */
 export const apply = (ctx: Context): Promise<() => void> =>

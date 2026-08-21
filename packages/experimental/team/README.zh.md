@@ -19,11 +19,11 @@
 
 每个限制都必须是正的安全整数。`maxMembers` 统计所有曾 provision 的名字，包括失败成员，因为名字永不复用。`maxTasks` 统计未删除任务。mailbox 限额按目标成员计算；字节限制覆盖完整的投递帧，包括稳定 id 与发送者名称。`disposalTimeoutMs` 限制已获准创建、mailbox dispatch 与 Team 自有 Activation 的 settlement 时长，使插件 reload 与进程 shutdown 在异常时明确失败，而不是无限等待。
 
-该服务要求 Agent、Session、Session persistence 与 continuable-subagent 服务。没有持久 Session 存储的组合不会激活它。
+该服务要求 Agent、Session、Session persistence、Session projection 与 continuable-subagent 服务。缺少持久 Session 存储或 projection registry 的组合不会激活它。
 
 ## Team 身份与 roster
 
-每个普通运行时 Root 都是一个隐式 Team 的 Lead，其 `TeamId` 等于 `SessionId`；因此，在写入第一条成员、消息或任务记录前，创建 Team 不需要额外状态。teammate 是记录在 Root Session 中的具名 continuable 直接 child。名字采用小写 kebab-case，最长 64 个字符，在 Team 生命周期内不可变。Session id 始终是持久化与授权身份。
+每个普通运行时 Root 都是一个隐式 Team 的 Lead，其 `TeamId` 等于 `SessionId`；因此，在写入第一条成员、消息或任务记录前，创建 Team 不需要额外状态。host-only Team projection 会把已提交记录即时折叠成按 `TeamId` 分组且可安全 checkpoint 的 JSON；Team 读取只选择当前 Lead 的分组，因此普通 fork 不会采用继承的 parent 状态。teammate 是记录在 Root Session 中的具名 continuable 直接 child。名字采用小写 kebab-case，最长 64 个字符，在 Team 生命周期内不可变。Session id 始终是持久化与授权身份。
 
 `spawnTeammate()` 先追加并 flush provisioning member，再要求配置的 spawn 或 fork provider 使用预留 child id 创建成员。provider 失败会追加持久 failed member。初始 inbox 消息获准后，先 flush child Session，再提交 active 边。Root 恢复时，只有独立持久 child 的直接 parent 与 continuable descriptor 匹配，并且其初始用户消息仍在持久 inbox 中或已经记录进历史，provisioning 才转为 active；否则转为 failed。如果 recovery 在同进程 provisioning 竞争中先完成，creator 会接受匹配终态，或报告 `TEAM_PROVISIONING_CONFLICT` 并 drain 已被 recovery 标为 failed 的 child。dispose 会关闭准入，中止并等待已获准的创建与 mailbox dispatch 事务，再让 continuation owner 释放 roster 中确切的 live direct child 及其后代；Lead 的非 Team continuable child 不受影响。cleanup 失败会让 dispose 明确失败。该对账覆盖 Root provisioning 与终态成员边之间的崩溃和 reload 窗口，同时不复用名字或遗留孤儿 Activation。
 
@@ -48,8 +48,6 @@ roster 同时报告持久 provisioning／failed phase 与实时 `running`／`idl
 `writeScopes` 会规范化为 workspace-relative 路径前缀。view 会对与 in-progress 任务的重叠发出警告，但绝不会阻止 claim 或授予文件写权限。它们是协作提示，不是锁。
 
 `waitForChange()` 可以等待注册后发生的下一条 roster、task、mailbox 或实时 status 边，时长范围为 10 秒到 1 小时；它只报告等待是否超时，也不会回放调用前已经发生的变化。运行时 dispose 会释放当前等待，并使后续等待不经超时立即返回。调用方需要在唤醒或超时后重新读取权威状态。取消会保留 Error reason；非 Error reason 则通过 `TEAM_WAIT_ABORTED` 以结构化检查结果报告，不再强制转成 object 字符串。`interrupt()` 仅限 Lead，并委托 continuable-subagent 的 interrupt 路径以 `keepInbox` 只取消 live teammate 的当前 turn；它既不释放任务 owner，也不删除持久 mail。
-
-独立的 `./invariant` 配套模块会把每条候选 Team event 对照已提交 Session 前缀回放。回放会先验证每个当前版本 Team payload，再将其纳入折叠状态；随后会在 append 前拒绝非法 member 转换、名字复用、超出范围的数字 task id、不连续任务 revision、非法任务依赖、重复 queue／ack，以及 target 不匹配的 acknowledgement。顺序与时间由 Session event 的 `seq` 和 `time` 负责，不在 snapshot 中重复保存。
 
 ## 模型体验
 

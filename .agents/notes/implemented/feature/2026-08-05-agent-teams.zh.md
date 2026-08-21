@@ -14,7 +14,7 @@ subagent seam 已提供 fresh／fork provider、持久 child Session、FIFO foll
 
 ## Decision
 
-每个普通运行时 Root 都是一个隐式 Team 的 Lead，Team id 等于该 Root 的 `SessionId`。Team 没有 creation event：Lead pseudo-row 由身份直接存在，持久状态从第一条 member、message 或 task event 开始。roster 是扁平结构，最多包含配置数量、不可变且采用小写 kebab-case 的名字。每个 teammate 都是使用预留 Session id 的 continuable 直接 child；只有 Lead 可以创建或 interrupt teammate。roster 外由 provider 管理的普通 subagent 不是 Team member；普通 fork 是新的 Root，继承的 Team 记录会因 ancestor `TeamId` 被排除。
+每个普通运行时 Root 都是一个隐式 Team 的 Lead，Team id 等于该 Root 的 `SessionId`。Team 没有 creation event：Lead pseudo-row 由身份直接存在，持久状态从第一条 member、message 或 task event 开始。host-only Session projection 会把已提交 Team 记录即时折叠成按 `TeamId` 分组且可安全 checkpoint 的 JSON；host 读取会直接选择当前 Lead 的分组，无需重放完整 Session 日志。分组会保留 ancestor 记录以支持准确的 checkpoint 恢复，同时把它们排除在普通 fork 的新 Root 状态之外。roster 是扁平结构，最多包含配置数量、不可变且采用小写 kebab-case 的名字。每个 teammate 都是使用预留 Session id 的 continuable 直接 child；只有 Lead 可以创建或 interrupt teammate。roster 外由 provider 管理的普通 subagent 不是 Team member。
 
 实现拆分为 `@deepseek-ai/dsh-team` 与 `@deepseek-ai/dsh-tool-team`：前者负责 `ctx.teams` 和持久语义，后者负责 scoped schema 与模型指引。每个 Team 工具都声明完整的结果 schema，并把该值渲染为紧凑 JSON，因此编译器会检查每个 `execute` 是否符合对模型的承诺，也没有结果把 token 花在缩进上。部署显式挂载两个插件，并可禁用具有相同模型可见名称的旧 continuable control。显式 delegation 策略只允许在用户要求 Agent Teams 或 teammate 时创建 Team。 两个包都是 `packages/experimental/` 的私有成员；[实验性包决策](../architecture/2026-08-18-experimental-agent-teams-packages.md)负责发布排除、依赖隔离与 promotion。
 
@@ -30,7 +30,7 @@ fresh child 不继承对话。fork child 只捕获一次 Lead 已完成 turn 前
 
 ## Mailbox and task transactions
 
-Peer 通讯使用 Lead 日志 mailbox。投递前先追加并 flush `team/message/queued`。target message 会在持久 source metadata 与短模型可见前缀中同时携带稳定 message id 和 sender identity。只有 pending inbox 条目或已记录用户消息完成 flush，Lead 日志才写入 `team/message/delivered` acknowledgement。即时准入按 target 和 queued 日志顺序串行化，恢复按同一顺序重试 queued-minus-delivered，并在冷恢复前折叠 live 或 persisted target 的 inbox／历史状态。每个当前版本 Team payload 都会经过运行时验证后才进入 replay state。Team runtime 从同步准入到 settlement 全程跟踪 dispatch 与异步 acknowledgement 工作；dispose 会关闭准入，并在移除服务前等待两者。当前 waiter 只在所属 Team event flush 成功后被唤醒。
+Peer 通讯使用 Lead 日志 mailbox。投递前先追加并 flush `team/message/queued`。target message 会在持久 source metadata 与短模型可见前缀中同时携带稳定 message id 和 sender identity。只有 pending inbox 条目或已记录用户消息完成 flush，Lead 日志才写入 `team/message/delivered` acknowledgement。即时准入按 target 和 queued 日志顺序串行化，恢复按同一顺序重试 queued-minus-delivered，并在冷恢复前折叠 live 或 persisted target 的 inbox／历史状态。每个当前版本 Team payload 都会经过运行时验证后才进入投影状态。Team runtime 从同步准入到 settlement 全程跟踪 dispatch 与异步 acknowledgement 工作；dispose 会关闭准入，并在移除服务前等待两者。当前 waiter 只在所属 Team event flush 成功后被唤醒。
 
 对于 live target，quiet `send_message` 会立即注入、flush 并确认，但不会唤醒它；inactive target 会保持 queued，直到其他事件 materialize 该 teammate。waking `followup_task` 成为 target 的下一个 FIFO turn，并可冷恢复。即使即时投递被推迟，成功也表示消息已经持久化。该机制提供进程内重试与 target Session 去重，不宣称跨进程 exactly-once。
 
@@ -62,7 +62,7 @@ Worktree isolation 不是 harness runtime 行为。deployment 或 prompt 可以�
 
 ## Testing
 
-Package test 以逐文件 100% coverage 覆盖身份、名字与权限检查、provider 选择、预留 id 持久化冲突、child-before-Lead flush 顺序、持久 provisioning 失败与 pending-inbox JSONL／SQLite 对账、target-local 并发顺序、pending／history 去重、mailbox 限额、flush 后 notification、取消在途创建与 dispatch 的有界 dispose、failed member cleanup、task CAS 与 DAG 校验、write-scope warning、wait cancel／timeout、保留 inbox 的 interrupt、普通 fork 隔离、旧 control shadowing、声明 schema 的紧凑结果渲染与 scoped registration HMR。一条 keyless headless Loader 快照会组合真实 Team 插件，并记录 teammate 创建、peer mail、依赖任务、等待与 Lead 汇总。
+Package test 以逐文件 100% coverage 覆盖身份、名字与权限检查、provider 选择、预留 id 持久化冲突、child-before-Lead flush 顺序、持久 provisioning 失败与 pending-inbox JSONL／SQLite 对账、target-local 并发顺序、pending／history 去重、mailbox 限额、flush 后 notification、取消在途创建与 dispatch 的有界 dispose、failed member cleanup、task CAS 与 DAG 校验、write-scope warning、wait cancel／timeout、保留 inbox 的 interrupt、Team projection checkpoint 状态、普通 fork 隔离、旧 control shadowing、声明 schema 的紧凑结果渲染与 scoped registration HMR。一条 keyless headless Loader 快照会组合真实 Team 插件，并记录 teammate 创建、peer mail、依赖任务、等待与 Lead 汇总。
 
 ## Consequences
 
