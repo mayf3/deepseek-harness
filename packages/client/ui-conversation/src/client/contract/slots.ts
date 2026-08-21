@@ -78,6 +78,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.session.header': { kind: 'single'; scope: 'session' }
     /**
+     * One breadcrumb title and its lineage controls. The render site keeps
+     * the ordinary title as fallback; an occupant receives plain title data
+     * and may replace a subagent title with one combined navigation control.
+     */
+    'conversation.session.header.lineage': {
+      kind: 'single'
+      scope: 'session'
+      owner: ConversationHeaderLineageOwnerProps
+    }
+    /**
      * One button in the session header's action row — the additive way to put
      * a per-session control beside the title without replacing the header.
      * Entries render by ascending `order`; negative values are reserved for
@@ -166,6 +176,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * reads the global workspace list.
      */
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
+    /**
+     * Brand mark leading the blank-session headline. Declared by this
+     * package's `conversation` entry; the shell supplies a fish fallback.
+     */
+    'conversation.hero.brand.mark': { kind: 'single'; scope: 'root'; owner: HeroBrandMarkOwnerProps }
     /**
      * The agent-preset chip beside the workspace picker on the new-session
      * screen. Root scope: no session exists yet, so the choice is staged for
@@ -299,6 +314,16 @@ export interface ConversationSessionOwnerProps {
 
 /** Header actions derive their state from the standard session/global kit. */
 export interface ConversationHeaderActionOwnerProps {}
+
+/** Plain breadcrumb data handed to the optional lineage renderer. */
+export interface ConversationHeaderLineageOwnerProps {
+  /** Session represented by this breadcrumb title. */
+  lineageSessionId: SessionId
+  /** Display title available to a renderer that combines the title with a control. */
+  displayTitle: string
+  /** Navigate to an ancestor title when its combined control is clicked. */
+  openTitle?: () => void
+}
 
 /**
  * The input-region slot currency: dock/left/right entries read
@@ -598,6 +623,14 @@ export interface ComposerChainProps {
   session: ConversationSnapshot | undefined
 }
 
+/** Presentation props supplied to the blank-session brand-mark occupant. */
+export interface HeroBrandMarkOwnerProps {
+  /** Requested square edge in pixels. */
+  size: number
+  /** Host CSS class for preserving the default hero mark color and hover motion. */
+  className?: string | undefined
+}
+
 /**
  * Full conversation-slot component props: runtime & child-render (view ring
  * + composer chain/bar + input-region + hero picker slots) & store & injected
@@ -610,6 +643,7 @@ export type ConversationSlotProps =
     | 'conversation.input.overlay'
     | 'conversation.input.dock' | 'conversation.composer.dock'
     | 'conversation.input.left' | 'conversation.input.right'
+    | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
     | 'conversation.hero.agentPreset'
   >
@@ -626,7 +660,11 @@ export type ConversationSessionSlotProps =
 /** Full strict-session header props: shared store, tabs/actions render shares, navigation, and locale. */
 export type ConversationSessionHeaderSlotProps =
   PropsRuntime<'conversation.session.header'>
-  & PropsRenderSlots<'conversation.session.header.actions' | 'conversation.session.header.utilities'>
+  & PropsRenderSlots<
+    'conversation.session.header.lineage'
+    | 'conversation.session.header.actions'
+    | 'conversation.session.header.utilities'
+  >
   & PropsStore<ChatStore>
   & ConversationSessionHeaderInjected
   & PropsLocale<'conversation'>
