@@ -138,9 +138,18 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
               style="display: contents;"
             >
               <span
-                class="fallbackBrandName"
+                class="localBuildBrand"
               >
-                DSH
+                <span
+                  class="localBuildName"
+                >
+                  DSH
+                </span>
+                <span
+                  class="localBuildLabel"
+                >
+                  Local Build
+                </span>
               </span>
               <span
                 class="buildVersion"
@@ -264,9 +273,18 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
               style="display: contents;"
             >
               <span
-                class="fallbackBrandName"
+                class="localBuildBrand"
               >
-                DSH
+                <span
+                  class="localBuildName"
+                >
+                  DSH
+                </span>
+                <span
+                  class="localBuildLabel"
+                >
+                  Local Build
+                </span>
               </span>
               <span
                 class="buildVersion"

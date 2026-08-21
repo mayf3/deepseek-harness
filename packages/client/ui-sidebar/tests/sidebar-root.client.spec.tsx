@@ -111,6 +111,7 @@ describe('SidebarRoot shell', () => {
     />)
 
     expect(screen.getByText('DSH')).toBeTruthy()
+    expect(screen.getByText('Local Build')).toBeTruthy()
     expect(screen.getByText('1.2.3-rc.4-0123456-dirty')).toBeTruthy()
     expect(container.querySelector('svg')).not.toBeNull()
   })
@@ -129,6 +130,7 @@ describe('SidebarRoot shell', () => {
     />)
 
     expect(screen.getByText('DSH')).toBeTruthy()
+    expect(screen.getByText('Local Build')).toBeTruthy()
     expect(screen.getByText(expected)).toBeTruthy()
   })
 

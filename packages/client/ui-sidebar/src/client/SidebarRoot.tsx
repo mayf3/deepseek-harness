@@ -153,16 +153,17 @@ export function SidebarRoot({
               </span>
               <span className={css.brandName}>
                 {renderSlot('sidebar.brand.name', {}, {
-                  fallback: (
-                    <>
-                      <span className={css.fallbackBrandName}>
-                        {buildVersion === undefined ? 'DSH Local Build' : 'DSH'}
-                      </span>
-                      {buildVersion === undefined
-                        ? null
-                        : <span className={css.buildVersion}>{buildVersion}</span>}
-                    </>
-                  ),
+                  fallback: buildVersion === undefined
+                    ? <span className={css.fallbackBrandName}>DSH Local Build</span>
+                    : (
+                      <>
+                        <span className={css.localBuildBrand}>
+                          <span className={css.localBuildName}>DSH</span>
+                          <span className={css.localBuildLabel}>Local Build</span>
+                        </span>
+                        <span className={css.buildVersion}>{buildVersion}</span>
+                      </>
+                    ),
                 })}
               </span>
             </span>

@@ -159,6 +159,30 @@
   white-space: nowrap;
 }
 
+.localBuildBrand {
+  flex: none;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  height: 24px;
+  white-space: nowrap;
+}
+
+.localBuildName {
+  font-size: 16px;
+  line-height: 15px;
+  letter-spacing: 0;
+}
+
+.localBuildLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 7px;
+  font-weight: 500;
+  line-height: 8px;
+  letter-spacing: 0.02em;
+}
+
 .iconButton {
   flex: none;
   display: inline-flex;
@@ -211,6 +235,7 @@
 }
 
 .buildVersion {
+  flex: none;
   display: inline-flex;
   align-items: center;
   height: 16px;
@@ -222,6 +247,7 @@
   font-size: 8px;
   font-weight: 500;
   line-height: 16px;
+  white-space: nowrap;
 }
 
 /* New Session: 38px bar, 12px radius (figma 133:7634 geometry, squared-off
