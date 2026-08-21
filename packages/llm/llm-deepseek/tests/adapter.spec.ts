@@ -77,7 +77,7 @@ const imageRef: ImageAttachmentRef = {
 function requestImage(ref = imageRef): RequestImageAttachment {
   return {
     variantId: ImageVariantId(`sha256:${'b'.repeat(64)}`),
-    master: ref,
+    attachment: ref,
     data: Uint8Array.of(1, 2, 3),
     mediaType: 'image/png',
     bytes: 3,
@@ -94,18 +94,11 @@ function attachmentStoreOf(
 ): {
   store: AttachmentStore
   readImageRequest: ReturnType<typeof vi.fn<typeof project>>
-  readImageRequests: ReturnType<typeof vi.fn>
 } {
   const readImageRequest = vi.fn(project)
-  const readImageRequests = vi.fn(async (
-    refs: readonly ImageAttachmentRef[],
-    policy: unknown,
-    signal?: AbortSignal,
-  ) => Promise.all(refs.map(ref => readImageRequest(ref, policy, signal))))
   return {
-    store: { readImageRequest, readImageRequests } as unknown as AttachmentStore,
+    store: { readImageRequest } as unknown as AttachmentStore,
     readImageRequest,
-    readImageRequests,
   }
 }
 
@@ -233,8 +226,8 @@ describe('DeepSeekAdapter against a mock server', () => {
       })],
     }))
 
-    expect(attachmentMocks.readImageRequests).toHaveBeenCalledWith(
-      [recent],
+    expect(attachmentMocks.readImageRequest).toHaveBeenCalledWith(
+      recent,
       { maxPixels: 640_000, maxBytes: 1024 * 1024 },
       expect.any(AbortSignal),
     )
@@ -283,15 +276,15 @@ describe('DeepSeekAdapter against a mock server', () => {
     await drain(adapter.stream({ provider: 'deepseek-official', model: 'vision-low', messages: [nested] }))
     await drain(adapter.stream({ provider: 'deepseek-official', model: 'vision-custom', messages: [nested] }))
 
-    expect(attachmentMocks.readImageRequests).toHaveBeenNthCalledWith(
+    expect(attachmentMocks.readImageRequest).toHaveBeenNthCalledWith(
       1,
-      [imageRef],
+      imageRef,
       { maxPixels: 512 * 512, maxBytes: 512_000 },
       expect.any(AbortSignal),
     )
-    expect(attachmentMocks.readImageRequests).toHaveBeenNthCalledWith(
+    expect(attachmentMocks.readImageRequest).toHaveBeenNthCalledWith(
       2,
-      [imageRef],
+      imageRef,
       { maxPixels: 320_000, maxBytes: 1024 * 1024 },
       expect.any(AbortSignal),
     )
@@ -395,7 +388,7 @@ describe('DeepSeekAdapter against a mock server', () => {
       return Promise.resolve({
         ...requestImage(ref),
         variantId: ImageVariantId(`sha256:${(first ? 'b' : 'd').repeat(64)}`),
-        master: first ? { ...ref, name: 'diagram.png' } : ref,
+        attachment: first ? { ...ref, name: 'diagram.png' } : ref,
         hasAlpha: false,
       })
     }).store

@@ -6,7 +6,6 @@ import type {
   ImageAttachmentRef,
   ImageRequestPolicy,
   RequestImageAttachment,
-  SavedImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
@@ -246,7 +245,7 @@ describe('PiAiAdapter provider routing', () => {
     ): Promise<RequestImageAttachment> => (
       Promise.resolve({
         variantId: ImageVariantId(`sha256:${'b'.repeat(64)}`),
-        master: value,
+        attachment: value,
         data: Uint8Array.of(1),
         mediaType: value.mediaType,
         bytes: 1,
@@ -272,7 +271,7 @@ describe('PiAiAdapter provider routing', () => {
         return Promise.reject(new Error('not used'))
       }
 
-      saveImage(_input: SaveImageAttachment): Promise<SavedImageAttachment> {
+      saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
         return Promise.reject(new Error('not used'))
       }
 

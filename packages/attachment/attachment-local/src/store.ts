@@ -12,12 +12,10 @@ import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
   SaveImageAttachment,
-  SavedImageAttachment,
-  SourceImageInfo,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import { prepareMasterImage } from './canonical.ts'
-import type { MasterImagePolicy } from './canonical.ts'
+import { normalizeImage } from './normalization.ts'
+import type { NormalizationPolicy } from './normalization.ts'
 import { detectImage, probeImage } from './image.ts'
 import type { DetectedImage } from './image.ts'
 
@@ -52,71 +50,69 @@ async function inspectMetadata(
   data: Uint8Array,
   declaredMediaType: ImageAttachmentRef['mediaType'],
   limits: ImageAttachmentLimits,
-): Promise<{ detected: DetectedImage; source: SourceImageInfo }> {
+): Promise<DetectedImage> {
   if (data.byteLength === 0) throw new AttachmentError('Image is empty.', 'INVALID_IMAGE')
   const detected = await detectImage(data, { maxPixels: limits.maxImagePixels, maxDimension: limits.maxImageDimension })
   if (detected.mediaType !== declaredMediaType) throw new AttachmentError('Declared image type does not match its bytes.', 'IMAGE_TYPE_MISMATCH')
-  return {
-    detected,
-    source: { mediaType: detected.mediaType, bytes: data.byteLength, width: detected.width, height: detected.height },
-  }
+  return detected
 }
 
 /**
  * Run the full admission policy for one image without touching storage,
- * including master-version preparation: a batch whose members all validate
- * cannot later be refused by the master byte cap during publication.
+ * including normalization: a batch whose members all validate cannot later
+ * be refused by the normalized image byte cap during publication.
  * @param input - encoded bytes and declared metadata.
  * @param limits - resolved source admission policy.
- * @param policy - resolved master-version storage policy.
- * @returns completion after the raster has been decoded and its master version proven to fit.
+ * @param policy - resolved normalization policy.
+ * @returns completion after the raster has been decoded and its normalized version proven to fit.
  */
 export async function validateImageFile(
   input: SaveImageAttachment,
   limits: ImageAttachmentLimits,
-  policy: MasterImagePolicy,
+  policy: NormalizationPolicy,
 ): Promise<void> {
   await prepareImageFile(input, limits, policy)
 }
 
-/** Fully prepared master object, verified before any batch member is persisted. */
-export interface PreparedImageFile extends SavedImageAttachment {
-  /** Deterministic master bytes whose digest is {@link ref.attachmentId}. */
+/** Fully prepared normalized object, verified before any batch member is persisted. */
+export interface PreparedImageFile {
+  /** Deterministic normalized bytes whose digest is {@link ref.attachmentId}. */
   data: Uint8Array
+  /** Durable reference describing {@link data}. */
+  ref: ImageAttachmentRef
 }
 
 /**
  * Decode, normalize, and verify one submitted image without touching storage.
  * @param input - submitted encoded bytes and declared media type.
  * @param limits - source admission policy.
- * @param policy - independent master-version storage policy.
+ * @param policy - independent normalization policy.
  * @returns immutable reference facts beside bytes ready for atomic publication.
  */
 export async function prepareImageFile(
   input: SaveImageAttachment,
   limits: ImageAttachmentLimits,
-  policy: MasterImagePolicy,
+  policy: NormalizationPolicy,
 ): Promise<PreparedImageFile> {
   if (input.data.byteLength > limits.maxImageBytes) {
     throw new AttachmentError('Image exceeds the configured byte limit.', 'IMAGE_TOO_LARGE')
   }
-  const { detected, source } = await inspectMetadata(input.data, input.mediaType, limits)
-  const master = await prepareMasterImage(input.data, detected, policy)
-  const sha256 = digest(master.data)
+  const detected = await inspectMetadata(input.data, input.mediaType, limits)
+  const normalized = await normalizeImage(input.data, detected, policy)
+  const sha256 = digest(normalized.data)
   const name = displayName(input.name)
-  const downscaled = source.width !== master.width || source.height !== master.height
+  const downscaled = detected.width !== normalized.width || detected.height !== normalized.height
   return {
-    data: master.data,
+    data: normalized.data,
     ref: {
       attachmentId: AttachmentId(`sha256:${sha256}`),
-      mediaType: master.mediaType,
-      width: master.width,
-      height: master.height,
-      bytes: master.data.byteLength,
+      mediaType: normalized.mediaType,
+      width: normalized.width,
+      height: normalized.height,
+      bytes: normalized.data.byteLength,
       ...(name !== undefined ? { name } : {}),
-      ...downscaled ? { sourceWidth: source.width, sourceHeight: source.height } : {},
+      ...downscaled ? { originalDimensions: { width: detected.width, height: detected.height } } : {},
     },
-    source,
   }
 }
 
@@ -180,18 +176,18 @@ async function ensureDurableHome(path: string): Promise<string> {
 }
 
 /**
- * Publish one already verified master below a versioned attachment root.
+ * Publish one already verified normalized image below a versioned attachment root.
  * @param root - absolute `DSH_HOME/attachments/v1` root.
- * @param prepared - deterministic master bytes, reference, and source facts.
- * @returns durable content-addressed reference beside the submitted source facts.
+ * @param prepared - deterministic normalized bytes and reference.
+ * @returns durable content-addressed normalized image reference.
  */
 export async function commitPreparedImageFile(
   root: string,
   prepared: PreparedImageFile,
-): Promise<SavedImageAttachment> {
-  const master = prepared.data
+): Promise<ImageAttachmentRef> {
+  const normalized = prepared.data
   const sha256 = ensureReference(prepared.ref)
-  if (digest(master) !== sha256 || master.byteLength !== prepared.ref.bytes) {
+  if (digest(normalized) !== sha256 || normalized.byteLength !== prepared.ref.bytes) {
     throw new AttachmentError('Prepared attachment bytes do not match their reference.', 'ATTACHMENT_CORRUPT')
   }
   const bucket = join(root, 'objects', sha256.slice(0, 2))
@@ -207,7 +203,7 @@ export async function commitPreparedImageFile(
   let handle
   try {
     handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
-    await handle.writeFile(master)
+    await handle.writeFile(normalized)
     await handle.sync()
     await handle.close()
     handle = undefined
@@ -242,7 +238,7 @@ export async function commitPreparedImageFile(
     if (error instanceof AttachmentError) throw error
     throw new AttachmentError('Unable to persist image attachment.', 'ATTACHMENT_WRITE_FAILED', { cause: error })
   }
-  return { ref: prepared.ref, source: prepared.source }
+  return prepared.ref
 }
 
 /**
@@ -250,15 +246,15 @@ export async function commitPreparedImageFile(
  * @param root - absolute `DSH_HOME/attachments/v1` root.
  * @param input - submitted encoded bytes and declared media type.
  * @param limits - resolved source admission policy.
- * @param policy - resolved master-version storage policy.
- * @returns durable content-addressed reference beside submitted source facts.
+ * @param policy - resolved normalization policy.
+ * @returns durable content-addressed normalized image reference.
  */
 export async function saveImageFile(
   root: string,
   input: SaveImageAttachment,
   limits: ImageAttachmentLimits,
-  policy: MasterImagePolicy,
-): Promise<SavedImageAttachment> {
+  policy: NormalizationPolicy,
+): Promise<ImageAttachmentRef> {
   return commitPreparedImageFile(root, await prepareImageFile(input, limits, policy))
 }
 

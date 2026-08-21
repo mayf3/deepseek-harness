@@ -18,7 +18,7 @@ type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
 ```
 
 ```ts type-equiv
-/** Durable, serializable metadata for one immutable image object. */
+/** Durable, serializable reference to one immutable normalized image. */
 interface ImageAttachmentRef {
   /** Opaque storage identifier; never a filesystem path or bearer URL. */
   attachmentId: AttachmentId
@@ -32,10 +32,14 @@ interface ImageAttachmentRef {
   height: number
   /** Optional display name stripped of local path information. */
   name?: string
-  /** Perceived source width before master-version downscaling; present only when it differs from {@link width}. */
-  sourceWidth?: number
-  /** Perceived source height before master-version downscaling; present only when it differs from {@link height}. */
-  sourceHeight?: number
+  /**
+   * Input dimensions after applying EXIF orientation and before normalization
+   * scaling. Present only when normalization reduced the image.
+   */
+  originalDimensions?: {
+    width: number
+    height: number
+  }
 }
 ```
 
@@ -52,7 +56,7 @@ interface ImageAttachmentLimits {
 }
 ```
 
-本地后端每条消息最多准入 20 张图片，源图编码数据总量不超过 200 MiB。单张源图不得超过 20 MiB、64,000,000 像素和单边 8192 像素。这些源文件限制先于独立的 2048 像素、4 MiB 主版本处理阶段执行。
+本地后端每条消息最多准入 20 张图片，源图编码数据总量不超过 200 MiB。单张源图不得超过 20 MiB、64,000,000 像素和单边 8192 像素。这些源文件限制先于独立的规范化阶段执行；该阶段默认把长边限制为 2048 像素，把编码数据限制为 4 MiB。
 
 引用记录固有尺寸和编码长度，使客户端无需先解码即可排布历史记录；每次权威读取仍会根据对象重新校验摘要、媒体签名、尺寸和元数据。
 
@@ -100,12 +104,12 @@ interface ImageRequestPolicy {
 ```
 
 ```ts type-equiv
-/** Cached request version derived from one provider-independent master attachment. */
+/** Cached request version derived from one provider-independent normalized attachment. */
 interface RequestImageAttachment {
-  /** Cache and upload-index key over the master id, policy, and fixed encoder parameters. */
+  /** Cache and upload-index key over the attachment id, policy, and fixed encoder parameters. */
   variantId: ImageVariantId
-  /** Durable master reference from which this request version was derived. */
-  master: ImageAttachmentRef
+  /** Durable normalized attachment from which this request version was derived. */
+  attachment: ImageAttachmentRef
   /** Encoded request bytes. */
   data: Uint8Array
   mediaType: ImageMediaType
@@ -121,7 +125,7 @@ interface RequestImageAttachment {
 }
 ```
 
-`saveImage()` 准备提供方无关的 2048px、4MiB 主版本，并在返回引用前以原子方式提交。`saveImages()` 在发布批次前为每个成员各准备一次经过验证的主版本，因此校验拒绝不会留下部分对象，发布也不会重复解码或选择质量。`admitEncodedImages()` 是面向 base64 上传的 wire 入口，把张数、聚合字节和有序批量准入交给 `saveImages()`。`readImage()` 校验来自已授权会话路径的主版本。`readImageRequest()` 按确切路由的像素和字节预算派生并缓存请求版本；新条目在发布前完整解码，缓存命中只做有界元数据探测。`readImageRequests()` 允许实现按自身配置的变换并发处理有序批次。本地实现按需编码首选候选、合并相同请求身份的并发任务、允许每个等待方单独取消、没有等待方时停止共享任务，默认同时执行两项变换。该服务不规定保留策略：恢复和 fork 后的会话可能共享对象，因此基于引用的垃圾回收会延期实现，不与单个会话的删除绑定。
+`saveImage()` 准备并原子提交提供方无关的规范化附件，然后直接返回 `ImageAttachmentRef`。`saveImages()` 在发布批次前为每个成员各准备一次经过验证的附件，因此校验拒绝不会留下部分对象，发布也不会重复解码或选择质量。`admitEncodedImages()` 是面向 base64 上传的 wire 入口，把张数、聚合字节和有序批量准入交给 `saveImages()`。`readImage()` 校验来自已授权会话路径的规范化附件。`readImageRequest()` 按确切路由的像素和字节预算派生并缓存请求版本；新条目在发布前完整解码，缓存命中只做有界元数据探测。调用方需要有序批次时，对单数方法使用 `Promise.all`。本地实现按需编码首选候选、合并相同请求身份的并发任务、允许每个等待方单独取消、没有等待方时停止共享任务，并通过实例级限流器限制全部变换，默认同时执行两项。该服务不规定保留策略：恢复和 fork 后的会话可能共享对象，因此基于引用的垃圾回收会延期实现，不与单个会话的删除绑定。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -149,48 +153,37 @@ abstract validateImage(input: SaveImageAttachment): Promise<void>
 /**
  * Validate and durably commit one ordered image batch.
  * @param inputs - encoded images in owning-message order.
- * @returns durable master references in the same order after every member succeeds.
+ * @returns durable normalized attachment references in the same order after every member succeeds.
  */
 async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>
 
 /**
  * Validate and durably commit one image before its owning session event is appended.
- * Implementations may store a prepared master version of the submitted raster;
- * the returned reference always describes the stored bytes, while `source`
- * preserves the submitted raster's intrinsic facts for callers that report
- * or map coordinates against the original.
+ * The returned reference describes the persisted normalized image. When
+ * normalization reduces the raster, its `originalDimensions` records the
+ * orientation-applied input dimensions.
  * @param input - encoded bytes, declared media type, and optional display name.
- * @returns the durable content-addressed reference beside the submitted source facts.
+ * @returns the durable content-addressed normalized image reference.
  */
-abstract saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment>
+abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 
 /**
  * Read one image and verify that bytes still match the recorded reference.
  * @param ref - durable reference from the session log.
  * @param signal - optional cancellation for backend read and verification work.
- * @returns the verified bytes and master reference.
+ * @returns the verified bytes and normalized attachment reference.
  * @throws the signal reason when aborted, or a storage error when verification fails.
  */
 abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
 
 /**
- * Generate or read one deterministic model-request version from the stored master image.
- * @param ref - durable provider-independent master reference.
+ * Generate or read one deterministic model-request version from the stored normalized image.
+ * @param ref - durable provider-independent normalized attachment reference.
  * @param policy - exact route pixel and encoded-byte budget.
  * @param signal - optional cancellation.
  * @returns request bytes and the cache/upload identity covering every transform input.
  */
 readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<RequestImageAttachment>
-
-/**
- * Generate or read an ordered batch of deterministic model-request versions.
- * Implementations may use their own bounded transform concurrency while preserving input order.
- * @param refs - durable provider-independent master references in request order.
- * @param policy - exact route pixel and encoded-byte budget shared by the batch.
- * @param signal - optional cancellation.
- * @returns request versions in the same order as `refs`.
- */
-async readImageRequests( refs: readonly ImageAttachmentRef[], policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<readonly RequestImageAttachment[]>
 ```
 
 Source: [`packages/attachment/attachment/src/index.ts`](../../packages/attachment/attachment/src/index.ts)

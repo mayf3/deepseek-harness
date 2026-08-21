@@ -653,8 +653,7 @@ describe('/plan', () => {
     const saveImage = (input: { mediaType: string }) => {
       saved += 1
       return Promise.resolve({
-        ref: { attachmentId: `att-${saved}`, mediaType: input.mediaType, bytes: 3, width: 1, height: 1 },
-        source: { mediaType: input.mediaType, bytes: 3, width: 1, height: 1 },
+        attachmentId: `att-${saved}`, mediaType: input.mediaType, bytes: 3, width: 1, height: 1,
       })
     }
     ctx.provide('attachments', {
@@ -666,7 +665,7 @@ describe('/plan', () => {
       saveImage,
       async saveImages(inputs: readonly { mediaType: string }[]) {
         const refs = []
-        for (const input of inputs) refs.push((await saveImage(input)).ref)
+        for (const input of inputs) refs.push(await saveImage(input))
         return refs
       },
     })

@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import sharp from 'sharp'
 import LocalAttachmentStore, {
-  DEFAULT_MASTER_MAX_BYTES,
-  DEFAULT_MASTER_MAX_DIMENSION,
+  DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
+  DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
   DEFAULT_IMAGE_COMPRESSION_CONCURRENCY,
   DEFAULT_MAX_IMAGE_BYTES,
   DEFAULT_MAX_IMAGE_DIMENSION,
@@ -32,9 +32,9 @@ describe('local attachment service', () => {
       maxImageDimension: DEFAULT_MAX_IMAGE_DIMENSION,
       mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
     })
-    expect(service.masterPolicy).toEqual({
-      maxDimension: DEFAULT_MASTER_MAX_DIMENSION,
-      maxBytes: DEFAULT_MASTER_MAX_BYTES,
+    expect(service.normalizationPolicy).toEqual({
+      maxDimension: DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
+      maxBytes: DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
     })
     expect(service.imageCompressionConcurrency).toBe(DEFAULT_IMAGE_COMPRESSION_CONCURRENCY)
   })
@@ -55,7 +55,7 @@ describe('local attachment service', () => {
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgZGIGAAAOAAeCcsnOAAAAAElFTkSuQmCC',
         'base64',
       ))
-      const { ref } = await service.saveImage({ data, mediaType: 'image/png' })
+      const ref = await service.saveImage({ data, mediaType: 'image/png' })
       await expect(service.readImage(ref)).resolves.toEqual({ ref, data })
     } finally {
       await rm(dshHome, { recursive: true, force: true })
@@ -86,7 +86,7 @@ describe('local attachment service', () => {
     }
   })
 
-  it.each([3, 4] as const)('admits a 16-bit %s-channel PNG as an 8-bit master object', async (channels) => {
+  it.each([3, 4] as const)('admits a 16-bit %s-channel PNG as an 8-bit normalized object', async (channels) => {
     const dshHome = await mkdtemp(join(tmpdir(), 'dsh-attachment-16-bit-'))
     try {
       const service = new LocalAttachmentStore(new Context(), { dshHome })
@@ -95,7 +95,7 @@ describe('local attachment service', () => {
       }).toColourspace('rgb16').png().toBuffer())
 
       const saved = await service.saveImage({ data: source, mediaType: 'image/png' })
-      const stored = await service.readImage(saved.ref)
+      const stored = await service.readImage(saved)
       const metadata = await sharp(stored.data).metadata()
 
       expect(stored.data).not.toEqual(source)
@@ -108,7 +108,7 @@ describe('local attachment service', () => {
   it('prepares every batch member before any write', async () => {
     const dshHome = await mkdtemp(join(tmpdir(), 'dsh-attachment-batch-'))
     try {
-      const service = new LocalAttachmentStore(new Context(), { dshHome, masterMaxBytes: 1 })
+      const service = new LocalAttachmentStore(new Context(), { dshHome, normalizedImageMaxBytes: 1 })
       const valid = Uint8Array.from(Buffer.from(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgZGIGAAAOAAeCcsnOAAAAAElFTkSuQmCC',
         'base64',

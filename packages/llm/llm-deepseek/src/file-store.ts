@@ -102,9 +102,9 @@ function extension(mediaType: RequestImageAttachment['mediaType']): 'png' | 'jpe
 }
 
 function filename(version: RequestImageAttachment): string {
-  const master = String(version.master.attachmentId).slice('sha256:'.length, 'sha256:'.length + 16)
+  const attachment = String(version.attachment.attachmentId).slice('sha256:'.length, 'sha256:'.length + 16)
   const variant = String(version.variantId).slice('sha256:'.length, 'sha256:'.length + 8)
-  return `${OWNED_FILE_PREFIX}${master}-${variant}.${extension(version.mediaType)}`
+  return `${OWNED_FILE_PREFIX}${attachment}-${variant}.${extension(version.mediaType)}`
 }
 
 /** User-scoped durable file-id reuse for the DeepSeek route. */
@@ -204,7 +204,7 @@ export class DeepSeekFileStore {
       }
       return {
         scope,
-        masterAttachmentId: version.master.attachmentId,
+        attachmentId: version.attachment.attachmentId,
         variantId: version.variantId,
         fileId: remote.id,
         bytes: remote.bytes,

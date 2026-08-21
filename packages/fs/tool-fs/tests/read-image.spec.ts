@@ -21,7 +21,7 @@ import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import * as FsPolicy from '@deepseek-ai/dsh-fs-observation-policy'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { AttachmentError, AttachmentId, AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, SavedImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import {
   applyReadImageTool,
@@ -170,8 +170,8 @@ describe('imageRefFromValue', () => {
     const base = { attachmentId: 'sha256:00', mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1 }
     expect(imageRefFromValue(base)).toEqual(base)
     expect(imageRefFromValue({ ...base, name: 'a.png' })).toEqual({ ...base, name: 'a.png' })
-    expect(imageRefFromValue({ ...base, sourceWidth: 4, sourceHeight: 2 }))
-      .toEqual({ ...base, sourceWidth: 4, sourceHeight: 2 })
+    expect(imageRefFromValue({ ...base, originalDimensions: { width: 4, height: 2 } }))
+      .toEqual({ ...base, originalDimensions: { width: 4, height: 2 } })
   })
 })
 
@@ -347,7 +347,7 @@ describe('argument and service preconditions', () => {
         throw new Error('unreachable: admission refuses before validation')
       }
 
-      saveImage(_input: SaveImageAttachment): Promise<SavedImageAttachment> {
+      saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
         throw new Error('unreachable: admission refuses before save')
       }
 
@@ -424,7 +424,7 @@ describe('image admission failures', () => {
         return Promise.resolve()
       }
 
-      async saveImage(_input: SaveImageAttachment): Promise<SavedImageAttachment> {
+      async saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
         throw FailingStore.failure
       }
 
@@ -442,15 +442,15 @@ describe('image admission failures', () => {
     expect(text(storageFault)).toContain('Unable to persist image attachment.')
 
     FailingStore.failure = new AttachmentError(
-      'The 16-bit PNG could not be converted to the canonical 8-bit sRGB form.',
+      'The 16-bit PNG could not be converted to the normalized 8-bit sRGB form.',
       'ATTACHMENT_WRITE_FAILED',
     )
     const sixteenBit = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
     expect(text(sixteenBit)).toContain(
-      `cannot read "${join(dir, 'red.png')}": the 16-bit PNG could not be converted to the canonical 8-bit sRGB form; convert it to an 8-bit PNG/JPEG/WebP and retry`,
+      `cannot read "${join(dir, 'red.png')}": the 16-bit PNG could not be converted to the normalized 8-bit sRGB form; convert it to an 8-bit PNG/JPEG/WebP and retry`,
     )
 
-    FailingStore.failure = new AttachmentError('Image cannot be encoded within the configured canonical byte target.', 'IMAGE_TOO_LARGE')
+    FailingStore.failure = new AttachmentError('Image cannot be encoded within the configured normalized-image byte cap.', 'IMAGE_TOO_LARGE')
     const overBudget = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
     expect(overBudget.isError).toBe(true)
     expect(text(overBudget)).toContain('cannot be stored within the deployment\'s byte limits; downscale the image and read the smaller copy')
@@ -492,11 +492,8 @@ describe('image admission failures', () => {
         return Promise.resolve()
       }
 
-      async saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment> {
-        return {
-          ref: { attachmentId: AttachmentId('sha256:feed'), mediaType: input.mediaType, bytes: input.data.length, width: 1, height: 1 },
-          source: { mediaType: input.mediaType, bytes: input.data.length, width: 1, height: 1 },
-        }
+      async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+        return { attachmentId: AttachmentId('sha256:feed'), mediaType: input.mediaType, bytes: input.data.length, width: 1, height: 1 }
       }
 
       readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
@@ -513,7 +510,7 @@ describe('image admission failures', () => {
   })
 
   it('names the on-disk dimensions and coordinate multiplier when storage downscales', async () => {
-    /** Store whose image master halves the source on both sides. */
+    /** Store whose normalized image halves the input on both sides. */
     class DownscalingStore extends AttachmentStore {
       readonly imageLimits: ImageAttachmentLimits = Object.freeze({
         maxImageBytes: 1024,
@@ -528,10 +525,14 @@ describe('image admission failures', () => {
         return Promise.resolve()
       }
 
-      async saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment> {
+      async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
         return {
-          ref: { attachmentId: AttachmentId('sha256:feed'), mediaType: input.mediaType, bytes: 7, width: 2, height: 1 },
-          source: { mediaType: input.mediaType, bytes: input.data.length, width: 4, height: 2 },
+          attachmentId: AttachmentId('sha256:feed'),
+          mediaType: input.mediaType,
+          bytes: 7,
+          width: 2,
+          height: 1,
+          originalDimensions: { width: 4, height: 2 },
         }
       }
 
@@ -549,7 +550,8 @@ describe('image admission failures', () => {
 
   it('names per-axis multipliers when integer rounding makes the ratios differ', () => {
     const envelope = formatImageReadOutput('/img/photo.jpg', {
-      attachmentId: 'sha256:feed', mediaType: 'image/jpeg', bytes: 9, width: 2, height: 1, sourceWidth: 5, sourceHeight: 2,
+      attachmentId: 'sha256:feed', mediaType: 'image/jpeg', bytes: 9, width: 2, height: 1,
+      originalDimensions: { width: 5, height: 2 },
     })
     expect(envelope).toContain('downscaled from 5x2 px; multiply x coordinates by 2.50 and y coordinates by 2.00 to locate features in the original file')
   })

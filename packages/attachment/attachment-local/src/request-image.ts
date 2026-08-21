@@ -12,12 +12,12 @@ import type {
   RequestImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import { hasLowColourCount } from './canonical.ts'
+import { hasLowColourCount } from './normalization.ts'
 import { encodeFirstWithinLimit, isExhaustedEncoding } from './encoding.ts'
 import { detectImage, probeImage } from './image.ts'
 
 /** Transform version included in every cache and upload-index identity. */
-export const REQUEST_IMAGE_TRANSFORM_VERSION = 'request-image-v3'
+export const REQUEST_IMAGE_TRANSFORM_VERSION = 'request-image-v4'
 /** DeepSeek request versions normally fit at these two preferred qualities. */
 export const REQUEST_IMAGE_QUALITIES = [85, 80] as const
 
@@ -80,10 +80,10 @@ function validatePolicy(policy: ImageRequestPolicy): void {
   checkedInteger(policy.maxBytes, 'Image request maxBytes')
 }
 
-function descriptor(master: ImageAttachmentRef, policy: ImageRequestPolicy): string {
+function descriptor(attachment: ImageAttachmentRef, policy: ImageRequestPolicy): string {
   return JSON.stringify({
     transformVersion: REQUEST_IMAGE_TRANSFORM_VERSION,
-    masterAttachmentId: master.attachmentId,
+    attachmentId: attachment.attachmentId,
     routePixelBudget: policy.maxPixels,
     encodedByteBudget: policy.maxBytes,
     encoding: {
@@ -97,25 +97,25 @@ function descriptor(master: ImageAttachmentRef, policy: ImageRequestPolicy): str
 }
 
 /**
- * Complete deterministic identity for one master and route-owned request policy.
- * @param master - provider-independent durable master reference.
+ * Complete deterministic identity for one attachment and route-owned request policy.
+ * @param attachment - provider-independent durable normalized attachment reference.
  * @param policy - route-owned pixel and byte policy.
  * @returns branded digest over every request transform input.
  */
 export function requestImageVariantId(
-  master: ImageAttachmentRef,
+  attachment: ImageAttachmentRef,
   policy: ImageRequestPolicy,
 ): ReturnType<typeof ImageVariantId> {
-  return ImageVariantId(`sha256:${digest(descriptor(master, policy))}`)
+  return ImageVariantId(`sha256:${digest(descriptor(attachment, policy))}`)
 }
 
-function pipeline(master: StoredImageAttachment, width: number, height: number): Sharp {
-  return sourcePipeline(master)
+function pipeline(attachment: StoredImageAttachment, width: number, height: number): Sharp {
+  return sourcePipeline(attachment)
     .resize({ width, height, fit: 'inside', withoutEnlargement: true })
 }
 
-function sourcePipeline(master: StoredImageAttachment): Sharp {
-  return sharp(master.data, { failOn: 'error', limitInputPixels: false }).toColourspace('srgb')
+function sourcePipeline(attachment: StoredImageAttachment): Sharp {
+  return sharp(attachment.data, { failOn: 'error', limitInputPixels: false }).toColourspace('srgb')
 }
 
 async function encoded(
@@ -134,13 +134,13 @@ async function encoded(
 }
 
 function encodingAttempts(
-  master: StoredImageAttachment,
+  attachment: StoredImageAttachment,
   width: number,
   height: number,
   hasAlpha: boolean,
   lowColour: boolean,
 ): Array<() => Promise<EncodedRequestImage>> {
-  const prepared = pipeline(master, width, height)
+  const prepared = pipeline(attachment, width, height)
   const webp = REQUEST_IMAGE_QUALITIES.map(quality => (
     () => encoded(prepared.clone(), 'image/webp', quality)
   ))
@@ -152,25 +152,25 @@ function encodingAttempts(
 }
 
 async function createRequestImage(
-  master: StoredImageAttachment,
+  attachment: StoredImageAttachment,
   policy: ImageRequestPolicy,
   hasAlpha: boolean,
 ): Promise<EncodedRequestImage> {
-  let dimensions = requestImageDimensions(master.ref.width, master.ref.height, policy.maxPixels)
-  if (dimensions.width === master.ref.width
-    && dimensions.height === master.ref.height
-    && master.data.byteLength <= policy.maxBytes) {
+  let dimensions = requestImageDimensions(attachment.ref.width, attachment.ref.height, policy.maxPixels)
+  if (dimensions.width === attachment.ref.width
+    && dimensions.height === attachment.ref.height
+    && attachment.data.byteLength <= policy.maxBytes) {
     return {
-      data: master.data,
-      mediaType: master.ref.mediaType,
-      width: master.ref.width,
-      height: master.ref.height,
+      data: attachment.data,
+      mediaType: attachment.ref.mediaType,
+      width: attachment.ref.width,
+      height: attachment.ref.height,
     }
   }
-  const lowColour = await hasLowColourCount(sourcePipeline(master))
+  const lowColour = await hasLowColourCount(sourcePipeline(attachment))
   for (;;) {
     const encodedVersion = await encodeFirstWithinLimit(
-      encodingAttempts(master, dimensions.width, dimensions.height, hasAlpha, lowColour),
+      encodingAttempts(attachment, dimensions.width, dimensions.height, hasAlpha, lowColour),
       policy.maxBytes,
     )
     if (!isExhaustedEncoding(encodedVersion)) return encodedVersion
@@ -190,7 +190,7 @@ function cachePath(root: string, hash: string): string {
 
 async function readCached(
   path: string,
-  master: StoredImageAttachment,
+  attachment: StoredImageAttachment,
   policy: ImageRequestPolicy,
   expectedAlpha: boolean,
   signal?: AbortSignal,
@@ -198,7 +198,7 @@ async function readCached(
   try {
     const data = new Uint8Array(await readFile(path, { signal }))
     const detected = await probeImage(data)
-    const maximum = requestImageDimensions(master.ref.width, master.ref.height, policy.maxPixels)
+    const maximum = requestImageDimensions(attachment.ref.width, attachment.ref.height, policy.maxPixels)
     if (data.byteLength > policy.maxBytes || detected.depth !== 'uchar' || detected.space !== 'srgb'
       || detected.width > maximum.width || detected.height > maximum.height
       || detected.hasAlpha !== expectedAlpha) return undefined
@@ -240,33 +240,33 @@ async function writeCached(path: string, data: Uint8Array): Promise<void> {
 /**
  * Generate or reuse one request image below the local attachment root.
  * @param root - absolute versioned attachment storage root.
- * @param master - verified stored master bytes and reference.
+ * @param attachment - verified normalized attachment bytes and reference.
  * @param policy - exact route request-image policy.
  * @param signal - optional cancellation for cache I/O and image transformation.
  * @returns verified request bytes and deterministic variant identity.
  */
 export async function readRequestImageFile(
   root: string,
-  master: StoredImageAttachment,
+  attachment: StoredImageAttachment,
   policy: ImageRequestPolicy,
   signal?: AbortSignal,
 ): Promise<RequestImageAttachment> {
   signal?.throwIfAborted()
   validatePolicy(policy)
-  const source = await probeImage(master.data)
-  const variantId = requestImageVariantId(master.ref, policy)
+  const source = await probeImage(attachment.data)
+  const variantId = requestImageVariantId(attachment.ref, policy)
   const hash = String(variantId).slice('sha256:'.length)
   const path = cachePath(root, hash)
-  const cached = await readCached(path, master, policy, source.hasAlpha, signal)
-  const created = cached ?? await createRequestImage(master, policy, source.hasAlpha)
-  const version = cached ?? (created.data === master.data
+  const cached = await readCached(path, attachment, policy, source.hasAlpha, signal)
+  const created = cached ?? await createRequestImage(attachment, policy, source.hasAlpha)
+  const version = cached ?? (created.data === attachment.data
     ? { ...created, hasAlpha: source.hasAlpha }
     : await verifyRequestImage(created, source.hasAlpha))
   signal?.throwIfAborted()
-  if (cached === undefined && version.data !== master.data) await writeCached(path, version.data)
+  if (cached === undefined && version.data !== attachment.data) await writeCached(path, version.data)
   return {
     variantId,
-    master: master.ref,
+    attachment: attachment.ref,
     data: version.data,
     mediaType: version.mediaType,
     bytes: version.data.byteLength,

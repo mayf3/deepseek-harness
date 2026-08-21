@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import sharp from 'sharp'
-import { hasLowColourCount, isMasterImage, prepareMasterImage } from '../src/canonical.ts'
-import type { MasterImagePolicy } from '../src/canonical.ts'
+import { hasLowColourCount, canPassThroughNormalization, normalizeImage } from '../src/normalization.ts'
+import type { NormalizationPolicy } from '../src/normalization.ts'
 import { detectImage } from '../src/image.ts'
 
-const POLICY: MasterImagePolicy = { maxDimension: 2048, maxBytes: 4 * 1024 * 1024 }
+const POLICY: NormalizationPolicy = { maxDimension: 2048, maxBytes: 4 * 1024 * 1024 }
 
 /** Deterministic pseudo-random RGB noise; PNG cannot compress it below raw size. */
 function noisePixels(width: number, height: number): Uint8Array {
@@ -31,29 +31,29 @@ async function flatImage(width: number, height: number, format: 'png' | 'jpeg' |
   return new Uint8Array(await image.toFormat(format, format === 'webp' && alpha ? { lossless: true } : {}).toBuffer())
 }
 
-describe('isMasterImage', () => {
+describe('canPassThroughNormalization', () => {
   it('accepts an in-budget clean PNG/JPEG/WebP and refuses GIF, animation, metadata, oversized edges, and oversized bytes', () => {
     const clean = { animated: false, carriesMetadata: false, depth: 'uchar', space: 'srgb', hasAlpha: false }
-    expect(isMasterImage({ mediaType: 'image/png', width: 2048, height: 4, ...clean }, 100, POLICY)).toBe(true)
-    expect(isMasterImage({ mediaType: 'image/gif', width: 4, height: 4, ...clean }, 100, POLICY)).toBe(false)
-    expect(isMasterImage({ mediaType: 'image/webp', width: 4, height: 4, animated: true, carriesMetadata: false, depth: 'uchar', space: 'srgb', hasAlpha: false }, 100, POLICY)).toBe(false)
-    expect(isMasterImage({ mediaType: 'image/jpeg', width: 4, height: 4, animated: false, carriesMetadata: true, depth: 'uchar', space: 'srgb', hasAlpha: false }, 100, POLICY)).toBe(false)
-    expect(isMasterImage({ mediaType: 'image/png', width: 4, height: 4, ...clean, depth: 'ushort' }, 100, POLICY)).toBe(false)
-    expect(isMasterImage({ mediaType: 'image/png', width: 4, height: 4, ...clean, space: 'rgb16' }, 100, POLICY)).toBe(false)
-    expect(isMasterImage({ mediaType: 'image/jpeg', width: 2049, height: 4, ...clean }, 100, POLICY)).toBe(false)
-    expect(isMasterImage({ mediaType: 'image/webp', width: 4, height: 4, ...clean }, POLICY.maxBytes + 1, POLICY)).toBe(false)
+    expect(canPassThroughNormalization({ mediaType: 'image/png', width: 2048, height: 4, ...clean }, 100, POLICY)).toBe(true)
+    expect(canPassThroughNormalization({ mediaType: 'image/gif', width: 4, height: 4, ...clean }, 100, POLICY)).toBe(false)
+    expect(canPassThroughNormalization({ mediaType: 'image/webp', width: 4, height: 4, animated: true, carriesMetadata: false, depth: 'uchar', space: 'srgb', hasAlpha: false }, 100, POLICY)).toBe(false)
+    expect(canPassThroughNormalization({ mediaType: 'image/jpeg', width: 4, height: 4, animated: false, carriesMetadata: true, depth: 'uchar', space: 'srgb', hasAlpha: false }, 100, POLICY)).toBe(false)
+    expect(canPassThroughNormalization({ mediaType: 'image/png', width: 4, height: 4, ...clean, depth: 'ushort' }, 100, POLICY)).toBe(false)
+    expect(canPassThroughNormalization({ mediaType: 'image/png', width: 4, height: 4, ...clean, space: 'rgb16' }, 100, POLICY)).toBe(false)
+    expect(canPassThroughNormalization({ mediaType: 'image/jpeg', width: 2049, height: 4, ...clean }, 100, POLICY)).toBe(false)
+    expect(canPassThroughNormalization({ mediaType: 'image/webp', width: 4, height: 4, ...clean }, POLICY.maxBytes + 1, POLICY)).toBe(false)
   })
 })
 
-describe('prepareMasterImage', () => {
-  it('passes an already-canonical source through byte-identically', async () => {
+describe('normalizeImage', () => {
+  it('passes an already-normalized source through byte-identically', async () => {
     const data = await flatImage(6, 4, 'webp')
     const detected = await detectImage(data)
 
-    const canonical = await prepareMasterImage(data, detected, POLICY)
+    const normalized = await normalizeImage(data, detected, POLICY)
 
-    expect(canonical.data).toBe(data)
-    expect(canonical).toMatchObject({ mediaType: 'image/webp', width: 6, height: 4 })
+    expect(normalized.data).toBe(data)
+    expect(normalized).toMatchObject({ mediaType: 'image/webp', width: 6, height: 4 })
   })
 
   it.each([3, 4] as const)('converts a 16-bit %s-channel PNG to 8-bit sRGB without passthrough', async (channels) => {
@@ -63,11 +63,11 @@ describe('prepareMasterImage', () => {
     const detected = await detectImage(data)
     expect(detected).toMatchObject({ depth: 'ushort', space: 'rgb16', hasAlpha: channels === 4 })
 
-    const canonical = await prepareMasterImage(data, detected, POLICY)
+    const normalized = await normalizeImage(data, detected, POLICY)
 
-    expect(canonical.data).not.toBe(data)
-    expect(canonical.data).not.toEqual(data)
-    await expect(detectImage(canonical.data)).resolves.toMatchObject({
+    expect(normalized.data).not.toBe(data)
+    expect(normalized.data).not.toEqual(data)
+    await expect(detectImage(normalized.data)).resolves.toMatchObject({
       depth: 'uchar', space: 'srgb', hasAlpha: channels === 4, width: 7, height: 5,
     })
   })
@@ -76,19 +76,19 @@ describe('prepareMasterImage', () => {
     const data = await flatImage(10, 6, 'png')
     const detected = await detectImage(data)
 
-    const canonical = await prepareMasterImage(data, detected, { maxDimension: 5, maxBytes: POLICY.maxBytes })
+    const normalized = await normalizeImage(data, detected, { maxDimension: 5, maxBytes: POLICY.maxBytes })
 
-    expect(canonical).toMatchObject({ mediaType: 'image/png', width: 5, height: 3 })
-    await expect(detectImage(canonical.data)).resolves.toMatchObject({ mediaType: 'image/png', width: 5, height: 3, animated: false, carriesMetadata: false, depth: 'uchar', space: 'srgb' })
-    const again = await prepareMasterImage(data, detected, { maxDimension: 5, maxBytes: POLICY.maxBytes })
-    expect(again.data).toEqual(canonical.data)
+    expect(normalized).toMatchObject({ mediaType: 'image/png', width: 5, height: 3 })
+    await expect(detectImage(normalized.data)).resolves.toMatchObject({ mediaType: 'image/png', width: 5, height: 3, animated: false, carriesMetadata: false, depth: 'uchar', space: 'srgb' })
+    const again = await normalizeImage(data, detected, { maxDimension: 5, maxBytes: POLICY.maxBytes })
+    expect(again.data).toEqual(normalized.data)
   })
 
-  it('re-encodes the canonical output of a resize into itself (idempotence)', async () => {
+  it('re-encodes the normalized output of a resize into itself (idempotence)', async () => {
     const data = await flatImage(10, 6, 'png')
-    const first = await prepareMasterImage(data, await detectImage(data), { maxDimension: 5, maxBytes: POLICY.maxBytes })
+    const first = await normalizeImage(data, await detectImage(data), { maxDimension: 5, maxBytes: POLICY.maxBytes })
 
-    const second = await prepareMasterImage(first.data, await detectImage(first.data), { maxDimension: 5, maxBytes: POLICY.maxBytes })
+    const second = await normalizeImage(first.data, await detectImage(first.data), { maxDimension: 5, maxBytes: POLICY.maxBytes })
 
     expect(second.data).toBe(first.data)
   })
@@ -97,19 +97,19 @@ describe('prepareMasterImage', () => {
     const data = await flatImage(6, 4, 'gif')
     const detected = await detectImage(data)
 
-    const canonical = await prepareMasterImage(data, detected, POLICY)
+    const normalized = await normalizeImage(data, detected, POLICY)
 
-    expect(canonical.mediaType).toBe('image/png')
-    await expect(detectImage(canonical.data)).resolves.toMatchObject({ mediaType: 'image/png', width: 6, height: 4, animated: false, carriesMetadata: false, depth: 'uchar', space: 'srgb' })
+    expect(normalized.mediaType).toBe('image/png')
+    await expect(detectImage(normalized.data)).resolves.toMatchObject({ mediaType: 'image/png', width: 6, height: 4, animated: false, carriesMetadata: false, depth: 'uchar', space: 'srgb' })
   })
 
   it('keeps a low-colour alpha source on PNG when the budget holds', async () => {
     const data = await flatImage(9, 5, 'webp', true)
     const detected = await detectImage(data)
 
-    const canonical = await prepareMasterImage(data, detected, { maxDimension: 4, maxBytes: POLICY.maxBytes })
+    const normalized = await normalizeImage(data, detected, { maxDimension: 4, maxBytes: POLICY.maxBytes })
 
-    expect(canonical).toMatchObject({ mediaType: 'image/png', width: 4, height: 2 })
+    expect(normalized).toMatchObject({ mediaType: 'image/png', width: 4, height: 2 })
   })
 
   it('retains an all-opaque alpha channel while converting a low-colour image', async () => {
@@ -117,13 +117,13 @@ describe('prepareMasterImage', () => {
       create: { width: 10, height: 6, channels: 4, background: { r: 12, g: 200, b: 64, alpha: 1 } },
     }).png().toBuffer())
 
-    const canonical = await prepareMasterImage(data, await detectImage(data), {
+    const normalized = await normalizeImage(data, await detectImage(data), {
       maxDimension: 5,
       maxBytes: POLICY.maxBytes,
     })
 
-    expect(canonical).toMatchObject({ mediaType: 'image/png', width: 5, height: 3 })
-    await expect(detectImage(canonical.data)).resolves.toMatchObject({ hasAlpha: true })
+    expect(normalized).toMatchObject({ mediaType: 'image/png', width: 5, height: 3 })
+    await expect(detectImage(normalized.data)).resolves.toMatchObject({ hasAlpha: true })
   })
 
   it('keeps transparency when the byte cap requires another encoding and smaller dimensions', async () => {
@@ -140,20 +140,20 @@ describe('prepareMasterImage', () => {
     }
     const data = new Uint8Array(await sharp(pixels, { raw: { width: side, height: side, channels: 4 } }).png().toBuffer())
 
-    const canonical = await prepareMasterImage(data, await detectImage(data), { maxDimension: side, maxBytes: 1_024 })
+    const normalized = await normalizeImage(data, await detectImage(data), { maxDimension: side, maxBytes: 1_024 })
 
-    expect(canonical.data.byteLength).toBeLessThanOrEqual(1_024)
-    expect(canonical.width).toBeLessThan(side)
-    await expect(detectImage(canonical.data)).resolves.toMatchObject({ hasAlpha: true, depth: 'uchar', space: 'srgb' })
+    expect(normalized.data.byteLength).toBeLessThanOrEqual(1_024)
+    expect(normalized.width).toBeLessThan(side)
+    await expect(detectImage(normalized.data)).resolves.toMatchObject({ hasAlpha: true, depth: 'uchar', space: 'srgb' })
   })
 
   it('re-encodes an oversized photographic JPEG as JPEG', async () => {
     const data = await noiseImage(64, 32, 'jpeg')
     const detected = await detectImage(data)
 
-    const canonical = await prepareMasterImage(data, detected, { maxDimension: 32, maxBytes: POLICY.maxBytes })
+    const normalized = await normalizeImage(data, detected, { maxDimension: 32, maxBytes: POLICY.maxBytes })
 
-    expect(canonical).toMatchObject({ mediaType: 'image/jpeg', width: 32, height: 16 })
+    expect(normalized).toMatchObject({ mediaType: 'image/jpeg', width: 32, height: 16 })
   })
 
   it('classifies a photographic PNG by pixels and uses an opaque photographic encoding', async () => {
@@ -174,21 +174,21 @@ describe('prepareMasterImage', () => {
     const detected = await detectImage(data)
     const budget = { maxDimension: 128, maxBytes: POLICY.maxBytes }
 
-    const canonical = await prepareMasterImage(data, detected, budget)
+    const normalized = await normalizeImage(data, detected, budget)
 
-    expect(canonical.mediaType).toBe('image/jpeg')
-    expect(canonical).toMatchObject({ width: 128, height: 128 })
-    expect(canonical.data.byteLength).toBeLessThanOrEqual(budget.maxBytes)
+    expect(normalized.mediaType).toBe('image/jpeg')
+    expect(normalized).toMatchObject({ width: 128, height: 128 })
+    expect(normalized.data.byteLength).toBeLessThanOrEqual(budget.maxBytes)
   })
 
   it('shrinks dimensions after the quality floor instead of refusing an oversized encoding', async () => {
     const data = await noiseImage(64, 64, 'png')
 
-    const canonical = await prepareMasterImage(data, await detectImage(data), { maxDimension: 2048, maxBytes: 512 })
+    const normalized = await normalizeImage(data, await detectImage(data), { maxDimension: 2048, maxBytes: 512 })
 
-    expect(canonical.data.byteLength).toBeLessThanOrEqual(512)
-    expect(canonical.width).toBeLessThan(64)
-    expect(canonical.height).toBeLessThan(64)
+    expect(normalized.data.byteLength).toBeLessThanOrEqual(512)
+    expect(normalized.width).toBeLessThan(64)
+    expect(normalized.height).toBeLessThan(64)
   })
 
   it('re-encodes an in-budget oriented JPEG, baking rotation and stripping metadata', async () => {
@@ -199,11 +199,11 @@ describe('prepareMasterImage', () => {
     // Orientation 6 rotates 90°: the perceived source is 2x4.
     expect(detected).toMatchObject({ width: 2, height: 4, carriesMetadata: true })
 
-    const canonical = await prepareMasterImage(data, detected, POLICY)
+    const normalized = await normalizeImage(data, detected, POLICY)
 
-    expect(canonical.data).not.toBe(data)
-    expect(canonical).toMatchObject({ width: 2, height: 4 })
-    await expect(detectImage(canonical.data)).resolves.toMatchObject({ width: 2, height: 4, carriesMetadata: false })
+    expect(normalized.data).not.toBe(data)
+    expect(normalized).toMatchObject({ width: 2, height: 4 })
+    await expect(detectImage(normalized.data)).resolves.toMatchObject({ width: 2, height: 4, carriesMetadata: false })
   })
 
   it('re-encodes an in-budget image with an ICC profile and strips the profile', async () => {
@@ -213,10 +213,10 @@ describe('prepareMasterImage', () => {
     const detected = await detectImage(data)
     expect(detected.carriesMetadata).toBe(true)
 
-    const canonical = await prepareMasterImage(data, detected, POLICY)
+    const normalized = await normalizeImage(data, detected, POLICY)
 
-    expect(canonical.data).not.toBe(data)
-    await expect(detectImage(canonical.data)).resolves.toMatchObject({ carriesMetadata: false })
+    expect(normalized.data).not.toBe(data)
+    await expect(detectImage(normalized.data)).resolves.toMatchObject({ carriesMetadata: false })
   })
 
   it('maps an encoder fault on undecodable bytes to a storage failure', async () => {
@@ -224,10 +224,10 @@ describe('prepareMasterImage', () => {
       mediaType: 'image/png', width: 5000, height: 5000, animated: false, carriesMetadata: false,
       depth: 'ushort', space: 'rgb16', hasAlpha: true,
     } as const
-    await expect(prepareMasterImage(Uint8Array.of(1, 2, 3), detected, POLICY))
+    await expect(normalizeImage(Uint8Array.of(1, 2, 3), detected, POLICY))
       .rejects.toMatchObject({
         code: 'ATTACHMENT_WRITE_FAILED',
-        message: 'The 16-bit PNG could not be converted to the canonical 8-bit sRGB form.',
+        message: 'The 16-bit PNG could not be converted to the normalized 8-bit sRGB form.',
       })
   })
 
@@ -245,23 +245,23 @@ describe('prepareMasterImage', () => {
       hasAlpha: false,
     } as const
 
-    await expect(prepareMasterImage(Uint8Array.of(1, 2, 3), detected, POLICY))
+    await expect(normalizeImage(Uint8Array.of(1, 2, 3), detected, POLICY))
       .rejects.toMatchObject({
         code: 'ATTACHMENT_WRITE_FAILED',
-        message: `The ${source} could not be converted to the canonical 8-bit sRGB form.`,
+        message: `The ${source} could not be converted to the normalized 8-bit sRGB form.`,
       })
   })
 
-  it('rejects a converted master whose verified alpha metadata disagrees with the source facts', async () => {
+  it('rejects a converted normalized image whose verified alpha metadata disagrees with the source facts', async () => {
     const data = await flatImage(8, 8, 'png', true)
     const detected = await detectImage(data)
 
-    await expect(prepareMasterImage(data, { ...detected, hasAlpha: false }, {
+    await expect(normalizeImage(data, { ...detected, hasAlpha: false }, {
       maxDimension: 4,
       maxBytes: POLICY.maxBytes,
     })).rejects.toMatchObject({
       code: 'ATTACHMENT_WRITE_FAILED',
-      message: 'Canonical image conversion did not produce a single-frame 8-bit sRGB image with matching metadata.',
+      message: 'Image normalization did not produce a single-frame 8-bit sRGB image with matching metadata.',
     })
   })
 })
@@ -339,13 +339,13 @@ describe('hasLowColourCount', () => {
       </svg>
     `)).removeAlpha().png().toBuffer())
 
-    const master = await prepareMasterImage(source, await detectImage(source), {
+    const normalized = await normalizeImage(source, await detectImage(source), {
       maxDimension: 512,
       maxBytes: POLICY.maxBytes,
     })
-    const stats = await sharp(master.data).greyscale().stats()
+    const stats = await sharp(normalized.data).greyscale().stats()
 
-    expect(master).toMatchObject({ mediaType: 'image/png', width: 512, height: 256 })
+    expect(normalized).toMatchObject({ mediaType: 'image/png', width: 512, height: 256 })
     expect(stats.channels[0]?.min).toBeLessThan(80)
     expect(stats.channels[0]?.max).toBeGreaterThan(240)
   })

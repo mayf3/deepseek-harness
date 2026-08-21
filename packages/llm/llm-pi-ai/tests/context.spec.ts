@@ -22,7 +22,7 @@ const ref: ImageAttachmentRef = {
 function requestImage(value: ImageAttachmentRef, data: Uint8Array): RequestImageAttachment {
   return {
     variantId: ImageVariantId(`sha256:${'b'.repeat(64)}`),
-    master: value,
+    attachment: value,
     data,
     mediaType: value.mediaType,
     bytes: data.byteLength,
@@ -43,14 +43,7 @@ function projectionStore(
     Promise.resolve(requestImage(value, Uint8Array.of(1)))
   )),
 ): AttachmentStore {
-  return {
-    readImageRequest,
-    readImageRequests: (
-      refs: readonly ImageAttachmentRef[],
-      policy: Parameters<AttachmentStore['readImageRequest']>[1],
-      signal?: AbortSignal,
-    ) => Promise.all(refs.map(value => readImageRequest(value, policy, signal))),
-  } as unknown as AttachmentStore
+  return { readImageRequest } as unknown as AttachmentStore
 }
 
 const attachments = projectionStore()
@@ -418,13 +411,4 @@ describe('pi-ai request context conversion', () => {
     )).toThrow(/assistant image output/)
   })
 
-  it('rejects an attachment service that omits a requested image version', async () => {
-    const store = {
-      readImageRequests: vi.fn(() => Promise.resolve([])),
-    } as unknown as AttachmentStore
-    await expect(toPiContext(
-      request([user([{ type: 'image', attachment: ref }])]),
-      store,
-    )).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
-  })
 })

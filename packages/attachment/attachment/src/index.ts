@@ -8,7 +8,6 @@ import type {
   ImageRequestPolicy,
   RequestImageAttachment,
   SaveImageAttachment,
-  SavedImageAttachment,
   StoredImageAttachment,
 } from './types.ts'
 
@@ -25,8 +24,6 @@ export type {
   ImageMediaType,
   RequestImageAttachment,
   SaveImageAttachment,
-  SavedImageAttachment,
-  SourceImageInfo,
   StoredImageAttachment,
 } from './types.ts'
 
@@ -80,40 +77,39 @@ export abstract class AttachmentStore extends Service {
   /**
    * Validate and durably commit one ordered image batch.
    * @param inputs - encoded images in owning-message order.
-   * @returns durable master references in the same order after every member succeeds.
+   * @returns durable normalized attachment references in the same order after every member succeeds.
    */
   async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]> {
     this.validateImageBatch(inputs)
     for (const input of inputs) await this.validateImage(input)
 
     const refs: ImageAttachmentRef[] = []
-    for (const input of inputs) refs.push((await this.saveImage(input)).ref)
+    for (const input of inputs) refs.push(await this.saveImage(input))
     return refs
   }
 
   /**
    * Validate and durably commit one image before its owning session event is appended.
-   * Implementations may store a prepared master version of the submitted raster;
-   * the returned reference always describes the stored bytes, while `source`
-   * preserves the submitted raster's intrinsic facts for callers that report
-   * or map coordinates against the original.
+   * The returned reference describes the persisted normalized image. When
+   * normalization reduces the raster, its `originalDimensions` records the
+   * orientation-applied input dimensions.
    * @param input - encoded bytes, declared media type, and optional display name.
-   * @returns the durable content-addressed reference beside the submitted source facts.
+   * @returns the durable content-addressed normalized image reference.
    */
-  abstract saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment>
+  abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 
   /**
    * Read one image and verify that bytes still match the recorded reference.
    * @param ref - durable reference from the session log.
    * @param signal - optional cancellation for backend read and verification work.
-   * @returns the verified bytes and master reference.
+   * @returns the verified bytes and normalized attachment reference.
    * @throws the signal reason when aborted, or a storage error when verification fails.
    */
   abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
 
   /**
-   * Generate or read one deterministic model-request version from the stored master image.
-   * @param ref - durable provider-independent master reference.
+   * Generate or read one deterministic model-request version from the stored normalized image.
+   * @param ref - durable provider-independent normalized attachment reference.
    * @param policy - exact route pixel and encoded-byte budget.
    * @param signal - optional cancellation.
    * @returns request bytes and the cache/upload identity covering every transform input.
@@ -130,24 +126,6 @@ export abstract class AttachmentStore extends Service {
       'The mounted attachment provider cannot derive model-request images.',
       'ATTACHMENT_PROJECTION_UNSUPPORTED',
     ))
-  }
-
-  /**
-   * Generate or read an ordered batch of deterministic model-request versions.
-   * Implementations may use their own bounded transform concurrency while preserving input order.
-   * @param refs - durable provider-independent master references in request order.
-   * @param policy - exact route pixel and encoded-byte budget shared by the batch.
-   * @param signal - optional cancellation.
-   * @returns request versions in the same order as `refs`.
-   */
-  async readImageRequests(
-    refs: readonly ImageAttachmentRef[],
-    policy: ImageRequestPolicy,
-    signal?: AbortSignal,
-  ): Promise<readonly RequestImageAttachment[]> {
-    const versions: RequestImageAttachment[] = []
-    for (const ref of refs) versions.push(await this.readImageRequest(ref, policy, signal))
-    return versions
   }
 
 }

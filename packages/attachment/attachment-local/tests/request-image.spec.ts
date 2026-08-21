@@ -54,43 +54,45 @@ describe('request image dimensions', () => {
 })
 
 describe('local request-image cache', () => {
-  it('passes through an in-budget master and reads a request batch in input order', async () => {
+  it('passes through an in-budget attachment and composes ordered request reads', async () => {
     const attachments = await store()
-    const first = (await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })).ref
-    const second = (await attachments.saveImage({ data: await image(4, 8), mediaType: 'image/png' })).ref
-    const firstMaster = await attachments.readImage(first)
+    const first = await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })
+    const second = await attachments.saveImage({ data: await image(4, 8), mediaType: 'image/png' })
+    const firstStored = await attachments.readImage(first)
     const policy = { maxPixels: 1_000, maxBytes: 1024 * 1024 }
 
     const request = await attachments.readImageRequest(first, policy)
-    const batch = await attachments.readImageRequests([first, second], policy)
+    const batch = await Promise.all([first, second].map(
+      attachment => attachments.readImageRequest(attachment, policy),
+    ))
 
-    expect(request.data).toEqual(firstMaster.data)
-    expect(batch.map(value => value.master.attachmentId)).toEqual([first.attachmentId, second.attachmentId])
+    expect(request.data).toEqual(firstStored.data)
+    expect(batch.map(value => value.attachment.attachmentId)).toEqual([first.attachmentId, second.attachmentId])
   })
 
   it('rejects invalid request policies', async () => {
     const attachments = await store()
-    const master = (await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })).ref
+    const attachment = await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })
 
-    await expect(attachments.readImageRequest(master, { maxPixels: 0, maxBytes: 100 }))
+    await expect(attachments.readImageRequest(attachment, { maxPixels: 0, maxBytes: 100 }))
       .rejects.toThrow('Image request maxPixels must be a positive integer')
-    await expect(attachments.readImageRequest(master, { maxPixels: 100, maxBytes: 0 }))
+    await expect(attachments.readImageRequest(attachment, { maxPixels: 100, maxBytes: 0 }))
       .rejects.toThrow('Image request maxBytes must be a positive integer')
   })
 
   it('refuses a one-pixel request that cannot meet the encoded-byte budget', async () => {
     const attachments = await store()
-    const master = (await attachments.saveImage({ data: await image(1, 1), mediaType: 'image/png' })).ref
+    const attachment = await attachments.saveImage({ data: await image(1, 1), mediaType: 'image/png' })
 
-    await expect(attachments.readImageRequest(master, { maxPixels: 1, maxBytes: 1 }))
+    await expect(attachments.readImageRequest(attachment, { maxPixels: 1, maxBytes: 1 }))
       .rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
   })
 
   it('regenerates invalid, oversized, incompatible, or mismatched cached variants', async () => {
     const attachments = await store()
-    const master = (await attachments.saveImage({ data: await image(64, 32), mediaType: 'image/png' })).ref
+    const attachment = await attachments.saveImage({ data: await image(64, 32), mediaType: 'image/png' })
     const policy = { maxPixels: 16 * 16, maxBytes: 4_096 }
-    const initial = await attachments.readImageRequest(master, policy)
+    const initial = await attachments.readImageRequest(attachment, policy)
     const hash = String(initial.variantId).slice('sha256:'.length)
     const path = join(attachments.root, 'request-images', hash.slice(0, 2), hash)
     const noisyPixels = new Uint8Array(64 * 64 * 3)
@@ -124,19 +126,19 @@ describe('local request-image cache', () => {
       Uint8Array.of(1, 2, 3),
     ]) {
       await writeFile(path, invalid)
-      const regenerated = await attachments.readImageRequest(master, policy)
+      const regenerated = await attachments.readImageRequest(attachment, policy)
       expect(regenerated.data).toEqual(initial.data)
     }
   })
 
   it('derives stable square and wide previews and separates route budgets in the cache key', async () => {
     const attachments = await store()
-    const square = (await attachments.saveImage({
+    const square = await attachments.saveImage({
       data: await image(2048, 2048), mediaType: 'image/png', name: 'square.png',
-    })).ref
-    const wide = (await attachments.saveImage({
+    })
+    const wide = await attachments.saveImage({
       data: await image(2048, 1024), mediaType: 'image/png', name: 'wide.png',
-    })).ref
+    })
 
     const squareRequest = await attachments.readImageRequest(square, { maxPixels: 640_000, maxBytes: 1024 * 1024 })
     const wideRequest = await attachments.readImageRequest(wide, { maxPixels: 640_000, maxBytes: 1024 * 1024 })
@@ -178,8 +180,8 @@ describe('local request-image cache', () => {
     const alphaSource = new Uint8Array(await sharp(alphaPixels, {
       raw: { width: side, height: side, channels: 4 },
     }).png().toBuffer())
-    const photo = (await attachments.saveImage({ data: photoSource, mediaType: 'image/png' })).ref
-    const alpha = (await attachments.saveImage({ data: alphaSource, mediaType: 'image/png' })).ref
+    const photo = await attachments.saveImage({ data: photoSource, mediaType: 'image/png' })
+    const alpha = await attachments.saveImage({ data: alphaSource, mediaType: 'image/png' })
 
     const photoRequest = await attachments.readImageRequest(photo, { maxPixels: 128 * 128, maxBytes: 1024 * 1024 })
     const alphaRequest = await attachments.readImageRequest(alpha, { maxPixels: 128 * 128, maxBytes: 4_096 })
@@ -195,9 +197,9 @@ describe('local request-image cache', () => {
     const source = new Uint8Array(await sharp({
       create: { width: 64, height: 32, channels, background: { r: 12, g: 34, b: 56, alpha: 0.5 } },
     }).toColourspace('rgb16').png().toBuffer())
-    const master = (await attachments.saveImage({ data: source, mediaType: 'image/png' })).ref
+    const attachment = await attachments.saveImage({ data: source, mediaType: 'image/png' })
 
-    const request = await attachments.readImageRequest(master, { maxPixels: 16 * 16, maxBytes: 1024 * 1024 })
+    const request = await attachments.readImageRequest(attachment, { maxPixels: 16 * 16, maxBytes: 1024 * 1024 })
 
     expect(request.bytes).toBeLessThanOrEqual(1024 * 1024)
     expect(request.width * request.height).toBeLessThanOrEqual(16 * 16)
@@ -211,9 +213,9 @@ describe('local request-image cache', () => {
     const source = new Uint8Array(await sharp({
       create: { width: 64, height: 32, channels: 4, background: { r: 12, g: 34, b: 56, alpha: 1 } },
     }).png().toBuffer())
-    const master = (await attachments.saveImage({ data: source, mediaType: 'image/png' })).ref
+    const attachment = await attachments.saveImage({ data: source, mediaType: 'image/png' })
 
-    const request = await attachments.readImageRequest(master, { maxPixels: 16 * 16, maxBytes: 1024 * 1024 })
+    const request = await attachments.readImageRequest(attachment, { maxPixels: 16 * 16, maxBytes: 1024 * 1024 })
 
     await expect(sharp(request.data).metadata()).resolves.toMatchObject({ hasAlpha: true })
   })
@@ -232,9 +234,9 @@ describe('local request-image cache', () => {
     const source = new Uint8Array(await sharp(pixels, {
       raw: { width: side, height: side, channels: 3 },
     }).png().toBuffer())
-    const master = (await attachments.saveImage({ data: source, mediaType: 'image/png' })).ref
+    const attachment = await attachments.saveImage({ data: source, mediaType: 'image/png' })
 
-    const request = await attachments.readImageRequest(master, { maxPixels: 640_000, maxBytes: 1024 * 1024 })
+    const request = await attachments.readImageRequest(attachment, { maxPixels: 640_000, maxBytes: 1024 * 1024 })
 
     expect(request).toMatchObject({ width: 800, height: 800 })
     expect(request.bytes).toBeLessThanOrEqual(1024 * 1024)
@@ -242,15 +244,15 @@ describe('local request-image cache', () => {
 
   it('shares one request transform between concurrent callers without sharing cancellation', async () => {
     const attachments = await store()
-    const master = (await attachments.saveImage({
+    const attachment = await attachments.saveImage({
       data: await image(2048, 1024), mediaType: 'image/png', name: 'shared.png',
-    })).ref
+    })
     const run = vi.spyOn(CompressionLimiter.prototype, 'run')
     const controller = new AbortController()
     const policy = { maxPixels: 640_000, maxBytes: 1024 * 1024 }
 
-    const cancelled = attachments.readImageRequest(master, policy, controller.signal)
-    const completed = attachments.readImageRequest(master, policy)
+    const cancelled = attachments.readImageRequest(attachment, policy, controller.signal)
+    const completed = attachments.readImageRequest(attachment, policy)
     const reason = new Error('cancel one waiter')
     controller.abort(reason)
 
@@ -262,9 +264,9 @@ describe('local request-image cache', () => {
 
   it('aborts the underlying request transform after its only waiter cancels', async () => {
     const attachments = await store()
-    const master = (await attachments.saveImage({
+    const attachment = await attachments.saveImage({
       data: await image(2048, 1024), mediaType: 'image/png', name: 'cancelled.png',
-    })).ref
+    })
     let readSignal: AbortSignal | undefined
     const read = vi.spyOn(attachments, 'readImage').mockImplementation((_ref, signal) => {
       readSignal = signal
@@ -276,7 +278,7 @@ describe('local request-image cache', () => {
     })
     const controller = new AbortController()
     const request = attachments.readImageRequest(
-      master,
+      attachment,
       { maxPixels: 640_000, maxBytes: 1024 * 1024 },
       controller.signal,
     )
@@ -293,9 +295,9 @@ describe('local request-image cache', () => {
 
   it('normalizes a non-Error cancellation and replaces an aborted shared transform', async () => {
     const attachments = await store()
-    const master = (await attachments.saveImage({
+    const attachment = await attachments.saveImage({
       data: await image(2048, 1024), mediaType: 'image/png', name: 'replace.png',
-    })).ref
+    })
     const actualRead = attachments.readImage.bind(attachments)
     let calls = 0
     vi.spyOn(attachments, 'readImage').mockImplementation((ref, signal) => {
@@ -311,13 +313,13 @@ describe('local request-image cache', () => {
     })
     const controller = new AbortController()
     const policy = { maxPixels: 640_000, maxBytes: 1024 * 1024 }
-    const cancelled = attachments.readImageRequest(master, policy, controller.signal)
+    const cancelled = attachments.readImageRequest(attachment, policy, controller.signal)
     await vi.waitFor(() => {
       expect(calls).toBe(1)
     })
 
     controller.abort('cancelled')
-    const replacement = attachments.readImageRequest(master, policy)
+    const replacement = attachments.readImageRequest(attachment, policy)
 
     await expect(cancelled).rejects.toMatchObject({
       message: 'Attachment request cancelled with a non-Error reason.',

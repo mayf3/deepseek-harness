@@ -52,7 +52,7 @@ export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
  * Deployments behind stricter gateways lower it per route.
  */
 export const DEFAULT_MAX_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
-/** Default total-pixel budget preserves the complete 2048px local master. */
+/** Default total-pixel budget preserves the complete 2048px normalized attachment. */
 export const DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET = 2048 * 2048
 /** Default raw encoded-byte cap before inline base64 expansion. */
 export const DEFAULT_REQUEST_IMAGE_MAX_BYTES = 1024 * 1024

@@ -1,4 +1,4 @@
-/** Deterministic provider-independent master-image encoding. */
+/** Deterministic provider-independent image normalization. */
 
 import sharp, { type Sharp } from 'sharp'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
@@ -7,23 +7,23 @@ import { encodeFirstWithinLimit, isExhaustedEncoding } from './encoding.ts'
 import { detectImage } from './image.ts'
 import type { DetectedImage } from './image.ts'
 
-/** Deployment-resolved storage policy for the provider-independent master version. */
-export interface MasterImagePolicy {
+/** Deployment-resolved policy for the persisted normalized attachment. */
+export interface NormalizationPolicy {
   /** Long-edge cap in pixels; larger sources are downscaled proportionally. */
   maxDimension: number
-  /** Independent safety cap for encoded master bytes. */
+  /** Independent safety cap for encoded normalized image bytes. */
   maxBytes: number
 }
 
-/** Master bytes beside the facts recorded by a durable reference. */
-export interface MasterImage {
+/** Normalized bytes beside the facts recorded by a durable reference. */
+export interface NormalizedImage {
   data: Uint8Array
   mediaType: ImageMediaType
   width: number
   height: number
 }
 
-const MASTER_QUALITIES = [85, 80, 75] as const
+const NORMALIZATION_QUALITIES = [85, 80, 75] as const
 const LOW_COLOUR_SAMPLE_EDGE = 128
 const LOW_COLOUR_LIMIT = 256
 const MIN_SCALE_STEP = 0.9
@@ -34,7 +34,7 @@ async function encode(
   mediaType: 'image/png' | 'image/jpeg' | 'image/webp',
   quality?: number,
   palette = true,
-): Promise<MasterImage> {
+): Promise<NormalizedImage> {
   const encoded = mediaType === 'image/png'
     ? pipeline.png({ compressionLevel: 9, palette })
     : mediaType === 'image/webp'
@@ -45,13 +45,17 @@ async function encode(
 }
 
 /**
- * Whether bytes already satisfy the master-version storage contract.
+ * Whether bytes already satisfy the normalization requirements.
  * @param detected - fully decoded source facts.
  * @param bytes - encoded source length.
- * @param policy - resolved master limits.
+ * @param policy - resolved normalization limits.
  * @returns whether the source can pass through byte-identically.
  */
-export function isMasterImage(detected: DetectedImage, bytes: number, policy: MasterImagePolicy): boolean {
+export function canPassThroughNormalization(
+  detected: DetectedImage,
+  bytes: number,
+  policy: NormalizationPolicy,
+): boolean {
   return detected.mediaType !== 'image/gif'
     && !detected.animated
     && !detected.carriesMetadata
@@ -87,8 +91,11 @@ export async function hasLowColourCount(pipeline: Sharp): Promise<boolean> {
   return true
 }
 
-/** Assert that a re-encoded master is an 8-bit sRGB/sRGBA single-frame image with matching facts. */
-async function verifyMaster(image: MasterImage, expectedAlpha: boolean | undefined): Promise<MasterImage> {
+/** Assert that a normalized output is an 8-bit sRGB/sRGBA single-frame image with matching facts. */
+async function verifyNormalizedImage(
+  image: NormalizedImage,
+  expectedAlpha: boolean | undefined,
+): Promise<NormalizedImage> {
   const detected = await detectImage(image.data)
   if (detected.mediaType !== image.mediaType
     || detected.width !== image.width
@@ -99,7 +106,7 @@ async function verifyMaster(image: MasterImage, expectedAlpha: boolean | undefin
     || detected.space !== 'srgb'
     || (expectedAlpha !== undefined && detected.hasAlpha !== expectedAlpha)) {
     throw new AttachmentError(
-      'Canonical image conversion did not produce a single-frame 8-bit sRGB image with matching metadata.',
+      'Image normalization did not produce a single-frame 8-bit sRGB image with matching metadata.',
       'ATTACHMENT_WRITE_FAILED',
     )
   }
@@ -130,36 +137,36 @@ function encodingAttemptsAtSize(
   height: number,
   hasAlpha: boolean,
   lowColour: boolean,
-): Array<() => Promise<MasterImage>> {
+): Array<() => Promise<NormalizedImage>> {
   const prepared = preparedPipeline(data, width, height)
-  const webp = MASTER_QUALITIES.map(quality => (
+  const webp = NORMALIZATION_QUALITIES.map(quality => (
     () => encode(prepared.clone(), 'image/webp', quality)
   ))
   if (lowColour) {
     return [() => encode(prepared.clone(), 'image/png', undefined, !hasAlpha), ...webp]
   }
   if (hasAlpha) return webp
-  return MASTER_QUALITIES.map(quality => (
+  return NORMALIZATION_QUALITIES.map(quality => (
     () => encode(prepared.clone(), 'image/jpeg', quality)
   ))
 }
 
 /**
- * Produce the 2048px provider-independent master version of one fully decoded source.
+ * Produce the persisted provider-independent normalized version of one fully decoded source.
  * The source is passed through only when it is already clean, single-frame, 8-bit sRGB/sRGBA,
- * and inside both master limits. Re-encoding never removes transparency. After the fixed
+ * and inside both normalization limits. Re-encoding never removes transparency. After the fixed
  * quality floor is reached, dimensions continue shrinking until the independent byte cap holds.
  * @param data - complete admitted source bytes.
  * @param detected - fully decoded source facts.
- * @param policy - resolved independent master limits.
- * @returns verified provider-independent master bytes and metadata.
+ * @param policy - resolved independent normalization limits.
+ * @returns verified provider-independent normalized bytes and metadata.
  */
-export async function prepareMasterImage(
+export async function normalizeImage(
   data: Uint8Array,
   detected: DetectedImage,
-  policy: MasterImagePolicy,
-): Promise<MasterImage> {
-  if (isMasterImage(detected, data.byteLength, policy)) {
+  policy: NormalizationPolicy,
+): Promise<NormalizedImage> {
+  if (canPassThroughNormalization(detected, data.byteLength, policy)) {
     return { data, mediaType: detected.mediaType, width: detected.width, height: detected.height }
   }
   try {
@@ -174,7 +181,7 @@ export async function prepareMasterImage(
         policy.maxBytes,
       )
       if (!isExhaustedEncoding(encoded)) {
-        return await verifyMaster(encoded, detected.mediaType === 'image/gif' ? undefined : detected.hasAlpha)
+        return await verifyNormalizedImage(encoded, detected.mediaType === 'image/gif' ? undefined : detected.hasAlpha)
       }
       if (width === 1 && height === 1) break
       const sizeScale = Math.sqrt(policy.maxBytes / encoded.smallest.data.byteLength) * 0.95
@@ -190,10 +197,10 @@ export async function prepareMasterImage(
       ? `${detected.depth === 'ushort' ? '16-bit' : detected.depth} PNG`
       : `${detected.depth} ${detected.mediaType.slice('image/'.length).toUpperCase()}`
     throw new AttachmentError(
-      `The ${source} could not be converted to the canonical 8-bit sRGB form.`,
+      `The ${source} could not be converted to the normalized 8-bit sRGB form.`,
       'ATTACHMENT_WRITE_FAILED',
       { cause: error },
     )
   }
-  throw new AttachmentError('Image cannot be encoded within the configured master-image byte cap.', 'IMAGE_TOO_LARGE')
+  throw new AttachmentError('Image cannot be encoded within the configured normalized-image byte cap.', 'IMAGE_TOO_LARGE')
 }

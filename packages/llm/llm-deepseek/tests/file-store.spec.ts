@@ -17,7 +17,7 @@ const REF: ImageAttachmentRef = {
 }
 const VERSION: RequestImageAttachment = {
   variantId: ImageVariantId(`sha256:${'b'.repeat(64)}`),
-  master: REF,
+  attachment: REF,
   data: Uint8Array.of(1, 2, 3),
   mediaType: 'image/png',
   bytes: 3,
@@ -328,7 +328,7 @@ describe('DeepSeekFileStore', () => {
       accepted: false,
       record: {
         scope: deepSeekFileScope(CONNECTION.baseURL, CONNECTION.apiKey),
-        masterAttachmentId: VERSION.master.attachmentId,
+        attachmentId: VERSION.attachment.attachmentId,
         variantId: VERSION.variantId,
         fileId: DeepSeekFileId('file-api-winner'),
         bytes: 3,

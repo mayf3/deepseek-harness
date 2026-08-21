@@ -39,7 +39,7 @@ function requestVersion(ref: ImageAttachmentRef): RequestImageAttachment {
   const hash = String(ref.attachmentId).slice('sha256:'.length)
   return {
     variantId: ImageVariantId(`sha256:${hash}`),
-    master: ref,
+    attachment: ref,
     data: new Uint8Array(ref.bytes),
     mediaType: ref.mediaType,
     bytes: ref.bytes,
@@ -545,7 +545,7 @@ describe('image serialization', () => {
       ],
     })
     expect(resolveFileId).toHaveBeenCalledTimes(1)
-    expect(resolveFileId.mock.calls[0]?.[0]).toMatchObject({ master: { mediaType: 'image/jpeg' } })
+    expect(resolveFileId.mock.calls[0]?.[0]).toMatchObject({ attachment: { mediaType: 'image/jpeg' } })
   })
 
   it('rejects an unprepared image while computing exact request bytes', async () => {

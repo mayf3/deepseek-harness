@@ -200,7 +200,9 @@ async function prepareRequestImages(
   for (const message of options.messages) collectImageRefs(message.content, refs)
   const policy = resolveRequestImagePolicy(model)
   const orderedRefs = [...refs.values()]
-  const projected = await attachments.readImageRequests(orderedRefs, policy, signal)
+  const projected = await Promise.all(orderedRefs.map(
+    ref => attachments.readImageRequest(ref, policy, signal),
+  ))
   return new Map(orderedRefs.map((ref, index) => (
     [ref.attachmentId, projected[index] as RequestImageAttachment]
   )))
@@ -250,7 +252,7 @@ function normalizedImageFacts(
   file: { version: RequestImageAttachment; location: ImageWireLocation },
 ): string {
   const version = file.version
-  const name = version.master.name ?? version.master.attachmentId
+  const name = version.attachment.name ?? version.attachment.attachmentId
   const colour = version.hasAlpha ? 'sRGBA' : 'sRGB'
   return `"${name}" at message ${file.location.message}, image ${file.location.image} `
     + `(${version.mediaType}, 8-bit ${colour}, ${version.width}x${version.height})`

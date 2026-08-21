@@ -18,7 +18,7 @@ type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
 ```
 
 ```ts type-equiv
-/** Durable, serializable metadata for one immutable image object. */
+/** Durable, serializable reference to one immutable normalized image. */
 interface ImageAttachmentRef {
   /** Opaque storage identifier; never a filesystem path or bearer URL. */
   attachmentId: AttachmentId
@@ -32,10 +32,14 @@ interface ImageAttachmentRef {
   height: number
   /** Optional display name stripped of local path information. */
   name?: string
-  /** Perceived source width before master-version downscaling; present only when it differs from {@link width}. */
-  sourceWidth?: number
-  /** Perceived source height before master-version downscaling; present only when it differs from {@link height}. */
-  sourceHeight?: number
+  /**
+   * Input dimensions after applying EXIF orientation and before normalization
+   * scaling. Present only when normalization reduced the image.
+   */
+  originalDimensions?: {
+    width: number
+    height: number
+  }
 }
 ```
 
@@ -52,7 +56,7 @@ interface ImageAttachmentLimits {
 }
 ```
 
-The local backend admits at most 20 images and 200 MiB of encoded source data per message. One source may use up to 20 MiB, 64,000,000 pixels, and 8192 pixels on either side. These source limits precede the independent 2048-pixel, 4 MiB master preparation stage.
+The local backend admits at most 20 images and 200 MiB of encoded source data per message. One source may use up to 20 MiB, 64,000,000 pixels, and 8192 pixels on either side. These source limits precede the independent normalization stage, which limits the long edge to 2048 pixels and encoded data to 4 MiB by default.
 
 The reference records intrinsic dimensions and encoded length so clients can lay out history without decoding first, while every authoritative read still re-checks digest, media signature, dimensions, and metadata against the object.
 
@@ -100,12 +104,12 @@ interface ImageRequestPolicy {
 ```
 
 ```ts type-equiv
-/** Cached request version derived from one provider-independent master attachment. */
+/** Cached request version derived from one provider-independent normalized attachment. */
 interface RequestImageAttachment {
-  /** Cache and upload-index key over the master id, policy, and fixed encoder parameters. */
+  /** Cache and upload-index key over the attachment id, policy, and fixed encoder parameters. */
   variantId: ImageVariantId
-  /** Durable master reference from which this request version was derived. */
-  master: ImageAttachmentRef
+  /** Durable normalized attachment from which this request version was derived. */
+  attachment: ImageAttachmentRef
   /** Encoded request bytes. */
   data: Uint8Array
   mediaType: ImageMediaType
@@ -121,7 +125,7 @@ interface RequestImageAttachment {
 }
 ```
 
-`saveImage()` prepares a provider-independent 2048px, 4MiB master and atomically commits it before returning its reference. `saveImages()` prepares every validated master once before publishing the batch, so validation rejection leaves no partial objects and publication does not repeat decoding or quality selection. `admitEncodedImages()` is the wire entry for base64 uploads and delegates count, aggregate-byte, and ordered batch admission to `saveImages()`. `readImage()` verifies a master from an authorized session path. `readImageRequest()` derives and caches one request version under an exact route pixel and byte budget; new entries are fully decoded before publication, while cache hits use a bounded metadata probe. `readImageRequests()` lets an implementation apply its configured transform concurrency to an ordered batch. The local implementation lazily encodes preferred candidates, singleflights equal request identities, lets each waiter cancel independently, stops shared work when no waiter remains, and defaults to two simultaneous transformations. The service is retention-neutral: resumed and forked sessions may share objects, so reference-aware garbage collection is deferred rather than tied to one session's deletion.
+`saveImage()` prepares and atomically commits a provider-independent normalized attachment before returning its `ImageAttachmentRef`. `saveImages()` prepares every validated attachment once before publishing the batch, so validation rejection leaves no partial objects and publication does not repeat decoding or quality selection. `admitEncodedImages()` is the wire entry for base64 uploads and delegates count, aggregate-byte, and ordered batch admission to `saveImages()`. `readImage()` verifies a normalized attachment from an authorized session path. `readImageRequest()` derives and caches one request version under an exact route pixel and byte budget; new entries are fully decoded before publication, while cache hits use a bounded metadata probe. Callers use `Promise.all` over the singular method when they need an ordered batch. The local implementation lazily encodes preferred candidates, singleflights equal request identities, lets each waiter cancel independently, stops shared work when no waiter remains, and bounds all transforms with its instance-level limiter, which defaults to two simultaneous transformations. The service is retention-neutral: resumed and forked sessions may share objects, so reference-aware garbage collection is deferred rather than tied to one session's deletion.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -149,48 +153,37 @@ abstract validateImage(input: SaveImageAttachment): Promise<void>
 /**
  * Validate and durably commit one ordered image batch.
  * @param inputs - encoded images in owning-message order.
- * @returns durable master references in the same order after every member succeeds.
+ * @returns durable normalized attachment references in the same order after every member succeeds.
  */
 async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>
 
 /**
  * Validate and durably commit one image before its owning session event is appended.
- * Implementations may store a prepared master version of the submitted raster;
- * the returned reference always describes the stored bytes, while `source`
- * preserves the submitted raster's intrinsic facts for callers that report
- * or map coordinates against the original.
+ * The returned reference describes the persisted normalized image. When
+ * normalization reduces the raster, its `originalDimensions` records the
+ * orientation-applied input dimensions.
  * @param input - encoded bytes, declared media type, and optional display name.
- * @returns the durable content-addressed reference beside the submitted source facts.
+ * @returns the durable content-addressed normalized image reference.
  */
-abstract saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment>
+abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 
 /**
  * Read one image and verify that bytes still match the recorded reference.
  * @param ref - durable reference from the session log.
  * @param signal - optional cancellation for backend read and verification work.
- * @returns the verified bytes and master reference.
+ * @returns the verified bytes and normalized attachment reference.
  * @throws the signal reason when aborted, or a storage error when verification fails.
  */
 abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
 
 /**
- * Generate or read one deterministic model-request version from the stored master image.
- * @param ref - durable provider-independent master reference.
+ * Generate or read one deterministic model-request version from the stored normalized image.
+ * @param ref - durable provider-independent normalized attachment reference.
  * @param policy - exact route pixel and encoded-byte budget.
  * @param signal - optional cancellation.
  * @returns request bytes and the cache/upload identity covering every transform input.
  */
 readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<RequestImageAttachment>
-
-/**
- * Generate or read an ordered batch of deterministic model-request versions.
- * Implementations may use their own bounded transform concurrency while preserving input order.
- * @param refs - durable provider-independent master references in request order.
- * @param policy - exact route pixel and encoded-byte budget shared by the batch.
- * @param signal - optional cancellation.
- * @returns request versions in the same order as `refs`.
- */
-async readImageRequests( refs: readonly ImageAttachmentRef[], policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<readonly RequestImageAttachment[]>
 ```
 
 Source: [`packages/attachment/attachment/src/index.ts`](../../packages/attachment/attachment/src/index.ts)

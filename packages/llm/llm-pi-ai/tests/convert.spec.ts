@@ -46,7 +46,7 @@ async function collect(stream: AsyncIterable<StreamChunk>): Promise<StreamChunk[
 function requestVersion(ref: ImageAttachmentRef): RequestImageAttachment {
   return {
     variantId: ImageVariantId(`sha256:${'e'.repeat(64)}`),
-    master: ref,
+    attachment: ref,
     data: Uint8Array.of(1, 2, 3),
     mediaType: ref.mediaType,
     bytes: 3,
@@ -63,16 +63,7 @@ function attachmentStore(readImageRequest: (
   policy: ImageRequestPolicy,
   signal?: AbortSignal,
 ) => Promise<RequestImageAttachment>): AttachmentStore {
-  return {
-    readImageRequest,
-    readImageRequests: (
-      refs: readonly ImageAttachmentRef[],
-      policy: ImageRequestPolicy,
-      signal?: AbortSignal,
-    ) => Promise.all(
-      refs.map(ref => readImageRequest(ref, policy, signal)),
-    ),
-  } as unknown as AttachmentStore
+  return { readImageRequest } as unknown as AttachmentStore
 }
 
 describe('toPiContext', () => {

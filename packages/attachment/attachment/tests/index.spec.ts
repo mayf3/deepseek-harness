@@ -10,7 +10,6 @@ import AttachmentStore, {
   type ImageRequestPolicy,
   type RequestImageAttachment,
   type SaveImageAttachment,
-  type SavedImageAttachment,
   type StoredImageAttachment,
 } from '../src/index.ts'
 
@@ -35,20 +34,17 @@ class RecordingStore extends AttachmentStore {
     if (value === this.rejectValidationAt) throw new Error(`invalid:${value}`)
   }
 
-  async saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment> {
+  async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
     const value = input.data[0] ?? 0
     this.calls.push(`save:${value}`)
     if (value === this.rejectSaveAt) throw new Error(`write:${value}`)
     return {
-      ref: {
-        attachmentId: AttachmentId(`sha256:${String(value).padStart(64, '0')}`),
-        mediaType: input.mediaType,
-        bytes: input.data.byteLength,
-        width: 1,
-        height: 1,
-        ...input.name === undefined ? {} : { name: input.name },
-      },
-      source: { mediaType: input.mediaType, bytes: input.data.byteLength, width: 1, height: 1 },
+      attachmentId: AttachmentId(`sha256:${String(value).padStart(64, '0')}`),
+      mediaType: input.mediaType,
+      bytes: input.data.byteLength,
+      width: 1,
+      height: 1,
+      ...input.name === undefined ? {} : { name: input.name },
     }
   }
 
@@ -63,7 +59,7 @@ class RecordingStore extends AttachmentStore {
     this.calls.push(`request:${ref.name}`)
     return Promise.resolve({
       variantId: ImageVariantId(`sha256:${String(ref.bytes).padStart(64, '0')}`),
-      master: ref,
+      attachment: ref,
       data: Uint8Array.of(ref.bytes),
       mediaType: ref.mediaType,
       bytes: 1,
@@ -83,7 +79,7 @@ class UnsupportedProjectionStore extends AttachmentStore {
     return Promise.resolve()
   }
 
-  saveImage(): Promise<SavedImageAttachment> {
+  saveImage(): Promise<ImageAttachmentRef> {
     throw new Error('not used')
   }
 
@@ -139,21 +135,10 @@ describe('AttachmentStore.saveImages', () => {
   })
 })
 
-describe('AttachmentStore.readImageRequests', () => {
-  it('uses the default serial projection and preserves input order', async () => {
-    const store = new RecordingStore(new Context())
-    const refs = await store.saveImages([image(1), image(2)])
-    store.calls.length = 0
-
-    const versions = await store.readImageRequests(refs, { maxPixels: 1, maxBytes: 1 })
-
-    expect(store.calls).toEqual(['request:1.png', 'request:2.png'])
-    expect(versions.map(version => version.master.name)).toEqual(['1.png', '2.png'])
-  })
-
+describe('AttachmentStore.readImageRequest', () => {
   it('reports unsupported request projection while preserving cancellation', async () => {
     const store = new UnsupportedProjectionStore(new Context())
-    const ref = (await new RecordingStore(new Context()).saveImage(image(1))).ref
+    const ref = await new RecordingStore(new Context()).saveImage(image(1))
     await expect(store.readImageRequest(ref, { maxPixels: 1, maxBytes: 1 }))
       .rejects.toMatchObject({ code: 'ATTACHMENT_PROJECTION_UNSUPPORTED' })
     const controller = new AbortController()

@@ -12,7 +12,6 @@ import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
-  SavedImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
@@ -126,7 +125,7 @@ class TestAttachmentStore extends AttachmentStore {
     return Promise.reject(new Error('test invariant attachment store does not validate images'))
   }
 
-  saveImage(_input: SaveImageAttachment): Promise<SavedImageAttachment> {
+  saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
     return Promise.reject(new Error('test invariant attachment store does not save images'))
   }
 

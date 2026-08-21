@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { Context } from '@deepseek-ai/cordis'
 import AttachmentStore, { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentLimits, ImageAttachmentRef, SavedImageAttachment, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { CallId, LlmAdapter, LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -86,7 +86,7 @@ class RecordingAttachmentStore extends AttachmentStore {
     return Promise.resolve()
   }
 
-  saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment> {
+  saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
     this.saved.push(input)
     const marker = input.data[0] ?? 0
     const ref: ImageAttachmentRef = {
@@ -96,10 +96,7 @@ class RecordingAttachmentStore extends AttachmentStore {
       width: 1,
       height: 1,
     }
-    return Promise.resolve({
-      ref,
-      source: { mediaType: ref.mediaType, bytes: ref.bytes, width: ref.width, height: ref.height },
-    })
+    return Promise.resolve(ref)
   }
 
   readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {

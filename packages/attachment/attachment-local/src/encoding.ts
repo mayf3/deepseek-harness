@@ -1,4 +1,4 @@
-/** Shared lazy candidate execution for master and request-image encoders. */
+/** Shared lazy candidate execution for normalization and request-image encoders. */
 
 /** One encoded candidate carrying its complete bytes. */
 export interface EncodedCandidate {

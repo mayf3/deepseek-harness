@@ -7,7 +7,6 @@ import type {
   ImageAttachmentRef,
   ImageRequestPolicy,
   RequestImageAttachment,
-  SavedImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
@@ -81,7 +80,7 @@ async function harness(image?: StoredImageAttachment): Promise<Context> {
         return Promise.reject(new Error('e2e attachment fixture is read-only'))
       }
 
-      saveImage(_input: SaveImageAttachment): Promise<SavedImageAttachment> {
+      saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
         return Promise.reject(new Error('e2e attachment fixture is read-only'))
       }
 
@@ -98,7 +97,7 @@ async function harness(image?: StoredImageAttachment): Promise<Context> {
         }
         return Promise.resolve({
           variantId: ImageVariantId(`sha256:${'f'.repeat(64)}`),
-          master: fixture.ref,
+          attachment: fixture.ref,
           data: fixture.data,
           mediaType: fixture.ref.mediaType,
           bytes: fixture.data.byteLength,

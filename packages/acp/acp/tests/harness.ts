@@ -13,7 +13,7 @@ import {
   type Stream,
 } from '@agentclientprotocol/sdk'
 import AttachmentStore, { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentLimits, ImageAttachmentRef, SavedImageAttachment, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { type GenerateOptions, LlmAdapter, type LlmResolvedModelInfo, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -99,7 +99,7 @@ class MemoryAttachmentStore extends AttachmentStore {
     if (input.data.byteLength === 0) throw new AttachmentError('Image is empty.', 'INVALID_IMAGE')
   }
 
-  saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment> {
+  saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
     this.saved.push(input)
     const digest = createHash('sha256').update(input.data).digest('hex')
     const ref: ImageAttachmentRef = {
@@ -110,10 +110,7 @@ class MemoryAttachmentStore extends AttachmentStore {
       height: 1,
     }
     this.objects.set(ref.attachmentId, { ref, data: Uint8Array.from(input.data) })
-    return Promise.resolve({
-      ref,
-      source: { mediaType: ref.mediaType, bytes: ref.bytes, width: ref.width, height: ref.height },
-    })
+    return Promise.resolve(ref)
   }
 
   async readImage(ref: ImageAttachmentRef): Promise<StoredImageAttachment> {

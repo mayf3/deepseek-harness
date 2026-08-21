@@ -38,8 +38,14 @@ const IMAGE_VALUE_SCHEMA = {
     width: { type: 'integer', required: true },
     height: { type: 'integer', required: true },
     name: { type: 'string' },
-    sourceWidth: { type: 'integer' },
-    sourceHeight: { type: 'integer' },
+    originalDimensions: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        width: { type: 'integer', required: true },
+        height: { type: 'integer', required: true },
+      },
+    },
   },
 } as const
 
@@ -53,10 +59,11 @@ export interface ImageReadValue {
     width: number
     height: number
     name?: string
-    /** Intrinsic width of the file on disk; present only when storage downscaled it. */
-    sourceWidth?: number
-    /** Intrinsic height of the file on disk; present only when storage downscaled it. */
-    sourceHeight?: number
+    /** Orientation-applied file dimensions before normalization; present only when storage reduced it. */
+    originalDimensions?: {
+      width: number
+      height: number
+    }
   }
 }
 
@@ -105,8 +112,9 @@ export function imageRefFromValue(image: ImageReadValue['image']): ImageAttachme
     width: image.width,
     height: image.height,
     ...image.name === undefined ? {} : { name: image.name },
-    ...image.sourceWidth === undefined ? {} : { sourceWidth: image.sourceWidth },
-    ...image.sourceHeight === undefined ? {} : { sourceHeight: image.sourceHeight },
+    ...image.originalDimensions === undefined ? {} : {
+      originalDimensions: { ...image.originalDimensions },
+    },
   }
 }
 
@@ -120,15 +128,15 @@ export function imageRefFromValue(image: ImageReadValue['image']): ImageAttachme
  */
 export function formatImageReadOutput(displayPath: string, image: ImageReadValue['image']): string {
   let scaled = ''
-  if (image.sourceWidth !== undefined && image.sourceHeight !== undefined) {
+  if (image.originalDimensions !== undefined) {
     // Integer rounding can give the two axes slightly different ratios, so the
     // advice names one multiplier only when both round to the same value.
-    const x = (image.sourceWidth / image.width).toFixed(2)
-    const y = (image.sourceHeight / image.height).toFixed(2)
+    const x = (image.originalDimensions.width / image.width).toFixed(2)
+    const y = (image.originalDimensions.height / image.height).toFixed(2)
     const advice = x === y
       ? `multiply coordinates by ${x}`
       : `multiply x coordinates by ${x} and y coordinates by ${y}`
-    scaled = ` (downscaled from ${image.sourceWidth}x${image.sourceHeight} px; ${advice} to locate features in the original file)`
+    scaled = ` (downscaled from ${image.originalDimensions.width}x${image.originalDimensions.height} px; ${advice} to locate features in the original file)`
   }
   return `<path>${displayPath}</path>
 <type>image</type>
@@ -208,11 +216,8 @@ export function applyReadImageTool(ctx: Context): void {
       // Persist before returning: the image block must reference a durably
       // committed object by the time the tool/result event is appended.
       let ref: ImageAttachmentRef
-      let source: { width: number; height: number }
       try {
-        const saved = await attachments.saveImage({ data, mediaType, name: basename(target.displayPath) })
-        ref = saved.ref
-        source = saved.source
+        ref = await attachments.saveImage({ data, mediaType, name: basename(target.displayPath) })
       } catch (error: unknown) {
         if (!(error instanceof AttachmentError)) throw error
         // Dimension refusals stay recoverable tool errors: an oversized image
@@ -238,7 +243,7 @@ export function applyReadImageTool(ctx: Context): void {
         }
         if (error.code === 'ATTACHMENT_WRITE_FAILED' && /16-bit PNG/iu.test(error.message)) {
           throw new Error(
-            `cannot read "${target.displayPath}": the 16-bit PNG could not be converted to the canonical 8-bit sRGB form; convert it to an 8-bit PNG/JPEG/WebP and retry`,
+            `cannot read "${target.displayPath}": the 16-bit PNG could not be converted to the normalized 8-bit sRGB form; convert it to an 8-bit PNG/JPEG/WebP and retry`,
             { cause: error },
           )
         }
@@ -250,7 +255,6 @@ export function applyReadImageTool(ctx: Context): void {
         )
       }
       ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
-      const downscaled = source.width !== ref.width || source.height !== ref.height
       const value: ImageReadValue = {
         path: target.displayPath,
         image: {
@@ -260,7 +264,9 @@ export function applyReadImageTool(ctx: Context): void {
           width: ref.width,
           height: ref.height,
           ...ref.name === undefined ? {} : { name: ref.name },
-          ...downscaled ? { sourceWidth: source.width, sourceHeight: source.height } : {},
+          ...ref.originalDimensions === undefined ? {} : {
+            originalDimensions: { ...ref.originalDimensions },
+          },
         },
       }
       return value

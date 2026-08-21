@@ -44,7 +44,7 @@ describe('ACP prompt lifecycle', () => {
   it('delivers a committed assistant image as verified ACP base64', async () => {
     const script: StreamChunk[][] = []
     harness = await makeBridgeHarness({ script })
-    const { ref } = await harness.attachments!.saveImage({ data: Uint8Array.of(1), mediaType: 'image/png' })
+    const ref = await harness.attachments!.saveImage({ data: Uint8Array.of(1), mediaType: 'image/png' })
     script.push([
       { type: 'block-start', index: 0, blockType: 'image' },
       {
@@ -68,7 +68,7 @@ describe('ACP prompt lifecycle', () => {
   it('preserves committed text/image/text order on the ACP wire', async () => {
     const script: StreamChunk[][] = []
     harness = await makeBridgeHarness({ script })
-    const { ref } = await harness.attachments!.saveImage({ data: Uint8Array.of(2), mediaType: 'image/jpeg' })
+    const ref = await harness.attachments!.saveImage({ data: Uint8Array.of(2), mediaType: 'image/jpeg' })
     script.push([
       { type: 'block-start', index: 0, blockType: 'text' },
       { type: 'block-end', index: 0, block: { type: 'text', text: 'before' } },
@@ -92,7 +92,7 @@ describe('ACP prompt lifecycle', () => {
   it('does not settle a prompt before ordered output delivery drains', async () => {
     const script: StreamChunk[][] = []
     harness = await makeBridgeHarness({ script })
-    const { ref } = await harness.attachments!.saveImage({ data: Uint8Array.of(3), mediaType: 'image/png' })
+    const ref = await harness.attachments!.saveImage({ data: Uint8Array.of(3), mediaType: 'image/png' })
     script.push([
       { type: 'block-start', index: 0, blockType: 'image' },
       { type: 'block-end', index: 0, block: { type: 'image', attachment: ref } },

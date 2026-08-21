@@ -13,7 +13,6 @@ import type {
   ImageAttachmentRef,
   ImageRequestPolicy,
   RequestImageAttachment,
-  SavedImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
@@ -58,7 +57,7 @@ class E2eAttachmentStore extends AttachmentStore {
   }
   readonly version: RequestImageAttachment = {
     variantId: ImageVariantId(`sha256:${randomBytes(32).toString('hex')}`),
-    master: this.ref,
+    attachment: this.ref,
     data: TEST_PNG,
     mediaType: 'image/png',
     bytes: TEST_PNG.byteLength,
@@ -73,16 +72,8 @@ class E2eAttachmentStore extends AttachmentStore {
     return Promise.resolve()
   }
 
-  saveImage(_input: SaveImageAttachment): Promise<SavedImageAttachment> {
-    return Promise.resolve({
-      ref: this.ref,
-      source: {
-        mediaType: this.ref.mediaType,
-        bytes: this.ref.bytes,
-        width: this.ref.width,
-        height: this.ref.height,
-      },
-    })
+  saveImage(_input: SaveImageAttachment): Promise<ImageAttachmentRef> {
+    return Promise.resolve(this.ref)
   }
 
   readImage(ref: ImageAttachmentRef, _signal?: AbortSignal): Promise<StoredImageAttachment> {

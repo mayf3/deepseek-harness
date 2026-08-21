@@ -10,17 +10,16 @@ import type {
   ImageRequestPolicy,
   RequestImageAttachment,
   SaveImageAttachment,
-  SavedImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import type { MasterImagePolicy } from './canonical.ts'
+import type { NormalizationPolicy } from './normalization.ts'
 import { CompressionLimiter } from './compression-limiter.ts'
 import { commitPreparedImageFile, prepareImageFile, readImageFile, validateImageFile } from './store.ts'
 import { readRequestImageFile, requestImageVariantId } from './request-image.ts'
 
-export { isMasterImage, prepareMasterImage } from './canonical.ts'
-export type { MasterImage, MasterImagePolicy } from './canonical.ts'
+export { canPassThroughNormalization, normalizeImage } from './normalization.ts'
+export type { NormalizedImage, NormalizationPolicy } from './normalization.ts'
 export { commitPreparedImageFile, prepareImageFile, readImageFile, saveImageFile, validateImageFile } from './store.ts'
 export type { PreparedImageFile } from './store.ts'
 export { readRequestImageFile, requestImageDimensions, requestImageVariantId } from './request-image.ts'
@@ -36,13 +35,13 @@ export const DEFAULT_MAX_IMAGE_PIXELS = 64_000_000
 /** Default per-side pixel cap for one submitted image. */
 export const DEFAULT_MAX_IMAGE_DIMENSION = 8192
 /**
- * Default long-edge target of the stored image master. A larger source
+ * Default long-edge target of the stored normalized image. A larger source
  * is admitted and downscaled to this edge, so admission bounds what rides
  * every later model request without refusing ordinary large sources.
  */
-export const DEFAULT_MASTER_MAX_DIMENSION = 2048
-/** Default independent safety cap for one stored master version. */
-export const DEFAULT_MASTER_MAX_BYTES = 4 * 1024 * 1024
+export const DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION = 2048
+/** Default independent safety cap for one stored normalized image. */
+export const DEFAULT_NORMALIZED_IMAGE_MAX_BYTES = 4 * 1024 * 1024
 /** Conservative default number of simultaneous native image transformations per store. */
 export const DEFAULT_IMAGE_COMPRESSION_CONCURRENCY = 2
 /** Maximum configurable native image transformations per store. */
@@ -62,11 +61,11 @@ export interface Config {
   maxImagePixels?: number
   /** Maximum intrinsic width and maximum intrinsic height accepted for one submitted image. Default: 8192px. */
   maxImageDimension?: number
-  /** Long-edge pixel cap of the stored provider-independent master version. */
-  masterMaxDimension?: number
-  /** Encoded-byte safety cap of the stored provider-independent master version. */
-  masterMaxBytes?: number
-  /** Maximum simultaneous master or request-image transformations in this service instance. */
+  /** Long-edge pixel cap of the stored provider-independent normalized image. */
+  normalizedImageMaxDimension?: number
+  /** Encoded-byte safety cap of the stored provider-independent normalized image. */
+  normalizedImageMaxBytes?: number
+  /** Maximum simultaneous normalization or request-image transformations in this service instance. */
   imageCompressionConcurrency?: number
 }
 
@@ -140,8 +139,8 @@ export class LocalAttachmentStore extends AttachmentStore {
     maxMessageImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_MESSAGE_IMAGE_BYTES),
     maxImagePixels: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGE_PIXELS),
     maxImageDimension: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGE_DIMENSION),
-    masterMaxDimension: z.number().step(1).min(1).default(DEFAULT_MASTER_MAX_DIMENSION),
-    masterMaxBytes: z.number().step(1).min(1).default(DEFAULT_MASTER_MAX_BYTES),
+    normalizedImageMaxDimension: z.number().step(1).min(1).default(DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION),
+    normalizedImageMaxBytes: z.number().step(1).min(1).default(DEFAULT_NORMALIZED_IMAGE_MAX_BYTES),
     imageCompressionConcurrency: z.number().step(1).min(1).max(MAX_IMAGE_COMPRESSION_CONCURRENCY)
       .default(DEFAULT_IMAGE_COMPRESSION_CONCURRENCY),
   })
@@ -149,8 +148,8 @@ export class LocalAttachmentStore extends AttachmentStore {
   /** Absolute versioned storage root. */
   readonly root: string
   readonly imageLimits: ImageAttachmentLimits
-  /** Resolved provider-independent master-version storage policy. */
-  readonly masterPolicy: Readonly<MasterImagePolicy>
+  /** Resolved provider-independent normalization policy. */
+  readonly normalizationPolicy: Readonly<NormalizationPolicy>
   /** Resolved instance-level compression limit. */
   readonly imageCompressionConcurrency: number
   private readonly compression: CompressionLimiter
@@ -167,9 +166,9 @@ export class LocalAttachmentStore extends AttachmentStore {
       maxImageDimension: config.maxImageDimension ?? DEFAULT_MAX_IMAGE_DIMENSION,
       mediaTypes: Object.freeze(['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const),
     })
-    this.masterPolicy = Object.freeze({
-      maxDimension: config.masterMaxDimension ?? DEFAULT_MASTER_MAX_DIMENSION,
-      maxBytes: config.masterMaxBytes ?? DEFAULT_MASTER_MAX_BYTES,
+    this.normalizationPolicy = Object.freeze({
+      maxDimension: config.normalizedImageMaxDimension ?? DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
+      maxBytes: config.normalizedImageMaxBytes ?? DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
     })
     const compressionConcurrency = config.imageCompressionConcurrency ?? DEFAULT_IMAGE_COMPRESSION_CONCURRENCY
     if (!Number.isSafeInteger(compressionConcurrency)
@@ -184,22 +183,22 @@ export class LocalAttachmentStore extends AttachmentStore {
   }
 
   async validateImage(input: SaveImageAttachment): Promise<void> {
-    await this.compression.run(() => validateImageFile(input, this.imageLimits, this.masterPolicy))
+    await this.compression.run(() => validateImageFile(input, this.imageLimits, this.normalizationPolicy))
   }
 
   override async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]> {
     this.validateImageBatch(inputs)
     const prepared = await Promise.all(inputs.map(input => this.compression.run(
-      () => prepareImageFile(input, this.imageLimits, this.masterPolicy),
+      () => prepareImageFile(input, this.imageLimits, this.normalizationPolicy),
     )))
     const refs: ImageAttachmentRef[] = []
-    for (const image of prepared) refs.push((await commitPreparedImageFile(this.root, image)).ref)
+    for (const image of prepared) refs.push(await commitPreparedImageFile(this.root, image))
     return refs
   }
 
-  async saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment> {
+  async saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef> {
     const prepared = await this.compression.run(
-      () => prepareImageFile(input, this.imageLimits, this.masterPolicy),
+      () => prepareImageFile(input, this.imageLimits, this.normalizationPolicy),
     )
     return commitPreparedImageFile(this.root, prepared)
   }
@@ -216,18 +215,10 @@ export class LocalAttachmentStore extends AttachmentStore {
     return this.requestVersion(ref, policy, undefined, signal)
   }
 
-  override async readImageRequests(
-    refs: readonly ImageAttachmentRef[],
-    policy: ImageRequestPolicy,
-    signal?: AbortSignal,
-  ): Promise<readonly RequestImageAttachment[]> {
-    return Promise.all(refs.map(ref => this.requestVersion(ref, policy, undefined, signal)))
-  }
-
   private requestVersion(
     ref: ImageAttachmentRef,
     policy: ImageRequestPolicy,
-    master: StoredImageAttachment | undefined,
+    stored: StoredImageAttachment | undefined,
     signal: AbortSignal | undefined,
   ): Promise<RequestImageAttachment> {
     signal?.throwIfAborted()
@@ -241,7 +232,7 @@ export class LocalAttachmentStore extends AttachmentStore {
     if (operation === undefined) {
       const shared = new SharedRequest<RequestImageAttachment>(sharedSignal => this.compression.run(async () => readRequestImageFile(
         this.root,
-        master ?? await this.readImage(ref, sharedSignal),
+        stored ?? await this.readImage(ref, sharedSignal),
         policy,
         sharedSignal,
       )))

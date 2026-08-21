@@ -479,11 +479,8 @@ describe('image attachments', () => {
       saveImage: vi.fn((input: { mediaType: string; name?: string }) => {
         saved += 1
         return Promise.resolve({
-          ref: {
-            attachmentId: `att-${saved}`, mediaType: input.mediaType, bytes: 3, width: 1, height: 1,
-            ...input.name === undefined ? {} : { name: input.name },
-          },
-          source: { mediaType: input.mediaType, bytes: 3, width: 1, height: 1 },
+          attachmentId: `att-${saved}`, mediaType: input.mediaType, bytes: 3, width: 1, height: 1,
+          ...input.name === undefined ? {} : { name: input.name },
         })
       }),
       validateImageBatch(inputs: readonly unknown[]) {
@@ -595,8 +592,7 @@ describe('image attachments', () => {
     store.saveImage.mockImplementationOnce((input: { mediaType: string }) => {
       controller.abort('operator cancelled during admission')
       return Promise.resolve({
-        ref: { attachmentId: 'att-late', mediaType: input.mediaType, bytes: 3, width: 1, height: 1 },
-        source: { mediaType: input.mediaType, bytes: 3, width: 1, height: 1 },
+        attachmentId: 'att-late', mediaType: input.mediaType, bytes: 3, width: 1, height: 1,
       })
     })
     ctx.provide('attachments', store)

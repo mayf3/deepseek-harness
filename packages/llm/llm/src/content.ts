@@ -24,7 +24,7 @@ export function textOnlyImageText(ref: ImageAttachmentRef): string {
  * @returns attachment handle and request-image dimensions.
  */
 export function requestImageHandleText(version: RequestImageAttachment): string {
-  return `Image ${version.master.attachmentId}; request image ${version.width}x${version.height}px.`
+  return `Image ${version.attachment.attachmentId}; request image ${version.width}x${version.height}px.`
 }
 
 /**

@@ -56,10 +56,7 @@ async function userContent(
         if (block.text.length > 0) content.push({ type: 'text', text: block.text })
         break
       case 'image': {
-        const version = requestImages.get(block.attachment.attachmentId)
-        if (version === undefined) {
-          throw new LlmError(`pi-ai request image ${block.attachment.attachmentId} was not prepared`, 'INVALID_REQUEST')
-        }
+        const version = requestImages.get(block.attachment.attachmentId) as RequestImageAttachment
         content.push({ type: 'text', text: requestImageHandleText(version) })
         content.push({
           type: 'image',
@@ -106,7 +103,9 @@ async function prepareRequestImages(
   const refs = new Map<AttachmentId, ImageAttachmentRef>()
   for (const message of messages) collectImageRefs(message.content, refs)
   const orderedRefs = [...refs.values()]
-  const prepared = await attachments.readImageRequests(orderedRefs, policy, signal)
+  const prepared = await Promise.all(orderedRefs.map(
+    ref => attachments.readImageRequest(ref, policy, signal),
+  ))
   const versions = new Map<AttachmentId, RequestImageAttachment>()
   for (const [index, ref] of orderedRefs.entries()) {
     versions.set(ref.attachmentId, prepared[index] as RequestImageAttachment)
@@ -238,7 +237,7 @@ async function toPiContextWithImages(
     representation: 'base64',
     ...maxRequestImageBytes === undefined ? {} : { maxBytes: maxRequestImageBytes },
     byteQuantum: 1,
-    byteLength: ref => requestImages.get(ref.attachmentId)?.bytes ?? ref.bytes,
+    byteLength: ref => (requestImages.get(ref.attachmentId) as RequestImageAttachment).bytes,
   })
   const toolNames = new Map<CallId, string>()
   const messages: PiMessage[] = []

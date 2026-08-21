@@ -7,7 +7,7 @@ export type { AttachmentId } from './brand.ts'
 /** Raster image formats accepted by the version-one attachment path. */
 export type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
 
-/** Durable, serializable metadata for one immutable image object. */
+/** Durable, serializable reference to one immutable normalized image. */
 export interface ImageAttachmentRef {
   /** Opaque storage identifier; never a filesystem path or bearer URL. */
   attachmentId: AttachmentId
@@ -21,10 +21,14 @@ export interface ImageAttachmentRef {
   height: number
   /** Optional display name stripped of local path information. */
   name?: string
-  /** Perceived source width before master-version downscaling; present only when it differs from {@link width}. */
-  sourceWidth?: number
-  /** Perceived source height before master-version downscaling; present only when it differs from {@link height}. */
-  sourceHeight?: number
+  /**
+   * Input dimensions after applying EXIF orientation and before normalization
+   * scaling. Present only when normalization reduced the image.
+   */
+  originalDimensions?: {
+    width: number
+    height: number
+  }
 }
 
 /** Deployment-resolved limits used by upload admission and request buffering. */
@@ -71,12 +75,12 @@ export interface ImageRequestPolicy {
   maxBytes: number
 }
 
-/** Cached request version derived from one provider-independent master attachment. */
+/** Cached request version derived from one provider-independent normalized attachment. */
 export interface RequestImageAttachment {
-  /** Cache and upload-index key over the master id, policy, and fixed encoder parameters. */
+  /** Cache and upload-index key over the attachment id, policy, and fixed encoder parameters. */
   variantId: ImageVariantId
-  /** Durable master reference from which this request version was derived. */
-  master: ImageAttachmentRef
+  /** Durable normalized attachment from which this request version was derived. */
+  attachment: ImageAttachmentRef
   /** Encoded request bytes. */
   data: Uint8Array
   mediaType: ImageMediaType
@@ -89,24 +93,4 @@ export interface RequestImageAttachment {
   space: 'srgb'
   /** Whether the encoded request version retains an alpha channel. */
   hasAlpha: boolean
-}
-
-/** Intrinsic facts of the submitted source raster, before master-version preparation. */
-export interface SourceImageInfo {
-  /** Media type verified from the submitted bytes. */
-  mediaType: ImageMediaType
-  /** Exact submitted encoded byte length. */
-  bytes: number
-  /** Perceived source width in pixels, with any EXIF orientation applied, so it shares axes with the stored raster. */
-  width: number
-  /** Perceived source height in pixels, with any EXIF orientation applied, so it shares axes with the stored raster. */
-  height: number
-}
-
-/** Commit result pairing the durable reference with the submitted source raster it was derived from. */
-export interface SavedImageAttachment {
-  /** Durable reference describing the stored bytes. */
-  ref: ImageAttachmentRef
-  /** Submitted source raster facts; equals the `ref` fields when the store kept the submitted bytes. */
-  source: SourceImageInfo
 }

@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import sharp from 'sharp'
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
-import type { MasterImagePolicy } from '../src/canonical.ts'
+import type { NormalizationPolicy } from '../src/normalization.ts'
 import { commitPreparedImageFile, prepareImageFile, readImageFile, saveImageFile } from '../src/store.ts'
 
 const fsControl = vi.hoisted(() => ({
@@ -39,7 +39,7 @@ const PNG = Uint8Array.from(Buffer.from(
   'base64',
 ))
 
-const POLICY: MasterImagePolicy = { maxDimension: 2048, maxBytes: 1024 * 1024 }
+const POLICY: NormalizationPolicy = { maxDimension: 2048, maxBytes: 1024 * 1024 }
 
 const LIMITS: ImageAttachmentLimits = {
   maxImageBytes: 1024,
@@ -107,7 +107,7 @@ describe('local attachment store', () => {
   it('creates and persists a missing nested home directory against the filesystem root', async () => {
     const storageRoot = join(await root(), 'home', 'attachments', 'v1')
 
-    const { ref } = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)
+    const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)
 
     await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
   })
@@ -121,7 +121,7 @@ describe('local attachment store', () => {
     const sha256 = createHash('sha256').update(PNG).digest('hex')
     const object = join(storageRoot, 'objects', sha256.slice(0, 2), sha256)
 
-    expect(first.ref).toEqual({
+    expect(first).toEqual({
       attachmentId: `sha256:${sha256}`,
       mediaType: 'image/png',
       bytes: PNG.byteLength,
@@ -129,17 +129,16 @@ describe('local attachment store', () => {
       height: 1,
       name: 'pixel.png',
     })
-    expect(first.source).toEqual({ mediaType: 'image/png', bytes: PNG.byteLength, width: 1, height: 1 })
-    expect(second.ref.attachmentId).toBe(first.ref.attachmentId)
+    expect(second.attachmentId).toBe(first.attachmentId)
     expect(new Uint8Array(await readFile(object))).toEqual(PNG)
     if (process.platform !== 'win32') {
       expect((await stat(object)).mode & 0o777).toBe(0o600)
       expect((await stat(join(storageRoot, 'objects', sha256.slice(0, 2)))).mode & 0o777).toBe(0o700)
     }
-    await expect(readImageFile(storageRoot, first.ref)).resolves.toEqual({ ref: first.ref, data: PNG })
+    await expect(readImageFile(storageRoot, first)).resolves.toEqual({ ref: first, data: PNG })
   })
 
-  it('stores the image master of an oversized source and reads it back verified', async () => {
+  it('stores the normalized image of an oversized source and reads it back verified', async () => {
     const storageRoot = await root()
     const oversized = new Uint8Array(await sharp({
       create: { width: 4, height: 4, channels: 3, background: { r: 9, g: 9, b: 9 } },
@@ -149,24 +148,29 @@ describe('local attachment store', () => {
       data: oversized, mediaType: 'image/png', name: 'big.png',
     }, { ...LIMITS, maxImagePixels: 64 }, { maxDimension: 2, maxBytes: 1024 * 1024 })
 
-    expect(saved.source).toEqual({ mediaType: 'image/png', bytes: oversized.byteLength, width: 4, height: 4 })
-    expect(saved.ref).toMatchObject({ mediaType: 'image/png', width: 2, height: 2, name: 'big.png' })
-    expect(saved.ref.bytes).not.toBe(oversized.byteLength)
-    const read = await readImageFile(storageRoot, saved.ref)
-    expect(read.data.byteLength).toBe(saved.ref.bytes)
-    expect(String(saved.ref.attachmentId)).toBe(`sha256:${createHash('sha256').update(read.data).digest('hex')}`)
+    expect(saved).toMatchObject({
+      mediaType: 'image/png',
+      width: 2,
+      height: 2,
+      name: 'big.png',
+      originalDimensions: { width: 4, height: 4 },
+    })
+    expect(saved.bytes).not.toBe(oversized.byteLength)
+    const read = await readImageFile(storageRoot, saved)
+    expect(read.data.byteLength).toBe(saved.bytes)
+    expect(String(saved.attachmentId)).toBe(`sha256:${createHash('sha256').update(read.data).digest('hex')}`)
   })
 
   it('keeps admitted history readable after deployment limits become stricter', async () => {
     const storageRoot = await root()
-    const { ref } = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)
+    const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)
 
     await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
   })
 
   it('forwards read cancellation to the filesystem and preserves its reason', async () => {
     const storageRoot = await root()
-    const { ref } = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)
+    const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)
     const controller = new AbortController()
     fsControl.readSignals.length = 0
 
@@ -205,12 +209,12 @@ describe('local attachment store', () => {
     const unnamed = await saveImageFile(storageRoot, {
       data: PNG, mediaType: 'image/png', name: '\u0000',
     }, LIMITS, POLICY)
-    expect(unnamed.ref).not.toHaveProperty('name')
+    expect(unnamed).not.toHaveProperty('name')
   })
 
   it('fails closed when an object is missing, corrupted, or addressed by an invalid reference', async () => {
     const storageRoot = await root()
-    const { ref } = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)
+    const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)
     const sha256 = String(ref.attachmentId).slice('sha256:'.length)
     const object = join(storageRoot, 'objects', sha256.slice(0, 2), sha256)
     await chmod(object, 0o600)
@@ -242,7 +246,7 @@ describe('local attachment store', () => {
       .rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
 
     await writeFile(target, PNG)
-    const { ref } = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)
+    const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)
     await expect(readImageFile(storageRoot, { ...ref, width: ref.width + 1 }))
       .rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
   })

@@ -440,32 +440,26 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly ImageAttachmentRef[]>',
         description: 'Validate and durably commit one ordered image batch.',
         parameters: [{ name: 'inputs', description: 'encoded images in owning-message order.' }],
-        returns: 'durable master references in the same order after every member succeeds.',
+        returns: 'durable normalized attachment references in the same order after every member succeeds.',
       },
       {
-        signature: 'abstract saveImage(input: SaveImageAttachment): Promise<SavedImageAttachment>',
-        description: 'Validate and durably commit one image before its owning session event is appended. Implementations may store a prepared master version of the submitted raster; the returned reference always describes the stored bytes, while `source` preserves the submitted raster\'s intrinsic facts for callers that report or map coordinates against the original.',
+        signature: 'abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>',
+        description: 'Validate and durably commit one image before its owning session event is appended. The returned reference describes the persisted normalized image. When normalization reduces the raster, its `originalDimensions` records the orientation-applied input dimensions.',
         parameters: [{ name: 'input', description: 'encoded bytes, declared media type, and optional display name.' }],
-        returns: 'the durable content-addressed reference beside the submitted source facts.',
+        returns: 'the durable content-addressed normalized image reference.',
       },
       {
         signature: 'abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>',
         description: 'Read one image and verify that bytes still match the recorded reference.',
         parameters: [{ name: 'ref', description: 'durable reference from the session log.' }, { name: 'signal', description: 'optional cancellation for backend read and verification work.' }],
-        returns: 'the verified bytes and master reference.',
+        returns: 'the verified bytes and normalized attachment reference.',
         throws: ['the signal reason when aborted, or a storage error when verification fails.'],
       },
       {
         signature: 'readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<RequestImageAttachment>',
-        description: 'Generate or read one deterministic model-request version from the stored master image.',
-        parameters: [{ name: 'ref', description: 'durable provider-independent master reference.' }, { name: 'policy', description: 'exact route pixel and encoded-byte budget.' }, { name: 'signal', description: 'optional cancellation.' }],
+        description: 'Generate or read one deterministic model-request version from the stored normalized image.',
+        parameters: [{ name: 'ref', description: 'durable provider-independent normalized attachment reference.' }, { name: 'policy', description: 'exact route pixel and encoded-byte budget.' }, { name: 'signal', description: 'optional cancellation.' }],
         returns: 'request bytes and the cache/upload identity covering every transform input.',
-      },
-      {
-        signature: 'async readImageRequests( refs: readonly ImageAttachmentRef[], policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<readonly RequestImageAttachment[]>',
-        description: 'Generate or read an ordered batch of deterministic model-request versions. Implementations may use their own bounded transform concurrency while preserving input order.',
-        parameters: [{ name: 'refs', description: 'durable provider-independent master references in request order.' }, { name: 'policy', description: 'exact route pixel and encoded-byte budget shared by the batch.' }, { name: 'signal', description: 'optional cancellation.' }],
-        returns: 'request versions in the same order as `refs`.',
       },
     ],
   },
@@ -3462,7 +3456,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ImageAttachmentRef',
-    declaration: 'export interface ImageAttachmentRef {\n    attachmentId: AttachmentId;\n    mediaType: ImageMediaType;\n    bytes: number;\n    width: number;\n    height: number;\n    name?: string;\n    sourceWidth?: number;\n    sourceHeight?: number;\n}',
+    declaration: 'export interface ImageAttachmentRef {\n    attachmentId: AttachmentId;\n    mediaType: ImageMediaType;\n    bytes: number;\n    width: number;\n    height: number;\n    name?: string;\n    originalDimensions?: {\n        width: number;\n        height: number;\n    };\n}',
   },
   {
     name: 'ImageBlock',
@@ -3942,7 +3936,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RequestImageAttachment',
-    declaration: 'export interface RequestImageAttachment {\n    variantId: ImageVariantId;\n    master: ImageAttachmentRef;\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    bytes: number;\n    width: number;\n    height: number;\n    depth: \'uchar\';\n    space: \'srgb\';\n    hasAlpha: boolean;\n}',
+    declaration: 'export interface RequestImageAttachment {\n    variantId: ImageVariantId;\n    attachment: ImageAttachmentRef;\n    data: Uint8Array;\n    mediaType: ImageMediaType;\n    bytes: number;\n    width: number;\n    height: number;\n    depth: \'uchar\';\n    space: \'srgb\';\n    hasAlpha: boolean;\n}',
   },
   {
     name: 'RequestRunOutcome',
@@ -4027,10 +4021,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SandboxPolicyRequest',
     declaration: 'export interface SandboxPolicyRequest {\n    session?: Session;\n    mode?: SandboxMode;\n}',
-  },
-  {
-    name: 'SavedImageAttachment',
-    declaration: 'export interface SavedImageAttachment {\n    ref: ImageAttachmentRef;\n    source: SourceImageInfo;\n}',
   },
   {
     name: 'SaveImageAttachment',
@@ -4435,10 +4425,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SkillViewOptions',
     declaration: 'export interface SkillViewOptions extends SkillLookupOptions {\n    readonly scope?: ScopeKey | undefined;\n}',
-  },
-  {
-    name: 'SourceImageInfo',
-    declaration: 'export interface SourceImageInfo {\n    mediaType: ImageMediaType;\n    bytes: number;\n    width: number;\n    height: number;\n}',
   },
   {
     name: 'SpawnTeammateRequest',
