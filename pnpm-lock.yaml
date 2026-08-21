@@ -6103,6 +6103,9 @@ importers:
 
   packages/sandbox/sandbox-windows-acl:
     dependencies:
+      '@deepseek-ai/dsh-win32-process':
+        specifier: workspace:^
+        version: link:../../subprocess/win32-process
       koffi:
         specifier: ^3.1.0
         version: 3.1.1
@@ -7986,6 +7989,19 @@ importers:
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:^
         version: link:../../util/timeout
+
+  packages/subprocess/win32-process:
+    dependencies:
+      koffi:
+        specifier: ^3.1.0
+        version: 3.1.1
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
 
   packages/terminal/terminal:
     devDependencies:

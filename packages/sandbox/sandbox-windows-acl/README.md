@@ -38,7 +38,7 @@ sandbox.dispose() // revokes the revocable (temp) grant, keeps the standing work
 rmSync(tempDir, { recursive: true, force: true })
 ```
 
-A direct `AclSandbox` requires an explicit private temp directory (or `tempDir: null`; the ambient temp root is never an implicit grant), grants the workspace ACEs STANDING (dispose() leaves them — they are the cross-instance reuse cache), and grants the distinct temp SID revocably. The server-side reuse is the `AclWriteGrant` class: `add(path, standing)` per directory, `dispose()` revokes the revocable paths and frees the SID — see the runner contract below. Every Win32 API call in this package is checked; failures throw `Win32Error` carrying the API name, the exact Win32 code, the `FormatMessageW` system text, and the failing path/context. This is deliberate: the POC ignored every return value and, when `CreateRestrictedToken` failed, silently ran the child with the FULL unrestricted token (fail-open). This port fails closed by construction.
+A direct `AclSandbox` requires an explicit private temp directory (or `tempDir: null`; the ambient temp root is never an implicit grant), grants the workspace ACEs STANDING (dispose() leaves them — they are the cross-instance reuse cache), and grants the distinct temp SID revocably. The server-side reuse is the `AclWriteGrant` class: `add(path, standing)` per directory, `dispose()` revokes the revocable paths and frees the SID — see the runner contract below. Every policy-specific Win32 call and every process primitive from [`dsh-win32-process`](../../subprocess/win32-process/README.md) is checked; failures throw `Win32Error` carrying the API name, the exact Win32 code, the `FormatMessageW` system text, and the failing path/context. This is deliberate: the POC ignored every return value and, when `CreateRestrictedToken` failed, silently ran the child with the FULL unrestricted token (fail-open). This port fails closed by construction.
 
 ## The confinement runner
 
@@ -62,13 +62,11 @@ The `AclSandbox` class (explicit private `tempDir` + `tempWriteSid`, or `tempDir
 
 ## Header verification
 
-All constants, signatures, and struct layouts were verified against the Windows headers on the development machine (MinGW `winnt.h` / `accctrl.h` / `aclapi.h` / `securitybaseapi.h` / `sddl.h` / `processthreadsapi.h` / `fileapi.h` / `namedpipeapi.h` / `synchapi.h` / `winbase.h`) and are cross-checked at runtime by [`verify/abi-probe.cpp`](verify/abi-probe.cpp) (sizes, offsets, enum values, static asserts):
+The sandbox-owned SID, ACL, token, file, and lock constants and layouts were verified against the Windows headers on the development machine (MinGW `winnt.h` / `accctrl.h` / `aclapi.h` / `securitybaseapi.h` / `sddl.h` / `fileapi.h`) and are cross-checked by [`verify/abi-probe.cpp`](verify/abi-probe.cpp). The shared process, stdio, and Job ABI is owned and verified by [`@deepseek-ai/dsh-win32-process`](../../subprocess/win32-process/README.md#header-verification).
 
 ```sh
 g++ -std=c++20 -municode -O2 -o abi-probe.exe verify/abi-probe.cpp -ladvapi32 && ./abi-probe.exe
 ```
-
-The koffi struct definitions assert their sizes against the probe at module load, so a header/koffi layout drift fails loudly instead of corrupting memory.
 
 ## Verified boundaries (inherent to restricted tokens, not this port)
 

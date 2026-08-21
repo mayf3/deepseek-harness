@@ -38,7 +38,7 @@ sandbox.dispose() // revokes the revocable (temp) grant, keeps the standing work
 rmSync(tempDir, { recursive: true, force: true })
 ```
 
-直接使用 `AclSandbox` 时，必须显式提供私有临时目录（或通过 `tempDir: null` 禁用临时写入；环境临时根目录绝不会被隐式授权），工作区 ACE 以**常驻**方式授予（`dispose()` 保留它们——它们是跨实例的复用缓存），不同的临时 SID 则以**可回收**方式授予。服务端复用则是 `AclWriteGrant` 类：每个目录一次 `add(path, standing)`，`dispose()` 撤销可回收路径并释放 SID——见下方 runner 契约。本包中的每个 Win32 API 调用都有检查；失败抛出 `Win32Error`，携带 API 名、精确 Win32 错误码、`FormatMessageW` 系统文本和失败的路径/上下文。这是刻意的：POC 忽略每个返回值，当 `CreateRestrictedToken` 失败时用完整无限制令牌静默运行子进程（fail-open）。本移植从构造上 fail-closed。
+直接使用 `AclSandbox` 时，必须显式提供私有临时目录（或通过 `tempDir: null` 禁用临时写入；环境临时根目录绝不会被隐式授权），工作区 ACE 以**常驻**方式授予（`dispose()` 保留它们——它们是跨实例的复用缓存），不同的临时 SID 则以**可回收**方式授予。服务端复用则是 `AclWriteGrant` 类：每个目录一次 `add(path, standing)`，`dispose()` 撤销可回收路径并释放 SID——见下方 runner 契约。每个 policy-specific Win32 调用和 [`dsh-win32-process`](../../subprocess/win32-process/README.zh.md) 提供的 process primitive 都有检查；失败抛出 `Win32Error`，携带 API 名、精确 Win32 错误码、`FormatMessageW` 系统文本和失败的路径/上下文。这是刻意的：POC 忽略每个返回值，当 `CreateRestrictedToken` 失败时用完整无限制令牌静默运行子进程（fail-open）。本移植从构造上 fail-closed。
 
 <a id="the-confinement-runner"></a>
 
@@ -64,13 +64,11 @@ Authenticated Users 在**两种**列表中都不存在——WMI 命名空间安�
 
 ## 头部验证
 
-所有常量、签名与结构体布局都在开发机上对照 Windows 头文件（MinGW `winnt.h` / `accctrl.h` / `aclapi.h` / `securitybaseapi.h` / `sddl.h` / `processthreadsapi.h` / `fileapi.h` / `namedpipeapi.h` / `synchapi.h` / `winbase.h`）验证过，并在运行时由 [`verify/abi-probe.cpp`](verify/abi-probe.cpp)（大小、偏移、枚举值、静态断言）交叉检查：
+sandbox 自有的 SID、ACL、token、文件与锁常量和布局均已在开发机上对照 Windows 头文件（MinGW `winnt.h` / `accctrl.h` / `aclapi.h` / `securitybaseapi.h` / `sddl.h` / `fileapi.h`）验证，并由 [`verify/abi-probe.cpp`](verify/abi-probe.cpp) 交叉检查。共享的 process、stdio 与 Job ABI 由 [`@deepseek-ai/dsh-win32-process`](../../subprocess/win32-process/README.zh.md#header-verification) 归属并验证。
 
 ```sh
 g++ -std=c++20 -municode -O2 -o abi-probe.exe verify/abi-probe.cpp -ladvapi32 && ./abi-probe.exe
 ```
-
-koffi 结构体定义在模块加载时对照探针断言其大小，因此头文件/koffi 布局漂移会大声失败而不是破坏内存。
 
 ## 已验证边界（受限令牌固有，非本移植引入）
 

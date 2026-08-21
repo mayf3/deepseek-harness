@@ -32,6 +32,7 @@ const WORKSPACE_CLOSURE = [
   // consumer resolves it like any other @deepseek-ai peer (koffi arrives
   // from the registry).
   'packages/sandbox/sandbox-windows-acl',
+  'packages/subprocess/win32-process',
   'packages/sandbox/sandbox',
   'packages/core/session',
   'packages/core/scope',
