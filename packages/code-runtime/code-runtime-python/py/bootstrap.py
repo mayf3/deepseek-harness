@@ -997,6 +997,14 @@ async def _run(channel: ProtocolChannel) -> None:
     # bound above.
     encode_plain_bound = _encode_json_plain
     write_encoded_bound = channel.write_encoded
+    # The completion-frame builder is bound into a LOCAL here, before the
+    # program runs: `done = _done_with_value(...)` below sits after the program
+    # (which is `__main__`) may have rebound `__main__._done_with_value`, so a
+    # module-global lookup at call time would let a one-line rebind rewrite a
+    # legitimate success into an `exception`. Binding it (with its own def-time
+    # default-captured `_check_done_value`/`_encode_json_plain`) makes the entry
+    # name immune.
+    done_with_value_bound = _done_with_value
     # The fallback primitives are bound into LOCALS here, before the program
     # runs, so `send_done`'s except arm does not read module globals at call
     # time. This bootstrap is `__main__`, so `__main__._os_write = boom` (or
@@ -1068,7 +1076,7 @@ async def _run(channel: ProtocolChannel) -> None:
         # the value frame's peak stands alone against the address space.
         flush_out()
         flush_err()
-        done = _done_with_value(value, max_value_bytes)
+        done = done_with_value_bound(value, max_value_bytes)
     except _BaseException as exc:  # noqa: BLE001 -- report every failure to host; `_BaseException` is a pre-program local, not a rebindable module global
         done = {
             "type": "done",

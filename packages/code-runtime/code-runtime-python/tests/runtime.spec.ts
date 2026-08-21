@@ -3145,6 +3145,29 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.value).toBe('released')
   }, 15_000)
 
+  it('keeps a successful completion when _done_with_value is rebound', async () => {
+    // `_run` calls `_done_with_value(value, max_value_bytes)` after the program
+    // returns. The name is a module global, and this bootstrap IS `__main__`, so
+    // `__main__._done_with_value = boom` as a program statement would otherwise
+    // be resolved at call time and a legitimate success would be rewritten into
+    // an `exception`. `_run` now binds `done_with_value_bound = _done_with_value`
+    // before the program runs, so the entry name is immune; the run must still
+    // report the success value.
+    const { runtime } = await setup({ maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'import __main__',
+        'def boom(*a, **k):',
+        '    raise RuntimeError("hijacked")',
+        '__main__._done_with_value = boom',
+        'return 1',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(1)
+  }, 15_000)
+
   it('round-trips an exactly representable large integer through a binding echo', async () => {
     // The reply serializer must print BigInt digits for a beyond-safe
     // integral double: String(2**60) emits a rounded form, and the child
