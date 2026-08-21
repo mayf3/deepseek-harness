@@ -735,12 +735,6 @@ async def _run(channel: ProtocolChannel) -> None:
     # with no done frame, misreporting the run as a `worker-exit`. A frame local
     # is not reachable by `__main__._X = ...`, so the catch is immune.
     _BaseException = BaseException
-    # `RuntimeError` is likewise bound into a local for the reply pump's catch:
-    # a rebind of `__main__.RuntimeError` would otherwise make the pump's
-    # `except RuntimeError` not match a closed-loop scheduling failure, killing
-    # the pump and stranding every later reply.
-    _RuntimeError = RuntimeError
-
     # 1. Boot handshake.
     boot = channel.read_frame()
     if boot is None or boot.get("type") != "boot":
@@ -1122,12 +1116,6 @@ async def _pump_replies(
     pending: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Future[Any]]],
     pending_lock: "threading.Lock",
 ) -> None:
-    # The exception class the closed-loop catch below resolves is bound into a
-    # LOCAL here. This bootstrap IS `__main__`, so `__main__.RuntimeError = ...`
-    # would otherwise rebind the module global the `except RuntimeError` clause
-    # resolves at runtime, and a closed-loop scheduling failure would then escape
-    # the catch, killing the pump and stranding every later reply.
-    _RuntimeError = RuntimeError
     """Background task: read reply frames and settle pending futures.
 
     Cancelled after ``done`` is posted. Unknown ids and post-settlement replies
@@ -1142,6 +1130,14 @@ async def _pump_replies(
     hang to the wall clock. The ``pop`` shares ``pending_lock`` with ``dispatch``
     so a reply cannot race the claim that registers its id.
     """
+
+    # The exception class the closed-loop catch below resolves is bound into a
+    # LOCAL here, after the docstring, before any model code runs. This bootstrap
+    # IS `__main__`, so `__main__.RuntimeError = ...` would otherwise rebind the
+    # module global the `except RuntimeError` clause resolves at runtime, and a
+    # closed-loop scheduling failure would then escape the catch, killing the
+    # pump and stranding every later reply.
+    _RuntimeError = RuntimeError
 
     def complete(fut: asyncio.Future[Any], ok: bool, value: Any, message: Any) -> None:
         # Runs on the Future's own loop. `done()` re-checked here because
@@ -2235,7 +2231,18 @@ def _join_bounded(lines, max_bytes: int) -> str:
     return "".join(chunks)
 
 
-def _done_with_value(value: Any, max_value_bytes: int) -> dict[str, Any] | str:
+def _done_with_value(
+    value: Any,
+    max_value_bytes: int,
+    # Bound as DEFAULT ARGUMENTS so they are captured at import time, before
+    # model code runs: `_done_with_value` runs AFTER the program (which is
+    # `__main__`) may have rebound `__main__._check_done_value` or
+    # `__main__._encode_json_plain`, and a module-global lookup at call time
+    # would let a one-line rebind rewrite a legitimate success into an
+    # `exception`. Defaults are evaluated at def time, so they are the originals.
+    _check_done_value: Any = _check_done_value,
+    _encode_json_plain: Any = _encode_json_plain,
+) -> dict[str, Any] | str:
     """Build the terminal done frame under the seam's lossless-JSON contract.
 
     A completion value returned by the program (``None`` when it returns
