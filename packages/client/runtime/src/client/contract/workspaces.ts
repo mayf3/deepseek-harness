@@ -26,8 +26,9 @@ export interface IWorkspaces {
    * list state.
    * @param workspaceId - explicit target; omitted inherits the current
    * Session's Workspace before falling back to the recency projection.
+   * @returns the opened session id, or undefined when no Workspace exists or connection fails.
    */
-  startSession(workspaceId?: WorkspaceId): void
+  startSession(workspaceId?: WorkspaceId): Promise<SessionId | undefined>
   /**
    * Register an existing path as a Workspace.
    * @param input - the Host create payload.

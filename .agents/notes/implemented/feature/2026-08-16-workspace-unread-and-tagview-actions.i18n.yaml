@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-16-workspace-unread-and-tagview-actions.md
-2026-08-16-workspace-unread-and-tagview-actions.md: ffa2727740fe870060bd6598a56f68dd37e91fbc
-2026-08-16-workspace-unread-and-tagview-actions.zh.md: a8b135757bec719f9acb96742a81492f517714c5
+2026-08-16-workspace-unread-and-tagview-actions.md: 7203bb8f597237a04867efc8ab76e419a69f2620
+2026-08-16-workspace-unread-and-tagview-actions.zh.md: 49eb36ed4991b8baa00d89df5f7712ede9e0cd90

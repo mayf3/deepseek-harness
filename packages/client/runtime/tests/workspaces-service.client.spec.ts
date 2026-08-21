@@ -417,19 +417,21 @@ describe('WorkspaceRuntime', () => {
     await Promise.all([workspaces.refresh(), sessions.refresh()])
     await Promise.resolve()
     sessions.open(sid('current'))
-    const unresolved = new Promise<SessionId>(() => {})
-    const connect = vi.spyOn(workspaces, 'connectWorkspace').mockReturnValue(unresolved)
+    const open = vi.spyOn(sessions, 'open').mockImplementation(() => {})
+    const connect = vi.spyOn(workspaces, 'connectWorkspace').mockResolvedValueOnce(sid('started'))
 
-    workspaces.startSession(wid('recent-home'))
-    await Promise.resolve()
+    await expect(workspaces.startSession(wid('recent-home'))).resolves.toBe(sid('started'))
     expect(connect).toHaveBeenLastCalledWith(wid('recent-home'))
+    expect(open).toHaveBeenCalledWith(sid('started'))
 
-    workspaces.startSession()
+    const unresolved = new Promise<SessionId>(() => {})
+    connect.mockReturnValue(unresolved)
+    void workspaces.startSession()
     await Promise.resolve()
     expect(connect).toHaveBeenLastCalledWith(wid('current-home'))
 
     sessions.clear()
-    workspaces.startSession()
+    void workspaces.startSession()
     await Promise.resolve()
     expect(connect).toHaveBeenLastCalledWith(wid('recent-home'))
 
@@ -438,7 +440,7 @@ describe('WorkspaceRuntime', () => {
     const emptySessions = new SessionRuntime(emptyCtx, emptyApi, fakeRemote())
     const emptyWorkspaces = new WorkspaceRuntime(emptyCtx, emptyApi, emptySessions)
     const clear = vi.spyOn(emptySessions, 'clear')
-    emptyWorkspaces.startSession()
+    await expect(emptyWorkspaces.startSession()).resolves.toBeUndefined()
     expect(clear).toHaveBeenCalledOnce()
   })
 

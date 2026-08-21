@@ -15,7 +15,7 @@ async function bench() {
     path: 'name' in input ? `/projects/${input.name}` : input.path,
     title: 'new', sessionIds: [], createdAt: '0', updatedAt: '0',
   }))
-  const startSession = vi.fn()
+  const startSession = vi.fn(async () => 'started' as never)
   const rename = vi.fn(async () => ({}))
   const insertSessionBefore = vi.fn(async () => ({}))
   const open = vi.fn()
@@ -84,9 +84,9 @@ describe('ui-workspace apply', () => {
 
     const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
     // Both arms delegate to the runtime's shared New Session action.
-    browser.startSession('ws' as never)
+    await expect(browser.startSession('ws' as never)).resolves.toBe('started')
     expect(b.startSession).toHaveBeenCalledWith('ws')
-    browser.startSession()
+    await expect(browser.startSession()).resolves.toBe('started')
     expect(b.startSession).toHaveBeenLastCalledWith(undefined)
     browser.open('session' as never)
     expect(b.open).toHaveBeenCalledWith('session')

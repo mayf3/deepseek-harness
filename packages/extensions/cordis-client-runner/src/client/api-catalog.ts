@@ -308,9 +308,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the connected session id.',
       },
       {
-        signature: 'startSession(workspaceId?: WorkspaceId): void',
+        signature: 'startSession(workspaceId?: WorkspaceId): Promise<SessionId | undefined>',
         description: 'The New Session flow: connect the explicit, current-Session, or recent Workspace and open the resulting session; failures surface on the session list state.',
         parameters: [{ name: 'workspaceId', description: 'explicit target; omitted inherits the current Session\'s Workspace before falling back to the recency projection.' }],
+        returns: 'the opened session id, or undefined when no Workspace exists or connection fails.',
       },
       {
         signature: 'create(input: { path: string }): Promise<WorkspaceView>',

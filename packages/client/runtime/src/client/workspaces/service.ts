@@ -173,8 +173,9 @@ export class WorkspaceRuntime implements IWorkspaces {
    * Connect failures are non-fatal (console diagnostics; the current view
    * stays usable).
    * @param workspaceId - explicit target Workspace for scoped actions.
+   * @returns the opened session id, or undefined when no Workspace exists or connection fails.
    */
-  startSession(workspaceId?: WorkspaceId): void {
+  startSession(workspaceId?: WorkspaceId): Promise<SessionId | undefined> {
     const workspace = this.list.getSnapshot()
     const current = this.sessions.list.getSnapshot().current
     const currentWorkspaceId = current === undefined
@@ -183,11 +184,17 @@ export class WorkspaceRuntime implements IWorkspaces {
     const target = workspaceId ?? currentWorkspaceId ?? workspace.recentWorkspaceId
     if (target === undefined) {
       this.sessions.clear()
-      return
+      return Promise.resolve(undefined)
     }
-    void this.connectWorkspace(target).then(
-      (sessionId) => { this.sessions.open(sessionId) },
-      (reason: unknown) => { console.warn('new session failed:', reason) },
+    return this.connectWorkspace(target).then(
+      (sessionId) => {
+        this.sessions.open(sessionId)
+        return sessionId
+      },
+      (reason: unknown) => {
+        console.warn('new session failed:', reason)
+        return undefined
+      },
     )
   }
 
