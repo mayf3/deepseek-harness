@@ -30,6 +30,9 @@
     - id: session
       name: '@deepseek-ai/dsh-session'
 
+    - id: session-log-deepseek
+      name: '@deepseek-ai/dsh-session-log-deepseek'
+
     - id: typert
       name: '@deepseek-ai/dsh-typert-registry'
 

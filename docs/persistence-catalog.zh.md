@@ -669,6 +669,24 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/session/session-title-llm/src/index.ts:43`](../packages/session/session-title-llm/src/index.ts)
 
+### `session-log-deepseek/*`
+
+<a id="session-log-deepseekaccepted--log-only"></a>
+
+#### `session-log-deepseek/accepted` — log-only
+
+```ts persistence-catalog
+/** Records a confirmed HTTP acceptance watermark for restart-safe suffix selection. */
+'session-log-deepseek/accepted': {
+  /** Session identity the accepted request carried; inherited fork markers retain the parent's id. */
+  sessionId: import('@deepseek-ai/dsh-session/types').SessionId
+  /** Last canonical event included in the accepted request. */
+  throughSeq: number
+}
+```
+
+来源：[`packages/session/session-log-deepseek/src/types.ts:54`](../packages/session/session-log-deepseek/src/types.ts)
+
 ### `step/*`
 
 <a id="stepend--log-only"></a>
