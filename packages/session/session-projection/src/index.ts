@@ -441,8 +441,9 @@ export class SessionProjectionRegistry extends Service {
       }
       let state = usable ? def.stateSchema.parse(row.val) : def.init()
       const from = usable ? row.seq : baseSeq - 1
-      for (const event of events) {
-        if (event.seq > from) state = def.apply(state, event)
+      const start = from - baseSeq + 1
+      for (let index = start; index < events.length; index++) {
+        state = def.apply(state, events[index]!)
       }
       if (def.wire !== undefined) values[def.key] = def.wire.viewSchema.parse(def.wire.view(state))
       refreshed[def.key] = { ver: def.stateVersion, seq: endSeq, val: state }
