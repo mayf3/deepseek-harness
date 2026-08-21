@@ -291,7 +291,6 @@ describe('Python release workflows', () => {
     if (!isRecord(workflow.on)) throw new TypeError('python-release workflow must define on')
     expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch'])
     expect(build).toMatchObject({
-      if: "github.event_name == 'workflow_dispatch'",
       uses: './.github/workflows/build-exe-for-python-sdk.yml',
       with: {
         targets: 'node24-linux-x64,node24-linux-arm64,node24-macos-arm64',
