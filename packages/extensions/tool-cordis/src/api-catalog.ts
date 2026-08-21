@@ -1089,11 +1089,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the effective preset name, or `custom` when nothing matches.',
       },
       {
-        signature: 'refreshDefaultForReuse(session: Session): void',
-        description: 'Advance one blank session after the host has confirmed it as the exact Web New Session reuse target. Only a still-effective default-origin selection advances; a started session, an explicit pick, legacy origin-less data, or independently changed knobs remain pinned. This is the permission-side half of the Web candidate selection and the host\'s blankness, membership, cwd, and archive verification.',
-        parameters: [{ name: 'session', description: 'the live session selected for Workspace blank reuse.' }],
-      },
-      {
         signature: 'selectFor(state: KnobState): PermissionSelect',
         description: 'Build the whole select value for one folded knob state: every table option in declaration order, `custom` appended exactly while derived.',
         parameters: [{ name: 'state', description: 'the folded knob overrides.' }],

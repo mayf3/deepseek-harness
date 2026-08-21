@@ -1467,9 +1467,8 @@ export interface Config {
    */
   presets?: Record<string, PresetSpec>
   /**
-   * Default for fresh sessions and eligible confirmed blank reuse. When
-   * omitted, the preset matching the composed sandbox and approval defaults
-   * is used.
+   * Default for new sessions. When omitted, the preset matching the composed
+   * sandbox and approval defaults is used.
    */
   defaultPreset?: string
 }
@@ -1489,8 +1488,7 @@ export interface PresetSpec {
 
 依赖：[`ApprovalPolicy`](subsystems/approval.zh.md) · [`SandboxMode`](subsystems/sandbox.zh.md)
 
-来源：[`packages/interaction/permission-presets/src/index.ts:168`](../packages/interaction/permission-presets/src/index.ts)
-
+来源：[`packages/interaction/permission-presets/src/index.ts:156`](../packages/interaction/permission-presets/src/index.ts)
 
 <a id="deepseek-aidsh-persona"></a>
 
