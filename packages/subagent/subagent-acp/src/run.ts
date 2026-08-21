@@ -379,16 +379,22 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
 
   const observeProcessOutcome = async (signal?: AbortSignal): Promise<SubprocessOutcome | undefined> => {
     if (processOutcome !== undefined || child.pid <= 0) return processOutcome
+    const timeout = AbortSignal.timeout(Math.ceil(spec.disposeGraceMs))
+    const bound = signal === undefined ? timeout : AbortSignal.any([signal, timeout])
+    const aborted = Promise.withResolvers<undefined>()
+    const onObservationAbort = (): void => { aborted.resolve(undefined) }
+    bound.addEventListener('abort', onObservationAbort, { once: true })
+    /* v8 ignore next -- closes the event-loop race between listener registration and the preceding derived-signal check. */
+    if (bound.aborted) onObservationAbort()
     try {
-      const timeout = AbortSignal.timeout(Math.ceil(spec.disposeGraceMs))
-      const exited = await child.waitForExit(
-        signal === undefined ? timeout : AbortSignal.any([signal, timeout]),
-      )
-      if (exited) return await processDone
+      return await Promise.race([processDone, aborted.promise])
     } catch {
       // The active protocol failure remains authoritative when exit observation fails.
+      /* v8 ignore next -- a published child.done cannot reject; spawn rejection is consumed before publication. */
+      return processOutcome
+    } finally {
+      bound.removeEventListener('abort', onObservationAbort)
     }
-    return processOutcome
   }
 
   // Startup rollback and the published handle share one process teardown.
