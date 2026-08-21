@@ -71,12 +71,12 @@ beforeEach(async () => {
   vi.stubEnv('DSH_HOME', identityHome)
 })
 
-async function harness(model: string, config: Partial<Config> = {}) {
+async function harness(_model: string, config: Partial<Config> = {}) {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(E2eAttachmentStore)
-  await ctx.plugin(LlmDeepSeek, { models: [{ id: model }], ...config })
+  await ctx.plugin(LlmDeepSeek, config)
   return ctx
 }
 
@@ -114,7 +114,6 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
   it.skipIf(!VISION_E2E_ENABLED)('recognizes a deterministic image with the official vision model', async () => {
     const ctx = await harness(VISION, {
       thinking: 'disabled',
-      models: [{ id: VISION, inputModalities: ['text', 'image'] }],
     })
     const result = await assemble(ctx, {
       model: VISION,
