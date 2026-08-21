@@ -79,7 +79,7 @@ The runtime distribution is wheel-only. The release pipeline publishes three pla
 
 ## Validate a release candidate
 
-Manually run the GitHub `Release (Python)` workflow with `publish=false` to build all four wheels, install the Linux release set on Python 3.10 and 3.14, check exact filenames and metadata, enforce PyPI's default per-file size limit, and retain one aggregate artifact with SHA-256 hashes. The run has no registry credentials; a dry-run run cannot enter either publication job.
+Manually run the GitHub `Release (Python)` workflow with `publish=false` to build all four wheels, install the Linux release set on Python 3.10 and 3.14, check exact filenames and metadata, enforce PyPI's default per-file size limit, and retain one aggregate artifact with SHA-256 hashes. The run has no registry credentials; a dry run cannot enter either publication job.
 
 Public publication runs from the private automation repository; package metadata points to the separate read-only public source mirror, which does not run release Actions. The private repository defines the repository variable `PYPI_PUBLISHER_REPOSITORY` as its own `owner/name` and keeps `PUBLIC_PYPI_RELEASE_ENABLED=false` except during an intentional release.
 

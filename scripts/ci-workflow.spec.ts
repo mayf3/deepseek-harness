@@ -288,7 +288,7 @@ describe('Python release workflows', () => {
     }
 
     expect(dispatch.inputs.publish).toMatchObject({ type: 'boolean', default: false })
-    expect(workflow.on).not.toHaveProperty('pull_request')
+    expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch'])
     expect(build).toMatchObject({
       if: "github.event_name == 'workflow_dispatch'",
       uses: './.github/workflows/build-exe-for-python-sdk.yml',
