@@ -11,7 +11,6 @@ import type { DeepSeekLlmApiJson } from '@deepseek-ai/dsh-deepseek-llm-api-exten
 import { SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { packSessionEvents } from './codec.ts'
 import type { DeepSeekSessionLogExtension } from './types.ts'
-import type {} from './types.ts'
 
 export { packSessionEvents, unpackJsonValue, unpackSessionEvents } from './codec.ts'
 export type * from './types.ts'

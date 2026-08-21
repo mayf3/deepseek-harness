@@ -47,3 +47,4 @@ None; the model-visible request prefix remains unchanged.
 - **Crash-window duplicates** — a 2xx followed by process loss before the acceptance watermark persists causes conservative replay on resume.
 - **No live Session means no field** — direct or stale-session calls have no canonical log to snapshot; explicit absence semantics remain deferred.
 - **No independent request-size cap** — complete delivery is fail-closed; provider rejection leaves the cursor unchanged instead of truncating the log.
+- **Synchronous request-time packing** — the encoder compares suffix strings with request-message strings before dispatch. Large first uploads or retry backlogs can delay the event loop until candidate indexing is implemented.

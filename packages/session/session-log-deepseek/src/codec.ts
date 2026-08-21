@@ -66,10 +66,12 @@ function sliceOf(source: MessageStringSource, start: number, end: number): DeepS
 function packString(value: string, sources: readonly MessageStringSource[]): PackedCandidate {
   const literal: PackedJsonValue = { kind: 'literal', value }
   if (value.length === 0) return { value: literal, references: false }
+  const valueBytes = Buffer.byteLength(value, 'utf8')
 
   let best: PackedJsonValue | undefined
   let bestBytes = wireBytes(literal)
   for (const source of sources) {
+    if (source.bytes < valueBytes) continue
     const start = source.value.indexOf(value)
     if (start < 0) continue
     const slice = sliceOf(source, start, start + value.length)
@@ -87,6 +89,7 @@ function packString(value: string, sources: readonly MessageStringSource[]): Pac
   if (best !== undefined) return { value: best, references: true }
 
   for (const source of sources) {
+    if (source.bytes > valueBytes) continue
     const start = value.indexOf(source.value)
     if (start < 0) continue
     const slice = sliceOf(source, 0, source.value.length)
@@ -199,6 +202,7 @@ export function packSessionEvents(
   events: readonly SessionEvent[],
   messages: readonly DeepSeekLlmApiJson[],
 ): EncodedSessionEvent[] {
+  // TODO: Index message strings if large opt-in suffixes show material request-preparation latency.
   const sources: MessageStringSource[] = []
   messages.forEach((message, messageIndex) => { collectSources(message, messageIndex, [], sources) })
   sources.sort((left, right) => right.bytes - left.bytes)
