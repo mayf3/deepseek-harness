@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决定
 
-内置根是一个派生，不是一个 overlay。`resolveShippedPresetPatch(rows)` 从一份已组合的行集构建 roster 补丁：保留全部已配置的键，并把内置根（`system` 信任）前置到组合的 `roots` 中，因此内置 preset 始终挂载并在 id 冲突时胜出，而配置的根目录保持生效。`composeProfilePatches(layers)` 把该补丁追加到展平后的补丁栈，是启动、用户层热重载与配置 dump 共同经过的唯一构建器——热重载从当前用户层派生而非重放启动快照，dump 也渲染这个派生层（标注为 `dsh launcher (shipped agent-preset root)`），使 roster 行的组合与实际启动完全一致。遥测开关仍是仅启动时的 overlay：它是启动进程的环境事实，不携带 config 快照，压过用户编辑正是其目的。
+内置根是一个派生，不是一个 overlay。`resolveShippedPresetPatch(rows)` 从一份已组合的行集构建 roster 补丁：保留全部已配置的键，并把内置根（`system` 信任）前置到组合的 `roots` 中，因此内置 preset 始终挂载并在 id 冲突时胜出，而配置的根目录保持生效。`composeProfilePatches(layers)` 把该补丁追加到展平后的补丁栈，是启动与用户层热重载共用的构建器——热重载从当前用户层派生而非重放启动快照。配置 dump 共用的是派生本身而非构建器：`renderConfigDump` 需要逐层标注来源，所以 `runDumpConfig` 把 `resolveShippedPresetPatch` 的输出作为独立一层追加（标注为 `dsh launcher (shipped agent-preset root)`），对 roster 行的组合与实际启动完全一致。遥测开关仍是仅启动时的 overlay：它是启动进程的环境事实，不携带 config 快照，压过用户编辑正是其目的。
 
 启动器无法静态改写的 `roots` 值——`!!js` 表达式或任何非数组——现在以指明约束的 `TypeError` 大声失败，而不是被静默替换。插件自身的契约不变：`config.roots` 按序扫描，可写 home 根由 `dsh-agent-presets` 自己追加。
 

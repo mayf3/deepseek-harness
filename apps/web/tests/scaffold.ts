@@ -401,14 +401,15 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     ...basePatches,
     ...surfacePatches,
     ...extraOverlayPatches,
-    // The roster's `roots` is an assembly fact AppCLIEntry resolves and patches
-    // in, exactly like `distIndex` on the webserver row — the shipped preset
-    // directory sits beside the composition that names it, and no config author
-    // chooses it. This lane boots the shipped tree WITHOUT AppCLIEntry, so it
-    // has to supply the same fact or the roster resolves nothing and every
-    // session composes an agent with no tools, no persona, and no token meter.
-    // Only the shipped root: a developer's own `~/.dsh/.agent-presets` must not be
-    // able to change a golden.
+    // The shipped preset root is an assembly fact only the launcher can
+    // resolve: it derives a patch per composition that PREPENDS the root to
+    // whatever `roots` the layers configured. This lane boots the shipped tree
+    // WITHOUT the launcher, so it supplies the same fact — literally rather
+    // than through the derivation, because a golden lane pins its roster — or
+    // the roster resolves nothing and every session composes an agent with no
+    // tools, no persona, and no token meter. Only the shipped root: a
+    // developer's own `~/.dsh/.agent-presets` must not be able to change a
+    // golden.
     {
       id: 'agent-presets',
       config: {

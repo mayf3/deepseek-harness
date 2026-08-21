@@ -1,9 +1,10 @@
 /**
  * Shared profile boot for every `dsh` surface: resolve the profile, stack its
  * patch layers (bundle layers in `dsh.profile.bundles` order, the profile's
- * own `cordis.patch.yml`, `--patch` overlays, the telemetry switch), mount the
- * tree over the profile's empty root config, keep the profile patch layer
- * live, and wire fail-loud plus bounded shutdown.
+ * own `cordis.patch.yml`, `--patch` overlays, the telemetry switch, and the
+ * per-composition derived shipped agent-preset root), mount the tree over the
+ * profile's empty root config, keep the profile patch layer live, and wire
+ * fail-loud plus bounded shutdown.
  *
  * App flags are not the launcher's business: the invocation's inner arguments
  * are provided to the tree through `ctx.cmdlineArgs`, where any injected app
@@ -102,7 +103,7 @@ export function prepareProfile(name: string, userLayer = true): Profile {
   return profile
 }
 
-/** One profile's patch layers (application order) and the row index of its pre-flag composition. */
+/** One profile's patch layers, in application order. */
 interface ComposedProfile {
   profile: Profile
   /** Bundle layers concatenated — the part below the user layers on a live reload. */
@@ -111,11 +112,6 @@ interface ComposedProfile {
   homePatches: PatchOptions[]
   /** Layers above the user layers on a live reload: `--patch` overlays and the telemetry switch. */
   overlays: PatchOptions[]
-  /**
-   * id → row of the composed tree (bundles + user layers + overlays), for the
-   * launcher's own row checks.
-   */
-  rows: ReadonlyMap<string, EntryOptions>
 }
 
 /** The full patch stack of one composed profile, in application order. */
@@ -199,7 +195,7 @@ export function composeProfilePatches(layers: readonly PatchOptions[][]): PatchO
  * then the telemetry switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
- * @returns the profile, its patch layers, and the composed row index.
+ * @returns the profile and its patch layers.
  */
 function composeProfile(
   name: string,
@@ -216,7 +212,7 @@ function composeProfile(
   const composedOverlays = [...overlays]
   const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED, rows.has(TELEMETRY_ROW_ID))
   if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
-  return { profile, bundlePatches, homePatches, overlays: composedOverlays, rows }
+  return { profile, bundlePatches, homePatches, overlays: composedOverlays }
 }
 
 /** Options for {@link runProfile}. */
