@@ -7,7 +7,7 @@ JSON backend for the [storage hub](../storage/README.md), registered as backend 
 - **`single` (default)** — one human-readable `<unit>.json` file per unit under a configured root.
 - **`per-record`** — one version-stamped document per record at `<root>/<unit>/<table>/<key>.json` (plus `global.json`), so one write replaces one record instead of the whole unit; the unit is stateless (the directory is the state; `loadAll` re-reads the tree). Record keys must be path-safe (`[a-zA-Z0-9_-]+`); an unsafe key rejects.
 
-Design: [domain KV storage Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.zh.md).
+Design: [domain KV storage Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md).
 
 ## Model
 

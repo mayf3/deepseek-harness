@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-[存储中心](../storage/README.md)的 JSON 后端，注册为后端 `json`，提供两种单元布局：
+[存储中心](../storage/README.zh.md)的 JSON 后端，注册为后端 `json`，提供两种单元布局：
 
 - **`single`（默认）**——配置根目录下每个单元使用一个人类可读的 `<unit>.json` 文件。
 - **`per-record`**——每个记录一个带版本戳的文档，位于 `<root>/<unit>/<table>/<key>.json`（外加 `global.json`），一次写入只替换一条记录而不是整个单元；该单元无状态（目录即状态，`loadAll` 重扫目录树）。记录键必须路径安全（`[a-zA-Z0-9_-]+`）；不安全键会被拒绝。
