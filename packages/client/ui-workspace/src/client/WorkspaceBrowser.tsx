@@ -195,33 +195,6 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
   )
 }
 
-/** Pending group-inheritance holder shared by the two tree bodies. */
-interface InheritGroupHolder {
-  current: { workspaceId: WorkspaceId; group: string } | null
-}
-
-/**
- * Record a pending group inheritance for a "new session in this workspace"
- * row action. The entry applies only to the workspace's freshly created
- * blank session; a 5s timeout prevents stale inheritance.
- * @param holder - the component's pending ref.
- * @param timer - the component's timeout ref (cleared on re-arm).
- * @param workspaceId - target workspace of the new session.
- * @param group - source row group to inherit.
- */
-function scheduleGroupInheritance(
-  holder: InheritGroupHolder,
-  timer: { current: number | null },
-  workspaceId: WorkspaceId,
-  group: string | undefined,
-): void {
-  holder.current = group === undefined ? null : { workspaceId, group }
-  if (timer.current !== null) window.clearTimeout(timer.current)
-  if (holder.current !== null) {
-    timer.current = window.setTimeout(() => { holder.current = null }, 5000)
-  }
-}
-
 interface DragState {
   /** Workspace id, or {@link UNGROUPED_KEY} for the browser-local loose-session account. */
   accountKey: string
@@ -306,7 +279,7 @@ type SessionTreeProps = Pick<
   /** Open the group editor for a session (row menu action). */
   onEditGroup: (sessionId: SessionNode['id'], currentGroup: string | undefined) => void
   /** Start a new session in a row's Workspace (row menu action). */
-  startSession: (workspaceId: WorkspaceId) => void
+  startSession: (workspaceId: WorkspaceId) => Promise<SessionId | undefined>
   /** Browser-local organization metadata (group + waiting-on parent). */
   sessionMeta: Readonly<Record<string, SessionMeta>>
   /** Explicitly created groups; empty sections stay visible. */
@@ -329,6 +302,17 @@ type SessionTreeProps = Pick<
   batchSelection?: BatchSelection | undefined
 }
 
+function startSessionInGroup(
+  startSession: SessionTreeProps['startSession'],
+  setSessionGroup: SessionTreeProps['setSessionGroup'],
+  workspaceId: WorkspaceId,
+  group: string | undefined,
+): void {
+  void startSession(workspaceId).then((sessionId) => {
+    if (sessionId !== undefined) setSessionGroup(sessionId, group)
+  })
+}
+
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
   useSessions, startSession, open, forkSession, workspaces, archivedSessionIds,
@@ -348,34 +332,6 @@ function SessionTree({
   const toggleUnread = (id: SessionNode['id']) => {
     setSessionUnread(id, !(sessionMeta[id]?.unread === true))
   }
-  // Group inheritance: the "new session in this workspace" row action tags the
-  // freshly created (blank) session with the source row's group once it
-  // becomes current (startSession opens without returning the new id).
-  const inheritGroupRef = useRef<InheritGroupHolder['current']>(null)
-  const inheritGroupTimer = useRef<number | null>(null)
-  const inheritGroup = (workspaceId: WorkspaceId, group: string | undefined) => {
-    scheduleGroupInheritance(inheritGroupRef, inheritGroupTimer, workspaceId, group)
-  }
-  useEffect(() => {
-    const pending = inheritGroupRef.current
-    if (pending === null) return
-    const current = list.current
-    if (current === undefined) return
-    const inWorkspace = workspaces.some(w => w.workspaceId === pending.workspaceId && w.sessionIds.includes(current))
-    if (!inWorkspace) return
-    const row = list.byId[current]
-    if (row === undefined) return
-    // Only the freshly created blank session inherits. Matching any session
-    // in the workspace would clobber the group of a task the user opens
-    // before the blank lands; a real task becoming current first drops the
-    // pending instead.
-    if (!row.blank) {
-      inheritGroupRef.current = null
-      return
-    }
-    inheritGroupRef.current = null
-    setSessionGroup(current, pending.group)
-  }, [list, workspaces, setSessionGroup])
   const [expandedSessionGroups, setExpandedSessionGroups] = useState<string[]>([])
   // Transient drag marker state; the selected mode owns the resulting order.
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -649,7 +605,7 @@ function SessionTree({
                 onCreate={() => {
                   if (group.workspaceId !== undefined) {
                     setGroupExpanded(group.key, true)
-                    startSession(group.workspaceId)
+                    void startSession(group.workspaceId)
                   }
                 }}
                 drag={batchSelection === undefined ? workspaceDragProps : undefined}
@@ -723,8 +679,7 @@ function SessionTree({
                         // property, so tsc drops the ternary narrowing inside
                         // the arrow; the checked value is captured first.
                         const workspaceId = node.workspaceId as WorkspaceId
-                        inheritGroup(workspaceId, node.group)
-                        startSession(workspaceId)
+                        startSessionInGroup(startSession, setSessionGroup, workspaceId, node.group)
                       }}
                     onToggleUnread={() => { toggleUnread(node.id) }}
                     selection={batchSelection === undefined || node.blank
@@ -800,34 +755,6 @@ function FlatList({
   const toggleUnread = (id: SessionNode['id']) => {
     setSessionUnread(id, !(sessionMeta[id]?.unread === true))
   }
-  // Group inheritance (same contract as SessionTree): the "new session in this
-  // workspace" row action tags the freshly created session with the source
-  // row's tags once it becomes current.
-  const inheritGroupRef = useRef<InheritGroupHolder['current']>(null)
-  const inheritGroupTimer = useRef<number | null>(null)
-  const inheritGroup = (workspaceId: WorkspaceId, group: string | undefined) => {
-    scheduleGroupInheritance(inheritGroupRef, inheritGroupTimer, workspaceId, group)
-  }
-  useEffect(() => {
-    const pending = inheritGroupRef.current
-    if (pending === null) return
-    const current = list.current
-    if (current === undefined) return
-    const inWorkspace = workspaces.some(w => w.workspaceId === pending.workspaceId && w.sessionIds.includes(current))
-    if (!inWorkspace) return
-    const row = list.byId[current]
-    if (row === undefined) return
-    // Only the freshly created blank session inherits. Matching any session
-    // in the workspace would clobber the group of a task the user opens
-    // before the blank lands; a real task becoming current first drops the
-    // pending instead.
-    if (!row.blank) {
-      inheritGroupRef.current = null
-      return
-    }
-    inheritGroupRef.current = null
-    setSessionGroup(current, pending.group)
-  }, [list, workspaces, setSessionGroup])
   const baseRows = useMemo(
     () => deriveFlat(list, workspaces, archivedSessionIds, sessionMeta, unreadOnly),
     [list, workspaces, archivedSessionIds, sessionMeta, unreadOnly],
@@ -933,8 +860,7 @@ function FlatList({
                 : () => {
                   // Closure narrowing guard (same as SessionTree).
                   const workspaceId = node.workspaceId as WorkspaceId
-                  inheritGroup(workspaceId, node.group)
-                  startSession(workspaceId)
+                  startSessionInGroup(startSession, setSessionGroup, workspaceId, node.group)
                 }}
               onToggleUnread={() => { toggleUnread(node.id) }}
               selection={batchSelection === undefined || node.blank
@@ -1588,7 +1514,7 @@ export function WorkspaceBrowser({
           side="right"
           onPick={(workspaceId) => {
             setWsPickerOpen(false)
-            startSession(workspaceId)
+            void startSession(workspaceId)
           }}
           onClose={() => { setWsPickerOpen(false) }}
         />

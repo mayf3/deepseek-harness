@@ -20,7 +20,7 @@ The workspace browser has three related gaps. Tag view cannot create a session i
 
 **Tags support whole-tag deletion and autocomplete.** `removeTag(tag)` removes the tag from all session metadata, `knownTags`, and the corresponding `tag:<name>` expansion key. Tag headings expose a destructive “Delete tag” context-menu action. Session-tag editing and new-tag dialogs share a datalist built from `knownTags` and session metadata, deduplicated and sorted.
 
-**A row-created session inherits the source row's tags.** `startSession` does not return the new session id, so `SessionTree` and `FlatList` retain `{ workspaceId, tags }` before the call. An effect applies those tags once the blank session in that workspace becomes current, then clears the pending record; a session from another workspace is never tagged.
+**A row-created session inherits the source row's group.** `startSession` resolves with the exact blank session it opened. `SessionTree` and `FlatList` assign that id to the source row's group, independent of current-session notification timing or later navigation.
 
 **Unread filtering and deep-link scrolling are persistent view behavior.** `unreadOnly` is stored with the view state. Workspace, tag, and flat derivations remove read rows and hide empty groups while the filter is active. Session rows expose `data-session-id`; a current-session change polls for that row and calls `scrollIntoView({ block: 'nearest' })`. Tag view expands the current session's tag groups before scrolling.
 
@@ -36,7 +36,7 @@ The workspace browser has three related gaps. Tag view cannot create a session i
 
 ## Consequences
 
-The three workspace views share session creation and unread behavior, tag expansion persists across refreshes and workspace changes, and deep links reveal the selected row. These preferences remain local to the browser profile. Creating a tagged session relies on observing the newly current blank session because the creation API does not return its id.
+The three workspace views share session creation and unread behavior, group expansion persists across refreshes and workspace changes, and deep links reveal the selected row. These preferences remain local to the browser profile. Row-created sessions enter the selected group even when the reused blank session was already current or navigation changes before creation settles.
 
 ## Related
 

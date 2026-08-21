@@ -105,8 +105,10 @@ export type WorkspaceBrowserInjected = {
    * Start a New Session in a Workspace: reuse-or-create its blank session and
    * open it; without an explicit workspace, inherit the current Session
    * Workspace, then the recent Workspace, or clear into the New Session view.
+   * Resolves with the opened session id, or undefined when no Workspace exists
+   * or connection fails.
    */
-  startSession: (workspaceId?: WorkspaceId) => void
+  startSession: (workspaceId?: WorkspaceId) => Promise<SessionId | undefined>
   /** Open a real Session. */
   open: (sessionId: SessionId) => void
   /**

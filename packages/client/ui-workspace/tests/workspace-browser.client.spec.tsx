@@ -67,7 +67,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     useWorkspaces: hook(workspaceState([])),
     useStore: bindSnapshotSelector(store),
     actions: store.actions,
-    startSession: vi.fn(),
+    startSession: vi.fn(async () => undefined),
     open: vi.fn(),
     searchSessions: vi.fn(async () => ({ items: [], hasMore: false })),
     searchResultLimit: 20,
@@ -316,56 +316,44 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().groupExpansion).not.toHaveProperty('group:前端')
   })
 
-  it('tags a new session with the source row tags when created via the row menu', async () => {
+  it('assigns the session returned by the row action to the source group', async () => {
     const sessions = sessionState([summary('one', 3), { ...summary('blank', 1), blank: true }])
+    const startSession = vi.fn(async () => sid('blank'))
     const b = mount({
       useSessions: hook(sessions),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'blank'])])),
+      startSession,
     })
     act(() => { b.store.actions.setSessionGroup('one', '前端') })
     fireEvent.click(screen.getByText('alpha'))
     const row = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
     fireEvent.contextMenu(row)
     fireEvent.click(screen.getByRole('menuitem', { name: '在此工作区新建会话' }))
-    // Simulate startSession: the workspace's blank session becomes current.
-    const next = sessionState(
-      [summary('one', 3), { ...summary('blank', 1), blank: true }],
-      { current: sid('blank') },
-    )
-    rerender(b, { useSessions: hook(next) })
     await waitFor(() => {
       expect(b.store.getSnapshot().sessionMeta.blank?.group).toBe('前端')
     })
+    expect(startSession).toHaveBeenCalledWith(wid('alpha'))
   })
 
-  it('does not clobber a task opened later while tag inheritance is pending', async () => {
-    const sessions = sessionState([
-      summary('one', 3), summary('two', 2), { ...summary('blank', 1), blank: true },
-    ])
+  it('assigns the returned session even when another task opens first', async () => {
+    let resolveStart: ((sessionId: SessionId) => void) | undefined
+    const startSession = vi.fn(() => new Promise<SessionId>((resolve) => { resolveStart = resolve }))
+    const items = [summary('one', 3), summary('two', 2), { ...summary('blank', 1), blank: true }]
+    const sessions = sessionState(items)
     const b = mount({
       useSessions: hook(sessions),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'blank'])])),
+      startSession,
     })
     act(() => { b.store.actions.setSessionGroup('one', '前端') })
     fireEvent.click(screen.getByText('alpha'))
     const row = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
     fireEvent.contextMenu(row)
     fireEvent.click(screen.getByRole('menuitem', { name: '在此工作区新建会话' }))
-    // A real task of the same workspace becomes current before the blank
-    // lands: the pending inheritance must be dropped, not applied to it.
-    const next = sessionState(
-      [summary('one', 3), summary('two', 2), { ...summary('blank', 1), blank: true }],
-      { current: sid('two') },
-    )
-    rerender(b, { useSessions: hook(next) })
+    rerender(b, { useSessions: hook(sessionState(items, { current: sid('two') })) })
+    await act(async () => { resolveStart?.(sid('blank')) })
     expect(b.store.getSnapshot().sessionMeta.two?.group).toBeUndefined()
-    // And the blank no longer inherits either (pending was cleared).
-    const afterBlank = sessionState(
-      [summary('one', 3), summary('two', 2), { ...summary('blank', 1), blank: true }],
-      { current: sid('blank') },
-    )
-    rerender(b, { useSessions: hook(afterBlank) })
-    expect(b.store.getSnapshot().sessionMeta.blank?.group).toBeUndefined()
+    expect(b.store.getSnapshot().sessionMeta.blank?.group).toBe('前端')
   })
 
   it('filters the tree to unread sessions via the header toggle', async () => {
