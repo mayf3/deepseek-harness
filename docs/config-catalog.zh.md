@@ -15,7 +15,7 @@
 
 ## `@deepseek-ai/dsh-acp`
 
-需要：`agents`
+需要：`agents` · `sessionProjections`
 
 ```ts config-catalog
 /** Plugin config: the provider/model selection used for each ACP-created agent. */
@@ -644,7 +644,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/goal/goal/src/index.ts:116`](../packages/goal/goal/src/index.ts)
+来源：[`packages/goal/goal/src/index.ts:121`](../packages/goal/goal/src/index.ts)
 
 <a id="deepseek-aidsh-headless"></a>
 
@@ -2342,7 +2342,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-team`
 
-需要：`agents` · `sessions` · `sessionPersistence` · `subagents`
+需要：`agents` · `sessions` · `sessionPersistence` · `sessionProjections` · `subagents`
 
 ```ts config-catalog
 /** Team-service deployment limits. */
