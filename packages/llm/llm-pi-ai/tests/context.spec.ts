@@ -6,7 +6,7 @@ import type {
   ImageRequestPolicy,
   RequestImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import { CallId, createMessage, createUserMessage, OFFLOADED_IMAGE_TEXT } from '@deepseek-ai/dsh-llm'
+import { CallId, createMessage, createUserMessage, offloadedImageText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import { toPiContext } from '../src/context.ts'
 import { toPiAssistant } from '../src/replay.ts'
@@ -43,7 +43,7 @@ function projectionStore(
     Promise.resolve(requestImage(value, Uint8Array.of(1)))
   )),
 ): AttachmentStore {
-  return { readImageRequest } as unknown as AttachmentStore
+  return { readImageRequest, imageAccess: () => undefined } as unknown as AttachmentStore
 }
 
 const attachments = projectionStore()
@@ -174,6 +174,26 @@ describe('pi-ai request context conversion', () => {
     ])
   })
 
+  it('uses the shared normalized-path description for retained images', async () => {
+    const named = { ...ref, name: 'chart.png', width: 2048, height: 1024 }
+    const store = projectionStore(value => Promise.resolve({
+      ...requestImage(value, Uint8Array.of(1)),
+      width: 1130,
+      height: 565,
+      access: { readonlyPath: '/tmp/dsh/objects/aa/object' },
+    }))
+    const context = await toPiContext(request([user([{ type: 'image', attachment: named }])]), store)
+    expect(context.messages[0]).toMatchObject({
+      role: 'user',
+      content: [
+        { type: 'text', text: expect.stringContaining('Image "chart.png"') as string },
+        { type: 'image' },
+      ],
+    })
+    expect(JSON.stringify(context.messages[0])).toContain('/tmp/dsh/objects/aa/object')
+    expect(JSON.stringify(context.messages[0])).toContain('request preview 1130x565px')
+  })
+
   it('recursively converts nested tool-result text and images', async () => {
     const callId = CallId('nested-call')
     const context = await toPiContext(request([user([{
@@ -252,7 +272,7 @@ describe('pi-ai request context conversion', () => {
         role: 'toolResult',
         toolCallId: 'shot-call',
         toolName: 'unknown',
-        content: [{ type: 'text', text: OFFLOADED_IMAGE_TEXT }],
+        content: [{ type: 'text', text: offloadedImageText(sized) }],
         isError: false,
         timestamp: 0,
       },
@@ -293,13 +313,33 @@ describe('pi-ai request context conversion', () => {
     expect(context.messages[0]).toMatchObject({
       role: 'user',
       content: [
-        { type: 'text', text: OFFLOADED_IMAGE_TEXT },
+        { type: 'text', text: offloadedImageText(old) },
         { type: 'text', text: expect.stringContaining(String(recent.attachmentId)) as string },
         { type: 'image' },
       ],
     })
     expect(readImageRequest).toHaveBeenCalledTimes(1)
     expect(readImageRequest.mock.calls[0]?.[0]).toEqual(recent)
+  })
+
+  it('uses the generated request access when exact encoded bytes require offload', async () => {
+    const sized: ImageAttachmentRef = { ...ref, bytes: 3 }
+    const access = { readonlyPath: '/tmp/dsh-normalized-image' }
+    const readImageRequest = vi.fn((value: ImageAttachmentRef) => Promise.resolve({
+      ...requestImage(value, Uint8Array.of(1, 2, 3, 4)),
+      access,
+    }))
+
+    const context = await toPiContext(request([
+      user([{ type: 'image', attachment: sized }]),
+    ]), projectionStore(readImageRequest), undefined, 4)
+
+    expect(context.messages).toEqual([{
+      role: 'user',
+      content: offloadedImageText(sized, access),
+      timestamp: 0,
+    }])
+    expect(readImageRequest).toHaveBeenCalledTimes(1)
   })
 
   it('keeps every image at exactly the payload bound and drops all of them when even the newest cannot fit', async () => {
@@ -330,7 +370,7 @@ describe('pi-ai request context conversion', () => {
     ]), store, undefined, 8)
     // All-text content collapses to the string form; the placeholder still reaches the model.
     expect(oversized.messages).toEqual([
-      { role: 'user', content: OFFLOADED_IMAGE_TEXT, timestamp: 0 },
+      { role: 'user', content: offloadedImageText({ ...ref, bytes: 300 }), timestamp: 0 },
     ])
     expect(readImageRequest).not.toHaveBeenCalled()
   })
@@ -351,7 +391,7 @@ describe('pi-ai request context conversion', () => {
     const expected = [{
       role: 'user',
       content: [
-        { type: 'text', text: OFFLOADED_IMAGE_TEXT },
+        { type: 'text', text: offloadedImageText(sized) },
         { type: 'text', text: expect.stringContaining(`Image ${sized.attachmentId}`) as string },
         { type: 'image', data: 'AQID', mimeType: 'image/png' },
       ],

@@ -6,7 +6,7 @@
  * @module dsh-llm-deepseek/serialize
  */
 
-import { contentHasImage, LlmError, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
+import { contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type {
@@ -125,12 +125,13 @@ function assertSupportedImageRoles(messages: readonly Message[]): void {
 
 /** Describe the exact request preview and its model-callable coordinate system. */
 function imageHandle(
+  ref: ImageAttachmentRef,
   version: RequestImageAttachment,
   precededByContent: boolean,
 ): WireTextContentPart {
   return {
     type: 'text',
-    text: `${precededByContent ? '\n' : ''}${requestImageHandleText(version)}`,
+    text: `${precededByContent ? '\n' : ''}${requestImageHandleText(ref, version)}`,
   }
 }
 
@@ -154,7 +155,7 @@ async function imageParts(
       type: 'image_url',
       image_url: { url: `data:${version.mediaType};base64,${Buffer.from(version.data).toString('base64')}` },
     }
-  return [imageHandle(version, precededByContent), image]
+  return [imageHandle(block.attachment, version, precededByContent), image]
 }
 
 /** Convert user or nested tool-result blocks into ordered wire parts. */
@@ -415,6 +416,10 @@ export async function serializeRequestWithImages(
     ...images.maxImagesPerRequest === undefined ? {} : { maxImages: images.maxImagesPerRequest },
     ...images.byteQuantum === undefined ? {} : { byteQuantum: images.byteQuantum },
     ...images.countQuantum === undefined ? {} : { countQuantum: images.countQuantum },
+    placeholder: (ref) => {
+      const version = images.requestImages.get(ref.attachmentId)
+      return offloadedImageText(ref, version?.access)
+    },
   })
   const messages: WireMessage[] = []
   if (options.system !== undefined) {

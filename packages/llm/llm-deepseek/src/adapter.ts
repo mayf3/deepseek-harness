@@ -8,7 +8,7 @@
  * @module dsh-llm-deepseek/adapter
  */
 
-import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -58,12 +58,10 @@ export interface DeepSeekCatalogModel {
   maxTokens?: number
   /** Accepted request modalities; omission is text-only. */
   inputModalities?: ModelModality[]
-  /** Total-pixel budget for one deterministic request preview. */
-  imagePixelBudget?: number
+  /** Total-pixel budget for one deterministic request preview, or the 512-by-512 `low` preset. */
+  imagePixelBudget?: number | 'low'
   /** Encoded-byte cap for one deterministic request preview. */
   imageMaxBytes?: number
-  /** Provider detail tier; `low` uses the 512-by-512 total-pixel default. */
-  imageDetail?: 'auto' | 'low'
 }
 
 /**
@@ -206,10 +204,9 @@ function collectImageRefs(
  * @internal
  */
 export function resolveRequestImagePolicy(model: DeepSeekCatalogModel): ImageRequestPolicy {
-  let maxPixels: number
-  if (model.imagePixelBudget !== undefined) maxPixels = model.imagePixelBudget
-  else if (model.imageDetail === 'low') maxPixels = DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET
-  else maxPixels = DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET
+  const maxPixels = model.imagePixelBudget === 'low'
+    ? DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET
+    : model.imagePixelBudget ?? DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET
   return {
     maxPixels,
     maxBytes: model.imageMaxBytes === undefined
@@ -548,6 +545,7 @@ export class DeepSeekAdapter extends LlmAdapter {
       byteQuantum: connection.imageOffloadByteQuantum,
       countQuantum: connection.imageOffloadCountQuantum,
       byteLength: ref => Math.min(ref.bytes, policy.maxBytes),
+      placeholder: ref => offloadedImageText(ref, attachments?.imageAccess(ref)),
     })
     const requestOptions = requestMessages === options.messages ? options : { ...options, messages: [...requestMessages] }
     const requestImages = attachments === undefined || model === undefined

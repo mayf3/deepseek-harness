@@ -5,6 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type {
+  ImageAttachmentAccess,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
@@ -15,7 +16,7 @@ import type {
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { NormalizationPolicy } from './normalization.ts'
 import { CompressionLimiter } from './compression-limiter.ts'
-import { commitPreparedImageFile, prepareImageFile, readImageFile, validateImageFile } from './store.ts'
+import { commitPreparedImageFile, normalizedImagePath, prepareImageFile, readImageFile, validateImageFile } from './store.ts'
 import { readRequestImageFile, requestImageVariantId } from './request-image.ts'
 
 export { canPassThroughNormalization, normalizeImage } from './normalization.ts'
@@ -207,6 +208,10 @@ export class LocalAttachmentStore extends AttachmentStore {
     return readImageFile(this.root, ref, signal)
   }
 
+  override imageAccess(ref: ImageAttachmentRef): ImageAttachmentAccess {
+    return { readonlyPath: normalizedImagePath(this.root, ref) }
+  }
+
   override async readImageRequest(
     ref: ImageAttachmentRef,
     policy: ImageRequestPolicy,
@@ -230,12 +235,15 @@ export class LocalAttachmentStore extends AttachmentStore {
       operation = undefined
     }
     if (operation === undefined) {
-      const shared = new SharedRequest<RequestImageAttachment>(sharedSignal => this.compression.run(async () => readRequestImageFile(
-        this.root,
-        stored ?? await this.readImage(ref, sharedSignal),
-        policy,
-        sharedSignal,
-      )))
+      const shared = new SharedRequest<RequestImageAttachment>(sharedSignal => this.compression.run(async () => ({
+        ...await readRequestImageFile(
+          this.root,
+          stored ?? await this.readImage(ref, sharedSignal),
+          policy,
+          sharedSignal,
+        ),
+        access: this.imageAccess(ref),
+      })))
       operation = shared
       this.requestInflight.set(key, shared)
       void shared.promise.finally(() => {

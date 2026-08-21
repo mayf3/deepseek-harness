@@ -933,6 +933,11 @@
     },
     {
       "doc": "docs/subsystems/attachment.md",
+      "symbol": "ImageAttachmentAccess",
+      "source": "packages/attachment/attachment/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/attachment.md",
       "symbol": "ImageRequestPolicy",
       "source": "packages/attachment/attachment/src/types.ts"
     },

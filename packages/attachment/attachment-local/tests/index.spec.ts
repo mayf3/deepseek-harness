@@ -1,6 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -37,6 +38,21 @@ describe('local attachment service', () => {
       maxBytes: DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
     })
     expect(service.imageCompressionConcurrency).toBe(DEFAULT_IMAGE_COMPRESSION_CONCURRENCY)
+    const ref = {
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'image/png' as const,
+      bytes: 1,
+      width: 1,
+      height: 1,
+    }
+    expect(service.imageAccess(ref).readonlyPath).toBe(join(
+      service.root,
+      'objects',
+      'aa',
+      'a'.repeat(64),
+    ))
+    expect(() => service.imageAccess({ ...ref, attachmentId: AttachmentId('invalid') }))
+      .toThrow(expect.objectContaining({ code: 'INVALID_ATTACHMENT_REF' }))
   })
 
   it('resolves and validates the instance image-compression concurrency', () => {
@@ -57,6 +73,18 @@ describe('local attachment service', () => {
       ))
       const ref = await service.saveImage({ data, mediaType: 'image/png' })
       await expect(service.readImage(ref)).resolves.toEqual({ ref, data })
+      const access = service.imageAccess(ref)
+      expect(access.readonlyPath).toBe(join(
+        dshHome,
+        'attachments',
+        'v1',
+        'objects',
+        String(ref.attachmentId).slice('sha256:'.length, 'sha256:'.length + 2),
+        String(ref.attachmentId).slice('sha256:'.length),
+      ))
+      await expect(readFile(access.readonlyPath)).resolves.toEqual(Buffer.from(data))
+      const request = await service.readImageRequest(ref, { maxPixels: 1, maxBytes: 1024 })
+      expect(request.access).toEqual(access)
     } finally {
       await rm(dshHome, { recursive: true, force: true })
     }

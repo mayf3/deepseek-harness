@@ -67,6 +67,12 @@ export interface StoredImageAttachment {
   data: Uint8Array
 }
 
+/** Provider-resolved ways for model tools to access one normalized attachment. */
+export interface ImageAttachmentAccess {
+  /** Absolute path to immutable normalized bytes; callers must treat it as read-only. */
+  readonlyPath: string
+}
+
 /** Deterministic request-image policy selected by one exact model route. */
 export interface ImageRequestPolicy {
   /** Maximum width multiplied by height after aspect-preserving projection. */
@@ -81,6 +87,8 @@ export interface RequestImageAttachment {
   variantId: ImageVariantId
   /** Durable normalized attachment from which this request version was derived. */
   attachment: ImageAttachmentRef
+  /** Transient provider access facts; never persisted in the durable reference. */
+  access?: ImageAttachmentAccess
   /** Encoded request bytes. */
   data: Uint8Array
   mediaType: ImageMediaType

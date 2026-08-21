@@ -4,7 +4,7 @@
  * @module dsh-llm-pi-ai/context
  */
 
-import { CallId, contentHasImage, LlmError, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
+import { CallId, contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type {
   AttachmentId,
@@ -57,7 +57,7 @@ async function userContent(
         break
       case 'image': {
         const version = requestImages.get(block.attachment.attachmentId) as RequestImageAttachment
-        content.push({ type: 'text', text: requestImageHandleText(version) })
+        content.push({ type: 'text', text: requestImageHandleText(block.attachment, version) })
         content.push({
           type: 'image',
           data: Buffer.from(version.data).toString('base64'),
@@ -231,6 +231,7 @@ async function toPiContextWithImages(
     ...maxRequestImageBytes === undefined ? {} : { maxBytes: maxRequestImageBytes },
     byteQuantum: 1,
     byteLength: ref => Math.min(ref.bytes, requestImagePolicy.maxBytes),
+    placeholder: ref => offloadedImageText(ref, attachments.imageAccess(ref)),
   })
   const requestImages = await prepareRequestImages(requestMessages, attachments, requestImagePolicy, options.signal)
   const exactMessages = offloadRequestImagesWithPolicy(requestMessages, {
@@ -238,6 +239,7 @@ async function toPiContextWithImages(
     ...maxRequestImageBytes === undefined ? {} : { maxBytes: maxRequestImageBytes },
     byteQuantum: 1,
     byteLength: ref => (requestImages.get(ref.attachmentId) as RequestImageAttachment).bytes,
+    placeholder: ref => offloadedImageText(ref, requestImages.get(ref.attachmentId)?.access),
   })
   const toolNames = new Map<CallId, string>()
   const messages: PiMessage[] = []

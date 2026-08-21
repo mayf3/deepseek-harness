@@ -4,6 +4,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { AttachmentError } from './error.ts'
 import type {
   ImageAttachmentLimits,
+  ImageAttachmentAccess,
   ImageAttachmentRef,
   ImageRequestPolicy,
   RequestImageAttachment,
@@ -18,6 +19,7 @@ export { admitEncodedImages } from './admission.ts'
 export type {
   AttachmentId as AttachmentIdType,
   EncodedImageAttachment,
+  ImageAttachmentAccess,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
@@ -106,6 +108,16 @@ export abstract class AttachmentStore extends Service {
    * @throws the signal reason when aborted, or a storage error when verification fails.
    */
   abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
+
+  /**
+   * Resolve provider-specific model-tool access without adding host facts to session history.
+   * @param ref - durable normalized attachment reference.
+   * @returns current-provider access facts, or undefined when this backend exposes no local path.
+   */
+  imageAccess(ref: ImageAttachmentRef): ImageAttachmentAccess | undefined {
+    void ref
+    return undefined
+  }
 
   /**
    * Generate or read one deterministic model-request version from the stored normalized image.

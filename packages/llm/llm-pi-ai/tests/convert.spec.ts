@@ -63,7 +63,7 @@ function attachmentStore(readImageRequest: (
   policy: ImageRequestPolicy,
   signal?: AbortSignal,
 ) => Promise<RequestImageAttachment>): AttachmentStore {
-  return { readImageRequest } as unknown as AttachmentStore
+  return { readImageRequest, imageAccess: () => undefined } as unknown as AttachmentStore
 }
 
 describe('toPiContext', () => {
