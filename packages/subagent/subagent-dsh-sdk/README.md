@@ -102,7 +102,7 @@ Independent of the parent request cache. Each SDK child can reuse only prefixes 
 
 #### What the model sees
 
-Through `dsh-tool-subagent`, the parent receives only the child's final assistant text (or accumulated partial text) or that consumer's exact stop-reason error, not intermediate messages or tool traffic. A non-completed result presents the safe diagnostic before separately preserved partial assistant output; startup and shutdown errors expose the same fixed facts without raw SDK text.
+Through `dsh-tool-subagent`, the parent receives only the child's final assistant text (or accumulated partial text) or that consumer's exact stop-reason error, not intermediate messages or tool traffic. A diagnostic-bearing non-completed result presents the safe diagnostic before separately preserved partial assistant output; startup and shutdown errors expose the same fixed facts without raw SDK text.
 
 #### Token effect
 

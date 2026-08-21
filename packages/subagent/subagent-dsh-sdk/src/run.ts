@@ -274,6 +274,8 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
     } catch (cleanupError: unknown) {
       reportFailure(spec, cleanupError)
       const cleanupFailure = new SdkRunFailure({ stage: 'shutdown', category: 'unknown' }, cleanupError)
+      // Preserve failed cleanup as a failed Job; settleStart treats only an
+      // aborted non-AggregateError rejection as a cleanly killed startup.
       throw new AggregateError([cleanupFailure], cleanupFailure.message)
     }
     throw new Error('subagent request was aborted before the SDK child started')

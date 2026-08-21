@@ -102,7 +102,7 @@ Provider 不宣告任何启动期能力（`outputSchema`/`depthLimit`/`toolFilte
 
 #### 模型看到的内容
 
-经由 `dsh-tool-subagent`，父级只会收到子运行时最终的 assistant 文本（或累积的部分文本），或该消费方给出的精确停止原因错误；不会收到中间消息或工具流量。非完成结果会先呈现安全诊断，再单独呈现保留的部分 assistant 输出；启动与 shutdown 错误使用同一固定事实，不公开原始 SDK 文本。
+经由 `dsh-tool-subagent`，父级只会收到子运行时最终的 assistant 文本（或累积的部分文本），或该消费方给出的精确停止原因错误；不会收到中间消息或工具流量。带诊断的非完成结果会先呈现安全诊断，再单独呈现保留的部分 assistant 输出；启动与 shutdown 错误使用同一固定事实，不公开原始 SDK 文本。
 
 #### Token 影响
 
