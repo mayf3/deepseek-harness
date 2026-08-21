@@ -33,8 +33,9 @@ interface SessionFormatMigrationInstance {
    */
   header(meta: unknown): unknown
   /**
-   * Transform exactly one event while retaining its sequence number. Instance
-   * fields may accumulate facts from the header and earlier events.
+   * Transform exactly one event into detached lossless JSON while retaining
+   * its sequence number. Instance fields may accumulate facts from the header
+   * and earlier events.
    * @param event - detached input event in durable sequence order.
    * @returns exactly one detached event for the same sequence number.
    */
@@ -137,7 +138,10 @@ export interface DecodedSession<TornMarker> {
   readonly revision: SessionPersistenceRevision
   /** Validated current-format events at or past the requested sequence. */
   readonly events: AsyncIterable<SessionEvent>
-  /** Completion metadata from the physical read supplying the events. */
+  /**
+   * Completion metadata from the physical read supplying the events. Settles
+   * only after the events iterable is fully consumed or fails.
+   */
   readonly completed: Promise<StoredEventReadCompletion<TornMarker>>
 }
 
@@ -363,7 +367,10 @@ async function* transformEvents(
       const sourceSeq = asStoredRecord(value)?.['seq']
       let output: unknown
       try {
-        output = instance.event(value)
+        output = snapshotJsonValue(instance.event(value))
+        if (output === undefined) {
+          throw new Error('migration returned an event that is not losslessly JSON-serializable')
+        }
       } catch (error: unknown) {
         throw new Error(
           `session "${id}" event migration v${Migration.from} -> v${Migration.to} failed at seq ${String(sourceSeq)}`,

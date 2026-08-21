@@ -316,6 +316,69 @@ describe('versioned Session format decoder', { concurrent: false }, () => {
     expect(events[0]?.data).toMatchObject({ migrationPath: [0, 1] })
   })
 
+  it('detaches each migration output before the next migration mutates its input', async () => {
+    const retained: Array<Record<string, unknown>> = []
+    const first = defineMigration(0, () => ({
+      header: meta => ({ ...(meta as Record<string, unknown>), version: 1 }),
+      event(value) {
+        const event = value as SessionEvent
+        const output = {
+          ...event,
+          data: { ...(event.data as Record<string, unknown>), first: true },
+        }
+        retained.push(output.data)
+        return output
+      },
+    }))
+    const second = defineMigration(1, () => ({
+      header: meta => ({ ...(meta as Record<string, unknown>), version: 2 }),
+      event(value) {
+        const event = value as SessionEvent
+        const data = event.data as Record<string, unknown>
+        data['second'] = true
+        return event
+      },
+    }))
+    const { decodeStoredSession } = await configuredDecoder(2, [first, second])
+
+    const decoded = decodeStoredSession(storedSource(0, eventLog()).source, id)
+    const events = await collectEvents(decoded.events)
+    await decoded.completed
+
+    expect(events.every(event => (event.data as Record<string, unknown>)['second'] === true)).toBe(true)
+    expect(retained.every(data => data['second'] === undefined)).toBe(true)
+  })
+
+  it('rejects a non-JSON event output before a later migration can repair it', async () => {
+    const first = defineMigration(0, () => ({
+      header: meta => ({ ...(meta as Record<string, unknown>), version: 1 }),
+      event(value) {
+        const event = value as SessionEvent
+        return {
+          ...event,
+          data: { ...(event.data as Record<string, unknown>), transient: undefined },
+        }
+      },
+    }))
+    const second = defineMigration(1, () => ({
+      header: meta => ({ ...(meta as Record<string, unknown>), version: 2 }),
+      event(value) {
+        const event = value as SessionEvent
+        const data = event.data as Record<string, unknown>
+        delete data['transient']
+        return event
+      },
+    }))
+    const { decodeStoredSession } = await configuredDecoder(2, [first, second])
+
+    const failure = await decodedFailure(
+      decodeStoredSession(storedSource(0, eventLog()).source, id),
+    )
+
+    expect(failure.message).toMatch(/event migration v0 -> v1 failed at seq 0/)
+    expect((failure.cause as Error).message).toMatch(/not losslessly JSON-serializable/)
+  })
+
   it('plans by version even when registry entries are declared out of order', async () => {
     const calls: string[] = []
     const { decodeStoredSession } = await configuredDecoder(

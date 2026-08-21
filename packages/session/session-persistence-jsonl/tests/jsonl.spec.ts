@@ -1524,6 +1524,23 @@ describe('JsonlSessionPersistence: edge cases', () => {
     expect(await ctx.sessionPersistence.list()).toEqual([])
   })
 
+  it('listing refuses a future format before validating current identity fields', async () => {
+    const id = SessionId('future-list')
+    const path = rawLogPath(root, '/work', id)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, `${JSON.stringify({ type: 'session', version: 42, id: 123 })}\n`)
+
+    for (const list of [
+      () => ctx.sessionPersistence.list(),
+      () => ctx.sessionPersistence.listSnapshots(),
+    ]) {
+      const failure = await list().then(() => undefined, (error: unknown) => error as Error)
+      expect(failure?.name).toBe('SessionFormatUnsupportedError')
+      expect(failure?.message).toContain('session "123" uses log format v42')
+      expect(failure?.message).toMatch(/written by a newer harness.*upgrade the harness/)
+    }
+  })
+
   it('keeps the transcript in an extensible session-owned directory', async () => {
     const m = meta('owned-directory', '/project')
     await ctx.sessionPersistence.create(m)
