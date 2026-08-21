@@ -8,6 +8,7 @@ import type { AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import LlmRuntime, { CallId, createUserMessage,
   CONTEXT_WINDOW_EXCEEDED_CODE,
+  LlmError,
   ProviderRequestId,
   QUOTA_EXCEEDED_CODE,
   ReasoningEffortId,
@@ -52,6 +53,7 @@ async function harness(baseURL: string, config: object = {}) {
 function adapterOf(
   config: Partial<LlmDeepSeek.Config> & { apiKey?: string } = {},
   attachments?: AttachmentStore,
+  files?: LlmDeepSeek.DeepSeekFileStore,
 ): DeepSeekAdapter {
   const { apiKey, ...rest } = config
   return new DeepSeekAdapter({
@@ -59,6 +61,7 @@ function adapterOf(
     resolveApiKey: () => Promise.resolve(apiKey ?? 'k'),
     resolveUserId: () => TEST_USER_ID,
     resolveAttachments: () => attachments,
+    ...files === undefined ? {} : { resolveFiles: () => files },
   })
 }
 
@@ -100,6 +103,32 @@ function attachmentStoreOf(
     store: { readImageRequest } as unknown as AttachmentStore,
     readImageRequest,
   }
+}
+
+function fileStoreOf(
+  implementation: (...args: Parameters<LlmDeepSeek.DeepSeekFileStore['ensureUploaded']>) => ReturnType<LlmDeepSeek.DeepSeekFileStore['ensureUploaded']>,
+) {
+  const ensureUploaded = vi.fn(implementation)
+  const invalidate = vi.fn(() => Promise.resolve())
+  return {
+    store: { ensureUploaded, invalidate } as unknown as LlmDeepSeek.DeepSeekFileStore,
+    ensureUploaded,
+    invalidate,
+  }
+}
+
+function fileReference(fileId: string): Awaited<ReturnType<LlmDeepSeek.DeepSeekFileStore['ensureUploaded']>> {
+  return {
+    record: { fileId: LlmDeepSeek.DeepSeekFileId(fileId) },
+    uploaded: true,
+  } as Awaited<ReturnType<LlmDeepSeek.DeepSeekFileStore['ensureUploaded']>>
+}
+
+function successfulSseResponse(): Response {
+  return new Response(textEvents.map(event => `data: ${event}\n\n`).join(''), {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  })
 }
 
 describe('request image policy', () => {
@@ -197,6 +226,188 @@ describe('DeepSeekAdapter against a mock server', () => {
     }])
     expect(signalSeen[0]).toBeInstanceOf(AbortSignal)
     expect(policies).toEqual([{ maxPixels: 640_000, maxBytes: 1024 * 1024 }])
+  })
+
+  it('falls back to one all-base64 request when Files API resolution fails', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const secondRef = { ...imageRef, attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`) }
+    const attachments = attachmentStoreOf(ref => Promise.resolve({
+      ...requestImage(ref),
+      variantId: ImageVariantId(`sha256:${(ref.attachmentId === imageRef.attachmentId ? 'b' : 'd').repeat(64)}`),
+    })).store
+    const files = fileStoreOf(() => Promise.reject(new LlmError('Files unavailable', 'SERVER')))
+    const adapter = adapterOf({
+      baseURL: server.url,
+      models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }],
+    }, attachments, files.store)
+
+    await drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: [
+          { type: 'image', attachment: imageRef },
+          { type: 'image', attachment: secondRef },
+        ],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))
+
+    const body = server.requests[0] as { messages: Array<{ content: unknown }> }
+    expect(JSON.stringify(body.messages[0]?.content).match(/"type":"image_url"/g)).toHaveLength(2)
+    expect(JSON.stringify(body)).not.toContain('file_id')
+    expect(files.ensureUploaded).toHaveBeenCalledTimes(1)
+  })
+
+  it('reduces base64 fallback history from the configured high watermark to its half-size quantum', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const attachments = attachmentStoreOf(ref => Promise.resolve(requestImage(ref))).store
+    const files = fileStoreOf(() => Promise.reject(new LlmError('Files unavailable', 'SERVER')))
+    const adapter = adapterOf({
+      baseURL: server.url,
+      maxInlineRequestImageBytes: 80,
+      inlineImageOffloadByteQuantum: 40,
+      models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }],
+    }, attachments, files.store)
+
+    await drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: Array.from({ length: 21 }, () => ({ type: 'image' as const, attachment: imageRef })),
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))
+
+    const body = JSON.stringify(server.requests[0])
+    expect(body.match(/older images are omitted first/g)).toHaveLength(11)
+    expect(body.match(/"type":"image_url"/g)).toHaveLength(10)
+  })
+
+  it('discards partially resolved file ids and falls back with every retained image inline', async () => {
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const secondRef = { ...imageRef, attachmentId: AttachmentId(`sha256:${'c'.repeat(64)}`) }
+    const attachments = attachmentStoreOf(ref => Promise.resolve({
+      ...requestImage(ref),
+      variantId: ImageVariantId(`sha256:${(ref.attachmentId === imageRef.attachmentId ? 'b' : 'd').repeat(64)}`),
+    })).store
+    const files = fileStoreOf(() => Promise.reject(new Error('unused')))
+    files.ensureUploaded
+      .mockResolvedValueOnce(fileReference('file-api-partial'))
+      .mockRejectedValueOnce(new LlmError('Files unavailable', 'TRANSPORT'))
+    const adapter = adapterOf({
+      baseURL: server.url,
+      models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }],
+    }, attachments, files.store)
+
+    await drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: [
+          { type: 'image', attachment: imageRef },
+          { type: 'image', attachment: secondRef },
+        ],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))
+
+    const body = server.requests[0] as { messages: Array<{ content: unknown }> }
+    expect(JSON.stringify(body.messages[0]?.content).match(/"type":"image_url"/g)).toHaveLength(2)
+    expect(JSON.stringify(body)).not.toContain('file-api-partial')
+  })
+
+  it('falls back after the configured Files API deadline without aborting chat', async () => {
+    vi.useFakeTimers()
+    const started = Promise.withResolvers<undefined>()
+    const files = fileStoreOf((_version, _connection, _policy, signal) => new Promise((_resolve, reject) => {
+      started.resolve(undefined)
+      signal?.addEventListener('abort', () => {
+        const reason: unknown = signal.reason
+        reject(reason instanceof Error ? reason : new Error('files operation aborted'))
+      }, { once: true })
+    }))
+    const attachments = attachmentStoreOf(ref => Promise.resolve(requestImage(ref))).store
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(successfulSseResponse())
+    const adapter = adapterOf({
+      baseURL: 'https://deepseek.invalid',
+      filesApiTimeoutMs: 50,
+      models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }],
+    }, attachments, files.store)
+
+    const pending = drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: [{ type: 'image', attachment: imageRef }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))
+    await started.promise
+    await vi.advanceTimersByTimeAsync(50)
+    await pending
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(String(fetchSpy.mock.calls[0]?.[1]?.body)).toContain('image_url')
+    fetchSpy.mockRestore()
+  })
+
+  it('does not turn caller cancellation during file resolution into base64 fallback', async () => {
+    const started = Promise.withResolvers<undefined>()
+    const files = fileStoreOf((_version, _connection, _policy, signal) => new Promise((_resolve, reject) => {
+      started.resolve(undefined)
+      signal?.addEventListener('abort', () => { reject(new Error('cancelled')) }, { once: true })
+    }))
+    const attachments = attachmentStoreOf(ref => Promise.resolve(requestImage(ref))).store
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const controller = new AbortController()
+    const adapter = adapterOf({
+      baseURL: 'https://deepseek.invalid',
+      models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }],
+    }, attachments, files.store)
+
+    const pending = drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash-vision-exp',
+      signal: controller.signal,
+      messages: [createUserMessage({
+        content: [{ type: 'image', attachment: imageRef }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))
+    await started.promise
+    controller.abort()
+
+    await expect(pending).rejects.toMatchObject({ code: 'ABORTED' })
+    expect(fetchSpy).not.toHaveBeenCalled()
+    fetchSpy.mockRestore()
+  })
+
+  it('does not retry a generic chat failure through base64 fallback', async () => {
+    const server = await mockServer([{
+      kind: 'http-error',
+      status: 503,
+      body: JSON.stringify({ error: { message: 'chat unavailable' } }),
+    }])
+    const attachments = attachmentStoreOf(ref => Promise.resolve(requestImage(ref))).store
+    const files = fileStoreOf(() => Promise.resolve(fileReference('file-api-ready')))
+    const adapter = adapterOf({
+      baseURL: server.url,
+      models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }],
+    }, attachments, files.store)
+
+    await expect(drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: [{ type: 'image', attachment: imageRef }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))).rejects.toMatchObject({ code: 'SERVER', message: 'chat unavailable' })
+
+    expect(server.requests).toHaveLength(1)
+    expect(JSON.stringify(server.requests[0])).toContain('file-api-ready')
+    expect(JSON.stringify(server.requests[0])).not.toContain('image_url')
   })
 
   it('does not prepare an old image removed by request offload', async () => {
@@ -452,6 +663,40 @@ describe('DeepSeekAdapter against a mock server', () => {
       { messages: [{ content: [expect.objectContaining({ type: 'text' }), { file_id: 'file-api-2' }] }] },
     ])
     expect(attachmentMocks.readImageRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses inline fallback when stale-id recovery cannot resolve a replacement file', async () => {
+    const server = await mockServer([
+      {
+        kind: 'http-error',
+        status: 400,
+        body: JSON.stringify({ error: { message: 'file_id file-api-stale expired' } }),
+      },
+      { kind: 'sse', events: textEvents },
+    ])
+    const attachments = attachmentStoreOf(ref => Promise.resolve(requestImage(ref))).store
+    const files = fileStoreOf(() => Promise.reject(new Error('unused')))
+    files.ensureUploaded
+      .mockResolvedValueOnce(fileReference('file-api-stale'))
+      .mockRejectedValueOnce(new LlmError('Files unavailable', 'SERVER'))
+    const adapter = adapterOf({
+      baseURL: server.url,
+      models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }],
+    }, attachments, files.store)
+
+    await drain(adapter.stream({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: [{ type: 'image', attachment: imageRef }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }))
+
+    expect(files.invalidate).toHaveBeenCalledTimes(1)
+    expect(server.requests).toHaveLength(2)
+    expect(JSON.stringify(server.requests[0])).toContain('file-api-stale')
+    expect(JSON.stringify(server.requests[1])).toContain('image_url')
   })
 
   it('invalidates only the identified mapping when a multi-image request names one stale file id', async () => {
@@ -1150,7 +1395,11 @@ describe('DeepSeekAdapter against a mock server', () => {
       })
       return Promise.resolve(new Response(body, { status: 200 }))
     })
-    const adapter = adapterOf({ baseURL: 'https://example.invalid', streamIdleTimeoutMs: 100 })
+    const adapter = adapterOf({
+      baseURL: 'https://example.invalid',
+      filesApiTimeoutMs: 50,
+      streamIdleTimeoutMs: 100,
+    })
     try {
       const drain = (async () => {
         for await (const _chunk of adapter.stream({ provider: 'deepseek-official', model: 'm', messages: [] })) { /* drain */ }
@@ -1181,7 +1430,11 @@ describe('DeepSeekAdapter against a mock server', () => {
       })
       return Promise.resolve(new Response(body, { status: 200 }))
     })
-    const adapter = adapterOf({ baseURL: 'https://example.invalid', streamIdleTimeoutMs: 100 })
+    const adapter = adapterOf({
+      baseURL: 'https://example.invalid',
+      filesApiTimeoutMs: 50,
+      streamIdleTimeoutMs: 100,
+    })
     try {
       const chunks: string[] = []
       const drain = (async () => {
@@ -1574,6 +1827,10 @@ describe('plugin registration and config', () => {
       imageOffloadByteQuantum: 11,
     })).toThrow(/imageOffloadByteQuantum must not exceed maxRequestFilesBytes/)
     expect(() => resolveAdapterOptions({
+      maxInlineRequestImageBytes: 10,
+      inlineImageOffloadByteQuantum: 11,
+    })).toThrow(/inlineImageOffloadByteQuantum must not exceed maxInlineRequestImageBytes/)
+    expect(() => resolveAdapterOptions({
       maxImagesPerRequest: 10,
       imageOffloadCountQuantum: 11,
     })).toThrow(/imageOffloadCountQuantum must not exceed maxImagesPerRequest/)
@@ -1584,6 +1841,8 @@ describe('plugin registration and config', () => {
     ['maxImagesPerRequest', 1.5, /maxImagesPerRequest must be a positive safe integer/],
     ['imageOffloadByteQuantum', 0, /imageOffloadByteQuantum must be a positive safe integer/],
     ['imageOffloadByteQuantum', Number.MAX_SAFE_INTEGER + 1, /imageOffloadByteQuantum must be a positive safe integer/],
+    ['inlineImageOffloadByteQuantum', 0, /inlineImageOffloadByteQuantum must be a positive safe integer/],
+    ['inlineImageOffloadByteQuantum', Number.MAX_SAFE_INTEGER + 1, /inlineImageOffloadByteQuantum must be a positive safe integer/],
     ['imageOffloadCountQuantum', 0, /imageOffloadCountQuantum must be a positive safe integer/],
     ['imageOffloadCountQuantum', 1.5, /imageOffloadCountQuantum must be a positive safe integer/],
     ['fileExpiresAfterSeconds', 3_599, /fileExpiresAfterSeconds must be an integer from 3600 through 2592000/],
@@ -1608,6 +1867,22 @@ describe('plugin registration and config', () => {
         baseURL: 'http://127.0.0.1:1',
         maxRequestFilesBytes,
       })).rejects.toThrow(/maxRequestFilesBytes/)
+      expect(ctx.llm.listProviders()).toEqual([])
+    },
+  )
+
+  it.each([0, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects invalid inline request image bound %s',
+    async (maxInlineRequestImageBytes) => {
+      expect(() => resolveAdapterOptions({ maxInlineRequestImageBytes }))
+        .toThrow(/maxInlineRequestImageBytes must be a positive safe integer/)
+
+      const ctx = new Context()
+      await ctx.plugin(LlmRuntime)
+      await expect(ctx.plugin(LlmDeepSeek, {
+        baseURL: 'http://127.0.0.1:1',
+        maxInlineRequestImageBytes,
+      })).rejects.toThrow(/maxInlineRequestImageBytes/)
       expect(ctx.llm.listProviders()).toEqual([])
     },
   )
@@ -1751,6 +2026,26 @@ describe('plugin registration and config', () => {
       baseURL: 'http://127.0.0.1:1',
       streamIdleTimeoutMs: MAX_TIMER_DELAY_MS + 1,
     })).rejects.toThrow(/streamIdleTimeoutMs/)
+  })
+
+  it('rejects invalid Files API timeout bounds for direct and plugin composition', async () => {
+    expect(() => resolveAdapterOptions({ filesApiTimeoutMs: Number.POSITIVE_INFINITY }))
+      .toThrow(/filesApiTimeoutMs.*positive finite/)
+    expect(() => resolveAdapterOptions({ filesApiTimeoutMs: MAX_TIMER_DELAY_MS + 1 }))
+      .toThrow(/filesApiTimeoutMs.*no greater/)
+
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await expect(ctx.plugin(LlmDeepSeek, {
+      baseURL: 'http://127.0.0.1:1',
+      filesApiTimeoutMs: 0,
+    })).rejects.toThrow(/filesApiTimeoutMs/)
+    await expect(ctx.plugin(LlmDeepSeek, {
+      baseURL: 'http://127.0.0.1:1',
+      filesApiTimeoutMs: MAX_TIMER_DELAY_MS + 1,
+    })).rejects.toThrow(/filesApiTimeoutMs/)
+    expect(() => resolveAdapterOptions({ filesApiTimeoutMs: 100, streamIdleTimeoutMs: 100 }))
+      .toThrow(/filesApiTimeoutMs must be below streamIdleTimeoutMs/)
   })
 
   it('rejects invalid nested retryPolicy before registering the provider', async () => {

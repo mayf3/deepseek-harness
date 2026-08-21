@@ -25,9 +25,12 @@ import {
   DEFAULT_FILE_EXPIRY_SECONDS,
   DEFAULT_FILE_QUOTA_CLEANUP_BATCH,
   DEFAULT_FILE_REFRESH_MARGIN_SECONDS,
+  DEFAULT_FILES_API_TIMEOUT_MS,
   DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM,
   DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM,
+  DEFAULT_INLINE_IMAGE_OFFLOAD_BYTE_QUANTUM,
   DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET,
+  DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES,
   DEFAULT_MAX_IMAGES_PER_REQUEST,
   DEFAULT_MAX_REQUEST_FILES_BYTES,
   DEFAULT_MAX_TOKENS,
@@ -43,9 +46,12 @@ export {
   DEFAULT_FILE_EXPIRY_SECONDS,
   DEFAULT_FILE_QUOTA_CLEANUP_BATCH,
   DEFAULT_FILE_REFRESH_MARGIN_SECONDS,
+  DEFAULT_FILES_API_TIMEOUT_MS,
   DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM,
   DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM,
+  DEFAULT_INLINE_IMAGE_OFFLOAD_BYTE_QUANTUM,
   DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET,
+  DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES,
   DEFAULT_MAX_IMAGES_PER_REQUEST,
   DEFAULT_MAX_REQUEST_FILES_BYTES,
   DEFAULT_MAX_TOKENS,
@@ -116,12 +122,18 @@ export interface Config {
   streamIdleTimeoutMs?: number
   /** Maximum accumulated file-referenced image bytes per chat request (default 128 MiB). */
   maxRequestFilesBytes?: number
-  /** Maximum number of file-referenced images per chat request (default 600). */
+  /** Maximum accumulated base64 image payload after Files API fallback (default 20 MiB). */
+  maxInlineRequestImageBytes?: number
+  /** Maximum number of represented images per chat request (default 600). */
   maxImagesPerRequest?: number
   /** Raw-byte removal step after the request exceeds its file bound (default 64 MiB). */
   imageOffloadByteQuantum?: number
+  /** Base64-byte removal step after inline fallback exceeds its bound (default 10 MiB). */
+  inlineImageOffloadByteQuantum?: number
   /** Image-count removal step after the request exceeds its count bound (default 20). */
   imageOffloadCountQuantum?: number
+  /** Maximum duration of one request-image Files API resolution (default one minute). */
+  filesApiTimeoutMs?: number
   /** Explicit lifetime assigned to each uploaded image (default seven days). */
   fileExpiresAfterSeconds?: number
   /** Remaining lifetime below which an indexed file is replaced (default one hour). */
@@ -154,9 +166,12 @@ export const Config: z<Config> = z.object({
   models: z.array(catalogModel).default(DEFAULT_MODELS),
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
   maxRequestFilesBytes: z.number().step(1).min(1).default(DEFAULT_MAX_REQUEST_FILES_BYTES),
+  maxInlineRequestImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES),
   maxImagesPerRequest: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGES_PER_REQUEST),
   imageOffloadByteQuantum: z.number().step(1).min(1).default(DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM),
+  inlineImageOffloadByteQuantum: z.number().step(1).min(1).default(DEFAULT_INLINE_IMAGE_OFFLOAD_BYTE_QUANTUM),
   imageOffloadCountQuantum: z.number().step(1).min(1).default(DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM),
+  filesApiTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_FILES_API_TIMEOUT_MS),
   fileExpiresAfterSeconds: z.number().step(1).min(3_600).max(2_592_000).default(DEFAULT_FILE_EXPIRY_SECONDS),
   fileRefreshMarginSeconds: z.number().step(1).min(0).default(DEFAULT_FILE_REFRESH_MARGIN_SECONDS),
   fileQuotaCleanupBatch: z.number().step(1).min(1).max(1_000).default(DEFAULT_FILE_QUOTA_CLEANUP_BATCH),
@@ -283,6 +298,10 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
   if (!Number.isSafeInteger(maxRequestFilesBytes) || maxRequestFilesBytes <= 0) {
     throw new Error('llm-deepseek: maxRequestFilesBytes must be a positive safe integer')
   }
+  const maxInlineRequestImageBytes = config.maxInlineRequestImageBytes ?? DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES
+  if (!Number.isSafeInteger(maxInlineRequestImageBytes) || maxInlineRequestImageBytes <= 0) {
+    throw new Error('llm-deepseek: maxInlineRequestImageBytes must be a positive safe integer')
+  }
   const maxImagesPerRequest = config.maxImagesPerRequest ?? DEFAULT_MAX_IMAGES_PER_REQUEST
   if (!Number.isSafeInteger(maxImagesPerRequest) || maxImagesPerRequest <= 0) {
     throw new Error('llm-deepseek: maxImagesPerRequest must be a positive safe integer')
@@ -294,12 +313,31 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
   if (imageOffloadByteQuantum > maxRequestFilesBytes) {
     throw new Error('llm-deepseek: imageOffloadByteQuantum must not exceed maxRequestFilesBytes')
   }
+  const inlineImageOffloadByteQuantum = config.inlineImageOffloadByteQuantum
+    ?? DEFAULT_INLINE_IMAGE_OFFLOAD_BYTE_QUANTUM
+  if (!Number.isSafeInteger(inlineImageOffloadByteQuantum) || inlineImageOffloadByteQuantum <= 0) {
+    throw new Error('llm-deepseek: inlineImageOffloadByteQuantum must be a positive safe integer')
+  }
+  if (inlineImageOffloadByteQuantum > maxInlineRequestImageBytes) {
+    throw new Error('llm-deepseek: inlineImageOffloadByteQuantum must not exceed maxInlineRequestImageBytes')
+  }
   const imageOffloadCountQuantum = config.imageOffloadCountQuantum ?? DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM
   if (!Number.isSafeInteger(imageOffloadCountQuantum) || imageOffloadCountQuantum <= 0) {
     throw new Error('llm-deepseek: imageOffloadCountQuantum must be a positive safe integer')
   }
   if (imageOffloadCountQuantum > maxImagesPerRequest) {
     throw new Error('llm-deepseek: imageOffloadCountQuantum must not exceed maxImagesPerRequest')
+  }
+  const filesApiTimeoutMs = config.filesApiTimeoutMs ?? DEFAULT_FILES_API_TIMEOUT_MS
+  if (!Number.isFinite(filesApiTimeoutMs)
+    || filesApiTimeoutMs <= 0
+    || filesApiTimeoutMs > MAX_TIMER_DELAY_MS) {
+    throw new Error(
+      `llm-deepseek: filesApiTimeoutMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`,
+    )
+  }
+  if (filesApiTimeoutMs >= streamIdleTimeoutMs) {
+    throw new Error('llm-deepseek: filesApiTimeoutMs must be below streamIdleTimeoutMs')
   }
   const fileExpiresAfterSeconds = config.fileExpiresAfterSeconds ?? DEFAULT_FILE_EXPIRY_SECONDS
   if (!Number.isSafeInteger(fileExpiresAfterSeconds)
@@ -333,9 +371,12 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
     models: resolveModels(config.models),
     streamIdleTimeoutMs,
     maxRequestFilesBytes,
+    maxInlineRequestImageBytes,
     maxImagesPerRequest,
     imageOffloadByteQuantum,
+    inlineImageOffloadByteQuantum,
     imageOffloadCountQuantum,
+    filesApiTimeoutMs,
     filePolicy: {
       expiresAfterSeconds: fileExpiresAfterSeconds,
       refreshMarginSeconds: fileRefreshMarginSeconds,

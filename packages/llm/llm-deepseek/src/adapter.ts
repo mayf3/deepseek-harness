@@ -28,7 +28,7 @@ import type {
   RequestImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
-import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { deadline, idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
 import type { ImageWireLocation, RequestDefaults } from './serialize.ts'
@@ -37,7 +37,7 @@ import type { DeepSeekFilePolicy } from './file-store.ts'
 import type { DeepSeekFileId } from './file-id.ts'
 import { parseSse } from './sse.ts'
 import { translate } from './translate.ts'
-import type { WireError } from './types.ts'
+import type { WireError, WireRequest } from './types.ts'
 
 /** One optional model entry advertised by the direct-fetch adapter. */
 export interface DeepSeekCatalogModel {
@@ -89,12 +89,18 @@ export interface DeepSeekConnectionOptions {
   streamIdleTimeoutMs: number
   /** Maximum accumulated file-referenced image bytes in one request. */
   maxRequestFilesBytes: number
-  /** Maximum number of file-referenced images in one request. */
+  /** Maximum accumulated base64 image payload after Files API fallback. */
+  maxInlineRequestImageBytes: number
+  /** Maximum number of represented images in one request. */
   maxImagesPerRequest: number
   /** Raw-byte removal step after the file-reference bound is exceeded. */
   imageOffloadByteQuantum: number
+  /** Base64-byte removal step after the inline fallback bound is exceeded. */
+  inlineImageOffloadByteQuantum: number
   /** Image-count removal step after the count bound is exceeded. */
   imageOffloadCountQuantum: number
+  /** Maximum duration of one request-image Files API resolution. */
+  filesApiTimeoutMs: number
   /** Upload expiry, refresh, and quota-recovery policy. */
   filePolicy: DeepSeekFilePolicy
   /** Provider-owned model-request retry policy, already resolved. */
@@ -128,6 +134,8 @@ export const DEFAULT_CONTEXT_WINDOW = 1_000_000
 export const DEFAULT_MAX_TOKENS = 256_000
 /** Default bound on accumulated file-referenced image bytes per request. */
 export const DEFAULT_MAX_REQUEST_FILES_BYTES = 128 * 1024 * 1024
+/** Default bound on accumulated base64 image payload after Files API fallback. */
+export const DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
 /** Provider request image-count limit. */
 export const DEFAULT_MAX_IMAGES_PER_REQUEST = 600
 /** Total-pixel budget matching DeepSeek's normal vision projection. */
@@ -138,6 +146,8 @@ export const DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET = 512 * 512
 export const DEFAULT_REQUEST_IMAGE_MAX_BYTES = 1024 * 1024
 /** Deterministic raw-byte removal step. */
 export const DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM = 64 * 1024 * 1024
+/** Deterministic base64-byte removal step after Files API fallback. */
+export const DEFAULT_INLINE_IMAGE_OFFLOAD_BYTE_QUANTUM = 10 * 1024 * 1024
 /** Deterministic image-count removal step. */
 export const DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM = 20
 /** Default explicit lifetime for uploaded images. */
@@ -146,7 +156,10 @@ export const DEFAULT_FILE_EXPIRY_SECONDS = 7 * 24 * 60 * 60
 export const DEFAULT_FILE_REFRESH_MARGIN_SECONDS = 60 * 60
 /** Default number of oldest harness-owned files removed on quota recovery. */
 export const DEFAULT_FILE_QUOTA_CLEANUP_BATCH = 100
+/** Default deadline for resolving one request image through the Files API. */
+export const DEFAULT_FILES_API_TIMEOUT_MS = 60_000
 const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
+const FILES_API_TIMEOUT_CODE = 'DEEPSEEK_FILES_API_TIMEOUT'
 const OFF_REASONING_EFFORT = ReasoningEffortId('off')
 const LOW_REASONING_EFFORT = ReasoningEffortId('low')
 const HIGH_REASONING_EFFORT = ReasoningEffortId('high')
@@ -160,6 +173,14 @@ const REASONING_EFFORTS = [
 const OFF_ONLY_REASONING_EFFORTS = [
   { id: OFF_REASONING_EFFORT, name: 'Off' },
 ] as const
+
+/** Marks a failed file-id resolution that may be retried as an inline request. */
+class FileResolutionFailure extends Error {
+  constructor(cause: unknown) {
+    super('DeepSeek Files API could not resolve a request image.', { cause })
+    this.name = 'FileResolutionFailure'
+  }
+}
 
 function collectImageRefs(
   content: readonly ContentBlock[],
@@ -494,7 +515,7 @@ export class DeepSeekAdapter extends LlmAdapter {
     apiKey: string,
     userId: AnonymousUserId,
     attachments: AttachmentStore | undefined,
-    onComment: () => void,
+    onActivity: () => void,
   ): AsyncIterable<StreamChunk> {
     const headers = {
       'authorization': `Bearer ${apiKey}`,
@@ -525,27 +546,58 @@ export class DeepSeekAdapter extends LlmAdapter {
     const requestImages = attachments === undefined || model === undefined
       ? new Map<AttachmentId, RequestImageAttachment>()
       : await prepareRequestImages(requestOptions, attachments, model, signal)
-    for (let fileAttempt = 0; fileAttempt < 2; fileAttempt += 1) {
+    let representation: 'file' | 'base64' = 'file'
+    let fileAttempt = 0
+    while (true) {
       const usedFiles: UsedRequestFile[] = []
-      const body = attachments === undefined
-        ? serializeRequest(requestOptions, connection.defaults)
-        : await serializeRequestWithImages(requestOptions, {
+      let body: WireRequest
+      if (attachments === undefined) {
+        body = serializeRequest(requestOptions, connection.defaults)
+      } else if (representation === 'base64') {
+        body = await serializeRequestWithImages(requestOptions, {
+          representation: { kind: 'base64' },
           requestImages,
-          resolveFileId: async (version, _block, location) => {
-            const resolved = await this.files.ensureUploaded(
-              version,
-              fileConnection,
-              connection.filePolicy,
-              signal,
-            )
-            usedFiles.push({ version, fileId: resolved.record.fileId, location })
-            return resolved.record.fileId
-          },
-          maxRequestFilesBytes: connection.maxRequestFilesBytes,
+          maxRequestImageBytes: connection.maxInlineRequestImageBytes,
           maxImagesPerRequest: connection.maxImagesPerRequest,
-          byteQuantum: connection.imageOffloadByteQuantum,
+          byteQuantum: connection.inlineImageOffloadByteQuantum,
           countQuantum: connection.imageOffloadCountQuantum,
         }, connection.defaults)
+      } else {
+        try {
+          body = await serializeRequestWithImages(requestOptions, {
+            representation: {
+              kind: 'file',
+              resolveFileId: async (version, _block, location) => {
+                using filesDeadline = deadline(signal, connection.filesApiTimeoutMs, FILES_API_TIMEOUT_CODE)
+                let resolved: Awaited<ReturnType<DeepSeekFileStore['ensureUploaded']>>
+                try {
+                  resolved = await this.files.ensureUploaded(
+                    version,
+                    fileConnection,
+                    connection.filePolicy,
+                    filesDeadline.signal,
+                  )
+                } catch (error: unknown) {
+                  if (signal.aborted) throw error
+                  throw new FileResolutionFailure(error)
+                }
+                onActivity()
+                usedFiles.push({ version, fileId: resolved.record.fileId, location })
+                return resolved.record.fileId
+              },
+            },
+            requestImages,
+            maxRequestImageBytes: connection.maxRequestFilesBytes,
+            maxImagesPerRequest: connection.maxImagesPerRequest,
+            byteQuantum: connection.imageOffloadByteQuantum,
+            countQuantum: connection.imageOffloadCountQuantum,
+          }, connection.defaults)
+        } catch (error: unknown) {
+          if (!(error instanceof FileResolutionFailure)) throw error
+          representation = 'base64'
+          continue
+        }
+      }
       const payload = JSON.stringify(body)
 
       // TODO(http): adopt the Cordis HTTP service when shared transport configuration
@@ -586,7 +638,10 @@ export class DeepSeekAdapter extends LlmAdapter {
           await Promise.all(staleMappings(usedFiles, detail).map(file => (
             this.files.invalidate(file.version, file.fileId, fileConnection)
           )))
-          if (fileAttempt === 0) continue
+          if (fileAttempt === 0) {
+            fileAttempt += 1
+            continue
+          }
         }
         if (response.status === 400 && usedFiles.length > 0 && providerRejectedNormalizedImage(detail)) {
           message = normalizedImageDiagnostic(usedFiles, message, detail)
@@ -604,7 +659,7 @@ export class DeepSeekAdapter extends LlmAdapter {
         throw new LlmError('DeepSeek API returned no response body', 'EMPTY_RESPONSE')
       }
 
-      yield* translate(parseSse(response.body, onComment))
+      yield* translate(parseSse(response.body, onActivity))
       return
     }
   }

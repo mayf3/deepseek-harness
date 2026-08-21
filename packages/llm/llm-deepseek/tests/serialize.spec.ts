@@ -11,6 +11,8 @@ import {
 } from '../src/serialize.ts'
 import type { ImageSerializationOptions } from '../src/serialize.ts'
 
+type FileResolver = Extract<ImageSerializationOptions['representation'], { kind: 'file' }>['resolveFileId']
+
 function request(overrides: Partial<GenerateOptions> = {}): GenerateOptions {
   return { provider: 'deepseek-official', model: 'deepseek-v4-flash', messages: [], ...overrides }
 }
@@ -32,7 +34,7 @@ function imageRef(mediaType: ImageMediaType = 'image/png', bytes = 3): ImageAtta
 }
 
 function fileResolver(id = 'file-api-image') {
-  return vi.fn<ImageSerializationOptions['resolveFileId']>(() => Promise.resolve(id))
+  return vi.fn<FileResolver>(() => Promise.resolve(id))
 }
 
 function requestVersion(ref: ImageAttachmentRef): RequestImageAttachment {
@@ -53,13 +55,26 @@ function requestVersion(ref: ImageAttachmentRef): RequestImageAttachment {
 
 function imageOptions(
   refs: readonly ImageAttachmentRef[],
-  resolveFileId: ImageSerializationOptions['resolveFileId'] = fileResolver(),
-  maxRequestFilesBytes = 20 * 1024 * 1024,
+  resolveFileId: FileResolver = fileResolver(),
+  maxRequestImageBytes = 20 * 1024 * 1024,
 ) {
   return {
-    resolveFileId,
+    representation: { kind: 'file' as const, resolveFileId },
     requestImages: new Map(refs.map(ref => [ref.attachmentId, requestVersion(ref)])),
-    maxRequestFilesBytes,
+    maxRequestImageBytes,
+  }
+}
+
+function inlineImageOptions(
+  refs: readonly ImageAttachmentRef[],
+  maxRequestImageBytes = 20 * 1024 * 1024,
+  byteQuantum = 10 * 1024 * 1024,
+): ImageSerializationOptions {
+  return {
+    representation: { kind: 'base64' },
+    requestImages: new Map(refs.map(ref => [ref.attachmentId, requestVersion(ref)])),
+    maxRequestImageBytes,
+    byteQuantum,
   }
 }
 
@@ -359,6 +374,30 @@ describe('image serialization', () => {
     }])
   })
 
+  it.each([
+    ['image/png', 'data:image/png;base64,AAAA'],
+    ['image/jpeg', 'data:image/jpeg;base64,AAAA'],
+    ['image/webp', 'data:image/webp;base64,AAAA'],
+    ['image/gif', 'data:image/gif;base64,AAAA'],
+  ] as const)('serializes every retained %s request version as an inline data URL', async (mediaType, url) => {
+    const ref = imageRef(mediaType)
+    const wire = await serializeRequestWithImages(request({
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: [{ type: 'image', attachment: ref }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }), inlineImageOptions([ref]))
+
+    expect(wire.messages).toEqual([{
+      role: 'user',
+      content: [
+        { type: 'text', text: `Image ${ref.attachmentId}; request image 1x1px.` },
+        { type: 'image_url', image_url: { url } },
+      ],
+    }])
+  })
+
   it('gives image-only input a stable handle and request dimensions', async () => {
     const ref = imageRef()
     const wire = await serializeRequestWithImages(request({
@@ -546,6 +585,21 @@ describe('image serialization', () => {
     })
     expect(resolveFileId).toHaveBeenCalledTimes(1)
     expect(resolveFileId.mock.calls[0]?.[0]).toMatchObject({ attachment: { mediaType: 'image/jpeg' } })
+  })
+
+  it('drops base64 history from a 20-unit high watermark to a 10-unit low watermark', async () => {
+    const ref = imageRef('image/png', 3)
+    const wire = await serializeRequestWithImages(request({
+      model: 'deepseek-v4-flash-vision-exp',
+      messages: [createUserMessage({
+        content: Array.from({ length: 21 }, () => ({ type: 'image' as const, attachment: ref })),
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    }), inlineImageOptions([ref], 80, 40))
+
+    const content = wire.messages[0]?.content
+    expect(JSON.stringify(content).match(/older images are omitted first/g)).toHaveLength(11)
+    expect(JSON.stringify(content).match(/"type":"image_url"/g)).toHaveLength(10)
   })
 
   it('rejects an unprepared image while computing exact request bytes', async () => {

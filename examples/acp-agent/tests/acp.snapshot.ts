@@ -702,9 +702,10 @@ defineAcpSnapshotSuite({
   hasPwsh,
 })
 
-it('pins native DeepSeek Files image offload in the request sent by the assembled app', async () => {
+it('pins native DeepSeek Files offload and inline fallback in assembled requests', async () => {
   const requests: Record<string, unknown>[] = []
   const fileRequests: Array<{ method: string; path: string; bytes: number }> = []
+  let rejectFiles = false
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     const chunks: Buffer[] = []
     request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
@@ -723,6 +724,12 @@ it('pins native DeepSeek Files image offload in the request sent by the assemble
           const file = form.get('file')
           if (!(file instanceof Blob)) throw new Error('snapshot Files upload omitted file')
           fileRequests.push({ method: 'POST', path: url.pathname, bytes: file.size })
+          if (rejectFiles) {
+            response.writeHead(503, { 'content-type': 'application/json' }).end(JSON.stringify({
+              error: { message: 'Files temporarily unavailable' },
+            }))
+            return
+          }
           const createdAt = Math.floor(Date.now() / 1_000)
           response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
             id: 'file-api-snapshot-1',
@@ -860,6 +867,39 @@ it('pins native DeepSeek Files image offload in the request sent by the assemble
           { type: 'file', file_id: 'file-api-snapshot-1' },
         ],
       },
+    ])
+
+    rejectFiles = true
+    const fallback = await runScenario(input, {
+      agent: AGENT,
+      mode: 'record',
+      configPath: IMAGE_OFFLOAD_CONFIG,
+      fixtureFile: join(SNAPSHOTS_DIR, 'image-offload-request', 'session.jsonl'),
+      workspaceDir: join(SNAPSHOTS_DIR, 'read-image', 'workspace'),
+      env: {
+        DSH_SNAPSHOT_API_KEY: 'snapshot-fallback-key',
+        DSH_SNAPSHOT_BASE_URL: `http://127.0.0.1:${address.port}`,
+      },
+    })
+    expect(fallback.stderr).toBe('')
+    expect(fileRequests).toEqual([
+      { method: 'POST', path: '/files', bytes: 69 },
+      { method: 'POST', path: '/files', bytes: 69 },
+    ])
+    expect(requests).toHaveLength(3)
+    const fallbackMessages = requests[2]?.messages as { content?: unknown }[] | undefined
+    const fallbackInput = fallbackMessages?.find(message => JSON.stringify(message.content).includes('[image omitted'))
+    expect(fallbackInput?.content).toEqual([
+      { type: 'text', text: 'Compare the older image ' },
+      { type: 'text', text: OFFLOADED_IMAGE_TEXT },
+      { type: 'text', text: ' with the newer image ' },
+      {
+        type: 'text',
+        text: '\nImage sha256:b1ff9c8ea3a780bad09b346c423d2d0e46815926879b18e841d928376a946640; '
+          + 'request image 1x1px.',
+      },
+      { type: 'image_url', image_url: { url: `data:image/png;base64,${image}` } },
+      { type: 'text', text: ', then use read_image on red.png and reply with DONE.' },
     ])
   } finally {
     await new Promise<void>(resolve => server.close(() => { resolve() }))

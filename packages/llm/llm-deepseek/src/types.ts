@@ -47,8 +47,17 @@ export interface WireFileContentPart {
   file_id: string
 }
 
+/** Inline base64 data URL inside a multimodal user message. */
+export interface WireImageUrlContentPart {
+  type: 'image_url'
+  image_url: { url: string }
+}
+
+/** One image representation accepted by a multimodal user message. */
+export type WireImageContentPart = WireFileContentPart | WireImageUrlContentPart
+
 /** Ordered input part accepted by a multimodal user message. */
-export type WireUserContentPart = WireTextContentPart | WireFileContentPart
+export type WireUserContentPart = WireTextContentPart | WireImageContentPart
 
 /** User-role message: text-only string or ordered multimodal input. */
 export interface WireUserMessage {

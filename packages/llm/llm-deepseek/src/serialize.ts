@@ -1,7 +1,7 @@
 /**
  * Serialize harness messages into DeepSeek chat completions. Text-only
  * requests retain string user content; the image path resolves durable
- * attachments into ordered Files API parts. Tool-result images follow their
+ * attachments into ordered file-id or inline parts. Tool-result images follow their
  * string-only tool messages in a separate user message.
  * @module dsh-llm-deepseek/serialize
  */
@@ -10,7 +10,7 @@ import { contentHasImage, LlmError, offloadRequestImagesWithPolicy, requestImage
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type {
-  WireFileContentPart,
+  WireImageContentPart,
   WireMessage,
   WireRequest,
   WireTextContentPart,
@@ -29,21 +29,30 @@ interface ResolvedThinking {
   reasoningEffort?: 'low' | 'high' | 'max'
 }
 
+/** Provider representation for every retained image in one request. */
+export type ImageRequestRepresentation =
+  | {
+    kind: 'file'
+    /** Resolve a retained request version to a reusable DeepSeek file id. */
+    resolveFileId: (
+      version: RequestImageAttachment,
+      block: Extract<ContentBlock, { type: 'image' }>,
+      location: ImageWireLocation,
+    ) => Promise<string>
+  }
+  | { kind: 'base64' }
+
 /** Dependencies required only when the request contains image input. */
 export interface ImageSerializationOptions {
-  /** Resolve a retained request version to a reusable DeepSeek file id. */
-  resolveFileId: (
-    version: RequestImageAttachment,
-    block: Extract<ContentBlock, { type: 'image' }>,
-    location: ImageWireLocation,
-  ) => Promise<string>
-  /** Request versions prepared for the conservatively retained masters, keyed by attachment id. */
+  /** One representation used for every retained image in this request. */
+  representation: ImageRequestRepresentation
+  /** Request versions prepared for the conservatively retained normalized attachments, keyed by attachment id. */
   requestImages: ReadonlyMap<ImageAttachmentRef['attachmentId'], RequestImageAttachment>
-  /** Positive bound on accumulated referenced image bytes. */
-  maxRequestFilesBytes: number
-  /** Maximum referenced images in one request. */
+  /** Positive bound on accumulated represented image bytes. */
+  maxRequestImageBytes: number
+  /** Maximum represented images in one request. */
   maxImagesPerRequest?: number
-  /** Raw-byte removal step applied after the request exceeds its byte bound. */
+  /** Represented-byte removal step applied after the request exceeds its byte bound. */
   byteQuantum?: number
   /** Image-count removal step applied after the request exceeds its count bound. */
   countQuantum?: number
@@ -125,13 +134,13 @@ function imageHandle(
   }
 }
 
-/** Resolve one durable image into its descriptor and transient DeepSeek file-id part. */
+/** Resolve one durable image into its descriptor and transient DeepSeek image part. */
 async function imageParts(
   block: Extract<ContentBlock, { type: 'image' }>,
   images: ImageSerializationOptions,
   location: ImageWireLocation,
   precededByContent: boolean,
-): Promise<[WireTextContentPart, WireFileContentPart]> {
+): Promise<[WireTextContentPart, WireImageContentPart]> {
   const version = images.requestImages.get(block.attachment.attachmentId)
   if (version === undefined) {
     throw new LlmError(
@@ -139,10 +148,13 @@ async function imageParts(
       'INVALID_REQUEST',
     )
   }
-  return [
-    imageHandle(version, precededByContent),
-    { type: 'file', file_id: await images.resolveFileId(version, block, location) },
-  ]
+  const image: WireImageContentPart = images.representation.kind === 'file'
+    ? { type: 'file', file_id: await images.representation.resolveFileId(version, block, location) }
+    : {
+      type: 'image_url',
+      image_url: { url: `data:${version.mediaType};base64,${Buffer.from(version.data).toString('base64')}` },
+    }
+  return [imageHandle(version, precededByContent), image]
 }
 
 /** Convert user or nested tool-result blocks into ordered wire parts. */
@@ -177,7 +189,7 @@ async function contentParts(
 function userContent(parts: readonly WireUserContentPart[]): string | WireUserContentPart[] {
   const text: string[] = []
   for (const part of parts) {
-    if (part.type === 'file') return [...parts]
+    if (part.type !== 'text') return [...parts]
     text.push(part.text)
   }
   return text.join('')
@@ -263,7 +275,7 @@ export function serializeMessages(messages: Message[]): WireMessage[] {
  * Consecutive tool results keep string `tool` messages and share one following
  * user message containing their images.
  * @param messages - transient request history after request-size offloading.
- * @param images - prepared request versions and reusable provider file-id resolver.
+ * @param images - prepared request versions, one provider representation, and its budget.
  * @returns ordered DeepSeek wire messages.
  */
 export async function serializeMessagesWithImages(
@@ -272,7 +284,7 @@ export async function serializeMessagesWithImages(
 ): Promise<WireMessage[]> {
   assertSupportedImageRoles(messages)
   const wire: WireMessage[] = []
-  let pendingToolImages: WireFileContentPart[] = []
+  let pendingToolImages: WireImageContentPart[] = []
   const flushToolImages = (): void => {
     if (pendingToolImages.length === 0) return
     wire.push({
@@ -309,14 +321,14 @@ export async function serializeMessagesWithImages(
     }
     for (const result of toolResults) {
       const parts = await contentParts(result.content, images, messageIndex + 1, nextImage)
-      const fileParts = parts.filter((part): part is WireFileContentPart => part.type === 'file')
+      const imageParts = parts.filter((part): part is WireImageContentPart => part.type !== 'text')
       const text = parts.filter(part => part.type === 'text').map(part => part.text).join('')
       wire.push({
         role: 'tool',
         tool_call_id: result.toolCallId,
         content: text || '(no output)',
       })
-      pendingToolImages.push(...fileParts)
+      pendingToolImages.push(...imageParts)
     }
   }
   flushToolImages()
@@ -378,7 +390,7 @@ export function serializeRequest(
 /**
  * Build one image-capable request while keeping durable bytes out of session
  * messages. Oversized oldest images become deterministic text after their
- * exact request-version byte lengths are known and before provider upload.
+ * exact request-version byte lengths are known and before provider serialization.
  * @param options - harness request containing image-capable user content.
  * @param images - attachment resolver, request bound, and cancellation.
  * @param defaults - adapter-level thinking defaults.
@@ -391,7 +403,7 @@ export async function serializeRequestWithImages(
 ): Promise<WireRequest> {
   assertSupportedImageRoles(options.messages)
   const requestMessages = offloadRequestImagesWithPolicy(options.messages, {
-    representation: 'raw',
+    representation: images.representation.kind === 'file' ? 'raw' : 'base64',
     byteLength: (ref) => {
       const version = images.requestImages.get(ref.attachmentId)
       if (version === undefined) {
@@ -399,7 +411,7 @@ export async function serializeRequestWithImages(
       }
       return version.bytes
     },
-    maxBytes: images.maxRequestFilesBytes,
+    maxBytes: images.maxRequestImageBytes,
     ...images.maxImagesPerRequest === undefined ? {} : { maxImages: images.maxImagesPerRequest },
     ...images.byteQuantum === undefined ? {} : { byteQuantum: images.byteQuantum },
     ...images.countQuantum === undefined ? {} : { countQuantum: images.countQuantum },
