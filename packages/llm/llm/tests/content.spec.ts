@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import { CallId, createUserMessage, OFFLOADED_IMAGE_TEXT, offloadRequestImages } from '../src/index.ts'
+import { createUserMessage, OFFLOADED_IMAGE_TEXT, offloadRequestImages, ToolCallId } from '../src/index.ts'
 import type { ContentBlock } from '../src/index.ts'
 
 const source = { kind: 'plugin' as const, plugin: 'test' }
@@ -49,7 +49,7 @@ describe('offloadRequestImages', () => {
       createUserMessage({
         content: [{
           type: 'tool-result',
-          toolCallId: CallId('shot'),
+          toolCallId: ToolCallId('shot'),
           content: [shared],
         }],
         source,
@@ -61,7 +61,7 @@ describe('offloadRequestImages', () => {
     expect(fitted).not.toBe(messages)
     expect(fitted[0]?.content).toEqual([{
       type: 'tool-result',
-      toolCallId: CallId('shot'),
+      toolCallId: ToolCallId('shot'),
       content: [{ type: 'text', text: OFFLOADED_IMAGE_TEXT }],
     }])
     expect(fitted[1]?.content).toEqual([shared, image(3)])
@@ -77,7 +77,7 @@ describe('offloadRequestImages', () => {
   it('keeps unchanged nested content while replacing a later image', () => {
     const nested = {
       type: 'tool-result' as const,
-      toolCallId: CallId('text-only'),
+      toolCallId: ToolCallId('text-only'),
       content: [{ type: 'text' as const, text: 'kept' }],
     }
     const messages = [createUserMessage({ content: [nested, image(3)], source })]

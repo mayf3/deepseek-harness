@@ -245,10 +245,10 @@ describe('BlockAssembler.interruptedBlocks', () => {
     assembler.push({ type: 'text-delta', index: 0, text: 'calling' })
     assembler.push({ type: 'block-end', index: 0, block: { type: 'text', text: 'calling' } })
     assembler.push({ type: 'block-start', index: 1, blockType: 'tool-call' })
-    assembler.push({ type: 'tool-call-delta', index: 1, id: CallId('c1'), name: 'read', argumentsDelta: '{"a":1}' })
-    assembler.push({ type: 'block-end', index: 1, block: { type: 'tool-call', id: CallId('c1'), name: 'read', arguments: '{"a":1}' } })
+    assembler.push({ type: 'tool-call-delta', index: 1, id: ToolCallId('c1'), name: 'read', argumentsDelta: '{"a":1}' })
+    assembler.push({ type: 'block-end', index: 1, block: { type: 'tool-call', id: ToolCallId('c1'), name: 'read', arguments: '{"a":1}' } })
     assembler.push({ type: 'block-start', index: 2, blockType: 'tool-call' })
-    assembler.push({ type: 'tool-call-delta', index: 2, id: CallId('c2'), name: 'read', argumentsDelta: '{"pa' })
+    assembler.push({ type: 'tool-call-delta', index: 2, id: ToolCallId('c2'), name: 'read', argumentsDelta: '{"pa' })
     expect(assembler.interruptedBlocks()).toEqual([{ type: 'text', text: 'calling' }])
   })
 
