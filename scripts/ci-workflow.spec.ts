@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '..')
 const runnerPrivatePnpmDestination = '${{ runner.temp }}/setup-pnpm'
+const nativeWindowsPnpmDestination = '${{ runner.temp }}/setup-pnpm-js'
 
 describe('CI workflow', () => {
   it('isolates every pnpm action setup destination per runner', () => {
@@ -25,8 +26,13 @@ describe('CI workflow', () => {
     expect(setups.length).toBeGreaterThan(0)
     for (const { jobName, step } of setups) {
       expect(step, `${jobName} must not share pnpm/action-setup's default destination`).toMatchObject({
-        with: { dest: runnerPrivatePnpmDestination },
+        with: {
+          dest: jobName === 'windows-native'
+            ? nativeWindowsPnpmDestination
+            : runnerPrivatePnpmDestination,
+        },
       })
+      if (jobName === 'windows-native') expect(step).not.toMatchObject({ with: { standalone: true } })
     }
   })
 
@@ -81,12 +87,6 @@ describe('CI workflow', () => {
       DSH_COVERAGE_TEST_TIMEOUT_MS: '30000',
     })
     const nativeSteps = windowsNative.steps as unknown[]
-    const nativePnpmSetup = nativeSteps.find(step => (
-      isRecord(step)
-      && typeof step.uses === 'string'
-      && step.uses.startsWith('pnpm/action-setup@')
-    ))
-    expect(nativePnpmSetup).toMatchObject({ with: { standalone: true } })
     const nativeCommandSteps = nativeSteps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
