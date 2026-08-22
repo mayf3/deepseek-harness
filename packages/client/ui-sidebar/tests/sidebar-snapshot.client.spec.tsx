@@ -34,7 +34,7 @@ afterEach(() => {
 async function bench(options: { locale?: 'en' } = {}) {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('layout', { toggleSidebar: vi.fn() })
-  vi.spyOn(runtime.ctx.uiSession, 'startSession').mockImplementation(() => undefined)
+  runtime.ctx.provide('uiWorkspace', { startSession: vi.fn() } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   if (options.locale === 'en') locale.setLocale('en')
   runtime.ctx.provide('locale', locale)

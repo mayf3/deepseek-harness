@@ -18,7 +18,7 @@ import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { DynamicCordisInvokeResult } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: resolves the `ctx.remote.$on` surface.
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import * as NodeHalf from '../src/index.ts'
 import * as Invariant from '../src/invariant.ts'
 import * as ClientHalf from '../src/client/index.ts'
@@ -448,7 +448,9 @@ describe('invariant companion', () => {
     expect(Invariant.name).toBe('cordis-client-runner-invariant')
     // No relation to audit here: the owned one is browser-local runner state.
     // An event this plugin declares nothing about: the bridge must not route it here.
-    expect(() => { (ctx.emit as (type: string) => void)('unrelated/event') }).not.toThrow()
+    expect(() => {
+      Reflect.apply(ctx.emit.bind(ctx), undefined, ['unrelated/event'])
+    }).not.toThrow()
     await fiber.dispose()
   })
 })

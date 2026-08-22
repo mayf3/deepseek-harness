@@ -119,7 +119,7 @@ export function apply(ctx: Context): void {
   if (connection.hostDescription.getSnapshot() !== undefined) sessions.handleConnected()
   ctx.typert.contexts.registerClient('agent', {
     identity: candidate => sessions.scopeOf(candidate),
-    resolve: sessionId => sessions.scope(sessionId),
+    resolve: sessionId => sessions.resolveAgentScope(sessionId),
   })
   ctx.effect(() => async () => { await control.dispose() }, 'session-controller.client.control')
 }

@@ -33,7 +33,8 @@ function sessionFakeFor() {
 async function bench() {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
-  const connectWorkspace = vi.spyOn(runtime.ctx.uiSession, 'connectWorkspace').mockResolvedValue(ROOT)
+  const connectWorkspace = vi.fn(async () => ROOT)
+  runtime.ctx.provide('uiWorkspace', { connectWorkspace } as never)
   const sessionFake = sessionFakeFor()
   await runtime.sessions.add({
     id: ROOT,

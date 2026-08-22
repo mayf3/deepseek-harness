@@ -42,7 +42,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Services required by the Conversation plugin. */
 export const inject = [
-  'slots', 'sessions', 'uiSession', 'locale', 'settingsScope',
+  'slots', 'sessions', 'uiSession', 'uiWorkspace', 'locale', 'settingsScope',
 ]
 
 // Stable no-session sources keep the renderer's observable-hook cache and
@@ -63,6 +63,12 @@ const ABSENT_LEXICON = {
 const ABSENT_MENU_LAUNCHER = {
   getSnapshot: (): string | null => null,
   subscribe: () => () => {},
+}
+
+interface WorkspaceNavigation {
+  connectWorkspace(
+    workspaceId: Parameters<ConversationInjected['selectWorkspace']>[0],
+  ): Promise<SessionId>
 }
 
 /** Resolve the session-scoped Conversation action face, failing loud. */
@@ -90,6 +96,7 @@ function concreteConversation(ctx: Context): ConversationController {
 export function apply(ctx: Context): void {
   const sessions = ctx.sessions
   const slots = ctx.slots
+  const workspaceNavigation = ctx.get('uiWorkspace') as WorkspaceNavigation
   const uiConversation = new UiConversation(ctx, sessions)
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-conversation: dictionaries')
@@ -184,7 +191,7 @@ export function apply(ctx: Context): void {
         composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),
       },
       selectWorkspace: async (workspaceId) => {
-        const nextId = await ctx.uiSession.connectWorkspace(workspaceId)
+        const nextId = await workspaceNavigation.connectWorkspace(workspaceId)
         if (sessionId !== undefined && nextId !== sessionId) {
           const from = inputHub.shell(sessionId)
           const draft = from.snapshot.draft

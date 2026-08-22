@@ -10,9 +10,9 @@ async function bench(declare = true) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const layout = { toggleSidebar: vi.fn() }
-  const uiSession = { startSession: vi.fn() }
+  const uiWorkspace = { startSession: vi.fn() }
   ctx.provide('layout', layout)
-  ctx.provide('uiSession', uiSession as never)
+  ctx.provide('uiWorkspace', uiWorkspace as never)
   ctx.provide('locale', new LocaleRuntime(ctx))
   const slots = ctx.get('slots') as SlotRegistry
   if (declare) {
@@ -21,12 +21,12 @@ async function bench(declare = true) {
       () => null,
     )
   }
-  return { ctx, slots, layout, uiSession }
+  return { ctx, slots, layout, uiWorkspace }
 }
 
 describe('ui-sidebar apply', () => {
   it('declares only the services it uses', () => {
-    expect(inject).toEqual(['slots', 'layout', 'uiSession', 'locale'])
+    expect(inject).toEqual(['slots', 'layout', 'uiWorkspace', 'locale'])
   })
 
   it('registers the shell and declares its child seats', async () => {
@@ -42,11 +42,11 @@ describe('ui-sidebar apply', () => {
     expect(b.slots.entries('sidebar')[0]!.locale).toBe('sidebar')
     const injected = (b.slots.entries('sidebar')[0]!.inject as () => SidebarRootInjected)()
     expect(Object.keys(injected)).toEqual(['startSession', 'toggleSidebar'])
-    // Both arms delegate to the Session UI's shared New Session action.
+    // Both arms delegate to the Workspace UI's shared New Session action.
     injected.startSession('workspace' as never)
-    expect(b.uiSession.startSession).toHaveBeenCalledWith('workspace')
+    expect(b.uiWorkspace.startSession).toHaveBeenCalledWith('workspace')
     injected.startSession()
-    expect(b.uiSession.startSession).toHaveBeenLastCalledWith(undefined)
+    expect(b.uiWorkspace.startSession).toHaveBeenLastCalledWith(undefined)
     injected.toggleSidebar()
     expect(b.layout.toggleSidebar).toHaveBeenCalledOnce()
   })
