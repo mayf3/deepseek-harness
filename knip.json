@@ -115,9 +115,11 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
-      ],
+      ]
+    },
+    "packages/api/workspace-controller": {
       "ignoreDependencies": [
-        "@deepseek-ai/dsh-api-gateway"
+        "zod"
       ]
     },
     "packages/client/ui-primitives": {

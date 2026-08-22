@@ -1,0 +1,28 @@
+{
+  "extends": "../../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
+  },
+  "files": [
+    "src/client/index.ts",
+    "src/types.ts",
+    "src/remote-events.ts"
+  ],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../gateway/tsconfig.client.json" },
+    { "path": "../../attachment/attachment" },
+    { "path": "../../core/session" },
+    { "path": "../../interaction/user-approval" },
+    { "path": "../../interaction/user-questions" },
+    { "path": "../../jobs/jobs" },
+    { "path": "../../llm/llm" },
+    { "path": "../../session/session-projection" },
+    { "path": "../../core/tools" },
+    { "path": "../../util/brand" },
+    { "path": "../../workspace/workspace" },
+    { "path": "../../typert/protocol" }
+  ]
+}
