@@ -1,20 +1,70 @@
-// PendingWait: the render-facing half of one Session Controller interaction.
+// PendingWait: the legacy render-facing carrier retained until UI owners consume Remote events directly.
 
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import type {
-  SessionApprovalRequest,
-  SessionInteractionId,
-  SessionInteractionResult,
-  SessionQuestionRequest,
-  SessionRespondReceipt,
-  SessionRespondRequest,
-} from '@deepseek-ai/dsh-api-session-controller/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+
+/** One selectable answer offered by the legacy question renderer. */
+export interface PendingQuestionOption {
+  readonly label: string
+  readonly description?: string
+}
+
+/** One question rendered by the legacy question composer. */
+export interface PendingQuestionItem {
+  readonly id: string
+  readonly question: string
+  readonly detail?: string
+  readonly header?: string
+  readonly options?: readonly PendingQuestionOption[]
+  readonly multiSelect?: boolean
+  readonly intent?: { readonly kind: 'plan-review'; readonly approve: string }
+}
+
+/** Structured answer returned by the legacy question composer. */
+export interface PendingQuestionAnswer {
+  readonly answers: readonly {
+    readonly id: string
+    readonly selected: readonly string[]
+    readonly custom?: string
+  }[]
+}
 
 /** Kind-keyed payload map: the requested frame's domain fields (envelope fields stripped). */
 export interface PendingPayloads {
-  approval: Omit<SessionApprovalRequest, 'interactionId' | 'sessionId'>
-  question: Omit<SessionQuestionRequest, 'interactionId' | 'sessionId'>
+  approval: {
+    readonly approvalId: string
+    readonly toolName: string
+    readonly callId?: string
+    readonly reason?: string
+  }
+  question: { readonly questions: readonly PendingQuestionItem[] }
+}
+
+interface PendingResponseValues {
+  approval: {
+    readonly sessionId: SessionId
+    readonly approvalId: string
+    readonly outcome: 'allowed-once' | 'rejected'
+  }
+  question: { readonly sessionId: SessionId; readonly answer: PendingQuestionAnswer }
+}
+
+type PendingInteractionResult<K extends PendingKind> =
+  | { readonly ok: true; readonly value: PendingResponseValues[K] }
+  | {
+    readonly ok: false
+    readonly error: { readonly code: string; readonly message: string; readonly details: Readonly<Record<string, unknown>> }
+  }
+
+/** Receipt returned by the legacy response carrier. */
+export interface PendingRespondReceipt {
+  readonly accepted: boolean
+  readonly reason?: string
+}
+
+interface PendingRespondRequest<K extends PendingKind> {
+  readonly interactionId: string
+  readonly result: PendingInteractionResult<K>
 }
 
 /** Pending-interaction discriminant (the keys of PendingPayloads). */
@@ -45,8 +95,8 @@ export class PendingWait<K extends PendingKind = PendingKind> {
   /** The requested frame's domain fields, verbatim. */
   readonly payload: PendingPayloads[K]
   #settled = false
-  readonly #interactionId: SessionInteractionId
-  readonly #respond: (request: SessionRespondRequest) => Promise<RemoteResult<SessionRespondReceipt>>
+  readonly #interactionId: string
+  readonly #respond: (request: PendingRespondRequest<K>) => Promise<RemoteResult<PendingRespondReceipt>>
 
   /**
    * Minted by Session on a requested frame (public construction is the test-fixture path).
@@ -57,8 +107,8 @@ export class PendingWait<K extends PendingKind = PendingKind> {
    * @param respond - Session Controller response method.
    */
   constructor(
-    kind: K, interactionId: SessionInteractionId, sessionId: SessionId, payload: PendingPayloads[K],
-    respond: (request: SessionRespondRequest) => Promise<RemoteResult<SessionRespondReceipt>>,
+    kind: K, interactionId: string, sessionId: SessionId, payload: PendingPayloads[K],
+    respond: (request: PendingRespondRequest<K>) => Promise<RemoteResult<PendingRespondReceipt>>,
   ) {
     this.kind = kind
     this.key = `${KEY_PREFIX[kind]}:${interactionId}`
@@ -74,12 +124,12 @@ export class PendingWait<K extends PendingKind = PendingKind> {
    * @param result - the result shell (ok value / error envelope), domain-encoded by the caller.
    * @returns the carrier receipt.
    */
-  respond(result: SessionInteractionResult): Promise<SessionRespondReceipt> {
+  respond(result: PendingInteractionResult<K>): Promise<PendingRespondReceipt> {
     if (this.#settled) throw new Error(`pending wait ${this.key} is already settled`)
     return this.send(result)
   }
 
-  private async send(result: SessionInteractionResult): Promise<SessionRespondReceipt> {
+  private async send(result: PendingInteractionResult<K>): Promise<PendingRespondReceipt> {
     const response = await this.#respond({ interactionId: this.#interactionId, result })
     if (!response.ok) {
       throw new Error(`session interaction response failed: ${response.error.code}: ${response.error.message}`)

@@ -8,10 +8,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm/types'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { MessageId, RpcId, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import type {
-  SessionControlFrame,
-  SessionInteractionId,
-} from '@deepseek-ai/dsh-api-session-controller/types'
+import type { SessionControlFrame } from '@deepseek-ai/dsh-api-session-controller/types'
 import { Session } from '../src/client/sessions/session.ts'
 import { SessionManager } from '../src/client/sessions/manager.ts'
 import { FakeApiClient, fakeRemote } from './fake-api.client.ts'
@@ -57,10 +54,6 @@ function makeBench(): { api: FakeApiClient; session: Session } {
 function makeManager(): SessionManager {
   const api = new FakeApiClient()
   return new SessionManager(api, fakeRemote(api))
-}
-
-function interactionId(value: string): SessionInteractionId {
-  return value as SessionInteractionId
 }
 
 describe('queue snapshot intake', () => {
@@ -245,7 +238,7 @@ describe('queue reconnect semantics', () => {
   it('a control baseline clears stale state before a fresh update lands', () => {
     const session = makeSession()
     session.handleControlFrame(queueFrame([{ id: 'q-old', body: '旧连接' }]))
-    session.replaceControl([], [])
+    session.replaceControl([])
     expect(session.getSnapshot().queue).toEqual([])
     session.handleControlFrame(queueFrame([{ id: 'q-new', body: '新基线' }]))
     expect(session.getSnapshot().queue.map(row => row.id)).toEqual(['q-new'])
@@ -276,7 +269,7 @@ describe('manager buffering of queue snapshots', () => {
     expect(manager.get(SID).getSnapshot().queue.map(row => row.id)).toEqual(['q-new'])
   })
 
-  it('a control baseline replaces the prior queue and restores answerable interactions', () => {
+  it('a control baseline replaces the prior queue', () => {
     const manager = makeManager()
     manager.handleControlFrame(queueFrame([{ id: 'q-g1', body: '第一代' }]))
     const nextQueue = queueFrame([{ id: 'q-g2', body: '第二代' }]).items
@@ -285,18 +278,10 @@ describe('manager buffering of queue snapshots', () => {
       value: {
         queues: { [SID]: nextQueue },
         jobs: {},
-        approvals: [{
-          interactionId: interactionId('approval-1'),
-          sessionId: SID,
-          approvalId: 'ap-1' as never,
-          toolName: 'bash',
-        }],
-        questions: [],
         projections: {},
       },
     })
     const snapshot = manager.get(SID).getSnapshot()
     expect(snapshot.queue.map(row => row.id)).toEqual(['q-g2'])
-    expect(snapshot.pending.map(pending => pending.kind)).toEqual(['approval'])
   })
 })

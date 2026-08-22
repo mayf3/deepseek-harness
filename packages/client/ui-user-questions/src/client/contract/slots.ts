@@ -10,14 +10,15 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 // Also pulls ui-conversation's SlotMap merge (the 'conversation.composer'
 // entry) into every program that sees this contract, so PropsRuntime resolves.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { PendingWait } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionQuestionResponse } from '@deepseek-ai/dsh-api-remotes/client'
+import type {
+  PendingQuestionAnswer, PendingWait,
+} from '@deepseek-ai/dsh-client-runtime/client'
 
 /** The pending question carrier the owner dispatches into the composer slot. */
 export type QuestionWait = PendingWait<'question'>
 
 /** One structured answer batch covering every question of the request. */
-export type QuestionAnswer = SessionQuestionResponse['answer']
+export type QuestionAnswer = PendingQuestionAnswer
 
 /** One question of the request, as the carrier payload carries it. */
 type QuestionItem = QuestionWait['payload']['questions'][number]

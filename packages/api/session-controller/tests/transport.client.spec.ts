@@ -207,7 +207,7 @@ describe('Session Client stream adapters', () => {
   it('maps the Host-wide control baseline and deltas into one snapshot stream', async () => {
     const baseline: SessionControlFrame = {
       type: 'baseline',
-      value: { queues: {}, jobs: {}, approvals: [], questions: [], projections: {} },
+      value: { queues: {}, jobs: {}, projections: {} },
     }
     const update: SessionControlFrame = {
       type: 'queue', sessionId: 'session-1' as never, items: [],

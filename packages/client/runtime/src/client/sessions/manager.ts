@@ -7,11 +7,8 @@ import type {
   SessionSummary, SubagentAddress, SubagentCatalog, JobView, WorkspaceId,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
-  SessionApprovalRequest,
   SessionControlBaseline,
   SessionControlFrame,
-  SessionInteractionId,
-  SessionQuestionRequest,
   SessionQueuedItem,
   SessionError,
 } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -22,7 +19,6 @@ import { mergeOrderedBaseline } from '../ordered-baseline.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
 import type { SessionListEntry, TitledSessionSummary } from './lineage.ts'
 import { flattenLineage } from './lineage.ts'
-import type { PendingInteractionStatus } from './pending.ts'
 // Type-only merge edge: the title domain's client-namespace outlet declares
 // the 'title' projection key this manager projects into list rows (and any
 // useProjection('title') consumer reads). Zero value imports by construction.
@@ -85,35 +81,11 @@ type SessionListMutation =
   /** Local first-send flip: the sender clears blank without waiting for a host frame. */
   | { kind: 'engaged'; sessionId: SessionId }
 
-/** Match ui-user-questions's binary plan-review routing at the wire boundary. */
-function questionInteractionStatus(
-  questions: SessionQuestionRequest['questions'],
-): PendingInteractionStatus {
-  if (questions.length !== 1) return 'question'
-  const question = questions[0] as typeof questions[number]
-  const intent = question.intent
-  if (intent?.kind !== 'plan-review' || question.detail === undefined) return 'question'
-  if (question.multiSelect === true) return 'question'
-  const options = question.options ?? []
-  if (options.length > 2) return 'question'
-  return options.some(option => option.label === intent.approve) ? 'plan-review' : 'question'
-}
-
 /** Instance cluster + frame entry + the session list. */
 export class SessionManager {
   private readonly sessions = new Map<SessionId, Session>()
   /** Latest transient queues, retained independently of Session object materialization. */
   private readonly queues = new Map<SessionId, readonly SessionQueuedItem[]>()
-  /** Answerable requests retained by stable identity for lazy Session materialization. */
-  private readonly interactions = new Map<
-    SessionId,
-    Map<SessionInteractionId, SessionApprovalRequest | SessionQuestionRequest>
-  >()
-  /** Outstanding answerable interactions per session, keyed by their stable request identity.
-   *  Manager-owned rather than read off Session instances because the sidebar must light up for
-   *  sessions never instantiated. Each control baseline replaces the complete set, and
-   *  session removal clears the corresponding rows. */
-  private readonly pendingInteractions = new Map<SessionId, Map<string, PendingInteractionStatus>>()
   /**
    * Sessions that finished running while not selected — the sidebar's green
    * "done" reminder (manager-owned, survives connection generations; cleared
@@ -279,10 +251,7 @@ export class SessionManager {
       // not-running summary must sweep replayed queue
       // rows the same way a live status flip would (their retirement events dropped
       // while the session was uninstantiated).
-      session.replaceControl(
-        this.queues.get(sessionId) ?? [],
-        [...(this.interactions.get(sessionId)?.values() ?? [])],
-      )
+      session.replaceControl(this.queues.get(sessionId) ?? [])
       // Sync the running and blank bits from the list snapshot into the new
       // instance (consistency when the list precedes open).
       const summary = this.summaries.find(s => s.sessionId === sessionId)
@@ -663,26 +632,6 @@ export class SessionManager {
     return this.listSnapshotCache
   }
 
-  /** Add or refresh one stable pending-interaction identity. */
-  private trackPending(sessionId: SessionId, key: string, status: PendingInteractionStatus): void {
-    let interactions = this.pendingInteractions.get(sessionId)
-    if (interactions === undefined) {
-      interactions = new Map()
-      this.pendingInteractions.set(sessionId, interactions)
-    }
-    if (interactions.get(key) === status) return
-    interactions.set(key, status)
-    this.notifier.markDirty()
-  }
-
-  /** Settle one pending-interaction identity without disturbing sibling waits. */
-  private resolvePending(sessionId: SessionId, key: string): void {
-    const interactions = this.pendingInteractions.get(sessionId)
-    if (interactions === undefined || !interactions.delete(key)) return
-    if (interactions.size === 0) this.pendingInteractions.delete(sessionId)
-    this.notifier.markDirty()
-  }
-
   // ---- Live control and Host-event sinks ----
 
   /**
@@ -705,28 +654,7 @@ export class SessionManager {
       this.notifier.markDirty()
       return
     }
-    if (frame.type === 'queue') this.queues.set(frame.sessionId, frame.items)
-    if (frame.type === 'approval/requested' || frame.type === 'question/requested') {
-      let interactions = this.interactions.get(frame.sessionId)
-      if (interactions === undefined) {
-        interactions = new Map()
-        this.interactions.set(frame.sessionId, interactions)
-      }
-      interactions.set(frame.interactionId, frame)
-      this.trackPending(
-        frame.sessionId,
-        `${frame.type === 'approval/requested' ? 'a' : 'q'}:${frame.interactionId}`,
-        frame.type === 'approval/requested' ? 'approval' : questionInteractionStatus(frame.questions),
-      )
-    } else if (frame.type === 'approval/resolved' || frame.type === 'question/resolved') {
-      const interactions = this.interactions.get(frame.sessionId)
-      interactions?.delete(frame.interactionId)
-      if (interactions?.size === 0) this.interactions.delete(frame.sessionId)
-      this.resolvePending(
-        frame.sessionId,
-        `${frame.type === 'approval/resolved' ? 'a' : 'q'}:${frame.interactionId}`,
-      )
-    }
+    this.queues.set(frame.sessionId, frame.items)
     this.sessions.get(frame.sessionId)?.handleControlFrame(frame)
   }
 
@@ -741,37 +669,13 @@ export class SessionManager {
       if (jobs.length > 0) this.jobsBySession.set(sessionId as SessionId, jobs)
     }
 
-    this.interactions.clear()
-    this.pendingInteractions.clear()
-    for (const interaction of [...baseline.approvals, ...baseline.questions]) {
-      let interactions = this.interactions.get(interaction.sessionId)
-      if (interactions === undefined) {
-        interactions = new Map()
-        this.interactions.set(interaction.sessionId, interactions)
-      }
-      interactions.set(interaction.interactionId, interaction)
-      let statuses = this.pendingInteractions.get(interaction.sessionId)
-      if (statuses === undefined) {
-        statuses = new Map()
-        this.pendingInteractions.set(interaction.sessionId, statuses)
-      }
-      const approval = 'approvalId' in interaction
-      statuses.set(
-        `${approval ? 'a' : 'q'}:${interaction.interactionId}`,
-        approval ? 'approval' : questionInteractionStatus(interaction.questions),
-      )
-    }
-
     for (const [sessionId, block] of Object.entries(baseline.projections)) {
       const store = this.projectionStore(sessionId as SessionId)
       store.truncate(block.asOfSeq)
       store.seed(block)
     }
     for (const [sessionId, session] of this.sessions) {
-      session.replaceControl(
-        this.queues.get(sessionId) ?? [],
-        [...(this.interactions.get(sessionId)?.values() ?? [])],
-      )
+      session.replaceControl(this.queues.get(sessionId) ?? [])
     }
     this.notifier.markDirty()
   }
@@ -813,8 +717,6 @@ export class SessionManager {
     if (durableSubagent) this.sessions.get(sessionId)?.handleRunning(false)
     else this.sessions.get(sessionId)?.handleRemoved()
     this.queues.delete(sessionId)
-    this.interactions.delete(sessionId)
-    this.pendingInteractions.delete(sessionId)
     this.jobsBySession.delete(sessionId)
     if (!durableSubagent) this.projectionStores.delete(sessionId)
     const inflightCatalog = this.catalogInflight.get(sessionId)
@@ -996,15 +898,7 @@ export class SessionManager {
         ...(projectionValues === undefined ? {} : { projectionValues }),
       }
     })
-    const pendingInteractions = new Map<SessionId, PendingInteractionStatus>()
-    for (const [sessionId, interactions] of this.pendingInteractions) {
-      const statuses = [...interactions.values()]
-      // The composer selects the first question ahead of approval. Mirror that
-      // answer order so the sidebar names the interaction the user can act on.
-      const status = statuses.find(candidate => candidate !== 'approval') ?? statuses[0]
-      if (status !== undefined) pendingInteractions.set(sessionId, status)
-    }
-    const fresh = flattenLineage(merged, pendingInteractions, this.completedNotifications)
+    const fresh = flattenLineage(merged, undefined, this.completedNotifications)
     const items = fresh.map((entry) => {
       const prev = this.entryCache.get(entry.sessionId)
       if (
@@ -1012,7 +906,6 @@ export class SessionManager {
         && prev.blank === entry.blank && prev.agentPreset === entry.agentPreset
         && prev.parentSessionId === entry.parentSessionId && prev.cwd === entry.cwd
         && prev.origin === entry.origin && prev.title === entry.title && prev.depth === entry.depth
-        && prev.pendingInteraction === entry.pendingInteraction
         && prev.projectionValues === entry.projectionValues
         && prev.completed === entry.completed
       ) return prev

@@ -17,10 +17,8 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   SessionAddress,
-  SessionApprovalRequest,
   SessionControlFrame,
   SessionEventEntry,
-  SessionQuestionRequest,
   SessionQueuedItem,
   SessionRequestId,
   SessionError,
@@ -38,7 +36,6 @@ import type {
 } from './conversation.ts'
 import { EMPTY_CHAT_SNAPSHOT } from './conversation.ts'
 import type { PendingInteraction } from './pending.ts'
-import { PendingWait } from './pending.ts'
 import { Notifier } from './notifier.ts'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionRemotes } from './remotes.ts'
@@ -49,6 +46,7 @@ import { SessionQueueMirror } from './queue-mirror.ts'
 
 /** Messages requested per history page. */
 export const PAGE_MESSAGES = 50
+const EMPTY_PENDING: readonly PendingInteraction[] = []
 
 /** Manager-owned observers of a Session object's local state edges. */
 export interface SessionOptions {
@@ -96,9 +94,6 @@ export class Session implements SessionFace {
    *  passes drop all writes once the generation moves on. */
   private openGeneration = 0
   private loadingOlder = false
-  private pending = new Map<string, PendingInteraction>()
-  private pendingRev = 0
-  private pendingCache: { rev: number; value: PendingInteraction[] } | null = null
   /** Authoritative stream-only inbox snapshot; pending work never hits history. */
   private readonly queueMirror = new SessionQueueMirror()
   /** Session-owned business Context engine over the contiguous raw window. */
@@ -456,41 +451,19 @@ export class Session implements SessionFace {
   /**
    * Replace every transient control value for this Session from one stream baseline.
    * @param queue - complete pending queue for this Session.
-   * @param interactions - complete pending approval and question set.
    */
-  replaceControl(
-    queue: readonly SessionQueuedItem[],
-    interactions: readonly (SessionApprovalRequest | SessionQuestionRequest)[],
-  ): void {
+  replaceControl(queue: readonly SessionQueuedItem[]): void {
     this.queueMirror.replace(queue)
-    this.pending.clear()
-    this.pendingRev++
-    for (const interaction of interactions) this.requestInteraction(interaction)
     this.notifier.markDirty()
   }
 
   /**
    * Apply one Session-addressed live control update.
-   * @param frame - queue or interaction replacement addressed to this Session.
+   * @param frame - queue replacement addressed to this Session.
    */
-  handleControlFrame(frame: Exclude<SessionControlFrame, { type: 'baseline' | 'jobs' | 'projection' }>): void {
-    switch (frame.type) {
-      case 'queue':
-        this.queueMirror.replace(frame.items)
-        this.notifier.markDirty()
-        return
-      case 'approval/requested':
-      case 'question/requested':
-        this.requestInteraction(frame)
-        this.notifier.markDirty()
-        return
-      case 'approval/resolved':
-        this.resolveInteraction(`a:${frame.interactionId}`)
-        return
-      case 'question/resolved':
-        this.resolveInteraction(`q:${frame.interactionId}`)
-        return
-    }
+  handleControlFrame(frame: Extract<SessionControlFrame, { type: 'queue' }>): void {
+    this.queueMirror.replace(frame.items)
+    this.notifier.markDirty()
   }
 
   /**
@@ -579,42 +552,6 @@ export class Session implements SessionFace {
   }
 
   // ---- Private ----
-
-  /** Requested-frame arrival: the wait enters the pending map under its own key. */
-  private mint(wait: PendingInteraction): void {
-    this.pending.set(wait.key, wait)
-    this.pendingRev++
-  }
-
-  /** Authoritative resolved-frame settlement: mark, then drop from the pending map. */
-  private settle(wait: PendingInteraction): void {
-    wait.markSettled()
-    this.pending.delete(wait.key)
-    this.pendingRev++
-  }
-
-  private requestInteraction(interaction: SessionApprovalRequest | SessionQuestionRequest): void {
-    if ('approvalId' in interaction) {
-      const { interactionId, sessionId: _sessionId, ...payload } = interaction
-      this.mint(new PendingWait(
-        'approval', interactionId, this.sessionId, payload,
-        request => this.remote.session.respond(request),
-      ))
-      return
-    }
-    const { interactionId, sessionId: _sessionId, ...payload } = interaction
-    this.mint(new PendingWait(
-      'question', interactionId, this.sessionId, payload,
-      request => this.remote.session.respond(request),
-    ))
-  }
-
-  private resolveInteraction(key: string): void {
-    const interaction = this.pending.get(key)
-    if (interaction === undefined) return
-    this.settle(interaction)
-    this.notifier.markDirty()
-  }
 
   /** @param generation - openGeneration at launch; stale passes cannot publish after replacement. */
   private async doOpen(generation: number): Promise<void> {
@@ -713,9 +650,6 @@ export class Session implements SessionFace {
   }
 
   private buildSnapshot(): ConversationSnapshot {
-    if (this.pendingCache === null || this.pendingCache.rev !== this.pendingRev) {
-      this.pendingCache = { rev: this.pendingRev, value: [...this.pending.values()] }
-    }
     const chat = (this.conversation.snapshot('chat') as ChatSnapshot | undefined) ?? EMPTY_CHAT_SNAPSHOT
     const legacy = chat.legacy
     return {
@@ -727,7 +661,7 @@ export class Session implements SessionFace {
       turnEnds: legacy.turnEnds,
       partial: legacy.partial,
       runningCalls: legacy.runningCalls,
-      pending: this.pendingCache.value,
+      pending: EMPTY_PENDING,
       queue: this.queueMirror.snapshot(),
       running: this.running,
       subagent: this.address === undefined
@@ -736,8 +670,7 @@ export class Session implements SessionFace {
       composerPhase: derivePhase(
         hasVisibleConversationContent(chat)
           || (!this.blankBit && !this.firstPromptPendingTurn)
-          || this.running
-          || this.pendingCache.value.length > 0,
+          || this.running,
         this.promptAttempted,
       ),
       removed: this.removed,

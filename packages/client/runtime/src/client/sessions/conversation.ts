@@ -11,11 +11,11 @@ import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import type {
   ClientFailure, SessionId, SubagentAddress, ToolCallView, ToolResultView,
 } from '@deepseek-ai/dsh-api-remotes/client'
-import type { PendingInteraction } from './pending.ts'
 import type { ContextProvenanceView, KnownContextForm } from './context-provenance.ts'
 import type {
   ChatConversationViewNode, ConversationTimelineSnapshot, ConversationViewSnapshotStore,
 } from '../contract/conversation.ts'
+import type { PendingInteraction } from './pending.ts'
 export type { TodoItem }
 
 /** Request configuration recorded for one provider call. */
@@ -445,6 +445,7 @@ export interface ConversationSnapshot {
   turnEnds: ReadonlyMap<number, number>
   partial: PartialAssistant | null
   runningCalls: readonly RunningToolCall[]
+  /** Legacy interaction carrier list; empty after Session interaction transport removal. */
   pending: readonly PendingInteraction[]
   /** Authoritative transient inbox snapshot, including queued and steering placements. */
   queue: readonly QueuedMessage[]

@@ -14,8 +14,6 @@ import type {
   SessionFollowRequest,
   SessionPage,
   SessionPageRequest,
-  SessionRespondReceipt,
-  SessionRespondRequest,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { WorkspaceRemote } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { WorkspaceError, WorkspaceFollowFrame } from '@deepseek-ai/dsh-api-workspace-controller/types'
@@ -192,8 +190,6 @@ export class FakeApiClient implements IApiClient {
   controlBaseline: SessionControlBaseline = {
     queues: {},
     jobs: {},
-    approvals: [],
-    questions: [],
     projections: {},
   }
   workspaceBaseline: Extract<WorkspaceFollowFrame, { type: 'baseline' }>['value'] = {
@@ -298,9 +294,6 @@ export class FakeApiClient implements IApiClient {
     discoverModels: payload => this.record('llm.discoverModels', payload, Promise.resolve(ok({ models: [] }))),
   }
 
-  onRespond: (request: SessionRespondRequest) => Promise<RemoteResult<SessionRespondReceipt>> =
-    () => Promise.resolve({ ok: true, value: { accepted: true } })
-
   /** Remote namespaces bound to this fake's programmable unary slots and stream pumps. */
   sessionRemotes(): RuntimeRemotes {
     return {
@@ -329,7 +322,6 @@ export class FakeApiClient implements IApiClient {
         page: request => this.page(request),
         follow: (request, signal) => this.openFollow(request, signal),
         control: signal => this.openControl(signal),
-        respond: request => this.record('session.respond', request, this.onRespond(request)),
       },
       workspace: {
         create: payload => this.record('workspace.create', payload, this.onWorkspaceCreate(payload)),

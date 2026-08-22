@@ -11,10 +11,7 @@ import { RemoteStreamError } from '@deepseek-ai/dsh-api-gateway/client'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-commands/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import type {
-  SessionInteractionId,
-  SessionToolView,
-} from '@deepseek-ai/dsh-api-session-controller/types'
+import type { SessionToolView } from '@deepseek-ai/dsh-api-session-controller/types'
 import { Session } from '../src/client/sessions/session.ts'
 import type {
   ChatConversationViewNode, ChatLocationNodeIndex, ChatNodeStore, ChatSnapshot,
@@ -165,10 +162,6 @@ const TEST_CONVERSATION: ConversationRuntime = {
 
 function makeSession(api = new FakeApiClient()): { api: FakeApiClient; session: Session } {
   return { api, session: new Session(SID, api, fakeRemote(api), { conversation: TEST_CONVERSATION }) }
-}
-
-function interactionId(value: string): SessionInteractionId {
-  return value as SessionInteractionId
 }
 
 function follow(
@@ -627,69 +620,6 @@ describe('rename', () => {
   })
 })
 
-describe('pending interactions', () => {
-  it('adds approval/question on requested and removes them on resolved', async () => {
-    const { session } = makeSession()
-    session.handleControlFrame({
-      type: 'approval/requested', interactionId: interactionId('ra'),
-      sessionId: SID, approvalId: 'ap1' as never, toolName: 'rm',
-    })
-    session.handleControlFrame({
-      type: 'question/requested', interactionId: interactionId('rq'),
-      sessionId: SID, questions: [],
-    })
-    expect(session.getSnapshot().pending.map(p => p.kind).sort()).toEqual(['approval', 'question'])
-    session.handleControlFrame({
-      type: 'approval/resolved', interactionId: interactionId('ra'),
-      sessionId: SID, approvalId: 'ap1' as never, outcome: 'allowed-once',
-    })
-    session.handleControlFrame({
-      type: 'question/resolved', interactionId: interactionId('rq'),
-      sessionId: SID, outcome: 'answered',
-    })
-    expect(session.getSnapshot().pending).toEqual([])
-  })
-
-  it('mints waits whose respond() addresses the stable interaction id', async () => {
-    const { api, session } = makeSession()
-    session.handleControlFrame({
-      type: 'question/requested', interactionId: interactionId('rq-answer'),
-      sessionId: SID, questions: [],
-    })
-    const wait = session.getSnapshot().pending[0]!
-    expect(wait).toMatchObject({ kind: 'question', key: 'q:rq-answer', sessionId: SID, payload: { questions: [] } })
-    const receipt = await wait.respond({
-      ok: true,
-      value: { sessionId: SID, answer: { answers: [{ id: 'mode', selected: ['Fast'] }] } },
-    })
-    expect(receipt).toEqual({ accepted: true })
-    expect(api.callsOf('session.respond')).toEqual([{
-      interactionId: 'rq-answer',
-      result: {
-        ok: true,
-        value: { sessionId: SID, answer: { answers: [{ id: 'mode', selected: ['Fast'] }] } },
-      },
-    }])
-  })
-
-  it('settles the wait on the authoritative resolved frame: respond() then throws synchronously', async () => {
-    const { api, session } = makeSession()
-    session.handleControlFrame({
-      type: 'question/requested', interactionId: interactionId('rq1'),
-      sessionId: SID, questions: [],
-    })
-    const wait = session.getSnapshot().pending[0]!
-    session.handleControlFrame({
-      type: 'question/resolved', interactionId: interactionId('rq1'),
-      sessionId: SID, outcome: 'answered',
-    })
-    expect(session.getSnapshot().pending).toEqual([])
-    expect(() => wait.respond({ ok: false, error: { code: 'internal', message: 'x', details: {} } }))
-      .toThrow('already settled')
-    expect(api.callsOf('session.respond')).toEqual([])
-  })
-})
-
 describe('remaining branches', () => {
   it('prompt transport throw folds to internal promptError', async () => {
     const { api, session } = makeSession()
@@ -771,29 +701,6 @@ describe('remaining branches', () => {
       code: 'internal', message: 'session event stream page did not end at its requested cursor',
     })
     expect(snapshot.nodes).toEqual([])
-  })
-
-  it('approval frame with callId/reason keeps the optional fields; duplicate resolved is a no-op', () => {
-    const { session } = makeSession()
-    session.handleControlFrame({
-      type: 'approval/requested', interactionId: interactionId('ra'),
-      sessionId: SID, approvalId: 'ap2' as never, toolName: 'rm',
-      callId: 'c1' as never, reason: '危险',
-    })
-    expect(session.getSnapshot().pending[0]).toMatchObject({ kind: 'approval', payload: { callId: 'c1', reason: '危险' } })
-    session.handleControlFrame({
-      type: 'approval/resolved', interactionId: interactionId('ra'),
-      sessionId: SID, approvalId: 'ap2' as never, outcome: 'allowed-once',
-    })
-    session.handleControlFrame({
-      type: 'approval/resolved', interactionId: interactionId('ra'),
-      sessionId: SID, approvalId: 'ap2' as never, outcome: 'allowed-once',
-    })
-    session.handleControlFrame({
-      type: 'question/resolved', interactionId: interactionId('never-was'),
-      sessionId: SID, outcome: 'cancelled',
-    })
-    expect(session.getSnapshot().pending).toEqual([])
   })
 
   it('deduplicates repeated running flips and records removal', () => {
@@ -951,42 +858,19 @@ describe('remaining branches', () => {
 })
 
 describe('resync', () => {
-  it('rebuilds the window without clearing control state; cold instances no-op', async () => {
+  it('rebuilds the window; cold instances no-op', async () => {
     const { api, session } = makeSession()
     api.onHistory = () => histResponse(plainTurn(0, 0, 'a', 'b'))
     await session.open()
-    session.handleControlFrame({
-      type: 'approval/requested', interactionId: interactionId('ra'),
-      sessionId: SID, approvalId: 'ap1' as never, toolName: 'rm',
-    })
     api.onHistory = () => histResponse([...plainTurn(0, 0, 'a', 'b'), ...plainTurn(6, 1, 'c', 'd')])
     await session.resync()
     const snapshot = session.getSnapshot()
     expect(snapshot.openState).toBe('open')
-    expect(snapshot.pending).toHaveLength(1)
     expect(snapshot.nodes).toHaveLength(4)
 
     const cold = makeSession()
     await cold.session.resync()
     expect(cold.api.calls).toEqual([]) // never opened: no traffic
-  })
-
-  it('re-mints a control-baseline interaction with the same key (old reference superseded)', async () => {
-    const { api, session } = makeSession()
-    api.onHistory = () => histResponse(plainTurn(0, 0, 'a', 'b'))
-    await session.open()
-    const request = {
-      interactionId: interactionId('rq-replay'), sessionId: SID, questions: [],
-    }
-    session.handleControlFrame({ type: 'question/requested', ...request })
-    const before = session.getSnapshot().pending[0]!
-    session.replaceControl([], [request])
-    const after = session.getSnapshot().pending[0]!
-    expect(after).not.toBe(before)
-    expect(after.key).toBe(before.key)
-    // Superseded ≠ settled: an in-flight respond on the stale reference still reaches the host.
-    await before.respond({ ok: false, error: { code: 'internal', message: 'x', details: {} } })
-    expect(api.callsOf('session.respond')).toMatchObject([{ interactionId: 'rq-replay' }])
   })
 
   it('drops a stale in-flight open superseded by resync (generation guard)', async () => {
@@ -1035,10 +919,6 @@ describe('reference stability (the memo contract)', () => {
       follow(api, ev.stepStart(7, 1)),
       follow(api, ev.toolCall(8, 1, 'c1', 'echo', '{}')),
     ])
-    session.handleControlFrame({
-      type: 'approval/requested', interactionId: interactionId('ra'),
-      sessionId: SID, approvalId: 'ap1' as never, toolName: 'rm',
-    })
     const before = session.getSnapshot()
     const settledKey = before.chat.order[0]!
     const settledNode = before.chat.nodes.get(settledKey)

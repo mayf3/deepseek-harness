@@ -5,12 +5,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import type {
-  SessionApprovalRequest,
-  SessionControlFrame,
-  SessionInteractionId,
-  SessionQuestionRequest,
-} from '@deepseek-ai/dsh-api-session-controller/types'
+import type { SessionControlFrame } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-session-title/client'
 import { SessionManager } from '../src/client/sessions/manager.ts'
 import { FakeApiClient, deferred, err, fakeRemote, ok } from './fake-api.client.ts'
@@ -37,32 +32,6 @@ function makeManager(): SessionManager {
   return new SessionManager(api, fakeRemote(api))
 }
 
-function interactionId(value: string): SessionInteractionId {
-  return value as SessionInteractionId
-}
-
-function approvalRequest(
-  id: string,
-  approvalId: string,
-  sessionId: SessionId = S1,
-): SessionApprovalRequest & { type: 'approval/requested' } {
-  return {
-    type: 'approval/requested',
-    interactionId: interactionId(id),
-    sessionId,
-    approvalId: approvalId as never,
-    toolName: 'rm',
-  }
-}
-
-function questionRequest(
-  id: string,
-  questions: SessionQuestionRequest['questions'] = [],
-  sessionId: SessionId = S1,
-): SessionQuestionRequest & { type: 'question/requested' } {
-  return { type: 'question/requested', interactionId: interactionId(id), sessionId, questions }
-}
-
 describe('instances', () => {
   it('lazily builds one resident instance per id and syncs the running bit from the list', async () => {
     const api = new FakeApiClient()
@@ -74,42 +43,6 @@ describe('instances', () => {
     expect(session.getSnapshot().running).toBe(true) // list preceded instantiation
   })
 
-  it('replays stable approval state on instantiation', () => {
-    const api = new FakeApiClient()
-    const manager = new SessionManager(api, fakeRemote(api))
-    manager.handleControlFrame(approvalRequest('ra', 'ap1'))
-    manager.handleControlFrame(approvalRequest('ra', 'ap1'))
-    const session = manager.get(S1)
-    expect(session.getSnapshot().pending).toMatchObject([{ kind: 'approval', payload: { approvalId: 'ap1' } }])
-    // Buffer cleared: a second instantiation of another id gets nothing.
-    expect(manager.get(S2).getSnapshot().pending).toEqual([])
-  })
-
-  it('retains every live answerable request and compacts resolutions before instantiation', () => {
-    const api = new FakeApiClient()
-    const manager = new SessionManager(api, fakeRemote(api))
-    manager.handleSessionAdded(summary(S1))
-    for (let i = 0; i < 40; i++) {
-      manager.handleControlFrame(questionRequest(`q${i}`))
-    }
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBe('question')
-    for (let i = 0; i < 40; i++) {
-      manager.handleControlFrame({
-        type: 'question/resolved', sessionId: S1,
-        interactionId: interactionId(`q${i}`), outcome: 'answered',
-      })
-    }
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBeUndefined()
-    expect(manager.get(S1).getSnapshot().pending).toEqual([])
-  })
-
-  it('drops buffered answerable requests on session removal', () => {
-    const manager = makeManager()
-    // Removed session: buffered frames must not replay on a future instantiation.
-    manager.handleControlFrame(questionRequest('qz', [], S2))
-    manager.handleSessionRemoved(S2)
-    expect(manager.get(S2).getSnapshot().pending).toEqual([])
-  })
 })
 
 describe('list lifecycle', () => {
@@ -252,7 +185,7 @@ describe('list lifecycle', () => {
     frame({
       type: 'baseline',
       value: {
-        queues: {}, jobs: {}, approvals: [], questions: [],
+        queues: {}, jobs: {},
         projections: { [S1]: { asOfSeq: 2, values: {} } },
       },
     })
@@ -265,7 +198,7 @@ describe('list lifecycle', () => {
     frame({
       type: 'baseline',
       value: {
-        queues: {}, jobs: {}, approvals: [], questions: [],
+        queues: {}, jobs: {},
         projections: { [S1]: { asOfSeq: 2, values: { title: 'Durable' } } },
       },
     })
@@ -777,12 +710,10 @@ describe('remaining branches', () => {
     expect(notified).toBe(seen)
   })
 
-  it('dispatches control and Host events to instantiated sessions', () => {
+  it('dispatches Host events to instantiated sessions', () => {
     const api = new FakeApiClient()
     const manager = new SessionManager(api, fakeRemote(api))
-    const session = manager.get(S1)
-    manager.handleControlFrame(questionRequest('q1'))
-    expect(session.getSnapshot().pending).toMatchObject([{ kind: 'question' }])
+    manager.get(S1)
     // status flip for an unknown session only touches summaries (no crash).
     manager.handleSessionStatus(S2, true)
     manager.handleSessionError(S2, '无实例')
@@ -852,114 +783,6 @@ describe('connected generation', () => {
       expect(api.callsOf('subagent.list')).toContainEqual({ parentSessionId: S1 })
     })
     expect(manager.getListSnapshot().currentAddress).toEqual(address)
-  })
-})
-
-describe('pending-interaction list status', () => {
-  it('tracks approval requests through replay and resolution without instantiation', () => {
-    const manager = makeManager()
-    manager.handleSessionAdded(summary(S1))
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBeUndefined()
-    manager.handleControlFrame(approvalRequest('ra', 'ap1'))
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBe('approval')
-    // Stream replay of the same stable interaction is idempotent.
-    manager.handleControlFrame(approvalRequest('ra', 'ap1'))
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBe('approval')
-    manager.handleControlFrame({
-      type: 'approval/resolved', interactionId: interactionId('ra'), sessionId: S1,
-      approvalId: 'ap1' as never, outcome: 'allowed-once',
-    })
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBeUndefined()
-  })
-
-  it('classifies ordinary questions and renderable plan reviews, then clears by interaction id', () => {
-    const manager = makeManager()
-    manager.handleSessionAdded(summary(S1))
-    manager.handleControlFrame(questionRequest('q1', [{ id: 'name', question: 'Name?' }]))
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBe('question')
-    manager.handleControlFrame({
-      type: 'question/resolved', interactionId: interactionId('q1'),
-      sessionId: S1, outcome: 'answered',
-    })
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBeUndefined()
-
-    manager.handleControlFrame(questionRequest('q2', [{
-      id: 'plan', question: 'Approve?', detail: '# Plan',
-      options: [{ label: 'Approve' }, { label: 'Refuse' }],
-      intent: { kind: 'plan-review', approve: 'Approve' },
-    }]))
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBe('plan-review')
-    manager.handleControlFrame({
-      type: 'question/resolved', interactionId: interactionId('q2'),
-      sessionId: S1, outcome: 'cancelled',
-    })
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBeUndefined()
-  })
-
-  it.each([
-    ['missing detail', {}],
-    ['multi-select', { detail: '# Plan', multiSelect: true }],
-    ['more than two options', { detail: '# Plan', options: [{ label: 'Approve' }, { label: 'Refuse' }, { label: 'Revise' }] }],
-    ['missing approve option', { detail: '# Plan', options: [{ label: 'Refuse' }] }],
-  ])('keeps an unrenderable %s plan intent on the ordinary question flow', (_name, over) => {
-    const manager = makeManager()
-    manager.handleSessionAdded(summary(S1))
-    manager.handleControlFrame(questionRequest('q-plan', [{
-      id: 'plan', question: 'Approve?', options: [{ label: 'Approve' }],
-      intent: { kind: 'plan-review', approve: 'Approve' },
-      ...over,
-    }]))
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBe('question')
-  })
-
-  it('the first question outranks sibling approvals and resolving it reveals the remaining wait', () => {
-    const manager = makeManager()
-    manager.handleSessionAdded(summary(S1))
-    manager.handleControlFrame(approvalRequest('r1', 'a1'))
-    manager.handleControlFrame(questionRequest('q1', [{ id: 'name', question: 'Name?' }]))
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBe('question')
-    manager.handleControlFrame({
-      type: 'question/resolved', interactionId: interactionId('q1'),
-      sessionId: S1, outcome: 'answered',
-    })
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBe('approval')
-    manager.handleControlFrame({
-      type: 'approval/resolved', interactionId: interactionId('r1'), sessionId: S1,
-      approvalId: 'a1' as never, outcome: 'rejected',
-    })
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBeUndefined()
-
-    manager.handleControlFrame(approvalRequest('r2', 'a2'))
-    manager.handleSessionRemoved(S1)
-    expect(manager.getListSnapshot().items).toHaveLength(0)
-  })
-
-  it('replaces stale interactions from the next control-stream baseline', () => {
-    const manager = makeManager()
-    manager.handleSessionAdded(summary(S1))
-    manager.handleControlFrame(approvalRequest('ra', 'ap1'))
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBe('approval')
-    manager.handleControlFrame({
-      type: 'baseline',
-      value: { queues: {}, jobs: {}, approvals: [], questions: [], projections: {} },
-    })
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBeUndefined()
-    manager.handleControlFrame(approvalRequest('ra', 'ap1'))
-    manager.handleConnected()
-    expect(manager.getListSnapshot().items[0]?.pendingInteraction).toBe('approval')
-  })
-
-  it('an empty baseline drops answerable state buffered before instantiation', () => {
-    const manager = makeManager()
-    manager.handleSessionAdded(summary(S1))
-    manager.handleControlFrame(approvalRequest('ra', 'ap1'))
-    manager.handleControlFrame(questionRequest('q1'))
-    manager.handleControlFrame({
-      type: 'baseline',
-      value: { queues: {}, jobs: {}, approvals: [], questions: [], projections: {} },
-    })
-    const session = manager.get(S1)
-    expect(session.getSnapshot().pending).toEqual([])
   })
 })
 
@@ -1123,7 +946,7 @@ describe('background-job mirror', () => {
     manager.handleControlFrame(tasksFrame(S1, [view()]))
     manager.handleControlFrame({
       type: 'baseline',
-      value: { queues: {}, jobs: {}, approvals: [], questions: [], projections: {} },
+      value: { queues: {}, jobs: {}, projections: {} },
     })
     expect(S1 in manager.getListSnapshot().jobsBySession).toBe(false)
   })

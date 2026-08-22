@@ -5,7 +5,6 @@ import type {
   ConversationSnapshot, SessionId, SessionListState, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { PendingWait } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionInteractionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { planReviewOf, type QuestionComposerProps, type QuestionWait } from '../src/client/contract/slots.ts'
 import { QuestionComposer } from '../src/client/QuestionComposer.tsx'
@@ -16,7 +15,7 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 afterEach(cleanup)
 
 const SID = 's1' as SessionId
-const interactionId = (value: string): SessionInteractionId => value as SessionInteractionId
+const interactionId = (value: string): string => value
 type QuestionRespond = ConstructorParameters<typeof PendingWait<'question'>>[4]
 
 const seatOver = (dict: Record<string, string>, common: Record<string, string>): QuestionComposerProps['t'] =>
