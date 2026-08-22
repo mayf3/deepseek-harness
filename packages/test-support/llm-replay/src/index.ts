@@ -115,7 +115,7 @@ export interface ReplayConfig {
    * this long before yielding, so a downstream transport (e.g. the web SSE
    * mux observed by a browser) sees genuinely incremental delivery. A realism
    * knob only — correctness must never depend on it. Absent or `0` keeps
-   * today's synchronous burst yield. Must be a non-negative finite integer;
+   * a synchronous burst yield. Must be a non-negative finite integer;
    * aborting mid-wait cancels the stream like any other abort.
    */
   paceMs?: number

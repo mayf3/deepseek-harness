@@ -1,9 +1,6 @@
-// ConversationSnapshot / ConversationNode: the only data shape the logic layer feeds the UI.
-// Publication contract: every change swaps the top-level object; unchanged
-// substructures keep their references (the React.memo premise). Chat node and
-// Location stores are stable live readers, so old snapshots are not time-point
-// views. callId/approvalId stay plain string here (narrow to real brands when
-// convenient).
+// Each publication replaces the top-level snapshot while preserving unchanged
+// substructure references. Stable node and location stores make old snapshots
+// live readers rather than time-point views.
 
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
@@ -235,7 +232,7 @@ export interface CompactionSummaryNode {
  * Fallback for surface events this UI version does not know: the documented
  * default arm of `SessionEventMap`, which is merge-extensible, so the
  * projection's switch cannot end in `assertNever`. No event produces this node
- * today — `isAppendSurfaceEvent` admits only the three types in core's
+ * because `isAppendSurfaceEvent` admits only the three types in core's
  * `SurfaceEventType`, and each has its own arm — and it exists so widening that
  * set core-side degrades to a raw row instead of dropping the event silently.
  */

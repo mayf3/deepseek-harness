@@ -293,6 +293,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ApprovalService: 'approval.md',
   EncodedImageAttachment: 'attachment.md',
   ImageAttachmentRef: 'attachment.md',
+  ImageRequestPolicy: 'attachment.md',
+  RequestImageAttachment: 'attachment.md',
   SaveImageAttachment: 'attachment.md',
   StoredImageAttachment: 'attachment.md',
   ShellExecRequest: 'shell.md',
@@ -1006,7 +1008,6 @@ export function main(): void {
   console.log(`gen-cordis-catalog: ${outputs.length} artifact(s) computed, ${changedPages} written, ${recorded} pair record(s) refreshed.`)
 }
 
-// Run only when invoked as a script, not when imported by a test.
 if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
   main()
 }

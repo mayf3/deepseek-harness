@@ -56,7 +56,7 @@ Kept deliberately narrow per the "not every string needs a brand" policy. Each o
 - **`ToolName`** (the `ToolRuntime` key) — author-defined, human-readable, and rarely confused with another id; the weakest candidate, likely not worth a brand.
 - **`ErrorCode`** (`HarnessError.code`) — a closed vocabulary (`ABORTED`, `NO_ADAPTER`, …), not a per-instance id; better served by a string-literal union than a brand, if anything.
 - **Numeric ordinals** — turn number, step number, and the event `seq` are `number`, not `string`, so `Branded<string>` does not apply; a parallel `number & { readonly [BRAND]: B }` variant could brand them, but they are positional ordinals rarely passed across boundaries, so the payoff is low.
-- **Validated construction** — the brand factories are pure casts with no runtime check, and every boundary (ACP `sessionId`, provider-issued `call.id`, the empty-string fallback in `dsh-llm-deepseek`) trusts the raw string today. A `SessionId.parse()` / `isValid()` companion that throws on malformed input at boundaries is a genuine gap, but it is a *runtime-behavior* change with its own design (what is "malformed"? what happens on failure?) and belongs in its own decision, not bundled into this type-only change.
+- **Validated construction** — the brand factories are pure casts with no runtime check, and every boundary (ACP `sessionId`, provider-issued `call.id`, the empty-string fallback in `dsh-llm-deepseek`) trusts the raw string. A `SessionId.parse()` / `isValid()` companion that throws on malformed input at boundaries is a genuine gap, but it is a *runtime-behavior* change with its own design (what is "malformed"? what happens on failure?) and belongs in its own decision, not bundled into this type-only change.
 
 ## Verification
 

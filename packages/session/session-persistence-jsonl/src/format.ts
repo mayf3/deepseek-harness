@@ -397,7 +397,7 @@ export function scanLog(buffer: Buffer): SessionLogScan {
  * @param firstLine - first JSONL record without its newline.
  * @returns normalized logical header JSON, or `undefined` for invalid framing.
  */
-export function parseStoredHeaderMeta(firstLine: string): unknown {
+export function parseStoredHeaderMeta(firstLine: string): Record<string, unknown> | undefined {
   let parsed: unknown
   try {
     parsed = JSON.parse(firstLine)

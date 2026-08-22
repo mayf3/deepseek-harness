@@ -103,7 +103,7 @@ class PresetTree extends Include {
    * backs every session that names it.
    *
    * Dropping the write drops the `loader/config-update` the inherited method
-   * emits with it. Nothing observes one for a preset subtree today, and a
+   * emits with it. No consumer observes one for a preset subtree, and a
    * future "edit your preset while it runs" flow needs a deliberate
    * persistence path rather than this method's return.
    */

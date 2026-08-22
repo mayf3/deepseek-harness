@@ -235,7 +235,7 @@ export function InputBar({
     else if (rect.top + line < box.top) scrollEl.scrollTop -= box.top - rect.top - line
   }
 
-  // Reveal the focus end of the current selection. Today's entry paths leave a
+  // Reveal the focus end of the current selection. Every shipped entry path leaves a
   // collapsed selection, but honoring direction keeps a future range-preserving
   // path from revealing its anchor instead of its focus.
   const revealSelectionFocus = (el: HTMLTextAreaElement): void => {

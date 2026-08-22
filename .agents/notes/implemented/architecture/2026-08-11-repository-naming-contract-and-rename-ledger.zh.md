@@ -309,7 +309,7 @@ PascalCase 标识符中的首字母缩略词使用首字母大写格式：`Ui`�
 | `ConversationService` | `ConversationController` | 该对象控制当前对话状态和用户操作。 |
 | `InputService` | `SessionInputResolver` | 该接口为一个会话作用域解析输入外观。它既不是全局输入注册表，也不是执行服务。保留 `InputHub` 作为具体中枢，并保留 `ctx.conversation.input` 作为对外接口。 |
 
-PascalCase 标识符内部使用 `Ui`，不要使用 `UI`。除非清单明确要求重命名，否则保留其余客户端包名。暂时保留已弃用的客户端连接和 Host `ApiProxy` 词汇；API 平面将替换它们，而在计划移除的表面上重命名只会增加改动量。
+PascalCase 标识符内部使用 `Ui`，不要使用 `UI`。除非清单明确要求重命名，否则保留其余客户端包名。在 API 平面移除相关表层之前，保留已弃用的客户端连接与 Host `ApiProxy` 词汇；提前重命名只会增加改动量，不会建立持久名称。
 
 ## 明确保留的名称
 

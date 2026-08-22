@@ -138,7 +138,6 @@ function appendClosedTurn(session: Session): void {
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 }
 
-// Run the shared backend contract against the real JSONL backend.
 runPersistenceContract('jsonl-none', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-jsonl-'))
   const ctx = new Context()
@@ -243,7 +242,7 @@ describe('JsonlSessionPersistence: format helpers', () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     const fiber = await ctx.plugin(JsonlSessionPersistence, { root: absoluteRoot, compression: 'none' })
-    // A future format need not satisfy today's header shape at all (no
+    // A future format need not satisfy this build's header shape at all (no
     // createdAt, unknown fields): the version must be refused before shape
     // validation, so the user sees the upgrade direction.
     const id = SessionId('future-shape')
@@ -1522,6 +1521,23 @@ describe('JsonlSessionPersistence: edge cases', () => {
 
   it('list on an empty root returns nothing', async () => {
     expect(await ctx.sessionPersistence.list()).toEqual([])
+  })
+
+  it('listing refuses a future format before validating current identity fields', async () => {
+    const id = SessionId('future-list')
+    const path = rawLogPath(root, '/work', id)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, `${JSON.stringify({ type: 'session', version: 42, id: 123 })}\n`)
+
+    for (const list of [
+      () => ctx.sessionPersistence.list(),
+      () => ctx.sessionPersistence.listSnapshots(),
+    ]) {
+      const failure = await list().then(() => undefined, (error: unknown) => error as Error)
+      expect(failure?.name).toBe('SessionFormatUnsupportedError')
+      expect(failure?.message).toContain('session "123" uses log format v42')
+      expect(failure?.message).toMatch(/written by a newer harness.*upgrade the harness/)
+    }
   })
 
   it('keeps the transcript in an extensible session-owned directory', async () => {

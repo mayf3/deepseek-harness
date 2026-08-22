@@ -39,9 +39,9 @@ export type { JsonlCompression } from './format.ts'
 const DEFAULT_PACK_CHUNKS = true
 const DEFAULT_COMPRESSION: JsonlCompression = 'zstd'
 /**
- * Internal scheduling constant, not deployment configuration: balance
- * frame-boundary event-loop yields against `setImmediate` overhead. One frame
- * remains an indivisible synchronous decode.
+ * Internal scheduling constants, not deployment configuration: decode yields
+ * balance frame latency against `setImmediate` overhead; replacement batches
+ * bound memory and frame granularity without changing durable behavior.
  */
 const ZSTD_DECODE_YIELD_INTERVAL_MS = 500
 const REPLACEMENT_BATCH_SIZE = 128
@@ -605,8 +605,12 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
         if (first === undefined) continue // empty/half-written file
         const rawMeta = parseStoredHeaderMeta(first)
         if (rawMeta === undefined) continue // not a session header
-        const identity = this.storedIdentity(rawMeta, path)
-        const meta = decodeStoredSessionHeader(rawMeta, identity.id, { kind: 'jsonl', path })
+        const rawId = rawMeta['id']
+        const expectedId = typeof rawId === 'string'
+          ? SessionId(rawId)
+          : SessionId('')
+        const meta = decodeStoredSessionHeader(rawMeta, expectedId, { kind: 'jsonl', path })
+        this.storedIdentity(rawMeta, path)
         await this.assertStoredIdentity(path, rawMeta, undefined, signal)
         signal?.throwIfAborted()
         if (ids.has(meta.id)) {
@@ -671,7 +675,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     // parent directory's metadata is synced.
     await this.syncDirPosix(dir)
     // Best-effort temp cleanup: the log is already published and durable, so a
-    // failure to remove the (now-redundant) temp hard link must NOT reject the
+    // failure to remove the redundant temp hard link must NOT reject the
     // append. Swallow only the rm failure; nothing else of consequence runs here.
     try {
       await rm(tmp, { force: true })
