@@ -1,7 +1,7 @@
 /**
  * Keyless snapshot coverage for the TypeScript SDK path: each scenario spawns
- * the REAL `dsh-jsonrpc-agent` runtime (per `DSH_EXAMPLE_MODE`) through the
- * REAL `@deepseek-ai/dsh-sdk-client`, drives one turn over stdio JSON-RPC,
+ * the real `dsh --profile sdk` runtime through
+ * `@deepseek-ai/dsh-sdk-client`, drives one turn over stdio JSON-RPC,
  * and pins the SDK `RunResult`, the complete notification stream, and the
  * persisted session logs. Replay serves recorded model
  * responses via `llm-replay` (`cordis.snapshot.yml`); `DSH_SNAPSHOT=record`
@@ -13,7 +13,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, delimiter, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   normalizeSessionLog,
@@ -28,19 +28,23 @@ import {
   type HarvestedLog,
   type NormalizeContext,
 } from '@deepseek-ai/dsh-acp-snapshot'
-import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 import { DeepSeekHarness, type HarnessNotification, type RunResult } from '@deepseek-ai/dsh-sdk-client'
 
 const testsDir = dirOf(import.meta.url)
 const snapshotsDir = join(testsDir, 'snapshots')
-const liveConfig = join(testsDir, '..', 'cordis.yml')
-const replayConfig = join(testsDir, '..', 'cordis.snapshot.yml')
-const minimalLiveConfig = join(testsDir, '..', 'minimal.cordis.yml')
-const minimalReplayConfig = join(testsDir, '..', 'minimal.snapshot.cordis.yml')
-const sessionUploadLiveConfig = join(testsDir, '..', 'session-upload.cordis.yml')
-const sessionUploadReplayConfig = join(testsDir, '..', 'session-upload.snapshot.cordis.yml')
-const runtimeBin = fileURLToPath(new URL('../../../packages/examples/jsonrpc-demo/src/bin.ts', import.meta.url))
-const repoTsconfig = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
+const liveConfig = join(testsDir, '..', 'typescript-sdk.cordis.yml')
+const replayConfig = join(testsDir, '..', 'typescript-sdk.cordis.snapshot.yml')
+const minimalLiveConfig = join(testsDir, '..', 'typescript-sdk-minimal.cordis.yml')
+const minimalReplayConfig = join(testsDir, '..', 'typescript-sdk-minimal.cordis.snapshot.yml')
+const sessionUploadLivePatch = join(testsDir, '..', 'session-upload.cordis.yml')
+const sessionUploadReplayPatch = join(testsDir, '..', 'session-upload.snapshot.cordis.yml')
+const exampleMode = process.env.DSH_EXAMPLE_MODE ?? 'src'
+const replayPlugin = fileURLToPath(new URL(
+  exampleMode === 'lib'
+    ? '../../../packages/test-support/llm-replay/lib/index.js'
+    : '../../../packages/test-support/llm-replay/src/index.ts',
+  import.meta.url,
+))
 
 const MINIMAL_SYSTEM_PROMPT = 'You are the environment-selected minimal software engineer.'
 const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
@@ -71,6 +75,8 @@ interface SdkScenario {
   children: number
   /** Optional scenario-specific live and replay compositions. */
   configs?: { live: string; replay: string }
+  /** Additional ordered patches applied after the selected live or replay patch. */
+  additionalPatches?: { live: readonly string[]; replay: readonly string[] }
   /** Environment overrides passed to the runtime subprocess. */
   environment?: Readonly<Record<string, string>>
   /** Cwd-relative files whose final contents are part of the scenario contract. */
@@ -91,7 +97,7 @@ const SCENARIOS: SdkScenario[] = [
     prompt: 'Reply with exactly: SDK snapshot OK',
     sessionId: 'sdk-snapshot-text',
     children: 0,
-    configs: { live: sessionUploadLiveConfig, replay: sessionUploadReplayConfig },
+    additionalPatches: { live: [sessionUploadLivePatch], replay: [sessionUploadReplayPatch] },
   },
   {
     name: 'bash-tool',
@@ -116,7 +122,10 @@ const SCENARIOS: SdkScenario[] = [
     expectedTools: { bash: ['command'], str_replace_editor: ['command', 'path'] },
     expectedSystem: MINIMAL_SYSTEM_PROMPT,
     expectedToolDescriptions: { bash: MINIMAL_BASH_DESCRIPTION },
-    runtimeContext: false,
+    runtimeContext: {
+      includes: ['Current DSH file policy: danger-full-access', 'Approval prompts are disabled in this session'],
+      excludes: ['workspace-write'],
+    },
   },
 ]
 
@@ -231,6 +240,15 @@ async function readExpectedFile(path: string): Promise<string | MissingFile> {
   }
 }
 
+/** Materialize a built-mode replay patch with an absolute test-plugin module URL. */
+async function materializeReplayPatch(source: string, cwd: string): Promise<string> {
+  const target = join(cwd, `.sdk-${basename(source)}`)
+  const content = (await readFile(source, 'utf8'))
+    .replaceAll("'@deepseek-ai/dsh-llm-replay'", JSON.stringify(pathToFileURL(replayPlugin).href))
+  await writeFile(target, content)
+  return target
+}
+
 /**
  * Normalize the SDK-visible notification stream: embedded `session.event`
  * envelopes get the session-log treatment (times zeroed, headers tokenized),
@@ -272,23 +290,20 @@ async function runScenario(scenario: SdkScenario): Promise<{
   cwd: string
 }> {
   const cwd = await mkdtemp(join(tmpdir(), `sdk-snapshot-${scenario.name}-`))
-  const sessionsRoot = join(cwd, '.sessions')
+  const dshHome = join(cwd, '.dsh')
+  const sessionsRoot = join(dshHome, 'sessions')
   const replayFixtures = recording ? [] : await hydrateReplayFixtures(scenario, cwd)
-  const launch = resolveExampleLaunch({
-    srcBin: runtimeBin,
-    configArgs: [],
-    tsconfigPath: repoTsconfig,
-  })
+  const livePatch = scenario.configs?.live ?? liveConfig
+  const replayPatch = scenario.configs?.replay ?? replayConfig
+  const resolvedReplayPatch = recording ? undefined : await materializeReplayPatch(replayPatch, cwd)
+  const additionalPatches = recording
+    ? scenario.additionalPatches?.live ?? []
+    : scenario.additionalPatches?.replay ?? []
   const [parentFixture, ...childFixtures] = replayFixtures
   const env: Record<string, string> = {
     ...Object.fromEntries(Object.entries(process.env).filter(([, value]) => value !== undefined)) as Record<string, string>,
-    ...Object.fromEntries(Object.entries(launch.env).filter(([, value]) => value !== undefined)) as Record<string, string>,
-    DSH_CORDIS_CONFIG: recording
-      ? scenario.configs?.live ?? liveConfig
-      : scenario.configs?.replay ?? replayConfig,
-    DSH_SESSION_ROOT: sessionsRoot,
-    DSH_CWD: cwd,
     DSH_SNAPSHOT: mode,
+    DSH_TELEMETRY_DISABLED: '1',
     NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
     ...parentFixture === undefined ? {} : {
       DSH_SNAPSHOT_FILE: parentFixture,
@@ -298,13 +313,16 @@ async function runScenario(scenario: SdkScenario): Promise<{
   }
 
   const harness = new DeepSeekHarness({
-    launch: {
-      command: launch.command,
-      args: launch.args,
-      cwd,
-      env,
-      requestTimeoutMs: 110_000,
-    },
+    profile: 'sdk',
+    patches: [
+      livePatch,
+      ...resolvedReplayPatch === undefined ? [] : [resolvedReplayPatch],
+      ...additionalPatches,
+    ],
+    dshHome,
+    processCwd: cwd,
+    env,
+    requestTimeoutMs: 110_000,
     cwd,
     provider: 'deepseek-official',
     model: 'deepseek-v4-flash',

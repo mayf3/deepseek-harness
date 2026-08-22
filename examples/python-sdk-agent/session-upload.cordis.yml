@@ -1,10 +1,5 @@
-# Snapshot recording composition that opts into the provider-specific Session-log field.
-- id: base
-  name: '@deepseek-ai/cordis-plugin-include'
+# Additional snapshot-record patch that opts into the provider-specific session-log field.
+- id: session-log-deepseek
+  name: '@deepseek-ai/dsh-session-log-deepseek'
   config:
-    path: ./cordis.yml
-    patches:
-      - id: session-log-deepseek
-        name: '@deepseek-ai/dsh-session-log-deepseek'
-        config:
-          enabled: true
+    enabled: true
