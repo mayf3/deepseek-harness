@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-供 app bin（[`dsh`](../../../apps/cli/README.zh.md) 与 [`dsh-acp-demo`](../../examples/acp-demo/README.zh.md)）共用的启动粘合层：每个 bin 都是在这些辅助函数之上构建的精简自执行组合，并以自身诊断前缀参数化。这样，Loader 故障行为只由一处负责，不会在已发布产物之间逐渐分化。
+供 [`dsh`](../../../apps/cli/README.zh.md) profile 与[暂时打包的 Python SDK runtime](../../../python/README.zh.md) 共用的 Loader 启动粘合层。产品启动器负责 profile 组合与进程生命周期；直接配置 helper 只为暂缓迁移的 runtime 保留，直至后续迁移。
 
 | 导出 | 职责 |
 |---|---|

@@ -29,12 +29,13 @@ import { OFFLOADED_IMAGE_TEXT } from '@deepseek-ai/dsh-llm'
  * .agents/notes/implemented/testing/2026-06-19-acp-snapshot-tests.md.
  */
 
-// The dsh-acp-demo bin (the demo:acp entry), this example's cordis.yml, and
+// The dsh CLI, this example's profile patch, and
 // the repo-root tsconfig (four levels up from examples/acp-agent/tests) — all
 // ABSOLUTE: the subprocess cwd is a temp dir outside the repo.
 const AGENT = {
-  binScript: fileURLToPath(new URL('../../../packages/examples/acp-demo/src/bin.ts', import.meta.url)),
+  binScript: fileURLToPath(new URL('../../../apps/cli/src/bin.ts', import.meta.url)),
   configPath: fileURLToPath(new URL('../cordis.yml', import.meta.url)),
+  profile: 'acp',
   tsconfigPath: fileURLToPath(new URL('../../../tsconfig.json', import.meta.url)),
 }
 const EDITING_CORDIS_SKILL = fileURLToPath(new URL(
@@ -42,8 +43,8 @@ const EDITING_CORDIS_SKILL = fileURLToPath(new URL(
   import.meta.url,
 ))
 
-// The Code Mode overlay configs (include-patched variants of cordis.yml; the
-// replay swap resolves each one's sibling `*cordis.snapshot.yml`).
+// The Code Mode profile patches; replay selects each one's sibling
+// `*cordis.snapshot.yml`.
 const CODE_MODE_CONFIG = fileURLToPath(new URL('../code-mode.cordis.yml', import.meta.url))
 const CODE_MODE_IMAGE_CONFIG = fileURLToPath(new URL('../code-mode-image.cordis.yml', import.meta.url))
 const CODE_MODE_WORKSPACE_CONTEXT_CONFIG = fileURLToPath(new URL('../code-mode-workspace-context.cordis.yml', import.meta.url))
@@ -238,6 +239,7 @@ const SCENARIOS: Scenario[] = [
     recorded: false,
     pinsHeader: true,
     headerClass: 'image',
+    toolSchemasSource: 'text-turn',
     configPath: IMAGE_CONFIG,
   },
   {
@@ -247,7 +249,7 @@ const SCENARIOS: Scenario[] = [
     pinsHeader: true,
     headerClass: 'image-text-route',
     systemPromptSource: 'text-turn',
-    toolSchemasSource: 'read-image',
+    toolSchemasSource: 'text-turn',
     configPath: IMAGE_TEXT_ROUTE_CONFIG,
   },
   // Authored keyless replay of wide-image admission: the 2001x1 fixture sits

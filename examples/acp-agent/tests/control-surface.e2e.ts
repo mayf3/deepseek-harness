@@ -1,4 +1,4 @@
-/** Generic keyless ACP v1 automation-control conformance over the real demo process. */
+/** Generic keyless ACP v1 automation-control conformance over the real dsh profile. */
 
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -12,13 +12,15 @@ import {
 } from '@deepseek-ai/dsh-acp-snapshot'
 import { describe, expect, it } from 'vitest'
 
-const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url))
+const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const agent: AgentUnderTest = {
-  binScript: join(repoRoot, 'packages/examples/acp-demo/src/bin.ts'),
-  configPath: fileURLToPath(new URL('./control-surface.cordis.yml', import.meta.url)),
+  binScript: join(repoRoot, 'apps/cli/src/bin.ts'),
+  libBinScript: join(repoRoot, 'apps/cli/lib/bin.js'),
+  configPath: fileURLToPath(new URL('./fixtures/control-surface/cordis.yml', import.meta.url)),
+  profile: 'acp',
   tsconfigPath: join(repoRoot, 'tsconfig.json'),
 }
-const mcpServer = fileURLToPath(new URL('../../../mcp/mcp-client/tests/fixture-server.ts', import.meta.url))
+const mcpServer = fileURLToPath(new URL('../../../packages/mcp/mcp-client/tests/fixture-server.ts', import.meta.url))
 
 /** Find one named select value in grouped or ungrouped standard options. */
 function selectValue(
@@ -38,7 +40,7 @@ describe('standard ACP v1 control surface', () => {
   it('selects, mounts MCP, closes, restarts, resumes, and cancels through the SDK only', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'dsh-acp-control-'))
     const persistenceRoot = join(cwd, '.sessions')
-    const env = { DSH_CONFORMANCE_PERSISTENCE_ROOT: persistenceRoot }
+    const env = { DSH_CONFORMANCE_PERSISTENCE_ROOT: persistenceRoot, DSH_TELEMETRY_DISABLED: '1' }
     const mcpServers = [{ name: 'fixture', command: process.execPath, args: [mcpServer], env: [] }]
     let first: LaunchedAcpTestAgent | undefined
     let second: LaunchedAcpTestAgent | undefined

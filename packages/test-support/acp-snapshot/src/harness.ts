@@ -192,12 +192,9 @@ export interface RunOptions {
    */
   workspaceParent?: string
   /**
-   * Alternate LIVE config path for the boot (absolute), overriding
-   * {@link AgentUnderTest.configPath} for this run. A scenario needing a
-   * differently-composed tree (the Code Mode scenarios) ships an overlay
-   * whose basename still ends in `cordis.yml`, so the bin's replay swap
-   * resolves the sibling `*cordis.snapshot.yml` the same way it does for
-   * the default.
+   * Alternate live profile patch (absolute), overriding
+   * {@link AgentUnderTest.configPath} for this run. Its basename still ends
+   * in `cordis.yml` so the launcher can select the replay sibling.
    */
   configPath?: string
 }

@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Shared boot glue for the app bins ([`dsh`](../../../apps/cli/README.md) and [`dsh-acp-demo`](../../examples/acp-demo/README.md)): each bin is a thin self-executing composition over these helpers, parameterized by its diagnostic prefix, so loader-failure behavior has one owner instead of drifting between published artifacts.
+Shared Loader boot glue for [`dsh`](../../../apps/cli/README.md) profiles and the [temporarily packaged Python SDK runtime](../../../python/README.md). The product launcher owns profile composition and process lifecycle; the direct-config helpers remain only for that held-back runtime until its later migration.
 
 | Export | Role |
 |---|---|
