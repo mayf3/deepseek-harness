@@ -92,8 +92,8 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
 
     await compareOrRefreshGolden(SECTION_EXPECTED, snapshot, MODE)
-    // The intro carries the guidance a create button used to imply, and the
-    // shipped rows offer view/copy but never delete or a location — their
+    // The intro states the copy path directly, and the shipped rows offer
+    // view/copy but never delete or a location — their
     // install is overwritten by upgrades and is not the user's to manage.
     expect(snapshot).toContain('或用「创造模式」让 Agent 帮你创建')
     expect(snapshot).not.toContain('新建预设')
