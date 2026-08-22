@@ -9,8 +9,8 @@
     persona: >-
       You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
 
-# The shared module-reload HMR row stays off; the launcher's watch-only
-# fallback still keeps the user patch layers live until the run exits.
+# The shared module-reload HMR row stays off. This startup profile freezes
+# every patch layer after boot; a later config change applies to the next run.
 - id: hmr
   disabled: true
 

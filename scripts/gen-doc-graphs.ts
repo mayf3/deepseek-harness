@@ -761,34 +761,20 @@ const APP_EXAMPLES = [
   {
     id: 'acp',
     rel: 'examples/acp-agent/composition.md',
-    title: 'ACP Automation App Composition',
+    title: 'ACP Automation Profile Patch',
     label: 'examples/acp-agent',
     config: 'examples/acp-agent/cordis.yml',
-    summary: 'The ACP demo exposes fresh baseline-prompt agent sessions to programmatic clients over JSON-RPC stdio, with no stdout logger, human UI, or pre-created agent.',
+    summary: 'The ACP example patches the shipped base + acp-app profile for demos and snapshots; dsh owns launch, and the ACP bridge exposes fresh automation sessions without a stdout logger or pre-created agent.',
   },
 ]
 
 type AppExample = typeof APP_EXAMPLES[number]
 
-function renderAppExpansion(lines: string[], appNode: string, pluginName: string): void {
-  const agentCore = nodeId('bundle', 'agent_core')
-  const jsonl = nodeId('bundle', 'jsonl')
-  lines.push(`  ${appNode} --> ${agentCore}["@deepseek-ai/dsh-agent-spine-demo"]`)
-  lines.push(`  ${appNode} --> ${jsonl}["@deepseek-ai/dsh-session-persistence-jsonl"]`)
-  if (pluginName === '@deepseek-ai/dsh-acp-demo') {
-    lines.push(`  ${appNode} --> ${nodeId('entrypoint', 'acp')}["@deepseek-ai/dsh-acp<br/>automation-only JSON-RPC stdio<br/>fresh sessions created by client"]`)
-  }
-  lines.push(
-    `  ${agentCore} --> ${nodeId('spine', 'llm')}["ctx.llm"]`,
-    `  ${agentCore} --> ${nodeId('spine', 'sessions')}["ctx.sessions"]`,
-    `  ${agentCore} --> ${nodeId('spine', 'tools')}["ctx.tools + tool-bash"]`,
-    `  ${agentCore} --> ${nodeId('spine', 'loop')}["ctx.agents + ctx.agentLoop"]`,
-  )
-}
-
 function renderAppComposition(example: AppExample): string {
   const plugins = parseExampleCordis(example.config)
-  const maintenance = 'hybrid: the leaf plugin list is parsed from its `cordis.yml`; app package expansion is curated from package source'
+  const maintenance = example.id === 'acp'
+    ? 'hybrid: the patch row list is parsed from its `cordis.yml`; the scope summary is curated'
+    : 'hybrid: the leaf plugin list is parsed from its `cordis.yml`; app package expansion is curated from package source'
   const lines = generatedHeader(example.title)
   lines.push(
     example.summary,
@@ -801,9 +787,6 @@ function renderAppComposition(example: AppExample): string {
     const pluginNode = nodeId(`plugin_${example.id}`, plugin.id)
     lines.push(`  ${pluginNode}["${escLabel(plugin.id)}<br/>${escLabel(plugin.name)}"]`)
     lines.push(`  cfg --> ${pluginNode}`)
-    if (plugin.name === '@deepseek-ai/dsh-acp-demo') {
-      renderAppExpansion(lines, pluginNode, plugin.name)
-    }
   }
   lines.push(
     '```',
