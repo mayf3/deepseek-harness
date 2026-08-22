@@ -69,8 +69,9 @@ describe('tool-call-model', () => {
     expect(model.title).toBe('Tool call')
   })
 
-  it('has dropped the v2 mount verbs that no longer exist', () => {
-    // Keeping them would be a mapping for a tool nothing can call.
+  it('renders cordis mount verbs no shipped tool implements as generic calls', () => {
+    // No shipped tool implements these cordis mount verbs, so a mapping would
+    // be unreachable.
     expect(classifyTool('cordis_mount')).toBe('others')
     expect(toolRowModel('cordis_mount', running({ name: 'cordis_mount', argsRaw: '{}' })).title).toBe('Tool call')
     expect(toolRowModel('cordis_unmount', running({ name: 'cordis_unmount', argsRaw: '{}' })).title).toBe('Tool call')

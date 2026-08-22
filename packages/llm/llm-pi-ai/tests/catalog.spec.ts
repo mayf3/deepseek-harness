@@ -1032,8 +1032,8 @@ describe('compat switches', () => {
   })
 
   it('refuses a compat key no wire protocol declares instead of dropping it', () => {
-    // The silent drop is what let an unreadable switch look applied: schemastery
-    // passes unknown keys through, and resolution used to read only two fields.
+    // Schemastery passes unknown keys through, so silently dropping one would
+    // make an unreadable switch look applied; the resolver must refuse it.
     expect(() => resolveProfiles({
       'acme-gateway': {
         api: 'openai-completions',
