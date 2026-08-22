@@ -4,7 +4,11 @@ DeepSeek Harness is an all-plugin agent harness on vendored Cordis. Read [docs/a
 
 ## Pre-release stance: foundation over blast radius
 
-**Remove this section at the first tagged release.** With no external consumers, prefer the correct foundation over compatibility shims: rename or repackage freely and update every reference together. Backends reject old on-disk formats. SQLite uses monotonic `SCHEMA_VERSION`; `dsh-session` keeps `SESSION_FORMAT_VERSION` at `0` with no compatibility promise.
+**Remove at the first tagged release.** Until then, prefer correct foundations over compatibility shims and update every reference together. Backends reject old disk formats; SQLite increments `SCHEMA_VERSION`, while `dsh-session` holds `SESSION_FORMAT_VERSION` at `0` without a compatibility promise.
+
+## Application launch
+
+Node apps launch only through `dsh` profiles; application-package bins, demos, and SDK argv escape hatches are forbidden. The private Python runtime is the sole temporary exception. [Architecture](docs/architecture.md#application-launch) owns scope and deferred artifact rename; `pnpm run verify-application-entrypoints` enforces it.
 
 ## Repository layout
 
@@ -41,9 +45,9 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   credentials/ credential/authorization capabilities + env/.env provider
   acp/         automation-only Agent Client Protocol server
   interaction/ approval/interaction capabilities, permission, commands, ask-user
-  boot/        shared app-bin glue
-  sdk/         JSON-RPC protocol, server, and TypeScript client
-  examples/    demo bundles (agent-spine + CLI/ACP/JSON-RPC bins)
+  boot/        shared profile/application boot glue
+  sdk/         JSON-RPC protocol, server, TypeScript client, and private Python carrier
+  examples/    reusable demo bundles (agent-spine)
   experimental/ private prototypes excluded from official releases
   support/     dev/test infrastructure
   util/        zero-dependency utilities
@@ -83,15 +87,11 @@ pnpm run demo:acp       # ACP automation server (needs DEEPSEEK_API_KEY)
 
 ### Host sandbox failures
 
-When required `gh`, `pnpm`, build, test, or generator commands fail because the agent sandbox blocks credentials, network, IPC, file watching, or nested `sandbox-exec`, retry unchanged with the narrowest host escalation before diagnosing authentication or project failure. Require sandbox evidence; never bypass genuine test failures or the product sandbox under test.
+If a required `gh`, `pnpm`, build, test, or generator command fails because the sandbox blocks credentials, network, IPC, watching, or nested `sandbox-exec`, retry unchanged with the narrowest host escalation. Require sandbox evidence; never bypass test failures or the product sandbox.
 
 ### Run relevant checks locally
 
-Run checks before pushes via [dsh-pre-push-checks](.agents/skills/dsh-pre-push-checks/SKILL.md); report only commands run. After `gh stack sync`, validate immediately; do not merge before checks pass.
-
-- Match evidence to the surface: focused tests for behavior, snapshots for model or user output, `doc-sync` for docs, build/hygiene and built smokes for published paths, and real-API e2e for provider behavior.
-- Never default to the full suite or repeat a passing check for commit or push. CI owns exhaustive coverage and the platform matrix; rehearse all locally only by explicit request, for CI diagnosis, or for an irreducibly repository-wide change.
-- `test:coverage`, not `test`, is the CI coverage gate ([why](docs/testing.md)).
+Before pushes, use [dsh-pre-push-checks](.agents/skills/dsh-pre-push-checks/SKILL.md) to choose the smallest diff-covering checks; after `gh stack sync`, validate immediately and never merge before they pass. Report commands only. Match evidence to its surface: focused behavior tests, model/user snapshots, `doc-sync`, build/hygiene plus built smokes for published paths, and real-API e2e for provider behavior. CI owns exhaustive coverage and the platform matrix; run them locally only by request, for CI diagnosis, or for an irreducibly repository-wide change. `test:coverage`, not `test`, is the CI coverage gate ([why](docs/testing.md)).
 
 ## Secrets / .env
 
