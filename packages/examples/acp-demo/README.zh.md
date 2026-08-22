@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-ACP（Agent Client Protocol）自动化服务器应用：默认 agent（智能体）主干、客户端通过 [`@deepseek-ai/dsh-acp`](../../acp/acp/README.zh.md) 创建的 agent、JSONL 持久化，以及语义检查点机制，并通过一个 JSON-RPC stdio bin 对外提供服务。程序化客户端创建新会话；此包不挂载人工交互 UI。
+ACP（Agent Client Protocol）自动化服务器应用：默认 agent（智能体）主干、客户端通过 [`@deepseek-ai/dsh-acp`](../../acp/acp/README.zh.md) 创建的 agent、JSONL 持久化，以及语义检查点机制，并通过一个 JSON-RPC stdio bin 对外提供服务。程序化客户端可以创建、列出、关闭和恢复会话；此包不挂载人工交互 UI。
 
 ## 组合
 
@@ -44,6 +44,12 @@ ACP（Agent Client Protocol）自动化服务器应用：默认 agent（智能�
 
 `dsh-acp-demo [--config path-to-cordis.yml]`（短形式 `-c`；默认为 `./cordis.yml`）会加载 gitignore 排除的 `.env`，回放模式除外；`DSH_SNAPSHOT=replay` 选择同级 `cordis.snapshot.yml`；stdin EOF 会在退出前 dispose（资源释放）上下文并刷新会话。Loader 已安装的可选对等依赖（peer dependency）`node-addon-require-builtin` 使纯 Node 下构建后的 bin 可以解析裸插件说明符。诊断使用 stderr，因为 stdout 是 ACP wire。
 
+## 标准自动化工作流
+
+ACP v1 SDK 客户端先初始化 bin，再使用绝对 `cwd` 和可选标准 stdio／HTTP MCP 声明创建会话，选择已公布的 `model` 或 `reasoning_effort`，发送提示词并观察标准语义更新，最后调用 `session/close`。后续进程可以针对同一个 `persistenceRoot` 使用 `session/list` 和 `session/resume`；恢复会重新连接该请求提供的 MCP 声明，并且不会重放历史。
+
+完整的支持／不支持方法矩阵、MCP 信任模型、更新映射和 stop reason 位于 [`dsh-acp` 协议约定](../../acp/acp/README.zh.md#standard-acp-v1-surface)。Demo 不增加私有方法、能力、`_meta`、环境变量或传输字段。Keyless control-surface conformance 测试只通过公开 ACP SDK 驱动这个确切 bin。
+
 ## 模型体验
 
 模型体验由 `dsh-agent-spine-demo` 和叶节点的面向模型插件间接提供。ACP 提示词文本会成为普通的已记录用户消息；协议元数据与权限选择不会进入模型请求。
@@ -56,4 +62,4 @@ ACP（Agent Client Protocol）自动化服务器应用：默认 agent（智能�
 
 - **JSONL 持久化固定不变**：使用其他后端需要另一种组合。
 - **同级插件可能破坏 stdout**：应用无法阻止另一个 Cordis 配置项写入非协议字节。
-- **只支持新建自动化会话**：恢复和人工交互属于其他运行入口。
+- **仅面向自动化**：会话控制和语义执行更新是协议数据，不是人工 UI；人工交互仍属于其他运行入口。

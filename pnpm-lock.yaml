@@ -16,8 +16,8 @@ importers:
   .:
     devDependencies:
       '@agentclientprotocol/sdk':
-        specifier: 0.25.1
-        version: 0.25.1(zod@4.4.3)
+        specifier: 1.4.0
+        version: 1.4.0(zod@4.4.3)
       '@deepseek-ai/dsh-tool-session-query':
         specifier: workspace:^
         version: link:packages/session-query/tool-session-query
@@ -789,8 +789,8 @@ importers:
   packages/acp/acp:
     dependencies:
       '@agentclientprotocol/sdk':
-        specifier: 0.25.1
-        version: 0.25.1(zod@4.4.3)
+        specifier: 1.4.0
+        version: 1.4.0(zod@4.4.3)
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -816,9 +816,21 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-mcp-client':
+        specifier: workspace:^
+        version: link:../../mcp/mcp-client
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-session-persistence':
+        specifier: workspace:^
+        version: link:../../session/session-persistence
+      '@deepseek-ai/dsh-session-persistence-jsonl':
+        specifier: workspace:^
+        version: link:../../session/session-persistence-jsonl
+      '@deepseek-ai/dsh-token-meter':
+        specifier: workspace:^
+        version: link:../../llm/token-meter
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
@@ -3946,6 +3958,9 @@ importers:
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
     devDependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 1.4.0
+        version: 1.4.0(zod@4.4.3)
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
@@ -3958,6 +3973,9 @@ importers:
       '@deepseek-ai/dsh-acp':
         specifier: workspace:^
         version: link:../../acp/acp
+      '@deepseek-ai/dsh-acp-snapshot':
+        specifier: workspace:^
+        version: link:../../test-support/acp-snapshot
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../core/agent
@@ -3988,6 +4006,9 @@ importers:
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-token-meter':
+        specifier: workspace:^
+        version: link:../../llm/token-meter
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
@@ -5890,6 +5911,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-scope':
+        specifier: workspace:^
+        version: link:../../core/scope
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess
@@ -7492,8 +7516,8 @@ importers:
   packages/subagent/subagent-acp:
     dependencies:
       '@agentclientprotocol/sdk':
-        specifier: 0.25.1
-        version: 0.25.1(zod@4.4.3)
+        specifier: 1.4.0
+        version: 1.4.0(zod@4.4.3)
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -8122,8 +8146,8 @@ importers:
   packages/test-support/acp-snapshot:
     dependencies:
       '@agentclientprotocol/sdk':
-        specifier: 0.25.1
-        version: 0.25.1(zod@4.4.3)
+        specifier: 1.4.0
+        version: 1.4.0(zod@4.4.3)
       '@deepseek-ai/dsh-loader-smoke':
         specifier: workspace:*
         version: link:../loader-smoke
@@ -9317,8 +9341,8 @@ importers:
 
 packages:
 
-  '@agentclientprotocol/sdk@0.25.1':
-    resolution: {integrity: sha512-jx2rF3bdpGwZ75Q/meyEDLLbYmbtxk82Uh9hDCdxDvcEedBnNSF5hZAnL/kJR5VNz56JqwOmqnAqasC84MwwkQ==}
+  '@agentclientprotocol/sdk@1.4.0':
+    resolution: {integrity: sha512-/eufudw+aFY1LKLolT6yFE6UMmYRl7fMJ/DEONSIyR6wI3slHWITBsANRGqXEY8FRzqUxwh7QEaGiZHcJPVThg==}
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
@@ -14940,7 +14964,7 @@ packages:
 
 snapshots:
 
-  '@agentclientprotocol/sdk@0.25.1(zod@4.4.3)':
+  '@agentclientprotocol/sdk@1.4.0(zod@4.4.3)':
     dependencies:
       zod: 4.4.3
 

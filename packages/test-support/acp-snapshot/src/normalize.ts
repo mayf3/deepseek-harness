@@ -7,6 +7,7 @@
  */
 
 const SESSION_ID = '{{sessionId}}'
+const MESSAGE_ID = '{{messageId}}'
 const CWD = '{{cwd}}'
 const SYSTEM = '{{system}}'
 const TOOLS = '{{tools}}'
@@ -184,6 +185,7 @@ function scrubString(value: string, ctx: NormalizeContext, cwdPathMode: CwdPathM
 /** Recursively scrub a parsed JSON value (strings replaced; structure kept). */
 function scrubValue(value: unknown, ctx: NormalizeContext, cwdPathMode: CwdPathMode, key?: string): unknown {
   if (typeof value === 'string') {
+    if (key === 'messageId') return MESSAGE_ID
     const scrubbed = scrubString(value, ctx, cwdPathMode)
     return cwdPathMode === 'canonical' && key === 'path' ? scrubbed.replaceAll('\\', '/') : scrubbed
   }
