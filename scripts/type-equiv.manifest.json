@@ -449,9 +449,9 @@
       "source": "packages/core/session/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/session.md",
+      "doc": "docs/subsystems/todo.md",
       "symbol": "TodoItem",
-      "source": "packages/core/session/src/types.ts"
+      "source": "packages/todo/tool-todo/src/types.ts"
     },
     {
       "doc": "docs/subsystems/session.md",
