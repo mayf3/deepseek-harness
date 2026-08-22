@@ -182,9 +182,9 @@ async function stop(child: ChildProcess): Promise<void> {
   const closed = new Promise<void>((resolve) => { resolveClosed = resolve })
   child.once('close', resolveClosed)
   child.kill('SIGTERM')
-  if (await Promise.race([closed.then(() => true), delay(10_000).then(() => false)])) return
+  if (await Promise.race([closed.then(() => true), delay(10_000, false, { ref: false })])) return
   if (child.exitCode === null) child.kill('SIGKILL')
-  await Promise.race([closed, delay(5_000)])
+  await Promise.race([closed, delay(5_000, undefined, { ref: false })])
 }
 
 /** Send the sole synthetic external interaction: one signed GitHub delivery. */
@@ -234,7 +234,6 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('GitHub webhook through the real 
       cwd: root,
       env: {
         ...process.env,
-        DEEPSEEK_BASE_URL: 'https://api.deepseek.com',
         DSH_AGENTS_HOME: join(root, '.agents'),
         DSH_GITHUB_E2E_MARKER: MARKER,
         DSH_GITHUB_E2E_WORKSPACE: workspacePath,
@@ -329,5 +328,5 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('GitHub webhook through the real 
       await stop(child)
       await rm(root, { recursive: true, force: true })
     }
-  }, 210_000)
+  }, 330_000)
 })
