@@ -148,13 +148,12 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   launchEnvironment: 'not a service: launcher-provided root accessor value (LaunchEnvironmentSnapshot | undefined) — packages/util/launch-environment/README.md owns this launcher contract',
   connection: 'interface-typed (HostConnectionHandle); implementing class HostConnectionService is declared in rpc-host.ts — packages/client/connection/README.md owns the API',
   uiRenderer: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
+  uiConversation: 'client-side Conversation registries and assembler — packages/client/ui-conversation/README.md owns the API',
   settingsSchema: 'client-side schema introspection service — packages/client/ui-settings/README.md owns the API',
   settingsScope: 'client-side settings-namespace transport service — packages/client/ui-settings/README.md owns the API',
-  chatFileMentions: 'client-side slot-contract accessor (ChatFileMentions) — packages/client/ui-conversation/README.md owns the API',
+  chatFileMentions: 'client-side slot-contract accessor (ChatFileMentions) — packages/client/ui-chat/README.md owns the API',
   commandUi: 'client-side interface-typed browser service — packages/client/ui-commands/README.md owns the API',
   conversation: 'client-side interface-typed browser service — packages/client/ui-conversation/README.md owns the API',
-  conversationEvents: 'client-side interface-typed registry — packages/client/runtime/README.md owns the API',
-  conversationViews: 'client-side interface-typed registry — packages/client/runtime/README.md owns the API',
   layout: 'client-side interface-typed browser service — packages/client/ui-layout/README.md owns the API',
   locale: 'client-side interface-typed browser service — packages/client/locale/README.md owns the API',
   modelDirectories: 'client-side interface-typed browser service — packages/client/ui-model-selection/README.md owns the API',
@@ -163,9 +162,9 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   sessionLogDownload: 'client-side browser download controller — packages/session-query/session-log-export/README.md owns the API',
   inputTriggers: 'client-side interface-typed browser service — packages/client/ui-input-trigger/README.md owns the API',
   timer: 'client-side dynamic-package timer service — packages/extensions/cordis-client-runner/README.md owns the API',
-  slots: 'client-side interface-typed browser service — packages/client/runtime/README.md owns the API',
+  slots: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
   theme: 'client-side interface-typed browser service — packages/client/ui-theme/README.md owns the API',
-  workspaces: 'client-side interface-typed browser service — packages/client/runtime/README.md owns the API',
+  workspaces: 'client-side interface-typed browser service — packages/api/workspace-controller/README.md owns the API',
 }
 
 /**
@@ -213,13 +212,13 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
  */
 export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
   'command/executed': 'client-face local command acknowledgment — packages/client/ui-commands/README.md owns the API',
-  'connection/reset': 'client-face transport signal — packages/client/runtime/README.md owns the API',
+  'connection/reset': 'client-face transport signal — packages/api/session-controller/README.md owns the API',
   'locale/change': 'client-face locale switch signal — packages/client/locale/README.md owns the API',
   'slash/input-begin-command': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
   'slash/input-consume-token': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
   'slash/input-insert-reference': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
   'slash/input-insert-text': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
-  'slots/changed': 'client-face slot invalidation signal — packages/client/runtime/README.md owns the API',
+  'slots/changed': 'client-face slot invalidation signal — packages/client/ui-renderer/README.md owns the API',
   'theme/change': 'client-face theme switch signal — packages/client/ui-theme/README.md owns the API',
 }
 

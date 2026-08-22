@@ -100,7 +100,7 @@ describe('source package uses', () => {
 
 describe('package modes', () => {
   it('accepts one dynamic package and one statically linked package', () => {
-    const dynamic = pkg('runtime')
+    const dynamic = pkg('feature')
     const shell = pkg('ui-slots', { dynamic: false, staticLinked: true })
     expect(collectClientPackageViolations(facts([dynamic, shell]))).toEqual([])
   })
@@ -116,11 +116,11 @@ describe('package modes', () => {
 
   it('requires seeded workspace packages to use staticLinked and preloads to name dynamic rows', () => {
     const slots = declaration('ui-slots', { dynamic: false })
-    const runtime = declaration('runtime', { dynamic: false })
+    const bootstrap = declaration('bootstrap', { dynamic: false })
     const found = collectClientPackageViolations(facts([], {
-      declarations: [slots, runtime],
+      declarations: [slots, bootstrap],
       platformModules: [slots.name],
-      preloadedExternals: [runtime.name + '/client'],
+      preloadedExternals: [bootstrap.name + '/client'],
     }))
     expect(found).toHaveLength(2)
     expect(found.join('\n')).toContain('does not use the staticLinked preset')
@@ -128,14 +128,14 @@ describe('package modes', () => {
   })
 
   it('requires every preloaded external to have a parser preload row', () => {
-    const runtime = declaration('runtime')
+    const bootstrap = declaration('bootstrap')
     expect(collectClientPackageViolations(facts([], {
-      declarations: [runtime],
-      preloadedExternals: [runtime.name + '/client'],
+      declarations: [bootstrap],
+      preloadedExternals: [bootstrap.name + '/client'],
       parserPreloadIds: [],
     }))).toEqual([
       'packages/client/web/src/platform.ts: parser-preloaded external '
-      + '"@deepseek-ai/dsh-client-runtime/client" has no matching PARSER_PRELOAD_IDS row in '
+      + '"@deepseek-ai/dsh-client-bootstrap/client" has no matching PARSER_PRELOAD_IDS row in '
       + 'packages/client/modules/src/index.ts',
     ])
   })
@@ -144,12 +144,12 @@ describe('package modes', () => {
 describe('dependency sections', () => {
   it('accepts dynamic peer plus dev relationships, static dev inputs, and private dependencies', () => {
     const slots = pkg('ui-slots', { dynamic: false, staticLinked: true })
-    const runtime = pkg('runtime', {
+    const conversation = pkg('conversation', {
       inject: ['@deepseek-ai/dsh-client-feature'],
       sourceUses: {
-        '@deepseek-ai/dsh-agent': ['packages/client/runtime/src/index.ts'],
-        '@deepseek-ai/dsh-client-ui-slots': ['packages/client/runtime/src/client/slots.ts'],
-        react: ['packages/client/runtime/src/client/view.tsx'],
+        '@deepseek-ai/dsh-agent': ['packages/client/conversation/src/index.ts'],
+        '@deepseek-ai/dsh-client-ui-slots': ['packages/client/conversation/src/client/slots.ts'],
+        react: ['packages/client/conversation/src/client/view.tsx'],
       },
       dependencies: { immer: '^10.1.1' },
       peerDependencies: {
@@ -165,7 +165,7 @@ describe('dependency sections', () => {
         react: '^18.2.0',
       },
     })
-    expect(collectClientPackageViolations(facts([slots, runtime], {
+    expect(collectClientPackageViolations(facts([slots, conversation], {
       platformModules: ['react', slots.name],
     }))).toEqual([])
   })

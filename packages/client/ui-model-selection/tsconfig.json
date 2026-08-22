@@ -18,7 +18,7 @@
       "path": "../locale"
     },
     {
-      "path": "../runtime"
+      "path": "../store"
     },
     {
       "path": "../ui-commands"
@@ -30,6 +30,12 @@
       "path": "../ui-primitives"
     },
     {
+      "path": "../ui-renderer"
+    },
+    {
+      "path": "../ui-session"
+    },
+    {
       "path": "../ui-input-trigger"
     },
     {
@@ -37,6 +43,9 @@
     },
     {
       "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../../core/session"
     },
     {
       "path": "../../api/session-controller/tsconfig.client.json"
