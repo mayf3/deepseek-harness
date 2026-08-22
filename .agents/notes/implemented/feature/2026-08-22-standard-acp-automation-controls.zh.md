@@ -30,6 +30,10 @@
 
 `session/new` 会显式要求持久化在不虚构会话事件的情况下实体化 live session header，因此即使空会话也可以关闭、列出和恢复。其他前端仍保留持久化 seam 的惰性默认行为，不会实体化被放弃的空会话。`session/resume` 拒绝活动 id，以及非顶层或未知的持久 id；在组合 Agent 前校验请求的规范 `cwd`；恢复持久日志但不向客户端重放；挂载该请求提供的 MCP 声明。`session/close` 让持久日志可供后续进程使用。
 
+持久化有意把 `create(meta)` 视为 live registration：JSONL 在首次追加事件前不创建 artifact，SQLite 在此之前不创建 row。该默认行为会移除被放弃的空会话，但 ACP 不能继承它，因为 `session/new` 会在任何提示词出现前公布会话身份，而进程可能在返回成功响应后、收到 `session/close` 前停止。桥接层只在 Agent 和 MCP 组合成功后、返回 `session/new` 前执行实体化；组合失败仍不留下残留物，每个已返回 id 则都能在重启后继续存在。
+
+`ensureMaterialized(session)` 接收确切 live Session，使 coordinator 先 flush 该会话，再通过现有 per-session 写入链，使用已注册的不可变 header 串行执行仅 header 实体化。JSONL 写入一个 header frame，SQLite 写入一条 metadata row；重复调用幂等，不支持该能力的 backend 会让会话创建失败，而不会承诺无法提供的可恢复性。让 `create` 全面 eager 会改变所有前端放弃会话的行为；追加 synthetic event 会仅为触发存储而虚构 sequence 与 replay 事实；等到关闭时再写入则会让持久性与进程丢失竞争。
+
 ## 标准配置选项
 
 建议性 LLM catalog 现在服务于另一个自动化 consumer，但不会成为请求校验。ACP 公开按提供方分组的 `model` select，其不透明值保留提供方／模型对；还会公开来自已解析确切模型的依赖 `reasoning_effort` select。新建、恢复和设置响应都返回完整状态。Adapter 拓扑事件发出 `config_option_update`；每个会话按接收顺序串行处理变更。配置的 ACP 提供方／模型仍是初始选择；未列出的配置路由会合成到返回选项中，而不会被拒绝。
