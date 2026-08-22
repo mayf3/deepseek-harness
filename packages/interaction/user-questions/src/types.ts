@@ -68,7 +68,7 @@ export interface AskUserQuestionRequestEvent {
   /** Questions to display. */
   questions: AskUserQuestionItem[]
   /** Agent identity projected to the corresponding Client Context in transit. */
-  agent: Agent
+  agent?: Agent
   /** Cancellation lifetime of the pending request. */
   signal?: AbortSignal
 }

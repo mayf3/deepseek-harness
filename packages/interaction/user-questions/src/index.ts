@@ -1,14 +1,13 @@
 /**
  * Service Definition for the user-questions capability seam (`ctx.userQuestions`): a UI-backed service for
  * pausing an agent tool call until the human answers a question. The model-
- * facing tool lives in `@deepseek-ai/dsh-tool-ask-user`; UI packages provide
- * the single active provider.
+ * facing tool lives in `@deepseek-ai/dsh-tool-ask-user`; UI packages compose
+ * answerers on the Agent-scoped Cordis waterfall.
  *
  * @module @deepseek-ai/dsh-user-questions
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 
@@ -19,7 +18,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 import type {
-  AskUserQuestionAnswer, AskUserQuestionItem,
+  AskUserQuestionAnswer, AskUserQuestionRequestEvent,
 } from './types.ts'
 
 export type {
@@ -28,19 +27,7 @@ export type {
 } from './types.ts'
 
 /** Request for a human answer. */
-export interface AskUserQuestionRequest {
-  /** Questions to display. */
-  questions: AskUserQuestionItem[]
-  /** Exact live calling agent, when the request came from an agent tool call. */
-  agent?: Agent
-  /** Abort signal for the owning tool/step. */
-  signal?: AbortSignal
-}
-
-/** UI-side provider for user questions. */
-export interface UserQuestionProvider {
-  ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>
-}
+export interface AskUserQuestionRequest extends AskUserQuestionRequestEvent {}
 
 /** Stable error taxonomy for user-questions failures. */
 export class UserQuestionError extends HarnessError {
@@ -58,35 +45,29 @@ function abortedQuestion(cause?: unknown): UserQuestionError {
   )
 }
 
-/** `ctx.userQuestions`: one active UI provider plus an `ask()` API. */
-export class UserQuestionService extends Service {
-  private provider: UserQuestionProvider | undefined
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
+function restoreUserQuestionError(reason: unknown): unknown {
+  if (reason instanceof UserQuestionError) return reason
+  if (isRecord(reason)
+    && reason.name === 'UserQuestionError'
+    && typeof reason.message === 'string'
+    && typeof reason.code === 'string') {
+    return new UserQuestionError(reason.message, reason.code, { cause: reason })
+  }
+  return reason
+}
+
+/** `ctx.userQuestions`: validation plus the scoped answerer waterfall. */
+export class UserQuestionService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'userQuestions')
   }
 
   /**
-   * Register the UI provider. Only one provider may be active in a context.
-   *
-   * @param provider UI-side implementation that collects answers.
-   * @returns Disposer that unregisters this provider.
-   */
-  registerProvider(provider: UserQuestionProvider): () => void {
-    const dispose = this.ctx.effect(function* (this: UserQuestionService) {
-      if (this.provider !== undefined) {
-        throw new UserQuestionError('a user-questions provider is already registered', 'DUPLICATE_PROVIDER')
-      }
-      this.provider = provider
-      yield () => {
-        this.provider = undefined
-      }
-    }.bind(this), 'userInteraction.registerProvider()')
-    return () => void dispose()
-  }
-
-  /**
-   * Ask the active UI provider and wait for the user's answer.
+   * Ask the scoped answerer waterfall and wait for the user's answer.
    *
    * When a caller supplies an agent, human interaction is valid only for the
    * exact live runtime root. Runtime ownership, not durable session lineage,
@@ -145,36 +126,28 @@ export class UserQuestionService extends Service {
           'BAD_INTENT')
       }
     }
-    const askProvider = () => this.provider === undefined
-      ? Promise.reject(new UserQuestionError('no user-questions provider is registered', 'NO_PROVIDER'))
-      : this.provider.ask(request)
+    const noAnswerer = () => Promise.reject(new UserQuestionError(
+      'no user-questions answerer accepted the request',
+      'NO_PROVIDER',
+    ))
     try {
       return await (agent === undefined
-        ? askProvider()
+        ? this.ctx.waterfall('user-questions/request', request, noAnswerer)
         : this.ctx.waterfall(
           scopeTarget(agent, agent),
           'user-questions/request',
           { ...request, agent },
-          askProvider,
+          noAnswerer,
         ))
     } catch (error) {
-      if (error instanceof UserQuestionError) throw error
       const restored = restoreUserQuestionError(error)
-      if (restored !== undefined) throw restored
+      if (restored instanceof UserQuestionError) throw restored
       if (request.signal?.aborted) {
         throw abortedQuestion(error)
       }
-      throw error
+      throw restored
     }
   }
-}
-
-function restoreUserQuestionError(reason: unknown): UserQuestionError | undefined {
-  if (!(reason instanceof Error) || reason.name !== 'UserQuestionError') return undefined
-  const code: unknown = (reason as Error & { readonly code?: unknown }).code
-  return typeof code === 'string'
-    ? new UserQuestionError(reason.message, code, { cause: reason })
-    : undefined
 }
 
 export default UserQuestionService
