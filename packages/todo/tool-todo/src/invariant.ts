@@ -39,34 +39,57 @@ function validateTodos(value: unknown, fail: InvariantFailure): void {
 }
 
 /* jscpd:ignore-start -- package companions share replay and dispatch plumbing */
-/** Whether the committed log prefix ends inside an open turn. */
-function hasOpenTurn(events: readonly SessionEvent[]): boolean {
-  let open = false
-  for (const event of events) {
-    if (event.type === 'turn/start') open = true
-    if (event.type === 'turn/end') open = false
-  }
-  return open
+/** Incremental turn state for one committed session log. */
+interface TurnTrace {
+  open: boolean
 }
 
-/** Validate one package-owned event against its payload and committed session prefix. */
-function validateEvent(session: Session, event: SessionEvent, fail: InvariantFailure): void {
+/** Advance the trace after one event has committed. */
+function advanceTrace(trace: TurnTrace, event: SessionEvent): void {
+  if (event.type === 'turn/start') trace.open = true
+  if (event.type === 'turn/end') trace.open = false
+}
+
+/** Validate one package-owned event against the preceding committed trace. */
+function validateEvent(event: SessionEvent, trace: TurnTrace, fail: InvariantFailure): void {
   if (event.type !== 'todo/write') return
   validateTodos(event.data.todos, fail)
-  if (!hasOpenTurn(session.events.slice(0, event.seq))) {
-    fail('todo/write appended outside any open turn')
+  if (!trace.open) fail('todo/write appended outside any open turn')
+}
+
+/** Validate one existing log in a single pass and return its tail trace. */
+function seedTrace(session: Session, fail: InvariantFailure): TurnTrace {
+  const trace: TurnTrace = { open: false }
+  for (const event of session.events) {
+    validateEvent(event, trace, fail)
+    advanceTrace(trace, event)
   }
+  return trace
 }
 
 /** Install validation for loaded and newly appended whole-list todo snapshots. */
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
-  for (const session of ctx.sessions.list()) {
-    for (const event of session.events) validateEvent(session, event, fail)
+  const traces = new WeakMap<Session, TurnTrace>()
+  const seed = (session: Session): void => {
+    traces.set(session, seedTrace(session, fail))
   }
+  const traceFor = (session: Session): TurnTrace => {
+    let trace = traces.get(session)
+    if (trace === undefined) {
+      trace = seedTrace(session, fail)
+      traces.set(session, trace)
+    }
+    return trace
+  }
+  for (const session of ctx.sessions.list()) seed(session)
+  ctx.on('session/created', (session) => { seed(session) }, { global: true })
   ctx.on('internal/dispatch', (_mode, eventName, args) => {
     if (eventName !== 'session/event') return
     const [session, event] = args as [Session, SessionEvent]
-    validateEvent(session, event, fail)
+    validateEvent(event, traceFor(session), fail)
+  }, { global: true })
+  ctx.on('session/event', (session, event) => {
+    advanceTrace(traceFor(session), event)
   }, { global: true })
 }, { inject: ['sessions'] })
 /* jscpd:ignore-end */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import * as TodoInvariant from '@deepseek-ai/dsh-tool-todo/invariant'
@@ -95,5 +95,33 @@ describe('todo snapshot invariants', () => {
     await ctx.plugin(InvariantRegistry, { enabled: true })
 
     await expect(ctx.plugin(TodoInvariant).then(() => undefined)).rejects.toThrow(/repeats content "duplicate"/)
+  })
+
+  it('validates seeded sessions announced after companion installation', async () => {
+    const ctx = await setup()
+    const valid = ctx.sessions.create(SessionId('todo-seeded-valid'), { seed: [
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      { type: 'todo/write', seq: 1, time: 2, data: { todos: [] } },
+    ] })
+    expect(() => valid.append('todo/write', { todos: [] })).not.toThrow()
+
+    expect(() => ctx.sessions.create(SessionId('todo-seeded-invalid'), { seed: [
+      { type: 'todo/write', seq: 0, time: 1, data: { todos: [] } },
+    ] })).toThrow(/outside any open turn/)
+  })
+
+  it('tracks events committed before a prepared session is announced', async () => {
+    const ctx = await setup()
+    const session = ctx.sessions.prepare(SessionId('todo-prepared'))
+    const detach = ctx.sessions.enter(session)
+    try {
+      session.append('turn/start', { turn: 1 })
+      expect(() => session.append('todo/write', { todos: [] })).not.toThrow()
+      ctx.sessions.announce(session)
+      session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+      expect(() => session.append('todo/write', { todos: [] })).toThrow(/outside any open turn/)
+    } finally {
+      detach()
+    }
   })
 })
