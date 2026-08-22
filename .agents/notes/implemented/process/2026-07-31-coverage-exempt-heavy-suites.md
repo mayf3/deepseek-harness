@@ -19,7 +19,7 @@ The `ci-coverage` aggregate splits into two parallel gates; every test still run
 - **Instrumented gate** (`test:coverage`): sets `DSH_COVERAGE_EXEMPT_HEAVY=1`, which makes `vitest.config.ts` drop the exempt suites from both projects' excludes; every remaining file runs instrumented and carries the entire threshold proof. The variable is injected through the gate's own env (the existing `Gate.env` mechanism), not the workflow-global environment, so the uninstrumented gate beside it and any local `vitest run` never see it and behave unchanged.
 - **Uninstrumented gate** (`test:coverage-exempt-heavy`): runs exactly the exempt suites through paired positional filters, keeping the correctness signal whole.
 
-Linux coverage CI and native Windows CI use [in-job partitioned coverage](2026-08-18-in-job-partitioned-coverage.md) inside the instrumented gate. Its merged report carries the same threshold proof; the exempt gate and its membership rules remain unchanged. Linux overlaps the two gates. Native Windows runs the exempt gate after the instrumented merge, while the lightweight observational inventory overlaps the exempt work, so the full-corpus child does not compete with eight coverage processes.
+Linux coverage CI and native Windows CI use [in-job partitioned coverage](2026-08-18-in-job-partitioned-coverage.md) inside the instrumented gate. Its merged report carries the same threshold proof; the exempt gate and its membership rules remain unchanged. Linux overlaps the two gates. Native Windows runs the exempt gate after the instrumented merge, while the lightweight observational inventory overlaps the exempt work, so the full-corpus child does not compete with sixteen coverage processes.
 
 `scripts/coverage-exempt.ts` is the single roster point, holding the membership contract and the filter/exclude pairs so the two sides cannot drift.
 
@@ -61,7 +61,7 @@ Coverage-result invariance therefore does not rest on humans maintaining the ros
 
 Measured on CI (16-core runner): the gate segment went from 424 seconds to the two gates in parallel — `test:coverage` 95.9 s + `test:coverage-exempt-heavy` 71.1 s — with the lane converging on the slower at about 96 seconds; the instrumented gate reported zero threshold errors both before and after the split. `vitest list` verifies the env toggle adds and removes exactly the exempt set; `run-gates.spec.ts` covers the aggregate graph construction.
 
-The Web Worker corpus entry is pinned by an eight-partition aggregate that runs all 15,250 tests and reports 100% for 45,959 statements, 28,116 branches, 9,781 functions, and 40,550 lines. A focused instrumented corpus run records no package source from its child process; the paired list check proves the spec is absent from the instrumented inventory and present in the uninstrumented inventory.
+The Web Worker corpus entry is pinned by a partitioned aggregate that runs all 15,250 tests and reports 100% for 45,959 statements, 28,116 branches, 9,781 functions, and 40,550 lines. A focused instrumented corpus run records no package source from its child process; the paired list check proves the spec is absent from the instrumented inventory and present in the uninstrumented inventory.
 
 The eight-child corpus run checks the same 239 native Windows bundles with 234 exact export matches, four pinned loader exemptions, one sentinel refusal, and no drift. The ARM64 VM measures 25.44 seconds for the sharded Vitest path versus 29.59 seconds for the unsharded checker; the complete x64 job remains the contended-host timing proof.
 

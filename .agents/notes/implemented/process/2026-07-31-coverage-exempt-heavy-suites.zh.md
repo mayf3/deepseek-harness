@@ -19,7 +19,7 @@ Web Worker 转换语料库在原生 Windows 上暴露了同一类浪费：`trans
 - **插桩 gate**（`test:coverage`）：设 `DSH_COVERAGE_EXEMPT_HEAVY=1`，`vitest.config.ts` 据此从两个 project 的 exclude 中剔除豁免套件，其余全部文件照旧插桩并承担全部阈值证明。经 gate 自带 env 注入（既有 `Gate.env` 机制），不进 workflow 全局环境，因此并排的无插桩 gate 和本地直跑 `vitest run` 都看不到该变量、行为不变。
 - **无插桩 gate**（`test:coverage-exempt-heavy`）：用配对的 positional filter 恰好运行豁免套件，保证正确性信号不缩水。
 
-Linux 覆盖率 CI 与原生 Windows CI 在插桩门禁内部使用 [job 内分区覆盖率](2026-08-18-in-job-partitioned-coverage.zh.md)。其合并报告承担相同的阈值证明；豁免门禁及其成员资格规则保持不变。Linux 让两道门禁重叠运行。原生 Windows 在插桩报告合并后运行豁免门禁，同时让轻量观测性清单与豁免工作重叠，因此完整语料库子进程不会与八个覆盖率进程争用资源。
+Linux 覆盖率 CI 与原生 Windows CI 在插桩门禁内部使用 [job 内分区覆盖率](2026-08-18-in-job-partitioned-coverage.zh.md)。其合并报告承担相同的阈值证明；豁免门禁及其成员资格规则保持不变。Linux 让两道门禁重叠运行。原生 Windows 在插桩报告合并后运行豁免门禁，同时让轻量观测性清单与豁免工作重叠，因此完整语料库子进程不会与十六个覆盖率进程争用资源。
 
 `scripts/coverage-exempt.ts` 是唯一名单点，集中持有成员资格约定与 filter/exclude 配对，防止两侧漂移。
 
@@ -61,7 +61,7 @@ per-file 100% 阈值本身就是豁免名单的守卫，名单错误无法静默
 
 CI 实测（16 核 runner）：拆分前 gate 段 424 秒，拆分后两 gate 并行 `test:coverage` 95.9 秒 + `test:coverage-exempt-heavy` 71.1 秒，lane 收敛于较慢者约 96 秒；拆分前后插桩 gate 阈值错误均为零。`vitest list` 验证 env 开关两态恰好增删豁免集；`run-gates.spec.ts` 覆盖聚合图构造。
 
-Web Worker 语料库条目由八分区聚合固定：它执行全部 15,250 个测试，并对 45,959 条语句、28,116 个分支、9,781 个函数和 40,550 行报告 100%。聚焦的插桩语料库运行不会记录其子进程中的包源码；配对名单检查证明该 spec 不在插桩清单中，但存在于无插桩清单中。
+Web Worker 语料库条目由分区聚合固定：它执行全部 15,250 个测试，并对 45,959 条语句、28,116 个分支、9,781 个函数和 40,550 行报告 100%。聚焦的插桩语料库运行不会记录其子进程中的包源码；配对名单检查证明该 spec 不在插桩清单中，但存在于无插桩清单中。
 
 八子进程语料库运行检查相同的 239 个原生 Windows bundle，得到 234 个精确 export 匹配、四个固定 loader 豁免、一次 sentinel 拒绝和零漂移。ARM64 虚拟机上，分片 Vitest 路径耗时 25.44 秒，未分片检查器耗时 29.59 秒；完整 x64 job 仍负责证明宿主争用下的耗时。
 
