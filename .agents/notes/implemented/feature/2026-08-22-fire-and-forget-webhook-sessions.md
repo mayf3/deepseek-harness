@@ -46,6 +46,8 @@ The initial follow-up is an ordinary durable user-role message with webhook prov
 
 Package tests pin independent callback execution, fire-and-forget HTTP timing, cancellation and quiescent disposal, request validation, Workspace attachment before prompt admission, rollback, GitHub HMAC and body limits, credential rotation, and exact Loader composition. The assembled Web example sends a signed ready-for-review delivery to an isolated second listener and records the resulting ordinary Workspace conversation.
 
+A real-API e2e test starts the built `dsh web` CLI with the webhook overlay and isolated listener, synthesizes only the signed inbound GitHub delivery, observes Workspace attachment and durable provenance through the public Web API, and waits for the real DeepSeek response. No DSH service, model adapter, or provider call is replaced by a test double.
+
 Source audits keep execution records, retry timers, dedupe maps, completion events, and Agent-status listeners absent.
 
 ## Consequences

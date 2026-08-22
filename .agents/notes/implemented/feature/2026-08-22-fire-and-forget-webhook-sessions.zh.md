@@ -46,6 +46,8 @@ Patch 加载会把插入行中的相对插件名锚定到 patch 文件。因而�
 
 包级测试固定独立回调执行、fire-and-forget HTTP 时序、取消与静止态释放、请求验证、提示词接纳前的 Workspace 附加、rollback、GitHub HMAC 与 body 限制、凭据轮换和精确 Loader 组合。组装 Web 示例会向隔离的第二监听器发送签名 ready-for-review 交付，并记录所得普通 Workspace 对话。
 
+真实 API e2e 测试会通过带 webhook overlay 与隔离监听器的构建产物启动 `dsh web` CLI（命令行界面），只合成带签名的入站 GitHub 交付，通过公开 Web API 观察 Workspace 附加与持久来源信息，并等待真实 DeepSeek 响应。测试不会用 test double 替换任何 DSH 服务、模型适配器或提供方调用。
+
 源码审计会保持执行记录、重试 timer、去重 map、完成事件与 Agent 状态监听器不存在。
 
 ## Consequences
