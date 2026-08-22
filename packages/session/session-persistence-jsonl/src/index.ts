@@ -675,7 +675,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     // parent directory's metadata is synced.
     await this.syncDirPosix(dir)
     // Best-effort temp cleanup: the log is already published and durable, so a
-    // failure to remove the (now-redundant) temp hard link must NOT reject the
+    // failure to remove the redundant temp hard link must NOT reject the
     // append. Swallow only the rm failure; nothing else of consequence runs here.
     try {
       await rm(tmp, { force: true })

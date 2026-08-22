@@ -182,10 +182,9 @@ function readDraft(
  * orphan it. A prefix narrows the level only while some row it would actually
  * show matches — a tail nobody matches is a name being spelled, not a demand
  * for an empty pane, so the level shows whole and its hidden rows return to
- * obeying the toggle. Counting only displayable rows is what keeps that true:
- * were a hidden row ever to match a prefix that does not reveal it (today
- * `hidden` means dot-prefixed, so it cannot), the level would narrow to
- * nothing.
+ * obeying the toggle. Counting only displayable rows keeps that true because
+ * every hidden name is dot-prefixed, and a matching prefix therefore reveals
+ * it; otherwise the level could narrow to nothing.
  */
 function visibleEntries(
   entries: readonly DirectoryEntry[],
@@ -279,7 +278,6 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
   const [pathDraft, setPathDraft] = useState<string | null>(null)
   // Show-hidden toggle state (pure client-side filter, reset on each open).
   const [showHidden, setShowHidden] = useState(false)
-  // Create-folder state: null = closed; a string = the nested dialog's draft.
   const [folderDraft, setFolderDraft] = useState<string | null>(null)
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)

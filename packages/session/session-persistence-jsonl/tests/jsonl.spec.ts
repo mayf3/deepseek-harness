@@ -138,7 +138,6 @@ function appendClosedTurn(session: Session): void {
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 }
 
-// Run the shared backend contract against the real JSONL backend.
 runPersistenceContract('jsonl-none', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-jsonl-'))
   const ctx = new Context()
@@ -243,7 +242,7 @@ describe('JsonlSessionPersistence: format helpers', () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     const fiber = await ctx.plugin(JsonlSessionPersistence, { root: absoluteRoot, compression: 'none' })
-    // A future format need not satisfy today's header shape at all (no
+    // A future format need not satisfy this build's header shape at all (no
     // createdAt, unknown fields): the version must be refused before shape
     // validation, so the user sees the upgrade direction.
     const id = SessionId('future-shape')

@@ -434,8 +434,8 @@ const VENDORED_LIBRARY = /^@deepseek-ai\\/(cosmokit|schemastery)(\\/|$)/
     expect: 1,
   },
   {
-    // The framework peer is no longer a registry name, so the rehearsal must install this
-    // repository's vendored copies; cosmokit comes along as cordis's own dependency.
+    // The framework peer is a rescoped package, so the rehearsal installs this
+    // repository's vendored copies; cosmokit arrives as cordis's dependency.
     id: 'packed-install-vendored-peer',
     file: 'packages/sandbox/sandbox-local/tests/packed-install.e2e.ts',
     find: `  'packages/runtime-diagnostics/invariants',
@@ -552,7 +552,7 @@ function rewriteLine(line: string, file: string, all: readonly Pattern[]): strin
  * Markdown splits in two. Every fence is code a reader copies or a
  * configuration they mount, so every fence follows the rename regardless of its
  * info string. Prose follows it only under `docs/`, where a sentence quoting
- * `` `cordis` `` teaches a name this repository no longer resolves; elsewhere
+ * `` `cordis` `` teaches an unresolved package name; elsewhere
  * prose is a record of what was true when it was written, and the same spelling
  * can mean something else entirely — the Python SDK's `cordis` option, or the
  * unvendored `@cordisjs/plugin-http`.

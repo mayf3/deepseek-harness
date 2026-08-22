@@ -180,9 +180,9 @@ for line in sys.stdin:
             },
         })
     elif method == "tools/list":
-        # Keep discovery pending longer than the old smoke's 100 ms grace
-        # period. An SDK runtime that answers initialize too early will make
-        # its first model request without this tool and fail deterministically.
+        # Keep discovery pending long enough that an SDK runtime answering
+        # initialize before discovery completes makes its first model request
+        # without this tool and fails deterministically.
         time.sleep(0.25)
         send({
             "jsonrpc": "2.0",

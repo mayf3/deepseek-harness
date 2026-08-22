@@ -406,7 +406,7 @@ describe('render failures', () => {
   it('seats a package that registers an unindexable component without claiming it', async () => {
     const bench = await boot()
     // A component that is not an object has no identity to key ownership on; the
-    // registration still stands, and a crash on it simply goes unattributed.
+    // registration remains valid, while a crash on it has no attributable package.
     await expect(bench.runner.load(half({
       code: `return {
         inject: ['slots'],

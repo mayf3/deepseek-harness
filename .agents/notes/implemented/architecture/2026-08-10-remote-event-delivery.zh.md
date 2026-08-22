@@ -26,7 +26,7 @@ Host 拥有 `agent-preset/selected`、`commands/change`、`credentials/reference
 
 五条事件全部走这条路径，专用帧与 Client 别名都已删除。模型消费方直接订阅 `llm/adapters-updated` 和 `settings/document-updated`；preset 消费方订阅 `agent-preset/selected`。真正需要投影或去重的数据仍保留专用帧。
 
-`skills/change`、`tools/change`、`system-prompt/change` 是同形状的纯失效事件但目前**没有任何消费者**，按「每个抽象都要有当前 owner 与需求」不进名单，只作为扩展位记录在此。
+`skills/change`、`tools/change`、`system-prompt/change` 是同形状的纯失效事件但**没有任何已交付消费者**，按「每个抽象都要有当前 owner 与需求」不进名单，只作为扩展位记录在此。
 
 ### 消费端契约（dsh-typert-protocol）
 
