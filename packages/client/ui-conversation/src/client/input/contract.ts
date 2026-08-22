@@ -223,7 +223,7 @@ export interface InputState {
   readonly occurrences: readonly Occurrence[]
   /** Live paste-match attempt (absent when no paste is matchable). */
   readonly paste?: PasteAttemptState
-  /** Read-only transient inbox projection (`session/queue`, including pending steering). */
+  /** Read-only transient inbox projection from Session control, including pending steering. */
   readonly queue: readonly QueuedMessage[]
 }
 

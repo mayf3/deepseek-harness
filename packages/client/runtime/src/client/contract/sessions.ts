@@ -1,15 +1,15 @@
 /**
  * The outward sessions-service face — what `ctx.sessions` exposes to feature
  * packages and the renderer host, and therefore exactly what the test
- * runtime's sessions double must implement. Wire-pump entry points
- * (handleMuxEnvelope/handleConnected/refresh) and runtime internals stay on
+ * runtime's sessions double must implement. Transport entry points and
+ * runtime internals stay on
  * the concrete class; cross-domain consumers keep the narrower
  * [SessionsPort](./sessions-port.ts). Widening this interface is the
  * explicit act of widening what features may do to the sessions domain.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type {
-  RpcResult, SessionId, SubagentAddress,
+  ClientResult, SessionId, SubagentAddress,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { HostObservable, SessionMaybeProvideInfo } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AgentContext } from '../agents/scope.ts'
@@ -83,7 +83,7 @@ export interface ISessions {
   search(
     query: string,
     signal: AbortSignal,
-  ): Promise<RpcResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>>
+  ): Promise<ClientResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>>
   /**
    * Fork a session from a completed-turn prefix of the source; on resolution
    * the child is in the list store and `open()` can target it.

@@ -5,8 +5,7 @@ import type {
   ConversationSnapshot, SessionId, SessionListState, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { PendingWait } from '@deepseek-ai/dsh-client-runtime/client'
-import type { RpcReceipt } from '@deepseek-ai/dsh-api-remotes/client'
-import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionInteractionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { PendingQuestion, type QuestionComposerProps } from '../src/client/contract/slots.ts'
 import { QuestionComposer, parseRecommendedLabel } from '../src/client/QuestionComposer.tsx'
@@ -17,6 +16,8 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 afterEach(cleanup)
 
 const SID = 's1' as SessionId
+const interactionId = (value: string): SessionInteractionId => value as SessionInteractionId
+type QuestionRespond = ConstructorParameters<typeof PendingWait<'question'>>[4]
 
 const seatOver = (dict: Record<string, string>, common: Record<string, string>): QuestionComposerProps['t'] =>
   (key => dict[key] ?? common[key] ?? key)
@@ -56,16 +57,22 @@ const QUESTIONS = [
 ]
 
 /** Carrier fixture: a real PendingWait over a scripted respond carrier. */
-function wait(rpcId = 'question-1', respond = vi.fn(() => Promise.resolve<RpcReceipt>({ accepted: true }))) {
+function wait(
+  id = 'question-1',
+  respond: QuestionRespond = vi.fn(() => Promise.resolve({
+    ok: true as const,
+    value: { accepted: true as const },
+  })),
+) {
   const carrier = new PendingWait(
-    'question', RpcId(rpcId), SID, { questions: QUESTIONS }, respond)
+    'question', interactionId(id), SID, { questions: QUESTIONS }, respond)
   return { carrier, respond }
 }
 
-/** The client-response envelope respond must have received for an answer batch. */
-function answeredEnvelope(rpcId: string, answers: object[]) {
+/** The Session Controller response request emitted for an answer batch. */
+function answeredEnvelope(id: string, answers: object[]) {
   return {
-    type: 'client-response', rpcId: RpcId(rpcId),
+    interactionId: interactionId(id),
     result: { ok: true, value: { sessionId: SID, answer: { answers } } },
   }
 }
@@ -123,7 +130,7 @@ describe('QuestionComposer', () => {
   it('renders plan detail through the shared assistant Markdown primitive', () => {
     const carrier = new PendingWait(
       'question',
-      RpcId('markdown-plan'),
+      interactionId('markdown-plan'),
       SID,
       {
         questions: [{
@@ -242,7 +249,7 @@ describe('QuestionComposer', () => {
 
   it('surfaces cancellation failures: rejected receipt text and raw transport reasons', async () => {
     const respond = vi.fn()
-      .mockResolvedValueOnce({ accepted: false, reason: 'bad-response' })
+      .mockResolvedValueOnce({ ok: true, value: { accepted: false, reason: 'bad-response' } })
       .mockRejectedValueOnce(new Error('第二次取消失败'))
     const { carrier } = wait('question-1', respond)
     render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
@@ -288,9 +295,9 @@ describe('QuestionComposer', () => {
   })
 
   it('renders chrome copy through the English dictionary', () => {
-    const respond = vi.fn(() => Promise.resolve<RpcReceipt>({ accepted: true }))
+    const respond = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
     const carrier = new PendingWait(
-      'question', RpcId('solo'), SID, { questions: [{ id: 'detail', question: '补充你的要求' }] }, respond)
+      'question', interactionId('solo'), SID, { questions: [{ id: 'detail', question: '补充你的要求' }] }, respond)
     render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} t={seatOver(en, commonEn)} />)
     expect(screen.getByLabelText('Dismiss all questions')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Skip this question' })).toBeTruthy()
@@ -312,8 +319,8 @@ describe('QuestionComposer', () => {
 describe('PendingQuestion domain face', () => {
   it('encodes the answer batch into the ok envelope and throws on a rejected receipt', async () => {
     const respond = vi.fn()
-      .mockResolvedValueOnce({ accepted: true })
-      .mockResolvedValueOnce({ accepted: false, reason: 'not-pending' })
+      .mockResolvedValueOnce({ ok: true, value: { accepted: true } })
+      .mockResolvedValueOnce({ ok: true, value: { accepted: false, reason: 'not-pending' } })
     const question = new PendingQuestion(wait('rq', respond).carrier)
     const batch = { answers: [{ id: 'mode', selected: ['Fast'] }] }
     await expect(question.answer(batch)).resolves.toBeUndefined()
@@ -323,12 +330,12 @@ describe('PendingQuestion domain face', () => {
 
   it('encodes cancellation as the cancelled error envelope and throws on a rejected receipt', async () => {
     const respond = vi.fn()
-      .mockResolvedValueOnce({ accepted: true })
-      .mockResolvedValueOnce({ accepted: false, reason: 'bad-response' })
+      .mockResolvedValueOnce({ ok: true, value: { accepted: true } })
+      .mockResolvedValueOnce({ ok: true, value: { accepted: false, reason: 'bad-response' } })
     const question = new PendingQuestion(wait('rc', respond).carrier)
     await expect(question.cancel()).resolves.toBeUndefined()
     expect(respond).toHaveBeenCalledWith({
-      type: 'client-response', rpcId: RpcId('rc'),
+      interactionId: interactionId('rc'),
       result: {
         ok: false,
         error: { code: 'cancelled', message: 'the user closed this question request', details: {} },

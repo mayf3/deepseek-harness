@@ -9,7 +9,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { LlmRetryEventData } from '@deepseek-ai/dsh-llm-retry/types'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import type {
-  RpcError, SessionId, SubagentAddress, ToolCallView, ToolResultView,
+  ClientFailure, SessionId, SubagentAddress, ToolCallView, ToolResultView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PendingInteraction } from './pending.ts'
 import type { ContextProvenanceView, KnownContextForm } from './context-provenance.ts'
@@ -310,7 +310,7 @@ export interface RunningToolCall {
 /** One running or settled call, recursively owning its child calls. */
 export type ToolCallBlock = RunningToolCall | ToolResultNode
 
-/** One transient inbox occurrence from the authoritative `session/queue` snapshot. */
+/** One transient inbox occurrence from the Session control stream's queue snapshot. */
 export interface QueuedMessage {
   readonly id: MessageId
   /** Stable message identity used for transient-to-durable steering handoff. */
@@ -358,7 +358,7 @@ export type ComposerPhase = 'blank' | 'engaging' | 'active'
 /** Send/stop failure surfaced in the input error strip; op picks the user-facing copy (发送失败 vs 停止失败). */
 export interface PromptError {
   op: 'send' | 'stop'
-  error: RpcError
+  error: ClientFailure
 }
 
 /**
@@ -456,20 +456,20 @@ export interface ConversationSnapshot {
   subagent: { address: SubagentAddress; parentAvailable: boolean } | null
   /** Input-area shape (see {@link ComposerPhase}); derived here, switched on by consumers. */
   composerPhase: ComposerPhase
-  /** Set after host/session-removed; the UI grays out and disables input. */
+  /** Set after the forwarded `api-session/removed` event; the UI disables input. */
   removed: boolean
   openState: OpenState
-  openError: RpcError | null
+  openError: ClientFailure | null
   hasMore: boolean
   loadingOlder: boolean
   promptError: PromptError | null
   /**
    * Whether this session still has an empty log (no user message yet).
-   * Mirrors the host summary's derived blank bit: seeded from `session.list`
-   * / the `host/session-added` frame, flipped false by the first ACCEPTED
+   * Mirrors the Host summary's derived blank bit: seeded from `session.list`
+   * or `api-session/added`, flipped false by the first accepted
    * prompt locally (on the RPC success response — acceptance proves the
    * user message is in the host log; a rejected first prompt keeps the
-   * session blank and reusable) and by any `running: true` status remotely,
+   * Session blank and reusable) and by any remote `running: true` status,
    * and re-aligned by every list re-pull (the summary stays authoritative).
    * Blank sessions are hidden from session lists and reused by New Session.
    */

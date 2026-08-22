@@ -74,10 +74,10 @@ async function bench(list: ListFn, addressed?: SessionId, invoke?: InvokeFn) {
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
       : undefined,
   })
-  new TestRemote(ctx)
+  const remote = new TestRemote(ctx)
   providePresentation(ctx)
   await ctx.plugin({ inject: [...inject], apply }).await()
-  return { ctx, source: captured! }
+  return { ctx, source: captured!, remote }
 }
 
 const CATALOG: SkillRow[] = [
@@ -269,13 +269,13 @@ describe('catalog cache', () => {
 
   it('agent-preset/selected clears only the recomposed session', async () => {
     const { list, payloads } = countingList()
-    const { ctx, source } = await bench(list)
+    const { source, remote } = await bench(list)
     await source.candidates(proj('s1'), req(''))
     await source.candidates(proj('s2'), req(''))
     expect(payloads).toHaveLength(2)
     // The catalog a preset supplies is the preset's; the other session's
     // composition did not change, so its cached catalog still holds.
-    ctx.remote.$dispatch('agent-preset/selected', [sid('s1'), 'minimal'])
+    remote.emit('agent-preset/selected', [sid('s1'), 'minimal'])
     await source.candidates(proj('s1'), req(''))
     await source.candidates(proj('s2'), req(''))
     expect(payloads).toHaveLength(3)

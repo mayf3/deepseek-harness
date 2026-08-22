@@ -12,7 +12,7 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   createSnapshotStore, EMPTY_CONVERSATION_VIEWS, PendingWait,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionInteractionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
   ChatNode, ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps, SelectionTarget, UseChatNodeTurnData,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -1342,9 +1342,9 @@ describe('ChatView', () => {
   it('pending waits leave the flow entirely — questions and approvals both take over the composer', () => {
     const h = makeHarness({
       pending: [
-        new PendingWait('approval', RpcId('r1'), SID,
+        new PendingWait('approval', 'r1' as SessionInteractionId, SID,
           { approvalId: 'ap1', toolName: 'bash' } as PendingWait<'approval'>['payload'], vi.fn()),
-        new PendingWait('question', RpcId('r2'), SID,
+        new PendingWait('question', 'r2' as SessionInteractionId, SID,
           { questions: [{ id: 'q1', question: '选择' }] }, vi.fn()),
       ],
     })

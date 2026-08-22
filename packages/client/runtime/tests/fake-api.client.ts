@@ -1,13 +1,40 @@
 // Test-local programmable IApiClient fake (NOT the fixture: fixture is a demo
 // data source on a real clock; behavior tests need per-case responses and
-// deferred-controlled timing). Streams are hand pumps: pushMux/pushHost.
+// deferred-controlled timing). Streams are hand pumps: pushFollow/pushControl/pushWorkspace.
 import type {
-  ClientResponse, HostFrame, IApiClient, ModelSelection, MuxFrame,
-  RpcError, RpcReceipt, RpcRequest, RpcResponse, SessionId, SessionModels, SessionSearchItem, SkillEntry,
+  IApiClient, ModelSelection,
+  RpcError, RpcResponse, SessionId, SessionModels, SessionSearchItem, SkillEntry,
   WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
+import type {
+  SessionAddress,
+  SessionControlBaseline,
+  SessionControlFrame,
+  SessionFollowFrame,
+  SessionFollowRequest,
+  SessionPage,
+  SessionPageRequest,
+  SessionRespondReceipt,
+  SessionRespondRequest,
+} from '@deepseek-ai/dsh-api-session-controller/types'
+import type { WorkspaceRemote } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { WorkspaceError, WorkspaceFollowFrame } from '@deepseek-ai/dsh-api-workspace-controller/types'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import {
+  RemoteStream,
+  type RemoteStreamOptions,
+} from '@deepseek-ai/dsh-api-gateway/client'
 import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
+
+const AVAILABLE_STREAM_CONNECTION = {
+  hostDescription: {
+    getSnapshot: () => ({
+      version: 'fixture', cwd: '/f', attachedSessions: 0, home: '/h', canOpenPath: true,
+    }),
+    subscribe: () => () => {},
+  },
+}
 
 /** Programmable-default workspace row (branded id, ISO-ish times). */
 function fakeWorkspace(id: string, over: Partial<WorkspaceView> = {}): WorkspaceView {
@@ -20,6 +47,16 @@ function fakeWorkspace(id: string, over: Partial<WorkspaceView> = {}): Workspace
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...over,
   }
+}
+
+function addressSessionId(address: SessionAddress): SessionId {
+  return address.kind === 'session' ? address.sessionId : address.childSessionId
+}
+
+function addressKey(address: SessionAddress): string {
+  return address.kind === 'session'
+    ? `session:${address.sessionId}`
+    : `subagent:${address.parentSessionId}:${address.childSessionId}:${address.mode}`
 }
 
 export interface Deferred<T> {
@@ -49,10 +86,28 @@ export function err<T>(error: RpcError): RpcResponse<T> {
   return { rpcId: RpcId(`fake-${nextRpc++}`), result: { ok: false, error } }
 }
 
-type StreamItem<F> = { kind: 'frame'; envelope: RpcRequest<F> } | { kind: 'end' } | { kind: 'fail'; error: unknown }
+/** Successful generated Remote result for programmable domain fakes. */
+export function remoteOk<T>(value: T): RemoteResult<T> {
+  return { ok: true, value }
+}
 
-interface StreamConn<F> {
-  feed(item: StreamItem<F>): void
+/** Workspace business failure returned by a generated Remote fake. */
+export function workspaceErr(error: WorkspaceError): RemoteResult<never> {
+  return { ok: false, error }
+}
+
+type ValueStreamItem<F> =
+  | { kind: 'frame'; value: F; delivered?: () => void }
+  | { kind: 'end' }
+  | { kind: 'fail'; error: unknown }
+
+interface ValueStreamConn<F> {
+  feed(item: ValueStreamItem<F>): void
+}
+
+interface OpenValueStream<F> {
+  readonly values: AsyncGenerator<F>
+  dispose(): void
 }
 
 /**
@@ -60,13 +115,10 @@ interface StreamConn<F> {
  * a test that programs nothing sees an empty catalog and an unmatched line.
  * @returns the Remote namespaces the session cluster calls.
  */
-export function fakeRemote(): SessionRemotes {
-  return {
-    commands: {
-      list: () => Promise.resolve({ ok: true, value: [] }),
-      execute: () => Promise.resolve({ ok: true, value: undefined }),
-    },
-  }
+export type RuntimeRemotes = SessionRemotes & { readonly workspace: WorkspaceRemote }
+
+export function fakeRemote(api = new FakeApiClient()): RuntimeRemotes {
+  return api.sessionRemotes()
 }
 
 export class FakeApiClient implements IApiClient {
@@ -82,7 +134,7 @@ export class FakeApiClient implements IApiClient {
   onRename: (payload: unknown) => Promise<RpcResponse<{ title: string; seq: number }>> = () => Promise.resolve(ok({ title: 'fk-renamed', seq: 0 }))
   onFork: (payload: unknown) => Promise<RpcResponse<{ sessionId: SessionId }>> = () => Promise.resolve(ok({ sessionId: 'fk-fork' as SessionId }))
   onHistory: (payload: { sessionId: SessionId; beforeSeq?: number; maxMessages?: number })
-  => Promise<RpcResponse<{ events: never[]; hasMore: boolean }>> =
+  => Promise<RpcResponse<SessionPage>> =
     () => Promise.resolve(ok({ events: [], hasMore: false }))
 
   onModels: (payload: unknown) => Promise<RpcResponse<SessionModels>> = () => Promise.resolve(ok({
@@ -131,37 +183,27 @@ export class FakeApiClient implements IApiClient {
   onCreateDirectory: (payload: unknown) => Promise<RpcResponse<{ path: string }>> =
     () => Promise.resolve(ok({ path: '/home/fake/new' }))
 
-  private readonly muxConns: StreamConn<MuxFrame>[] = []
-  private readonly hostConns: StreamConn<HostFrame>[] = []
-  lastSearchSignal: AbortSignal | undefined
-
-  // Parameters carry local structural annotations: the CI lint lane runs
-  // without built lib/, so IApiClient's indexed-access types collapse to any
-  // and inferred parameters would trip no-unsafe-argument.
-  readonly sessions: IApiClient['sessions'] = {
-    list: (payload: unknown) => this.record('session.list', payload, this.onList(payload)),
-    search: (payload: unknown, signal?: AbortSignal) => {
-      this.lastSearchSignal = signal
-      return this.record('session.search', payload, this.onSearch(payload))
-    },
-    create: (payload: unknown) => this.record('session.create', payload, this.onCreate(payload)),
-    history: (payload: { sessionId: SessionId; beforeSeq?: number; maxMessages?: number }) =>
-      this.record('session.history', payload, this.onHistory(payload)),
-    models: (payload: unknown) => this.record('session.models', payload, this.onModels(payload)),
-    selectModel: (payload: { provider: string; model: string }) =>
-      this.record('session.selectModel', payload, this.onSelectModel(payload)),
-    rename: (payload: unknown) => this.record('session.rename', payload, this.onRename(payload)),
-    fork: (payload: unknown) => this.record('session.fork', payload, this.onFork(payload)),
-    prompt: (payload: unknown) => this.record('session.prompt', payload, this.onPrompt(payload)),
-    attachment: (payload: unknown) => this.record('session.attachment', payload, this.onAttachment(payload)),
-    updateQueue: (payload: unknown) => this.record('session.updateQueue', payload, this.onUpdateQueue(payload)),
-    cancel: (payload: unknown) => this.record('session.cancel', payload, this.onCancel(payload)),
+  private readonly followConns = new Map<SessionId, ValueStreamConn<SessionFollowFrame>[]>()
+  private readonly controlConns: ValueStreamConn<SessionControlFrame>[] = []
+  private readonly workspaceConns: ValueStreamConn<WorkspaceFollowFrame>[] = []
+  private readonly openingPages = new Map<string, Promise<RemoteResult<SessionPage>>>()
+  /** Optional Host opening cursor override for stale-page and reconnect tests. */
+  followCursor: number | undefined
+  controlBaseline: SessionControlBaseline = {
+    queues: {},
+    jobs: {},
+    approvals: [],
+    questions: [],
+    projections: {},
   }
+  workspaceBaseline: Extract<WorkspaceFollowFrame, { type: 'baseline' }>['value'] = {
+    items: [],
+    archivedSessionIds: [],
+  }
+  lastSearchSignal: AbortSignal | undefined
 
   onSubagentList: (payload: unknown) => Promise<RpcResponse<{ entries: never[]; parentAvailable: boolean }>>
     = () => Promise.resolve(ok({ entries: [], parentAvailable: true }))
-  onSubagentHistory: (payload: unknown) => Promise<RpcResponse<{ events: never[]; hasMore: boolean }>>
-    = () => Promise.resolve(ok({ events: [], hasMore: false }))
   onSubagentPrompt: (payload: unknown) => Promise<RpcResponse<{ messageId: never }>>
     = () => Promise.resolve(ok({ messageId: 'fake-message' as never }))
 
@@ -170,7 +212,6 @@ export class FakeApiClient implements IApiClient {
 
   readonly subagents: IApiClient['subagents'] = {
     list: (payload: unknown) => this.record('subagent.list', payload, this.onSubagentList(payload)),
-    history: (payload: unknown) => this.record('subagent.history', payload, this.onSubagentHistory(payload)),
     prompt: (payload: unknown) => this.record('subagent.prompt', payload, this.onSubagentPrompt(payload)),
     interrupt: (payload: unknown) => this.record('subagent.interrupt', payload, this.onSubagentInterrupt(payload)),
   }
@@ -183,44 +224,23 @@ export class FakeApiClient implements IApiClient {
     openPath: (payload: unknown) => this.record('host.openPath', payload, this.onOpenPath(payload)),
   }
 
-  // The archive-set field defaults at the binding below so list stubs keep
-  // the pre-archive `{ items }` shape; a stub carrying the field wins.
-  onWorkspaceList: (payload: unknown) => Promise<RpcResponse<{ items: never[]; archivedSessionIds?: never[] }>> =
-    () => Promise.resolve(ok({ items: [] }))
-  onWorkspaceCreate: (payload: unknown) => Promise<RpcResponse<{ workspace: WorkspaceView; created: boolean }>> =
-    () => Promise.resolve(ok({ workspace: fakeWorkspace('fk-ws'), created: true }))
+  onWorkspaceCreate: (payload: unknown) => Promise<RemoteResult<{ workspace: WorkspaceView; created: boolean }>> =
+    () => Promise.resolve(remoteOk({ workspace: fakeWorkspace('fk-ws'), created: true }))
 
-  onWorkspaceRename: (payload: unknown) => Promise<RpcResponse<{ workspace: WorkspaceView }>> =
-    () => Promise.resolve(ok({ workspace: fakeWorkspace('fk-ws') }))
+  onWorkspaceRename: (payload: unknown) => Promise<RemoteResult<{ workspace: WorkspaceView }>> =
+    () => Promise.resolve(remoteOk({ workspace: fakeWorkspace('fk-ws') }))
 
-  onWorkspaceDelete: (payload: unknown) => Promise<RpcResponse<{ deleted: true }>> =
-    () => Promise.resolve(ok({ deleted: true }))
+  onWorkspaceDelete: (payload: unknown) => Promise<RemoteResult<{ deleted: true }>> =
+    () => Promise.resolve(remoteOk({ deleted: true }))
 
-  onWorkspaceInsertBefore: (payload: unknown) => Promise<RpcResponse<{ workspaceIds: WorkspaceId[] }>> =
-    () => Promise.resolve(ok({ workspaceIds: [] }))
+  onWorkspaceInsertBefore: (payload: unknown) => Promise<RemoteResult<{ workspaceIds: WorkspaceId[] }>> =
+    () => Promise.resolve(remoteOk({ workspaceIds: [] }))
 
-  onWorkspaceInsertSessionBefore: (payload: unknown) => Promise<RpcResponse<{ workspace: WorkspaceView }>> =
-    () => Promise.resolve(ok({ workspace: fakeWorkspace('fk-ws') }))
+  onWorkspaceInsertSessionBefore: (payload: unknown) => Promise<RemoteResult<{ workspace: WorkspaceView }>> =
+    () => Promise.resolve(remoteOk({ workspace: fakeWorkspace('fk-ws') }))
 
-  onWorkspaceArchiveSession: (payload: unknown) => Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>> =
-    payload => Promise.resolve(ok({ archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
-
-  readonly workspace: IApiClient['workspace'] = {
-    list: (payload: unknown) => this.record('workspace.list', payload, this.onWorkspaceList(payload).then(response => (
-      response.result.ok
-        ? { ...response, result: { ok: true as const, value: { archivedSessionIds: [] as never[], ...response.result.value } } }
-        : response
-    )) as ReturnType<IApiClient['workspace']['list']>),
-    create: (payload: unknown) => this.record('workspace.create', payload, this.onWorkspaceCreate(payload)),
-    rename: (payload: unknown) => this.record('workspace.rename', payload, this.onWorkspaceRename(payload)),
-    delete: (payload: unknown) => this.record('workspace.delete', payload, this.onWorkspaceDelete(payload)),
-    insertBefore: (payload: unknown) =>
-      this.record('workspace.insertBefore', payload, this.onWorkspaceInsertBefore(payload)),
-    insertSessionBefore: (payload: unknown) =>
-      this.record('workspace.insertSessionBefore', payload, this.onWorkspaceInsertSessionBefore(payload)),
-    archiveSession: (payload: unknown) =>
-      this.record('workspace.archiveSession', payload, this.onWorkspaceArchiveSession(payload)),
-  }
+  onWorkspaceArchiveSession: (payload: unknown) => Promise<RemoteResult<{ archivedSessionIds: SessionId[] }>> =
+    payload => Promise.resolve(remoteOk({ archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
 
   // Payloads stay `unknown` (lint-lane note above); response rows are the real
   // wire shapes so cases can program requires-bearing catalogs and dual-address
@@ -278,51 +298,98 @@ export class FakeApiClient implements IApiClient {
     discoverModels: payload => this.record('llm.discoverModels', payload, Promise.resolve(ok({ models: [] }))),
   }
 
-  /** When true, streams never fire onOpen (misbehaving-carrier material for the handshake timeout guard). */
-  suppressStreamOpen = false
+  onRespond: (request: SessionRespondRequest) => Promise<RemoteResult<SessionRespondReceipt>> =
+    () => Promise.resolve({ ok: true, value: { accepted: true } })
 
-  /** When true, onOpen callbacks are parked instead of fired; releaseStreamOpens() fires them.
-   *  Lets a case hold the readiness handshake open (describe done, streams not yet "established"). */
-  holdStreamOpen = false
-  private heldOpens: (() => void)[] = []
-
-  releaseStreamOpens(): void {
-    const held = this.heldOpens
-    this.heldOpens = []
-    for (const fire of held) fire()
+  /** Remote namespaces bound to this fake's programmable unary slots and stream pumps. */
+  sessionRemotes(): RuntimeRemotes {
+    return {
+      $stream: <Item>(options: RemoteStreamOptions<Item>) => (
+        new RemoteStream(AVAILABLE_STREAM_CONNECTION, options)
+      ),
+      commands: {
+        list: () => Promise.resolve({ ok: true, value: [] }),
+        execute: () => Promise.resolve({ ok: true, value: undefined }),
+      },
+      session: {
+        list: payload => this.remoteResult('session.list', payload, this.onList(payload)),
+        search: (payload, signal) => {
+          this.lastSearchSignal = signal
+          return this.remoteResult('session.search', payload, this.onSearch(payload))
+        },
+        create: payload => this.remoteResult('session.create', payload, this.onCreate(payload)),
+        models: payload => this.remoteResult('session.models', payload, this.onModels(payload)),
+        selectModel: payload => this.remoteResult('session.selectModel', payload, this.onSelectModel(payload)),
+        rename: payload => this.remoteResult('session.rename', payload, this.onRename(payload)),
+        fork: payload => this.remoteResult('session.fork', payload, this.onFork(payload)),
+        prompt: payload => this.remoteResult('session.prompt', payload, this.onPrompt(payload)),
+        attachment: payload => this.remoteResult('session.attachment', payload, this.onAttachment(payload)),
+        updateQueue: payload => this.remoteResult('session.updateQueue', payload, this.onUpdateQueue(payload)),
+        cancel: payload => this.remoteResult('session.cancel', payload, this.onCancel(payload)),
+        page: request => this.page(request),
+        follow: (request, signal) => this.openFollow(request, signal),
+        control: signal => this.openControl(signal),
+        respond: request => this.record('session.respond', request, this.onRespond(request)),
+      },
+      workspace: {
+        create: payload => this.record('workspace.create', payload, this.onWorkspaceCreate(payload)),
+        rename: payload => this.record('workspace.rename', payload, this.onWorkspaceRename(payload)),
+        delete: payload => this.record('workspace.delete', payload, this.onWorkspaceDelete(payload)),
+        insertBefore: payload => this.record(
+          'workspace.insertBefore',
+          payload,
+          this.onWorkspaceInsertBefore(payload),
+        ),
+        insertSessionBefore: payload => this.record(
+          'workspace.insertSessionBefore',
+          payload,
+          this.onWorkspaceInsertSessionBefore(payload),
+        ),
+        archiveSession: payload => this.record(
+          'workspace.archiveSession',
+          payload,
+          this.onWorkspaceArchiveSession(payload),
+        ),
+        follow: signal => this.openWorkspace(signal),
+      },
+    }
   }
 
-  readonly events: IApiClient['events'] = {
-    mux: (_payload: unknown, signal: AbortSignal, onOpen?: () => void) => this.openStream(this.muxConns, signal, onOpen),
-    host: (_payload: unknown, signal: AbortSignal, onOpen?: () => void) => this.openStream(this.hostConns, signal, onOpen),
+  /** Push one live Session event to every follower of that Session. */
+  async pushFollow(
+    sessionId: SessionId,
+    frame: Extract<SessionFollowFrame, { type: 'event' }>,
+  ): Promise<void> {
+    await Promise.all([...(this.followConns.get(sessionId) ?? [])].map(conn => new Promise<void>((resolve) => {
+      conn.feed({ kind: 'frame', value: frame, delivered: resolve })
+    })))
   }
 
-  onRespond: (message: ClientResponse) => Promise<RpcReceipt> = () => Promise.resolve({ accepted: true })
-
-  respond(message: ClientResponse): Promise<RpcReceipt> {
-    return this.record('respond', message, this.onRespond(message))
+  /** Push one Host-wide control update. */
+  pushControl(frame: Exclude<SessionControlFrame, { type: 'baseline' }>): void {
+    for (const conn of [...this.controlConns]) conn.feed({ kind: 'frame', value: frame })
   }
 
-  /** Push one mux frame to every open mux stream (rpcId minted unless pinned by the case). */
-  pushMux(frame: MuxFrame, rpcId?: string): void {
-    for (const conn of [...this.muxConns]) conn.feed({ kind: 'frame', envelope: { rpcId: RpcId(rpcId ?? `push-${nextRpc++}`), payload: frame } })
-  }
-
-  pushHost(frame: HostFrame, rpcId?: string): void {
-    for (const conn of [...this.hostConns]) conn.feed({ kind: 'frame', envelope: { rpcId: RpcId(rpcId ?? `push-${nextRpc++}`), payload: frame } })
+  /** Push one Workspace projection increment. */
+  pushWorkspace(frame: Exclude<WorkspaceFollowFrame, { type: 'baseline' }>): void {
+    for (const conn of [...this.workspaceConns]) conn.feed({ kind: 'frame', value: frame })
   }
 
   /** End (clean close) or fail (throw) every open stream — reconnect-path material. */
   endStreams(): void {
-    for (const conn of [...this.muxConns, ...this.hostConns]) conn.feed({ kind: 'end' })
+    for (const conns of this.followConns.values()) {
+      for (const conn of [...conns]) conn.feed({ kind: 'end' })
+    }
+    for (const conn of [...this.controlConns]) conn.feed({ kind: 'end' })
+    for (const conn of [...this.workspaceConns]) conn.feed({ kind: 'end' })
   }
 
   failStreams(error: unknown): void {
-    for (const conn of [...this.muxConns, ...this.hostConns]) conn.feed({ kind: 'fail', error })
-  }
-
-  get openMuxCount(): number {
-    return this.muxConns.length
+    for (const conns of this.followConns.values()) {
+      for (const conn of [...conns]) conn.feed({ kind: 'fail', error })
+    }
+    for (const conn of [...this.controlConns]) conn.feed({ kind: 'fail', error })
+    for (const conn of [...this.workspaceConns]) conn.feed({ kind: 'fail', error })
   }
 
   callsOf(method: string): unknown[] {
@@ -334,34 +401,144 @@ export class FakeApiClient implements IApiClient {
     return response
   }
 
-  private async *openStream<F>(registry: StreamConn<F>[], signal: AbortSignal, onOpen?: () => void): AsyncGenerator<RpcRequest<F>> {
-    const inbox: StreamItem<F>[] = []
+  private async remoteResult<T>(
+    method: string,
+    payload: unknown,
+    response: Promise<RpcResponse<T>>,
+  ): Promise<RemoteResult<T>> {
+    return (await this.record(method, payload, response)).result
+  }
+
+  private page(request: SessionPageRequest): Promise<RemoteResult<SessionPage>> {
+    const key = addressKey(request.address)
+    if (request.beforeSeq === undefined && request.maxMessages === 50) {
+      const opening = this.openingPages.get(key)
+      if (opening !== undefined) {
+        this.openingPages.delete(key)
+        return opening
+      }
+    }
+    return this.fetchPage(request)
+  }
+
+  private fetchPage(request: SessionPageRequest): Promise<RemoteResult<SessionPage>> {
+    const sessionId = addressSessionId(request.address)
+    const payload = request.address.kind === 'session'
+      ? {
+        sessionId,
+        ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
+        ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
+      }
+      : {
+        parentSessionId: request.address.parentSessionId,
+        childSessionId: request.address.childSessionId,
+        mode: request.address.mode,
+        ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
+        ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
+      }
+    const method = request.address.kind === 'session' ? 'session.history' : 'subagent.history'
+    return this.remoteResult(method, payload, this.onHistory({
+      sessionId,
+      ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
+      ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
+    }))
+  }
+
+  private async *openFollow(
+    request: SessionFollowRequest,
+    signal: AbortSignal = new AbortController().signal,
+  ): AsyncGenerator<SessionFollowFrame> {
+    const sessionId = addressSessionId(request.address)
+    const key = addressKey(request.address)
+    const initialPage = this.fetchPage({ address: request.address, maxMessages: 50 })
+    this.openingPages.set(key, initialPage)
+    const conns = this.followConns.get(sessionId) ?? []
+    if (!this.followConns.has(sessionId)) this.followConns.set(sessionId, conns)
+    const stream = this.openValueStream(conns, signal)
+    try {
+      const page = await initialPage
+      const cursor = this.followCursor ?? (page.ok ? page.value.events.at(-1)?.event.seq ?? -1 : -1)
+      yield { type: 'opened', cursor }
+      yield* stream.values
+    } finally {
+      stream.dispose()
+      this.openingPages.delete(key)
+    }
+  }
+
+  private async *openControl(
+    signal: AbortSignal = new AbortController().signal,
+  ): AsyncGenerator<SessionControlFrame> {
+    const stream = this.openValueStream(this.controlConns, signal)
+    try {
+      yield { type: 'baseline', value: this.controlBaseline }
+      yield* stream.values
+    } finally {
+      stream.dispose()
+    }
+  }
+
+  private async *openWorkspace(
+    signal: AbortSignal = new AbortController().signal,
+  ): AsyncGenerator<WorkspaceFollowFrame> {
+    const stream = this.openValueStream(this.workspaceConns, signal)
+    try {
+      yield { type: 'baseline', value: this.workspaceBaseline }
+      yield* stream.values
+    } finally {
+      stream.dispose()
+    }
+  }
+
+  private openValueStream<F>(
+    registry: ValueStreamConn<F>[],
+    signal: AbortSignal,
+  ): OpenValueStream<F> {
+    const inbox: ValueStreamItem<F>[] = []
     let wake: (() => void) | null = null
-    const conn: StreamConn<F> = {
+    let inFlightDelivered: (() => void) | undefined
+    let disposed = false
+    const conn: ValueStreamConn<F> = {
       feed: (item) => {
         inbox.push(item)
         wake?.()
       },
     }
     registry.push(conn)
-    if (this.holdStreamOpen && onOpen !== undefined) this.heldOpens.push(onOpen)
-    else if (!this.suppressStreamOpen) onOpen?.()
-    try {
-      while (!signal.aborted) {
-        while (inbox.length > 0) {
-          const item = inbox.shift() as StreamItem<F>
-          if (item.kind === 'end') return
-          if (item.kind === 'fail') throw item.error
-          yield item.envelope
-        }
-        await new Promise<void>((resolve) => {
-          wake = resolve
-          signal.addEventListener('abort', () => { resolve() }, { once: true })
-        })
-        wake = null
+    const dispose = (): void => {
+      if (disposed) return
+      disposed = true
+      inFlightDelivered?.()
+      for (const item of inbox) {
+        if (item.kind === 'frame') item.delivered?.()
       }
-    } finally {
-      registry.splice(registry.indexOf(conn), 1)
+      const index = registry.indexOf(conn)
+      if (index >= 0) registry.splice(index, 1)
+      wake?.()
     }
+    const values = (async function* (): AsyncGenerator<F> {
+      try {
+        while (!signal.aborted && !disposed) {
+          while (inbox.length > 0) {
+            const item = inbox.shift() as ValueStreamItem<F>
+            if (item.kind === 'end') return
+            if (item.kind === 'fail') throw item.error
+            inFlightDelivered = item.delivered
+            yield item.value
+            inFlightDelivered?.()
+            inFlightDelivered = undefined
+          }
+          await new Promise<void>((resolve) => {
+            wake = resolve
+            signal.addEventListener('abort', () => { resolve() }, { once: true })
+          })
+          wake = null
+        }
+      } finally {
+        dispose()
+      }
+    })()
+    return { values, dispose }
   }
+
 }

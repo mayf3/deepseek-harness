@@ -1,15 +1,20 @@
-// PendingWait: the carrier-protocol half of a pending host interaction. The runtime owns only
-// envelope knowledge (rpcId backfill into a client-response); domain result encoding belongs to
-// the interaction's consumer package.
+// PendingWait: the render-facing half of one Session Controller interaction.
 
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
-  ClientResponse, MuxFrame, RpcId, RpcReceipt, SessionId,
-} from '@deepseek-ai/dsh-api-remotes/client'
+  SessionApprovalRequest,
+  SessionInteractionId,
+  SessionInteractionResult,
+  SessionQuestionRequest,
+  SessionRespondReceipt,
+  SessionRespondRequest,
+} from '@deepseek-ai/dsh-api-session-controller/types'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 
 /** Kind-keyed payload map: the requested frame's domain fields (envelope fields stripped). */
 export interface PendingPayloads {
-  approval: Omit<Extract<MuxFrame, { type: 'approval/requested' }>, 'type' | 'sessionId'>
-  question: Omit<Extract<MuxFrame, { type: 'question/requested' }>, 'type' | 'sessionId'>
+  approval: Omit<SessionApprovalRequest, 'interactionId' | 'sessionId'>
+  question: Omit<SessionQuestionRequest, 'interactionId' | 'sessionId'>
 }
 
 /** Pending-interaction discriminant (the keys of PendingPayloads). */
@@ -26,53 +31,60 @@ const KEY_PREFIX: Record<PendingKind, string> = { approval: 'a', question: 'q' }
 
 /**
  * One pending host-owned interaction wait: an immutable render face
- * (kind/key/sessionId/payload) plus the response carrier. respond() backfills
- * the requested frame's rpcId into a client-response envelope — no consumer
- * ever sees the raw rpcId. Settlement is expressed only by pending-list
+ * (kind/key/sessionId/payload) plus the response carrier. respond() addresses
+ * the Host's opaque interaction identity. Settlement is expressed only by pending-list
  * membership (the settled flag is a fail-loud guard, not a render input).
  */
 export class PendingWait<K extends PendingKind = PendingKind> {
   /** Interaction kind (union discriminant). */
   readonly kind: K
-  /** Opaque render identity, `<prefix>:<rpcId>` — stable across baseline replay, usable as a React key. */
+  /** Opaque render identity, stable across baseline replay and usable as a React key. */
   readonly key: string
   /** Owning session. */
   readonly sessionId: SessionId
   /** The requested frame's domain fields, verbatim. */
   readonly payload: PendingPayloads[K]
   #settled = false
-  readonly #rpcId: RpcId
-  readonly #respond: (message: ClientResponse) => Promise<RpcReceipt>
+  readonly #interactionId: SessionInteractionId
+  readonly #respond: (request: SessionRespondRequest) => Promise<RemoteResult<SessionRespondReceipt>>
 
   /**
    * Minted by Session on a requested frame (public construction is the test-fixture path).
    * @param kind - interaction kind.
-   * @param rpcId - the requested frame's stable envelope id (kept private; respond echoes it).
+   * @param interactionId - the Host-minted stable interaction identity.
    * @param sessionId - owning session.
    * @param payload - the requested frame's domain fields.
-   * @param respond - the client-response carrier (api.respond).
+   * @param respond - Session Controller response method.
    */
   constructor(
-    kind: K, rpcId: RpcId, sessionId: SessionId, payload: PendingPayloads[K],
-    respond: (message: ClientResponse) => Promise<RpcReceipt>,
+    kind: K, interactionId: SessionInteractionId, sessionId: SessionId, payload: PendingPayloads[K],
+    respond: (request: SessionRespondRequest) => Promise<RemoteResult<SessionRespondReceipt>>,
   ) {
     this.kind = kind
-    this.key = `${KEY_PREFIX[kind]}:${rpcId}`
+    this.key = `${KEY_PREFIX[kind]}:${interactionId}`
     this.sessionId = sessionId
     this.payload = payload
-    this.#rpcId = rpcId
+    this.#interactionId = interactionId
     this.#respond = respond
   }
 
   /**
-   * Send a result for this wait: wraps it into the client-response envelope
-   * with the rpcId backfilled. Throws synchronously once settled.
+   * Send a result for this wait. Throws synchronously once settled and rejects
+   * when the generated Remote call itself fails.
    * @param result - the result shell (ok value / error envelope), domain-encoded by the caller.
    * @returns the carrier receipt.
    */
-  respond(result: ClientResponse['result']): Promise<RpcReceipt> {
+  respond(result: SessionInteractionResult): Promise<SessionRespondReceipt> {
     if (this.#settled) throw new Error(`pending wait ${this.key} is already settled`)
-    return this.#respond({ type: 'client-response', rpcId: this.#rpcId, result })
+    return this.send(result)
+  }
+
+  private async send(result: SessionInteractionResult): Promise<SessionRespondReceipt> {
+    const response = await this.#respond({ interactionId: this.#interactionId, result })
+    if (!response.ok) {
+      throw new Error(`session interaction response failed: ${response.error.code}: ${response.error.message}`)
+    }
+    return response.value
   }
 
   /** Session-only settlement mark (the authoritative resolved frame arrived); respond() throws afterwards. */

@@ -45,11 +45,10 @@ async function bench() {
     }
   })
   ctx.provide('connection', { api: { settings: { describe, mutate } }, isLoopback: true } as never)
-  // The settings transport and the forwarded-event port the plugin injects.
-  new TestRemote(ctx)
+  const events = new TestRemote(ctx)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return {
-    ctx, slots: ctx.get('slots') as SlotRegistry, describe, mutate,
+    ctx, slots: ctx.get('slots') as SlotRegistry, describe, mutate, events,
     setHostPreference: (next: string | undefined) => { preference = next; revision += 1 },
   }
 }
@@ -136,19 +135,19 @@ describe('locale apply', () => {
     // Preference must differ from the provisional locale (FALLBACK_LOCALE = en
     // with no window), or clearing it below would be unobservable.
     b.setHostPreference('zh')
-    b.ctx.remote.$dispatch('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
+    b.events.emit('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
     declareItems(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const locale = b.ctx.get('locale') as LocaleRuntime
     await vi.waitFor(() => { expect(locale.getLocale().active).toBe('zh') })
     // Cleared preference falls back to the provisional locale.
     b.setHostPreference(undefined)
-    b.ctx.remote.$dispatch('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
+    b.events.emit('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
     await vi.waitFor(() => { expect(locale.getLocale().active).toBe('en') })
     // Re-selecting zh after the clear is an explicit pick of the provisional
     // value and must persist as a written preference.
     b.setHostPreference('zh')
-    b.ctx.remote.$dispatch('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
+    b.events.emit('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
     await vi.waitFor(() => { expect(locale.getLocale().active).toBe('zh') })
     expect(b.describe).toHaveBeenCalledTimes(4)
   })

@@ -5,8 +5,7 @@ import type {
   ConversationSnapshot, SessionId, SessionListState, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { PendingWait } from '@deepseek-ai/dsh-client-runtime/client'
-import type { RpcReceipt } from '@deepseek-ai/dsh-api-remotes/client'
-import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionInteractionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { planReviewOf, type QuestionComposerProps, type QuestionWait } from '../src/client/contract/slots.ts'
 import { QuestionComposer } from '../src/client/QuestionComposer.tsx'
@@ -17,6 +16,8 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 afterEach(cleanup)
 
 const SID = 's1' as SessionId
+const interactionId = (value: string): SessionInteractionId => value as SessionInteractionId
+type QuestionRespond = ConstructorParameters<typeof PendingWait<'question'>>[4]
 
 const seatOver = (dict: Record<string, string>, common: Record<string, string>): QuestionComposerProps['t'] =>
   (key => dict[key] ?? common[key] ?? key)
@@ -52,15 +53,18 @@ const questions = (): QuestionWait['payload']['questions'] => [{
 /** Carrier fixture over a scripted respond carrier. */
 function wait(
   payload: QuestionWait['payload'] = { questions: questions() },
-  respond = vi.fn(() => Promise.resolve<RpcReceipt>({ accepted: true })),
+  respond: QuestionRespond = vi.fn(() => Promise.resolve({
+    ok: true as const,
+    value: { accepted: true as const },
+  })),
 ) {
-  return { carrier: new PendingWait('question', RpcId('q-1'), SID, payload, respond), respond }
+  return { carrier: new PendingWait('question', interactionId('q-1'), SID, payload, respond), respond }
 }
 
-/** The client-response envelope respond must have received for a decision. */
+/** The Session Controller response request emitted for a decision. */
 function decidedEnvelope(label: string) {
   return {
-    type: 'client-response', rpcId: RpcId('q-1'),
+    interactionId: interactionId('q-1'),
     result: { ok: true, value: { sessionId: SID, answer: { answers: [{ id: 'plan-review', selected: [label] }] } } },
   }
 }
@@ -156,7 +160,7 @@ describe('PlanReviewPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: zh['plan.discuss'] }))
     expect(respond).toHaveBeenCalledWith({
-      type: 'client-response', rpcId: RpcId('q-1'),
+      interactionId: interactionId('q-1'),
       result: {
         ok: false,
         error: { code: 'cancelled', message: 'the user closed this question request', details: {} },
@@ -188,7 +192,10 @@ describe('PlanReviewPanel', () => {
   it('re-arms the actions and says why when the decision does not land', async () => {
     const { carrier, respond } = wait(
       { questions: questions() },
-      vi.fn(() => Promise.resolve<RpcReceipt>({ accepted: false, reason: 'not-pending' })),
+      vi.fn(() => Promise.resolve({
+        ok: true as const,
+        value: { accepted: false as const, reason: 'not-pending' as const },
+      })),
     )
     render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
 

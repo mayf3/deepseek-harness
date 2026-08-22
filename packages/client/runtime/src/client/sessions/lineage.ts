@@ -6,7 +6,7 @@ import type { SessionId, SessionSummary } from '@deepseek-ai/dsh-api-remotes/cli
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { PendingInteractionStatus } from './pending.ts'
 
-/** Host list summary enriched with the latest mux-projected durable title. */
+/** Host list summary enriched with the latest Session Controller title projection. */
 export interface TitledSessionSummary extends SessionSummary {
   title?: string
   /** Current host-computed projection values for list consumers. */
@@ -29,7 +29,7 @@ export interface SessionListEntry {
   agentPreset?: string
   /** Current host-computed projection values for list consumers. */
   projectionValues?: Readonly<Partial<SessionProjectionMap>>
-  /** User interaction currently blocking this session, derived from live mux frames. */
+  /** User interaction currently blocking this session, derived from live control frames. */
   pendingInteraction?: PendingInteractionStatus
   /** Finished running while not selected and not yet opened — the sidebar's green "done" reminder (clears on select or the next run). */
   completed: boolean

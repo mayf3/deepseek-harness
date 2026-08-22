@@ -1,6 +1,13 @@
 /** Browser runtime services for slots, sessions, workspaces, and connection-stream delivery. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionHandle, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import {
+  createSessionControlStream,
+  SESSION_SEARCH_RESULT_LIMIT,
+} from '@deepseek-ai/dsh-api-session-controller/client'
+import {
+  createWorkspaceStateStream, ClientWorkspaceModel,
+} from '@deepseek-ai/dsh-api-workspace-controller/client'
 // Type-only: the ctx.remote merge. Deliberately the gateway's Client half rather
 // than api-remotes': that face imports a Host-tsdown-generated artifact, and this
 // project sits in the Host build graph.
@@ -17,6 +24,7 @@ import { ConversationEventRegistry } from './conversation/event-registry.ts'
 import { ConversationViewRegistry } from './conversation/view-registry.ts'
 
 export { isAppendSurfaceEvent, isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
+export { SESSION_SEARCH_RESULT_LIMIT }
 
 export { SlotRegistry } from './slots.ts'
 export { ConversationEventRegistry } from './conversation/event-registry.ts'
@@ -58,12 +66,12 @@ export type {
   SessionBinding, SessionListState, SessionProvideContribution, SessionProvideDescriptor, SessionSummary,
 } from './sessions/service.ts'
 export type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from './sessions/manager.ts'
-export type { SubagentAddress, JobView } from '@deepseek-ai/dsh-client-connection/client'
-export type { WorkspaceListPhase } from './workspaces/manager.ts'
+export type { SubagentAddress } from '@deepseek-ai/dsh-client-connection/client'
+export type { SessionJob as JobView } from '@deepseek-ai/dsh-api-session-controller/types'
+export type { WorkspaceListPhase } from '@deepseek-ai/dsh-api-workspace-controller/client'
 export type { WorkspaceListState } from './workspaces/service.ts'
-export type {
-  DirectoryEntry, DirectoryListing, WorkspaceId, WorkspaceView,
-} from '@deepseek-ai/dsh-client-connection/client'
+export type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-client-connection/client'
+export type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-remotes/client'
 // Runtime owns the snapshot store; ui-renderer only binds it to React.
 export { createSnapshotStore, defineStore, shallowEqual } from './contract/store.ts'
 export type {
@@ -158,8 +166,8 @@ declare module '@deepseek-ai/cordis' {
     'slots/changed'(key: string): void
     /**
      * A connection generation was (re-)established. Wire-derived caches must
-     * treat their state as stale and repull (commands directory; the queue
-     * mirrors reset themselves through the session resync path).
+     * treat their state as stale and repull. Session follow and control
+     * streams own their independent resume and baseline lifecycles.
      * @mode emit
      */
     'connection/reset'(): void
@@ -178,7 +186,14 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /** Required services: the wire handle and Client Typert registry. */
-export const inject = ['connection', 'typert', 'remote', 'remote.commands']
+export const inject = [
+  'connection',
+  'typert',
+  'remote',
+  'remote.commands',
+  'remote.session',
+  'remote.workspace',
+]
 
 /** Mounts the browser runtime services and connection stream.
  * @param ctx - Client Cordis context.
@@ -191,41 +206,44 @@ export function apply(ctx: Context): void {
   }
   const connection = ctx.get('connection') as ConnectionHandle
   const sessions = new SessionRuntime(ctx, connection.api, ctx.remote, conversation)
+  ctx.remote.$on('api-session/added', (summary) => { sessions.handleSessionAdded(summary) })
+  ctx.remote.$on('api-session/removed', (sessionId) => { sessions.handleSessionRemoved(sessionId) })
+  ctx.remote.$on('api-session/status', (sessionId, running) => {
+    sessions.handleSessionStatus(sessionId, running)
+  })
+  ctx.remote.$on('api-session/activity', (sessionId, updatedAt) => {
+    sessions.handleSessionActivity(sessionId, updatedAt)
+  })
+  ctx.remote.$on('api-session/error', (sessionId, message) => {
+    sessions.handleSessionError(sessionId, message)
+  })
+  const sessionControl = createSessionControlStream(ctx.remote, {
+    accept: (frame) => { sessions.handleControlFrame(frame) },
+    failed: (error) => { console.error('[web-runtime] session control stream failed:', error) },
+  })
+  sessionControl.start()
   ctx.typert.contexts.registerClient('agent', {
     identity: candidate => sessions.scopeOf(candidate),
+    resolve: sessionId => sessions.scope(sessionId),
   })
-  const workspaces = new WorkspaceRuntime(ctx, connection.api, sessions)
+  const workspaceModel = new ClientWorkspaceModel(ctx.remote.workspace)
+  const workspaces = new WorkspaceRuntime(ctx, connection.api, workspaceModel, sessions)
+  const workspaceControl = createWorkspaceStateStream(ctx.remote, {
+    accept: workspaceModel,
+    carrierFailed: () => { workspaceModel.handleCarrierFailure() },
+    failed: (error) => { workspaceModel.handleStreamFailure(error) },
+  })
+  workspaceControl.start()
   ctx.effect(
     () => workspaces.startInitialSelection(),
     'runtime: initial Workspace selection',
   )
-  const loop = connection.start({
-    onMuxEnvelope: (envelope) => {
-      sessions.handleMuxEnvelope(envelope)
-    },
-    onHostEnvelope: (envelope) => {
-      sessions.handleHostEnvelope(envelope)
-      workspaces.handleHostEnvelope(envelope)
-      // Forwarded-event bridge: the session layer ignores registry frames (no
-      // session routing). This plugin owns the frame sink, so it hands the
-      // decoded frame straight to the Remote service, which fans it out to
-      // `ctx.remote.$on` subscribers; no consumer reads a frame.
-      const frame = envelope.payload
-      if (frame.type === 'host/remote-event') ctx.remote.$dispatch(frame.event, frame.args)
-    },
-    onConnected: () => {
-      sessions.handleConnected()
-      workspaces.handleConnected()
-      ctx.emit('connection/reset')
-    },
-    onStateChange: (state) => {
-      // Generation death fires before any next-generation frame can arrive
-      // (reconnect replays flow from stream open, ahead of onConnected):
-      // the only safe moment to drop generation-scoped interaction state.
-      if (state === 'reconnecting') {
-        sessions.handleDisconnected()
-      }
-    },
-  })
-  ctx.effect(() => () => { loop.stop() }, 'runtime: connection stream loop')
+  ctx.on('connection/reset', () => { sessions.handleConnected() })
+  if (connection.hostDescription.getSnapshot() !== undefined) sessions.handleConnected()
+  ctx.effect(() => async () => {
+    await Promise.all([
+      workspaceControl.dispose(),
+      sessionControl.dispose(),
+    ])
+  }, 'runtime: connection streams')
 }

@@ -23,7 +23,7 @@ interface Bench {
 function bench(): Bench {
   const ctx = new Context()
   const api = new FakeApiClient()
-  const svc = new SessionRuntime(ctx, api, fakeRemote())
+  const svc = new SessionRuntime(ctx, api, fakeRemote(api))
   return { ctx, api, svc }
 }
 
@@ -55,9 +55,8 @@ async function feedList(b: Bench, rows: FeedRow[]): Promise<void> {
 describe('list store projection', () => {
   it('projects durable titles separately from cwd/id display fallbacks and parent links', async () => {
     const b = bench()
-    b.svc.handleMuxEnvelope({
-      rpcId: 'title' as never,
-      payload: { type: 'session/projection', sessionId: sid('s1'), key: 'title', value: 'Durable title', seq: 2 } as never,
+    b.svc.handleControlFrame({
+      type: 'projection', sessionId: sid('s1'), key: 'title', value: 'Durable title', seq: 2,
     })
     await feedList(b, [
       { id: 's1', cwd: '/home/u/proj-a/' },
@@ -90,7 +89,9 @@ describe('list store projection', () => {
   it('reflects live increments (host stream via manager) into the store', async () => {
     const b = bench()
     await feedList(b, [{ id: 's1' }])
-    b.svc.handleHostEnvelope({ rpcId: 'r1' as never, payload: { type: 'host/session-added', blank: true, sessionId: sid('s2') } as never })
+    b.svc.handleSessionAdded({
+      sessionId: sid('s2'), updatedAt: 2, running: false, blank: true,
+    })
     await Promise.resolve()
     expect(b.svc.list.getSnapshot().ids).toContain('s2')
   })
@@ -528,9 +529,8 @@ describe('fork', () => {
     ['计划 （9）', '计划 （10）'],
   ])('increments the durable title %j after the child is published', async (sourceTitle, childTitle) => {
     const b = bench()
-    b.svc.handleMuxEnvelope({
-      rpcId: 'source-title' as never,
-      payload: { type: 'session/projection', sessionId: sid('source'), key: 'title', value: sourceTitle, seq: 2 } as never,
+    b.svc.handleControlFrame({
+      type: 'projection', sessionId: sid('source'), key: 'title', value: sourceTitle, seq: 2,
     })
     await feedList(b, [{ id: 'source', cwd: '/work' }])
     b.api.onFork = () => Promise.resolve(ok({ sessionId: sid('child') }))
@@ -578,15 +578,14 @@ describe('fork', () => {
 
   it('rejects when child rename fails while keeping the published child addressable', async () => {
     const b = bench()
-    b.svc.handleMuxEnvelope({
-      rpcId: 'source-title' as never,
-      payload: { type: 'session/projection', sessionId: sid('source'), key: 'title', value: 'Roadmap', seq: 2 } as never,
+    b.svc.handleControlFrame({
+      type: 'projection', sessionId: sid('source'), key: 'title', value: 'Roadmap', seq: 2,
     })
     await feedList(b, [{ id: 'source' }])
     b.api.onFork = () => Promise.resolve(ok({ sessionId: sid('child') }))
     b.api.onRename = () => Promise.resolve(err({
       code: 'title-invalid', message: 'rejected', details: { sessionId: sid('child') },
-    }))
+    } as never))
 
     await expect(b.svc.fork({ sessionId: sid('source'), increaseTitle: true }))
       .rejects.toThrow('fork child rename failed: title-invalid: rejected')
@@ -599,18 +598,14 @@ describe('scope lifecycle rides the list mirror (entity parity: no client-side p
     const b = bench()
     await feedList(b, [])
     expect(b.svc.scope(sid('s-new'))).toBeUndefined() // not in view: no scope, no exceptions
-    b.svc.handleHostEnvelope({
-      rpcId: 'add' as never,
-      payload: { type: 'host/session-added', sessionId: sid('s-new'), blank: true, cwd: '/w/a' } as never,
+    b.svc.handleSessionAdded({
+      sessionId: sid('s-new'), updatedAt: 2, running: false, blank: true, cwd: '/w/a',
     })
     await Promise.resolve()
     const scoped = b.svc.scope(sid('s-new'))
     expect(scoped).toBeDefined()
     expect(scopeOf(scoped as Context)).toBe('s-new')
-    b.svc.handleHostEnvelope({
-      rpcId: 'rm' as never,
-      payload: { type: 'host/session-removed', sessionId: sid('s-new') },
-    })
+    b.svc.handleSessionRemoved(sid('s-new'))
     await Promise.resolve()
     expect(b.svc.scope(sid('s-new'))).toBeUndefined()
   })
@@ -621,10 +616,7 @@ describe('blank mirror', () => {
     const b = bench()
     await feedList(b, [{ id: 's1', blank: true }])
     expect(b.svc.list.getSnapshot().byId[sid('s1')]).toMatchObject({ blank: true })
-    b.svc.handleHostEnvelope({
-      rpcId: 'st' as never,
-      payload: { type: 'host/session-status', sessionId: sid('s1'), running: true },
-    })
+    b.svc.handleSessionStatus(sid('s1'), true)
     await Promise.resolve()
     expect(b.svc.list.getSnapshot().byId[sid('s1')]).toMatchObject({ blank: false, running: true })
     // The instantiated Session mirrors the same flip.
@@ -669,9 +661,8 @@ describe('blank mirror', () => {
   it('takes session-added blank=true as the hidden birth and list blank as reconnect authority', async () => {
     const b = bench()
     await feedList(b, [])
-    b.svc.handleHostEnvelope({
-      rpcId: 'add' as never,
-      payload: { type: 'host/session-added', sessionId: sid('s-new'), blank: true, cwd: '/w/a' } as never,
+    b.svc.handleSessionAdded({
+      sessionId: sid('s-new'), updatedAt: 2, running: false, blank: true, cwd: '/w/a',
     })
     await Promise.resolve()
     expect(b.svc.list.getSnapshot().byId[sid('s-new')]).toMatchObject({ blank: true })

@@ -4,7 +4,7 @@
  * higher-seq-wins rule on both paths (a stale baseline cannot overwrite a
  * newer push frame; a replayed frame cannot regress), capability absence as
  * undefined, generation truncation, and the Session/manager wiring (tail-page
- * seeding, session/projection frame routing pre- and post-instantiation, the
+ * seeding, control-stream projection routing pre- and post-instantiation, the
  * list rows' title projection).
  */
 import { describe, expect, it } from 'vitest'
@@ -103,7 +103,7 @@ describe('ProjectionValueStore semantics', () => {
 describe('Session tail-page seeding', () => {
   it('seeds the store from a history response carrying a projections block', async () => {
     const api = new FakeApiClient()
-    const session = new Session(SID, api, fakeRemote())
+    const session = new Session(SID, api, fakeRemote(api))
     api.onHistory = () => Promise.resolve(ok({
       events: entries(plainTurn(0, 0, '问', '答')) as never[], hasMore: false,
       projections: { asOfSeq: 5, values: { 'test/marks': { marks: ['from-baseline'] } } },
@@ -114,7 +114,7 @@ describe('Session tail-page seeding', () => {
 
   it('a resync serving a stale block keeps the newer pushed value (seq rule end to end)', async () => {
     const api = new FakeApiClient()
-    const session = new Session(SID, api, fakeRemote())
+    const session = new Session(SID, api, fakeRemote(api))
     api.onHistory = () => Promise.resolve(ok({
       events: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false,
       projections: { asOfSeq: 5, values: { 'test/marks': { marks: ['baseline'] } } },
@@ -127,7 +127,7 @@ describe('Session tail-page seeding', () => {
 
   it('treats a blockless response as no reset: pushed values survive', async () => {
     const api = new FakeApiClient()
-    const session = new Session(SID, api, fakeRemote())
+    const session = new Session(SID, api, fakeRemote(api))
     api.onHistory = () => Promise.resolve(ok({ events: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false }))
     await session.open()
     session.projections.apply('test/marks', { marks: ['pushed'] }, 9)
@@ -139,41 +139,41 @@ describe('Session tail-page seeding', () => {
 describe('manager frame routing', () => {
   const sid = (s: string): SessionId => s as SessionId
 
-  it('lands session/projection frames before instantiation and the Session adopts the same store', async () => {
+  it('lands projection frames before instantiation and the Session adopts the same store', async () => {
     const api = new FakeApiClient()
-    const manager = new SessionManager(api, fakeRemote())
-    manager.handleMuxEnvelope({
-      rpcId: 'p1' as never,
-      payload: { type: 'session/projection', sessionId: sid('s1'), key: 'test/marks', value: { marks: ['early'] }, seq: 7 } as never,
+    const manager = new SessionManager(api, fakeRemote(api))
+    manager.handleControlFrame({
+      type: 'projection', sessionId: sid('s1'), key: 'test/marks', value: { marks: ['early'] }, seq: 7,
     })
     const session = manager.get(sid('s1'))
     expect(session.projections.get('test/marks')).toEqual({ marks: ['early'] })
     // Frames after instantiation land in the same store.
-    manager.handleMuxEnvelope({
-      rpcId: 'p2' as never,
-      payload: { type: 'session/projection', sessionId: sid('s1'), key: 'test/marks', value: { marks: ['later'] }, seq: 9 } as never,
+    manager.handleControlFrame({
+      type: 'projection', sessionId: sid('s1'), key: 'test/marks', value: { marks: ['later'] }, seq: 9,
     })
     expect(session.projections.get('test/marks')).toEqual({ marks: ['later'] })
   })
 
-  it('projects the title key into list rows and truncates phantom rows on the subscribed baseline', async () => {
+  it('projects the title key into list rows and truncates phantom rows on the control baseline', async () => {
     const api = new FakeApiClient()
-    const manager = new SessionManager(api, fakeRemote())
+    const manager = new SessionManager(api, fakeRemote(api))
     api.onList = () => Promise.resolve(ok({
       items: [{ sessionId: sid('s1'), updatedAt: 1, running: false, blank: false }],
     }) as never)
     await manager.refreshList()
-    manager.handleMuxEnvelope({
-      rpcId: 't1' as never,
-      payload: { type: 'session/projection', sessionId: sid('s1'), key: 'title', value: 'Projected title', seq: 4 } as never,
+    manager.handleControlFrame({
+      type: 'projection', sessionId: sid('s1'), key: 'title', value: 'Projected title', seq: 4,
     })
     await Promise.resolve()
     expect(manager.getListSnapshot().items[0]?.title).toBe('Projected title')
     // The durable baseline says the host only knows up to seq 2: the row rode
     // lost state and must drop (the un-flushed title precedent).
-    manager.handleMuxEnvelope({
-      rpcId: 'sub' as never,
-      payload: { type: 'session/subscribed', sessionId: sid('s1'), lastSeq: 2 } as never,
+    manager.handleControlFrame({
+      type: 'baseline',
+      value: {
+        queues: {}, jobs: {}, approvals: [], questions: [],
+        projections: { [sid('s1')]: { asOfSeq: 2, values: {} } },
+      },
     })
     await Promise.resolve()
     expect(manager.getListSnapshot().items[0]?.title).toBeUndefined()
@@ -181,7 +181,7 @@ describe('manager frame routing', () => {
 
   it('projects every retained value into list rows with stable snapshot identity', async () => {
     const api = new FakeApiClient()
-    const manager = new SessionManager(api, fakeRemote())
+    const manager = new SessionManager(api, fakeRemote(api))
     api.onList = () => Promise.resolve(ok({
       items: [{
         sessionId: sid('s1'), updatedAt: 1, running: false, blank: false,
@@ -196,12 +196,9 @@ describe('manager frame routing', () => {
     expect(baseline).toEqual({ 'test/marks': { marks: ['baseline'] } })
     expect(manager.getListSnapshot().items[0]?.projectionValues).toBe(baseline)
 
-    manager.handleMuxEnvelope({
-      rpcId: 'p2' as never,
-      payload: {
-        type: 'session/projection', sessionId: sid('s1'), key: 'test/marks',
-        value: { marks: ['live'] }, seq: 3,
-      } as never,
+    manager.handleControlFrame({
+      type: 'projection', sessionId: sid('s1'), key: 'test/marks',
+      value: { marks: ['live'] }, seq: 3,
     })
     await Promise.resolve()
     expect(manager.getListSnapshot().items[0]?.projectionValues)
@@ -211,19 +208,15 @@ describe('manager frame routing', () => {
 
   it('drops the projection store with the removed session', async () => {
     const api = new FakeApiClient()
-    const manager = new SessionManager(api, fakeRemote())
+    const manager = new SessionManager(api, fakeRemote(api))
     api.onList = () => Promise.resolve(ok({
       items: [{ sessionId: sid('s1'), updatedAt: 1, running: false, blank: false }],
     }) as never)
     await manager.refreshList()
-    manager.handleMuxEnvelope({
-      rpcId: 't1' as never,
-      payload: { type: 'session/projection', sessionId: sid('s1'), key: 'title', value: 'Doomed', seq: 4 } as never,
+    manager.handleControlFrame({
+      type: 'projection', sessionId: sid('s1'), key: 'title', value: 'Doomed', seq: 4,
     })
-    manager.handleHostEnvelope({
-      rpcId: 'rm' as never,
-      payload: { type: 'host/session-removed', sessionId: sid('s1') } as never,
-    })
+    manager.handleSessionRemoved(sid('s1'))
     expect(manager.get(sid('s1')).projections.get('title')).toBeUndefined()
   })
 })

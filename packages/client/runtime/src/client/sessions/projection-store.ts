@@ -2,8 +2,8 @@
  * Generic per-session projection value store (push model; see the
  * session-projection subsystem page, docs/subsystems/session-projection.md):
  * the host is the only computation site; the client holds finished
- * whole values per key — `key → { value, seq }` — seeded by the history tail
- * page's projections block and updated by `session/projection` push frames,
+ * whole values per key — `key → { value, seq }` — seeded by a Session page's
+ * projections block and updated by Session Controller `projection` frames,
  * under the single rule **higher seq wins**. No client-side domain folding
  * exists: a domain ships projection support with zero client code. Per-key
  * bare observable faces feed `useProjection` (ui-renderer binds them).
@@ -40,8 +40,8 @@ export type UseProjection = {
 }
 
 /**
- * Tail-page projections baseline — structurally identical to the wire's
- * `SessionProjectionsBlock` (apiproxy api layer), restated here so the
+ * Tail-page projections baseline — structurally identical to Session
+ * Controller's `SessionProjectionsBlock`, restated here so the
  * React-free store depends only on the type table, not the wire package's
  * response vocabulary.
  */
@@ -49,7 +49,7 @@ export interface ProjectionsBaseline {
   /** The consistent-cut seq (equals the window tail seq by construction). */
   asOfSeq: number
   /** Whole current values by key; a registered key absent here means the capability is absent. */
-  values: Partial<SessionProjectionMap>
+  values: Readonly<Record<string, unknown>>
 }
 
 /** One key's row: the latest finished value and the seq it is consistent with. */
@@ -126,7 +126,7 @@ export class ProjectionValueStore {
   }
 
   /**
-   * Apply one finished value (the `session/projection` push-frame path).
+   * Apply one finished value from the Session control stream.
    * @param key - projection key.
    * @param value - whole value computed by the host unit.
    * @param seq - the unit's watermark at emission.
@@ -160,13 +160,11 @@ export class ProjectionValueStore {
   }
 
   /**
-   * Drop rows past a mux-generation baseline (`session/subscribed.lastSeq`):
-   * a row claiming knowledge beyond the host's own durable baseline rode
-   * state a restart lost — under last-wins it would wrongly outrank the
-   * host's recomputed (lower-seq) values forever. Durable replay and the next
-   * baseline re-seed whatever truly survived (the title-snapshot precedent,
-   * generalized).
-   * @param lastSeq - the subscribed frame's durable baseline seq.
+   * Drop rows beyond a replacement control baseline. Such rows describe
+   * process state the Host lost before persisting it and would otherwise
+   * outrank recomputed lower-seq values forever. The caller seeds the new
+   * baseline immediately afterward.
+   * @param lastSeq - highest durable sequence reflected by the baseline.
    */
   truncate(lastSeq: number): void {
     for (const [key, row] of this.rows) {

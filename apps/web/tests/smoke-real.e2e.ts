@@ -16,6 +16,7 @@
 // sequentially in-file.
 import type { ChildProcess } from 'node:child_process'
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
@@ -50,22 +51,22 @@ function waitForReadyLine(child: ChildProcess): Promise<string> {
   })
 }
 
-async function rpc<T>(baseUrl: string, method: string, payload: unknown): Promise<T> {
-  const response = await fetch(`${baseUrl}/api/${method}`, {
+async function remoteRpc<T>(baseUrl: string, endpoint: string, args: object): Promise<T> {
+  const response = await fetch(`${baseUrl}/api/${endpoint}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       type: 'client-request',
-      rpcId: `smoke-${method}`,
-      method,
-      payload,
+      rpcId: `smoke-${endpoint}`,
+      method: endpoint,
+      payload: { args },
     }),
   })
-  if (!response.ok) throw new Error(`${method} failed over HTTP ${response.status}: ${await response.text()}`)
+  if (!response.ok) throw new Error(`${endpoint} failed over HTTP ${response.status}: ${await response.text()}`)
   const body = await response.json() as {
     result: { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
   }
-  if (!body.result.ok) throw new Error(`${method} failed: ${body.result.error.code}: ${body.result.error.message}`)
+  if (!body.result.ok) throw new Error(`${endpoint} failed: ${body.result.error.code}: ${body.result.error.message}`)
   return body.result.value
 }
 
@@ -101,7 +102,9 @@ function hasAssistantMarker(page: HistoryPage, marker: string): boolean {
 }
 
 async function history(baseUrl: string, sessionId: string): Promise<HistoryPage> {
-  return rpc<HistoryPage>(baseUrl, 'session.history', { sessionId, maxMessages: 10 })
+  return remoteRpc<HistoryPage>(baseUrl, 'session/page', {
+    request: { address: { kind: 'session', sessionId }, maxMessages: 10 },
+  })
 }
 
 async function waitForProviderTitle(baseUrl: string, sessionId: string): Promise<string> {
@@ -242,12 +245,13 @@ describe('dsh web keyless CLI smoke', () => {
     )
     try {
       const baseUrl = await waitForReadyLine(child)
-      const created = await rpc<{ sessionId: string }>(baseUrl, 'session.create', {})
-      await rpc<{ accepted: true }>(baseUrl, 'session.prompt', {
+      const created = await remoteRpc<{ sessionId: string }>(baseUrl, 'session/create', { request: {} })
+      await remoteRpc<{ accepted: true }>(baseUrl, 'session/prompt', { request: {
+        requestId: randomUUID(),
         sessionId: created.sessionId,
         mode: 'queue',
         content: [{ type: 'text', text: 'go' }],
-      })
+      } })
       const capturedRequests = await Promise.race([
         providerRequests,
         new Promise<never>((_resolve, reject) => {
@@ -354,12 +358,13 @@ describe('dsh web keyless CLI smoke', () => {
     )
     try {
       const baseUrl = await waitForReadyLine(child)
-      const created = await rpc<{ sessionId: string }>(baseUrl, 'session.create', {})
-      await rpc<{ accepted: true }>(baseUrl, 'session.prompt', {
+      const created = await remoteRpc<{ sessionId: string }>(baseUrl, 'session/create', { request: {} })
+      await remoteRpc<{ accepted: true }>(baseUrl, 'session/prompt', { request: {
+        requestId: randomUUID(),
         sessionId: created.sessionId,
         mode: 'queue',
         content: [{ type: 'text', text: promptMarker }],
-      })
+      } })
       let page: HistoryPage | undefined
       await expect.poll(async () => {
         page = await history(baseUrl, created.sessionId)
@@ -438,12 +443,13 @@ describe('dsh web keyless CLI smoke', () => {
     )
     try {
       const baseUrl = await waitForReadyLine(child)
-      const created = await rpc<{ sessionId: string }>(baseUrl, 'session.create', {})
-      await rpc<{ accepted: true }>(baseUrl, 'session.prompt', {
+      const created = await remoteRpc<{ sessionId: string }>(baseUrl, 'session/create', { request: {} })
+      await remoteRpc<{ accepted: true }>(baseUrl, 'session/prompt', { request: {
+        requestId: randomUUID(),
         sessionId: created.sessionId,
         mode: 'queue',
         content: [{ type: 'text', text: 'go' }],
-      })
+      } })
       const captured = await Promise.race([
         providerRequest,
         new Promise<never>((_resolve, reject) => {
@@ -555,10 +561,18 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
       productTitle,
       { timeout: 15_000 },
     )
-    await expect.poll(async () => (await rpc<{ items: { sessionId: string }[] }>(baseUrl, 'session.list', {})).items.length, {
+    await expect.poll(async () => (await remoteRpc<{ items: { sessionId: string }[] }>(
+      baseUrl,
+      'session/list',
+      { _request: {} },
+    )).items.length, {
       timeout: 15_000,
     }).toBe(1)
-    const sessions = await rpc<{ items: { sessionId: string }[] }>(baseUrl, 'session.list', {})
+    const sessions = await remoteRpc<{ items: { sessionId: string }[] }>(
+      baseUrl,
+      'session/list',
+      { _request: {} },
+    )
     const sessionId = sessions.items[0]?.sessionId
     if (sessionId === undefined) throw new Error('created Web session was not listed')
     const durableTitle = await waitForProviderTitle(baseUrl, sessionId)

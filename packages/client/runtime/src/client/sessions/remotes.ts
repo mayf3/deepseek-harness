@@ -8,5 +8,5 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 
-/** The generated Remote namespaces a Session and its manager call. */
-export type SessionRemotes = Pick<Context['remote'], 'commands'>
+/** The generated Remote namespaces and Gateway stream factory a Session cluster uses. */
+export type SessionRemotes = Pick<Context['remote'], '$stream' | 'commands' | 'session'>

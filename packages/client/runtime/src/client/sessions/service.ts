@@ -16,11 +16,9 @@
  */
 import type { Context, Fiber } from '@deepseek-ai/cordis'
 import type {
-  IApiClient, RpcError, RpcResult, SessionId, SubagentAddress, JobView, WorkspaceId,
+  ClientFailure, ClientResult, IApiClient, SessionId, SubagentAddress, JobView, WorkspaceId,
 } from '@deepseek-ai/dsh-api-remotes/client'
-// Value import from the inline-safe wire layer (not the connection plugin):
-// plugin-to-plugin value imports are a bundle purity error.
-import { SESSION_SEARCH_RESULT_LIMIT } from '@deepseek-ai/dsh-host-apiproxy/api'
+import { SESSION_SEARCH_RESULT_LIMIT } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   HostObservable, SessionMaybeProvideInfo, SessionProvideInfo,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -88,9 +86,9 @@ export interface SessionListState {
   /** Direct durable catalogs keyed by their selected parent address. */
   subagentsByParent: Readonly<Record<SessionId, SubagentCatalogSnapshot>>
   /**
-   * Background jobs each session can see, mirrored last-wins from
-   * `session/jobs`. A missing key is an empty set — the Host sends no baseline
-   * for a session without tasks — so consumers read absence, never a sentinel.
+   * Background jobs each session can see, mirrored last-wins from Session
+   * Controller's control baseline and `jobs` frames. A missing key is an empty
+   * set, so consumers read absence rather than a sentinel.
    */
   jobsBySession: Readonly<Record<SessionId, readonly JobView[]>>
   /** Current session's catalog-derived address, absent on ordinary navigation. */
@@ -112,7 +110,7 @@ export class SessionCreateError extends Error {
    * @param requestedSessionId - caller-preallocated id used for later stream/list reconciliation.
    */
   constructor(
-    readonly rpcError: RpcError,
+    readonly rpcError: ClientFailure,
     readonly requestedSessionId: SessionId | undefined,
   ) {
     super(`session create failed: ${rpcError.code}: ${rpcError.message}`)
@@ -128,7 +126,7 @@ export class SessionForkError extends Error {
    * @param sourceSessionId - the session the fork was cut from.
    */
   constructor(
-    readonly rpcError: RpcError,
+    readonly rpcError: ClientFailure,
     readonly sourceSessionId: SessionId,
   ) {
     super(`session fork failed: ${rpcError.code}: ${rpcError.message}`)
@@ -441,34 +439,61 @@ export class SessionRuntime implements ISessions {
   search(
     query: string,
     signal: AbortSignal,
-  ): Promise<RpcResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>> {
+  ): Promise<ClientResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>> {
     return this.manager.search(query, signal)
   }
 
   /**
-   * Route a mux stream envelope into the Session object layer.
-   * @param envelope - validated mux stream envelope.
+   * Apply one Session Controller live-control frame.
+   * @param frame - baseline or live control replacement.
    */
-  handleMuxEnvelope(envelope: Parameters<SessionManager['handleMuxEnvelope']>[0]): void {
-    this.manager.handleMuxEnvelope(envelope)
+  handleControlFrame(frame: Parameters<SessionManager['handleControlFrame']>[0]): void {
+    this.manager.handleControlFrame(frame)
   }
 
   /**
-   * Route a Host stream envelope into the Session object layer.
-   * @param envelope - validated Host stream envelope.
+   * Apply one remotely forwarded Session-list addition.
+   * @param summary - current Host summary for the added Session.
    */
-  handleHostEnvelope(envelope: Parameters<SessionManager['handleHostEnvelope']>[0]): void {
-    this.manager.handleHostEnvelope(envelope)
+  handleSessionAdded(summary: Parameters<SessionManager['handleSessionAdded']>[0]): void {
+    this.manager.handleSessionAdded(summary)
+  }
+
+  /**
+   * Apply one remotely forwarded Session removal.
+   * @param sessionId - removed Session identity.
+   */
+  handleSessionRemoved(sessionId: Parameters<SessionManager['handleSessionRemoved']>[0]): void {
+    this.manager.handleSessionRemoved(sessionId)
+  }
+
+  /**
+   * Apply one remotely forwarded running-state change.
+   * @param args - Session identity and current Agent running state.
+   */
+  handleSessionStatus(...args: Parameters<SessionManager['handleSessionStatus']>): void {
+    this.manager.handleSessionStatus(...args)
+  }
+
+  /**
+   * Apply one remotely forwarded list-activity change.
+   * @param args - Session identity and durable activity timestamp.
+   */
+  handleSessionActivity(...args: Parameters<SessionManager['handleSessionActivity']>): void {
+    this.manager.handleSessionActivity(...args)
+  }
+
+  /**
+   * Apply one remotely forwarded Agent failure.
+   * @param args - Session identity and caller-visible failure description.
+   */
+  handleSessionError(...args: Parameters<SessionManager['handleSessionError']>): void {
+    this.manager.handleSessionError(...args)
   }
 
   /** Rebuild the Session baseline and every opened window after connection. */
   handleConnected(): void {
     this.manager.handleConnected()
-  }
-
-  /** Drop generation-scoped live interaction state the moment a connection generation dies. */
-  handleDisconnected(): void {
-    this.manager.handleDisconnected()
   }
 
   /**

@@ -3,9 +3,18 @@
 // List data never enters zustand; React connects via subscribe/getListSnapshot.
 
 import type {
-  IApiClient, HostFrame, MuxFrame, RpcError, RpcRequest, RpcResult, SessionId,
+  ClientFailure, ClientResult, IApiClient, SessionId,
   SessionSummary, SubagentAddress, SubagentCatalog, JobView, WorkspaceId,
 } from '@deepseek-ai/dsh-api-remotes/client'
+import type {
+  SessionApprovalRequest,
+  SessionControlBaseline,
+  SessionControlFrame,
+  SessionInteractionId,
+  SessionQuestionRequest,
+  SessionQueuedItem,
+  SessionError,
+} from '@deepseek-ai/dsh-api-session-controller/types'
 // Value import from the inline-safe wire layer (not the connection plugin):
 // plugin-to-plugin value imports are a bundle purity error.
 import { transportError } from '@deepseek-ai/dsh-host-apiproxy/api'
@@ -47,7 +56,7 @@ export interface SessionListSnapshot {
   state: 'idle' | 'loading' | 'error'
   /** Arrival lifecycle (see {@link SessionListPhase}); `state` stays the pull-activity axis. */
   phase: SessionListPhase
-  error: RpcError | null
+  error: ClientFailure | null
   subagentsByParent: Readonly<Record<SessionId, SubagentCatalogSnapshot>>
   /** Background jobs per session; an absent key is an empty set. */
   jobsBySession: Readonly<Record<SessionId, readonly JobView[]>>
@@ -57,7 +66,7 @@ export interface SessionListSnapshot {
 /** One parent-addressed durable catalog projected through the sessions snapshot. */
 export interface SubagentCatalogSnapshot extends SubagentCatalog {
   state: 'loading' | 'ready' | 'error'
-  error: RpcError | null
+  error: ClientFailure | null
 }
 
 interface CatalogInflight {
@@ -76,21 +85,9 @@ type SessionListMutation =
   /** Local first-send flip: the sender clears blank without waiting for a host frame. */
   | { kind: 'engaged'; sessionId: SessionId }
 
-/** Stable identity of a frame retained until an uninstantiated Session can consume it. */
-function bufferedRequestKey(envelope: RpcRequest<MuxFrame>): string | undefined {
-  const frame = envelope.payload
-  switch (frame.type) {
-    case 'approval/requested': return `a:${frame.approvalId}`
-    case 'question/requested': return `q:${envelope.rpcId}`
-    case 'session/queue': return 'queue'
-    /* v8 ignore next -- pendingBuffers contains only the three frame types above. */
-    default: return undefined
-  }
-}
-
 /** Match ui-user-questions's binary plan-review routing at the wire boundary. */
 function questionInteractionStatus(
-  questions: Extract<MuxFrame, { type: 'question/requested' }>['questions'],
+  questions: SessionQuestionRequest['questions'],
 ): PendingInteractionStatus {
   if (questions.length !== 1) return 'question'
   const question = questions[0] as typeof questions[number]
@@ -105,14 +102,17 @@ function questionInteractionStatus(
 /** Instance cluster + frame entry + the session list. */
 export class SessionManager {
   private readonly sessions = new Map<SessionId, Session>()
-  /** Pre-instantiation buffer for answerable requests and the queued-turn snapshot, which history
-   *  cannot reconstruct on open. Live requests remain until resolution; queue and replay duplicates
-   *  compact by identity. Instantiation replays and clears it, while removal drops it. */
-  private readonly pendingBuffers = new Map<SessionId, RpcRequest<MuxFrame>[]>()
+  /** Latest transient queues, retained independently of Session object materialization. */
+  private readonly queues = new Map<SessionId, readonly SessionQueuedItem[]>()
+  /** Answerable requests retained by stable identity for lazy Session materialization. */
+  private readonly interactions = new Map<
+    SessionId,
+    Map<SessionInteractionId, SessionApprovalRequest | SessionQuestionRequest>
+  >()
   /** Outstanding answerable interactions per session, keyed by their stable request identity.
    *  Manager-owned rather than read off Session instances because the sidebar must light up for
-   *  sessions never instantiated. Cleared per connection generation — the reopen replay re-adds
-   *  still-pending requests — and on session-removed. */
+   *  sessions never instantiated. Each control baseline replaces the complete set, and
+   *  session removal clears the corresponding rows. */
   private readonly pendingInteractions = new Map<SessionId, Map<string, PendingInteractionStatus>>()
   /**
    * Sessions that finished running while not selected — the sidebar's green
@@ -131,7 +131,7 @@ export class SessionManager {
   private listState: 'idle' | 'loading' | 'error' = 'idle'
   /** Arrival phase; the pending → ready edge fires on the first successful pull (see SessionListPhase). */
   private listPhase: SessionListPhase = 'pending'
-  private listError: RpcError | null = null
+  private listError: ClientFailure | null = null
   private listInflight: Promise<void> | null = null
   /** Mutations arriving after a list request starts are replayed over its response. */
   private listMutations: SessionListMutation[] | null = null
@@ -143,8 +143,9 @@ export class SessionManager {
   private readonly openCatalogs = new Set<SessionId>()
   private readonly catalogDebounce = new Map<SessionId, ReturnType<typeof setTimeout>>()
   /**
-   * Background jobs per session, last-wins from `session/jobs`. An empty set
-   * is stored as an absent key, so absence and `[]` are one representation.
+   * Background jobs per session, last-wins from Session Controller's control
+   * stream. An empty set is stored as an absent key, so absence and `[]` are
+   * one representation.
    */
   private readonly jobsBySession = new Map<SessionId, readonly JobView[]>()
 
@@ -274,16 +275,14 @@ export class SessionManager {
     if (session === undefined) {
       session = this.createSession(sessionId)
       this.sessions.set(sessionId, session)
-      // Replay approval/question/queued frames buffered before instantiation (rpcId
-      // verbatim, same semantics as the subscribed baseline replay). Replay happens
-      // BEFORE the running-bit sync: a not-running summary must sweep replayed queue
+      // Install the latest control baseline before the running-bit sync: a
+      // not-running summary must sweep replayed queue
       // rows the same way a live status flip would (their retirement events dropped
       // while the session was uninstantiated).
-      const buffered = this.pendingBuffers.get(sessionId)
-      if (buffered !== undefined) {
-        this.pendingBuffers.delete(sessionId)
-        for (const envelope of buffered) session.handleMuxEnvelope(envelope.rpcId, envelope.payload)
-      }
+      session.replaceControl(
+        this.queues.get(sessionId) ?? [],
+        [...(this.interactions.get(sessionId)?.values() ?? [])],
+      )
       // Sync the running and blank bits from the list snapshot into the new
       // instance (consistency when the list precedes open).
       const summary = this.summaries.find(s => s.sessionId === sessionId)
@@ -446,10 +445,10 @@ export class SessionManager {
     this.notifier.markDirty()
     this.listInflight = (async () => {
       try {
-        const { result } = await this.api.sessions.list({})
+        const result = toSessionResult(await this.remote.session.list({}))
         if (result.ok) {
-          const baseline = this.listPhase === 'pending'
-            ? result.value.items
+          const baseline: SessionSummary[] = this.listPhase === 'pending'
+            ? [...result.value.items]
             : mergeOrderedBaseline(established, result.value.items, summary => summary.sessionId)
           // Seed first observations from the pull-time baseline BEFORE replaying
           // in-flight mutations, then reconcile the reminders after EVERY
@@ -518,9 +517,17 @@ export class SessionManager {
   async search(
     query: string,
     signal: AbortSignal,
-  ): Promise<RpcResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>> {
+  ): Promise<ClientResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>> {
     try {
-      return (await this.api.sessions.search({ query }, signal)).result
+      const result = toSessionResult(await this.remote.session.search({ query }, signal))
+      if (!result.ok) return result
+      return {
+        ok: true,
+        value: {
+          items: [...result.value.items],
+          hasMore: result.value.hasMore,
+        },
+      }
     } catch (error: unknown) {
       return transportError(error)
     }
@@ -532,16 +539,20 @@ export class SessionManager {
    * (entity birth precedes the first message).
    * @param opts - target workspace or working directory, plus an optional caller-owned id.
    * @returns the create result.
-   */
+  */
   async create(
-    opts: { workspaceId?: WorkspaceId; cwd?: string; sessionId?: SessionId } = {},
-  ): Promise<RpcResult<{ sessionId: SessionId }>> {
+    opts: {
+      workspaceId?: WorkspaceId
+      cwd?: string
+      sessionId?: SessionId
+    } = {},
+  ): Promise<ClientResult<{ sessionId: SessionId }>> {
     try {
       const shared = opts.sessionId === undefined ? {} : { sessionId: opts.sessionId }
       const payload = opts.workspaceId !== undefined
         ? { workspaceId: opts.workspaceId, ...shared }
         : { ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }), ...shared }
-      const { result } = await this.api.sessions.create(payload)
+      const result = toSessionResult(await this.remote.session.create(payload))
       if (result.ok) {
         this.recordMutation({ kind: 'upsert', summary: {
           sessionId: result.value.sessionId, updatedAt: Date.now(), running: false, blank: true,
@@ -579,13 +590,13 @@ export class SessionManager {
    */
   async fork(
     opts: { sessionId: SessionId; atSeq?: number },
-  ): Promise<RpcResult<{ sessionId: SessionId }>> {
+  ): Promise<ClientResult<{ sessionId: SessionId }>> {
     try {
       const source = this.summaries.find(s => s.sessionId === opts.sessionId)
-      const { result } = await this.api.sessions.fork({
+      const result = toSessionResult(await this.remote.session.fork({
         sessionId: opts.sessionId,
         ...opts.atSeq === undefined ? {} : { atSeq: opts.atSeq },
-      })
+      }))
       const childId = result.ok
         ? result.value.sessionId
         : workspaceAttachSessionId(result.error)
@@ -672,240 +683,195 @@ export class SessionManager {
     this.notifier.markDirty()
   }
 
-  // ---- ConnectionController sinks (wired by boot) ----
+  // ---- Live control and Host-event sinks ----
 
   /**
-   * Mux frame entry: sessionId-bearing frames go only to instantiated sessions
-   * (no lazy build; non-pending frames for uninstantiated sessions drop —
-   * history backfills them on open).
-   * @param envelope - the frame with its wire rpcId.
+   * Apply a complete control baseline or one later replacement frame.
+   * @param frame - baseline or live control replacement from Session Controller.
    */
-  handleMuxEnvelope(envelope: RpcRequest<MuxFrame>): void {
-    const frame = envelope.payload
-    if (frame.type === 'stream/error') return // Controller already treats this as stream failure
-    if (
-      frame.type === 'session/event'
-      && frame.event.type === 'user/message'
-      && frame.event.data.source.kind === 'user'
-    ) {
-      // session.list supplies the cold baseline, while a direct prompt or an
-      // admitted steer advances it between pulls. Max keeps replayed or
-      // repaired older user messages from moving the row backwards.
-      this.recordMutation({ kind: 'activity', sessionId: frame.sessionId, updatedAt: frame.event.time })
+  handleControlFrame(frame: SessionControlFrame): void {
+    if (frame.type === 'baseline') {
+      this.replaceControlBaseline(frame.value)
+      return
     }
-    if (frame.type === 'session/projection') {
-      // Finished host-computed value: land it in the resident store whether or
-      // not the Session is instantiated (list rows read the 'title' key). The
-      // synchronous markDirty keeps the list snapshot same-tick fresh (the
-      // store's own any-key channel is microtask-batched).
+    if (frame.type === 'projection') {
       this.projectionStore(frame.sessionId).apply(frame.key, frame.value, frame.seq)
       this.notifier.markDirty()
       return
     }
-    if (frame.type === 'session/jobs') {
-      // Whole-set snapshot, so last-wins with no reconciliation. The Host omits
-      // the baseline for an empty set, which is the same fact an emptying change
-      // reports as `[]` — both land as an absent key.
+    if (frame.type === 'jobs') {
       if (frame.jobs.length === 0) this.jobsBySession.delete(frame.sessionId)
       else this.jobsBySession.set(frame.sessionId, frame.jobs)
       this.notifier.markDirty()
       return
     }
-    if (frame.type === 'session/subscribed') {
-      // Rows past the host's durable baseline rode state a restart lost; drop
-      // them so last-wins cannot pin a phantom value over recomputed truth.
-      this.projectionStores.get(frame.sessionId)?.truncate(frame.lastSeq)
-      // Same re-baseline reasoning as the queue below: this generation sends a
-      // task baseline only when the set is non-empty, so a mirror kept from the
-      // previous generation would survive as a phantom list.
-      this.jobsBySession.delete(frame.sessionId)
-      this.notifier.markDirty()
-      // New mux-generation baseline: discard the previous queue snapshot.
-      // The host omits session/queue when the live queue is empty, so retaining
-      // it could replay stale work when the Session is instantiated later.
-      // This is the same re-baseline signal Session uses for its own mirror.
-      const buffered = this.pendingBuffers.get(frame.sessionId)
-      if (buffered !== undefined) {
-        const kept = buffered.filter(item => item.payload.type !== 'session/queue')
-        if (kept.length !== buffered.length) {
-          if (kept.length === 0) this.pendingBuffers.delete(frame.sessionId)
-          else this.pendingBuffers.set(frame.sessionId, kept)
-        }
+    if (frame.type === 'queue') this.queues.set(frame.sessionId, frame.items)
+    if (frame.type === 'approval/requested' || frame.type === 'question/requested') {
+      let interactions = this.interactions.get(frame.sessionId)
+      if (interactions === undefined) {
+        interactions = new Map()
+        this.interactions.set(frame.sessionId, interactions)
       }
-    }
-    // List-level pending-interaction status (the sidebar amber dot): tracked
-    // for every session, instantiated or not; stable keys make replays idempotent.
-    if (frame.type === 'approval/requested') {
-      this.trackPending(frame.sessionId, `a:${frame.approvalId}`, 'approval')
-    } else if (frame.type === 'approval/resolved') {
-      this.resolvePending(frame.sessionId, `a:${frame.approvalId}`)
-    } else if (frame.type === 'question/requested') {
+      interactions.set(frame.interactionId, frame)
       this.trackPending(
         frame.sessionId,
-        `q:${envelope.rpcId}`,
-        questionInteractionStatus(frame.questions),
+        `${frame.type === 'approval/requested' ? 'a' : 'q'}:${frame.interactionId}`,
+        frame.type === 'approval/requested' ? 'approval' : questionInteractionStatus(frame.questions),
       )
-    } else if (frame.type === 'question/resolved') {
-      this.resolvePending(frame.sessionId, `q:${frame.questionRpcId}`)
+    } else if (frame.type === 'approval/resolved' || frame.type === 'question/resolved') {
+      const interactions = this.interactions.get(frame.sessionId)
+      interactions?.delete(frame.interactionId)
+      if (interactions?.size === 0) this.interactions.delete(frame.sessionId)
+      this.resolvePending(
+        frame.sessionId,
+        `${frame.type === 'approval/resolved' ? 'a' : 'q'}:${frame.interactionId}`,
+      )
     }
-    const session = this.sessions.get(frame.sessionId)
-    if (session === undefined) {
-      // Answerable requests never hit history: retain each live identity until
-      // instantiation, compacting replay duplicates and resolutions so list
-      // status cannot outlive the PendingWait the user would need to answer.
-      // Queue is a latest-value snapshot; everything else drops because open
-      // backfills it from history.
-      switch (frame.type) {
-        case 'approval/requested':
-        case 'question/requested':
-        case 'session/queue': {
-          const buffer = this.pendingBuffers.get(frame.sessionId) ?? []
-          const key = frame.type === 'approval/requested'
-            ? `a:${frame.approvalId}`
-            : frame.type === 'question/requested' ? `q:${envelope.rpcId}` : 'queue'
-          const prior = buffer.findIndex(item => bufferedRequestKey(item) === key)
-          if (prior === -1) buffer.push(envelope)
-          else buffer[prior] = envelope
-          this.pendingBuffers.set(frame.sessionId, buffer)
-          return
-        }
-        case 'approval/resolved':
-        case 'question/resolved': {
-          const buffer = this.pendingBuffers.get(frame.sessionId)
-          if (buffer === undefined) return
-          const key = frame.type === 'approval/resolved'
-            ? `a:${frame.approvalId}`
-            : `q:${frame.questionRpcId}`
-          const prior = buffer.findIndex(item => bufferedRequestKey(item) === key)
-          if (prior !== -1) buffer.splice(prior, 1)
-          if (buffer.length === 0) this.pendingBuffers.delete(frame.sessionId)
-          return
-        }
-        default:
-          return
+    this.sessions.get(frame.sessionId)?.handleControlFrame(frame)
+  }
+
+  private replaceControlBaseline(baseline: SessionControlBaseline): void {
+    this.queues.clear()
+    for (const [sessionId, items] of Object.entries(baseline.queues)) {
+      this.queues.set(sessionId as SessionId, items)
+    }
+
+    this.jobsBySession.clear()
+    for (const [sessionId, jobs] of Object.entries(baseline.jobs)) {
+      if (jobs.length > 0) this.jobsBySession.set(sessionId as SessionId, jobs)
+    }
+
+    this.interactions.clear()
+    this.pendingInteractions.clear()
+    for (const interaction of [...baseline.approvals, ...baseline.questions]) {
+      let interactions = this.interactions.get(interaction.sessionId)
+      if (interactions === undefined) {
+        interactions = new Map()
+        this.interactions.set(interaction.sessionId, interactions)
       }
+      interactions.set(interaction.interactionId, interaction)
+      let statuses = this.pendingInteractions.get(interaction.sessionId)
+      if (statuses === undefined) {
+        statuses = new Map()
+        this.pendingInteractions.set(interaction.sessionId, statuses)
+      }
+      const approval = 'approvalId' in interaction
+      statuses.set(
+        `${approval ? 'a' : 'q'}:${interaction.interactionId}`,
+        approval ? 'approval' : questionInteractionStatus(interaction.questions),
+      )
     }
-    session.handleMuxEnvelope(envelope.rpcId, frame)
+
+    for (const [sessionId, block] of Object.entries(baseline.projections)) {
+      const store = this.projectionStore(sessionId as SessionId)
+      store.truncate(block.asOfSeq)
+      store.seed(block)
+    }
+    for (const [sessionId, session] of this.sessions) {
+      session.replaceControl(
+        this.queues.get(sessionId) ?? [],
+        [...(this.interactions.get(sessionId)?.values() ?? [])],
+      )
+    }
+    this.notifier.markDirty()
   }
 
   /**
-   * Host frame entry: list upkeep + per-instance running/removed/agent-error relay.
-   * @param envelope - the frame with its wire rpcId.
+   * Apply one Session-list addition forwarded through `ctx.remote.$on`.
+   * @param summary - current Host summary for the added Session.
    */
-  handleHostEnvelope(envelope: RpcRequest<HostFrame>): void {
-    const frame = envelope.payload
-    switch (frame.type) {
-      case 'host/session-added': {
-        this.mergeSummary({
-          sessionId: frame.sessionId, updatedAt: Date.now(), running: false, blank: frame.blank,
-          ...(frame.parentSessionId !== undefined ? { parentSessionId: frame.parentSessionId } : {}),
-          ...(frame.origin !== undefined ? { origin: frame.origin } : {}),
-          ...(frame.cwd !== undefined ? { cwd: frame.cwd } : {}),
-          ...(frame.agentPreset !== undefined ? { agentPreset: frame.agentPreset } : {}),
-        })
-        this.sessions.get(frame.sessionId)?.handleBlank(frame.blank)
-        if (frame.origin === 'subagent' && frame.parentSessionId !== undefined) {
-          this.markCatalogParentExpandable(frame.parentSessionId)
-        }
-        if (frame.parentSessionId !== undefined
-          && (this.selected === frame.parentSessionId || this.openCatalogs.has(frame.parentSessionId))) {
-          this.scheduleCatalogRefresh(frame.parentSessionId)
-        }
-        return
+  handleSessionAdded(summary: SessionSummary): void {
+    this.mergeSummary(summary)
+    this.sessions.get(summary.sessionId)?.handleBlank(summary.blank)
+    const projections = summary.projections
+    if (projections !== undefined) {
+      const store = this.projectionStore(summary.sessionId)
+      for (const [key, value] of Object.entries(projections.values)) {
+        store.apply(key, value, projections.asOfSeq)
       }
-      case 'host/session-removed': {
-        const summary = this.summaries.find(candidate => candidate.sessionId === frame.sessionId)
-        const durableSubagent = summary?.origin === 'subagent' || this.addresses.has(frame.sessionId)
-        this.recordMutation(durableSubagent
-          ? { kind: 'status', sessionId: frame.sessionId, running: false }
-          : { kind: 'remove', sessionId: frame.sessionId })
-        this.updateCatalogActivity(frame.sessionId, false)
-        if (durableSubagent) {
-          // An Activation detaching is not durable child deletion:
-          // keep its lineage and conversation while returning it to idle.
-          this.sessions.get(frame.sessionId)?.handleRunning(false)
-        } else {
-          this.sessions.get(frame.sessionId)?.handleRemoved()
-        }
-        this.pendingBuffers.delete(frame.sessionId) // a removed session's buffered frames must not replay on a future instantiation
-        this.pendingInteractions.delete(frame.sessionId) // a removed session cannot wait on anyone
-        // Owner disposal already dropped these registry-side, but that lands on
-        // the mux stream while this frame rides the host stream, so the two have
-        // no relative order. Clearing here makes a detached Activation's rows
-        // disappear whichever arrives first.
-        this.jobsBySession.delete(frame.sessionId)
-        if (!durableSubagent) this.projectionStores.delete(frame.sessionId)
-        // A pull already in flight was requested before this removal and can
-        // carry the pre-removal parentAvailable:true, which would resurrect
-        // the writable editor this invalidation just closed. Replay false over
-        // that response and queue one trailing refresh so the post-removal
-        // host truth converges.
-        const inflightCatalog = this.catalogInflight.get(frame.sessionId)
-        if (inflightCatalog !== undefined) {
-          inflightCatalog.parentAvailableOverride = false
-          this.catalogStale.add(frame.sessionId)
-        }
-        // The removed session can no longer be the delivery owner of its
-        // catalog: invalidate availability immediately. Removal schedules no
-        // catalog refresh, and without this an addressed child keeps a
-        // writable editor against a dead continuation owner until an
-        // unrelated refresh (or forever, for a closed menu).
-        const ownedCatalog = this.catalogs.get(frame.sessionId)
-        if (ownedCatalog !== undefined && ownedCatalog.parentAvailable) {
-          this.catalogs.set(frame.sessionId, { ...ownedCatalog, parentAvailable: false })
-        }
-        for (const [childId, address] of this.addresses) {
-          if (address.parentSessionId !== frame.sessionId) continue
-          this.sessions.get(childId)?.handleSubagentParentAvailable(false)
-        }
-        return
-      }
-      case 'host/session-status': {
-        this.recordMutation({ kind: 'status', sessionId: frame.sessionId, running: frame.running })
-        this.sessions.get(frame.sessionId)?.handleRunning(frame.running)
-        this.updateCatalogActivity(frame.sessionId, frame.running)
-        return
-      }
-      case 'host/agent-error': {
-        this.sessions.get(frame.sessionId)?.handleAgentError(frame.message)
-        return // not reflected in the list
-      }
-      default:
-        return // stream/error ignored; unknown frames ignored (documented default)
+    }
+    if (summary.origin === 'subagent' && summary.parentSessionId !== undefined) {
+      this.markCatalogParentExpandable(summary.parentSessionId)
+    }
+    if (summary.parentSessionId !== undefined
+      && (this.selected === summary.parentSessionId || this.openCatalogs.has(summary.parentSessionId))) {
+      this.scheduleCatalogRefresh(summary.parentSessionId)
     }
   }
 
   /**
-   * The moment a connection generation dies (before any next-generation frame
-   * can arrive — onConnected waits for the readiness handshake while replayed
-   * frames flow from stream open, so clearing there would race the replay):
-   * drop generation-scoped live state. Interactions resolved while disconnected
-   * send no frame, so stale statuses and buffered answerable frames must not
-   * survive into the next generation — mux-open replay re-adds every still-pending
-   * request with its live rpcId.
-  */
-  handleDisconnected(): void {
-    if (this.pendingInteractions.size > 0) {
-      this.pendingInteractions.clear()
-      this.notifier.markDirty()
+   * Apply one Session removal forwarded through `ctx.remote.$on`.
+   * @param sessionId - removed Session identity.
+   */
+  handleSessionRemoved(sessionId: SessionId): void {
+    const summary = this.summaries.find(candidate => candidate.sessionId === sessionId)
+    const durableSubagent = summary?.origin === 'subagent' || this.addresses.has(sessionId)
+    this.recordMutation(durableSubagent
+      ? { kind: 'status', sessionId, running: false }
+      : { kind: 'remove', sessionId })
+    this.updateCatalogActivity(sessionId, false)
+    if (durableSubagent) this.sessions.get(sessionId)?.handleRunning(false)
+    else this.sessions.get(sessionId)?.handleRemoved()
+    this.queues.delete(sessionId)
+    this.interactions.delete(sessionId)
+    this.pendingInteractions.delete(sessionId)
+    this.jobsBySession.delete(sessionId)
+    if (!durableSubagent) this.projectionStores.delete(sessionId)
+    const inflightCatalog = this.catalogInflight.get(sessionId)
+    if (inflightCatalog !== undefined) {
+      inflightCatalog.parentAvailableOverride = false
+      this.catalogStale.add(sessionId)
     }
-    for (const [sessionId, buffer] of [...this.pendingBuffers]) {
-      const kept = buffer.filter(item =>
-        item.payload.type !== 'approval/requested' && item.payload.type !== 'question/requested')
-      if (kept.length === buffer.length) continue
-      if (kept.length === 0) this.pendingBuffers.delete(sessionId)
-      else this.pendingBuffers.set(sessionId, kept)
+    const ownedCatalog = this.catalogs.get(sessionId)
+    if (ownedCatalog !== undefined && ownedCatalog.parentAvailable) {
+      this.catalogs.set(sessionId, { ...ownedCatalog, parentAvailable: false })
+    }
+    for (const [childId, address] of this.addresses) {
+      if (address.parentSessionId === sessionId) {
+        this.sessions.get(childId)?.handleSubagentParentAvailable(false)
+      }
     }
   }
 
-  /** After each connection generation: refresh the session baseline and rebuild opened windows. */
+  /**
+   * Apply one live Agent running-state change.
+   * @param sessionId - Session whose Agent state changed.
+   * @param running - current Agent running state.
+   */
+  handleSessionStatus(sessionId: SessionId, running: boolean): void {
+    this.recordMutation({ kind: 'status', sessionId, running })
+    this.sessions.get(sessionId)?.handleRunning(running)
+    this.updateCatalogActivity(sessionId, running)
+  }
+
+  /**
+   * Advance Session-list activity from one user-authored durable message.
+   * @param sessionId - Session whose activity changed.
+   * @param updatedAt - durable message timestamp.
+   */
+  handleSessionActivity(sessionId: SessionId, updatedAt: number): void {
+    this.recordMutation({ kind: 'activity', sessionId, updatedAt })
+  }
+
+  /**
+   * Surface one live Agent failure on an already-materialized Session.
+   * @param sessionId - Session whose Agent failed.
+   * @param message - caller-visible failure description.
+   */
+  handleSessionError(sessionId: SessionId, message: string): void {
+    this.sessions.get(sessionId)?.handleAgentError(message)
+  }
+
+  /**
+   * Repair one re-established Host-event generation with queryable baselines.
+   * Opened Session follow streams resume independently through API Gateway.
+   */
   handleConnected(): void {
     void this.refreshList()
     const selectedAddress = this.selected === undefined ? undefined : this.addresses.get(this.selected)
     if (selectedAddress !== undefined) void this.refreshSubagents(selectedAddress.parentSessionId)
     if (this.selected !== undefined) void this.refreshSubagents(this.selected)
     for (const parentSessionId of this.openCatalogs) void this.refreshSubagents(parentSessionId)
-    for (const session of this.sessions.values()) void session.resync()
   }
 
   /** Debounce membership refetches while one parent catalog is selected or open. */
@@ -1125,7 +1091,13 @@ function applyMutation(summaries: readonly SessionSummary[], mutation: SessionLi
 }
 
 /** Temporary source-plane bridge while the Host contract and client project build independently. */
-function workspaceAttachSessionId(error: RpcError): SessionId | undefined {
-  const candidate = error as unknown as { code: string; details: { sessionId?: SessionId } }
-  return candidate.code === 'workspace-attach-failed' ? candidate.details.sessionId : undefined
+function workspaceAttachSessionId(error: ClientFailure): SessionId | undefined {
+  return error.code === 'workspace-attach-failed' ? error.details.sessionId : undefined
+}
+
+/** Narrow a generated Session Remote failure to its service-owned error vocabulary. */
+function toSessionResult<T>(
+  result: import('@deepseek-ai/dsh-typert-protocol').RemoteResult<T>,
+): ClientResult<T> {
+  return result.ok ? result : { ok: false, error: result.error as SessionError }
 }

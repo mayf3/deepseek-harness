@@ -80,9 +80,7 @@ async function bench() {
   const locale = new LocaleRuntime(ctx)
   locale.setLocale('zh')
   ctx.provide('locale', locale)
-  // The plugins inject `remote`; forwarded events reach them through the
-  // same `$dispatch` handoff the connection sink makes.
-  new TestRemote(ctx)
+  const remote = new TestRemote(ctx)
   const calls: string[] = []
   ctx.provide('connection', {
     api: {
@@ -120,7 +118,7 @@ async function bench() {
     },
   } as never)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault, remote }
 }
 
 function declareRoot(slots: SlotRegistry): () => void {
@@ -255,18 +253,18 @@ describe('ui-agent-preset apply', () => {
   })
 
   it('refreshes a showing surface when its namespace changes, and ignores others', async () => {
-    const { ctx, slots, calls } = await bench()
+    const { ctx, slots, calls, remote } = await bench()
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
     const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
     await section.load()
     const before = calls.length
 
-    ctx.remote.$dispatch('settings/document-updated', ['agent-presets', 1])
+    remote.emit('settings/document-updated', ['agent-presets', 1])
     await vi.waitFor(() => { expect(calls.length).toBe(before + 2) })
     const afterRelevant = calls.length
 
-    ctx.remote.$dispatch('settings/document-updated', ['llm-deepseek', 1])
+    remote.emit('settings/document-updated', ['llm-deepseek', 1])
     await Promise.resolve()
 
     // Both surfaces re-read on their own namespace; an unrelated one moves
@@ -289,12 +287,12 @@ describe('ui-agent-preset apply', () => {
   })
 
   it('leaves the section alone until it has been opened once', async () => {
-    const { ctx, slots, calls } = await bench()
+    const { ctx, slots, calls, remote } = await bench()
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
     const before = calls.length
 
-    ctx.remote.$dispatch('settings/document-updated', ['agent-presets', 1])
+    remote.emit('settings/document-updated', ['agent-presets', 1])
     await vi.waitFor(() => { expect(calls.length).toBeGreaterThan(before) })
 
     // Only the General row reloads: a section nobody opened has nothing to
@@ -325,7 +323,7 @@ describe('ui-agent-preset apply', () => {
   })
 
   it('moves the chip when the default changes on the settings surface', async () => {
-    const { ctx, slots, moveDefault } = await bench()
+    const { ctx, slots, moveDefault, remote } = await bench()
     declareRoot(slots)
     const conversation = declareConversation(slots)
     ctx.provide('conversation', {} as never)
@@ -345,11 +343,11 @@ describe('ui-agent-preset apply', () => {
     // An unrelated namespace moves nothing: the chip re-reads on its own
     // setting, not on every settings write in the process.
     moveDefault()
-    ctx.remote.$dispatch('settings/document-updated', ['llm-deepseek', 1])
+    remote.emit('settings/document-updated', ['llm-deepseek', 1])
     await Promise.resolve()
     expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
 
-    ctx.remote.$dispatch('settings/document-updated', ['agent-presets', 1])
+    remote.emit('settings/document-updated', ['agent-presets', 1])
     await vi.waitFor(() => {
       expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('minimal')
     })
@@ -357,7 +355,7 @@ describe('ui-agent-preset apply', () => {
   })
 
   it('folds a remote preset commit into the shared session row', async () => {
-    const { ctx, slots } = await bench()
+    const { ctx, slots, remote } = await bench()
     declareRoot(slots)
     declareConversation(slots)
     ctx.provide('conversation', {} as never)
@@ -369,7 +367,7 @@ describe('ui-agent-preset apply', () => {
     ctx.provide('workspaces', workspacesDouble() as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
 
-    ctx.remote.$dispatch('agent-preset/selected', ['s1', 'minimal'])
+    remote.emit('agent-preset/selected', ['s1', 'minimal'])
 
     expect(state.byId.s1.agentPreset).toBe('minimal')
   })

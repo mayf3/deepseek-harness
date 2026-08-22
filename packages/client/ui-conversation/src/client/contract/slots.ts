@@ -675,7 +675,7 @@ export type ApprovalWait = PendingWait<'approval'>
 /**
  * Approval domain face over the carrier (the ui-user-questions PendingQuestion
  * pattern): render identity and question material forwarded transparently;
- * answer owns the wire encoding — the ApprovalResponsePayload value shape
+ * answer owns the Session Controller approval-response value
  * with the audit correlation the host reconciles — and turns a rejected
  * carrier receipt into a thrown error. Minted per carrier via useMemo.
  */

@@ -14,7 +14,7 @@ import {
 import type {
   ConversationEventInput, ConversationLocationDataStore, ConversationMatch, ConversationNodeDefinition,
   ConversationTimelineSnapshot, ConversationTurnDataMap, ConversationViewDefinition,
-  ConversationViewNode, ToolResultNode, TurnLocation,
+  ConversationViewNode, TurnLocation,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -123,10 +123,12 @@ function matched(input: ConversationEventInput, role: ConversationMatch['role'])
   return { ...input, role, location: { kind: 'unresolved' } }
 }
 
+type WireCallView = Extract<NonNullable<ConversationEventInput['view']>, { for: 'call' }>['view']
+
 function call(
   seq: number,
   callId: string,
-  view: ToolResultNode['callView'],
+  view: WireCallView | null,
   turn = 1,
 ): ConversationEventInput {
   return at(
@@ -148,7 +150,7 @@ function result(seq: number, callId: string, isError = false, turn = 1): Convers
   })
 }
 
-function diff(...paths: string[]): ToolResultNode['callView'] {
+function diff(...paths: string[]): WireCallView {
   return {
     card: 'diff', title: `Write ${paths[0] ?? ''}`,
     diffs: paths.map(path => ({ path, oldText: null, newText: 'x' })),
@@ -156,7 +158,7 @@ function diff(...paths: string[]): ToolResultNode['callView'] {
   }
 }
 
-function edit(path: string): ToolResultNode['callView'] {
+function edit(path: string): WireCallView {
   return { card: 'generic', title: `insert ${path}`, kind: 'edit', locations: [{ path }] }
 }
 

@@ -1,12 +1,31 @@
-// Sessions remain resident after creation so they continue consuming mux frames off-screen.
+// Sessions remain resident after creation so their open Remote sources keep running off-screen.
 
 import type { Context } from '@deepseek-ai/cordis'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  HistoryEntry, IApiClient, MessageId, MuxFrame, PromptContentPart, QueueAction, RpcError,
-  RpcId, RpcResponse, RpcResult, SessionId, SubagentAddress, ToolEventView,
+  ClientFailure, ClientResult, IApiClient, MessageId, PromptContentPart, QueueAction,
+  SessionId, SubagentAddress,
 } from '@deepseek-ai/dsh-api-remotes/client'
+import {
+  SessionEventStream,
+  sessionStreamFailure,
+} from '@deepseek-ai/dsh-api-session-controller/client'
+import type {
+  SessionEventChange,
+} from '@deepseek-ai/dsh-api-session-controller/client'
+import type {
+  SessionAddress,
+  SessionApprovalRequest,
+  SessionControlFrame,
+  SessionEventEntry,
+  SessionQuestionRequest,
+  SessionQueuedItem,
+  SessionRequestId,
+  SessionError,
+  SessionToolView,
+} from '@deepseek-ai/dsh-api-session-controller/types'
 // Value import from the inline-safe wire layer (not the connection plugin):
 // plugin-to-plugin value imports are a bundle purity error.
 import { transportError } from '@deepseek-ai/dsh-host-apiproxy/api'
@@ -64,17 +83,16 @@ export interface SessionOptions {
  */
 export class Session implements SessionFace {
   // ---- Window and derived state (all private; the snapshot is the only read API) ----
-  private events: SessionEvent[] = []
-  /** Wire views aligned with `events` by index (envelope-level annotations; undefined = no view).
-   *  Kept parallel rather than merged so `events` stays the raw log slice (model-visible ⟺ logged). */
-  private views: (ToolEventView | undefined)[] = []
+  private eventWindow: SessionEvent[] = []
+  /** Wire views aligned with `eventWindow` by index (envelope annotations; undefined = no view).
+   *  Kept parallel so `eventWindow` remains the raw log slice (model-visible ⟺ logged). */
+  private views: (SessionToolView | undefined)[] = []
   private baseSeq = 0
   private hasMore = false
   private openState: OpenState = 'cold'
-  private openError: RpcError | null = null
+  private openError: ClientFailure | null = null
   private openPromise: Promise<void> | null = null
-  /** Bumped by resync to invalidate an in-flight doOpen: a reconnect must rebuild, never adopt
-   *  a pre-disconnect open whose history request is already doomed. Stale doOpen
+  /** Bumped by stream replacement to invalidate an in-flight doOpen. Stale
    *  passes drop all writes once the generation moves on. */
   private openGeneration = 0
   private loadingOlder = false
@@ -101,18 +119,14 @@ export class Session implements SessionFace {
   private removed = false
   private promptError: PromptError | null = null
   private lastAgentError: string | null = null
-  /** Live events buffered during open/resync and stitched by sequence once history lands. */
-  private liveBuffer: { event: SessionEvent; view: ToolEventView | undefined }[] = []
-  /** Gap repair in flight; live events detour to the buffer until the tail page lands. */
-  private stitching = false
-  /** subscribed.lastSeq baseline (gap detection; null when no subscribed frame arrived — degrade to the liveBuffer dedup path). */
-  private subscribedLastSeq: number | null = null
+  /** Owns the addressed page/follow lifecycle while this Session is open. */
+  private events: SessionEventStream | undefined
 
   /**
    * Per-session projection value store (push model; see the session-projection
    * subsystem page, docs/subsystems/session-projection.md): finished whole
-   * values computed on the host, seeded by the tail page's
-   * projections block and updated by `session/projection` frames under the
+   * values computed on the Host, seeded by the tail page's
+   * projections block and updated by Session Controller control frames under the
    * one higher-seq-wins rule. Keys are read via `projections.faceOf(key)`
    * (the useProjection resolution face); the conversation snapshot never
    * carries projection values, and no client-side domain folding exists.
@@ -191,7 +205,7 @@ export class Session implements SessionFace {
     content: PromptContentPart[],
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
-  ): Promise<RpcResult<{ accepted: true }>> {
+  ): Promise<ClientResult<{ accepted: true }>> {
     this.promptError = null
     this.lastAgentError = null
     // Synchronous, before the first await: the blank → engaging edge must be
@@ -200,15 +214,17 @@ export class Session implements SessionFace {
     this.promptAttempted = true
     if (this.blankBit) this.firstPromptPendingTurn = true
     this.notifier.markDirty()
-    let result: RpcResult<{ accepted: true }>
+    let result: ClientResult<{ accepted: true }>
     try {
       if (this.address === undefined) {
-        result = (await this.api.sessions.prompt({
+        const clientTimeZone = resolvedClientTimeZone()
+        result = toSessionResult(await this.remote.session.prompt({
+          requestId: randomUUID() as SessionRequestId,
           sessionId: this.sessionId,
           mode,
           content,
-          clientTimeZone: resolvedClientTimeZone(),
-        }, signal)).result
+          clientTimeZone,
+        }, signal))
       } else if (this.address.mode === 'one-shot') {
         result = {
           ok: false,
@@ -270,13 +286,13 @@ export class Session implements SessionFace {
    */
   async readAttachment(
     attachmentId: AttachmentIdType,
-  ): Promise<RpcResult<{ attachment: ImageAttachmentRef; data: Uint8Array }>> {
+  ): Promise<ClientResult<{ attachment: ImageAttachmentRef; data: Uint8Array }>> {
     try {
-      const result = (await this.api.sessions.attachment({
+      const result = await this.remote.session.attachment({
         sessionId: this.sessionId,
         attachmentId,
-      })).result
-      if (!result.ok) return result
+      })
+      if (!result.ok) return toSessionResult(result)
       const binary = atob(result.value.data)
       const data = Uint8Array.from(binary, char => char.charCodeAt(0))
       return { ok: true, value: { attachment: result.value.attachment, data } }
@@ -286,9 +302,9 @@ export class Session implements SessionFace {
   }
 
   /** Apply one operation to a still-pending queue occurrence. */
-  async updateQueue(itemId: MessageId, action: QueueAction): Promise<RpcResult<{ accepted: true }>> {
+  async updateQueue(itemId: MessageId, action: QueueAction): Promise<ClientResult<{ accepted: true }>> {
     try {
-      return (await this.api.sessions.updateQueue({ sessionId: this.sessionId, itemId, action })).result
+      return toSessionResult(await this.remote.session.updateQueue({ sessionId: this.sessionId, itemId, action }))
     } catch (error) {
       return transportError(error)
     }
@@ -303,10 +319,10 @@ export class Session implements SessionFace {
    * defensive).
    * @returns the cancel result.
    */
-  async cancel(): Promise<RpcResult<{ accepted: true }>> {
+  async cancel(): Promise<ClientResult<{ accepted: true }>> {
     const address = this.address
     if (address !== undefined && address.mode === 'one-shot') {
-      const result: RpcResult<{ accepted: true }> = {
+      const result: ClientResult<{ accepted: true }> = {
         ok: false,
         error: {
           code: 'subagent-delivery-unavailable',
@@ -318,11 +334,11 @@ export class Session implements SessionFace {
       this.notifier.markDirty()
       return result
     }
-    let result: RpcResult<{ accepted: true }>
+    let result: ClientResult<{ accepted: true }>
     try {
       result = address !== undefined
         ? (await this.api.subagents.interrupt(address)).result
-        : (await this.api.sessions.cancel({ sessionId: this.sessionId })).result
+        : toSessionResult(await this.remote.session.cancel({ sessionId: this.sessionId }))
     } catch (error) {
       result = transportError(error)
     }
@@ -338,13 +354,13 @@ export class Session implements SessionFace {
    * projection cell from the response's `{title, seq}` under the store's
    * higher-seq-wins rule (the push frame arriving later is a no-op replay),
    * so the list row and any useProjection('title') reader update without
-   * waiting for the mux frame.
+   * waiting for the control-stream projection update.
    * @param title - raw title text (the host normalizes acceptance).
    * @returns the rename result (normalized accepted title + title event seq).
    */
-  async rename(title: string): Promise<RpcResult<{ title: string; seq: number }>> {
+  async rename(title: string): Promise<ClientResult<{ title: string; seq: number }>> {
     try {
-      const { result } = await this.api.sessions.rename({ sessionId: this.sessionId, title })
+      const result = toSessionResult(await this.remote.session.rename({ sessionId: this.sessionId, title }))
       if (result.ok) this.projections.apply('title', result.value.title, result.value.seq)
       return result
     } catch (error) {
@@ -380,63 +396,37 @@ export class Session implements SessionFace {
   /** Page up: pull one earlier page with the window's first seq as beforeSeq and prepend. */
   async loadOlder(): Promise<void> {
     if (this.openState !== 'open' || !this.hasMore || this.loadingOlder) return
+    const events = this.events
+    if (events === undefined) return
     this.loadingOlder = true
     this.notifier.markDirty()
     try {
-      const { result } = await this.history({ beforeSeq: this.baseSeq, maxMessages: PAGE_MESSAGES })
-      if (!result.ok) return // keep the window as-is; do not overwrite openError (open already succeeded)
-      const older = result.value.events
-      if (older.length === 0) {
-        this.hasMore = result.value.hasMore
-        this.conversation.prepend([], this.hasMore)
-        return
-      }
-      const tail = older[older.length - 1]
-      if (tail === undefined || tail.event.seq + 1 !== this.baseSeq) {
-        // Continuity assertion: on violation drop the page fail-soft rather than render an out-of-order stream.
-        console.error(`[web-runtime] history page discontinuous: tail seq ${tail?.event.seq} vs baseSeq ${this.baseSeq}`)
-        this.hasMore = false
-        this.conversation.prepend([], false)
-        return
-      }
-      this.events = [...older.map(e => e.event), ...this.events]
-      this.views = [...older.map(e => e.view), ...this.views]
-      /* v8 ignore next -- the ?? arm needs older[0] undefined, but the empty-page branch above already returned. */
-      this.baseSeq = older[0]?.event.seq ?? this.baseSeq
-      this.hasMore = result.value.hasMore
-      this.conversation.prepend(older.map(conversationInput), this.hasMore)
+      await events.prepend({ beforeSeq: this.baseSeq, maxMessages: PAGE_MESSAGES })
     } catch (error) {
-      console.error('[web-runtime] loadOlder failed:', error)
+      if (sessionStreamFailure(error) === undefined) {
+        console.error('[web-runtime] loadOlder failed:', error)
+      }
     } finally {
       this.loadingOlder = false
       this.notifier.markDirty()
     }
   }
 
-  /** Reconnect rebuild (manager calls this on onConnected for instances that were opened):
-   *  reset the window and rerun open; pending waits for the baseline replay. Invalidates any
-   *  in-flight open first — its history request rode the dead connection and must not settle
-   *  the fresh generation into 'error'. */
+  /** Rebuild an opened history source after address replacement.
+   *  Invalidates any in-flight open first; queue and pending-interaction state belongs
+   *  to the independently reconnecting control stream and remains untouched. */
   async resync(): Promise<void> {
-    // The queue mirror is NOT cleared here: onConnected (which drives resync)
-    // races the mux frames — the fresh generation's baseline may have landed
-    // already, and the host never resends it. The mirror re-baselines on the
-    // session/subscribed frame instead (same stream as the queue snapshot
-    // that follows it, so ordering is guaranteed).
     if (this.openState === 'cold') return // never opened: no window to rebuild (doOpen flips to 'loading' synchronously, so cold implies no in-flight open)
     this.openGeneration++
+    const events = this.events
+    this.events = undefined
+    await events?.dispose()
     this.openPromise = null
     this.openState = 'cold'
     this.openError = null
-    this.events = []
+    this.eventWindow = []
     this.views = []
     this.baseSeq = 0
-    // Superseded, not settled: the baseline replay re-sends still-pending requested frames verbatim
-    // (same rpcId), re-minting fresh waits; a stale reference's respond() still reaches the host.
-    this.pending.clear()
-    this.pendingRev++
-    this.subscribedLastSeq = null
-    this.liveBuffer = []
     this.notifier.markDirty()
     await this.open()
   }
@@ -464,57 +454,42 @@ export class Session implements SessionFace {
   // ---- Manager-only entry points (@internal; never called by the UI) ----
 
   /**
-   * Mux frame arrival (the dispatch switch).
-   * @param rpcId - the frame envelope id (the respond backfill key for requested frames).
-   * @param frame - the routed frame.
+   * Replace every transient control value for this Session from one stream baseline.
+   * @param queue - complete pending queue for this Session.
+   * @param interactions - complete pending approval and question set.
    */
-  handleMuxEnvelope(rpcId: RpcId, frame: MuxFrame): void {
+  replaceControl(
+    queue: readonly SessionQueuedItem[],
+    interactions: readonly (SessionApprovalRequest | SessionQuestionRequest)[],
+  ): void {
+    this.queueMirror.replace(queue)
+    this.pending.clear()
+    this.pendingRev++
+    for (const interaction of interactions) this.requestInteraction(interaction)
+    this.notifier.markDirty()
+  }
+
+  /**
+   * Apply one Session-addressed live control update.
+   * @param frame - queue or interaction replacement addressed to this Session.
+   */
+  handleControlFrame(frame: Exclude<SessionControlFrame, { type: 'baseline' | 'jobs' | 'projection' }>): void {
     switch (frame.type) {
-      case 'session/event': {
-        this.acceptLiveEvent(frame.event, frame.view)
-        return
-      }
-      case 'session/queue': {
+      case 'queue':
         this.queueMirror.replace(frame.items)
         this.notifier.markDirty()
         return
-      }
-      case 'session/subscribed': {
-        this.subscribedLastSeq = frame.lastSeq
-        // New mux-generation baseline: the host pushes this session's queue
-        // snapshot AFTER the subscribed frame on the same stream, so the
-        // stale mirror clears here — race-free against onConnected/resync
-        // timing (clearing there could wipe a baseline that already landed).
-        if (this.queueMirror.reset()) this.notifier.markDirty()
-        return
-      }
-      case 'approval/requested': {
-        const { type: _type, sessionId: _sid, ...payload } = frame
-        this.mint(new PendingWait('approval', rpcId, this.sessionId, payload, m => this.api.respond(m)))
+      case 'approval/requested':
+      case 'question/requested':
+        this.requestInteraction(frame)
         this.notifier.markDirty()
         return
-      }
-      case 'approval/resolved': {
-        for (const item of this.pending.values()) {
-          if (item.kind === 'approval' && item.payload.approvalId === frame.approvalId) this.settle(item)
-        }
-        this.notifier.markDirty()
+      case 'approval/resolved':
+        this.resolveInteraction(`a:${frame.interactionId}`)
         return
-      }
-      case 'question/requested': {
-        const { type: _type, sessionId: _sid, ...payload } = frame
-        this.mint(new PendingWait('question', rpcId, this.sessionId, payload, m => this.api.respond(m)))
-        this.notifier.markDirty()
+      case 'question/resolved':
+        this.resolveInteraction(`q:${frame.interactionId}`)
         return
-      }
-      case 'question/resolved': {
-        const item = this.pending.get(`q:${frame.questionRpcId}`)
-        if (item !== undefined) this.settle(item)
-        this.notifier.markDirty()
-        return
-      }
-      default:
-        return // stream/error never reaches Session (Controller converges it); unknown frames ignored (documented default)
     }
   }
 
@@ -562,8 +537,8 @@ export class Session implements SessionFace {
   }
 
   /**
-   * Blank-bit relay from the authoritative summary source (list baseline and
-   * the session-added frame). Monotone: once any signal (local first send,
+   * Blank-bit relay from the authoritative summary source (`session.list` and
+   * `api-session/added`). Monotone: once any signal (local first send,
    * running flip, an earlier summary) cleared it, a stale true never
    * re-blanks.
    * @param blank - the summary's derived empty-log bit.
@@ -575,14 +550,14 @@ export class Session implements SessionFace {
     this.notifier.markDirty()
   }
 
-  /** host/session-removed relay: flag the snapshot (instance survives — resident-instance rule). */
+  /** `api-session/removed` relay: flag the snapshot while retaining the resident instance. */
   handleRemoved(): void {
     this.removed = true
     this.notifier.markDirty()
   }
 
   /**
-   * host/agent-error relay: the only outlet for live failures with no turn position.
+   * `api-session/error` relay: the outlet for live failures with no turn position.
    * @param message - the stringified error.
    */
   handleAgentError(message: string): void {
@@ -590,8 +565,13 @@ export class Session implements SessionFace {
     this.notifier.markDirty()
   }
 
-  /** No-op because session instances remain resident. */
-  dispose(): void {}
+  /** Stop the Session's live Remote source. */
+  dispose(): void {
+    this.openGeneration++
+    const events = this.events
+    this.events = undefined
+    void events?.dispose()
+  }
 
   /** Rebuild the current window after a low-frequency Definition or view registration change. */
   rebuildConversationRegistry(): void {
@@ -613,91 +593,105 @@ export class Session implements SessionFace {
     this.pendingRev++
   }
 
-  /** @param generation - openGeneration at launch; every await re-checks it and a stale pass
-   *  drops all writes (resync superseded this open — its outcome belongs to a dead connection). */
+  private requestInteraction(interaction: SessionApprovalRequest | SessionQuestionRequest): void {
+    if ('approvalId' in interaction) {
+      const { interactionId, sessionId: _sessionId, ...payload } = interaction
+      this.mint(new PendingWait(
+        'approval', interactionId, this.sessionId, payload,
+        request => this.remote.session.respond(request),
+      ))
+      return
+    }
+    const { interactionId, sessionId: _sessionId, ...payload } = interaction
+    this.mint(new PendingWait(
+      'question', interactionId, this.sessionId, payload,
+      request => this.remote.session.respond(request),
+    ))
+  }
+
+  private resolveInteraction(key: string): void {
+    const interaction = this.pending.get(key)
+    if (interaction === undefined) return
+    this.settle(interaction)
+    this.notifier.markDirty()
+  }
+
+  /** @param generation - openGeneration at launch; stale passes cannot publish after replacement. */
   private async doOpen(generation: number): Promise<void> {
     this.openState = 'loading'
     this.openError = null
     this.notifier.markDirty()
+    const events = new SessionEventStream(this.remote, this.sessionAddress(), {
+      publish: (change) => {
+        if (generation !== this.openGeneration || this.events !== events) return
+        this.acceptEventChange(change)
+      },
+      failed: (error) => {
+        this.failEventStream(events, generation, error)
+      },
+    })
+    this.events = events
     try {
-      let { result } = await this.history({ maxMessages: PAGE_MESSAGES })
-      if (generation !== this.openGeneration) return
-      if (!result.ok) {
-        this.openState = 'error'
-        this.openError = result.error
-        return
-      }
-      this.installWindow(result.value.events, result.value.hasMore, result.value.projections)
-      // Gap detection: baseline past the window tail and liveBuffer did not cover it -> pull the tail page once more.
-      const tailSeq = this.windowTailSeq()
-      if (this.subscribedLastSeq !== null && tailSeq !== null && this.subscribedLastSeq > tailSeq) {
-        result = (await this.history({ maxMessages: PAGE_MESSAGES })).result
-        if (generation !== this.openGeneration) return
-        if (result.ok) this.installWindow(result.value.events, result.value.hasMore, result.value.projections)
-      }
+      await events.open({ maxMessages: PAGE_MESSAGES })
+      if (generation !== this.openGeneration || this.events !== events) return
       this.openState = 'open'
     } catch (error) {
-      if (generation !== this.openGeneration) return
+      if (generation !== this.openGeneration || this.events !== events) return
+      this.events = undefined
       this.openState = 'error'
-      const folded = transportError<never>(error)
-      /* v8 ignore next -- the `? null` arm is unreachable: transportError always returns ok:false. */
-      this.openError = folded.ok ? null : folded.error
+      this.openError = openFailure(error)
     } finally {
       if (generation === this.openGeneration) this.notifier.markDirty()
     }
   }
 
-  /** Install the history window + stitch the liveBuffer (seq is the sole dedup key).
-   *  Stitching MUST NOT route through acceptLiveEvent: openState is still 'loading' here
-   *  (doOpen flips it after install), so recursing would push every buffered event straight
-   *  back into liveBuffer where nothing ever drains it — a silent drop loop.
-   *  A carried projections block seeds the value store (higher seq wins, so a stale
-   *  baseline cannot overwrite a newer push frame); the window events themselves are
-   *  never folded — the host is the only computation site. */
-  private installWindow(entries: HistoryEntry[], hasMore: boolean, projections?: ProjectionsBaseline): void {
-    this.events = entries.map(e => e.event)
-    this.views = entries.map(e => e.view)
-    this.baseSeq = this.events[0]?.seq ?? 0
+  /** Apply one contiguous journal update already reconciled by the Remote stream. */
+  private acceptEventChange(change: SessionEventChange): void {
+    switch (change.type) {
+      case 'replace':
+        this.installWindow(change.entries, change.hasMore, change.page.projections)
+        return
+      case 'prepend':
+        this.prependWindow(change.entries, change.hasMore)
+        return
+      case 'append': {
+        const entry = conversationInput(change.entry)
+        this.scheduleConversation(this.appendLive(entry.event, entry.view))
+      }
+    }
+  }
+
+  /** Replace the complete contiguous window and apply page-owned projection metadata. */
+  private installWindow(entries: readonly SessionEventEntry[], hasMore: boolean, projections?: ProjectionsBaseline): void {
+    const normalized = entries.map(conversationInput)
+    this.eventWindow = normalized.map(entry => entry.event)
+    this.views = normalized.map(entry => entry.view)
+    this.baseSeq = this.eventWindow[0]?.seq ?? 0
     this.hasMore = hasMore
-    if (this.events.some(event => event.type === 'turn/start')) this.firstPromptPendingTurn = false
-    this.conversation.replaceWindow(entries.map(conversationInput), hasMore)
+    if (this.eventWindow.some(event => event.type === 'turn/start')) this.firstPromptPendingTurn = false
+    this.conversation.replaceWindow(normalized, hasMore)
     if (projections !== undefined) this.projections.seed(projections)
-    const buffered = this.liveBuffer
-    this.liveBuffer = []
-    for (const item of buffered) this.appendLive(item.event, item.view)
     this.notifier.markDirty()
   }
 
-  /** Seq-guarded append shared by stitching and the open-state live path. */
-  private appendLive(event: SessionEvent, view?: ToolEventView): ConversationPublication {
-    const tailSeq = this.windowTailSeq()
-    if (tailSeq !== null && event.seq <= tailSeq) return 'none' // replay overlap, drop
-    this.events.push(event)
+  /** Prepend one stream-validated history page. */
+  private prependWindow(entries: readonly SessionEventEntry[], hasMore: boolean): void {
+    const normalized = entries.map(conversationInput)
+    this.eventWindow = [...normalized.map(entry => entry.event), ...this.eventWindow]
+    this.views = [...normalized.map(entry => entry.view), ...this.views]
+    this.baseSeq = this.eventWindow[0]?.seq ?? 0
+    this.hasMore = hasMore
+    this.conversation.prepend(normalized, hasMore)
+  }
+
+  /** Append one stream-validated live event. */
+  private appendLive(event: SessionEvent, view?: SessionToolView): ConversationPublication {
+    this.eventWindow.push(event)
     this.views.push(view)
     if (event.type === 'turn/start') this.firstPromptPendingTurn = false
     const queueChanged = this.queueMirror.acceptDurable(event)
     const publication = this.conversation.append({ event, view })
     return queueChanged ? 'immediate' : publication
-  }
-
-  /** Land a live session/event (open/repair in flight -> buffer; overlapping seq -> drop;
-   *  a seq gap -> buffer + tail-page repull instead of appending a hole (a gap is an
-   *  expected reconnect-window artifact, repaired by refetch). The window stays one contiguous
-   *  raw range, which lets Conversation Definitions correlate every recorded event between its
-   *  ends and lets a compaction checkpoint resolve its cited summary event. */
-  private acceptLiveEvent(event: SessionEvent, view?: ToolEventView): void {
-    if (this.openState === 'loading' || this.stitching) {
-      this.liveBuffer.push({ event, view })
-      return
-    }
-    if (this.openState !== 'open') return // cold/error: no window upkeep (history fully backfills on open)
-    const tailSeq = this.windowTailSeq()
-    if (tailSeq !== null && event.seq > tailSeq + 1) {
-      this.liveBuffer.push({ event, view })
-      void this.repairGap()
-      return
-    }
-    this.scheduleConversation(this.appendLive(event, view))
   }
 
   /** Route assembler cadence into the Session's existing microtask/RAF notifier. */
@@ -706,30 +700,16 @@ export class Session implements SessionFace {
     else if (publication === 'animation-frame') this.notifier.markFrameDirty()
   }
 
-  /** Resync-lite: repull the tail page and stitch the liveBuffer through the shared
-   *  installWindow path. No openState transition — the UI keeps the current window (no loading
-   *  flash); events arriving meanwhile detour to liveBuffer via the stitching flag. */
-  private async repairGap(): Promise<void> {
-    /* v8 ignore next -- re-entry guard: acceptLiveEvent already detours to liveBuffer while stitching, so no second call reaches here. */
-    if (this.stitching) return
-    this.stitching = true
-    const generation = this.openGeneration
-    try {
-      const { result } = await this.history({ maxMessages: PAGE_MESSAGES })
-      // Failure or superseded by a full resync: drop — the resync path rebuilds and clears the buffer itself.
-      if (result.ok && generation === this.openGeneration && this.openState === 'open') {
-        this.installWindow(result.value.events, result.value.hasMore, result.value.projections)
-      }
-    } catch (error) {
-      console.error('[web-runtime] gap repair failed:', error)
-    } finally {
-      this.stitching = false
-    }
-  }
-
-  private windowTailSeq(): number | null {
-    const tail = this.events[this.events.length - 1]
-    return tail === undefined ? null : tail.seq
+  /** Publish a terminal background failure only while this stream still owns the Session. */
+  private failEventStream(events: SessionEventStream, generation: number, error: unknown): void {
+    if (generation !== this.openGeneration || this.events !== events) return
+    this.openGeneration++
+    this.events = undefined
+    this.openPromise = null
+    this.openState = 'error'
+    this.openError = openFailure(error)
+    void events.dispose()
+    this.notifier.markDirty()
   }
 
   private buildSnapshot(): ConversationSnapshot {
@@ -771,21 +751,34 @@ export class Session implements SessionFace {
     }
   }
 
-  /** Select ordinary or addressed history transport from the stored browser fact. */
-  private history(payload: { beforeSeq?: number; maxMessages?: number }): Promise<RpcResponse<{
-    events: HistoryEntry[]
-    hasMore: boolean
-    projections?: ProjectionsBaseline
-  }>> {
+  private sessionAddress(): SessionAddress {
     return this.address === undefined
-      ? this.api.sessions.history({ sessionId: this.sessionId, ...payload })
-      : this.api.subagents.history({ ...this.address, ...payload })
+      ? { kind: 'session', sessionId: this.sessionId }
+      : { kind: 'subagent', ...this.address }
   }
 }
 
 /** Convert one wire history row into the assembler's transport-neutral input. */
-function conversationInput(entry: HistoryEntry): ConversationEventInput {
-  return { event: entry.event, view: entry.view }
+function conversationInput(entry: SessionEventEntry): ConversationEventInput {
+  return {
+    event: entry.event as SessionEvent,
+    view: entry.view,
+  }
+}
+
+/** Convert a terminal Session stream failure to the Client error vocabulary. */
+function openFailure(error: unknown): ClientFailure {
+  const failure = sessionStreamFailure(error)
+  if (failure !== undefined) return failure as SessionError
+  const folded = transportError<never>(error)
+  /* v8 ignore next -- transportError never returns an ok result. */
+  if (folded.ok) throw new Error('transportError returned an unexpected success')
+  return folded.error
+}
+
+/** Narrow a generated Session Remote failure to its service-owned error vocabulary. */
+function toSessionResult<T>(result: RemoteResult<T>): ClientResult<T> {
+  return result.ok ? result : { ok: false, error: result.error as SessionError }
 }
 
 /** A generic command row alone remains control-plane content; every other visible Chat Node activates the conversation. */
