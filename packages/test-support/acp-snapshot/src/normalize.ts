@@ -8,6 +8,7 @@
 
 const SESSION_ID = '{{sessionId}}'
 const MESSAGE_ID = '{{messageId}}'
+const USED_TOKENS = '{{usedTokens}}'
 const CWD = '{{cwd}}'
 const SYSTEM = '{{system}}'
 const TOOLS = '{{tools}}'
@@ -193,6 +194,10 @@ function scrubValue(value: unknown, ctx: NormalizeContext, cwdPathMode: CwdPathM
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(value)) out[k] = scrubValue(v, ctx, cwdPathMode, k)
+    if (
+      (value as { sessionUpdate?: unknown }).sessionUpdate === 'usage_update'
+      && typeof (value as { used?: unknown }).used === 'number'
+    ) out.used = USED_TOKENS
     return out
   }
   return value

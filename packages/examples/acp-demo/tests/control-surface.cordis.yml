@@ -12,4 +12,4 @@
     workspaceContext: false
 
 - id: token-meter
-  name: '@deepseek-ai/dsh-token-meter'
+  name: '../../../llm/token-meter/src/index.ts'
