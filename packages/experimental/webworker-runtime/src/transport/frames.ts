@@ -17,6 +17,14 @@ export interface TunnelRequestFrame {
   readonly body?: ArrayBuffer | undefined
 }
 
+/** Open one Gateway Remote stream over the worker-local carrier. */
+export interface TunnelStreamOpenFrame {
+  readonly t: 'stream-open'
+  readonly id: TunnelRequestId
+  readonly endpoint: string
+  readonly payload: unknown
+}
+
 /** Page-side cancellation of an in-flight request or stream. */
 export interface TunnelAbortFrame {
   readonly t: 'abort'
@@ -34,7 +42,11 @@ export interface TunnelInitFrame {
 }
 
 /** Every frame the page sends the worker. */
-export type TunnelInboundFrame = TunnelInitFrame | TunnelRequestFrame | TunnelAbortFrame
+export type TunnelInboundFrame =
+  | TunnelInitFrame
+  | TunnelRequestFrame
+  | TunnelStreamOpenFrame
+  | TunnelAbortFrame
 
 /** Complete response for unary requests and static files. */
 export interface TunnelResponseFrame {
@@ -75,6 +87,36 @@ export interface TunnelResponseErrorFrame {
   readonly message: string
 }
 
+/** One decoded value from a worker-local Gateway Remote stream. */
+export interface TunnelStreamItemFrame {
+  readonly t: 'stream-item'
+  readonly id: TunnelRequestId
+  readonly value?: unknown
+}
+
+/** Normal completion of a worker-local Gateway Remote stream. */
+export interface TunnelStreamEndFrame {
+  readonly t: 'stream-end'
+  readonly id: TunnelRequestId
+}
+
+/** Stable Host failure or worker-carrier failure for one logical stream. */
+export interface TunnelStreamErrorFrame {
+  readonly t: 'stream-error'
+  readonly id: TunnelRequestId
+  readonly failure:
+    | {
+      readonly kind: 'remote'
+      readonly code: string
+      readonly message: string
+      readonly details: object
+    }
+    | {
+      readonly kind: 'carrier'
+      readonly message: string
+    }
+}
+
 /** Frames the worker emits. */
 export type TunnelOutboundFrame =
   | TunnelResponseFrame
@@ -82,6 +124,9 @@ export type TunnelOutboundFrame =
   | TunnelResponseChunkFrame
   | TunnelResponseEndFrame
   | TunnelResponseErrorFrame
+  | TunnelStreamItemFrame
+  | TunnelStreamEndFrame
+  | TunnelStreamErrorFrame
 
 /**
  * Validate a `postMessage` payload as a tunnel frame.
@@ -104,6 +149,12 @@ export function parseInboundFrame(data: unknown): TunnelInboundFrame {
     throw new Error(`webworker tunnel: frame has no usable id: ${JSON.stringify(frame.id)}`)
   }
   if (frame.t === 'abort') return { t: 'abort', id }
+  if (frame.t === 'stream-open') {
+    if (typeof frame.endpoint !== 'string' || frame.endpoint.length === 0) {
+      throw new Error(`webworker tunnel: stream ${String(id)} needs a non-empty endpoint`)
+    }
+    return { t: 'stream-open', id, endpoint: frame.endpoint, payload: frame.payload }
+  }
   if (frame.t !== 'req') throw new Error(`webworker tunnel: unknown frame type ${JSON.stringify(frame.t)}`)
   if (typeof frame.method !== 'string' || typeof frame.url !== 'string') {
     throw new Error(`webworker tunnel: request ${String(id)} needs string method and url`)
