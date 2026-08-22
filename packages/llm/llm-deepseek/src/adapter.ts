@@ -30,6 +30,11 @@ import type {
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { deadline, idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
+import type {
+  DeepSeekLlmApiExtensionRequest,
+  DeepSeekLlmApiJson,
+  PreparedDeepSeekLlmApiExtensions,
+} from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
 import type { ImageWireLocation, RequestDefaults } from './serialize.ts'
 import { DeepSeekFileStore } from './file-store.ts'
@@ -124,6 +129,8 @@ export interface DeepSeekAdapterOptions {
   resolveAttachments?: () => AttachmentStore | undefined
   /** Resolve the process-wide upload reuse store. */
   resolveFiles?: () => DeepSeekFileStore
+  /** Prepare the official API's plugin-contributed top-level fields for one exact wire request. */
+  prepareExtensions: (request: DeepSeekLlmApiExtensionRequest) => Promise<PreparedDeepSeekLlmApiExtensions>
 }
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
@@ -598,7 +605,25 @@ export class DeepSeekAdapter extends LlmAdapter {
           continue
         }
       }
-      const payload = JSON.stringify(body)
+      let extensions: PreparedDeepSeekLlmApiExtensions
+      try {
+        extensions = await this.config.prepareExtensions({
+          body: body as unknown as Readonly<Record<string, DeepSeekLlmApiJson>>,
+          signal,
+          ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
+          ...options.purpose === undefined ? {} : { purpose: options.purpose },
+        })
+      } catch (error) {
+        throw new LlmError('DeepSeek request extension preparation failed', 'REQUEST_EXTENSION', { cause: error })
+      }
+      for (const field of Object.keys(extensions.fields)) {
+        if (Object.hasOwn(body, field)) {
+          throw new LlmError(`DeepSeek request extension field ${JSON.stringify(field)} collides with the base request`, 'REQUEST_EXTENSION')
+        }
+      }
+      // Prepared outside the try so the TRANSPORT label below covers exactly the
+      // transport boundary, never a serialization failure.
+      const payload = JSON.stringify({ ...body, ...extensions.fields })
 
       // TODO(http): adopt the Cordis HTTP service when shared transport configuration
       // outweighs its additional runtime dependencies.
@@ -654,6 +679,11 @@ export class DeepSeekAdapter extends LlmAdapter {
           ...delay === undefined ? {} : { providerRetryAfterMs: delay },
           ...id === undefined ? {} : { requestId: id },
         })
+      }
+      try {
+        await extensions.accept()
+      } catch (error) {
+        throw new LlmError('DeepSeek request extension acceptance failed', 'REQUEST_EXTENSION', { cause: error })
       }
       if (!response.body) {
         throw new LlmError('DeepSeek API returned no response body', 'EMPTY_RESPONSE')

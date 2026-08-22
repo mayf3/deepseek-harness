@@ -1,13 +1,12 @@
 /**
  * The `node:child_process` face over the in-worker shell, and the ladder above
  * it: the REAL local subprocess service, running unmodified against this
- * module instead of a host kernel. That ladder is what the bash tool walks in
- * the browser, so proving it here is what makes the browser probe a
- * confirmation rather than the only evidence.
+ * module instead of a host kernel. The bash tool walks this same ladder in the
+ * browser.
  *
  * A Node test host has no DOM `Worker`, so the commands here run through the
  * inline strategy; the worker strategy and its frames are proven in
- * `../shell/shell-process.spec.ts`, and both meet again in the preview probe.
+ * `../shell/shell-process.spec.ts`.
  *
  * `process.kill` is redirected to the worker's process table for the same
  * reason the worker does it: the subprocess service polls process-group

@@ -116,6 +116,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Adapters register provider implementations; the loop and compaction call the provider-neutral stream service.',
   },
   {
+    key: 'deepseekLlmApiExtensions',
+    pkg: 'deepseek-llm-api-extensions',
+    title: 'Official DeepSeek request extensions',
+    mode: 'seam',
+    implementations: ['plugin-package-inventory-deepseek'],
+    consumers: ['llm-deepseek'],
+    note: 'Plugins prepare independent top-level fields; the official adapter merges them and commits their delivery state after HTTP acceptance.',
+  },
+  {
     key: 'tokenMeter',
     pkg: 'token-meter',
     title: 'Replay token measurement',

@@ -470,9 +470,12 @@ function ciWindowsBlockingGates(): Gate[] {
 
 function ciWindowsCompleteGates(): Gate[] {
   const coverage = coverageGates().map(gate => gate.id === 'coverage-exempt-heavy'
-    ? { ...gate, needs: [...new Set(['build', ...(gate.needs ?? [])])] }
+    ? {
+      ...gate,
+      needs: [...new Set(['build', ...(gate.needs ?? [])])],
+      after: [...new Set(['coverage', ...(gate.after ?? [])])],
+    }
     : gate)
-  const coverageAfter = coverage.map(gate => gate.id)
   const observational = ciWindowsObservationalGates()
     // The required production site replaces the observational MPA build; both
     // VitePress modes write the same output directory and cannot overlap.
@@ -480,7 +483,7 @@ function ciWindowsCompleteGates(): Gate[] {
     .map(gate => ({
       ...gate,
       allowFailure: true,
-      after: [...new Set([...coverageAfter, ...(gate.after ?? [])])],
+      after: [...new Set(['coverage', ...(gate.after ?? [])])],
     }))
   return [
     ciBuildGate(),

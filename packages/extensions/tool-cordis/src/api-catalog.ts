@@ -678,6 +678,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'deepseekLlmApiExtensions',
+    summary: 'Registry of independently owned top-level fields for official DeepSeek requests.',
+    description: 'Registry of independently owned top-level fields for official DeepSeek requests.',
+    methods: [
+      {
+        signature: 'register<K extends keyof DeepSeekLlmApiExtensionMap>( field: K, provider: DeepSeekLlmApiExtensionProvider<DeepSeekLlmApiExtensionMap[K]>, ): () => Promise<void>',
+        description: 'Register the sole provider of one top-level request field. Registration is effect-scoped.',
+        parameters: [{ name: 'field', description: 'declaration-merged field owned by the provider.' }, { name: 'provider', description: 'request-time field preparation and optional acceptance behavior.' }],
+        returns: 'disposer that releases the field.',
+      },
+      {
+        signature: 'async prepare(request: DeepSeekLlmApiExtensionRequest): Promise<PreparedDeepSeekLlmApiExtensions>',
+        description: 'Prepare every currently registered field from one immutable base request. Preparation failures reject before HTTP dispatch. Field values are cloned and frozen; providers retain no mutable alias to the outgoing request.',
+        parameters: [{ name: 'request', description: 'exact serialized request facts before extension fields.' }],
+        returns: 'detached fields and their idempotent joint acceptance transaction.',
+      },
+    ],
+  },
+  {
     key: 'directoryPicker',
     summary: 'Abstract directory-picking service.',
     description: 'Abstract directory-picking service. Subclass, implement `capability()`, and load the subclass as a plugin — it registers as `ctx.directoryPicker` (one implementation per context; loading a second throws, cordis\' standard duplicate-service behavior). The capability object must be stable for the service lifetime: consumers may capture it across calls.',
@@ -1203,6 +1222,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract create(meta: SessionHeader): Promise<void>',
         description: 'Register a new session\'s metadata. A backend MAY defer the physical write until the first append (lazy materialization), in which case a created-but-never-appended session is absent from list — abandoned sessions leave nothing behind.',
         parameters: [{ name: 'meta', description: 'the immutable header (id, version, cwd, lineage) to record.' }],
+      },
+      {
+        signature: 'ensureMaterialized(_session: Session): Promise<void>',
+        description: 'Ensure a live session has a durable header even when it has no events. Ordinary sessions remain lazily materialized; lifecycle frontends call this only when an empty session itself is a durable resumable resource.',
+        parameters: [{ name: '_session', description: 'exact live session whose registered header is materialized.' }],
       },
       {
         signature: 'abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>',
@@ -3226,6 +3250,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
   },
   {
+    name: 'DeepSeekLlmApiExtensionMap',
+    declaration: 'export interface DeepSeekLlmApiExtensionMap {\n}',
+  },
+  {
+    name: 'DeepSeekLlmApiExtensionProvider',
+    declaration: 'export interface DeepSeekLlmApiExtensionProvider<T extends DeepSeekLlmApiJson> {\n    prepare(request: DeepSeekLlmApiExtensionRequest): PreparedDeepSeekLlmApiExtension<T> | undefined | Promise<PreparedDeepSeekLlmApiExtension<T> | undefined>;\n}',
+  },
+  {
+    name: 'DeepSeekLlmApiExtensionRequest',
+    declaration: 'export interface DeepSeekLlmApiExtensionRequest {\n    readonly body: Readonly<Record<string, DeepSeekLlmApiJson>>;\n    readonly sessionId?: string;\n    readonly purpose?: \'compaction\' | \'session-title\';\n    readonly signal: AbortSignal;\n}',
+  },
+  {
+    name: 'DeepSeekLlmApiJson',
+    declaration: 'export type DeepSeekLlmApiJson = null | boolean | number | string | DeepSeekLlmApiJson[] | {\n    [key: string]: DeepSeekLlmApiJson;\n};',
+  },
+  {
     name: 'DiffCallView',
     declaration: 'export interface DiffCallView {\n    card: \'diff\';\n    title: string;\n    diffs: FileDiff[];\n    locations?: FileLocation[];\n}',
   },
@@ -3816,6 +3856,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PreparedAdapterCall',
     declaration: 'export interface PreparedAdapterCall {\n    readonly model: LlmResolvedModelInfo;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+  },
+  {
+    name: 'PreparedDeepSeekLlmApiExtension',
+    declaration: 'export interface PreparedDeepSeekLlmApiExtension<T extends DeepSeekLlmApiJson> {\n    readonly value: T;\n    accept?(): void | Promise<void>;\n}',
+  },
+  {
+    name: 'PreparedDeepSeekLlmApiExtensions',
+    declaration: 'export interface PreparedDeepSeekLlmApiExtensions {\n    readonly fields: Readonly<Partial<DeepSeekLlmApiExtensionMap>>;\n    accept(): Promise<void>;\n}',
   },
   {
     name: 'PreparedLlmCall',

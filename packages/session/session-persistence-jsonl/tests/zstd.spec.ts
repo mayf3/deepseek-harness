@@ -353,6 +353,19 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     expect(scanLog(Buffer.from(plaintext)).events).toEqual(replacement)
   })
 
+  it('materializes an explicitly durable empty session as one header frame', async () => {
+    const root = await freshRoot()
+    const ctx = await mount(root)
+    const session = ctx.sessions.create(SessionId('empty-zstd'), { meta: { cwd: '/work' } })
+
+    await ctx.sessionPersistence.ensureMaterialized(session)
+
+    const buffer = await readFile(logPath(root, '/work', session.id, 'zstd'))
+    expect(scanZstdFrames(buffer).frames).toHaveLength(1)
+    expect((await decodeCompleteFrames(buffer)).toString()).toBe(`${JSON.stringify(toHeaderLine(session.header))}\n`)
+    await expect(ctx.sessionPersistence.load(session.id)).resolves.toEqual({ meta: session.header, events: [] })
+  })
+
   it('writes .jsonl.zstd by default with one header frame and one first-batch frame', async () => {
     const root = await freshRoot()
     const ctx = await mount(root)
