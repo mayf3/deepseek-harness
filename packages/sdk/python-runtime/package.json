@@ -1,21 +1,16 @@
 {
-  "name": "@deepseek-ai/dsh-sdk-jsonrpc-demo",
-  "description": "Bin that boots an external Cordis config for the stdio JSON-RPC SDK runtime",
+  "name": "@deepseek-ai/dsh-sdk-python-runtime",
+  "description": "Private direct-config runtime carrier for the temporarily unchanged Python SDK",
   "version": "0.1.1-rc.2",
-  "publishConfig": {
-    "access": "public"
-  },
+  "private": true,
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/examples/jsonrpc-demo"
+    "directory": "packages/sdk/python-runtime"
   },
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
-  "bin": {
-    "dsh-jsonrpc-agent": "lib/bin.js"
-  },
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
@@ -24,10 +19,6 @@
     "./invariant": {
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
-    },
-    "./bin": {
-      "types": "./lib/types/bin.d.ts",
-      "default": "./lib/bin.js"
     },
     "./packaged-bin": {
       "types": "./lib/types/packaged-bin.d.ts",
@@ -39,7 +30,6 @@
   "files": [
     "lib/index.js",
     "lib/invariant.js",
-    "lib/bin.js",
     "lib/packaged-bin.js",
     "lib/types/**/*.d.ts"
   ],

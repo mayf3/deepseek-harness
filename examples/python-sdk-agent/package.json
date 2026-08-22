@@ -1,7 +1,7 @@
 {
-  "name": "jsonrpc-agent-example",
+  "name": "python-sdk-agent-example",
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Unattended JSON-RPC coding-agent composition"
+  "description": "Unattended coding-agent composition for the Python SDK runtime"
 }

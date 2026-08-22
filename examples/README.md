@@ -12,9 +12,9 @@ Optional overlays that connect supported third-party memory servers through the 
 
 A non-interactive agent that accepts one task, runs it, and emits a selected machine-readable or human-readable output format. See the [headless example reference](headless-agent/README.md).
 
-## jsonrpc-agent
+## python-sdk-agent
 
-An unattended coding agent driven through the Python SDK and JSON-RPC. See the [JSON-RPC example reference](jsonrpc-agent/README.md).
+An unattended coding agent driven through the Python SDK and JSON-RPC. See the [Python SDK agent reference](python-sdk-agent/README.md).
 
 ## web-cordis
 

@@ -1,7 +1,7 @@
 /**
- * Shared process lifecycle for the generic and closed-runtime JSON-RPC bins.
+ * Process lifecycle for the Python SDK's closed direct-config runtime.
  *
- * @module @deepseek-ai/dsh-sdk-jsonrpc-demo/runner
+ * @module @deepseek-ai/dsh-sdk-python-runtime/runner
  */
 
 import { existsSync } from 'node:fs'
@@ -12,12 +12,11 @@ const NAME = 'dsh-jsonrpc-agent'
 
 /**
  * Boot the explicitly selected external configuration and own process exit.
- * @param bareModuleBaseUrl - optional installed-runtime base for bare plugins;
- * omit it when the configuration project owns its plugin packages.
+ * @param bareModuleBaseUrl - installed-runtime base for bare plugins.
  * @returns after process handlers are installed; process lifetime then belongs
  * to stdin and signal events.
  */
-export async function runJsonrpcAgent(bareModuleBaseUrl?: string): Promise<void> {
+export async function runPythonSdkRuntime(bareModuleBaseUrl: string): Promise<void> {
   installFailLoud(NAME)
   loadEnv(NAME)
 

@@ -8,7 +8,7 @@ import { zstdDecompress } from 'node:zlib'
 import { execa } from 'execa'
 import { describe, expect, it } from 'vitest'
 
-const binScript = fileURLToPath(new URL('../../../packages/examples/jsonrpc-demo/src/bin.ts', import.meta.url))
+const binScript = fileURLToPath(new URL('../../../packages/sdk/python-runtime/src/packaged-bin.ts', import.meta.url))
 const configPath = fileURLToPath(new URL('../cordis.yml', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const decompress = promisify(zstdDecompress)
@@ -45,13 +45,13 @@ function waitForLine(
   })
 }
 
-describe('jsonrpc-agent keyless smoke', () => {
+describe('Python SDK runtime carrier keyless smoke', () => {
   it.each([
     { label: 'reports max-token turns with the default mapping config', envValue: undefined },
     { label: 'reports max-token turns with mapping enabled through env', envValue: 'true' },
     { label: 'reports max-token turns with mapping disabled through env', envValue: 'false' },
   ])('$label', async ({ envValue }) => {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-agent-smoke-'))
+    const root = await mkdtemp(join(tmpdir(), 'dsh-python-sdk-runtime-smoke-'))
     const modelRequests: Record<string, unknown>[] = []
     const modelServer = createServer((request, response) => {
       let body = ''

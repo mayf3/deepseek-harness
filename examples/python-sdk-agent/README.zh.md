@@ -1,4 +1,4 @@
-# jsonrpc-agent
+# python-sdk-agent
 
 [English](README.md) | 中文
 
