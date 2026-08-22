@@ -49,6 +49,14 @@ export class UserQuestionError extends HarnessError {
   }
 }
 
+function abortedQuestion(cause?: unknown): UserQuestionError {
+  return new UserQuestionError(
+    'ask_user_question was aborted before the user answered',
+    'ASK_ABORTED',
+    cause === undefined ? undefined : { cause },
+  )
+}
+
 /** `ctx.userQuestions`: one active UI provider plus an `ask()` API. */
 export class UserQuestionService extends Service {
   private provider: UserQuestionProvider | undefined
@@ -87,13 +95,14 @@ export class UserQuestionService extends Service {
    *
    * @param request Questions, owner agent, and abort signal.
    * @returns The answer chosen or typed by the human.
-   * @throws {UserQuestionError} code `CALLER_NOT_LIVE` when a supplied
-   *   agent is not the registry's exact live instance, or `DELEGATED_CALLER`
-   *   when that live agent is owned by another agent.
+   * @throws {UserQuestionError} code `ASK_ABORTED` when the supplied signal
+   *   is already or becomes aborted, `CALLER_NOT_LIVE` when a supplied agent
+   *   is not the registry's exact live instance, or `DELEGATED_CALLER` when
+   *   that live agent is owned by another agent.
    */
   async ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer> {
     if (request.signal?.aborted) {
-      throw new UserQuestionError('ask_user_question was aborted before the user answered', 'ASK_ABORTED')
+      throw abortedQuestion()
     }
     if (request.questions.length === 0) {
       throw new UserQuestionError('ask_user_question requires at least one question', 'EMPTY_QUESTIONS')
@@ -138,7 +147,14 @@ export class UserQuestionService extends Service {
     if (this.provider === undefined) {
       throw new UserQuestionError('no user-questions provider is registered', 'NO_PROVIDER')
     }
-    return this.provider.ask(request)
+    try {
+      return await this.provider.ask(request)
+    } catch (error) {
+      if (request.signal?.aborted && !(error instanceof UserQuestionError)) {
+        throw abortedQuestion(error)
+      }
+      throw error
+    }
   }
 }
 
