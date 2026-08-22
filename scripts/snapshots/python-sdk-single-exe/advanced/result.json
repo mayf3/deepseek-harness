@@ -134,7 +134,7 @@
       }
     },
     {
-      "type": "session-log-deepseek/accepted",
+      "type": "session-log-deepseek/delivery-accepted",
       "seq": 8,
       "time": 0,
       "data": {
@@ -329,7 +329,7 @@
       }
     },
     {
-      "type": "session-log-deepseek/accepted",
+      "type": "session-log-deepseek/delivery-accepted",
       "seq": 19,
       "time": 0,
       "data": {
@@ -562,7 +562,7 @@
       }
     },
     {
-      "type": "session-log-deepseek/accepted",
+      "type": "session-log-deepseek/delivery-accepted",
       "seq": 31,
       "time": 0,
       "data": {
@@ -788,7 +788,7 @@
       }
     },
     {
-      "type": "session-log-deepseek/accepted",
+      "type": "session-log-deepseek/delivery-accepted",
       "seq": 44,
       "time": 0,
       "data": {
@@ -979,7 +979,7 @@
       }
     },
     {
-      "type": "session-log-deepseek/accepted",
+      "type": "session-log-deepseek/delivery-accepted",
       "seq": 55,
       "time": 0,
       "data": {
@@ -1210,7 +1210,7 @@
       }
     },
     {
-      "type": "session-log-deepseek/accepted",
+      "type": "session-log-deepseek/delivery-accepted",
       "seq": 70,
       "time": 0,
       "data": {
@@ -1437,7 +1437,7 @@
       }
     },
     {
-      "type": "session-log-deepseek/accepted",
+      "type": "session-log-deepseek/delivery-accepted",
       "seq": 82,
       "time": 0,
       "data": {
@@ -1770,7 +1770,7 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "session-log-deepseek/accepted",
+          "type": "session-log-deepseek/delivery-accepted",
           "seq": 8,
           "time": 0,
           "data": {
@@ -2031,7 +2031,7 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "session-log-deepseek/accepted",
+          "type": "session-log-deepseek/delivery-accepted",
           "seq": 19,
           "time": 0,
           "data": {
@@ -2336,7 +2336,7 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "session-log-deepseek/accepted",
+          "type": "session-log-deepseek/delivery-accepted",
           "seq": 31,
           "time": 0,
           "data": {
@@ -2640,7 +2640,7 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "session-log-deepseek/accepted",
+          "type": "session-log-deepseek/delivery-accepted",
           "seq": 44,
           "time": 0,
           "data": {
@@ -3071,7 +3071,7 @@
       "payload": {
         "sessionId": "{{child-1}}",
         "event": {
-          "type": "session-log-deepseek/accepted",
+          "type": "session-log-deepseek/delivery-accepted",
           "seq": 10,
           "time": 0,
           "data": {
@@ -3360,7 +3360,7 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "session-log-deepseek/accepted",
+          "type": "session-log-deepseek/delivery-accepted",
           "seq": 55,
           "time": 0,
           "data": {
@@ -3823,7 +3823,7 @@
       "payload": {
         "sessionId": "{{child-2}}",
         "event": {
-          "type": "session-log-deepseek/accepted",
+          "type": "session-log-deepseek/delivery-accepted",
           "seq": 10,
           "time": 0,
           "data": {
@@ -4143,7 +4143,7 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "session-log-deepseek/accepted",
+          "type": "session-log-deepseek/delivery-accepted",
           "seq": 70,
           "time": 0,
           "data": {
@@ -4442,7 +4442,7 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "session-log-deepseek/accepted",
+          "type": "session-log-deepseek/delivery-accepted",
           "seq": 82,
           "time": 0,
           "data": {

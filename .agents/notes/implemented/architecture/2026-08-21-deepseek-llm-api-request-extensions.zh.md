@@ -20,7 +20,7 @@ Status: implemented
 
 ## 增量会话日志字段
 
-`@deepseek-ai/dsh-session-log-deepseek` 以显式选择启用的方式拥有 `dsh_session_log`。启用后，每个携带存活会话 id 的请求都会发送该确切会话身份最大持久 `session-log-deepseek/accepted` 水位之后的连续权威事件后缀。该字段包含不可变会话 header 与完整事件信封。2xx 会为已发送的 `throughSeq` 追加新水位；该事件会进入下一次请求的后缀。Fork 日志会保留父级水位 id，因此子会话会在自己的身份下从序列零开始。并发接受可能乱序到达，最大水位仍保持权威。进程内 fold 会让每条会话事件只被扫描一次，并增量消费后续追加；新的会话对象或 HMR generation 会从持久历史重建该 fold。
+`@deepseek-ai/dsh-session-log-deepseek` 以显式选择启用的方式拥有 `dsh_session_log`。启用后，每个携带存活会话 id 的请求都会发送该确切会话身份最大持久 `session-log-deepseek/delivery-accepted` 水位之后的连续权威事件后缀。该字段包含不可变会话 header 与完整事件信封。2xx 会为已发送的 `throughSeq` 追加新水位；该事件会进入下一次请求的后缀。Fork 日志会保留父级水位 id，因此子会话会在自己的身份下从序列零开始。并发接受可能乱序到达，最大水位仍保持权威。进程内 fold 会让每条会话事件只被扫描一次，并增量消费后续追加；新的会话对象或 HMR generation 会从持久历史重建该 fold。
 
 失败方向为至少一次。传输失败或提供方拒绝不会记录水位。远端接受后、水位持久化前发生崩溃，会在恢复后触发重放，绝不会跳过序列。现有会话检查点会持久化该事件；上传插件不拥有第二份存储。
 
@@ -72,6 +72,6 @@ Status: implemented
 
 DeepSeek 官方请求会把存活包版本发送到解析后的 `baseURL`，包括已配置 gateway。显式选择启用会话日志后，请求还会携带完整的未接受会话新后缀。这些字段对模型不可见，不增加提示词 token，也不改变 KV Cache，但可能显著增大 HTTP 正文。请求相对打包会在派发前同步比较后缀字符串与消息字符串，因此在实现候选索引前，较大的首次上传或重试积压可能延迟事件循环。编码、manifest 解析、字段冲突、接受记录或提供方 schema 拒绝会使模型请求失败，而不会静默丢弃元数据。
 
-已接受水位事件会成为权威日志的一部分，并在后续请求中自行交付。崩溃恢复可能重复后缀，但不会根据 assistant 输出推断接受，也不会创建第二份本地游标存储。缺少存活会话的直接调用会省略会话字段；宿主包清单仍然可用。
+`delivery-accepted` 事件会成为权威日志的一部分，并在后续请求中自行交付。崩溃恢复可能重复后缀，但不会根据 assistant 输出推断接受，也不会创建第二份本地游标存储。缺少存活会话的直接调用会省略会话字段；宿主包清单仍然可用。
 
 [DeepSeek 请求身份决策](../feature/2026-08-11-deepseek-request-user-id-header.zh.md)继续拥有 user／session header，且这些 header 仍位于正文之外。[会话遥测决策](../feature/2026-07-23-session-telemetry-otel-revival.zh.md)在另一项变更删除该 seam 与后端之前仍保持当前有效；本请求路径不改变 OTel 捕获或共享模式。

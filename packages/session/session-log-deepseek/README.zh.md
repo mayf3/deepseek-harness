@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-用于 DeepSeek 官方 LLM API 请求的增量权威会话日志上传。该函数插件注入 `ctx.sessions` 与 `ctx.deepseekLlmApiExtensions`，并拥有 `dsh_session_log` 请求字段和持久的 `session-log-deepseek/accepted` 水位事件。
+用于 DeepSeek 官方 LLM API 请求的增量权威会话日志上传。该函数插件注入 `ctx.sessions` 与 `ctx.deepseekLlmApiExtensions`，并拥有 `dsh_session_log` 请求字段以及用于派生接受水位的持久 `session-log-deepseek/delivery-accepted` 事件。
 
 ## 配置
 
@@ -20,7 +20,7 @@
 
 ## 接受与重试
 
-DeepSeek 适配器会在 HTTP 2xx 后、消费 SSE（Server-Sent Events）正文前调用已准备贡献的 `accept()`。接受操作会追加 `session-log-deepseek/accepted` 及已上传的 `throughSeq`；下一次请求再把该水位作为新后缀的一部分上传。传输失败与非 2xx 失败不会追加水位，因此后续请求会重发不确定范围。并发请求可能乱序追加已接受水位；折叠其中最大值可以防止游标回退。
+DeepSeek 适配器会在 HTTP 2xx 后、消费 SSE（Server-Sent Events）正文前调用已准备贡献的 `accept()`。接受操作会追加 `session-log-deepseek/delivery-accepted` 及已上传的 `throughSeq`；下一次请求再把该事件作为新后缀的一部分上传。传输失败与非 2xx 失败不会追加接受记录，因此后续请求会重发不确定范围。并发交付可能乱序得到接受；折叠匹配记录中最大的 `throughSeq` 可以防止游标回退。
 
 服务端接受后、持久化水位前发生崩溃，可能让恢复后的进程重放已经接受的范围。这是至少一次交付的失败方向：不确定性会制造重复，绝不会跳过序列。普通会话检查点策略会在下一个语义检查点持久化水位；本插件不执行独立 I/O。
 

@@ -9,7 +9,7 @@
 {"type":"session/title","data":{"title":"Reply with exactly DIRECT_CHILD_OK and","messageSeqs":[5],"source":{"kind":"fallback"}}}
 {"type":"request/header","data":{"header":{"config":{"provider":"deepseek-official","model":"smoke-model","maxTokens":256000,"reasoningEffort":"high"},"adapterDefaults":{"reasoningEffort":true,"maxTokens":true},"system":"{{system}}","tools":["cordis_define","cordis_inspect_list","cordis_inspect_query","cordis_inspect_self","cordis_run","cordis_stop","cordis_undefine","job_kill","job_list","job_output","run_code","snapshot_double","subagent","workflow"]},"reason":"initial"}}
 {"type":"request/context","data":{"provider":"deepseek-official","model":"smoke-model","contextWindow":1000000}}
-{"type":"session-log-deepseek/accepted","data":{"sessionId":"{{child-1}}","throughSeq":9}}
+{"type":"session-log-deepseek/delivery-accepted","data":{"sessionId":"{{child-1}}","throughSeq":9}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"text"}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"text-delta","index":0,"text":"DIRECT_CHILD_OK"}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"text","text":"DIRECT_CHILD_OK"}}}}

@@ -13,30 +13,30 @@ export const name = 'session-log-deepseek-invariant'
 export const inject = ['invariants']
 
 /** Validate one acceptance watermark against its containing event and session. */
-function validateAccepted(session: Session, event: SessionEvent<'session-log-deepseek/accepted'>, fail: InvariantFailure): void {
+function validateDeliveryAccepted(session: Session, event: SessionEvent<'session-log-deepseek/delivery-accepted'>, fail: InvariantFailure): void {
   const { sessionId, throughSeq } = event.data
   const inherited = session.header.parentSession !== undefined
     && session.header.seedLength !== undefined
     && event.seq < session.header.seedLength
   if (sessionId !== session.id && !inherited) {
-    fail('a non-inherited session-log-deepseek/accepted event must name its containing session')
+    fail('a non-inherited session-log-deepseek/delivery-accepted event must name its containing session')
   }
   if (!Number.isSafeInteger(throughSeq) || throughSeq < 0 || throughSeq >= event.seq) {
-    fail(`session-log-deepseek/accepted throughSeq must identify an earlier event, got ${throughSeq} at seq ${event.seq}`)
+    fail(`session-log-deepseek/delivery-accepted throughSeq must identify an earlier event, got ${throughSeq} at seq ${event.seq}`)
   }
 }
 
 /** Validate acceptance watermarks already present in one Session. */
 function validateSession(session: Session, fail: InvariantFailure): void {
   for (const event of session.events) {
-    if (event.type === 'session-log-deepseek/accepted') validateAccepted(session, event, fail)
+    if (event.type === 'session-log-deepseek/delivery-accepted') validateDeliveryAccepted(session, event, fail)
   }
 }
 
 /** Validate one live session-event dispatch. */
 function validateDispatched(args: unknown[], fail: InvariantFailure): void {
   const [session, event] = args as [Session, SessionEvent]
-  if (event.type === 'session-log-deepseek/accepted') validateAccepted(session, event, fail)
+  if (event.type === 'session-log-deepseek/delivery-accepted') validateDeliveryAccepted(session, event, fail)
 }
 
 /** Install validation for restored, newly created, and newly appended watermarks. */

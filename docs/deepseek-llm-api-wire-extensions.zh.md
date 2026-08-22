@@ -13,7 +13,7 @@
 | HTTP 字段名 | 小写 kebab-case；HTTP 匹配仍不区分大小写 | `user-agent`, `x-deepseek-harness-session-id` |
 | DeepSeek 请求正文扩展字段 | 使用保留 `dsh_` 前缀的 snake case | `dsh_plugin_packages`, `dsh_session_log` |
 | DSH 持有的嵌套 JSON 成员 | Camel case | `afterSeq`, `messageIndex`, `utf8Start` |
-| 带标签的值 | 使用 kebab-case 字符串；持久事件采用 `domain/action` | `message-references`, `session-log-deepseek/accepted` |
+| 带标签的值 | 使用 kebab-case 字符串；持久事件采用 `domain/action` | `message-references`, `session-log-deepseek/delivery-accepted` |
 
 每个正文扩展独立持有自身的 `version`。版本仅适用于包含该字段的对象；不同字段的版本之间不存在兼容或排序关系。JSON 成员顺序不属于协议。
 
@@ -236,7 +236,7 @@
 
 ```json
 {
-  "type": "session-log-deepseek/accepted",
+  "type": "session-log-deepseek/delivery-accepted",
   "seq": 8,
   "time": 1780000000002,
   "data": {
@@ -246,7 +246,7 @@
 }
 ```
 
-`accepted` 表示已配置端点为包含该字段的 LLM 请求返回 HTTP 2xx。它不表示 SSE 已完整结束，也不表示远端已经持久化。该事件的 `throughSeq` 必须标识一项更早的事件，`sessionId` 则标识已发送后缀所属的会话。
+`delivery-accepted` 表示已配置端点为包含该字段的 LLM 请求返回 HTTP 2xx。它不表示 SSE 已完整结束，也不表示远端已经持久化。该事件的 `throughSeq` 必须标识一项更早的事件，`sessionId` 则标识已发送后缀所属的会话。
 
 发送方会折叠最大的匹配 `throughSeq`，因此并发已接受请求无法使游标倒退。恢复后的进程会从持久日志重建游标。fork 会忽略命名其父会话的继承水位，因此先发送自身完整的继承前缀，再以子会话 id 推进。水位事件自身属于下一段未发送后缀。
 

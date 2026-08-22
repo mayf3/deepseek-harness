@@ -50,9 +50,9 @@ declare module '@deepseek-ai/dsh-deepseek-llm-api-extensions/types' {
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
-    /** Records a confirmed HTTP acceptance watermark for restart-safe suffix selection. */
-    'session-log-deepseek/accepted': {
-      /** Session identity the accepted request carried; inherited fork markers retain the parent's id. */
+    /** Records that the configured endpoint accepted one delivery through `throughSeq`. */
+    'session-log-deepseek/delivery-accepted': {
+      /** Session identity the accepted delivery carried; inherited fork markers retain the parent's id. */
       sessionId: import('@deepseek-ai/dsh-session/types').SessionId
       /** Last canonical event included in the accepted request. */
       throughSeq: number

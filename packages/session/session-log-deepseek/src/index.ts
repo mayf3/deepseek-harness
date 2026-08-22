@@ -50,7 +50,7 @@ export function acceptedThrough(session: Session): number {
   const start = previous?.scannedEvents ?? 0
   for (let index = start; index < events.length; index++) {
     const event = events[index] as SessionEvent
-    if (event.type !== 'session-log-deepseek/accepted') continue
+    if (event.type !== 'session-log-deepseek/delivery-accepted') continue
     if (typeof event.data.sessionId !== 'string' || event.data.sessionId.length === 0
       || !Number.isSafeInteger(event.data.throughSeq) || event.data.throughSeq < 0
       || event.data.throughSeq >= event.seq) {
@@ -99,7 +99,7 @@ export function apply(ctx: Context, config: Config): void {
       return {
         value,
         accept: () => {
-          session.append('session-log-deepseek/accepted', { sessionId: session.id, throughSeq })
+          session.append('session-log-deepseek/delivery-accepted', { sessionId: session.id, throughSeq })
           // TODO: Add an immediate lightweight checkpoint if duplicate replay after a 2xx crash window becomes unacceptable.
         },
       }

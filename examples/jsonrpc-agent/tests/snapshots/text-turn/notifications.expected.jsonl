@@ -7,7 +7,7 @@
 {"method":"session.event","params":{"sessionId":"{{sessionId}}","event":{"type":"session/title","seq":5,"time":0,"data":{"title":"Reply with exactly: SDK snapshot","messageSeqs":[4],"source":{"kind":"fallback"}}}}}
 {"method":"session.event","params":{"sessionId":"{{sessionId}}","event":{"type":"request/header","seq":6,"time":0,"data":{"header":{"config":{"provider":"deepseek-official","model":"deepseek-v4-flash"},"system":"{{system}}","tools":"{{tools}}"},"reason":"initial"}}}}
 {"method":"session.event","params":{"sessionId":"{{sessionId}}","event":{"type":"request/context","seq":7,"time":0,"data":{"provider":"deepseek-official","model":"deepseek-v4-flash"}}}}
-{"method":"session.event","params":{"sessionId":"{{sessionId}}","event":{"type":"session-log-deepseek/accepted","seq":8,"time":0,"data":{"sessionId":"{{sessionId}}","throughSeq":7}}}}
+{"method":"session.event","params":{"sessionId":"{{sessionId}}","event":{"type":"session-log-deepseek/delivery-accepted","seq":8,"time":0,"data":{"sessionId":"{{sessionId}}","throughSeq":7}}}}
 {"method":"session.event","params":{"sessionId":"{{sessionId}}","event":{"type":"assistant/chunk","seq":9,"time":0,"data":{"turn":1,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"reasoning"}}}}}
 {"method":"session.event","params":{"sessionId":"{{sessionId}}","event":{"type":"assistant/chunk","seq":10,"time":0,"data":{"turn":1,"step":1,"chunk":{"type":"reasoning-delta","index":0,"text":"The"}}}}}
 {"method":"session.event","params":{"sessionId":"{{sessionId}}","event":{"type":"assistant/chunk","seq":11,"time":0,"data":{"turn":1,"step":1,"chunk":{"type":"reasoning-delta","index":0,"text":" user"}}}}}

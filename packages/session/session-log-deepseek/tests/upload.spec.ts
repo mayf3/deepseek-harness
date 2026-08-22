@@ -67,7 +67,7 @@ describe('incremental DeepSeek session-log upload', () => {
     expect(second.fields.dsh_session_log?.events).toHaveLength(2)
     expect(second.fields.dsh_session_log?.events[0]).toMatchObject({
       encoding: 'raw',
-      event: { type: 'session-log-deepseek/accepted', seq: 2 },
+      event: { type: 'session-log-deepseek/delivery-accepted', seq: 2 },
     })
   })
 
@@ -107,7 +107,7 @@ describe('incremental DeepSeek session-log upload', () => {
     const id = SessionId('incremental-fold')
     const events: SessionEvent[] = [
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
-      { type: 'session-log-deepseek/accepted', seq: 1, time: 2, data: { sessionId: id, throughSeq: 0 } },
+      { type: 'session-log-deepseek/delivery-accepted', seq: 1, time: 2, data: { sessionId: id, throughSeq: 0 } },
     ]
     let reads = 0
     const observed = new Proxy(events, {
@@ -126,7 +126,7 @@ describe('incremental DeepSeek session-log upload', () => {
 
     events.push(
       { type: 'step/start', seq: 2, time: 3, data: { turn: 1, step: 1 } },
-      { type: 'session-log-deepseek/accepted', seq: 3, time: 4, data: { sessionId: id, throughSeq: 2 } },
+      { type: 'session-log-deepseek/delivery-accepted', seq: 3, time: 4, data: { sessionId: id, throughSeq: 2 } },
     )
     expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(2)
     expect(reads).toBe(2)
@@ -147,7 +147,7 @@ describe('incremental DeepSeek session-log upload', () => {
     expect(current.fields.dsh_session_log).toMatchObject({
       afterSeq: 0,
       throughSeq: 1,
-      events: [{ event: { type: 'session-log-deepseek/accepted' } }],
+      events: [{ event: { type: 'session-log-deepseek/delivery-accepted' } }],
     })
   })
 
@@ -160,7 +160,7 @@ describe('incremental DeepSeek session-log upload', () => {
 
   it('fails closed on a malformed persisted acceptance watermark', async () => {
     const malformed = [{
-      type: 'session-log-deepseek/accepted',
+      type: 'session-log-deepseek/delivery-accepted',
       seq: 0,
       time: 1,
       data: { sessionId: 'malformed', throughSeq: 0 },

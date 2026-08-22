@@ -13,7 +13,7 @@ The adapter sends the additions to its resolved `baseURL`, including a configure
 | HTTP field names | Lowercase kebab-case; HTTP matching remains case-insensitive | `user-agent`, `x-deepseek-harness-session-id` |
 | DeepSeek request-body extension fields | Snake case with the reserved `dsh_` prefix | `dsh_plugin_packages`, `dsh_session_log` |
 | DSH-owned nested JSON members | Camel case | `afterSeq`, `messageIndex`, `utf8Start` |
-| Tagged values | Kebab-case strings; durable events use `domain/action` | `message-references`, `session-log-deepseek/accepted` |
+| Tagged values | Kebab-case strings; durable events use `domain/action` | `message-references`, `session-log-deepseek/delivery-accepted` |
 
 Each body extension owns its `version` independently. A version applies only to the object that contains it; no compatibility or ordering relationship exists between versions of different fields. JSON member order is not part of the protocol.
 
@@ -236,7 +236,7 @@ After the endpoint returns HTTP 2xx, the contribution appends this canonical eve
 
 ```json
 {
-  "type": "session-log-deepseek/accepted",
+  "type": "session-log-deepseek/delivery-accepted",
   "seq": 8,
   "time": 1780000000002,
   "data": {
@@ -246,7 +246,7 @@ After the endpoint returns HTTP 2xx, the contribution appends this canonical eve
 }
 ```
 
-`accepted` means that the configured endpoint returned HTTP 2xx for the containing LLM request. It does not assert SSE completion or remote persistence. The event's `throughSeq` must identify an earlier event, and its `sessionId` identifies the Session whose suffix was sent.
+`delivery-accepted` means that the configured endpoint returned HTTP 2xx for the containing LLM request. It does not assert SSE completion or remote persistence. The event's `throughSeq` must identify an earlier event, and its `sessionId` identifies the Session whose suffix was sent.
 
 The sender folds the greatest matching `throughSeq`, so concurrent accepted requests cannot move the cursor backward. A resumed process rebuilds the cursor from the durable log. A fork ignores inherited watermarks that name its parent, and therefore sends its own complete inherited prefix before advancing under the child id. The watermark event itself belongs to the next unsent suffix.
 

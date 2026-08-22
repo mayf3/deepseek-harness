@@ -25,7 +25,7 @@ describe('DeepSeek session-log acceptance invariant', () => {
     const ctx = await setup()
     const session = ctx.sessions.create(SessionId('valid'))
     session.append('turn/start', { turn: 1 })
-    expect(() => session.append('session-log-deepseek/accepted', { sessionId: session.id, throughSeq: 0 }))
+    expect(() => session.append('session-log-deepseek/delivery-accepted', { sessionId: session.id, throughSeq: 0 }))
       .not.toThrow()
   })
 
@@ -33,7 +33,7 @@ describe('DeepSeek session-log acceptance invariant', () => {
     const ctx = await setup()
     const wrongId = ctx.sessions.create(SessionId('wrong-id'))
     wrongId.append('turn/start', { turn: 1 })
-    expect(() => wrongId.append('session-log-deepseek/accepted', {
+    expect(() => wrongId.append('session-log-deepseek/delivery-accepted', {
       sessionId: SessionId('other'),
       throughSeq: 0,
     })).toThrow(expect.objectContaining<Partial<InvariantError>>({
@@ -43,7 +43,7 @@ describe('DeepSeek session-log acceptance invariant', () => {
 
     const wrongSeq = ctx.sessions.create(SessionId('wrong-seq'))
     wrongSeq.append('turn/start', { turn: 1 })
-    expect(() => wrongSeq.append('session-log-deepseek/accepted', {
+    expect(() => wrongSeq.append('session-log-deepseek/delivery-accepted', {
       sessionId: wrongSeq.id,
       throughSeq: 1,
     })).toThrow(expect.objectContaining<Partial<InvariantError>>({
@@ -60,7 +60,7 @@ describe('DeepSeek session-log acceptance invariant', () => {
     const id = SessionId('late-invalid')
     ctx.sessions.create(id, { seed: [
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
-      { type: 'session-log-deepseek/accepted', seq: 1, time: 2, data: { sessionId: id, throughSeq: 1 } },
+      { type: 'session-log-deepseek/delivery-accepted', seq: 1, time: 2, data: { sessionId: id, throughSeq: 1 } },
     ] })
 
     let failure: unknown
@@ -85,7 +85,7 @@ describe('DeepSeek session-log acceptance invariant', () => {
     ctx.sessions.create(childId, {
       seed: [
         { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
-        { type: 'session-log-deepseek/accepted', seq: 1, time: 2, data: { sessionId: parentId, throughSeq: 0 } },
+        { type: 'session-log-deepseek/delivery-accepted', seq: 1, time: 2, data: { sessionId: parentId, throughSeq: 0 } },
       ],
       meta: { parentSession: parentId, seedLength: 2 },
     })

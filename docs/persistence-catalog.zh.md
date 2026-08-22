@@ -671,14 +671,14 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `session-log-deepseek/*`
 
-<a id="session-log-deepseekaccepted--log-only"></a>
+<a id="session-log-deepseekdelivery-accepted--log-only"></a>
 
-#### `session-log-deepseek/accepted` — log-only
+#### `session-log-deepseek/delivery-accepted` — log-only
 
 ```ts persistence-catalog
-/** Records a confirmed HTTP acceptance watermark for restart-safe suffix selection. */
-'session-log-deepseek/accepted': {
-  /** Session identity the accepted request carried; inherited fork markers retain the parent's id. */
+/** Records that the configured endpoint accepted one delivery through `throughSeq`. */
+'session-log-deepseek/delivery-accepted': {
+  /** Session identity the accepted delivery carried; inherited fork markers retain the parent's id. */
   sessionId: import('@deepseek-ai/dsh-session/types').SessionId
   /** Last canonical event included in the accepted request. */
   throughSeq: number

@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Incremental canonical session-log upload for official DeepSeek LLM API requests. This function plugin injects `ctx.sessions` and `ctx.deepseekLlmApiExtensions`, then owns the `dsh_session_log` request field and the durable `session-log-deepseek/accepted` watermark event.
+Incremental canonical session-log upload for official DeepSeek LLM API requests. This function plugin injects `ctx.sessions` and `ctx.deepseekLlmApiExtensions`, then owns the `dsh_session_log` request field and the durable `session-log-deepseek/delivery-accepted` event from which it derives the acceptance watermark.
 
 ## Configuration
 
@@ -20,7 +20,7 @@ Each event is sent raw unless request-relative packing reduces its JSON byte siz
 
 ## Acceptance and retry
 
-The DeepSeek adapter calls the prepared contribution's `accept()` after HTTP 2xx, before it consumes the SSE body. Acceptance appends `session-log-deepseek/accepted` with the uploaded `throughSeq`; the next request uploads that watermark as part of its new suffix. Transport and non-2xx failures append no watermark, so later requests resend the uncertain range. Concurrent accepted requests may append watermarks out of order; folding their maximum prevents cursor regression.
+The DeepSeek adapter calls the prepared contribution's `accept()` after HTTP 2xx, before it consumes the SSE body. Acceptance appends `session-log-deepseek/delivery-accepted` with the uploaded `throughSeq`; the next request uploads that event as part of its new suffix. Transport and non-2xx failures append no acceptance record, so later requests resend the uncertain range. Concurrent deliveries may be accepted out of order; folding the maximum matching `throughSeq` prevents cursor regression.
 
 A crash after server acceptance but before the watermark reaches persistence can replay an accepted range after restart. This is the at-least-once failure direction: uncertainty creates duplicates, never a skipped sequence. The ordinary session checkpoint policy persists the watermark at the next semantic checkpoint; this plugin performs no independent I/O.
 
