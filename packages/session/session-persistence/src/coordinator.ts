@@ -68,7 +68,7 @@ export class SessionFormatUnsupportedError extends Error {
  * Direction-aware refusal text for a stored session whose format version this
  * build does not read. Shared by the coordinator's load-time check and by
  * backends that must refuse BEFORE decoding version-dependent structure (a
- * future format may not satisfy this format version's structural checks at all, and the
+ * future format may not satisfy this build's structural checks at all, and the
  * user must see "upgrade the harness", never "corrupt").
  * @param id - the stored session id, for message context.
  * @param version - the stored format version.
