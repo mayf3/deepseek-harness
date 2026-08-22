@@ -1724,6 +1724,22 @@ Depends on: `Readable` (`node:stream`) · `Writable` (`node:stream`)
 
 Source: [`packages/sdk/server/src/index.ts:25`](../packages/sdk/server/src/index.ts)
 
+<a id="deepseek-aidsh-session-log-deepseek"></a>
+
+## `@deepseek-ai/dsh-session-log-deepseek`
+
+Requires: `deepseekLlmApiExtensions` · `sessions`
+
+```ts config-catalog
+/** Session-log request contribution configuration. */
+export interface Config {
+  /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `false`. */
+  enabled?: boolean
+}
+```
+
+Source: [`packages/session/session-log-deepseek/src/index.ts:22`](../packages/session/session-log-deepseek/src/index.ts)
+
 <a id="deepseek-aidsh-session-persistence-jsonl"></a>
 
 ## `@deepseek-ai/dsh-session-persistence-jsonl`

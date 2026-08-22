@@ -37,6 +37,8 @@ const liveConfig = join(testsDir, '..', 'cordis.yml')
 const replayConfig = join(testsDir, '..', 'cordis.snapshot.yml')
 const minimalLiveConfig = join(testsDir, '..', 'minimal.cordis.yml')
 const minimalReplayConfig = join(testsDir, '..', 'minimal.snapshot.cordis.yml')
+const sessionUploadLiveConfig = join(testsDir, '..', 'session-upload.cordis.yml')
+const sessionUploadReplayConfig = join(testsDir, '..', 'session-upload.snapshot.cordis.yml')
 const runtimeBin = fileURLToPath(new URL('../../../packages/examples/jsonrpc-demo/src/bin.ts', import.meta.url))
 const repoTsconfig = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
 
@@ -89,6 +91,7 @@ const SCENARIOS: SdkScenario[] = [
     prompt: 'Reply with exactly: SDK snapshot OK',
     sessionId: 'sdk-snapshot-text',
     children: 0,
+    configs: { live: sessionUploadLiveConfig, replay: sessionUploadReplayConfig },
   },
   {
     name: 'bash-tool',

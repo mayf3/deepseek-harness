@@ -120,7 +120,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'deepseek-llm-api-extensions',
     title: 'Official DeepSeek request extensions',
     mode: 'seam',
-    implementations: ['plugin-package-inventory-deepseek'],
+    implementations: ['session-log-deepseek', 'plugin-package-inventory-deepseek'],
     consumers: ['llm-deepseek'],
     note: 'Plugins prepare independent top-level fields; the official adapter merges them and commits their delivery state after HTTP acceptance.',
   },

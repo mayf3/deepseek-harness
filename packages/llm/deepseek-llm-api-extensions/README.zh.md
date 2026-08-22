@@ -12,7 +12,7 @@
 
 每个提供方都会看到确切的已序列化基础正文、请求 `AbortSignal`，以及可选的 `sessionId` 与辅助调用 `purpose`。提供方必须在取消后迅速停止自身工作；字段不适用于当前请求时返回 `undefined`。即使 HMR（热模块替换）在 HTTP 接受前移除了注册，已准备的操作仍会保留其捕获的提供方。
 
-注册表拥有字段添加与生命周期，不拥有字段语义。`@deepseek-ai/dsh-plugin-package-inventory-deepseek` 拥有首个 `dsh_plugin_packages` 字段。提供方无关的 LLM seam 与 `llm-pi-ai` 都不消费该注册表。
+注册表拥有字段添加与生命周期，不拥有字段语义。`@deepseek-ai/dsh-session-log-deepseek` 拥有 `dsh_session_log`；`@deepseek-ai/dsh-plugin-package-inventory-deepseek` 拥有 `dsh_plugin_packages`。提供方无关的 LLM seam 与 `llm-pi-ai` 都不消费该注册表。
 
 ## 模型体验
 

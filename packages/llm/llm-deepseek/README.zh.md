@@ -88,7 +88,7 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
 
 存在 `ctx.deepseekLlmApiExtensions` 时，适配器会在序列化确切协议消息后、`fetch` 前准备其中已注册的顶层字段。提供方会收到同一个请求信号；即使某个提供方忽略信号，取消也会停止等待。准备失败与字段冲突会在 HTTP 前以 `REQUEST_EXTENSION` 失败。HTTP 2xx 后，适配器会先等待已准备的接受事务，再消费 SSE 正文；接受失败使用同一 code，而传输失败与非 2xx 失败不会接受字段。字段会发往解析后的 `baseURL`，包括已配置的网关。未组合该注册表的部署会发送未改变的 DeepSeek 基础请求。
 
-随附 profile 与可运行示例会挂载 [`@deepseek-ai/dsh-plugin-package-inventory-deepseek`](../plugin-package-inventory-deepseek/README.zh.md) 以提供完整存活 `dsh_plugin_packages` 字段。插件包元数据默认开启且对模型不可见。`llm-pi-ai` 既不导入也不调用该提供方特定注册表。
+随附 profile 与可运行示例会挂载 [`@deepseek-ai/dsh-session-log-deepseek`](../../session/session-log-deepseek/README.zh.md) 以提供增量 `dsh_session_log` 字段，并挂载 [`@deepseek-ai/dsh-plugin-package-inventory-deepseek`](../plugin-package-inventory-deepseek/README.zh.md) 以提供完整存活 `dsh_plugin_packages` 字段。会话日志上传默认关闭，需要设置 `session-log-deepseek.enabled: true`；插件包元数据默认开启。两个字段都对模型不可见。`llm-pi-ai` 既不导入也不调用该提供方特定注册表。
 
 ## 应用归因
 

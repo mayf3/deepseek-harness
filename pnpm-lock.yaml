@@ -589,6 +589,9 @@ importers:
       '@deepseek-ai/dsh-session-checkpoint-policy':
         specifier: workspace:*
         version: link:../packages/session/session-checkpoint-policy
+      '@deepseek-ai/dsh-session-log-deepseek':
+        specifier: workspace:*
+        version: link:../packages/session/session-log-deepseek
       '@deepseek-ai/dsh-session-persistence-jsonl':
         specifier: workspace:*
         version: link:../packages/session/session-persistence-jsonl
@@ -1132,6 +1135,9 @@ importers:
       '@deepseek-ai/dsh-session-checkpoint-policy':
         specifier: workspace:^
         version: link:../../session/session-checkpoint-policy
+      '@deepseek-ai/dsh-session-log-deepseek':
+        specifier: workspace:^
+        version: link:../../session/session-log-deepseek
       '@deepseek-ai/dsh-session-persistence-jsonl':
         specifier: workspace:^
         version: link:../../session/session-persistence-jsonl
@@ -5686,6 +5692,9 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-session-log-deepseek':
+        specifier: workspace:^
+        version: link:../../session/session-log-deepseek
       '@deepseek-ai/dsh-settings':
         specifier: workspace:^
         version: link:../../settings/settings
@@ -6528,6 +6537,25 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
+
+  packages/session/session-log-deepseek:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-deepseek-llm-api-extensions':
+        specifier: workspace:^
+        version: link:../../llm/deepseek-llm-api-extensions
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
 
   packages/session/session-persistence:
     devDependencies:
@@ -9108,6 +9136,9 @@ importers:
       '@deepseek-ai/dsh-session-checkpoint-policy':
         specifier: workspace:^
         version: link:../../packages/session/session-checkpoint-policy
+      '@deepseek-ai/dsh-session-log-deepseek':
+        specifier: workspace:^
+        version: link:../../packages/session/session-log-deepseek
       '@deepseek-ai/dsh-session-persistence':
         specifier: workspace:^
         version: link:../../packages/session/session-persistence

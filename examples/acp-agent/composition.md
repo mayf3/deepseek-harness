@@ -10,6 +10,8 @@ flowchart LR
   cfg["examples/acp-agent<br/>cordis.yml"]
   plugin_acp_deepseek_llm_api_extensions["deepseek-llm-api-extensions<br/>@deepseek-ai/dsh-deepseek-llm-api-extensions"]
   cfg --> plugin_acp_deepseek_llm_api_extensions
+  plugin_acp_session_log_deepseek["session-log-deepseek<br/>@deepseek-ai/dsh-session-log-deepseek"]
+  cfg --> plugin_acp_session_log_deepseek
   plugin_acp_plugin_package_inventory_deepseek["plugin-package-inventory-deepseek<br/>@deepseek-ai/dsh-plugin-package-inventory-deepseek"]
   cfg --> plugin_acp_plugin_package_inventory_deepseek
   plugin_acp_llm_deepseek["llm-deepseek<br/>@deepseek-ai/dsh-llm-deepseek"]
@@ -80,6 +82,7 @@ flowchart LR
 | Plugin id | Package / module |
 | --- | --- |
 | `deepseek-llm-api-extensions` | `@deepseek-ai/dsh-deepseek-llm-api-extensions` |
+| `session-log-deepseek` | `@deepseek-ai/dsh-session-log-deepseek` |
 | `plugin-package-inventory-deepseek` | `@deepseek-ai/dsh-plugin-package-inventory-deepseek` |
 | `llm-deepseek` | `@deepseek-ai/dsh-llm-deepseek` |
 | `sandbox` | `@deepseek-ai/dsh-sandbox-local` |
