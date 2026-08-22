@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-ACP automation server app: the default agent spine, client-created agents through [`@deepseek-ai/dsh-acp`](../../acp/acp/README.md), JSONL persistence, and semantic checkpointing behind one JSON-RPC stdio bin. Programmatic clients create fresh sessions; this package mounts no human UI.
+ACP automation server app: the default agent spine, client-created agents through [`@deepseek-ai/dsh-acp`](../../acp/acp/README.md), JSONL persistence, and semantic checkpointing behind one JSON-RPC stdio bin. Programmatic clients create, list, close, and resume sessions; this package mounts no human UI.
 
 ## Composition
 
@@ -44,6 +44,12 @@ The shipped [`examples/acp-agent/cordis.yml`](../../../examples/acp-agent/cordis
 
 `dsh-acp-demo [--config path-to-cordis.yml]` (short form `-c`; default `./cordis.yml`) loads the gitignored `.env`, except in replay mode; `DSH_SNAPSHOT=replay` selects the sibling `cordis.snapshot.yml`; stdin EOF disposes the context and flushes sessions before exit. Loader's installed optional `node-addon-require-builtin` peer resolves bare plugin specifiers for the built bin under plain Node. Diagnostics use stderr because stdout is the ACP wire.
 
+## Standard automation workflow
+
+An ACP v1 SDK client initializes the bin, creates a session with an absolute `cwd` and optional standard stdio/HTTP MCP declarations, chooses an advertised `model` or `reasoning_effort`, prompts and observes semantic standard updates, then calls `session/close`. A later process can use `session/list` and `session/resume` against the same `persistenceRoot`; resume reconnects the MCP declarations supplied by that request and does not replay history.
+
+The complete supported/unsupported method matrix, MCP trust model, update mapping, and stop reasons live in the [`dsh-acp` protocol contract](../../acp/acp/README.md#standard-acp-v1-surface). The demo adds no private method, capability, `_meta`, environment variable, or transport field. The keyless control-surface conformance test drives this exact bin through the public ACP SDK.
+
 ## Model Experience
 
 Indirectly, through `dsh-agent-spine-demo` and the leaf's model-facing plugins. ACP prompt text becomes the ordinary logged user message; protocol metadata and permission choices do not enter the model request.
@@ -56,4 +62,4 @@ Append-only per session; the app adds no request-prefix content itself.
 
 - **JSONL persistence is fixed** — a different backend requires another composition.
 - **Sibling plugins can corrupt stdout** — the app cannot prevent another entry from writing non-protocol bytes.
-- **Fresh automation sessions only** — resume and human interaction belong to other entry points.
+- **Automation only** — session controls and semantic execution updates are protocol data, not a human UI; human interaction remains in other entry points.

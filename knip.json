@@ -493,7 +493,8 @@
     "packages/examples/acp-demo": {
       "entry": [
         "tests/**/*.spec.ts",
-        "tests/**/*.e2e.ts"
+        "tests/**/*.e2e.ts",
+        "tests/control-surface-llm.ts"
       ],
       "project": [
         "src/**/*.ts",

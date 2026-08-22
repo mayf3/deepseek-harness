@@ -53,8 +53,22 @@ const hasSeatbelt = process.platform === 'darwin' && spawnSync('sandbox-exec', [
 }).status === 0
 const hasRunner = hasBwrap || hasSeatbelt
 
+const STANDARD_EXECUTION_UPDATES = new Set([
+  'agent_message_chunk',
+  'agent_thought_chunk',
+  'tool_call',
+  'tool_call_update',
+  'usage_update',
+])
+
 interface Spawned extends LaunchedAcpTestAgent {
   permissionRequests: RequestPermissionRequest[]
+}
+
+/** Require a model answer while allowing every standard semantic execution update. */
+function expectStandardExecutionUpdates(updates: LaunchedAcpTestAgent['updates']): void {
+  expect(updates.some(update => update.sessionUpdate === 'agent_message_chunk')).toBe(true)
+  expect(updates.every(update => STANDARD_EXECUTION_UPDATES.has(update.sessionUpdate))).toBe(true)
 }
 
 /** Boot the example with an optional sandbox override; the scripted client answers every permission prompt with `answer`. */
@@ -112,7 +126,9 @@ describe('default sandbox composition keyless smoke (real cordis.yml via the Loa
     const init = await client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
     expect(init.protocolVersion).toBe(PROTOCOL_VERSION)
     expect(init.agentCapabilities).toEqual({
+      mcpCapabilities: { http: true },
       promptCapabilities: { image: false, audio: false, embeddedContext: false },
+      sessionCapabilities: { close: {}, list: {}, resume: {} },
     })
     const { sessionId } = await client.newSession({ cwd: workdir, mcpServers: [] })
     expect(sessionId.length).toBeGreaterThan(0)
@@ -136,7 +152,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || !hasRunner)('default sandbox co
       }],
     })
     expect(['end_turn', 'max_tokens']).toContain(res.stopReason)
-    expect(updates.every(update => update.sessionUpdate === 'agent_message_chunk')).toBe(true)
+    expectStandardExecutionUpdates(updates)
 
     // The WORLD: the approved escalated retry landed the write.
     const proof = await readFile(join(workdir, 'escalated.txt'), 'utf8')
@@ -168,7 +184,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || !hasRunner)('default sandbox co
       }],
     })
     expect(['end_turn', 'max_tokens']).toContain(res.stopReason)
-    expect(updates.every(update => update.sessionUpdate === 'agent_message_chunk')).toBe(true)
+    expectStandardExecutionUpdates(updates)
 
     // The WORLD: rejected means the file never appeared.
     await expect(readFile(join(workdir, 'refused.txt'), 'utf8')).rejects.toThrow()
