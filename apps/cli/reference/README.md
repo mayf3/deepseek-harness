@@ -8,9 +8,9 @@ This reference defines the profile, web-alias, plugin-management, and config-dum
 
 `dsh --profile <name>` boots the profile at `$DSH_HOME/profiles/<name>`. The effective tree is composed over an empty root by applying, in order: each bundle patch named in the profile manifest's `dsh.profile.bundles` list, the profile's own `cordis.patch.yml`, the home-level `$DSH_HOME/cordis.patch.yml` (machine-local preferences shared by every profile, so it outranks the per-profile layer), and each `--patch <path>` overlay in argv order. Later layers win per row; a patch replaces the targeted row's complete `config` value rather than deep-merging keys, and may insert new rows. `dsh.profile.patchReload` selects `live` patch-file watching or `startup` one-time loading; omission defaults a custom profile to `live`. A parse, schema, resolution, or plugin boot failure is reported and exits nonzero. SIGINT and SIGTERM dispose the mounted root before exit.
 
-Bundle names resolve from the dsh installation first, then from the profile directory. In-box bundles (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`, `@deepseek-ai/dsh-sdk-app`) therefore always come from the same installation as the running `dsh`; out-of-tree bundles come from the profile's pnpm-managed `node_modules`. A bare plugin `name` in any patch row resolves through the profile directory's Node parent-walk, which reaches the maintained installation fallback `$DSH_HOME/profiles/node_modules` (one symlink per package the installation's app and bundles depend on, healed on every launch).
+Bundle names resolve from the dsh installation first, then from the profile directory. In-box bundles (`@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-headless`, `@deepseek-ai/dsh-sdk-app`, `@deepseek-ai/dsh-acp-app`) therefore always come from the same installation as the running `dsh`; out-of-tree bundles come from the profile's pnpm-managed `node_modules`. A bare plugin `name` in any patch row resolves through the profile directory's Node parent-walk, which reaches the maintained installation fallback `$DSH_HOME/profiles/node_modules` (one symlink per package the installation's app and bundles depend on, healed on every launch).
 
-The `web`, `headless`, and `sdk` profiles auto-initialize from shipped templates on first use (`web`: base + web-app with live patches; `headless`: base + headless with startup-only patches; `sdk`: base + sdk-app with startup-only patches). Any other missing profile fails loud with a hint to run `dsh plugin --profile <name> add <package>`.
+The `web`, `headless`, `sdk`, and `acp` profiles auto-initialize from shipped templates on first use (`web`: base + web-app with live patches; `headless`: base + headless with startup-only patches; `sdk`: base + sdk-app with startup-only patches; `acp`: base + acp-app with startup-only patches). Any other missing profile fails loud with a hint to run `dsh plugin --profile <name> add <package>`.
 
 ### App arguments
 
@@ -27,6 +27,7 @@ The shipped apps own these command lines:
 | `web` | `--host`, `--port`, repeatable `--trusted-host`, `--no-open` |
 | `headless` | the task text, as the positional argument |
 | `sdk` | no options; stdio carries the JSON-RPC protocol |
+| `acp` | no options; stdio carries Agent Client Protocol |
 
 A one-shot task (`dsh --profile headless "run the tests"`) creates one fresh persisted Agent through the core registry, submits the task, waits for quiescence, and flushes the Session before deriving the last non-empty assistant text and final `turn/end` reason from its durable interval. It prints the text on stdout and exits 0 for `completed`, else 1. An invocation with no task is a usage error from that app. The shipped headless profile mounts no ApiProxy, Host, HTTP server, Web runtime, or browser client; a successful run writes nothing to stderr and opens no listening port.
 

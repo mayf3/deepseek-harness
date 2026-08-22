@@ -2,7 +2,18 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+import { Readable, Writable } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import {
+  ClientSideConnection,
+  ndJsonStream,
+  PROTOCOL_VERSION,
+  type Agent as AcpAgent,
+  type Client as AcpClient,
+  type RequestPermissionRequest,
+  type RequestPermissionResponse,
+  type SessionNotification,
+} from '@agentclientprotocol/sdk'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { execa } from 'execa'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -365,6 +376,14 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(sdkHelp.stderr).toBe('')
       expect(sdkHelp.stdout).toContain('Usage: dsh --profile sdk')
 
+      const acpHelp = await runBuiltBin(['--profile', 'acp', '--help'], {
+        DSH_HOME: home,
+        DSH_TELEMETRY_DISABLED: '1',
+      })
+      expect(acpHelp.code).toBe(0)
+      expect(acpHelp.stderr).toBe('')
+      expect(acpHelp.stdout).toContain('Usage: dsh --profile acp')
+
       const missingTask = await runBuiltBin(['--profile', 'headless'], {
         DSH_HOME: home,
         DSH_TELEMETRY_DISABLED: '1',
@@ -448,6 +467,65 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       const result = await child
       expect(result.exitCode, `signal=${String(result.signal)}; stderr=${stderr}`).toBe(0)
       expect(stderr).toBe('')
+    } finally {
+      child.kill('SIGKILL')
+      await child
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('serves fresh ACP sessions through the acp profile and exits on disconnect', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-built-acp-'))
+    const child = execa(process.execPath, [dshBin, '--profile', 'acp'], {
+      cwd: home,
+      reject: false,
+      timeout: 25_000,
+      killSignal: 'SIGKILL',
+      env: {
+        ...process.env,
+        DSH_HOME: home,
+        DSH_TELEMETRY_DISABLED: '1',
+        DEEPSEEK_API_KEY: 'built-acp-profile-no-call',
+      },
+      extendEnv: false,
+    })
+    const rawOut: string[] = []
+    const passthrough = new Readable({ read() {} })
+    child.stdout.on('data', (chunk: Buffer) => {
+      rawOut.push(chunk.toString('utf8'))
+      passthrough.push(chunk)
+    })
+    child.stdout.on('end', () => { passthrough.push(null) })
+    const stream = ndJsonStream(
+      Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
+      Readable.toWeb(passthrough) as ReadableStream<Uint8Array>,
+    )
+    const makeClient = (_agent: AcpAgent): AcpClient => ({
+      sessionUpdate(_params: SessionNotification): Promise<void> {
+        return Promise.resolve()
+      },
+      requestPermission(_params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
+        return Promise.resolve({ outcome: { outcome: 'cancelled' } })
+      },
+    })
+    const client = new ClientSideConnection(makeClient, stream)
+    try {
+      const initialized = await client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+      expect(initialized).toMatchObject({
+        agentInfo: { name: 'deepseek-harness-acp' },
+        agentCapabilities: {
+          promptCapabilities: { image: false, audio: false, embeddedContext: false },
+        },
+      })
+      const session = await client.newSession({ cwd: home, mcpServers: [] })
+      expect(session.sessionId).toBeTruthy()
+      child.stdin.end()
+      const result = await child
+      expect(result.exitCode, `signal=${String(result.signal)}; stderr=${result.stderr}`).toBe(0)
+      expect(result.stderr).toBe('')
+      for (const line of rawOut.join('').split('\n').filter(value => value.trim() !== '')) {
+        expect(() => JSON.parse(line) as unknown).not.toThrow()
+      }
     } finally {
       child.kill('SIGKILL')
       await child

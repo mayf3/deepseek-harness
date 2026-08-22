@@ -141,6 +141,9 @@ importers:
       '@deepseek-ai/cordis-plugin-timer':
         specifier: workspace:^
         version: link:../../vendor/timer
+      '@deepseek-ai/dsh-acp-app':
+        specifier: workspace:^
+        version: link:../../packages/bundle/acp-app
       '@deepseek-ai/dsh-agent-instructions':
         specifier: workspace:^
         version: link:../../packages/context/agent-instructions
@@ -322,6 +325,9 @@ importers:
         specifier: ^0.1.4
         version: 0.1.4
     devDependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 0.25.1
+        version: 0.25.1(zod@4.4.3)
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../packages/core/agent
@@ -1289,6 +1295,28 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
+  packages/bundle/acp-app:
+    dependencies:
+      '@deepseek-ai/dsh-acp':
+        specifier: workspace:^
+        version: link:../../acp/acp
+      '@deepseek-ai/dsh-cmdline':
+        specifier: workspace:^
+        version: link:../../boot/cmdline
+      commander:
+        specifier: ^15.0.0
+        version: 15.0.0
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
