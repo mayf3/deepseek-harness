@@ -15,7 +15,10 @@ export const name = 'webhook-invariant'
 export const inject = ['invariants']
 
 /** Verify that one webhook-origin message already belongs to its cwd Workspace. */
-function installWebhookInvariant(ctx: Context, fail: InvariantFailure): void {
+const install: InvariantInstaller = Object.assign(function installWebhookMessages(
+  ctx: Context,
+  fail: InvariantFailure,
+): void {
   ctx.on('internal/dispatch', (_mode, eventName, args) => {
     if (eventName !== 'session/event') return
     const [session, event] = args as [Session, SessionEvent]
@@ -32,9 +35,7 @@ function installWebhookInvariant(ctx: Context, fail: InvariantFailure): void {
       fail(`webhook Session "${session.id}" cwd ${JSON.stringify(cwd)} differs from its Workspace path`)
     }
   }, { global: true })
-}
-
-const install: InvariantInstaller = Object.assign(installWebhookInvariant, {
+}, {
   inject: ['workspaceRegistry'],
 })
 
