@@ -6,8 +6,8 @@
  * `node:path/posix`", so Node itself is the oracle and every case is compared
  * rather than asserted against a hand-written expectation. The corpus is the
  * shapes a VFS path actually takes (absolute image paths, `node_modules`
- * specifiers, `.bin` entries) plus the edge forms that diverge between the two
- * implementations (repeated slashes, trailing dots, `..` past the root).
+ * specifiers, `.bin` entries) plus edge forms that stress lexical handling
+ * (repeated slashes, trailing dots, `..` past the root).
  *
  * Imports go through the package name so the harness and the shim resolve to one
  * module instance (see `../polyfill/als-shim.spec.ts` for why that matters).

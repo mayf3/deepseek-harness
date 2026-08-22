@@ -414,9 +414,7 @@ export function openHandleSync(path: PathArg, flags = 'r'): FileHandle {
 /**
  * Watch registration refuses loudly, and NOT because watching is hard.
  *
- * The inert form was tried: `chokidar.ts` records that "no events" is the truth
- * about a filesystem with no external writer, and the same reasoning seemed to
- * cover this. It does not, because of the caller. `skill-filesystem` does not
+ * An inert watcher would not serve this caller. `skill-filesystem` does not
  * merely register a listener — `openStableWatcher` opens a watcher and then
  * loops until two consecutive mode probes agree, so a watcher that reports
  * success and never fires leaves `observeRoots()` awaiting forever: the skill
