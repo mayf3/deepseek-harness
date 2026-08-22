@@ -18,7 +18,7 @@ When partitioning is enabled, `scripts/run-gates.ts` selects `pnpm run test:cove
 
 The coordinator waits for every child, validates that the blob directory contains exactly the expected files, and then runs one `vitest --merge-reports ... --coverage` command. Only that merged command applies the repository's per-file statement, branch, function, and line thresholds, so a partition is never judged against an intentionally partial inventory.
 
-`DSH_COVERAGE_MAX_WORKERS` continues to size the uninstrumented exempt gate and the ordinary non-partitioned path; it does not resize partition children. Build, production-site validation, and instrumented coverage start immediately on native Windows. The exempt gate needs the build and waits for instrumented coverage to settle, so its full-corpus child and temporary Oxlint probes do not compete with the eight partitions; it then receives four workers from the budget of 12. The observational inventory also waits for instrumented coverage, then overlaps the exempt gate within an eight-worker outer budget. Ordering uses `after`, so both groups still run after an instrumented failure; each gate's `needs` dependencies remain pass-required. Linux overlaps four instrumented partition processes with two exempt workers, restoring the ordinary path's former four-way instrumented concurrency while keeping every instrumented process single-worker.
+`DSH_COVERAGE_MAX_WORKERS` continues to size the uninstrumented exempt gate and the ordinary non-partitioned path; it does not resize partition children. Build, production-site validation, and instrumented coverage start immediately on native Windows. The exempt gate needs the build and waits for instrumented coverage to settle, so its full-corpus children and temporary Oxlint probes do not compete with the eight partitions; it then receives four workers from the budget of 12. The observational inventory also waits for instrumented coverage, then overlaps the exempt gate within an eight-worker outer budget. Ordering uses `after`, so both groups still run after an instrumented failure; each gate's `needs` dependencies remain pass-required. Linux overlaps four instrumented partition processes with two exempt workers, restoring the ordinary path's former four-way instrumented concurrency while keeping every instrumented process single-worker.
 
 ## Failure and output semantics
 
@@ -32,7 +32,7 @@ A normal failed test still emits a blob through `--coverage.reportOnFailure`, al
 
 Completed native Windows comparisons measured two partitions near 405 seconds and sixteen partitions at 112.66–122.01 seconds, but the sixteen-way schedule could put more than twenty active execution units beside build and exempt coverage on a 16-core runner. Eight partitions keep separate-process isolation while accepting a longer feedback path for a materially lower peak. Two Linux samples measured the conservative two-partition configuration at 276.68 and 282.27 seconds; that configuration was stable but halved the ordinary path's four instrumented workers. Four partitions restore that fan-out, for six total coverage execution units on the 16-core hosted runner and at most 36 across the failover VM's six runner instances. These values come from completed runs or fixed capacity bounds; an unfinished run crossing an arbitrary elapsed-time mark is not evidence for increasing concurrency.
 
-The native ARM64 VM runs the full transform corpus in 29.59 seconds without coverage partitions. A concurrent self-hosted x64 job stretched the same test to 279.13 seconds while one instrumented partition reached 442.45 seconds, which is why the Windows graph separates the partition and exempt phases instead of increasing partition count.
+The native ARM64 VM runs the full transform corpus in 29.59 seconds without coverage partitions and in 25.06 seconds through the four-child Vitest path. A concurrent self-hosted x64 job stretched the former serial test to 279.13 seconds while one instrumented partition reached 442.45 seconds, which is why the Windows graph separates the partition and exempt phases instead of increasing partition count.
 
 ## Alternatives considered
 
@@ -44,7 +44,7 @@ The native ARM64 VM runs the full transform corpus in 29.59 seconds without cove
 
 **Apply thresholds independently in each partition.** Rejected because every partition intentionally sees only part of the suite and would report false uncovered files. Threshold ownership belongs to the merged report.
 
-**Overlap the Windows exempt gate with instrumented partitions.** Rejected because the full-corpus child is fast in isolation but multiplies under partition contention. The post-coverage phase uses available workers for the exempt and observational checks without changing either verdict.
+**Overlap the Windows exempt gate with instrumented partitions.** Rejected because the full-corpus checker is fast in isolation but multiplies under partition contention. The post-coverage phase uses available workers for the exempt and observational checks without changing either verdict.
 
 ## Consequences
 
