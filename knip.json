@@ -676,6 +676,11 @@
         "@deepseek-ai/dsh-code-runtime-worker-thread"
       ]
     },
+    "packages/bundle/sdk-app": {
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-sdk-jsonrpc-server"
+      ]
+    },
     "packages/bundle/web-app": {
       "ignoreDependencies": [
         "@deepseek-ai/.+"

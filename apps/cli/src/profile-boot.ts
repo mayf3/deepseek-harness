@@ -35,10 +35,34 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', import.meta.url))
 
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
+import { provideCmdline, type AppReady } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
 
 const NAME = 'dsh'
+
+/** Launcher-owned readiness signal committed only after boot and host setup succeed. */
+function createAppReady(): { service: AppReady; commit(): void } {
+  let ready = false
+  const listeners = new Set<() => void>()
+  return {
+    service: {
+      onReady(listener) {
+        if (ready) {
+          listener()
+          return () => {}
+        }
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      },
+    },
+    commit() {
+      if (ready) return
+      ready = true
+      for (const listener of [...listeners]) listener()
+      listeners.clear()
+    },
+  }
+}
 
 /**
  * The home-level user patch layer (`$DSH_HOME/cordis.patch.yml`), applied
@@ -207,6 +231,7 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
   const composed = composeProfile(options.profile, options.patchFiles)
   const app: { current?: Context } = {}
+  const appReady = createAppReady()
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
   const signalShutdown = new AbortController()
   const interrupt = (code: number): void => {
@@ -255,6 +280,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     provideCmdline(hostCtx, {
       args: options.args,
       exit: code => void shutdown.shutdown(code),
+      ready: appReady.service,
     })
   })
   app.current = ctx
@@ -294,6 +320,11 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     } catch (error) {
       suppressShutdownError(ctx, signalShutdown.signal, error)
     }
+  }
+  if (!signalShutdown.signal.aborted
+    && ctx.fiber.state === FiberState.ACTIVE
+    && ctx.get('loader') !== undefined) {
+    appReady.commit()
   }
   return { ctx, shutdown }
 }
