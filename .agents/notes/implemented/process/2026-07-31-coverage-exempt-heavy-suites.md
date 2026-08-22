@@ -10,6 +10,8 @@ The CI coverage lane (`check:ci:coverage`) had its wall clock pinned by a handfu
 
 The decisive waste: the instrumentation tax these suites paid contributed **nothing** to the per-file 100% thresholds — the measured code they execute in-process is either outside the threshold scope already or independently fully covered by other suites. Running them instrumented traded lane time for zero information.
 
+The Web Worker transform corpus exposed the same waste on native Windows: `transform-corpus.spec.ts` spent 279 seconds inside one 442-second coverage partition while the other seven partitions settled in 110–161 seconds. Its real checker runs package source only in a spawned Node process, outside the parent Vitest worker's v8 coverage session, so the slow partition produced no threshold data from that work.
+
 ## Decision
 
 The `ci-coverage` aggregate splits into two parallel gates; every test still runs, and only the heavy suites stop paying the instrumentation tax:
@@ -30,6 +32,7 @@ A suite contributes to coverage exactly when it executes measured files in-proce
 | All 6 typert generator specs | The generator's own src | Generator src is threshold-excluded as a package (`vitest.config.ts`) — outside the threshold scope to begin with |
 | tools-catalog.spec additionally imports | `typert-registry` and `tool-cordis` src | Each package's own tests cover them fully (verified with focused coverage runs, zero threshold errors) |
 | `scripts/install-lefthook.spec.ts`, `scripts/oxlint-contract.spec.ts`, `scripts/change-scope.spec.ts`, `scripts/translation-pairing-merge.spec.ts` | None — they test `scripts/` sources (never in `coverage.include`) and work by spawning child processes | Nothing to carry |
+| `packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts` | None — its package-source imports and the complete bundle sweep run in a spawned Node process | The Web Worker runtime's in-process unit suites carry its source coverage |
 
 ### Membership contract
 
@@ -54,6 +57,8 @@ Coverage-result invariance therefore does not rest on humans maintaining the ros
 ## Verification
 
 Measured on CI (16-core runner): the gate segment went from 424 seconds to the two gates in parallel — `test:coverage` 95.9 s + `test:coverage-exempt-heavy` 71.1 s — with the lane converging on the slower at about 96 seconds; the instrumented gate reported zero threshold errors both before and after the split. `vitest list` verifies the env toggle adds and removes exactly the exempt set; `run-gates.spec.ts` covers the aggregate graph construction.
+
+The Web Worker corpus entry is pinned by an eight-partition aggregate that runs all 15,250 tests and reports 100% for 45,959 statements, 28,116 branches, 9,781 functions, and 40,550 lines. A focused instrumented corpus run records no package source from its child process; the paired list check proves the spec is absent from the instrumented inventory and present in the uninstrumented inventory.
 
 ## Consequences
 

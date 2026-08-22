@@ -10,6 +10,8 @@ CI 覆盖率 lane（`check:ci:coverage`）的墙钟被少数几个重型测试�
 
 关键的浪费在于：这些套件缴纳的插桩税对 per-file 100% 阈值**没有任何贡献**——它们进程内执行的被度量代码，要么本来就不在阈值口径内，要么已由其他套件独立满覆盖。继续在插桩下运行它们，纯粹是用 lane 时长换零信息。
 
+Web Worker 转换语料库在原生 Windows 上暴露了同一类浪费：`transform-corpus.spec.ts` 在一个 442 秒的覆盖率分区中占用 279 秒，而其余七个分区在 110–161 秒内完成。它的真实检查器只在 spawn 的 Node 子进程中运行包源码，处于父 Vitest worker 的 v8 覆盖率会话之外，因此这个慢分区没有从该工作中产生任何阈值数据。
+
 ## Decision
 
 `ci-coverage` 聚合拆成两个并行 gate，全部测试仍然执行，只有重型套件不再交插桩税：
@@ -30,6 +32,7 @@ Linux 覆盖率 CI 与原生 Windows CI 在插桩门禁内部使用 [job 内分�
 | typert generator 全部 6 个 spec | generator 自身 src | generator src 已整包 threshold-excluded（`vitest.config.ts`），本不在阈值口径内 |
 | 其中 tools-catalog.spec 额外 import | `typert-registry`、`tool-cordis` 的 src | 两包各自的测试独立满覆盖（focused coverage 实测无阈值错误） |
 | `scripts/install-lefthook.spec.ts`、`scripts/oxlint-contract.spec.ts`、`scripts/change-scope.spec.ts`、`scripts/translation-pairing-merge.spec.ts` | 无——被测对象是 `scripts/` 源码（从不在 coverage.include），执行方式是 spawn 子进程 | 无需接 |
+| `packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts` | 无——包源码 import 与完整 bundle 扫描都在 spawn 的 Node 子进程中运行 | Web Worker runtime 的进程内单元套件承担其源码覆盖率 |
 
 ### 成员资格约定
 
@@ -54,6 +57,8 @@ per-file 100% 阈值本身就是豁免名单的守卫，名单错误无法静默
 ## Verification
 
 CI 实测（16 核 runner）：拆分前 gate 段 424 秒，拆分后两 gate 并行 `test:coverage` 95.9 秒 + `test:coverage-exempt-heavy` 71.1 秒，lane 收敛于较慢者约 96 秒；拆分前后插桩 gate 阈值错误均为零。`vitest list` 验证 env 开关两态恰好增删豁免集；`run-gates.spec.ts` 覆盖聚合图构造。
+
+Web Worker 语料库条目由八分区聚合固定：它执行全部 15,250 个测试，并对 45,959 条语句、28,116 个分支、9,781 个函数和 40,550 行报告 100%。聚焦的插桩语料库运行不会记录其子进程中的包源码；配对名单检查证明该 spec 不在插桩清单中，但存在于无插桩清单中。
 
 ## Consequences
 
