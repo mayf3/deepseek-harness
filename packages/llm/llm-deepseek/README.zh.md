@@ -84,6 +84,12 @@ harness LLM（大语言模型）seam 的 DeepSeek chat-completions 适配器：�
 
 该插件还会在可配置提供方目录（`ctx.llm.listConfigurableProviders()`）中声明自己的路由：提供方为 `deepseek-official`，settings namespace 为 `llm-deepseek`，settings path 为空——整个分节就是 profile。配置界面借助该条目，把本适配器与休眠的 pi-ai 提供方一并呈现。
 
+## DeepSeek 请求扩展
+
+存在 `ctx.deepseekLlmApiExtensions` 时，适配器会在序列化确切协议消息后、`fetch` 前准备其中已注册的顶层字段。提供方会收到同一个请求信号；即使某个提供方忽略信号，取消也会停止等待。准备失败与字段冲突会在 HTTP 前以 `REQUEST_EXTENSION` 失败。HTTP 2xx 后，适配器会先等待已准备的接受事务，再消费 SSE 正文；接受失败使用同一 code，而传输失败与非 2xx 失败不会接受字段。字段会发往解析后的 `baseURL`，包括已配置的网关。未组合该注册表的部署会发送未改变的 DeepSeek 基础请求。
+
+随附 profile 与可运行示例会挂载 [`@deepseek-ai/dsh-plugin-package-inventory-deepseek`](../plugin-package-inventory-deepseek/README.zh.md) 以提供完整存活 `dsh_plugin_packages` 字段。插件包元数据默认开启且对模型不可见。`llm-pi-ai` 既不导入也不调用该提供方特定注册表。
+
 ## 应用归因
 
 每个 chat 和 Files API 请求都携带 dsh-llm `attributionHeaders()` 的共享归因标头，即用于识别 harness 的必需 `User-Agent` 基线（见 [dsh-llm § 应用归因](../llm/README.zh.md#app-attribution-attributionts)）。在该适配器约定（adapter contract）下，直接 DeepSeek 请求与 OpenAI 兼容 gateway 请求都不会获得提供方特定应用归因标头；OpenRouter 应用归因暂缓到未来的显式 OpenRouter 适配器或模式。`GenerateOptions.purpose` 为 `compaction` 的请求（dsh-compaction-basic 的辅助摘要调用）还会携带 `x-deepseek-harness-compact: 1`，让宿主可以将压缩流量与会话请求分开。
@@ -101,7 +107,7 @@ DeepSeek 请求身份独立于应用归因。凭据解析成功后，每个提�
 
 ## 错误
 
-非 2xx 响应会抛出稳定 code 的 `LlmError`：`AUTH`（401/403）、`QUOTA`（提供方详细信息标识配额、余额或点数耗尽的响应）、`RATE_LIMIT`（其他 429）、`CONTEXT_WINDOW_EXCEEDED`（提供方 code、type 或 message 标识上下文溢出的 400）、`INVALID_REQUEST`（其他 400 和 413）、`SERVER`（5xx），其他情况为 `HTTP_<status>`。其可序列化 `failure` 保留 HTTP 状态，以及有效的正 `Retry-After` 秒数／日期延迟和存在时的 `x-request-id` / `x-deepseek-request-id`。如果 DeepSeek 拒绝一张已规范化图片，主错误会写明附件 ID 或显示名称、持久消息和图片位置、规范化后的媒体类型、8-bit sRGB/sRGBA 位深、尺寸和提供方消息。存在多张候选图片且提供方详细信息没有 file id 时，错误会列出全部可能图片，不会把错误归给第一张。原始响应保留为错误 `cause`，不会成为唯一的用户可见诊断。附件读取会保留稳定的附件失败 code，不会变成传输失败。响应前传输失败（DNS、连接被拒绝、TLS、proxy）会抛出命名已配置端点的 `TRANSPORT`，并将原始拒绝作为 `cause`；调用方 abort 抛出 `ABORTED`，仍以 loop 的取消信号为准。协议违例抛出 `STREAM_CLOSED`（没有 `[DONE]`）或 `MALFORMED_RESPONSE`（JSON payload 格式错误）。未知协议 `finish_reason`（例如 `content_filter`、`insufficient_system_resource`）会变为 `finish {kind: 'error', failure}` 分片；已完成流如果使用 `stop`（或缺失）finish 但没有开启内容块，就会变为 `finish {kind: 'error'}`，code 为 `EMPTY_RESPONSE`（默认策略会重试）。
+非 2xx 响应会抛出稳定 code 的 `LlmError`：`AUTH`（401/403）、`QUOTA`（提供方详细信息标识配额、余额或点数耗尽的响应）、`RATE_LIMIT`（其他 429）、`CONTEXT_WINDOW_EXCEEDED`（提供方 code、type 或 message 标识上下文溢出的 400）、`INVALID_REQUEST`（其他 400 和 413）、`SERVER`（5xx），其他情况为 `HTTP_<status>`。其可序列化 `failure` 保留 HTTP 状态，以及有效的正 `Retry-After` 秒数／日期延迟和存在时的 `x-request-id` / `x-deepseek-request-id`。扩展准备、基础字段冲突或 2xx 后接受失败会使用 `REQUEST_EXTENSION`；扩展失败绝不会被重新标记为传输失败。如果 DeepSeek 拒绝一张已规范化图片，主错误会写明附件 ID 或显示名称、持久消息和图片位置、规范化后的媒体类型、8-bit sRGB/sRGBA 位深、尺寸和提供方消息。存在多张候选图片且提供方详细信息没有 file id 时，错误会列出全部可能图片，不会把错误归给第一张。原始响应保留为错误 `cause`，不会成为唯一的用户可见诊断。附件读取会保留稳定的附件失败 code，不会变成传输失败。响应前传输失败（DNS、连接被拒绝、TLS、proxy）会抛出命名已配置端点的 `TRANSPORT`，并将原始拒绝作为 `cause`；调用方 abort 抛出 `ABORTED`，仍以 loop 的取消信号为准。协议违例抛出 `STREAM_CLOSED`（没有 `[DONE]`）或 `MALFORMED_RESPONSE`（JSON payload 格式错误）。未知协议 `finish_reason`（例如 `content_filter`、`insufficient_system_resource`）会变为 `finish {kind: 'error', failure}` 分片；已完成流如果使用 `stop`（或缺失）finish 但没有开启内容块，就会变为 `finish {kind: 'error'}`，code 为 `EMPTY_RESPONSE`（默认策略会重试）。
 
 ## 模型体验
 
@@ -109,7 +115,7 @@ DeepSeek 请求身份独立于应用归因。凭据解析成功后，每个提�
 
 #### 模型看到的内容
 
-所选 DeepSeek 模型会收到 harness 系统提示词、消息历史、工具 schema、stop sequence 和调用配置。视觉模型通常通过 Files API 引用收到保留的 user 与工具结果图片，旁边带有稳定附件句柄和请求图片尺寸；Files 解析失败时，所有保留图片改用内联 data URL。超出上限的较旧图片由已记录的占位文本表示。之前 assistant 轮次的推理内容会原文回传，无论该轮次是否调用了工具。
+所选 DeepSeek 模型会收到 harness 系统提示词、消息历史、工具 schema、stop sequence 和调用配置，不含适配器撰写的提示词文本。提供方特定请求扩展字段仍位于该模型输入之外。视觉模型通常通过 Files API 引用收到保留的 user 与工具结果图片，旁边带有稳定附件句柄和请求图片尺寸；Files 解析失败时，所有保留图片改用内联 data URL。超出上限的较旧图片由已记录的占位文本表示。之前 assistant 轮次的推理内容会原文回传，无论该轮次是否调用了工具。
 
 #### Token 影响
 

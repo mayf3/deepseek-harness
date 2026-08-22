@@ -6,6 +6,12 @@
   config:
     maxTokensAsSuccess: !!js "process.env.DSH_MAX_TOKENS_AS_SUCCESS === undefined ? true : JSON.parse(process.env.DSH_MAX_TOKENS_AS_SUCCESS)"
 
+- id: deepseek-llm-api-extensions
+  name: '@deepseek-ai/dsh-deepseek-llm-api-extensions'
+
+- id: plugin-package-inventory-deepseek
+  name: '@deepseek-ai/dsh-plugin-package-inventory-deepseek'
+
 # The DeepSeek adapter. Shipped default: full thinking at max effort on every
 # request; exact-model resolution materializes request defaults before logging.
 # The model arrives per session over JSON-RPC, so it is not pinned here.
