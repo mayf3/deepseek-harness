@@ -304,7 +304,7 @@ export function loadOverlayPatches(binName: string, file: string): PatchOptions[
   return parsePatchList(binName, file, content, 'overlay')
 }
 
-/** Resolve plugin paths introduced by one patch file without changing assertion names. */
+/** Resolve relative plugin paths in one patch file's `insert` rows without changing assertion names. */
 function anchorInsertedPluginNames(patches: PatchOptions[], file: string): PatchOptions[] {
   const base = dirname(resolve(file))
   const visit = (entry: EntryOptions): void => {
