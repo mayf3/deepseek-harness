@@ -28,8 +28,10 @@ const runner = fileURLToPath(new URL('./transform-corpus-check.ts', import.meta.
 const repositoryRoot = fileURLToPath(new URL('../../../../../', import.meta.url))
 const corpusShards = 8
 const shardAffinity = new Set([
+  // client-runtime needs acp-snapshot to establish Vitest's internal state.
   'packages/test-support/acp-snapshot/lib/index.js',
   'packages/test-support/client-runtime/lib/index.js',
+  // win32-process observes Koffi's duplicate type names after the ACL bundle.
   'packages/sandbox/sandbox-windows-acl/lib/index.js',
   'packages/subprocess/win32-process/lib/index.js',
 ])
@@ -48,14 +50,14 @@ function discoverBuiltBundles(): string[] {
   ].map(path => path.replaceAll('\\', '/')).sort()
 }
 
-/** @returns Every bundle assigned exactly once while preserving Koffi loader affinity. */
+/** @returns Non-empty shards with every bundle assigned once and loader affinity preserved. */
 function partitionBundles(files: readonly string[], count: number): string[][] {
   const partitions = Array.from({ length: count }, () => [] as string[])
   files.forEach((file, index) => {
     const assigned = shardAffinity.has(file) ? 0 : index % count
     partitions[assigned]?.push(file)
   })
-  return partitions
+  return partitions.filter(partition => partition.length > 0)
 }
 
 /** @returns One isolated Node-loader corpus shard. */
@@ -90,6 +92,7 @@ test('partitions every bundle once while retaining loader-state affinity', () =>
   ]
   const shards = partitionBundles(files, corpusShards)
 
+  expect(shards.every(shard => shard.length > 0)).toBe(true)
   expect(shards.flat().sort()).toEqual([...files].sort())
   expect(shards[0]?.filter(file => shardAffinity.has(file))).toEqual(files.filter(file => shardAffinity.has(file)))
 })

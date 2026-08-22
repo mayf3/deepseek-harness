@@ -39,6 +39,11 @@ function normalizedOutput(result: ReturnType<typeof runOxlint>): string {
   return `${result.stdout}${result.stderr}`.replaceAll('\\', '/')
 }
 
+/** @returns A transient filename excluded from concurrent repository-wide glob discovery. */
+function hiddenProbeName(prefix: string, suffix: string, extension = '.ts'): string {
+  return `.${prefix}-${suffix}${extension}`
+}
+
 async function writeContractConfig(suffix: string): Promise<string> {
   const path = join(repositoryRoot, `.oxlintrc.contract-${suffix}.json`)
   await writeFile(path, JSON.stringify({ extends: ['./.oxlintrc.json'], ignorePatterns: [] }))
@@ -59,7 +64,8 @@ describe('Oxlint executable contract', () => {
       ['example', 'examples/headless-agent/tests', 'tsconfig.host.json'],
       ['website', 'website', 'tsconfig.host.json'],
     ] as const
-    const source = `export function probePromise(): Promise<void> {
+    const source = `/** Produce a settled promise for type-aware linting. */
+export function probePromise(): Promise<void> {
   return Promise.resolve()
 }
 
@@ -88,7 +94,7 @@ probePromise()
       expect(result.error).toBeUndefined()
       expect(result.status, output).toBe(1)
       for (const [label, path, tsconfig] of paths) {
-        expect(output, label).toContain(`${path.replaceAll('\\', '/')}:5:1: Promises must be awaited`)
+        expect(output, label).toContain(`${path.replaceAll('\\', '/')}:6:1: Promises must be awaited`)
         expect(output, `${label} project`).toContain(
           `Got tsconfig for file ${join(repositoryRoot, path).replaceAll('\\', '/')}: ${join(repositoryRoot, tsconfig).replaceAll('\\', '/')}`,
         )
@@ -110,7 +116,7 @@ probePromise()
   it('runs JavaScript compatibility and nursery rules', async () => {
     const suffix = randomUUID()
     const configPath = await writeContractConfig(suffix)
-    const path = join(repositoryRoot, 'scripts', `oxlint-contract-${suffix}.ts`)
+    const path = join(repositoryRoot, 'scripts', hiddenProbeName('oxlint-contract', suffix))
     const source = `export function firstProbe(): number {
   const first = 1
   const second = 2
@@ -230,7 +236,7 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
   it('reports an unused suppression', async () => {
     const suffix = randomUUID()
     const configPath = await writeContractConfig(suffix)
-    const path = join(repositoryRoot, 'scripts', `oxlint-contract-${suffix}.ts`)
+    const path = join(repositoryRoot, 'scripts', hiddenProbeName('oxlint-contract', suffix))
 
     try {
       await writeFile(path, '// oxlint-disable-next-line no-console\nexport const value = 1\n')
@@ -280,7 +286,7 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
     expect(stagedConfig.ignorePatterns).not.toContain('packages/typert/generator/tests/fixtures/type-model/**')
 
     const suffix = randomUUID()
-    const path = join(repositoryRoot, 'scripts', `staged-lint-probe-${suffix}.ts`)
+    const path = join(repositoryRoot, 'scripts', hiddenProbeName('staged-lint-probe', suffix))
     try {
       await writeFile(path, 'export const value={answer:1};\n')
       const lint = runOxlint([
@@ -303,7 +309,7 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
 
   it('preserves successful fix output channels', async () => {
     const suffix = randomUUID()
-    const path = join(repositoryRoot, 'scripts', `staged-lint-probe-${suffix}.ts`)
+    const path = join(repositoryRoot, 'scripts', hiddenProbeName('staged-lint-probe', suffix))
 
     try {
       await writeFile(path, '// oxlint-disable-next-line no-console\nexport const value = 1\n')
@@ -327,7 +333,7 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
 
   it('prints only the final diagnostics when a fix retry still fails', async () => {
     const suffix = randomUUID()
-    const path = join(repositoryRoot, 'scripts', `staged-lint-probe-${suffix}.ts`)
+    const path = join(repositoryRoot, 'scripts', hiddenProbeName('staged-lint-probe', suffix))
 
     try {
       await writeFile(path, `export const longProbe = ${'1 + '.repeat(80)}1\n`)

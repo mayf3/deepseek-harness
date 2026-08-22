@@ -19,11 +19,11 @@ Web Worker 转换语料库在原生 Windows 上暴露了同一类浪费：`trans
 - **插桩 gate**（`test:coverage`）：设 `DSH_COVERAGE_EXEMPT_HEAVY=1`，`vitest.config.ts` 据此从两个 project 的 exclude 中剔除豁免套件，其余全部文件照旧插桩并承担全部阈值证明。经 gate 自带 env 注入（既有 `Gate.env` 机制），不进 workflow 全局环境，因此并排的无插桩 gate 和本地直跑 `vitest run` 都看不到该变量、行为不变。
 - **无插桩 gate**（`test:coverage-exempt-heavy`）：用配对的 positional filter 恰好运行豁免套件，保证正确性信号不缩水。
 
-Linux 覆盖率 CI 与原生 Windows CI 在插桩门禁内部使用 [job 内分区覆盖率](2026-08-18-in-job-partitioned-coverage.zh.md)。其合并报告承担相同的阈值证明；豁免门禁及其成员资格规则保持不变。Linux 让两道门禁重叠运行。原生 Windows 在插桩报告合并后运行豁免门禁，同时让轻量观测性清单与豁免工作重叠，因此完整语料库子进程不会与十六个覆盖率进程争用资源。
+Linux 覆盖率 CI 与原生 Windows CI 在插桩门禁内部使用 [job 内分区覆盖率](2026-08-18-in-job-partitioned-coverage.zh.md)。其合并报告承担相同的阈值证明；豁免门禁及其成员资格规则保持不变。Linux 会让 4 个分区子进程、2 个豁免 worker 与最多 8 个语料库子进程重叠，因此该通道变慢时应先检查这组并发。原生 Windows 在插桩报告合并后运行豁免门禁，同时让轻量观测性清单与豁免工作重叠，因此完整语料库子进程不会与 16 个覆盖率进程争用资源。Oxlint 约定套件让包内临时探针满足并发源码检查，并把只属于脚本的探针对 glob 发现隐藏。
 
 `scripts/coverage-exempt.ts` 是唯一名单点，集中持有成员资格约定与 filter/exclude 配对，防止两侧漂移。
 
-`transform-corpus.spec.ts` 只发现一次完整的已构建 bundle 集合，把每条路径恰好分配给八个 Node loader 子进程之一，并在启动前断言分片并集。test-support 对与 ACL/win32-process 对在同一分片内保留原始顺序，因为它们固定的 Vitest 状态与 Koffi 豁免依赖前序模块状态。
+`transform-corpus.spec.ts` 只发现一次完整的已构建 bundle 集合，把每条路径恰好分配给最多 8 个非空 Node loader 子进程之一，并在启动前断言分片并集。`client-runtime` 会为固定的 Vitest 状态豁免跟在 `acp-snapshot` 之后，`win32-process` 则会为固定的 Koffi 豁免跟在 `sandbox-windows-acl` 之后。
 
 ### 豁免名单与逐项对账
 
@@ -69,7 +69,7 @@ Web Worker 语料库条目由分区聚合固定：它执行全部 15,250 个测�
 
 - 豁免套件在执行时不会向阈值门禁叠加插桩开销；分区墙钟数据由 [job 内分区决策](2026-08-18-in-job-partitioned-coverage.zh.md)负责记录。
 - 原生 Windows 在插桩覆盖率后调度豁免套件，并让它们与观测性检查重叠；Linux 保留并行覆盖率拆分。
-- 语料库套件使用八个 Node loader 子进程，但只产生一个阻断性测试结果；其亲和名单属于豁免判定器，受影响 bundle 移动时必须同步更新。
+- 语料库套件使用最多 8 个非空 Node loader 子进程，但只产生一个阻断性测试结果；其亲和名单属于豁免判定器，受影响 bundle 移动时必须同步更新。
 - `DSH_GATE_CONCURRENCY` 在本 lane 重新拥有两个可调度对象，聚合调度器不再是直通。
 - 向名单新增重型套件必须完成上述成员资格对账；错误条目会让插桩 gate 大声失败，而不是静默侵蚀覆盖率。
 - 豁免套件不再出现在覆盖率报告的贡献文件列表中；其正确性信号完全由无插桩 gate 的红绿承载。

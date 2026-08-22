@@ -19,11 +19,11 @@ The `ci-coverage` aggregate splits into two parallel gates; every test still run
 - **Instrumented gate** (`test:coverage`): sets `DSH_COVERAGE_EXEMPT_HEAVY=1`, which makes `vitest.config.ts` drop the exempt suites from both projects' excludes; every remaining file runs instrumented and carries the entire threshold proof. The variable is injected through the gate's own env (the existing `Gate.env` mechanism), not the workflow-global environment, so the uninstrumented gate beside it and any local `vitest run` never see it and behave unchanged.
 - **Uninstrumented gate** (`test:coverage-exempt-heavy`): runs exactly the exempt suites through paired positional filters, keeping the correctness signal whole.
 
-Linux coverage CI and native Windows CI use [in-job partitioned coverage](2026-08-18-in-job-partitioned-coverage.md) inside the instrumented gate. Its merged report carries the same threshold proof; the exempt gate and its membership rules remain unchanged. Linux overlaps the two gates. Native Windows runs the exempt gate after the instrumented merge, while the lightweight observational inventory overlaps the exempt work, so the full-corpus child does not compete with sixteen coverage processes.
+Linux coverage CI and native Windows CI use [in-job partitioned coverage](2026-08-18-in-job-partitioned-coverage.md) inside the instrumented gate. Its merged report carries the same threshold proof; the exempt gate and its membership rules remain unchanged. Linux overlaps four partition children, two exempt workers, and up to eight corpus children, so this combined fan-out is the first check if that lane regresses. Native Windows runs the exempt gate after the instrumented merge, while the lightweight observational inventory overlaps the exempt work, so the full-corpus child does not compete with sixteen coverage processes. The Oxlint contract suite keeps temporary package probes valid under concurrent source checks and hides its script-only probes from glob discovery.
 
 `scripts/coverage-exempt.ts` is the single roster point, holding the membership contract and the filter/exclude pairs so the two sides cannot drift.
 
-`transform-corpus.spec.ts` discovers the complete built-bundle set once, assigns every path to exactly one of eight Node-loader children, and asserts the shard union before launch. The test-support pair and the ACL/win32-process pair retain their original order in one shard because their pinned Vitest-state and Koffi exemptions depend on preceding module state.
+`transform-corpus.spec.ts` discovers the complete built-bundle set once, assigns every path to exactly one of up to eight non-empty Node-loader children, and asserts the shard union before launch. `client-runtime` follows `acp-snapshot` for its pinned Vitest-state exemption, while `win32-process` follows `sandbox-windows-acl` for its pinned Koffi exemption.
 
 ### The roster, reconciled entry by entry
 
@@ -69,7 +69,7 @@ The eight-child corpus run checks the same 239 native Windows bundles with 234 e
 
 - The exempt suites execute without adding instrumentation cost to the thresholded gate; partitioned wall-clock measurements belong to the [in-job partitioning decision](2026-08-18-in-job-partitioned-coverage.md).
 - Native Windows schedules the exempt suites after instrumented coverage and overlaps them with observational checks; Linux retains the parallel coverage split.
-- The corpus suite uses eight child Node loaders but emits one blocking test result; its affinity roster is part of the exemption oracle and must move with affected bundles.
+- The corpus suite uses up to eight non-empty child Node loaders but emits one blocking test result; its affinity roster is part of the exemption oracle and must move with affected bundles.
 - `DSH_GATE_CONCURRENCY` has two schedulable gates in this lane again, so the aggregate scheduler is no longer a pass-through.
 - Adding a heavy suite to the roster requires the membership audit above; a wrong entry fails the instrumented gate loudly rather than eroding coverage silently.
 - The exempt suites no longer appear in the coverage report's file list of contributors; their correctness signal lives solely in the uninstrumented gate's pass/fail.
