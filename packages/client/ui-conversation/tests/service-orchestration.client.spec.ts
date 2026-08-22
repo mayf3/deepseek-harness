@@ -5,16 +5,15 @@
 // tag probe).
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
-import type { QueuedMessage, SessionFace } from '@deepseek-ai/dsh-client-runtime/client'
+import type { QueuedMessage } from '@deepseek-ai/dsh-api-session-controller/client'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
 import { InputHub } from '../src/client/input/hub.ts'
 import { PendingInteractionPresenter } from '../src/client/pending-interactions.ts'
 import { ConversationController, UnsupportedImageMediaTypeError } from '../src/client/service.ts'
 import { zh } from '../src/client/locales.ts'
 
-async function bench(readAttachment?: SessionFace['readAttachment']) {
+async function bench() {
   const runtime = await SlotTestRuntime.create()
   const prompt = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
   const updateQueue = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
@@ -22,7 +21,7 @@ async function bench(readAttachment?: SessionFace['readAttachment']) {
   const loadOlder = vi.fn(() => Promise.resolve())
   await runtime.sessions.add({
     id: 's1',
-    session: { prompt, updateQueue, cancel, loadOlder, ...(readAttachment === undefined ? {} : { readAttachment }) },
+    session: { prompt, updateQueue, cancel, loadOlder },
   })
   // config.input is required (the apply shares its hub with the inject
   // factories); the bench passes its own instance explicitly.
@@ -117,27 +116,13 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
-  it('invalidates pending historical image loads when the rendered session is released', async () => {
-    const read = Promise.withResolvers<Awaited<ReturnType<SessionFace['readAttachment']>>>()
-    const b = await bench(() => read.promise)
-    const sessionId = b.runtime.sessions.behavior('s1').sessionId
-    const attachment = {
-      attachmentId: AttachmentId('image-1'), mediaType: 'image/png', bytes: 1, width: 1, height: 1,
-    } as const
-    const pending = b.root.resolveImage(sessionId, attachment)
-    b.root.releaseSessionImages(sessionId)
-    read.resolve({ ok: true, value: { attachment, data: Uint8Array.of(1) } })
-    await expect(pending).rejects.toThrow('historical image scope was released')
-    await b.runtime.dispose()
-  })
-
-  it('fails loudly from the root scope, on an unbound session, or without SessionRuntime', async () => {
+  it('fails loudly from the root scope, on an unbound session, or without Client Sessions', async () => {
     const b = await bench()
     await expect(b.root.send('x')).rejects.toThrow(/requires a session scope/)
     await b.runtime.sessions.remove('s1')
     await expect(b.scoped.send('x')).rejects.toThrow(/resolved no binding/)
     await b.runtime.dispose()
-    // No SessionRuntime at all: a bare context (the runtime always provides one).
+    // No Client Sessions service at all: a bare context lacks the assembled controller.
     const bare = new Context()
     await bare.plugin(ConversationController, {
       input: new InputHub(bare, makeTranslate(zh, {})),
@@ -161,7 +146,7 @@ describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
 
   it('steers every queued row in FIFO order and leaves steering rows alone', async () => {
     const b = await bench()
-    await b.runtime.sessions.updateSnapshot('s1', (draft) => {
+    await b.runtime.sessions.updateSessionSnapshot('s1', (draft) => {
       draft.queue = [row('q-1'), { ...row('q-2'), placement: 'steering' }, row('q-3')]
     })
     b.shell.steerQueue()
@@ -176,7 +161,7 @@ describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
 
   it('converges silently when the turn closes or a row is claimed mid-steer', async () => {
     const b = await bench()
-    await b.runtime.sessions.updateSnapshot('s1', (draft) => {
+    await b.runtime.sessions.updateSessionSnapshot('s1', (draft) => {
       draft.queue = [row('q-1'), row('q-2')]
     })
     // The turn closes before the second row: the flush stops, silently.
@@ -189,7 +174,7 @@ describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
 
     // A row the host already claimed (e.g. a repeated empty-draft chord):
     // the duplicate strict steer is a silent no-op.
-    await b.runtime.sessions.updateSnapshot('s1', (draft) => {
+    await b.runtime.sessions.updateSessionSnapshot('s1', (draft) => {
       draft.queue = [row('q-3')]
     })
     b.updateQueue.mockResolvedValueOnce({
@@ -203,7 +188,7 @@ describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
 
   it('surfaces one notice on a genuine steer failure and stops', async () => {
     const b = await bench()
-    await b.runtime.sessions.updateSnapshot('s1', (draft) => {
+    await b.runtime.sessions.updateSessionSnapshot('s1', (draft) => {
       draft.queue = [row('q-1'), row('q-2')]
     })
     b.updateQueue.mockResolvedValueOnce({

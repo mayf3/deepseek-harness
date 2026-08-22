@@ -1,9 +1,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {
-  AssistantMessageNode, ConversationNode, ConversationPromptSnapshot,
-  ConversationViewBuilder, ConversationViewDefinition, RequestView,
-  ToolCallBlock,
-} from '@deepseek-ai/dsh-client-runtime/client'
+  AssistantMessageNode, ConversationNode, ConversationPromptSnapshot, ConversationViewBuilder,
+  ConversationViewDefinition, RequestView, ToolCallBlock,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   TrajectoryConversationViewNode, TrajectoryRequestHeaderState,
   TrajectorySnapshot,
@@ -280,5 +279,5 @@ export const trajectoryViewDefinition: ConversationViewDefinition<
  * @param ctx - Plugin context receiving the view Definition.
  */
 export function registerTrajectoryConversationView(ctx: Context): void {
-  ctx.conversationViews.register(trajectoryViewDefinition)
+  ctx.uiConversation.views.register(trajectoryViewDefinition)
 }
