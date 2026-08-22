@@ -148,11 +148,13 @@ export class WebhookRuntime extends Service {
         )
       }
     }).catch((error: unknown) => {
-      this.selfCtx.logger.warn(
-        `webhook: provider=${JSON.stringify(delivery.kind)} source=${JSON.stringify(delivery.source)} `
-        + `delivery=${JSON.stringify(delivery.deliveryId)} rule=${JSON.stringify(registration.rule.id)} `
-        + `failed: ${errorChain(error)}`,
-      )
+      const invocation = `webhook: provider=${JSON.stringify(delivery.kind)} source=${JSON.stringify(delivery.source)} `
+        + `delivery=${JSON.stringify(delivery.deliveryId)} rule=${JSON.stringify(registration.rule.id)}`
+      if (registration.controller.signal.aborted) {
+        this.selfCtx.logger.debug(`${invocation} stopped after disposal: ${errorChain(error)}`)
+      } else {
+        this.selfCtx.logger.warn(`${invocation} failed: ${errorChain(error)}`)
+      }
     }).finally(() => {
       registration.active.delete(tracked)
     })

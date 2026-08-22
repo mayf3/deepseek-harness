@@ -107,7 +107,8 @@ describe('WebhookRuntime', () => {
   })
 
   it('hides, aborts, and drains a registration before disposal resolves', async () => {
-    const { runtime } = harness()
+    const { ctx, runtime } = harness()
+    const warnings = vi.spyOn(ctx.logger, 'warn')
     const entered = Promise.withResolvers<AbortSignal>()
     const finished = Promise.withResolvers<boolean>()
     let calls = 0
@@ -133,6 +134,7 @@ describe('WebhookRuntime', () => {
     await finished.promise
     expect(calls).toBe(1)
     await expect(dispose()).resolves.toBeUndefined()
+    expect(warnings).not.toHaveBeenCalled()
   })
 
   it('aborts active rules and refuses later work when the runtime disposes', async () => {
@@ -241,7 +243,7 @@ describe('WebhookRuntime', () => {
     ctx.provide('sessionTitle', { rename: () => ({}) } as never)
     ctx.provide('agents', {
       create: async (options: { setup?: (agentCtx: unknown) => Promise<void> }) => {
-        await options.setup?.({})
+        await options.setup?.({ on: () => () => {} })
         return {
           agent: {
             session,
