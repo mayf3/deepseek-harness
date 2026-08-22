@@ -7,6 +7,8 @@ import { ReasoningEffortId, type LlmCallConfig, type LlmRuntime } from '@deepsee
 
 const MODEL_CONFIG_ID = 'model'
 const REASONING_CONFIG_ID = 'reasoning_effort'
+// DSH reasoning effort ids are non-empty, so the empty opaque ACP value is a disjoint provider-default choice.
+const PROVIDER_DEFAULT_REASONING_VALUE = ''
 
 interface ModelChoice {
   selection: ModelSelection
@@ -111,13 +113,18 @@ export class AcpModelControl {
         this.selected = selected
       } else if (configId === REASONING_CONFIG_ID) {
         const info = await this.llm.resolveModelInfo(current.provider, current.model, signal)
-        if (info.reasoning === undefined || !info.reasoning.efforts.some(effort => effort.id === value)) {
+        const providerDefault = value === PROVIDER_DEFAULT_REASONING_VALUE
+          && info.reasoning?.defaultEffort === undefined
+        if (
+          info.reasoning === undefined
+          || (!providerDefault && !info.reasoning.efforts.some(effort => effort.id === value))
+        ) {
           throw new AcpModelConfigError(`unknown reasoning effort for ${current.provider}/${current.model}: ${value}`)
         }
         this.selected = await this.resolveSelection({
           provider: current.provider,
           model: current.model,
-          reasoningEffort: ReasoningEffortId(value),
+          ...providerDefault ? {} : { reasoningEffort: ReasoningEffortId(value) },
         }, signal)
       } else {
         throw new AcpModelConfigError(`unknown session config option: ${configId}`)
@@ -189,18 +196,25 @@ export class AcpModelControl {
     const info = routeAvailable
       ? await this.llm.resolveModelInfo(resolved.provider, resolved.model, signal)
       : undefined
-    if (info?.reasoning !== undefined && resolved.reasoningEffort !== undefined) {
+    if (info?.reasoning !== undefined) {
       options.push({
         id: REASONING_CONFIG_ID,
         name: 'Reasoning effort',
         category: 'thought_level',
         type: 'select',
-        currentValue: String(resolved.reasoningEffort),
-        options: info.reasoning.efforts.map(effort => ({
-          value: String(effort.id),
-          name: effort.name,
-          ...effort.description === undefined ? {} : { description: effort.description },
-        })),
+        currentValue: resolved.reasoningEffort === undefined
+          ? PROVIDER_DEFAULT_REASONING_VALUE
+          : String(resolved.reasoningEffort),
+        options: [
+          ...info.reasoning.defaultEffort === undefined
+            ? [{ value: PROVIDER_DEFAULT_REASONING_VALUE, name: 'Provider default' }]
+            : [],
+          ...info.reasoning.efforts.map(effort => ({
+            value: String(effort.id),
+            name: effort.name,
+            ...effort.description === undefined ? {} : { description: effort.description },
+          })),
+        ],
       })
     }
     return { choices, options }

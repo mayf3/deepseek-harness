@@ -77,6 +77,30 @@ describe('ACP MCP declaration mapping', () => {
     }], process.cwd())).rejects.toThrow(/absolute HTTP/)
   })
 
+  it('preserves legal names that collide with Object prototype setters', async () => {
+    const { ctx, configs } = captureContext()
+
+    await mountAcpMcpServers(ctx, [
+      {
+        name: 'stdio',
+        command: process.execPath,
+        args: [],
+        env: [{ name: '__proto__', value: 'environment-value' }],
+      },
+      {
+        type: 'http',
+        name: 'http',
+        url: 'https://example.test/mcp',
+        headers: [{ name: '__proto__', value: 'header-value' }],
+      },
+    ], process.cwd())
+
+    expect(configs[0]?.transport === 'stdio' && Object.hasOwn(configs[0].env, '__proto__')).toBe(true)
+    expect(configs[0]?.transport === 'stdio' && configs[0].env['__proto__']).toBe('environment-value')
+    expect(configs[1]?.transport === 'streamable-http' && Object.hasOwn(configs[1].headers, '__proto__')).toBe(true)
+    expect(configs[1]?.transport === 'streamable-http' && configs[1].headers['__proto__']).toBe('header-value')
+  })
+
   it('maps provider schema failures into the indexed declaration error', async () => {
     const { ctx } = captureContext()
     const malformed = {

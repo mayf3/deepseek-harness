@@ -36,7 +36,7 @@ Persistence deliberately treats `create(meta)` as a live registration: JSONL cre
 
 ## Standard configuration options
 
-The advisory LLM catalog now serves another automation consumer without becoming request validation. ACP exposes a provider-grouped `model` select whose opaque values retain the provider/model pair, plus a dependent `reasoning_effort` select from the resolved exact model. New, resume, and set responses return the complete state. Adapter topology events emit `config_option_update`; per-session mutations serialize in receive order. The configured ACP provider/model remains the initial selection, and unlisted configured routes are synthesized into the returned choices instead of being rejected.
+The advisory LLM catalog now serves another automation consumer without becoming request validation. ACP exposes a provider-grouped `model` select whose opaque values retain the provider/model pair, plus a dependent `reasoning_effort` select from the resolved exact model. A model with efforts but no adapter-configured default includes `Provider default`, which preserves omission and lets the provider choose. New, resume, and set responses return the complete state. Adapter topology events emit `config_option_update`; per-session mutations serialize in receive order. The configured ACP provider/model remains the initial selection, and unlisted configured routes are synthesized into the returned choices instead of being rejected.
 
 ## Standard MCP mapping
 

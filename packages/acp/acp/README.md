@@ -42,7 +42,7 @@ Unsupported surfaces are omitted from capabilities or reject when addressed: `se
 Every new or resumed session returns standard select options:
 
 - `model` groups choices by provider from the advisory LLM catalog. Values are opaque strings carrying the exact provider/model pair; clients must return them unchanged.
-- `reasoning_effort` is derived from the selected exact model and is omitted when that model does not declare reasoning choices.
+- `reasoning_effort` is derived from the selected exact model and is omitted when that model does not declare reasoning choices. When the adapter exposes choices but preserves the provider's own default, a `Provider default` choice represents omitting an explicit effort.
 
 The ACP plugin's `provider` and `model` config establish the initial selection. Adapter topology changes emit `config_option_update` with the complete current state. Mutations are serialized per session.
 

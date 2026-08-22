@@ -44,7 +44,7 @@
 每个新建或恢复的会话都会返回标准 select 选项：
 
 - `model` 根据建议性 LLM catalog 按提供方分组。值是不透明字符串，携带确切的提供方／模型对；客户端必须原样返回。
-- `reasoning_effort` 来自所选确切模型；该模型未声明推理选项时省略。
+- `reasoning_effort` 来自所选确切模型；该模型未声明推理选项时省略。如果 adapter 公开选项但保留提供方自身默认值，`Provider default` 选项表示不显式指定 effort。
 
 ACP 插件的 `provider` 和 `model` 配置建立初始选择。Adapter 拓扑变化会发送包含完整当前状态的 `config_option_update`。每个会话会串行处理配置变更。
 

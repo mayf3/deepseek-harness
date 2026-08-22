@@ -45,25 +45,29 @@ function resolveMcpConfigs(servers: readonly McpServer[], sessionCwd: string): M
       if (!isAbsolute(server.command)) {
         throw new AcpMcpConfigError(`mcpServers[${index}].command must be an absolute path`)
       }
-      return validateClientConfig(index, () => McpClient.Config({
+      const env = entriesToRecord(server.env, `mcpServers[${index}].env`, 'environment')
+      const config = validateClientConfig(index, () => McpClient.Config({
         transport: 'stdio',
         serverName,
         command: server.command,
         args: server.args,
-        env: entriesToRecord(server.env, `mcpServers[${index}].env`, 'environment'),
+        env,
         cwd: sessionCwd,
         failOnStartupError: true,
       }))
+      return { ...config, env }
     }
     if (server.type === 'http') {
       assertHttpUrl(server.url, `mcpServers[${index}].url`)
-      return validateClientConfig(index, () => McpClient.Config({
+      const headers = entriesToRecord(server.headers, `mcpServers[${index}].headers`, 'header')
+      const config = validateClientConfig(index, () => McpClient.Config({
         transport: 'streamable-http',
         serverName,
         url: server.url,
-        headers: entriesToRecord(server.headers, `mcpServers[${index}].headers`, 'header'),
+        headers,
         failOnStartupError: true,
       }))
+      return { ...config, headers }
     }
     throw new AcpMcpConfigError(`mcpServers[${index}] transport ${server.type} is not supported`)
   })
@@ -75,7 +79,9 @@ function entriesToRecord(
   field: string,
   kind: 'environment' | 'header',
 ): Record<string, string> {
-  const result: Record<string, string> = {}
+  // Valid environment and header names include "__proto__"; a null prototype
+  // keeps that entry as data instead of invoking Object.prototype's setter.
+  const result = Object.create(null) as Record<string, string>
   const names = new Set<string>()
   for (const entry of entries) {
     if (kind === 'header') {

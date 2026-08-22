@@ -36,7 +36,7 @@
 
 ## 标准配置选项
 
-建议性 LLM catalog 现在服务于另一个自动化 consumer，但不会成为请求校验。ACP 公开按提供方分组的 `model` select，其不透明值保留提供方／模型对；还会公开来自已解析确切模型的依赖 `reasoning_effort` select。新建、恢复和设置响应都返回完整状态。Adapter 拓扑事件发出 `config_option_update`；每个会话按接收顺序串行处理变更。配置的 ACP 提供方／模型仍是初始选择；未列出的配置路由会合成到返回选项中，而不会被拒绝。
+建议性 LLM catalog 现在服务于另一个自动化 consumer，但不会成为请求校验。ACP 公开按提供方分组的 `model` select，其不透明值保留提供方／模型对；还会公开来自已解析确切模型的依赖 `reasoning_effort` select。具有 efforts 但没有 adapter 配置默认值的模型会包含 `Provider default`，以保留省略状态并让提供方自行选择。新建、恢复和设置响应都返回完整状态。Adapter 拓扑事件发出 `config_option_update`；每个会话按接收顺序串行处理变更。配置的 ACP 提供方／模型仍是初始选择；未列出的配置路由会合成到返回选项中，而不会被拒绝。
 
 ## 标准 MCP 映射
 

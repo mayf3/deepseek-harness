@@ -244,6 +244,28 @@ describe('automation-only ACP bridge', () => {
     await expect(first).resolves.toHaveProperty('configOptions')
   })
 
+  it('excludes a globally live session owned outside this ACP bridge', async () => {
+    harness = await makeBridgeHarness()
+    await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+    const sessionId = SessionId('other-frontend-live')
+    harness.ctx.sessions.create(sessionId, { meta: { cwd: process.cwd() } })
+    vi.spyOn(harness.ctx.sessionPersistence, 'list').mockResolvedValue([{
+      version: 0,
+      id: sessionId,
+      createdAt: 1,
+      cwd: process.cwd(),
+    }])
+    const resume = vi.spyOn(harness.ctx.agents, 'resume')
+
+    await expect(harness.client.listSessions({})).resolves.toEqual({ sessions: [] })
+    await expect(harness.client.resumeSession({
+      sessionId,
+      cwd: process.cwd(),
+      mcpServers: [],
+    })).rejects.toThrow(/already active/)
+    expect(resume).not.toHaveBeenCalled()
+  })
+
   it('rejects unknown resume ids and rolls back invalid resume MCP', async () => {
     harness = await makeBridgeHarness({ script: [textResponse('persisted')] })
     await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
@@ -400,6 +422,7 @@ describe('automation-only ACP bridge', () => {
     await expect(harness.client.newSession({ cwd: process.cwd(), mcpServers: [] }))
       .rejects.toThrow(/Internal error/)
     expect(harness.ctx.agents.list()).toHaveLength(0)
+    await expect(harness.ctx.sessionPersistence.list()).resolves.toEqual([])
 
     const created = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
     await harness.client.prompt({ sessionId: created.sessionId, prompt: [{ type: 'text', text: 'persist' }] })
@@ -503,6 +526,30 @@ describe('automation-only ACP bridge', () => {
       expect(model.options.some(option => 'group' in option && option.group === 'other')).toBe(true)
     })
     expect(harness.sessionUpdates.at(-1)?.sessionId).toBe(created.sessionId)
+  })
+
+  it('does not let hung topology discovery block prompt completion or close', async () => {
+    harness = await makeBridgeHarness({ script: [textResponse('still responsive')] })
+    await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+    const created = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
+    const original = harness.ctx.llm.listModels.bind(harness.ctx.llm)
+    const blocked = Promise.withResolvers<Awaited<ReturnType<typeof original>>>()
+    const listModels = vi.spyOn(harness.ctx.llm, 'listModels').mockImplementation((provider: string) => (
+      provider === 'hung' ? blocked.promise : original(provider)
+    ))
+
+    try {
+      harness.registerCatalogProvider('hung')
+      await vi.waitFor(() => { expect(listModels).toHaveBeenCalledWith('hung') })
+      await expect(harness.client.prompt({
+        sessionId: created.sessionId,
+        prompt: [{ type: 'text', text: 'continue while discovery is pending' }],
+      })).resolves.toEqual({ stopReason: 'end_turn' })
+      await expect(harness.client.closeSession({ sessionId: created.sessionId })).resolves.toEqual({})
+    } finally {
+      blocked.resolve([])
+      listModels.mockRestore()
+    }
   })
 
   it('publishes recoverable options when the selected adapter disappears', async () => {

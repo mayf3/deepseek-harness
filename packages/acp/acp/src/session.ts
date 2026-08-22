@@ -211,19 +211,25 @@ export class AcpSession {
     return this.modelControl.set(configId, value, signal)
   }
 
-  /** Queue a complete option-state update after every earlier session update. */
+  /** Resolve topology state off-chain, then serialize its notification without blocking execution updates. */
   topologyChanged(): void {
     if (this.closing !== undefined) return
-    const previous = this.outputTail
-    this.outputTail = previous
-      .then(async () => this.notify({
-        sessionId: this.agent.session.id,
-        update: {
-          sessionUpdate: 'config_option_update',
-          configOptions: await this.modelControl.options(),
-        },
-      }))
-      /* v8 ignore start -- option discovery contains per-provider failure and the bridge notifier contains transport failure. */
+    void this.modelControl.options()
+      .then((configOptions) => {
+        if (this.closing !== undefined) return
+        const previous = this.outputTail
+        this.outputTail = previous
+          .then(() => this.notify({
+            sessionId: this.agent.session.id,
+            update: { sessionUpdate: 'config_option_update', configOptions },
+          }))
+          /* v8 ignore start -- the bridge notifier contains transport failure. */
+          .catch((error: unknown) => {
+            this.ctx.logger.warn(`acp: config-option update failed: ${errorChain(error)}`)
+          })
+        /* v8 ignore stop */
+      })
+      /* v8 ignore start -- option discovery contains per-provider failure. */
       .catch((error: unknown) => {
         this.ctx.logger.warn(`acp: config-option update failed: ${errorChain(error)}`)
       })
@@ -404,7 +410,10 @@ export class AcpSession {
    */
   onAgentError(turn: number, error: unknown): void {
     const inflight = this.inflight
-    if (inflight === undefined || !inflight.messageQueued || inflight.turn === turn) return
+    if (inflight === undefined || !inflight.messageQueued) return
+    // AgentLoop balances an in-turn failure with durable turn/end; settlement
+    // reads that exact error reason. This slot records interval failures outside it.
+    if (inflight.turn === turn) return
     inflight.agentError = new Error(errorChain(error))
     this.settleAfterQuiescence(inflight)
   }

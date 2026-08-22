@@ -85,7 +85,7 @@ export interface AcpConfig {
 export const Config: Schema<AcpConfig> = Schema.object({
   provider: Schema.string(),
   model: Schema.string(),
-  sessionListPageSize: Schema.natural().min(1).default(100),
+  sessionListPageSize: Schema.natural().min(1).default(DEFAULT_SESSION_LIST_PAGE_SIZE),
 })
 
 /**
@@ -222,9 +222,11 @@ export function apply(ctx: Context, config: AcpConfig): void {
       }
       sessions.set(sessionId, record)
       try {
+        const configOptions = await record.configOptions(signal)
+        assertOpen()
         await persistence.ensureMaterialized(record.agent.session)
         assertOpen()
-        return { sessionId, configOptions: await record.configOptions(signal) }
+        return { sessionId, configOptions }
       } catch (error: unknown) {
         sessions.delete(sessionId)
         await record.close('session/new activation failed')
@@ -236,7 +238,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
       assertOpen()
       validateWorkspaceParams(params)
       const sessionId = SessionId(params.sessionId)
-      if (sessions.has(sessionId) || activating.has(sessionId)) {
+      if (sessions.has(sessionId) || activating.has(sessionId) || ctx.sessions.get(sessionId) !== undefined) {
         throw invalidParams(`session is already active: ${sessionId}`)
       }
       activating.add(sessionId)
@@ -301,6 +303,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
         if (
           sessions.has(header.id)
             || activating.has(header.id)
+            || ctx.sessions.get(header.id) !== undefined
             || header.origin === 'subagent'
             || header.parentSession !== undefined
             || header.cwd === undefined
@@ -313,7 +316,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
       }))
       const entries = filtered
         .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined)
-        .sort((left, right) => right.createdAt - left.createdAt || String(left.sessionId).localeCompare(String(right.sessionId)))
+        .sort((left, right) => right.createdAt - left.createdAt || compareSessionIds(left.sessionId, right.sessionId))
       const remaining = cursor === undefined
         ? entries
         : entries.filter(entry => isAfterSessionListCursor(entry, cursor))
@@ -499,7 +502,12 @@ function encodeSessionListCursor(entry: SessionListCursor): string {
 /** Test whether an entry follows the cursor in newest-first list order. */
 function isAfterSessionListCursor(entry: SessionListCursor, cursor: SessionListCursor): boolean {
   return entry.createdAt < cursor.createdAt
-    || (entry.createdAt === cursor.createdAt && entry.sessionId.localeCompare(cursor.sessionId) > 0)
+    || (entry.createdAt === cursor.createdAt && compareSessionIds(entry.sessionId, cursor.sessionId) > 0)
+}
+
+/** Compare opaque session ids by stable UTF-8 bytes, independent of process locale. */
+function compareSessionIds(left: string, right: string): number {
+  return Buffer.compare(Buffer.from(left), Buffer.from(right))
 }
 
 /** Reject workspace features outside the automation contract. */

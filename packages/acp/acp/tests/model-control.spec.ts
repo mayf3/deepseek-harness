@@ -93,4 +93,39 @@ describe('ACP model configuration control', () => {
 
     expect(options.find(option => option.id === 'reasoning_effort')).toMatchObject({ currentValue: 'low' })
   })
+
+  it('exposes and restores a provider-owned reasoning default', async () => {
+    const runtime = llmRuntime({
+      resolveCallConfig: (selection: { provider?: string; model?: string; reasoningEffort?: string }) => Promise.resolve({
+        provider: selection.provider ?? 'mock',
+        model: selection.model ?? 'mock',
+        ...selection.reasoningEffort === undefined
+          ? {}
+          : { reasoningEffort: ReasoningEffortId(selection.reasoningEffort) },
+      }),
+      resolveModelInfo: (provider: string, model: string) => Promise.resolve({
+        provider,
+        id: model,
+        name: model,
+        reasoning: {
+          efforts: [
+            { id: ReasoningEffortId('low'), name: 'Low' },
+            { id: ReasoningEffortId('high'), name: 'High' },
+          ],
+        },
+      }),
+    })
+    const control = new AcpModelControl(runtime, { provider: 'mock', model: 'mock' })
+
+    const initial = await control.options()
+    expect(initial.find(option => option.id === 'reasoning_effort')).toMatchObject({
+      currentValue: '',
+      options: [{ value: '', name: 'Provider default' }, { value: 'low' }, { value: 'high' }],
+    })
+    await control.set('reasoning_effort', 'low')
+    const restored = await control.set('reasoning_effort', '')
+
+    expect(restored.find(option => option.id === 'reasoning_effort')).toMatchObject({ currentValue: '' })
+    expect(control.selection.current).toEqual({ provider: 'mock', model: 'mock' })
+  })
 })
