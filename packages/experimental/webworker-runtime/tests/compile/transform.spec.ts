@@ -14,8 +14,7 @@
  *
  * The trap cases are module forms that break a boot when the transform
  * mishandles them. Five traps cannot recur while the AST pass is the parser,
- * but they stay checked because a future parser swap would reintroduce exactly
- * them.
+ * but they stay checked because a future parser swap could reintroduce them.
  */
 import { expect, test } from 'vitest'
 import { parse } from 'acorn'
