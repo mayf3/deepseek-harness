@@ -14,7 +14,7 @@ English | [中文](2026-07-20-todo-event-ownership.zh.md)
 
 Consumers that inspect todo records use type-only imports plus explicit package dependencies and TypeScript project references. The emitted JavaScript has no todo import, and a composition does not need to mount the todo tool merely to search, transmit, or render a log that may contain `todo/write`.
 
-The todo invariant companion owns both the payload rules and the event's relationship to an open turn. Core session's merge-extensible switch falls through for `todo/write`, while the todo companion rejects malformed snapshots and snapshots outside an open turn before append, and validates the same rules when mounted over existing sessions. Todo-specific append, replay, projection, and enclosure tests live with the todo package. The model-facing behavior remains owned by the [`todo_write` feature decision](../feature/2026-06-29-todo-write-tool.md).
+The todo invariant companion owns both the payload rules and the event's relationship to an open turn. Core session's merge-extensible switch falls through for `todo/write`, while the todo companion rejects malformed snapshots and snapshots outside an open turn before append. It validates existing and newly announced sessions in one pass and advances a committed per-session turn trace for later events. Todo-specific append, replay, projection, and enclosure tests live with the todo package. The model-facing behavior remains owned by the [`todo_write` feature decision](../feature/2026-06-29-todo-write-tool.md).
 
 ## Verification
 

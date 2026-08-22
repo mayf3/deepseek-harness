@@ -780,7 +780,7 @@ Source: [`packages/experimental/agent-team/src/types.ts:208`](../packages/experi
 'todo/write': { todos: TodoItem[] }
 ```
 
-Types: [TodoItem](../packages/todo/tool-todo/README.md)
+Types: [TodoItem](subsystems/todo.md)
 
 Source: [`packages/todo/tool-todo/src/types.ts:31`](../packages/todo/tool-todo/src/types.ts)
 

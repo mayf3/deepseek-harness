@@ -14,7 +14,7 @@ Status: implemented
 
 检查 todo 记录的消费方使用仅类型导入，并声明显式包依赖与 TypeScript 项目引用。产出的 JavaScript 不含 todo 导入；组合仅为了搜索、传输或渲染可能含有 `todo/write` 的日志时，无需挂载 todo 工具。
 
-todo 不变量配套插件同时拥有 payload 规则和事件必须位于开放轮次内的关系。核心会话的可合并扩展 switch 对 `todo/write` 走默认分支；todo 配套插件会在追加前拒绝格式错误或位于开放轮次之外的快照，并在挂载到现有会话时校验相同规则。todo 专属的追加、回放、投影和轮次封闭测试与 todo 包放在一起。面向模型的行为仍由 [`todo_write` 功能决策](../feature/2026-06-29-todo-write-tool.zh.md)负责。
+todo 不变量配套插件同时拥有 payload 规则和事件必须位于开放轮次内的关系。核心会话的可合并扩展 switch 对 `todo/write` 走默认分支；todo 配套插件会在追加前拒绝格式错误或位于开放轮次之外的快照。它会单次校验现有会话与新发布的会话，并为后续事件推进逐会话的已提交轮次追踪状态。todo 专属的追加、回放、投影和轮次封闭测试与 todo 包放在一起。面向模型的行为仍由 [`todo_write` 功能决策](../feature/2026-06-29-todo-write-tool.zh.md)负责。
 
 ## 验证
 

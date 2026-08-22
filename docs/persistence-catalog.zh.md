@@ -782,7 +782,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'todo/write': { todos: TodoItem[] }
 ```
 
-类型：[TodoItem](../packages/todo/tool-todo/README.zh.md)
+类型：[TodoItem](subsystems/todo.zh.md)
 
 来源：[`packages/todo/tool-todo/src/types.ts:31`](../packages/todo/tool-todo/src/types.ts)
 

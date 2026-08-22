@@ -44,7 +44,7 @@ const LINK_MAP: Record<string, string> = {
   ScheduleChange: 'subsystems/schedule.md',
   StreamChunk: 'subsystems/llm-streaming.md',
   TokenUsage: 'subsystems/llm-streaming.md',
-  TodoItem: '../packages/todo/tool-todo/README.md',
+  TodoItem: 'subsystems/todo.md',
   TurnTrigger: 'subsystems/session.md',
   TurnEndReason: 'subsystems/session.md',
   SessionTitleEventData: 'subsystems/session-title.md',

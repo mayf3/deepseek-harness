@@ -24,7 +24,7 @@
 
 除 schema 的类型／必填／枚举检查外，`execute` 还会拒绝空或重复的 `content`，以及 `content`/`status` 之外的任何条目键——扩展条目形状（id、嵌套）会明确报错而不是被静默压平，保证落日志的快照与模型自认为写入的内容一致。同时可以有多少任务处于 `in_progress` 由部署决定（见 § 配置）：选择 `true` 的组合允许并行工作（并发 subagent、后台命令）同时将多个任务标记为 `in_progress`。列表的顺序及及时更新由模型依照工具描述负责。
 
-本包的不变量配套插件会校验每个持久 `todo/write` payload，并要求事件位于开放轮次内；这些规则同时适用于实时追加和插件加载时检查的现有日志。核心会话只会通用处理声明合并事件，todo 专属规则由生产该事件的包负责（见[事件所有权](../../../.agents/notes/implemented/architecture/2026-07-20-todo-event-ownership.zh.md)）。
+本包的不变量配套插件会校验每个持久 `todo/write` payload，并要求事件位于开放轮次内。它会各自单次校验现有会话与新发布的会话，随后为实时追加推进逐会话的已提交轮次追踪状态。核心会话只会通用处理声明合并事件，todo 专属规则由生产该事件的包负责（见[事件所有权](../../../.agents/notes/implemented/architecture/2026-07-20-todo-event-ownership.zh.md)）。
 
 ## 渲染
 
