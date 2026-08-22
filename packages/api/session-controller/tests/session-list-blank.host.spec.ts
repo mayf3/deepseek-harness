@@ -19,23 +19,16 @@ import { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-user-approval'
-import type { ApiProxy, RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
-import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
+import { createSessionTestRemote, type TestSessionRemote } from './test-remote.ts'
 
-let nextRpc = 1
-function request<P>(payload: P): RpcRequest<P> {
-  return { rpcId: RpcId(`blank-${String(nextRpc++)}`), payload }
-}
-
-async function harness(): Promise<{ ctx: Context; api: ApiProxy; attach: (session: Session) => void }> {
+async function harness(): Promise<{ ctx: Context; remote: TestSessionRemote; attach: (session: Session) => void }> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
   return {
     ctx,
-    api: createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' }),
+    remote: createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' }),
     attach: (session) => {
       ctx.agents.register({ id: session.id, session, status: 'idle', ctx } as Agent)
     },
@@ -58,28 +51,28 @@ function appendStandalone(session: Session): void {
   session.append('approval/policy', { policy: 'never' })
 }
 
-async function listBlank(api: ApiProxy, id: string): Promise<boolean | undefined> {
-  const response = await api.sessions.list(request({}))
-  if (!response.result.ok) throw new Error('list failed')
-  return response.result.value.items.find(item => item.sessionId === id)?.blank
+async function listBlank(remote: TestSessionRemote, id: string): Promise<boolean | undefined> {
+  const result = await remote.list({})
+  if (!result.ok) throw new Error('list failed')
+  return result.value.items.find(item => item.sessionId === id)?.blank
 }
 
 describe('summary blank = conversation not started', () => {
   it('standalone events (command lifecycle, plan/mode, title) keep the session blank', async () => {
-    const { ctx, api, attach } = await harness()
+    const { ctx, remote, attach } = await harness()
     const session = ctx.sessions.create()
     attach(session)
-    expect(await listBlank(api, session.id)).toBe(true)
+    expect(await listBlank(remote, session.id)).toBe(true)
     appendStandalone(session)
-    expect(await listBlank(api, session.id)).toBe(true)
+    expect(await listBlank(remote, session.id)).toBe(true)
   })
 
   it('the first turn clears blank', async () => {
-    const { ctx, api, attach } = await harness()
+    const { ctx, remote, attach } = await harness()
     const session = ctx.sessions.create()
     attach(session)
     appendStandalone(session)
     session.append('turn/start', { turn: 0 })
-    expect(await listBlank(api, session.id)).toBe(false)
+    expect(await listBlank(remote, session.id)).toBe(false)
   })
 })

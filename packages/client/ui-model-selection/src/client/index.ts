@@ -12,7 +12,7 @@
  * history outside the direct-parent continuation path.
  */
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
-import type { ModelSelection, SessionModels } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelSelection, SessionModels } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { CommandUiContract, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
 // Type-only: pulls the ui-conversation SlotMap merge (the input.model seat).
@@ -97,7 +97,7 @@ function selectionOf(state: ModelDirectoryState, id: string): ModelSelection | u
 const NS = 'model'
 
 /** Required services: the contribution registry, the seat's slot registry, locale, and the service's own faces. */
-export const inject = ['commandUi', 'connection', 'locale', 'sessions', 'slots', 'remote']
+export const inject = ['commandUi', 'locale', 'sessions', 'slots', 'remote', 'remote.session']
 
 /**
  * Client plugin body: mount ModelDirectoryResolver, register the `model` dictionaries,

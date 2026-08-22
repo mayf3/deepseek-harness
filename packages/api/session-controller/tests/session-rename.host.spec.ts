@@ -1,9 +1,9 @@
 /**
- * sessions.rename delegation through the composed SessionTitleService. The
+ * Session Controller rename delegation through the composed SessionTitleService. The
  * agent factory is a structural stub whose createAgent forwards seed/meta into
  * the real SessionStore, and whose resume never runs (every source here is
  * already attached). Cold-session resolution is the shared `agentFor` path —
- * api-proxy-cold.spec.ts owns the resume evidence for every unary that rides
+ * remote-proxy-cold.spec.ts owns the resume evidence for every unary that rides
  * it, rename included.
  */
 
@@ -16,15 +16,12 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionTitleService from '@deepseek-ai/dsh-session-title'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
+import { createSessionTestRemote } from './test-remote.ts'
 
 const sid = (id: string): SessionId => id as SessionId
 
-let nextRpc = 1
-function request<P>(payload: P): RpcRequest<P> {
-  return { rpcId: RpcId(`fr-${String(nextRpc++)}`), payload }
+function request<P>(payload: P): P {
+  return payload
 }
 
 async function composed(withTitles = true): Promise<Context> {
@@ -68,19 +65,19 @@ function liveAgent(ctx: Context, id: string, turns: number): Session {
   return session
 }
 
-const api = (ctx: Context) => createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+const remote = (ctx: Context) => createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
 describe('sessions.rename', () => {
   it('accepts through the composed title service: normalized user-source event, echoed seq', async () => {
     const ctx = await composed()
     const source = liveAgent(ctx, 'session-rename', 1)
 
-    const renamed = await api(ctx).sessions.rename(request({ sessionId: source.id, title: '  new   name  ' }))
-    expect(renamed.result.ok).toBe(true)
-    if (!renamed.result.ok) return
-    expect(renamed.result.value.title).toBe('new name')
+    const renamed = await remote(ctx).rename(request({ sessionId: source.id, title: '  new   name  ' }))
+    expect(renamed.ok).toBe(true)
+    if (!renamed.ok) return
+    expect(renamed.value.title).toBe('new name')
     const event = source.events.findLast(item => item.type === 'session/title')
-    expect(event?.seq).toBe(renamed.result.value.seq)
+    expect(event?.seq).toBe(renamed.value.seq)
     expect(event?.data).toMatchObject({ title: 'new name', source: { kind: 'user' } })
   })
 
@@ -89,15 +86,15 @@ describe('sessions.rename', () => {
     const source = liveAgent(ctx, 'session-rename-bad', 1)
 
     // U+200B passes a client-side trim gate but normalizes to empty host-side.
-    const response = await api(ctx).sessions.rename(request({ sessionId: source.id, title: ' ​ ' }))
-    expect(response.result.ok).toBe(false)
-    if (!response.result.ok) {
-      expect(response.result.error).toMatchObject({
+    const response = await remote(ctx).rename(request({ sessionId: source.id, title: ' ​ ' }))
+    expect(response.ok).toBe(false)
+    if (!response.ok) {
+      expect(response.error).toMatchObject({
         code: 'title-invalid',
         details: { sessionId: source.id },
       })
       // The message renders verbatim in the rename dialog's alert.
-      expect(response.result.error.message).toBe('session title must contain visible characters')
+      expect(response.error.message).toBe('session title must contain visible characters')
     }
   })
 
@@ -110,20 +107,20 @@ describe('sessions.rename', () => {
     const stale = liveAgent(foreign, 'session-rename-stale', 1)
     ctx.agents.register({ id: stale.id, session: stale, status: 'idle', ctx } as Agent)
 
-    const response = await api(ctx).sessions.rename(request({ sessionId: stale.id, title: 'name' }))
-    expect(response.result.ok).toBe(false)
-    if (!response.result.ok) expect(response.result.error.code).toBe('internal')
+    const response = await remote(ctx).rename(request({ sessionId: stale.id, title: 'name' }))
+    expect(response.ok).toBe(false)
+    if (!response.ok) expect(response.error.code).toBe('internal')
   })
 
   it('answers internal when the composition mounts no session-title service', async () => {
     const ctx = await composed(false)
     const source = liveAgent(ctx, 'session-no-titles', 1)
 
-    const response = await api(ctx).sessions.rename(request({ sessionId: source.id, title: 'name' }))
-    expect(response.result.ok).toBe(false)
-    if (!response.result.ok) {
-      expect(response.result.error.code).toBe('internal')
-      expect(response.result.error.message).toMatch(/mounts no session-title service/)
+    const response = await remote(ctx).rename(request({ sessionId: source.id, title: 'name' }))
+    expect(response.ok).toBe(false)
+    if (!response.ok) {
+      expect(response.error.code).toBe('internal')
+      expect(response.error.message).toMatch(/mounts no session-title service/)
     }
   })
 })

@@ -1,10 +1,9 @@
 /**
- * Tool-card view computation over the mux live path: three standard card types
+ * Tool-card view computation over Session Controller history and follow: three standard card types
  * arrive on the frame, a presenterless tool ships no view field, a call-only
  * presenter keeps raw result content out of the view payload, and a throwing
  * presenter soft-falls to no view (the event still ships). Result pairing
- * works both through the live open-call table and the backscan fallback after
- * turn/end cleared it.
+ * works for both paged and live entries.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -19,9 +18,9 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
-import type { MuxFrame, RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
-import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
+import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
+import type { SessionFollowFrame } from '@deepseek-ai/dsh-api-session-controller/types'
+import { createSessionTestRemote } from './test-remote.ts'
 
 const reply = (text: string): Promise<ContentBlock[]> => Promise.resolve([{ type: 'text', text }])
 
@@ -92,26 +91,46 @@ async function harness(): Promise<{ ctx: Context }> {
   return { ctx }
 }
 
-/** Drain frames from an open mux stream until `count` session/event frames arrived. */
-async function collect(iterable: AsyncIterable<RpcRequest<MuxFrame>>, count: number, abort: AbortController): Promise<MuxFrame[]> {
-  const frames: MuxFrame[] = []
+/** Drain one Session follow until `count` event frames arrive. */
+async function collect(
+  iterable: AsyncIterable<SessionFollowFrame>,
+  count: number,
+  abort: AbortController,
+): Promise<SessionFollowFrame[]> {
+  const frames: SessionFollowFrame[] = []
   for await (const frame of iterable) {
-    frames.push(frame.payload)
-    if (frames.filter(f => f.type === 'session/event').length >= count) abort.abort()
+    frames.push(frame)
+    if (frames.filter(candidate => candidate.type === 'event').length >= count) abort.abort()
   }
   return frames
 }
 
-describe('mux live view computation', () => {
+/** Open follow and wait until its cursor is fixed before appending fixtures. */
+async function openFollow(
+  history: SessionHistoryController,
+  sessionId: SessionId,
+  signal: AbortSignal,
+): Promise<AsyncIterable<SessionFollowFrame>> {
+  const iterator = history.follow({
+    address: { kind: 'session', sessionId },
+  }, signal)[Symbol.asyncIterator]()
+  await expect(iterator.next()).resolves.toMatchObject({
+    done: false,
+    value: { type: 'opened' },
+  })
+  return { [Symbol.asyncIterator]: () => iterator }
+}
+
+describe('Session history view computation', () => {
   it('attaches the three standard card views, omits view without a presenter, soft-falls on throw', async () => {
     const { ctx } = await harness()
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const session = ctx.sessions.create()
+    const history = new SessionHistoryController(ctx)
     const abort = new AbortController()
-    const stream = api.events.mux({ rpcId: RpcId('t-mux'), payload: {} }, abort.signal)
+    const stream = await openFollow(history, session.id, abort.signal)
     const collected = collect(stream, 9, abort)
     const rawResult = `RAW_RESULT:${'x'.repeat(64 * 1024)}`
 
-    const session = ctx.sessions.create()
     session.append('turn/start', { turn: 1 })
     session.append('tool/call', { turn: 1, step: 1, callId: CallId('c-gen'), name: 'gen', arguments: '{}' })
     session.append('tool/call', { turn: 1, step: 1, callId: CallId('c-term'), name: 'term', arguments: '{"cmd":"echo hi"}' })
@@ -137,13 +156,13 @@ describe('mux live view computation', () => {
     }, { surfaceOp: 'append' })
 
     const frames = await collected
-    const events = frames.filter(f => f.type === 'session/event')
+    const events = frames.filter(f => f.type === 'event')
     const byCall = new Map(events
       .filter(f => f.event.type === 'tool/call' || f.event.type === 'tool/result')
       .map(f => [
         `${f.event.type}:${f.event.type === 'tool/call'
-          ? f.event.data.callId
-          : (f.event.data as SessionEvent<'tool/result'>['data']).message.source.callId}`,
+          ? (f.event.data as unknown as SessionEvent<'tool/call'>['data']).callId
+          : (f.event.data as unknown as SessionEvent<'tool/result'>['data']).message.source.callId}`,
         f,
       ]))
 
@@ -170,7 +189,7 @@ describe('mux live view computation', () => {
 
   it('serves history entries with call/result views, backscan pairing, and soft-falls', async () => {
     const { ctx } = await harness()
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
     const session = ctx.sessions.create()
     // history resolves the agent first; a live structural stub is enough (only
     // .session is read on this path).
@@ -217,16 +236,18 @@ describe('mux live view computation', () => {
       }),
     }, { surfaceOp: 'append' })
 
-    const response = await api.sessions.history({ rpcId: RpcId('t-hist'), payload: { sessionId: session.id } })
-    expect(response.result.ok).toBe(true)
-    if (!response.result.ok) throw new Error('unreachable')
-    const entries = response.result.value.events
+    const response = await remote.page({
+      address: { kind: 'session', sessionId: session.id },
+    })
+    expect(response.ok).toBe(true)
+    if (!response.ok) throw new Error('unreachable')
+    const entries = response.value.events
     const byKey = new Map(entries
       .filter(entry => entry.event.type === 'tool/call' || entry.event.type === 'tool/result')
       .map(entry => [
         `${entry.event.type}:${entry.event.type === 'tool/call'
-          ? entry.event.data.callId
-          : (entry.event.data as SessionEvent<'tool/result'>['data']).message.source.callId}`,
+          ? (entry.event.data as unknown as SessionEvent<'tool/call'>['data']).callId
+          : (entry.event.data as unknown as SessionEvent<'tool/result'>['data']).message.source.callId}`,
         entry,
       ]))
     expect(byKey.get('tool/call:h-term')?.view).toEqual({ for: 'call', view: { card: 'terminal', title: 'ls' } })
@@ -238,7 +259,7 @@ describe('mux live view computation', () => {
 
   it('counts only append-origin messages toward maxMessages and keeps each compaction summary with its replacement', async () => {
     const { ctx } = await harness()
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
     const session = ctx.sessions.create()
     ctx.agents.register({ id: session.id, session, status: 'idle', ctx } as Agent)
     session.append('turn/start', { turn: 1 })
@@ -265,18 +286,18 @@ describe('mux live view computation', () => {
       sourceEventSeqs: [...shadowed, summary.seq],
     })
 
-    const response = await api.sessions.history({
-      rpcId: RpcId('t-hist-compact'),
-      payload: { sessionId: session.id, maxMessages: 2 },
+    const response = await remote.page({
+      address: { kind: 'session', sessionId: session.id },
+      maxMessages: 2,
     })
-    if (!response.result.ok) throw new Error('unreachable')
-    const page = response.result.value.events.map(entry => entry.event)
+    if (!response.ok) throw new Error('unreachable')
+    const page = response.value.events.map(entry => entry.event)
     // Two append-origin messages fill the page even though a replacement copy of
     // the same event type sits in the window: the copy is model-only.
     const messages = page.filter(event => event.type === 'user/message' || event.type === 'assistant/message')
     expect(messages.map(event => event.seq)).toEqual([third.seq, third.seq + 1, third.seq + 3])
     expect(page.some(event => event.seq === first.seq)).toBe(false)
-    expect(response.result.value.hasMore).toBe(true)
+    expect(response.value.hasMore).toBe(true)
     // The range stays contiguous, so the checkpoint's summary record is readable on
     // the same page as the checkpoint itself.
     const summaryIndex = page.findIndex(event => event.seq === summary.seq)
@@ -287,7 +308,7 @@ describe('mux live view computation', () => {
 
   it('paginates a message with many provenance sources without variadic argument expansion', async () => {
     const { ctx } = await harness()
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
     const session = ctx.sessions.create()
     ctx.agents.register({ id: session.id, session, status: 'idle', ctx } as Agent)
     session.append('turn/start', { turn: 1 })
@@ -312,52 +333,29 @@ describe('mux live view computation', () => {
       return scalarMin(...values)
     })
     try {
-      const response = await api.sessions.history({
-        rpcId: RpcId('t-hist-large-provenance'),
-        payload: { sessionId: session.id, maxMessages: 1 },
+      const response = await remote.page({
+        address: { kind: 'session', sessionId: session.id },
+        maxMessages: 1,
       })
-      if (!response.result.ok) throw new Error('unreachable')
-      expect(response.result.value.events.map(entry => entry.event.seq)).toEqual([...sources, message.seq])
-      expect(response.result.value.hasMore).toBe(true)
+      if (!response.ok) throw new Error('unreachable')
+      expect(response.value.events.map(entry => entry.event.seq)).toEqual([...sources, message.seq])
+      expect(response.value.hasMore).toBe(true)
     } finally {
       min.mockRestore()
     }
   })
 
-  it('drops a disposed session from the live open-call table (result after dispose gets no view)', async () => {
+  it('pairs a followed result after turn/end from the addressed Session log', async () => {
     const { ctx } = await harness()
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const session = ctx.sessions.create()
+    const history = new SessionHistoryController(ctx)
     const abort = new AbortController()
-    const stream = api.events.mux({ rpcId: RpcId('t-mux3'), payload: {} }, abort.signal)
-
-    let session: Session | undefined
-    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
-      session = inner.sessions.create('session-doomed' as SessionId)
-    }, { inject: ['sessions'] }))
-    session?.append('turn/start', { turn: 1 })
-    session?.append('tool/call', { turn: 1, step: 1, callId: CallId('c-doomed'), name: 'term', arguments: '{"cmd":"x"}' })
-    // Disposing the owning fiber detaches the session mid-stream; the
-    // session/disposed listener must clear its open-call table entry.
-    await fiber.dispose()
-
-    const frames = await collect(stream, 2, abort)
-    const call = frames.find(f => f.type === 'session/event' && f.event.type === 'tool/call')
-    expect(call?.type === 'session/event' && call.view?.for).toBe('call')
-  })
-
-  it('pairs a result after turn/end via the in-memory backscan fallback', async () => {
-    const { ctx } = await harness()
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
-    const abort = new AbortController()
-    const stream = api.events.mux({ rpcId: RpcId('t-mux2'), payload: {} }, abort.signal)
+    const stream = await openFollow(history, session.id, abort.signal)
     const collected = collect(stream, 4, abort)
 
-    const session = ctx.sessions.create()
     session.append('turn/start', { turn: 1 })
     session.append('tool/call', { turn: 1, step: 1, callId: CallId('c-late'), name: 'term', arguments: '{"cmd":"tail"}' })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    // The turn/end above cleared the live table; pairing must fall back to
-    // scanning the session's in-memory events.
     session.append('tool/result', {
       turn: 1, step: 1,
       message: createToolResultMessage({
@@ -368,7 +366,7 @@ describe('mux live view computation', () => {
     }, { surfaceOp: 'append' })
 
     const frames = await collected
-    const result = frames.find(f => f.type === 'session/event' && f.event.type === 'tool/result')
-    expect(result?.type === 'session/event' && result.view).toEqual({ for: 'result', view: { card: 'terminal', output: 'done' } })
+    const result = frames.find(f => f.type === 'event' && f.event.type === 'tool/result')
+    expect(result?.type === 'event' && result.view).toEqual({ for: 'result', view: { card: 'terminal', output: 'done' } })
   })
 })

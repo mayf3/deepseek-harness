@@ -17,17 +17,10 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
-import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
-
-let nextRpc = 1
-function request<P>(payload: P): RpcRequest<P> {
-  return { rpcId: RpcId(`todo-proj-${String(nextRpc++)}`), payload }
-}
 
 interface Bench {
   ctx: Context
@@ -46,14 +39,13 @@ async function harness(withTodoTool: boolean): Promise<Bench> {
   if (withTodoTool) await ctx.plugin(ToolTodo, { allowParallelInProgress: true })
   const session = ctx.sessions.create()
   ctx.agents.register({ id: session.id, session, status: 'idle', ctx } as Agent)
-  const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+  const history = new SessionHistoryController(ctx)
   return {
     ctx,
     session,
     async tailProjections() {
-      const response = await api.sessions.history(request({ sessionId: session.id }))
-      if (!response.result.ok) throw new Error('history failed')
-      return response.result.value.projections
+      return (await history.page({ address: { kind: 'session', sessionId: session.id } }, new AbortController().signal))
+        .projections
     },
   }
 }

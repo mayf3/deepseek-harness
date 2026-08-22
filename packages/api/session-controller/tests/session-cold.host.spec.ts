@@ -1,5 +1,5 @@
 /**
- * Cold-session and degenerate-composition paths of the host ApiProxy:
+ * Cold-session and degenerate-composition paths of the Session Controller:
  * metadata-only listing, Agent-free history reads, subagent ownership
  * isolation, and prompt failure mapping.
  */
@@ -11,27 +11,36 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore from '@deepseek-ai/dsh-session'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionPromptRequest, SessionRequestId } from '../src/types.ts'
 import {
   PersistenceCoordinator,
   SessionPersistenceRevision,
   type PersistenceBackend,
   type StoredPrefix,
 } from '@deepseek-ai/dsh-session-persistence'
-import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
+import { createSessionTestRemote } from './test-remote.ts'
 
 const sid = (id: string): SessionId => id as SessionId
 
-let nextRpc = 1
-function request<P>(payload: P): RpcRequest<P> {
-  return { rpcId: RpcId(`cold-${String(nextRpc++)}`), payload }
+function request<P>(payload: P): P {
+  return payload
+}
+
+let nextRequestId = 1
+function promptRequest(
+  payload: Omit<SessionPromptRequest, 'requestId'>,
+): SessionPromptRequest {
+  return {
+    ...payload,
+    requestId: `cold-${String(nextRequestId++)}` as SessionRequestId,
+  }
 }
 
 function header(id: string, createdAt: number, extra: Partial<SessionHeader> = {}): SessionHeader {
@@ -104,12 +113,12 @@ describe('sessions.list cold merge', () => {
         return undefined
       },
     } as never)
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
-    const response = await api.sessions.list(request({}))
-    expect(response.result.ok).toBe(true)
-    if (!response.result.ok) throw new Error('unreachable')
-    const byId = Object.fromEntries(response.result.value.items.map(item => [item.sessionId, item]))
+    const response = await remote.list(request({}))
+    expect(response.ok).toBe(true)
+    if (!response.ok) throw new Error('unreachable')
+    const byId = Object.fromEntries(response.value.items.map(item => [item.sessionId, item]))
     expect(byId['small-blank']).toMatchObject({ blank: true, updatedAt: 100, running: false })
     // A stale true hint cannot hide the turn found in the bounded read.
     expect(byId['small-conversation']).toMatchObject({ blank: false, updatedAt: 1200 })
@@ -143,15 +152,15 @@ describe('sessions.list cold merge', () => {
       locate: () => ({ kind: 'jsonl', path: '/not-read' }),
       readFrom,
     } as never)
-    const api = createApiProxy(ctx, {
+    const remote = createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/tmp',
       coldBlankProbeMaxBytes: 0,
     })
 
-    const response = await api.sessions.list(request({}))
-    if (!response.result.ok) throw new Error('unreachable')
-    expect(response.result.value.items).toEqual([
+    const response = await remote.list(request({}))
+    if (!response.ok) throw new Error('unreachable')
+    expect(response.value.items).toEqual([
       expect.objectContaining({ sessionId: meta.id, blank: false, updatedAt: meta.createdAt }),
     ])
     expect(readFrom).not.toHaveBeenCalled()
@@ -180,9 +189,9 @@ describe('sessions.list cold merge', () => {
         }
       },
     } as never)
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
-    const listing = api.sessions.list(request({}))
+    const listing = remote.list(request({}))
     await started.promise
     const session = ctx.sessions.create(meta.id, {
       seed: [
@@ -202,8 +211,8 @@ describe('sessions.list cold merge', () => {
     release.resolve(undefined)
 
     const response = await listing
-    if (!response.result.ok) throw new Error('list failed')
-    expect(response.result.value.items).toEqual([
+    if (!response.ok) throw new Error('list failed')
+    expect(response.value.items).toEqual([
       expect.objectContaining({
         sessionId: meta.id,
         blank: false,
@@ -220,7 +229,7 @@ describe('attached updatedAt tracks human prompts', () => {
     await ctx.plugin(SessionStore)
     await ctx.plugin(UserQuestionService)
     await ctx.plugin(AgentRegistry)
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
     // Old work, resumed just now: the log tail would report the pickup.
     const worked = 1_000_000
@@ -241,25 +250,25 @@ describe('attached updatedAt tracks human prompts', () => {
     expect(boundary?.type).toBe('session/end-seed')
     expect(boundary?.time).toBeGreaterThan(worked)
 
-    const listed = await api.sessions.list(request({}))
-    if (!listed.result.ok) throw new Error('list failed')
-    const summary = listed.result.value.items.find(item => item.sessionId === 'resumed-untouched')
+    const listed = await remote.list(request({}))
+    if (!listed.ok) throw new Error('list failed')
+    const summary = listed.value.items.find(item => item.sessionId === 'resumed-untouched')
     expect(summary?.updatedAt).toBe(worked)
 
     // A lifecycle boundary is not a human update.
     resumed.append('turn/start', { turn: 2 })
-    const afterBoundary = await api.sessions.list(request({}))
-    if (!afterBoundary.result.ok) throw new Error('list failed')
-    expect(afterBoundary.result.value.items.find(item => item.sessionId === 'resumed-untouched')?.updatedAt)
+    const afterBoundary = await remote.list(request({}))
+    if (!afterBoundary.ok) throw new Error('list failed')
+    expect(afterBoundary.value.items.find(item => item.sessionId === 'resumed-untouched')?.updatedAt)
       .toBe(worked)
 
     const prompt = resumed.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'new prompt' }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    const after = await api.sessions.list(request({}))
-    if (!after.result.ok) throw new Error('list failed')
-    const moved = after.result.value.items.find(item => item.sessionId === 'resumed-untouched')
+    const after = await remote.list(request({}))
+    if (!after.ok) throw new Error('list failed')
+    const moved = after.value.items.find(item => item.sessionId === 'resumed-untouched')
     expect(moved?.updatedAt).toBe(prompt.time)
   })
 })
@@ -292,11 +301,15 @@ describe('cold history recovery view', () => {
       inspect: (id: SessionId, signal?: AbortSignal) => coordinator.inspect(id, signal),
       locate: () => undefined,
     } as never)
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
-    const history = await api.sessions.history(request({ sessionId, beforeSeq: 2, maxMessages: 10 }))
-    if (!history.result.ok) throw new Error('history failed')
-    expect(history.result.value.events.map(entry => entry.event)).toMatchInlineSnapshot(`
+    const history = await remote.page({
+      address: { kind: 'session', sessionId },
+      beforeSeq: 2,
+      maxMessages: 10,
+    })
+    if (!history.ok) throw new Error('history failed')
+    expect(history.value.events.map(entry => entry.event)).toMatchInlineSnapshot(`
       [
         {
           "data": {
@@ -348,7 +361,7 @@ describe('Remote Agent and Session lookup policy', () => {
     })
     const defaultAgentLookup = ctx.typert.lookups.get('agent')
     const defaultSessionLookup = ctx.typert.lookups.get('session')
-    createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
     await vi.waitFor(() => {
       expect(ctx.typert.lookups.get('agent')).not.toBe(defaultAgentLookup)
       expect(ctx.typert.lookups.get('session')).not.toBe(defaultSessionLookup)
@@ -392,7 +405,7 @@ describe('Remote Agent and Session lookup policy', () => {
     const resume = vi.spyOn(ctx.agents, 'resume')
     const defaultAgentLookup = ctx.typert.lookups.get('agent')
     const defaultSessionLookup = ctx.typert.lookups.get('session')
-    createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
     await vi.waitFor(() => {
       expect(ctx.typert.lookups.get('agent')).not.toBe(defaultAgentLookup)
       expect(ctx.typert.lookups.get('session')).not.toBe(defaultSessionLookup)
@@ -454,31 +467,35 @@ describe('subagent ownership fence', () => {
       locate: () => undefined,
     } as never)
     const resume = vi.spyOn(ctx.agents, 'resume')
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
-    const history = await api.sessions.history(request({ sessionId }))
-    expect(history.result.ok).toBe(true)
-    if (history.result.ok) {
-      expect(history.result.value.events.map(entry => entry.event.type)).toEqual(events.map(event => event.type))
-    }
+    const history = await new SessionHistoryController(ctx).page({
+      address: {
+        kind: 'subagent',
+        parentSessionId: meta.parentSession as SessionId,
+        childSessionId: sessionId,
+        mode: 'continuable',
+      },
+    }, new AbortController().signal)
+    expect(history.events.map(entry => entry.event.type)).toEqual(events.map(event => event.type))
     expect(ctx.agents.get(sessionId)).toBeUndefined()
 
-    const prompt = await api.sessions.prompt(request({
+    const prompt = await remote.prompt(promptRequest({
       sessionId,
       mode: 'queue',
       content: [{ type: 'text', text: 'follow up' }],
     }))
-    expect(prompt.result.ok).toBe(false)
-    if (!prompt.result.ok) {
-      expect(prompt.result.error).toMatchObject({
+    expect(prompt.ok).toBe(false)
+    if (!prompt.ok) {
+      expect(prompt.error).toMatchObject({
         code: 'agent-busy',
         details: { reason: 'use subagent delivery for this child session' },
       })
     }
 
-    const create = await api.sessions.create(request({ sessionId, cwd: '/proj' }))
-    expect(create.result.ok).toBe(false)
-    if (!create.result.ok) expect(create.result.error.code).toBe('agent-busy')
+    const create = await remote.create(request({ sessionId, cwd: '/proj' }))
+    expect(create.ok).toBe(false)
+    if (!create.ok) expect(create.error.code).toBe('agent-busy')
     expect(resume).not.toHaveBeenCalled()
     expect(ctx.agents.get(sessionId)).toBeUndefined()
     expect(inspect).toHaveBeenCalledTimes(3)
@@ -513,16 +530,16 @@ describe('subagent ownership fence', () => {
     // answering `agent-busy`.
     const resume = vi.spyOn(ctx.agents, 'resume')
       .mockRejectedValue(new Error('registry unavailable in this bench'))
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
-    const prompt = await api.sessions.prompt(request({
+    const prompt = await remote.prompt(promptRequest({
       sessionId,
       mode: 'queue',
       content: [{ type: 'text', text: 'follow up' }],
     }))
     expect(resume).toHaveBeenCalledTimes(1)
-    expect(prompt.result.ok).toBe(false)
-    if (!prompt.result.ok) expect(prompt.result.error.code).toBe('internal')
+    expect(prompt.ok).toBe(false)
+    if (!prompt.ok) expect(prompt.error.code).toBe('internal')
   })
 
   it('rejects origin-marked and runtime-owned live children from generic controls', async () => {
@@ -554,32 +571,30 @@ describe('subagent ownership fence', () => {
     })
     const startingChild = { id: startingSession.id, session: startingSession, status: 'idle', ctx } as Agent
     ctx.agents.enter(startingChild, parent)
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
-    const stopped = await api.sessions.cancel(request({ sessionId: originChild.id }))
-    expect(stopped.result.ok).toBe(false)
-    if (!stopped.result.ok) expect(stopped.result.error.code).toBe('agent-busy')
+    const stopped = await remote.cancel(request({ sessionId: originChild.id }))
+    expect(stopped.ok).toBe(false)
+    if (!stopped.ok) expect(stopped.error.code).toBe('agent-busy')
     expect(cancel).not.toHaveBeenCalled()
 
-    const queued = await api.sessions.updateQueue(request({
+    const queued = await remote.updateQueue(request({
       sessionId: originChild.id,
       itemId: MessageId('queued-item'),
       action: { kind: 'remove' },
     }))
-    expect(queued.result.ok).toBe(false)
-    if (!queued.result.ok) expect(queued.result.error.code).toBe('agent-busy')
+    expect(queued.ok).toBe(false)
+    if (!queued.ok) expect(queued.error.code).toBe('agent-busy')
     expect(updateInbox).not.toHaveBeenCalled()
 
-    const models = await api.sessions.models(request({ sessionId: startingChild.id }))
-    expect(models.result.ok).toBe(false)
-    if (!models.result.ok) expect(models.result.error.code).toBe('agent-busy')
+    const models = await remote.models(request({ sessionId: startingChild.id }))
+    expect(models.ok).toBe(false)
+    if (!models.ok) expect(models.error.code).toBe('agent-busy')
 
-    const create = await api.sessions.create(request({ sessionId: originChild.id, cwd: '/proj' }))
-    expect(create.result.ok).toBe(false)
-    if (!create.result.ok) expect(create.result.error.code).toBe('agent-busy')
+    const create = await remote.create(request({ sessionId: originChild.id, cwd: '/proj' }))
+    expect(create.ok).toBe(false)
+    if (!create.ok) expect(create.error.code).toBe('agent-busy')
 
-    const history = await api.sessions.history(request({ sessionId: originChild.id }))
-    expect(history.result.ok).toBe(true)
     expect(ctx.agents.get(originChild.id)).toBe(originChild)
   })
 
@@ -600,14 +615,14 @@ describe('subagent ownership fence', () => {
     const followup = vi.fn()
     const agent = { id: session.id, session, status: 'idle', ctx, followup } as unknown as Agent
     ctx.agents.register(agent)
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
-    const response = await api.sessions.prompt(request({
+    const response = await remote.prompt(promptRequest({
       sessionId: agent.id,
       mode: 'queue',
       content: [{ type: 'text', text: 'ordinary work' }],
     }))
-    expect(response.result.ok).toBe(true)
+    expect(response.ok).toBe(true)
     expect(followup).toHaveBeenCalledOnce()
   })
 
@@ -620,7 +635,7 @@ describe('subagent ownership fence', () => {
     const followup = vi.fn()
     const agent = { id: session.id, session, status: 'idle', ctx, followup } as unknown as Agent
     ctx.agents.register(agent)
-    const api = createApiProxy(ctx, {
+    const remote = createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
       cwd: '/tmp',
     })
@@ -628,52 +643,46 @@ describe('subagent ownership fence', () => {
     const alias = 'US/Pacific'
     const canonical = new Intl.DateTimeFormat('en-US', { timeZone: alias })
       .resolvedOptions().timeZone
-    const zonedRequest = request({
+    const zonedRequest = promptRequest({
       sessionId: agent.id,
       mode: 'queue' as const,
       content: [{ type: 'text' as const, text: 'zoned work' }],
       clientTimeZone: alias,
     })
-    await expect(api.sessions.prompt(zonedRequest)).resolves.toMatchObject({
-      result: { ok: true },
-    })
+    await expect(remote.prompt(zonedRequest)).resolves.toMatchObject({ ok: true })
     expect(followup).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      source: { kind: 'user', rpcId: zonedRequest.rpcId, clientTimeZone: canonical },
+      source: { kind: 'user', rpcId: zonedRequest.requestId, clientTimeZone: canonical },
     }))
 
-    const utcRequest = request({
+    const utcRequest = promptRequest({
       sessionId: agent.id,
       mode: 'queue' as const,
       content: [{ type: 'text' as const, text: 'UTC work' }],
       clientTimeZone: 'UTC',
     })
-    await expect(api.sessions.prompt(utcRequest)).resolves.toMatchObject({
-      result: { ok: true },
-    })
+    await expect(remote.prompt(utcRequest)).resolves.toMatchObject({ ok: true })
     expect(followup).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      source: { kind: 'user', rpcId: utcRequest.rpcId, clientTimeZone: 'UTC' },
+      source: { kind: 'user', rpcId: utcRequest.requestId, clientTimeZone: 'UTC' },
     }))
 
-    const unzonedRequest = request({
+    const unzonedRequest = promptRequest({
       sessionId: agent.id,
       mode: 'queue' as const,
       content: [{ type: 'text' as const, text: 'headless work' }],
     })
-    await expect(api.sessions.prompt(unzonedRequest)).resolves.toMatchObject({
-      result: { ok: true },
-    })
+    await expect(remote.prompt(unzonedRequest)).resolves.toMatchObject({ ok: true })
     expect(followup).toHaveBeenNthCalledWith(3, expect.objectContaining({
-      source: { kind: 'user', rpcId: unzonedRequest.rpcId },
+      source: { kind: 'user', rpcId: unzonedRequest.requestId },
     }))
 
     for (const clientTimeZone of ['', ' UTC', 'CST', 'Not/A_Real_Zone']) {
-      const invalid = await api.sessions.prompt(request({
+      const invalid = await remote.prompt(promptRequest({
         sessionId: agent.id,
         mode: 'queue' as const,
         content: [{ type: 'text' as const, text: 'invalid zone' }],
         clientTimeZone,
       }))
-      expect(invalid.result).toEqual({
+      expect(invalid).toEqual({
         ok: false,
         error: {
           code: 'invalid-time-zone',
@@ -692,18 +701,20 @@ describe('degenerate composition (no persistence, no factory)', () => {
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(UserQuestionService)
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
-    const listed = await api.sessions.list(request({}))
-    expect(listed.result.ok).toBe(true)
-    if (listed.result.ok) expect(listed.result.value.items).toEqual([])
+    const listed = await remote.list(request({}))
+    expect(listed.ok).toBe(true)
+    if (listed.ok) expect(listed.value.items).toEqual([])
 
     // No persistence means cold history cannot inspect a transcript.
-    const response = await api.sessions.history(request({ sessionId: sid('session-ghost') }))
-    expect(response.result.ok).toBe(false)
-    if (!response.result.ok) {
-      expect(response.result.error.code).toBe('internal')
-      expect(response.result.error.message).toMatch(/history unavailable for session "session-ghost"/)
+    const response = await remote.page({
+      address: { kind: 'session', sessionId: sid('session-ghost') },
+    })
+    expect(response.ok).toBe(false)
+    if (!response.ok) {
+      expect(response.error.code).toBe('internal')
+      expect(response.error.message).toMatch(/session persistence is not configured/)
     }
   })
 
@@ -717,11 +728,13 @@ describe('degenerate composition (no persistence, no factory)', () => {
       list: () => Promise.resolve([]),
       inspect,
     } as never)
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
-    const response = await api.sessions.history(request({ sessionId: sid('session-missing') }))
-    expect(response.result.ok).toBe(false)
-    if (!response.result.ok) expect(response.result.error.code).toBe('session-not-found')
+    const response = await remote.page({
+      address: { kind: 'session', sessionId: sid('session-missing') },
+    })
+    expect(response.ok).toBe(false)
+    if (!response.ok) expect(response.error.code).toBe('session-not-found')
     expect(inspect).not.toHaveBeenCalled()
   })
 })
@@ -743,17 +756,17 @@ describe('sessions.prompt synchronous rejection', () => {
       followup: () => { throw new Error('agent "session-throwing" lifecycle disposed') },
       steer: () => { throw new Error('agent "session-throwing" lifecycle disposed') },
     } as unknown as Agent)
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
     for (const mode of ['queue', 'steer'] as const) {
-      const response = await api.sessions.prompt(request({
+      const response = await remote.prompt(promptRequest({
         sessionId: session.id, mode, content: [{ type: 'text' as const, text: 'x' }],
       }))
-      expect(response.result.ok).toBe(false)
-      if (!response.result.ok) {
-        expect(response.result.error.code).toBe('agent-busy')
-        expect(response.result.error.message).toBe('prompt rejected')
-        expect(response.result.error.details).toEqual({
+      expect(response.ok).toBe(false)
+      if (!response.ok) {
+        expect(response.error.code).toBe('agent-busy')
+        expect(response.error.message).toBe('prompt rejected')
+        expect(response.error.details).toEqual({
           reason: 'Error: agent "session-throwing" lifecycle disposed',
         })
       }
@@ -787,12 +800,12 @@ describe('sessions.prompt synchronous rejection', () => {
       ctx.agents.register(child)
       throw new Error('session id already published')
     })
-    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
-    const models = await api.sessions.models(request({ sessionId }))
-    expect(models.result.ok).toBe(false)
-    if (!models.result.ok) {
-      expect(models.result.error).toMatchObject({
+    const models = await remote.models(request({ sessionId }))
+    expect(models.ok).toBe(false)
+    if (!models.ok) {
+      expect(models.error).toMatchObject({
         code: 'agent-busy',
         details: { reason: 'use subagent delivery for this child session' },
       })

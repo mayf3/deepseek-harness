@@ -1,5 +1,5 @@
 /**
- * Host session.search projection: list-equivalent visibility, fixed message
+ * Session Controller search projection: list-equivalent visibility, fixed message
  * filters and result bound, cancellation mapping, and unavailable/failure
  * behavior.
  */
@@ -17,9 +17,7 @@ import {
   type SessionSearchHit,
   type SessionSearchRequest,
 } from '@deepseek-ai/dsh-session-query'
-import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
-import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api'
-import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
+import { createSessionTestRemote } from './test-remote.ts'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
@@ -29,8 +27,8 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 const sid = (value: string): SessionId => value as SessionId
 const defaults = { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' }
 
-function request(query: string): RpcRequest<{ query: string }> {
-  return { rpcId: RpcId(`search-${query}`), payload: { query } }
+function request(query: string): { query: string } {
+  return { query }
 }
 
 function header(id: string, cwd: string | null = '/project'): SessionHeader {
@@ -116,12 +114,12 @@ describe('session.search', () => {
       ],
     }))
     ctx.provide('sessionQuery', { searchSessions } as never)
-    const api = createApiProxy(ctx, defaults)
+    const remote = createSessionTestRemote(ctx, defaults)
     const signal = new AbortController().signal
 
-    const response = await api.sessions.search(request('matching answer'), signal)
+    const response = await remote.search(request('matching answer'), signal)
 
-    expect(response.result).toEqual({
+    expect(response).toEqual({
       ok: true,
       value: {
         items: [{ sessionId: 'cold', snippet: 'the matching answer' }],
@@ -151,14 +149,14 @@ describe('session.search', () => {
     const ctx = await baseContext()
     const searchSessions = vi.fn()
     ctx.provide('sessionQuery', { searchSessions } as never)
-    const api = createApiProxy(ctx, defaults)
+    const remote = createSessionTestRemote(ctx, defaults)
 
-    const response = await api.sessions.search(
+    const response = await remote.search(
       request('anything'),
       new AbortController().signal,
     )
 
-    expect(response.result).toEqual({
+    expect(response).toEqual({
       ok: true,
       value: { items: [], hasMore: false },
     })
@@ -187,12 +185,12 @@ describe('session.search', () => {
       }),
     } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('match'),
       new AbortController().signal,
     )
 
-    expect(response.result).toEqual({
+    expect(response).toEqual({
       ok: true,
       value: {
         items: [{ sessionId: 'visible', snippet: 'allowed snippet' }],
@@ -203,7 +201,7 @@ describe('session.search', () => {
 
   it('pages the globally ranked stream until the 20-item Host boundary is known', async () => {
     const ctx = await baseContext()
-    const items = Array.from({ length: 21 }, (_, index) => hit(`visible-${index}`, index))
+    const items = Array.from({ length: 22 }, (_, index) => hit(`visible-${index}`, index))
     for (const item of items) {
       ctx.sessions.create(item.header.id, { meta: item.header })
     }
@@ -216,18 +214,18 @@ describe('session.search', () => {
     ctx.provide('sessionQuery', {
       searchSessions,
     } as never)
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('match'),
       new AbortController().signal,
     )
 
-    expect(response.result).toMatchObject({
+    expect(response).toMatchObject({
       ok: true,
       value: { hasMore: true },
     })
-    if (!response.result.ok) throw new Error('unreachable')
-    expect(response.result.value.items).toHaveLength(20)
-    expect(response.result.value.items.at(-1)?.sessionId).toBe('visible-19')
+    if (!response.ok) throw new Error('unreachable')
+    expect(response.value.items).toHaveLength(20)
+    expect(response.value.items.at(-1)?.sessionId).toBe('visible-19')
     expect(searchSessions).toHaveBeenCalledTimes(2)
     expect(searchSessions.mock.calls[1]?.[0]).toMatchObject({ cursor: 'page-2' })
   })
@@ -257,17 +255,17 @@ describe('session.search', () => {
     })
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('adaptive-page-limit'),
       new AbortController().signal,
     )
 
-    expect(response.result).toMatchObject({
+    expect(response).toMatchObject({
       ok: true,
       value: { hasMore: true },
     })
-    if (!response.result.ok) throw new Error('unreachable')
-    expect(response.result.value.items.map(item => item.sessionId))
+    if (!response.ok) throw new Error('unreachable')
+    expect(response.value.items.map(item => item.sessionId))
       .toEqual(items.slice(0, 20).map(item => item.header.id))
     expect(searchSessions.mock.calls.map(([providerRequest]) => ({
       limit: providerRequest.limit,
@@ -300,15 +298,15 @@ describe('session.search', () => {
     })
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('endless-pages'),
       new AbortController().signal,
     )
 
-    expect(response.result.ok).toBe(false)
-    if (response.result.ok) throw new Error('unreachable')
-    expect(response.result.error).toMatchObject({ code: 'internal' })
-    expect(response.result.error.message).toContain('100-call work budget')
+    expect(response.ok).toBe(false)
+    if (response.ok) throw new Error('unreachable')
+    expect(response.error).toMatchObject({ code: 'internal' })
+    expect(response.error.message).toContain('100-call work budget')
     expect(searchSessions).toHaveBeenCalledTimes(100)
   })
 
@@ -365,12 +363,12 @@ describe('session.search', () => {
     })
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('stale-restart'),
       new AbortController().signal,
     )
 
-    expect(response.result).toEqual({
+    expect(response).toEqual({
       ok: true,
       value: {
         items: [
@@ -404,16 +402,16 @@ describe('session.search', () => {
     })
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('stale-churn'),
       new AbortController().signal,
     )
 
-    expect(response.result.ok).toBe(false)
-    if (response.result.ok) throw new Error('unreachable')
-    expect(response.result.error.code).toBe('internal')
-    expect(response.result.error.message).toContain('100-call work budget')
-    expect(response.result).not.toHaveProperty('value')
+    expect(response.ok).toBe(false)
+    if (response.ok) throw new Error('unreachable')
+    expect(response.error.code).toBe('internal')
+    expect(response.error.message).toContain('100-call work budget')
+    expect(response).not.toHaveProperty('value')
     expect(searchSessions).toHaveBeenCalledTimes(100)
   })
 
@@ -433,12 +431,12 @@ describe('session.search', () => {
       })
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('abort-stale'),
       controller.signal,
     )
 
-    expect(response.result).toMatchObject({
+    expect(response).toMatchObject({
       ok: false,
       error: { code: 'cancelled' },
     })
@@ -454,16 +452,16 @@ describe('session.search', () => {
     )))
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('first-page-stale'),
       new AbortController().signal,
     )
 
-    expect(response.result).toMatchObject({
+    expect(response).toMatchObject({
       ok: false,
       error: { code: 'internal' },
     })
-    expect(response.result).not.toHaveProperty('value')
+    expect(response).not.toHaveProperty('value')
     expect(searchSessions).toHaveBeenCalledOnce()
   })
 
@@ -478,12 +476,12 @@ describe('session.search', () => {
       ))
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('continuation-invalid-limit'),
       new AbortController().signal,
     )
 
-    expect(response.result).toMatchObject({
+    expect(response).toMatchObject({
       ok: false,
       error: { code: 'internal' },
     })
@@ -505,12 +503,12 @@ describe('session.search', () => {
     ))
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('minimum-page-limit'),
       new AbortController().signal,
     )
 
-    expect(response.result).toMatchObject({
+    expect(response).toMatchObject({
       ok: false,
       error: { code: 'internal' },
     })
@@ -531,12 +529,12 @@ describe('session.search', () => {
     })
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('abort-invalid-limit'),
       controller.signal,
     )
 
-    expect(response.result).toMatchObject({
+    expect(response).toMatchObject({
       ok: false,
       error: { code: 'cancelled' },
     })
@@ -550,15 +548,15 @@ describe('session.search', () => {
     const searchSessions = vi.fn(() => Promise.resolve({ items: oversized }))
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('oversized-page'),
       new AbortController().signal,
     )
 
-    expect(response.result.ok).toBe(false)
-    if (response.result.ok) throw new Error('unreachable')
-    expect(response.result.error).toMatchObject({ code: 'internal' })
-    expect(response.result.error.message).toContain('returned 21 items; maximum is 20')
+    expect(response.ok).toBe(false)
+    if (response.ok) throw new Error('unreachable')
+    expect(response.error).toMatchObject({ code: 'internal' })
+    expect(response.error.message).toContain('returned 21 items; maximum is 20')
   })
 
   it('uses the learned provider limit for the overproduction guard', async () => {
@@ -576,15 +574,15 @@ describe('session.search', () => {
     })
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('adapted-oversized-page'),
       new AbortController().signal,
     )
 
-    expect(response.result.ok).toBe(false)
-    if (response.result.ok) throw new Error('unreachable')
-    expect(response.result.error).toMatchObject({ code: 'internal' })
-    expect(response.result.error.message).toContain('returned 11 items; maximum is 10')
+    expect(response.ok).toBe(false)
+    if (response.ok) throw new Error('unreachable')
+    expect(response.error).toMatchObject({ code: 'internal' })
+    expect(response.error.message).toContain('returned 11 items; maximum is 10')
     expect(searchSessions).toHaveBeenCalledTimes(2)
   })
 
@@ -604,12 +602,12 @@ describe('session.search', () => {
       searchSessions: () => Promise.resolve({ items: [overlong] }),
     } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('bounded-snippet'),
       new AbortController().signal,
     )
 
-    expect(response.result).toEqual({
+    expect(response).toEqual({
       ok: true,
       value: {
         items: [{ sessionId: 'visible', snippet: expected }],
@@ -626,15 +624,15 @@ describe('session.search', () => {
       .mockResolvedValueOnce({ items: [], nextCursor: 'repeated' })
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('repeated-cursor'),
       new AbortController().signal,
     )
 
-    expect(response.result.ok).toBe(false)
-    if (response.result.ok) throw new Error('unreachable')
-    expect(response.result.error).toMatchObject({ code: 'internal' })
-    expect(response.result.error.message).toContain('repeated a continuation cursor')
+    expect(response.ok).toBe(false)
+    if (response.ok) throw new Error('unreachable')
+    expect(response.error).toMatchObject({ code: 'internal' })
+    expect(response.error.message).toContain('repeated a continuation cursor')
     expect(searchSessions).toHaveBeenCalledTimes(2)
   })
 
@@ -649,18 +647,18 @@ describe('session.search', () => {
       .mockResolvedValueOnce({ items: items.slice(20), nextCursor: 'repeated' })
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('repeated-lookahead-cursor'),
       new AbortController().signal,
     )
 
-    expect(response.result).toMatchObject({
+    expect(response).toMatchObject({
       ok: false,
       error: { code: 'internal' },
     })
-    expect(response.result).not.toHaveProperty('value')
-    if (response.result.ok) throw new Error('unreachable')
-    expect(response.result.error.message).toContain('repeated a continuation cursor')
+    expect(response).not.toHaveProperty('value')
+    if (response.ok) throw new Error('unreachable')
+    expect(response.error.message).toContain('repeated a continuation cursor')
     expect(searchSessions).toHaveBeenCalledTimes(2)
   })
 
@@ -676,17 +674,17 @@ describe('session.search', () => {
       .mockResolvedValueOnce({ items: items.slice(20) })
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('duplicate-pages'),
       new AbortController().signal,
     )
 
-    expect(response.result).toMatchObject({
+    expect(response).toMatchObject({
       ok: true,
       value: { hasMore: true },
     })
-    if (!response.result.ok) throw new Error('unreachable')
-    expect(response.result.value.items.map(item => item.sessionId)).toEqual(
+    if (!response.ok) throw new Error('unreachable')
+    expect(response.value.items.map(item => item.sessionId)).toEqual(
       items.slice(0, 20).map(item => item.header.id),
     )
     expect(searchSessions).toHaveBeenCalledTimes(3)
@@ -704,12 +702,12 @@ describe('session.search', () => {
       })
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('cancel-continuation'),
       controller.signal,
     )
 
-    expect(response.result).toMatchObject({
+    expect(response).toMatchObject({
       ok: false,
       error: { code: 'cancelled' },
     })
@@ -734,12 +732,12 @@ describe('session.search', () => {
     }))
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('large corpus'),
       new AbortController().signal,
     )
 
-    expect(response.result).toEqual({
+    expect(response).toEqual({
       ok: true,
       value: {
         items: [{ sessionId: 'cold-32750', snippet: 'match 0' }],
@@ -770,12 +768,12 @@ describe('session.search', () => {
     const searchSessions = vi.fn()
     ctx.provide('sessionQuery', { searchSessions } as never)
 
-    const response = await createApiProxy(ctx, defaults).sessions.search(
+    const response = await createSessionTestRemote(ctx, defaults).search(
       request('cancel-during-visibility'),
       controller.signal,
     )
 
-    expect(response.result).toMatchObject({
+    expect(response).toMatchObject({
       ok: false,
       error: { code: 'cancelled' },
     })
@@ -802,7 +800,7 @@ describe('session.search', () => {
     ctx.provide('sessionQuery', { searchSessions } as never)
 
     let settled = false
-    const responsePromise = createApiProxy(ctx, defaults).sessions.search(
+    const responsePromise = createSessionTestRemote(ctx, defaults).search(
       request('cancel-during-cold-stats'),
       controller.signal,
     ).finally(() => {
@@ -819,7 +817,7 @@ describe('session.search', () => {
 
     for (const gate of statGates.slice(1)) gate.resolve({ mtimeMs: 102 })
     const response = await responsePromise
-    expect(response.result).toMatchObject({
+    expect(response).toMatchObject({
       ok: false,
       error: { code: 'cancelled' },
     })
@@ -829,26 +827,26 @@ describe('session.search', () => {
   it('maps missing composition, query cancellation, and provider failure', async () => {
     const missingCtx = await baseContext()
     missingCtx.sessions.create(sid('visible'), { meta: header('visible') })
-    const missingApi = createApiProxy(missingCtx, defaults)
+    const missingApi = createSessionTestRemote(missingCtx, defaults)
     const preAborted = new AbortController()
     preAborted.abort()
-    const cancelledBeforeLookup = await missingApi.sessions.search(
+    const cancelledBeforeLookup = await missingApi.search(
       request('cancel-before-lookup'),
       preAborted.signal,
     )
-    expect(cancelledBeforeLookup.result).toMatchObject({
+    expect(cancelledBeforeLookup).toMatchObject({
       ok: false,
       error: { code: 'cancelled' },
     })
 
-    const missing = await missingApi.sessions.search(
+    const missing = await missingApi.search(
       request('needle'),
       new AbortController().signal,
     )
-    expect(missing.result.ok).toBe(false)
-    if (missing.result.ok) throw new Error('unreachable')
-    expect(missing.result.error.code).toBe('internal')
-    expect(missing.result.error.message).toContain('does not mount')
+    expect(missing.ok).toBe(false)
+    if (missing.ok) throw new Error('unreachable')
+    expect(missing.error.code).toBe('internal')
+    expect(missing.error.message).toContain('does not mount')
 
     const ctx = await baseContext()
     ctx.sessions.create(sid('visible'), { meta: header('visible') })
@@ -857,24 +855,24 @@ describe('session.search', () => {
       .mockRejectedValueOnce(aborted)
       .mockRejectedValueOnce(new Error('database unavailable'))
     ctx.provide('sessionQuery', { searchSessions } as never)
-    const api = createApiProxy(ctx, defaults)
+    const remote = createSessionTestRemote(ctx, defaults)
 
-    const cancelled = await api.sessions.search(
+    const cancelled = await remote.search(
       request('first'),
       new AbortController().signal,
     )
-    expect(cancelled.result).toMatchObject({
+    expect(cancelled).toMatchObject({
       ok: false,
       error: { code: 'cancelled' },
     })
 
-    const failed = await api.sessions.search(
+    const failed = await remote.search(
       request('second'),
       new AbortController().signal,
     )
-    expect(failed.result.ok).toBe(false)
-    if (failed.result.ok) throw new Error('unreachable')
-    expect(failed.result.error.code).toBe('internal')
-    expect(failed.result.error.message).toContain('database unavailable')
+    expect(failed.ok).toBe(false)
+    if (failed.ok) throw new Error('unreachable')
+    expect(failed.error.code).toBe('internal')
+    expect(failed.error.message).toContain('database unavailable')
   })
 })

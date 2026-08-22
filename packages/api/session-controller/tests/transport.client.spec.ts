@@ -1,0 +1,224 @@
+import { describe, expect, it, vi } from 'vitest'
+import {
+  RemoteStream,
+  RemoteStreamCarrierError,
+  RemoteStreamError,
+  type RemoteStreamOptions,
+} from '@deepseek-ai/dsh-api-gateway/client'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import {
+  apply,
+  createSessionControlStream,
+  SessionEventStream,
+  sessionStreamFailure,
+  type SessionEventChange,
+  type SessionRemote,
+} from '../src/client/index.ts'
+import type {
+  SessionAddress,
+  SessionControlFrame,
+  SessionEventEntry,
+  SessionFollowFrame,
+  SessionFollowRequest,
+  SessionPage,
+  SessionPageRequest,
+} from '../src/types.ts'
+
+type SessionTransportRemote = Pick<SessionRemote, 'control' | 'follow' | 'page'>
+
+const ADDRESS: SessionAddress = { kind: 'session', sessionId: 'session-1' as never }
+const AVAILABLE_CONNECTION = {
+  hostDescription: {
+    getSnapshot: () => ({
+      version: 'fixture', cwd: '/fixture', attachedSessions: 0, home: '/home/fixture', canOpenPath: true,
+    }),
+    subscribe: () => () => {},
+  },
+}
+
+function entry(seq: number): SessionEventEntry {
+  return { event: { type: 'turn/start', seq, time: seq, data: { turn: seq } } }
+}
+
+function page(events: readonly SessionEventEntry[], hasMore = false): SessionPage {
+  return { events, hasMore }
+}
+
+function sessionClient(remote: SessionTransportRemote) {
+  return {
+    session: remote as SessionRemote,
+    $stream: <Item>(options: RemoteStreamOptions<Item>) => (
+      new RemoteStream(AVAILABLE_CONNECTION, options)
+    ),
+  }
+}
+
+interface FollowGeneration {
+  readonly frames: readonly SessionFollowFrame[]
+  readonly terminal?: Error
+  readonly hold?: boolean
+}
+
+class ScriptedSessionRemote implements SessionTransportRemote {
+  readonly followRequests: SessionFollowRequest[] = []
+  readonly pageRequests: SessionPageRequest[] = []
+  readonly signals: AbortSignal[] = []
+
+  constructor(
+    private readonly generations: FollowGeneration[],
+    private readonly pages: RemoteResult<SessionPage>[],
+    private readonly controlFrames: readonly SessionControlFrame[] = [],
+  ) {}
+
+  async *follow(request: SessionFollowRequest, signal = new AbortController().signal): AsyncIterable<SessionFollowFrame> {
+    const generation = this.generations.shift()
+    if (generation === undefined) throw new Error('no scripted Session generation')
+    this.followRequests.push(request)
+    this.signals.push(signal)
+    for (const frame of generation.frames) yield frame
+    if (generation.terminal !== undefined) throw generation.terminal
+    if (generation.hold === true && !signal.aborted) {
+      await new Promise<void>((resolve) => {
+        signal.addEventListener('abort', () => { resolve() }, { once: true })
+      })
+    }
+  }
+
+  page(request: SessionPageRequest): Promise<RemoteResult<SessionPage>> {
+    this.pageRequests.push(request)
+    const result = this.pages.shift()
+    if (result === undefined) throw new Error('no scripted Session page')
+    return Promise.resolve(result)
+  }
+
+  async *control(signal = new AbortController().signal): AsyncIterable<SessionControlFrame> {
+    for (const frame of this.controlFrames) yield frame
+    if (!signal.aborted) {
+      await new Promise<void>((resolve) => {
+        signal.addEventListener('abort', () => { resolve() }, { once: true })
+      })
+    }
+  }
+}
+
+describe('Session Client stream adapters', () => {
+  it('installs no Client service', () => {
+    apply()
+  })
+
+  it('binds an event journal to one address and publishes replace, append, and prepend changes', async () => {
+    const remote = new ScriptedSessionRemote(
+      [{
+        frames: [
+          { type: 'opened', cursor: 3 },
+          { type: 'event', ...entry(3) },
+          { type: 'event', ...entry(4) },
+        ],
+        hold: true,
+      }],
+      [
+        { ok: true, value: page([entry(2), entry(3)], true) },
+        { ok: true, value: page([entry(0), entry(1)], false) },
+      ],
+    )
+    const changes: SessionEventChange[] = []
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: (change) => { changes.push(change) },
+      failed: vi.fn(),
+    })
+
+    await stream.open({ maxMessages: 50 })
+    await vi.waitFor(() => { expect(changes).toHaveLength(2) })
+    await stream.prepend({ beforeSeq: 2, maxMessages: 50 })
+
+    expect(remote.followRequests).toEqual([{ address: ADDRESS }])
+    expect(remote.pageRequests).toEqual([
+      { address: ADDRESS, maxMessages: 50 },
+      { address: ADDRESS, beforeSeq: 2, maxMessages: 50 },
+    ])
+    expect(changes).toMatchObject([
+      { type: 'replace', entries: [entry(2), entry(3)], hasMore: true },
+      { type: 'append', entry: entry(4) },
+      { type: 'prepend', entries: [entry(0), entry(1)], hasMore: false },
+    ])
+    await stream.dispose()
+    expect(remote.signals[0]?.aborted).toBe(true)
+  })
+
+  it('resumes after the applied cursor and repairs through the addressed tail page', async () => {
+    const lost = new RemoteStreamCarrierError('lost')
+    const remote = new ScriptedSessionRemote(
+      [
+        {
+          frames: [{ type: 'opened', cursor: 1 }, { type: 'event', ...entry(2) }],
+          terminal: lost,
+        },
+        { frames: [{ type: 'opened', cursor: 4 }], hold: true },
+      ],
+      [
+        { ok: true, value: page([entry(0), entry(1)]) },
+        { ok: true, value: page([entry(0), entry(1), entry(2), entry(3), entry(4)]) },
+      ],
+    )
+    const changes: SessionEventChange[] = []
+    const carrierFailed = vi.fn()
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: (change) => { changes.push(change) },
+      carrierFailed,
+      failed: vi.fn(),
+    })
+
+    await stream.open({})
+    await vi.waitFor(() => { expect(remote.followRequests).toHaveLength(2) })
+
+    expect(remote.followRequests).toEqual([
+      { address: ADDRESS },
+      { address: ADDRESS, afterSeq: 2 },
+    ])
+    expect(changes.map(change => change.type)).toEqual(['replace', 'append', 'replace'])
+    expect(carrierFailed).toHaveBeenCalledWith(lost)
+    await stream.dispose()
+  })
+
+  it('turns a page failure into a typed stream failure and closes follow', async () => {
+    const failure = { code: 'session-not-found', message: 'missing', details: { sessionId: 'session-1' } } as const
+    const remote = new ScriptedSessionRemote(
+      [{ frames: [{ type: 'opened', cursor: -1 }], hold: true }],
+      [{ ok: false, error: failure }],
+    )
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: vi.fn(),
+      failed: vi.fn(),
+    })
+
+    await expect(stream.open({})).rejects.toBeInstanceOf(RemoteStreamError)
+    await expect(stream.open({})).rejects.toThrow('already opened')
+    expect(sessionStreamFailure(new RemoteStreamError(failure.code, failure.message, failure.details)))
+      .toEqual(failure)
+    expect(sessionStreamFailure(new Error('local'))).toBeUndefined()
+    expect(remote.signals[0]?.aborted).toBe(true)
+  })
+
+  it('maps the Host-wide control baseline and deltas into one snapshot stream', async () => {
+    const baseline: SessionControlFrame = {
+      type: 'baseline',
+      value: { queues: {}, jobs: {}, approvals: [], questions: [], projections: {} },
+    }
+    const update: SessionControlFrame = {
+      type: 'queue', sessionId: 'session-1' as never, items: [],
+    }
+    const remote = new ScriptedSessionRemote([], [], [baseline, update])
+    const accept = vi.fn<(frame: SessionControlFrame) => void>()
+    const stream = createSessionControlStream(sessionClient(remote), {
+      accept,
+      failed: vi.fn(),
+    })
+
+    stream.start()
+    stream.start()
+    await vi.waitFor(() => { expect(accept).toHaveBeenCalledTimes(2) })
+    expect(accept.mock.calls.map(([frame]) => frame)).toEqual([baseline, update])
+    await stream.dispose()
+    await stream.dispose()
+  })
+})

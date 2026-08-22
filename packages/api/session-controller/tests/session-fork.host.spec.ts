@@ -1,4 +1,4 @@
-/** Session-fork boundaries, lineage, and inherited model routing. */
+/** Session Controller fork boundaries, lineage, and inherited model routing. */
 
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -11,15 +11,12 @@ import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
-import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { createApiProxy } from '@deepseek-ai/dsh-host-apiproxy'
+import { createSessionTestRemote } from './test-remote.ts'
 
 const sid = (id: string): SessionId => id as SessionId
 
-let nextRpc = 1
-function request<P>(payload: P): RpcRequest<P> {
-  return { rpcId: RpcId(`fork-${String(nextRpc++)}`), payload }
+function request<P>(payload: P): P {
+  return payload
 }
 
 async function composed(workspaces: readonly Workspace[] = []): Promise<Context> {
@@ -81,7 +78,7 @@ function liveAgent(
   return session
 }
 
-const api = (ctx: Context) => createApiProxy(ctx, {
+const remote = (ctx: Context) => createSessionTestRemote(ctx, {
   defaultModelSelection: () => ({ provider: 'default-provider', model: 'default-model' }),
   cwd: '/tmp',
 })
@@ -90,10 +87,10 @@ describe('sessions.fork', () => {
   it('cuts at the anchored completed turn and records lineage and cwd', async () => {
     const ctx = await composed()
     const source = liveAgent(ctx, 'session-source', 2)
-    const response = await api(ctx).sessions.fork(request({ sessionId: source.id, atSeq: 1 }))
-    expect(response.result.ok).toBe(true)
-    if (!response.result.ok) return
-    const child = ctx.sessions.get(response.result.value.sessionId)
+    const response = await remote(ctx).fork(request({ sessionId: source.id, atSeq: 1 }))
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+    const child = ctx.sessions.get(response.value.sessionId)
     expect(child?.events.map(event => event.type)).toEqual([
       'turn/start', 'user/message', 'turn/end', 'session/end-seed',
     ])
@@ -134,16 +131,16 @@ describe('sessions.fork', () => {
       })),
     } as never)
 
-    const response = await api(ctx).sessions.fork(request({ sessionId: grandchild.id }))
+    const response = await remote(ctx).fork(request({ sessionId: grandchild.id }))
 
-    expect(response.result.ok).toBe(true)
-    if (!response.result.ok) return
-    expect(attachSession).toHaveBeenCalledWith(response.result.value.sessionId)
-    expect(ctx.sessions.get(response.result.value.sessionId)?.header).toMatchObject({
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+    expect(attachSession).toHaveBeenCalledWith(response.value.sessionId)
+    expect(ctx.sessions.get(response.value.sessionId)?.header).toMatchObject({
       parentSession: grandchild.id,
       cwd: '/proj',
     })
-    expect(ctx.sessions.get(response.result.value.sessionId)?.header.origin).toBeUndefined()
+    expect(ctx.sessions.get(response.value.sessionId)?.header.origin).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -185,39 +182,39 @@ describe('sessions.fork', () => {
     } as never)
     const resume = vi.spyOn(ctx.agents, 'resume')
 
-    const response = await api(ctx).sessions.fork(request({ sessionId: sourceId }))
+    const response = await remote(ctx).fork(request({ sessionId: sourceId }))
 
-    expect(response.result.ok).toBe(true)
-    if (!response.result.ok) return
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
     expect(resume).not.toHaveBeenCalled()
     expect(ctx.agents.get(sourceId)).toBeUndefined()
-    expect(ctx.sessions.get(response.result.value.sessionId)?.header).toMatchObject({
+    expect(ctx.sessions.get(response.value.sessionId)?.header).toMatchObject({
       parentSession: sourceId,
       cwd: '/proj',
     })
-    expect(ctx.sessions.get(response.result.value.sessionId)?.header.origin).toBeUndefined()
+    expect(ctx.sessions.get(response.value.sessionId)?.header.origin).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
   it('uses the last completed turn only for omitted and past-end anchors', async () => {
     const ctx = await composed()
     const source = liveAgent(ctx, 'session-tail', 2, 'open')
-    const proxy = api(ctx)
+    const proxy = remote(ctx)
     const expectedTypes = [
       'turn/start', 'user/message', 'turn/end',
       'turn/start', 'user/message', 'turn/end',
       'session/end-seed',
     ]
-    const omitted = await proxy.sessions.fork(request({ sessionId: source.id }))
-    expect(omitted.result.ok).toBe(true)
-    if (omitted.result.ok) {
-      expect(ctx.sessions.get(omitted.result.value.sessionId)?.events.map(event => event.type))
+    const omitted = await proxy.fork(request({ sessionId: source.id }))
+    expect(omitted.ok).toBe(true)
+    if (omitted.ok) {
+      expect(ctx.sessions.get(omitted.value.sessionId)?.events.map(event => event.type))
         .toEqual(expectedTypes)
     }
-    const pastEnd = await proxy.sessions.fork(request({ sessionId: source.id, atSeq: 999 }))
-    expect(pastEnd.result.ok).toBe(true)
-    if (pastEnd.result.ok) {
-      expect(ctx.sessions.get(pastEnd.result.value.sessionId)?.events.map(event => event.type))
+    const pastEnd = await proxy.fork(request({ sessionId: source.id, atSeq: 999 }))
+    expect(pastEnd.ok).toBe(true)
+    if (pastEnd.ok) {
+      expect(ctx.sessions.get(pastEnd.value.sessionId)?.events.map(event => event.type))
         .toEqual(expectedTypes)
     }
     await ctx.fiber.dispose()
@@ -229,10 +226,10 @@ describe('sessions.fork', () => {
     // What a stopped message's fork button anchors on: the frozen node sits
     // one event before its turn/end, floored client-side to that event's seq.
     const anchor = (source.events.at(-1)?.seq ?? 0) - 1
-    const response = await api(ctx).sessions.fork(request({ sessionId: source.id, atSeq: anchor }))
-    expect(response.result.ok).toBe(true)
-    if (!response.result.ok) return
-    expect(ctx.sessions.get(response.result.value.sessionId)?.events.map(event => event.type)).toEqual([
+    const response = await remote(ctx).fork(request({ sessionId: source.id, atSeq: anchor }))
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+    expect(ctx.sessions.get(response.value.sessionId)?.events.map(event => event.type)).toEqual([
       'turn/start', 'user/message', 'turn/end',
       'turn/start', 'user/message', 'turn/end',
       'session/end-seed',
@@ -244,12 +241,12 @@ describe('sessions.fork', () => {
     const ctx = await composed()
     const source = liveAgent(ctx, 'session-open', 1, 'open')
     const anchor = source.events.at(-1)?.seq ?? 0
-    const response = await api(ctx).sessions.fork(request({ sessionId: source.id, atSeq: anchor }))
-    expect(response.result).toMatchObject({
+    const response = await remote(ctx).fork(request({ sessionId: source.id, atSeq: anchor }))
+    expect(response).toMatchObject({
       ok: false,
       error: { code: 'fork-unavailable', details: { sessionId: source.id } },
     })
-    if (!response.result.ok) expect(response.result.error.message).toMatch(/has not completed/)
+    if (!response.ok) expect(response.error.message).toMatch(/has not completed/)
     await ctx.fiber.dispose()
   })
 
@@ -266,10 +263,10 @@ describe('sessions.fork', () => {
       },
       reason: 'initial',
     })
-    const response = await api(ctx).sessions.fork(request({ sessionId: source.id }))
-    expect(response.result.ok).toBe(true)
-    if (!response.result.ok) return
-    const child = ctx.agents.get(response.result.value.sessionId)
+    const response = await remote(ctx).fork(request({ sessionId: source.id }))
+    expect(response.ok).toBe(true)
+    if (!response.ok) return
+    const child = ctx.agents.get(response.value.sessionId)
     if (child === undefined) throw new Error('fork did not publish the child agent')
     const assembly = await child.ctx.systemPrompt.assemble()
     expect(assembly.variables).toMatchObject({
