@@ -1,22 +1,23 @@
 // SessionManager: the instance cluster Map<SessionId, Session> (lazy-built, resident) + the frame
-// dispatch entry + list state, constructed and held by SessionRuntime (one per client runtime).
+// dispatch entry + list state, constructed and held by ClientSessions (one per browser client).
 // List data never enters zustand; React connects via subscribe/getListSnapshot.
 
 import type {
-  ClientFailure, ClientResult, IApiClient, SessionId,
-  SessionSummary, SubagentAddress, SubagentCatalog, JobView, WorkspaceId,
-} from '@deepseek-ai/dsh-api-remotes/client'
+  IApiClient, SubagentAddress, SubagentCatalog,
+} from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type {
   SessionControlBaseline,
   SessionControlFrame,
   SessionQueuedItem,
   SessionError,
-} from '@deepseek-ai/dsh-api-session-controller/types'
-// Value import from the inline-safe wire layer (not the connection plugin):
-// plugin-to-plugin value imports are a bundle purity error.
-import { transportError } from '@deepseek-ai/dsh-host-apiproxy/api'
+  SessionSummary,
+  SessionJob as JobView,
+} from '../../types.ts'
 import { mergeOrderedBaseline } from '../ordered-baseline.ts'
-import type { ConversationRuntime } from './conversation-assembler.ts'
+import type { ClientFailure, ClientResult } from '../contract/result.ts'
+import { transportResult } from '../contract/result.ts'
 import type { SessionListEntry, TitledSessionSummary } from './lineage.ts'
 import { flattenLineage } from './lineage.ts'
 // Type-only merge edge: the title domain's client-namespace outlet declares
@@ -84,6 +85,8 @@ type SessionListMutation =
 /** Instance cluster + frame entry + the session list. */
 export class SessionManager {
   private readonly sessions = new Map<SessionId, Session>()
+  /** In-flight Session disposals remain here after instances leave `sessions`, so manager disposal can await quiescence. */
+  private readonly sessionDisposals = new Set<Promise<void>>()
   /** Latest transient queues, retained independently of Session object materialization. */
   private readonly queues = new Map<SessionId, readonly SessionQueuedItem[]>()
   /**
@@ -142,7 +145,6 @@ export class SessionManager {
     private readonly remote: SessionRemotes,
     restoredSelection?: SessionId,
     restoredAddress?: SubagentAddress,
-    private readonly conversation?: ConversationRuntime,
   ) {
     this.selected = restoredSelection
     if (restoredAddress !== undefined) this.addresses.set(restoredAddress.childSessionId, restoredAddress)
@@ -232,11 +234,41 @@ export class SessionManager {
    * truth — a later get() lazily rebuilds and open() backfills history.
    * @param sessionId - the session to drop.
    */
-  drop(sessionId: SessionId): Promise<void> {
+  async drop(sessionId: SessionId): Promise<void> {
     const session = this.sessions.get(sessionId)
-    if (session === undefined) return Promise.resolve()
     this.sessions.delete(sessionId)
-    return session.dispose()
+    if (session !== undefined) await this.startSessionDisposal(session)
+  }
+
+  /**
+   * Stop owned timers and every remaining Session instance.
+   * @returns when every Session Remote iterator has completed teardown.
+   */
+  async dispose(): Promise<void> {
+    for (const timer of this.catalogDebounce.values()) clearTimeout(timer)
+    this.catalogDebounce.clear()
+    this.catalogStale.clear()
+    this.openCatalogs.clear()
+    const sessions = [...this.sessions.values()]
+    this.sessions.clear()
+    for (const session of sessions) void this.startSessionDisposal(session)
+    await this.drainSessionDisposals()
+  }
+
+  private startSessionDisposal(session: Session): Promise<void> {
+    const disposal = session.dispose()
+    this.sessionDisposals.add(disposal)
+    void disposal.then(
+      () => { this.sessionDisposals.delete(disposal) },
+      () => { this.sessionDisposals.delete(disposal) },
+    )
+    return disposal
+  }
+
+  private async drainSessionDisposals(): Promise<void> {
+    while (this.sessionDisposals.size > 0) {
+      await Promise.allSettled([...this.sessionDisposals])
+    }
   }
 
   /**
@@ -289,13 +321,7 @@ export class SessionManager {
         this.recordMutation({ kind: 'engaged', sessionId: engaged.sessionId })
       },
       projections: this.projectionStore(sessionId),
-      ...this.conversation === undefined ? {} : { conversation: this.conversation },
     })
-  }
-
-  /** Rebuild every resident Session after one coalesced registry transaction. */
-  rebuildConversationRegistry(): void {
-    for (const session of this.sessions.values()) session.rebuildConversationRegistry()
   }
 
   /** Resident per-session projection store (create-on-demand; outlives instantiation). */
@@ -357,7 +383,7 @@ export class SessionManager {
           })
         }
       } catch (error: unknown) {
-        const folded = transportError<never>(error)
+        const folded = transportResult<never>(error)
         this.catalogs.set(parentSessionId, {
           entries: this.withCatalogMutations(
             previous?.entries ?? [], expandableRows, activityRows,
@@ -467,8 +493,8 @@ export class SessionManager {
         }
       } catch (error) {
         this.listState = 'error'
-        const folded = transportError<never>(error)
-        /* v8 ignore next -- the `? null` arm is unreachable: transportError always returns ok:false. */
+        const folded = transportResult<never>(error)
+        /* v8 ignore next -- the `? null` arm is unreachable: transportResult always returns ok:false. */
         this.listError = folded.ok ? null : folded.error
       } finally {
         this.listMutations = null
@@ -501,7 +527,7 @@ export class SessionManager {
         },
       }
     } catch (error: unknown) {
-      return transportError(error)
+      return transportResult(error)
     }
   }
 
@@ -547,7 +573,7 @@ export class SessionManager {
       }
       return result
     } catch (error) {
-      return transportError(error)
+      return transportResult(error)
     }
   }
 
@@ -581,7 +607,7 @@ export class SessionManager {
       }
       return result
     } catch (error) {
-      return transportError(error)
+      return transportResult(error)
     }
   }
 

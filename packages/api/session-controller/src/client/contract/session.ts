@@ -1,19 +1,20 @@
 /**
  * The outward session face. Feature packages never see the concrete Session
- * class: components read conversation state through `useSession` (the
+ * class: components read lifecycle state through `useSession` (the
  * ObservableSnapshot half), and orchestration code calls the behavior verbs
  * below — nothing else. Widening this interface is the explicit act of
  * widening what features may do to a session (and what every test fixture
- * must stub); runtime-internal entry points (history staging, wire-frame
+ * must stub); implementation-internal entry points (history staging, wire-frame
  * dispatch) stay on the class, invisible out here.
  */
 import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type {
-  ClientResult, MessageId, PromptContentPart, QueueAction, SessionId,
-} from '@deepseek-ai/dsh-api-remotes/client'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import type { ConversationSnapshot } from '../sessions/conversation.ts'
-import type { ObservableSnapshot } from './store.ts'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { PromptContentPart, QueueAction } from '../../types.ts'
+import type { ClientResult } from './result.ts'
+import type { SessionSnapshot } from './snapshot.ts'
 
 /** Key-addressed projection read face (the useProjection resolution path; see ProjectionValueStore). */
 export interface ProjectionsFace {
@@ -86,8 +87,8 @@ export interface ISession {
 }
 
 /**
- * The full outward face: behavior verbs plus the conversation read side
+ * The full outward face: behavior verbs plus the Session lifecycle read side
  * (the `useSession` hook source). This is the type carried by
  * `SessionBinding.session` and the provide channel.
  */
-export type SessionFace = ISession & ObservableSnapshot<ConversationSnapshot>
+export type SessionFace = ISession & ObservableSnapshot<SessionSnapshot>

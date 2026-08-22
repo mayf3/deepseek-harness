@@ -3,19 +3,19 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  ClientFailure, ClientResult, IApiClient, MessageId, PromptContentPart, QueueAction,
-  SessionId, SubagentAddress,
-} from '@deepseek-ai/dsh-api-remotes/client'
+  IApiClient, SubagentAddress,
+} from '@deepseek-ai/dsh-client-connection/client'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   SessionEventStream,
   sessionStreamFailure,
-} from '@deepseek-ai/dsh-api-session-controller/client'
+} from '../transport.ts'
+import type { SessionJournalChange } from '../transport.ts'
 import type {
-  SessionEventChange,
-} from '@deepseek-ai/dsh-api-session-controller/client'
-import type {
+  PromptContentPart,
+  QueueAction,
   SessionAddress,
   SessionControlFrame,
   SessionEventEntry,
@@ -23,18 +23,14 @@ import type {
   SessionRequestId,
   SessionError,
   SessionToolView,
-} from '@deepseek-ai/dsh-api-session-controller/types'
-// Value import from the inline-safe wire layer (not the connection plugin):
-// plugin-to-plugin value imports are a bundle purity error.
-import { transportError } from '@deepseek-ai/dsh-host-apiproxy/api'
+} from '../../types.ts'
+import type { ClientFailure, ClientResult } from '../contract/result.ts'
+import { transportResult } from '../contract/result.ts'
 import type { SessionFace } from '../contract/session.ts'
-import { ConversationNodeAssembler } from './conversation-assembler.ts'
-import type { ConversationRuntime } from './conversation-assembler.ts'
-import type { ConversationEventInput, ConversationPublication } from '../contract/conversation.ts'
 import type {
-  ChatSnapshot, ComposerPhase, ConversationSnapshot, OpenState, PromptError,
-} from './conversation.ts'
-import { EMPTY_CHAT_SNAPSHOT } from './conversation.ts'
+  OpenState, PromptError, SessionSnapshot,
+} from '../contract/snapshot.ts'
+import { MutableSessionEventSource } from '../contract/events.ts'
 import { Notifier } from './notifier.ts'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionRemotes } from './remotes.ts'
@@ -67,15 +63,13 @@ export interface SessionOptions {
    * private store (bare object-layer construction).
    */
   projections?: ProjectionValueStore
-  /** Runtime registries used by this Session-owned Conversation assembler. */
-  conversation?: ConversationRuntime
 }
 
 /**
- * Owns a session's event window, derived conversation state, and observable
+ * Owns a session's event window, lifecycle state, and observable
  * snapshot. React bindings remain outside this data layer. Features see only
  * the {@link SessionFace} slice (ISession verbs + the snapshot source); the
- * remaining public members are manager/runtime entry points.
+ * remaining public members are Session Controller internals.
  */
 export class Session implements SessionFace {
   // ---- Window and derived state (all private; the snapshot is the only read API) ----
@@ -94,8 +88,6 @@ export class Session implements SessionFace {
   private loadingOlder = false
   /** Authoritative stream-only inbox snapshot; pending work never hits history. */
   private readonly queueMirror = new SessionQueueMirror()
-  /** Session-owned business Context engine over the contiguous raw window. */
-  private readonly conversation: ConversationNodeAssembler
   private running = false
   private address: SubagentAddress | undefined
   private parentAvailable = false
@@ -129,10 +121,12 @@ export class Session implements SessionFace {
    */
   readonly projections: ProjectionValueStore
 
-  private snapshotCache: ConversationSnapshot
+  /** Contiguous history and live tail consumed by Conversation assembly. */
+  readonly eventSource = new MutableSessionEventSource()
+  private snapshotCache: SessionSnapshot
   private readonly notifier: Notifier
   /**
-   * Agent-scoped cordis context, bound once by SessionRuntime when it
+   * Agent-scoped cordis context, bound once by ClientSessions when it
    * mints the scope (the client mirror of the host Agent's loopCtx). The
    * Session dispatches its own scoped events through it; undefined means
    * unbound (bare object-layer construction) or already pruned — both skip
@@ -155,21 +149,14 @@ export class Session implements SessionFace {
     this.projections = options.projections ?? new ProjectionValueStore()
     this.address = options.address
     this.parentAvailable = options.parentAvailable ?? false
-    this.conversation = options.conversation === undefined
-      ? new ConversationNodeAssembler(
-        { entries: () => [], fallbackEntry: () => undefined },
-        { entries: () => [] },
-      )
-      : new ConversationNodeAssembler(options.conversation.events, options.conversation.views)
     this.notifier = new Notifier(() => {
-      this.conversation.flush()
       this.snapshotCache = this.buildSnapshot()
     })
     this.snapshotCache = this.buildSnapshot()
   }
 
   /**
-   * Bind the Agent-scoped context minted by SessionRuntime (single write;
+   * Bind the Agent-scoped context minted by ClientSessions (single write;
    * a second bind is a wiring error and throws). Direction stays one-way at
    * this binding boundary: consumers still reach the Session via `sessions.sessionOf`,
    * while the Session holds its own dispatch point (host Agent.loopCtx
@@ -249,7 +236,7 @@ export class Session implements SessionFace {
         }
       }
     } catch (error) {
-      result = transportError(error)
+      result = transportResult(error)
     }
     if (!result.ok) {
       this.promptError = { op: 'send', error: result.error }
@@ -290,7 +277,7 @@ export class Session implements SessionFace {
       const data = Uint8Array.from(binary, char => char.charCodeAt(0))
       return { ok: true, value: { attachment: result.value.attachment, data } }
     } catch (error) {
-      return transportError(error)
+      return transportResult(error)
     }
   }
 
@@ -299,7 +286,7 @@ export class Session implements SessionFace {
     try {
       return toSessionResult(await this.remote.session.updateQueue({ sessionId: this.sessionId, itemId, action }))
     } catch (error) {
-      return transportError(error)
+      return transportResult(error)
     }
   }
 
@@ -333,7 +320,7 @@ export class Session implements SessionFace {
         ? (await this.api.subagents.interrupt(address)).result
         : toSessionResult(await this.remote.session.cancel({ sessionId: this.sessionId }))
     } catch (error) {
-      result = transportError(error)
+      result = transportResult(error)
     }
     if (!result.ok) {
       this.promptError = { op: 'stop', error: result.error }
@@ -357,7 +344,7 @@ export class Session implements SessionFace {
       if (result.ok) this.projections.apply('title', result.value.title, result.value.seq)
       return result
     } catch (error) {
-      return transportError(error)
+      return transportResult(error)
     }
   }
 
@@ -397,7 +384,7 @@ export class Session implements SessionFace {
       await events.prepend({ beforeSeq: this.baseSeq, maxMessages: PAGE_MESSAGES })
     } catch (error) {
       if (sessionStreamFailure(error) === undefined) {
-        console.error('[web-runtime] loadOlder failed:', error)
+        console.error('[session-controller] loadOlder failed:', error)
       }
     } finally {
       this.loadingOlder = false
@@ -406,8 +393,8 @@ export class Session implements SessionFace {
   }
 
   /** Rebuild an opened history source after address replacement.
-   *  Invalidates any in-flight open first; queue and pending-interaction state belongs
-   *  to the independently reconnecting control stream and remains untouched. */
+   *  Invalidates any in-flight open first; queue state belongs to the independently
+   *  reconnecting control stream and remains untouched. */
   async resync(): Promise<void> {
     if (this.openState === 'cold') return // never opened: no window to rebuild (doOpen flips to 'loading' synchronously, so cold implies no in-flight open)
     this.openGeneration++
@@ -436,10 +423,10 @@ export class Session implements SessionFace {
   }
 
   /**
-   * Cached conversation snapshot (rebuilt lazily when dirty with no listeners).
+   * Cached Session snapshot (rebuilt lazily when dirty with no listeners).
    * @returns the cached reference (stable until the next flush).
    */
-  getSnapshot(): ConversationSnapshot {
+  getSnapshot(): SessionSnapshot {
     this.notifier.ensureFresh()
     return this.snapshotCache
   }
@@ -538,18 +525,13 @@ export class Session implements SessionFace {
 
   /**
    * Stop the Session's live Remote source.
-   * @returns when the active journal generation and consumer are quiescent.
+   * @returns when the Remote iterator has completed teardown.
    */
-  dispose(): Promise<void> {
+  async dispose(): Promise<void> {
     this.openGeneration++
     const events = this.events
     this.events = undefined
-    return events?.dispose() ?? Promise.resolve()
-  }
-
-  /** Rebuild the current window after a low-frequency Definition or view registration change. */
-  rebuildConversationRegistry(): void {
-    this.scheduleConversation(this.conversation.rebuildRegistry())
+    await events?.dispose()
   }
 
   // ---- Private ----
@@ -584,7 +566,7 @@ export class Session implements SessionFace {
   }
 
   /** Apply one contiguous journal update already reconciled by the Remote stream. */
-  private acceptEventChange(change: SessionEventChange): void {
+  private acceptEventChange(change: SessionJournalChange): void {
     switch (change.type) {
       case 'replace':
         this.installWindow(change.entries, change.hasMore, change.page.projections)
@@ -592,50 +574,42 @@ export class Session implements SessionFace {
       case 'prepend':
         this.prependWindow(change.entries, change.hasMore)
         return
-      case 'append': {
-        const entry = conversationInput(change.entry)
-        this.scheduleConversation(this.appendLive(entry.event, entry.view))
-      }
+      case 'append':
+        if (this.appendLive(change.entry)) this.notifier.markDirty()
     }
   }
 
   /** Replace the complete contiguous window and apply page-owned projection metadata. */
   private installWindow(entries: readonly SessionEventEntry[], hasMore: boolean, projections?: ProjectionsBaseline): void {
-    const normalized = entries.map(conversationInput)
-    this.eventWindow = normalized.map(entry => entry.event)
-    this.views = normalized.map(entry => entry.view)
+    this.eventWindow = entries.map(entry => entry.event as SessionEvent)
+    this.views = entries.map(entry => entry.view)
     this.baseSeq = this.eventWindow[0]?.seq ?? 0
     this.hasMore = hasMore
     if (this.eventWindow.some(event => event.type === 'turn/start')) this.firstPromptPendingTurn = false
-    this.conversation.replaceWindow(normalized, hasMore)
     if (projections !== undefined) this.projections.seed(projections)
+    this.eventSource.replace(entries, hasMore)
     this.notifier.markDirty()
   }
 
   /** Prepend one stream-validated history page. */
   private prependWindow(entries: readonly SessionEventEntry[], hasMore: boolean): void {
-    const normalized = entries.map(conversationInput)
-    this.eventWindow = [...normalized.map(entry => entry.event), ...this.eventWindow]
-    this.views = [...normalized.map(entry => entry.view), ...this.views]
+    this.eventWindow = [...entries.map(entry => entry.event as SessionEvent), ...this.eventWindow]
+    this.views = [...entries.map(entry => entry.view), ...this.views]
     this.baseSeq = this.eventWindow[0]?.seq ?? 0
     this.hasMore = hasMore
-    this.conversation.prepend(normalized, hasMore)
+    this.eventSource.prepend(entries, hasMore)
   }
 
   /** Append one stream-validated live event. */
-  private appendLive(event: SessionEvent, view?: SessionToolView): ConversationPublication {
+  private appendLive(entry: SessionEventEntry): boolean {
+    const event = entry.event as SessionEvent
     this.eventWindow.push(event)
-    this.views.push(view)
+    this.views.push(entry.view)
+    const awaitingFirstTurn = this.firstPromptPendingTurn
     if (event.type === 'turn/start') this.firstPromptPendingTurn = false
     const queueChanged = this.queueMirror.acceptDurable(event)
-    const publication = this.conversation.append({ event, view })
-    return queueChanged ? 'immediate' : publication
-  }
-
-  /** Route assembler cadence into the Session's existing microtask/RAF notifier. */
-  private scheduleConversation(publication: ConversationPublication): void {
-    if (publication === 'immediate') this.notifier.markDirty()
-    else if (publication === 'animation-frame') this.notifier.markFrameDirty()
+    this.eventSource.append(entry)
+    return queueChanged || awaitingFirstTurn !== this.firstPromptPendingTurn
   }
 
   /** Publish a terminal background failure only while this stream still owns the Session. */
@@ -650,29 +624,14 @@ export class Session implements SessionFace {
     this.notifier.markDirty()
   }
 
-  private buildSnapshot(): ConversationSnapshot {
-    const chat = (this.conversation.snapshot('chat') as ChatSnapshot | undefined) ?? EMPTY_CHAT_SNAPSHOT
-    const legacy = chat.legacy
+  private buildSnapshot(): SessionSnapshot {
     return {
       sessionId: this.sessionId,
-      views: this.conversation,
-      chat,
-      nodes: legacy.nodes,
-      turnTimings: legacy.turnTimings,
-      turnEnds: legacy.turnEnds,
-      partial: legacy.partial,
-      runningCalls: legacy.runningCalls,
       queue: this.queueMirror.snapshot(),
       running: this.running,
       subagent: this.address === undefined
         ? null
         : { address: this.address, parentAvailable: this.parentAvailable },
-      composerPhase: derivePhase(
-        hasVisibleConversationContent(chat)
-          || (!this.blankBit && !this.firstPromptPendingTurn)
-          || this.running,
-        this.promptAttempted,
-      ),
       removed: this.removed,
       openState: this.openState,
       openError: this.openError,
@@ -681,6 +640,8 @@ export class Session implements SessionFace {
       promptError: this.promptError,
       blank: this.blankBit,
       lastAgentError: this.lastAgentError,
+      promptAttempted: this.promptAttempted,
+      awaitingFirstTurn: this.firstPromptPendingTurn,
     }
   }
 
@@ -691,45 +652,16 @@ export class Session implements SessionFace {
   }
 }
 
-/** Convert one wire history row into the assembler's transport-neutral input. */
-function conversationInput(entry: SessionEventEntry): ConversationEventInput {
-  return {
-    event: entry.event as SessionEvent,
-    view: entry.view,
-  }
-}
-
 /** Convert a terminal Session stream failure to the Client error vocabulary. */
 function openFailure(error: unknown): ClientFailure {
   const failure = sessionStreamFailure(error)
   if (failure !== undefined) return failure as SessionError
-  const folded = transportError<never>(error)
-  /* v8 ignore next -- transportError never returns an ok result. */
-  if (folded.ok) throw new Error('transportError returned an unexpected success')
+  const folded = transportResult<never>(error)
+  /* v8 ignore next -- transportResult never returns an ok result. */
+  if (folded.ok) throw new Error('transportResult returned an unexpected success')
   return folded.error
 }
-
 /** Narrow a generated Session Remote failure to its service-owned error vocabulary. */
 function toSessionResult<T>(result: RemoteResult<T>): ClientResult<T> {
   return result.ok ? result : { ok: false, error: result.error as SessionError }
-}
-
-/** A generic command row alone remains control-plane content; every other visible Chat Node activates the conversation. */
-function hasVisibleConversationContent(chat: ChatSnapshot): boolean {
-  return chat.order.some(key => chat.nodes.get(key)?.kind !== 'command')
-}
-
-/**
- * The composerPhase judgment — the single site that knows the predicate
- * (consumers switch on the result, never re-derive). A failed first prompt
- * stays engaging until an authoritative accepted-turn, running, or pending
- * signal arrives (retry semantics — see ComposerPhase).
- * @param hasContent - authoritative non-blank activity beyond a pending first
- *   prompt, visible non-command Chat content, a running turn, or a pending interaction.
- * @param promptAttempted - a prompt was initiated on this session object.
- * @returns the derived phase.
- */
-function derivePhase(hasContent: boolean, promptAttempted: boolean): ComposerPhase {
-  if (hasContent) return 'active'
-  return promptAttempted ? 'engaging' : 'blank'
 }

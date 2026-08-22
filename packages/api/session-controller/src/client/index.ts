@@ -1,184 +1,125 @@
-/** Session-specific adapters for Gateway-owned Remote stream lifecycles. */
+/** Client Session object layer, Agent scopes, and Remote lifecycle wiring. */
 
-import type {} from '@deepseek-ai/dsh-api-session-controller/remote'
-import type { RemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
-import {
-  RemoteJournalStream,
-  RemoteSnapshotStream,
-  RemoteStreamCarrierError,
-  RemoteStreamError,
-  type ClientRemote,
-  type RemoteJournalChange,
-  type RemoteJournalFrame,
-} from '@deepseek-ai/dsh-api-gateway/client'
-import type {
-  SessionAddress,
-  SessionControlFrame,
-  SessionEventEntry,
-  SessionPage,
-  SessionPageRequest,
-} from '../types.ts'
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent/types'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import { createSessionControlStream } from './transport.ts'
+import { ClientSessions } from './sessions/service.ts'
+import type { ISessions } from './contract/sessions.ts'
+import type { SessionRemotes } from './sessions/remotes.ts'
+import type {} from '../remote-events.ts'
 
 export {
+  createSessionControlStream,
+  SessionEventStream,
   SESSION_SEARCH_RESULT_LIMIT,
   SESSION_SEARCH_SNIPPET_MAX_CODE_POINTS,
-} from '../types.ts'
+  sessionStreamFailure,
+} from './transport.ts'
+export type {
+  ClientSessionPageRequest,
+  SessionControlStream,
+  SessionControlStreamOptions,
+  SessionEventStreamOptions,
+  SessionJournalChange,
+  SessionRemote,
+} from './transport.ts'
+export { createScope, scopeOf } from './scope.ts'
+export type { AgentContext, AgentScopeHandle } from './scope.ts'
+export { SessionCreateError, SessionForkError, workspaceTitleOf } from './sessions/service.ts'
+export type { SessionBinding, SessionListState, SessionSummary } from './sessions/service.ts'
+export type {
+  SessionListPhase,
+  SessionListSnapshot,
+  SessionSearchResultItem,
+  SubagentCatalogSnapshot,
+} from './sessions/manager.ts'
+export type { Session } from './sessions/session.ts'
+export type {
+  ProjectionsBaseline,
+  ProjectionValueStore,
+  SessionProjectionMap,
+  UseProjection,
+} from './sessions/projection-store.ts'
+export type { ISession, ProjectionsFace, SessionFace } from './contract/session.ts'
+export type { ISessions } from './contract/sessions.ts'
+export { MutableSessionEventSource } from './contract/events.ts'
+export type { SessionEventChange, SessionEventSource, SessionEventWindow } from './contract/events.ts'
+export type {
+  OpenState,
+  PromptError,
+  QueuedMessage,
+  SessionSnapshot,
+} from './contract/snapshot.ts'
+export type { ClientFailure, ClientResult } from './contract/result.ts'
+export { indexSubagentDescendants } from './sessions/subagent-lineage.ts'
+export type { SubagentDescendantSummary } from './sessions/subagent-lineage.ts'
 
-/** Session Controller's Client row exports library values and installs no Cordis service. */
-export function apply(): void {}
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * A Host connection generation completed its readiness handshake.
+     * @mode emit
+     */
+    'connection/reset'(): void
+  }
 
-/** Pagination fields bound to an already-addressed Session journal. */
-export type ClientSessionPageRequest = Omit<SessionPageRequest, 'address' | 'throughSeq'>
-
-/** Complete generated `ctx.remote.session` namespace. */
-export type SessionRemote = ClientRemote['session']
-
-/** One complete event-window publication from the Session journal stream. */
-export type SessionEventChange = RemoteJournalChange<SessionPage, SessionEventEntry>
-
-type SessionControlBaselineFrame = Extract<SessionControlFrame, { type: 'baseline' }>
-type SessionControlDeltaFrame = Exclude<SessionControlFrame, SessionControlBaselineFrame>
-
-/** Gateway-owned control snapshot stream configured for Session frames. */
-export type SessionControlStream = RemoteSnapshotStream<
-  SessionControlBaselineFrame,
-  SessionControlDeltaFrame
->
-
-type SessionStreamRemote = Pick<ClientRemote, '$stream' | 'session'>
-
-/** Domain sinks used by the Host-wide Session control stream. */
-export interface SessionControlStreamOptions {
-  /** Apply a complete baseline or one later update. */
-  readonly accept: (frame: SessionControlFrame) => void
-  /** Observe a retryable carrier loss before reconnection. */
-  readonly carrierFailed?: (error: RemoteStreamCarrierError) => void
-  /** Publish a terminal business or protocol failure. */
-  readonly failed: (error: unknown) => void
+  interface Context {
+    /** Client Session object layer and Agent scope owner. */
+    sessions: import('./contract/sessions.ts').ISessions
+  }
 }
 
-/** Domain sinks used by one addressed Session event journal. */
-export interface SessionEventStreamOptions {
-  /** Apply one complete event-window change. */
-  readonly publish: (change: SessionEventChange) => void
-  /** Observe a retryable carrier loss before reconnection. */
-  readonly carrierFailed?: (error: RemoteStreamCarrierError) => void
-  /** Publish a terminal stream, page, or protocol failure after opening. */
-  readonly failed: (error: unknown) => void
+/** Required wire, Remote, and Context projection services. */
+export const inject = [
+  'connection',
+  'typert',
+  'remote',
+  'remote.commands',
+  'remote.session',
+]
+
+/**
+ * Resolve the Client Session service from any Client Cordis context.
+ * @param ctx - Client root or Agent-scoped context.
+ * @returns the Client Session object layer.
+ */
+export function resolveClientSessions(ctx: Context): ISessions {
+  const sessions = ctx.get('sessions')
+  if (sessions === undefined) throw new Error('session-controller: Client sessions service unavailable')
+  return sessions
 }
 
 /**
- * Create the Host-wide Session control snapshot stream.
- * @param remote - generated Session namespace and Gateway stream factory.
- * @param options - Session state destinations.
- * @returns an unstarted stream owned by the Client Session runtime.
+ * Install Client Session state and its reconnecting control stream.
+ * @param ctx - Client Cordis context.
  */
-export function createSessionControlStream(
-  remote: SessionStreamRemote,
-  options: SessionControlStreamOptions,
-): SessionControlStream {
-  const stream = remote.$stream<SessionControlFrame>({
-    name: 'session control stream',
-    open: signal => remote.session.control(signal),
-    ended: accepted => accepted
-      ? new RemoteStreamCarrierError('session control stream ended without a terminal result')
-      : new Error('session control stream ended before its opening snapshot'),
-    ...(options.carrierFailed === undefined ? {} : { carrierFailed: options.carrierFailed }),
+export function apply(ctx: Context): void {
+  const connection = ctx.get('connection') as ConnectionHandle
+  const remotes = ctx.remote as unknown as SessionRemotes
+  const sessions = new ClientSessions(ctx, connection.api, remotes)
+  ctx.remote.$on('api-session/added', (summary) => { sessions.handleSessionAdded(summary) })
+  ctx.remote.$on('api-session/removed', (sessionId) => { sessions.handleSessionRemoved(sessionId) })
+  ctx.remote.$on('api-session/status', (sessionId, running) => {
+    sessions.handleSessionStatus(sessionId, running)
   })
-  return new RemoteSnapshotStream(stream, {
-    name: 'session control stream',
-    isSnapshot: (frame): frame is SessionControlBaselineFrame => frame.type === 'baseline',
-    replace: options.accept,
-    update: options.accept,
-    failed: options.failed,
+  ctx.remote.$on('api-session/activity', (sessionId, updatedAt) => {
+    sessions.handleSessionActivity(sessionId, updatedAt)
   })
-}
+  ctx.remote.$on('api-session/error', (sessionId, message) => {
+    sessions.handleSessionError(sessionId, message)
+  })
 
-/** Gateway-owned event journal bound to one ordinary or direct-subagent Session address. */
-export class SessionEventStream extends RemoteJournalStream<
-  SessionPage,
-  SessionEventEntry,
-  number,
-  ClientSessionPageRequest
-> {
-  /**
-   * @param remote - generated Session namespace and Gateway stream factory.
-   * @param address - durable ordinary-Session or direct-subagent address.
-   * @param options - Session event-window destinations.
-   */
-  constructor(
-    private readonly remote: SessionStreamRemote,
-    private readonly address: SessionAddress,
-    options: SessionEventStreamOptions,
-  ) {
-    super(remote, {
-      name: 'session event stream',
-      emptyCursor: -1,
-      entries: page => page.events,
-      hasMore: page => page.hasMore,
-      cursor: entry => entry.event.seq,
-      compare: (left, right) => left - right,
-      follows: (left, right) => right === left + 1,
-      publish: options.publish,
-      ...(options.carrierFailed === undefined
-        ? {}
-        : { carrierFailed: options.carrierFailed }),
-      failed: options.failed,
-    })
-  }
-
-  /** @inheritdoc */
-  protected override async * follow(
-    afterSeq: number | undefined,
-    signal: AbortSignal,
-  ): AsyncIterable<RemoteJournalFrame<SessionEventEntry, number>> {
-    const request = afterSeq === undefined
-      ? { address: this.address }
-      : { address: this.address, afterSeq }
-    for await (const frame of this.remote.session.follow(request, signal)) {
-      if (frame.type === 'opened') {
-        yield frame
-        continue
-      }
-      const { type: _type, ...entry } = frame
-      yield { type: 'entry', entry }
-    }
-  }
-
-  /** @inheritdoc */
-  protected override async readPage(
-    request: ClientSessionPageRequest,
-    throughSeq: number,
-    signal: AbortSignal,
-  ): Promise<SessionPage> {
-    const result = await this.remote.session.page(
-      { address: this.address, throughSeq, ...request },
-      signal,
-    )
-    if (!result.ok) {
-      throw new RemoteStreamError(
-        result.error.code,
-        result.error.message,
-        result.error.details,
-      )
-    }
-    return result.value
-  }
-
-  /** @inheritdoc */
-  protected override repairRequest(
-    request: ClientSessionPageRequest,
-  ): ClientSessionPageRequest {
-    return request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages }
-  }
-}
-
-/**
- * Recover a Host Session failure from a Remote stream terminal error.
- * @param error - value thrown while opening or consuming a Session stream.
- * @returns the Host failure, or `undefined` for carrier and local failures.
- */
-export function sessionStreamFailure(error: unknown): RemoteFailure | undefined {
-  if (!(error instanceof RemoteStreamError)) return undefined
-  return { code: error.code, message: error.message, details: error.details }
+  const control = createSessionControlStream(remotes, {
+    accept: (frame) => { sessions.handleControlFrame(frame) },
+    failed: (error) => { console.error('[session-controller] control stream failed:', error) },
+  })
+  control.start()
+  ctx.on('connection/reset', () => { sessions.handleConnected() })
+  if (connection.hostDescription.getSnapshot() !== undefined) sessions.handleConnected()
+  ctx.typert.contexts.registerClient('agent', {
+    identity: candidate => sessions.scopeOf(candidate),
+    resolve: sessionId => sessions.scope(sessionId),
+  })
+  ctx.effect(() => async () => { await control.dispose() }, 'session-controller.client.control')
 }

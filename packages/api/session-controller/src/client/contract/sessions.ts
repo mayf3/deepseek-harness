@@ -1,39 +1,42 @@
 /**
  * The outward sessions-service face — what `ctx.sessions` exposes to feature
- * packages and the renderer host, and therefore exactly what the test
- * runtime's sessions double must implement. Transport entry points and
- * runtime internals stay on
- * the concrete class; cross-domain consumers keep the narrower
- * [SessionsPort](./sessions-port.ts). Widening this interface is the
+ * packages. Transport entry points and implementation internals stay on
+ * the concrete class. Widening this interface is the
  * explicit act of widening what features may do to the sessions domain.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type {
-  ClientResult, SessionId, SubagentAddress,
-} from '@deepseek-ai/dsh-api-remotes/client'
-import type { HostObservable, SessionMaybeProvideInfo } from '@deepseek-ai/dsh-client-ui-slots'
-import type { AgentContext } from '../agents/scope.ts'
+import type { SubagentAddress } from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import type { AgentContext } from '../scope.ts'
 import type { SessionSearchResultItem } from '../sessions/manager.ts'
-import type {
-  SessionBinding, SessionListState, SessionProvideDescriptor,
-} from '../sessions/service.ts'
+import type { SessionBinding, SessionListState } from '../sessions/service.ts'
+import type { ClientResult } from './result.ts'
 import type { SessionFace } from './session.ts'
-import type { ObservableSnapshot } from './store.ts'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 
-export type { AgentContext } from '../agents/scope.ts'
+export type { AgentContext } from '../scope.ts'
 
 /** The sessions-service face injected as `ctx.sessions`. */
 export interface ISessions {
   /** The useSessions standard feed (list rows + current selection; read face — writes stay inside the domain). */
   readonly list: ObservableSnapshot<SessionListState>
-  /** Atomic current-session provide projection (the renderer host's `sessions.provideInfo` feed). */
-  readonly currentProvideInfo: HostObservable<SessionMaybeProvideInfo>
   /**
    * The `session.search` result bound the wire schema fixes, exposed to
    * presentation as injected data. Not per-connection state: every transport
    * (fixture included) reports the same number.
    */
   readonly searchResultLimit: number
+  /**
+   * Create or adopt a Session on the Host.
+   * @param opts - target workspace, directory, and optional preallocated identity.
+   * @returns the Session identity after its local binding is addressable.
+   */
+  create(opts?: {
+    workspaceId?: WorkspaceId
+    cwd?: string
+    sessionId?: SessionId
+  }): Promise<SessionId>
   /**
    * Select a session as current.
    * @param id - session id (must exist in the list; unknown ids fail loud).
@@ -73,6 +76,8 @@ export interface ISessions {
   noteAgentPreset(sessionId: SessionId, agentPreset: string): void
   /** Clear the current selection into the no-session view state. */
   clear(): void
+  /** @returns completion of the current or newly started Session-list refresh. */
+  refresh(): Promise<void>
   /**
    * Search the Host's visible message-content index. Results stay
    * request-local; the list snapshot remains the metadata authority.
@@ -95,13 +100,6 @@ export interface ISessions {
    * @throws when the fork fails, or when a requested child-title rename fails after creation.
    */
   fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId>
-  /**
-   * Register a per-session standard-props provider (hooks become `use<Name>`
-   * selector hooks on the render side; props spread verbatim).
-   * @param descriptor - static member roster plus per-session resolver.
-   * @returns disposer removing the provider.
-   */
-  provide(descriptor: SessionProvideDescriptor): () => void
   /**
    * Resolve an Agent-scoped context view (use-and-discard).
    * @param id - session id.

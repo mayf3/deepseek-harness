@@ -1,6 +1,6 @@
 /**
  * SessionManager orchestration: lazy resident instances, list lifecycle, host
- * frame routing, and the pending-frame buffer for uninstantiated sessions.
+ * frame routing, and control baselines for uninstantiated sessions.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -32,7 +32,7 @@ function makeManager(): SessionManager {
   return new SessionManager(api, fakeRemote(api))
 }
 
-describe('instances', () => {
+describe('SessionManager instances', () => {
   it('lazily builds one resident instance per id and syncs the running bit from the list', async () => {
     const api = new FakeApiClient()
     api.onList = () => Promise.resolve(ok({ items: [summary(S1, { running: true })] as never[] }))
@@ -710,11 +710,9 @@ describe('remaining branches', () => {
     expect(notified).toBe(seen)
   })
 
-  it('dispatches Host events to instantiated sessions', () => {
+  it('ignores Host status and error events for sessions without an instance', () => {
     const api = new FakeApiClient()
     const manager = new SessionManager(api, fakeRemote(api))
-    manager.get(S1)
-    // status flip for an unknown session only touches summaries (no crash).
     manager.handleSessionStatus(S2, true)
     manager.handleSessionError(S2, '无实例')
   })

@@ -12,7 +12,7 @@ const s = (id: string, updatedAt: number, parent?: string): SessionSummary => ({
   ...(parent !== undefined ? { parentSessionId: parent as SessionId } : {}),
 })
 
-describe('flattenLineage', () => {
+describe('Session lineage flattening', () => {
   it('keeps established root and sibling order while expanding children DFS with depth', () => {
     const out = flattenLineage([
       s('old-root', 10),

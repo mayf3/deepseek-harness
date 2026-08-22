@@ -2,8 +2,9 @@
 // The input order is authoritative; lineage only makes each child adjacent to its parent.
 // Orphaned lineage degrades to root level; cycles fail soft and emit as roots.
 
-import type { SessionId, SessionSummary } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
+import type { SessionSummary } from '../../types.ts'
 
 /** Host list summary enriched with the latest Session Controller title projection. */
 export interface TitledSessionSummary extends SessionSummary {
@@ -65,7 +66,7 @@ export function flattenLineage(
   const visited = new Set<SessionId>()
   const walk = (s: TitledSessionSummary, depth: number): void => {
     if (visited.has(s.sessionId)) {
-      console.warn(`[web-runtime] lineage cycle at ${s.sessionId}; emitting as root`)
+      console.warn(`[session-controller] lineage cycle at ${s.sessionId}; emitting as root`)
       return
     }
     visited.add(s.sessionId)

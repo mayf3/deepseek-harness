@@ -5,7 +5,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('browser time zone', () => {
+describe('Session Controller browser time zone', () => {
   it('returns the runtime-resolved zone', () => {
     expect(resolvedClientTimeZone()).toBe(
       new Intl.DateTimeFormat().resolvedOptions().timeZone,

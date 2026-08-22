@@ -1,7 +1,7 @@
 /**
- * SessionRuntime: list store projection (manager → {ids, byId, current}
- * with derived titles), the migrated current-selection account (open
- * validation, persisted mask semantics, cell resolution), scope-tree
+ * ClientSessions: list store projection (manager → {ids, byId, current}
+ * with derived titles), the current-selection account (open validation and
+ * persisted mask semantics), scope-tree
  * lifecycle (lazy mint / frozen survival / removed teardown with staged
  * deferral — the stage follows list.current), binding identity, breadcrumb
  * projection, create.
@@ -9,21 +9,31 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import { SessionCreateError, SessionRuntime, scopeOf } from '../src/client/sessions/service.ts'
-import { FakeApiClient, deferred, err, fakeRemote, ok } from './fake-api.client.ts'
+import { ClientSessions, SessionCreateError } from '../src/client/sessions/service.ts'
+import { scopeOf } from '../src/client/scope.ts'
+import type { SessionFollowFrame } from '../src/types.ts'
+import {
+  FakeApiClient,
+  deferred,
+  err,
+  fakeRemote,
+  ok,
+  type RuntimeRemotes,
+} from './fake-api.client.ts'
 
 const sid = (s: string): SessionId => s as SessionId
 
 interface Bench {
   ctx: Context
   api: FakeApiClient
-  svc: SessionRuntime
+  svc: ClientSessions
 }
 
-function bench(): Bench {
+function bench(configureRemote?: (remote: RuntimeRemotes) => RuntimeRemotes): Bench {
   const ctx = new Context()
   const api = new FakeApiClient()
-  const svc = new SessionRuntime(ctx, api, fakeRemote(api))
+  const remote = fakeRemote(api)
+  const svc = new ClientSessions(ctx, api, configureRemote?.(remote) ?? remote)
   return { ctx, api, svc }
 }
 
@@ -147,7 +157,7 @@ describe('scope tree', () => {
     expect(scopeOf(b.ctx)).toBeUndefined()
     const binding = b.svc.binding(sid('s1'))
     b.svc.open(sid('s1'))
-    expect(binding?.session).toBe(b.svc.currentProvideInfo.getSnapshot().hooks['session'])
+    expect(b.svc.sessionOf(scoped as Context)).toBe(binding?.session)
     expect(b.svc.binding(sid('s1'))).toBe(binding)
     expect(binding?.ctx).toBe(scoped)
   })
@@ -214,6 +224,166 @@ describe('scope tree', () => {
   })
 })
 
+describe('Agent scope disposal lifecycle', () => {
+  it('root disposal runs Agent scope effects', async () => {
+    const b = bench()
+    const readiness = b.ctx.plugin(() => undefined)
+    await readiness
+    b.svc.handleSessionAdded({
+      sessionId: sid('live'), updatedAt: 1, running: false, blank: true,
+    })
+    await Promise.resolve()
+    const scoped = b.svc.scope(sid('live'))
+    if (scoped === undefined) throw new Error('fixture Agent Context was not minted')
+    await scoped.fiber.await()
+    const scopeDisposed = vi.fn()
+    scoped.effect(() => scopeDisposed, 'fixture Agent scope effect')
+    await b.ctx.fiber.dispose()
+
+    expect(scopeDisposed).toHaveBeenCalledOnce()
+    expect(b.svc.sessionOf(scoped)).toBeUndefined()
+  })
+
+  it('root disposal waits for an opened Session source to finish closing', async () => {
+    const closeGate = deferred<undefined>()
+    const abortObserved = vi.fn()
+    let followSignal: AbortSignal | undefined
+    const b = bench(remote => ({
+      ...remote,
+      session: {
+        ...remote.session,
+        follow: (_request, signal) => {
+          if (signal === undefined) throw new Error('fixture requires a signal')
+          followSignal = signal
+          let opened = false
+          return {
+            [Symbol.asyncIterator]: () => ({
+              next: () => {
+                if (!opened) {
+                  opened = true
+                  return Promise.resolve({
+                    done: false,
+                    value: { type: 'opened', cursor: -1 } as const,
+                  })
+                }
+                return new Promise((_resolve, reject) => {
+                  signal.addEventListener('abort', () => {
+                    abortObserved()
+                    void closeGate.promise.then(() => {
+                      reject(signal.reason instanceof Error
+                        ? signal.reason
+                        : new Error(String(signal.reason)))
+                    })
+                  }, { once: true })
+                })
+              },
+            }),
+          }
+        },
+      },
+    }))
+    const readiness = b.ctx.plugin(() => undefined)
+    await readiness
+    await feedList(b, [{ id: 's1' }])
+    b.svc.open(sid('s1'))
+    await vi.waitFor(() => {
+      expect(b.svc.binding(sid('s1'))?.session.getSnapshot().openState).toBe('open')
+    })
+
+    const disposal = b.ctx.fiber.dispose()
+    const settled = vi.fn()
+    const observed = disposal.then(settled)
+
+    await vi.waitFor(() => { expect(abortObserved).toHaveBeenCalledOnce() })
+    expect(followSignal?.aborted).toBe(true)
+    expect(settled).not.toHaveBeenCalled()
+
+    closeGate.resolve(undefined)
+    await observed
+    expect(settled).toHaveBeenCalledOnce()
+  })
+
+  it('root disposal joins every Session drop already started by pruning under load', async () => {
+    const closeGates = new Map<SessionId, ReturnType<typeof deferred<undefined>>>()
+    const aborted = new Set<SessionId>()
+    const b = bench(remote => ({
+      ...remote,
+      session: {
+        ...remote.session,
+        follow: (request, signal) => {
+          if (signal === undefined) throw new Error('fixture requires a signal')
+          const sessionId = request.address.kind === 'session'
+            ? request.address.sessionId
+            : request.address.childSessionId
+          const closeGate = deferred<undefined>()
+          closeGates.set(sessionId, closeGate)
+          let opened = false
+          return {
+            [Symbol.asyncIterator]: () => ({
+              next: () => {
+                if (!opened) {
+                  opened = true
+                  return Promise.resolve({
+                    done: false,
+                    value: { type: 'opened', cursor: -1 } as const,
+                  })
+                }
+                return new Promise<IteratorResult<SessionFollowFrame>>((_resolve, reject) => {
+                  signal.addEventListener('abort', () => {
+                    aborted.add(sessionId)
+                    void closeGate.promise.then(() => {
+                      reject(signal.reason instanceof Error
+                        ? signal.reason
+                        : new Error(String(signal.reason)))
+                    })
+                  }, { once: true })
+                })
+              },
+            }),
+          }
+        },
+      },
+    }))
+    const readiness = b.ctx.plugin(() => undefined)
+    await readiness
+    const sessionIds = Array.from({ length: 24 }, (_, index) => sid(`load-${String(index)}`))
+    const retained = sessionIds.at(-1)
+    const held = sessionIds[0]
+    if (retained === undefined || held === undefined) throw new Error('fixture requires sessions')
+    await feedList(b, sessionIds.map(id => ({ id })))
+    for (const id of sessionIds) b.svc.open(id)
+    await vi.waitFor(() => {
+      for (const id of sessionIds) {
+        expect(b.svc.binding(id)?.session.getSnapshot().openState).toBe('open')
+      }
+    })
+
+    const pruned = sessionIds.slice(0, -1)
+    await feedList(b, [{ id: retained }])
+    await vi.waitFor(() => { expect(aborted.size).toBe(pruned.length) })
+    for (const id of pruned) expect(b.svc.scope(id)).toBeUndefined()
+
+    const disposal = b.ctx.fiber.dispose()
+    const settled = vi.fn()
+    const observed = disposal.then(settled)
+    await vi.waitFor(() => { expect(aborted.size).toBe(sessionIds.length) })
+
+    const otherClosures: Promise<void>[] = []
+    for (const [id, gate] of closeGates) {
+      if (id === held) continue
+      gate.resolve(undefined)
+      otherClosures.push(gate.promise)
+    }
+    await Promise.all(otherClosures)
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+    expect(settled).not.toHaveBeenCalled()
+
+    closeGates.get(held)?.resolve(undefined)
+    await observed
+    expect(settled).toHaveBeenCalledOnce()
+  })
+})
+
 describe('current selection (migrated from ui-layout, arbitrated into the list snapshot)', () => {
   afterEach(() => { vi.unstubAllGlobals() })
 
@@ -274,78 +444,7 @@ describe('current selection (migrated from ui-layout, arbitrated into the list s
   })
 })
 
-describe('cell (render-layer session kit)', () => {
-  it('resolves an identity-stable {sessionId, session} cell through the current projection', async () => {
-    const b = bench()
-    await feedList(b, [{ id: 's1' }])
-    b.svc.open(sid('s1'))
-    const info = b.svc.currentProvideInfo.getSnapshot()
-    expect(info.sessionId).toBe('s1')
-    // The bundle carries bare observables; hook binding happens in React.
-    expect(info.hooks['session']).toBe(b.svc.binding(sid('s1'))?.session)
-    // Re-staging the same id republishes nothing: identity holds.
-    b.svc.open(sid('s1'))
-    expect(b.svc.currentProvideInfo.getSnapshot()).toBe(info)
-  })
-
-  it('currentProvideInfo follows selection: absent projection ↔ definite bundle, notified on each move', async () => {
-    const b = bench()
-    await feedList(b, [{ id: 's1' }, { id: 's2' }])
-    const absent = b.svc.currentProvideInfo.getSnapshot()
-    expect(absent.sessionId).toBeUndefined()
-    expect(Object.hasOwn(absent.hooks, 'session')).toBe(true)
-    const notified = vi.fn()
-    b.svc.currentProvideInfo.subscribe(notified)
-    b.svc.open(sid('s1'))
-    const s1Bundle = b.svc.currentProvideInfo.getSnapshot()
-    expect(s1Bundle.sessionId).toBe('s1')
-    expect(s1Bundle.hooks['session']).toBe(b.svc.binding(sid('s1'))?.session)
-    expect(notified).toHaveBeenCalledTimes(1)
-    b.svc.open(sid('s2'))
-    const s2Bundle = b.svc.currentProvideInfo.getSnapshot()
-    expect(s2Bundle.sessionId).toBe('s2')
-    expect(s2Bundle).not.toBe(s1Bundle)
-    expect(notified).toHaveBeenCalledTimes(2)
-    b.svc.clear()
-    await Promise.resolve() // clearSelection projects through the manager notifier
-    expect(b.svc.currentProvideInfo.getSnapshot().sessionId).toBeUndefined()
-  })
-
-  it('a provider roster change under a stable current id republishes the bundle', async () => {
-    const b = bench()
-    await feedList(b, [{ id: 's1' }])
-    b.svc.open(sid('s1'))
-    const before = b.svc.currentProvideInfo.getSnapshot()
-    const notified = vi.fn()
-    b.svc.currentProvideInfo.subscribe(notified)
-    const source = { getSnapshot: () => 'live', subscribe: () => () => {} }
-    const dispose = b.svc.provide({
-      hooks: ['extra'],
-      props: ['marker'],
-      resolve: () => ({ hooks: { extra: source }, props: { marker: 7 } }),
-    })
-    const added = b.svc.currentProvideInfo.getSnapshot()
-    expect(added).not.toBe(before)
-    expect(added).toMatchObject({ sessionId: 's1', props: { marker: 7 } })
-    expect(added.hooks['extra']).toBe(source)
-    expect(notified).toHaveBeenCalledTimes(1)
-    dispose()
-    const removed = b.svc.currentProvideInfo.getSnapshot()
-    expect(removed).not.toBe(added)
-    expect(Object.hasOwn(removed.hooks, 'extra')).toBe(false)
-    expect(notified).toHaveBeenCalledTimes(2)
-  })
-
-  it('an unsubscribed currentProvideInfo listener stops receiving notifications', async () => {
-    const b = bench()
-    await feedList(b, [{ id: 's1' }])
-    const notified = vi.fn()
-    const off = b.svc.currentProvideInfo.subscribe(notified)
-    off()
-    b.svc.open(sid('s1'))
-    expect(notified).not.toHaveBeenCalled()
-  })
-
+describe('binding and stage lifecycle', () => {
   it('binding() is pure resolution: no staging, no deferred sweep', async () => {
     const b = bench()
     await feedList(b, [{ id: 's1' }, { id: 's2' }])
@@ -396,32 +495,6 @@ describe('cell (render-layer session kit)', () => {
     } finally {
       vi.unstubAllGlobals()
     }
-  })
-})
-
-describe('slot-store scope prune hook', () => {
-  it('notifies ctx.slots.pruneStoreScope when a scope dies (both teardown paths)', async () => {
-    const b = bench()
-    const pruneStoreScope = vi.fn()
-    b.ctx.reflect.provide('slots', { pruneStoreScope })
-    await feedList(b, [{ id: 's1' }, { id: 's2' }])
-    b.svc.scope(sid('s1'))
-    b.svc.scope(sid('s2'))
-    b.svc.open(sid('s2')) // s2 staged
-    await feedList(b, []) // s1 off stage → immediate drop; s2 staged → deferred
-    expect(pruneStoreScope).toHaveBeenCalledWith('s1')
-    expect(pruneStoreScope).not.toHaveBeenCalledWith('s2')
-    await feedList(b, [{ id: 's3' }])
-    b.svc.open(sid('s3')) // stage moves → deferred sweep drops s2
-    expect(pruneStoreScope).toHaveBeenCalledWith('s2')
-  })
-
-  it('tolerates a slots-less boot (object-layer benches carry no slot service)', async () => {
-    const b = bench()
-    await feedList(b, [{ id: 's1' }])
-    b.svc.scope(sid('s1'))
-    await feedList(b, []) // teardown without ctx.slots must not throw
-    expect(b.svc.scope(sid('s1'))).toBeUndefined()
   })
 })
 

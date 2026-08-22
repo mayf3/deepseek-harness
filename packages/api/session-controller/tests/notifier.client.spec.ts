@@ -12,7 +12,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('Notifier', () => {
+describe('Session notifier', () => {
   it('collapses N markDirty calls into one flush, rebuilding before notifying', async () => {
     const order: string[] = []
     const notifier = new Notifier(() => order.push('rebuild'))

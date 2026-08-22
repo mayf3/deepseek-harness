@@ -7,11 +7,10 @@ import {
 } from '@deepseek-ai/dsh-api-gateway/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {
-  apply,
   createSessionControlStream,
   SessionEventStream,
   sessionStreamFailure,
-  type SessionEventChange,
+  type SessionJournalChange,
   type SessionRemote,
 } from '../src/client/index.ts'
 import type {
@@ -105,10 +104,6 @@ class ScriptedSessionRemote implements SessionTransportRemote {
 }
 
 describe('Session Client stream adapters', () => {
-  it('installs no Client service', () => {
-    apply()
-  })
-
   it('binds an event journal to one address and publishes replace, append, and prepend changes', async () => {
     const remote = new ScriptedSessionRemote(
       [{
@@ -124,7 +119,7 @@ describe('Session Client stream adapters', () => {
         { ok: true, value: page([entry(0), entry(1)], false) },
       ],
     )
-    const changes: SessionEventChange[] = []
+    const changes: SessionJournalChange[] = []
     const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
       publish: (change) => { changes.push(change) },
       failed: vi.fn(),
@@ -163,7 +158,7 @@ describe('Session Client stream adapters', () => {
         { ok: true, value: page([entry(0), entry(1), entry(2), entry(3), entry(4)]) },
       ],
     )
-    const changes: SessionEventChange[] = []
+    const changes: SessionJournalChange[] = []
     const carrierFailed = vi.fn()
     const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
       publish: (change) => { changes.push(change) },

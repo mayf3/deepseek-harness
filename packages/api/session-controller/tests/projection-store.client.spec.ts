@@ -25,7 +25,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 
 const SID = 'fk-s1' as SessionId
 
-describe('ProjectionValueStore semantics', () => {
+describe('Session projection value semantics', () => {
   it('reads undefined until a value lands (capability absence)', () => {
     const store = new ProjectionValueStore()
     expect(store.get('test/marks')).toBeUndefined()

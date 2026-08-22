@@ -1,9 +1,9 @@
 // Test-local programmable IApiClient fake (NOT the fixture: fixture is a demo
 // data source on a real clock; behavior tests need per-case responses and
-// deferred-controlled timing). Streams are hand pumps: pushFollow/pushControl/pushWorkspace.
+// deferred-controlled timing). Session streams are hand pumps: pushFollow/pushControl.
 import type {
-  IApiClient, ModelSelection,
-  RpcError, RpcResponse, SessionId, SessionModels, SessionSearchItem, SkillEntry,
+  IApiClient,
+  RpcError, RpcResponse, SessionId, SessionSearchItem, SkillEntry,
   WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
@@ -12,11 +12,14 @@ import type {
   SessionControlFrame,
   SessionFollowFrame,
   SessionFollowRequest,
+  SessionModels,
   SessionPage,
   SessionPageRequest,
+  SessionSelectModelRequest,
+  SessionSelectModelValue,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { WorkspaceRemote } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import type { WorkspaceError, WorkspaceFollowFrame } from '@deepseek-ai/dsh-api-workspace-controller/types'
+import type { WorkspaceFollowFrame } from '@deepseek-ai/dsh-api-workspace-controller/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {
   RemoteStream,
@@ -85,13 +88,8 @@ export function err<T>(error: RpcError): RpcResponse<T> {
 }
 
 /** Successful generated Remote result for programmable domain fakes. */
-export function remoteOk<T>(value: T): RemoteResult<T> {
+function remoteOk<T>(value: T): RemoteResult<T> {
   return { ok: true, value }
-}
-
-/** Workspace business failure returned by a generated Remote fake. */
-export function workspaceErr(error: WorkspaceError): RemoteResult<never> {
-  return { ok: false, error }
 }
 
 type ValueStreamItem<F> =
@@ -130,26 +128,28 @@ export class FakeApiClient implements IApiClient {
   onSearch: (payload: unknown) => Promise<RpcResponse<{ items: SessionSearchItem[]; hasMore: boolean }>> =
     () => Promise.resolve(ok({ items: [], hasMore: false }))
   onCreate: (payload: unknown) => Promise<RpcResponse<{ sessionId: SessionId }>> = () => Promise.resolve(ok({ sessionId: 'fk-new' as SessionId }))
-  readonly defaultModel: ModelSelection = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+  onModels: (payload: unknown) => Promise<RpcResponse<SessionModels>> = () => Promise.resolve(ok({
+    current: { provider: 'fixture', model: 'fixture' },
+    routable: true,
+    groups: [],
+    failures: [],
+  }))
+  onSelectModel: (payload: SessionSelectModelRequest) => Promise<RpcResponse<SessionSelectModelValue>> =
+    payload => Promise.resolve(ok({
+      selected: {
+        provider: payload.provider,
+        model: payload.model,
+        ...(payload.reasoningEffort === undefined
+          ? {}
+          : { reasoningEffort: payload.reasoningEffort }),
+      },
+    }))
   onRename: (payload: unknown) => Promise<RpcResponse<{ title: string; seq: number }>> = () => Promise.resolve(ok({ title: 'fk-renamed', seq: 0 }))
   onFork: (payload: unknown) => Promise<RpcResponse<{ sessionId: SessionId }>> = () => Promise.resolve(ok({ sessionId: 'fk-fork' as SessionId }))
   onHistory: (payload: { sessionId: SessionId; throughSeq?: number; beforeSeq?: number; maxMessages?: number })
   => Promise<RpcResponse<SessionPage>> =
     () => Promise.resolve(ok({ events: [], hasMore: false }))
 
-  onModels: (payload: unknown) => Promise<RpcResponse<SessionModels>> = () => Promise.resolve(ok({
-    current: this.defaultModel,
-    routable: true,
-    groups: [{
-      id: 'deepseek-official',
-      name: 'DeepSeek',
-      models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' }],
-    }],
-    failures: [],
-  }))
-  onSelectModel: (payload: { provider: string; model: string }) =>
-  Promise<RpcResponse<{ selected: ModelSelection }>> =
-    payload => Promise.resolve(ok({ selected: { provider: payload.provider, model: payload.model } }))
   onPrompt: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onAttachment: (payload: unknown) => Promise<RpcResponse<{ attachment: { attachmentId: never; mediaType: 'image/png'; bytes: number; width: number; height: number }; data: string }>> =
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, data: 'AA==' }))
@@ -303,7 +303,6 @@ export class FakeApiClient implements IApiClient {
         new RemoteStream(AVAILABLE_STREAM_CONNECTION, options)
       ),
       commands: {
-        list: () => Promise.resolve({ ok: true, value: [] }),
         execute: () => Promise.resolve({ ok: true, value: undefined }),
       },
       session: {
@@ -314,7 +313,11 @@ export class FakeApiClient implements IApiClient {
         },
         create: payload => this.remoteResult('session.create', payload, this.onCreate(payload)),
         models: payload => this.remoteResult('session.models', payload, this.onModels(payload)),
-        selectModel: payload => this.remoteResult('session.selectModel', payload, this.onSelectModel(payload)),
+        selectModel: payload => this.remoteResult(
+          'session.selectModel',
+          payload,
+          this.onSelectModel(payload),
+        ),
         rename: payload => this.remoteResult('session.rename', payload, this.onRename(payload)),
         fork: payload => this.remoteResult('session.fork', payload, this.onFork(payload)),
         prompt: payload => this.remoteResult('session.prompt', payload, this.onPrompt(payload)),
@@ -464,19 +467,24 @@ export class FakeApiClient implements IApiClient {
     const sessionId = addressSessionId(request.address)
     this.followStarts.push(sessionId)
     const key = addressKey(request.address)
-    const initialPage = this.onHistory({ sessionId, maxMessages: 50 })
-    this.openingPages.set(key, initialPage)
+    const initialPage = this.followCursor === undefined
+      ? this.onHistory({ sessionId, maxMessages: 50 })
+      : undefined
+    if (initialPage !== undefined) this.openingPages.set(key, initialPage)
     const conns = this.followConns.get(sessionId) ?? []
     if (!this.followConns.has(sessionId)) this.followConns.set(sessionId, conns)
     const stream = this.openValueStream(conns, signal)
     try {
-      const page = (await initialPage).result
-      const cursor = this.followCursor ?? (page.ok ? page.value.events.at(-1)?.event.seq ?? -1 : -1)
+      const page = initialPage === undefined ? undefined : (await initialPage).result
+      const cursor = this.followCursor
+        ?? (page?.ok ? page.value.events.at(-1)?.event.seq ?? -1 : -1)
       yield { type: 'opened', cursor }
       yield* stream.values
     } finally {
       stream.dispose()
-      this.openingPages.delete(key)
+      if (initialPage !== undefined && this.openingPages.get(key) === initialPage) {
+        this.openingPages.delete(key)
+      }
     }
   }
 

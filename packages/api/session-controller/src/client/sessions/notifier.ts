@@ -1,3 +1,5 @@
+import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
+
 /**
  * Batches structural updates in microtasks and stream updates by animation
  * frame. Reads may rebuild a dirty snapshot without consuming the pending
@@ -90,6 +92,6 @@ export class Notifier {
       this.dirty = false
       this.rebuild()
     }
-    for (const listener of this.listeners) listener()
+    notifySubscribers(this.listeners, '[session-controller]')
   }
 }

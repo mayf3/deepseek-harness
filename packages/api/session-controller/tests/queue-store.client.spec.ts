@@ -56,7 +56,7 @@ function makeManager(): SessionManager {
   return new SessionManager(api, fakeRemote(api))
 }
 
-describe('queue snapshot intake', () => {
+describe('Session queue snapshot intake', () => {
   it('projects stable ids, flat previews, and complete text', () => {
     const session = makeSession()
     session.handleControlFrame(queueFrame([

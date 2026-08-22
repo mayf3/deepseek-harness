@@ -1,24 +1,11 @@
-/**
- * Session orchestration: drive the object through contract calls and injected
- * frames (open → prompt → stream → finalize → cancel → resync) and assert the
- * ConversationSnapshot it settles into. Reference stability is asserted with
- * toBe/not.toBe — it is the React.memo/uSES contract, equal-value output is not
- * enough.
- */
+/** Session object lifecycle, event-window transport, commands, and resync behavior. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RemoteStreamError } from '@deepseek-ai/dsh-api-gateway/client'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import type {} from '@deepseek-ai/dsh-commands/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionToolView } from '@deepseek-ai/dsh-api-session-controller/types'
-import { Session } from '../src/client/sessions/session.ts'
-import type {
-  ChatConversationViewNode, ChatLocationNodeIndex, ChatNodeStore, ChatSnapshot,
-  ConversationEventInput, ConversationNode, ConversationNodeDefinition,
-  ConversationRuntime, ConversationSnapshot, ConversationTimelineSnapshot,
-  ConversationViewDefinition,
-} from '../src/client/index.ts'
+import { Session, type SessionOptions } from '../src/client/sessions/session.ts'
 import { FakeApiClient, deferred, err, fakeRemote, ok } from './fake-api.client.ts'
 import { entries, ev, plainTurn } from './event-script.client.ts'
 
@@ -29,139 +16,11 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const EMPTY: readonly never[] = []
-
-interface TestEventState extends ConversationEventInput {}
-
-class TestNodeStore implements ChatNodeStore {
-  private readonly nodes = new Map<string, ChatConversationViewNode>()
-  private cache: readonly ChatConversationViewNode[] = EMPTY
-
-  get(key: string): ChatConversationViewNode | undefined {
-    return this.nodes.get(key)
-  }
-
-  values(): readonly ChatConversationViewNode[] {
-    return this.cache
-  }
-
-  replace(nodes: readonly ChatConversationViewNode[]): void {
-    this.nodes.clear()
-    for (const node of nodes) this.nodes.set(node.key, node)
-    this.cache = [...this.nodes.values()]
-  }
-
-  upsert(nodes: readonly ChatConversationViewNode[]): void {
-    if (nodes.length === 0) return
-    for (const node of nodes) this.nodes.set(node.key, node)
-    this.cache = [...this.nodes.values()]
-  }
-}
-
-const TEST_LOCATIONS: ChatLocationNodeIndex = {
-  getTurn: () => EMPTY,
-  getStep: () => EMPTY,
-}
-
-function testLegacy(
-  nodes: readonly ChatConversationViewNode[],
-  timeline: ConversationTimelineSnapshot,
-): ChatSnapshot['legacy'] {
-  const legacyNodes = nodes.flatMap((node): ConversationNode[] => {
-    const event = (node.data as TestEventState).event
-    if (event.type === 'user/message') return [{ kind: 'user', seq: event.seq } as ConversationNode]
-    if (event.type === 'assistant/message') return [{ kind: 'assistant', seq: event.seq } as ConversationNode]
-    return []
-  })
-  const turnTimings = new Map<number, { startTime: number; endTime?: number }>()
-  const turnEnds = new Map<number, number>()
-  for (const turn of timeline.turns.values()) {
-    if (turn.start !== undefined) {
-      turnTimings.set(turn.turn, turn.end === undefined
-        ? { startTime: turn.start.time }
-        : { startTime: turn.start.time, endTime: turn.end.time })
-    }
-    if (turn.end !== undefined) turnEnds.set(turn.turn, turn.end.seq)
-  }
-  return { nodes: legacyNodes, turnTimings, turnEnds, partial: null, runningCalls: EMPTY }
-}
-
-function testViewDefinition(): ConversationViewDefinition<ChatConversationViewNode, ChatSnapshot> {
-  return {
-    target: 'chat',
-    create: () => {
-      const store = new TestNodeStore()
-      let current: ChatSnapshot = {
-        order: EMPTY,
-        nodes: store,
-        locations: TEST_LOCATIONS,
-        timeline: { turnOrder: EMPTY, turns: new Map() },
-        legacy: testLegacy(EMPTY, { turnOrder: EMPTY, turns: new Map() }),
-      }
-      const build = (timeline: ConversationTimelineSnapshot): ChatSnapshot => {
-        const nodes = [...store.values()].sort((left, right) => left.anchorSeq - right.anchorSeq)
-        current = {
-          order: nodes.map(node => node.key),
-          nodes: store,
-          locations: TEST_LOCATIONS,
-          timeline,
-          legacy: testLegacy(nodes, timeline),
-        }
-        return current
-      }
-      return {
-        empty: current,
-        replace: ({ nodes, timeline }) => {
-          store.replace(nodes)
-          return build(timeline)
-        },
-        apply: ({ upserts, timeline }) => {
-          store.upsert(upserts)
-          return build(timeline)
-        },
-      }
-    },
-  }
-}
-
-const TEST_EVENT_DEFINITION: ConversationNodeDefinition<TestEventState> = {
-  kind: 'runtime-test-event',
-  target: 'chat',
-  match: event => ({ id: String(event.seq), role: 'start' }),
-  start: (_context, match) => ({ event: match.event, view: match.view }),
-  update: context => context.state,
-  publication: match => match.event.type === 'assistant/chunk' ? 'animation-frame' : 'immediate',
-  buildViewNode: (context) => {
-    if (context.state === undefined || context.start === undefined) return null
-    return {
-      key: context.key,
-      kind: context.start.event.type === 'command/run' && context.start.event.data.name === 'goal'
-        ? 'command-input'
-        : context.start.event.type === 'command/run' || context.start.event.type === 'command/done'
-          ? 'command'
-          : 'runtime-test-event',
-      id: context.id,
-      target: 'chat',
-      anchorSeq: context.start.event.seq,
-      location: context.start.location,
-      visibility: 'visible',
-      data: context.state,
-    }
-  },
-}
-
-const TEST_CONVERSATION: ConversationRuntime = {
-  events: {
-    entries: () => [TEST_EVENT_DEFINITION],
-    fallbackEntry: () => undefined,
-  } as unknown as ConversationRuntime['events'],
-  views: {
-    entries: () => [testViewDefinition()],
-  } as unknown as ConversationRuntime['views'],
-}
-
-function makeSession(api = new FakeApiClient()): { api: FakeApiClient; session: Session } {
-  return { api, session: new Session(SID, api, fakeRemote(api), { conversation: TEST_CONVERSATION }) }
+function makeSession(
+  api = new FakeApiClient(),
+  options: SessionOptions = {},
+): { api: FakeApiClient; session: Session } {
+  return { api, session: new Session(SID, api, fakeRemote(api), options) }
 }
 
 function follow(
@@ -176,12 +35,12 @@ function follow(
   })
 }
 
-function chatEvents(snapshot: ConversationSnapshot): readonly TestEventState[] {
-  return snapshot.chat.order.map(key => snapshot.chat.nodes.get(key)?.data as TestEventState)
+function windowEntries(session: Session) {
+  return session.eventSource.getSnapshot().entries
 }
 
-function chatSeqs(snapshot: ConversationSnapshot): number[] {
-  return chatEvents(snapshot).map(item => item.event.seq)
+function eventSeqs(session: Session): number[] {
+  return windowEntries(session).map(entry => entry.event.seq)
 }
 
 function histResponse(events: SessionEvent[], hasMore = false) {
@@ -189,13 +48,13 @@ function histResponse(events: SessionEvent[], hasMore = false) {
   return Promise.resolve(ok({ events: entries(events) as never[], hasMore }))
 }
 
-describe('open', () => {
+describe('Session open', () => {
   it('keeps a bare Session blank until an authoritative lifecycle signal arrives', () => {
     const { session } = makeSession()
-    expect(session.getSnapshot()).toMatchObject({ blank: true, composerPhase: 'blank' })
+    expect(session.getSnapshot()).toMatchObject({ blank: true, promptAttempted: false, running: false })
 
     session.handleRunning(true)
-    expect(session.getSnapshot()).toMatchObject({ blank: false, composerPhase: 'active' })
+    expect(session.getSnapshot()).toMatchObject({ blank: false, running: true })
   })
 
   it('installs the tail page: cold → loading → open with window and nodes in place', async () => {
@@ -209,12 +68,8 @@ describe('open', () => {
     const snapshot = session.getSnapshot()
     expect(snapshot.openState).toBe('open')
     expect(snapshot.hasMore).toBe(true)
-    expect(snapshot.nodes.map(n => n.kind)).toEqual(['user', 'assistant'])
-    expect(snapshot.turnTimings.get(3)).toEqual({
-      startTime: 1_700_000_000_010,
-      endTime: 1_700_000_000_015,
-    })
-    expect(snapshot.turnEnds.get(3)).toBe(15)
+    expect(eventSeqs(session)).toEqual([10, 11, 12, 13, 14, 15])
+    expect(session.eventSource.getSnapshot().change).toMatchObject({ kind: 'replace' })
   })
 
   it('is idempotent: concurrent opens share one history call, reopening when open is a no-op', async () => {
@@ -258,9 +113,9 @@ describe('open', () => {
       modelSelection: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     }))
     await Promise.all([opening, ...deliveries])
-    const seqs = session.getSnapshot().nodes.map(n => n.seq)
+    const seqs = eventSeqs(session)
     // Overlapping seq-15 frame (== page tail turn/end) was dropped; 16 appended once.
-    expect(seqs).toEqual([11, 13, 16])
+    expect(seqs).toEqual([10, 11, 12, 13, 14, 15, 16])
   })
 })
 
@@ -275,98 +130,21 @@ describe('live event path', () => {
 
   it('drops replayed frames at or below the window tail', async () => {
     const { api, session } = await opened()
-    const before = session.getSnapshot()
+    const before = session.eventSource.getSnapshot()
     await follow(api, ev.user(3, '重放'))
-    expect(session.getSnapshot().nodes).toEqual(before.nodes)
+    expect(session.eventSource.getSnapshot()).toBe(before)
   })
 
   it('keeps the authoritative host blank bit across unrelated log events', async () => {
     const { api, session } = await opened([])
     session.handleBlank(true)
-    expect(session.getSnapshot().composerPhase).toBe('blank')
     await Promise.all([
       follow(api, ev.commandRun(0, 'cmd-perm', 'permission', ' danger-full-access')),
       follow(api, ev.commandDone(1, 'cmd-perm', 'success', 'preset danger-full-access')),
     ])
     const snapshot = session.getSnapshot()
-    expect(chatSeqs(snapshot)).toEqual([0, 1])
-    expect(snapshot.composerPhase).toBe('blank')
-  })
-
-  it('activates a fresh conversation for a command-input View Node without opening a model turn', async () => {
-    const { api, session } = await opened([])
-    session.handleBlank(true)
-    await Promise.all([
-      follow(api, ev.commandRun(0, 'cmd-goal', 'goal', ' ')),
-      follow(api, ev.commandDone(1, 'cmd-goal', 'success', 'No goal is currently set.')),
-    ])
-
-    expect(session.getSnapshot()).toMatchObject({
-      blank: true,
-      composerPhase: 'active',
-    })
-    expect(session.getSnapshot().chat.order.map(
-      key => session.getSnapshot().chat.nodes.get(key)?.kind,
-    )).toContain('command-input')
-  })
-
-  it('publishes animation-frame Definitions once per frame and lets an immediate event supersede the pending frame', async () => {
-    const frames: FrameRequestCallback[] = []
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      frames.push(callback)
-      return frames.length
-    })
-    const { api, session } = await opened()
-    const published: number[][] = []
-    session.subscribe(() => {
-      published.push(chatSeqs(session.getSnapshot()))
-    })
-    await Promise.all([
-      follow(api, ev.chunkStart(6, 1)),
-      follow(api, ev.chunkText(7, 1, '累')),
-      follow(api, ev.chunkText(8, 1, '计')),
-    ])
-    expect(published).toEqual([])
-    expect(frames).toHaveLength(1)
-
-    frames.shift()!(0)
-    expect(published).toEqual([[0, 1, 2, 3, 4, 5, 6, 7, 8]])
-
-    await Promise.all([
-      follow(api, ev.chunkText(9, 1, '完成')),
-      follow(api, ev.assistant(10, 1, '累计完成')),
-    ])
-    await Promise.resolve()
-    expect(published).toEqual([
-      [0, 1, 2, 3, 4, 5, 6, 7, 8],
-      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-    ])
-
-    frames.shift()!(0)
-    expect(published).toHaveLength(2)
-  })
-
-  it('publishes a timeline-only boundary even when no Definition claims the event', async () => {
-    const api = new FakeApiClient()
-    api.onHistory = () => histResponse([])
-    const conversation: ConversationRuntime = {
-      events: {
-        entries: () => [],
-        fallbackEntry: () => undefined,
-      } as unknown as ConversationRuntime['events'],
-      views: {
-        entries: () => [testViewDefinition()],
-      } as unknown as ConversationRuntime['views'],
-    }
-    const session = new Session(SID, api, fakeRemote(api), { conversation })
-    await session.open()
-    const snapshots: ConversationSnapshot[] = []
-    session.subscribe(() => { snapshots.push(session.getSnapshot()) })
-
-    await follow(api, ev.turnStart(0, 1))
-
-    expect(snapshots).toHaveLength(1)
-    expect(snapshots[0]?.chat.timeline.turns.get(1)?.status).toBe('open')
+    expect(eventSeqs(session)).toEqual([0, 1])
+    expect(snapshot.blank).toBe(true)
   })
 
   it('repairs a seq gap by repulling the tail page instead of appending a hole', async () => {
@@ -379,8 +157,9 @@ describe('live event path', () => {
       expect(api.callsOf('session.history').length).toBe(2)
     })
     await vi.waitFor(() => {
-      const seqs = session.getSnapshot().nodes.map(n => n.seq)
-      expect(seqs).toEqual([1, 3, 7, 9]) // both turns' user/assistant, no hole, no duplicate 9
+      expect(eventSeqs(session)).toEqual(
+        repaired.filter(event => event.seq <= 9).map(event => event.seq),
+      )
     })
   })
 })
@@ -401,7 +180,7 @@ describe('paging', () => {
       { sessionId: SID, throughSeq: 11, beforeSeq: 6 },
     ])
     expect(snapshot.hasMore).toBe(false)
-    expect(snapshot.nodes.map(n => n.seq)).toEqual([1, 3, 7, 9])
+    expect(eventSeqs(session)).toEqual([...older, ...newer].map(event => event.seq))
   })
 
   it('installs a page without interpreting business replacement metadata', async () => {
@@ -416,7 +195,7 @@ describe('paging', () => {
       await session.open()
       const snapshot = session.getSnapshot()
       expect(snapshot.openState).toBe('open')
-      expect(chatSeqs(snapshot)).toEqual([80, 81, 82])
+      expect(eventSeqs(session)).toEqual([80, 81, 82])
       expect(errorSpy).not.toHaveBeenCalled()
     } finally {
       errorSpy.mockRestore()
@@ -431,10 +210,10 @@ describe('paging', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
       await session.open()
-      const nodesBefore = session.getSnapshot().nodes
+      const windowBefore = session.eventSource.getSnapshot()
       await session.loadOlder()
       const snapshot = session.getSnapshot()
-      expect(snapshot.nodes).toEqual(nodesBefore)
+      expect(session.eventSource.getSnapshot().entries).toEqual(windowBefore.entries)
       expect(snapshot.hasMore).toBe(false)
     } finally {
       errorSpy.mockRestore()
@@ -532,40 +311,41 @@ describe('prompt and cancel errors', () => {
     expect(api.callsOf('session.cancel')).toEqual([])
   })
 
-  it('sends content through session.prompt; composerPhase steps blank → engaging synchronously at send entry', async () => {
+  it('publishes the first-prompt lifecycle synchronously before the Remote settles', async () => {
     const { api, session } = makeSession()
     session.handleBlank(true)
-    // The blank → engaging edge fires before the RPC settles: the first-send
-    // flow reads the phase on the session area's first frame to keep the
-    // guidance hero from flashing back in.
-    expect(session.getSnapshot().composerPhase).toBe('blank')
+    expect(session.getSnapshot()).toMatchObject({
+      blank: true, promptAttempted: false, awaitingFirstTurn: false,
+    })
     const inFlight = session.prompt([{ type: 'text', text: '要发的' }], 'queue')
-    expect(session.getSnapshot().composerPhase).toBe('engaging')
+    expect(session.getSnapshot()).toMatchObject({
+      blank: true, promptAttempted: true, awaitingFirstTurn: true,
+    })
     const result = await inFlight
     expect(result.ok).toBe(true)
-    // Monotone: settlement alone does not step the phase anywhere.
-    expect(session.getSnapshot().composerPhase).toBe('engaging')
+    expect(session.getSnapshot()).toMatchObject({
+      blank: false, promptAttempted: true, awaitingFirstTurn: true,
+    })
     expect(api.callsOf('session.prompt')).toMatchObject([{
       sessionId: SID,
       mode: 'queue',
       content: [{ type: 'text', text: '要发的' }],
       clientTimeZone: new Intl.DateTimeFormat().resolvedOptions().timeZone,
     }])
-    // First content lands (running turn): engaging → active.
     session.handleRunning(true)
-    expect(session.getSnapshot().composerPhase).toBe('active')
+    expect(session.getSnapshot()).toMatchObject({ running: true, awaitingFirstTurn: false })
   })
 
-  it('business failure lands in promptError with op=send; the phase stays engaging (retry, no hero bounce)', async () => {
+  it('keeps the attempted-first-prompt state when the Host rejects the prompt', async () => {
     const { api, session } = makeSession()
     session.handleBlank(true)
     api.onPrompt = () => Promise.resolve(err({ code: 'agent-busy', message: 'busy', details: { reason: 'x' } }))
     const result = await session.prompt([{ type: 'text', text: '失败的' }], 'queue')
     expect(result.ok).toBe(false)
     expect(session.getSnapshot().promptError).toMatchObject({ op: 'send', error: { code: 'agent-busy' } })
-    // Failed first prompt: composer + error strip is the retry surface —
-    // blank is unreachable once a send was initiated.
-    expect(session.getSnapshot().composerPhase).toBe('engaging')
+    expect(session.getSnapshot()).toMatchObject({
+      blank: true, promptAttempted: true, awaitingFirstTurn: true,
+    })
   })
 
   it('lands cancel failures in promptError with op=stop', async () => {
@@ -645,7 +425,7 @@ describe('remaining branches', () => {
     // err result: window unchanged
     api.onHistory = () => Promise.resolve(err({ code: 'internal', message: 'x', details: {} }))
     await session.loadOlder()
-    expect(session.getSnapshot().nodes).toHaveLength(2)
+    expect(eventSeqs(session)).toHaveLength(6)
     expect(session.getSnapshot().hasMore).toBe(true)
     // empty page: hasMore adopts the response
     api.onHistory = () => histResponse([], false)
@@ -700,7 +480,7 @@ describe('remaining branches', () => {
     expect(snapshot.openError).toMatchObject({
       code: 'internal', message: 'session event stream page did not end at its requested cursor',
     })
-    expect(snapshot.nodes).toEqual([])
+    expect(eventSeqs(session)).toEqual([])
   })
 
   it('deduplicates repeated running flips and records removal', () => {
@@ -715,11 +495,11 @@ describe('remaining branches', () => {
   it('drops live events while cold/error (no window upkeep)', async () => {
     const { api, session } = makeSession()
     await follow(api, ev.user(0, '冷态帧'))
-    expect(session.getSnapshot().nodes).toEqual([])
+    expect(eventSeqs(session)).toEqual([])
     api.onHistory = () => Promise.resolve(err({ code: 'internal', message: 'x', details: {} }))
     await session.open()
     await follow(api, ev.user(0, '错态帧'))
-    expect(session.getSnapshot().nodes).toEqual([])
+    expect(eventSeqs(session)).toEqual([])
   })
 
   it('preserves a Host-reported failure that terminates the live source', async () => {
@@ -757,7 +537,7 @@ describe('remaining branches', () => {
     await deliveries
     await vi.waitFor(() => { expect(session.getSnapshot().openState).toBe('error') })
     expect(session.getSnapshot().openError).toMatchObject({ code: 'internal', message: 'repair wire down' })
-    expect(session.getSnapshot().nodes).toHaveLength(2)
+    expect(eventSeqs(session)).toHaveLength(6)
   })
 
   it('doOpen transport throw of a stale generation is swallowed (generation guard in catch)', async () => {
@@ -785,7 +565,7 @@ describe('remaining branches', () => {
       modelSelection: { provider: 'deepseek-official', model: 'stale' },
     })) // success, but its generation is gone
     await Promise.all([opening, resynced])
-    expect(session.getSnapshot().nodes.map(n => n.seq)).toEqual([7, 9]) // only the fresh generation's window
+    expect(eventSeqs(session)).toEqual(plainTurn(6, 1, '新', '代').map(event => event.seq))
   })
 
   it('drops a gap repair superseded by a full resync while its pull was in flight', async () => {
@@ -804,7 +584,7 @@ describe('remaining branches', () => {
       modelSelection: { provider: 'deepseek-official', model: 'stale' },
     })) // repair result: stale, dropped
     await Promise.all([delivery, resynced])
-    expect(session.getSnapshot().nodes.map(n => n.seq)).toEqual([7, 9])
+    expect(eventSeqs(session)).toEqual(plainTurn(6, 1, 'c', 'd').map(event => event.seq))
   })
 
   it('successful cancel leaves no promptError', async () => {
@@ -821,7 +601,7 @@ describe('remaining branches', () => {
     await expect(session.dispose()).resolves.toBeUndefined()
   })
 
-  it('carries history-entry and follow-frame views into the business-neutral Event input', async () => {
+  it('carries history-entry and follow-frame views through the event feed', async () => {
     const { api, session } = makeSession()
     const callView = { for: 'call', view: { card: 'generic', title: '历史卡' } }
     api.onHistory = () => Promise.resolve(ok({
@@ -834,7 +614,7 @@ describe('remaining branches', () => {
       modelSelection: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     }))
     await session.open()
-    expect(chatEvents(session.getSnapshot()).slice(-2).map(item => item.view)).toEqual([
+    expect(windowEntries(session).slice(-2).map(item => item.view)).toEqual([
       callView,
       { for: 'result', view: { card: 'generic', title: '历史果' } },
     ])
@@ -843,7 +623,7 @@ describe('remaining branches', () => {
       ev.toolCall(8, 2, 'l1', 'write', '{}'),
       { for: 'call', view: { card: 'generic', title: '直播卡' } },
     )
-    expect(chatEvents(session.getSnapshot()).at(-1)?.view).toEqual({
+    expect(windowEntries(session).at(-1)?.view).toEqual({
       for: 'call', view: { card: 'generic', title: '直播卡' },
     })
     await follow(
@@ -851,22 +631,63 @@ describe('remaining branches', () => {
       ev.toolResult(9, 2, 'l1', 'ok'),
       { for: 'result', view: { card: 'generic', title: '直播果' } },
     )
-    expect(chatEvents(session.getSnapshot()).at(-1)?.view).toEqual({
+    expect(windowEntries(session).at(-1)?.view).toEqual({
       for: 'result', view: { card: 'generic', title: '直播果' },
     })
   })
 })
 
 describe('resync', () => {
-  it('rebuilds the window; cold instances no-op', async () => {
+  it('keeps the old feed until one sorted page-and-live replacement is ready', async () => {
+    const { api, session } = makeSession()
+    api.onHistory = () => histResponse(plainTurn(0, 0, '旧', '窗'))
+    await session.open()
+    const oldWindow = session.eventSource.getSnapshot()
+    const replacement = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
+    api.followCursor = 15
+    api.onHistory = () => replacement.promise
+    const publications: ReturnType<Session['eventSource']['getSnapshot']>[] = []
+    const off = session.eventSource.subscribe(() => {
+      publications.push(session.eventSource.getSnapshot())
+    })
+
+    const syncing = session.resync()
+    await vi.waitFor(() => { expect(api.callsOf('session.history')).toHaveLength(2) })
+    expect(session.eventSource.getSnapshot()).toBe(oldWindow)
+    expect(publications).toEqual([])
+
+    await Promise.all([
+      follow(api, ev.user(17, '后到高位')),
+      follow(api, ev.user(16, '后到低位')),
+    ])
+    expect(session.eventSource.getSnapshot()).toBe(oldWindow)
+    replacement.resolve(ok({
+      events: entries(plainTurn(10, 2, '终', '页')) as never[],
+      hasMore: false,
+      modelSelection: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    }))
+    await syncing
+
+    expect(publications).toHaveLength(1)
+    expect(publications[0]?.entries).not.toHaveLength(0)
+    expect(publications[0]?.change.kind).toBe('replace')
+    expect(eventSeqs(session)).toEqual([10, 11, 12, 13, 14, 15, 16, 17])
+    off()
+  })
+
+  it('rebuilds the window without clearing control state; cold instances no-op', async () => {
     const { api, session } = makeSession()
     api.onHistory = () => histResponse(plainTurn(0, 0, 'a', 'b'))
     await session.open()
+    session.handleRunning(true)
+    session.handleAgentError('still visible')
     api.onHistory = () => histResponse([...plainTurn(0, 0, 'a', 'b'), ...plainTurn(6, 1, 'c', 'd')])
     await session.resync()
     const snapshot = session.getSnapshot()
     expect(snapshot.openState).toBe('open')
-    expect(snapshot.nodes).toHaveLength(4)
+    expect(snapshot.running).toBe(true)
+    expect(snapshot.lastAgentError).toBe('still visible')
+    expect(eventSeqs(session)).toHaveLength(12)
 
     const cold = makeSession()
     await cold.session.resync()
@@ -885,55 +706,24 @@ describe('resync', () => {
     await resynced
     const snapshot = session.getSnapshot()
     expect(snapshot.openState).toBe('open') // stale failure did not settle the fresh generation into error
-    expect(snapshot.nodes.map(n => n.seq)).toEqual([7, 9])
+    expect(eventSeqs(session)).toEqual(plainTurn(6, 1, '新', '代').map(event => event.seq))
   })
 
 })
 
-describe('reference stability (the memo contract)', () => {
-  it('keeps unchanged node references across an append and swaps the snapshot object', async () => {
+describe('snapshot ownership', () => {
+  it('publishes event-window appends without changing an unrelated Session snapshot', async () => {
     const { api, session } = makeSession()
     api.onHistory = () => histResponse(plainTurn(0, 0, '稳', '定'))
     await session.open()
-    const before = session.getSnapshot()
-    const firstKey = before.chat.order[0]!
-    const secondKey = before.chat.order[1]!
-    const first = before.chat.nodes.get(firstKey)
-    const second = before.chat.nodes.get(secondKey)
+    const sessionBefore = session.getSnapshot()
+    const windowBefore = session.eventSource.getSnapshot()
+    const firstEntry = windowBefore.entries[0]
     await follow(api, ev.user(6, '追加'))
-    const after = session.getSnapshot()
-    expect(after).not.toBe(before) // top-level swap on change
-    expect(after.chat.nodes.get(firstKey)).toBe(first)
-    expect(after.chat.nodes.get(secondKey)).toBe(second)
-    expect(after.chat.order).toHaveLength(7)
-    // No change → same snapshot reference.
-    expect(session.getSnapshot()).toBe(after)
-  })
-
-  it('keeps unrelated Session arrays and settled Chat Nodes stable across Event updates', async () => {
-    const { api, session } = makeSession()
-    api.onHistory = () => histResponse(plainTurn(0, 0, '底', '座'))
-    await session.open()
-    await Promise.all([
-      follow(api, ev.turnStart(6, 1)),
-      follow(api, ev.stepStart(7, 1)),
-      follow(api, ev.toolCall(8, 1, 'c1', 'echo', '{}')),
-    ])
-    const before = session.getSnapshot()
-    const settledKey = before.chat.order[0]!
-    const settledNode = before.chat.nodes.get(settledKey)
-    await Promise.all([
-      follow(api, ev.chunkStart(9, 1)),
-      follow(api, ev.chunkText(10, 1, '与工具无关的流式')),
-    ])
-    const after = session.getSnapshot()
-    expect(after).not.toBe(before)
-    expect(after.runningCalls).toBe(before.runningCalls)
-    expect(after.chat.nodes.get(settledKey)).toBe(settledNode)
-    await follow(api, ev.toolResult(11, 1, 'c1', 'ECHO'))
-    const resolved = session.getSnapshot()
-    expect(resolved.chat.nodes.get(settledKey)).toBe(settledNode)
-    await follow(api, ev.assistant(12, 1, '完成'))
-    expect(session.getSnapshot()).not.toBe(resolved)
+    const windowAfter = session.eventSource.getSnapshot()
+    expect(session.getSnapshot()).toBe(sessionBefore)
+    expect(windowAfter).not.toBe(windowBefore)
+    expect(windowAfter.entries[0]).toBe(firstEntry)
+    expect(windowAfter.change).toMatchObject({ kind: 'append' })
   })
 })

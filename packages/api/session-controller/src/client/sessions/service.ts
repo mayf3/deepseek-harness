@@ -1,5 +1,5 @@
 /**
- * SessionRuntime: root sessions service — list snapshot store (manager
+ * ClientSessions: root sessions service — list snapshot store (manager
  * projection; carries `current`, the persisted selection every
  * session-scoped surface keys off), Agent scope tree (mintScope pattern: no-op plugin
  * Fiber + ctx.extend scope tag; one scope per session, agent id === session
@@ -16,23 +16,24 @@
  */
 import type { Context, Fiber } from '@deepseek-ai/cordis'
 import type {
-  ClientFailure, ClientResult, IApiClient, SessionId, SubagentAddress, JobView, WorkspaceId,
-} from '@deepseek-ai/dsh-api-remotes/client'
-import { SESSION_SEARCH_RESULT_LIMIT } from '@deepseek-ai/dsh-api-session-controller/client'
-import type {
-  HostObservable, SessionMaybeProvideInfo, SessionProvideInfo,
-} from '@deepseek-ai/dsh-client-ui-slots'
+  IApiClient, SubagentAddress,
+} from '@deepseek-ai/dsh-client-connection/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import { SESSION_SEARCH_RESULT_LIMIT } from '../../types.ts'
+import type { SessionJob as JobView } from '../../types.ts'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
-import type { SnapshotStore } from '../contract/store.ts'
-import { createSnapshotStore } from '../contract/store.ts'
+import {
+  createSnapshotStore, type SnapshotStore,
+} from '@deepseek-ai/dsh-client-store'
+import type { ClientFailure, ClientResult } from '../contract/result.ts'
+import type { SessionEventSource } from '../contract/events.ts'
 import type { SessionFace } from '../contract/session.ts'
 import type { AgentContext, ISessions } from '../contract/sessions.ts'
-import { createScope, scopeOf as scopeTagOf } from '../agents/scope.ts'
-import type { ConversationRuntime } from './conversation-assembler.ts'
+import { createScope, scopeOf as scopeTagOf } from '../scope.ts'
 import { SessionManager } from './manager.ts'
 import type { SessionRemotes } from './remotes.ts'
 import type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from './manager.ts'
-import { SessionProvideChannel } from './provide.ts'
 import type { Session } from './session.ts'
 
 /** Session list row projected from the host list RPC plus live stream increments. */
@@ -70,7 +71,7 @@ export interface SessionSummary {
 /**
  * Session list store shape. `current` rides the same snapshot (arbitrated:
  * the single useSessions standard hook reads list and selection together —
- * sidebar highlighting and SessionProvider share one fact source).
+ * sidebar highlighting and current-session consumers share one fact source).
  */
 export interface SessionListState {
   /** Host-list order; addressed breadcrumb-only rows are excluded. */
@@ -130,18 +131,20 @@ export class SessionForkError extends Error {
   }
 }
 
-/** Session assembly handle for SessionProvider/inject factories (identity-stable per session). */
+/** Identity-stable logical binding for one materialized Client Session. */
 export interface SessionBinding {
   readonly sessionId: SessionId
   /** The outward session face only — feature code never sees the concrete class. */
   readonly session: SessionFace
+  /** Contiguous event window reserved for Conversation assembly. */
+  readonly eventSource: SessionEventSource
   readonly ctx: AgentContext
 }
 
-// Scope primitives live in ../agents/scope.ts (the client mirror of host
+// Scope primitives live in ../scope.ts (the client mirror of host
 // dsh-scope, keyed by Agent identity); re-exported here so existing
 // consumers keep their import site.
-export { scopeOf } from '../agents/scope.ts'
+export { scopeOf } from '../scope.ts'
 
 /**
  * Workspace display title of a session cwd: the path's last non-empty
@@ -194,34 +197,10 @@ interface ScopeRecord {
   binding: SessionBinding
   /** The concrete Session for runtime-internal entry points (staging open()); the binding carries only the outward face. */
   session: Session
-  /** Render-layer standard-props bundle (identity-stable per scope; the renderer's per-info caches key off it). */
-  provideInfo: SessionProvideInfo
-}
-
-/** One plugin's per-session standard-props contribution (see {@link SessionRuntime.provide}). */
-export interface SessionProvideContribution {
-  /** Bare observable sources, keyed by hook base name ('input' → useInput). */
-  hooks?: Record<string, HostObservable<unknown>>
-  /** Stable plain members (action callbacks etc.), spread into standard props verbatim. */
-  props?: Record<string, unknown>
-}
-
-/**
- * Static declaration plus per-session resolver for one standard-kit
- * contribution. The declared names let the renderer construct the same hook
- * and prop surface while no session is current.
- */
-export interface SessionProvideDescriptor {
-  /** Hook base names (`input` becomes `useInput`). */
-  hooks?: readonly string[]
-  /** Plain standard-prop names. */
-  props?: readonly string[]
-  /** Resolve every declared member for one definite session. */
-  resolve(binding: SessionBinding): SessionProvideContribution
 }
 
 /** Root sessions service: list store, current selection, object-layer manager, scope tree, bindings, and breadcrumb routes. */
-export class SessionRuntime implements ISessions {
+export class ClientSessions implements ISessions {
   /**
    * The wire schema's own result bound, re-exposed for presentation plugins as
    * injected data. Not per-connection state: the `session.search` response
@@ -234,17 +213,9 @@ export class SessionRuntime implements ISessions {
   /** The object-layer instance cluster and frame dispatch entry. */
   private readonly manager: SessionManager
   /**
-   * Atomic current-session provide projection: selection changes and
-   * provider-roster changes publish through this one source (the renderer
-   * host's `sessions.provide` feed), so a roster change under a stable
-   * current id republishes the bundle instead of stranding mounted entries.
-   */
-  readonly currentProvideInfo: HostObservable<SessionMaybeProvideInfo>
-
-  /**
    * Persisted selection cell (the durable half of `list.current`). Private on
    * purpose: reads go through the list snapshot; writes through {@link
-   * SessionRuntime.open} / {@link SessionRuntime.clear}. Projection
+   * ClientSessions.open} / {@link ClientSessions.clear}. Projection
    * validates it against the live list instead of destructively pruning, so a
    * selection survives transient list states (reconnect re-pull) and
    * resurfaces when its session returns.
@@ -252,8 +223,8 @@ export class SessionRuntime implements ISessions {
   private readonly selection: SnapshotStore<SessionSelection>
 
   private readonly scopes = new Map<SessionId, ScopeRecord>()
-  /** The provide channel (roster, materialization rules, current projection) — shared with the test runtime's double. */
-  private readonly provideChannel: SessionProvideChannel
+  /** In-flight scope drops remain here after records leave `scopes`, so root disposal can await quiescence. */
+  private readonly scopeDrops = new Set<Promise<void>>()
   /**
    * The staged session id — follows `list.current` exactly, holding its last
    * defined value across masked gaps (a transiently absent selection blanks
@@ -263,38 +234,26 @@ export class SessionRuntime implements ISessions {
   private watched: SessionId | undefined
   /** Removed-while-staged sessions whose teardown waits for the stage to move away. */
   private readonly deferredRemovals = new Set<SessionId>()
-  /** Scope and journal teardowns started by synchronous list projection. */
-  private readonly scopeDisposals = new Set<Promise<void>>()
 
   /**
    * @param ctx - client root context (scope fibers mount under it).
    * @param api - wire client shared with every Session.
    * @param remote - generated Remote namespaces shared with every Session.
-   * @param conversationRuntime - same-pass registry instances, when runtime apply owns them.
    */
   constructor(
     private readonly rootCtx: Context,
     api: IApiClient,
     remote: SessionRemotes,
-    conversationRuntime?: ConversationRuntime,
   ) {
     this.selection = createSnapshotStore<SessionSelection>(
       {},
       { persist: { name: 'dsh.sessions.current' } })
     const restored = this.selection.getSnapshot()
-    const conversationEvents = rootCtx.get('conversationEvents')
-    const conversationViews = rootCtx.get('conversationViews')
-    const conversation = conversationRuntime ?? (
-      conversationEvents === undefined || conversationViews === undefined
-        ? undefined
-        : { events: conversationEvents, views: conversationViews }
-    )
     this.manager = new SessionManager(
       api,
       remote,
       restored.sessionId,
       restored.subagentAddress,
-      conversation,
     )
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'pending',
@@ -302,72 +261,30 @@ export class SessionRuntime implements ISessions {
     })
     // The manager owns wire truth; the store is its projection. Manager
     // notifications are already microtask-batched.
-    this.manager.subscribe(() => { this.projectList() })
+    const disposeManagerProjection = this.manager.subscribe(() => {
+      this.projectList()
+    })
     // Stage follower: every current write (open() and projection alike)
     // re-evaluates staging, so startup restore (persisted selection validated
     // by the projection) and reconnect resurfacing open their window with no
     // dedicated code path. Safe to run synchronously inside the store notify:
     // the follower writes no list state — session.open()'s synchronous prefix
     // touches only session-side state and its own microtask-batched notifier.
-    // The current-provide projection follows the same current writes.
-    this.list.subscribe(() => {
+    const disposeStageFollower = this.list.subscribe(() => {
       this.followCurrent()
-      this.provideChannel.publishCurrent()
     })
-    this.provideChannel = new SessionProvideChannel({
-      rebuildBundles: () => {
-        for (const record of this.scopes.values()) {
-          record.provideInfo = this.provideChannel.materializeInfo(record.binding)
-        }
-      },
-      resolveCurrent: () => this.maybeProvideInfo(this.list.getSnapshot().current),
-    })
-    this.currentProvideInfo = this.provideChannel.currentProvideInfo
-    let registryRebuildQueued = false
-    const scheduleRegistryRebuild = (): void => {
-      if (registryRebuildQueued) return
-      registryRebuildQueued = true
-      queueMicrotask(() => {
-        registryRebuildQueued = false
-        this.manager.rebuildConversationRegistry()
-      })
-    }
-    if (conversation !== undefined) {
-      rootCtx.effect(() => {
-        const disposeEvents = conversation.events.subscribe(scheduleRegistryRebuild)
-        const disposeViews = conversation.views.subscribe(scheduleRegistryRebuild)
-        return () => {
-          disposeEvents()
-          disposeViews()
-        }
-      }, 'sessions: conversation registry rebuild')
-    }
     rootCtx.effect(() => async () => {
-      for (const [id, record] of this.scopes) {
-        this.scopes.delete(id)
-        this.deferredRemovals.delete(id)
-        this.dropScope(id, record)
-      }
-      await Promise.all(this.scopeDisposals)
-    }, 'sessions: scoped resources')
+      disposeStageFollower()
+      disposeManagerProjection()
+      const scopes = [...this.scopes]
+      this.scopes.clear()
+      this.deferredRemovals.clear()
+      this.watched = undefined
+      for (const [id, record] of scopes) this.startScopeDrop(id, record)
+      await this.drainScopeDrops()
+      await this.manager.dispose()
+    }, 'session-controller.client.sessions')
     rootCtx.reflect.provide('sessions', this, undefined)
-  }
-
-  /**
-   * Register a per-session standard-props provider: every session-scope slot
-   * component receives the contributed members as standard props (`hooks`
-   * sources become `use<Name>` selector hooks on the render side; `props`
-   * spread verbatim). Contributions materialize lazily with the session's
-   * scope record and die with it. Registration order is resolution order;
-   * duplicate member names fail loud at materialization.
-   * @param descriptor - static member roster plus per-session resolver.
-   * @returns disposer removing the provider (already-materialized bundles keep their members until their scope drops).
-   */
-  provide(descriptor: SessionProvideDescriptor): () => void {
-    // Scopes may already exist (boot order: the list lands and resolves
-    // scopes before later plugins register) — the channel rebuilds their
-    // bundles through the host hooks so every provider lands by first render.
-    return this.provideChannel.provide(descriptor)
   }
 
   /**
@@ -397,7 +314,7 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
-   * Inform the runtime whether a catalog menu is consuming membership updates.
+   * Inform the Session Controller whether a catalog menu is consuming membership updates.
    * @param parentSessionId - selected parent.
    * @param open - menu state.
    */
@@ -498,7 +415,7 @@ export class SessionRuntime implements ISessions {
     this.manager.handleSessionError(...args)
   }
 
-  /** Refresh Session and subagent catalogs after connection; opened journals resume independently. */
+  /** Rebuild the Session baseline and every opened window after connection. */
   handleConnected(): void {
     this.manager.handleConnected()
   }
@@ -506,7 +423,7 @@ export class SessionRuntime implements ISessions {
   /**
    * Create a session on the host. Resolution guarantee: by the time the
    * promise resolves, the created session is in the list store and
-   * {@link SessionRuntime.binding} resolves it — callers (New Session
+   * {@link ClientSessions.binding} resolves it — callers (New Session
    * draft hand-off) may address the scope synchronously, without waiting a
    * notifier flush. The synchronous projection below makes this structural
    * rather than an accident of microtask ordering.
@@ -523,7 +440,7 @@ export class SessionRuntime implements ISessions {
 
   /**
    * Fork a session from a completed-turn prefix of the source (same
-   * synchronous-addressability guarantee as {@link SessionRuntime.create}:
+   * synchronous-addressability guarantee as {@link ClientSessions.create}:
    * on resolution the child is in the list store and open() can target it).
    * @param opts - source session id, the optional event seq anchoring the
    *   cut (the boundary is the first turn/end at or after it; an in-log
@@ -601,7 +518,7 @@ export class SessionRuntime implements ISessions {
    * hop every scoped consumer (event listeners, per-session controllers)
    * takes from ctx-space into object-space (the client mirror of host
    * `agent.session`). Same service-method boundary as
-   * {@link SessionRuntime.scopeOf}.
+   * {@link ClientSessions.scopeOf}.
    * @param ctx - an Agent-scoped context.
    * @returns the session face, or undefined when the ctx is untagged or its scope was pruned.
    */
@@ -619,25 +536,6 @@ export class SessionRuntime implements ISessions {
    */
   binding(id: SessionId): SessionBinding | undefined {
     return this.resolve(id)?.binding
-  }
-
-  /**
-   * Resolve one session's render-layer standard-props bundle (ctx never
-   * enters the render layer; the renderer subscribes to
-   * {@link SessionRuntime.currentProvideInfo}). Pure resolution — render-safe:
-   * no staging, no window side effects (StrictMode double-invokes and
-   * concurrent discarded passes must stay free).
-   */
-  private provideInfo(id: string): SessionProvideInfo | undefined {
-    return this.resolve(id as SessionId)?.provideInfo
-  }
-
-  /**
-   * Resolve the current-session-optional standard kit. Unknown or absent ids
-   * return the static no-session projection rather than removing hook props.
-   */
-  private maybeProvideInfo(id: string | undefined): SessionMaybeProvideInfo {
-    return (id === undefined ? undefined : this.provideInfo(id)) ?? this.provideChannel.maybeInfo
   }
 
   /**
@@ -686,14 +584,12 @@ export class SessionRuntime implements ISessions {
     // The Session owns its scoped dispatch point (host Agent.loopCtx mirror);
     // mint and bind are one step so a live scope record implies a bound actx.
     session.bindScope(ctx)
-    const binding: SessionBinding = { sessionId: id, session, ctx }
+    const binding: SessionBinding = { sessionId: id, session, eventSource: session.eventSource, ctx }
     const record: ScopeRecord = {
       fiber,
       ctx,
       binding,
       session,
-      // Sources are bare observables; React binds selector hooks at its own boundary.
-      provideInfo: this.provideChannel.materializeInfo(binding),
     }
     this.scopes.set(id, record)
     return record
@@ -790,7 +686,22 @@ export class SessionRuntime implements ISessions {
       }
       this.scopes.delete(id)
       this.deferredRemovals.delete(id)
-      this.dropScope(id, record)
+      this.startScopeDrop(id, record)
+    }
+  }
+
+  private startScopeDrop(id: SessionId, record: ScopeRecord): void {
+    const drop = this.dropScope(id, record)
+    this.scopeDrops.add(drop)
+    void drop.then(
+      () => { this.scopeDrops.delete(drop) },
+      () => { this.scopeDrops.delete(drop) },
+    )
+  }
+
+  private async drainScopeDrops(): Promise<void> {
+    while (this.scopeDrops.size > 0) {
+      await Promise.allSettled([...this.scopeDrops])
     }
   }
 
@@ -798,29 +709,17 @@ export class SessionRuntime implements ISessions {
    * One teardown for the whole per-session axis: the scope
    * fiber (cascading every actx-registered effect: input shell, slash
    * controller, popup, plugin stores, listeners), the session-keyed slot
-   * stores, and the Session instance itself — the host session log is the
+   * registrations and the Session instance itself — the host session log is the
    * durable truth, a reopen lazily rebuilds and backfills via open().
    */
-  private dropScope(id: SessionId, record: ScopeRecord): void {
+  private async dropScope(id: SessionId, record: ScopeRecord): Promise<void> {
     // Release the Session's dispatch point with the scope it belongs to (a
     // surviving instance — the live Intent — rebinds when resolve re-mints).
     record.session.unbindScope()
-    // Optional lookup: slots and sessions are sibling services with no
-    // declared dependency; a slots-less boot (object-layer tests) skips.
-    this.rootCtx.get('slots')?.pruneStoreScope(id)
-    this.trackScopeDisposal(id, 'scope fiber', record.fiber.dispose())
-    this.trackScopeDisposal(id, 'journal', this.manager.drop(id))
-  }
-
-  /** Retain one asynchronous scope cleanup through runtime disposal and contain its failure. */
-  private trackScopeDisposal(id: SessionId, part: string, task: void | Promise<void>): void {
-    const tracked = Promise.resolve(task).catch((error: unknown) => {
-      this.rootCtx.logger.warn(
-        `client-runtime: Session ${JSON.stringify(id)} ${part} cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
-      )
-    })
-    this.scopeDisposals.add(tracked)
-    void tracked.then(() => { this.scopeDisposals.delete(tracked) })
+    await Promise.allSettled([
+      record.fiber.dispose(),
+      this.manager.drop(id),
+    ])
   }
 
   /** Run deferred teardowns whose session is no longer staged (called when the stage moves). */
@@ -842,7 +741,7 @@ export class SessionRuntime implements ISessions {
        * future teardown path cannot double-dispose. */
       if (record !== undefined) {
         this.scopes.delete(id)
-        this.dropScope(id, record)
+        this.startScopeDrop(id, record)
       }
     }
   }
