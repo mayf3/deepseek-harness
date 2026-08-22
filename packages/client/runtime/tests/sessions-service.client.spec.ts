@@ -172,6 +172,30 @@ describe('scope tree', () => {
     b.svc.open(sid('s2')) // stage moves; sweep must NOT tear down the re-listed s1
     expect(b.svc.scope(sid('s1'))).toBe(scoped)
   })
+
+  it('closes an opened journal when its removed scope drops', async () => {
+    const b = bench()
+    await feedList(b, [{ id: 's1' }])
+    b.svc.open(sid('s1'))
+    const session = b.svc.binding(sid('s1'))?.session
+    if (session === undefined) throw new Error('expected the selected Session binding')
+    await vi.waitFor(() => { expect(b.api.activeFollows(sid('s1'))).toBe(1) })
+    const notified = vi.fn()
+    session.subscribe(notified)
+
+    await feedList(b, [])
+    await feedList(b, [{ id: 's2' }])
+    b.svc.open(sid('s2'))
+
+    await vi.waitFor(() => { expect(b.api.activeFollows(sid('s1'))).toBe(0) })
+    await b.api.pushFollow(sid('s1'), {
+      type: 'event',
+      event: { seq: 0, timestamp: 0, type: 'turn/start', data: { turn: 0 } } as never,
+    })
+    await Promise.resolve()
+    expect(b.api.followStarts.filter(id => id === sid('s1'))).toHaveLength(1)
+    expect(notified).not.toHaveBeenCalled()
+  })
 })
 
 describe('current selection (migrated from ui-layout, arbitrated into the list snapshot)', () => {
@@ -324,13 +348,17 @@ describe('cell (render-layer session kit)', () => {
     b.svc.binding(sid('s1'))
     expect(historyCalls()).toHaveLength(0)
     b.svc.open(sid('s1'))
-    expect(historyCalls().map(c => (c.payload as { sessionId: string }).sessionId)).toEqual(['s1'])
+    await vi.waitFor(() => {
+      expect(historyCalls().map(c => (c.payload as { sessionId: string }).sessionId)).toEqual(['s1'])
+    })
     // Same current again: no second pull.
     b.svc.open(sid('s1'))
     expect(historyCalls()).toHaveLength(1)
     // Stage moves: the new occupant opens.
     b.svc.open(sid('s2'))
-    expect(historyCalls().map(c => (c.payload as { sessionId: string }).sessionId)).toEqual(['s1', 's2'])
+    await vi.waitFor(() => {
+      expect(historyCalls().map(c => (c.payload as { sessionId: string }).sessionId)).toEqual(['s1', 's2'])
+    })
   })
 
   it('startup restore: a persisted selection validated by the first projection opens its window unprompted', async () => {
@@ -345,8 +373,10 @@ describe('cell (render-layer session kit)', () => {
       const b = bench()
       expect(b.api.calls.filter(c => c.method === 'session.history')).toHaveLength(0)
       await feedList(b, [{ id: 's1' }]) // projection validates the persisted id → current lands → stage follows
-      const historyCalls = b.api.calls.filter(c => c.method === 'session.history')
-      expect(historyCalls.map(c => (c.payload as { sessionId: string }).sessionId)).toEqual(['s1'])
+      await vi.waitFor(() => {
+        const historyCalls = b.api.calls.filter(c => c.method === 'session.history')
+        expect(historyCalls.map(c => (c.payload as { sessionId: string }).sessionId)).toEqual(['s1'])
+      })
     } finally {
       vi.unstubAllGlobals()
     }
@@ -709,7 +739,7 @@ describe('coverage tails (branch duals)', () => {
     await feedList(b, [{ id: 's1' }])
     b.svc.open(sid('s1'))
     const historyCalls = () => b.api.calls.filter(c => c.method === 'session.history')
-    expect(historyCalls()).toHaveLength(1)
+    await vi.waitFor(() => { expect(historyCalls()).toHaveLength(1) })
     await feedList(b, []) // removed while staged: current masks to undefined, stage holds → deferred
     expect(b.svc.scope(sid('s1'))).toBeDefined()
     // Resurfacing re-projects current = s1: same stage occupant, no second pull.

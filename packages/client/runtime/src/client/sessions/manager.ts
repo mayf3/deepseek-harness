@@ -232,8 +232,11 @@ export class SessionManager {
    * truth — a later get() lazily rebuilds and open() backfills history.
    * @param sessionId - the session to drop.
    */
-  drop(sessionId: SessionId): void {
+  drop(sessionId: SessionId): Promise<void> {
+    const session = this.sessions.get(sessionId)
+    if (session === undefined) return Promise.resolve()
     this.sessions.delete(sessionId)
+    return session.dispose()
   }
 
   /**

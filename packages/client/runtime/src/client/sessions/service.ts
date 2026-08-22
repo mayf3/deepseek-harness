@@ -266,6 +266,8 @@ export class SessionRuntime implements ISessions {
   private watched: SessionId | undefined
   /** Removed-while-staged sessions whose teardown waits for the stage to move away. */
   private readonly deferredRemovals = new Set<SessionId>()
+  /** Scope and journal teardowns started by synchronous list projection. */
+  private readonly scopeDisposals = new Set<Promise<void>>()
 
   /**
    * @param ctx - client root context (scope fibers mount under it).
@@ -343,6 +345,14 @@ export class SessionRuntime implements ISessions {
         }
       }, 'sessions: conversation registry rebuild')
     }
+    rootCtx.effect(() => async () => {
+      for (const [id, record] of this.scopes) {
+        this.scopes.delete(id)
+        this.deferredRemovals.delete(id)
+        this.dropScope(id, record)
+      }
+      await Promise.all(this.scopeDisposals)
+    }, 'sessions: scoped resources')
     rootCtx.reflect.provide('sessions', this, undefined)
   }
 
@@ -491,7 +501,7 @@ export class SessionRuntime implements ISessions {
     this.manager.handleSessionError(...args)
   }
 
-  /** Rebuild the Session baseline and every opened window after connection. */
+  /** Refresh Session and subagent catalogs after connection; opened journals resume independently. */
   handleConnected(): void {
     this.manager.handleConnected()
   }
@@ -780,14 +790,25 @@ export class SessionRuntime implements ISessions {
    * durable truth, a reopen lazily rebuilds and backfills via open().
    */
   private dropScope(id: SessionId, record: ScopeRecord): void {
-    void record.fiber.dispose()
     // Release the Session's dispatch point with the scope it belongs to (a
     // surviving instance — the live Intent — rebinds when resolve re-mints).
     record.session.unbindScope()
     // Optional lookup: slots and sessions are sibling services with no
     // declared dependency; a slots-less boot (object-layer tests) skips.
     this.rootCtx.get('slots')?.pruneStoreScope(id)
-    this.manager.drop(id)
+    this.trackScopeDisposal(id, 'scope fiber', record.fiber.dispose())
+    this.trackScopeDisposal(id, 'journal', this.manager.drop(id))
+  }
+
+  /** Retain one asynchronous scope cleanup through runtime disposal and contain its failure. */
+  private trackScopeDisposal(id: SessionId, part: string, task: void | Promise<void>): void {
+    const tracked = Promise.resolve(task).catch((error: unknown) => {
+      this.rootCtx.logger.warn(
+        `client-runtime: Session ${JSON.stringify(id)} ${part} cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    })
+    this.scopeDisposals.add(tracked)
+    void tracked.then(() => { this.scopeDisposals.delete(tracked) })
   }
 
   /** Run deferred teardowns whose session is no longer staged (called when the stage moves). */

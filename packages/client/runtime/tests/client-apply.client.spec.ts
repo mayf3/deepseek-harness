@@ -17,6 +17,7 @@ import { FakeApiClient, fakeRemote, ok } from './fake-api.client.ts'
 interface Bench {
   ctx: Context
   api: FakeApiClient
+  runtime: { dispose(): Promise<void> }
   start: ReturnType<typeof vi.fn<ConnectionHandle['start']>>
   dispatchRemote(event: string, args: readonly unknown[]): void
 }
@@ -31,7 +32,6 @@ async function mount(configure?: (api: FakeApiClient) => void): Promise<Bench> {
     for (const listener of listeners.get(event) ?? []) listener(...args as never[])
   }
   const start = vi.fn<ConnectionHandle['start']>(() => ({ stop: () => {} }))
-  const bench: Bench = { ctx, api, start, dispatchRemote }
   const handle: ConnectionHandle = {
     api,
     isLoopback: true,
@@ -59,8 +59,8 @@ async function mount(configure?: (api: FakeApiClient) => void): Promise<Bench> {
   ctx.reflect.provide('remote.commands', remote.commands)
   ctx.reflect.provide('remote.session', remote.session)
   ctx.reflect.provide('remote.workspace', remote.workspace)
-  await ctx.plugin(RuntimeClient).await()
-  return bench
+  const runtime = await ctx.plugin(RuntimeClient).await()
+  return { ctx, api, runtime, start, dispatchRemote }
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -171,7 +171,17 @@ describe('runtime client apply', () => {
 
   it('does not own the Connection loop and closes its Remote streams on unload', async () => {
     const bench = await mount()
-    await bench.ctx.fiber.dispose()
+    const sessions = bench.ctx.get('sessions') as SessionRuntime
+    bench.dispatchRemote('api-session/added', [{
+      sessionId: 's-open', updatedAt: 1, running: false, blank: false,
+    }])
+    await flushMicrotasks()
+    sessions.open('s-open' as never)
+    await vi.waitFor(() => { expect(bench.api.activeFollows('s-open' as never)).toBe(1) })
+
+    await bench.runtime.dispose()
+
     expect(bench.start).not.toHaveBeenCalled()
+    expect(bench.api.activeFollows('s-open' as never)).toBe(0)
   })
 })

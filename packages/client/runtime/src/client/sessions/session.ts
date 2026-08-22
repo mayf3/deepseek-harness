@@ -538,12 +538,15 @@ export class Session implements SessionFace {
     this.notifier.markDirty()
   }
 
-  /** Stop the Session's live Remote source. */
-  dispose(): void {
+  /**
+   * Stop the Session's live Remote source.
+   * @returns when the active journal generation and consumer are quiescent.
+   */
+  dispose(): Promise<void> {
     this.openGeneration++
     const events = this.events
     this.events = undefined
-    void events?.dispose()
+    return events?.dispose() ?? Promise.resolve()
   }
 
   /** Rebuild the current window after a low-frequency Definition or view registration change. */

@@ -122,6 +122,8 @@ export function fakeRemote(api = new FakeApiClient()): RuntimeRemotes {
 export class FakeApiClient implements IApiClient {
   /** Chronological call record: [method, payload]. */
   readonly calls: { method: string; payload: unknown }[] = []
+  /** Session ids in physical follow-generation opening order. */
+  readonly followStarts: SessionId[] = []
 
   // Programmable slots (defaults answer OK-empty); reassign per case.
   onList: (payload: unknown) => Promise<RpcResponse<{ items: never[] }>> = () => Promise.resolve(ok({ items: [] }))
@@ -388,6 +390,11 @@ export class FakeApiClient implements IApiClient {
     return this.calls.filter(c => c.method === method).map(c => c.payload)
   }
 
+  /** Number of currently attached journal generations for one Session. */
+  activeFollows(sessionId: SessionId): number {
+    return this.followConns.get(sessionId)?.length ?? 0
+  }
+
   private record<T>(method: string, payload: unknown, response: Promise<T>): Promise<T> {
     this.calls.push({ method, payload })
     return response
@@ -455,6 +462,7 @@ export class FakeApiClient implements IApiClient {
     signal: AbortSignal = new AbortController().signal,
   ): AsyncGenerator<SessionFollowFrame> {
     const sessionId = addressSessionId(request.address)
+    this.followStarts.push(sessionId)
     const key = addressKey(request.address)
     const initialPage = this.onHistory({ sessionId, maxMessages: 50 })
     this.openingPages.set(key, initialPage)
