@@ -29,6 +29,8 @@ interface Generation {
   readonly hold?: boolean
 }
 
+type PageSource = Page | Promise<Page> | ((signal: AbortSignal) => Promise<Page>)
+
 const AVAILABLE_CONNECTION = {
   hostDescription: {
     getSnapshot: () => ({
@@ -55,7 +57,7 @@ const STREAM_FACTORY = {
 class FixtureJournal extends RemoteJournalStream<Page, Entry, number, PageRequest> {
   constructor(
     private readonly generations: Generation[],
-    private readonly pages: (Page | Promise<Page>)[],
+    private readonly pages: PageSource[],
     private readonly calls: string[],
     private readonly pageRequests: PageRequest[],
     private readonly pageCursors: number[],
@@ -95,13 +97,17 @@ class FixtureJournal extends RemoteJournalStream<Page, Entry, number, PageReques
   }
 
   /** @inheritdoc */
-  protected override readPage(request: PageRequest, through: number): Promise<Page> {
+  protected override readPage(
+    request: PageRequest,
+    through: number,
+    signal: AbortSignal,
+  ): Promise<Page> {
     this.calls.push('page')
     this.pageRequests.push(request)
     this.pageCursors.push(through)
     const value = this.pages.shift()
     if (value === undefined) throw new Error('no scripted journal page')
-    return Promise.resolve(value)
+    return typeof value === 'function' ? value(signal) : Promise.resolve(value)
   }
 
   /** @inheritdoc */
@@ -112,7 +118,7 @@ class FixtureJournal extends RemoteJournalStream<Page, Entry, number, PageReques
 
 function journalFixture(
   generations: Generation[],
-  pages: (Page | Promise<Page>)[],
+  pages: PageSource[],
 ): {
   readonly journal: RemoteJournalStream<Page, Entry, number, PageRequest>
   readonly changes: RemoteJournalChange<Page, Entry>[]
@@ -237,6 +243,42 @@ describe('RemoteJournalStream', () => {
     })
     expect(fixture.followCursors).toEqual([undefined, 2])
     expect(fixture.pageCursors).toEqual([1, 4])
+    expect(fixture.failed).not.toHaveBeenCalled()
+    await fixture.journal.dispose()
+  })
+
+  it('restarts a page aborted with its carrier generation', async () => {
+    const fixture = journalFixture(
+      [
+        {
+          frames: [{ type: 'opened', cursor: 1 }],
+          terminal: new RemoteStreamCarrierError('carrier lost during page'),
+        },
+        {
+          frames: [{ type: 'opened', cursor: 2 }],
+          hold: true,
+        },
+      ],
+      [
+        signal => new Promise<Page>((_resolve, reject) => {
+          const aborted = (): void => { reject(signal.reason) }
+          signal.addEventListener('abort', aborted, { once: true })
+          if (signal.aborted) aborted()
+        }),
+        page('replacement', [0, 1, 2]),
+      ],
+    )
+
+    await fixture.journal.open({ limit: 3 })
+
+    expect(fixture.changes).toEqual([{
+      type: 'replace',
+      page: page('replacement', [0, 1, 2]),
+      entries: entries(0, 1, 2),
+      hasMore: false,
+    }])
+    expect(fixture.pageCursors).toEqual([1, 2])
+    expect(fixture.followCursors).toEqual([undefined, 1])
     expect(fixture.failed).not.toHaveBeenCalled()
     await fixture.journal.dispose()
   })

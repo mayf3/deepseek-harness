@@ -396,7 +396,10 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
         signal.throwIfAborted()
         return { type: 'page', page: result.value }
       }
-      if (result.type === 'page-error') throw result.error
+      if (result.type === 'page-error') {
+        if (!signal.aborted || this.stream.signal.aborted) throw result.error
+        return this.awaitReplacementGeneration(generation, iterator, pending)
+      }
       this.releaseNext(pending)
       if (result.type === 'next-error') throw result.error
       if (result.value.done) {
@@ -409,6 +412,32 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
         throw new Error(`${this.options.name} emitted more than one opening cursor`)
       }
       queued.push(item.value.entry)
+    }
+  }
+
+  private async awaitReplacementGeneration(
+    generation: number,
+    iterator: AsyncIterator<JournalStreamItem<Entry, Cursor>>,
+    initial: Promise<IteratorResult<JournalStreamItem<Entry, Cursor>>>,
+  ): Promise<{ readonly type: 'superseded'; readonly item: JournalStreamItem<Entry, Cursor> }> {
+    let pending = initial
+    while (true) {
+      let next: IteratorResult<JournalStreamItem<Entry, Cursor>>
+      try {
+        next = await pending
+      } finally {
+        this.releaseNext(pending)
+      }
+      if (next.done) {
+        this.stream.signal.throwIfAborted()
+        throw new Error(`${this.options.name} ended while replacing an aborted page generation`)
+      }
+      const item = next.value
+      if (item.generation !== generation) return { type: 'superseded', item }
+      if (item.value.type === 'opened') {
+        throw new Error(`${this.options.name} emitted more than one opening cursor`)
+      }
+      pending = this.nextResult(iterator)
     }
   }
 
