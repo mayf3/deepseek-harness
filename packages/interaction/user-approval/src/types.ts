@@ -77,12 +77,13 @@ declare module '@deepseek-ai/cordis' {
   interface Events {
     /**
      * Ask composed answerers for one decision. Return an outcome to claim the
-     * request or call `next()` to delegate.
+     * request or call `next()` to delegate. Scope-filtered dispatch
+     * (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
      * @param req - pending approval request.
      * @mode waterfall
      */
     'approval/request'(
-      this: Scoped<object>,
+      this: Scoped<Agent>,
       req: ApprovalRequestEvent,
       next: () => Promise<ApprovalOutcome>,
     ): Promise<ApprovalOutcome>

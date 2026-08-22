@@ -18,7 +18,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 import type {
-  AskUserQuestionAnswer, AskUserQuestionItem, AskUserQuestionRequestEvent,
+  AskUserQuestionAnswer, AskUserQuestionItem,
 } from './types.ts'
 
 export type {
@@ -27,7 +27,7 @@ export type {
 } from './types.ts'
 
 /** Request for a human answer. */
-export interface AskUserQuestionRequest extends AskUserQuestionRequestEvent {
+export interface AskUserQuestionRequest {
   /** Questions to display. */
   questions: AskUserQuestionItem[]
   /** Exact live calling agent, when the request came from an agent tool call. */

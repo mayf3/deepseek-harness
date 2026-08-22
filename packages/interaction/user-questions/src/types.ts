@@ -68,7 +68,7 @@ export interface AskUserQuestionRequestEvent {
   /** Questions to display. */
   questions: AskUserQuestionItem[]
   /** Agent identity projected to the corresponding Client Context in transit. */
-  agent?: Agent
+  agent: Agent
   /** Cancellation lifetime of the pending request. */
   signal?: AbortSignal
 }
@@ -77,12 +77,13 @@ declare module '@deepseek-ai/cordis' {
   interface Events {
     /**
      * Ask composed answerers for structured user input. Return an answer to
-     * claim the request or call `next()` to delegate.
+     * claim the request or call `next()` to delegate. Scope-filtered dispatch
+     * (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
      * @param request - pending user-question request.
      * @mode waterfall
      */
     'user-questions/request'(
-      this: Scoped<object>,
+      this: Scoped<Agent>,
       request: AskUserQuestionRequestEvent,
       next: () => Promise<AskUserQuestionAnswer>,
     ): Promise<AskUserQuestionAnswer>

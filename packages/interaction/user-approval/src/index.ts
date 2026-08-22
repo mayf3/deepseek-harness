@@ -281,7 +281,7 @@ export class ApprovalService extends Service {
     // the containment into the caller.
     const answer: Promise<ApprovalOutcome> = Promise.resolve().then(
       () => this.ctx.waterfall(
-        scopeTarget(this, req.agent), 'approval/request', req,
+        scopeTarget(req.agent, req.agent), 'approval/request', req,
         () => Promise.resolve<ApprovalOutcome>('unavailable'),
       ),
     ).then(
