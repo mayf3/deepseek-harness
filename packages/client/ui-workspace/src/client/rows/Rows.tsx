@@ -165,7 +165,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
               setMenuOpen(false)
               // Unknown ids leave before the dispatch: a future menu row must
               // not inherit the destructive branch as an else fallback.
-              /* v8 ignore next -- workspaceMenuItems carries exactly these two rows today. */
+              /* v8 ignore next -- workspaceMenuItems is a closed two-row union. */
               if (id !== 'rename' && id !== 'delete') return
               if (id === 'rename') actions.rename()
               else actions.delete()

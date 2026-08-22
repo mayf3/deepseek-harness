@@ -28,7 +28,7 @@ Catalog membership is advisory. It drives selectors and diagnostics but never ch
 
 ### Per-session selection in the front end
 
-A selection is owned by the front end that offers it (today the TUI `/model` selector), never by `LlmRuntime` or `AgentOptions`: those are deployment-wide or creation-wide objects, and mutating them would couple concurrent sessions. Each opaque choice carries the full provider/model pair, because the same model id may appear under multiple routes.
+A selection is owned by the front end that offers it, never by `LlmRuntime` or `AgentOptions`: those are deployment-wide or creation-wide objects, and mutating them would couple concurrent sessions. Each opaque choice carries the full provider/model pair, because the same model id may appear under multiple routes.
 
 The ACP automation transport is not a catalog consumer. Its deployment config supplies one optional provider/model target for newly created agents, and it advertises no model selector or configuration-option interface.
 

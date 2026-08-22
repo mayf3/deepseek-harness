@@ -1386,7 +1386,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           // Symmetric pairing: a callId-bearing ask only takes its own call's
           // record, and a callId-less ask only takes a callId-less record —
           // so neither shape can steal the other's audit id under parallel
-          // asks. (Today every producer — the tool executor — passes callId;
+          // asks. (Every shipped producer — the tool executor — passes callId;
           // the callId-less arm guards any future non-tool asker.)
           if ((req.callId ?? null) !== (event.data.callId ?? null)) continue
           approvalId = event.data.id
@@ -1545,7 +1545,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     try {
       // An unrecorded preset (a log from before the roster existed) renders
       // through the DEFAULT preset's standing layer: that is the composition
-      // an unnamed session composes today, and presenters are pure display,
+      // an unnamed session composes, and presenters are pure display,
       // so the worst a mismatch produces is the generic card it had anyway.
       return await presets.standingKeyFor(resolveSessionPreset(session))
     } catch {
@@ -2316,8 +2316,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // The child inherits the parent's composition for the same reason a
         // resumed session keeps its own: the seeded history was produced under
         // those tools, and composing anything else would strand the tool calls
-        // it already carries. Now that no model-facing row sits in the host
-        // plane, composing nothing would leave the child with no tools at all.
+        // it already carries. No model-facing row sits in the host plane, so
+        // composing nothing would leave the child with no tools at all.
         const forkComposition = await composeAgent(resolveSessionPreset(source))
         try {
           await ctx.agents.create({
@@ -2822,7 +2822,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
     host: {
       describe(request) {
-        // TODO: version should read apps/cli's package.json; placeholder for now.
+        // TODO(apiproxy-version): read the version from apps/cli/package.json.
         const selection = defaults.defaultModelSelection()
         return Promise.resolve(ok(request, {
           version: '0.0.1',

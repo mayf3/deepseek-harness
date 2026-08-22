@@ -23,5 +23,5 @@ VFS 镜像打包器：把一份合成 profile 变成浏览器 worker 解压后�
 ## Known Limitations and Deferred Work
 
 - **规则表是判断题**（`rules.ts`：exclude glob、页面资产模式、入口种子），由 `tests/` 钉住；worker 需要触达的新资产类别应加表行，而不是改扫描器。
-- **vendored 包源码（`src/*.ts`）不再打包**——运行时无人解析它们；未来若有 worker 内源码巡检功能需要专门的 include 规则。
+- **vendored 包源码（`src/*.ts`）被排除**——运行时无人解析它们；未来若有 worker 内源码巡检功能需要专门的 include 规则。
 - **打包器假定构建产物 `lib/` 是新鲜的**：它从不编译，工作区构建过期就打包过期字节。先跑仓库构建。

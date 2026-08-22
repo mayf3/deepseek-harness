@@ -651,9 +651,9 @@ export function assertManifestComplete(packages: ToolPackage[] = TOOL_PACKAGES, 
  * A tool package that boots without registering anything is a broken boot, not
  * an empty catalog section. The usual cause is an `inject` the entry's `mount`
  * does not satisfy: cordis leaves the plugin PENDING, every step here still
- * succeeds, and the generator writes a catalog missing that package's tools —
- * with the freshness gate green on it, because the omission is now what the
- * generator produces. {@link assertManifestComplete} cannot see this: the
+ * succeeds, and the generator writes a catalog missing that package's tools.
+ * The freshness gate stays green because regeneration reproduces the omission.
+ * {@link assertManifestComplete} cannot see this: the
  * package IS listed, it just contributed nothing.
  * @param entry - the manifest entry that was booted.
  * @param harvested - how many schemas its boot registered.

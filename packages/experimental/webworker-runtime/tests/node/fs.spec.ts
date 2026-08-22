@@ -3,21 +3,9 @@
  * encoding branches, Dirent, file descriptors, FileHandle append/replace semantics,
  * and Node's error codes.
  *
- * Migrated from apps/web-preview/scripts/checks/fs-check.ts.
- *
- * ONE module instance, and every import says so explicitly. The bridge reaches
- * the VFS through a module-level slot (`setActiveVfs`/`requireActiveVfs`), so the
- * harness that mounts the VFS and the bridge that reads it must be the same copy
- * of `src/storage/memory.ts`. Two copies mean the mount lands in one and the bridge reports
- * `no filesystem is mounted` from the other — the incident this check itself
- * caused once, when it imported the built `lib/` while the bridge resolved to
- * `src/`.
- *
- * Note the package-name subtlety that made that bug possible: the BARE specifier
- * `@deepseek-ai/dsh-experimental-webworker-runtime` resolves to built `lib/index.js`, while
- * `…/src/*` resolves to source. Under tsx those two happen to share a `vfs`
- * instance today, so a mixed-path version of this file passes — for now. Pinning
- * every import to `src/` removes the coincidence instead of depending on it.
+ * Every import resolves through `src/` so the harness and bridge share the same
+ * module-level VFS slot. Mixing the bare package's built entry with `/src/*`
+ * imports can create two slots, leaving the bridge with no mounted filesystem.
  */
 import { expect, test } from 'vitest'
 import { MemoryVfs } from '@deepseek-ai/dsh-experimental-webworker-runtime/src/storage/memory.ts'
@@ -29,12 +17,8 @@ import type { VfsBigIntStats, VfsStats } from '@deepseek-ai/dsh-experimental-web
 const vfs = new MemoryVfs()
 setActiveVfs(vfs)
 
-// Precondition, not a behaviour: prove the bridge reads the VFS this file mounted.
-// If these ever resolve to two module copies again, the write below would report
-// `no filesystem is mounted` — but a bridge that answered from some OTHER mounted
-// VFS would pass the whole suite while testing the wrong world, so the identity is
-// asserted rather than inferred from things working. The probe creates its own
-// directory: the suite's `/dsh` tree does not exist yet at this point.
+// Identity precondition: the bridge must read this exact mounted VFS; successful
+// calls alone could come from another mounted instance.
 fs.mkdirSync('/dsh/.probe', { recursive: true })
 fs.writeFileSync('/dsh/.probe/instance', 'x')
 if (!vfs.existsSync('/dsh/.probe/instance')) {

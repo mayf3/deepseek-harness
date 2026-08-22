@@ -12,11 +12,9 @@
  * one — the code parses as script, publishes the right bindings, keeps line
  * count, and routes suspension through `__als`.
  *
- * The trap cases come from the two reports the lexer retirement produced
- * (`.artifacts/w0-lexer-conclusion.md` §"seven traps", `.artifacts/v3-transform.md`
- * §2). Five traps cannot recur under an AST pass, but they are checked anyway:
- * they are the forms that actually broke a boot, and a future parser swap would
- * reintroduce exactly them.
+ * The trap cases are the module forms that broke real boots under the retired
+ * lexer pipeline. Five cannot recur under an AST pass, but retaining them pins
+ * the behavior against a future parser swap.
  */
 import { expect, test } from 'vitest'
 import { parse } from 'acorn'
@@ -598,7 +596,6 @@ refuses('unparseable source is refused', 'export const = \n', 'parse failed')
 // ---------------------------------------------------------------------------
 // 9. Trap regressions. Each case broke a real boot under the retired lexer
 //    pipeline; the AST pass must keep them fixed.
-//    Sources: .artifacts/w0-lexer-conclusion.md, .artifacts/v3-transform.md §2.
 // ---------------------------------------------------------------------------
 
 {
@@ -623,9 +620,8 @@ refuses('unparseable source is refused', 'export const = \n', 'parse failed')
 }
 
 {
-  // Trap 3/4: `export const a = 1, b = 2` — only the first declarator was
-  // reported. Now both are published (checked in §4); here the point is that
-  // the no-initializer form works too.
+  // Trap 3/4: every declarator is published, including declarations without an
+  // initializer.
   const code = transformModule('export let x, y\nexport const set = () => { x = 1; y = 2 }\n', 'probe.js')
   parsesAsScript('trap 3', code)
   const exports = runBody(code)

@@ -97,4 +97,4 @@ import { clientBundle } from '../tsdown.client.ts'
 export default clientBundle('@deepseek-ai/dsh-client-my-plugin', ['lib/types/index.js', 'lib/types/invariant.js'])
 ```
 
-That preset is not published today, so a package outside this repository has to reproduce the same output format itself. The bundle-purity gate also rejects value imports across plugins, so a card cannot import this section's card chrome or its staged-form model — it renders its own, and owns its own staging and revision fencing. Both limits are recorded under [the section's known limitations](../../packages/client/ui-settings-plugins/README.md#known-limitations-and-deferred-work).
+No published preset exposes this package, so a package outside this repository has to reproduce the same output format itself. The bundle-purity gate also rejects value imports across plugins, so a card cannot import this section's card chrome or its staged-form model — it renders its own, and owns its own staging and revision fencing. Both limits are recorded under [the section's known limitations](../../packages/client/ui-settings-plugins/README.md#known-limitations-and-deferred-work).

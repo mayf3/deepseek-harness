@@ -180,8 +180,8 @@ for line in sys.stdin:
             },
         })
     elif method == "tools/list":
-        # Keep discovery pending longer than the old smoke's 100 ms grace
-        # period. An SDK runtime that answers initialize too early will make
+        # Keep discovery pending beyond 100 ms. An SDK runtime that answers
+        # initialize too early will make
         # its first model request without this tool and fail deterministically.
         time.sleep(0.25)
         send({

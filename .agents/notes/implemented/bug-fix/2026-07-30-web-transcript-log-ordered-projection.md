@@ -51,9 +51,9 @@ The unmerged manual-compaction-queueing branch fixes the same interleaving bug b
 
 **Value-import the predicate** from the new leaf and add `dsh-compaction` to the client `INLINE_SAFE` allowlist. Rejected: the client needs the plugin id, not the predicate — a type is enough, and an erased import never reaches the purity gate, so nothing has to be admitted to it. The allowlist would only matter for a value import, and there it is a poor trade: `INLINE_SAFE` matches on specifier *prefix*, so admitting the package admits its cordis-importing root along with the leaf.
 
-**A bare shape rule** — any replacement `user/message` is a compaction. Rejected: correct today only because compaction is the sole producer of replacement `user/message`s, with nothing to catch it if that changes. The pinning spec costs one file and removes exactly that risk.
+**A bare shape rule** — any replacement `user/message` is a compaction. Rejected: correct only because compaction is the sole producer of replacement `user/message`s, with nothing to catch it if that changes. The pinning spec costs one file and removes exactly that risk.
 
-**Tag the checkpoint host-side** through the projection or wire contract. Rejected: most aligned with the "collaborate through cordis services" rule, but the client folds raw `SessionEvent`s today, so it means a wire contract change out of proportion to one pure predicate.
+**Tag the checkpoint host-side** through the projection or wire contract. Rejected: most aligned with the "collaborate through cordis services" rule, but the client folds raw `SessionEvent`s, so it means a wire contract change out of proportion to one pure predicate.
 
 **Move frozen-node ownership into the adapter** (`nodes(extraNodes)`), as the unmerged branch does. Rejected: the interrupted nodes come from the `turn/end` sweep `Session` already runs over the window, and with a seq-monotonic transcript the simple shape is correct — the adapter returns nodes, the session merges frozen ones by seq. Widening the adapter's signature would buy nothing and split the sweep from its product.
 
