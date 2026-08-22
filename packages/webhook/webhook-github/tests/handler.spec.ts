@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto'
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -78,6 +78,37 @@ async function post(
       'x-github-delivery': options.delivery ?? 'delivery-1',
     },
     ...(options.method === 'GET' ? {} : { body }),
+  })
+}
+
+/** Send body chunks without Content-Length through a real Node client socket. */
+async function postChunked(
+  base: string,
+  chunks: readonly string[],
+  endDelayMs = 0,
+): Promise<{ body: string; status: number }> {
+  return await new Promise((resolve, reject) => {
+    const request = httpRequest(base, {
+      method: 'POST',
+      headers: {
+        connection: 'close',
+        'content-type': 'application/json',
+        'transfer-encoding': 'chunked',
+        'x-hub-signature-256': 'sha256=unused',
+        'x-github-event': 'pull_request',
+        'x-github-delivery': 'chunked-delivery',
+      },
+    }, (response) => {
+      let body = ''
+      response.setEncoding('utf8')
+      response.on('data', (chunk: string) => { body += chunk })
+      response.on('end', () => { resolve({ body, status: response.statusCode ?? 0 }) })
+    })
+    request.once('error', reject)
+    request.once('socket', (socket) => { socket.setNoDelay(true) })
+    for (const chunk of chunks) request.write(chunk)
+    if (endDelayMs === 0) request.end()
+    else setTimeout(() => { request.end() }, endDelayMs)
   })
 }
 
@@ -180,11 +211,22 @@ describe('GitHub webhook HTTP handler', () => {
     expect(fake.dispatch).not.toHaveBeenCalled()
   })
 
-  it('rejects declared and streamed bodies over the configured cap', async () => {
+  it('rejects a declared body over the configured cap', async () => {
     const fake = fakeContext()
     const base = await serve(fake.ctx, 2)
     const response = await post(base, '{} ')
     expect(response.status).toBe(413)
+    expect(fake.dispatch).not.toHaveBeenCalled()
+  })
+
+  it('answers 413 for a chunked body over the cap without resetting the connection', async () => {
+    const fake = fakeContext()
+    const base = await serve(fake.ctx, 2)
+
+    await expect(postChunked(base, ['abc'], 50)).resolves.toEqual({
+      body: 'request body is too large',
+      status: 413,
+    })
     expect(fake.dispatch).not.toHaveBeenCalled()
   })
 
