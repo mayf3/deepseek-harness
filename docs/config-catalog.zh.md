@@ -267,6 +267,22 @@ export interface Config {
 
 来源：[`packages/core/agent-tool-presentation/src/index.ts:38`](../packages/core/agent-tool-presentation/src/index.ts)
 
+<a id="deepseek-aidsh-api-session-controller"></a>
+
+## `@deepseek-ai/dsh-api-session-controller`
+
+需要：`agentDefaultModel` · `agents` · `attachments` · `llm` · `sessions` · `sessionQuery` · `tools` · `typert` · `userQuestions` · `workspaceRegistry`
+
+```ts config-catalog
+/** Session Controller deployment policy. */
+export interface Config {
+  /** Maximum cold Session artifact size read to determine blankness. */
+  readonly coldBlankProbeMaxBytes?: number
+}
+```
+
+来源：[`packages/api/session-controller/src/index.ts:60`](../packages/api/session-controller/src/index.ts)
+
 <a id="deepseek-aidsh-attachment-local"></a>
 
 ## `@deepseek-ai/dsh-attachment-local`
@@ -367,7 +383,7 @@ export interface ConnectionConfig {
 }
 ```
 
-来源：[`packages/client/connection/src/index.ts:50`](../packages/client/connection/src/index.ts)
+来源：[`packages/client/connection/src/index.ts:53`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -744,7 +760,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-apiproxy`
 
-需要：`agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userQuestions` · `workspaceRegistry`
+需要：`agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `sessionController` · `workspaceRegistry`
 
 ```ts config-catalog
 /** Gateway plugin configuration. */
@@ -763,16 +779,10 @@ export interface Config {
    * @default 6
    */
   sessionExportCompressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
-  /**
-   * Maximum physical size of a cold Session artifact eligible for blankness
-   * verification. Zero disables probes.
-   * @default 1024
-   */
-  coldBlankProbeMaxBytes?: number
 }
 ```
 
-来源：[`packages/host/apiproxy/src/index.ts:41`](../packages/host/apiproxy/src/index.ts)
+来源：[`packages/host/apiproxy/src/index.ts:42`](../packages/host/apiproxy/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 

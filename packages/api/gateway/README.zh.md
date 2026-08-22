@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-为 Host 与 Client 两侧的 Cordis 环境提供 Typert RPC endpoint。Host 入口提供 `ctx.typertGateway`，`@deepseek-ai/dsh-api-gateway/client` 则提供 `ctx.remote`；两者使用同一份生成的 `InvocationDescriptor` 约定，并将业务选择交给 API Remotes，将传输、请求关联、信任和响应封装交给 Connection。
+为 Host 与 Client 两侧的 Cordis 环境提供 Typert RPC endpoint。Host 入口提供 `ctx.typertGateway`，`@deepseek-ai/dsh-api-gateway/client` 则提供 `ctx.remote`；两者使用同一份生成的 `InvocationDescriptor` 约定，并将业务选择交给 API Remotes。Connection 承载一元调用的请求关联、信任和响应 envelope，Gateway 则拥有多路复用的 Remote 流。
 
 ## Host 服务：`TypertGatewayService`（ctx key：`typertGateway`）
 
@@ -14,13 +14,19 @@ Connection 可用时，Host 入口会在 Connection 共享的 `/api` FetchHandle
 
 支持取消的 Remote 方法会把 `signal: AbortSignal` 声明为最后一个 Host 参数。signal 是 descriptor 元数据，而不是 wire 参数：Connection 将它提供给 Gateway，Gateway 则在已解码的业务参数之后注入它。SRC 识别这个保留的末位参数名，严格生成还要求它具有全局 `AbortSignal` 类型。
 
+流式 Remote 使用 `@Remote({ mode: 'stream' })` 并返回 `Iterable` 或 `AsyncIterable`。`ctx.typertGateway.stream()` 执行与一元调用相同的 endpoint、参数、lookup 和取消校验，再用生成的 result codec 校验每个产出项。Client 插件激活时打开 Gateway 自有的 `/api/remote.mux` WebSocket，使其在空闲时保持连接，并以有上限的退避重试物理连接失败。可独立取消的逻辑流共享这条连接；进程内 Connection 载体直接提供等价的流，不打开该 WebSocket。
+
+Host 组合可通过 `registerRemoteEvents()` 注册唯一的应用事件 source。Gateway 为它保留内部 `$events` logical endpoint，只接受空 `args`，并在 source 撤回时中止该注册打开的 stream；事件名单、参数 JSON 校验和每 Client 队列由 API Remotes 拥有，不进入生成的业务 descriptor。source factory 必须在返回 iterable 前同步挂好增量 listener；Gateway 紧接着先产出 `{ type: 'ready' }`，再迭代 source，让 Client 能在增量通道就绪后才开始 baseline 读取。
+
 ## Client 服务：`ClientRemote`（ctx key：`remote`）
 
 `ctx.remote.$mount()` 会校验并注册生成的 Host-for-Client 贡献项，然后为发起调用的 Cordis fiber 安装具体的直接方法和作用域方法。每个 namespace 都是可追踪的 `remote.<namespace>` 子 Service，并在最后一个方法撤回后卸载。重复端点、命名空间冲突，以及缺少生成的严格编解码器的描述符，都会在方法可调用前报错。
 
-每次调用都会校验位置参数，构造与描述符完全匹配的具名 `args`，再通过 `ctx.connection.rpc.call('/api', endpoint, ...)` 发送。生成的支持取消的方法接受最后一个可选 `AbortSignal`；Client 会在调用 Connection 前将它与贡献项的挂载生命周期合并。返回值经过校验后才会交给应用代码。撤回贡献项会同时移除其描述符和方法、中止正在进行的调用，并使外部仍持有的方法句柄在调用时返回拒绝。
+每次一元调用都会校验位置参数，构造与描述符完全匹配的具名 `args`，再通过 `ctx.connection.rpc.call('/api', endpoint, ...)` 发送。生成的流方法返回 `AsyncIterable`，并在进程内 Connection 载体可用时通过它打开逻辑流，否则通过共享的 Gateway WebSocket 打开。生成的支持取消的方法接受最后一个可选 `AbortSignal`；Client 会在调用载体前将它与贡献项的挂载生命周期合并。一元结果和每个流项都经过校验后才会交给应用代码。撤回贡献项会同时移除其描述符和方法、中止正在进行的调用与流，并使外部仍持有的方法句柄在调用时返回拒绝。
 
-`ctx.remote.$on()` 订阅一条被转发的 Host 事件。它的合法键恰好等于 Host 装配声明的转发选择，listener 类型就是事件所属包自己的 Cordis `Events` 声明，因此不存在会与之漂移的第二份签名。每个订阅归属发起调用的 fiber，并随该 fiber 一起消失。投递是单向的，并按注册顺序进行；抛错的 listener 会被记录并与其余 listener 隔离，绝不影响帧泵。`ctx.remote.$dispatch()` 是该面的另一半，且属于载体：持有 Host 帧 sink 的 Client 半把每个解码后的帧交进来，收到无人订阅的事件名即丢弃，因为 wire 上出现什么取决于 Host 的转发选择。消费方只订阅，绝不调用它。
+`ctx.remote.$stream()` 返回跨越多个物理载体代次的单消费方 `RemoteStream`。Host 仍在线时，它允许一次立即重试；Host 离线时，它等待下一代连接，并为每个流项标注物理代次。领域消费方校验并接受各代次的 opening value；业务与协议错误仍然终止流。`RemoteSnapshotStream` 在此之上规定每代由一个 opening snapshot 和后续 delta 组成，`RemoteJournalStream` 则提供 follow-before-page、cursor 去重、分页、重连追赶与缺口修复。dispose 任一种 stream 都会取消其请求，并在活动 iterator 完全停止后完成。
+
+`ctx.remote.$on()` 订阅一条被转发的 Host 事件。它的合法键恰好等于 Host 装配声明的转发选择，listener 类型就是事件所属包自己的 Cordis `Events` 声明，因此不存在会与之漂移的第二份签名。每个订阅归属发起调用的 fiber，并随该 fiber 一起消失。Client Remote 服务激活时就把 `$events` pump 注册为 Connection generation source，因此即使当前无 `$on` 订阅，它也会在 Connection 循环启动时打开。浏览器使用 Remote mux，进程内组合使用 `connection.rpc.open`；`ready` 项将该逻辑流与 `host.describe` 共同组成一个 Connection generation。物理 carrier 失败、Remote stream error、意外正常结束、非 ready 首项或畸形事件项都会终止该 generation，由 Connection 退避后重开。投递按注册顺序进行；抛错或返回拒绝 Promise 的 listener 会被记录并与其余 listener 隔离。生产方交接不在 `TypertClientRemote` 上公开。
 
 生成的声明合并通过共享的 `TypertClientRemote` 约定提供 TypeScript API。Client 入口不包含 Host 服务或 Host Cordis 接口合并；方法查找和调用使用普通对象与函数，而不使用 JavaScript Proxy。
 
@@ -37,6 +43,6 @@ Connection 可用时，Host 入口会在 Connection 共享的 `/api` FetchHandle
 - Connection 适配器将普通分发故障和业务异常映射为 RPC 的 `internal` 代码，且不附带详细信息；`TypertLookupFailure` 携带的 lookup 策略错误会原样返回。结构化的 `TypertGatewayError` 类别仅供同进程调用方使用。
 - SRC 模式仅支持名称唯一的标识符参数，不支持解构、默认值或剩余参数。它只校验值能否安全表示为 JSON，不校验生成的业务类型，也绝不会推断可选字段。
 - Client 侧只能挂载严格模式生成的贡献项。SRC 标记不具备 Client 编解码器或类型投影。
-- 该包只分发一元方法。增量会话数据通过同一个 Connection 上独立的具名流协议传输。
+- `$stream()` 监督载体替换，但不推断回放语义；各领域自行拥有恢复 cursor 或替换 baseline 的校验，以及正常结束的分类。Connection generation 会重开内部 `$events`，但不会重放断线期间的事件。
 - lookup resolver 按 key 配置；当前无法让单个 Remote 参数或 endpoint 在同一 `agent`/`session` key 下选择 live-only 策略。
 - 被转发的事件原样到达 `$on`：没有载荷投影或脱敏，不支持 Scope 化订阅，重连后也不重放。

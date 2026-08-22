@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Two-sided Typert RPC endpoint for Host and Client Cordis environments. The Host entry provides `ctx.typertGateway`, while `@deepseek-ai/dsh-api-gateway/client` provides `ctx.remote`; both consume the same generated `InvocationDescriptor` contract and leave business selection to API Remotes and transport, request correlation, trust, and response envelopes to Connection.
+Two-sided Typert RPC endpoint for Host and Client Cordis environments. The Host entry provides `ctx.typertGateway`, while `@deepseek-ai/dsh-api-gateway/client` provides `ctx.remote`; both consume the same generated `InvocationDescriptor` contract and leave business selection to API Remotes. Connection carries unary request correlation, trust, and response envelopes, while Gateway owns multiplexed Remote streams.
 
 ## Host service: `TypertGatewayService` (ctx key: `typertGateway`)
 
@@ -14,11 +14,15 @@ The Host entry registers a trusted-host interceptor on Connection's shared `/api
 
 A cancellation-aware Remote method declares `signal: AbortSignal` as its final Host parameter. The signal is descriptor metadata rather than a wire argument: Connection supplies it to the Gateway, and the Gateway injects it after decoded business parameters. SRC recognizes the reserved final name, while strict generation additionally requires the global `AbortSignal` type.
 
+A stream Remote uses `@Remote({ mode: 'stream' })` and returns an `Iterable` or `AsyncIterable`. `ctx.typertGateway.stream()` applies the same endpoint, argument, lookup, and cancellation checks as unary invocation, then validates each yielded item with the generated result codec. The Client opens the Gateway-owned `/api/remote.mux` WebSocket when its plugin activates, keeps it connected while idle, and retries physical connection failures with capped backoff. Independently cancellable logical streams share that socket; an in-process Connection carrier provides equivalent streams directly without opening it.
+
 ## Client service: `ClientRemote` (ctx key: `remote`)
 
 `ctx.remote.$mount()` validates and registers a generated Host-for-Client contribution, then installs concrete direct and scoped methods for the calling Cordis fiber. Each namespace is a traced `remote.<namespace>` child Service and unloads after its last method is withdrawn. Duplicate endpoints, namespace collisions, and descriptors without strict generated codecs fail before methods become callable.
 
-Each call validates positional inputs, constructs the descriptor's exact named `args`, and sends it through `ctx.connection.rpc.call('/api', endpoint, ...)`. Generated cancellation-aware methods accept a final optional `AbortSignal`; the Client combines it with the contribution mount lifetime before calling Connection. The returned value is validated before reaching application code. Withdrawing a contribution removes its descriptors and methods together, aborts in-flight calls, and makes retained method handles reject.
+Each unary call validates positional inputs, constructs the descriptor's exact named `args`, and sends it through `ctx.connection.rpc.call('/api', endpoint, ...)`. A generated stream method returns an `AsyncIterable` and opens one logical stream through an in-process Connection carrier when available, otherwise through the shared Gateway WebSocket. Generated cancellation-aware methods accept a final optional `AbortSignal`; the Client combines it with the contribution mount lifetime before invoking the carrier. Unary results and every stream item are validated before reaching application code. Withdrawing a contribution removes its descriptors and methods together, aborts in-flight calls and streams, and makes retained method handles reject.
+
+`ctx.remote.$stream()` returns a single-consumer `RemoteStream` spanning physical carrier generations. It permits one immediate retry while the Host remains available, otherwise waits for the next connected Host generation, and annotates each item with its physical generation. The domain consumer validates and accepts each generation's opening value; business and protocol failures remain terminal. `RemoteSnapshotStream` adds one opening snapshot followed by deltas, while `RemoteJournalStream` adds follow-before-page opening, cursor deduplication, pagination, reconnect catch-up, and gap repair. Disposing any stream cancels its requests and resolves after the active iterator is fully stopped.
 
 `ctx.remote.$on()` subscribes to one forwarded Host event. Its legal keys are exactly the Host assembly's forwarding selection, and the listener type is the owning package's own Cordis `Events` declaration, so no second signature can drift from it. Each subscription belongs to the calling fiber and disappears with it. Delivery is one-way and follows registration order; a listener that throws is logged and isolated from the remaining listeners, which never affects the frame pump. `ctx.remote.$dispatch()` is the other half of that surface, and it is the carrier's: the Client half owning the Host frame sink hands each decoded frame over, and an event name nobody subscribes to is dropped, since the wire carries whatever the Host selected. A consumer subscribes and never calls it.
 
@@ -37,6 +41,6 @@ No direct effect; invoked business Services own any model-visible result.
 - The Connection adapter maps ordinary dispatch failures and business exceptions to the RPC `internal` code with empty details; lookup-policy errors carried by `TypertLookupFailure` are returned unchanged. Structured `TypertGatewayError` categories remain available only to same-process callers.
 - SRC mode supports unique identifier parameters without destructuring, defaults, or rest parameters. It validates JSON safety rather than generated business types and never infers optional fields.
 - Only strict generated contributions can mount on the Client face. SRC markers have no Client codec or type projection.
-- The package dispatches unary methods only. Incremental Session data uses a separate named-stream protocol over the same Connection.
+- `$stream()` supervises carrier replacement but does not infer replay semantics; each domain owns its resume cursor or replacement-baseline validation and normal-end classification.
 - Lookup resolvers are configured per key; an individual Remote parameter or endpoint cannot currently select a live-only policy under the same `agent`/`session` key.
 - Forwarded events reach `$on` exactly as the Host emitted them: no payload projection or redaction, no Scope-bound subscription, and no replay after a reconnect.

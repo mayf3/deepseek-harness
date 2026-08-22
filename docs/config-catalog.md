@@ -265,6 +265,22 @@ Depends on: [`ToolPresentationMode`](subsystems/tools.md)
 
 Source: [`packages/core/agent-tool-presentation/src/index.ts:38`](../packages/core/agent-tool-presentation/src/index.ts)
 
+<a id="deepseek-aidsh-api-session-controller"></a>
+
+## `@deepseek-ai/dsh-api-session-controller`
+
+Requires: `agentDefaultModel` · `agents` · `attachments` · `llm` · `sessions` · `sessionQuery` · `tools` · `typert` · `userQuestions` · `workspaceRegistry`
+
+```ts config-catalog
+/** Session Controller deployment policy. */
+export interface Config {
+  /** Maximum cold Session artifact size read to determine blankness. */
+  readonly coldBlankProbeMaxBytes?: number
+}
+```
+
+Source: [`packages/api/session-controller/src/index.ts:60`](../packages/api/session-controller/src/index.ts)
+
 <a id="deepseek-aidsh-attachment-local"></a>
 
 ## `@deepseek-ai/dsh-attachment-local`
@@ -365,7 +381,7 @@ export interface ConnectionConfig {
 }
 ```
 
-Source: [`packages/client/connection/src/index.ts:50`](../packages/client/connection/src/index.ts)
+Source: [`packages/client/connection/src/index.ts:53`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -742,7 +758,7 @@ Source: [`packages/hooks/hooks-codex/src/index.ts:44`](../packages/hooks/hooks-c
 
 ## `@deepseek-ai/dsh-host-apiproxy`
 
-Requires: `agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userQuestions` · `workspaceRegistry`
+Requires: `agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `sessionController` · `workspaceRegistry`
 
 ```ts config-catalog
 /** Gateway plugin configuration. */
@@ -761,12 +777,6 @@ export interface Config {
    * @default 6
    */
   sessionExportCompressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
-  /**
-   * Maximum physical size of a cold Session artifact eligible for blankness
-   * verification. Zero disables probes.
-   * @default 1024
-   */
-  coldBlankProbeMaxBytes?: number
 }
 ```
 

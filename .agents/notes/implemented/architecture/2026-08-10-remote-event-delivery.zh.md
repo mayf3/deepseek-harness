@@ -6,9 +6,9 @@ Status: implemented
 
 ## 问题
 
-[Typert Remote 方法调用](../../implemented/architecture/2026-08-02-typert-remote-method-calls.zh.md)只覆盖「一次请求一个结果」的定向调用，明确把 Session 事件流与有状态交互留在别处；Host 向消费端的**单向事件推送**因此仍然全部压在遗留的 API Proxy 上。
+[Typert Remote 方法调用](../../implemented/architecture/2026-08-02-typert-remote-method-calls.zh.md)最初只覆盖「一次请求一个结果」的定向调用，明确把 Session 事件流与有状态交互留在别处；Host 向消费端的**单向事件推送**需要一个不归 API Proxy 领域所有的投递机制。
 
-Host 拥有 `agent-preset/selected`、`commands/change`、`credentials/reference-updated`、`llm/adapters-updated`、`settings/document-updated` 这五条单向事件；它们既不依赖 AgentScope，载荷也本来就是 JSON。过去每条都要穿过 host cordis 事件、apiproxy 手写帧、client/runtime 手写桥和 Client 事件别名才能抵达 UI，而这些层没有陈述 owner 事件之外的新事实。
+Host 拥有 `agent-preset/selected`、`commands/change`、`credentials/reference-updated`、`llm/adapters-updated`、`settings/document-updated` 等单向事件；它们既不依赖 AgentScope，载荷也本来就是 JSON。若每条事件都要穿过 API Proxy 手写帧、Client Runtime 手写桥和 Client 事件别名才能抵达 UI，这些层不会陈述 owner 事件之外的新事实。
 
 那份重复声明还是**有损**的：client 侧写成 `settings/changed(ns: string)`，brand 类型在这一跳被拍平成裸 `string`，与 Remote 方法侧「消费端类型指向业务包唯一符号」的既有契约相反。
 
@@ -18,13 +18,13 @@ Host 拥有 `agent-preset/selected`、`commands/change`、`credentials/reference
 
 - `packages/api/remotes/src/remote-events.ts` 持有一份可转发 host 事件名单，它同时是「消费端能订阅什么」的唯一控制点。旁边的 `src/types.ts` 由它派生类型投影并填充 selection 座位，按包约定保持纯类型。两个文件**都同时列进本包 host 与 client 两个 face 的 `files`**，两侧读同一份。
 - wire 上的事件名 **就是 host cordis 事件原名**（`settings/document-updated`），不加 `host/` 前缀；载荷 **就是 host 的实参列表**，逐元素原样过 JSON，无投影、无脱敏、无改名。
-- 载体**寄生现有 host 流**：`HostFrame` 加一个包裹帧 `host/remote-event`，不新开下行通道。
+- Host source 由 `api/remotes` 注册到 API Gateway；Gateway 在既有 `/api/remote.mux` 上保留内部 logical endpoint `$events`，不增加物理连接，也不让 API Proxy 解释事件。
 - 事件**签名**不另立表：owner 包把自己的 cordis `Events` 声明搬进 client-safe 的 `./types` 纯类型出口，两侧读**同一份**——`$on` 的 listener 类型就是 `Events[Event]` 本身。「原样」不需要证明，是构造性成立的。
 - 但**只借 cordis 的类型形状，不接 cordis 的事件系统**：投递语义、注册表、异常处置全归 Typert 自己。
 
-一条 `Events` 条目若签名里够到了 host-only 符号（Service、`Agent`、Context 等），处理方式是**把代码拆到能干净落进 `./types` 为止**；不接受「一半留 index、一半搬走」的分裂声明，也不接受在 `./types` 里造结构等价的影子类型。这五个包都不需要拆：它们的条目只够到纯类型。agent-presets 把原词汇模块改名为 `preset.ts`，让导出的 `types.ts` 专门承载 client-safe 事件声明。
+一条 `Events` 条目若签名里够到了 host-only 符号（Service、`Agent`、Context 等），处理方式是**把代码拆到能干净落进 `./types` 为止**；不接受「一半留 index、一半搬走」的分裂声明，也不接受在 `./types` 里造结构等价的影子类型。当前名单内各 owner 都从 client-safe 类型出口提供同一份事件声明。
 
-五条事件全部走这条路径，专用帧与 Client 别名都已删除。模型消费方直接订阅 `llm/adapters-updated` 和 `settings/document-updated`；preset 消费方订阅 `agent-preset/selected`。真正需要投影或去重的数据仍保留专用帧。
+名单内事件全部走这条路径，专用帧与 Client 别名都已删除。模型消费方直接订阅 `llm/adapters-updated` 和 `settings/document-updated`；preset 消费方订阅 `agent-preset/selected`；Session 与动态 Cordis 的无状态通知使用同一机制。真正需要 baseline、投影或去重的数据仍保留专用 Remote stream。
 
 `skills/change`、`tools/change`、`system-prompt/change` 是同形状的纯失效事件但**没有任何已交付消费者**，按「每个抽象都要有当前 owner 与需求」不进名单，只作为扩展位记录在此。
 
@@ -56,15 +56,13 @@ $on<Event extends TypertRemoteEvent>(event: Event, listener: Events[Event]): () 
 
 `Events` 按程序解析：host 程序里是 host 事件全集，client 程序里是 client 编译面看得见的那些——同一个谓词在两侧各自成立，不需要把 host 声明拖进 client。
 
-**契约把消费动词与载体交接分开**：消费方用 `$on` 订阅，持有 host 帧 sink 的一方用 `$dispatch` 把解码后的帧交进来。它**不能**是一个跨插件的模块级函数：client bundle 纯度门禁（`packages/client/tsdown.client.ts`）只放行隐式的 `PLATFORM_MODULES` 加 `PRELOADED_CLIENT_EXTERNALS` 基座、包自身的 `dsh.client.external` 请求、`INLINE_SAFE` wire 层与 `/remote` 生成物值导入。靠 inline 绕过会把 `ClientRemoteService` 复制一份进 runtime bundle、令 `instanceof` 恒假。cordis 服务方法正是该门禁指定的协作形态：
+**契约只公开消费动词。**`ClientRemoteService` 激活时就把内部唯一的 `$events` pump 注册为 Connection generation source，与当前有无 `$on` 订阅无关；浏览器通过共享 Remote mux 打开 `$events`，进程内组合通过 `connection.rpc.open` 打开同一 logical stream。解码、精确 item 校验和订阅表派发都是 Gateway Client 的私有实现，`TypertClientRemote` 不暴露生产方方法，因此业务插件不能伪造一条 Host 事件。
 
-```ts ignore-check
-$dispatch(event: string, args: readonly unknown[]): void
-```
+每次 Host 打开 `$events` 时，API Remotes source factory 先同步挂载所有 allowlist listener，Gateway 随后产出首项 `{ type: 'ready' }`，再开始迭代事件 source。`ConnectionController` 并行等待该 ready 与 `host.describe`，只有两者都成功才发布 `connected` 并允许 baseline 读取。这个顺序保证 baseline 不会跑在增量 listener 前面。
 
-持有 host 帧 sink 的 client/runtime 直接调用它，帧不经中转事件即到达订阅表。`event` 形参是 `string` 而非 `TypertRemoteEvent`：这是 wire 边界，收到无人订阅的名字即静默丢弃。
+物理 mux 断开会让 logical stream 以 `RemoteStreamCarrierError` 结束；Host 返回的 Remote stream error、意外正常结束、非 ready 首项或畸形事件项也会结束当前 generation。Connection 撤回该 generation 的 `hostDescription`，在退避后重开 `$events` 和 `host.describe`；Gateway mux 只负责重建物理 WebSocket。转发事件不重放；凡正确性依赖恢复的状态，owner 必须另有查询、cursor 或 opening baseline，不能把 `$on` 当作可靠日志。
 
-投递语义与 cordis 事件系统不共用实现：只有单向投递，没有 waterfall / bail / parallel / serial 模式，也没有 `@mode` 概念（`ReturnType extends void` 是这条纪律的静态表达）；不绑 `this`；没有 `EventOptions`、`prepend`、优先级；按注册顺序逐个调用，单个 listener 抛错就地隔离并记日志——它绝不能拖垮帧泵（沿用 `ConnectionController` 对 sink 异常的既有处置）。
+投递语义与 cordis 事件系统不共用实现：只有单向投递，没有 waterfall / bail / parallel / serial 模式，也没有 `@mode` 概念（`ReturnType extends void` 是这条纪律的静态表达）；不绑 `this`；没有 `EventOptions`、`prepend`、优先级；按注册顺序逐个调用，单个 listener 抛错或返回拒绝的 Promise 都就地隔离并记日志，不能拖垮事件投递或 Connection generation。
 
 ### 名单：两个 face 共读的同一份声明
 
@@ -74,8 +72,19 @@ $dispatch(event: string, args: readonly unknown[]): void
 // remote-events.ts — the value
 export const API_REMOTE_FORWARDED_EVENTS = [
   'agent-preset/selected',
+  'api-session/activity',
+  'api-session/added',
+  'api-session/error',
+  'api-session/removed',
+  'api-session/status',
   'commands/change',
   'credentials/reference-updated',
+  'cordis/request-run',
+  'cordis/request-run-resolved',
+  'cordis/dynamic-package',
+  'cordis/dynamic-retract',
+  'cordis/inspect-query',
+  'cordis/inspect-query-resolved',
   'llm/adapters-updated',
   'settings/document-updated',
 ] as const
@@ -100,20 +109,20 @@ API_REMOTE_FORWARDED_EVENTS satisfies readonly TypertForwardableEvent[]
 
 **「原样」不在任何地方证明，而是构造性成立**：`$on` 的 listener 类型取自 owner 包 `./types` 里那一份 cordis `Events` 声明，host 转发读的是同一份，不存在可以彼此偏离的第二份声明。
 
-载荷 JSON-safe 交给运行时：apiproxy 转发前用 `dsh-session` 的 `isJsonValue` 逐元素校验，不合格**抛错 fail loud**（这是名单配置错误，不是外部输入）。
+载荷 JSON-safe 交给运行时：`api/remotes` 的 Host source 在入队前用 `dsh-session` 的 `isJsonValue` 逐元素校验，不合格**抛错 fail loud**（这是名单配置错误，不是外部输入）。
 
-### 线协议（apiproxy）
+### 线协议（API Gateway Remote mux）
 
 ```ts ignore-check
-| { type: 'host/remote-event'; event: string; args: JsonValue[] }
+{ type: 'ready' }
+{ event: string; args: JsonValue[] }
 ```
 
-zod 侧 `args: z.array(z.unknown())`：帧本身来自 `JSON.parse`，元素必然已是 JSON 值，结构契约由 owner 包的 `Events` 声明承担——与既有 `session/projection` 帧的 `value` 同 posture。
+Client 以 endpoint `$events` 和 payload `{ args: {} }` 打开 internal logical stream。Gateway 拒绝额外参数、缺失 Host source 和重复 source 注册；source 被撤回时会中止所有由该注册打开的 stream。每个 Client stream 在 `api/remotes` 中拥有独立队列与一组 allowlist listener，因此一个 Client 断开不会消费或撤销另一个 Client 的事件。
 
-`events.host()` 打开时按名单挂监听；每条流自持 disposers，无需新增广播集合或派生失效 listener。
+Client 要求首项恰好是只含 `type: 'ready'` 的对象，后续每个 item 则恰好包含非空 `event` 与数组 `args` 两个字段。浏览器 wire 的 JSON 解码保证元素是 JSON 值；进程内载体则读取同一个已经过 `isJsonValue` 校验的 Host source。未知但结构合法的事件名会在没有订阅者时静默丢弃。
 
-
-`api/events.ts` 是浏览器侧也要编译的 wire 契约文件，所以它引用的每个类型都必须走 owner 包的 **client-safe type-only 子路径**，绝不能走包根出口。实证：从 `@deepseek-ai/dsh-session` 根引一个类型，就把根出口的 `declare module 'cordis' { interface Context { sessions: SessionStore } }` 拖进 client 编译面、把 client 的 `ctx.sessions: ISessions` 顶掉，在完全无关的 `ui-input-trigger` / `ui-conversation` 里炸出 18 条错。`JsonValue` 因此需要 `dsh-session/src/types.ts` 补一条 re-export。
+`$events` 是 Gateway 内部 endpoint，不进入生成的 Typert Remote descriptor，也不成为 `ctx.remote.<namespace>`。应用选择仍只存在于 `api/remotes` 的 allowlist 和 Host source；Gateway 只拥有注册、payload 校验与物理传输。
 
 ### apps/web 的 browser e2e 属于 Host 面
 
@@ -127,21 +136,23 @@ zod 侧 `args: z.array(z.unknown())`：帧本身来自 `JSON.parse`，元素必�
 
 | 位置 | 改动 |
 |---|---|
-| `dsh-typert-protocol` | `src/types.ts` 加 `TypertForwardableEvent`、`TypertRemoteEventSelection`、`TypertRemoteEvent`；`TypertClientRemote` 增 `$on` 与 `$dispatch`。纯类型，零运行时 |
-| `api/gateway` client 半 | `ClientRemoteService` 实现 `$on`（订阅按注册项寻址、`ctx.effect` 归属调用方 fiber）与 `$dispatch`（快照后按注册顺序派发，收容抛出或拒绝的 listener） |
-| `api/remotes` | 新增 `src/remote-events.ts`（名单值）与 `src/types.ts`（类型投影 + 选择座位），两者都双列进两个 face 的 `files`；`./types` 出口 + `files` 补 `lib/types/**/*.js`；host 半加形状断言并 `import type {}` 三个 owner 包的 `./types`；client 半 `export type {}` 那三个 `./types` 与 `@deepseek-ai/dsh-api-gateway/client` |
+| `dsh-typert-protocol` | `src/types.ts` 提供 `TypertForwardableEvent`、`TypertRemoteEventSelection` 与 `TypertRemoteEvent`；`TypertClientRemote` 只公开 `$on`。纯类型，零运行时 |
+| `api/gateway` | Host 半提供唯一 Remote event source 注册位、`$events` logical stream 与 opening ready 项；Client 半把私有 pump 注册为 Connection generation source，负责 item 校验、按注册顺序派发以及 listener 异常收容 |
+| `api/remotes` | `src/remote-events.ts`（名单值）与 `src/types.ts`（类型投影 + 选择座位）双列进两个 face；Host 半注册每 Client 独立的 allowlist source，并在入队前校验 JSON；Client 半继续组合生成的 Remote contribution |
 | 根 `tsconfig.base.json` | 加 `dsh-settings/types`、`dsh-credentials/types`、`dsh-api-remotes/types` 三条 `paths`，全部指向**源**平面 |
 | `dsh-commands` / `dsh-settings` / `dsh-credentials` | `interface Events` 子块移入各自 client-safe 的 `./types`（settings/credentials 新建该出口，brand 与纯类型一并移入，index 继续 re-export 并留住构造器；`files` 补 `lib/types/**/*.js`） |
-| `host/apiproxy` | `HostFrame` 增 `host/remote-event`、删除五个专用变体及其 zod；`events.host()` 按名单挂监听并通过 `assertJsonArgs` 校验 |
-| `dsh-session` | `src/types.ts` 补 `export type { JsonValue }`，让 wire 契约文件能走 client-safe 子路径 |
-| `client/runtime` | 五条 Client 事件桥分支收敛为 `ctx.remote.$dispatch(frame.event, frame.args)`，并删除重复声明 |
-| 5 个消费者 | ui-commands / ui-settings-models / ui-settings-general / ui-permission / ui-agent-preset 改订 `ctx.remote.$on(...)`；照 `ui-goal` 先例 type-only 引 `@deepseek-ai/dsh-api-remotes/client` 并把 `'remote'` 加进 `inject` |
-| `client/connection` | fixture 的 `emitHost` 造 `host/remote-event` |
+| `host/apiproxy` | 不包含 `HostFrame`、`events.host()` 或其他 Host 下行 carrier；API Proxy 不参与 Host 事件或 Connection generation |
+| `dsh-session` | `isJsonValue` 供 `api/remotes` Host source 校验每个事件参数 |
+| `client/runtime` | 删除 Host frame 到 Remote subscription table 的桥；只继续在 Connection generation 建立后发布 `connection/reset` |
+| 消费方 | Client 插件直接订阅 `ctx.remote.$on(...)`，type-only 引入 owner 事件声明并把 `'remote'` 加进 `inject` |
+| `client/connection` | 提供唯一 generation source 注册位；`ConnectionController` 以 `$events` ready 与 `host.describe` 组成世代握手，fixture 也从同一 source 产生事件 |
 | `apps/web/tests` + `apps/cli` | 客户端符号镜像（见上节）；`apps/cli/tsconfig.json` 删 15 条 client 工程引用 |
 
 ## 备选方案
 
-**给 Remote 事件新开一条通用下行通道**（`ctx.connection.rpc` 的推送对偶，第三条 WebSocket）。最符合「Connection 独占载体、Gateway 不碰传输」；但要同时改 host 下行、`WebApiClient`、`ConnectionController`、fixture 与 web e2e 各一条流，代价与本次收益不匹配。寄生 host 流的代价是新契约暂时寄居在 legacy 帧联合里——host 流将来整体搬家时它随之搬走，消费端契约不变。
+**继续寄生 API Proxy 的 Host downlink。**这样可以复用 Connection generation 和 `connection/reset`，但会让 API Proxy 保留 Remote 事件 allowlist、队列、schema 和 Client Runtime bridge，领域传输也无法随其他 Remote stream 共用生命周期。API Gateway 已有常驻 `/api/remote.mux` 后，`$events` 只增加一个 internal logical stream，不需要第三条 WebSocket，因此转移到 Gateway 的成本和所有权都更合理。
+
+**给 Remote 事件另开第三条物理 WebSocket。**独立通道能拥有自己的连接状态，但会重复 Gateway mux 已经提供的认证升级、复用、取消、错误映射和退避重连。内部 `$events` endpoint 保留独立 logical stream，同时复用一条物理连接。
 
 **在 type-meta 立一张独立的 `TypertRemoteEventMap`，让 owner 包 declare-merge 进去**。消费端键集会精确等于「被声明为可远程投递的事件」；代价是每条事件的签名要在 cordis `Events` 之外**再写一遍**，于是需要一条双向 `extends` 的等价性证明来防漂移，还要给三个 owner 包新增 type-meta 依赖。共用同一份 `Events` 声明让等价性变成构造性成立，这张表因此不立。
 
@@ -157,21 +168,22 @@ zod 侧 `args: z.array(z.unknown())`：帧本身来自 `JSON.parse`，元素必�
 
 钉住该行为的东西：
 
-- 一个真组合测试：host 每 emit 一次，真实 host 流就出一帧 `host/remote-event`，`event` 为 host 原名、`args` 与实参逐元素相等。
+- Host source 真组合测试：两个 Client stream 各自收到 host emit 的 `{ event, args }`，其中一个断开不会影响另一个；非 JSON 实参会响亮拒绝且不会毒化后续合法事件。
 - 类型层负例拒绝三类候选：不是事件的名字、绑 Scope 的事件（`goal/changed`）、返回值非 `void` 的事件。`$on('slots/changed', …)`（client 本地事件）与 `$on('skills/change', …)`（已声明但未选中）都编译失败——因此 `$on` 的键面恰好等于名单。
 - 消费端 `$on('settings/document-updated', …)` 把 `ns` 解析为 `SettingsNamespace`：brand 穿过 wire 存活。
 - `$on` 的 disposer 归属调用方 fiber；同一个函数对象订阅两次时两条注册各自独立退订——按 listener 身份做键的表会把它们合并，所以订阅按注册项寻址。
 - 投递同时收容抛出的 listener 与拒绝所返回 promise 的 listener：声明返回值是 `void`，没人 await 异步 listener，其拒绝否则会完全逃出这层收容。投递遍历快照，因此派发中订阅或退订都不会改变本帧的接收者集合。
-- `assertJsonArgs` 直接单测，而不是从事件总线造畸形 emit：类型化的 `ctx.emit` 造不出来——名单内每条事件的载荷在静态上都是 JSON-safe 的。
-- 五个专用帧、五条 Client 别名及其桥分支都不存在；各消费方直接观察 owner 事件。
+- Gateway 测试覆盖 source 缺失、重复注册、撤销中止、payload 拒绝、ready 先于事件，以及浏览器与进程内两种 carrier；Client 测试覆盖 generation source 注册边界、描述与增量就绪顺序、物理失败后重开、Host 错误与意外结束、非 ready 首项、畸形事件项和 dispose quiescence。
+- JSON 参数校验直接在 Host source 上覆盖：类型化的 `ctx.emit` 通常造不出畸形值，但 runtime allowlist 配置错误仍必须响亮失败。
+- `host/remote-event`、公开 `$dispatch`、Client Runtime bridge 和 API Proxy 的 allowlist 依赖都不存在；各消费方直接观察 owner 事件。
 
 ## 后果
 
-- **寄居在 legacy 帧联合里**：契约住在 apiproxy 的 `HostFrame` 中，读者可能误以为 apiproxy 拥有 Remote 事件。该帧的 JSDoc 点名名单归 `api-remotes`，apiproxy README 在 known limitations 记录这项寄居。host 流将来整体搬家时，包裹帧随之搬走，消费端契约不变。
+- **Gateway 有一个非生成 endpoint**：`$events` 不对应业务 namespace，也不进入 Typert descriptor；它是 Gateway 与 `api/remotes` 之间的内部连接点，同时定义 Client Connection generation 的存活期。严格的空 payload 校验、opening ready 校验和单 source 注册限制它不会演化成第二个手写业务 API。
 - **两个文件打破了 api/remotes 的 face 互斥约定**：`src/remote-events.ts` 与 `src/types.ts` 同属两个工程，各自向共享的 `lib/types` 发射一份相同声明。内容逐字节相同、`.tsbuildinfo` 各自独立，实践上无害；README 的构建边界节陈述了这个例外及其成因（`paths` 指向源码面）。
-- **载体交接是开发者可见的**：任何持有 `ctx.remote` 的 client 插件都能调 `$dispatch` 合成一条转发事件。这个暴露面早于该动词存在——先前由内部事件中转帧时，`ctx.emit` 同样可达——与 `connection/reset` 可被伪造成重连同一量级（client 是单一信任域）。测试只钉「交接到 `$on` 的转换」，不假装该端口鉴别调用方。
-- **畸形实参在发射方的收容里失败，而非加载期**：`assertJsonArgs` 在转发监听内抛出，因此由发射 seam 自己的 listener 收容记录并丢弃该帧——响亮地出现在 host 日志里，而不是加载时或 emit 点。
+- **生产方保持私有**：业务插件只能调用 `$on`；Host source 注册和 Client 派发都不在 `TypertClientRemote` 上暴露，测试 double 以自己的 `emit` 方法驱动订阅，不伪装成生产接口。
+- **畸形实参在 emit 点失败**：`api/remotes` listener 在入队前抛出，因此调用 Host `ctx.emit` 的操作立即看到名单配置错误；队列仍可继续投递后续合法事件。
 - **测试侧镜像值可能漂移**：没有任何机制核对 `apps/web/tests` 中镜像的 client 常量与其源；安全网只是漂移会让选择器失配。规则写在 `apps/web/tests/README.md`，由 review 守；grep 级门禁经评估后刻意不做。
-- **放弃的能力**：不支持投影或脱敏载荷、不支持 Scope 化事件（`agentCtx.remote.$on`）、重连不重放——这些都是纯失效信号，且 `connection/reset` 已覆盖重连后的重新拉取。mux 流的会话事件、可应答帧与快照基线不在范围内。
+- **放弃的能力**：不支持投影或脱敏载荷、不支持 Scope 化事件（`agentCtx.remote.$on`）、重连不重放。需要可靠恢复的状态必须拥有查询、cursor 或 opening baseline；可应答交互与快照状态不应进入 `$on`。
 - **仍有 client 包留在 host 图里**：12 个工程（`connection`、`runtime`、`ui-slots` 等）经未拆分的 `directory-picker-browse`/`-native` 与 `api/gateway → client/connection` 仍可达 host 图。它们都能编译且不再牵连 api/remotes 的 client face，因此没有阻塞本次改动；拆分那些包能减少几个，但经评估后不做。两个 chat e2e 直接引 `dsh-client-runtime/client` 依赖 `runtime` 本来就在图里——属偶然而非保证。
 - **invariant companion 不做运行期检查**：早先的修订曾在活事件总线上断言投递形状（`thisArg === null`、`mode === 'emit'`），这让 companion 与名单值耦合，并使 rolldown 把它提成第三个 bundle chunk——而机械推导的发布文件清单并不携带它。host 面的 `TypertForwardableEvent` 断言在编译期已拒绝这两种偏离，因此该 companion 是一个带说明的空 installer。

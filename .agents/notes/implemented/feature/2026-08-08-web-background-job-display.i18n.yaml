@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-08-web-background-job-display.md
-2026-08-08-web-background-job-display.md: 1af949a537103637e8bac84b5bfa0f915fcf82e0
-2026-08-08-web-background-job-display.zh.md: 0aa8d65b7697312f603dd9ddd37f182da0b7f39c
+2026-08-08-web-background-job-display.md: 962d29e35ffe436c5ab91307d0cdfa557bbd539f
+2026-08-08-web-background-job-display.zh.md: 8b391c272b8ff38028cc6819f2fbec49505d85aa
