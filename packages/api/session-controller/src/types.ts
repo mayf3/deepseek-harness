@@ -4,13 +4,11 @@ import type {
   AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { CallId, MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { JsonValue, SessionId, SurfaceOp } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
-import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-approval/types'
-import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type {
   DiffCallView,
@@ -412,33 +410,11 @@ export interface SessionJob {
   readonly finishedAt?: number
 }
 
-/** Stable identity of one answerable Host interaction. */
-export type SessionInteractionId = Branded<'session-interaction-id'>
-
 /** Complete live control baseline emitted once per control stream generation. */
 export interface SessionControlBaseline {
   readonly queues: Readonly<Record<SessionId, readonly SessionQueuedItem[]>>
   readonly jobs: Readonly<Record<SessionId, readonly SessionJob[]>>
-  readonly approvals: readonly SessionApprovalRequest[]
-  readonly questions: readonly SessionQuestionRequest[]
   readonly projections: Readonly<Record<SessionId, SessionProjectionsBlock>>
-}
-
-/** One pending approval request. */
-export interface SessionApprovalRequest {
-  readonly interactionId: SessionInteractionId
-  readonly sessionId: SessionId
-  readonly approvalId: ApprovalRequestId
-  readonly toolName: string
-  readonly callId?: CallId
-  readonly reason?: string
-}
-
-/** One pending structured-question request. */
-export interface SessionQuestionRequest {
-  readonly interactionId: SessionInteractionId
-  readonly sessionId: SessionId
-  readonly questions: readonly AskUserQuestionItem[]
 }
 
 /** One finished projection value and its durable watermark. */
@@ -454,58 +430,7 @@ export type SessionControlFrame =
   | { readonly type: 'baseline'; readonly value: SessionControlBaseline }
   | { readonly type: 'queue'; readonly sessionId: SessionId; readonly items: readonly SessionQueuedItem[] }
   | { readonly type: 'jobs'; readonly sessionId: SessionId; readonly jobs: readonly SessionJob[] }
-  | ({ readonly type: 'approval/requested' } & SessionApprovalRequest)
-  | {
-    readonly type: 'approval/resolved'
-    readonly interactionId: SessionInteractionId
-    readonly sessionId: SessionId
-    readonly approvalId: ApprovalRequestId
-    readonly outcome: ApprovalOutcome
-  }
-  | ({ readonly type: 'question/requested' } & SessionQuestionRequest)
-  | {
-    readonly type: 'question/resolved'
-    readonly interactionId: SessionInteractionId
-    readonly sessionId: SessionId
-    readonly outcome: 'answered' | 'cancelled'
-  }
   | ({ readonly type: 'projection' } & SessionProjectionUpdate)
-
-/** Result shell sent back for one pending interaction. */
-export type SessionInteractionResult =
-  | { readonly ok: true; readonly value: SessionApprovalResponse | SessionQuestionResponse }
-  | {
-    readonly ok: false
-    readonly error: {
-      readonly code: string
-      readonly message: string
-      readonly details: Readonly<Record<string, JsonValue>>
-    }
-  }
-
-/** Pending-interaction response request. */
-export interface SessionRespondRequest {
-  readonly interactionId: SessionInteractionId
-  readonly result: SessionInteractionResult
-}
-
-/** Receipt for one pending-interaction response. */
-export type SessionRespondReceipt =
-  | { readonly accepted: true }
-  | { readonly accepted: false; readonly reason: 'not-pending' | 'bad-response' }
-
-/** Validated approval answer carried inside a successful interaction response. */
-export interface SessionApprovalResponse {
-  readonly sessionId: SessionId
-  readonly approvalId: ApprovalRequestId
-  readonly outcome: 'allowed-once' | 'rejected'
-}
-
-/** Validated structured-question answer carried inside a successful interaction response. */
-export interface SessionQuestionResponse {
-  readonly sessionId: SessionId
-  readonly answer: AskUserQuestionAnswer
-}
 
 declare module '@deepseek-ai/cordis' {
   interface Events {

@@ -17,7 +17,6 @@ import { CallId, createMessage, createToolResultMessage, createUserMessage } fro
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import type { SessionFollowFrame } from '@deepseek-ai/dsh-api-session-controller/types'
 import { createSessionTestRemote } from './test-remote.ts'
@@ -68,7 +67,6 @@ async function harness(): Promise<{ ctx: Context }> {
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt, { persona: '' })
   await ctx.plugin(ToolRuntime)
-  await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
   ctx.tools.register(tool('gen', {
     presentCall: () => ({ card: 'generic', title: 'gen call' }),

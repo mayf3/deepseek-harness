@@ -5,7 +5,6 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
-import type { SessionInteractionId } from '../src/types.ts'
 import { createSessionTestController } from './test-remote.ts'
 
 const defaults = {
@@ -74,9 +73,5 @@ describe('SessionController facade', () => {
     })
     abort.abort()
     await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
-    expect(controller.respond({
-      interactionId: 'missing' as SessionInteractionId,
-      result: { ok: false, error: { code: 'cancelled', message: 'cancelled', details: {} } },
-    })).toEqual({ accepted: false, reason: 'not-pending' })
   })
 })

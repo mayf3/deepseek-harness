@@ -36,8 +36,6 @@ import type {
   SessionPromptValue,
   SessionRenameRequest,
   SessionRenameValue,
-  SessionRespondReceipt,
-  SessionRespondRequest,
   SessionSearchRequest,
   SessionSearchValue,
   SessionSelectModelRequest,
@@ -73,7 +71,6 @@ export class SessionController extends TypertRemoteService {
     'sessionQuery',
     'tools',
     'typert',
-    'userQuestions',
     'workspaceRegistry',
   ]
 
@@ -292,15 +289,6 @@ export class SessionController extends TypertRemoteService {
     return this.controlState.control(signal)
   }
 
-  /**
-   * Settle one still-pending approval or structured question.
-   * @param request - interaction identity and caller response.
-   * @returns whether a matching pending interaction accepted the response.
-   */
-  @Remote('respond')
-  respond(request: SessionRespondRequest): SessionRespondReceipt {
-    return this.controlState.respond(request)
-  }
 }
 
 export { buildModelCatalog } from './catalog.ts'

@@ -26,8 +26,6 @@
     { "path": "../../core/session" },
     { "path": "../../core/tools" },
     { "path": "../../attachment/attachment" },
-    { "path": "../../interaction/user-approval" },
-    { "path": "../../interaction/user-questions" },
     { "path": "../../jobs/jobs" },
     { "path": "../../llm/llm" },
     { "path": "../../preset/agent-presets" },

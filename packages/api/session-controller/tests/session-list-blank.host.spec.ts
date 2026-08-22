@@ -13,18 +13,15 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
-import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import { CommandId } from '@deepseek-ai/dsh-commands/brand'
-// Side-effect type imports: the knob-event SessionEventMap merges.
+// Side-effect type imports: the configuration-event SessionEventMap merges.
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
-import type {} from '@deepseek-ai/dsh-user-approval'
 import { createSessionTestRemote, type TestSessionRemote } from './test-remote.ts'
 
 async function harness(): Promise<{ ctx: Context; remote: TestSessionRemote; attach: (session: Session) => void }> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
-  await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
   return {
     ctx,
@@ -45,10 +42,9 @@ function appendStandalone(session: Session): void {
   session.append('session/title', {
     title: 'standalone title', messageSeqs: [], source: { kind: 'fallback' },
   })
-  // The three permission knob events (a /permission switch on a fresh session).
+  // Permission configuration events from a /permission switch on a fresh session.
   session.append('permission/preset', { preset: 'danger-full-access' })
   session.append('sandbox/mode', { mode: 'danger-full-access' })
-  session.append('approval/policy', { policy: 'never' })
 }
 
 async function listBlank(remote: TestSessionRemote, id: string): Promise<boolean | undefined> {

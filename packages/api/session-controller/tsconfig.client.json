@@ -15,8 +15,6 @@
     { "path": "../gateway/tsconfig.client.json" },
     { "path": "../../attachment/attachment" },
     { "path": "../../core/session" },
-    { "path": "../../interaction/user-approval" },
-    { "path": "../../interaction/user-questions" },
     { "path": "../../jobs/jobs" },
     { "path": "../../llm/llm" },
     { "path": "../../session/session-projection" },

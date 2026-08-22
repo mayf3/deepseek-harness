@@ -93,12 +93,6 @@ function installControllers(
       },
     } as never)
   }
-  if (ctx.get('userQuestions') === undefined) {
-    ctx.provide('userQuestions', {
-      registerProvider: () => (): void => {},
-    } as never)
-  }
-
   const cwd = vi.spyOn(process, 'cwd').mockReturnValue(defaults.cwd)
   let controller: SessionController
   try {

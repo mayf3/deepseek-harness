@@ -98,8 +98,6 @@
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "@deepseek-ai/dsh-typert-registry": "workspace:^",
-    "@deepseek-ai/dsh-user-approval": "workspace:^",
-    "@deepseek-ai/dsh-user-questions": "workspace:^",
     "@deepseek-ai/dsh-workspace": "workspace:^"
   },
   "peerDependenciesMeta": {
@@ -107,8 +105,7 @@
     "@deepseek-ai/dsh-session-persistence": { "optional": true },
     "@deepseek-ai/dsh-session-projection": { "optional": true },
     "@deepseek-ai/dsh-session-projection-cache": { "optional": true },
-    "@deepseek-ai/dsh-tools": { "optional": true },
-    "@deepseek-ai/dsh-user-approval": { "optional": true }
+    "@deepseek-ai/dsh-tools": { "optional": true }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -133,8 +130,6 @@
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "@deepseek-ai/dsh-typert-registry": "workspace:^",
-    "@deepseek-ai/dsh-user-approval": "workspace:^",
-    "@deepseek-ai/dsh-user-questions": "workspace:^",
     "@deepseek-ai/dsh-workspace": "workspace:^"
   }
 }

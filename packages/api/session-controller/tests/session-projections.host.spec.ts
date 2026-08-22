@@ -18,7 +18,6 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
-import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import { SessionControlController } from '@deepseek-ai/dsh-api-session-controller/src/control.ts'
 import type { SessionControlFrame } from '@deepseek-ai/dsh-api-session-controller/types'
 import { createSessionTestRemote, type TestSessionRemote } from './test-remote.ts'
@@ -76,7 +75,6 @@ const internalCountUnit = () => ({
 async function harness(withRegistry: boolean): Promise<{ ctx: Context; session: Session }> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
-  await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
   if (withRegistry) await ctx.plugin(SessionProjectionRegistry)
   const session = ctx.sessions.create()
@@ -274,7 +272,7 @@ describe('session.history projections block', () => {
     expect('sessionListMetadata' in ctx.sessionProjections.snapshot(session).values).toBe(false)
     const fiber = ctx.plugin(Object.assign((gatewayCtx: Context) => {
       createSessionTestRemote(gatewayCtx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
-    }, { inject: ['sessions', 'agents', 'userQuestions', 'sessionProjections'] }))
+    }, { inject: ['sessions', 'agents', 'sessionProjections'] }))
     await fiber.await()
     await vi.waitFor(() => {
       expect(ctx.sessionProjections.snapshot(session).values.sessionListMetadata)
