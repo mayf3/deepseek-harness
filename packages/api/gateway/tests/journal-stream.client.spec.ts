@@ -261,7 +261,7 @@ describe('RemoteJournalStream', () => {
       ],
       [
         signal => new Promise<Page>((_resolve, reject) => {
-          const aborted = (): void => { reject(signal.reason) }
+          const aborted = (): void => { reject(new Error('page aborted')) }
           signal.addEventListener('abort', aborted, { once: true })
           if (signal.aborted) aborted()
         }),

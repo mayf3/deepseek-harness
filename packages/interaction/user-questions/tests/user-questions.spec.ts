@@ -88,18 +88,19 @@ describe('UserQuestionService', () => {
     const pending = Promise.withResolvers<never>()
     ctx.userQuestions.registerProvider({ ask: () => pending.promise })
     const controller = new AbortController()
+    const abortReason = new DOMException('This operation was aborted', 'AbortError')
 
     const answer = ctx.userQuestions.ask({
       questions: [{ id: 'confirm', question: 'Proceed?' }],
       signal: controller.signal,
     })
-    controller.abort()
-    pending.reject(controller.signal.reason)
+    controller.abort(abortReason)
+    pending.reject(abortReason)
 
     await expect(answer).rejects.toMatchObject({
       name: 'UserQuestionError',
       code: 'ASK_ABORTED',
-      cause: controller.signal.reason,
+      cause: abortReason,
     })
   })
 

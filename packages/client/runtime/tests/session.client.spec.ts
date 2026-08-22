@@ -816,9 +816,9 @@ describe('remaining branches', () => {
     expect(session.getSnapshot().promptError).toBeNull()
   })
 
-  it('dispose is a reserved no-op on resident instances', () => {
+  it('dispose is a reserved no-op on resident instances', async () => {
     const { session } = makeSession()
-    expect(() => { session.dispose() }).not.toThrow()
+    await expect(session.dispose()).resolves.toBeUndefined()
   })
 
   it('carries history-entry and follow-frame views into the business-neutral Event input', async () => {

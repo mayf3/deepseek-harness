@@ -1342,7 +1342,7 @@ describe('ChatView', () => {
     const h = makeHarness({
       pending: [
         new PendingWait('approval', 'r1', SID,
-          { approvalId: 'ap1', toolName: 'bash' } as PendingWait<'approval'>['payload'], vi.fn()),
+          { approvalId: 'ap1', toolName: 'bash' }, vi.fn()),
         new PendingWait('question', 'r2', SID,
           { questions: [{ id: 'q1', question: '选择' }] }, vi.fn()),
       ],

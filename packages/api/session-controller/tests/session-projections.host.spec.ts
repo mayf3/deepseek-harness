@@ -120,10 +120,10 @@ describe('session.history projections block', () => {
     if (!response.ok) throw new Error('history failed')
 
     expect(response.value.events.map(entry => entry.event.seq)).toEqual([0])
-    expect(response.value.projections).toEqual({
-      asOfSeq: 0,
-      values: expect.objectContaining({ 'test/last-user': { text: 'm0' } }),
-    })
+    expect(response.value.projections?.asOfSeq).toBe(0)
+    expect(response.value.projections?.values).toEqual(
+      expect.objectContaining({ 'test/last-user': { text: 'm0' } }),
+    )
   })
 
   it('projects an empty log at cursor -1', async () => {
@@ -134,10 +134,10 @@ describe('session.history projections block', () => {
     if (!response.ok) throw new Error('history failed')
 
     expect(response.value.events).toEqual([])
-    expect(response.value.projections).toEqual({
-      asOfSeq: -1,
-      values: expect.objectContaining({ 'test/last-user': null }),
-    })
+    expect(response.value.projections?.asOfSeq).toBe(-1)
+    expect(response.value.projections?.values).toEqual(
+      expect.objectContaining({ 'test/last-user': null }),
+    )
   })
 
   it('publishes the attachments imageLimits as a constant unit while both seams are composed', async () => {

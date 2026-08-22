@@ -205,22 +205,23 @@ export function apply(ctx: Context): void {
       const source = generationSource
       if (source === undefined) throw new Error('connection: no generation source is registered')
       const token = {}
+      const ownsGeneration = (): boolean => owner?.token === token
       const controller = new ConnectionController(api, source, {
         ...sinks,
         onConnected: (next) => {
-          if (owner?.token !== token) return
+          if (!ownsGeneration()) return
           publishDescription(next)
           // A description subscriber may synchronously stop the loop. In that
           // case publishDescription(undefined) has already retracted this
           // generation, so do not leak its stale connected notification to
           // the consumer sink afterward.
-          if (owner?.token !== token || !Object.is(description, next)) return
+          if (!ownsGeneration() || !Object.is(description, next)) return
           sinks.onConnected?.(next)
         },
         onStateChange: (state) => {
-          if (owner?.token !== token) return
+          if (!ownsGeneration()) return
           if (state === 'reconnecting') publishDescription(undefined)
-          if (owner?.token !== token) return
+          if (!ownsGeneration()) return
           sinks.onStateChange?.(state)
         },
       }, config ?? {})
