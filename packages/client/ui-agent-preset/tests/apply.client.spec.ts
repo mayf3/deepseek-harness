@@ -8,7 +8,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -143,8 +143,8 @@ function declareConversation(slots: SlotRegistry): () => void {
   } as never, () => null)
 }
 
-/** A workspaces double recording new-session starts. */
-function workspacesDouble() {
+/** A Session UI double recording new-session starts. */
+function uiSessionDouble() {
   const starts: unknown[] = []
   return {
     starts,
@@ -306,8 +306,8 @@ describe('ui-agent-preset apply', () => {
     const conversation = declareConversation(slots)
     ctx.provide('conversation', {} as never)
     ctx.provide('sessions', sessionsDouble({ byId: {} }) as never)
-    ctx.provide('workspaces', workspacesDouble() as never)
-    const fiber = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply })
+    ctx.provide('uiSession', uiSessionDouble() as never)
+    const fiber = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiSession'], apply })
     await fiber.await()
 
     const chip = slots.entries('conversation.hero.agentPreset')[0]!
@@ -328,8 +328,8 @@ describe('ui-agent-preset apply', () => {
     const conversation = declareConversation(slots)
     ctx.provide('conversation', {} as never)
     ctx.provide('sessions', sessionsDouble({ byId: {} }) as never)
-    ctx.provide('workspaces', workspacesDouble() as never)
-    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    ctx.provide('uiSession', uiSessionDouble() as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiSession'], apply }).await()
 
     const chip = slots.entries('conversation.hero.agentPreset')[0]!
     const seat = (chip.inject as unknown as () => AgentPresetSeatInjected)()
@@ -364,8 +364,8 @@ describe('ui-agent-preset apply', () => {
       byId: { s1: { id: 's1', blank: true, agentPreset: 'standard' } },
     }
     ctx.provide('sessions', sessionsDouble(state) as never)
-    ctx.provide('workspaces', workspacesDouble() as never)
-    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    ctx.provide('uiSession', uiSessionDouble() as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiSession'], apply }).await()
 
     remote.emit('agent-preset/selected', ['s1', 'minimal'])
 
@@ -378,8 +378,8 @@ describe('ui-agent-preset apply', () => {
     const conversation = declareConversation(slots)
     ctx.provide('conversation', {} as never)
     ctx.provide('sessions', sessionsDouble({ byId: {} }) as never)
-    ctx.provide('workspaces', workspacesDouble() as never)
-    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    ctx.provide('uiSession', uiSessionDouble() as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiSession'], apply }).await()
 
     const chip = slots.entries('conversation.hero.agentPreset')[0]!
     const seat = (chip.inject as unknown as () => AgentPresetSeatInjected)()
@@ -413,8 +413,8 @@ describe('ui-agent-preset apply', () => {
     } = { byId: {} }
     const sessions = sessionsDouble(state)
     ctx.provide('sessions', sessions as never)
-    ctx.provide('workspaces', workspacesDouble() as never)
-    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    ctx.provide('uiSession', uiSessionDouble() as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiSession'], apply }).await()
     const chip = (slots.entries('conversation.hero.agentPreset')[0]!
       .inject as unknown as () => AgentPresetSeatInjected)()
 
@@ -441,8 +441,8 @@ describe('ui-agent-preset apply', () => {
       byId: { s1: { id: 's1', blank: true } },
     })
     ctx.provide('sessions', sessions as never)
-    ctx.provide('workspaces', workspacesDouble() as never)
-    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    ctx.provide('uiSession', uiSessionDouble() as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiSession'], apply }).await()
     const chip = (slots.entries('conversation.hero.agentPreset')[0]!
       .inject as unknown as () => AgentPresetSeatInjected)()
 
@@ -465,8 +465,8 @@ describe('ui-agent-preset apply', () => {
     }
     const sessions = sessionsDouble(state)
     ctx.provide('sessions', sessions as never)
-    ctx.provide('workspaces', workspacesDouble() as never)
-    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    ctx.provide('uiSession', uiSessionDouble() as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiSession'], apply }).await()
     const chip = (slots.entries('conversation.hero.agentPreset')[0]!
       .inject as unknown as () => AgentPresetSeatInjected)()
 
@@ -488,8 +488,8 @@ describe('ui-agent-preset apply', () => {
     declareConversation(slots)
     ctx.provide('conversation', {} as never)
     ctx.provide('sessions', sessionsDouble({ byId: {} }) as never)
-    ctx.provide('workspaces', workspacesDouble() as never)
-    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    ctx.provide('uiSession', uiSessionDouble() as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiSession'], apply }).await()
     const label = (slots.entries('conversation.session.header.actions')[0]!
       .inject as unknown as () => AgentPresetLabelInjected)()
     const row = (slots.entries('settings.general.item')[0]!
@@ -509,9 +509,9 @@ describe('ui-agent-preset apply', () => {
     const conversation = declareConversation(slots)
     ctx.provide('conversation', {} as never)
     ctx.provide('sessions', sessionsDouble({ byId: {} }) as never)
-    const workspaces = workspacesDouble()
-    ctx.provide('workspaces', workspaces as never)
-    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    const uiSession = uiSessionDouble()
+    ctx.provide('uiSession', uiSession as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiSession'], apply }).await()
     const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
     const seat = (slots.entries('conversation.hero.agentPreset')[0]!
       .inject as unknown as () => AgentPresetSeatInjected)()
@@ -523,7 +523,7 @@ describe('ui-agent-preset apply', () => {
     // new-session flow began.
     expect(section.startCreatorDraft).toBeDefined()
     expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
-    expect(workspaces.starts).toHaveLength(1)
+    expect(uiSession.starts).toHaveLength(1)
 
     // A cross-screen stage carries the introduce cue; the chip acknowledges
     // it once, and a repeat acknowledgement leaves the snapshot untouched.
@@ -547,8 +547,8 @@ describe('ui-agent-preset apply', () => {
     } = { byId: {} }
     const sessions = sessionsDouble(state)
     ctx.provide('sessions', sessions as never)
-    ctx.provide('workspaces', workspacesDouble() as never)
-    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    ctx.provide('uiSession', uiSessionDouble() as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiSession'], apply }).await()
     const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
     const seat = (slots.entries('conversation.hero.agentPreset')[0]!
       .inject as unknown as () => AgentPresetSeatInjected)()

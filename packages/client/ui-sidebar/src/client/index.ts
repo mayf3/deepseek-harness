@@ -1,7 +1,11 @@
 /** Registers the sidebar shell into the layout-owned slot. */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+// Type-only: pulls the SlotRegistry service merge (ctx.slots).
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only: pulls the Session UI navigation service merge (ctx.uiSession).
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SidebarRootInjected } from './contract/slots.ts'
 import { SidebarRoot } from './SidebarRoot.tsx'
 import { en, zh, type SidebarKey } from './locales.ts'
@@ -23,7 +27,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'sidebar'
 
 /** Services required by the sidebar plugin. */
-export const inject = ['slots', 'layout', 'sessions', 'workspaces', 'locale']
+export const inject = ['slots', 'layout', 'uiSession', 'locale']
 
 /** Registers the sidebar shell and its service callbacks.
  * @param ctx - Client root context.
@@ -32,9 +36,9 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar: dictionaries')
 
   const injectProps = (): SidebarRootInjected => ({
-    // The shell's New Session button rides the runtime's shared action
+    // The shell's New Session button rides the Session UI's shared action
     // (current Session Workspace, then recent Workspace).
-    startSession: (workspaceId) => { ctx.workspaces.startSession(workspaceId) },
+    startSession: (workspaceId) => { ctx.uiSession.startSession(workspaceId) },
     toggleSidebar: () => { ctx.layout.toggleSidebar() },
   })
   ctx.effect(

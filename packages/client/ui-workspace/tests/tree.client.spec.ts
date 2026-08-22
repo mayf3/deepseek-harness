@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type {
-  PendingInteractionStatus, SessionId, SessionListState, SessionSummary, WorkspaceId, WorkspaceView,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionPendingInteractionBase } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   deriveFlat, deriveGroups, deriveSearchResults, workspaceLabel, relativeTime,
   UNGROUPED_KEY, UNGROUPED_LABEL,
@@ -29,14 +30,14 @@ const view = (expandedGroups: readonly string[] = [], ungroupedOrder?: readonly 
   ...(ungroupedOrder === undefined ? {} : { ungroupedOrder }),
 })
 const noArchive: readonly SessionId[] = []
-const noPending: ReadonlyMap<SessionId, PendingInteractionStatus> = new Map()
+const noAttention: ReadonlyMap<SessionId, SessionPendingInteractionBase> = new Map()
 const archived = (...ids: string[]): readonly SessionId[] => ids.map(sid)
 
 describe('deriveGroups', () => {
   it('keeps Host Workspace and sessionIds order without Client recency sorting', () => {
     const sessions = list(summary('newer', 20), summary('older', 10))
     const workspaces = [workspace('first', ['older', 'newer']), workspace('empty', [])]
-    const groups = deriveGroups(sessions, workspaces, noArchive, noPending, view(['first']))
+    const groups = deriveGroups(sessions, workspaces, noArchive, noAttention, view(['first']))
     expect(groups.map(group => group.key)).toEqual(['first', 'empty'])
     expect(groups[0]!.sessions.map(session => session.id)).toEqual([sid('older'), sid('newer')])
   })
@@ -44,20 +45,22 @@ describe('deriveGroups', () => {
   it('projects pending-interaction state into grouped and flat rows', () => {
     const awaiting = { ...summary('awaiting', 10), running: true }
     const sessions = list(awaiting)
-    const pending = new Map([[awaiting.id, 'plan-review' as const]])
+    const attention: ReadonlyMap<SessionId, SessionPendingInteractionBase> = new Map([[
+      awaiting.id,
+      { key: 'question:1', kind: 'plan-review', sessionId: awaiting.id },
+    ]])
     const grouped = deriveGroups(
-      sessions, [workspace('project', ['awaiting'])], noArchive, pending, view(['project']),
+      sessions, [workspace('project', ['awaiting'])], noArchive, attention, view(['project']),
     )
     expect(grouped[0]!.sessions[0]).toMatchObject({ pendingInteraction: 'plan-review', running: true })
-    expect(deriveFlat(sessions, noArchive, pending)[0]).toMatchObject({
-      pendingInteraction: 'plan-review', running: true,
-    })
+    expect(deriveFlat(sessions, noArchive, attention)[0])
+      .toMatchObject({ pendingInteraction: 'plan-review', running: true })
   })
 
   it('puts only real unaccounted Sessions in the trailing Ungrouped group', () => {
     const sessions = list(summary('owned', 1, '/projects/first'), summary('loose', 9, '/other'))
     const groups = deriveGroups(
-      sessions, [workspace('first', ['owned'])], noArchive, noPending, view([UNGROUPED_KEY]),
+      sessions, [workspace('first', ['owned'])], noArchive, noAttention, view([UNGROUPED_KEY]),
     )
     expect(groups.map(group => group.key)).toEqual(['first', UNGROUPED_KEY])
     expect(groups[1]!.sessions.map(session => session.id)).toEqual([sid('loose')])
@@ -69,7 +72,7 @@ describe('deriveGroups', () => {
       sessions,
       [],
       noArchive,
-      noPending,
+      noAttention,
       view([UNGROUPED_KEY], ['two', 'stale', 'two']),
     )
     expect(groups[0]!.sessions.map(session => session.id)).toEqual([
@@ -87,7 +90,7 @@ describe('deriveGroups', () => {
     }
     const groups = deriveGroups(
       sessions, [workspace('first', ['shown', 'current-blank', 'stale-blank'])],
-      noArchive, noPending, view(['first']),
+      noArchive, noAttention, view(['first']),
     )
     expect(groups[0]!.sessions.map(session => session.id)).toEqual([real.id, currentBlank.id])
     const blankNode = groups[0]!.sessions.find(session => session.id === currentBlank.id)!
@@ -99,8 +102,8 @@ describe('deriveGroups', () => {
     expect(groups[0]!.sessionCount).toBe(2)
     // A non-current blank stray never surfaces an Ungrouped bucket either.
     const strayGroups = deriveGroups(
-      list({ ...summary('stray', 2), blank: true }), [workspace('first', [])],
-      noArchive, noPending, view(),
+      list({ ...summary('stray', 2), blank: true }),
+      [workspace('first', [])], noArchive, noAttention, view(),
     )
     expect(strayGroups.map(group => group.key)).toEqual(['first'])
   })
@@ -110,16 +113,16 @@ describe('deriveGroups', () => {
     const plain = summary('plain', 2)
     const sessions = list(done, plain)
     const groups = deriveGroups(
-      sessions, [workspace('first', ['done', 'plain'])], noArchive, noPending, view(['first']),
+      sessions, [workspace('first', ['done', 'plain'])], noArchive, noAttention, view(['first']),
     )
     const doneNode = groups[0]!.sessions.find(session => session.id === done.id)!
     const plainNode = groups[0]!.sessions.find(session => session.id === plain.id)!
     expect(doneNode.completed).toBe(true)
     expect(plainNode.completed).toBe(false)
-    expect(deriveFlat(sessions, noArchive, noPending).find(node => node.id === done.id)!.completed).toBe(true)
+    expect(deriveFlat(sessions, noArchive, noAttention).find(node => node.id === done.id)!.completed).toBe(true)
     const search = deriveSearchResults(
       sessions, [workspace('first', ['done', 'plain'])], 'done', noArchive,
-      noPending, { items: [], hasMore: false }, 10,
+      noAttention, { items: [], hasMore: false }, 10,
     )
     expect(search.items[0]?.completed).toBe(true)
   })
@@ -141,7 +144,7 @@ describe('deriveGroups', () => {
       sessions,
       [workspace('first', ['parent', 'fork', 'subagent', 'grandchild', 'fork-child'])],
       noArchive,
-      noPending,
+      noAttention,
       view(['first']),
     )
 
@@ -149,12 +152,12 @@ describe('deriveGroups', () => {
     expect(groups[0]!.sessionCount).toBe(2)
     expect(groups[0]!.sessions[0]).toMatchObject({ running: false, runningSubagentCount: 2 })
     expect(groups[0]!.sessions[1]).toMatchObject({ running: false, runningSubagentCount: 1 })
-    expect(deriveFlat(sessions, noArchive, noPending).map(node => [node.id, node.runningSubagentCount])).toEqual([
+    expect(deriveFlat(sessions, noArchive, noAttention).map(node => [node.id, node.runningSubagentCount])).toEqual([
       [fork.id, 1], [parent.id, 2],
     ])
     expect(deriveSearchResults(
-      sessions, [workspace('first', ['parent', 'fork'])], 'parent', noArchive, noPending,
-      { items: [], hasMore: false }, 10,
+      sessions, [workspace('first', ['parent', 'fork'])], 'parent', noArchive,
+      noAttention, { items: [], hasMore: false }, 10,
     ).items[0]).toMatchObject({ id: parent.id, runningSubagentCount: 2 })
   })
 
@@ -172,7 +175,7 @@ describe('deriveGroups', () => {
       list(parent, oldChild, newChild, tieB, tieA, self, orphan, cycleA, cycleB),
       [],
       noArchive,
-      noPending,
+      noAttention,
       { expandedGroups: [UNGROUPED_KEY] },
     )
 
@@ -184,7 +187,7 @@ describe('deriveGroups', () => {
 
     // Equal timestamps use ids as a deterministic tiebreak in either input order.
     expect(deriveGroups(
-      list(summary('tie-a', 1), summary('tie-b', 1)), [], noArchive, noPending, view([UNGROUPED_KEY]),
+      list(summary('tie-a', 1), summary('tie-b', 1)), [], noArchive, noAttention, view([UNGROUPED_KEY]),
     )[0]!
       .sessions.map(node => node.id)).toEqual([sid('tie-a'), sid('tie-b')])
   })
@@ -196,7 +199,7 @@ describe('deriveGroups', () => {
       byId: { [sid('present')]: summary('present', 1) },
     }
     const groups = deriveGroups(
-      partial, [workspace('project', ['missing', 'present'])], noArchive, noPending, view(['project']),
+      partial, [workspace('project', ['missing', 'present'])], noArchive, noAttention, view(['project']),
     )
     expect(groups[0]!.sessions.map(node => node.id)).toEqual([sid('present')])
   })
@@ -208,7 +211,7 @@ describe('deriveGroups', () => {
     const sessions = list(kept, gone, looseGone)
     const groups = deriveGroups(
       sessions, [workspace('first', ['kept', 'gone'])], archived('gone', 'loose-gone'),
-      noPending, view(['first', UNGROUPED_KEY]),
+      noAttention, view(['first', UNGROUPED_KEY]),
     )
     // The archived member drops from its group AND the archived stray never
     // surfaces an Ungrouped bucket; counts follow the visible rows.
@@ -222,11 +225,11 @@ describe('deriveGroups', () => {
     const loose = summary('loose', 2)
     const ws = workspace('project', ['owned'])
     const ownedGroups = deriveGroups(
-      { ...list(owned, loose), current: owned.id }, [ws], noArchive, noPending, view(),
+      { ...list(owned, loose), current: owned.id }, [ws], noArchive, noAttention, view(),
     )
     expect(ownedGroups.find(group => group.key === 'project')!.containsCurrent).toBe(true)
     const looseGroups = deriveGroups(
-      { ...list(owned, loose), current: loose.id }, [ws], noArchive, noPending, view(),
+      { ...list(owned, loose), current: loose.id }, [ws], noArchive, noAttention, view(),
     )
     expect(looseGroups.find(group => group.key === UNGROUPED_KEY)!.containsCurrent).toBe(true)
   })
@@ -238,7 +241,7 @@ describe('deriveFlat', () => {
     const child = { ...summary('child', 30), parentId: parent.id }
     const tieB = summary('tie-b', 20)
     const tieA = summary('tie-a', 20)
-    const rows = deriveFlat(list(parent, child, tieB, tieA), noArchive, noPending)
+    const rows = deriveFlat(list(parent, child, tieB, tieA), noArchive, noAttention)
     expect(rows.map(row => row.id)).toEqual([sid('child'), sid('tie-a'), sid('tie-b'), sid('parent')])
   })
 
@@ -249,14 +252,14 @@ describe('deriveFlat', () => {
     const rows = deriveFlat(
       { ...list(parent, fork, subagent), current: subagent.id },
       noArchive,
-      noPending,
+      noAttention,
     )
     expect(rows.map(row => row.id)).toEqual([fork.id, parent.id])
   })
 
   it('tolerates ids whose summary has not landed yet', () => {
     const partial: SessionListState = { ...list(summary('present', 1)), ids: [sid('ghost'), sid('present')] }
-    expect(deriveFlat(partial, noArchive, noPending).map(row => row.id)).toEqual([sid('present')])
+    expect(deriveFlat(partial, noArchive, noAttention).map(row => row.id)).toEqual([sid('present')])
   })
 
   it('shows only the current blank session and excludes blanks from search', () => {
@@ -266,7 +269,7 @@ describe('deriveFlat', () => {
       ...list(summary('real', 1), currentBlank, staleBlank),
       current: currentBlank.id,
     }
-    const rows = deriveFlat(sessions, noArchive, noPending)
+    const rows = deriveFlat(sessions, noArchive, noAttention)
     expect(rows.map(row => row.id)).toEqual([currentBlank.id, sid('real')])
     expect(rows.map(row => row.title)).toEqual(['New Session', 'real'])
     expect(rows.map(row => row.blank)).toEqual([true, false])
@@ -275,7 +278,7 @@ describe('deriveFlat', () => {
   it('hides archived sessions in flat mode', () => {
     const kept = summary('kept', 1)
     const gone = summary('gone', 2)
-    expect(deriveFlat(list(kept, gone), archived('gone'), noPending).map(row => row.id)).toEqual([kept.id])
+    expect(deriveFlat(list(kept, gone), archived('gone'), noAttention).map(row => row.id)).toEqual([kept.id])
   })
 })
 
@@ -290,7 +293,7 @@ describe('deriveSearchResults archive filtering', () => {
       [],
       'needle',
       archived('gone'),
-      noPending,
+      noAttention,
       { items: [{ sessionId: gone.id, snippet: 'needle body' }], hasMore: false },
       10,
     )
@@ -302,7 +305,6 @@ describe('deriveSearchResults', () => {
   it('merges local title/Workspace matches before ranked content hits and enriches duplicates', () => {
     const titleHit = summary('title-hit', 30, '/projects/a')
     titleHit.displayTitle = 'Needle title'
-    const pending = new Map([[titleHit.id, 'plan-review' as const]])
     const workspaceHit = summary('workspace-hit', 20, '/projects/b')
     workspaceHit.displayTitle = 'Ordinary title'
     const contentHit = summary('content-hit', 10, '/projects/c')
@@ -316,7 +318,9 @@ describe('deriveSearchResults', () => {
       ],
       ' NEEDLE ',
       noArchive,
-      pending,
+      new Map([[titleHit.id, {
+        key: 'question:1', kind: 'plan-review', sessionId: titleHit.id,
+      }]]),
       {
         items: [
           { sessionId: contentHit.id, snippet: 'body needle excerpt' },
@@ -377,7 +381,7 @@ describe('deriveSearchResults', () => {
       [workspace('first', ['opaque-current', 'new session stale'])],
       'new session',
       noArchive,
-      noPending,
+      noAttention,
       {
         items: [
           { sessionId: staleBlank.id, snippet: 'stale body' },
@@ -401,7 +405,7 @@ describe('deriveSearchResults', () => {
       [],
       'needle',
       noArchive,
-      noPending,
+      noAttention,
       { items: [], hasMore: false },
       3,
     )
@@ -413,13 +417,13 @@ describe('deriveSearchResults', () => {
       [],
       'needle',
       noArchive,
-      noPending,
+      noAttention,
       { items: [{ sessionId: sid('body'), snippet: 'needle' }], hasMore: true },
       3,
     )
     expect(backendMore.items).toHaveLength(1)
     expect(backendMore.hasMore).toBe(true)
-    expect(deriveSearchResults(list(), [], '  ', noArchive, noPending, { items: [], hasMore: true }, 3))
+    expect(deriveSearchResults(list(), [], '  ', noArchive, noAttention, { items: [], hasMore: true }, 3))
       .toEqual({ items: [], hasMore: false })
   })
 })

@@ -15,7 +15,7 @@
       "path": "../../../vendor/cordis"
     },
     {
-      "path": "../runtime"
+      "path": "../store"
     },
     {
       "path": "../../test-support/client-runtime"
@@ -25,6 +25,12 @@
     },
     {
       "path": "../ui-primitives"
+    },
+    {
+      "path": "../ui-renderer"
+    },
+    {
+      "path": "../ui-session"
     },
     {
       "path": "../ui-settings"
@@ -37,6 +43,12 @@
     },
     {
       "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../../core/session"
     }
   ]
 }
