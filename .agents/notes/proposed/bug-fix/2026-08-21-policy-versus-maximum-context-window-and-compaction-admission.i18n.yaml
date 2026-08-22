@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/bug-fix/2026-08-21-policy-versus-maximum-context-window-and-compaction-admission.md
-2026-08-21-policy-versus-maximum-context-window-and-compaction-admission.md: 24b7c4169260b5dcd89c1da9efaea88f6cc72ce8
-2026-08-21-policy-versus-maximum-context-window-and-compaction-admission.zh.md: cb0f812a9b25c47fa189171ba8b1ead0781db70b
+2026-08-21-policy-versus-maximum-context-window-and-compaction-admission.md: a4e8a8b6aed5a8b371b1205548b413cb6185ad7d
+2026-08-21-policy-versus-maximum-context-window-and-compaction-admission.zh.md: fc2e5a42780249fa2db69745a0fe8695dfe8d07f
