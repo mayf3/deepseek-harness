@@ -22,23 +22,25 @@ Status: proposed
 
 ### 合并容量与权威来源
 
-`contextWindow` 保持为驱动压力、压缩准入与切换预检的策略容量。`maxContextWindow` 是路由的原始最大容量。两个字段都表示请求与响应合并上下文的最大值，绝不表示仅输入容量。只披露一个数值时由它同时充当两个字段，任何代码路径都不得从策略值推断出更大的最大值。
+`contextWindow` 是生效合并上下文：该路由当前实际运行的请求与响应合并上下文最大值，也是驱动压力、压缩准入与切换预检的容量。`maxContextWindow` 是 override ceiling（覆盖上限）：显式配置覆盖允许把生效上下文提升到的最大合并上下文。仅有 ceiling 绝不改变生效上下文，绝不声明 provider 硬限制，也绝不充当溢出判定权威。两个字段都表示请求与响应合并上下文，绝不表示仅输入容量。只披露一个数值时由它充当生效上下文，任何代码路径都不得在没有显式覆盖的情况下从 ceiling 推断生效上下文。
 
 每个字段通过一条由适配器所有的权威链解析：显式部署配置优先于路由本地能力元数据，优先于安装的 catalog 条目，优先于路由 fallback。普通 llm-pi-ai settings 路由可以通过 `models` 或 `modelOverrides` 提供两个容量；包括外部适配器在内的任何适配器也可以改由 `resolveModel` 直接返回它们。通用字段名与校验属于 `@deepseek-ai/dsh-llm`；Core 绝不读取 Codex 能力文件，也绝不按提供方或模型名称分支。
 
-解析时校验正整数与 `maxContextWindow >= contextWindow`。路由还可以披露大于 0 且不超过 100 的百分比 `effectiveContextWindowPercent`。解析出的准入容量为 `effectiveAdmissionContext = min(contextWindow, floor(maxContextWindow * effectiveContextWindowPercent / 100))`；省略百分比表示 100%。因此原始 `max_context_window = 872000` 是最大合并上下文的元数据，不是安全输入预算；95% 设置先得出来自最大值的 828400 上限，随后仍需应用策略最小值和全部请求组成部分。
+解析时校验正整数，且两者都披露时要求 `contextWindow <= maxContextWindow`；生效上下文高于其 override ceiling 的配置在加载时点名出错 key 地失败。解析出的合并上下文为 `resolvedContextWindow = contextWindow ?? maxContextWindow`：披露生效上下文时取它，仅在生效上下文缺失时回退到 ceiling。路由还可以披露大于 0 且不超过 100 的百分比 `effectiveContextWindowPercent`；省略表示 100%。百分比作用于 resolved context，绝不作用于 ceiling：`effectiveContextBudget = floor(resolvedContextWindow * effectiveContextWindowPercent / 100)`。对观测元数据——生效上下文 272000、ceiling 872000、95%——resolved context 为 272000、有效预算为 258400；只有显式、合法地把生效上下文覆盖到 ceiling 后才会得到 828400。
 
-适配器返回一个不可变容量快照，其中包含策略容量、原始最大值、生效百分比与 `effectiveAdmissionContext`。一次操作的准入、熔断、诊断和切换预检使用同一快照。部署本地能力文件只证明该部署中自身路由的事实，绝不提升为全局 catalog 事实。
+适配器返回一个不可变容量快照，其中包含 `resolvedContextWindow`、可选的 override ceiling、生效百分比、`effectiveContextBudget`、静默溢出能力，以及每个字段的元数据来源与权威。一次操作的准入、熔断、诊断和切换预检使用同一快照。如果某条路由确需把 provider 确认的硬限制作为独立事实，适配器必须在单独证明的字段中声明它；绝不从 override ceiling 推断。部署本地能力文件只证明该部署中自身路由的事实，绝不提升为全局 catalog 事实。
 
 ### 成功响应的权威性
 
-可识别的提供方溢出错误仍是最终权威，不受本地元数据影响，映射到规范的 `CONTEXT_WINDOW_EXCEEDED`。携带非空 assistant 内容的完整响应保持成功，即使上报的输入用量超过 `maxContextWindow`；本地元数据不得把提供方成功改写成失败。适配器改为记录 capacity-metadata-drift 诊断，其中包含路由、容量快照与上报用量。
+可识别的提供方溢出错误仍是最终权威，不受本地元数据影响，映射到规范的 `CONTEXT_WINDOW_EXCEEDED`。携带非空 assistant 内容的完整响应保持成功，即使上报的输入用量超过任何本地披露的容量；本地元数据不得把提供方成功改写成失败。适配器改为记录 capacity-metadata-drift 诊断，其中包含路由、容量快照与上报用量。
 
-静默溢出检测是由所属适配器针对精确提供方协议解析的显式启用路由能力。能力缺失时禁用，不能仅因路由使用 pi-ai 就运行。冻结的异常签名要求每个已声明要素同时满足：终止原因由该能力明确允许、没有 assistant 内容块、上报输出 token 为零，且 `usage.input + cacheRead >= maxContextWindow`。仅比较用量并不充分。只有已启用能力且匹配完整签名的路由才可把响应映射为规范溢出；不匹配的空响应仍采用普通空响应或最大输出结果。
+静默溢出检测是由所属适配器针对精确提供方协议解析的显式启用路由能力。能力缺失时禁用，不能仅因路由使用 pi-ai 就运行。冻结的异常签名要求每个已声明要素同时满足：终止原因由该能力明确允许、没有 assistant 内容块、上报输出 token 为零，且 `usage.input + cacheRead >= resolvedContextWindow`。仅比较用量并不充分。只有已启用能力且匹配完整签名的路由才可把响应映射为规范溢出；不匹配的空响应仍采用普通空响应或最大输出结果。
 
 ### 合并上下文准入
 
-每次准入判断都要证明 `pricedSystem + pricedTools + pricedSelectedMessages + pricedInstruction + effectiveOutputReserve + tokenizerSafetyMargin <= effectiveAdmissionContext`。定价使用所选适配器将实际发送的精确摘要请求或普通请求表示。不能仅因尚无输出就把输出预留设为零。
+每次准入判断都要证明 `pricedSystem + pricedTools + pricedSelectedMessages + pricedInstruction + effectiveOutputReserve + tokenizerSafetyMargin <= effectiveContextBudget`。定价使用所选适配器将实际发送的精确摘要请求或普通请求表示。不能仅因尚无输出就把输出预留设为零。
+
+生效百分比是一次性总预算折减，先于全部 harness 算术作用于 resolved context。harness 不声称知道该百分比覆盖了哪些上游预留，绝不把它说成已包含 system、tools、指令或输出，因此在它之后扣除每个精确定价组成部分与显式 tokenizer 安全边际。可能的重叠只是 harness 有意放弃的保守余量；harness 自身绝不重复扣除任何组成部分。
 
 对压缩而言，`effectiveOutputReserve` 是精确目标策略解析后实际传给摘要调用的 `maxTokens`；因此当前继承默认值 8192 必须预留 8192 token。对普通请求与切换预检而言，它先取显式请求 `maxTokens`，否则取预备调用解析所物化的适配器自有 `defaultMaxTokens`。若两者都不存在，容量敏感的预检大声失败，而非假设为零。`tokenizerSafetyMargin` 是经过解析与校验的策略值，并被捕获进容量快照 key。
 
@@ -66,9 +68,9 @@ WINDOW 与 COMPACTION 是完整 precompact-before-commit SWITCH 交付的先决�
 
 ## 执行交接
 
-**窗口执行。** 用合并上下文容量快照与显式启用的静默溢出能力扩展 `LlmModelContext` 和精确模型解析。扩展 llm-pi-ai `models` 与 `modelOverrides`，但保持容量解析由适配器所有，使外部适配器能通过 `resolveModel` 提供相同字段。把流分类改为提供方错误权威、metadata-drift 记录及能力约束的强签名。交付适配器、catalog、stream、文档与 changeset 覆盖。
+**窗口执行。** 用生效上下文、override ceiling 与有效预算的容量快照以及显式启用的静默溢出能力扩展 `LlmModelContext` 和精确模型解析。扩展 llm-pi-ai `models` 与 `modelOverrides`，但保持容量解析由适配器所有，使外部适配器能通过 `resolveModel` 提供相同字段。把流分类改为提供方错误权威、metadata-drift 记录及能力约束的强签名。交付适配器、catalog、stream、文档与 changeset 覆盖。
 
-经核证的外部集成基线是 `Yan-Zero/dsh-codex` 的 `dsh-codex@0.2.4`——已安装、其 `createOpenAICodexAdapter()` 拥有观测路由的适配器。在协调的 dsh-codex 变更让 `createOpenAICodexAdapter()` 为 `openai-codex` 解析策略容量、原始最大值与生效百分比之前，WINDOW 均不完整；只有协议证据证明冻结的签名时，它才能把静默溢出能力解析为启用，否则必须保持缺失或禁用。该变更还要增加适配器集成测试，并发布精确 dsh-codex 包版本与源 revision、精确 pin 到包含该词汇的 Harness 包 release，同时在该变更中记录基线自身的源 revision。版本范围或未记录的本地文件不能作为有效交接。
+经核证的外部集成基线是 `Yan-Zero/dsh-codex` 的 `dsh-codex@0.2.4`——已安装、其 `createOpenAICodexAdapter()` 拥有观测路由的适配器。在协调的 dsh-codex 变更让 `createOpenAICodexAdapter()` 把路由的生效 `context_window`、override ceiling `max_context_window` 与 `effective_context_window_percent` 翻译进通用快照——`resolvedContextWindow`、override ceiling、`effectiveContextBudget`——并携带每个字段的来源之前，WINDOW 均不完整；只有协议证据证明冻结的签名时，它才能把静默溢出能力解析为启用，否则必须保持缺失或禁用。该变更还要增加适配器集成测试，并发布精确 dsh-codex 包版本与源 revision、精确 pin 到包含该词汇的 Harness 包 release，同时在该变更中记录基线自身的源 revision。版本范围或未记录的本地文件不能作为有效交接。
 
 **压缩执行。** 为 `packages/compaction/compaction-basic` 增加合并上下文准入公式、实际输出预留、tokenizer 安全边际、有界平衡多 pass 选择与精确确定性熔断；扩展 `compaction-loop-repro.spec.ts`，覆盖精确调用上限与瞬时分类体系。
 
@@ -82,7 +84,9 @@ WINDOW 与 COMPACTION 是完整 precompact-before-commit SWITCH 交付的先决�
 
 **为所有 pi-ai 路由启用静默溢出启发式。** 否决：pi-ai 是传输家族，不是每个提供方协议都会静默截断的证据。必须有精确路由能力并匹配完整空输出异常。
 
-**把 `maxContextWindow` 当作输入容量，或直接使用原始 872000。** 否决：两个容量都描述请求与响应合并上下文；选择输入前必须扣除输出预留、生效百分比、策略最小值与安全边际。
+**把 override ceiling 当作 provider 硬限制或溢出权威。** 否决：ceiling 只约束配置覆盖；provider 硬限制与溢出判定权威是需单独证明的事实，静默溢出签名比较的是 resolved context。
+
+**把生效百分比应用到 override ceiling 上。** 否决：百分比作用于生效与解析后的上下文——272000 的 95% 是 258400——把它应用到 872000 等于按一条未被显式覆盖、路由并未运行的窗口做预算。
 
 **把 catalog 的 `contextWindow` 抬到部署最大值。** 否决：策略窗口才是压力与准入做预算的依据；抬高它会关闭真实最大值之下的主动压缩，把所有会话推到溢出恢复上。
 
@@ -97,10 +101,11 @@ WINDOW 与 COMPACTION 是完整 precompact-before-commit SWITCH 交付的先决�
 - 用量超过本地 `maxContextWindow` 的完整非空响应保持成功并发出 capacity-metadata drift；通用用量比较不得把它改写成溢出。
 - 没有精确静默溢出能力的路由绝不运行启发式。已启用能力的路由只有在完整的终止原因、空内容、零输出和用量签名同时匹配时才映射规范溢出。可识别的提供方溢出错误仍为权威。
 - 模型容量以请求与响应合并上下文记录并测试。压缩准入计入实际摘要 `maxTokens`，包括继承的 8192 默认值；普通请求与切换预检计入物化后的请求输出预留和 tokenizer 安全边际。
-- 测试钉住 `effectiveAdmissionContext = min(contextWindow, floor(maxContextWindow * percent / 100))`，包括原始最大值的 95%，并证明原始 872000 绝不被当作安全输入预算。
+- 测试钉住 `resolvedContextWindow = contextWindow ?? maxContextWindow` 与 `effectiveContextBudget = floor(resolvedContextWindow * effectiveContextWindowPercent / 100)`：生效上下文 272000、override ceiling 872000、95% 时解析为 272000、预算 258400；只有显式、合法地把生效上下文覆盖到 ceiling 才得到 828400。
+- 生效上下文高于其 override ceiling 的配置在解析时点名出错 key 地失败；仅有 ceiling 绝不改变生效上下文，绝不声明 provider 硬限制，也绝不判定溢出。
 - 协调后的精确 package/revision 上的 dsh-codex 适配器集成测试证明 `openai-codex` 通过 `resolveModel` 提供路由本地容量；Core 不读取 Codex 文件，也不包含提供方/模型特判。
 - 在一个不变的确定性熔断 key 下，`CALLS_BEFORE_LATCH <= 2` 且 `CALLS_WHILE_LATCHED = 0`；至少连续 20 个普通工具步骤不增加调用。瞬时 `TRANSPORT`、`SERVER`、`TIMEOUT`、`terminated` 与 `fetch failed` 不永久熔断，失败的手动 probe 立即重新熔断。
-- 切换测试证明 reservation 排除并发轮次、摘要使用旧路由或显式摘要目标、重新测量先于提交，且失败保留旧选择、不留下目标部分状态并保持同一 session id。
+- 切换测试证明 reservation 排除并发轮次、摘要使用旧路由或显式摘要目标、重新测量先于提交，且失败保留旧选择、不留下目标部分状态并保持同一 session id；两次预检测量与压缩准入消费同一个不可变容量快照。
 - 交接测试与文档明确完整 SWITCH 依赖 WINDOW 与 COMPACTION；任何更早的 SWITCH 交付都命名为 `REFUSE_ONLY`，且不声称支持 precompact-before-commit。
 - 工具调用/结果配对平衡、每 pass 的 summary-smaller 校验、检查点溯源与大声失败行为在每条压缩路径上都保持；三个交接携带其聚焦测试、受影响文档、changeset 与集成 pin。
 
