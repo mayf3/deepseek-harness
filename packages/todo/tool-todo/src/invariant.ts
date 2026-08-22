@@ -39,20 +39,34 @@ function validateTodos(value: unknown, fail: InvariantFailure): void {
 }
 
 /* jscpd:ignore-start -- package companions share replay and dispatch plumbing */
-/** Validate the package-owned event fields and ignore unrelated events. */
-function validateEvent(event: SessionEvent, fail: InvariantFailure): void {
-  if (event.type === 'todo/write') validateTodos(event.data.todos, fail)
+/** Whether the committed log prefix ends inside an open turn. */
+function hasOpenTurn(events: readonly SessionEvent[]): boolean {
+  let open = false
+  for (const event of events) {
+    if (event.type === 'turn/start') open = true
+    if (event.type === 'turn/end') open = false
+  }
+  return open
+}
+
+/** Validate one package-owned event against its payload and committed session prefix. */
+function validateEvent(session: Session, event: SessionEvent, fail: InvariantFailure): void {
+  if (event.type !== 'todo/write') return
+  validateTodos(event.data.todos, fail)
+  if (!hasOpenTurn(session.events.slice(0, event.seq))) {
+    fail('todo/write appended outside any open turn')
+  }
 }
 
 /** Install validation for loaded and newly appended whole-list todo snapshots. */
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
   for (const session of ctx.sessions.list()) {
-    for (const event of session.events) validateEvent(event, fail)
+    for (const event of session.events) validateEvent(session, event, fail)
   }
   ctx.on('internal/dispatch', (_mode, eventName, args) => {
     if (eventName !== 'session/event') return
-    const event = (args as [Session, SessionEvent])[1]
-    validateEvent(event, fail)
+    const [session, event] = args as [Session, SessionEvent]
+    validateEvent(session, event, fail)
   }, { global: true })
 }, { inject: ['sessions'] })
 /* jscpd:ignore-end */
