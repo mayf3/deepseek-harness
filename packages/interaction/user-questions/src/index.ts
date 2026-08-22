@@ -10,6 +10,7 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
+import { scopeTarget } from '@deepseek-ai/dsh-scope'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -144,11 +145,18 @@ export class UserQuestionService extends Service {
           'BAD_INTENT')
       }
     }
-    if (this.provider === undefined) {
-      throw new UserQuestionError('no user-questions provider is registered', 'NO_PROVIDER')
-    }
+    const askProvider = () => this.provider === undefined
+      ? Promise.reject(new UserQuestionError('no user-questions provider is registered', 'NO_PROVIDER'))
+      : this.provider.ask(request)
     try {
-      return await this.provider.ask(request)
+      return await (agent === undefined
+        ? askProvider()
+        : this.ctx.waterfall(
+          scopeTarget(agent, agent),
+          'user-questions/request',
+          { ...request, agent },
+          askProvider,
+        ))
     } catch (error) {
       if (request.signal?.aborted && !(error instanceof UserQuestionError)) {
         throw abortedQuestion(error)

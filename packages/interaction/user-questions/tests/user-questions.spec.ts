@@ -171,6 +171,25 @@ describe('UserQuestionService', () => {
     expect(result).toEqual({ answers: [{ id: 'confirm', selected: ['yes'] }] })
   })
 
+  it('offers an Agent-scoped waterfall before the provider fallback', async () => {
+    const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(UserQuestionService)
+    const p = provider('fallback')
+    ctx.userQuestions.registerProvider(p)
+    const agent = stubAgent('root')
+    ctx.agents.enter(agent, undefined)
+    ctx.on('user-questions/request', request => Promise.resolve({
+      answers: request.questions.map(question => ({ id: question.id, selected: ['remote'] })),
+    }))
+
+    await expect(ctx.userQuestions.ask({
+      questions: [{ id: 'confirm', question: 'Proceed?' }],
+      agent,
+    })).resolves.toEqual({ answers: [{ id: 'confirm', selected: ['remote'] }] })
+    expect(p.seen).toEqual([])
+  })
+
   it('rejects a supplied agent when no live registry can attest it', async () => {
     const ctx = new Context()
     await ctx.plugin(UserQuestionService)
