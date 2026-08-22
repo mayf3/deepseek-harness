@@ -14,75 +14,104 @@ The misclassification mechanism is in `packages/llm/llm-pi-ai/src/stream.ts`: `m
 
 The repetition is structural. `maxOverflowRetries` gates only the `agent/request-error` recovery sequence in `packages/compaction/compaction-basic/src/index.ts`, and those request errors never fire because the main requests succeed. The `agent/pre-step` pressure handler catches each compaction failure with a warning and continues the turn, so the same deterministic failure re-ran before every following tool step: 260 of the 270 starts sit inside a single turn at a median interval of 85 seconds.
 
-Two further gaps complete the picture. Region selection for overflow recovery calls `selectCompactableRange` with `retainTokens=0` — the largest balanced old region — and pressure selection retains a fraction of the same window, but neither proves that the resulting summarization request fits the summarization model's input budget; the summarizer's prefix-reusing design in `packages/compaction/compaction-basic/src/summarizer.ts` makes that request at least as large as the region it condenses. And because one `contextWindow` drives both the proactive pressure threshold (`resolveCompactSpec`) and the overflow verdict, no configuration can state "budget against 272000, this route carries up to 872000".
+Three further gaps complete the picture. Region selection for overflow recovery calls `selectCompactableRange` with `retainTokens=0` — the largest balanced old region — and pressure selection retains a fraction of the same window, but neither proves that the resulting summarization request plus its output reserve fits the summarization model's combined request-and-response context. One `contextWindow` drives both the proactive pressure threshold and the overflow verdict. The observed `openai-codex` route is owned by external `dsh-codex`, which directly constructs `PiAiAdapter` from `openaiCodexProvider()` and does not pass through the ordinary llm-pi-ai settings catalog, so changing only catalog materialization cannot deliver its route-local capacity.
 
 ## Proposal
 
-Freeze the following provider-neutral, model-neutral behavior. No rule names a provider, model, agent, or numeric window; every rule is stated in resolved capacities and measured tokens.
+Freeze the following provider-neutral, model-neutral behavior. Core code names no provider or model and reads no Codex-specific file; adapters resolve route-local facts through the generic LLM vocabulary.
 
-### Two capacities, two fields, one authority chain
+### Combined capacities and authority
 
-`contextWindow` stays the policy window: the capacity the harness budgets against — the pressure threshold, the summarization admission budget, and the switch preflight. `maxContextWindow` is the hard window: the largest input the route can carry, and the only capacity overflow classification compares usage against.
+`contextWindow` remains the policy capacity that drives pressure, compaction admission, and switch preflight. `maxContextWindow` is the route's raw maximum capacity. Both fields mean maximum combined request plus response context, never input-only capacity. A single disclosed number serves both fields, and no code path infers a larger maximum from a policy value.
 
-Each field resolves through one authority chain: explicit deployment configuration (a `models` entry or `modelOverrides` field) over route-local capability metadata over the installed catalog entry over the route's `defaultContextWindow`. A single disclosed number serves both roles, so every model that discloses one capacity keeps today's behavior. No code path infers a larger maximum from a policy value. A deployment-local capability file is evidence for an override on that route in that deployment only; it is never promoted to a catalog fact for other deployments. Resolution validates positive integers and `maxContextWindow >= contextWindow` and fails loud at load naming the offending key.
+Each field resolves through one adapter-owned authority chain: explicit deployment configuration over route-local capability metadata over an installed catalog entry over the route fallback. Ordinary llm-pi-ai settings routes can provide both capacities through `models` or `modelOverrides`; any adapter, including an external adapter, can instead return them directly from `resolveModel`. The generic field names and validation belong to `@deepseek-ai/dsh-llm`; Core never reads a Codex capability file and never branches on a provider or model name.
 
-### Canonical overflow detection
+Resolution validates positive integers and `maxContextWindow >= contextWindow`. A route may also disclose `effectiveContextWindowPercent`, a positive percentage no greater than 100. Its resolved admission capacity is `effectiveAdmissionContext = min(contextWindow, floor(maxContextWindow * effectiveContextWindowPercent / 100))`; omission means 100 percent. Thus raw `max_context_window = 872000` is metadata for the maximum combined context, not a safe input budget, and a 95-percent setting yields a maximum-derived ceiling of 828400 before the policy minimum and all request components are applied.
 
-`CONTEXT_WINDOW_EXCEEDED` is returned exactly when the provider returns a recognized overflow error, or when a completed response proves the provider truncated it: `stop` with `usage.input + cacheRead > maxContextWindow`, or `length` with zero output and input filling the hard window. A successful response within the hard window is never reclassified as overflow for exceeding the policy window.
+The adapter returns one immutable capacity snapshot containing the policy capacity, raw maximum, effective percentage, and `effectiveAdmissionContext`. Admission, latching, diagnostics, and switch preflight use that same snapshot for one operation. A deployment-local capability file is evidence for its route in that deployment only and is never promoted to a global catalog fact.
 
-### Summarization admission budget
+### Successful response authority
 
-Region selection is bounded by the summarization model's own resolved policy window minus the priced prefix — system, tools, and compaction instruction — and a configured safety margin. When the balanced old region exceeds that budget, compaction proceeds in multiple balanced, bounded passes: each pass summarizes exactly the span it replaces and lands its own checkpoint, and the pass sequence converges under a declared bound on pass count. Compaction never summarizes a smaller span while replacing a larger one, never truncates the request and still replaces the full span, and fails loud instead. The per-pass summary-smaller check, tool-call/result pairing balance, and checkpoint provenance (`compaction/summary` with `shadowedRange`, `shadowedSeqs`, `shadowedTokenCount`, and `sourceEventSeqs`) are preserved unchanged.
+A recognized provider overflow error remains final authority and maps to canonical `CONTEXT_WINDOW_EXCEEDED` regardless of local metadata. A completed response with non-empty assistant content remains successful even when reported input usage exceeds `maxContextWindow`; local metadata cannot rewrite provider success into failure. The adapter records a capacity-metadata-drift diagnostic containing the route, capacity snapshot, and reported usage instead.
+
+Silent-overflow detection is an opt-in route capability resolved by the owning adapter for an exact provider protocol. It is disabled when the capability is absent and must not run merely because a route uses pi-ai. The frozen anomalous signature requires every declared element: a terminal reason explicitly allowed by that capability, no assistant content blocks, zero reported output tokens, and `usage.input + cacheRead >= maxContextWindow`. Usage comparison alone is insufficient. Only a capability-enabled route matching the full signature may map the response to canonical overflow; an empty response that does not match remains the ordinary empty-response or max-output outcome.
+
+### Combined-context admission
+
+Every admission decision proves `pricedSystem + pricedTools + pricedSelectedMessages + pricedInstruction + effectiveOutputReserve + tokenizerSafetyMargin <= effectiveAdmissionContext`. Pricing uses the exact summarization or ordinary request representation that the selected adapter will send. The output reserve is never zero merely because no output exists yet.
+
+For compaction, `effectiveOutputReserve` is the actual `maxTokens` sent to the summarization call after exact-target policy resolution; the current inherited default of 8192 therefore reserves 8192 tokens. For an ordinary request and switch preflight, it is the explicit request `maxTokens`, otherwise the adapter-owned `defaultMaxTokens` materialized by prepared-call resolution. If neither value exists, capacity-sensitive preflight fails loud rather than assuming zero. `tokenizerSafetyMargin` is a resolved, validated policy value captured in the capacity snapshot key.
+
+When the largest balanced old region exceeds the admission budget, compaction proceeds in multiple balanced, bounded passes. Each pass summarizes exactly the span it replaces and lands its own checkpoint. Compaction never summarizes a smaller span while replacing a larger one, never truncates a request and still replaces the full span, and fails loud if no balanced pass can satisfy the formula or the declared pass bound. The per-pass summary-smaller check, tool-call/result pairing balance, and checkpoint provenance (`compaction/summary` with `shadowedRange`, `shadowedSeqs`, `shadowedTokenCount`, and `sourceEventSeqs`) remain mandatory.
 
 ### Deterministic failure latch
 
-An automatic compaction failure whose cause is deterministic — the same classification repeated under an unchanged key of surface `replaceGeneration`, routed target, and effective policy — opens a latch: while the latch holds, further steps issue no new summarization provider calls. The latch clears when the generation, route, or policy changes, or when an operator intervenes through manual compaction or session maintenance. A latched session reports the held cause in diagnostics; the latch never silences the failure.
+The latch key contains at least `replaceGeneration`, the conversation provider/model target, the actual summarization provider/model target, the complete resolved capacity snapshot, effective output reserve, tokenizer safety margin, pass policy and its revision, and failure classification. Ordinary assistant/message and tool/result appends do not clear it.
 
-### Large-to-small switch preflight
+Deterministic classes are locally reproducible admission impossibility, no balanced eligible span, pass-bound or no-progress failure, summary-not-smaller invariant failure, a provider-confirmed `CONTEXT_WINDOW_EXCEEDED`, and a request-size `INVALID_REQUEST` for the identical admitted request. `TRANSPORT`, `SERVER`, `TIMEOUT`, `ABORTED`, rate or quota failures, `terminated`, `fetch failed`, and an incomplete stream are transient and never open the permanent deterministic latch. Other unclassified provider failures remain transient unless this proposal is amended with a reproducibility rule.
 
-Before committing a reroute whose resolved policy window is smaller than the session's projected next-request envelope — measured surface tokens plus the priced system prompt and tools — the switch either precompacts to a safe margin under the new window or fails loud and keeps the previous model. Session identity, log continuity, and Kernel semantics are unchanged: `agent-loop`, the `SessionEventMap`, and the durable `request/context` payload take no change (Kernel change = NONE); the preflight lives on the routing surface that stamps the next request's provider and model.
+Automatic compaction may make at most two provider calls for one unchanged deterministic key: the initial failure and at most one confirmation probe. It then latches, and all automatic pressure checks under that key make zero summarization provider calls while continuing to report the held cause. At least 20 consecutive ordinary tool steps, including their ordinary message and result appends, must not increase the call count.
+
+Manual compaction grants exactly one explicit probe without deleting the held key. Success changes generation and clears the obsolete latch; reproduction of the same deterministic classification immediately re-latches it. The only maintenance action that can clear a latch is an explicit capacity, target, output-reserve, safety-margin, or pass-policy update whose recomputed key differs; generic session maintenance is not a clearing condition.
+
+### Large-to-small switch sequencing
+
+A model switch that may reduce admission capacity runs as one reserved operation: `PREPARE → acquire idle/maintenance reservation → measure → compact with the previous route or an explicit summarization target → remeasure → COMMIT`. The reservation excludes a concurrent next turn and remains held through commit or rollback. Both measurements include priced system, tools, selected messages, instruction where applicable, output reserve, and safety margin.
+
+If remeasurement does not satisfy the target route's admission formula, the operation fails loud, releases the reservation, keeps the previous model selection, performs no partial target commit, and keeps the session id unchanged. Compaction never runs through the uncommitted smaller target unless the operator explicitly selected that route as the separate summarization target.
+
+Session identity, log continuity, and Kernel semantics are unchanged throughout the reserved operation: `agent-loop`, the `SessionEventMap`, and the durable `request/context` payload take no change (Kernel change = NONE); the sequencing lives on the routing surface that stamps the next request's provider and model.
+
+WINDOW and COMPACTION are prerequisites for full precompact-before-commit SWITCH delivery. A SWITCH change that lands before both prerequisites may implement only `REFUSE_ONLY`: it measures with the available conservative capacity and rejects an unsafe switch without attempting precompaction. It must not claim that full precompact-before-commit is independently available.
 
 ## Execution handoffs
 
-**Window execution.** Extend the model-capacity vocabulary (`LlmModelContext`, the pi-ai catalog and profile materialization in `packages/llm/llm-pi-ai/src/catalog.ts`) with the two capacities and their authority chain; retarget overflow classification in `packages/llm/llm-pi-ai/src/stream.ts` and its call site in `adapter.ts` to the hard window; deliver llm-pi-ai tests, affected documentation, and a changeset.
+**Window execution.** Extend `LlmModelContext` and exact-model resolution with the combined-context capacity snapshot and opt-in silent-overflow capability. Extend llm-pi-ai `models` and `modelOverrides`, but keep capacity resolution adapter-owned so external adapters can contribute the same fields through `resolveModel`. Retarget stream classification to provider-error authority, metadata-drift reporting, and the capability-gated strong signature. Deliver adapter, catalog, stream, documentation, and changeset coverage.
 
-**Compaction execution.** Add the summarization admission budget and bounded balanced multi-pass region selection to `packages/compaction/compaction-basic`; add the deterministic failure latch to the automatic pressure path; extend `compaction-loop-repro.spec.ts` with regression coverage for both.
+The verified external integration baseline is `dsh-codex@0.2.4` from `Yan-Zero/dsh-codex` — the installed adapter whose `createOpenAICodexAdapter()` owns the observed route. WINDOW is incomplete until a coordinated dsh-codex change makes `createOpenAICodexAdapter()` resolve policy, raw maximum, and effective percentage for `openai-codex`; it must resolve the silent-overflow capability as enabled only when protocol evidence proves the frozen signature and otherwise leave it absent or disabled. The change also adds an adapter integration test and publishes an exact dsh-codex package version and source revision pinned to the exact Harness package release containing this vocabulary, recording the baseline's own source revision with that change. Version ranges or an unrecorded local file are not an acceptable handoff.
 
-**Switch execution.** Add the reroute preflight on the model-switch surface: precompact-before-commit or fail-loud keeping the previous model; change neither session identity nor Kernel semantics.
+**Compaction execution.** Add the combined-context admission formula, actual output reserve, tokenizer safety margin, bounded balanced multi-pass selection, and exact deterministic latch to `packages/compaction/compaction-basic`; extend `compaction-loop-repro.spec.ts` with the exact call bounds and transient taxonomy.
 
-Each handoff is independently landable; none modifies production behavior outside its named surface, and none is implemented by this note.
+**Switch execution.** First land `REFUSE_ONLY` if needed. Full delivery depends on WINDOW and COMPACTION, then adds reservation, previous-route or explicit-target compaction, remeasurement, and atomic commit on the model-switch surface without changing session identity or Kernel semantics.
+
+None of these handoffs is implemented by this note. WINDOW and COMPACTION may land independently; full SWITCH may not land independently of them.
 
 ## Alternatives considered
 
-**Keep classifying any completed response above the policy window as overflow (status quo).** Rejected: it converts successful provider responses into compaction failures whenever policy and maximum differ, which is the observed incident.
+**Classify any completed response above local metadata as overflow.** Rejected: a complete non-empty provider response is stronger evidence than stale local capacity metadata; record drift instead of manufacturing a failure.
 
-**Raise the catalog `contextWindow` to the deployment maximum.** Rejected: the policy window is what pressure and admission must budget against; inflating it disables proactive compaction below the real maximum and moves every session onto overflow recovery.
+**Enable the silent-overflow heuristic for all pi-ai routes.** Rejected: pi-ai is a transport family, not evidence that every provider/protocol silently truncates. Exact route capability plus the full empty-output anomaly is required.
 
-**Publish the deployment-local maximum as a global catalog fact.** Rejected: a local capability cache proves capacity for its own route and deployment only; other deployments of the same model may enforce different maxima.
+**Treat `maxContextWindow` as input capacity or use raw 872000 directly.** Rejected: both capacities describe combined request and response context; output reserve, effective percentage, policy minimum, and safety margin must be subtracted before selecting input.
 
-**Drop the cache-reusing prefix from the summarization call.** Rejected: sending a bare region discards tool context and KV-cache reuse; bounding the region against the admission budget keeps the prefix and still fits the request.
+**Raise the catalog `contextWindow` to the deployment maximum.** Rejected: the policy window is what pressure and admission budget against; inflating it disables proactive compaction below the real maximum and moves every session onto overflow recovery.
 
-**Add per-step backoff to pressure compaction.** Rejected: backoff slows the burn without bounding it; a deterministic failure under unchanged state must stop issuing provider calls entirely.
+**Read Codex metadata in Core or add a Codex model special case.** Rejected: the owning adapter already controls exact-route resolution. A provider-neutral adapter result keeps external routes viable without coupling Core to their files.
 
-**Fail the turn when pressure compaction fails.** Rejected: the main requests succeed; ending the turn would convert a working session into an outage.
+**Add per-step backoff to pressure compaction.** Rejected: backoff slows the burn without bounding it; a deterministic failure under unchanged state must stop issuing provider calls entirely, while transient failures remain retryable under their existing policy.
+
+**Commit the smaller route before precompaction.** Rejected: it can strand compaction on the route that cannot admit the existing history and exposes a partial selection when failure occurs.
 
 ## Acceptance criteria
 
-- A 620,000-token session under a 272,000 policy window with an 872,000 hard window receives successful provider responses without an overflow verdict, pinned by an adapter-level test over finish mapping.
-- Input beyond the hard window yields the canonical `CONTEXT_WINDOW_EXCEEDED` failure, both from provider error text and from the truncation-proofing usage heuristic.
-- A summarization region exceeding the admission budget shrinks the replacement span through bounded passes or fails loud; the replaced span always equals the summarized span, and no truncated request ever replaces a full span.
-- Under identical state — surface generation, route, and policy — with a deterministically failing summarizer, at least 20 consecutive tool steps issue a bounded number of summarization provider calls that does not grow linearly with steps, and none while latched.
-- Switching a session grown on a 1,000,000-token window model at ~600k tokens to a 272,000-policy-window model either lands a precompaction to a safe margin before the reroute commits or refuses the switch, keeps the previous model, and states why; the session id is unchanged.
-- Tool-call/result pairing balance, the per-pass summary-smaller check, and checkpoint provenance survive every new path; regression coverage extends `compaction-loop-repro.spec.ts`; llm-pi-ai catalog and stream tests plus a changeset accompany the window execution.
+- A completed non-empty response whose usage exceeds local `maxContextWindow` remains successful and emits capacity-metadata drift; no generic usage comparison rewrites it as overflow.
+- A route without the exact silent-overflow capability never runs the heuristic. A capability-enabled route maps canonical overflow only when its complete terminal-reason, empty-content, zero-output, and usage signature matches. Recognized provider overflow errors remain authoritative.
+- Model capacities are documented and tested as combined request-plus-response context. Compaction admission includes the actual summarization `maxTokens`, including the inherited 8192 default, and ordinary/switch preflight includes the materialized request output reserve plus tokenizer safety margin.
+- Tests pin `effectiveAdmissionContext = min(contextWindow, floor(maxContextWindow * percent / 100))`, including 95 percent of a raw maximum, and prove that raw 872000 is never treated as a safe input budget.
+- A dsh-codex adapter integration test at the coordinated exact package/revision proves `openai-codex` contributes route-local capacities through `resolveModel`; Core reads no Codex file and contains no provider/model special case.
+- Under one unchanged deterministic latch key, `CALLS_BEFORE_LATCH <= 2` and `CALLS_WHILE_LATCHED = 0`; at least 20 consecutive ordinary tool steps do not increase calls. Transient `TRANSPORT`, `SERVER`, `TIMEOUT`, `terminated`, and `fetch failed` cases do not permanently latch, and a failed manual probe re-latches immediately.
+- Switch tests prove reservation excludes a concurrent turn, summarization uses the previous route or explicit summarization target, remeasurement precedes commit, and failure leaves the previous selection, no partial target state, and the same session id.
+- Handoff tests and documentation state that full SWITCH depends on WINDOW and COMPACTION; any earlier SWITCH delivery is named `REFUSE_ONLY` and does not claim precompact-before-commit support.
+- Tool-call/result pairing balance, the per-pass summary-smaller check, checkpoint provenance, and fail-loud behavior survive every compaction path; the three handoffs carry their focused tests, affected documentation, changesets, and integration pins.
 
 ## Risks
 
-**Two capacities double the misconfiguration surface.** Load-time validation and diagnostics must name the offending key and the violated relationship (`maxContextWindow >= contextWindow`) so a wrong pair fails at resolution, not mid-turn.
+**Capacity metadata can be stale in either direction.** Provider-confirmed overflow remains authoritative, complete non-empty success produces drift rather than failure, and the effective percentage plus safety margin protects admission without pretending metadata is provider truth.
 
 **Admission budgets can fragment history into many passes.** The declared pass bound plus the per-pass summary-smaller invariant keeps convergence observable; reaching the bound fails loud instead of looping.
 
-**The latch can hide a transient cause.** The latch key contains exactly the inputs a deterministic retry could change — generation, route, policy — and latched diagnostics state the held cause so an operator can distinguish a latch from a silent skip.
+**The latch can hide a recoverable cause.** Only the frozen deterministic taxonomy can latch; transient classes cannot. The exact key, one-probe manual behavior, and held-cause diagnostics expose when a meaningful state change permits another attempt.
 
-**Preflight prices an estimate.** Token estimates drift from provider counts; the precompaction safety margin absorbs drift, and a misestimate still surfaces as the canonical overflow code at the provider boundary rather than as a misrouted session.
+**Cross-repository delivery can drift.** The verified dsh-codex baseline and the required exact final package/revision pins make the external adapter change part of WINDOW acceptance rather than an assumed follow-up.
 
-**Declared maxima can overstate real limits.** A route override is evidence-bound to its deployment; provider-confirmed overflow errors remain authoritative above any declared maximum.
+**Switch reservation can delay a turn.** The reservation is limited to prepare, measure, optional compaction, remeasure, and commit or rollback; it buys an atomic selection and a stable measurement.
