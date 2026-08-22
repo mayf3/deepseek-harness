@@ -7,12 +7,10 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { DeepSeekLlmApiJson } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
+import type {} from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import { SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { packSessionEvents } from './codec.ts'
 import type { DeepSeekSessionLogExtension } from './types.ts'
 
-export { packSessionEvents, unpackJsonValue, unpackSessionEvents } from './codec.ts'
 export type * from './types.ts'
 
 /** Cordis plugin name. */
@@ -63,13 +61,6 @@ export function acceptedThrough(session: Session): number {
   return throughSeq
 }
 
-/** Resolve the serialized message list or fail before transport. */
-function requestMessages(body: Readonly<Record<string, DeepSeekLlmApiJson>>): readonly DeepSeekLlmApiJson[] {
-  const messages = body.messages
-  if (!Array.isArray(messages)) throw new Error('session-log-deepseek: DeepSeek request body has no messages array')
-  return messages
-}
-
 /**
  * Register the incremental `dsh_session_log` request contribution when enabled.
  * @param ctx - plugin context carrying Sessions and the DeepSeek request-extension registry.
@@ -94,7 +85,7 @@ export function apply(ctx: Context, config: Config): void {
         session: session.header,
         afterSeq,
         throughSeq,
-        events: packSessionEvents(suffix, requestMessages(request.body)),
+        events: suffix,
       }
       return {
         value,

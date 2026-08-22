@@ -12,8 +12,8 @@
 |---|---|---|
 | HTTP 字段名 | 小写 kebab-case；HTTP 匹配仍不区分大小写 | `user-agent`, `x-deepseek-harness-session-id` |
 | DeepSeek 请求正文扩展字段 | 使用保留 `dsh_` 前缀的 snake case | `dsh_plugin_packages`, `dsh_session_log` |
-| DSH 持有的嵌套 JSON 成员 | Camel case | `afterSeq`, `messageIndex`, `utf8Start` |
-| 带标签的值 | 使用 kebab-case 字符串；持久事件采用 `domain/action` | `message-references`, `session-log-deepseek/delivery-accepted` |
+| DSH 持有的嵌套 JSON 成员 | Camel case | `afterSeq`, `throughSeq`, `sessionId` |
+| 带标签的值 | 使用 kebab-case 字符串；持久事件采用 `domain/action` | `session-log-deepseek/delivery-accepted` |
 
 每个正文扩展独立持有自身的 `version`。版本仅适用于包含该字段的对象；不同字段的版本之间不存在兼容或排序关系。JSON 成员顺序不属于协议。
 
@@ -88,14 +88,11 @@
     "throughSeq": 0,
     "events": [
       {
-        "encoding": "raw",
-        "event": {
-          "type": "turn/start",
-          "seq": 0,
-          "time": 1780000000001,
-          "data": {
-            "turn": 1
-          }
+        "type": "turn/start",
+        "seq": 0,
+        "time": 1780000000001,
+        "data": {
+          "turn": 1
         }
       }
     ]
@@ -129,106 +126,9 @@
 | `delegationDepth` | 可选 | 持久化的非负 subagent 委派深度 |
 | `agentPreset` | 可选 | 用于组合该会话的 agent preset id |
 
-### 事件信封与编码
+### 权威事件信封
 
-每个 `events` 元素都是通过 `encoding` 值选择的 `EncodedSessionEvent`。
-
-| `encoding` | `event` 值 |
-|---|---|
-| `raw` | 完整的权威 `SessionEvent` |
-| `message-references` | 根据本次请求 `messages` 重建完整权威 `SessionEvent` 的 `PackedJsonValue` |
-
-权威事件始终携带 `type`、`seq`、`time` 和 `data`。它可以携带 `ignorable: true`；展示事件还可以携带 `sourceEventSeqs` 和 `surfaceOp`。raw 编码会复制全部已有成员，不做投影或脱敏。
-
-`PackedJsonValue` 使用以下四种 `kind` 值之一：
-
-| `kind` | 成员 | 解码值 |
-|---|---|---|
-| `literal` | `value` | 所含 JSON 值；该值自身也可以是复合值 |
-| `string` | `parts` | 已解码 `PackedJsonStringPart` 值的拼接结果 |
-| `array` | `items` | 递归解码值组成的数组 |
-| `object` | `entries` | 根据有序 `[key, value]` 对构建的对象 |
-
-已打包字符串包含以下两种片段：
-
-| `kind` | `value` |
-|---|---|
-| `literal` | 字面字符串片段 |
-| `message-slice` | 确切的请求相对 `DeepSeekMessageStringSlice` |
-
-```json
-{
-  "encoding": "message-references",
-  "event": {
-    "kind": "object",
-    "entries": [
-      [
-        "type",
-        {
-          "kind": "literal",
-          "value": "plugin/test"
-        }
-      ],
-      [
-        "seq",
-        {
-          "kind": "literal",
-          "value": 0
-        }
-      ],
-      [
-        "time",
-        {
-          "kind": "literal",
-          "value": 1780000000001
-        }
-      ],
-      [
-        "data",
-        {
-          "kind": "object",
-          "entries": [
-            [
-              "text",
-              {
-                "kind": "string",
-                "parts": [
-                  {
-                    "kind": "literal",
-                    "value": "prefix:"
-                  },
-                  {
-                    "kind": "message-slice",
-                    "value": {
-                      "messageIndex": 0,
-                      "path": [
-                        "content"
-                      ],
-                      "utf8Start": 0,
-                      "utf8End": 12
-                    }
-                  }
-                ]
-              }
-            ]
-          ]
-        }
-      ]
-    ]
-  }
-}
-```
-
-| slice 成员 | 含义 |
-|---|---|
-| `messageIndex` | 包含该扩展的请求中，确切 DeepSeek `messages` 数组的零基序号 |
-| `path` | 从该消息根到某个字符串值的路径数组；对象键使用字符串，数组索引使用数字 |
-| `utf8Start` | 已解析字符串值中的包含性 UTF-8 字节偏移 |
-| `utf8End` | 已解析字符串值中的排他性 UTF-8 字节偏移 |
-
-偏移量指向已解析字符串值的 UTF-8 字节，而不是经过 JSON 转义的源文本。路径缺失、目标不是字符串、范围无效或范围切开 UTF-8 码点时，解码器会拒绝。因此，重建必须使用同一次请求的确切 `messages` 数组。
-
-编码器只会引用确切子字符串，并且仅在整个引用事件占用的序列化 UTF-8 字节少于 raw 形式时才会使用引用。字面片段保留未匹配文本。无法精确重建为原值的候选项会保留 raw 形式；协议不执行模糊匹配、截断或有损省略。
+每个 `events` 元素都是完整的权威 `SessionEvent`，不依赖任何其他请求字段。事件始终携带 `type`、`seq`、`time` 与 `data`；它可以携带 `ignorable: true`，展示事件还可携带 `sourceEventSeqs` 与 `surfaceOp`。发送方会复制每个已有成员，不执行投影、脱敏或重建。
 
 ### 接受水位与至少一次交付
 
@@ -256,4 +156,4 @@
 
 请求标头会暴露 Harness 应用版本、一个匿名 Harness-home 身份和可选的会话身份。`dsh_plugin_packages` 会暴露存活 npm 包的名称与版本。启用后，`dsh_session_log` 可能暴露会话工作目录、系统提示词快照、用户与 assistant 内容、原始 assistant 分片、工具参数与结果、压缩摘要、反馈和插件持有的事件。适配器 API key 不是会话事件，因此不会进入该字段。通过 `baseURL` 选择的网关会收到与官方端点相同的值。
 
-接收方按名称定位扩展字段，按各字段自己的 `version` 分派，保留不同的包版本，并忽略 JSON 成员顺序。会话日志接收方必须校验连续序号范围，并在解释事件类型前，根据包含该扩展的请求重建每个引用事件。遇到不带 `ignorable: true` 的未知权威事件时，接收方无法进行无损重建。即使缺少注册表或某项贡献，基础请求仍然可用；字段缺失表示该项贡献不适用于本次请求。
+接收方按名称定位扩展字段，按各字段自己的 `version` 分派，保留不同的包版本，并忽略 JSON 成员顺序。会话日志接收方必须先校验连续序号范围，再解释事件类型。遇到不带 `ignorable: true` 的未知权威事件时，接收方无法进行无损重建。即使缺少注册表或某项贡献，基础请求仍然可用；字段缺失表示该项贡献不适用于本次请求。

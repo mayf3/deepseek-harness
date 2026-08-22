@@ -66,8 +66,8 @@ describe('incremental DeepSeek session-log upload', () => {
     expect(second.fields.dsh_session_log).toMatchObject({ afterSeq: 1, throughSeq: 3 })
     expect(second.fields.dsh_session_log?.events).toHaveLength(2)
     expect(second.fields.dsh_session_log?.events[0]).toMatchObject({
-      encoding: 'raw',
-      event: { type: 'session-log-deepseek/delivery-accepted', seq: 2 },
+      type: 'session-log-deepseek/delivery-accepted',
+      seq: 2,
     })
   })
 
@@ -147,15 +147,15 @@ describe('incremental DeepSeek session-log upload', () => {
     expect(current.fields.dsh_session_log).toMatchObject({
       afterSeq: 0,
       throughSeq: 1,
-      events: [{ event: { type: 'session-log-deepseek/delivery-accepted' } }],
+      events: [{ type: 'session-log-deepseek/delivery-accepted' }],
     })
   })
 
-  it('fails preparation when the DeepSeek body has no messages array', async () => {
-    const { ctx, session } = await harness('bad-body')
+  it('contributes complete events without reading request messages', async () => {
+    const { ctx, session } = await harness('direct-events')
     session.append('turn/start', { turn: 1 })
-    await expect(ctx.deepseekLlmApiExtensions.prepare({ body: {}, signal: SIGNAL, sessionId: session.id }))
-      .rejects.toThrow(/no messages array/)
+    const prepared = await ctx.deepseekLlmApiExtensions.prepare({ body: {}, signal: SIGNAL, sessionId: session.id })
+    expect(prepared.fields.dsh_session_log?.events).toEqual(session.events)
   })
 
   it('fails closed on a malformed persisted acceptance watermark', async () => {

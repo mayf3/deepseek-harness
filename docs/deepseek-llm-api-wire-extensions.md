@@ -12,8 +12,8 @@ The adapter sends the additions to its resolved `baseURL`, including a configure
 |---|---|---|
 | HTTP field names | Lowercase kebab-case; HTTP matching remains case-insensitive | `user-agent`, `x-deepseek-harness-session-id` |
 | DeepSeek request-body extension fields | Snake case with the reserved `dsh_` prefix | `dsh_plugin_packages`, `dsh_session_log` |
-| DSH-owned nested JSON members | Camel case | `afterSeq`, `messageIndex`, `utf8Start` |
-| Tagged values | Kebab-case strings; durable events use `domain/action` | `message-references`, `session-log-deepseek/delivery-accepted` |
+| DSH-owned nested JSON members | Camel case | `afterSeq`, `throughSeq`, `sessionId` |
+| Tagged values | Kebab-case strings; durable events use `domain/action` | `session-log-deepseek/delivery-accepted` |
 
 Each body extension owns its `version` independently. A version applies only to the object that contains it; no compatibility or ordering relationship exists between versions of different fields. JSON member order is not part of the protocol.
 
@@ -88,14 +88,11 @@ An enabled inventory with no qualifying entries sends `packages: []`; disabling 
     "throughSeq": 0,
     "events": [
       {
-        "encoding": "raw",
-        "event": {
-          "type": "turn/start",
-          "seq": 0,
-          "time": 1780000000001,
-          "data": {
-            "turn": 1
-          }
+        "type": "turn/start",
+        "seq": 0,
+        "time": 1780000000001,
+        "data": {
+          "turn": 1
         }
       }
     ]
@@ -129,106 +126,9 @@ The `session` member is the exact `Session.header`, not a complete runtime Sessi
 | `delegationDepth` | optional | Non-negative persisted subagent delegation depth |
 | `agentPreset` | optional | Agent preset id used to compose this Session |
 
-### Event envelope and encodings
+### Canonical event envelopes
 
-Each `events` item is an `EncodedSessionEvent` selected by its `encoding` value.
-
-| `encoding` | `event` value |
-|---|---|
-| `raw` | Complete canonical `SessionEvent` |
-| `message-references` | `PackedJsonValue` that reconstructs the complete canonical `SessionEvent` against this request's `messages` |
-
-A canonical event always carries `type`, `seq`, `time`, and `data`. It may carry `ignorable: true`; surface events may additionally carry `sourceEventSeqs` and `surfaceOp`. A raw encoding copies every present member without projection or redaction.
-
-A `PackedJsonValue` uses one of four `kind` values:
-
-| `kind` | Members | Decoded value |
-|---|---|---|
-| `literal` | `value` | The contained JSON value, which may itself be composite |
-| `string` | `parts` | Concatenation of decoded `PackedJsonStringPart` values |
-| `array` | `items` | Array of recursively decoded values |
-| `object` | `entries` | Object built from ordered `[key, value]` pairs |
-
-A packed string contains these part variants:
-
-| `kind` | `value` |
-|---|---|
-| `literal` | Literal string fragment |
-| `message-slice` | Exact request-relative `DeepSeekMessageStringSlice` |
-
-```json
-{
-  "encoding": "message-references",
-  "event": {
-    "kind": "object",
-    "entries": [
-      [
-        "type",
-        {
-          "kind": "literal",
-          "value": "plugin/test"
-        }
-      ],
-      [
-        "seq",
-        {
-          "kind": "literal",
-          "value": 0
-        }
-      ],
-      [
-        "time",
-        {
-          "kind": "literal",
-          "value": 1780000000001
-        }
-      ],
-      [
-        "data",
-        {
-          "kind": "object",
-          "entries": [
-            [
-              "text",
-              {
-                "kind": "string",
-                "parts": [
-                  {
-                    "kind": "literal",
-                    "value": "prefix:"
-                  },
-                  {
-                    "kind": "message-slice",
-                    "value": {
-                      "messageIndex": 0,
-                      "path": [
-                        "content"
-                      ],
-                      "utf8Start": 0,
-                      "utf8End": 12
-                    }
-                  }
-                ]
-              }
-            ]
-          ]
-        }
-      ]
-    ]
-  }
-}
-```
-
-| Slice member | Meaning |
-|---|---|
-| `messageIndex` | Zero-based index into the exact DeepSeek `messages` array in the containing request |
-| `path` | Array of string object keys and numeric array indexes from that message root to a string value |
-| `utf8Start` | Inclusive UTF-8 byte offset in the resolved string value |
-| `utf8End` | Exclusive UTF-8 byte offset in the resolved string value |
-
-Offsets address the UTF-8 bytes of the parsed string value, not its JSON-escaped source text. A decoder rejects a missing path, a non-string target, an invalid range, or a range that splits a UTF-8 code point. Reconstruction therefore requires the exact `messages` array from the same request.
-
-The encoder uses a reference only for an exact substring and only when the complete referenced event occupies fewer serialized UTF-8 bytes than its raw form. Literal fragments retain unmatched text. A candidate that cannot round-trip exactly stays raw; the protocol performs no fuzzy matching, truncation, or lossy omission.
+Each `events` item is a complete canonical `SessionEvent`, independent of every other request field. An event always carries `type`, `seq`, `time`, and `data`; it may carry `ignorable: true`, and surface events may additionally carry `sourceEventSeqs` and `surfaceOp`. The sender copies every present member without projection, redaction, or reconstruction.
 
 ### Acceptance watermark and at-least-once delivery
 
@@ -256,4 +156,4 @@ Transport and non-2xx failures append no watermark. A crash after endpoint accep
 
 The request headers expose the Harness application version, one anonymous Harness-home identity, and an optional Session identity. `dsh_plugin_packages` exposes active npm package names and versions. When enabled, `dsh_session_log` may expose the Session working directory, system-prompt snapshots, user and assistant content, raw assistant chunks, tool arguments and results, compaction summaries, feedback, and plugin-owned events. Adapter API keys are not Session events and therefore do not enter the field. A gateway selected through `baseURL` receives the same values as the official endpoint.
 
-Receivers address extension fields by name, dispatch each field by its own `version`, preserve distinct package versions, and ignore JSON member ordering. A session-log receiver validates the contiguous sequence range and reconstructs every referenced event against the containing request before interpreting event types. An unrecognized canonical event without `ignorable: true` prevents lossless reconstruction. The base request remains usable without either the registry or a particular contribution; field absence means that contribution did not apply to that request.
+Receivers address extension fields by name, dispatch each field by its own `version`, preserve distinct package versions, and ignore JSON member ordering. A session-log receiver validates the contiguous sequence range before interpreting event types. An unrecognized canonical event without `ignorable: true` prevents lossless reconstruction. The base request remains usable without either the registry or a particular contribution; field absence means that contribution did not apply to that request.

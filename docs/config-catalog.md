@@ -1738,7 +1738,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/session/session-log-deepseek/src/index.ts:24`](../packages/session/session-log-deepseek/src/index.ts)
+Source: [`packages/session/session-log-deepseek/src/index.ts:22`](../packages/session/session-log-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-session-persistence-jsonl"></a>
 

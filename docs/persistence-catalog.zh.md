@@ -685,7 +685,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/session/session-log-deepseek/src/types.ts:54`](../packages/session/session-log-deepseek/src/types.ts)
+来源：[`packages/session/session-log-deepseek/src/types.ts:26`](../packages/session/session-log-deepseek/src/types.ts)
 
 ### `step/*`
 

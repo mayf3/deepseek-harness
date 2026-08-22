@@ -179,7 +179,7 @@ describe('llm-deepseek real dynamic composition', () => {
         session: { id: string }
         afterSeq: number
         throughSeq: number
-        events: Array<{ event: { type: string; seq: number } }>
+        events: Array<{ type: string; seq: number }>
       }
     }
     expect(request.dsh_session_log).toMatchObject({
@@ -187,7 +187,7 @@ describe('llm-deepseek real dynamic composition', () => {
       session: { id: 'extension-composition-enabled' },
       afterSeq: -1,
       throughSeq: 0,
-      events: [{ event: { type: 'turn/start', seq: 0 } }],
+      events: [{ type: 'turn/start', seq: 0 }],
     })
     expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(0)
   })

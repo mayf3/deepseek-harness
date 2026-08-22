@@ -24,7 +24,7 @@ The provider-neutral `llm` package and `llm-pi-ai` contain no extension type, se
 
 The failure direction is at least once. A transport or provider rejection records no watermark. A crash after remote acceptance but before the watermark persists causes replay after resume, never a skipped sequence. Existing session checkpoints persist the event; the upload plugin owns no second store.
 
-Event strings are raw unless exact request-relative references reduce encoded bytes. A reference identifies one serialized DeepSeek message, a path to one parsed string value, and a half-open UTF-8 byte range. The encoder verifies that each candidate range decodes to the exact matched UTF-16 substring; surrogate-splitting and ill-formed UTF-16 candidates stay raw. The decoder reconstructs every literal and cited byte exactly and rejects invalid paths, ranges, or code-point splits. Fuzzy similarity, normalization, and lossy omission are absent.
+The `events` array contains complete canonical `SessionEvent` objects directly. The sender copies every present event member without projection or redaction; the field is self-contained and requires no reconstruction against `messages`.
 
 ## Plugin package field
 
@@ -50,7 +50,7 @@ The process-lifetime manifest-identity cache remains separate because in-process
 
 ## Verification
 
-Registry tests pin duplicate ownership, effect-scoped disposal, detached field values, concurrent and abortable preparation, receiver-preserving acceptance, one acceptance settlement, and failure aggregation. Session tests pin the default-off policy, explicit full-first/suffix-later delivery, incremental watermark folding, persisted restart recovery, fork identity fencing, out-of-order acceptance, exact Unicode reconstruction, invalid references, surrogate-safe raw fallback, and late invariant loading. Package-inventory tests pin default-on and explicit-off policies, host and standing-preset discovery, conflicting Loader resolution bases, manifest resolution, lifecycle filtering, and exact name/version ordering. The direct adapter mock proves pre-HTTP preparation failure, cancellation, non-2xx non-acceptance, 2xx acceptance before a later stream failure, and field collision. Keyless replay pins post-2xx extension acceptance, and the TypeScript JSON-RPC plus Python packaged-runtime snapshots project the acceptance event through both SDKs. Real Loader composition pins default package metadata plus opt-in Session upload, one real-API request mounts both shipped extensions and proves the official endpoint accepts them, and pi-ai tests retain their unchanged wire requests.
+Registry tests pin duplicate ownership, effect-scoped disposal, detached field values, concurrent and abortable preparation, receiver-preserving acceptance, one acceptance settlement, and failure aggregation. Session tests pin the default-off policy, explicit full-first/suffix-later delivery, direct complete event envelopes independent of base-body messages, incremental watermark folding, persisted restart recovery, fork identity fencing, out-of-order acceptance, and late invariant loading. Package-inventory tests pin default-on and explicit-off policies, host and standing-preset discovery, conflicting Loader resolution bases, manifest resolution, lifecycle filtering, and exact name/version ordering. The direct adapter mock proves pre-HTTP preparation failure, cancellation, non-2xx non-acceptance, 2xx acceptance before a later stream failure, and field collision. Keyless replay pins post-2xx extension acceptance, and the TypeScript JSON-RPC plus Python packaged-runtime snapshots project the acceptance event through both SDKs. Real Loader composition pins default package metadata plus opt-in Session upload, one real-API request mounts both shipped extensions and proves the official endpoint accepts them, and pi-ai tests retain their unchanged wire requests.
 
 ## Alternatives considered
 
@@ -58,7 +58,22 @@ Registry tests pin duplicate ownership, effect-scoped disposal, detached field v
 
 **Hard-wire the two producers into `llm-deepseek`.** Rejected because the adapter would import Session, Loader, preset, package-manifest, and cursor logic. The registry keeps transport responsible only for field merge and HTTP acceptance.
 
-**Use fuzzy message similarity or omit overlapping event data.** Rejected because the receiver could not reconstruct the canonical log. Exact byte references with raw fallback preserve every value.
+### Why not request-relative message references?
+
+A recursive tagged representation could replace exact event-string ranges with paths and UTF-8 byte offsets into the containing request's `messages`. Measurement used Node v24.16.0 on macOS arm64 and the three largest available local Zstandard Session artifacts, whose compressed artifact sizes were 2,437,052, 572,602, and 118,811 bytes. Late-enable replay used each final completed request boundary; steady replay covered 411 completed boundaries. The byte counts cover complete minified DeepSeek requests.
+
+| Replay | Raw JSON | Referenced JSON | Saving | Synchronous encoder time |
+|---|---:|---:|---:|---:|
+| Late enable | 29,668,725 B | 27,645,825 B | 6.82% | 500.1 s total |
+| Steady state | 389,295,815 B | 387,180,848 B | 0.54% | 285.0 s total |
+
+The three late-enable calls took 470.5, 29.4, and 0.158 seconds. Only 701 of 115,071 events (0.61%) selected references. A hypothetical level-6 whole-request gzip comparison reduced raw request bytes by 89.38% for late enable and 73.42% for steady state; message references added 21.68% and 0.59% respectively after gzip.
+
+The receiver would also need to traverse the tagged tree, resolve paths into the exact request messages, validate UTF-8 ranges, and reconstruct every referenced event. Even treating that receiver cost as zero, the steady-state byte saving, synchronous sender cost, and dependence on another request field do not justify a versioned wire format.
+
+### Why not omit assistant chunks or overlapping event data?
+
+About 98% of the measured real-session events were `assistant/chunk`. Omitting chunks after reference encoding reduced the complete identity JSON by another 84.79% for late enable and 6.49% for steady state, but it prevents lossless canonical-log reconstruction and leaves `assistant/message.sourceEventSeqs` pointing to absent events. Fuzzy or normalized substitutions have the same reconstruction defect.
 
 **Keep the upload cursor only in memory.** Rejected because a normal process restart would resend the entire Session. A canonical acceptance event makes restart recovery best-effort durable without another storage backend; the remaining crash window produces allowed duplicates.
 
@@ -70,7 +85,7 @@ Registry tests pin duplicate ownership, effect-scoped disposal, detached field v
 
 ## Consequences
 
-Official DeepSeek requests carry active package versions to their resolved `baseURL`, including configured gateways. An explicit Session-log opt-in also carries the complete newly unaccepted Session suffix. The fields are model-hidden and add no prompt tokens or KV-cache changes, but can substantially increase HTTP body size. Request-relative packing synchronously compares suffix and message strings before dispatch, so a large first upload or retry backlog can delay the event loop until candidate indexing is implemented. Encoding, manifest resolution, field collision, acceptance logging, or provider schema rejection fails the model request rather than silently dropping metadata.
+Official DeepSeek requests carry active package versions to their resolved `baseURL`, including configured gateways. An explicit Session-log opt-in also carries the complete newly unaccepted Session suffix. The fields are model-hidden and add no prompt tokens or KV-cache changes, but can substantially increase HTTP body size. Manifest resolution, field collision, acceptance logging, or provider schema rejection fails the model request rather than silently dropping metadata.
 
 The `delivery-accepted` event becomes part of the canonical log and is itself delivered on a later request. Crash recovery can duplicate a suffix but does not infer acceptance from assistant output or create a second local cursor store. Direct calls without a live Session omit the session field; host package inventory remains available.
 
