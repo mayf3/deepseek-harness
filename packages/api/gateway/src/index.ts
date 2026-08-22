@@ -513,6 +513,8 @@ export class TypertGatewayService extends Service implements TypertGateway {
     result: ReturnType<typeof parseRemoteEventResult>,
   ): void {
     const pending = this.pendingRemoteEvents.get(result.eventId)
+    // Settlement and Client replacement may race the result request. Results
+    // from a completed event or a superseded delivery are idempotent no-ops.
     if (pending === undefined || !pending.deliveries.has(client)) return
     this.removeRemoteEventDelivery(pending, client)
     if (result.outcome.kind === 'result') {

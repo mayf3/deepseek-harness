@@ -714,6 +714,39 @@ describe('Typert Remote streams', () => {
     await unregister()
   })
 
+  it('delivers a pending waterfall to the first Client that connects', async () => {
+    const { ctx } = await setup(true)
+    const source = new RemoteEventSourceProbe()
+    const unregister = ctx.typertGateway.registerRemoteEvents(source.source)
+    const agent = ctx.extend()
+    ctx.typert.contexts.registerHost('agent', {
+      wire: 'agentId',
+      wireTypeSymbol: '@fixture#AgentId',
+      identity: candidate => candidate === agent ? agentId('agent-late-client') : undefined,
+      resolve: id => id === 'agent-late-client' ? agent : undefined,
+    })
+    const pending = pendingInvocation(agent, undefined, 'before-connect')
+
+    source.push(pending.dispatch)
+    await vi.waitFor(() => { expect(randomUuid).toHaveBeenCalledTimes(1) })
+
+    const client = await openEventClient(ctx, 'events-first-client')
+    await vi.waitFor(() => { expect(deliveredInvocation(client)).toBeDefined() })
+    const frame = deliveredInvocation(client)!
+    expect(frame).toMatchObject({
+      type: 'waterfall',
+      event: 'fixture/approval',
+      agentId: 'agent-late-client',
+      request: { prompt: 'before-connect' },
+    })
+
+    await sendEventResult(client, frame, { kind: 'result', value: 'allowed' })
+    await expect(pending.outcome).resolves.toEqual({ kind: 'result', value: 'allowed' })
+
+    client.socket.close()
+    await unregister()
+  })
+
   it('replays a pending event id to a replacement Client generation', async () => {
     const { ctx } = await setup(true)
     const source = new RemoteEventSourceProbe()
