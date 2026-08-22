@@ -232,7 +232,7 @@ export interface CompactionSummaryNode {
  * Fallback for surface events this UI version does not know: the documented
  * default arm of `SessionEventMap`, which is merge-extensible, so the
  * projection's switch cannot end in `assertNever`. No event produces this node
- * today — `isAppendSurfaceEvent` admits only the three types in core's
+ * because `isAppendSurfaceEvent` admits only the three types in core's
  * `SurfaceEventType`, and each has its own arm — and it exists so widening that
  * set core-side degrades to a raw row instead of dropping the event silently.
  */

@@ -5,8 +5,7 @@
  * statically at module scope, so the row cannot mount without it.
  *
  * Every symbol `llm-pi-ai` imports by name is present: a missing CommonJS symbol
- * would surface as `undefined` at call time instead of a link error
- * (research/services-build.md §11.4 lists the ten). The three catalog readers
+ * would surface as `undefined` at call time instead of a link error. The three catalog readers
  * return empty collections rather than throwing — the row reads them while it
  * activates, and "this deployment ships no pi-ai provider" is the truth here.
  * Everything on a request path is loud.

@@ -567,7 +567,7 @@ describe('DetailsPanel Output section', () => {
   // `tool/code-dispatch(-start)` with `callView: null`/`resultView: null`, and
   // the host's `viewFor` only presents top-level `tool/call`/`tool/result`. This
   // pins the resolution path with views injected directly, and the arm below
-  // pins what the shipped path actually shows today.
+  // pins what the shipped path shows.
   it('a run_code sub-dispatch resolves to its own terminal card once views reach it', () => {
     const child = settled({ callId: 'c1' })
     const view = mount(snapshot({

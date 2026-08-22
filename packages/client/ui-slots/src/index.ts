@@ -237,8 +237,8 @@ export interface ChainRenderOpts {
    * Keep the fallback permanently mounted: an election hides it (wrapped,
    * display:none) instead of unmounting it, and the all-decline case shows it
    * as-is — fallback-held state (composer drafts, DOM state) survives a
-   * takeover. Chain kind only. Sole consumer today: the
-   * 'conversation.composer' chain.
+   * takeover. Chain kind only; the sole consumer is the
+   * `conversation.composer` chain.
    */
   overlay?: boolean
 }

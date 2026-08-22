@@ -182,10 +182,9 @@ function readDraft(
  * orphan it. A prefix narrows the level only while some row it would actually
  * show matches — a tail nobody matches is a name being spelled, not a demand
  * for an empty pane, so the level shows whole and its hidden rows return to
- * obeying the toggle. Counting only displayable rows is what keeps that true:
- * were a hidden row ever to match a prefix that does not reveal it (today
- * `hidden` means dot-prefixed, so it cannot), the level would narrow to
- * nothing.
+ * obeying the toggle. Counting only displayable rows keeps that true because
+ * every hidden name is dot-prefixed, and a matching prefix therefore reveals
+ * it; otherwise the level could narrow to nothing.
  */
 function visibleEntries(
   entries: readonly DirectoryEntry[],

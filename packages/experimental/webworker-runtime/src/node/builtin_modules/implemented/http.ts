@@ -2,7 +2,7 @@
  * `node:http` for the worker: `createServer` returns a Server whose `listen`
  * succeeds immediately without a socket, and retains the captured request
  * listener so the tunnel server can feed synthesized requests into the real
- * route table (research/transport.md §5.1: 7 Server members, all pure values).
+ * route table. The fake Server exposes only the members those routes read.
  * The worker entry hands {@link whenRequestListener} to the host assembly, so the
  * package never reaches back into this app.
  */

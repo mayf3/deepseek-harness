@@ -26,7 +26,7 @@ When an `Events` entry's signature reaches a Host-only symbol (a Service, `Agent
 
 All five events ride this path, and their dedicated `HostFrame` variants or Client aliases are gone. Model consumers subscribe directly to both owner inputs, `llm/adapters-updated` and `settings/document-updated`; preset-derived consumers subscribe to `agent-preset/selected`. Frames that actually project or deduplicate data stay dedicated: `host/workspace-changed`/`-removed`/`host/archived-sessions-changed` (view derivation plus per-connection dedup state), and `host/session-added`/`-removed`/`host/session-status`/`host/agent-error` (live-object projection or frame-time derived fields).
 
-`skills/change`, `tools/change`, and `system-prompt/change` have the same shape but **no consumer today**; under "require a current owner and need" they stay out of the allowlist and are recorded here only as the extension seat.
+`skills/change`, `tools/change`, and `system-prompt/change` have the same shape but **no shipped consumer**; under "require a current owner and need" they stay out of the allowlist and are recorded here only as the extension seat.
 
 ### Consumer contract (dsh-typert-protocol)
 

@@ -151,7 +151,7 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
     ])
     // Defensive: an abort() is a macrotask and no user callback runs inside
     // the microtask drain between handshake fulfillment and this continuation,
-    // so the recheck is not schedulable today; it guards future reentrancy.
+    // so current callback ordering cannot schedule the recheck; it guards future reentrancy.
     /* v8 ignore next */
     if (flags.cancelled) throw new Error('subagent cancelled before the SDK child initialized')
   } catch (error: unknown) {

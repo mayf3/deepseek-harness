@@ -309,7 +309,7 @@ Keep atomic-write, brand, native-command, timeout utility, directory-picker, `ds
 | `ConversationService` | `ConversationController` | The object controls the active conversation state and user actions. |
 | `InputService` | `SessionInputResolver` | The interface resolves the input facade for one session scope. It is neither a global input registry nor an execution service. Keep `InputHub` as the concrete hub and `ctx.conversation.input` as the published face. |
 
-Use `Ui`, not `UI`, inside PascalCase identifiers. Keep the remaining client package names unless this ledger names them. Keep the deprecated client connection and Host `ApiProxy` vocabulary for now; the API plane will replace them, and a rename would add churn to a surface scheduled for removal.
+Use `Ui`, not `UI`, inside PascalCase identifiers. Keep the remaining client package names unless this ledger names them. Retain the deprecated client connection and Host `ApiProxy` vocabulary until the API plane removes those surfaces; renaming them earlier would add churn without establishing a lasting name.
 
 ## Explicit non-renames
 
