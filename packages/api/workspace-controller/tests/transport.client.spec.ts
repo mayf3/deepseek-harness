@@ -1,14 +1,19 @@
+import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import {
   RemoteStream,
   RemoteStreamCarrierError,
   type RemoteStreamOptions,
 } from '@deepseek-ai/dsh-api-gateway/client'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import * as WorkspaceClientPlugin from '../src/client/index.ts'
 import {
-  apply,
+  ClientWorkspaceModel,
   createWorkspaceStateStream,
+  WorkspaceController,
+  WorkspaceCreateError,
   type WorkspaceFollowSink,
   type WorkspaceRemote,
 } from '../src/client/index.ts'
@@ -24,14 +29,11 @@ import type {
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
   WorkspaceRenameRequest,
+  WorkspaceError,
+  WorkspaceId,
   WorkspaceValue,
+  WorkspaceView,
 } from '../src/types.ts'
-
-interface Generation {
-  readonly frames: readonly WorkspaceFollowFrame[]
-  readonly error?: unknown
-  readonly hold?: boolean
-}
 
 const AVAILABLE_CONNECTION = {
   hostDescription: {
@@ -52,6 +54,14 @@ function workspaceClient(
   }
 }
 
+interface Generation {
+  readonly frames: readonly WorkspaceFollowFrame[]
+  readonly error?: unknown
+  readonly hold?: boolean
+  readonly afterAbort?: () => void
+  readonly afterAbortError?: unknown
+}
+
 const baseline = (id?: string): Extract<WorkspaceFollowFrame, { type: 'baseline' }> => ({
   type: 'baseline',
   value: {
@@ -66,6 +76,29 @@ const baseline = (id?: string): Extract<WorkspaceFollowFrame, { type: 'baseline'
     archivedSessionIds: [],
   },
 })
+
+const wid = (id: string): WorkspaceId => id as WorkspaceId
+const sid = (id: string): SessionId => SessionId(id)
+
+function workspace(id: string, overrides: Partial<WorkspaceView> = {}): WorkspaceView {
+  return {
+    workspaceId: wid(id),
+    path: `/work/${id}`,
+    title: id,
+    sessionIds: [],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
+function remoteOk<T>(value: T): RemoteResult<T> {
+  return { ok: true, value }
+}
+
+function remoteFailure(error: WorkspaceError): RemoteResult<never> {
+  return { ok: false, error }
+}
 
 function accepts(overrides: Partial<WorkspaceFollowSink> = {}): WorkspaceFollowSink {
   const ignore = (): void => {}
@@ -119,13 +152,128 @@ class ScriptedWorkspaceRemote implements WorkspaceRemote {
       await new Promise<void>((resolve) => {
         signal.addEventListener('abort', () => { resolve() }, { once: true })
       })
+      generation.afterAbort?.()
+      if (generation.afterAbortError !== undefined) throw generation.afterAbortError
     }
   }
 }
 
-describe('Workspace Client snapshot adapter', () => {
-  it('installs no Client service and maps the baseline plus every increment', async () => {
-    apply()
+class CommandWorkspaceRemote implements WorkspaceRemote {
+  readonly create = vi.fn<WorkspaceRemote['create']>(request => Promise.resolve(remoteOk({
+    workspace: workspace('created', { path: request.path }),
+    created: true,
+  })))
+
+  readonly rename = vi.fn<WorkspaceRemote['rename']>(request => Promise.resolve(remoteOk({
+    workspace: workspace(String(request.workspaceId), { title: request.title }),
+  })))
+
+  readonly delete = vi.fn<WorkspaceRemote['delete']>(() => Promise.resolve(remoteOk({ deleted: true })))
+
+  readonly insertBefore = vi.fn<WorkspaceRemote['insertBefore']>(request => Promise.resolve(remoteOk({
+    workspaceIds: [request.workspaceId],
+  })))
+
+  readonly insertSessionBefore = vi.fn<WorkspaceRemote['insertSessionBefore']>(request => Promise.resolve(remoteOk({
+    workspace: workspace(String(request.workspaceId), { sessionIds: [request.sessionId] }),
+  })))
+
+  readonly archiveSession = vi.fn<WorkspaceRemote['archiveSession']>(request => Promise.resolve(remoteOk({
+    archivedSessionIds: [request.sessionId],
+  })))
+
+  async *follow(_signal?: AbortSignal): AsyncIterable<WorkspaceFollowFrame> {}
+}
+
+async function waitFor(check: () => void): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    try {
+      check()
+      return
+    } catch {
+      await Promise.resolve()
+    }
+  }
+  check()
+}
+
+function provideClientServices(ctx: Context, remote: WorkspaceRemote): void {
+  const connection: ConnectionHandle = {
+    api: {} as ConnectionHandle['api'],
+    isLoopback: true,
+    hostDescription: {
+      getSnapshot: () => ({
+        version: 'fixture',
+        cwd: '/fixture',
+        attachedSessions: 0,
+        home: '/home/fixture',
+        canOpenPath: true,
+      }),
+      subscribe: () => () => {},
+    },
+    rpc: {
+      call: () => Promise.reject(new Error('unexpected generic RPC call')),
+    },
+    registerGenerationSource: () => () => {},
+    start: () => ({ stop: () => {} }),
+  }
+  ctx.reflect.provide('connection', connection)
+  ctx.reflect.provide('remote', workspaceClient(remote, connection))
+  ctx.reflect.provide('remote.workspace', remote)
+}
+
+describe('Workspace Controller Client apply', () => {
+  it('provides the Workspace service and stops its follow generation with the plugin fiber', async () => {
+    const ctx = new Context()
+    const remote = new ScriptedWorkspaceRemote([{ frames: [baseline('mounted')], hold: true }])
+    provideClientServices(ctx, remote)
+    const fiber = ctx.plugin(WorkspaceClientPlugin)
+    await fiber
+    await waitFor(() => {
+      expect(ctx.workspaces.list.getSnapshot()).toMatchObject({
+        phase: 'ready',
+        state: 'idle',
+        items: [{ workspaceId: 'mounted' }],
+      })
+    })
+
+    await fiber.dispose()
+
+    expect(remote.signals[0]?.aborted).toBe(true)
+    expect(ctx.get('workspaces')).toBeUndefined()
+  })
+
+  it('marks carrier loss while retrying and publishes a later protocol failure', async () => {
+    const ctx = new Context()
+    const remote = new ScriptedWorkspaceRemote([
+      {
+        frames: [baseline('old')],
+        error: new RemoteStreamCarrierError('generation lost'),
+      },
+      { frames: [baseline('fresh'), baseline('duplicate')] },
+    ])
+    provideClientServices(ctx, remote)
+    const carrierFailure = vi.spyOn(ClientWorkspaceModel.prototype, 'handleCarrierFailure')
+    const streamFailure = vi.spyOn(ClientWorkspaceModel.prototype, 'handleStreamFailure')
+    const fiber = ctx.plugin(WorkspaceClientPlugin)
+    await fiber
+    await waitFor(() => {
+      expect(ctx.workspaces.list.getSnapshot()).toMatchObject({
+        phase: 'ready',
+        state: 'error',
+        items: [{ workspaceId: 'fresh' }],
+        error: { code: 'internal', message: 'Workspace state stream emitted more than one opening snapshot' },
+      })
+    })
+
+    expect(carrierFailure).toHaveBeenCalledOnce()
+    expect(streamFailure).toHaveBeenCalledOnce()
+    await fiber.dispose()
+  })
+})
+
+describe('Workspace state stream', () => {
+  it('delivers one baseline followed by increments', async () => {
     const opening = baseline('one')
     const workspace = opening.value.items[0]!
     const remote = new ScriptedWorkspaceRemote([{
@@ -285,5 +433,64 @@ describe('Workspace Client snapshot adapter', () => {
     await vi.waitFor(() => { expect(replaceBaseline).toHaveBeenCalledTimes(2) })
     expect(failed).not.toHaveBeenCalled()
     await stream.dispose()
+  })
+})
+
+describe('WorkspaceController', () => {
+  it('publishes the model source and exposes successful Workspace commands', async () => {
+    const remote = new CommandWorkspaceRemote()
+    const model = new ClientWorkspaceModel(remote)
+    model.replaceBaseline({ items: [workspace('one')], archivedSessionIds: [] })
+    const controller = new WorkspaceController(new Context(), model)
+
+    expect(controller.list).toBe(model)
+    await expect(controller.create({ path: '/work/created' })).resolves.toMatchObject({ workspaceId: 'created' })
+    await expect(controller.rename(wid('one'), 'renamed')).resolves.toMatchObject({ title: 'renamed' })
+    await expect(controller.insertBefore(wid('one'))).resolves.toBeUndefined()
+    await expect(controller.insertSessionBefore(wid('one'), sid('session'))).resolves.toMatchObject({
+      sessionIds: ['session'],
+    })
+    await expect(controller.archiveSession(sid('session'))).resolves.toBeUndefined()
+    await expect(controller.delete(wid('one'))).resolves.toBeUndefined()
+  })
+
+  it('maps generated business failures to the command facade errors', async () => {
+    const remote = new CommandWorkspaceRemote()
+    const controller = new WorkspaceController(new Context(), new ClientWorkspaceModel(remote))
+    const missingWorkspace: WorkspaceError = {
+      code: 'workspace-not-found',
+      message: 'gone',
+      details: { workspaceId: wid('missing') },
+    }
+    const missingSession: WorkspaceError = {
+      code: 'session-not-found',
+      message: 'missing session',
+      details: { sessionId: sid('session') },
+    }
+
+    remote.create.mockResolvedValueOnce(remoteFailure({
+      code: 'workspace-invalid-path',
+      message: 'missing path',
+      details: { path: '/missing' },
+    }))
+    const create = controller.create({ path: '/missing' })
+    await expect(create).rejects.toBeInstanceOf(WorkspaceCreateError)
+    await expect(create).rejects.toThrow('workspace-invalid-path: missing path')
+
+    remote.rename.mockResolvedValueOnce(remoteFailure(missingWorkspace))
+    await expect(controller.rename(wid('missing'), 'name')).rejects.toThrow('workspace rename failed: workspace-not-found: gone')
+    remote.delete.mockResolvedValueOnce(remoteFailure(missingWorkspace))
+    await expect(controller.delete(wid('missing'))).rejects.toThrow('workspace delete failed: workspace-not-found: gone')
+    remote.insertBefore.mockResolvedValueOnce(remoteFailure(missingWorkspace))
+    await expect(controller.insertBefore(wid('missing'))).rejects.toThrow('workspace reorder failed: workspace-not-found: gone')
+    remote.archiveSession.mockResolvedValueOnce(remoteFailure(missingSession))
+    await expect(controller.archiveSession(sid('session'))).rejects.toThrow('workspace session archive failed: session-not-found: missing session')
+    remote.insertSessionBefore.mockResolvedValueOnce(remoteFailure({
+      code: 'workspace-move-invalid',
+      message: 'invalid move',
+      details: { workspaceId: wid('missing'), sessionId: sid('session') },
+    }))
+    await expect(controller.insertSessionBefore(wid('missing'), sid('session')))
+      .rejects.toThrow('workspace move failed: workspace-move-invalid: invalid move')
   })
 })

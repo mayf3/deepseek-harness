@@ -1,5 +1,6 @@
 /** Client-side Workspace state model shared by Remote transport and UI projection. */
 
+import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
 import type { RemoteFailure, RemoteResult, TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 import type {
@@ -23,7 +24,7 @@ export type WorkspaceRemote = TypertClientRemote['workspace']
 export type WorkspaceListPhase = 'pending' | 'ready'
 
 /** Immutable Client Workspace state. */
-export interface WorkspaceListSnapshot {
+export interface WorkspaceSnapshot {
   readonly items: readonly WorkspaceView[]
   /** Complete registry-global archive set in Host order. */
   readonly archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds']
@@ -52,7 +53,7 @@ export interface WorkspaceFollowSink {
 export class ClientWorkspaceModel implements WorkspaceFollowSink {
   private items: readonly WorkspaceView[] = []
   private archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds'] = []
-  private state: WorkspaceListSnapshot['state'] = 'loading'
+  private state: WorkspaceSnapshot['state'] = 'loading'
   private phase: WorkspaceListPhase = 'pending'
   private error: RemoteFailure | null = null
   /** Latest local reorder request; only its unary echo may install order. */
@@ -64,7 +65,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   /** Host Workspace ids are never reused, so delayed data cannot resurrect a removed row. */
   private readonly removedIds = new Set<WorkspaceId>()
   private readonly listeners = new Set<() => void>()
-  private snapshotCache: WorkspaceListSnapshot
+  private snapshotCache: WorkspaceSnapshot
   private snapshotDirty = false
   private notificationPending = false
   private notificationScheduled = false
@@ -251,12 +252,12 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * Read the cached state, rebuilding it first when necessary.
    * @returns the current stable Workspace list snapshot.
    */
-  getSnapshot(): WorkspaceListSnapshot {
+  getSnapshot(): WorkspaceSnapshot {
     this.refreshSnapshot()
     return this.snapshotCache
   }
 
-  private buildSnapshot(): WorkspaceListSnapshot {
+  private buildSnapshot(): WorkspaceSnapshot {
     return {
       items: this.items,
       archivedSessionIds: this.archivedSessionIds,
@@ -346,7 +347,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     if (!this.notificationPending || this.listeners.size === 0) return
     this.notificationPending = false
     this.refreshSnapshot()
-    for (const listener of this.listeners) listener()
+    notifySubscribers(this.listeners, '[workspace-controller]')
   }
 
   private refreshSnapshot(): void {

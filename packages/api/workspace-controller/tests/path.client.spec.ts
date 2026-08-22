@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { abbreviateHomePath, resolveWorkspacePath } from '../src/client/workspaces/path.ts'
+import { abbreviateHomePath, resolveWorkspacePath } from '../src/client/path.ts'
 
 describe('abbreviateHomePath', () => {
   it('collapses a POSIX home and its descendants', () => {

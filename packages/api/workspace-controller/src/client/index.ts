@@ -1,5 +1,6 @@
 /** Workspace-specific adapter for the Gateway-owned snapshot stream lifecycle. */
 
+import type { Context } from '@deepseek-ai/cordis'
 import {
   RemoteSnapshotStream,
   RemoteStreamCarrierError,
@@ -7,14 +8,20 @@ import {
 } from '@deepseek-ai/dsh-api-gateway/client'
 import type { WorkspaceFollowFrame, WorkspaceFollowIncrement } from '../types.ts'
 import type { WorkspaceFollowSink, WorkspaceRemote } from './model.ts'
+import { ClientWorkspaceModel } from './model.ts'
+import { WorkspaceController } from './service.ts'
 
 export { ClientWorkspaceModel } from './model.ts'
 export type {
-  WorkspaceFollowSink, WorkspaceListPhase, WorkspaceListSnapshot, WorkspaceRemote,
+  WorkspaceFollowSink, WorkspaceListPhase, WorkspaceRemote, WorkspaceSnapshot,
 } from './model.ts'
+export { abbreviateHomePath, resolveWorkspacePath } from './path.ts'
+export { WorkspaceController, WorkspaceCreateError } from './service.ts'
+export type { IWorkspaces, WorkspaceSource } from './service.ts'
+export type { WorkspaceId, WorkspaceView } from '../types.ts'
 
 type WorkspaceStreamRemote = Pick<ClientRemote, '$stream'> & {
-  readonly workspace: Pick<WorkspaceRemote, 'follow'>
+  readonly workspace: WorkspaceRemote
 }
 
 type WorkspaceBaselineFrame = Extract<WorkspaceFollowFrame, { type: 'baseline' }>
@@ -25,8 +32,35 @@ export type WorkspaceStateStream = RemoteSnapshotStream<
   WorkspaceFollowIncrement
 >
 
-/** Workspace Controller's Client row exports library values and installs no Cordis service. */
-export function apply(): void {}
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** React-free Client Workspace state and commands. */
+    workspaces: import('./service.ts').IWorkspaces
+  }
+}
+
+/** Required Client Remote services. */
+export const inject = ['remote', 'remote.workspace']
+
+/**
+ * Install Client Workspace state, commands, and reconnecting follow control.
+ * @param ctx - Client root Context.
+ */
+export function apply(ctx: Context): void {
+  const remote = ctx.remote as WorkspaceStreamRemote
+  const model = new ClientWorkspaceModel(remote.workspace)
+  new WorkspaceController(ctx, model)
+  const control = createWorkspaceStateStream(remote, {
+    accept: model,
+    carrierFailed: () => { model.handleCarrierFailure() },
+    failed: (error) => { model.handleStreamFailure(error) },
+  })
+  control.start()
+  ctx.effect(
+    () => async () => { await control.dispose() },
+    'workspace-controller.client.control',
+  )
+}
 
 /** Domain sinks used by the Workspace state stream. */
 export interface WorkspaceStateStreamOptions {

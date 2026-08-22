@@ -1,8 +1,8 @@
 /**
  * Resolve a workspace-relative path into the Host-facing spelling used by openPath.
- * @param cwd - session workspace root, when known.
- * @param path - absolute or workspace-relative path.
- * @returns an absolute path when a workspace root is available, otherwise the original path.
+ * @param cwd - Session Workspace root, when known.
+ * @param path - absolute or Workspace-relative path.
+ * @returns an absolute path when a Workspace root is available, otherwise the original path.
  */
 export function resolveWorkspacePath(cwd: string | undefined, path: string): string {
   if (path.startsWith('/') || isWindowsStylePath(path)) return path
@@ -22,7 +22,7 @@ function isWindowsStylePath(value: string): boolean {
  * verbatim, including when `home` itself is a Windows path. A missing, empty,
  * or filesystem-root `home` leaves `path` unchanged so `/` cannot become `~`.
  * @param path - absolute or already-short display path.
- * @param home - host account home from `host.describe`; absent skips abbreviation.
+ * @param home - Host account home from `host.describe`; absent skips abbreviation.
  * @returns `~` or `~/…` for the POSIX home and its descendants, otherwise `path`.
  */
 export function abbreviateHomePath(path: string, home?: string): string {
