@@ -73,7 +73,7 @@ describe('SessionHistoryController', () => {
     })
 
     const page = await transport.page(
-      { address: { kind: 'session', sessionId: session.id } },
+      { address: { kind: 'session', sessionId: session.id }, throughSeq: 1 },
       new AbortController().signal,
     )
     expect(page.events.map(entry => entry.event.seq)).toEqual([0, 1])
@@ -213,6 +213,9 @@ describe('SessionHistoryController', () => {
       address: { kind: 'session', sessionId: session.id },
     }, abort.signal)[Symbol.asyncIterator]()
     await expect(iterator.next()).resolves.toEqual({ done: false, value: { type: 'opened', cursor: -1 } })
+    await expect(transport.page({
+      address: { kind: 'session', sessionId: session.id }, throughSeq: -1,
+    }, signal())).resolves.toMatchObject({ events: [], hasMore: false })
     abort.abort()
     await expect(iterator.next()).resolves.toMatchObject({ done: true })
   })
@@ -234,6 +237,7 @@ describe('SessionHistoryController', () => {
 
     await expect(transport.page({
       address: { kind: 'subagent', parentSessionId, childSessionId, mode: 'continuable' },
+      throughSeq: 0,
     }, signal)).resolves.toMatchObject({ events: [{ event: { type: 'subagent/descriptor' } }] })
     await expect(transport.page({
       address: {
@@ -242,12 +246,15 @@ describe('SessionHistoryController', () => {
         childSessionId,
         mode: 'continuable',
       },
+      throughSeq: 0,
     }, signal)).rejects.toMatchObject({ failure: { code: 'subagent-unauthorized' } })
     await expect(transport.page({
       address: { kind: 'subagent', parentSessionId, childSessionId, mode: 'one-shot' },
+      throughSeq: 0,
     }, signal)).rejects.toMatchObject({ failure: { code: 'subagent-unauthorized' } })
     await expect(transport.page({
       address: { kind: 'session', sessionId: childSessionId },
+      throughSeq: 0,
     }, signal)).rejects.toMatchObject({ failure: { code: 'agent-busy' } })
   })
 
@@ -263,6 +270,7 @@ describe('SessionHistoryController', () => {
 
     await expect(transport.page({
       address: { kind: 'session', sessionId },
+      throughSeq: -1,
     }, new AbortController().signal)).rejects.toBe(failure)
   })
 
@@ -271,13 +279,28 @@ describe('SessionHistoryController', () => {
     const session = ctx.sessions.create(SessionId('validation'), { meta: { cwd: '/workspace' } })
     const address = { kind: 'session' as const, sessionId: session.id }
     for (const request of [
-      { address, beforeSeq: -1 },
-      { address, beforeSeq: 1.5 },
-      { address, maxMessages: 0 },
-      { address, maxMessages: 1.5 },
+      { address, throughSeq: -2 },
+      { address, throughSeq: 0.5 },
+      { address, throughSeq: -1, beforeSeq: -1 },
+      { address, throughSeq: -1, beforeSeq: 1.5 },
+      { address, throughSeq: -1, maxMessages: 0 },
+      { address, throughSeq: -1, maxMessages: 1.5 },
     ]) {
       await expect(transport.page(request, signal())).rejects.toMatchObject({ failure: { code: 'bad-request' } })
     }
+    await expect(transport.page({ address, throughSeq: 0 }, signal()))
+      .rejects.toMatchObject({ failure: { code: 'bad-request' } })
+
+    const corrupt = await setup()
+    const corruptId = SessionId('missing-through-seq')
+    cold(
+      corrupt.ctx,
+      { version: 0, id: corruptId, createdAt: 1, cwd: '/workspace' },
+      [event('fixture/start', 0), event('fixture/gap', 2)],
+    )
+    await expect(corrupt.transport.page({
+      address: { kind: 'session', sessionId: corruptId }, throughSeq: 1,
+    }, signal())).rejects.toMatchObject({ failure: { code: 'internal' } })
     for (const afterSeq of [-2, 0.5]) {
       const iterator = transport.follow({ address, afterSeq }, signal())[Symbol.asyncIterator]()
       await expect(iterator.next()).rejects.toMatchObject({ failure: { code: 'bad-request' } })
@@ -289,14 +312,14 @@ describe('SessionHistoryController', () => {
   it('reports missing ordinary and subagent sources without fabricating inspection failures', async () => {
     const { ctx, transport } = await setup()
     const ordinary = { kind: 'session' as const, sessionId: SessionId('missing') }
-    await expect(transport.page({ address: ordinary }, signal()))
+    await expect(transport.page({ address: ordinary, throughSeq: -1 }, signal()))
       .rejects.toMatchObject({ failure: { code: 'internal' } })
 
     ctx.provide('sessionPersistence', {
       list: () => Promise.resolve([]),
       inspect: () => Promise.reject(new Error('must not inspect')),
     } as never)
-    await expect(transport.page({ address: ordinary }, signal()))
+    await expect(transport.page({ address: ordinary, throughSeq: -1 }, signal()))
       .rejects.toMatchObject({ failure: { code: 'session-not-found' } })
     await expect(transport.page({
       address: {
@@ -305,6 +328,7 @@ describe('SessionHistoryController', () => {
         childSessionId: SessionId('missing-child'),
         mode: 'continuable',
       },
+      throughSeq: -1,
     }, signal())).rejects.toMatchObject({ failure: { code: 'subagent-not-found' } })
   })
 
@@ -316,7 +340,7 @@ describe('SessionHistoryController', () => {
       list: () => Promise.resolve([{ version: 0, id: sessionId, createdAt: 1 }]),
       inspect: () => Promise.reject(new Error('must not inspect')),
     } as never)
-    await expect(first.transport.page({ address }, signal()))
+    await expect(first.transport.page({ address, throughSeq: -1 }, signal()))
       .rejects.toMatchObject({ failure: { code: 'session-not-found' } })
 
     const second = await setup()
@@ -325,7 +349,7 @@ describe('SessionHistoryController', () => {
       list: () => Promise.resolve([listed]),
       inspect: () => Promise.resolve({ meta: { ...listed, cwd: undefined }, events: [] }),
     } as never)
-    await expect(second.transport.page({ address }, signal()))
+    await expect(second.transport.page({ address, throughSeq: -1 }, signal()))
       .rejects.toMatchObject({ failure: { code: 'session-not-found' } })
   })
 
@@ -336,6 +360,7 @@ describe('SessionHistoryController', () => {
     cold(ordinaryBench.ctx, ordinaryHeader, [event('turn/start', 0, { turn: 1 })])
     await expect(ordinaryBench.transport.page({
       address: { kind: 'session', sessionId: ordinaryId },
+      throughSeq: 0,
     }, signal())).resolves.toMatchObject({ events: [{ event: { seq: 0 } }] })
 
     const parentSessionId = SessionId('cold-parent')
@@ -356,18 +381,18 @@ describe('SessionHistoryController', () => {
     }
     const missing = await setup()
     cold(missing.ctx, childHeader, [])
-    await expect(missing.transport.page({ address: childAddress }, signal()))
+    await expect(missing.transport.page({ address: childAddress, throughSeq: -1 }, signal()))
       .rejects.toMatchObject({ failure: { code: 'subagent-catalog-diagnostic', details: { reason: 'unsupported' } } })
 
     const corrupt = await setup()
     cold(corrupt.ctx, childHeader, [event('subagent/descriptor', 0, { version: 'bad' })])
-    await expect(corrupt.transport.page({ address: childAddress }, signal()))
+    await expect(corrupt.transport.page({ address: childAddress, throughSeq: 0 }, signal()))
       .rejects.toMatchObject({ failure: { code: 'subagent-catalog-diagnostic', details: { reason: 'corrupt' } } })
 
     const ordinaryChild = await setup()
     const { origin: _origin, ...ordinaryChildHeader } = childHeader
     cold(ordinaryChild.ctx, ordinaryChildHeader, [])
-    await expect(ordinaryChild.transport.page({ address: childAddress }, signal()))
+    await expect(ordinaryChild.transport.page({ address: childAddress, throughSeq: -1 }, signal()))
       .rejects.toMatchObject({ failure: { code: 'subagent-unauthorized' } })
   })
 
@@ -379,10 +404,11 @@ describe('SessionHistoryController', () => {
     attached.ctx.provide('sessionProjections', { snapshot, restore: vi.fn() } as never)
     await expect(attached.transport.page({
       address: { kind: 'session', sessionId: session.id },
+      throughSeq: 0,
     }, signal())).resolves.toMatchObject({ projections: { asOfSeq: 0, values: { title: 'attached' } } })
     expect(snapshot).toHaveBeenCalledWith(session)
     const older = await attached.transport.page({
-      address: { kind: 'session', sessionId: session.id }, beforeSeq: 1,
+      address: { kind: 'session', sessionId: session.id }, throughSeq: 0, beforeSeq: 1,
     }, signal())
     expect('projections' in older).toBe(false)
 
@@ -394,6 +420,7 @@ describe('SessionHistoryController', () => {
     detached.ctx.provide('sessionProjections', { snapshot: vi.fn(), restore } as never)
     await expect(detached.transport.page({
       address: { kind: 'session', sessionId: coldId },
+      throughSeq: 0,
     }, signal())).resolves.toMatchObject({ projections: { values: { title: 'cold' } } })
     expect(restore).toHaveBeenCalledWith({}, expect.any(Array), 0)
 
@@ -405,6 +432,7 @@ describe('SessionHistoryController', () => {
     } as never)
     await expect(failed.transport.page({
       address: { kind: 'session', sessionId: coldId },
+      throughSeq: 0,
     }, signal())).rejects.toThrow('projection failed')
 
     const child = await setup()
@@ -423,6 +451,7 @@ describe('SessionHistoryController', () => {
     } as never)
     const page = await child.transport.page({
       address: { kind: 'subagent', parentSessionId, childSessionId, mode: 'continuable' },
+      throughSeq: 0,
     }, signal())
     expect('projections' in page).toBe(false)
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('child projection failed'))
@@ -435,7 +464,9 @@ describe('SessionHistoryController', () => {
     const preset = vi.fn(() => Promise.resolve('preset-scope'))
     live.ctx.provide('agents', { get: () => liveAgent } as never)
     live.ctx.provide('agentPresets', { standingKeyFor: preset } as never)
-    await live.transport.page({ address: { kind: 'session', sessionId: liveSession.id } }, signal())
+    await live.transport.page({
+      address: { kind: 'session', sessionId: liveSession.id }, throughSeq: -1,
+    }, signal())
     expect(preset).not.toHaveBeenCalled()
 
     const attached = await setup()
@@ -446,6 +477,7 @@ describe('SessionHistoryController', () => {
     attached.ctx.provide('agentPresets', { standingKeyFor } as never)
     await attached.transport.page({
       address: { kind: 'session', sessionId: attachedSession.id },
+      throughSeq: -1,
     }, signal())
     expect(standingKeyFor).toHaveBeenCalledWith('minimal')
 
@@ -459,6 +491,7 @@ describe('SessionHistoryController', () => {
     detached.ctx.provide('agentPresets', { standingKeyFor: rejected } as never)
     await expect(detached.transport.page({
       address: { kind: 'session', sessionId: detachedId },
+      throughSeq: -1,
     }, signal())).resolves.toMatchObject({ events: [] })
     expect(rejected).toHaveBeenCalledWith('standard')
 
@@ -472,7 +505,9 @@ describe('SessionHistoryController', () => {
     ])
     const switchedKey = vi.fn(() => Promise.resolve('switched-scope'))
     switched.ctx.provide('agentPresets', { standingKeyFor: switchedKey } as never)
-    await switched.transport.page({ address: { kind: 'session', sessionId: switchedId } }, signal())
+    await switched.transport.page({
+      address: { kind: 'session', sessionId: switchedId }, throughSeq: 0,
+    }, signal())
     expect(switchedKey).toHaveBeenCalledWith('minimal')
   })
 
@@ -491,12 +526,12 @@ describe('SessionHistoryController', () => {
     })
 
     const page = await transport.page({
-      address: { kind: 'session', sessionId: session.id }, maxMessages: 2,
+      address: { kind: 'session', sessionId: session.id }, throughSeq: replacement.seq, maxMessages: 2,
     }, signal())
     expect(page.events.map(entry => entry.event.seq)).toEqual([3, 4, 5, replacement.seq])
     expect(page.hasMore).toBe(true)
     const before = await transport.page({
-      address: { kind: 'session', sessionId: session.id }, beforeSeq: 3, maxMessages: 1,
+      address: { kind: 'session', sessionId: session.id }, throughSeq: replacement.seq, beforeSeq: 3, maxMessages: 1,
     }, signal())
     expect(before.events.map(entry => entry.event.seq)).toEqual([2])
   })
@@ -510,7 +545,7 @@ describe('SessionHistoryController', () => {
     })
 
     const page = await transport.page({
-      address: { kind: 'session', sessionId: session.id }, maxMessages: 1,
+      address: { kind: 'session', sessionId: session.id }, throughSeq: 1, maxMessages: 1,
     }, signal())
     expect(page.events.map(entry => entry.event.seq)).toEqual([0, 1])
     expect(page.hasMore).toBe(false)
@@ -576,7 +611,9 @@ describe('SessionHistoryController', () => {
     } as never)
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
 
-    const page = await transport.page({ address: { kind: 'session', sessionId } }, signal())
+    const page = await transport.page({
+      address: { kind: 'session', sessionId }, throughSeq: 10,
+    }, signal())
     expect(page.events[1]?.view).toEqual({
       for: 'call', view: { card: 'generic', title: 'Call', rawInput: { path: 'a.ts' } },
     })

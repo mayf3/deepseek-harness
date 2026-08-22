@@ -44,7 +44,10 @@ async function harness(withTodoTool: boolean): Promise<Bench> {
     ctx,
     session,
     async tailProjections() {
-      return (await history.page({ address: { kind: 'session', sessionId: session.id } }, new AbortController().signal))
+      return (await history.page({
+        address: { kind: 'session', sessionId: session.id },
+        throughSeq: session.seq - 1,
+      }, new AbortController().signal))
         .projections
     },
   }

@@ -39,10 +39,11 @@ function request<P>(payload: P): P {
 
 function page(
   remote: TestSessionRemote,
-  request: { sessionId: SessionId; beforeSeq?: number; maxMessages?: number },
+  request: { sessionId: SessionId; throughSeq: number; beforeSeq?: number; maxMessages?: number },
 ) {
   return remote.page({
     address: { kind: 'session', sessionId: request.sessionId },
+    throughSeq: request.throughSeq,
     ...(request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq }),
     ...(request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages }),
   })
@@ -101,7 +102,7 @@ describe('session.history projections block', () => {
     const { ctx, session } = await harness(true)
     ctx.sessionProjections.register(lastUserUnit())
     seedMessages(session, 3)
-    const response = await page(remote(ctx), request({ sessionId: session.id }))
+    const response = await page(remote(ctx), request({ sessionId: session.id, throughSeq: session.seq - 1 }))
     expect(response.ok).toBe(true)
     if (!response.ok) throw new Error('unreachable')
     const { events, projections } = response.value
@@ -110,6 +111,35 @@ describe('session.history projections block', () => {
     expect(projections?.values['test/last-user']).toEqual({ text: 'm2' })
     // asOfSeq IS the window tail: the last served event carries it.
     expect(events.at(-1)?.event.seq).toBe(projections?.asOfSeq)
+  })
+
+  it('cuts attached projections and events at the requested follow cursor', async () => {
+    const { ctx, session } = await harness(true)
+    ctx.sessionProjections.register(lastUserUnit())
+    seedMessages(session, 2)
+
+    const response = await page(remote(ctx), request({ sessionId: session.id, throughSeq: 0 }))
+    if (!response.ok) throw new Error('history failed')
+
+    expect(response.value.events.map(entry => entry.event.seq)).toEqual([0])
+    expect(response.value.projections).toEqual({
+      asOfSeq: 0,
+      values: expect.objectContaining({ 'test/last-user': { text: 'm0' } }),
+    })
+  })
+
+  it('projects an empty log at cursor -1', async () => {
+    const { ctx, session } = await harness(true)
+    ctx.sessionProjections.register(lastUserUnit())
+
+    const response = await page(remote(ctx), request({ sessionId: session.id, throughSeq: -1 }))
+    if (!response.ok) throw new Error('history failed')
+
+    expect(response.value.events).toEqual([])
+    expect(response.value.projections).toEqual({
+      asOfSeq: -1,
+      values: expect.objectContaining({ 'test/last-user': null }),
+    })
   })
 
   it('publishes the attachments imageLimits as a constant unit while both seams are composed', async () => {
@@ -130,7 +160,7 @@ describe('session.history projections block', () => {
     })
     const gateway = remote(ctx)
     seedMessages(session, 2)
-    const response = await page(gateway, request({ sessionId: session.id }))
+    const response = await page(gateway, request({ sessionId: session.id, throughSeq: session.seq - 1 }))
     if (!response.ok) throw new Error('history failed')
     expect(response.value.projections?.values['imageLimits']).toEqual(limits)
     // Constant unit: appending events must never broadcast an imageLimits projection.
@@ -158,7 +188,7 @@ describe('session.history projections block', () => {
   it('leaves the imageLimits key absent while no attachment service is composed', async () => {
     const { ctx, session } = await harness(true)
     seedMessages(session, 1)
-    const response = await page(remote(ctx), request({ sessionId: session.id }))
+    const response = await page(remote(ctx), request({ sessionId: session.id, throughSeq: session.seq - 1 }))
     if (!response.ok) throw new Error('history failed')
     expect(response.value.projections).toBeDefined()
     expect('imageLimits' in (response.value.projections?.values ?? {})).toBe(false)
@@ -168,7 +198,9 @@ describe('session.history projections block', () => {
     const { ctx, session } = await harness(true)
     ctx.sessionProjections.register(lastUserUnit())
     seedMessages(session, 5)
-    const older = await page(remote(ctx), request({ sessionId: session.id, beforeSeq: 3, maxMessages: 2 }))
+    const older = await page(remote(ctx), request({
+      sessionId: session.id, throughSeq: session.seq - 1, beforeSeq: 3, maxMessages: 2,
+    }))
     expect(older.ok).toBe(true)
     if (!older.ok) throw new Error('unreachable')
     expect('projections' in older.value).toBe(false)
@@ -177,7 +209,7 @@ describe('session.history projections block', () => {
   it('serves no block when the composition has no projection registry', async () => {
     const { ctx, session } = await harness(false)
     seedMessages(session, 2)
-    const response = await page(remote(ctx), request({ sessionId: session.id }))
+    const response = await page(remote(ctx), request({ sessionId: session.id, throughSeq: session.seq - 1 }))
     expect(response.ok).toBe(true)
     if (!response.ok) throw new Error('unreachable')
     expect('projections' in response.value).toBe(false)
@@ -206,7 +238,7 @@ describe('session.history projections block', () => {
     abort.abort()
     await iterator.return?.()
 
-    const history = await page(proxy, request({ sessionId: session.id }))
+    const history = await page(proxy, request({ sessionId: session.id, throughSeq: session.seq - 1 }))
     if (!history.ok) throw new Error('history failed')
     expect('test/internal-count' in (history.value.projections?.values ?? {})).toBe(false)
     const listing = await proxy.list(request({}))
@@ -220,12 +252,12 @@ describe('session.history projections block', () => {
     const dispose = ctx.sessionProjections.register(lastUserUnit())
     seedMessages(session, 1)
     const proxy = remote(ctx)
-    const before = await page(proxy, request({ sessionId: session.id }))
+    const before = await page(proxy, request({ sessionId: session.id, throughSeq: session.seq - 1 }))
     if (!before.ok) throw new Error('unreachable')
     expect(before.value.projections?.values['test/last-user']).toEqual({ text: 'm0' })
 
     dispose()
-    const after = await page(proxy, request({ sessionId: session.id }))
+    const after = await page(proxy, request({ sessionId: session.id, throughSeq: session.seq - 1 }))
     if (!after.ok) throw new Error('unreachable')
     // The registry stays mounted; only the disposed key leaves while the
     // gateway-owned Session-list unit remains.
@@ -391,7 +423,7 @@ describe('Session control projection frames', () => {
       { type: 'projection', sessionId: session.id, key: 'sessionListMetadata', value: { blank: false, lastPromptAt: 300 }, seq: 2 },
     ])
     // Frame seq aligns with the tail block's asOfSeq vocabulary (higher-seq-wins compatible).
-    const tail = await page(proxy, request({ sessionId: session.id }))
+    const tail = await page(proxy, request({ sessionId: session.id, throughSeq: session.seq - 1 }))
     if (!tail.ok) throw new Error('unreachable')
     expect(tail.value.projections?.asOfSeq).toBe(pushes.at(-1)?.seq)
   })

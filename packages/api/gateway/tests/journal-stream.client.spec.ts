@@ -58,6 +58,7 @@ class FixtureJournal extends RemoteJournalStream<Page, Entry, number, PageReques
     private readonly pages: (Page | Promise<Page>)[],
     private readonly calls: string[],
     private readonly pageRequests: PageRequest[],
+    private readonly pageCursors: number[],
     private readonly followCursors: (number | undefined)[],
     changes: RemoteJournalChange<Page, Entry>[],
     failed: (error: unknown) => void,
@@ -94,9 +95,10 @@ class FixtureJournal extends RemoteJournalStream<Page, Entry, number, PageReques
   }
 
   /** @inheritdoc */
-  protected override readPage(request: PageRequest): Promise<Page> {
+  protected override readPage(request: PageRequest, through: number): Promise<Page> {
     this.calls.push('page')
     this.pageRequests.push(request)
+    this.pageCursors.push(through)
     const value = this.pages.shift()
     if (value === undefined) throw new Error('no scripted journal page')
     return Promise.resolve(value)
@@ -117,10 +119,12 @@ function journalFixture(
   readonly failed: ReturnType<typeof vi.fn>
   readonly calls: string[]
   readonly pageRequests: PageRequest[]
+  readonly pageCursors: number[]
   readonly followCursors: (number | undefined)[]
 } {
   const calls: string[] = []
   const pageRequests: PageRequest[] = []
+  const pageCursors: number[] = []
   const followCursors: (number | undefined)[] = []
   const changes: RemoteJournalChange<Page, Entry>[] = []
   const failed = vi.fn()
@@ -129,11 +133,12 @@ function journalFixture(
     pages,
     calls,
     pageRequests,
+    pageCursors,
     followCursors,
     changes,
     failed,
   )
-  return { journal, changes, failed, calls, pageRequests, followCursors }
+  return { journal, changes, failed, calls, pageRequests, pageCursors, followCursors }
 }
 
 describe('RemoteJournalStream', () => {
@@ -156,6 +161,7 @@ describe('RemoteJournalStream', () => {
 
     expect(fixture.calls.slice(0, 2)).toEqual(['follow', 'page'])
     expect(fixture.pageRequests).toEqual([{ limit: 2 }, { before: 2, limit: 2 }])
+    expect(fixture.pageCursors).toEqual([3, 4])
     expect(fixture.changes).toEqual([
       { type: 'replace', page: page('tail', [2, 3], true), entries: entries(2, 3), hasMore: true },
       { type: 'append', entry: { seq: 4 } },
@@ -165,9 +171,9 @@ describe('RemoteJournalStream', () => {
     await fixture.journal.dispose()
   })
 
-  it('publishes one sorted replacement from a repair page and live entries queued while it loads', async () => {
-    let resolveRepair!: (value: Page) => void
-    const repair = new Promise<Page>((resolve) => { resolveRepair = resolve })
+  it('publishes one sorted replacement from an exact page and live entries queued while it loads', async () => {
+    let resolvePage!: (value: Page) => void
+    const openingPage = new Promise<Page>((resolve) => { resolvePage = resolve })
     const fixture = journalFixture(
       [{
         frames: [
@@ -177,24 +183,25 @@ describe('RemoteJournalStream', () => {
         ],
         hold: true,
       }],
-      [page('stale', [6, 7, 8, 9, 10, 11]), repair],
+      [openingPage],
     )
 
     const opening = fixture.journal.open({ limit: 6 })
     await vi.waitFor(() => {
-      expect(fixture.calls.filter(call => call === 'page')).toHaveLength(2)
+      expect(fixture.calls.filter(call => call === 'page')).toHaveLength(1)
     })
     expect(fixture.changes).toEqual([])
 
-    resolveRepair(page('repair', [10, 11, 12, 13, 14, 15]))
+    resolvePage(page('opening', [10, 11, 12, 13, 14, 15]))
     await opening
 
     expect(fixture.changes).toEqual([{
       type: 'replace',
-      page: page('repair', [10, 11, 12, 13, 14, 15]),
+      page: page('opening', [10, 11, 12, 13, 14, 15]),
       entries: entries(10, 11, 12, 13, 14, 15, 16, 17),
       hasMore: false,
     }])
+    expect(fixture.pageCursors).toEqual([15])
     await fixture.journal.dispose()
   })
 
@@ -229,6 +236,7 @@ describe('RemoteJournalStream', () => {
       type: 'replace', page: { marker: 'repair' }, entries: entries(0, 1, 2, 3, 4),
     })
     expect(fixture.followCursors).toEqual([undefined, 2])
+    expect(fixture.pageCursors).toEqual([1, 4])
     expect(fixture.failed).not.toHaveBeenCalled()
     await fixture.journal.dispose()
   })
@@ -250,6 +258,7 @@ describe('RemoteJournalStream', () => {
 
     expect(fixture.changes.map(change => change.type)).toEqual(['replace', 'replace'])
     expect(fixture.changes[1]).toMatchObject({ page: { marker: 'repair' } })
+    expect(fixture.pageCursors).toEqual([1, 4])
     await fixture.journal.dispose()
   })
 
@@ -268,9 +277,15 @@ describe('RemoteJournalStream', () => {
 
     const shortPage = journalFixture(
       [{ frames: [{ type: 'opened', cursor: 3 }], hold: true }],
-      [page('short', [0, 1]), page('repair-short', [0, 1, 2])],
+      [page('short', [0, 1])],
     )
-    await expect(shortPage.journal.open({})).rejects.toThrow('page did not reach its opening cursor')
+    await expect(shortPage.journal.open({})).rejects.toThrow('page did not end at its requested cursor')
+
+    const longPage = journalFixture(
+      [{ frames: [{ type: 'opened', cursor: 1 }], hold: true }],
+      [page('long', [0, 1, 2])],
+    )
+    await expect(longPage.journal.open({})).rejects.toThrow('page did not end at its requested cursor')
   })
 
   it('reports duplicate and regressed generation cursors as terminal failures', async () => {

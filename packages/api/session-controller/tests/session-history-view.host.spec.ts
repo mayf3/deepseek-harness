@@ -238,6 +238,7 @@ describe('Session history view computation', () => {
 
     const response = await remote.page({
       address: { kind: 'session', sessionId: session.id },
+      throughSeq: session.seq - 1,
     })
     expect(response.ok).toBe(true)
     if (!response.ok) throw new Error('unreachable')
@@ -288,6 +289,7 @@ describe('Session history view computation', () => {
 
     const response = await remote.page({
       address: { kind: 'session', sessionId: session.id },
+      throughSeq: session.seq - 1,
       maxMessages: 2,
     })
     if (!response.ok) throw new Error('unreachable')
@@ -335,6 +337,7 @@ describe('Session history view computation', () => {
     try {
       const response = await remote.page({
         address: { kind: 'session', sessionId: session.id },
+        throughSeq: message.seq,
         maxMessages: 1,
       })
       if (!response.ok) throw new Error('unreachable')

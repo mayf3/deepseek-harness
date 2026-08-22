@@ -125,10 +125,11 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
   /**
    * Read one journal page through the addressed domain source.
    * @param request - domain page request.
+   * @param through - inclusive journal cursor that fixes the source read.
    * @param signal - cancellation lifetime shared with the logical stream.
-   * @returns the requested page.
+   * @returns the requested page, whose tail equals `through` unless the domain request selects older entries.
    */
-  protected abstract readPage(request: PageRequest, signal: AbortSignal): Promise<Page>
+  protected abstract readPage(request: PageRequest, through: Cursor, signal: AbortSignal): Promise<Page>
 
   /**
    * Derive an unbounded-tail request from the initial page request.
@@ -172,7 +173,7 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
    */
   async prepend(request: PageRequest): Promise<void> {
     if (!this.opened || this.disposed) throw new Error(`${this.options.name} is not open`)
-    const page = await this.readPage(request, this.stream.signal)
+    const page = await this.readPage(request, this.currentCursor(), this.stream.signal)
     this.stream.signal.throwIfAborted()
     const entries = this.options.entries(page)
     this.assertPage(entries)
@@ -325,14 +326,23 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
     iterator: AsyncIterator<JournalStreamItem<Entry, Cursor>>,
     queued: Entry[],
   ): Promise<JournalStreamItem<Entry, Cursor> | undefined> {
-    let read = await this.readPageWhileFollowing(request, generation, signal, iterator, queued)
+    let read = await this.readPageWhileFollowing(
+      request,
+      requiredCursor,
+      generation,
+      signal,
+      iterator,
+      queued,
+    )
     if (read.type === 'superseded') return read.item
     let page = read.page
+    this.assertPageThrough(page, requiredCursor)
     let entries = this.mergeReplacement(page, queued)
     let target = this.maxCursor(requiredCursor, queued)
     if (entries === undefined || this.options.compare(this.tailCursor(entries), target) < 0) {
       read = await this.readPageWhileFollowing(
         this.repairPageRequest(),
+        target,
         generation,
         signal,
         iterator,
@@ -340,6 +350,7 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
       )
       if (read.type === 'superseded') return read.item
       page = read.page
+      this.assertPageThrough(page, target)
       entries = this.mergeReplacement(page, queued)
       target = this.maxCursor(requiredCursor, queued)
     }
@@ -361,6 +372,7 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
 
   private async readPageWhileFollowing(
     request: PageRequest,
+    through: Cursor,
     generation: number,
     signal: AbortSignal,
     iterator: AsyncIterator<JournalStreamItem<Entry, Cursor>>,
@@ -369,7 +381,7 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
     | { readonly type: 'page'; readonly page: Page }
     | { readonly type: 'superseded'; readonly item: JournalStreamItem<Entry, Cursor> }
   > {
-    const page = this.readPage(request, signal).then(
+    const page = this.readPage(request, through, signal).then(
       value => ({ type: 'page' as const, value }),
       (error: unknown) => ({ type: 'page-error' as const, error }),
     )
@@ -458,6 +470,10 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
     this.hasResumeCursor = true
   }
 
+  private currentCursor(): Cursor {
+    return this.resumeCursor as Cursor
+  }
+
   private tailCursor(entries: readonly Entry[]): Cursor {
     const tail = entries.at(-1)
     return tail === undefined ? this.options.emptyCursor : this.options.cursor(tail)
@@ -471,6 +487,13 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
       if (!this.options.follows(this.options.cursor(previous), this.options.cursor(entry))) {
         throw new Error(`${this.options.name} page contains discontinuous entries`)
       }
+    }
+  }
+
+  private assertPageThrough(page: Page, through: Cursor): void {
+    const tail = this.tailCursor(this.options.entries(page))
+    if (this.options.compare(tail, through) !== 0) {
+      throw new Error(`${this.options.name} page did not end at its requested cursor`)
     }
   }
 }

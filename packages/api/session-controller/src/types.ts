@@ -366,6 +366,8 @@ export interface SessionWireEvent {
 /** One message-aligned backwards-history request. */
 export interface SessionPageRequest {
   readonly address: SessionAddress
+  /** Inclusive log cut obtained from the corresponding follow opening frame. */
+  readonly throughSeq: number
   readonly beforeSeq?: number
   readonly maxMessages?: number
 }

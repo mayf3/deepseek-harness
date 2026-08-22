@@ -133,7 +133,7 @@ export class FakeApiClient implements IApiClient {
   readonly defaultModel: ModelSelection = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
   onRename: (payload: unknown) => Promise<RpcResponse<{ title: string; seq: number }>> = () => Promise.resolve(ok({ title: 'fk-renamed', seq: 0 }))
   onFork: (payload: unknown) => Promise<RpcResponse<{ sessionId: SessionId }>> = () => Promise.resolve(ok({ sessionId: 'fk-fork' as SessionId }))
-  onHistory: (payload: { sessionId: SessionId; beforeSeq?: number; maxMessages?: number })
+  onHistory: (payload: { sessionId: SessionId; throughSeq?: number; beforeSeq?: number; maxMessages?: number })
   => Promise<RpcResponse<SessionPage>> =
     () => Promise.resolve(ok({ events: [], hasMore: false }))
 
@@ -186,7 +186,7 @@ export class FakeApiClient implements IApiClient {
   private readonly followConns = new Map<SessionId, ValueStreamConn<SessionFollowFrame>[]>()
   private readonly controlConns: ValueStreamConn<SessionControlFrame>[] = []
   private readonly workspaceConns: ValueStreamConn<WorkspaceFollowFrame>[] = []
-  private readonly openingPages = new Map<string, Promise<RemoteResult<SessionPage>>>()
+  private readonly openingPages = new Map<string, Promise<RpcResponse<SessionPage>>>()
   /** Optional Host opening cursor override for stale-page and reconnect tests. */
   followCursor: number | undefined
   controlBaseline: SessionControlBaseline = {
@@ -415,17 +415,21 @@ export class FakeApiClient implements IApiClient {
       const opening = this.openingPages.get(key)
       if (opening !== undefined) {
         this.openingPages.delete(key)
-        return opening
+        return this.fetchPage(request, opening)
       }
     }
     return this.fetchPage(request)
   }
 
-  private fetchPage(request: SessionPageRequest): Promise<RemoteResult<SessionPage>> {
+  private async fetchPage(
+    request: SessionPageRequest,
+    response?: Promise<RpcResponse<SessionPage>>,
+  ): Promise<RemoteResult<SessionPage>> {
     const sessionId = addressSessionId(request.address)
     const payload = request.address.kind === 'session'
       ? {
         sessionId,
+        throughSeq: request.throughSeq,
         ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
         ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
       }
@@ -433,15 +437,25 @@ export class FakeApiClient implements IApiClient {
         parentSessionId: request.address.parentSessionId,
         childSessionId: request.address.childSessionId,
         mode: request.address.mode,
+        throughSeq: request.throughSeq,
         ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
         ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
       }
     const method = request.address.kind === 'session' ? 'session.history' : 'subagent.history'
-    return this.remoteResult(method, payload, this.onHistory({
+    const result = await this.remoteResult(method, payload, response ?? this.onHistory({
       sessionId,
+      throughSeq: request.throughSeq,
       ...request.beforeSeq === undefined ? {} : { beforeSeq: request.beforeSeq },
       ...request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages },
     }))
+    if (!result.ok) return result
+    return {
+      ok: true,
+      value: {
+        ...result.value,
+        events: result.value.events.filter(entry => entry.event.seq <= request.throughSeq),
+      },
+    }
   }
 
   private async *openFollow(
@@ -450,13 +464,13 @@ export class FakeApiClient implements IApiClient {
   ): AsyncGenerator<SessionFollowFrame> {
     const sessionId = addressSessionId(request.address)
     const key = addressKey(request.address)
-    const initialPage = this.fetchPage({ address: request.address, maxMessages: 50 })
+    const initialPage = this.onHistory({ sessionId, maxMessages: 50 })
     this.openingPages.set(key, initialPage)
     const conns = this.followConns.get(sessionId) ?? []
     if (!this.followConns.has(sessionId)) this.followConns.set(sessionId, conns)
     const stream = this.openValueStream(conns, signal)
     try {
-      const page = await initialPage
+      const page = (await initialPage).result
       const cursor = this.followCursor ?? (page.ok ? page.value.events.at(-1)?.event.seq ?? -1 : -1)
       yield { type: 'opened', cursor }
       yield* stream.values

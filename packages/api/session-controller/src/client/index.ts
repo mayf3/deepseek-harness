@@ -28,7 +28,7 @@ export {
 export function apply(): void {}
 
 /** Pagination fields bound to an already-addressed Session journal. */
-export type ClientSessionPageRequest = Omit<SessionPageRequest, 'address'>
+export type ClientSessionPageRequest = Omit<SessionPageRequest, 'address' | 'throughSeq'>
 
 /** Complete generated `ctx.remote.session` namespace. */
 export type SessionRemote = ClientRemote['session']
@@ -148,10 +148,11 @@ export class SessionEventStream extends RemoteJournalStream<
   /** @inheritdoc */
   protected override async readPage(
     request: ClientSessionPageRequest,
+    throughSeq: number,
     signal: AbortSignal,
   ): Promise<SessionPage> {
     const result = await this.remote.session.page(
-      { address: this.address, ...request },
+      { address: this.address, throughSeq, ...request },
       signal,
     )
     if (!result.ok) {

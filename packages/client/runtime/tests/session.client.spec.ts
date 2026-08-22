@@ -403,7 +403,10 @@ describe('paging', () => {
     await session.open()
     await session.loadOlder()
     const snapshot = session.getSnapshot()
-    expect(api.callsOf('session.history')).toMatchObject([{}, { beforeSeq: 6 }].map(p => ({ sessionId: SID, ...p })))
+    expect(api.callsOf('session.history')).toMatchObject([
+      { sessionId: SID, throughSeq: 11 },
+      { sessionId: SID, throughSeq: 11, beforeSeq: 6 },
+    ])
     expect(snapshot.hasMore).toBe(false)
     expect(snapshot.nodes.map(n => n.seq)).toEqual([1, 3, 7, 9])
   })
@@ -477,7 +480,7 @@ describe('prompt and cancel errors', () => {
     expect(prompted).toEqual({ ok: true, value: { accepted: true } })
     expect(cancelled).toEqual({ ok: true, value: { accepted: true } })
     expect(api.callsOf('subagent.history')).toEqual([
-      { parentSessionId: PARENT, childSessionId: SID, mode: 'continuable', maxMessages: 50 },
+      { parentSessionId: PARENT, childSessionId: SID, mode: 'continuable', throughSeq: -1, maxMessages: 50 },
     ])
     expect(api.callsOf('subagent.prompt')).toEqual([
       {
@@ -529,7 +532,7 @@ describe('prompt and cancel errors', () => {
     expect(prompted).toMatchObject({ ok: false, error: { code: 'subagent-not-resumable' } })
     expect(cancelled).toMatchObject({ ok: false, error: { code: 'subagent-delivery-unavailable' } })
     expect(api.callsOf('subagent.history')).toEqual([
-      { parentSessionId: PARENT, childSessionId: SID, mode: 'one-shot', maxMessages: 50 },
+      { parentSessionId: PARENT, childSessionId: SID, mode: 'one-shot', throughSeq: -1, maxMessages: 50 },
     ])
     expect(api.callsOf('subagent.prompt')).toEqual([])
     expect(api.callsOf('subagent.interrupt')).toEqual([])
@@ -752,35 +755,21 @@ describe('remaining branches', () => {
     expect(notified).toBe(seen)
   })
 
-  it('an opening cursor past the window tail triggers the second stitch pull in doOpen', async () => {
-    const { api, session } = makeSession()
-    const full = [...plainTurn(0, 0, 'a', 'b'), ...plainTurn(6, 1, 'c', 'd')]
-    let call = 0
-    api.onHistory = () => {
-      call++
-      return histResponse(call === 1 ? plainTurn(0, 0, 'a', 'b') : full)
-    }
-    api.followCursor = 11
-    await session.open()
-    expect(call).toBe(2)
-    expect(session.getSnapshot().nodes.map(n => n.seq)).toEqual([1, 3, 7, 9])
-  })
-
-  it('a failed opening repair rejects the incomplete window and reports the unresolved gap', async () => {
+  it('rejects an opening page that does not end at the opening cursor', async () => {
     const { api, session } = makeSession()
     let call = 0
     api.onHistory = () => {
       call++
-      return call === 1
-        ? histResponse(plainTurn(0, 0, 'a', 'b'))
-        : Promise.resolve(err({ code: 'internal', message: 'stitch pull down', details: {} }))
+      return histResponse(plainTurn(0, 0, 'a', 'b'))
     }
     api.followCursor = 11
     await session.open()
-    expect(call).toBe(2)
+    expect(call).toBe(1)
     const snapshot = session.getSnapshot()
     expect(snapshot.openState).toBe('error')
-    expect(snapshot.openError).toMatchObject({ code: 'internal', message: 'stitch pull down' })
+    expect(snapshot.openError).toMatchObject({
+      code: 'internal', message: 'session event stream page did not end at its requested cursor',
+    })
     expect(snapshot.nodes).toEqual([])
   })
 
@@ -890,29 +879,6 @@ describe('remaining branches', () => {
     })) // success, but its generation is gone
     await Promise.all([opening, resynced])
     expect(session.getSnapshot().nodes.map(n => n.seq)).toEqual([7, 9]) // only the fresh generation's window
-  })
-
-  it('drops a stale stitch pull (second doOpen fetch) superseded mid-flight by resync', async () => {
-    const { api, session } = makeSession()
-    const secondPull = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
-    let call = 0
-    api.onHistory = () => {
-      call++
-      if (call === 1) return histResponse(plainTurn(0, 0, 'a', 'b')) // first page: tail 5
-      if (call === 2) return secondPull.promise // gap-stitch pull: held
-      return histResponse(plainTurn(6, 1, 'c', 'd'))
-    }
-    api.followCursor = 11
-    const opening = session.open() // triggers the second pull, which parks
-    await vi.waitFor(() => { expect(call).toBe(2) })
-    const resynced = session.resync()
-    secondPull.resolve(ok({
-      events: entries([...plainTurn(0, 0, 'a', 'b'), ...plainTurn(6, 1, 'c', 'd')]) as never[],
-      hasMore: false,
-      modelSelection: { provider: 'deepseek-official', model: 'stale' },
-    }))
-    await Promise.all([opening, resynced])
-    expect(session.getSnapshot().openState).toBe('open')
   })
 
   it('drops a gap repair superseded by a full resync while its pull was in flight', async () => {

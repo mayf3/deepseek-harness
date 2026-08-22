@@ -56,9 +56,22 @@ export class SessionHistoryController {
   async page(request: SessionPageRequest, signal: AbortSignal): Promise<SessionPage> {
     validatePageRequest(request)
     const source = await this.sourceFor(request.address, signal)
-    const scope = await this.presenterScopeFor(addressId(request.address), source)
     signal.throwIfAborted()
-    const events = sourceEvents(source)
+    const sourceLog = sourceEvents(source)
+    const sourceCursor = sourceLog.at(-1)?.seq ?? -1
+    if (request.throughSeq > sourceCursor) {
+      reject(
+        'bad-request',
+        `session page through seq ${String(request.throughSeq)} is past cursor ${String(sourceCursor)}`,
+        {},
+      )
+    }
+    const events = sourceLog.filter(event => event.seq <= request.throughSeq)
+    if ((events.at(-1)?.seq ?? -1) !== request.throughSeq) {
+      reject('internal', `session log does not contain through seq ${String(request.throughSeq)}`, {})
+    }
+    const scope = await this.presenterScopeFor(addressId(request.address), source, events)
+    signal.throwIfAborted()
     const page = paginate(events, request.beforeSeq, request.maxMessages ?? DEFAULT_MAX_MESSAGES)
     const entries = page.events.map(event => entryFor(this.ctx, event, page.events, scope))
     const projections = request.beforeSeq === undefined
@@ -106,9 +119,9 @@ export class SessionHistoryController {
     signal.addEventListener('abort', onAbort, { once: true })
     try {
       const source = await this.sourceFor(address, signal)
-      const scope = await this.presenterScopeFor(target, source)
+      const events = [...sourceEvents(source)]
+      const scope = await this.presenterScopeFor(target, source, events)
       signal.throwIfAborted()
-      const events = sourceEvents(source)
       const cursor = events.at(-1)?.seq ?? -1
       if (afterSeq !== undefined && afterSeq > cursor) {
         reject('bad-request', `session event resume seq ${String(afterSeq)} is past cursor ${String(cursor)}`, {})
@@ -168,14 +181,18 @@ export class SessionHistoryController {
     return { kind: 'detached', header: inspected.meta, events: inspected.events }
   }
 
-  private async presenterScopeFor(sessionId: SessionId, source: SessionSource): Promise<ScopeKey | undefined> {
+  private async presenterScopeFor(
+    sessionId: SessionId,
+    source: SessionSource,
+    events: readonly SessionEvent[],
+  ): Promise<ScopeKey | undefined> {
     const live = this.ctx.get('agents')?.get(sessionId)
     if (live !== undefined) return live
     const presets = this.ctx.get('agentPresets')
     if (presets === undefined) return undefined
     const session = source.kind === 'attached'
-      ? { header: source.session.header, events: source.session.events }
-      : { header: source.header, events: source.events }
+      ? { header: source.session.header, events }
+      : { header: source.header, events }
     try {
       return await presets.standingKeyFor(resolveSessionPreset(session))
     } catch {
@@ -191,7 +208,8 @@ export class SessionHistoryController {
     const registry = this.ctx.get('sessionProjections')
     if (registry === undefined) return undefined
     try {
-      const snapshot = source.kind === 'attached'
+      const throughSeq = events.at(-1)?.seq ?? -1
+      const snapshot = source.kind === 'attached' && source.session.seq - 1 === throughSeq
         ? registry.snapshot(source.session)
         : registry.restore({}, events, 0).snapshot
       return {
@@ -208,6 +226,9 @@ export class SessionHistoryController {
 }
 
 function validatePageRequest(request: SessionPageRequest): void {
+  if (!Number.isSafeInteger(request.throughSeq) || request.throughSeq < -1) {
+    reject('bad-request', 'throughSeq must be an integer greater than or equal to -1', {})
+  }
   if (request.beforeSeq !== undefined
     && (!Number.isSafeInteger(request.beforeSeq) || request.beforeSeq < 0)) {
     reject('bad-request', 'beforeSeq must be a non-negative safe integer', {})

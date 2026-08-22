@@ -133,8 +133,8 @@ describe('Session Client stream adapters', () => {
 
     expect(remote.followRequests).toEqual([{ address: ADDRESS }])
     expect(remote.pageRequests).toEqual([
-      { address: ADDRESS, maxMessages: 50 },
-      { address: ADDRESS, beforeSeq: 2, maxMessages: 50 },
+      { address: ADDRESS, throughSeq: 3, maxMessages: 50 },
+      { address: ADDRESS, throughSeq: 4, beforeSeq: 2, maxMessages: 50 },
     ])
     expect(changes).toMatchObject([
       { type: 'replace', entries: [entry(2), entry(3)], hasMore: true },
@@ -175,6 +175,10 @@ describe('Session Client stream adapters', () => {
       { address: ADDRESS },
       { address: ADDRESS, afterSeq: 2 },
     ])
+    expect(remote.pageRequests).toEqual([
+      { address: ADDRESS, throughSeq: 1 },
+      { address: ADDRESS, throughSeq: 4 },
+    ])
     expect(changes.map(change => change.type)).toEqual(['replace', 'append', 'replace'])
     expect(carrierFailed).toHaveBeenCalledWith(lost)
     await stream.dispose()
@@ -197,6 +201,7 @@ describe('Session Client stream adapters', () => {
       .toEqual(failure)
     expect(sessionStreamFailure(new Error('local'))).toBeUndefined()
     expect(remote.signals[0]?.aborted).toBe(true)
+    expect(remote.pageRequests).toEqual([{ address: ADDRESS, throughSeq: -1 }])
   })
 
   it('maps the Host-wide control baseline and deltas into one snapshot stream', async () => {

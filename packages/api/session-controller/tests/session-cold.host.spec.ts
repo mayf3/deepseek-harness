@@ -305,6 +305,7 @@ describe('cold history recovery view', () => {
 
     const history = await remote.page({
       address: { kind: 'session', sessionId },
+      throughSeq: 1,
       beforeSeq: 2,
       maxMessages: 10,
     })
@@ -476,6 +477,7 @@ describe('subagent ownership fence', () => {
         childSessionId: sessionId,
         mode: 'continuable',
       },
+      throughSeq: 3,
     }, new AbortController().signal)
     expect(history.events.map(entry => entry.event.type)).toEqual(events.map(event => event.type))
     expect(ctx.agents.get(sessionId)).toBeUndefined()
@@ -710,6 +712,7 @@ describe('degenerate composition (no persistence, no factory)', () => {
     // No persistence means cold history cannot inspect a transcript.
     const response = await remote.page({
       address: { kind: 'session', sessionId: sid('session-ghost') },
+      throughSeq: -1,
     })
     expect(response.ok).toBe(false)
     if (!response.ok) {
@@ -732,6 +735,7 @@ describe('degenerate composition (no persistence, no factory)', () => {
 
     const response = await remote.page({
       address: { kind: 'session', sessionId: sid('session-missing') },
+      throughSeq: -1,
     })
     expect(response.ok).toBe(false)
     if (!response.ok) expect(response.error.code).toBe('session-not-found')
