@@ -62,7 +62,6 @@ export type RequestErrorAction = { kind: 'retry' } | undefined
 export type SessionStartSource = 'startup' | 'resume' | 'clear' | 'compact'
 
 declare module './types.ts' {
-  /** Public live-agent handle. */
   interface Agent {
     /** The provider route and model this agent's requests use. */
     readonly options: AgentOptions

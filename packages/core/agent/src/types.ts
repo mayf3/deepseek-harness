@@ -8,7 +8,7 @@ import type { UserMessage } from '@deepseek-ai/dsh-llm/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TypertContext, TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
 
-/** Minimum Agent identity visible to cross-process event declarations. */
+/** Public live-agent handle; the runtime face augments its live capabilities. */
 export interface Agent {
   /** Session-backed Agent identity. */
   readonly id: SessionId

@@ -126,13 +126,15 @@ Session control 与 Workspace state 各使用一个独立的 `RemoteSnapshotStre
 
 repair 期间旧 window 保持可读；page 与期间积累的 live entries 拼成连续窗口后只发布一次 `replace`，不会把半修复状态暴露给消费者。
 
+若 page 请求随物理 carrier generation 一起取消，journal 等待下一 generation 的 opening cursor，再以新 cursor 重读 page；该取消不会作为 terminal page failure 泄漏给领域对象。
+
 `RemoteJournalStream` 拥有 opening cursor、resume cursor、分页、重连 catch-up、重叠去重和 gap repair。领域 Session 对象不复制这些状态机。
 
 ### Session Controller
 
 `packages/api/session-controller` 提供 Host `ctx.sessionController` 与生成的 `ctx.remote.session` namespace。
 
-它拥有 Session list、search、create、models、selectModel、rename、fork、prompt、attachment、updateQueue、cancel、page、follow、control 与 respond。
+它拥有 Session list、search、create、models、selectModel、rename、fork、prompt、attachment、updateQueue、cancel、page、follow 与 control。
 
 包内的 agent、commands、control、history 与 list controller 分开实现，但 Session 身份解析、激活策略、subagent ownership 和 Remote 错误投影只有一个公开 owner。
 
@@ -151,7 +153,7 @@ Session Remote 方法传递 `SessionId` 或 `SessionAddress`，不靠参数类�
 | `session.follow(address)` | 冷读当前 cursor，等待将来的 append | 建联和等待都不恢复 Agent |
 | `session.control()` | 当前 attached Agent、pending registry 与进程内 registry | baseline 与重连不恢复 Agent |
 | `session.attachment`、fork 源读取 | 已授权的持久 Session 数据 | 读取不恢复 Agent |
-| `session.updateQueue`、`cancel`、`respond` | 仅命中当前 live 或 pending 对象 | 不为已消失状态恢复 Agent |
+| `session.updateQueue`、`cancel` | 仅命中当前 live Agent | 不为已消失状态恢复 Agent |
 | `models`、`selectModel`、`rename`、`prompt` | 命令解析目标 Session | 仅按方法约定显式恢复 |
 | `create` 与 fork 目标 | 新 Session／Agent | 用户命令提供创建授权 |
 
@@ -191,13 +193,11 @@ initial page、repair page 或 follow 的 terminal failure 进入当前 Session 
 
 `session.control()` 是 Host 范围的 snapshot stream，一个浏览器可观察所有当前 live Session 的瞬态状态，而不必为每个 transcript 打开 journal。
 
-每个 generation 先发完整 baseline，再发 queue、jobs、projection、approval 与 question 的增量帧。baseline 读取 attached Agent 和进程内 registry，不恢复冷 Agent。
+每个 generation 先发完整 baseline，再发 queue、jobs 与 projection 增量帧。baseline 读取 attached Agent 和进程内 registry，不恢复冷 Agent。
 
 queue 与 jobs 使用完整 replacement 值并按 last-wins 应用。Agent attach、detach、Session disposal 与 owner disposal 都能用空值或新 baseline 清除陈旧镜像。
 
-pending approval 与 question 使用稳定 `interactionId`。opening baseline 包含仍待处理的请求，resolved 帧撤销请求，`session.respond` 使用同一 id，保留首个有效应答者获胜与过期应答明确失败的语义。
-
-原始 `approval/request` 与 `user-questions/request` 同时是可转发 waterfall。若某个 Agent-scoped Client listener claim，请求直接返回；若所有已投递 Client 都调用 `next()`，原 Cordis waterfall 继续到后续 Host listener，因此 control provider 仍能提供可重连的 pending 镜像。
+原始 `approval/request` 与 `user-questions/request` 是可转发 waterfall。若某个 Agent-scoped Client listener claim，请求直接返回；若所有已投递 Client 都调用 `next()`，原 Cordis waterfall 继续到后续 Host listener。Session control 不保存或重放这些请求。
 
 projection baseline 与 tail page 的日志切点独立产生，Client 总是保留较高 seq 的值。订阅 live projection 不会为取得值而启动 Agent。
 
@@ -274,6 +274,10 @@ Host caller signal 取消、Agent Context 释放、Client generation 结束和 l
 
 Client 通过现有 HTTP unary RPC `$events/result` 回送 `next`、result 或 rejection；下行事件仍复用 Remote WebSocket mux，不为应答建立 duplex WebSocket。
 
+Gateway 只验证 waterfall 返回值能无损表示为 JSON，不解释业务字段。Question 回答的 option 归属等语义由请求方或 UI 领域承担，transport 不重复校验。
+
+`UserQuestionService` 在请求期间观察到调用方 `AbortSignal` 已取消、且 provider 抛出普通错误时，将其归一为 `UserQuestionError` 的 `ASK_ABORTED`，并把原错误保留为 `cause`；provider 已给出的领域错误保持不变。
+
 `$events/result` 失败会令当前 Connection generation 失败。Host 随 generation 撤销该 Client 的 delivery，pending event 在下一 generation 重放，Client 不维护第二套结果重试队列。
 
 普通 `$on` 通知在断线后不重放。凡正确性依赖恢复的数据必须有 query、cursor 或 opening baseline，不能依赖 Remote Event 恰好送达。
@@ -298,7 +302,7 @@ API Proxy 只承接自身拥有的独立业务 API，不是 Session、Workspace�
 
 **把 Session transport 与 Session commands 拆成两个公开包。** 两者共同依赖 Session address、Agent 激活策略、subagent ownership、错误映射和 Client 挂载顺序；一个公开 Controller 保持统一所有权，内部 class 仍可独立演化。
 
-**把 queue、jobs、projection、Workspace 与日志都改成普通 `$on`。** 普通事件没有 reconnect baseline、cursor 或 gap repair，漏掉一次推送就会留下永久陈旧状态；只有无需恢复或可由独立查询修复的通知适合 `$on`。
+**把 queue、jobs、projection、Workspace 与日志都改成普通 `$on`。** 普通事件没有 reconnect baseline、cursor 或 gap repair，漏掉一次推送就会留下永久陈旧状态；只有无需恢复、可由独立查询修复，或以 waterfall 本身持有请求生命周期的通知适合 `$on`。
 
 **让每个领域 Controller 继承一个 page／follow／retry 基类。** Session journal 与 Workspace snapshot 的 opening、恢复和排序规则不同；Gateway 的三个组合式 stream 对象复用 transport 生命周期，同时让领域 adapter 只声明自己的 frame 语义。
 
@@ -328,7 +332,7 @@ Connection 测试固定 generation source 缺失、重复注册、撤回、`$eve
 
 Session Host 测试固定 cold page／follow 不增加 attached Agent、显式 prompt 后 cold follow 收到连续事件、direct subagent ownership、message-aligned pagination 和终止错误投影。
 
-Session control 测试固定 baseline-first、冷 Session 不恢复、attach／detach 清理、queue 与 jobs replacement、projection watermark，以及 pending interaction 的稳定 id 与首个应答者获胜。
+Session control 测试固定 baseline-first、冷 Session 不恢复、attach／detach 清理、queue 与 jobs replacement，以及 projection watermark。
 
 Session Client 测试固定每 Session 单一 journal owner、旧 open epoch 不写回、control 与 journal 独立取消，以及 carrier retry 期间保留已发布窗口。
 
@@ -340,7 +344,7 @@ Remote Event 类型测试拒绝未选择事件、非 void 的 unscoped 事件、
 
 Remote Event Host 测试固定 listener-before-ready、payload 校验、pending replay、多 Client first-result、all-next delegation、rejection、Host cancellation、Context release 和 losing-client cancel。
 
-Remote Event Client 测试固定实例私有 key、Cordis 注册顺序、Agent Context 解析、`next`、result、rejection、cancel、旧 generation 回包拒绝和 `$events/result` 失败导致 generation 结束。
+Remote Event Client 测试固定实例私有 key、Cordis 注册顺序、Agent Context 解析、`next`、result、rejection、cancel、旧 generation 回包拒绝和 `$events/result` 失败导致 generation 结束；User Question 测试固定进行中 signal 取消的错误归一化及 cause 保留。
 
 缺失 source、重复 source、撤回 source、非 ready 首项、未知 discriminant、额外字段与非 JSON 值都在各自 wire 入口响亮失败。
 

@@ -719,18 +719,11 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<{ meta: SessionH
  * @returns one complete baseline followed by live replacement frames.
  */
 @Remote({ mode: 'stream' }) control(signal: AbortSignal): AsyncIterable<SessionControlFrame>
-
-/**
- * Settle one still-pending approval or structured question.
- * @param request - interaction identity and caller response.
- * @returns whether a matching pending interaction accepted the response.
- */
-@Remote('respond') respond(request: SessionRespondRequest): SessionRespondReceipt
 ```
 
-Types: [SessionHeader](persistence.md) · [SessionId](core.md) · [SessionSearchRequest](session-query.md)
+Types: [SessionHeader](persistence.zh.md) · [SessionId](core.zh.md) · [SessionSearchRequest](session-query.zh.md)
 
-Source: [`packages/api/session-controller/src/index.ts:66`](../../packages/api/session-controller/src/index.ts)
+Source: [`packages/api/session-controller/src/index.ts`](../../packages/api/session-controller/src/index.ts)
 
 <a id="ctxsessions--sessionstore"></a>
 
@@ -888,9 +881,9 @@ One user-authored durable message advanced Session list activity.
 'api-session/activity'(sessionId: SessionId, updatedAt: number): void
 ```
 
-Types: [SessionId](core.md)
+Types: [SessionId](core.zh.md)
 
-Source: [`packages/api/session-controller/src/types.ts:529`](../../packages/api/session-controller/src/types.ts)
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
 
 <a id="api-sessionadded--emit"></a>
 
@@ -907,7 +900,7 @@ A Session became visible to Session list consumers.
 'api-session/added'(summary: SessionSummary): void
 ```
 
-Source: [`packages/api/session-controller/src/types.ts:509`](../../packages/api/session-controller/src/types.ts)
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
 
 <a id="api-sessionerror--emit"></a>
 
@@ -925,9 +918,9 @@ One Agent failed outside a durable turn position.
 'api-session/error'(sessionId: SessionId, message: string): void
 ```
 
-Types: [SessionId](core.md)
+Types: [SessionId](core.zh.md)
 
-Source: [`packages/api/session-controller/src/types.ts:536`](../../packages/api/session-controller/src/types.ts)
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
 
 <a id="api-sessionremoved--emit"></a>
 
@@ -944,9 +937,9 @@ A Session left the live Host registry.
 'api-session/removed'(sessionId: SessionId): void
 ```
 
-Types: [SessionId](core.md)
+Types: [SessionId](core.zh.md)
 
-Source: [`packages/api/session-controller/src/types.ts:515`](../../packages/api/session-controller/src/types.ts)
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
 
 <a id="api-sessionstatus--emit"></a>
 
@@ -964,9 +957,9 @@ One Agent changed running state.
 'api-session/status'(sessionId: SessionId, running: boolean): void
 ```
 
-Types: [SessionId](core.md)
+Types: [SessionId](core.zh.md)
 
-Source: [`packages/api/session-controller/src/types.ts:522`](../../packages/api/session-controller/src/types.ts)
+Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/session-controller/src/types.ts)
 
 <a id="session-events"></a>
 
