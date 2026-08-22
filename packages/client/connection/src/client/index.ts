@@ -139,6 +139,12 @@ export interface ConnectionHandle {
   start(sinks: ConnectionSinks, config?: ConnectionConfig): { stop(): void }
 }
 
+interface ConnectionOwner {
+  readonly token: object
+  readonly source: ConnectionGenerationSource
+  readonly controller: ConnectionController
+}
+
 /**
  * Client plugin body: pick the api by page mode and provide ctx.connection.
  * @param ctx - client cordis context.
@@ -150,9 +156,8 @@ export function apply(ctx: Context): void {
   const transport = (globalThis as ClientTransportGlobal).__DSH_TRANSPORT__
   const api: IApiClient = fixtureClient ?? transport?.createApiClient() ?? new WebApiClient()
   const rpc = fixtureClient?.rpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream)
-  let started = false
   let generationSource: ConnectionGenerationSource | undefined
-  let controller: ConnectionController | undefined
+  let owner: ConnectionOwner | undefined
   let description: HostDescription | undefined
   const descriptionListeners = new Set<() => void>()
   const publishDescription = (next: HostDescription | undefined): void => {
@@ -165,6 +170,12 @@ export function apply(ctx: Context): void {
         console.error('[connection] host-description listener threw:', error)
       }
     }
+  }
+  const releaseOwner = (current: ConnectionOwner): void => {
+    if (owner !== current) return
+    owner = undefined
+    current.controller.stop()
+    publishDescription(undefined)
   }
   const handle: ConnectionHandle = {
     api,
@@ -185,36 +196,39 @@ export function apply(ctx: Context): void {
       return () => {
         if (generationSource !== source) return
         generationSource = undefined
-        controller?.stop()
-        publishDescription(undefined)
+        const current = owner
+        if (current?.source === source) releaseOwner(current)
       }
     },
     start(sinks, config) {
-      if (started) throw new Error('connection: the stream loop is already owned by another consumer')
-      if (generationSource === undefined) throw new Error('connection: no generation source is registered')
-      started = true
-      controller = new ConnectionController(api, generationSource, {
+      if (owner !== undefined) throw new Error('connection: the stream loop is already owned by another consumer')
+      const source = generationSource
+      if (source === undefined) throw new Error('connection: no generation source is registered')
+      const token = {}
+      const controller = new ConnectionController(api, source, {
         ...sinks,
         onConnected: (next) => {
+          if (owner?.token !== token) return
           publishDescription(next)
           // A description subscriber may synchronously stop the loop. In that
           // case publishDescription(undefined) has already retracted this
           // generation, so do not leak its stale connected notification to
           // the consumer sink afterward.
-          if (!Object.is(description, next)) return
+          if (owner?.token !== token || !Object.is(description, next)) return
           sinks.onConnected?.(next)
         },
         onStateChange: (state) => {
+          if (owner?.token !== token) return
           if (state === 'reconnecting') publishDescription(undefined)
+          if (owner?.token !== token) return
           sinks.onStateChange?.(state)
         },
       }, config ?? {})
+      const current = { token, source, controller }
+      owner = current
       controller.start()
       return {
-        stop: () => {
-          controller?.stop()
-          publishDescription(undefined)
-        },
+        stop: () => { releaseOwner(current) },
       }
     },
   }

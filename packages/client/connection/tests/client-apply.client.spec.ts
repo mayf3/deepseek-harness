@@ -133,6 +133,29 @@ describe('connection client apply', () => {
     errorSpy.mockRestore()
   })
 
+  it('allows a replacement owner and ignores the previous owner handle', async () => {
+    ;(globalThis as Win).location = { hostname: 'localhost', search: '?fixture' }
+    const handle = await mount()
+    const generation = installGeneration(handle)
+
+    const first = handle.start({})
+    await vi.waitFor(() => {
+      expect(handle.hostDescription.getSnapshot()?.canOpenPath).toBe(true)
+    })
+    first.stop()
+    expect(handle.hostDescription.getSnapshot()).toBeUndefined()
+
+    const second = handle.start({})
+    await vi.waitFor(() => {
+      expect(handle.hostDescription.getSnapshot()?.canOpenPath).toBe(true)
+    })
+    first.stop()
+    expect(handle.hostDescription.getSnapshot()?.canOpenPath).toBe(true)
+
+    second.stop()
+    generation.end()
+  })
+
   it('does not announce a generation synchronously stopped by a description subscriber', async () => {
     ;(globalThis as Win).location = { hostname: 'localhost', search: '?fixture' }
     const handle = await mount()
