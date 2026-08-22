@@ -29,7 +29,7 @@ dsh --help                          # the launcher's own help
 
 ## Profiles
 
-A profile directory holds a `package.json` (out-of-tree plugin dependencies plus the profile manifest `dsh.profile` with its ordered `bundles` list) and a `cordis.patch.yml` (the user's own patch layer).
+A profile directory holds a `package.json` (out-of-tree plugin dependencies plus the profile manifest `dsh.profile` with its ordered `bundles` list and `patchReload` lifecycle) and a `cordis.patch.yml` (the user's own patch layer). `patchReload: live` watches the profile and home-level patch files; `startup` applies them once.
 
 The tree composes over an empty root:
 - each bundle's patch in `dsh.profile.bundles` order

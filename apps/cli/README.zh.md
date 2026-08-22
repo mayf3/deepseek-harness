@@ -31,7 +31,7 @@ dsh --help                          # the launcher's own help
 
 ## Profile
 
-profile 目录包含一个 `package.json`，其中记录树外插件依赖，以及 profile manifest（元数据清单）`dsh.profile` 和其中按顺序排列的 `bundles` 列表；还包含一个 `cordis.patch.yml`，其中保存用户自己的 patch 层。
+profile 目录包含一个 `package.json`，其中记录树外插件依赖，以及 profile manifest（元数据清单）`dsh.profile`、其中按顺序排列的 `bundles` 列表与 `patchReload` 生命周期；还包含一个 `cordis.patch.yml`，其中保存用户自己的 patch 层。`patchReload: live` 监视 profile 与 home 级 patch 文件，`startup` 则只应用一次。
 
 配置树以空根为起点，依次叠加以下配置层：
 - `dsh.profile.bundles` 中各组合包的 patch

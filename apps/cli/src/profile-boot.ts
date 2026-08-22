@@ -2,8 +2,8 @@
  * Shared profile boot for every `dsh` surface: resolve the profile, stack its
  * patch layers (bundle layers in `dsh.profile.bundles` order, the profile's
  * own `cordis.patch.yml`, `--patch` overlays, the telemetry switch), mount the
- * tree over the profile's empty root config, keep the profile patch layer
- * live, and wire fail-loud plus bounded shutdown.
+ * tree over the profile's empty root config, apply its selected patch-reload
+ * lifecycle, and wire fail-loud plus bounded shutdown.
  *
  * App flags are not the launcher's business: the invocation's inner arguments
  * are provided to the tree through `ctx.cmdlineArgs`, where any injected app
@@ -258,14 +258,13 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     })
   })
   app.current = ctx
-  // A surface can dispose the whole tree while boot or this post-boot watcher
-  // setup is still in flight — a signal, or a fast one-shot's appExit. Loader
-  // presence and fiber state own liveness; the initial check skips a tree
-  // that already exited, and the catch below re-checks for an exit that
-  // landed mid-setup. Watching is unconditional: a one-shot surface exits
-  // through its bounded shutdown, which disposes the watchers before the
-  // loop drains.
-  if (!signalShutdown.signal.aborted
+  // A live-reload profile can dispose the whole tree while post-boot watcher
+  // setup is in flight — a signal or appExit. Loader presence and fiber state
+  // own liveness; the initial check skips a tree that already exited, and the
+  // catch below re-checks for an exit that landed mid-setup. Startup-frozen
+  // profiles apply every user layer above but install no HMR fallback or watcher.
+  if (composed.profile.patchReload === 'live'
+    && !signalShutdown.signal.aborted
     && ctx.fiber.state === FiberState.ACTIVE
     && ctx.get('loader') !== undefined) {
     try {
@@ -273,8 +272,8 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       // disables the shared module-reload `hmr` row (its reload lifecycle is
       // untested), so when the composition leaves no HMR service, mount a
       // watch-only instance with no module roots — cordis.patch.yml edits stay
-      // live on every long-lived surface. A silent skip would break the
-      // documented hot-reload contract. HMR injects the timer service, which a
+      // live for the profiles that select it. A silent skip would break their
+      // documented reload contract. HMR injects the timer service, which a
       // bare custom profile may not mount either.
       if (ctx.get('hmr') === undefined) {
         if (ctx.get('timer') === undefined) {

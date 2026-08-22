@@ -31,6 +31,7 @@ declare module '@deepseek-ai/cordis' {
 export {
   composeEntries,
   DEFAULT_PROFILE_BUNDLES,
+  DEFAULT_PROFILE_PATCH_RELOAD,
   healProfilesModuleFallback,
   initProfile,
   loadProfile,
@@ -47,6 +48,8 @@ export {
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
+  type ProfilePatchReload,
+  type ProfileTemplate,
 } from './profile.ts'
 
 /**
