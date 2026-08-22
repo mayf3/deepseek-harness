@@ -2275,6 +2275,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'webhookRuntime',
+    summary: 'Fire-and-forget rule runtime.',
+    description: 'Fire-and-forget rule runtime. Session creation is the only built-in action.',
+    methods: [
+      {
+        signature: 'register<K extends string>(rule: WebhookRule<K>): () => Promise<void>',
+        description: 'Register one trusted programmatic rule.',
+        parameters: [{ name: 'rule', description: 'unique id, provider kind, and arbitrary callback.' }],
+        returns: 'awaitable effect disposer that aborts and drains this rule\'s active callbacks.',
+      },
+      {
+        signature: 'dispatch<K extends string>(delivery: VerifiedWebhookDelivery<K>): void',
+        description: 'Start every currently matching rule and return before any callback settles.',
+        parameters: [{ name: 'delivery', description: 'authenticated provider data; snapshotted before dispatch.' }],
+        throws: ['synchronously when the runtime is closing or the delivery is malformed.'],
+      },
+    ],
+  },
+  {
     key: 'webServer',
     summary: 'The browser HTTP carrier service.',
     description: 'The browser HTTP carrier service. Activation listens immediately. Route registration order does not affect requests because configured named routes must be distinct, and the fallback handler answers anything not yet claimed during startup with 404 until its owner registers. A listen failure rejects initialization, and the boot process reports the failed fiber.',
@@ -4982,6 +5001,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface UserQuestionProvider {\n    ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>;\n}',
   },
   {
+    name: 'VerifiedWebhookDelivery',
+    declaration: 'export interface VerifiedWebhookDelivery<K extends string = string> {\n    readonly kind: K;\n    readonly source: WebhookSourceId;\n    readonly deliveryId: WebhookDeliveryId;\n    readonly event: WebhookEventOf<K>;\n    readonly receivedAt: number;\n}',
+  },
+  {
     name: 'WebBootEntry',
     declaration: 'export interface WebBootEntry {\n    id: string;\n    url: string;\n    rev: string;\n    inject?: string[];\n    immediately?: boolean;\n    external?: string[];\n}',
   },
@@ -5008,6 +5031,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WebFetchResultView',
     declaration: 'export interface WebFetchResultView {\n    card: \'web\';\n    kind: \'fetch\';\n    title?: string;\n    url: string;\n    statusCode: number;\n    truncated: boolean;\n}',
+  },
+  {
+    name: 'WebhookDeliveryId',
+    declaration: 'export type WebhookDeliveryId = Branded<\'WebhookDeliveryId\'>;',
+  },
+  {
+    name: 'WebhookEventMap',
+    declaration: 'export interface WebhookEventMap {\n}',
+  },
+  {
+    name: 'WebhookEventOf',
+    declaration: 'export type WebhookEventOf<K extends string> = K extends keyof WebhookEventMap ? WebhookEventMap[K] : JsonValue;',
+  },
+  {
+    name: 'WebhookModelSelection',
+    declaration: 'export interface WebhookModelSelection {\n    readonly provider: string;\n    readonly model: string;\n    readonly maxTokens?: number;\n}',
+  },
+  {
+    name: 'WebhookRule',
+    declaration: 'export interface WebhookRule<K extends string = string> {\n    readonly id: WebhookRuleId;\n    readonly kind: K;\n    run(delivery: Readonly<VerifiedWebhookDelivery<K>>, signal: AbortSignal): WebhookSessionRequest | null | Promise<WebhookSessionRequest | null>;\n}',
+  },
+  {
+    name: 'WebhookRuleId',
+    declaration: 'export type WebhookRuleId = Branded<\'WebhookRuleId\'>;',
+  },
+  {
+    name: 'WebhookSessionRequest',
+    declaration: 'export interface WebhookSessionRequest {\n    readonly workspacePath: string;\n    readonly title: string;\n    readonly prompt: string;\n    readonly agentPreset: string;\n    readonly permissionPreset: string;\n    readonly model?: WebhookModelSelection;\n}',
+  },
+  {
+    name: 'WebhookSourceId',
+    declaration: 'export type WebhookSourceId = Branded<\'WebhookSourceId\'>;',
   },
   {
     name: 'WebResultView',

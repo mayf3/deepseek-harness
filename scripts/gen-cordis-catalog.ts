@@ -113,6 +113,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   userQuestions: 'user-questions.md',
   web: 'web.md',
   workflowEngine: 'workflow.md',
+  webhookRuntime: 'webhook.md',
   workspaceRegistry: 'workspace.md',
 }
 
@@ -505,6 +506,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   WebSearchRequest: 'web.md',
   WebSearchResult: 'web.md',
   WorkflowRun: 'workflow.md',
+  VerifiedWebhookDelivery: 'webhook.md',
+  WebhookRule: 'webhook.md',
   PresetOption: 'permission-presets.md',
   PresetSpec: 'permission-presets.md',
   InvariantInstaller: 'invariants.md',

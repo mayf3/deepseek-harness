@@ -34,6 +34,7 @@ const root = resolve(import.meta.dirname, '..')
 // specifiers resolve from apps/cli rather than the examples workspace.
 const appOverlayFiles = new Set([
   'examples/web-cordis/cordis.yml',
+  'examples/web-github-review/cordis.yml',
   'examples/web-schedule/cordis.yml',
   ...globSync('examples/mcp-memory/*.cordis.yml', { cwd: root }),
 ])
