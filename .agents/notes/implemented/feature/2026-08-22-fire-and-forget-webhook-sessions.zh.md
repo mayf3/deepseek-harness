@@ -26,7 +26,7 @@ Patch 加载会把插入行中的相对插件名锚定到 patch 文件。因而�
 
 ## Session creation
 
-规则结果会指定本地 Workspace 路径、标题、文本提示词、agent preset、permission preset 与可选完整模型选择。runtime 会在变更状态前验证 preset，解析或创建规范 Workspace，以该路径作为 Session cwd 创建 Agent，在发布前挂载 preset，并在接纳提示词前附加 Session。
+规则结果会指定本地 Workspace 路径、标题、文本提示词、agent preset、permission preset，以及可选的明确提供方／模型路由与输出上限。没有明确路由时，runtime 会快照包含推理强度的完整实时默认选择，直到首个请求记录其持久 header。runtime 会在变更状态前验证 preset，解析或创建规范 Workspace，以该路径作为 Session cwd 创建 Agent，在发布前挂载 preset，并在接纳提示词前附加 Session。
 
 初始 follow-up 是普通持久 user-role 消息，并携带 webhook 提供方、来源、交付和规则来源信息。它的 inbox 插入是 webhook 操作的最后边界。之后的工作由普通 Session persistence 与 Agent 生命周期拥有；runtime 既不执行特殊 flush，也不等待轮次。
 

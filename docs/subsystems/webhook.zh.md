@@ -14,7 +14,7 @@ Webhook 子系统会把已通过身份验证的外部交付转换为可选的普
 
 `WebhookRule<K>` 包含唯一 id、提供方种类与 `run(delivery, signal)`。回调可以执行任意受信任代码。它返回 `null` 或一个 `WebhookSessionRequest`，并且异步工作若应在注册卸载时停止，就必须观察 signal。
 
-`WebhookSessionRequest` 要求绝对 `workspacePath`、标题、文本提示词、agent preset 与 permission preset。可选 `model` 会指定完整提供方／模型组合与可选输出 token 上限；省略时读取当前部署默认值。
+`WebhookSessionRequest` 要求绝对 `workspacePath`、标题、文本提示词、agent preset 与 permission preset。可选 `model` 会指定明确的提供方／模型路由与可选输出 token 上限，并使用该适配器的默认推理强度。省略时会快照包含推理强度的完整当前部署选择，直到首个请求记录持久 header。
 
 ## Fire-and-forget 分发
 

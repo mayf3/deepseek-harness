@@ -14,7 +14,7 @@ The Webhook subsystem turns authenticated external deliveries into optional ordi
 
 `WebhookRule<K>` contains a unique id, provider kind, and `run(delivery, signal)`. The callback may execute arbitrary trusted code. It returns `null` or one `WebhookSessionRequest`, and it must observe the signal for asynchronous work that should stop when the registration unloads.
 
-`WebhookSessionRequest` requires an absolute `workspacePath`, title, text prompt, agent preset, and permission preset. Optional `model` names a complete provider/model pair plus optional output-token cap; omission reads the current deployment default.
+`WebhookSessionRequest` requires an absolute `workspacePath`, title, text prompt, agent preset, and permission preset. Optional `model` names an explicit provider/model route plus optional output-token cap and uses that adapter's reasoning default. Omission snapshots the complete current deployment selection, including reasoning effort, until the first request records its durable header.
 
 ## Fire-and-forget dispatch
 

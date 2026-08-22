@@ -26,7 +26,7 @@ Patch loading anchors relative plugin names in inserted rows to the patch file. 
 
 ## Session creation
 
-A rule result names a local Workspace path, title, text prompt, agent preset, permission preset, and optional complete model selection. The runtime validates presets before mutation, resolves or creates the canonical Workspace, creates the Agent with that path as Session cwd, mounts the preset before publication, and attaches the Session before admitting the prompt.
+A rule result names a local Workspace path, title, text prompt, agent preset, permission preset, and optional explicit provider/model route with an output cap. Without that route, the runtime snapshots the complete live default, including reasoning effort, until the first request records its durable header. It validates presets before mutation, resolves or creates the canonical Workspace, creates the Agent with that path as Session cwd, mounts the preset before publication, and attaches the Session before admitting the prompt.
 
 The initial follow-up is an ordinary durable user-role message with webhook provider, source, delivery, and rule provenance. Its inbox insertion is the webhook operation's last boundary. Ordinary Session persistence and Agent lifecycle own later work; the runtime neither flushes specially nor waits for a turn.
 

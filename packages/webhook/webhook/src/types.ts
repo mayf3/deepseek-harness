@@ -24,7 +24,7 @@ export interface VerifiedWebhookDelivery<K extends string = string> {
   readonly receivedAt: number
 }
 
-/** Optional complete model selection for a webhook-created Agent. */
+/** Optional explicit model route and output cap for a webhook-created Agent. */
 export interface WebhookModelSelection {
   /** Registered provider route. */
   readonly provider: string
@@ -46,7 +46,7 @@ export interface WebhookSessionRequest {
   readonly agentPreset: string
   /** Sandbox and approval preset applied before prompt admission. */
   readonly permissionPreset: string
-  /** Optional explicit model; omission uses the current deployment default. */
+  /** Optional explicit route; omission uses the complete current default, including reasoning effort. */
   readonly model?: WebhookModelSelection
 }
 
