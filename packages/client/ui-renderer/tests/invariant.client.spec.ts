@@ -1,26 +1,26 @@
 /**
- * Runtime invariant companion: the 'slots/changed' emission-order audit —
+ * Renderer invariant companion: the 'slots/changed' emission-order audit —
  * a fired key must already carry a bumped version (emission follows the
  * applied mutation), bogus payloads fail loud, foreign events pass.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
-import * as RuntimeInvariant from '../src/invariant.ts'
-import { SlotRegistry } from '../src/client/slots.ts'
+import * as RendererInvariant from '../src/invariant.ts'
+import { SlotRegistry } from '../src/client/registry.ts'
 
 async function setup(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(InvariantRegistry, { enabled: true })
-  await ctx.plugin(RuntimeInvariant).await()
+  await ctx.plugin(RendererInvariant).await()
   return ctx
 }
 
 const emit = (ctx: Context, event: string, ...args: unknown[]): void => {
-  ;(ctx.emit as (event: string, ...args: unknown[]) => void)(event, ...args)
+  Reflect.apply(ctx.emit.bind(ctx), undefined, [event, ...args])
 }
 
-describe('runtime slots/changed invariant', () => {
+describe('renderer slots/changed invariant', () => {
   it('passes foreign events and a legitimate mutation-then-emission sequence', async () => {
     const ctx = await setup()
     expect(() => { emit(ctx, 'unrelated/event', 'x') }).not.toThrow()

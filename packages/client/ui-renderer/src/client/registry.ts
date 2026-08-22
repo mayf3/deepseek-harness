@@ -1,8 +1,8 @@
 /**
- * SlotRegistry: the cordis Service layer of the slot system over the pure
+ * SlotRegistry: the renderer-owned Cordis service over the pure
  * SlotCore (ui-slots owns registration semantics, the declaration ledger,
  * the load-time validations, and the unload cascade). This layer owns what
- * needs the runtime: the 'slots/changed' event bridge, register and
+ * needs a live application: the 'slots/changed' event bridge, register and
  * declaration injection through the caller's ctx.effect (fiber unload
  * collects both), the renderer installation contract (install()/renderSlot('root') +
  * the SlotRendererHost face), and the store INSTANCE axis — handle x scope
@@ -16,10 +16,12 @@
  * redundancy. */
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
-import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
+import { SlotCore, standardHookPropName } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
-  LiveSlotNode, LocaleFace, OwnerOf, SlotEntryDef, SlotMap, SlotRenderer, SlotRendererHost,
-  SlotScope, SlotSpec, StoreDecl, StoreFactory, StoredEntry, StoreInstanceLike,
+  HostObservable, LiveSlotNode, LocaleFace, OwnerOf, SlotEntryDef, SlotMap, SlotRenderer, SlotRendererHost,
+  RootStandardSourceContribution, ScopedStandardSourceBinding, SlotScope, SlotScopeAdapter, SlotSpec,
+  StandardSourceBinding,
+  StoreDecl, StoreFactory, StoredEntry, StoreInstanceLike,
 } from '@deepseek-ai/dsh-client-ui-slots'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -62,6 +64,8 @@ interface StoreAxisRecord {
   refs: number
   /** Root scope: the single instance under {@link ROOT_INSTANCE_KEY}; session scope: one per session id. */
   instances: Map<string, EngineStoreInstance>
+  /** Scope-lifetime registrations for Session instances. */
+  lifetimes: Map<string, () => void>
 }
 
 /** Type-erased options view the implementation works with (the typed overloads proved the shares). */
@@ -97,6 +101,31 @@ export class SlotRegistry extends Service {
   private _renderer: SlotRenderer | undefined
   private _locale: LocaleFace | undefined
   private _host: SlotRendererHost | undefined
+  private readonly _rootContributions: RootStandardSourceContribution[] = []
+  private readonly _rootListeners = new Set<() => void>()
+  private _rootBinding: StandardSourceBinding = {
+    key: undefined,
+    hooks: {},
+    keyedHooks: {},
+    props: {},
+  }
+  private readonly _rootSource = {
+    getSnapshot: (): StandardSourceBinding => this._rootBinding,
+    subscribe: (listener: () => void): (() => void) => {
+      this._rootListeners.add(listener)
+      return () => { this._rootListeners.delete(listener) }
+    },
+  }
+  private readonly _scopes = new Map<Exclude<SlotScope, 'root' | 'session-maybe'>, SlotScopeAdapter>()
+  private _scopeRevision = 0
+  private readonly _scopeListeners = new Set<() => void>()
+  private readonly _scopeRevisionSource: HostObservable<number> = {
+    getSnapshot: () => this._scopeRevision,
+    subscribe: (listener) => {
+      this._scopeListeners.add(listener)
+      return () => { this._scopeListeners.delete(listener) }
+    },
+  }
 
   /**
    * @param ctx - owning root context.
@@ -238,6 +267,54 @@ export class SlotRegistry extends Service {
   }
 
   /**
+   * Contribute domain-owned root data. Hook names must be globally unique;
+   * registration and disposal republish one atomic root binding.
+   * @param contribution - bare sources and stable props.
+   * @returns disposer owned by the caller's Cordis fiber.
+   */
+  provideRoot(contribution: RootStandardSourceContribution): () => void {
+    const dispose = this.ctx.effect(() => {
+      this._rootContributions.push(contribution)
+      try {
+        this.rebuildRootBinding()
+      } catch (error) {
+        this._rootContributions.pop()
+        throw error
+      }
+      return () => {
+        const index = this._rootContributions.indexOf(contribution)
+        if (index === -1) return
+        this._rootContributions.splice(index, 1)
+        this.rebuildRootBinding()
+      }
+    }, 'slots.provideRoot()')
+    return () => { void dispose() }
+  }
+
+  /**
+   * Install the owner adapter for one strict scope. Its optional counterpart
+   * resolves through the same adapter.
+   * @param scope - strict scope name.
+   * @param adapter - current/resolved binding source and release notifications.
+   */
+  installScope(
+    scope: Exclude<SlotScope, 'root' | 'session-maybe'>,
+    adapter: SlotScopeAdapter,
+  ): void {
+    if (this._scopes.has(scope)) throw new Error(`slot scope '${scope}' already has an adapter`)
+    this.ctx.effect(() => {
+      this._scopes.set(scope, adapter)
+      this.publishScopeRevision()
+      return () => {
+        if (this._scopes.get(scope) === adapter) {
+          this._scopes.delete(scope)
+          this.publishScopeRevision()
+        }
+      }
+    }, `slots.installScope(${JSON.stringify(scope)})`)
+  }
+
+  /**
    * The single ctx-level render entry: the shell renders 'root'; every other
    * key renders inside components through the props renderSlot face. All
    * three guards are fail-loud boot-order checks, no fallback.
@@ -259,23 +336,6 @@ export class SlotRegistry extends Service {
       throw new Error("'root' has no registration — a layout entry must register into 'root' before the shell renders it")
     }
     return this._renderer.renderRoot(this.hostFace(), owner)
-  }
-
-  /**
-   * Drop the per-session store instances of a dead session (the sessions
-   * service calls this on scope teardown; root-scoped records are untouched).
-   * Persisted state goes with the session — a never-rendered dead session can
-   * still own keys from an earlier page load, so the instance is materialized
-   * transiently just to clear storage (no-op for unpersisted stores).
-   * @param sessionId - the torn-down session.
-   */
-  pruneStoreScope(sessionId: string): void {
-    for (const [handle, record] of this._stores) {
-      if (record.scope !== 'session') continue
-      const instance = record.instances.get(sessionId) ?? handle.create(sessionId)
-      instance.clearPersisted()
-      record.instances.delete(sessionId)
-    }
   }
 
   /**
@@ -381,17 +441,9 @@ export class SlotRegistry extends Service {
     }
   }
 
-  /** Build once after both object-layer services mount; per-session provide bundles still resolve lazily. */
+  /** Build the domain-neutral host face once; installed adapters remain live through getters. */
   private hostFace(): SlotRendererHost {
     if (this._host !== undefined) return this._host
-    const sessions = this.ctx.get('sessions')
-    if (sessions === undefined) {
-      throw new Error("renderSlot('root') before the sessions service mounted — boot order puts runtime apply first")
-    }
-    const workspaces = this.ctx.get('workspaces')
-    if (workspaces === undefined) {
-      throw new Error("renderSlot('root') before the workspaces service mounted — boot order puts runtime apply first")
-    }
     // `locale` is a live getter: the face installs (and, under HMR, swaps)
     // on the locale plugin's own fiber lifetime, while this host object is
     // built once — a captured value would strand renders on a dead face. The
@@ -406,23 +458,59 @@ export class SlotRegistry extends Service {
       reportEntryError: (key, entry, error, info) => { this._core.reportEntryError(key, entry, error, info) },
       specOf: key => this._core.specDynamic(key),
       isLive: entry => this._core.isLive(entry),
-      storeOf: (entry, scopeKey) =>
-        entry.store === undefined ? undefined : this.resolveStore(entry.store as unknown as EngineStoreHandle, scopeKey),
-      sessions: {
-        list: sessions.list,
-        provideInfo: sessions.currentProvideInfo,
-      },
-      workspaces: { list: workspaces.list },
+      storeOf: (entry, scopeBinding) =>
+        entry.store === undefined
+          ? undefined
+          : this.resolveStore(entry.store as unknown as EngineStoreHandle, scopeBinding),
+      root: this._rootSource,
+      scopeRevision: this._scopeRevisionSource,
+      scope: scope => service._scopes.get(scope === 'session-maybe' ? 'session' : scope),
       get locale() { return service._locale },
     }
     return this._host
   }
 
+  /** Validate and atomically publish the current root contribution roster. */
+  private rebuildRootBinding(): void {
+    const hooks: Record<string, HostObservable<unknown>> = {}
+    const keyedHooks: Record<string, import('@deepseek-ai/dsh-client-ui-slots').KeyedStandardSource> = {}
+    const props: Record<string, unknown> = {}
+    const finalProps = new Set<string>()
+    for (const contribution of this._rootContributions) {
+      copyUnique('hook', hooks, contribution.hooks, finalProps, standardHookPropName)
+      copyUnique('keyed hook', keyedHooks, contribution.keyedHooks, finalProps, standardHookPropName)
+      copyUnique('prop', props, contribution.props, finalProps, name => name)
+    }
+    this._rootBinding = { key: undefined, hooks, keyedHooks, props }
+    for (const listener of [...this._rootListeners]) {
+      try {
+        listener()
+      } catch (error) {
+        console.error('root standard-source subscriber failed:', error)
+      }
+    }
+  }
+
+  /** Publish one installed-scope roster transition after the map is authoritative. */
+  private publishScopeRevision(): void {
+    this._scopeRevision += 1
+    for (const listener of [...this._scopeListeners]) {
+      try {
+        listener()
+      } catch (error) {
+        console.error('scope-adapter subscriber failed:', error)
+      }
+    }
+  }
+
   /** Resolve (create or reuse) the store instance for a registered handle under a scope key. */
-  private resolveStore(handle: EngineStoreHandle, sessionId: string | undefined): StoreInstanceLike {
+  private resolveStore(
+    handle: EngineStoreHandle,
+    scopeBinding: ScopedStandardSourceBinding | undefined,
+  ): StoreInstanceLike {
     const record = this._stores.get(handle)
     if (record === undefined) throw new Error('store handle is not registered (entry unloaded, or the handle never went through register)')
-    const key = record.scope === 'root' ? ROOT_INSTANCE_KEY : sessionId
+    const key = record.scope === 'root' ? ROOT_INSTANCE_KEY : scopeBinding?.key
     if (key === undefined) throw new Error(`${record.scope} store resolution requires a session id`)
     let instance = record.instances.get(key)
     if (instance === undefined) {
@@ -430,6 +518,25 @@ export class SlotRegistry extends Service {
       // key per session); root instances stay keyless.
       instance = record.scope === 'root' ? handle.create() : handle.create(key)
       record.instances.set(key, instance)
+      if (record.scope !== 'root') {
+        const scopeCtx = scopeBinding?.ctx
+        if (scopeCtx === undefined) {
+          record.instances.delete(key)
+          throw new Error(`${record.scope} store resolution requires a scope lifetime`)
+        }
+        const owned = instance
+        const dispose = scopeCtx.effect(
+          () => () => {
+            if (this._stores.get(handle) !== record || record.instances.get(key) !== owned) return
+            owned.clearPersisted()
+            record.instances.delete(key)
+            record.lifetimes.delete(key)
+          },
+          `slots: store scope ${key}`,
+        )
+        const release = (): void => { void dispose() }
+        record.lifetimes.set(key, release)
+      }
     }
     return instance
   }
@@ -438,7 +545,7 @@ export class SlotRegistry extends Service {
   private _acquire(handle: EngineStoreHandle, scope: SlotScope): void {
     const record = this._stores.get(handle)
     if (record === undefined) {
-      this._stores.set(handle, { scope, refs: 1, instances: new Map() })
+      this._stores.set(handle, { scope, refs: 1, instances: new Map(), lifetimes: new Map() })
       return
     }
     record.refs += 1
@@ -452,7 +559,27 @@ export class SlotRegistry extends Service {
      * future call site cannot underflow the axis. */
     if (record === undefined) return
     record.refs -= 1
-    if (record.refs === 0) this._stores.delete(handle)
+    if (record.refs !== 0) return
+    this._stores.delete(handle)
+    for (const release of record.lifetimes.values()) release()
+  }
+}
+
+function copyUnique<T>(
+  kind: string,
+  target: Record<string, T>,
+  values: Readonly<Record<string, T>> | undefined,
+  finalProps: Set<string>,
+  propNameOf: (name: string) => string,
+): void {
+  if (values === undefined) return
+  for (const [name, value] of Object.entries(values)) {
+    const propName = propNameOf(name)
+    if (finalProps.has(propName)) {
+      throw new Error(`duplicate root standard ${kind} '${name}' at prop '${propName}'`)
+    }
+    finalProps.add(propName)
+    target[name] = value
   }
 }
 

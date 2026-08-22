@@ -33,7 +33,7 @@ function Frame({ renderSlot, SessionProvider }: FrameProps) {
     <>
       {renderSlot('trt.panel', { label: 'from-owner' }, { fallback: <i>no panel</i> })}
       <SessionProvider empty={() => <i>no session</i>}>
-        {() => renderSlot('trt.chat', {})}
+        {renderSlot('trt.chat', {})}
       </SessionProvider>
       {renderSlot('trt.rows', {})}
     </>

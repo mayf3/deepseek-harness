@@ -1,30 +1,27 @@
 /**
- * Snapshot store engine (zustand vanilla + immer + subscribeWithSelector +
+ * React-free snapshot store engine (zustand vanilla + immer + subscribeWithSelector +
  * rafFlush middleware + opt-in persist + dev freeze) plus the declarative
  * shell over it: {@link defineStore} bakes an init/persist/actions literal
  * into a {@link StoreHandle}, the registration-side store seat of slot
- * terminals. Lives in the React-free runtime (the data layer owns its
- * engine; ui-renderer is shell-only React
- * glue): engine products are bare observables — subscribe/getSnapshot/
+ * terminals. Engine products are bare observables — subscribe/getSnapshot/
  * update/set, NO selector hook. Hook synthesis is ui-renderer's (the one
  * uSES bridge, cached per source at the binding site).
  */
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { shallow } from 'zustand/shallow'
-import { produce } from 'immer'
+import { freeze, produce } from 'immer'
 import type {
-  ActionsDecl, BakedActions, StoreHandle, StoreInstance, StoreSpec,
-} from '@deepseek-ai/dsh-client-ui-slots'
+  ActionsDecl, BakedActions, ObservableSnapshot, StoreHandle, StoreInstance, StoreSpec,
+} from './contract.ts'
 
 // Store contract types are ui-slots authority; re-exported beside the engine
 // so store consumers get one import path.
 export type {
-  ActionsDecl, BakedActions, BoundActions, StoreFactory, StoreHandle, StoreInstance, StoreSpec,
-} from '@deepseek-ai/dsh-client-ui-slots'
-
-/** Minimal observable snapshot source: Session objects and snapshot stores both satisfy it. */
-export interface ObservableSnapshot<T> { getSnapshot(): T; subscribe(fn: () => void): () => void }
+  ActionsDecl, BakedActions, BoundActions, DefineStore, HandleOf, MaybeSnapshotSelectorHook,
+  ObservableSnapshot, PropsStore, SnapshotSelectorHook, StoreDecl, StoreFactory,
+  StoreHandle, StoreInstance, StoreSpec,
+} from './contract.ts'
 
 /** Writable snapshot store (bare data face; React selector hooks are synthesized in ui-renderer). */
 export interface SnapshotStore<T> extends ObservableSnapshot<T> {
@@ -38,6 +35,26 @@ export interface SnapshotStore<T> extends ObservableSnapshot<T> {
    * @param next - next state.
    */
   set(next: T): void
+}
+
+/**
+ * Notify an observer set without allowing one callback to starve the rest.
+ * @param listeners - current observer callbacks; copied before dispatch.
+ * @param label - diagnostic owner prefix.
+ * @param args - callback arguments.
+ */
+export function notifySubscribers<Args extends readonly unknown[]>(
+  listeners: Iterable<(...args: Args) => void>,
+  label: string,
+  ...args: Args
+): void {
+  for (const listener of [...listeners]) {
+    try {
+      listener(...args)
+    } catch (error) {
+      console.error(`${label} subscriber failed:`, error)
+    }
+  }
 }
 
 /**
@@ -91,10 +108,12 @@ export function createSnapshotStore<T>(
   const api: StoreApi<T> = createStore<T>()(withSelector)
   if (opts?.persist) attachPersistence(api, opts.persist.name)
 
-  let subscribe = (fn: () => void) => api.subscribe(fn)
+  let subscribe = (fn: () => void) => api.subscribe(() => {
+    notifySubscribers([fn], '[client-store]')
+  })
   if (opts?.flush === 'raf') {
     const listeners = new Set<() => void>()
-    const flush = rafBatch(() => { for (const fn of [...listeners]) fn() })
+    const flush = rafBatch(() => { notifySubscribers(listeners, '[client-store]') })
     api.subscribe(flush)
     subscribe = (fn: () => void) => {
       listeners.add(fn)
@@ -146,19 +165,10 @@ function attachPersistence<T>(api: StoreApi<T>, name: string): void {
   })
 }
 
-/** Deep-freeze wholesale-set state outside production: set() bypasses immer's freeze. */
+/** Deep-freeze draftable wholesale-set state outside production: set() bypasses immer's freeze. */
 function devFreeze<T>(value: T): T {
   if (process.env.NODE_ENV === 'production') return value
-  deepFreeze(value)
-  return value
-}
-
-function deepFreeze(value: unknown): void {
-  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return
-  Object.freeze(value)
-  for (const key of Reflect.ownKeys(value)) {
-    deepFreeze((value as Record<PropertyKey, unknown>)[key])
-  }
+  return freeze(value, true)
 }
 
 // ui-slots owns the contract; this module supplies the engine implementation.

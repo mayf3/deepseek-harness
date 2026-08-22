@@ -372,7 +372,13 @@ export class SlotTestRuntime {
     }
     const entry = this.host.entriesOf(key)[0]
     if (entry === undefined) throw new Error(`storeOf('${key}'): no registration on the ledger`)
-    const instance = this.host.storeOf(entry, scopeKey)
+    const scopeBinding = scopeKey === undefined
+      ? undefined
+      : this.host.scope('session')?.resolve(scopeKey)
+    if (scopeKey !== undefined && scopeBinding === undefined) {
+      throw new Error(`storeOf('${key}'): no live Session binding for '${scopeKey}'`)
+    }
+    const instance = this.host.storeOf(entry, scopeBinding)
     if (instance === undefined) throw new Error(`storeOf('${key}'): the entry declares no store`)
     return instance
   }

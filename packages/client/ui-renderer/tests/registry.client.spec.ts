@@ -8,13 +8,14 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { FC } from 'react'
-import type { SlotRendererHost } from '@deepseek-ai/dsh-client-ui-slots'
-import { SlotRegistry } from '../src/client/slots.ts'
+import type { ScopedStandardSourceBinding, SlotRendererHost } from '@deepseek-ai/dsh-client-ui-slots'
+import { SlotRegistry } from '../src/client/registry.ts'
 
 // Test-only slot keys (merged so the typed entries/spec faces accept them).
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     't.host': { kind: 'single'; scope: 'root' }
+    't.maybe': { kind: 'single'; scope: 'session-maybe' }
     't.panel': { kind: 'single'; scope: 'session' }
     't.rows': { kind: 'list'; scope: 'root' }
   }
@@ -85,27 +86,21 @@ function captureHost(bench: Bench, children?: object): SlotRendererHost {
     renderRoot: (h: SlotRendererHost) => { host = h; return 'rendered' },
   })
   bench.erased.register({ name: 'root', ...(children !== undefined ? { children } : {}) }, C)
-  bench.ctx.reflect.provide('sessions', fakeSessions())
-  bench.ctx.reflect.provide('workspaces', fakeWorkspaces())
   bench.erased.renderSlot('root', {})
   if (host === undefined) throw new Error('renderer never received the host')
   return host
 }
 
-/** Minimal independent Workspace list source for the renderer host contract. */
-function fakeWorkspaces() {
-  const state = { items: [], phase: 'ready' as const }
-  return { list: { getSnapshot: () => state, subscribe: () => () => undefined } }
-}
-
-/** Minimal sessions face for the host contract (list observable + current provide projection). */
-function fakeSessions() {
-  const state = { ids: [], byId: {}, current: undefined as string | undefined }
-  const absentInfo = { sessionId: undefined, hooks: { session: undefined }, props: {} }
-  return {
-    list: { getSnapshot: () => state, subscribe: () => () => undefined },
-    currentProvideInfo: { getSnapshot: () => absentInfo, subscribe: () => () => undefined },
+function scopedBinding(_ctx: Context, key: string) {
+  const ctx = new Context()
+  const binding: ScopedStandardSourceBinding = {
+    key,
+    ctx,
+    hooks: {},
+    keyedHooks: {},
+    props: {},
   }
+  return { binding, fiber: ctx.fiber }
 }
 
 describe("built-in 'root'", () => {
@@ -404,8 +399,6 @@ describe('declaration injection', () => {
     const bench = await boot()
     let host: SlotRendererHost | undefined
     bench.erased.install({ renderRoot: (value: SlotRendererHost) => { host = value; return null } })
-    bench.ctx.reflect.provide('sessions', fakeSessions())
-    bench.ctx.reflect.provide('workspaces', fakeWorkspaces())
     const disposeFrame = bench.erased.register({
       name: 'root', children: { 't.host': { kind: 'single', scope: 'root' } },
     }, C)
@@ -422,8 +415,10 @@ describe('declaration injection', () => {
     }, C)
     bench.erased.register({ name: 't.panel', store: handle }, C)
     const panelEntry = host.entriesOf('t.panel')[0]
-    expect(host.storeOf(panelEntry as never, 's1')).toBeDefined()
+    const scope = scopedBinding(bench.ctx, 's1')
+    expect(host.storeOf(panelEntry as never, scope.binding)).toBeDefined()
     expect(handle.create).toHaveBeenLastCalledWith('s1')
+    await scope.fiber.dispose()
   })
 })
 
@@ -456,18 +451,8 @@ describe('renderer install seam', () => {
     const renderRoot = vi.fn(() => 'tree')
     bench.erased.install({ renderRoot })
     bench.erased.register({ name: 'root' }, C)
-    bench.ctx.reflect.provide('sessions', fakeSessions())
-    bench.ctx.reflect.provide('workspaces', fakeWorkspaces())
     expect(bench.erased.renderSlot('root', {})).toBe('tree')
     expect(renderRoot).toHaveBeenCalledTimes(1)
-  })
-
-  it('fails before rendering when the Workspace object layer is absent', async () => {
-    const bench = await boot()
-    bench.erased.install({ renderRoot: () => null })
-    bench.erased.register({ name: 'root' }, C)
-    bench.ctx.reflect.provide('sessions', fakeSessions())
-    expect(() => bench.erased.renderSlot('root', {})).toThrow(/workspaces service mounted/)
   })
 })
 
@@ -488,17 +473,65 @@ describe('host face', () => {
     expect(host.entriesOf('t.host')).toHaveLength(0)
   })
 
-  it('exposes the session list and the atomic current provide projection', async () => {
+  it('publishes and retracts domain-owned root standard sources atomically', async () => {
     const bench = await boot()
     const host = captureHost(bench)
-    expect(host.sessions.list.getSnapshot()).toMatchObject({ ids: [] })
-    expect(host.sessions.provideInfo.getSnapshot()).toMatchObject({ sessionId: undefined })
+    const source = { getSnapshot: () => 1, subscribe: () => () => undefined }
+    const changed = vi.fn()
+    host.root.subscribe(changed)
+    const dispose = bench.svc.provideRoot({ hooks: { sessions: source }, props: { ready: true } })
+    expect(host.root.getSnapshot()).toEqual({
+      key: undefined,
+      hooks: { sessions: source },
+      keyedHooks: {},
+      props: { ready: true },
+    })
+    expect(changed).toHaveBeenCalledOnce()
+    dispose()
+    expect(host.root.getSnapshot()).toEqual({ key: undefined, hooks: {}, keyedHooks: {}, props: {} })
+    expect(changed).toHaveBeenCalledTimes(2)
   })
 
-  it('exposes the independent Workspace list source', async () => {
+  it('rejects duplicate final root prop names without publishing a partial binding', async () => {
     const bench = await boot()
     const host = captureHost(bench)
-    expect(host.workspaces.list.getSnapshot()).toEqual({ items: [], phase: 'ready' })
+    const source = { getSnapshot: () => 1, subscribe: () => () => undefined }
+    bench.svc.provideRoot({ hooks: { feature: source } })
+    const before = host.root.getSnapshot()
+    expect(() => bench.svc.provideRoot({ hooks: { feature: source } }))
+      .toThrow("duplicate root standard hook 'feature' at prop 'useFeature'")
+    expect(() => bench.svc.provideRoot({ keyedHooks: { feature: () => source } }))
+      .toThrow("duplicate root standard keyed hook 'feature' at prop 'useFeature'")
+    expect(() => bench.svc.provideRoot({ props: { useFeature: true } }))
+      .toThrow("duplicate root standard prop 'useFeature' at prop 'useFeature'")
+    expect(host.root.getSnapshot()).toBe(before)
+  })
+
+  it('publishes scope-adapter install and disposal revisions', async () => {
+    const bench = await boot()
+    const host = captureHost(bench)
+    const absent = { key: undefined, hooks: {}, keyedHooks: {}, props: {} }
+    const adapter = {
+      current: { getSnapshot: () => absent, subscribe: () => () => undefined },
+      resolve: () => undefined,
+    }
+    const changed = vi.fn()
+    host.scopeRevision.subscribe(changed)
+    const owner = bench.ctx.plugin({
+      name: 'session-scope-owner',
+      inject: ['slots'],
+      apply: (ctx: Context) => { ctx.slots.installScope('session', adapter) },
+    })
+    await owner.await()
+    expect(host.scopeRevision.getSnapshot()).toBe(1)
+    expect(changed).toHaveBeenCalledOnce()
+    expect(host.scope('session')).toBe(adapter)
+    expect(host.scope('session-maybe')).toBe(adapter)
+    expect(() => { bench.svc.installScope('session', adapter) }).toThrow(/already has an adapter/)
+    await owner.dispose()
+    expect(host.scopeRevision.getSnapshot()).toBe(2)
+    expect(changed).toHaveBeenCalledTimes(2)
+    expect(host.scope('session')).toBeUndefined()
   })
 })
 
@@ -508,6 +541,7 @@ describe('store instance axis', () => {
     const bench = await boot()
     const host = captureHost(bench, {
       't.host': { kind: 'single', scope: 'root' },
+      't.maybe': { kind: 'single', scope: 'session-maybe' },
       't.rows': { kind: 'list', scope: 'root' },
       't.panel': { kind: 'single', scope: 'session' },
     })
@@ -534,13 +568,16 @@ describe('store instance axis', () => {
     const { handle } = fakeHandle()
     bench.erased.register({ name: 't.panel', store: handle }, C)
     const [entry] = host.entriesOf('t.panel')
-    const s1 = host.storeOf(entry as never, 's1')
-    const s2 = host.storeOf(entry as never, 's2')
+    const scope1 = scopedBinding(bench.ctx, 's1')
+    const scope2 = scopedBinding(bench.ctx, 's2')
+    const s1 = host.storeOf(entry as never, scope1.binding)
+    const s2 = host.storeOf(entry as never, scope2.binding)
     expect(s1).not.toBe(s2)
-    expect(host.storeOf(entry as never, 's1')).toBe(s1) // cached per key
+    expect(host.storeOf(entry as never, scope1.binding)).toBe(s1) // cached per key
     expect(handle.create).toHaveBeenCalledWith('s1')
     expect(handle.create).toHaveBeenCalledWith('s2')
     expect(() => host.storeOf(entry as never, undefined)).toThrow(/requires a session id/)
+    await Promise.all([scope1.fiber.dispose(), scope2.fiber.dispose()])
   })
 
   it('mints a fresh handle per register for the factory (exclusive) form', async () => {
@@ -569,21 +606,44 @@ describe('store instance axis', () => {
     // resolution is covered through the cascade spec below.
   })
 
-  it('pruneStoreScope clears persisted state per dead session, including never-materialized ones', async () => {
+  it('clears a materialized per-session instance with its binding lifetime', async () => {
     const { bench, host } = await storeBench()
     const { handle, created } = fakeHandle()
     bench.erased.register({ name: 't.panel', store: handle }, C)
     const [entry] = host.entriesOf('t.panel')
-    const s1 = host.storeOf(entry as never, 's1')
+    const scope = scopedBinding(bench.ctx, 's1')
+    const s1 = host.storeOf(entry as never, scope.binding)
     expect(s1).toBe(created[0]) // the resolved instance is the fake the handle minted
-    bench.svc.pruneStoreScope('s1')
+    await scope.fiber.dispose()
     expect(created[0]?.clearPersisted).toHaveBeenCalledTimes(1)
-    expect(host.storeOf(entry as never, 's1')).not.toBe(s1) // instance dropped, next resolve mints anew
-    // Never-rendered dead session: a transient instance is created just to clear storage.
-    const before = created.length
-    bench.svc.pruneStoreScope('s-never')
-    expect(created.length).toBe(before + 1)
-    expect(created[created.length - 1]?.clearPersisted).toHaveBeenCalledTimes(1)
+    const replacement = scopedBinding(bench.ctx, 's1')
+    expect(host.storeOf(entry as never, replacement.binding)).not.toBe(s1)
+    await replacement.fiber.dispose()
+  })
+
+  it('clears session-maybe state through binding disposal and creates a fresh instance on reuse', async () => {
+    const { bench, host } = await storeBench()
+    bench.svc.installScope('session', {
+      current: {
+        getSnapshot: () => ({ key: undefined, hooks: {}, keyedHooks: {}, props: {} }),
+        subscribe: () => () => undefined,
+      },
+      resolve: () => undefined,
+    })
+    const { handle, created } = fakeHandle()
+    bench.erased.register({ name: 't.maybe', store: handle }, C)
+    const [entry] = host.entriesOf('t.maybe')
+    const scope = scopedBinding(bench.ctx, 's1')
+    const before = host.storeOf(entry as never, scope.binding)
+
+    await scope.fiber.dispose()
+
+    expect(created[0]?.clearPersisted).toHaveBeenCalledOnce()
+    const replacement = scopedBinding(bench.ctx, 's1')
+    const after = host.storeOf(entry as never, replacement.binding)
+    expect(after).not.toBe(before)
+    expect(handle.create).toHaveBeenLastCalledWith('s1')
+    await replacement.fiber.dispose()
   })
 })
 
@@ -594,8 +654,6 @@ describe('entry-unload cascade', () => {
     bench.erased.install({
       renderRoot: (h: SlotRendererHost) => { host = h; return 'rendered' },
     })
-    bench.ctx.reflect.provide('sessions', fakeSessions())
-    bench.ctx.reflect.provide('workspaces', fakeWorkspaces())
     // The declarer here is NOT the root occupant: root stays occupied by a
     // separate entry so disposing the declarer only kills its children.
     const disposeRoot = bench.erased.register({ name: 'root' }, C)

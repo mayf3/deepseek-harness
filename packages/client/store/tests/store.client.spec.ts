@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSnapshotStore, defineStore, shallowEqual } from '../src/client/contract/store.ts'
+import { createSnapshotStore, defineStore, shallowEqual } from '../src/index.ts'
 
 interface State {
   a: { n: number }
@@ -10,6 +10,8 @@ const init = (): State => ({ a: { n: 1 }, b: { list: ['x'] } })
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
 })
 
 describe('createSnapshotStore', () => {
@@ -90,10 +92,35 @@ describe('createSnapshotStore', () => {
     expect(() => { (store.getSnapshot().a).n = 9 }).toThrow()
   })
 
+  it('freezes the owned envelope without traversing opaque object handles', () => {
+    class OpaqueHandle {
+      readonly value = { n: 1 }
+    }
+    const handle = new OpaqueHandle()
+    const store = createSnapshotStore({ handle, values: new Set(['x']) })
+
+    store.set({ handle, values: new Set(['y']) })
+
+    const snapshot = store.getSnapshot()
+    expect(Object.isFrozen(snapshot)).toBe(true)
+    expect(Object.isFrozen(snapshot.handle)).toBe(false)
+    expect(() => { snapshot.values.add('z') }).toThrow()
+  })
+
   it('freezes update produce output outside production (immer dev freeze)', () => {
     const store = createSnapshotStore(init())
     store.update((d) => { d.a.n = 2 })
     expect(() => { (store.getSnapshot().a).n = 9 }).toThrow()
+  })
+
+  it('does not deep-freeze wholesale state in production', () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    const store = createSnapshotStore(init())
+    const next = init()
+    store.set(next)
+
+    next.a.n = 9
+    expect(store.getSnapshot().a.n).toBe(9)
   })
 
   it('rehydrates primitive state whole, not spread into index keys', () => {
@@ -122,6 +149,42 @@ describe('createSnapshotStore', () => {
     const revived = createSnapshotStore(init(), { persist: { name: 'spec-store' } })
     expect(revived.getSnapshot().a.n).toBe(42)
   })
+
+  it('reports rehydration failures without preventing store creation', () => {
+    const failure = new Error('storage read failed')
+    vi.stubGlobal('localStorage', {
+      getItem: () => { throw failure },
+      setItem: () => {},
+      removeItem: () => {},
+    })
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const store = createSnapshotStore(init(), { persist: { name: 'spec-broken-read' } })
+
+    expect(store.getSnapshot()).toEqual(init())
+    expect(report).toHaveBeenCalledWith(
+      "snapshot store 'spec-broken-read' rehydration failed:",
+      failure,
+    )
+  })
+
+  it('reports persistence failures without rejecting the write', () => {
+    const failure = new Error('storage write failed')
+    vi.stubGlobal('localStorage', {
+      getItem: () => null,
+      setItem: () => { throw failure },
+      removeItem: () => {},
+    })
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const store = createSnapshotStore(init(), { persist: { name: 'spec-broken-write' } })
+
+    expect(() => { store.update((draft) => { draft.a.n = 7 }) }).not.toThrow()
+    expect(store.getSnapshot().a.n).toBe(7)
+    expect(report).toHaveBeenCalledWith(
+      "snapshot store 'spec-broken-write' persistence failed:",
+      failure,
+    )
+  })
 })
 
 describe('defineStore', () => {
@@ -136,12 +199,17 @@ describe('defineStore', () => {
 
   it('create() yields a live instance: fresh init state, selector-visible action writes', () => {
     const inst = declare().create()
-    expect(inst.store.getSnapshot()).toEqual({ selection: null, draft: '' })
+    expect(inst.getSnapshot()).toEqual({ selection: null, draft: '' })
+    const listener = vi.fn()
+    const unsubscribe = inst.subscribe(listener)
     inst.actions.setDraft('hello')
     inst.actions.select('m1')
     expect(inst.store.getSnapshot()).toEqual({ selection: 'm1', draft: 'hello' })
+    expect(listener).toHaveBeenCalledTimes(2)
+    unsubscribe()
     inst.actions.clearDraft()
     expect(inst.store.getSnapshot().draft).toBe('')
+    expect(listener).toHaveBeenCalledTimes(2)
   })
 
   it('bakes draft-stripped actions that write through update (draft mutation, not replacement)', () => {
