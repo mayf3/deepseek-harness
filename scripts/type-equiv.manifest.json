@@ -450,11 +450,6 @@
     },
     {
       "doc": "docs/subsystems/session.md",
-      "symbol": "TodoItem",
-      "source": "packages/core/session/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/session.md",
       "symbol": "SessionEvent",
       "source": "packages/core/session/src/types.ts"
     },
