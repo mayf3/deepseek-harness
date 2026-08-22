@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-07-31-coverage-exempt-heavy-suites.md
-2026-07-31-coverage-exempt-heavy-suites.md: b27039e529dad12eb82637a749577f4922c22f03
-2026-07-31-coverage-exempt-heavy-suites.zh.md: 99c707f079c215f196b5378f8e4739dce4076846
+2026-07-31-coverage-exempt-heavy-suites.md: 35642c41c0140b5a39be7da4668b33b70f858a85
+2026-07-31-coverage-exempt-heavy-suites.zh.md: cefade080581e4c20a71269bef638e12559153ae

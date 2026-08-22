@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { join, relative } from 'node:path'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { flattenDiagnosticMessageText, parseConfigFileTextToJson } from 'typescript'
 import { describe, expect, it } from 'vitest'
@@ -44,6 +44,21 @@ function hiddenProbeName(prefix: string, suffix: string, extension = '.ts'): str
   return `.${prefix}-${suffix}${extension}`
 }
 
+/**
+ * Publish a complete probe so concurrent repository scans never read a partial write.
+ * @param path - Final probe path that the owning project must discover.
+ * @param source - Complete TypeScript source to publish.
+ */
+async function publishProbe(path: string, source: string): Promise<void> {
+  const staging = join(dirname(path), `.${basename(path)}.staging`)
+  try {
+    await writeFile(staging, source)
+    await rename(staging, path)
+  } finally {
+    await rm(staging, { force: true })
+  }
+}
+
 async function writeContractConfig(suffix: string): Promise<string> {
   const path = join(repositoryRoot, `.oxlintrc.contract-${suffix}.json`)
   await writeFile(path, JSON.stringify({ extends: ['./.oxlintrc.json'], ignorePatterns: [] }))
@@ -76,7 +91,7 @@ probePromise()
       const paths: Array<readonly [label: string, path: string, tsconfig: string]> = []
       for (const [label, parent, tsconfig, extension = '.ts'] of probes) {
         const path = join(repositoryRoot, parent, `oxlint-contract-${suffix}${extension}`)
-        await writeFile(path, source)
+        await publishProbe(path, source)
         paths.push([label, relative(repositoryRoot, path), tsconfig])
       }
       const clientScript = 'scripts/client-bundle-purity.spec.ts'
