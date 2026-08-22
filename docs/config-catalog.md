@@ -3242,7 +3242,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/webhook/webhook-github/src/index.ts:15`](../packages/webhook/webhook-github/src/index.ts)
+Source: [`packages/webhook/webhook-github/src/index.ts:17`](../packages/webhook/webhook-github/src/index.ts)
 
 <a id="deepseek-aidsh-workflow-worker-thread"></a>
 

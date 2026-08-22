@@ -6,6 +6,8 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import z from '@deepseek-ai/schemastery'
 import { createGitHubWebhookHandler } from './handler.ts'
 
+export type * from './types.ts'
+
 /** Cordis function-plugin name. */
 export const name = 'webhook-github'
 /** Host services required before the exact route can register. */
