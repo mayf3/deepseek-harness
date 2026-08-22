@@ -106,12 +106,11 @@ const PNG: SubmitImageAttachment = { mediaType: 'image/png', data: 'AA==' }
 async function scopedBench(register?: (inputTriggers: InputTriggerService) => void) {
   const ctx = new Context()
   const api = new FakeApiClient()
-  api.onWorkspaceList = () => Promise.resolve(ok({ items: [] }))
   const sessionId = 'scenario-s1' as Parameters<SessionRuntime['open']>[0]
   api.onList = () => Promise.resolve(ok({
     items: [{ sessionId, updatedAt: 1, running: false, blank: false, cwd: '/w/a' }],
   }) as never)
-  const sessions = new SessionRuntime(ctx, api, fakeRemote()) // provides 'sessions' itself
+  const sessions = new SessionRuntime(ctx, api, fakeRemote(api)) // provides 'sessions' itself
   await sessions.refresh()
   await Promise.resolve() // manager notifier flush
   await ctx.plugin(InputTriggerService).await()

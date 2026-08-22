@@ -1,15 +1,18 @@
-/** WorkspaceRuntime projects the Workspace object manager for UI consumers. */
+/** WorkspaceRuntime combines controller-owned Workspace state with Session/UI behavior. */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   DirectoryListing, IApiClient, RpcError,
   SessionId, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
+import type {
+  ClientWorkspaceModel, WorkspaceListPhase,
+} from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { RemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import type { SnapshotStore } from '../contract/store.ts'
 import { createSnapshotStore } from '../contract/store.ts'
 import type { SessionsPort, SessionsPortList } from '../contract/sessions-port.ts'
 import type { IWorkspaces } from '../contract/workspaces.ts'
-import { WorkspaceManager, type WorkspaceListPhase } from './manager.ts'
 
 /** Workspace list plus the two-baseline readiness and default-target projection. */
 export interface WorkspaceListState {
@@ -24,8 +27,8 @@ export interface WorkspaceListState {
   archivedSessionIds: readonly SessionId[]
   state: 'idle' | 'loading' | 'error'
   phase: WorkspaceListPhase
-  error: RpcError | null
-  /** True only after both workspace.list and session.list have succeeded. */
+  error: RemoteFailure | null
+  /** True only after both Workspace and Session stream baselines have arrived. */
   baselinesReady: boolean
   /** Most recently active Workspace, derived without changing `items` order. */
   recentWorkspaceId: WorkspaceId | undefined
@@ -33,7 +36,7 @@ export interface WorkspaceListState {
 
 /** Structured create failure for UI flows that distinguish Host business errors. */
 export class WorkspaceCreateError extends Error {
-  constructor(readonly rpcError: RpcError) {
+  constructor(readonly rpcError: RemoteFailure) {
     super(`workspace create failed: ${rpcError.code}: ${rpcError.message}`)
     this.name = 'WorkspaceCreateError'
   }
@@ -49,10 +52,8 @@ export class DirectoryBrowseError extends Error {
 
 /** Real Workspace object layer and Host actions. */
 export class WorkspaceRuntime implements IWorkspaces {
-  /** UI-facing immutable projection; the manager remains wire truth. */
+  /** UI-facing projection derived from the controller model and Session list. */
   readonly list: SnapshotStore<WorkspaceListState>
-  /** Workspace baseline and frame owner. */
-  private readonly manager: WorkspaceManager
   /** In-flight blank-session creates keyed by workspace (connectWorkspace coalescing). */
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
   /** Guards the runtime-owned one-shot initial-selection subscription. */
@@ -61,15 +62,20 @@ export class WorkspaceRuntime implements IWorkspaces {
   /**
    * @param ctx - client root context.
    * @param api - shared wire client.
+   * @param model - Workspace Controller's Client state model.
    * @param sessions - cross-domain sessions face used for recency and blank-session reuse.
    */
-  constructor(ctx: Context, private readonly api: IApiClient, private readonly sessions: SessionsPort) {
-    this.manager = new WorkspaceManager(api)
+  constructor(
+    ctx: Context,
+    private readonly api: IApiClient,
+    private readonly model: ClientWorkspaceModel,
+    private readonly sessions: SessionsPort,
+  ) {
     this.list = createSnapshotStore<WorkspaceListState>({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'pending', error: null,
+      items: [], archivedSessionIds: [], state: 'loading', phase: 'pending', error: null,
       baselinesReady: false, recentWorkspaceId: undefined,
     })
-    this.manager.subscribe(() => { this.project() })
+    this.model.subscribe(() => { this.project() })
     this.sessions.list.subscribe(() => { this.project() })
     ctx.reflect.provide('workspaces', this, undefined)
   }
@@ -197,7 +203,7 @@ export class WorkspaceRuntime implements IWorkspaces {
    * @returns the created or idempotently resolved Workspace.
    */
   async create(input: { path: string }): Promise<WorkspaceView> {
-    const result = await this.manager.create(input)
+    const result = await this.model.create(input)
     if (!result.ok) throw new WorkspaceCreateError(result.error)
     return result.value.workspace
   }
@@ -256,7 +262,7 @@ export class WorkspaceRuntime implements IWorkspaces {
    * @returns the renamed Workspace view.
    */
   async rename(workspaceId: WorkspaceId, title: string): Promise<WorkspaceView> {
-    const result = await this.manager.rename(workspaceId, title)
+    const result = await this.model.rename(workspaceId, title)
     if (!result.ok) throw new Error(`workspace rename failed: ${result.error.code}: ${result.error.message}`)
     return result.value.workspace
   }
@@ -267,7 +273,7 @@ export class WorkspaceRuntime implements IWorkspaces {
    * @param workspaceId - target workspace.
    */
   async delete(workspaceId: WorkspaceId): Promise<void> {
-    const result = await this.manager.delete(workspaceId)
+    const result = await this.model.delete(workspaceId)
     if (!result.ok) throw new Error(`workspace delete failed: ${result.error.code}: ${result.error.message}`)
   }
 
@@ -277,7 +283,7 @@ export class WorkspaceRuntime implements IWorkspaces {
    * @param beforeWorkspaceId - Anchor workspace; omitted appends.
    */
   async insertBefore(workspaceId: WorkspaceId, beforeWorkspaceId?: WorkspaceId): Promise<void> {
-    const result = await this.manager.insertBefore(workspaceId, beforeWorkspaceId)
+    const result = await this.model.insertBefore(workspaceId, beforeWorkspaceId)
     if (!result.ok) throw new Error(`workspace reorder failed: ${result.error.code}: ${result.error.message}`)
   }
 
@@ -288,7 +294,7 @@ export class WorkspaceRuntime implements IWorkspaces {
    * @param sessionId - session to archive.
    */
   async archiveSession(sessionId: SessionId): Promise<void> {
-    const result = await this.manager.archiveSession(sessionId)
+    const result = await this.model.archiveSession(sessionId)
     if (!result.ok) throw new Error(`session archive failed: ${result.error.code}: ${result.error.message}`)
   }
 
@@ -304,34 +310,13 @@ export class WorkspaceRuntime implements IWorkspaces {
     sessionId: SessionId,
     beforeSessionId?: SessionId,
   ): Promise<WorkspaceView> {
-    const result = await this.manager.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
+    const result = await this.model.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
     if (!result.ok) throw new Error(`workspace move failed: ${result.error.code}: ${result.error.message}`)
     return result.value.workspace
   }
 
-  /**
-   * Refresh the workspace baseline, reusing an in-flight pull.
-   * @returns completion of the current or newly started workspace baseline pull.
-   */
-  refresh(): Promise<void> {
-    return this.manager.refresh()
-  }
-
-  /**
-   * Route a Host stream envelope into the Workspace object layer.
-   * @param envelope - validated Host stream envelope.
-   */
-  handleHostEnvelope(envelope: Parameters<WorkspaceManager['handleHostEnvelope']>[0]): void {
-    this.manager.handleHostEnvelope(envelope)
-  }
-
-  /** Rebuild the Workspace baseline after connection. */
-  handleConnected(): void {
-    this.manager.handleConnected()
-  }
-
   private project(): void {
-    const workspace = this.manager.getSnapshot()
+    const workspace = this.model.getSnapshot()
     const sessions = this.sessions.list.getSnapshot()
     const baselinesReady = workspace.phase === 'ready' && sessions.phase === 'ready'
     // An archived current selection clears into the New Session view state —
