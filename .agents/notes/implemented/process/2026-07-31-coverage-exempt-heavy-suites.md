@@ -23,7 +23,7 @@ Linux coverage CI and native Windows CI use [in-job partitioned coverage](2026-0
 
 `scripts/coverage-exempt.ts` is the single roster point, holding the membership contract and the filter/exclude pairs so the two sides cannot drift.
 
-`transform-corpus.spec.ts` discovers the complete built-bundle set once, assigns every path to exactly one of four Node-loader children, and asserts the shard union before launch. The test-support pair and the ACL/win32-process pair retain their original order in one shard because their pinned Vitest-state and Koffi exemptions depend on preceding module state.
+`transform-corpus.spec.ts` discovers the complete built-bundle set once, assigns every path to exactly one of eight Node-loader children, and asserts the shard union before launch. The test-support pair and the ACL/win32-process pair retain their original order in one shard because their pinned Vitest-state and Koffi exemptions depend on preceding module state.
 
 ### The roster, reconciled entry by entry
 
@@ -54,7 +54,7 @@ Coverage-result invariance therefore does not rest on humans maintaining the ros
 - **CLI `--exclude` to drop the exempt suites from the instrumented gate.** Proven ineffective: vitest 4's `cliExclude` does not participate in per-project include resolution, so under a multi-project config the exempt suites stayed selected; the env + config route replaced it.
 - **Lowering worker counts or raising gate concurrency.** Measured ineffective during the incident: the lane's wall clock was pinned by the longest tail files (aggregate/wall ≈ 4× effective parallelism), and the concurrency knobs moved nothing in either direction.
 - **Cross-runner sharding (`--shard` + blob merge).** Rejected because a matrix, artifact pipeline, and merge job would add a second workflow topology. The selected [in-job partitioning](2026-08-18-in-job-partitioned-coverage.md) uses Vitest shards only as local single-worker processes inside the existing job.
-- **Keep the transform corpus in one Node process.** Rejected because its serial loader becomes the Windows heavy gate's longest tail under host contention. Four local children retain the same file set, per-file oracle, loader-sensitive affinities, and one blocking Vitest verdict.
+- **Keep the transform corpus in one Node process.** Rejected because its serial loader becomes the Windows heavy gate's longest tail under host contention. Eight local children retain the same file set, per-file oracle, loader-sensitive affinities, and one blocking Vitest verdict.
 - **Deleting or skipping the heavy suites.** Rejected: they are the sole correctness evidence for the typert generator and the scripts tooling; running them uninstrumented in parallel preserves the full signal.
 
 ## Verification
@@ -63,13 +63,13 @@ Measured on CI (16-core runner): the gate segment went from 424 seconds to the t
 
 The Web Worker corpus entry is pinned by an eight-partition aggregate that runs all 15,250 tests and reports 100% for 45,959 statements, 28,116 branches, 9,781 functions, and 40,550 lines. A focused instrumented corpus run records no package source from its child process; the paired list check proves the spec is absent from the instrumented inventory and present in the uninstrumented inventory.
 
-The four-child corpus run checks the same 239 native Windows bundles with 234 exact export matches, four pinned loader exemptions, one sentinel refusal, and no drift. The ARM64 VM measures 25.06 seconds for the sharded Vitest path versus 29.59 seconds for the unsharded checker; the complete x64 job remains the contended-host timing proof.
+The eight-child corpus run checks the same 239 native Windows bundles with 234 exact export matches, four pinned loader exemptions, one sentinel refusal, and no drift. The ARM64 VM measures 25.44 seconds for the sharded Vitest path versus 29.59 seconds for the unsharded checker; the complete x64 job remains the contended-host timing proof.
 
 ## Consequences
 
 - The exempt suites execute without adding instrumentation cost to the thresholded gate; partitioned wall-clock measurements belong to the [in-job partitioning decision](2026-08-18-in-job-partitioned-coverage.md).
 - Native Windows schedules the exempt suites after instrumented coverage and overlaps them with observational checks; Linux retains the parallel coverage split.
-- The corpus suite uses four child Node loaders but emits one blocking test result; its affinity roster is part of the exemption oracle and must move with affected bundles.
+- The corpus suite uses eight child Node loaders but emits one blocking test result; its affinity roster is part of the exemption oracle and must move with affected bundles.
 - `DSH_GATE_CONCURRENCY` has two schedulable gates in this lane again, so the aggregate scheduler is no longer a pass-through.
 - Adding a heavy suite to the roster requires the membership audit above; a wrong entry fails the instrumented gate loudly rather than eroding coverage silently.
 - The exempt suites no longer appear in the coverage report's file list of contributors; their correctness signal lives solely in the uninstrumented gate's pass/fail.

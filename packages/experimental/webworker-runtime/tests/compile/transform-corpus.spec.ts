@@ -11,7 +11,7 @@
  * exemptions as stale. The gate's own note applies to itself: a gate whose
  * verdict depends on how it was launched is not a gate.
  *
- * Four Node-loader processes divide the discovered files, and the union check
+ * Eight Node-loader processes divide the discovered files, and the union check
  * proves that each bundle appears once. The two test-support bundles and the
  * ACL/win32-process pair stay in one ordered shard because their pinned loader
  * exemptions depend on the same preceding module state as the unsharded
@@ -26,7 +26,7 @@ import { expect, test } from 'vitest'
 
 const runner = fileURLToPath(new URL('./transform-corpus-check.ts', import.meta.url))
 const repositoryRoot = fileURLToPath(new URL('../../../../../', import.meta.url))
-const corpusShards = 4
+const corpusShards = 8
 const shardAffinity = new Set([
   'packages/test-support/acp-snapshot/lib/index.js',
   'packages/test-support/client-runtime/lib/index.js',
