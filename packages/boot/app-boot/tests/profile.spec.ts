@@ -36,12 +36,18 @@ function stageInstallation(bundles: Record<string, { patch?: string; deps?: Reco
     writeFileSync(join(dir, 'package.json'), JSON.stringify({
       name,
       version: '0.0.0',
+      type: 'module',
+      main: './index.js',
       dependencies: spec.deps ?? {},
       ...spec.patch === undefined ? {} : { dsh: { bundle: { patch: './cordis.patch.yml' } } },
     }))
+    writeFileSync(join(dir, 'index.js'), `export const packageName = ${JSON.stringify(name)}\n`)
     if (spec.patch !== undefined) writeFileSync(join(dir, 'cordis.patch.yml'), spec.patch)
   }
-  writeFileSync(join(appDir, 'package.json'), JSON.stringify({ name: 'dsh-app', dependencies: appDeps }))
+  writeFileSync(join(appDir, 'package.json'), JSON.stringify({
+    name: 'dsh-app', version: '0.0.0', type: 'module', main: './index.js', dependencies: appDeps,
+  }))
+  writeFileSync(join(appDir, 'index.js'), 'export const packageName = "dsh-app"\n')
   return join(appDir, 'package.json')
 }
 
@@ -321,5 +327,96 @@ describe('healProfilesModuleFallback', () => {
     healProfilesModuleFallback(anchor, home) // second healer sees the correct link
     const fallback = join(home, 'profiles', 'node_modules')
     expect(lstatSync(join(fallback, 'dsh-app')).isSymbolicLink()).toBe(true)
+  })
+
+  it('writes real ESM proxies for a packaged executable', async () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    const bundleDir = join(anchor, '..', 'node_modules', 'bundle-a')
+    const bundleManifest = JSON.parse(readFileSync(join(bundleDir, 'package.json'), 'utf8')) as Record<string, unknown>
+    bundleManifest.exports = { '.': './index.js', './feature': './feature.js' }
+    writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(bundleManifest))
+    writeFileSync(join(bundleDir, 'feature.js'), 'export const feature = "proxied"\n')
+    const home = tmp()
+    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    try {
+      healProfilesModuleFallback(anchor, home)
+      const fallback = join(home, 'profiles', 'node_modules')
+      const proxy = join(fallback, 'bundle-a')
+      expect(lstatSync(proxy).isDirectory()).toBe(true)
+      const proxyManifest = JSON.parse(readFileSync(join(proxy, 'package.json'), 'utf8')) as {
+        version: unknown
+        exports: unknown
+        dsh: { moduleFallback: { targets: Record<string, unknown> } }
+      }
+      expect(proxyManifest).toMatchObject({
+        version: '0.0.0',
+        exports: { '.': './entry-0.js', './feature': './entry-1.js' },
+      })
+      expect(proxyManifest.dsh.moduleFallback.targets['.']).toEqual(expect.stringContaining('/bundle-a/index.js'))
+      await expect(import(join(proxy, 'entry-0.js'))).resolves.toMatchObject({ packageName: 'bundle-a' })
+      await expect(import(join(proxy, 'entry-1.js'))).resolves.toMatchObject({ feature: 'proxied' })
+      healProfilesModuleFallback(anchor, home)
+    } finally {
+      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
+    }
+  })
+
+  it('requires a package version before writing a packaged proxy', () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    const bundleDir = join(anchor, '..', 'node_modules', 'bundle-a')
+    const manifest = JSON.parse(readFileSync(join(bundleDir, 'package.json'), 'utf8')) as Record<string, unknown>
+    manifest.version = ''
+    writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
+    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    try {
+      expect(() => { healProfilesModuleFallback(anchor, tmp()) }).toThrow(
+        'installed package bundle-a must declare a non-empty version',
+      )
+    } finally {
+      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
+    }
+  })
+
+  it('replaces plain-node links and stale managed proxies in packaged mode', () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    const home = tmp()
+    healProfilesModuleFallback(anchor, home)
+    const proxy = join(home, 'profiles', 'node_modules', 'bundle-a')
+    expect(lstatSync(proxy).isSymbolicLink()).toBe(true)
+
+    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    try {
+      healProfilesModuleFallback(anchor, home)
+      expect(lstatSync(proxy).isDirectory()).toBe(true)
+      const stale = JSON.parse(readFileSync(join(proxy, 'package.json'), 'utf8')) as {
+        version: string
+      }
+      stale.version = 'stale'
+      writeFileSync(join(proxy, 'package.json'), JSON.stringify(stale))
+      healProfilesModuleFallback(anchor, home)
+      expect(JSON.parse(readFileSync(join(proxy, 'package.json'), 'utf8'))).toMatchObject({
+        version: '0.0.0',
+      })
+    } finally {
+      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
+    }
+  })
+
+  it('rejects foreign packaged fallback directories with valid or invalid metadata', () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    try {
+      for (const metadata of ['{}', '{']) {
+        const home = tmp()
+        const proxy = join(home, 'profiles', 'node_modules', 'bundle-a')
+        mkdirSync(proxy, { recursive: true })
+        writeFileSync(join(proxy, 'package.json'), metadata)
+        expect(() => { healProfilesModuleFallback(anchor, home) }).toThrow(
+          'exists and is not a dsh-managed module proxy',
+        )
+      }
+    } finally {
+      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
+    }
   })
 })
