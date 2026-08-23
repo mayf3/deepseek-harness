@@ -87,7 +87,7 @@ async function mount(initialHost?: HostDescription): Promise<Bench> {
   ctx.reflect.provide('remote.session', remote.session)
   const fiber = ctx.plugin(SessionClient)
   await fiber
-  const sessions = SessionClient.resolveClientSessions(ctx) as ClientSessions
+  const sessions = ctx.sessions as ClientSessions
   return {
     ctx,
     api,
@@ -108,14 +108,6 @@ async function flush(): Promise<void> {
 }
 
 describe('Session Controller Client apply', () => {
-  it('requires the installed Session service at the resolver boundary', () => {
-    const ctx = new Context()
-    contexts.add(ctx)
-
-    expect(() => SessionClient.resolveClientSessions(ctx))
-      .toThrow('session-controller: Client sessions service unavailable')
-  })
-
   it('routes Session Remote Events and connection generations into the object layer', async () => {
     const connected = vi.spyOn(ClientSessions.prototype, 'handleConnected')
     const error = vi.spyOn(ClientSessions.prototype, 'handleSessionError')

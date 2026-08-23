@@ -14,7 +14,7 @@
  */
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
-import { resolveClientSessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ModelDirectory } from './directory.ts'
 
@@ -70,7 +70,7 @@ export class ModelDirectoryResolver extends Service {
     const { live } = this
     const existing = live.directories.get(sessionId)
     if (existing !== undefined) return existing
-    const sessions = resolveClientSessions(this.ctx)
+    const sessions = this.ctx.sessions
     const actx = sessions.scope(sessionId)
     if (actx === undefined) throw new Error(`ui-model-selection: session "${String(sessionId)}" resolved no scope`)
     const directory = new ModelDirectory(

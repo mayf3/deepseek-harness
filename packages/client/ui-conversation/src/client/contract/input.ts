@@ -133,13 +133,29 @@ export interface InputTriggerController {
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
-    /** @param request - command claim and span. @mode bail */
+    /**
+     * Claim a command token for the scoped input machine.
+     * @param request - command claim and span.
+     * @mode bail
+     */
     'slash/input-begin-command'(request: BeginCommandRequest): true | undefined
-    /** @param request - reference and span. @mode bail */
+    /**
+     * Insert a structured reference into the scoped input machine.
+     * @param request - reference and span.
+     * @mode bail
+     */
     'slash/input-insert-reference'(request: InsertReferenceRequest): true | undefined
-    /** @param request - token guard. @mode bail */
+    /**
+     * Consume a trigger token without inserting replacement content.
+     * @param request - token guard.
+     * @mode bail
+     */
     'slash/input-consume-token'(request: ConsumeTokenRequest): true | undefined
-    /** @param request - plain text and span. @mode bail */
+    /**
+     * Insert plain text into the scoped input machine.
+     * @param request - plain text and span.
+     * @mode bail
+     */
     'slash/input-insert-text'(request: InsertTextRequest): true | undefined
   }
 }

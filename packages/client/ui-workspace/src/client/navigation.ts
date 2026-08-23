@@ -31,7 +31,10 @@ export interface UiWorkspace {
    * @param sessionId - Session to archive.
    */
   archiveSession(sessionId: SessionId): Promise<void>
-  /** @returns the Host-native picked directory, or null when cancelled. */
+  /**
+   * Open the Host-native directory picker.
+   * @returns the selected directory, or null when cancelled.
+   */
   pickDirectory(): Promise<string | null>
   /**
    * List one Host directory level.
