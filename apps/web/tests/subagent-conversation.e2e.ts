@@ -490,7 +490,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await expect.poll(() => scaffold.ctx.agents.get(forkId)).not.toBeUndefined()
 
     await sessions.getByRole('treeitem', { name: /Ask a research subagent to/ }).click()
-    await page.getByRole('button', { name: '3 subagents' }).hover()
+    await page.getByRole('button', { name: '3 subagents' }).press('ArrowDown')
     await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
     const input = page.locator('textarea:enabled').first()
     await input.waitFor()
