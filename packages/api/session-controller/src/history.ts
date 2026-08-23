@@ -171,11 +171,8 @@ export class SessionHistoryController {
         nextSeq++
         if (item.event.type === 'tool/call') {
           const data = item.event.data as ToolCallData
-          try {
-            openCalls.set(data.callId, { name: data.name, args: JSON.parse(data.arguments) })
-          } catch {
-            // Unparseable model arguments leave the fast path unset; result presentation soft-falls.
-          }
+          const call = parseToolCall(data)
+          if (call !== undefined) openCalls.set(data.callId, call)
         } else if (item.event.type === 'turn/end') {
           openCalls.clear()
         }
@@ -392,6 +389,7 @@ function viewFor(
 ): SessionToolView | undefined {
   if (event.type !== 'tool/call' && event.type !== 'tool/result') return undefined
   const tools = ctx.get('tools')
+  /* v8 ignore next -- deployments without the optional Tools service omit presentation metadata. */
   if (tools === undefined) return undefined
   try {
     if (event.type === 'tool/call') {
@@ -399,17 +397,15 @@ function viewFor(
       const view: ToolCallView | undefined = tools.get(data.name, scope)?.presentCall?.(JSON.parse(data.arguments))
       return view === undefined ? undefined : { for: 'call', view: jsonView(view) }
     }
-    if (event.type === 'tool/result') {
-      const [result] = event.data.message.content
-      const call = argsFor(event.data.message.source.callId)
-      if (call === undefined) return undefined
-      const view: ToolResultView | undefined = tools.get(call.name, scope)?.presentResult?.(call.args, {
-        content: result.content,
-        isError: result.isError === true,
-        ...(event.data.meta === undefined ? {} : { meta: event.data.meta }),
-      })
-      return view === undefined ? undefined : { for: 'result', view: jsonView(view) }
-    }
+    const [result] = event.data.message.content
+    const call = argsFor(event.data.message.source.callId)
+    if (call === undefined) return undefined
+    const view: ToolResultView | undefined = tools.get(call.name, scope)?.presentResult?.(call.args, {
+      content: result.content,
+      isError: result.isError === true,
+      ...(event.data.meta === undefined ? {} : { meta: event.data.meta }),
+    })
+    return view === undefined ? undefined : { for: 'result', view: jsonView(view) }
   } catch (error) {
     ctx.logger.warn(`session: presenter failed for ${event.type}: ${String(error)}`)
   }
@@ -425,13 +421,17 @@ function backscanArgs(
     if (event.type !== 'tool/call') continue
     const data = event.data as ToolCallData
     if (data.callId !== callId) continue
-    try {
-      return { name: data.name, args: JSON.parse(data.arguments) }
-    } catch {
-      return undefined
-    }
+    return parseToolCall(data)
   }
   return undefined
+}
+
+function parseToolCall(data: ToolCallData): { readonly name: string; readonly args: unknown } | undefined {
+  try {
+    return { name: data.name, args: JSON.parse(data.arguments) }
+  } catch {
+    return undefined
+  }
 }
 
 function jsonView(view: ToolCallView): SessionToolCallView
