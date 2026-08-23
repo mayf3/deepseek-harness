@@ -228,7 +228,7 @@ describe('CI workflow', () => {
       name: 'python runtime / release-shaped matrix',
       uses: './.github/workflows/build-exe-for-python-sdk.yml',
       with: {
-        targets: 'node24-linux-x64,node24-linux-arm64,node24-macos-arm64',
+        targets: 'node24-linux-x64,node24-linux-arm64,node24-macos-arm64,node24-win-x64',
         ci: true,
       },
       secrets: {
@@ -320,7 +320,7 @@ describe('Python release workflows', () => {
     expect(build).toMatchObject({
       uses: './.github/workflows/build-exe-for-python-sdk.yml',
       with: {
-        targets: 'node24-linux-x64,node24-linux-arm64,node24-macos-arm64',
+        targets: 'node24-linux-x64,node24-linux-arm64,node24-macos-arm64,node24-win-x64',
         release: true,
       },
     })
@@ -390,10 +390,11 @@ describe('Python release workflows', () => {
     const manylinuxAddon = buildSteps.find(step => isRecord(step) && step.name === 'Rebuild Linux node-pty against manylinux 2.28')
     const macosCheck = buildSteps.find(step => isRecord(step) && step.name === 'Check macOS deployment target')
     const manylinuxSmoke = buildSteps.find(step => isRecord(step) && step.name === 'Run wheel in a manylinux 2.28 container')
+    const cleanVenv = buildSteps.find(step => isRecord(step) && step.name === 'Install local SDK and runtime wheels into a clean venv')
     const installedKeyless = buildSteps.find(step => isRecord(step) && step.name === 'Run installed-wheel keyless black-box tests')
     const realApiPreflight = buildSteps.find(step => isRecord(step) && step.name === 'Preflight installed-wheel real API test')
     const installedRealApi = buildSteps.find(step => isRecord(step) && step.name === 'Run installed-wheel real API black-box test')
-    if (!isRecord(installedKeyless) || !isRecord(realApiPreflight) || !isRecord(installedRealApi)) {
+    if (!isRecord(cleanVenv) || !isRecord(installedKeyless) || !isRecord(realApiPreflight) || !isRecord(installedRealApi)) {
       throw new TypeError('Python wheel builder must define installed-wheel keyless and real API steps')
     }
     expect(call.inputs).toHaveProperty('targets')
@@ -407,11 +408,15 @@ describe('Python release workflows', () => {
     expect(workflow.concurrency).toMatchObject({
       group: 'build-single-exe-${{ github.workflow }}-${{ github.ref }}',
     })
+    expect(build.defaults).toMatchObject({ run: { shell: 'bash' } })
     expect(plan.if).toContain('inputs.ci')
     expect(plan.if).toContain('inputs.release')
     expect(JSON.stringify(plan.steps)).toContain('pep440_version')
     const workflowJson = JSON.stringify(workflow)
     expect(workflowJson).toContain('macosx_14_0_arm64')
+    expect(workflowJson).toContain('win_amd64')
+    expect(workflowJson).toContain('node24-win-x64')
+    expect(workflowJson).toContain('windows-2025')
     expect(workflowJson).toContain('dist-python/$SDK_WHEEL')
     expect(workflowJson).toContain('dist-python/$RUNTIME_WHEEL')
     expect(workflowJson).toContain('/work/dist-python/$SDK_WHEEL')
@@ -422,7 +427,8 @@ describe('Python release workflows', () => {
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_x86_64')
     expect(JSON.stringify(manylinuxAddon)).toContain('manylinux_2_28_aarch64')
     expect(JSON.stringify(manylinuxAddon)).toContain('npm_config_build_from_source=true pnpm run install')
-    expect(JSON.stringify(manylinuxAddon)).toContain('$HOME/setup-pnpm:$HOME/setup-pnpm:ro')
+    expect(JSON.stringify(manylinuxAddon)).toContain('pnpm_setup_root')
+    expect(JSON.stringify(manylinuxAddon)).toContain('$pnpm_setup_root:$pnpm_setup_root:ro')
     expect(JSON.stringify(manylinuxAddon)).toContain('node-pty-glibc-versions.txt')
     expect(JSON.stringify(manylinuxAddon)).toContain('le 2.28')
     expect(macosCheck).toMatchObject({ if: "runner.os == 'macOS'" })
@@ -432,6 +438,7 @@ describe('Python release workflows', () => {
     expect(JSON.stringify(installedKeyless)).toContain('--installed-wheel')
     expect(JSON.stringify(installedKeyless)).toContain('env -u PYTHONPATH')
     expect(JSON.stringify(installedKeyless)).toContain('-u DSH_RUNTIME_MODE')
+    expect(JSON.stringify(cleanVenv)).toContain('Scripts/python.exe')
     expect(realApiPreflight).toMatchObject({
       env: { DEEPSEEK_API_KEY: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}' },
     })
@@ -468,6 +475,21 @@ describe('Python release workflows', () => {
 
     expect(macosCheck).toContain('scripts/check-macos-deployment-target.py')
     expect(macosCheck).toContain('"$EXE" "$EXE-spawn-helper"')
+  })
+
+  it('builds and black-box tests the Windows x64 wheel in GitLab', () => {
+    const workflow = loadWorkflow('.gitlab-ci.yml')
+    const windows = workflow['runtime-windows-x64']
+    const publish = workflow['publish-python']
+    if (!isRecord(windows) || !Array.isArray(windows.script) || !isRecord(publish) || !Array.isArray(publish.needs)) {
+      throw new TypeError('GitLab CI must define the Windows runtime and aggregate publication jobs')
+    }
+
+    expect(windows.tags).toEqual(['windows-x64'])
+    expect(windows.variables).toMatchObject({ PKG_TARGET: 'node24-win-x64', PLATFORM: 'win-x64' })
+    expect(JSON.stringify(windows.script)).toContain('win_amd64.whl')
+    expect(JSON.stringify(windows.script)).toContain('--scenario all --installed-wheel')
+    expect(publish.needs).toContainEqual({ job: 'runtime-windows-x64', artifacts: true })
   })
 })
 
