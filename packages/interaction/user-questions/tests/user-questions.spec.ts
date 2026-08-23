@@ -148,7 +148,7 @@ describe('UserQuestionService', () => {
       name: 'UserQuestionError',
       code: 'ASK_CANCELLED',
     })
-    ctx.userQuestions.registerProvider({ ask: () => Promise.reject(transported) })
+    registerAnswerer(ctx, { ask: () => Promise.reject(transported) })
 
     const rejection = await ctx.userQuestions.ask({
       questions: [{ id: 'confirm', question: 'Proceed?' }],
@@ -174,7 +174,7 @@ describe('UserQuestionService', () => {
   ])('preserves %s from the provider', async (_label, rejection) => {
     const ctx = new Context()
     await ctx.plugin(UserQuestionService)
-    ctx.userQuestions.registerProvider({ ask: vi.fn().mockRejectedValue(rejection) })
+    registerAnswerer(ctx, { ask: vi.fn().mockRejectedValue(rejection) })
 
     await expect(ctx.userQuestions.ask({
       questions: [{ id: 'confirm', question: 'Proceed?' }],
