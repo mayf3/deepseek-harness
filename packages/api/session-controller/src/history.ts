@@ -390,6 +390,7 @@ function viewFor(
   argsFor: (callId: string) => { readonly name: string; readonly args: unknown } | undefined,
   scope?: ScopeKey,
 ): SessionToolView | undefined {
+  if (event.type !== 'tool/call' && event.type !== 'tool/result') return undefined
   const tools = ctx.get('tools')
   if (tools === undefined) return undefined
   try {
