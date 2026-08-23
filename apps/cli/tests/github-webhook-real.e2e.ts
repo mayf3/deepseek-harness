@@ -2,7 +2,7 @@
 
 import type { ChildProcess } from 'node:child_process'
 import { spawn } from 'node:child_process'
-import { createHmac } from 'node:crypto'
+import { createHmac, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
@@ -33,7 +33,7 @@ interface SessionList {
   }>
 }
 
-interface WorkspaceList {
+interface WorkspaceBaseline {
   items: Array<{
     path: string
     sessionIds: string[]
@@ -109,26 +109,136 @@ async function freePort(): Promise<number> {
   return port
 }
 
-/** Invoke one public Web RPC method. */
-async function rpc<T>(baseUrl: string, method: string, payload: unknown): Promise<T> {
-  const response = await fetch(`${baseUrl}/api/${method}`, {
+/** Invoke one public Remote method over its HTTP carrier. */
+async function remoteRpc<T>(baseUrl: string, endpoint: string, args: object): Promise<T> {
+  const response = await fetch(`${baseUrl}/api/${endpoint}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       type: 'client-request',
-      rpcId: `github-webhook-real-${method}`,
-      method,
-      payload,
+      rpcId: `github-webhook-real-${endpoint}-${randomUUID()}`,
+      method: endpoint,
+      payload: { args },
     }),
   })
-  if (!response.ok) throw new Error(`${method} returned HTTP ${String(response.status)}: ${await response.text()}`)
+  if (!response.ok) {
+    throw new Error(`${endpoint} returned HTTP ${String(response.status)}: ${await response.text()}`)
+  }
   const envelope = await response.json() as {
     result: { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
   }
   if (!envelope.result.ok) {
-    throw new Error(`${method} failed: ${envelope.result.error.code}: ${envelope.result.error.message}`)
+    throw new Error(`${endpoint} failed: ${envelope.result.error.code}: ${envelope.result.error.message}`)
   }
   return envelope.result.value
+}
+
+/** Read one opening item from a public Remote stream. */
+async function openingStreamItem(
+  baseUrl: string,
+  endpoint: string,
+  args: object,
+  accepts: (value: unknown) => boolean,
+): Promise<Record<string, unknown>> {
+  const socket = new WebSocket(`${baseUrl.replace(/^http/u, 'ws')}/api/remote.mux`)
+  const streamId = `github-webhook-real-${endpoint}-${randomUUID()}`
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = (): void => {
+        socket.removeEventListener('open', opened)
+        socket.removeEventListener('error', failed)
+        socket.removeEventListener('close', closed)
+      }
+      const opened = (): void => {
+        cleanup()
+        resolve()
+      }
+      const failed = (): void => {
+        cleanup()
+        reject(new Error(`${endpoint} carrier failed before opening`))
+      }
+      const closed = (): void => {
+        cleanup()
+        reject(new Error(`${endpoint} carrier closed before opening`))
+      }
+      socket.addEventListener('open', opened)
+      socket.addEventListener('error', failed)
+      socket.addEventListener('close', closed)
+    })
+    return await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timer = setTimeout(() => { finish(new Error(`${endpoint} did not publish its opening item`)) }, 10_000)
+      const cleanup = (): void => {
+        clearTimeout(timer)
+        socket.removeEventListener('message', message)
+        socket.removeEventListener('error', failed)
+        socket.removeEventListener('close', closed)
+      }
+      const finish = (error: Error | undefined, value?: Record<string, unknown>): void => {
+        cleanup()
+        if (error !== undefined) reject(error)
+        else if (value === undefined) reject(new Error(`${endpoint} opening item was absent`))
+        else resolve(value)
+      }
+      const message = (event: MessageEvent<unknown>): void => {
+        try {
+          if (typeof event.data !== 'string') throw new Error(`${endpoint} published a non-text frame`)
+          const frame: unknown = JSON.parse(event.data)
+          if (!isRecord(frame) || frame.streamId !== streamId) return
+          if (frame.type === 'error') {
+            finish(new Error(`${endpoint} failed: ${JSON.stringify(frame.error)}`))
+            return
+          }
+          if (frame.type === 'end') {
+            finish(new Error(`${endpoint} ended before its opening item`))
+            return
+          }
+          if (frame.type === 'item' && isRecord(frame.value) && accepts(frame.value)) {
+            finish(undefined, frame.value)
+          }
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)))
+        }
+      }
+      const failed = (): void => { finish(new Error(`${endpoint} carrier failed before its opening item`)) }
+      const closed = (): void => { finish(new Error(`${endpoint} carrier closed before its opening item`)) }
+      socket.addEventListener('message', message)
+      socket.addEventListener('error', failed)
+      socket.addEventListener('close', closed)
+      socket.send(JSON.stringify({ type: 'open', streamId, endpoint, payload: { args } }))
+    })
+  } finally {
+    socket.close()
+  }
+}
+
+/** Read the current Workspace baseline from a fresh follow generation. */
+async function workspaceBaseline(baseUrl: string): Promise<WorkspaceBaseline> {
+  const frame = await openingStreamItem(
+    baseUrl,
+    'workspace/follow',
+    {},
+    value => isRecord(value) && value.type === 'baseline' && isRecord(value.value),
+  )
+  return frame.value as WorkspaceBaseline
+}
+
+/** Read the explicit page cut from a fresh Session follow generation. */
+async function sessionCursor(baseUrl: string, sessionId: string): Promise<number> {
+  const frame = await openingStreamItem(
+    baseUrl,
+    'session/follow',
+    { request: { address: { kind: 'session', sessionId } } },
+    value => isRecord(value) && value.type === 'opened' && Number.isSafeInteger(value.cursor),
+  )
+  return frame.cursor as number
+}
+
+/** Read Session history at the cursor explicitly opened for this page. */
+async function history(baseUrl: string, sessionId: string): Promise<HistoryPage> {
+  const throughSeq = await sessionCursor(baseUrl, sessionId)
+  return remoteRpc<HistoryPage>(baseUrl, 'session/page', {
+    request: { address: { kind: 'session', sessionId }, throughSeq, maxMessages: 100 },
+  })
 }
 
 /** Poll a public observation until it satisfies the test's behavior predicate. */
@@ -258,16 +368,16 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('GitHub webhook through the real 
         child,
         observation.text,
         'one Workspace-attached Session',
-        async () => await rpc<WorkspaceList>(baseUrl, 'workspace.list', {}),
+        async () => await workspaceBaseline(baseUrl),
         value => value.items.some(workspace =>
           workspace.path === canonicalWorkspacePath && workspace.sessionIds.length === 1),
         30_000,
       )
       const workspace = workspaces.items.find(item => item.path === canonicalWorkspacePath)
       const sessionId = workspace?.sessionIds[0]
-      if (sessionId === undefined) throw new Error('workspace.list did not expose the webhook Session')
+      if (sessionId === undefined) throw new Error('workspace/follow did not expose the webhook Session')
 
-      const sessions = await rpc<SessionList>(baseUrl, 'session.list', {})
+      const sessions = await remoteRpc<SessionList>(baseUrl, 'session/list', { _request: {} })
       expect(sessions.items.find(session => session.sessionId === sessionId)).toMatchObject({
         agentPreset: 'minimal',
         blank: false,
@@ -278,7 +388,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('GitHub webhook through the real 
         child,
         observation.text,
         'webhook provenance, title, and permission events',
-        async () => await rpc<HistoryPage>(baseUrl, 'session.history', { sessionId, maxMessages: 100 }),
+        async () => await history(baseUrl, sessionId),
         (page) => {
           const events = page.events.map(item => item.event)
           const title = events.find(event => event.type === 'session/title')
@@ -319,7 +429,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('GitHub webhook through the real 
         child,
         observation.text,
         'a real DeepSeek assistant response',
-        async () => await rpc<HistoryPage>(baseUrl, 'session.history', { sessionId, maxMessages: 100 }),
+        async () => await history(baseUrl, sessionId),
         page => assistantText(page).includes(MARKER),
         150_000,
       )

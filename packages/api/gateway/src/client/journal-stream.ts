@@ -73,7 +73,6 @@ export interface RemoteJournalStreamOptions<Page, Entry, Cursor> {
 export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = void> {
   private readonly stream: RemoteStream<RemoteJournalFrame<Entry, Cursor>>
   private initialRequest!: PageRequest
-  private hasInitialRequest = false
   private resumeCursor: Cursor | undefined
   private hasResumeCursor = false
   private generation = 0
@@ -152,7 +151,6 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
     if (this.started) throw new Error(`${this.options.name} already opened`)
     this.started = true
     this.initialRequest = request
-    this.hasInitialRequest = true
     const iterator = this.stream[Symbol.asyncIterator]()
     try {
       const first = await this.takeNext(iterator)
@@ -233,7 +231,7 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
         if (item.value.type === 'opened') {
           throw new Error(`${this.options.name} emitted more than one opening cursor`)
         }
-        await this.acceptEntry(item, iterator)
+        await this.acceptEntry(item.value.entry, item, iterator)
       }
     } catch (error) {
       if (!this.disposed) this.options.failed(error)
@@ -285,32 +283,27 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
   }
 
   private async acceptEntry(
+    entry: Entry,
     item: JournalStreamItem<Entry, Cursor>,
     iterator: AsyncIterator<JournalStreamItem<Entry, Cursor>>,
   ): Promise<void> {
-    if (item.value.type !== 'entry') {
-      throw new Error(`${this.options.name} emitted more than one opening cursor`)
-    }
-    const entry = item.value.entry
     const cursor = this.options.cursor(entry)
-    const last = this.lastCursor
-    if (last !== undefined) {
-      if (this.options.compare(cursor, last) <= 0) return
-      if (!this.options.follows(last, cursor)) {
-        const request = this.repairPageRequest()
-        const superseded = await this.replaceThrough(
-          request,
-          cursor,
-          item.generation,
-          item.signal,
-          iterator,
-          [entry],
-        )
-        if (superseded !== undefined) {
-          await this.replaceGeneration(request, superseded, iterator, true)
-        }
-        return
+    const last = this.lastCursor as Cursor
+    if (this.options.compare(cursor, last) <= 0) return
+    if (!this.options.follows(last, cursor)) {
+      const request = this.repairPageRequest()
+      const superseded = await this.replaceThrough(
+        request,
+        cursor,
+        item.generation,
+        item.signal,
+        iterator,
+        [entry],
+      )
+      if (superseded !== undefined) {
+        await this.replaceGeneration(request, superseded, iterator, true)
       }
+      return
     }
     if (this.firstCursor === undefined) this.firstCursor = cursor
     this.lastCursor = cursor
@@ -400,7 +393,7 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
         if (!signal.aborted || this.stream.signal.aborted) throw result.error
         return this.awaitReplacementGeneration(generation, iterator, pending)
       }
-      this.releaseNext(pending)
+      this.releaseNext()
       if (result.type === 'next-error') throw result.error
       if (result.value.done) {
         signal.throwIfAborted()
@@ -426,7 +419,7 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
       try {
         next = await pending
       } finally {
-        this.releaseNext(pending)
+        this.releaseNext()
       }
       if (next.done) {
         this.stream.signal.throwIfAborted()
@@ -481,16 +474,15 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
     try {
       return await pending
     } finally {
-      this.releaseNext(pending)
+      this.releaseNext()
     }
   }
 
-  private releaseNext(pending: Promise<IteratorResult<JournalStreamItem<Entry, Cursor>>>): void {
-    if (this.pendingNext === pending) this.pendingNext = undefined
+  private releaseNext(): void {
+    this.pendingNext = undefined
   }
 
   private repairPageRequest(): PageRequest {
-    if (!this.hasInitialRequest) throw new Error(`${this.options.name} has no initial page request`)
     return this.repairRequest(this.initialRequest)
   }
 
@@ -509,13 +501,15 @@ export abstract class RemoteJournalStream<Page, Entry, Cursor, PageRequest = voi
   }
 
   private assertPage(entries: readonly Entry[]): void {
-    for (let index = 1; index < entries.length; index++) {
-      const previous = entries[index - 1]
-      const entry = entries[index]
-      if (previous === undefined || entry === undefined) continue
+    const iterator = entries[Symbol.iterator]()
+    const first = iterator.next()
+    if (first.done) return
+    let previous = first.value
+    for (const entry of iterator) {
       if (!this.options.follows(this.options.cursor(previous), this.options.cursor(entry))) {
         throw new Error(`${this.options.name} page contains discontinuous entries`)
       }
+      previous = entry
     }
   }
 

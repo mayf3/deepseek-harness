@@ -192,6 +192,49 @@ describe('Workspace Client snapshot adapter', () => {
     await stream.dispose()
   })
 
+  it('classifies a normal end after the opening baseline as carrier loss', async () => {
+    const remote = new ScriptedWorkspaceRemote([
+      { frames: [baseline('old')] },
+      { frames: [baseline('fresh')], hold: true },
+    ])
+    const replaceBaseline = vi.fn<WorkspaceFollowSink['replaceBaseline']>()
+    const carrierFailed = vi.fn()
+    const stream = createWorkspaceStateStream(workspaceClient(remote), {
+      accept: accepts({ replaceBaseline }),
+      carrierFailed,
+      failed: vi.fn(),
+    })
+
+    stream.start()
+    await vi.waitFor(() => { expect(replaceBaseline).toHaveBeenCalledTimes(2) })
+    expect(carrierFailed.mock.calls[0]?.[0]).toMatchObject({
+      message: 'Workspace state stream ended without a terminal result',
+    })
+    await stream.dispose()
+  })
+
+  it('suppresses callback failure after disposal begins', async () => {
+    const failed = vi.fn()
+    let closing: Promise<void> | undefined
+    const stream = createWorkspaceStateStream(
+      workspaceClient(new ScriptedWorkspaceRemote([{ frames: [baseline()] }])),
+      {
+        accept: accepts({
+          replaceBaseline: () => {
+            closing = stream.dispose()
+            throw new Error('disposed callback')
+          },
+        }),
+        failed,
+      },
+    )
+
+    stream.start()
+    await vi.waitFor(() => { expect(closing).toBeDefined() })
+    await closing
+    expect(failed).not.toHaveBeenCalled()
+  })
+
   it.each([
     {
       name: 'an increment before the baseline',

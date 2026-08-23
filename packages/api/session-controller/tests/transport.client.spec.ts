@@ -57,6 +57,7 @@ interface FollowGeneration {
   readonly frames: readonly SessionFollowFrame[]
   readonly terminal?: Error
   readonly hold?: boolean
+  readonly waitAfterFrames?: Promise<void>
 }
 
 class ScriptedSessionRemote implements SessionTransportRemote {
@@ -68,6 +69,7 @@ class ScriptedSessionRemote implements SessionTransportRemote {
     private readonly generations: FollowGeneration[],
     private readonly pages: RemoteResult<SessionPage>[],
     private readonly controlFrames: readonly SessionControlFrame[] = [],
+    private readonly holdControl = true,
   ) {}
 
   async *follow(request: SessionFollowRequest, signal = new AbortController().signal): AsyncIterable<SessionFollowFrame> {
@@ -76,6 +78,7 @@ class ScriptedSessionRemote implements SessionTransportRemote {
     this.followRequests.push(request)
     this.signals.push(signal)
     for (const frame of generation.frames) yield frame
+    await generation.waitAfterFrames
     if (generation.terminal !== undefined) throw generation.terminal
     if (generation.hold === true && !signal.aborted) {
       await new Promise<void>((resolve) => {
@@ -93,7 +96,7 @@ class ScriptedSessionRemote implements SessionTransportRemote {
 
   async *control(signal = new AbortController().signal): AsyncIterable<SessionControlFrame> {
     for (const frame of this.controlFrames) yield frame
-    if (!signal.aborted) {
+    if (this.holdControl && !signal.aborted) {
       await new Promise<void>((resolve) => {
         signal.addEventListener('abort', () => { resolve() }, { once: true })
       })
@@ -168,7 +171,7 @@ describe('Session Client stream adapters', () => {
       failed: vi.fn(),
     })
 
-    await stream.open({})
+    await stream.open({ maxMessages: 50 })
     await vi.waitFor(() => { expect(remote.followRequests).toHaveLength(2) })
 
     expect(remote.followRequests).toEqual([
@@ -176,11 +179,42 @@ describe('Session Client stream adapters', () => {
       { address: ADDRESS, afterSeq: 2 },
     ])
     expect(remote.pageRequests).toEqual([
-      { address: ADDRESS, throughSeq: 1 },
-      { address: ADDRESS, throughSeq: 4 },
+      { address: ADDRESS, throughSeq: 1, maxMessages: 50 },
+      { address: ADDRESS, throughSeq: 4, maxMessages: 50 },
     ])
     expect(changes.map(change => change.type)).toEqual(['replace', 'append', 'replace'])
     expect(carrierFailed).toHaveBeenCalledWith(lost)
+    await stream.dispose()
+  })
+
+  it('repairs a resumed event stream without an optional message limit', async () => {
+    const finish = Promise.withResolvers<undefined>()
+    const remote = new ScriptedSessionRemote(
+      [
+        {
+          frames: [{ type: 'opened', cursor: 0 }],
+          waitAfterFrames: finish.promise,
+          terminal: new RemoteStreamCarrierError('lost'),
+        },
+        { frames: [{ type: 'opened', cursor: 1 }], hold: true },
+      ],
+      [
+        { ok: true, value: page([entry(0)]) },
+        { ok: true, value: page([entry(0), entry(1)]) },
+      ],
+    )
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: vi.fn(),
+      failed: vi.fn(),
+    })
+
+    await stream.open({})
+    finish.resolve(undefined)
+    await vi.waitFor(() => { expect(remote.pageRequests).toHaveLength(2) })
+    expect(remote.pageRequests).toEqual([
+      { address: ADDRESS, throughSeq: 0 },
+      { address: ADDRESS, throughSeq: 1 },
+    ])
     await stream.dispose()
   })
 
@@ -225,5 +259,42 @@ describe('Session Client stream adapters', () => {
     expect(accept.mock.calls.map(([frame]) => frame)).toEqual([baseline, update])
     await stream.dispose()
     await stream.dispose()
+  })
+
+  it('classifies control streams that end before and after their opening baseline', async () => {
+    const beforeFailed = vi.fn()
+    const before = createSessionControlStream(
+      sessionClient(new ScriptedSessionRemote([], [], [], false)),
+      { accept: vi.fn(), failed: beforeFailed },
+    )
+    before.start()
+    await vi.waitFor(() => { expect(beforeFailed).toHaveBeenCalledOnce() })
+    expect(beforeFailed.mock.calls[0]?.[0]).toMatchObject({
+      message: 'session control stream ended before its opening snapshot',
+    })
+    await before.dispose()
+
+    const baseline: SessionControlFrame = {
+      type: 'baseline',
+      value: { queues: {}, jobs: {}, projections: {} },
+    }
+    const carrierFailed = vi.fn()
+    const failed = vi.fn()
+    const afterRemote = new ScriptedSessionRemote([], [], [baseline], false)
+    const after = createSessionControlStream(sessionClient(afterRemote), {
+      accept: vi.fn(),
+      carrierFailed: (error) => {
+        carrierFailed(error)
+        void after.dispose()
+      },
+      failed,
+    })
+    after.start()
+    await vi.waitFor(() => { expect(carrierFailed).toHaveBeenCalledOnce() })
+    expect(carrierFailed.mock.calls[0]?.[0]).toMatchObject({
+      message: 'session control stream ended without a terminal result',
+    })
+    expect(failed).not.toHaveBeenCalled()
+    await after.dispose()
   })
 })

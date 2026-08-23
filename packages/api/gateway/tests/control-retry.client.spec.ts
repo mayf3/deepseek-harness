@@ -37,7 +37,7 @@ function hostSource(initiallyAvailable: boolean): {
 }
 
 interface Generation<Item> {
-  readonly values?: readonly Item[]
+  readonly values?: readonly (Item | Promise<Item>)[]
   readonly terminal?: Error
   readonly hold?: boolean
   readonly afterAbortError?: Error
@@ -51,7 +51,7 @@ function scripted<Item>(generations: Generation<Item>[], opened?: () => void) {
       if (generation === undefined) throw new Error('fixture has no stream generation')
       opened?.()
       try {
-        for (const value of generation.values ?? []) yield value
+        for (const value of generation.values ?? []) yield await value
         if (generation.terminal !== undefined) throw generation.terminal
         if (generation.hold === true && !signal.aborted) {
           await new Promise<void>((resolve) => {
@@ -118,9 +118,21 @@ describe('RemoteStream', () => {
   })
 
   it('waits for a replacement Host generation after observing unavailability', async () => {
-    const source = hostSource(false)
+    let available = false
+    let listener: (() => void) | undefined
+    const subscribed = Promise.withResolvers<undefined>()
+    const connection = {
+      hostDescription: {
+        getSnapshot: () => available ? DESCRIPTION : undefined,
+        subscribe: (value: () => void) => {
+          listener = value
+          subscribed.resolve(undefined)
+          return () => { listener = undefined }
+        },
+      },
+    }
     let opened = 0
-    const stream = new RemoteStream(source.connection, {
+    const stream = new RemoteStream(connection, {
       name: 'fixture stream',
       open: scripted([
         { terminal: new RemoteStreamCarrierError('offline') },
@@ -130,15 +142,35 @@ describe('RemoteStream', () => {
     })
     const pending = stream[Symbol.asyncIterator]().next()
     await vi.waitFor(() => { expect(opened).toBe(1) })
+    await subscribed.promise
 
-    source.publish(false)
+    listener?.()
     expect(opened).toBe(1)
-    source.publish(true)
+    available = true
+    listener?.()
     await expect(pending).resolves.toMatchObject({
       done: false,
       value: { generation: 2, value: 'ready' },
     })
     await stream.dispose()
+  })
+
+  it('stops a pending retry when the logical stream is disposed', async () => {
+    const source = hostSource(false)
+    let opened = 0
+    const stream = new RemoteStream(source.connection, {
+      name: 'fixture stream',
+      open: scripted([
+        { terminal: new RemoteStreamCarrierError('offline') },
+      ], () => { opened++ }),
+      ended: () => new Error('ended'),
+    })
+    const pending = stream[Symbol.asyncIterator]().next()
+    await vi.waitFor(() => { expect(opened).toBe(1) })
+    source.publish(false)
+
+    await stream.dispose()
+    await expect(pending).resolves.toEqual({ done: true, value: undefined })
   })
 
   it('contains a Host publication during subscription setup', async () => {
@@ -299,5 +331,17 @@ describe('RemoteStream', () => {
       done: true,
       value: undefined,
     })
+  })
+
+  it('drops a value that arrives after disposal begins', async () => {
+    const source = hostSource(true)
+    const late = Promise.withResolvers<string>()
+    const stream = supervisor(source.connection, [{ values: [late.promise] }])
+    const pending = stream[Symbol.asyncIterator]().next()
+    const disposing = stream.dispose()
+    late.resolve('late')
+
+    await expect(pending).resolves.toEqual({ done: true, value: undefined })
+    await disposing
   })
 })

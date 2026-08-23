@@ -102,4 +102,19 @@ describe('Session control queue projection', () => {
 
     await expect(waiting).resolves.toMatchObject({ done: true })
   })
+
+  it('ends active streams on context disposal after flushing buffered frames', async () => {
+    const { ctx, control, inbox } = await harness()
+    const iterator = control.control(new AbortController().signal)[Symbol.asyncIterator]()
+    await iterator.next()
+    inbox.append('next-turn', message('first'))
+    inbox.append('next-turn', message('second'))
+
+    const first = await iterator.next()
+    expect(first).toMatchObject({ done: false, value: { type: 'queue' } })
+    await ctx.fiber.dispose()
+    const second = await iterator.next()
+    expect(second).toMatchObject({ done: false, value: { type: 'queue' } })
+    await expect(iterator.next()).resolves.toMatchObject({ done: true })
+  })
 })
