@@ -208,14 +208,26 @@ export default defineConfig({
         'packages/client/ui-primitives/src/RiskConfirmation.tsx',
         'packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx',
         'packages/client/ui-workspace/src/client/WorkspacePicker.tsx',
+        'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx',
         'packages/client/ui-renderer/src/client/*',
-        // This isolated settings-scope lifecycle has complete unit coverage;
-        // keep it out of the broader client-runtime GUI debt exemption.
-        'packages/client/runtime/src/**/!(settings-scope).ts',
+        // Session object internals retain the runtime GUI debt exemption; the
+        // new Controller entry, transport, Agent scope, and adapters stay gated.
+        'packages/api/session-controller/src/client/sessions/*',
+        'packages/api/session-controller/src/client/ordered-baseline.ts',
+        'packages/api/session-controller/src/client/time-zone.ts',
         // Keep the browser conversation tree under its existing GUI debt
         // exemption while gating the newly stateful Host half and vocabulary.
         'packages/client/ui-conversation/src/client/*',
         'packages/client/ui-conversation/src/invariant.ts',
+        // Chat presentation and assembly retain the same GUI debt exemption;
+        // package wiring and the new approval-detail adapter remain gated.
+        'packages/client/ui-chat/src/client/chat/!(ApprovalCommand).{ts,tsx}',
+        'packages/client/ui-chat/src/client/conversation-nodes/*',
+        'packages/client/ui-chat/src/client/details/*',
+        'packages/client/ui-chat/src/client/model/*',
+        'packages/client/ui-chat/src/client/contract/context-provenance.ts',
+        'packages/client/ui-chat/src/client/contract/snapshot.ts',
+        'packages/client/ui-chat/src/client/historical-images.ts',
         'packages/client/ui-primitives/src/DisclosureRow.tsx',
         'packages/client/ui-tool/src/*',
         'packages/client/ui-slots/src/*',

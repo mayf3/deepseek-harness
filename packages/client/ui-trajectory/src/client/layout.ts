@@ -6,17 +6,17 @@ import type {
   AssistantBlock,
   AssistantMessageNode,
   ConversationLocation,
-  ConversationSnapshot,
   RequestInspectionSnapshot,
   RequestPromptChange,
   RequestView,
   ToolCallBlock,
   ToolResultNode,
-} from '@deepseek-ai/dsh-client-runtime/client'
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   TrajectoryCellProps,
   TrajectorySourceBlock,
 } from './trajectory-record.ts'
+import type { TrajectorySnapshot } from './trajectory-contract.ts'
 import { formatElapsedSeconds } from './trajectory-record.ts'
 
 /** One Message or Step group inside a turn. */
@@ -34,10 +34,10 @@ export interface TrajectoryTurnModel {
 
 /** Snapshot slice the trajectory view folds. */
 export interface TrajectoryLayoutInput {
-  nodes: ConversationSnapshot['nodes']
+  nodes: TrajectorySnapshot['eventNodes']
   eventLocations?: ReadonlyMap<number, ConversationLocation>
-  partial: ConversationSnapshot['partial']
-  runningCalls: ConversationSnapshot['runningCalls']
+  partial: TrajectorySnapshot['partial']
+  runningCalls: TrajectorySnapshot['runningCalls']
   requests?: readonly RequestView[]
   callSchemas?: RequestInspectionSnapshot['callSchemas']
 }
@@ -72,7 +72,7 @@ type AssistantRequestView = Extract<RequestView, { purpose: 'assistant' }>
 type CompactionRequestView = Extract<RequestView, { purpose: 'compaction' }>
 
 type InputNode = Extract<
-  ConversationSnapshot['nodes'][number],
+  TrajectorySnapshot['eventNodes'][number],
   { kind: 'user' | 'steering' | 'context' }
 >
 
@@ -80,7 +80,7 @@ type OrderedLayoutEntry =
   | {
     kind: 'node'
     seq: number
-    node: ConversationSnapshot['nodes'][number]
+    node: TrajectorySnapshot['eventNodes'][number]
     nodeIndex: number
   }
   | {
@@ -531,7 +531,7 @@ export function deriveTrajectoryLayout(input: TrajectoryLayoutInput): readonly T
  */
 export function appendTrajectoryPartialLayout(
   turns: readonly TrajectoryTurnModel[],
-  partial: ConversationSnapshot['partial'],
+  partial: TrajectorySnapshot['partial'],
   lastIndex: number,
 ): readonly TrajectoryTurnModel[] {
   if (partial === null) return turns
@@ -858,7 +858,7 @@ function stringifySourceValue(value: unknown): string {
  */
 function enclosingUserTurn(
   followingAssistant: AssistantMessageNode | undefined,
-  partial: ConversationSnapshot['partial'],
+  partial: TrajectorySnapshot['partial'],
   lastAssistantTurn: number | null,
 ): number {
   if (followingAssistant !== undefined) return followingAssistant.turn
@@ -869,7 +869,7 @@ function enclosingUserTurn(
 
 function steeringPlacement(
   followingAssistant: AssistantMessageNode | undefined,
-  partial: ConversationSnapshot['partial'],
+  partial: TrajectorySnapshot['partial'],
   lastAssistantTurn: number | null,
   location: ConversationLocation | undefined,
 ): { turn: number; step?: number } {
@@ -892,7 +892,7 @@ function steeringPlacement(
 }
 
 function indexFollowingAssistants(
-  nodes: ConversationSnapshot['nodes'],
+  nodes: TrajectorySnapshot['eventNodes'],
 ): readonly (AssistantMessageNode | undefined)[] {
   const following = new Array<AssistantMessageNode | undefined>(nodes.length)
   let assistant: AssistantMessageNode | undefined
@@ -905,9 +905,9 @@ function indexFollowingAssistants(
 }
 
 function enclosingPromptTurn(
-  nodes: ConversationSnapshot['nodes'],
+  nodes: TrajectorySnapshot['eventNodes'],
   seq: number,
-  partial: ConversationSnapshot['partial'],
+  partial: TrajectorySnapshot['partial'],
 ): number {
   const next = nodes.find(node =>
     node.seq > seq && node.kind === 'assistant' && node.step > 0)
@@ -917,8 +917,8 @@ function enclosingPromptTurn(
 
 /** Earliest raw turn represented by the selected trajectory branch. */
 function firstVisibleTurn(
-  nodes: ConversationSnapshot['nodes'],
-  partial: ConversationSnapshot['partial'],
+  nodes: TrajectorySnapshot['eventNodes'],
+  partial: TrajectorySnapshot['partial'],
 ): number {
   const turns = nodes.flatMap(node =>
     node.kind === 'assistant' && node.turn > 0
@@ -939,7 +939,7 @@ function attachUsage(cell: TrajectoryCellProps, usage: UsageLike | undefined): v
   if (usage.reasoningTokens !== undefined) cell.think = usage.reasoningTokens
 }
 
-function indexResults(nodes: ConversationSnapshot['nodes']): Map<string, ToolResultNode> {
+function indexResults(nodes: TrajectorySnapshot['eventNodes']): Map<string, ToolResultNode> {
   const map = new Map<string, ToolResultNode>()
   for (const node of nodes) {
     if (node.kind === 'tool-result') map.set(node.callId, node)
@@ -947,7 +947,7 @@ function indexResults(nodes: ConversationSnapshot['nodes']): Map<string, ToolRes
   return map
 }
 
-function indexAssistantCallIds(nodes: ConversationSnapshot['nodes']): ReadonlySet<string> {
+function indexAssistantCallIds(nodes: TrajectorySnapshot['eventNodes']): ReadonlySet<string> {
   const ids = new Set<string>()
   for (const node of nodes) {
     if (node.kind !== 'assistant') continue

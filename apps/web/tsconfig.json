@@ -105,6 +105,9 @@
   ],
   "references": [
     {
+      "path": "../../packages/client/store"
+    },
+    {
       "path": "../../packages/client/web"
     },
     {

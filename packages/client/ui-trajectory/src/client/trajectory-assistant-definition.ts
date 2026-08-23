@@ -1,12 +1,11 @@
 import type { Context } from '@deepseek-ai/cordis'
-import type {
-  AssistantBlock, AssistantMessageNode, ConversationLocation, ConversationMatch,
-  ConversationNodeContext, ConversationNodeDefinition, PartialAssistant, RequestView,
-} from '@deepseek-ai/dsh-client-runtime/client'
 import {
   displayFailureMessage, emptyAssistantBlock, isTokenDelta, toAssistantBlock,
   toAssistantBlocks,
-} from '@deepseek-ai/dsh-client-runtime/client'
+  type AssistantBlock, type AssistantMessageNode, type ConversationLocation,
+  type ConversationMatch, type ConversationNodeContext, type ConversationNodeDefinition,
+  type PartialAssistant, type RequestView,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { trajectoryNode } from './trajectory-definition-common.ts'
 
 /* jscpd:ignore-start -- Target-owned Definitions intentionally keep their event
@@ -402,6 +401,6 @@ const trajectoryTurnEndDefinition: ConversationNodeDefinition<TurnEndState> = {
  * @param ctx - Plugin context receiving the Definitions.
  */
 export function registerTrajectoryAssistantDefinition(ctx: Context): void {
-  ctx.conversationEvents.register(trajectoryAssistantDefinition)
-  ctx.conversationEvents.register(trajectoryTurnEndDefinition)
+  ctx.uiConversation.events.register(trajectoryAssistantDefinition)
+  ctx.uiConversation.events.register(trajectoryTurnEndDefinition)
 }

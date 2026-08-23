@@ -115,9 +115,35 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
-      ],
+      ]
+    },
+    "packages/api/workspace-controller": {
       "ignoreDependencies": [
-        "@deepseek-ai/dsh-api-gateway"
+        "zod"
+      ]
+    },
+    "packages/client/ui-approval": {
+      "entry": [
+        "tests/**/*.spec.tsx"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "tests/**/*.tsx"
+      ]
+    },
+    "packages/client/ui-conversation": {
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
+    },
+    "packages/client/ui-sidebar": {
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
+    },
+    "packages/client/ui-subagent": {
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-client-ui-input-trigger"
       ]
     },
     "packages/client/ui-primitives": {
@@ -624,6 +650,7 @@
         "tests/**/*.ts"
       ],
       "ignoreDependencies": [
+        "@deepseek-ai/dsh-client-store",
         "@deepseek-ai/dsh-client-ui-primitives",
         "@deepseek-ai/dsh-client-ui-slots",
         "@types/react",

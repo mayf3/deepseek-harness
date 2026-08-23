@@ -7,27 +7,36 @@
  * event ledger with its timing overview, and fiber disposal removes the tab.
  * Timeline projection and inclusive focus edge cases ride along.
  */
-import { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createElement, type ComponentProps, type FC, type ReactNode } from 'react'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  ConversationEventRegistry, ConversationViewRegistry, createSnapshotStore,
-  EMPTY_CHAT_SNAPSHOT,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+  EMPTY_CONVERSATION_SNAPSHOT, UiConversation,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  ConversationSnapshot, RequestView,
-  SessionId, SessionListState, SnapshotStore, WorkspaceListState,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConvViewProps, ViewTab } from '@deepseek-ai/dsh-client-ui-conversation/client'
+  ConversationBinding, ConversationSnapshot, ConversationViewSnapshotMap, ConvViewProps,
+  InputActions, InputState, RequestView, ViewTab,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { EMPTY_CHAT_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type {
+  ChatSnapshot, LegacyConversationSlice,
+} from '@deepseek-ai/dsh-client-ui-chat/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type {
+  SessionBinding, SessionListState, SessionProjectionMap, SessionSnapshot, UseProjection,
+} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import {
   ConversationSession, ConversationSessionHeader,
   type ConversationSessionHeaderProps, type ConversationSessionProps,
 } from '@deepseek-ai/dsh-client-ui-conversation/src/client/skeleton/ConversationSession.tsx'
-import { createChatStore } from '@deepseek-ai/dsh-client-ui-conversation/src/client/stores.ts'
+import { createConversationStore } from '@deepseek-ai/dsh-client-ui-conversation/src/client/stores.ts'
 import { zh as conversationZh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 import { apply as localeApply, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
@@ -41,23 +50,28 @@ import {
   TrajectoryView, type TrajectoryViewInjected,
 } from '../src/client/TrajectoryView.tsx'
 import { createTrajectoryDurationStore } from '../src/client/duration-store.ts'
+import { EMPTY_TRAJECTORY_SNAPSHOT } from '../src/client/trajectory-snapshot-builder.ts'
 import type { TrajectorySnapshot } from '../src/client/trajectory-contract.ts'
 import { deriveTrajectoryTimeline } from '../src/client/timeline.ts'
 
 const SID = 's1' as SessionId
-const sessionSnapshots = new WeakMap<SlotRegistry, SnapshotStore<ConversationSnapshot>>()
 const tConversation: ConversationSessionHeaderProps['t'] =
   key => (conversationZh as Record<string, string>)[key] ?? key
 
-afterEach(cleanup)
-// The chat store persists under its declared key; clear so one case's active
+const runtimes: SlotTestRuntime[] = []
+
+afterEach(async () => {
+  cleanup()
+  for (const runtime of runtimes.splice(0)) await runtime.dispose()
+})
+// The Conversation store persists under its declared key; clear so one case's active
 // view cannot rehydrate into the next.
 beforeEach(() => {
   localStorage.clear()
 })
 
 /** Node fixture: user prologue, two turns, one tool result inside turn 1. */
-const NODES = [
+const NODES: LegacyConversationSlice['nodes'] = [
   { kind: 'user', seq: 1, time: 1_000, content: [], source: null },
   {
     kind: 'assistant', seq: 2, time: 2_000, turn: 1, step: 1, blocks: [],
@@ -65,19 +79,19 @@ const NODES = [
   },
   {
     kind: 'tool-result', seq: 3, time: 3_000, callId: 'c1', call: null, callTime: 2_200,
-    content: [], isError: false, callView: null, resultView: null,
+    content: [], isError: false, callView: null, resultView: null, subCalls: [],
   },
   {
     kind: 'assistant', seq: 4, time: 4_000, turn: 2, step: 1, blocks: [],
     timing: { stepStartTime: 3_500, firstTokenTime: 3_700, completedTime: 4_000 },
   },
-] as unknown as ConversationSnapshot['nodes']
+]
 
 function historySnapshot(
-  nodes: ConversationSnapshot['nodes'],
+  nodes: LegacyConversationSlice['nodes'],
   inspection: Partial<TrajectorySnapshot> = {},
-): ConversationSnapshot {
-  const trajectory: TrajectorySnapshot = {
+): TrajectorySnapshot {
+  return {
     eventNodes: nodes,
     eventLocations: new Map(),
     requests: [],
@@ -86,22 +100,14 @@ function historySnapshot(
     runningCalls: [],
     ...inspection,
   }
+}
+
+function sessionSnapshot(nodes: LegacyConversationSlice['nodes']): SessionSnapshot {
   return {
     sessionId: SID,
-    views: {
-      get: target => target === 'trajectory' ? trajectory : undefined,
-    },
-    chat: EMPTY_CHAT_SNAPSHOT,
-    nodes,
-    turnTimings: new Map(),
-    turnEnds: new Map(),
-    partial: trajectory.partial,
-    runningCalls: trajectory.runningCalls,
-    pending: [],
     queue: [],
     running: false,
     subagent: null,
-    composerPhase: 'active',
     removed: false,
     openState: 'open',
     openError: null,
@@ -110,18 +116,33 @@ function historySnapshot(
     promptError: null,
     blank: nodes.length === 0,
     lastAgentError: null,
+    promptAttempted: nodes.length > 0,
+    awaitingFirstTurn: false,
+  }
+}
+
+function conversationSnapshot(
+  trajectory: TrajectorySnapshot,
+): ConversationSnapshot {
+  return {
+    views: EMPTY_CONVERSATION_SNAPSHOT.views,
+    activeTargets: trajectory.eventNodes.length === 0
+      ? new Set()
+      : new Set(['trajectory']),
   }
 }
 
 function standaloneHistory(
-  snapshot: ConversationSnapshot,
+  snapshot: TrajectorySnapshot,
 ): Pick<
   ComponentProps<typeof TrajectoryView>,
-  'useSession' | 'loadOlder'
+  'useSession' | 'useTrajectory' | 'loadOlder'
 > {
-  const store = createSnapshotStore(snapshot)
+  const session = createSnapshotStore(sessionSnapshot(snapshot.eventNodes))
+  const trajectory = createSnapshotStore(snapshot)
   return {
-    useSession: bindSnapshotSelector(store),
+    useSession: bindSnapshotSelector(session),
+    useTrajectory: bindSnapshotSelector(trajectory),
     loadOlder: () => Promise.resolve(false),
   }
 }
@@ -136,11 +157,6 @@ function standaloneDuration(): Pick<
   }
 }
 
-function fakeSession(nodes: ConversationSnapshot['nodes']) {
-  const store = createSnapshotStore(historySnapshot(nodes))
-  return { store, useSession: bindSnapshotSelector(store) }
-}
-
 /** Empty sessions-list hook; breadcrumbs therefore fall back to the raw id. */
 function emptySessions() {
   const store = createSnapshotStore<SessionListState>(
@@ -149,50 +165,104 @@ function emptySessions() {
 }
 
 function emptyWorkspaces() {
-  const store = createSnapshotStore<WorkspaceListState>({
-    items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null, baselinesReady: true,
-    recentWorkspaceId: undefined,
+  const store = createSnapshotStore<WorkspaceSnapshot>({
+    items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
   })
   return bindSnapshotSelector(store)
 }
 
+function emptyProjection<Key extends Extract<keyof SessionProjectionMap, string>>(
+  key: Key,
+): SessionProjectionMap[Key] | undefined
+function emptyProjection<Key extends Extract<keyof SessionProjectionMap, string>, Selected>(
+  key: Key,
+  selector: (value: SessionProjectionMap[Key] | undefined) => Selected,
+  eq?: (left: Selected, right: Selected) => boolean,
+): Selected
+function emptyProjection<Key extends Extract<keyof SessionProjectionMap, string>, Selected>(
+  _key: Key,
+  selector?: (value: SessionProjectionMap[Key] | undefined) => Selected,
+): SessionProjectionMap[Key] | Selected | undefined {
+  return selector === undefined ? undefined : selector(undefined)
+}
+
+const useProjection: UseProjection = emptyProjection
+
+type StandaloneBaseProps = Omit<
+  ComponentProps<typeof TrajectoryView>,
+  'useSession' | 'useTrajectory' | 'useDuration' | 'loadOlder' | 'setActualDuration'
+>
+
 /** Standalone view props: the session-scope standard kit the outlet would bake. */
 function standaloneProps(
-  nodes: ConversationSnapshot['nodes'],
-): ConvViewProps & { t: (key: LocaleKeysOf<'trajectory'>) => string } {
+  nodes: LegacyConversationSlice['nodes'],
+): StandaloneBaseProps {
+  const trajectory = historySnapshot(nodes)
+  const input = createSnapshotStore<InputState>({
+    draft: '', imageIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [],
+  })
+  const inputActions: InputActions = {
+    setDraft: () => {},
+    addImages: () => false,
+    removeImage: () => {},
+    pruneImages: () => {},
+    submit: () => {},
+  }
   return {
     sessionId: SID,
-    useSession: fakeSession(nodes).useSession,
+    useChat: bindSnapshotSelector(createSnapshotStore(EMPTY_CHAT_SNAPSHOT)),
     useSessions: emptySessions(),
+    useSessionPendingInteraction: bindSnapshotSelector(
+      createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
+    ),
     useWorkspaces: emptyWorkspaces(),
-    useProjection: (() => undefined) as never,
+    useConversation: bindSnapshotSelector(createSnapshotStore(conversationSnapshot(trajectory))),
+    useInput: bindSnapshotSelector(input),
+    inputActions,
+    useProjection,
+    viewRequest: null,
+    openView: () => {},
+    completeViewRequest: () => {},
     // The locale seat the outlet would inject for the declared namespace.
     t: (key: LocaleKeysOf<'trajectory'>) => zh[key as TrajectoryKey] ?? key,
-  } as unknown as ConvViewProps & { t: (key: LocaleKeysOf<'trajectory'>) => string }
+  }
+}
+
+type ConversationTargetSources = {
+  [Target in Extract<keyof ConversationViewSnapshotMap, string>]:
+  ObservableSnapshot<ConversationViewSnapshotMap[Target] | undefined>
 }
 
 /** Real-stack bench: root Context + real SlotRegistry ring + the plugin fiber. */
 async function bench(snapshot = historySnapshot(NODES)) {
-  const ctx = new Context()
-  const slots = new SlotRegistry(ctx)
+  const runtime = await SlotTestRuntime.create()
+  runtimes.push(runtime)
+  const ctx = runtime.ctx
+  const slots = runtime.slots
   const loadOlder = vi.fn(() => Promise.resolve())
-  const sessionStore = createSnapshotStore(snapshot)
-  const session = {
-    getSnapshot: () => sessionStore.getSnapshot(),
-    subscribe: (listener: () => void) => sessionStore.subscribe(listener),
-    loadOlder,
-  }
-  await ctx.plugin(ConversationEventRegistry).await()
-  await ctx.plugin(ConversationViewRegistry).await()
-  ctx.provide('sessions', {
-    binding: () => ({ session }),
+  await runtime.sessions.add({
+    id: SID,
+    snapshot: { blank: false },
+    session: { loadOlder },
   })
-  sessionSnapshots.set(slots, sessionStore)
+  const trajectoryStore = createSnapshotStore(snapshot)
+  const conversationStore = createSnapshotStore<ConversationSnapshot>(conversationSnapshot(snapshot))
+  const uiConversation = new UiConversation(ctx, runtime.sessions)
+  const { events, views } = uiConversation
+  const targetSources: ConversationTargetSources = {
+    chat: createSnapshotStore<ChatSnapshot | undefined>(undefined),
+    trajectory: trajectoryStore,
+  }
+  const binding: ConversationBinding = {
+    snapshot: conversationStore,
+    target: target => targetSources[target],
+  }
+  vi.spyOn(uiConversation, 'binding').mockReturnValue(binding)
   // The conversation entry's role: declare the ring, then seed the chat entry.
-  slots.register({
-    name: 'root',
-    children: { 'conversation.view': { kind: 'list', scope: 'session' } },
-  }, (_p: { renderSlot?: unknown }) => null)
+  await runtime.root.declare(
+    { 'conversation.view': { kind: 'list', scope: 'session' } },
+    (_p: { renderSlot?: unknown }) => null,
+  )
   const chatBody = vi.fn(() => <div data-testid="chat-body" />)
   slots.register(
     { name: 'conversation.view', id: 'chat', order: 0, label: 'Chat' } as never, chatBody as never)
@@ -202,10 +272,15 @@ async function bench(snapshot = historySnapshot(NODES)) {
   ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
   ctx.provide('remote', { $on: () => () => {} } as never)
   ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
-  ctx.plugin({ inject: [...localeInject], apply: localeApply })
-  const fiber = ctx.plugin({ inject: [...inject], apply })
-  await fiber.await()
-  return { ctx, slots, fiber, loadOlder, sessionStore }
+  await runtime.mount({ inject: [...localeInject], apply: localeApply })
+  const provide = vi.spyOn(ctx.uiSession, 'provide')
+  const feature = await runtime.mount({ inject: [...inject], apply })
+  const sourceDescriptor = provide.mock.calls[0]?.[0]
+  if (sourceDescriptor === undefined) throw new Error('ui-trajectory did not provide its standard source')
+  return {
+    runtime, ctx, slots, feature, loadOlder, trajectoryStore, conversationStore,
+    events, views, sourceDescriptor,
+  }
 }
 
 /** Tab projection twin of apply's viewTabs (the render-side consumption path). */
@@ -214,28 +289,63 @@ function tabsOf(slots: SlotRegistry): ViewTab[] {
     .map(e => ({ id: e.options.id!, label: resolveSlotLabel(e.options.label) ?? e.options.id! }))
 }
 
+type ConvViewOwner = Pick<ConvViewProps, 'viewRequest' | 'openView' | 'completeViewRequest'>
+
+function isConvViewOwner(owner: object): owner is ConvViewOwner {
+  return 'viewRequest' in owner
+    && 'openView' in owner && typeof owner.openView === 'function'
+    && 'completeViewRequest' in owner && typeof owner.completeViewRequest === 'function'
+}
+
 /** Mount the strict Session header/body over the ring ledger with outlet-faithful render shares. */
-function mount(slots: SlotRegistry, nodes: ConversationSnapshot['nodes'] = NODES) {
-  const sessionSnapshot = sessionSnapshots.get(slots) ?? createSnapshotStore(historySnapshot(nodes))
-  const useSession = bindSnapshotSelector(sessionSnapshot)
-  const chat = createChatStore().create()
-  const views = {
-    list: () => tabsOf(slots),
-    subscribe: (fn: () => void) => slots.subscribe('conversation.view', fn),
-    version: () => slots.getVersion('conversation.view'),
-  }
-  const useInput = bindSnapshotSelector(createSnapshotStore({
+function mount(fixture: Awaited<ReturnType<typeof bench>>) {
+  const { runtime, slots, trajectoryStore, conversationStore } = fixture
+  const session = runtime.sessions.binding(SID)?.session
+  if (session === undefined) throw new Error('trajectory fixture session is unavailable')
+  const useSession = bindSnapshotSelector<SessionSnapshot>(session)
+  const useTrajectory = bindSnapshotSelector<TrajectorySnapshot>(trajectoryStore)
+  const useConversation = bindSnapshotSelector<ConversationSnapshot>(conversationStore)
+  const useChat = bindSnapshotSelector(createSnapshotStore(EMPTY_CHAT_SNAPSHOT))
+  const useSessions = emptySessions()
+  const useSessionPendingInteraction = bindSnapshotSelector(
+    createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
+  )
+  const useWorkspaces = emptyWorkspaces()
+  const conversation = createConversationStore().create()
+  const useConversationViews = bindSnapshotSelector(
+    createSnapshotStore<readonly ViewTab[]>(tabsOf(slots)),
+  )
+  const useInput = bindSnapshotSelector(createSnapshotStore<InputState>({
     draft: '', imageIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [],
-  })) as never
-  const inputActions = {
-    setDraft: vi.fn(), addImages: vi.fn(), removeImage: vi.fn(), pruneImages: vi.fn(), submit: vi.fn(),
+  }))
+  const inputActions: InputActions = {
+    setDraft: vi.fn(),
+    addImages: vi.fn(() => false),
+    removeImage: vi.fn(),
+    pruneImages: vi.fn(),
+    submit: vi.fn(),
+  }
+  const standardProps = {
+    sessionId: SID,
+    useSession,
+    useTrajectory,
+    useChat,
+    useConversation,
+    useConversationViews,
+    useSessions,
+    useSessionPendingInteraction,
+    useWorkspaces,
+    useProjection,
+    useInput,
+    inputActions,
   }
   // Minimal outlet twin: resolve the ring entry by the `only` filter and
   // render it with the session standard kit (what SlotOutlet does for a
   // list-kind session slot, minus machinery).
-  const renderSlot = ((key: string, _owner: object, opts?: { only?: string }): ReactNode => {
+  const renderSlot: ConversationSessionProps['renderSlot'] = (key, owner, opts): ReactNode => {
     const entry = slots.entries('conversation.view').find(e => e.options.id === opts?.only)
     if (entry === undefined) return null
+    if (!isConvViewOwner(owner)) throw new Error('trajectory fixture expected Conversation view owner props')
     const View = entry.component as FC<ConvViewProps>
     const injectEntry = entry.inject as ((sessionId: SessionId) => object) | undefined
     const injected = injectEntry === undefined
@@ -252,46 +362,32 @@ function mount(slots: SlotRegistry, nodes: ConversationSnapshot['nodes'] = NODES
         }
       })()
       : injected
+    const viewProps: ConvViewProps = { ...owner, ...standardProps }
     return (
       <View
+        {...viewProps}
         {...injectedProps}
-        {...({ sessionId: SID, useSession, useSessions: emptySessions(), useWorkspaces: emptyWorkspaces() } as unknown as ConvViewProps)}
         key={key}
       />
     )
-  }) as unknown as ConversationSessionProps['renderSlot']
+  }
   return render(
     <>
       <ConversationSessionHeader
-        sessionId={SID}
-        SessionProvider={({ children }) => children(SID)}
-        useSession={useSession}
-        useSessions={emptySessions()}
-        useWorkspaces={emptyWorkspaces()}
-        useProjection={(() => undefined)}
-        useStore={bindSnapshotSelector(chat)}
-        actions={chat.actions}
+        {...standardProps}
+        SessionProvider={({ children }) => children}
+        useStore={bindSnapshotSelector(conversation)}
+        actions={conversation.actions}
         renderSlot={() => null}
-        views={views}
-        useInput={useInput}
-        inputActions={inputActions}
         open={vi.fn()}
         t={tConversation}
       />
       <ConversationSession
-        sessionId={SID}
-        SessionProvider={({ children }) => children(SID)}
-        useSession={useSession}
-        useSessions={emptySessions()}
-        useWorkspaces={emptyWorkspaces()}
-        useProjection={(() => undefined)}
-        useStore={bindSnapshotSelector(chat)}
-        actions={chat.actions}
+        {...standardProps}
+        SessionProvider={({ children }) => children}
+        useStore={bindSnapshotSelector(conversation)}
+        actions={conversation.actions}
         renderSlot={renderSlot}
-        views={views}
-        releaseSessionImages={vi.fn()}
-        useInput={useInput}
-        inputActions={inputActions}
         bindDraftMirror={() => () => {}}
       />
     </>,
@@ -309,16 +405,36 @@ describe('plugin registration', () => {
 
   it('fiber disposal removes the tab and leaves chat standing', async () => {
     const b = await bench()
-    const events = b.ctx.get('conversationEvents') as ConversationEventRegistry
-    const views = b.ctx.get('conversationViews') as ConversationViewRegistry
-    expect(events.entries().length).toBeGreaterThan(0)
-    expect(views.entries()).toHaveLength(1)
+    expect(b.events.entries().length).toBeGreaterThan(0)
+    expect(b.views.entries()).toHaveLength(1)
 
-    await b.fiber.dispose()
+    await b.feature.dispose()
 
     expect(tabsOf(b.slots).map(v => v.id)).toEqual(['chat'])
-    expect(events.entries()).toEqual([])
-    expect(views.entries()).toEqual([])
+    expect(b.events.entries()).toEqual([])
+    expect(b.views.entries()).toEqual([])
+  })
+
+  it('keeps one total standard source for a Session binding', async () => {
+    const b = await bench()
+    const binding = b.runtime.sessions.binding(SID)
+    if (binding === undefined) throw new Error('Trajectory source test Session binding is unavailable')
+    const resolveSource = (owner: SessionBinding): ObservableSnapshot<TrajectorySnapshot> => {
+      const contribution = b.sourceDescriptor.resolve(owner) as {
+        hooks: { trajectory: ObservableSnapshot<TrajectorySnapshot> }
+      }
+      return contribution.hooks.trajectory
+    }
+    const source = b.runtime.ctx.uiSession.adapter.resolve(SID)!.hooks.trajectory as
+      ObservableSnapshot<TrajectorySnapshot>
+
+    expect(resolveSource(binding)).toBe(source)
+    expect(resolveSource(binding)).toBe(source)
+    const optionalTrajectory = b.trajectoryStore as unknown as {
+      set(value: TrajectorySnapshot | undefined): void
+    }
+    optionalTrajectory.set(undefined)
+    expect(source.getSnapshot()).toBe(EMPTY_TRAJECTORY_SNAPSHOT)
   })
 
   it('shares one browser-wide duration preference across session injections', async () => {
@@ -330,6 +446,7 @@ describe('plugin registration', () => {
       sessionId: SessionId,
     ) => TrajectoryViewInjected
     const first = injectEntry(SID)
+    await b.runtime.sessions.add({ id: 's2' }, { current: false })
     const second = injectEntry('s2' as SessionId)
 
     expect(second.hooks.duration).toBe(first.hooks.duration)
@@ -351,7 +468,7 @@ describe('plugin registration', () => {
     expect(await injected.loadOlder()).toBe(false)
 
     b.loadOlder.mockImplementationOnce(async () => {
-      b.sessionStore.set(historySnapshot([...NODES]))
+      b.trajectoryStore.set(historySnapshot([...NODES]))
     })
     expect(await injected.loadOlder()).toBe(true)
   })
@@ -360,7 +477,7 @@ describe('plugin registration', () => {
 describe('tab switching in ConversationRoot', () => {
   it('renders two tabs, defaults to chat, and switches to the trajectory ledger', async () => {
     const b = await bench()
-    const view = mount(b.slots)
+    const view = mount(b)
     expect(screen.getByTestId('chat-body')).toBeTruthy()
     expect(screen.getAllByRole('tab').map(t => t.textContent)).toEqual(['Chat', 'Trajectory'])
 
@@ -394,7 +511,7 @@ describe('tab switching in ConversationRoot', () => {
 
   it('opens a local record inspector and switches payload tabs without opening chat details', async () => {
     const b = await bench()
-    mount(b.slots)
+    mount(b)
     fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
 
     fireEvent.keyDown(screen.getByRole('row', { name: /TOOL/ }), { key: 'Enter' })
@@ -408,7 +525,7 @@ describe('tab switching in ConversationRoot', () => {
   })
 
   it('labels a standalone compaction as between-turn work in the ledger and inspector', async () => {
-    const nodes = [
+    const nodes: LegacyConversationSlice['nodes'] = [
       { kind: 'user', seq: 1, time: 1_000, content: [], source: null },
       {
         kind: 'assistant', seq: 2, time: 2_000, turn: 1, step: 1,
@@ -419,7 +536,7 @@ describe('tab switching in ConversationRoot', () => {
         kind: 'assistant', seq: 6, time: 6_000, turn: 2, step: 1,
         blocks: [{ kind: 'text', text: 'after' }],
       },
-    ] as unknown as ConversationSnapshot['nodes']
+    ]
     const compaction: RequestView = {
       purpose: 'compaction',
       startSeq: 3,
@@ -431,7 +548,7 @@ describe('tab switching in ConversationRoot', () => {
       summary: [{ type: 'text', text: 'standalone summary' }],
     }
     const b = await bench(historySnapshot(nodes, { requests: [compaction] }))
-    const view = mount(b.slots, nodes)
+    const view = mount(b)
     fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
 
     expect(screen.getByText('Between turns')).toBeTruthy()
@@ -443,7 +560,7 @@ describe('tab switching in ConversationRoot', () => {
   })
 
   it('activates only the selected standalone compaction section', async () => {
-    const nodes = [
+    const nodes: LegacyConversationSlice['nodes'] = [
       { kind: 'user', seq: 1, time: 1_000, content: [], source: null },
       {
         kind: 'assistant', seq: 2, time: 2_000, turn: 1, step: 1,
@@ -459,7 +576,7 @@ describe('tab switching in ConversationRoot', () => {
         kind: 'assistant', seq: 10, time: 10_000, turn: 3, step: 1,
         blocks: [{ kind: 'text', text: 'after second compaction' }],
       },
-    ] as unknown as ConversationSnapshot['nodes']
+    ]
     const compactions: RequestView[] = [
       {
         purpose: 'compaction',
@@ -483,7 +600,7 @@ describe('tab switching in ConversationRoot', () => {
       },
     ]
     const b = await bench(historySnapshot(nodes, { requests: compactions }))
-    mount(b.slots, nodes)
+    mount(b)
     fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
 
     const firstRequest = screen.getByRole('button', { name: 'Request #2 · Compaction' })
@@ -508,7 +625,7 @@ describe('tab switching in ConversationRoot', () => {
 
   it('dragging the overview focuses overlapping records without filtering the ledger', async () => {
     const b = await bench()
-    mount(b.slots)
+    mount(b)
     fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
     const plot = screen.getByLabelText('Timeline overview; drag horizontally to focus events')
     vi.spyOn(plot, 'getBoundingClientRect').mockReturnValue({
@@ -540,7 +657,7 @@ describe('tab switching in ConversationRoot', () => {
 
   it('clicking a timeline block clears the range, selects the record, and opens its inspector', async () => {
     const b = await bench()
-    const view = mount(b.slots)
+    const view = mount(b)
     fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
     const plot = screen.getByLabelText('Timeline overview; drag horizontally to focus events')
     vi.spyOn(plot, 'getBoundingClientRect').mockReturnValue({
@@ -578,7 +695,7 @@ describe('tab switching in ConversationRoot', () => {
 
   it('empty window keeps the toolbar and reports no timing data', async () => {
     const b = await bench(historySnapshot([]))
-    mount(b.slots)
+    mount(b)
     fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }))
     expect(screen.getByRole('toolbar', { name: '轨迹工具栏' })).toBeTruthy()
     expect(screen.getByText('No timing data')).toBeTruthy()
@@ -1170,20 +1287,21 @@ describe('TrajectoryView state', () => {
 
 
   it('keeps ledger and timeline selection on the same event after prepend', () => {
-    const older = {
+    const older: LegacyConversationSlice['nodes'][number] = {
       kind: 'user', seq: 1, time: 1_000,
       content: [{ type: 'text', text: 'older prompt' }], source: null,
-    } as unknown as ConversationSnapshot['nodes'][number]
-    const current = {
+    }
+    const current: LegacyConversationSlice['nodes'][number] = {
       kind: 'assistant', seq: 100, time: 5_000, turn: 2, step: 1,
       blocks: [{ kind: 'text', text: 'selected current response' }],
-    } as unknown as ConversationSnapshot['nodes'][number]
+    }
     const store = createSnapshotStore(historySnapshot([current]))
     const view = render(
       <TrajectoryView
         {...standaloneProps([])}
+        {...standaloneHistory(historySnapshot([]))}
         {...standaloneDuration()}
-        useSession={bindSnapshotSelector(store)}
+        useTrajectory={bindSnapshotSelector(store)}
         loadOlder={vi.fn(() => Promise.resolve(false))}
       />,
     )

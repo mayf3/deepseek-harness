@@ -5,12 +5,12 @@
  * capacity. */
 
 import { useEffect, useRef, useState } from 'react'
-import type { UseProjection } from '@deepseek-ai/dsh-client-runtime/client'
+import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: the `contextPressure` / `contextBreakdown` projection key merges.
 import type {} from '@deepseek-ai/dsh-token-meter/client'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ComposerBarProps } from '../contract/slots.ts'
-import { contextOccupancy, formatTokens } from '../chat/StatsLine.tsx'
+import { contextOccupancy } from '../context-occupancy.ts'
 import css from './ContextMeter.module.css'
 
 /** Ring geometry: 14px viewBox, 2px stroke. */
@@ -30,6 +30,20 @@ const ROWS = [
   { key: 'toolsTokens', label: 'context.tools', color: css.colorTools },
   { key: 'messageTokens', label: 'context.messages', color: css.colorMessages },
 ] as const
+
+/**
+ * Format a token count for the compact context panel.
+ * @param value - token count.
+ * @returns compact count using K or M when needed.
+ */
+function formatTokens(value: number): string {
+  const scaled = (candidate: number): string => candidate >= 100
+    ? String(Math.round(candidate))
+    : String(Math.round(candidate * 10) / 10)
+  if (value < 1_000) return String(value)
+  if (value < 1_000_000) return `${scaled(value / 1_000)}K`
+  return `${scaled(value / 1_000_000)}M`
+}
 
 export interface ContextMeterProps {
   useProjection: UseProjection

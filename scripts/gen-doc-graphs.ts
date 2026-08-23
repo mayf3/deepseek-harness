@@ -150,6 +150,21 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns append-only Session instances and emits the durable session event feed.',
   },
   {
+    key: 'sessionController',
+    pkg: 'api-session-controller',
+    title: 'Host Session Remote controller',
+    mode: 'core',
+    consumers: ['apiproxy'],
+    note: 'Owns Session commands, cold reads, durable-event following, live control state, and Agent activation policy; apiProxy reuses its inspection and Agent-resolution operations for Session-aware domains.',
+  },
+  {
+    key: 'workspaceController',
+    pkg: 'api-workspace-controller',
+    title: 'Host Workspace Remote controller',
+    mode: 'core',
+    note: 'Owns Workspace commands and reconnect-safe Workspace state delivery through the generated Remote namespace.',
+  },
+  {
     key: 'invariants',
     pkg: 'invariants',
     title: 'Package-owned invariant registry',
