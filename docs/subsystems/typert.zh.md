@@ -329,7 +329,7 @@ registerRemoteEvents(source: TypertRemoteEventSource): () => Promise<void>
 /**
  * Invoke one live Remote method through strict generated reflection or SRC markers.
  * @param request - decoded endpoint and exact named wire arguments.
- * @returns the validated business result.
+ * @returns the business result without output decoding.
  * @throws {@link TypertGatewayError} for dispatch, provider, or boundary failures; lookup-policy and business errors retain identity.
  */
 async invoke(request: InvokeRemoteRequest): Promise<unknown>
@@ -337,7 +337,7 @@ async invoke(request: InvokeRemoteRequest): Promise<unknown>
 /**
  * Open one live stream Remote method without assuming a physical carrier.
  * @param request - decoded endpoint and named wire arguments.
- * @returns an iterable whose items have passed the generated result codec.
+ * @returns a cancellation-aware iterable over the business results.
  */
 async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
 ```
