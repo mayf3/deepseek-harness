@@ -997,8 +997,10 @@ describe('exit_plan_mode', () => {
   it('reads a dismissed review as the user taking the turn back, not as a failure', async () => {
     const { ctx, agent } = await setupWithReview()
     ctx.userQuestions.registerProvider({
-      ask: () => Promise.reject(new UserQuestionError(
-        'the user cancelled ask_user_question', 'ASK_CANCELLED')),
+      ask: () => Promise.reject(Object.assign(
+        new Error('the user cancelled ask_user_question'),
+        { name: 'UserQuestionError', code: 'ASK_CANCELLED' },
+      )),
     })
     const result = await callExit(ctx, agent)
     expect(result.isError).toBe(true)

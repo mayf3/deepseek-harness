@@ -122,6 +122,46 @@ describe('UserQuestionService', () => {
     })).rejects.toBe(cancelled)
   })
 
+  it('restores a transported provider rejection to UserQuestionError', async () => {
+    const ctx = new Context()
+    await ctx.plugin(UserQuestionService)
+    const transported = Object.assign(new Error('the user cancelled ask_user_question'), {
+      name: 'UserQuestionError',
+      code: 'ASK_CANCELLED',
+    })
+    ctx.userQuestions.registerProvider({ ask: () => Promise.reject(transported) })
+
+    const rejection = await ctx.userQuestions.ask({
+      questions: [{ id: 'confirm', question: 'Proceed?' }],
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+
+    expect(rejection).toBeInstanceOf(UserQuestionError)
+    expect(rejection).toMatchObject({
+      name: 'UserQuestionError',
+      code: 'ASK_CANCELLED',
+      cause: transported,
+    })
+  })
+
+  it.each([
+    ['an ordinary Error', new Error('provider failed')],
+    ['a namesake Error without a string code', Object.assign(new Error('provider failed'), {
+      name: 'UserQuestionError',
+    })],
+    ['a non-Error rejection', { name: 'UserQuestionError', code: 'ASK_CANCELLED' }],
+  ])('preserves %s from the provider', async (_label, rejection) => {
+    const ctx = new Context()
+    await ctx.plugin(UserQuestionService)
+    ctx.userQuestions.registerProvider({ ask: vi.fn().mockRejectedValue(rejection) })
+
+    await expect(ctx.userQuestions.ask({
+      questions: [{ id: 'confirm', question: 'Proceed?' }],
+    })).rejects.toBe(rejection)
+  })
+
   it('rejects empty question batches before reaching the provider', async () => {
     const ctx = new Context()
     await ctx.plugin(UserQuestionService)

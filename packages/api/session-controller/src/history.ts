@@ -44,8 +44,15 @@ interface BufferedEvent {
 
 /** Implements cold-safe history operations delegated by the Session Controller. */
 export class SessionHistoryController {
+  private readonly closeFollowers = new Set<() => void>()
+
   /** @param ctx - Host context carrying Session, persistence, presenter, and projection services. */
-  constructor(private readonly ctx: Context) {}
+  constructor(private readonly ctx: Context) {
+    ctx.effect(() => () => {
+      for (const close of this.closeFollowers) close()
+      this.closeFollowers.clear()
+    }, 'session-controller.history')
+  }
 
   /**
    * Read one message-aligned history page without activating an Agent.
@@ -101,6 +108,12 @@ export class SessionHistoryController {
       wake = undefined
       resume?.()
     }
+    const follower = { closed: false }
+    const close = (): void => {
+      follower.closed = true
+      notify()
+    }
+    this.closeFollowers.add(close)
     const disposeEvent = this.ctx.on('session/event', (session, event) => {
       if (session.id !== target) return
       buffered.push({ session, event })
@@ -138,7 +151,7 @@ export class SessionHistoryController {
           yield { type: 'event', ...entryFor(this.ctx, event, events, scope) }
         }
       }
-      while (!signal.aborted) {
+      while (!follower.closed && !signal.aborted) {
         const item = buffered.shift()
         if (item === undefined) {
           await new Promise<void>((resolve) => { wake = resolve })
@@ -154,6 +167,7 @@ export class SessionHistoryController {
         yield { type: 'event', ...entry }
       }
     } finally {
+      this.closeFollowers.delete(close)
       signal.removeEventListener('abort', onAbort)
       disposeCreated()
       disposeEvent()

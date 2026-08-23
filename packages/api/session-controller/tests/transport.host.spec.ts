@@ -82,6 +82,31 @@ describe('SessionHistoryController', () => {
     expect(await iterator.next()).toMatchObject({ done: true })
   })
 
+  it('ends active followers when the owning Controller unloads', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    let transport!: SessionHistoryController
+    const owner = ctx.plugin(Object.assign(
+      (inner: Context) => { transport = new SessionHistoryController(inner) },
+      { inject: ['sessions'] },
+    ))
+    await owner.await()
+    const session = ctx.sessions.create(SessionId('controller-unload'), { meta: { cwd: '/workspace' } })
+    const iterator = transport.follow(
+      { address: { kind: 'session', sessionId: session.id } },
+      new AbortController().signal,
+    )[Symbol.asyncIterator]()
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: 'opened', cursor: -1 },
+    })
+    const pending = iterator.next()
+    await owner.dispose()
+    await expect(pending).resolves.toEqual({ done: true, value: undefined })
+    await ctx.fiber.dispose()
+  })
+
   it('resumes from the last applied seq before delivering later live events', async () => {
     const { ctx, transport } = await setup()
     const session = ctx.sessions.create(SessionId('resume'), { meta: { cwd: '/workspace' } })

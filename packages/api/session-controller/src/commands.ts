@@ -206,6 +206,10 @@ export class SessionCommandController {
    * @returns the new Session identity.
    */
   async fork(request: SessionForkRequest): Promise<SessionForkValue> {
+    if (request.atSeq !== undefined
+      && (!Number.isInteger(request.atSeq) || request.atSeq < 0)) {
+      reject('bad-request', 'atSeq must be a non-negative integer', {})
+    }
     let source: SessionReadState
     try {
       source = await this.readSessionState(request.sessionId)

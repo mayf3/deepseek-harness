@@ -115,7 +115,7 @@ describe('session.search', () => {
     const remote = createSessionTestRemote(ctx, defaults)
     const signal = new AbortController().signal
 
-    const response = await remote.search(request('matching answer'), signal)
+    const response = await remote.search(request('  matching answer  '), signal)
 
     expect(response).toEqual({
       ok: true,
@@ -141,6 +141,21 @@ describe('session.search', () => {
       limit: 20,
     })
     expect(exec.signal).toBe(signal)
+  })
+
+  it('rejects invalid wire queries before invoking the search provider', async () => {
+    const ctx = await baseContext()
+    ctx.sessions.create(sid('visible'), { meta: header('visible') })
+    const searchSessions = vi.fn()
+    ctx.provide('sessionQuery', { searchSessions } as never)
+    const remote = createSessionTestRemote(ctx, defaults)
+
+    for (const query of ['', '   ', 'contains\0nul', 'x'.repeat(501)]) {
+      await expect(remote.search(request(query), new AbortController().signal))
+        .resolves.toMatchObject({ ok: false, error: { code: 'bad-request' } })
+    }
+    expect(searchSessions).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
   })
 
   it('returns an empty page without invoking the index when no session is visible', async () => {

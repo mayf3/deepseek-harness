@@ -158,12 +158,23 @@ export class UserQuestionService extends Service {
           askProvider,
         ))
     } catch (error) {
-      if (request.signal?.aborted && !(error instanceof UserQuestionError)) {
+      if (error instanceof UserQuestionError) throw error
+      const restored = restoreUserQuestionError(error)
+      if (restored !== undefined) throw restored
+      if (request.signal?.aborted) {
         throw abortedQuestion(error)
       }
       throw error
     }
   }
+}
+
+function restoreUserQuestionError(reason: unknown): UserQuestionError | undefined {
+  if (!(reason instanceof Error) || reason.name !== 'UserQuestionError') return undefined
+  const code: unknown = (reason as Error & { readonly code?: unknown }).code
+  return typeof code === 'string'
+    ? new UserQuestionError(reason.message, code, { cause: reason })
+    : undefined
 }
 
 export default UserQuestionService

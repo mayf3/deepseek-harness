@@ -25,6 +25,7 @@ export const DEFAULT_COLD_BLANK_PROBE_MAX_BYTES = 1024
 
 const COLD_SUMMARY_BATCH_SIZE = 16
 const SEARCH_PROVIDER_CALL_LIMIT = 100
+const SESSION_SEARCH_QUERY_MAX_CHARS = 500
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
 
 const sessionListMetadataSchema: z.ZodType<SessionListMetadata> = z.object({
@@ -190,6 +191,7 @@ export class ApiSessionList {
    * @returns authorized bounded Session search results.
    */
   async search(query: string, signal: AbortSignal): Promise<SessionSearchValue> {
+    const normalizedQuery = normalizeSearchQuery(query)
     signal.throwIfAborted()
     const provider = this.ctx.get('sessionQuery')
     if (provider === undefined) {
@@ -221,7 +223,7 @@ export class ApiSessionList {
         let page
         try {
           page = await provider.searchSessions({
-            query,
+            query: normalizedQuery,
             eventFilters: [
               { kind: 'type', values: ['user/message', 'assistant/message'] },
               { kind: 'surface', values: ['current'] },
@@ -310,6 +312,24 @@ export class ApiSessionList {
       return undefined
     }
   }
+}
+
+function normalizeSearchQuery(query: string): string {
+  const normalized = query.trim()
+  if (normalized.length === 0) {
+    reject('bad-request', 'session search query must not be empty', {})
+  }
+  if (normalized.length > SESSION_SEARCH_QUERY_MAX_CHARS) {
+    reject(
+      'bad-request',
+      `session search query must contain at most ${SESSION_SEARCH_QUERY_MAX_CHARS} UTF-16 code units`,
+      {},
+    )
+  }
+  if (normalized.includes('\0')) {
+    reject('bad-request', 'session search query must not contain NUL', {})
+  }
+  return normalized
 }
 
 function reject(code: string, message: string, details: object): never {

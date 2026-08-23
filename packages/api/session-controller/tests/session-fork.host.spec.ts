@@ -218,6 +218,18 @@ describe('sessions.fork', () => {
     await ctx.fiber.dispose()
   })
 
+  it('rejects invalid fork anchors before reading or creating a Session', async () => {
+    const ctx = await composed()
+    const proxy = remote(ctx)
+
+    for (const atSeq of [-1, 0.5]) {
+      await expect(proxy.fork(request({ sessionId: sid('missing'), atSeq })))
+        .resolves.toMatchObject({ ok: false, error: { code: 'bad-request' } })
+    }
+    expect(ctx.sessions.list()).toEqual([])
+    await ctx.fiber.dispose()
+  })
+
   it('cuts through an aborted turn: stopped is closed, not open', async () => {
     const ctx = await composed()
     const source = liveAgent(ctx, 'session-aborted', 1, 'aborted')
