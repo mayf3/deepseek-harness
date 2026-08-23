@@ -283,10 +283,10 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
   })
   try {
     await page.goto(`${origin}/preview.html`, { waitUntil: 'domcontentloaded' })
-    await page.getByRole('heading', { name: '选择 Preview 数据源' }).waitFor()
+    await page.getByRole('heading', { name: 'Choose Preview data' }).waitFor()
     expect(await page.locator('input[name="preview-source"][value="vfs-example"]').isChecked()).toBe(true)
-    expect(await page.getByText('空白环境', { exact: true }).count()).toBe(1)
-    expect(await page.getByText('WebFS 目录', { exact: true }).count()).toBe(1)
+    expect(await page.getByText('Empty environment', { exact: true }).count()).toBe(1)
+    expect(await page.getByText('WebFS directory', { exact: true }).count()).toBe(1)
     expect(await page.locator('input[name="preview-source"][value="webfs"]').isDisabled()).toBe(true)
     expect(await page.getByRole('textbox', { name: 'Choose workspace' }).count()).toBe(0)
     await compareOrRefreshGolden(
@@ -294,7 +294,8 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
       await captureStableAria(page, '[data-preview-source-card]', '/__preview_no_workspace__'),
       SNAPSHOT_MODE,
     )
-    await page.getByRole('button', { name: '启动 Preview' }).click()
+    await page.getByRole('button', { name: 'Start Preview' }).click()
+    await page.getByText('Loading plugins…', { exact: true }).waitFor({ timeout: 10_000 })
     const bootLine = await within(treeActive, BOOT_TIMEOUT_MS, `preview boot: the worker never reported "${TREE_ACTIVE}"`)
     // The activated tree ran bodies lowered against the contract this
     // checkout's packer emits; a dist built before a contract change would

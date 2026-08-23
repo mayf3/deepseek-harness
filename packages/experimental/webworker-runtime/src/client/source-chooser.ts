@@ -31,7 +31,6 @@ const CHOOSER_STYLE = `
     font-size: 14px;
     line-height: 22px;
   }
-  #root:has(> [data-preview-source-chooser]) > [data-dsh-boot] { display: none; }
   [data-preview-source-card] {
     width: min(600px, 100%);
     max-height: calc(100dvh - 48px);
@@ -206,15 +205,15 @@ export async function choosePreviewSource(manifestUrl: URL): Promise<readonly UR
   const choices: PreviewSourceChoice[] = [
     {
       id: EMPTY_SOURCE,
-      label: '空白环境',
-      description: '只加载基础运行时，用于验证首次启动与新建 Workspace。',
+      label: 'Empty environment',
+      description: 'Load only the base runtime to verify first launch and workspace creation.',
       overlays: [],
     },
     ...fixtureChoices(manifest.fixtures, manifestUrl),
     {
       id: WEBFS_SOURCE,
-      label: 'WebFS 目录',
-      description: '需要用户授权的目录来源，将在 WebFS provider 接入后开放。',
+      label: 'WebFS directory',
+      description: 'Requires directory access and will be available after the WebFS provider lands.',
       overlays: [],
       disabled: true,
     },
@@ -235,18 +234,19 @@ export async function choosePreviewSource(manifestUrl: URL): Promise<readonly UR
   style.textContent = CHOOSER_STYLE
   document.head.append(style)
 
-  root.innerHTML = `<main data-preview-source-chooser>
-    <form data-preview-source-card aria-labelledby="preview-source-title">
-      <h1 id="preview-source-title">选择 Preview 数据源</h1>
-      <p>数据会在 Worker 和应用启动前挂载；刷新页面可重新选择。</p>
+  const chooser = document.createElement('main')
+  chooser.dataset.previewSourceChooser = ''
+  chooser.innerHTML = `<form data-preview-source-card aria-labelledby="preview-source-title">
+      <h1 id="preview-source-title">Choose Preview data</h1>
+      <p>Data mounts before the Worker and application start. Refresh to choose again.</p>
       <fieldset>
-        <legend>文件系统来源</legend>
+        <legend>Filesystem source</legend>
         ${choices.map(choice => optionMarkup(choice, selected)).join('')}
       </fieldset>
-      <button data-preview-source-submit type="submit">启动 Preview</button>
-    </form>
-  </main>`
-  const form = root.querySelector<HTMLFormElement>('[data-preview-source-card]')
+      <button data-preview-source-submit type="submit">Start Preview</button>
+    </form>`
+  root.prepend(chooser)
+  const form = chooser.querySelector<HTMLFormElement>('[data-preview-source-card]')
   if (form === null) throw new Error('preview source chooser: form was not rendered')
   const sourceId = await new Promise<string>((resolve, reject) => {
     form.addEventListener('submit', (event) => {
@@ -258,7 +258,7 @@ export async function choosePreviewSource(manifestUrl: URL): Promise<readonly UR
   })
   const choice = choices.find(candidate => candidate.id === sourceId && candidate.disabled !== true)
   if (choice === undefined) throw new Error(`preview source chooser: unavailable source "${sourceId}"`)
-  root.replaceChildren()
+  chooser.remove()
   style.remove()
   return choice.overlays
 }

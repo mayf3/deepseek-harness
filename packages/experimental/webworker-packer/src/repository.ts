@@ -156,8 +156,8 @@ export function previewFixtures(repoRoot: string): PreviewFixture[] {
   const root = join(repoRoot, PREVIEW_EXAMPLE_ROOT)
   return [{
     id: 'vfs-example',
-    label: '内置综合示例',
-    description: '示例 Workspace、工具卡、子代理与分页会话。',
+    label: 'Built-in showcase',
+    description: 'Sample workspace, tool cards, subagents, and paged history.',
     trees: ['home', 'workspace'].map(mount => ({ mount, directory: join(root, mount) })),
   }]
 }

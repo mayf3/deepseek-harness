@@ -1,15 +1,15 @@
-- form "选择 Preview 数据源":
-  - heading "选择 Preview 数据源" [level=1]
-  - paragraph: 数据会在 Worker 和应用启动前挂载；刷新页面可重新选择。
-  - group "文件系统来源":
-    - text: 文件系统来源
-    - radio "空白环境 只加载基础运行时，用于验证首次启动与新建 Workspace。"
-    - strong: 空白环境
-    - text: 只加载基础运行时，用于验证首次启动与新建 Workspace。
-    - radio "内置综合示例 示例 Workspace、工具卡、子代理与分页会话。" [checked]
-    - strong: 内置综合示例
-    - text: 示例 Workspace、工具卡、子代理与分页会话。
-    - radio "WebFS 目录 需要用户授权的目录来源，将在 WebFS provider 接入后开放。" [disabled]
-    - strong: WebFS 目录
-    - text: 需要用户授权的目录来源，将在 WebFS provider 接入后开放。
-  - button "启动 Preview"
+- form "Choose Preview data":
+  - heading "Choose Preview data" [level=1]
+  - paragraph: Data mounts before the Worker and application start. Refresh to choose again.
+  - group "Filesystem source":
+    - text: Filesystem source
+    - radio "Empty environment Load only the base runtime to verify first launch and workspace creation."
+    - strong: Empty environment
+    - text: Load only the base runtime to verify first launch and workspace creation.
+    - radio "Built-in showcase Sample workspace, tool cards, subagents, and paged history." [checked]
+    - strong: Built-in showcase
+    - text: Sample workspace, tool cards, subagents, and paged history.
+    - radio "WebFS directory Requires directory access and will be available after the WebFS provider lands." [disabled]
+    - strong: WebFS directory
+    - text: Requires directory access and will be available after the WebFS provider lands.
+  - button "Start Preview"

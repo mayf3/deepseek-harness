@@ -80,6 +80,11 @@ describe('Preview source chooser', () => {
 
   it('shows the chooser only when the query is absent and returns its default selection', async () => {
     installManifest()
+    const root = document.getElementById('root')
+    if (root === null) throw new Error('test root is missing')
+    const bootPage = document.createElement('div')
+    bootPage.dataset.dshBoot = ''
+    root.append(bootPage)
 
     const selected = choosePreviewSource(MANIFEST_URL)
     await vi.waitFor(() => {
@@ -97,7 +102,9 @@ describe('Preview source chooser', () => {
       new URL('https://preview.test/preview/fixtures/base.tar.gz'),
       new URL('https://preview.test/preview/fixtures/tail.tar.gz'),
     ])
-    expect(document.getElementById('root')?.childElementCount).toBe(0)
+    expect(root.contains(bootPage)).toBe(true)
+    expect(root.childElementCount).toBe(1)
+    expect(document.querySelector('[data-preview-source-chooser]')).toBeNull()
     expect(document.querySelector('[data-preview-source-style]')).toBeNull()
   })
 
@@ -124,8 +131,9 @@ describe('Preview source chooser', () => {
     document.body.innerHTML = '<div id="root"></div>'
     const root = document.getElementById('root')
     if (root === null) throw new Error('test root is missing')
-    vi.spyOn(root, 'querySelector').mockReturnValueOnce(null)
+    const querySelector = vi.spyOn(HTMLElement.prototype, 'querySelector').mockReturnValueOnce(null)
     await expect(choosePreviewSource(MANIFEST_URL)).rejects.toThrow(/form was not rendered/)
+    querySelector.mockRestore()
 
     document.head.replaceChildren()
     document.body.innerHTML = '<div id="root"></div>'
