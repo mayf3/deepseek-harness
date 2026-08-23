@@ -322,7 +322,10 @@ Standard and persistent providers sharing the same tool name are a special compa
 |---|---|
 | running `write` | intended added-only diff from `file_path` and `content` |
 | running `edit` | intended replacement diff from `file_path`, `old_string`, and `new_string` |
+| running `str_replace_editor create` | intended added-only diff from `path` and `file_text` |
+| running `str_replace_editor str_replace` | intended replacement diff from `path`, `old_str`, and `new_str` |
 | successful settled `write`/`edit` | applied contextual hunks from `meta.diffs` |
+| settled `str_replace_editor` | Generic, because the tool defines no result presenter |
 | write create or missing/malformed/empty applied metadata | current argument fallback |
 | error, malformed arguments, edit with malformed metadata, or Code Dispatch child | Generic |
 

@@ -63,6 +63,47 @@ describe('diffCardModel', () => {
     })
   })
 
+  it.each([
+    {
+      command: 'create',
+      args: { command: 'create', path: 'notes/new.txt', file_text: 'new file\n' },
+      diff: { path: 'notes/new.txt', oldText: null, newText: 'new file\n' },
+    },
+    {
+      command: 'str_replace',
+      args: { command: 'str_replace', path: 'notes/demo.txt', old_str: 'old', new_str: 'new' },
+      diff: { path: 'notes/demo.txt', oldText: 'old', newText: 'new' },
+    },
+  ])('preserves the running str_replace_editor $command diff', ({ args, diff }) => {
+    expect(diffCardModel(running({
+      name: 'str_replace_editor',
+      argsRaw: JSON.stringify(args),
+    }))).toEqual({ card: { diffs: [diff] } })
+  })
+
+  it('preserves str_replace_editor defaults and its settled Generic result', () => {
+    const argsRaw = JSON.stringify({ command: 'str_replace', path: 'notes/demo.txt' })
+    expect(diffCardModel(running({ name: 'str_replace_editor', argsRaw }))).toEqual({
+      card: { diffs: [{ path: 'notes/demo.txt', oldText: null, newText: '' }] },
+    })
+    expect(diffCardModel(settled({
+      call: { name: 'str_replace_editor', argsRaw },
+      meta: { diffs: [{ path: 'notes/demo.txt', oldText: 'old', newText: 'new' }] },
+    }))).toBeNull()
+  })
+
+  it('keeps unsupported or malformed str_replace_editor calls generic', () => {
+    const editor = (args: Record<string, unknown>) => running({
+      name: 'str_replace_editor', argsRaw: JSON.stringify(args),
+    })
+    expect(diffCardModel(editor({ command: 'view', path: 'notes/demo.txt' }))).toBeNull()
+    expect(diffCardModel(editor({ command: 'insert', path: 'notes/demo.txt', new_str: 'x' }))).toBeNull()
+    expect(diffCardModel(editor({ command: 'create', path: '', file_text: 'x' }))).toBeNull()
+    expect(diffCardModel(editor({ command: 'create', path: 'notes/demo.txt', file_text: 1 }))).toBeNull()
+    expect(diffCardModel(editor({ command: 'str_replace', path: 'notes/demo.txt', old_str: 1 }))).toBeNull()
+    expect(diffCardModel(editor({ command: 'str_replace', path: 'notes/demo.txt', new_str: 1 }))).toBeNull()
+  })
+
   it('derives a settled card from result metadata, which replaces the intended diff', () => {
     expect(diffCardModel(settled({
       meta: { diffs: [{ path: 'notes/demo.txt', oldText: 'a', newText: 'b' }] },

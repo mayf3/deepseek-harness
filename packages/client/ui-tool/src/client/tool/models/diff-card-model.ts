@@ -1,4 +1,4 @@
-/** Pure diff-card derivation from raw write/edit calls and result metadata. @module */
+/** Pure diff-card derivation from raw file-mutation calls and result metadata. @module */
 import type { DiffBlockProps, DiffHunk } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ToolCallBlock } from './tool-call-model.ts'
 import { parsedToolCall, validEscalationFields } from './raw-tool-call.ts'
@@ -47,11 +47,31 @@ function narrowDiffs(diffs: unknown): DiffHunk[] | null {
   return out
 }
 
-type IntendedDiff = { tool: 'write' | 'edit'; diff: DiffHunk }
+type IntendedDiff = { tool: 'write' | 'edit' | 'str_replace_editor'; diff: DiffHunk }
 
 function intendedDiff(block: ToolCallBlock): IntendedDiff | null {
   const parsed = parsedToolCall(block)
   if (parsed === null) return null
+  if (parsed.name === 'str_replace_editor') {
+    const { command, path, file_text: fileText, old_str: oldText, new_str: newText } = parsed.args
+    if (typeof path !== 'string' || path.trim() === '') return null
+    if (command === 'create') {
+      if (fileText !== undefined && typeof fileText !== 'string') return null
+      return {
+        tool: 'str_replace_editor',
+        diff: { path, oldText: null, newText: fileText ?? '' },
+      }
+    }
+    if (command === 'str_replace') {
+      if (oldText !== undefined && typeof oldText !== 'string') return null
+      if (newText !== undefined && typeof newText !== 'string') return null
+      return {
+        tool: 'str_replace_editor',
+        diff: { path, oldText: oldText ?? null, newText: newText ?? '' },
+      }
+    }
+    return null
+  }
   const { file_path: path } = parsed.args
   if (typeof path !== 'string' || path.trim() === '') return null
   if (!validEscalationFields(parsed.args)) return null
@@ -77,9 +97,11 @@ function appliedDiffs(meta: unknown): DiffHunk[] | 'empty' | null {
 }
 
 /**
- * Derive intended running or applied settled diffs for a root write/edit call.
+ * Derive running diffs for root write/edit and `str_replace_editor`
+ * create/replace calls, plus applied settled diffs for root write/edit calls.
  * A successful write with valid empty metadata uses its argument-derived
- * whole-file diff, matching create and identical-overwrite presentation.
+ * whole-file diff, matching create and identical-overwrite presentation;
+ * `str_replace_editor` settles through Generic because it has no result view.
  * @param block - running or settled Tool block.
  * @returns the diff-card props, or null for the generic path.
  */
@@ -88,6 +110,7 @@ export function diffCardModel(block: ToolCallBlock): DiffCardModel | null {
   const intended = intendedDiff(block)
   if (intended === null) return null
   if (!('kind' in block)) return { card: { diffs: [intended.diff] } }
+  if (intended.tool === 'str_replace_editor') return null
   if (block.isError) return null
   const applied = appliedDiffs(block.meta)
   if (applied === null || applied === 'empty') {

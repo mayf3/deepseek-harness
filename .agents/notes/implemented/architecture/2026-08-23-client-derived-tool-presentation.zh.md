@@ -322,7 +322,10 @@ TerminalBlock 的 ANSI、光标重放、宽字符、行数上限、展开、复�
 |---|---|
 | running `write` | 从 `file_path` 与 `content` 生成 intended added-only diff |
 | running `edit` | 从 `file_path`、`old_string`、`new_string` 生成 intended replacement diff |
+| running `str_replace_editor create` | 从 `path` 与 `file_text` 生成 intended added-only diff |
+| running `str_replace_editor str_replace` | 从 `path`、`old_str` 与 `new_str` 生成 intended replacement diff |
 | settled `write`／`edit` success | 从 `meta.diffs` 生成 applied contextual hunks |
+| settled `str_replace_editor` | Generic，因为该工具没有 result presenter |
 | write create 或 applied metadata 缺失、畸形、为空 | 当前 args fallback |
 | error、畸形 args、edit 的 metadata 畸形、Code Dispatch child | Generic |
 
