@@ -731,7 +731,8 @@ time.sleep(60)
     with HarnessClient(
         HarnessConfig(
             _launch_args=(sys.executable, str(script)),
-            request_timeout_seconds=0.1,
+            profile="web",
+            initialize_timeout_seconds=0.1,
         )
     ) as client:
         start = time.monotonic()
@@ -740,6 +741,7 @@ time.sleep(60)
         except TimeoutError as exc:
             assert time.monotonic() - start < 2
             assert "bridge is still starting" in str(exc)
+            assert "profile 'web'" in str(exc)
         else:
             raise AssertionError("initialize should time out")
 
@@ -832,6 +834,8 @@ def test_public_signatures_omit_unsupported_wire_parameters() -> None:
     assert {"dsh_bin", "profile", "patches", "dsh_home"} <= set(
         HarnessConfig.__dataclass_fields__
     )
+    assert "initialize_timeout_seconds" in DeepSeekHarnessConfig.__dataclass_fields__
+    assert "initialize_timeout_seconds" in HarnessConfig.__dataclass_fields__
     for removed in ("cordis", "session_root", "runtime_bin", "bridge_bin", "launch_args_override"):
         assert removed not in DeepSeekHarnessConfig.__dataclass_fields__
         assert removed not in HarnessConfig.__dataclass_fields__

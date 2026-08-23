@@ -8,7 +8,7 @@ Status: implemented
 
 DeepSeek Harness 应用进程需要由同一个机制负责组合、插件解析、环境发现、关闭和用户自定义。带完整 `cordis.yml` 的专用应用 bin 会在 profile 启动之外形成第二套生命周期：安装到 profile 的插件无法到达它，行为会与 `dsh-base` 偏离，SDK 调用方还需要学习任意进程 argv，而不是产品的组合模型。
 
-Python SDK 分发一个原生可执行文件和三个平台 wheel 包；其中嵌入的直读配置运行时只有在重建并验证完整 VFS 闭包后才能改变启动架构。该分发需要一个明确的临时例外，而不是另一种通用 Node 应用模式。
+Python SDK 分发一个原生可执行文件和三个平台 wheel 包。其打包进程必须使用同一 profile 启动器，同时保留封闭的 VFS 依赖树、原生伴随文件与 installed-wheel 证据。
 
 ## Decision
 
@@ -43,19 +43,15 @@ SDK 用户通过 profile 自定义插件。`dsh plugin --profile <name> ...` 管
 
 直接使用 SDK 时遵循普通 Harness home 解析：显式 `dshHome`、继承的 `DSH_HOME`，最后是 `~/.dsh`。`subagent-dsh-sdk` 则要求显式绝对 home，因此嵌套运行时不会通过操作系统 home 发现个人 profile、已安装插件、凭据或会话。DSH 专用 ACP 子进程示例同样传入隔离 home；ACP 后端自身继续适用于非 DSH agent。
 
-### Python 例外与命名
+### Python 运行时
 
-Python SDK 的直读配置应用位于私有 `packages/sdk/python-runtime` 包，名称是 `@deepseek-ai/dsh-sdk-python-runtime`。它唯一的打包可执行入口是 `lib/packaged-bin.js`，由私有 `dsh-sdk-python-runtime-closure` 部署根消费。它没有公开 npm bin。可运行的直启 Python 示例是 `examples/python-sdk-agent`。
+Python 运行时 wheel 通过私有 `dsh-python-runtime-closure` 部署 manifest，打包来自 `node_modules/@deepseek-ai/dsh/lib/bin.js` 的普通 `@deepseek-ai/dsh` CLI。Python 客户端选择 `dsh --profile sdk`、有序 patch 文件和显式 Harness home；安装的 `dsh` 控制台命令暴露相同 profile 语法。可运行的 Python 示例是 `examples/python-sdk-agent`。
 
-Python 可观察行为保持不变：Python API、SDK 协议格式、默认 `cordis.yml`、环境变量、wheel 包分发名称、打包可执行文件名称、伴随文件名称、显式运行时选项、零配置行为与支持平台。稳定 SDK 包族继续是 `@deepseek-ai/dsh-sdk-client`、`@deepseek-ai/dsh-sdk-protocol`、`@deepseek-ai/dsh-sdk-jsonrpc-server`，协议 identity 继续是 `deepseek-harness-sdk-runtime`；`@deepseek-ai/dsh-acp` 继续作为 ACP 协议插件。仓库不保留兼容包、转发可执行文件、后备解析器或 SDK／ACP 启动别名。
+可执行文件族是 `deepseek-harness-sdk-runtime-<platform>-<arch>`。SDK 协议格式、wheel 与 import 分发名称、伴随文件名称，以及协议 identity `deepseek-harness-sdk-runtime` 保持稳定。SDK 包族是 `@deepseek-ai/dsh-sdk-client`、`@deepseek-ai/dsh-sdk-protocol` 与 `@deepseek-ai/dsh-sdk-jsonrpc-server`；`@deepseek-ai/dsh-acp` 继续作为 ACP 协议插件。仓库不保留 Python 专用 Node 应用、检入的完整配置、兼容包、转发可执行文件、后备解析器或 SDK／ACP 启动别名。
 
 ### 强制校验
 
-`verify-application-entrypoints` 扫描应用／包 manifest、可执行源码和根 demo 脚本。允许清单对 `dsh` 产品 bin、排除的 vendor 范围、私有 WebWorker 构建工具、测试支持以及私有 Python 载体进行分类。未分类的 shebang、新包 bin 或绕过 `apps/cli/src/bin.ts` 的 demo wrapper 都会使 hygiene 与 primary／static CI 聚合失败。
-
-## 暂缓的 Python 迁移
-
-Python 运行时后续工作必须把打包进程迁移到 `dsh --profile sdk`，保持 wheel 包的封闭依赖与原生伴随文件行为，并删除 `@deepseek-ai/dsh-sdk-python-runtime`。只有这些条件在 Linux x64、Linux arm64 与 macOS arm64 全部通过后，可执行文件族才会从 `dsh-jsonrpc-agent-pkg-<platform>-<arch>` 改名为 `deepseek-harness-sdk-runtime-<platform>-<arch>`。临时载体与当前产物名称使这项义务清晰可见，同时不削弱当前 Python 兼容性。
+`verify-application-entrypoints` 扫描应用／包 manifest、可执行源码和根 demo 脚本。允许清单对 `dsh` 产品 bin、排除的 vendor 范围、私有 WebWorker 构建工具和测试支持进行分类。未分类的 shebang、新包 bin 或绕过 `apps/cli/src/bin.ts` 的 demo wrapper 都会使 hygiene 与 primary／static CI 聚合失败。
 
 ## 既有决策与取代关系
 
@@ -88,7 +84,7 @@ Python 运行时后续工作必须把打包进程迁移到 `dsh --profile sdk`�
 - 聚焦单元套件覆盖 profile 启动解析、初始化时限、SDK 重试、服务器就绪和嵌套隔离 home，并对变更后的运行时源码实现 100% 覆盖率。
 - 免密钥 ACP 与 SDK 快照启动真实 `dsh` profile，并钉住协议输出与持久化日志；嵌套 SDK 组合会启动第二个真实 profile 运行时。
 - 真实 API 工作流把文件并行度限制为 4，因为一个 profile e2e 文件可能拥有多个完整 `dsh` 子进程树；工作流测试会钉住该资源上限。
-- Python 套件同时测试 exe 与 node 载体；全部打包运行时场景、原生 macOS 可执行文件构建、两个 wheel 包以及干净 wheel 默认／MCP 冒烟测试都保留既有产物名称。
+- Python 套件同时测试 exe 与 node 载体；打包运行时场景、原生 macOS 可执行文件构建、两个 wheel 包以及干净 wheel 默认／MCP 冒烟测试会钉住 `deepseek-harness-sdk-runtime-*` 产物与 profile 启动。
 - `verify-application-entrypoints` 包含包 bin、可执行源码、直启包的 demo wrapper 与未分类 demo 等非法 fixture（测试前置数据）。
 
 ## 影响
@@ -98,4 +94,4 @@ Python 运行时后续工作必须把打包进程迁移到 `dsh --profile sdk`�
 - SDK 与 ACP 共享完整 base 应用和同一份策略与工具；快照以显式差异呈现刻意采用的组装变化。
 - 增加 `@deepseek-ai/dsh` 会扩大 TypeScript 客户端的安装体积，换来确定的同版本运行时。
 - 受信任用户 patch 可以增加写入 stdout 的插件并破坏自己的协议流；随附 profile 保证纯净，不为任意第三方组合提供保证。
-- Python 保留一个清晰可见的私有直读配置载体，直到其平台产物迁移得到独立证明。
+- Python 打包普通 `dsh` profile 启动器，同时保留封闭原生运行时，wheel 用户无需系统 Node。

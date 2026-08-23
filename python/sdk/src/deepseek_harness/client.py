@@ -31,6 +31,7 @@ class HarnessConfig:
     dsh_home: str | None = None
     cwd: str | None = None
     env: dict[str, str] | None = None
+    initialize_timeout_seconds: float = 10.0
     request_timeout_seconds: float | None = None
     shutdown_timeout_seconds: float | None = 1.0
     _launch_args: tuple[str, ...] | None = None
@@ -137,7 +138,15 @@ class HarnessClient:
         if max_tokens is not None:
             payload["maxTokens"] = max_tokens
         try:
-            return self.request("initialize", payload, response_model=InitializeResponse)
+            return self.request(
+                "initialize",
+                payload,
+                response_model=InitializeResponse,
+                timeout_seconds=self.config.initialize_timeout_seconds,
+            )
+        except TimeoutError as error:
+            self.close()
+            raise TimeoutError(f"{error}\nselected dsh profile {self.config.profile!r}") from error
         except BaseException as error:
             self.close()
             diagnostics = self._runtime_diagnostics()

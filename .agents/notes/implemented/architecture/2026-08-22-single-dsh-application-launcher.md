@@ -8,7 +8,7 @@ English | [中文](2026-08-22-single-dsh-application-launcher.zh.md)
 
 DeepSeek Harness application processes need one owner for composition, plugin resolution, environment discovery, shutdown, and user customization. A dedicated app bin with a complete `cordis.yml` creates a second lifecycle beside profile launch: plugins installed into a profile do not reach it, behavior drifts from `dsh-base`, and SDK callers learn arbitrary process argv instead of the product's composition model.
 
-The Python SDK distributes a native executable and three platform wheels whose embedded direct-config runtime cannot change launch architecture without rebuilding and validating the complete VFS closure. That distribution needs an explicit temporary exception, not a second general Node application pattern.
+The Python SDK distributes a native executable and three platform wheels. Its packaged process must use the same profile launcher while preserving the closed VFS dependency tree, native sidecars, and installed-wheel evidence.
 
 ## Decision
 
@@ -43,19 +43,15 @@ SDK users customize plugins through profiles. `dsh plugin --profile <name> ...` 
 
 Direct SDK use follows normal Harness-home resolution: explicit `dshHome`, inherited `DSH_HOME`, then `~/.dsh`. `subagent-dsh-sdk` instead requires an explicit absolute home, so a nested runtime cannot discover a person's profiles, installed plugins, credentials, or sessions through the operating-system home. DSH-specific ACP child examples also pass an isolated home; the ACP backend itself remains generic for non-DSH agents.
 
-### Python exception and names
+### Python runtime
 
-The Python SDK's direct-config application lives in the private `packages/sdk/python-runtime` package named `@deepseek-ai/dsh-sdk-python-runtime`. Its only packaged executable entry is `lib/packaged-bin.js`, consumed by the private `dsh-sdk-python-runtime-closure` deploy root. It has no public npm bin. The runnable direct Python example is `examples/python-sdk-agent`.
+The Python runtime wheel packages the ordinary `@deepseek-ai/dsh` CLI from `node_modules/@deepseek-ai/dsh/lib/bin.js` through the private `dsh-python-runtime-closure` deploy manifest. The Python client selects `dsh --profile sdk`, ordered patch files, and an explicit Harness home; the installed `dsh` console command exposes the same profile grammar. The runnable Python example is `examples/python-sdk-agent`.
 
-Python-observable behavior remains fixed: Python API, SDK wire, default `cordis.yml`, environment variables, wheel distribution names, packaged executable names, sidecar names, explicit runtime options, zero-config behavior, and supported platforms. The stable SDK family remains `@deepseek-ai/dsh-sdk-client`, `@deepseek-ai/dsh-sdk-protocol`, `@deepseek-ai/dsh-sdk-jsonrpc-server`, and wire identity `deepseek-harness-sdk-runtime`; `@deepseek-ai/dsh-acp` remains the ACP protocol plugin. There is no compatibility package, forwarding executable, fallback parser, or SDK/ACP launcher alias.
+The executable family is `deepseek-harness-sdk-runtime-<platform>-<arch>`. The SDK wire, wheel and import distribution names, sidecar names, and wire identity `deepseek-harness-sdk-runtime` remain stable. The SDK package family is `@deepseek-ai/dsh-sdk-client`, `@deepseek-ai/dsh-sdk-protocol`, and `@deepseek-ai/dsh-sdk-jsonrpc-server`; `@deepseek-ai/dsh-acp` remains the ACP protocol plugin. There is no Python-specific Node application, checked-in complete config, compatibility package, forwarding executable, fallback parser, or SDK/ACP launcher alias.
 
 ### Enforcement
 
-`verify-application-entrypoints` scans application/package manifests, executable sources, and root demo scripts. The allowlist classifies the `dsh` product bin, vendor-excluded scope, the private WebWorker build tool, test support, and the private Python carrier. An unclassified shebang, a new package bin, or a demo wrapper that bypasses `apps/cli/src/bin.ts` fails hygiene and the primary/static CI aggregates.
-
-## Deferred Python migration
-
-The Python runtime follow-up must move the packaged process through `dsh --profile sdk`, preserve the wheel's closed dependency and native sidecar behavior, and delete `@deepseek-ai/dsh-sdk-python-runtime`. Only after those conditions pass on Linux x64, Linux arm64, and macOS arm64 does the executable family change from `dsh-jsonrpc-agent-pkg-<platform>-<arch>` to `deepseek-harness-sdk-runtime-<platform>-<arch>`. The temporary carrier and current artifact names make that obligation visible without weakening current Python compatibility.
+`verify-application-entrypoints` scans application/package manifests, executable sources, and root demo scripts. The allowlist classifies the `dsh` product bin, vendor-excluded scope, the private WebWorker build tool, and test support. An unclassified shebang, a new package bin, or a demo wrapper that bypasses `apps/cli/src/bin.ts` fails hygiene and the primary/static CI aggregates.
 
 ## Existing decisions and supersession
 
@@ -88,7 +84,7 @@ The [ACP automation-only protocol](../simplification/2026-07-23-acp-automation-o
 - Focused unit suites cover profile launch resolution, initialization bounds, SDK retries, server readiness, and nested isolated homes with 100% coverage on the changed runtime sources.
 - Keyless ACP and SDK snapshots boot real `dsh` profiles and pin protocol output plus persisted logs; the nested SDK composition boots a second real profile runtime.
 - The real-API workflow caps file parallelism at four because one profile e2e file can own several complete `dsh` subprocess trees; workflow tests pin that resource bound.
-- The Python suite exercises exe and node carriers; all packaged-runtime scenarios, native macOS executable construction, both wheels, and clean-wheel default/MCP smokes retain the existing artifact names.
+- The Python suite exercises exe and node carriers; packaged-runtime scenarios, native macOS executable construction, both wheels, and clean-wheel default/MCP smokes pin the `deepseek-harness-sdk-runtime-*` artifacts and profile launch.
 - `verify-application-entrypoints` includes invalid fixtures for package bins, executable sources, package-launching demo wrappers, and unclassified demos.
 
 ## Consequences
@@ -98,4 +94,4 @@ The [ACP automation-only protocol](../simplification/2026-07-23-acp-automation-o
 - SDK and ACP share the complete base application and one set of policy and tools; snapshots present intentional assembled differences explicitly.
 - Adding `@deepseek-ai/dsh` increases the TypeScript client's install size in exchange for a deterministic same-version runtime.
 - Trusted user patches can add a plugin that writes to stdout and corrupt their own protocol stream; shipped profiles guarantee purity, not arbitrary third-party composition.
-- Python keeps a visibly private, narrowly allowed direct-config carrier until its platform artifact migration is independently proven.
+- Python packages the ordinary `dsh` profile launcher while retaining a closed native runtime and no system-Node requirement for wheel users.

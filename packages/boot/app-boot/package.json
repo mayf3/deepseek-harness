@@ -32,6 +32,8 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/dsh-atomic-write": "workspace:^",
+    "import-meta-resolve": "^4.2.0",
     "js-yaml": "^4.2.0"
   },
   "peerDependencies": {
