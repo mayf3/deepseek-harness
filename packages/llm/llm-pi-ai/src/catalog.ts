@@ -91,9 +91,10 @@ export type PiAiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFo
  * The nameable reasoning-dispatch formats, most-reached first. The `Record`
  * key type is a drift gate: an upstream format addition fails compilation
  * here until it is named, so the offer never silently lags the upstream set.
- * The two `chat-template` variants
- * are nameable because {@link PiAiCompatProfile.chatTemplateKwargs} carries
- * the kwargs they dispatch through.
+ * The two `chat-template` variants are nameable because
+ * {@link PiAiCompatProfile.chatTemplateKwargs} carries their kwargs;
+ * `baseten` is nameable because {@link PiAiCompatProfile.chatTemplateArgs}
+ * carries its arguments.
  */
 const THINKING_FORMAT_GATE: Record<PiAiThinkingFormat, true> = {
   'openai': true,

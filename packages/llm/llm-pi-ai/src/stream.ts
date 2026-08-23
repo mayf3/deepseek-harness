@@ -130,7 +130,8 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
  * `finish` chunks (the harness protocol's other error-delivery style).
  * @param events - one assistant turn's pi-ai event stream.
  * @param contextWindow - resolved catalog capacity for usage-based overflow detection.
- * @param callerSignal - caller cancellation state for setup failures pi-ai emits in-band.
+ * @param callerSignal - caller cancellation state; an aborted caller makes any
+ *   in-band terminal error an aborted finish.
  * @returns the harness chunks, ending with `usage` then `finish`; throws
  *   `LlmError` (`STREAM_CLOSED`) if the source ends without a terminal event.
  */
