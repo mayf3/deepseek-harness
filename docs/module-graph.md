@@ -326,12 +326,12 @@ flowchart TD
     pkg_tool_terminal["tool-terminal"]
   end
   subgraph group_test_support["packages/test-support"]
-    pkg_acp_snapshot["acp-snapshot"]
     pkg_agent_loop_testkit["agent-loop-testkit"]
     pkg_client_test_runtime["client-test-runtime"]
     pkg_llm_mock_server["llm-mock-server"]
     pkg_llm_replay["llm-replay"]
     pkg_loader_smoke["loader-smoke"]
+    pkg_session_snapshot["session-snapshot"]
   end
   subgraph group_typert["packages/typert"]
     pkg_typert_generator["typert-generator"]
@@ -501,8 +501,8 @@ flowchart TD
   pkg_session_persistence --> pkg_timeout
   pkg_session_projection --> pkg_invariants
   pkg_session_projection --> pkg_session
-  pkg_acp_snapshot --> pkg_invariants
-  pkg_acp_snapshot --> pkg_session
+  pkg_session_snapshot --> pkg_invariants
+  pkg_session_snapshot --> pkg_session
   pkg_llm_retry --> pkg_agent
   pkg_llm_retry --> pkg_brand
   pkg_llm_retry --> pkg_invariants
@@ -1721,7 +1721,7 @@ flowchart TD
 | [`session-log-deepseek`](../packages/session/session-log-deepseek) | `session` | [`deepseek-llm-api-extensions`](../packages/llm/deepseek-llm-api-extensions), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
 | [`session-persistence`](../packages/session/session-persistence) | `session` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`timeout`](../packages/util/timeout) |
 | [`session-projection`](../packages/session/session-projection) | `session` | [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
-| [`acp-snapshot`](../packages/test-support/acp-snapshot) | `test-support` | [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
+| [`session-snapshot`](../packages/test-support/session-snapshot) | `test-support` | [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session) |
 | [`llm-retry`](../packages/llm/llm-retry) | `llm` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`timeout`](../packages/util/timeout) |
 | [`agent-default-model`](../packages/core/agent-default-model) | `core` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`settings`](../packages/settings/settings) |
 | [`goal`](../packages/goal/goal) | `goal` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`typert-protocol`](../packages/typert/protocol) |

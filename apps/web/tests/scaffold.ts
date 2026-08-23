@@ -37,7 +37,7 @@ import {
   scrubRequestHeaders,
   scrubSessionSnapshot,
   stabilizeFixtureMessageIds,
-} from '@deepseek-ai/dsh-acp-snapshot'
+} from '@deepseek-ai/dsh-session-snapshot'
 import {
   assertEntriesLoaded,
   composeEntries,

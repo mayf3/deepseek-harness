@@ -13,18 +13,18 @@ import {
   type InputScript,
   type Scenario,
   type SnapshotSuiteOptions,
-} from '@deepseek-ai/dsh-acp-snapshot'
+} from '@deepseek-ai/dsh-session-snapshot'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 
 /**
  * The acp-agent example's snapshot suite: the scenario table for
- * `dsh-acp-snapshot`'s suite factory, which owns every compare/guard mechanic
+ * `dsh-session-snapshot`'s ACP suite factory, which owns every compare/guard mechanic
  * (expected-output + re-persisted-log diffs, record/refresh write-back, the pinned-header
  * uniformity guard, the fixture guards). Fixtures live under `snapshots/<name>/`;
  * `pnpm run test:snapshot:record` re-records model transcripts against the real
  * API; `pnpm run test:snapshot:refresh` rewrites current replay expected outputs keyless.
- * See the package README (packages/test-support/acp-snapshot) and the snapshot Agent Note,
+ * See the package README (packages/test-support/session-snapshot) and the snapshot Agent Note,
  * .agents/notes/implemented/testing/2026-06-19-acp-snapshot-tests.md.
  */
 

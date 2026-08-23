@@ -14,7 +14,7 @@
  * are identical. Every live header is checked against the composed pin, so
  * session-dependent composition must declare a separate class instead of
  * escaping coverage.
- * @module @deepseek-ai/dsh-acp-snapshot/suite
+ * @module @deepseek-ai/dsh-session-snapshot/suite
  */
 
 import { readFile, readdir, rm, writeFile } from 'node:fs/promises'

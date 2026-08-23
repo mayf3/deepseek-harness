@@ -348,7 +348,7 @@
         "src/**/*.ts"
       ]
     },
-    "packages/test-support/acp-snapshot": {
+    "packages/test-support/session-snapshot": {
       "entry": [
         "tests/**/*.spec.ts",
         "tests/fixtures/fake-acp-agent.ts"

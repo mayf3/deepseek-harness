@@ -4,7 +4,7 @@
  * stdout tee, SDK client, update collection, permission fallback, and process
  * shutdown so e2e and snapshot suites do not each reconstruct that boundary.
  *
- * @module @deepseek-ai/dsh-acp-snapshot/launcher
+ * @module @deepseek-ai/dsh-session-snapshot/launcher
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'

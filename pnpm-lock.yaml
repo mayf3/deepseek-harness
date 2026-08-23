@@ -8863,7 +8863,7 @@ importers:
         specifier: workspace:^
         version: link:../../core/tools
 
-  packages/test-support/acp-snapshot:
+  packages/test-support/session-snapshot:
     dependencies:
       '@agentclientprotocol/sdk':
         specifier: 1.4.0

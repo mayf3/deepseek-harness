@@ -1,10 +1,10 @@
-# `@deepseek-ai/dsh-acp-snapshot`
+# `@deepseek-ai/dsh-session-snapshot`
 
 English | [中文](README.zh.md)
 
-The ACP snapshot suite kit: the shared machinery behind the keyless snapshot tier (`pnpm run test:snapshot`, [testing policy](../../../docs/testing.md)). An example gets a full snapshot suite from a scenario table plus a fixtures directory; every compare/guard mechanic lives here, under the per-file coverage gate, instead of being copied per example.
+Session-log snapshot support for the keyless snapshot tier (`pnpm run test:snapshot`, [testing policy](../../../docs/testing.md)). Transport-neutral normalization and fixture invariants live beside the existing ACP protocol adapter so additional `dsh` profile adapters can reuse the recorded-session format without copying its guards.
 
-Four layers, importable separately:
+The current ACP adapter has four importable layers:
 
 - **`launchAcpTestAgent` (launcher)** — boots a source entry under tsx or a built `lib` entry under plain Node from a supplied cwd, connects the SDK client over a raw-byte stdout tee, collects session updates and stderr, surfaces asynchronous spawn failures through startup, fails closed on unhandled permission requests, and owns graceful or signalled shutdown. Product suites name a `dsh` profile: the launcher passes the base and selected scenario patches through `--patch`, selects the scenario's sibling `*cordis.snapshot.yml` in replay, and materializes temporary copies whose relative plugin modules become absolute file URLs. Test-only fake bins may omit the profile and retain their own config grammar. Shutdown waits for process exit, inherited stdio closure, and ACP parser exhaustion before resolving or propagating a child error, so captures are complete and callers can remove owned paths after either outcome.
 - **`runScenario` (harness)** — drives ACP JSON-RPC stdio from a deterministic `input.json` script through the launcher, tees raw stdout for the expected-output and purity checks, and harvests every persisted raw JSONL session log (parent and subagent children, primary-first) after graceful stdin EOF. `AgentUnderTest` supplies absolute `binScript`, optional `libBinScript`, `configPath`, and `tsconfigPath` paths because the subprocess cwd is outside the repo; `workspaceParent` may move the generated child cwd from the platform temp directory when that grant is itself under test. Startup failures preserve captured agent stderr in the rejected diagnostic.
@@ -22,7 +22,7 @@ import {
   defineAcpSnapshotSuite,
   type Scenario,
   type SnapshotSuiteOptions,
-} from '@deepseek-ai/dsh-acp-snapshot'
+} from '@deepseek-ai/dsh-session-snapshot'
 
 function snapshotMode(value: string | undefined): SnapshotSuiteOptions['mode'] {
   switch (value) {

@@ -1,10 +1,10 @@
-# `@deepseek-ai/dsh-acp-snapshot`
+# `@deepseek-ai/dsh-session-snapshot`
 
 [English](README.md) | 中文
 
-ACP（Agent Client Protocol）快照套件工具包：无密钥快照层（`pnpm run test:snapshot`，见[测试策略](../../../docs/testing.zh.md)）背后的共享机制。示例只需场景表和 fixture（测试前置数据）目录就能获得完整快照套件；每项比较/保护机制都位于此处，受每文件覆盖率门禁约束，而不是在每个示例中复制。
+无密钥快照层（`pnpm run test:snapshot`，见[测试策略](../../../docs/testing.zh.md)）的会话日志快照支持。与传输无关的规范化和 fixture（测试前置数据）不变量与现有 ACP（Agent Client Protocol）协议适配器位于同一包中，使其他 `dsh` profile 适配器可以复用录制会话格式，而不复制其保护机制。
 
-四层可单独导入：
+当前 ACP 适配器包含四个可单独导入的层：
 
 - **`launchAcpTestAgent`（启动器）**：从指定 cwd 在 tsx 下启动源码入口，或在普通 Node 下启动已构建 `lib` 入口；通过原始字节 stdout tee 连接 SDK 客户端，收集会话更新和 stderr，在启动阶段报告异步 spawn 失败，默认拒绝未处理的权限请求，并负责优雅或带信号关闭。产品套件指定一个 `dsh` profile：启动器通过 `--patch` 传入基础 patch 与所选场景 patch，在 replay 时选择场景同级的 `*cordis.snapshot.yml`，并把相对插件模块改写成绝对 file URL 后物化为临时副本。测试专用 fake bin 可以省略 profile 并保留自己的配置语法。关闭会等待进程退出、继承 stdio 关闭和 ACP parser 耗尽，然后才完成关闭或传播子级错误，使捕获内容完整，且调用方可在任一结果后移除自有路径。
 - **`runScenario`（harness）**：通过启动器从确定性 `input.json` 脚本驱动 ACP JSON-RPC stdio，将原始 stdout tee 给预期输出和纯度检查，并在优雅 stdin EOF 后收集每个持久化原始 JSONL 会话日志（父会话和 subagent 子会话，主会话优先）。`AgentUnderTest` 提供绝对 `binScript`、可选 `libBinScript`、`configPath` 和 `tsconfigPath` 路径，因为子进程 cwd 位于仓库外。当生成子级 cwd 的授权本身是测试对象时，`workspaceParent` 可以将它从平台临时目录移出。启动失败会在拒绝诊断中保留已捕获 agent stderr。
@@ -22,7 +22,7 @@ import {
   defineAcpSnapshotSuite,
   type Scenario,
   type SnapshotSuiteOptions,
-} from '@deepseek-ai/dsh-acp-snapshot'
+} from '@deepseek-ai/dsh-session-snapshot'
 
 function snapshotMode(value: string | undefined): SnapshotSuiteOptions['mode'] {
   switch (value) {
