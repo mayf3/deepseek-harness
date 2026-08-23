@@ -14,9 +14,9 @@ import {
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/goal-command-presentation', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('./goldens/goal-command-presentation', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL(
-  './snapshots/goal-command-presentation/ui.expected.md', import.meta.url,
+  './goldens/goal-command-presentation/ui.expected.md', import.meta.url,
 ))
 const MODE = webSnapshotMode()
 

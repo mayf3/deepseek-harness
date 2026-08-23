@@ -17,8 +17,8 @@ import {
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/permission-policy-context', import.meta.url))
-const FIXTURE = fileURLToPath(new URL('./snapshots/permission-policy-context/session.jsonl', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/permission-policy-context', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/permission-policy-context/session.jsonl', import.meta.url))
 const MODE = webSnapshotMode()
 
 const PROMPTS = [

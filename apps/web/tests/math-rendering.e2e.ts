@@ -17,8 +17,8 @@ import {
 } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/math-rendering', import.meta.url))
-const UI_EXPECTED = fileURLToPath(new URL('./snapshots/math-rendering/ui.expected.md', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('./goldens/math-rendering', import.meta.url))
+const UI_EXPECTED = fileURLToPath(new URL('./goldens/math-rendering/ui.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'math-rendering-web-e2e'
 const DONE = 'MATH_RENDERING_DONE'

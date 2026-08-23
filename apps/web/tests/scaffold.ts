@@ -25,7 +25,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Page } from 'playwright'
 import { expect } from 'vitest'
@@ -34,6 +34,7 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Group from '@deepseek-ai/cordis-plugin-group'
 import {
+  parseSnapshotManifest,
   scrubRequestHeaders,
   scrubSessionSnapshot,
   stabilizeFixtureMessageIds,
@@ -966,8 +967,23 @@ export async function compareOrRefreshGolden(goldenPath: string, actual: string,
  */
 export async function assertFixtureInventory(dir: string, expected: string[]): Promise<void> {
   const entries = (await readdir(dir)).sort()
-  expect(entries).toEqual([...expected].sort())
-  for (const entry of entries.filter(name => name.endsWith('.jsonl'))) {
+  const ownsManifest = entries.includes('snapshot.yml')
+  const artifacts = entries.filter(name => name !== 'snapshot.yml')
+  expect(artifacts).toEqual([...expected].sort())
+  if (ownsManifest) {
+    const manifestPath = join(dir, 'snapshot.yml')
+    const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
+    expect(manifest.profile).toBe('web')
+    if (manifest.session === undefined) {
+      expect(
+        artifacts.includes('session.jsonl') || artifacts.includes('seed.jsonl'),
+        `${dir}: session owner must carry session.jsonl or seed.jsonl`,
+      ).toBe(true)
+    } else {
+      expect(existsSync(resolve(dir, manifest.session.source)), `${dir}: session source`).toBe(true)
+    }
+  }
+  for (const entry of artifacts.filter(name => name.endsWith('.jsonl'))) {
     const content = await readFile(join(dir, entry), 'utf8')
     expect(scrubRequestHeaders(content), `${dir}/${entry} carries request-header bulk`).toBe(content)
     expect(content, `${dir}/${entry} carries a run-local rpcId`)

@@ -10,7 +10,7 @@ import {
   type WebScaffold,
 } from './scaffold.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/message-feedback-protocol', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/message-feedback-protocol', import.meta.url))
 const SESSION_FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
 const PROTOCOL_EXPECTED = join(SNAPSHOT_DIR, 'protocol.expected.json')
 const SESSION_ID = 'message-feedback-protocol'

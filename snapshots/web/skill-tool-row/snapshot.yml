@@ -1,0 +1,4 @@
+version: 1
+profile: web
+session:
+  source: ../../acp/skill-load/session.jsonl

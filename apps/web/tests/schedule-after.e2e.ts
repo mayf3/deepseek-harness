@@ -29,7 +29,7 @@ import { connectFreshWorkspace, conversationContextKey, saveFailureShot } from '
 
 const MODE = webSnapshotMode()
 const OVERLAY = fileURLToPath(new URL('../../../examples/web-schedule/cordis.yml', import.meta.url))
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/schedule-after', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('./goldens/schedule-after', import.meta.url))
 const AFTER_EXPECTED = join(SNAPSHOT_DIR, 'conversation.expected.md')
 const AT_EXPECTED = join(SNAPSHOT_DIR, 'at-conversation.expected.md')
 const EVERY_EXPECTED = join(SNAPSHOT_DIR, 'every-conversation.expected.md')

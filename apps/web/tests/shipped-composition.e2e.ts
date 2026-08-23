@@ -22,7 +22,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import { launchWebScaffold, type WebScaffold } from './scaffold.ts'
 
 const FILE_REFERENCE_PROMPT = fileURLToPath(new URL(
-  './snapshots/web-runtime-context/file-reference-prompt.expected.md', import.meta.url,
+  './goldens/web-runtime-context/file-reference-prompt.expected.md', import.meta.url,
 ))
 
 /**

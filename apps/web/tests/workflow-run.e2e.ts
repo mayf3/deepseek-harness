@@ -19,7 +19,7 @@ import {
 } from './support.ts'
 
 const MODE = webSnapshotMode()
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/workflow-run', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/workflow-run', import.meta.url))
 const UI_LIVE_EXPECTED = join(SNAPSHOT_DIR, 'ui-live.expected.md')
 const UI_EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
 const PARENT_FIXTURE = join(REPO_ROOT, 'snapshots/acp/workflow-run/session.jsonl')
