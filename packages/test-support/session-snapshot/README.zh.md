@@ -2,9 +2,11 @@
 
 [English](README.md) | 中文
 
-无密钥快照层（`pnpm run test:snapshot`，见[测试策略](../../../docs/testing.zh.md)）的会话日志快照支持。与传输无关的规范化和 fixture（测试前置数据）不变量与现有 ACP（Agent Client Protocol）协议适配器位于同一包中，使其他 `dsh` profile 适配器可以复用录制会话格式，而不复制其保护机制。
+无密钥快照层（`pnpm run test:snapshot`，见[测试策略](../../../docs/testing.zh.md)）的会话日志快照支持。与传输无关的 manifest、带类型身份脱敏、规范化、回写和 fixture（测试前置数据）不变量由 headless、SDK、ACP（Agent Client Protocol）和 Web 适配器共享。对应测试启动或组装随附的 `dsh` profile 表层；本支持包不提供另一个应用入口。
 
-每个录制会话目录都包含一个封闭的 `snapshot.yml` manifest。`profile` 指名随附的 `dsh` 控制器，`composition` 把场景归入同一组 profile patch 与请求头 pin，`recording` 区分可通过真实模型录制的会话和特意手写的脚本，`header` 记录 pin 与 sidecar 的所有权。失败或挂起无法由成功 chunk 重建时，`replay.override` 声明所需的例外 sidecar。除非 `session.source` 指向另一个场景的只读规范录制，否则目录拥有本地 `session.jsonl`。收集期间会拒绝未知字段、JavaScript YAML tag、格式错误的名称和索引、绝对路径及平台专用分隔符。
+每个录制会话目录都包含一个封闭的 `snapshot.yml` manifest。`scenario` 重复目录名以便诊断移动，`profile` 指名随附的 `dsh` 控制器，`composition` 把场景归入同一组 profile patch 与请求头 pin，`recording` 区分可通过真实模型录制的会话和特意手写的脚本，`header` 记录 pin 与 sidecar 的所有权。`replay`、`platform`、`permission`、`environment`、`workspace` 和 `input` 只保存已完成会话无法重建的事实；内联附件字节是标准的例外输入。除非 `session.source` 指向另一个场景的只读规范录制，否则目录拥有本地 `session.jsonl`。收集期间会拒绝未知字段、JavaScript YAML tag、格式错误的名称和索引、绝对路径及平台专用分隔符。
+
+提交的会话使用 `{{session:1}}`、`{{message:4}}` 和 `{{approval:1}}` 等按首次出现编号的带类型 token。主会话及其所有子会话共用一张映射，因此父级链接、中继消息和重复消息身份仍然可测试。任意用户或工具正文保持不变，除非其中包含已由带类型字段识别的同一值。请求系统提示词和工具 schema 绝不保留在会话 JSONL 中；每个组合与请求头类别有一个结构 pin，而字节相同的提示词或 schema 引用同一个可读 sidecar 所有者。
 
 当前 ACP 适配器包含四个可单独导入的层：
 
@@ -68,7 +70,7 @@ defineAcpSnapshotSuite({
 
 ## 模型体验
 
-无。该测试专用 harness 记录、规范化并比较 ACP transcript（文本记录），不会改变 agent 组装的模型请求。
+无。该测试专用支持记录、规范化并比较 profile 会话，不会改变 agent 组装的模型请求。
 
 #### KV Cache 影响
 
@@ -78,4 +80,4 @@ defineAcpSnapshotSuite({
 
 - **会话收集需要原始 JSONL mode**：`runScenario` 收集持久化 `.jsonl` 日志，因此快照配置使用 `persistenceCompression: 'none'`；压缩 JSONL 和 SQLite 组合没有快照收集路径。
 - **构建 mode 需要当前产物**：先运行 `pnpm run build`，再选择 `DSH_EXAMPLE_MODE=lib`；源 mode 仍是零构建路径。
-- **后端覆盖仍使用 ACP 驱动器**：保留场景为何使用该传输，见[仅自动化 ACP 决策](../../../.agents/notes/implemented/simplification/2026-07-23-acp-automation-only-protocol.zh.md#snapshot-boundary)。
+- **ACP 仅保留协议行为**：取消和权限往返等由 ACP 客户端触发的行为继续使用该适配器；组装后的一次性行为和持久控制行为分别使用 headless 与 SDK。

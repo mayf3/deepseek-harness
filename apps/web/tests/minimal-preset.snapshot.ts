@@ -19,7 +19,7 @@ describe('minimal agent preset', () => {
   let disposeInjectedPrompt: () => void
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE })
+    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, compareReplaySession: true })
     disposeInjectedPrompt = scaffold.ctx.systemPrompt.section({
       name: 'test:injected-prompt',
       order: 999,
@@ -119,6 +119,10 @@ describe('minimal agent preset', () => {
     `)
     expect(requestHeader.tools?.toSorted((left, right) => left.name.localeCompare(right.name)))
       .toEqual(scaffold.ctx.tools.schemas(agentHandle.agent).toSorted((left, right) => left.name.localeCompare(right.name)))
-    await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl'])
+    await assertFixtureInventory(SNAPSHOT_DIR, [
+      'session.jsonl',
+      'system-prompt.expected.md',
+      'tool-schemas.expected.json',
+    ])
   })
 })

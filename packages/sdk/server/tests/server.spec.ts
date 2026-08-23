@@ -250,6 +250,60 @@ describe('HarnessSdkJsonRpcServer', () => {
     expect(otherHandle.dispose).toHaveBeenCalledOnce()
   })
 
+  it('admits inline SDK images before the user message enters the session', async () => {
+    const followup = vi.fn<Agent['followup']>()
+    const agent = ({ id: SessionId('image'), followup } satisfies Pick<Agent, 'id' | 'followup'>) as unknown as Agent
+    const handle = { agent, dispose: vi.fn(() => Promise.resolve()) }
+    const ref = {
+      attachmentId: 'sha256:image',
+      mediaType: 'image/png',
+      bytes: 1,
+      width: 1,
+      height: 1,
+    }
+    const saveImages = vi.fn(async () => [ref])
+    const ctx = {
+      on: vi.fn(() => () => undefined),
+      agents: { create: vi.fn(async () => handle), get: () => agent },
+      get: (name: string) => name === 'attachments' ? { saveImages } : undefined,
+    } as unknown as Context
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+
+    await server.prompt({
+      sessionId: 'image',
+      contentBlocks: [
+        { type: 'text', text: 'inspect' },
+        { type: 'image', data: 'AQ==', mimeType: 'image/png' },
+      ],
+    })
+
+    expect(saveImages).toHaveBeenCalledWith([{ data: Uint8Array.of(1), mediaType: 'image/png' }])
+    expect(followup.mock.calls[0]?.[0].content).toEqual([
+      { type: 'text', text: 'inspect' },
+      { type: 'image', attachment: ref },
+    ])
+    await server.shutdown()
+  })
+
+  it('rejects inline SDK images when the composition has no attachment store', async () => {
+    const followup = vi.fn<Agent['followup']>()
+    const agent = ({ id: SessionId('image'), followup } satisfies Pick<Agent, 'id' | 'followup'>) as unknown as Agent
+    const handle = { agent, dispose: vi.fn(() => Promise.resolve()) }
+    const ctx = {
+      on: vi.fn(() => () => undefined),
+      agents: { create: vi.fn(async () => handle), get: () => agent },
+      get: () => undefined,
+    } as unknown as Context
+    const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+
+    await expect(server.prompt({
+      sessionId: 'image',
+      contentBlocks: [{ type: 'image', data: 'AQ==', mimeType: 'image/png' }],
+    })).rejects.toThrow('SDK image prompt requires an attachment store')
+    expect(followup).not.toHaveBeenCalled()
+    await server.shutdown()
+  })
+
   it('rejects a prompt for a session whose agent was disposed outside the server', async () => {
     const followup = vi.fn<Agent['followup']>()
     const agent = ({

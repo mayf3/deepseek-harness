@@ -6,6 +6,8 @@
  * @module @deepseek-ai/dsh-session-snapshot/normalize
  */
 
+import { redactSessionSnapshotIds } from './identity.ts'
+
 const SESSION_ID = '{{sessionId}}'
 const MESSAGE_ID = '{{messageId}}'
 const USED_TOKENS = '{{usedTokens}}'
@@ -94,6 +96,8 @@ export type CwdPathMode = 'canonical' | 'native'
 export interface NormalizeOptions {
   /** Use `/` for shared goldens, or preserve captured separators for a platform-specific golden. */
   cwdPathMode?: CwdPathMode
+  /** Keep already-redacted typed ids and arbitrary UUID-like prose unchanged. */
+  identityMode?: 'legacy' | 'preserve'
 }
 
 /** Return every known spelling of the generated cwd, most specific first. */
@@ -150,7 +154,12 @@ function replaceCwd(value: string, ctx: NormalizeContext, replacement: string): 
 }
 
 /** Replace cwd, session ids, and any stray UUID with stable tokens in a string. */
-function scrubString(value: string, ctx: NormalizeContext, cwdPathMode: CwdPathMode): string {
+function scrubString(
+  value: string,
+  ctx: NormalizeContext,
+  cwdPathMode: CwdPathMode,
+  identityMode: 'legacy' | 'preserve',
+): string {
   let out = replaceCwd(value, ctx, CWD)
   // Filesystem APIs can report one directory with several spellings. Replace
   // every known spelling longest-first so a shorter alias cannot corrupt a
@@ -178,22 +187,30 @@ function scrubString(value: string, ctx: NormalizeContext, cwdPathMode: CwdPathM
     )
     out = out.replace(EVENT_READ_OMITTED_BYTES_RE, `$1${EVENT_OMITTED_BYTES}$2`)
   }
-  for (const id of ctx.sessionIds) out = out.split(id).join(SESSION_ID)
-  out = out.replace(UUID_RE, SESSION_ID)
+  if (identityMode === 'legacy') {
+    for (const id of ctx.sessionIds) out = out.split(id).join(SESSION_ID)
+    out = out.replace(UUID_RE, SESSION_ID)
+  }
   return out
 }
 
 /** Recursively scrub a parsed JSON value (strings replaced; structure kept). */
-function scrubValue(value: unknown, ctx: NormalizeContext, cwdPathMode: CwdPathMode, key?: string): unknown {
+function scrubValue(
+  value: unknown,
+  ctx: NormalizeContext,
+  cwdPathMode: CwdPathMode,
+  identityMode: 'legacy' | 'preserve',
+  key?: string,
+): unknown {
   if (typeof value === 'string') {
-    if (key === 'messageId') return MESSAGE_ID
-    const scrubbed = scrubString(value, ctx, cwdPathMode)
+    if (identityMode === 'legacy' && key === 'messageId') return MESSAGE_ID
+    const scrubbed = scrubString(value, ctx, cwdPathMode, identityMode)
     return cwdPathMode === 'canonical' && key === 'path' ? scrubbed.replaceAll('\\', '/') : scrubbed
   }
-  if (Array.isArray(value)) return value.map(v => scrubValue(v, ctx, cwdPathMode))
+  if (Array.isArray(value)) return value.map(v => scrubValue(v, ctx, cwdPathMode, identityMode))
   if (value !== null && typeof value === 'object') {
     const out: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(value)) out[k] = scrubValue(v, ctx, cwdPathMode, k)
+    for (const [k, v] of Object.entries(value)) out[k] = scrubValue(v, ctx, cwdPathMode, identityMode, k)
     if (
       (value as { sessionUpdate?: unknown }).sessionUpdate === 'usage_update'
       && typeof (value as { used?: unknown }).used === 'number'
@@ -279,6 +296,7 @@ export function normalizeStdout(
   options: NormalizeOptions = {},
 ): string {
   const cwdPathMode = options.cwdPathMode ?? 'canonical'
+  const identityMode = options.identityMode ?? 'legacy'
   const lines = rawStdout.split('\n').filter(line => line.trim().length > 0)
   // Map each distinct JSON-RPC id (request/response correlate by id) to a stable
   // sequence number, in first-seen order, so id churn doesn't perturb the expected output.
@@ -294,7 +312,7 @@ export function normalizeStdout(
     if ('id' in frame && frame.id !== undefined && frame.id !== null) {
       frame.id = stableId(frame.id)
     }
-    return scrubValue(frame, ctx, cwdPathMode) as Record<string, unknown>
+    return scrubValue(frame, ctx, cwdPathMode, identityMode) as Record<string, unknown>
   })
   return frames.map(f => JSON.stringify(f)).join('\n') + '\n'
 }
@@ -319,6 +337,7 @@ export function normalizeSessionLog(
   options: NormalizeOptions = {},
 ): string {
   const cwdPathMode = options.cwdPathMode ?? 'canonical'
+  const identityMode = options.identityMode ?? 'legacy'
   const lines = rawLog.split('\n').filter(line => line.trim().length > 0)
   const records = lines.map((line) => {
     const record = JSON.parse(line) as Record<string, unknown>
@@ -337,7 +356,7 @@ export function normalizeSessionLog(
       const data = record.data as Record<string, unknown>
       if ('durationMs' in data) data.durationMs = 0
     }
-    return scrubValue(record, ctx, cwdPathMode) as Record<string, unknown>
+    return scrubValue(record, ctx, cwdPathMode, identityMode) as Record<string, unknown>
   })
   return records.map(r => JSON.stringify(r)).join('\n') + '\n'
 }
@@ -358,6 +377,25 @@ export function normalizeSessionSnapshot(
   options: NormalizeOptions = {},
 ): string {
   return scrubSessionSnapshot(normalizeSessionLog(rawLog, ctx, options))
+}
+
+/**
+ * Normalize one scenario's primary and child logs with shared typed identity redaction.
+ * @param rawLogs - primary-first persisted or projected session JSONL.
+ * @param ctx - generated cwd spellings and other volatile run facts.
+ * @param options - separator controls; relationship-preserving identity mode is mandatory.
+ * @returns normalized session fixtures in input order.
+ */
+export function normalizeSessionSnapshots(
+  rawLogs: readonly string[],
+  ctx: NormalizeContext,
+  options: Omit<NormalizeOptions, 'identityMode'> = {},
+): string[] {
+  return redactSessionSnapshotIds(rawLogs).map(log => scrubSessionSnapshot(normalizeSessionLog(
+    log,
+    { ...ctx, sessionIds: [] },
+    { ...options, identityMode: 'preserve' },
+  )))
 }
 
 /**

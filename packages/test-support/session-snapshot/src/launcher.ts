@@ -405,10 +405,17 @@ function linkProfilePackage(source: string, cwd: string, packageName: string): v
   symlinkSync(packageDir, link, process.platform === 'win32' ? 'junction' : 'dir')
 }
 
-/** Copy one authored patch into the launch cwd with relative plugin names made absolute. */
-function materializeProfilePatch(source: string, cwd: string, targetDir: string, index: number): string {
+/**
+ * Copy one authored patch into the launch cwd with relative plugin names made absolute.
+ * @param source - authored profile patch path.
+ * @param cwd - isolated process cwd whose profile fallback receives package links.
+ * @param targetDir - existing directory that owns the materialized patch.
+ * @param index - stable patch ordinal used in the output filename.
+ * @returns absolute materialized patch path.
+ */
+export function materializeProfilePatch(source: string, cwd: string, targetDir: string, index: number): string {
   const parsed = yaml.load(readFileSync(source, 'utf8'), { schema: entryListSchema })
-  if (!Array.isArray(parsed)) throw new Error(`ACP profile patch must be a top-level array: ${source}`)
+  if (!Array.isArray(parsed)) throw new Error(`snapshot profile patch must be a top-level array: ${source}`)
   const patches = parsed as PatchOptions[]
   const baseDir = dirname(source)
   const resolveName = (value: string): string => {

@@ -24,11 +24,13 @@ import { isSurfaceEligibleType } from '@deepseek-ai/dsh-session/surface'
 import { describe, expect, it } from 'vitest'
 import { type AgentUnderTest, type HarvestedLog, type InputScript, runScenario } from './harness.ts'
 import { parseSnapshotManifest } from './manifest.ts'
+import { redactSessionSnapshotIds } from './identity.ts'
 import {
   type CwdPathMode,
   type NormalizeContext,
   extractSnapshotSpillPaths,
   normalizeSessionLog,
+  normalizeSessionSnapshots,
   normalizeStdout,
   scrubRequestHeaders,
   scrubSessionSnapshot,
@@ -1251,7 +1253,7 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
               ctx,
             ))))
             : result.sessionLogs.map(log => scrubSessionSnapshot(portableFixture(log.content)))
-          const outputFixtures = stabilizeFixtureMessageIds(freshFixtures, existingFixtures)
+          const outputFixtures = redactSessionSnapshotIds(stabilizeFixtureMessageIds(freshFixtures, existingFixtures))
           await Promise.all(outputFixtures.map((fixture, index) =>
             writeFile(join(dir, outputFixtureFiles[index] as string), fixture)))
           if (RECORDING) {
@@ -1331,11 +1333,19 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
         if (comparesLog) {
           // The harvested logs (primary-first) must match their committed fixtures 1:1.
           expect(result.sessionLogs.length, 'this scenario must persist one log per session fixture').toBe(fixtureFiles.length)
-          for (let i = 0; i < fixtureFiles.length; i++) {
-            const harvested = scrubSessionSnapshot((result.sessionLogs[i] as HarvestedLog).content)
-            const fixture = scrubSessionSnapshot(await readFile(join(dir, fixtureFiles[i] as string), 'utf8'))
-            expect(normalizeSessionLog(harvested, ctx), `${fixtureFiles[i]} mismatch`)
-              .toEqual(normalizeSessionLog(fixture, fixtureContext(fixture)))
+          const harvested = result.sessionLogs.map(log => log.content)
+          const fixtures = await Promise.all(fixtureFiles.map(file => readFile(join(dir, file), 'utf8')))
+          const fixtureHeaders = fixtures.map(fixture => JSON.parse(
+            fixture.split('\n').find(line => line.trim() !== '') ?? '{}',
+          ) as { id?: unknown; cwd?: unknown })
+          const fixtureCtx: NormalizeContext = {
+            sessionIds: fixtureHeaders.flatMap(header => typeof header.id === 'string' ? [header.id] : []),
+            cwd: typeof fixtureHeaders[0]?.cwd === 'string' ? fixtureHeaders[0].cwd : '\0no-cwd\0',
+          }
+          const actualSnapshots = normalizeSessionSnapshots(harvested, ctx)
+          const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureCtx)
+          for (const [index, actual] of actualSnapshots.entries()) {
+            expect(actual, `${fixtureFiles[index]} mismatch`).toEqual(expectedSnapshots[index])
           }
         }
 
@@ -1599,6 +1609,8 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
               .toEqual(fixture)
           }
         }
+        const fixtures = await Promise.all(files.map(file => readFile(join(dir, file), 'utf8')))
+        expect(redactSessionSnapshotIds(fixtures), `${scenario.name}: identity redaction fixed point`).toEqual(fixtures)
       }
     })
   })

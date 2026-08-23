@@ -39,6 +39,7 @@ describe('web e2e: /feedback command acknowledgement', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
       telemetryUrl: TELEMETRY_URL,
+      compareReplaySession: true,
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE }),
     })
     browser = await chromium.launch()

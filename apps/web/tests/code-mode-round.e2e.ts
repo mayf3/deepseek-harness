@@ -31,6 +31,7 @@ describe('web e2e: Code Mode round renders nested sub-calls', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
       toolsMode: 'code',
+      compareReplaySession: true,
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 }),
     })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })

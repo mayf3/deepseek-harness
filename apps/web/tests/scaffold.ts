@@ -23,9 +23,10 @@
 // (the plugin-row path discards the ReplayHandle; the direct install keeps
 // assertConsumed for the teardown fixture-consumption check).
 import { existsSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Page } from 'playwright'
 import { expect } from 'vitest'
@@ -34,10 +35,17 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Group from '@deepseek-ai/cordis-plugin-group'
 import {
+  formatSystemPromptSnapshot,
+  formatToolSchemasSnapshot,
+  normalizedSystemPrompts,
+  normalizedToolSchemas,
   parseSnapshotManifest,
+  redactSessionSnapshotIds,
+  normalizeSessionSnapshots,
   scrubRequestHeaders,
   scrubSessionSnapshot,
   stabilizeFixtureMessageIds,
+  type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
 import {
   assertEntriesLoaded,
@@ -192,6 +200,8 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
+  /** Compare the replayed root session with `replayFixture`; enable only when this scaffold drives the canonical recording. */
+  compareReplaySession?: boolean
   /**
    * Optional product overlay applied after the shipped Web surface and before
    * the scaffold's hermetic test patches, matching the launcher's `--patch`
@@ -513,6 +523,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   // the temp workspace so tool cwd, session cwd, and fixtures agree.
   const originalCwd = process.cwd()
   const ctx = new Context()
+  const observedSessions = new Map<SessionId, Session>()
+  const stopObservingSessions = ctx.on('session/created', (session) => {
+    observedSessions.set(session.id, session)
+  })
   let port = 0
   let replayHandle: ReplayHandle | undefined
   try {
@@ -658,6 +672,21 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     },
     async close(): Promise<void> {
       const failures: unknown[] = []
+      if (mode !== 'record'
+        && options.replayFixture !== undefined
+        && options.replayProvidersOnly !== true
+        && options.compareReplaySession === true) {
+        try {
+          await assertReplaySession(
+            [...observedSessions.values()],
+            options.replayFixture,
+            mode,
+            `http://${browserHost}:${port}`,
+          )
+        } catch (error) {
+          failures.push(error)
+        }
+      }
       // Fixture-consumption check first, while the run's binding state is
       // still authoritative — a scenario that drove fewer model calls than
       // recorded fails here instead of drifting green. Skipped for
@@ -670,6 +699,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         }
       }
       try {
+        stopObservingSessions()
         failures.push(...await cleanupScaffoldWorld(ctx, workspaceCwd, persistenceRoot))
       } finally {
         restoreCredentialEnvironment()
@@ -692,28 +722,107 @@ function rawSessionLog(session: Session): string {
   ].join('\n')
 }
 
+function normalizeWebSessionVolatiles(log: string): string {
+  const normalizeValue = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+      return value.replace(/Anonymous user: [^.]+(?=\. Session sharing)/g, 'Anonymous user: {{anonymousUserId}}')
+    }
+    if (Array.isArray(value)) return value.map(normalizeValue)
+    if (value !== null && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, normalizeValue(item)]))
+    }
+    return value
+  }
+  return log.split(/\r?\n/).map((line) => {
+    if (line.trim() === '') return line
+    const record = normalizeValue(JSON.parse(line)) as { type?: unknown; data?: { endpoint?: unknown } }
+    if (record.type === 'web/deepseek-search-llm-request' && typeof record.data?.endpoint === 'string') {
+      record.data.endpoint = '{{webSearchEndpoint}}'
+    }
+    return JSON.stringify(record)
+  }).join('\n')
+}
+
+function stableSessionFixture(session: Session, existing: string, workspaceCwd: string): string {
+  const fresh = scrubSessionSnapshot(normalizeWebSessionVolatiles(rawSessionLog(session)))
+    .split(session.id).join('{{sessionId}}')
+    .split(workspaceCwd).join('{{cwd}}')
+  const stable = redactSessionSnapshotIds(stabilizeFixtureMessageIds([fresh], [existing]))[0]
+  if (stable === undefined) throw new Error('session harvest produced no stabilized fixture')
+  return stable
+}
+
+async function assertReplaySession(
+  sessions: readonly Session[],
+  fixturePath: string,
+  mode: WebSnapshotMode,
+  webUrl: string,
+): Promise<void> {
+  let expected = await readFile(fixturePath, 'utf8')
+  const userPrompts = fixtureUserPrompts(expected)
+  const candidates = sessions.filter((session) => {
+    if (session.header.parentSession !== undefined) return false
+    const actual = session.events.flatMap((event) => {
+      if (event.type !== 'user/message' || event.data.source.kind !== 'user') return []
+      const text = event.data.content.filter(block => block.type === 'text').map(block => block.text).join('')
+      return text.length === 0 ? [] : [text]
+    })
+    return JSON.stringify(actual) === JSON.stringify(userPrompts)
+  })
+  expect(candidates, `Web replay fixture ${fixturePath} must match one live root session`).toHaveLength(1)
+  const session = candidates[0] as Session
+  const sessionCwd = session.header.cwd
+  if (sessionCwd === undefined) throw new Error(`${fixturePath}: replayed session has no cwd`)
+  const actual = rawSessionLog(session)
+  if (mode === 'refresh') {
+    expected = stableSessionFixture(session, expected, sessionCwd)
+    await writeFile(fixturePath, expected)
+  }
+  const expectedHeader = JSON.parse(expected.split('\n').find(line => line.trim() !== '') ?? '{}') as {
+    id?: unknown
+    cwd?: unknown
+  }
+  const actualContext: NormalizeContext = { sessionIds: [String(session.id)], cwd: sessionCwd }
+  const expectedContext: NormalizeContext = {
+    sessionIds: typeof expectedHeader.id === 'string' ? [expectedHeader.id] : [],
+    cwd: typeof expectedHeader.cwd === 'string' ? expectedHeader.cwd : '\0no-cwd\0',
+  }
+  expect(normalizeSessionSnapshots([normalizeWebSessionVolatiles(actual)], actualContext)[0], `${fixturePath}: persisted replay`)
+    .toBe(normalizeSessionSnapshots([normalizeWebSessionVolatiles(expected)], expectedContext)[0])
+
+  const fixtureDir = dirname(fixturePath)
+  const manifestPath = join(fixtureDir, 'snapshot.yml')
+  const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
+  if (manifest.header?.pin !== true) return
+  const normalizePrompt = (value: string): string => value
+    .split(REPO_ROOT).join('{{sourceRoot}}')
+    .split(webUrl).join('{{webUrl}}')
+  const prompts = normalizedSystemPrompts(actual, actualContext).map(normalizePrompt)
+  const schemas = normalizedToolSchemas(actual, actualContext)
+  const promptPath = join(fixtureDir, 'system-prompt.expected.md')
+  const schemaPath = join(fixtureDir, 'tool-schemas.expected.json')
+  const promptSnapshot = formatSystemPromptSnapshot(prompts[0] as string, prompts.slice(1))
+  const schemaSnapshot = formatToolSchemasSnapshot(schemas[0] as unknown[], schemas.slice(1))
+  if (mode === 'refresh') {
+    await Promise.all([writeFile(promptPath, promptSnapshot), writeFile(schemaPath, schemaSnapshot)])
+  }
+  expect(promptSnapshot, `${fixturePath}: system-prompt pin`).toBe(await readFile(promptPath, 'utf8'))
+  expect(schemaSnapshot, `${fixturePath}: tool-schema pin`).toBe(await readFile(schemaPath, 'utf8'))
+}
+
 /**
  * Record-mode fixture write-back: harvest the live session, scrub request
- * headers to {{system}}/{{tools}} (TODO(web-header-pin): the web lane pins no
- * header class — a deliberate deviation logged in the Agent Note's deferred
- * work), tokenize the run-local session id, cwd, and browser RPC id
- * ({{sessionId}}/{{cwd}}/{{rpcId}}, the committed fixture convention —
- * re-records then diff only on real content), and write the fixture.
+ * headers to {{system}}/{{tools}}, tokenize the run-local cwd, redact opaque
+ * identities with typed relationship-preserving tokens, and write the fixture.
  * @param scaffold - the record-mode scaffold.
  * @param sessionId - the driven session.
- * @param fixturePath - the committed session.jsonl / seed.jsonl target.
+ * @param fixturePath - the committed session.jsonl target.
  */
 export async function recordFixture(scaffold: WebScaffold, sessionId: SessionId, fixturePath: string): Promise<void> {
   const agent = scaffold.ctx.agents.get(sessionId)
   if (agent === undefined) throw new Error(`record harvest: no live agent for ${sessionId}`)
-  const fresh = scrubSessionSnapshot(rawSessionLog(agent.session))
-    .split(sessionId).join('{{sessionId}}')
-    .split(scaffold.workspaceCwd).join('{{cwd}}')
-    .replace(/"rpcId":"[^"]+"/g, '"rpcId":"{{rpcId}}"')
   const existing = existsSync(fixturePath) ? await readFile(fixturePath, 'utf8') : ''
-  const stable = stabilizeFixtureMessageIds([fresh], [existing])[0]
-  if (stable === undefined) throw new Error('record harvest: no stabilized fixture')
-  await writeFile(fixturePath, stable)
+  await writeFile(fixturePath, stableSessionFixture(agent.session, existing, scaffold.workspaceCwd))
 }
 
 /**
@@ -728,6 +837,17 @@ export function fixtureUserPrompts(fixtureText: string): string[] {
     const text = event.data.content.filter(block => block.type === 'text').map(block => block.text).join('')
     return text.length > 0 ? [text] : []
   })
+}
+
+/** Deterministic UUID used when a seed fixture's typed identity token is materialized. */
+export function fixtureIdentity(
+  kind: 'message' | 'approval' | 'workflow' | 'command' | 'rpc' | 'retry' | 'id',
+  ordinal: number,
+): string {
+  const hex = createHash('sha256').update(`${kind}:${ordinal}`).digest('hex').slice(0, 32).split('')
+  hex[12] = '4'
+  hex[16] = ['8', '9', 'a', 'b'][Number.parseInt(hex[16] as string, 16) % 4] as string
+  return `${hex.slice(0, 8).join('')}-${hex.slice(8, 12).join('')}-${hex.slice(12, 16).join('')}-${hex.slice(16, 20).join('')}-${hex.slice(20).join('')}`
 }
 
 /**
@@ -761,6 +881,10 @@ export function fixtureUserPrompts(fixtureText: string): string[] {
 export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, id: string): string {
   const realized = fixtureText
     .split('{{sessionId}}').join(id)
+    .split('{{session:1}}').join(id)
+    .replace(/\{\{session:([2-9]\d*)\}\}/g, (_token, ordinal: string) => `${id}-child-${ordinal}`)
+    .replace(/\{\{(message|approval|workflow|command|rpc|retry|id):([1-9]\d*)\}\}/g, (_token, kind: string, ordinal: string) =>
+      fixtureIdentity(kind as 'message' | 'approval' | 'workflow' | 'command' | 'rpc' | 'retry' | 'id', Number(ordinal)))
     .split('{{cwd}}').join(scaffold.workspaceCwd)
   const fixtureCwd = (JSON.parse(realized.split('\n', 1)[0]!) as { cwd?: string }).cwd
   return fixtureCwd === undefined
@@ -960,8 +1084,7 @@ export async function compareOrRefreshGolden(goldenPath: string, actual: string,
 
 /**
  * Fixture-inventory guard: the scenario directory holds exactly the expected
- * files and every committed JSONL is a scrub fixed-point without a run-local
- * browser RPC id.
+ * files and every committed JSONL is a header-scrubbed, typed-redaction fixed point.
  * @param dir - the scenario snapshot directory.
  * @param expected - the exact expected file inventory.
  */
@@ -976,8 +1099,8 @@ export async function assertFixtureInventory(dir: string, expected: string[]): P
     expect(manifest.profile).toBe('web')
     if (manifest.session === undefined) {
       expect(
-        artifacts.includes('session.jsonl') || artifacts.includes('seed.jsonl'),
-        `${dir}: session owner must carry session.jsonl or seed.jsonl`,
+        artifacts.includes('session.jsonl'),
+        `${dir}: session owner must carry session.jsonl`,
       ).toBe(true)
     } else {
       expect(existsSync(resolve(dir, manifest.session.source)), `${dir}: session source`).toBe(true)
@@ -986,8 +1109,7 @@ export async function assertFixtureInventory(dir: string, expected: string[]): P
   for (const entry of artifacts.filter(name => name.endsWith('.jsonl'))) {
     const content = await readFile(join(dir, entry), 'utf8')
     expect(scrubRequestHeaders(content), `${dir}/${entry} carries request-header bulk`).toBe(content)
-    expect(content, `${dir}/${entry} carries a run-local rpcId`)
-      .not.toMatch(/"rpcId":"(?!\{\{rpcId\}\})[^"]+"/)
+    expect(redactSessionSnapshotIds([content]), `${dir}/${entry} carries unredacted identities`).toEqual([content])
   }
 }
 

@@ -148,6 +148,7 @@ describe('web e2e: shipped default web search', () => {
     searchServer = search.server
     searchBaseURL = search.baseURL
     scaffold = await launchWebScaffold({
+      compareReplaySession: true,
       deepSeekSearch: {
         baseURL: search.baseURL,
         apiKeyEnv: SEARCH_CREDENTIAL_REF,

@@ -18,7 +18,11 @@
  */
 
 export {
+  redactSessionSnapshotIds,
+} from './identity.ts'
+export {
   runScenario,
+  snapshotSpillRoot,
   type HarvestedLog,
   type InputScript,
   type InputStep,
@@ -28,6 +32,7 @@ export {
 } from './harness.ts'
 export {
   launchAcpTestAgent,
+  materializeProfilePatch,
   type AcpTestLaunchOptions,
   type AgentUnderTest,
   type LaunchedAcpTestAgent,
@@ -36,6 +41,7 @@ export {
   extractSnapshotSpillPaths,
   normalizeSessionLog,
   normalizeSessionSnapshot,
+  normalizeSessionSnapshots,
   normalizeStdout,
   scrubRequestHeaders,
   scrubSessionSnapshot,
@@ -49,15 +55,30 @@ export {
 export {
   parseSnapshotManifest,
   type SnapshotHeaderManifest,
+  type SnapshotInputAttachment,
+  type SnapshotInputManifest,
   type SnapshotManifest,
+  type SnapshotPermission,
+  type SnapshotPlatform,
   type SnapshotProfile,
   type SnapshotRecording,
   type SnapshotReplayManifest,
   type SnapshotSessionReference,
+  type SnapshotWorkspaceManifest,
 } from './manifest.ts'
 export {
+  formatSystemPromptSnapshot,
+  formatToolSchemasSnapshot,
+  fixtureContext,
+  headerChangeCount,
   defineAcpSnapshotSuite,
+  normalizedHeaders,
+  normalizedSystemPrompts,
+  normalizedToolSchemas,
+  parseToolSchemasSnapshot,
   refreshFixtureReplacements,
+  restorePinnedToolSchemas,
+  sessionFixtureNames,
   stabilizeFixtureMessageIds,
   stabilizeRefreshLog,
   type Scenario,

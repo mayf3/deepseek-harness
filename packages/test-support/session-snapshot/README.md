@@ -2,9 +2,11 @@
 
 English | [中文](README.zh.md)
 
-Session-log snapshot support for the keyless snapshot tier (`pnpm run test:snapshot`, [testing policy](../../../docs/testing.md)). Transport-neutral normalization and fixture invariants live beside the existing ACP protocol adapter so additional `dsh` profile adapters can reuse the recorded-session format without copying its guards.
+Session-log snapshot support for the keyless snapshot tier (`pnpm run test:snapshot`, [testing policy](../../../docs/testing.md)). Transport-neutral manifests, typed identity redaction, normalization, write-back, and fixture invariants are shared by the headless, SDK, ACP, and Web adapters. Their tests launch or compose the shipped `dsh` profile surface; the support package does not provide another application entrypoint.
 
-Every recorded-session directory carries a closed `snapshot.yml` manifest. `profile` names the shipped `dsh` controller, `composition` groups scenarios under one profile-patch and request-header pin, `recording` distinguishes live-recordable sessions from deliberately authored scripts, and `header` records pin and sidecar ownership. `replay.override` declares the exceptional sidecar needed for a failure or hang that successful chunks cannot reconstruct. A directory owns its local `session.jsonl` unless `session.source` names another scenario's read-only canonical recording. Unknown fields, JavaScript YAML tags, malformed names and indexes, absolute paths, and platform-specific separators fail during collection.
+Every recorded-session directory carries a closed `snapshot.yml` manifest. `scenario` repeats the directory name for move diagnostics, `profile` names the shipped `dsh` controller, `composition` groups scenarios under one profile patch and request-header pin, `recording` distinguishes live-recordable sessions from deliberately authored scripts, and `header` records pin and sidecar ownership. `replay`, `platform`, `permission`, `environment`, `workspace`, and `input` hold only facts the completed session cannot reconstruct; inline attachment bytes are the standard exceptional input. A directory owns its local `session.jsonl` unless `session.source` names another scenario's read-only canonical recording. Unknown fields, JavaScript YAML tags, malformed names and indexes, absolute paths, and platform-specific separators fail during collection.
+
+Committed sessions use typed first-seen tokens such as `{{session:1}}`, `{{message:4}}`, and `{{approval:1}}`. One map covers the primary and every child so parent links, relays, and repeated message identities stay test-visible. Arbitrary user and tool prose is unchanged unless it contains a value already identified by a typed field. Request system prompts and tool schemas never remain in session JSONL; each composition/header class has one structural pin, while identical prompt or schema bytes reference one readable sidecar owner.
 
 The current ACP adapter has four importable layers:
 
@@ -68,7 +70,7 @@ Constraints: `suite.ts` and `harness.ts` import vitest (the harness polls its du
 
 ## Model Experience
 
-None, as this test-only harness records, normalizes, and compares ACP transcripts without changing the agent's assembled model request.
+None, as this test-only support records, normalizes, and compares profile sessions without changing the agent's assembled model request.
 
 #### KV Cache effect
 
@@ -78,4 +80,4 @@ None; this package neither assembles nor sends a provider request.
 
 - **Session harvest requires raw JSONL mode** — `runScenario` collects persisted `.jsonl` logs, so snapshot configs set `persistenceCompression: 'none'`; compressed JSONL and SQLite compositions have no snapshot-harvest path.
 - **Built mode requires current artifacts** — run `pnpm run build` before selecting `DSH_EXAMPLE_MODE=lib`; source mode remains the zero-build path.
-- **Backend coverage still rides an ACP driver** — see the [automation-only ACP decision](../../../.agents/notes/implemented/simplification/2026-07-23-acp-automation-only-protocol.md#snapshot-boundary) for why retained scenarios use this transport.
+- **ACP remains for protocol behavior** — cancellation and permission round trips whose stimulus is the ACP client stay on that adapter; assembled one-shot and persistent-control behavior uses headless and SDK instead.

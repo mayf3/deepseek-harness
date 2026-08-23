@@ -212,14 +212,15 @@ describe('defineAcpSnapshotSuite: record inventory write-back', () => {
       .toContain('"name": "t1"')
   })
 
-  it('retains an unchanged message id across the recorded parent and child fixtures', () => {
+  it('retains an unchanged message relationship across the recorded parent and child fixtures', () => {
     const existingMessageId = '22222222-2222-4222-8222-222222222222'
     const freshMessageId = '11111111-1111-4111-8111-111111111111'
     const fixtures = ['session.jsonl', 'session.1.jsonl']
       .map(file => readFileSync(join(recordDir, 'rec-child', file), 'utf8'))
 
     for (const fixture of fixtures) {
-      expect(fixture).toContain(`"id":"${existingMessageId}"`)
+      expect(fixture).toContain('"id":"{{message:1}}"')
+      expect(fixture).not.toContain(existingMessageId)
       expect(fixture).not.toContain(freshMessageId)
     }
   })

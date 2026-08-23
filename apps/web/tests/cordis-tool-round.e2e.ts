@@ -73,6 +73,7 @@ describe('web e2e: Cordis tools use their owned cards', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
       cordisTools: true,
+      compareReplaySession: true,
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 }),
     })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })

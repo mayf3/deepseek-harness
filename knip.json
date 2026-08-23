@@ -51,15 +51,7 @@
         "headless-agent/tests/fixtures/session-telemetry-otel-driver.ts",
         "headless-agent/tests/fixtures/telemetry-redact-rule.ts",
         "headless-agent/tests/fixtures/e2b/e2b/bin.ts",
-        "acp-agent/tests/snapshots/lsp-definition/workspace/subject.ts",
-        "acp-agent/tests/fixtures/child-question-tripwire.ts",
-        "acp-agent/tests/fixtures/parent-sandbox-override.ts",
-        "acp-agent/tests/fixtures/partial-landlock-sandbox.ts",
-        "acp-agent/tests/fixtures/subagent-durability-failure.ts",
-        "acp-agent/tests/fixtures/subagent-result-diagnostic.ts",
-        "acp-agent/tests/fixtures/subagent-report-fence.ts",
         "acp-agent/tests/fixtures/subagent-settlement-marker.ts",
-        "acp-agent/tests/fixtures/workspace-context-compaction.ts",
         "acp-agent/tests/fixtures/control-surface/control-surface-llm.ts",
         "acp-agent/tests/fixtures/subagent/subagent-acp/mock-delegating-llm.ts",
         "acp-agent/tests/fixtures/subagent/subagent-acp/driver.ts",
@@ -351,7 +343,7 @@
     "packages/test-support/session-snapshot": {
       "entry": [
         "tests/**/*.spec.ts",
-        "tests/fixtures/fake-acp-agent.ts"
+        "tests/fixtures/*.ts"
       ],
       "project": [
         "src/**/*.ts",

@@ -250,7 +250,7 @@ describe('runScenario', () => {
       agent: { ...profileAgent, configPath: invalidPatch },
       cwd: dir,
       env: { DSH_SNAPSHOT: 'record', DSH_SNAPSHOT_FILE: fixtureFile },
-    })).toThrow(`ACP profile patch must be a top-level array: ${invalidPatch}`)
+    })).toThrow(`snapshot profile patch must be a top-level array: ${invalidPatch}`)
   })
 
   it('waits for inherited stdio and buffered ACP parsing after the parent exits', { timeout: 20_000 }, async () => {

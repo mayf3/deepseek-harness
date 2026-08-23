@@ -8,6 +8,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { resolve } from 'node:path'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
+import { admitEncodedImages, type EncodedImageAttachment, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { carrierKeyOf, type Scoped } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -22,12 +24,32 @@ import type {
   SessionEventNotification,
   SessionPromptParams,
   SessionPromptResult,
+  SdkEncodedImageBlock,
   SubagentFinishedNotification,
   SubagentStartedNotification,
 } from '@deepseek-ai/dsh-sdk-protocol'
 
 interface SessionRecord {
   handle: AgentHandle
+}
+
+function encodedImage(block: SessionPromptParams['contentBlocks'][number]): block is SdkEncodedImageBlock {
+  return block.type === 'image' && 'data' in block
+}
+
+async function durablePromptContent(ctx: Context, blocks: SessionPromptParams['contentBlocks']): Promise<ContentBlock[]> {
+  const images = blocks.filter(encodedImage)
+  if (images.length === 0) return blocks as ContentBlock[]
+  const attachments = ctx.get('attachments')
+  if (attachments === undefined) throw new Error('SDK image prompt requires an attachment store')
+  const refs = await admitEncodedImages(attachments, images.map((image): EncodedImageAttachment => ({
+    data: image.data,
+    mediaType: image.mimeType,
+  })))
+  let next = 0
+  return blocks.map(block => encodedImage(block)
+    ? { type: 'image', attachment: refs[next++] as ImageAttachmentRef }
+    : block)
 }
 
 /** Recover the delegating parent from the service-owned scoped carrier. */
@@ -140,7 +162,10 @@ export class HarnessSdkJsonRpcServer {
     if (this.ctx.agents.get(rec.handle.agent.id) !== rec.handle.agent) {
       throw new Error(`session agent was disposed outside the server: ${params.sessionId}`)
     }
-    const message = createUserMessage({ content: params.contentBlocks, source: { kind: 'user' } })
+    const message = createUserMessage({
+      content: await durablePromptContent(this.ctx, params.contentBlocks),
+      source: { kind: 'user' },
+    })
     rec.handle.agent.followup(message)
     return { messageId: message.id }
   }
