@@ -88,8 +88,8 @@ describe('gate graph validation', () => {
     const ids = withPnpmEntrypoint(() => gatesForMode('hygiene').map(subject => subject.id))
 
     expect(ids).toEqual([
-      'rescope-vendor', 'knip', 'publint', 'constraints', 'dsh-package-licenses',
-      'package-invariants', 'built-package-invariants', 'node-next-types',
+      'rescope-vendor', 'knip', 'publint', 'constraints', 'application-entrypoints',
+      'dsh-package-licenses', 'package-invariants', 'built-package-invariants', 'node-next-types',
       'optional-dependency-imports', 'client-packages', 'cordis-config',
       'runtime-closure', 'vendored-links',
     ])
@@ -133,6 +133,15 @@ describe('gate graph validation', () => {
       const ids = withPnpmEntrypoint(() => gatesForMode(mode).map(subject => subject.id))
 
       expect(ids).toContain('client-packages')
+    },
+  )
+
+  it.each(['ci-primary', 'ci-static', 'check-all', 'hygiene'] as const)(
+    'keeps application entrypoint enforcement in %s',
+    (mode) => {
+      const ids = withPnpmEntrypoint(() => gatesForMode(mode).map(subject => subject.id))
+
+      expect(ids).toContain('application-entrypoints')
     },
   )
 

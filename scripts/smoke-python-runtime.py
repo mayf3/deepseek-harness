@@ -35,7 +35,7 @@ FS_SEARCH_MARKER = "PACKAGED_FS_SEARCH_OK"
 MCP_PROMPT = "Exercise the packaged MCP client with one external stdio server."
 MCP_TEXT = "MCP client smoke ok"
 MINIMAL_CORDIS = (
-    Path(__file__).resolve().parent.parent / "examples" / "jsonrpc-agent" / "minimal.cordis.yml"
+    Path(__file__).resolve().parent.parent / "examples" / "python-sdk-agent" / "minimal.cordis.yml"
 )
 MINIMAL_BASH_COMMAND = (
     "counter=$(( ${counter:-0} + 1 )); export counter; "

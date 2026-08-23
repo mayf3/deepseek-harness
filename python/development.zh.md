@@ -50,7 +50,7 @@ with DeepSeekHarness() as harness:
 仓库贡献者可以选择以下任一开发载体：
 
 - 设置 `DSH_RUNTIME_MODE=node`，在系统 Node `>=22.19` 上使用已构建的 Node 载体。构建脚本会刷新该载体，但分发物绝不会包含或自动选择它。
-- 将仓库根目录设为 `cwd`，并设置 `launch_args_override=("./node_modules/.bin/tsx", "packages/examples/jsonrpc-demo/src/bin.ts")`，以运行未构建的 TypeScript 源码。默认配置不合适时，请提供 `cordis=...`。
+- 将仓库根目录设为 `cwd`，并设置 `launch_args_override=("./node_modules/.bin/tsx", "packages/sdk/python-runtime/src/packaged-bin.ts")`，以运行私有载体未构建的 TypeScript 源码。默认配置不合适时，请提供 `cordis=...`。
 
 完整的源码模式调用见 `python/sdk/tests/manual_sdk_agent_smoke.py`。
 

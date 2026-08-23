@@ -12,9 +12,9 @@
 
 非交互式 agent（智能体）：接受一项任务并运行，然后以选定的机器可读或人类可读格式输出结果。详见[无头示例参考](headless-agent/README.zh.md)。
 
-## jsonrpc-agent
+## python-sdk-agent
 
-由 Python SDK 和 JSON-RPC 驱动的无人值守编码 agent。详见 [JSON-RPC 示例参考](jsonrpc-agent/README.zh.md)。
+由 Python SDK 和 JSON-RPC 驱动的无人值守编码 agent。详见 [Python SDK agent 示例参考](python-sdk-agent/README.zh.md)。
 
 ## web-cordis
 

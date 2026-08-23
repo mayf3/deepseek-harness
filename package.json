@@ -100,6 +100,7 @@
     "verify-node-next-types": "tsx scripts/verify-node-next-types.ts",
     "verify-optional-dependency-imports": "tsx scripts/verify-optional-dependency-imports.ts",
     "verify-runtime-closure": "tsx scripts/verify-runtime-closure.ts",
+    "verify-application-entrypoints": "tsx scripts/verify-application-entrypoints.ts",
     "verify-client-packages": "tsx scripts/verify-client-packages.ts",
     "verify-vendored-links": "tsx scripts/verify-vendored-links.ts",
     "verify-cordis-config": "tsx scripts/verify-cordis-config.ts",
@@ -141,13 +142,12 @@
     "dsh": "node --import tsx/esm apps/cli/src/bin.ts",
     "demo:code-mode": "node scripts/demo-code-mode.mjs",
     "demo:cordis": "node scripts/demo-cordis.mjs",
-    "demo:acp": "node --import tsx packages/examples/acp-demo/src/bin.ts --config examples/acp-agent/cordis.yml",
+    "demo:acp": "node --import tsx/esm apps/cli/src/bin.ts --profile acp --patch examples/acp-agent/cordis.yml",
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "dev:web": "tsx scripts/dev-web.ts --poll",
     "postinstall": "node scripts/install-lefthook.mjs"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "1.4.0",
     "@deepseek-ai/dsh-tool-session-query": "workspace:^",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@testing-library/dom": "^10.4.1",

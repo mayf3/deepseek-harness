@@ -1,5 +1,5 @@
 /**
- * Shared boot glue for the app bins (`dsh`, `dsh-acp-demo`): load the gitignored
+ * Shared boot glue for `dsh` profiles and the temporarily packaged Python SDK runtime: load the gitignored
  * `.env`, install the fail-loud Loader guards, resolve the config path (snapshot-aware), load the
  * optional user patch layers from the Harness home (`~/.dsh`), expose its path resolver to
  * config expressions, and drive the Cordis Loader against a leaf `cordis.yml` until the tree settles.
@@ -31,6 +31,7 @@ declare module '@deepseek-ai/cordis' {
 export {
   composeEntries,
   DEFAULT_PROFILE_BUNDLES,
+  DEFAULT_PROFILE_PATCH_RELOAD,
   healProfilesModuleFallback,
   initProfile,
   loadProfile,
@@ -47,6 +48,8 @@ export {
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
+  type ProfilePatchReload,
+  type ProfileTemplate,
 } from './profile.ts'
 
 /**

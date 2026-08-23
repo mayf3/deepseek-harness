@@ -50,7 +50,7 @@ with DeepSeekHarness() as harness:
 Repository contributors can select either development carrier:
 
 - Set `DSH_RUNTIME_MODE=node` to use the built Node carrier on system Node `>=22.19`. The build script refreshes this carrier, but distributions never include or auto-select it.
-- Set `launch_args_override=("./node_modules/.bin/tsx", "packages/examples/jsonrpc-demo/src/bin.ts")` with the repository root as `cwd` to run unbuilt TypeScript source. Supply `cordis=...` when the default configuration is not suitable.
+- Set `launch_args_override=("./node_modules/.bin/tsx", "packages/sdk/python-runtime/src/packaged-bin.ts")` with the repository root as `cwd` to run the private carrier's unbuilt TypeScript source. Supply `cordis=...` when the default configuration is not suitable.
 
 See `python/sdk/tests/manual_sdk_agent_smoke.py` for a complete source-mode invocation.
 

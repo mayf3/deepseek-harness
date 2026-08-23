@@ -19,7 +19,7 @@ import { cleanupAcpExampleTest } from './cleanup.ts'
 /**
  * The default ACP composition (`cordis.yml`) end to end.
  *
- * Keyless smoke: boot the REAL `cordis.yml` through the `dsh-acp-agent` bin as
+ * Keyless smoke: boot the real profile patch through `dsh --profile acp` as
  * an ACP subprocess and drive initialize + session/new — the real-Loader-path
  * guard (postmortem 0001) for THIS tree's exports, including the
  * sandbox executor AND the approval service. No prompt is sent, so neither the
@@ -34,8 +34,9 @@ import { cleanupAcpExampleTest } from './cleanup.ts'
  */
 
 const AGENT: AgentUnderTest = {
-  binScript: fileURLToPath(new URL('../../../packages/examples/acp-demo/src/bin.ts', import.meta.url)),
+  binScript: fileURLToPath(new URL('../../../apps/cli/src/bin.ts', import.meta.url)),
   configPath: fileURLToPath(new URL('../cordis.yml', import.meta.url)),
+  profile: 'acp',
   tsconfigPath: fileURLToPath(new URL('../../../tsconfig.json', import.meta.url)),
 }
 

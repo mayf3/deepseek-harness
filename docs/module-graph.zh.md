@@ -118,8 +118,10 @@ flowchart TD
     pkg_cmdline["cmdline"]
   end
   subgraph group_bundle["packages/bundle"]
+    pkg_acp_app["acp-app"]
     pkg_base["base"]
     pkg_headless["headless"]
+    pkg_sdk_app["sdk-app"]
     pkg_web_app["web-app"]
   end
   subgraph group_client["packages/client"]
@@ -194,9 +196,7 @@ flowchart TD
     pkg_subprocess_e2b["subprocess-e2b"]
   end
   subgraph group_examples["packages/examples"]
-    pkg_acp_demo["acp-demo"]
     pkg_agent_spine_demo["agent-spine-demo"]
-    pkg_sdk_jsonrpc_demo["sdk-jsonrpc-demo"]
   end
   subgraph group_experimental["packages/experimental"]
     pkg_experimental_agent_team["experimental-agent-team"]
@@ -271,6 +271,7 @@ flowchart TD
     pkg_sdk_client["sdk-client"]
     pkg_sdk_jsonrpc_server["sdk-jsonrpc-server"]
     pkg_sdk_protocol["sdk-protocol"]
+    pkg_sdk_python_runtime["sdk-python-runtime"]
   end
   subgraph group_session["packages/session"]
     pkg_session_checkpoint_policy["session-checkpoint-policy"]
@@ -358,20 +359,22 @@ flowchart TD
   pkg_deepseek_llm_api_extensions --> pkg_invariants
   pkg_scope --> pkg_invariants
   pkg_cmdline --> pkg_invariants
+  pkg_acp_app --> pkg_invariants
   pkg_base --> pkg_invariants
+  pkg_sdk_app --> pkg_invariants
   pkg_client_ui_primitives --> pkg_invariants
   pkg_client_ui_slots --> pkg_invariants
   pkg_client_web --> pkg_invariants
   pkg_code_runtime --> pkg_invariants
   pkg_code_runtime_python --> pkg_invariants
   pkg_e2b --> pkg_invariants
-  pkg_sdk_jsonrpc_demo --> pkg_invariants
   pkg_experimental_webworker_packer --> pkg_invariants
   pkg_host_directory_picker --> pkg_invariants
   pkg_host_directory_picker_browse --> pkg_invariants
   pkg_host_directory_picker_native --> pkg_invariants
   pkg_host_webserver --> pkg_invariants
   pkg_sandbox_windows_acl --> pkg_invariants
+  pkg_sdk_python_runtime --> pkg_invariants
   pkg_storage --> pkg_invariants
   pkg_subprocess --> pkg_invariants
   pkg_win32_process --> pkg_invariants
@@ -1225,16 +1228,6 @@ flowchart TD
   pkg_api_gateway --> pkg_client_connection
   pkg_api_gateway --> pkg_invariants
   pkg_api_gateway --> pkg_typert_registry
-  pkg_acp_demo --> pkg_acp
-  pkg_acp_demo --> pkg_agent_instructions
-  pkg_acp_demo --> pkg_agent_spine_demo
-  pkg_acp_demo --> pkg_app_boot
-  pkg_acp_demo --> pkg_invariants
-  pkg_acp_demo --> pkg_session_checkpoint_policy
-  pkg_acp_demo --> pkg_session_persistence_jsonl
-  pkg_acp_demo --> pkg_session_query
-  pkg_acp_demo --> pkg_session_query_sqlite
-  pkg_acp_demo --> pkg_tools
   pkg_api_remotes --> pkg_agent
   pkg_api_remotes --> pkg_agent_presets
   pkg_api_remotes --> pkg_api_gateway
@@ -1528,20 +1521,22 @@ flowchart TD
 | [`deepseek-llm-api-extensions`](../packages/llm/deepseek-llm-api-extensions) | `llm` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`scope`](../packages/core/scope) | `core` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`cmdline`](../packages/boot/cmdline) | `boot` | [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`acp-app`](../packages/bundle/acp-app) | `bundle` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`base`](../packages/bundle/base) | `bundle` | [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`sdk-app`](../packages/bundle/sdk-app) | `bundle` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-primitives`](../packages/client/ui-primitives) | `client` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-slots`](../packages/client/ui-slots) | `client` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-web`](../packages/client/web) | `client` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`code-runtime`](../packages/code-runtime/code-runtime) | `code-runtime` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`code-runtime-python`](../packages/code-runtime/code-runtime-python) | `code-runtime` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`e2b`](../packages/e2b/e2b) | `e2b` | [`invariants`](../packages/runtime-diagnostics/invariants) |
-| [`sdk-jsonrpc-demo`](../packages/examples/jsonrpc-demo) | `examples` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`experimental-webworker-packer`](../packages/experimental/webworker-packer) | `experimental` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`host-directory-picker`](../packages/host/directory-picker) | `host` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`host-directory-picker-browse`](../packages/host/directory-picker-browse) | `host` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`host-directory-picker-native`](../packages/host/directory-picker-native) | `host` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`host-webserver`](../packages/host/webserver) | `host` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`sandbox-windows-acl`](../packages/sandbox/sandbox-windows-acl) | `sandbox` | [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`sdk-python-runtime`](../packages/sdk/python-runtime) | `sdk` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`storage`](../packages/storage/storage) | `storage` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`subprocess`](../packages/subprocess/subprocess) | `subprocess` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`win32-process`](../packages/subprocess/win32-process) | `subprocess` | [`invariants`](../packages/runtime-diagnostics/invariants) |
@@ -1711,7 +1706,6 @@ flowchart TD
 | [`sdk-jsonrpc-server`](../packages/sdk/server) | `sdk` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`llm-deepseek`](../packages/llm/llm-deepseek), [`scope`](../packages/core/scope), [`sdk-protocol`](../packages/sdk/protocol), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent) |
 | [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | `subagent` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`sdk-client`](../packages/sdk/client), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess) |
 | [`api-gateway`](../packages/api/gateway) | `api` | [`client-connection`](../packages/client/connection), [`invariants`](../packages/runtime-diagnostics/invariants), [`typert-registry`](../packages/typert/registry) |
-| [`acp-demo`](../packages/examples/acp-demo) | `examples` | [`acp`](../packages/acp/acp), [`agent-instructions`](../packages/context/agent-instructions), [`agent-spine-demo`](../packages/examples/agent-spine-demo), [`app-boot`](../packages/boot/app-boot), [`invariants`](../packages/runtime-diagnostics/invariants), [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy), [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl), [`session-query`](../packages/session-query/session-query), [`session-query-sqlite`](../packages/session-query/session-query-sqlite), [`tools`](../packages/core/tools) |
 | [`api-remotes`](../packages/api/remotes) | `api` | [`agent`](../packages/core/agent), [`agent-presets`](../packages/preset/agent-presets), [`api-gateway`](../packages/api/gateway), [`commands`](../packages/interaction/commands), [`cordis-host-runner`](../packages/extensions/cordis-host-runner), [`credentials`](../packages/credentials/credentials), [`file-reference`](../packages/context/file-reference), [`goal`](../packages/goal/goal), [`host-plugin-inventory`](../packages/host/plugin-inventory), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`message-feedback`](../packages/feedback/message-feedback), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-reference`](../packages/context/session-reference), [`settings`](../packages/settings/settings), [`typert-registry`](../packages/typert/registry) |
 | [`client-runtime`](../packages/client/runtime) | `client` | [`agent`](../packages/core/agent), [`api-remotes`](../packages/api/remotes), [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`commands`](../packages/interaction/commands), [`host-apiproxy`](../packages/host/apiproxy), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`llm-retry`](../packages/llm/llm-retry), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`session-title`](../packages/session/session-title), [`tool-todo`](../packages/todo/tool-todo), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`typert-registry`](../packages/typert/registry) |
 | [`client-ui-renderer`](../packages/client/ui-renderer) | `client` | [`client-runtime`](../packages/client/runtime), [`invariants`](../packages/runtime-diagnostics/invariants) |

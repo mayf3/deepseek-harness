@@ -18,10 +18,6 @@
     persona: >-
       You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
 
-# TODO: Re-enable shared HMR for Web after its reload lifecycle is tested.
-- id: hmr
-  disabled: true
-
 # Full-text session search is opt-in (the base row's `openAt: never`). This
 # restatement keeps the Web values on one ephemeral in-memory index; a
 # deployment enabling content search overrides `openAt` to `first-search` in a
