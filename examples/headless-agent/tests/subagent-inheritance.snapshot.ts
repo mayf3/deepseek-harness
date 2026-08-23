@@ -14,7 +14,7 @@ import SessionStore, { SESSION_FORMAT_VERSION, SessionId, type SessionEvent, typ
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { describe, expect, it } from 'vitest'
 
-const fixtureDir = fileURLToPath(new URL('./subagent-inheritance-snapshots/parent-override', import.meta.url))
+const fixtureDir = fileURLToPath(new URL('./goldens/subagent-inheritance', import.meta.url))
 const replayOverride = join(fixtureDir, 'replay.override.json')
 const childReplay = join(fixtureDir, 'child.replay.jsonl')
 const parentExpected = join(fixtureDir, 'parent.expected.jsonl')

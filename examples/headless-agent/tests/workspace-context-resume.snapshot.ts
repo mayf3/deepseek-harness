@@ -22,7 +22,7 @@ import { renderWorkspaceContext } from '@deepseek-ai/dsh-agent-instructions'
 import { resolveConfig, workspaceBaselineIdentity } from '@deepseek-ai/dsh-agent-instructions/src/config.ts'
 import { describe, expect, it } from 'vitest'
 
-const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), 'workspace-context-resume-snapshots/offline-edit')
+const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), 'goldens/workspace-context-resume/offline-edit')
 const replayFixture = join(fixtureDir, 'replay.jsonl')
 const replayOverride = join(fixtureDir, 'replay.override.json')
 const sessionExpected = join(fixtureDir, 'session.expected.jsonl')

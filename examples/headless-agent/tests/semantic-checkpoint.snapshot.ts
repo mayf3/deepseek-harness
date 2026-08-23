@@ -9,7 +9,7 @@ import SessionStore, { SESSION_FORMAT_VERSION, SessionId, type SessionEvent, typ
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { describe, expect, it } from 'vitest'
 
-const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), 'semantic-checkpoint-snapshots/tool-outcome-unknown')
+const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), 'goldens/semantic-checkpoint')
 const replayFixture = join(fixtureDir, 'replay.jsonl')
 const replayOverride = join(fixtureDir, 'replay.override.json')
 const sessionExpected = join(fixtureDir, 'session.expected.jsonl')

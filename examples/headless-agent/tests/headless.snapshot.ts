@@ -1,12 +1,13 @@
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { delimiter, dirname, join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   normalizeSessionLog,
   normalizeSessionSnapshot,
   normalizeStdout,
+  parseSnapshotManifest,
   refreshFixtureReplacements,
   scrubRequestHeaders,
   stabilizeRefreshLog,
@@ -21,7 +22,8 @@ import {
 } from '@deepseek-ai/dsh-session-persistence-jsonl/src/zstd.ts'
 import { describe, expect, it } from 'vitest'
 
-const snapshotsDir = join(dirname(fileURLToPath(import.meta.url)), 'snapshots')
+const snapshotsDir = fileURLToPath(new URL('../../../snapshots/session/', import.meta.url))
+const goldensDir = fileURLToPath(new URL('./goldens/', import.meta.url))
 const advancedScenarioDir = join(snapshotsDir, 'advanced-toolchain')
 const advancedSessionFixture = join(advancedScenarioDir, 'session.jsonl')
 const advancedStreamExpected = join(advancedScenarioDir, 'stream-json.expected.jsonl')
@@ -30,27 +32,27 @@ const ptyScenarioDir = join(snapshotsDir, 'pty-tools')
 const ptySessionFixture = join(ptyScenarioDir, 'session.jsonl')
 const ptyStreamExpected = join(ptyScenarioDir, 'stream-json.expected.jsonl')
 const ptyConfigPath = fileURLToPath(new URL('../pty.cordis.snapshot.yml', import.meta.url))
-const goalScenarioDir = join(snapshotsDir, 'goal-tools')
+const goalScenarioDir = join(goldensDir, 'goal-tools')
 const goalConfigPath = fileURLToPath(new URL('../goal.cordis.snapshot.yml', import.meta.url))
-const retryScenarioDir = join(snapshotsDir, 'provider-retry')
+const retryScenarioDir = join(goldensDir, 'provider-retry')
 const retryConfigPath = fileURLToPath(new URL('../retry.cordis.snapshot.yml', import.meta.url))
 const compactionScenarioDir = join(snapshotsDir, 'compaction-recovery')
 const compactionSessionFixture = join(compactionScenarioDir, 'session.jsonl')
 const compactionStreamExpected = join(compactionScenarioDir, 'stream-json.expected.jsonl')
 const compactionConfigPath = fileURLToPath(new URL('../compaction.cordis.snapshot.yml', import.meta.url))
-const credentialsScenarioDir = join(snapshotsDir, 'missing-credential')
+const credentialsScenarioDir = join(goldensDir, 'missing-credential')
 const credentialsConfigPath = fileURLToPath(new URL('../credentials.cordis.snapshot.yml', import.meta.url))
 // Same keyless composition as the missing-credential scenario: the endpoint is
 // never dialed either way, because a supplied-but-unusable key fails credential
 // resolution exactly where an absent one does.
-const invalidCredentialScenarioDir = join(snapshotsDir, 'invalid-credential')
+const invalidCredentialScenarioDir = join(goldensDir, 'invalid-credential')
 const ralphScenarioDir = join(snapshotsDir, 'ralph-loop')
 const ralphConfigPath = fileURLToPath(new URL('../ralph.cordis.snapshot.yml', import.meta.url))
-const settlementScenarioDir = join(snapshotsDir, 'subagent-settlement')
+const settlementScenarioDir = join(goldensDir, 'subagent-settlement')
 const settlementConfigPath = fileURLToPath(new URL('../subagent-settlement.cordis.snapshot.yml', import.meta.url))
 const teamConfigPath = fileURLToPath(new URL('../team.cordis.snapshot.yml', import.meta.url))
 const startupFailureConfigPath = fileURLToPath(new URL('./fixtures/startup-activation-error/cordis.yml', import.meta.url))
-const startupFailureExpected = join(snapshotsDir, 'startup-activation-error', 'stderr.expected.txt')
+const startupFailureExpected = join(goldensDir, 'startup-activation-error', 'stderr.expected.txt')
 const binScript = fileURLToPath(new URL('./fixtures/headless-driver.ts', import.meta.url))
 const dshBinScript = fileURLToPath(new URL('../../../apps/cli/src/bin.ts', import.meta.url))
 const tsconfigPath = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
@@ -58,8 +60,8 @@ const reasoningConfigPath = fileURLToPath(new URL('./fixtures/cli.cordis.yml', i
 const deepseekDefaultsConfigPath = fileURLToPath(new URL('./fixtures/deepseek-defaults.cordis.yml', import.meta.url))
 const piAiDefaultsConfigPath = fileURLToPath(new URL('./fixtures/pi-ai-defaults.cordis.yml', import.meta.url))
 const headlessOverlayPath = fileURLToPath(new URL('./fixtures/headless-profile.cordis.yml', import.meta.url))
-const headlessSessionExpected = join(snapshotsDir, 'headless-profile', 'session.expected.jsonl')
-const headlessFailureExpected = join(snapshotsDir, 'headless-profile', 'stderr.expected.txt')
+const headlessSessionExpected = join(goldensDir, 'headless-profile', 'session.expected.jsonl')
+const headlessFailureExpected = join(goldensDir, 'headless-profile', 'stderr.expected.txt')
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 
 interface JsonObject {
@@ -233,6 +235,16 @@ async function persistedLogs(cwd: string, root: string = join(cwd, '.sessions'))
 }
 
 describe('headless stream-json snapshots', () => {
+  it('declares every recorded-session fixture under the headless profile', async () => {
+    for (const dir of [advancedScenarioDir, compactionScenarioDir, ptyScenarioDir, ralphScenarioDir]) {
+      const path = join(dir, 'snapshot.yml')
+      expect(parseSnapshotManifest(await readFile(path, 'utf8'), path)).toEqual({
+        version: 1,
+        profile: 'headless',
+      })
+    }
+  })
+
   it('runs one task through the product headless profile command', async () => {
     const task = 'Prove the product headless profile path with one real tool round trip.'
     const result = await runLoaderSmoke({

@@ -19,7 +19,7 @@ import SessionStore, {
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { describe, expect, it } from 'vitest'
 
-const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), 'workspace-context-resume-snapshots/offline-edit')
+const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), 'goldens/workspace-context-resume/offline-edit')
 const replayFixture = join(fixtureDir, 'replay.jsonl')
 const configPath = fileURLToPath(new URL('../workspace-context-resume.cordis.snapshot.yml', import.meta.url))
 const binScript = fileURLToPath(new URL('./fixtures/headless-driver.ts', import.meta.url))
