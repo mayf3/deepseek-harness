@@ -258,11 +258,11 @@ WebSocket JSON 与进程内 carrier 的入口都从 `unknown` 开始按 `type` �
 
 Host 只投影 request 一级的 `agent` 与 `signal`：`agent` 变为 frame 的一级 `agentId`，`signal` 成为 delivery lifetime，其余字段必须整体为无损 JSON。
 
-Client 用 `agentId` 同步解析已存在的 Agent Context，把当前 delivery signal 放回 request 的直接 `signal` 字段，再在目标 Context 的私有 key 上调用 Cordis `waterfall()`。
+Client 用 `agentId` 同步解析或物化 Agent Context，把当前 delivery signal 放回 request 的直接 `signal` 字段，再在目标 Context 的私有 key 上调用 Cordis `waterfall()`。Session-backed adapter 在首个成功 Session 列表 baseline 到达前允许 transport 先物化 scope；baseline 到达后由列表生命周期接管 scope 存活判断。
 
 系统不扫描任意深度对象，不传 path array 或 placeholder，不 deep clone／restore Context 和 AbortSignal，也不等待未来出现的 Agent Context。
 
-Client adapter 未注册、Agent Context 不存在或已经释放时，本 Client 立即返回 `next`。它不订阅 registry、不做 resolve 后竞态复查，也不为一次 delivery 创建临时 Fiber。
+Client adapter 未注册、resolver 未返回 Context 或解析抛错时，本 Client 立即返回 `next`。它不订阅 registry、不做 resolve 后竞态复查，也不为一次 delivery 创建临时 Fiber。
 
 Gateway Host 为每个未完成 waterfall 保存 `eventId`、Host continuation 与已投递 Client generation。新 Client generation 会收到同一 pending event 的重放。
 
@@ -310,7 +310,7 @@ API Proxy 只承接自身拥有的独立业务 API，不是 Session、Workspace�
 
 **把 Agent scope 做成任意深度对象投影。** 递归扫描 Context 与 AbortSignal 需要 path、placeholder、clone 和 restore 协议，并把偶然对象结构升级成 wire 约定；一级 `agent` 与 `signal` 足以覆盖当前 waterfall。
 
-**等待 Client Agent Context 或 adapter 后再分发。** registry waiter、竞态复查和临时 delivery Fiber 会为一个可直接委托的 Client 增加额外生命周期；目标不存在时立即 `next` 保持 Cordis waterfall 语义。
+**等待 Client Agent Context 或 adapter 后再分发。** registry waiter、竞态复查和临时 delivery Fiber 会为一个可同步解析或物化目标的 Client 增加额外生命周期；resolver 当下不能提供目标时立即 `next` 保持 Cordis waterfall 语义。
 
 **给 Remote Event 使用独立物理 WebSocket 或 duplex stream。** Gateway mux 已提供认证升级、复用、取消、错误映射和重连；下行 `$events` 加上 HTTP `$events/result` 足以表达 request／response，不需要第三条连接。
 

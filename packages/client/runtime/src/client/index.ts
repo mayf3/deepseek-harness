@@ -225,7 +225,7 @@ export function apply(ctx: Context): void {
   sessionControl.start()
   ctx.typert.contexts.registerClient('agent', {
     identity: candidate => sessions.scopeOf(candidate),
-    resolve: sessionId => sessions.scope(sessionId),
+    resolve: sessionId => sessions.resolveAgentScope(sessionId),
   })
   const workspaceModel = new ClientWorkspaceModel(ctx.remote.workspace)
   const workspaces = new WorkspaceRuntime(ctx, connection.api, workspaceModel, sessions)

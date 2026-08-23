@@ -573,6 +573,18 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
+   * Materialize the Agent scope named by a validated Host Remote Event.
+   * The first successful Session-list baseline becomes authoritative for its
+   * lifetime; until then, transport streams may address the scope in either
+   * arrival order.
+   * @param id - Host-projected Agent identity (the matching Session id).
+   * @returns the identity-stable Agent Context.
+   */
+  resolveAgentScope(id: SessionId): AgentContext {
+    return (this.scopes.get(id) ?? this.materializeScope(id)).ctx
+  }
+
+  /**
    * Read the Agent scope tag off a context. Service-method boundary: fetch
    * bundles must reach scope resolution through ctx.sessions — a cross-bundle
    * value import of the standalone helper would inline a second module
@@ -664,6 +676,11 @@ export class SessionRuntime implements ISessions {
     const existing = this.scopes.get(id)
     if (existing !== undefined) return existing
     if (!this.eligible(id)) return undefined
+    return this.materializeScope(id)
+  }
+
+  /** Materialize one scope after its caller establishes that the id may be addressed. */
+  private materializeScope(id: SessionId): ScopeRecord {
     const { fiber, ctx } = createScope(this.rootCtx, id)
     const session = this.manager.get(id)
     // The Session owns its scoped dispatch point (host Agent.loopCtx mirror);
@@ -764,6 +781,7 @@ export class SessionRuntime implements ISessions {
 
   /** Tear down scope + instance for no-longer-eligible sessions off stage; the staged one defers until the stage moves. */
   private pruneScopes(): void {
+    if (this.list.getSnapshot().phase === 'pending') return
     for (const [id, record] of this.scopes) {
       if (this.eligible(id)) continue
       if (id === this.watched) {

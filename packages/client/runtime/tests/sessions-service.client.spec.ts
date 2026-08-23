@@ -121,6 +121,22 @@ describe('search', () => {
 })
 
 describe('scope tree', () => {
+  it('retains a Host-addressed scope until the first Session baseline owns pruning', async () => {
+    const b = bench()
+    const scoped = b.svc.resolveAgentScope(sid('s-early'))
+    expect(scopeOf(scoped)).toBe('s-early')
+
+    b.svc.handleControlFrame({
+      type: 'baseline',
+      value: { queues: {}, jobs: {}, projections: {} },
+    })
+    await Promise.resolve()
+    expect(b.svc.resolveAgentScope(sid('s-early'))).toBe(scoped)
+
+    await feedList(b, [])
+    expect(b.svc.scope(sid('s-early'))).toBeUndefined()
+  })
+
   it('mints lazily on first resolution, tags the ctx, and keeps binding identity stable', async () => {
     const b = bench()
     await feedList(b, [{ id: 's1' }])

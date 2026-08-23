@@ -10,6 +10,7 @@ import { SESSION_SEARCH_RESULT_LIMIT } from '@deepseek-ai/dsh-api-session-contro
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import * as RuntimeClient from '../src/client/index.ts'
 import type { ConversationNodeDefinition } from '../src/client/contract/conversation.ts'
+import { scopeOf } from '../src/client/agents/scope.ts'
 import { Session } from '../src/client/sessions/session.ts'
 import { SessionRuntime } from '../src/client/sessions/service.ts'
 import { FakeApiClient, fakeRemote, ok } from './fake-api.client.ts'
@@ -68,6 +69,16 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('runtime client apply', () => {
+  it('materializes Host-addressed Agent scopes before the Session list arrives', async () => {
+    const bench = await mount()
+    const adapter = bench.ctx.typert.contexts.getClient('agent')
+    const first = adapter?.resolve('s-early')
+
+    expect(first).toBeDefined()
+    expect(scopeOf(first as Context)).toBe('s-early')
+    expect(adapter?.resolve('s-early')).toBe(first)
+  })
+
   it('refreshes Sessions on every Gateway connection generation', async () => {
     const refresh = vi.spyOn(SessionRuntime.prototype, 'handleConnected')
     const bench = await mount()
