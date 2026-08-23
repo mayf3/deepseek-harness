@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Session-log snapshot support for the keyless snapshot tier (`pnpm run test:snapshot`, [testing policy](../../../docs/testing.md)). Transport-neutral normalization and fixture invariants live beside the existing ACP protocol adapter so additional `dsh` profile adapters can reuse the recorded-session format without copying its guards.
 
-Every recorded-session directory carries a closed `snapshot.yml` manifest. `profile` names the shipped `dsh` controller; a directory owns its local `session.jsonl` unless `session.source` names another scenario's read-only canonical recording. Unknown fields, JavaScript YAML tags, absolute paths, and platform-specific separators fail during collection.
+Every recorded-session directory carries a closed `snapshot.yml` manifest. `profile` names the shipped `dsh` controller, `composition` groups scenarios under one profile-patch and request-header pin, `recording` distinguishes live-recordable sessions from deliberately authored scripts, and `header` records pin and sidecar ownership. `replay.override` declares the exceptional sidecar needed for a failure or hang that successful chunks cannot reconstruct. A directory owns its local `session.jsonl` unless `session.source` names another scenario's read-only canonical recording. Unknown fields, JavaScript YAML tags, malformed names and indexes, absolute paths, and platform-specific separators fail during collection.
 
 The current ACP adapter has four importable layers:
 

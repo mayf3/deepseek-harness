@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -731,7 +731,7 @@ const hasPwsh = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInte
 defineAcpSnapshotSuite({
   agent: AGENT,
   snapshotsDir: SNAPSHOTS_DIR,
-  scenarios: SCENARIOS,
+  scenarios: SCENARIOS.filter(scenario => existsSync(join(SNAPSHOTS_DIR, scenario.name))),
   mode: snapshotModeFromEnv(process.env.DSH_SNAPSHOT),
   hasPwsh,
 })

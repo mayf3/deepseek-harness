@@ -48,8 +48,11 @@ export {
 } from './normalize.ts'
 export {
   parseSnapshotManifest,
+  type SnapshotHeaderManifest,
   type SnapshotManifest,
   type SnapshotProfile,
+  type SnapshotRecording,
+  type SnapshotReplayManifest,
   type SnapshotSessionReference,
 } from './manifest.ts'
 export {

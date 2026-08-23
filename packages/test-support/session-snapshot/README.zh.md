@@ -4,7 +4,7 @@
 
 无密钥快照层（`pnpm run test:snapshot`，见[测试策略](../../../docs/testing.zh.md)）的会话日志快照支持。与传输无关的规范化和 fixture（测试前置数据）不变量与现有 ACP（Agent Client Protocol）协议适配器位于同一包中，使其他 `dsh` profile 适配器可以复用录制会话格式，而不复制其保护机制。
 
-每个录制会话目录都包含一个封闭的 `snapshot.yml` manifest。`profile` 指名随附的 `dsh` 控制器；除非 `session.source` 指向另一个场景的只读规范录制，否则目录拥有本地 `session.jsonl`。收集期间会拒绝未知字段、JavaScript YAML tag、绝对路径和平台专用分隔符。
+每个录制会话目录都包含一个封闭的 `snapshot.yml` manifest。`profile` 指名随附的 `dsh` 控制器，`composition` 把场景归入同一组 profile patch 与请求头 pin，`recording` 区分可通过真实模型录制的会话和特意手写的脚本，`header` 记录 pin 与 sidecar 的所有权。失败或挂起无法由成功 chunk 重建时，`replay.override` 声明所需的例外 sidecar。除非 `session.source` 指向另一个场景的只读规范录制，否则目录拥有本地 `session.jsonl`。收集期间会拒绝未知字段、JavaScript YAML tag、格式错误的名称和索引、绝对路径及平台专用分隔符。
 
 当前 ACP 适配器包含四个可单独导入的层：
 
