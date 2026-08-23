@@ -8,7 +8,7 @@
 
 - Python 3.10 或更高版本
 - Git
-- Linux x64、Linux arm64，或 arm64 上的 macOS 14 或更高版本
+- Linux x64、Linux arm64、arm64 上的 macOS 14 或更高版本，或 Windows x64
 - DeepSeek 兼容的 API endpoint 与凭据
 - 隔离的 workspace 与隔离的 Harness home
 
@@ -92,13 +92,13 @@ dsh plugin --profile sdk-minimal add file:/absolute/path/to/my-plugin-bundle
 |---|---|
 | 系统提示词 | `DSH_SYSTEM_PROMPT`，未设置时为 `You are a helpful software engineer assistant.` |
 | `minimal.py` 的模型 | `--model`，然后是 `DSH_MODEL`，最后是 `deepseek-v4-flash` |
-| 面向模型的工具 | 仅持久 `bash` 与 `str_replace_editor` |
-| Bash 超时 | 300 秒 |
+| 面向模型的工具 | Linux／macOS 上的持久 `bash` 或 Windows 上的 `pwsh`，以及 `str_replace_editor` |
+| Shell 超时 | 300 秒 |
 | Editor 输出上限 | 16,000 字符 |
 | 运行时上下文与 compaction | 不存在 |
 | 会话持久化 | `<dsh_home>/sessions` 下的未压缩 JSONL |
 
-该 profile 的唯一组合包会在空根之上插入完整配置树，且不包含 `dsh-base`，因此基础 profile 以后新增的工具不会隐式出现。它包含 SDK 协议、一个由环境配置的 DeepSeek 适配器、本地执行与持久化；settings、托管凭据、遥测、Web 工具、subagent、本地指令发现和 compaction 均不存在。它固定使用 `danger-full-access`，因此持久 Bash 与 editor 可以修改运行时可见的任何路径；应使用一次性 checkout 或容器。由于采用 PTY 实现，本示例只支持 POSIX。
+该 profile 的唯一组合包会在空根之上插入完整配置树，且不包含 `dsh-base`，因此基础 profile 以后新增的工具不会隐式出现。它包含 SDK 协议、一个由环境配置的 DeepSeek 适配器、本地执行与持久化；settings、托管凭据、遥测、Web 工具、subagent、本地指令发现和 compaction 均不存在。它固定使用 `danger-full-access`，因此按平台选择的持久 shell 与 editor 可以修改运行时可见的任何路径；应使用一次性 checkout 或容器。
 
 已安装 wheel 仍会打包完整 `web` profile 与前端产物。如果 Python SDK 部署还需要浏览器应用，请针对显式 `DSH_HOME` 运行 `dsh web`；`web` 是独立 CLI 应用，不能为 Python SDK client 提供服务。
 

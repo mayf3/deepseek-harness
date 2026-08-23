@@ -1591,6 +1591,9 @@ importers:
       '@deepseek-ai/dsh-tool-bash-persistent':
         specifier: workspace:^
         version: link:../../shell/tool-bash-persistent
+      '@deepseek-ai/dsh-tool-pwsh-persistent':
+        specifier: workspace:^
+        version: link:../../shell/tool-pwsh-persistent
       '@deepseek-ai/dsh-tool-str-replace-editor':
         specifier: workspace:^
         version: link:../../fs/tool-str-replace-editor

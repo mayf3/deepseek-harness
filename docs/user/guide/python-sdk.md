@@ -8,7 +8,7 @@ This tutorial installs the published Python SDK, runs the shipped standalone min
 
 - Python 3.10 or newer
 - Git
-- Linux x64, Linux arm64, or macOS 14 or newer on arm64
+- Linux x64, Linux arm64, macOS 14 or newer on arm64, or Windows x64
 - A DeepSeek-compatible API endpoint and credential
 - An isolated workspace and an isolated Harness home
 
@@ -92,13 +92,13 @@ Another `profile` is valid when it includes `@deepseek-ai/dsh-sdk-app` or anothe
 |---|---|
 | System prompt | `DSH_SYSTEM_PROMPT`, falling back to `You are a helpful software engineer assistant.` |
 | Model in `minimal.py` | `--model`, then `DSH_MODEL`, then `deepseek-v4-flash` |
-| Model-facing tools | Persistent `bash` and `str_replace_editor` only |
-| Bash timeout | 300 seconds |
+| Model-facing tools | Persistent `bash` on Linux/macOS or `pwsh` on Windows, plus `str_replace_editor` |
+| Shell timeout | 300 seconds |
 | Editor output limit | 16,000 characters |
 | Runtime context and compaction | Absent |
 | Session persistence | Uncompressed JSONL under `<dsh_home>/sessions` |
 
-The profile's sole bundle inserts the complete tree over an empty root and does not include `dsh-base`; later base-profile tools therefore cannot appear implicitly. It contains the SDK protocol, one environment-configured DeepSeek adapter, local execution, and persistence, while settings, managed credentials, telemetry, Web tools, subagents, local instruction discovery, and compaction are absent. It pins `danger-full-access`, so persistent Bash and the editor can modify any path visible to the runtime; use a disposable checkout or container. The PTY implementation makes this example POSIX-only.
+The profile's sole bundle inserts the complete tree over an empty root and does not include `dsh-base`; later base-profile tools therefore cannot appear implicitly. It contains the SDK protocol, one environment-configured DeepSeek adapter, local execution, and persistence, while settings, managed credentials, telemetry, Web tools, subagents, local instruction discovery, and compaction are absent. It pins `danger-full-access`, so the platform-selected persistent shell and editor can modify any path visible to the runtime; use a disposable checkout or container.
 
 The installed wheel still packages the full `web` profile and frontend assets. Run `dsh web` against an explicit `DSH_HOME` when a Python SDK deployment also needs the browser application; `web` is a separate CLI application and cannot serve a Python SDK client.
 

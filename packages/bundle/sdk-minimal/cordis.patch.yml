@@ -47,7 +47,15 @@
 
     - id: terminal-bash
       name: '@deepseek-ai/dsh-terminal-bash'
+      disabled: !!js process.platform === 'win32'
       config:
+        timeoutMs: 300000
+
+    - id: terminal-pwsh
+      name: '@deepseek-ai/dsh-terminal-bash'
+      disabled: !!js process.platform !== 'win32'
+      config:
+        shellDialect: pwsh
         timeoutMs: 300000
 
     # The editor uses the bare local filesystem; persistent Bash still consumes
@@ -71,6 +79,7 @@
 
     - id: persistent-bash
       name: '@deepseek-ai/dsh-tool-bash-persistent'
+      disabled: !!js process.platform === 'win32'
       config:
         timeoutMs: 300000
         description: |-
@@ -82,6 +91,20 @@
           * To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
           * Please avoid commands that may produce a very large amount of output.
           * Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.
+
+    - id: persistent-pwsh
+      name: '@deepseek-ai/dsh-tool-pwsh-persistent'
+      disabled: !!js process.platform !== 'win32'
+      config:
+        timeoutMs: 300000
+        description: |-
+          Run commands in a PowerShell shell
+          * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
+          * You don't have access to the internet via this tool.
+          * State is persistent across command calls and discussions with the user.
+          * Use native Windows paths (C:\...) and $env:NAME variables; this is PowerShell, not bash.
+          * Please avoid commands that may produce a very large amount of output.
+          * Please run long lived commands in the background, e.g. 'Start-Job' or start a server with Start-Process.
 
     - id: str-replace-editor
       name: '@deepseek-ai/dsh-tool-str-replace-editor'
