@@ -31,7 +31,7 @@ Profile manifests own patch reload:
 | `sdk` | `startup` |
 | `acp` | `startup` |
 
-Custom profiles default to `live`. A startup profile still applies its bundle, profile, home-level, and invocation `--patch` layers, but it does not watch them after boot. SDK and ACP also disable module HMR because one owned stdio connection cannot safely replace its server, agents, persistence, or tool registry in place.
+Custom profiles default to `live`. A startup profile still applies its bundle, profile, home-level, and invocation `--patch` layers, but it does not watch them after boot. `dsh-base` inserts the module-HMR row disabled; a profile with a tested source-module reload lifecycle must enable it explicitly. None of the shipped profiles enable server module HMR: `patchReload: live` uses the launcher's config-only watcher while the startup profiles install no watcher. SDK and ACP cannot safely replace their server, agents, persistence, or tool registry inside one owned stdio connection.
 
 The shipped protocol profiles reserve stdout for protocol frames, expose help without starting transport, and route stdin EOF and signals through bounded root disposal. ACP remains automation-only. The SDK JSON-RPC methods, notification fields, and `initialize.serverInfo.name` remain stable. Model-visible tool and persistence defaults come from `dsh-base`, and runnable snapshots own those assembled application outputs.
 
@@ -75,6 +75,8 @@ The [ACP automation-only protocol](../simplification/2026-07-23-acp-automation-o
 
 **Resolve `dsh` only from `PATH`.** Rejected: ordinary Node processes do not reliably inherit a project-local `.bin` path. A same-version package dependency provides a deterministic runtime.
 
+**Enable module HMR in `dsh-base` and make unsafe profiles disable it.** Rejected: the shared base also underlies custom profiles, so an enabled default makes every new application remember to opt out of source-module replacement. A disabled base makes module HMR an explicit profile capability while leaving `patchReload: live` config watching available.
+
 **Hot-reload protocol profiles.** Rejected: replacing a protocol server or its dependencies can invalidate pending frames and SDK-owned agents. Process restart is the adoption boundary for SDK and ACP configuration changes.
 
 **Move the Python executable through profiles without a separate packaging proof.** Rejected: the native VFS closure, three platform wheels, ripgrep and spawn-helper sidecars, default config discovery, and clean-install behavior require their own migration evidence.
@@ -82,6 +84,7 @@ The [ACP automation-only protocol](../simplification/2026-07-23-acp-automation-o
 ## Verification
 
 - Source and built CLI acceptance cover `sdk` and `acp` help, transport startup, stdout purity, EOF, signals, and root disposal.
+- Bundle configuration tests pin module HMR disabled in `dsh-base` and absent from shipped mode overrides; the custom live-profile e2e pins config reload through the launcher's watch-only fallback.
 - Focused unit suites cover profile launch resolution, initialization bounds, SDK retries, server readiness, and nested isolated homes with 100% coverage on the changed runtime sources.
 - Keyless ACP and SDK snapshots boot real `dsh` profiles and pin protocol output plus persisted logs; the nested SDK composition boots a second real profile runtime.
 - The real-API workflow caps file parallelism at four because one profile e2e file can own several complete `dsh` subprocess trees; workflow tests pin that resource bound.
@@ -91,6 +94,7 @@ The [ACP automation-only protocol](../simplification/2026-07-23-acp-automation-o
 ## Consequences
 
 - A user changes an SDK application's plugin composition through a named profile and ordered patches, using the same installation and resolution model as every other dsh application.
+- A custom profile receives live config watching without server module HMR and opts into source-module replacement only through an explicit row override.
 - SDK and ACP share the complete base application and one set of policy and tools; snapshots present intentional assembled differences explicitly.
 - Adding `@deepseek-ai/dsh` increases the TypeScript client's install size in exchange for a deterministic same-version runtime.
 - Trusted user patches can add a plugin that writes to stdout and corrupt their own protocol stream; shipped profiles guarantee purity, not arbitrary third-party composition.

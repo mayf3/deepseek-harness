@@ -294,13 +294,12 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     && ctx.fiber.state === FiberState.ACTIVE
     && ctx.get('loader') !== undefined) {
     try {
-      // Config-only HMR for the live profile patch layer: the web bundle
-      // disables the shared module-reload `hmr` row (its reload lifecycle is
-      // untested), so when the composition leaves no HMR service, mount a
-      // watch-only instance with no module roots — cordis.patch.yml edits stay
-      // live for the profiles that select it. A silent skip would break their
-      // documented reload contract. HMR injects the timer service, which a
-      // bare custom profile may not mount either.
+      // Config-only HMR for the live profile patch layer: dsh-base disables
+      // module reload by default, so when no profile explicitly enabled that
+      // service, mount a watch-only instance with no module roots —
+      // cordis.patch.yml edits stay live without replacing source modules. A
+      // silent skip would break the documented reload contract. HMR injects
+      // the timer service, which a bare custom profile may not mount either.
       if (ctx.get('hmr') === undefined) {
         if (ctx.get('timer') === undefined) {
           await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-timer' })
