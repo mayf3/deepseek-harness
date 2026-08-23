@@ -39,6 +39,14 @@ interface RetryCountdown {
   seconds: number
 }
 
+function failureMessage(
+  message: string,
+  code: unknown,
+  t: ChatViewSlotProps['t'],
+): string {
+  return code === 'AUTH' ? t('message.failure.auth') : message
+}
+
 function ModelRetryItem({ node, active, t }: {
   node: ModelRetryNode
   active: boolean
@@ -98,7 +106,7 @@ function ModelRetryItem({ node, active, t }: {
         </div>
         <div>
           <span className={css.retryDetailLabel}>{t('message.retry.failure')}</span>
-          {node.failure.message}
+          {failureMessage(node.failure.message, node.failure.code, t)}
         </div>
       </div>
     </details>
@@ -115,7 +123,7 @@ function TurnErrorItem({ node, t }: {
       <StateDot state="error" className={css.turnErrorDot} />
       <div className={css.turnErrorCopy}>
         <span className={css.turnErrorTitle}>{t('message.turnError')}</span>
-        <span className={css.turnErrorMessage}>{node.message}</span>
+        <span className={css.turnErrorMessage}>{failureMessage(node.message, node.code, t)}</span>
       </div>
       {node.code !== undefined && <code className={css.turnErrorCode}>{node.code}</code>}
     </div>

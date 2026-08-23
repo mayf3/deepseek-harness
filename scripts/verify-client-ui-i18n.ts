@@ -8,7 +8,7 @@
  */
 
 import { globSync, readFileSync } from 'node:fs'
-import { resolve, sep } from 'node:path'
+import { resolve } from 'node:path'
 import ts from 'typescript'
 
 const root = resolve(import.meta.dirname, '..')
@@ -32,12 +32,13 @@ const COPY_ATTRIBUTES = new Set([
 ])
 const COPY_ATTRIBUTE_SUFFIX = /(?:Aria|Copy|Description|Heading|Label|Message|Placeholder|Summary|Text|Title|Tooltip)$/
 
-const COPY_NAME = /(?:^|_)(?:aria|copy|description|empty|heading|label|placeholder|title|tooltip)(?:s|_.*)?$/i
-const COPY_SUFFIX = /(?:aria|copy|description|empty|heading|label|labels|placeholder|title|tooltip|tabs)$/i
+const COPY_NAME = /(?:^|_)(?:aria|copy|description|empty|heading|label|message|placeholder|summary|text|title|tooltip)(?:s|_.*)?$/i
+const COPY_SUFFIX = /(?:aria|copy|description|empty|heading|label|labels|message|placeholder|summary|text|title|tooltip|tabs)$/i
 const IMMUTABLE_LANGUAGE_TOKENS = new Set([
   'Function',
   'K',
   'M',
+  'MB',
   'Symbol',
   'false',
   'function()',
@@ -76,13 +77,6 @@ function containsProductText(text: string): boolean {
     && !IMMUTABLE_LANGUAGE_TOKENS.has(normalized)
     && !LOCALE_KEY.test(normalized)
     && /\p{L}/u.test(normalized)
-}
-
-function translationCall(node: ts.CallExpression): boolean {
-  const callee = node.expression
-  return ts.isIdentifier(callee)
-    ? callee.text === 't'
-    : ts.isPropertyAccessExpression(callee) && callee.name.text === 't'
 }
 
 function propertyName(node: ts.PropertyName | ts.BindingName): string | undefined {
@@ -161,7 +155,7 @@ export function findUiI18nViolations(file: string, sourceText: string): UiI18nVi
       return
     }
     if (ts.isCallExpression(node)) {
-      if (translationCall(node)) return
+      // A call result is dynamic; copy-bearing arguments are visited through their own syntax.
       return
     }
     if (
@@ -293,12 +287,23 @@ export function findUiI18nViolations(file: string, sourceText: string): UiI18nVi
   return [...violations.values()].sort((left, right) => left.line - right.line || left.column - right.column)
 }
 
+/**
+ * Resolve the normalized Client source root containing one TSX component.
+ * @param file - Glob result using native or POSIX separators.
+ * @returns Repository-relative `src/client` root, or undefined outside that tree.
+ */
+export function clientSourceRoot(file: string): string | undefined {
+  const normalized = file.replaceAll('\\', '/')
+  const marker = '/src/client/'
+  const index = normalized.indexOf(marker)
+  return index < 0 ? undefined : normalized.slice(0, index + marker.length - 1)
+}
+
 function sourceFiles(): string[] {
   const clientComponentRoots = new Set(
-    globSync('packages/*/*/src/client/**/*.tsx', { cwd: root }).map((file) => {
-      const marker = '/src/client/'
-      return file.slice(0, file.indexOf(marker) + marker.length - 1)
-    }),
+    globSync('packages/*/*/src/client/**/*.tsx', { cwd: root })
+      .map(clientSourceRoot)
+      .filter((clientRoot): clientRoot is string => clientRoot !== undefined),
   )
   return [...new Set([
     ...globSync('packages/client/*/src/**/*.tsx', { cwd: root }),
@@ -307,7 +312,7 @@ function sourceFiles(): string[] {
       globSync(`${clientRoot}/**/*.{ts,tsx}`, { cwd: root })),
     ...globSync('apps/web/src/**/*.{ts,tsx}', { cwd: root }),
   ])]
-    .map(file => file.split(sep).join('/'))
+    .map(file => file.replaceAll('\\', '/'))
     .filter(file => !file.endsWith('.d.ts'))
     .sort()
 }

@@ -43,7 +43,7 @@ export type {
 export { isRunningTool, isSettledTool } from './contract/chat-nodes.ts'
 export { EMPTY_CHAT_SNAPSHOT, toAssistantBlock, toAssistantBlocks } from './contract/snapshot.ts'
 export {
-  contextForm, contextProvenance, displayFailureMessage, emptyAssistantBlock, isTokenDelta,
+  contextForm, contextProvenance, displayFailure, emptyAssistantBlock, isTokenDelta,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 /** Public merge surface for Chat renderer payloads contributed by other plugins. */

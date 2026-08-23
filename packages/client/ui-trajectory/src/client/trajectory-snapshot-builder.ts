@@ -113,7 +113,7 @@ function interruptCompactions(
 
 function applyTurnErrors(
   requests: RequestView[],
-  endings: readonly { turn: number; time: number; error?: string }[],
+  endings: readonly { turn: number; time: number; error?: string; errorCode?: string }[],
 ): void {
   const lastAssistantByTurn = new Map<number, number>()
   for (const [index, request] of requests.entries()) {
@@ -130,6 +130,7 @@ function applyTurnErrors(
       completedAt: request.completedAt ?? ending.time,
       status: 'error',
       error: ending.error,
+      ...(ending.errorCode === undefined ? {} : { errorCode: ending.errorCode }),
     }
   }
 }
@@ -183,7 +184,12 @@ export class TrajectorySnapshotBuilder implements ConversationViewBuilder<
     const eventLocations = new Map<number, TrajectoryConversationViewNode['location']>()
     const requests: RequestView[] = []
     const boundaries: { seq: number; time: number }[] = []
-    const turnEndings: { turn: number; time: number; error?: string }[] = []
+    const turnEndings: {
+      turn: number
+      time: number
+      error?: string
+      errorCode?: string
+    }[] = []
     const callSchemas = new Map<string, ToolSchema>()
     const consumedPromptChanges = new Set<number>()
     let previousHeader: TrajectoryRequestHeaderState | undefined
@@ -237,6 +243,7 @@ export class TrajectorySnapshotBuilder implements ConversationViewBuilder<
         turn: data.turn,
         time: data.time,
         ...(data.error === undefined ? {} : { error: data.error }),
+        ...(data.errorCode === undefined ? {} : { errorCode: data.errorCode }),
       })
     }
 

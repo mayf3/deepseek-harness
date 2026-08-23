@@ -397,7 +397,6 @@ export function JsonTree({
   expandTopLevel = true,
   labels,
 }: JsonTreeProps) {
-  const copyLabels = labels
   const rootEntries = entriesOf(data)
   const firstExpandableIndex = rootEntries.findIndex(([, value]) => (
     isExpandableValue(value) && entriesOf(value).length > 0
@@ -526,10 +525,10 @@ export function JsonTree({
   const copyTargetIsObject = typeof copyTarget?.value === 'object' && copyTarget.value !== null
   const defaultCopyMode = copyTargetIsObject ? 'prettyJson' : 'value'
   const copyTitle = copyState === 'copied'
-    ? copyLabels.copied
+    ? labels.copied
     : copyState === 'failed'
-      ? copyLabels.copyFailed
-      : copyTargetIsObject ? copyLabels.copyPrettyJson : copyLabels.copyValue
+      ? labels.copyFailed
+      : copyTargetIsObject ? labels.copyPrettyJson : labels.copyValue
 
   return (
     <div
@@ -565,7 +564,7 @@ export function JsonTree({
                   field={key}
                   value={value}
                   path={[Array.isArray(data) ? index : key]}
-                  labels={copyLabels}
+                  labels={labels}
                   lastElement={index === rootEntries.length - 1}
                   initialExpanded={false}
                   tabStopId={tabStopId}
@@ -584,7 +583,7 @@ export function JsonTree({
             <JsonTreeNode
               value={data}
               path={[]}
-              labels={copyLabels}
+              labels={labels}
               lastElement
               initialExpanded
               tabStopId={tabStopId}
@@ -612,7 +611,7 @@ export function JsonTree({
                 data-json-copy-button
                 data-state={copyState}
                 aria-label={copyTitle}
-                title={copyLabels.copyButtonTitle(copyTitle)}
+                title={labels.copyButtonTitle(copyTitle)}
                 onClick={() => void copy(defaultCopyMode)}
                 onContextMenu={(event) => {
                   event.preventDefault()
@@ -626,7 +625,7 @@ export function JsonTree({
                   : <IconCopyOutline16 size={12} />}
               </button>
             )}
-            items={copyTargetIsObject ? objectCopyMenuItems(copyLabels) : valueCopyMenuItems(copyLabels)}
+            items={copyTargetIsObject ? objectCopyMenuItems(labels) : valueCopyMenuItems(labels)}
             onSelect={(id) => {
               void copy(id as 'json' | 'path' | 'prettyJson' | 'value')
               copyMenuOpenRef.current = false

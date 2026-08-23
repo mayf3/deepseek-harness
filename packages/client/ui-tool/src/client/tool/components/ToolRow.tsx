@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
   CodeBlock, DiffBlock, DisclosureRow, IconInspectOutline12, ReadBlock, SearchBlock, StateDot, TerminalBlock, WebBlock,
@@ -101,6 +101,11 @@ export function ToolRow({
   inspect,
 }: ToolRowProps) {
   const [expanded, setExpanded] = useState(false)
+  const terminalLabels = useMemo(() => terminalBlockLabels(t), [t])
+  const diffLabels = useMemo(() => diffBlockLabels(t), [t])
+  const readLabels = useMemo(() => readBlockLabels(t), [t])
+  const searchLabels = useMemo(() => searchBlockLabels(t), [t])
+  const webLabels = useMemo(() => webBlockLabels(t), [t])
   const terminalBody = terminal ?? null
   const diffBody = diff ?? null
   const readBody = read ?? null
@@ -179,20 +184,20 @@ export function ToolRow({
               <TerminalBlock
                 {...terminalBody.card}
                 maxLines={Infinity}
-                labels={terminalBlockLabels(t)}
+                labels={terminalLabels}
                 className={css.terminalBody}
               />
             )
             : diffBody !== null
-              ? <DiffBlock {...diffBody.card} labels={diffBlockLabels(t)} maxLines={CHAT_DIFF_MAX_LINES} className={css.diffBody} />
+              ? <DiffBlock {...diffBody.card} labels={diffLabels} maxLines={CHAT_DIFF_MAX_LINES} className={css.diffBody} />
               : readBody !== null
-                ? <ReadBlock {...readBody} labels={readBlockLabels(t)} maxLines={CHAT_READ_MAX_LINES} className={css.readBody} />
+                ? <ReadBlock {...readBody} labels={readLabels} maxLines={CHAT_READ_MAX_LINES} className={css.readBody} />
                 : searchBody !== null
                   ? (
                     <>
                       <SearchBlock
                         {...searchBody.card}
-                        labels={searchBlockLabels(t)}
+                        labels={searchLabels}
                         maxLines={CHAT_SEARCH_MAX_LINES}
                         className={css.searchBody}
                       />
@@ -204,7 +209,7 @@ export function ToolRow({
                     </>
                   )
                   : webBody !== null
-                    ? <WebBlock {...webBody} labels={webBlockLabels(t)} className={css.webBody} />
+                    ? <WebBlock {...webBody} labels={webLabels} className={css.webBody} />
                     : (
                       <>
                         {variant === 'code' && body !== null && (

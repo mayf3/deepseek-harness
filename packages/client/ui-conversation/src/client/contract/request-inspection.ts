@@ -37,6 +37,8 @@ interface RequestViewBase {
   completedAt: number | null
   status: 'running' | 'complete' | 'error'
   error?: string
+  /** Stable provider code for localized presentation of known failures. */
+  errorCode?: string
   provenance?: AssistantProvenanceView
   requestConfig?: AssistantRequestConfig
   usage?: unknown

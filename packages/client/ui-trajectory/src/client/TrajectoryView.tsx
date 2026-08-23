@@ -206,6 +206,7 @@ export function TrajectoryView({
           ...(request?.startedAt === undefined ? {} : { startedAt: request.startedAt }),
           ...(request?.completedAt === undefined ? {} : { completedAt: request.completedAt }),
           ...(request?.error === undefined ? {} : { error: request.error }),
+          ...(request?.errorCode === undefined ? {} : { errorCode: request.errorCode }),
           ...(request?.resultSeq === undefined ? {} : { resultSeq: request.resultSeq }),
           ...(request?.retry === undefined ? {} : { retry: request.retry }),
           ...(request?.maxRetries === undefined ? {} : { maxRetries: request.maxRetries }),
@@ -232,6 +233,7 @@ export function TrajectoryView({
         startedAt: request.startedAt,
         completedAt: request.completedAt,
         ...(request.error === undefined ? {} : { error: request.error }),
+        ...(request.errorCode === undefined ? {} : { errorCode: request.errorCode }),
         resultSeq: request.startSeq,
         ...(request.provenance?.provider === undefined
           ? {}

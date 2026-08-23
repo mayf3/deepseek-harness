@@ -187,9 +187,7 @@ interface ToolCallTextParts {
 }
 
 interface SelectedRequest {
-  turn: number | null
-  group: string
-  seq?: number
+  identity: string
 }
 
 interface DetailsResizeDrag {
@@ -425,14 +423,13 @@ export interface TrajectoryTableProps {
 
 /** Request-inspector fields shared by ordinary generation and compaction. */
 interface TrajectoryRequestNumberBase {
-  /** Request anchor event sequence; absent for the currently streaming ordinary request. */
-  seq?: number
   group: string
   number: number
   status?: 'complete' | 'running' | 'error'
   startedAt?: number
   completedAt?: number | null
   error?: string
+  errorCode?: string
   retry?: number
   maxRetries?: number
   retryDelayMs?: number
@@ -448,11 +445,15 @@ interface TrajectoryRequestNumberBase {
 export type TrajectoryRequestNumber = TrajectoryRequestNumberBase & (
   | {
     purpose?: 'assistant'
+    /** Request anchor event sequence; absent for the currently streaming request. */
+    seq?: number
     turn: number
     step: number
   }
   | {
     purpose: 'compaction'
+    /** Request anchor event sequence and stable compaction identity. */
+    seq: number
     turn: number | null
     step: 0
   }
@@ -521,6 +522,12 @@ function filterRecords(
 
 function requestKey(turn: number | null, group: string): string {
   return `${turn}\u0000${group}`
+}
+
+function requestIdentity(request: TrajectoryRequestNumber): string {
+  return request.purpose === 'compaction'
+    ? `compaction\u0000${request.seq}`
+    : `assistant\u0000${request.turn}\u0000${request.step}`
 }
 
 function indexRequestBoundaries(
@@ -647,19 +654,23 @@ function assistantToolCalls(
   return calls
 }
 
-function summarizeAssistantTools(records: readonly TableRecord[]): string {
+function summarizeAssistantTools(
+  records: readonly TableRecord[],
+  t: TrajectoryTranslate,
+): string {
   const names = [...new Set(records.map((record) => {
     const separator = record.cell.text.indexOf(' · ')
     return separator === -1 ? record.cell.text : record.cell.text.slice(0, separator)
   }).filter(name => name !== ''))]
   const count = records.length
-  const summary = `${count} tool ${count === 1 ? 'call' : 'calls'}`
+  const summary = t(count === 1 ? 'summary.toolCalls.one' : 'summary.toolCalls.other', { count })
   return names.length > 0 ? `${summary} · ${names.join(', ')}` : summary
 }
 
 function collapseAssistantRecords(
   records: readonly TableRecord[],
   collapsedAssistants: ReadonlySet<string>,
+  t: TrajectoryTranslate,
 ): TableRecord[] {
   const out: TableRecord[] = []
   for (let i = 0; i < records.length; i++) {
@@ -688,7 +699,7 @@ function collapseAssistantRecords(
       groupStart: false,
       turnStart: false,
       turnEnd: last?.turnEnd ?? false,
-      collapsedSummary: summarizeAssistantTools(calls),
+      collapsedSummary: summarizeAssistantTools(calls, t),
       collapsedSummaryKind: 'assistant',
     })
     i += calls.length
@@ -710,6 +721,15 @@ function statusLabel(state: RecordState, t: TrajectoryTranslate): string {
   if (state === 'error') return t('status.failed')
   if (state === 'running') return t('status.pending')
   return t('status.completed')
+}
+
+function requestErrorMessage(
+  request: Pick<TrajectoryRequestNumber, 'error' | 'errorCode'>,
+  t: TrajectoryTranslate,
+): string | undefined {
+  if (request.errorCode === 'AUTH') return t('details.failure.auth')
+  if (request.error === COMPACTION_INTERRUPTED_ERROR) return t('layout.compactionInterrupted')
+  return request.error
 }
 
 function TokenRows({ cell, t }: { cell: TrajectoryCellProps; t: TrajectoryTranslate }) {
@@ -1083,10 +1103,11 @@ function MarkdownFragment({
   preview: boolean
   t: TrajectoryTranslate
 }) {
+  const labels = useMemo(() => markdownLabels(t), [t])
   if (rendered) {
     return (
       <div className={preview ? css.markdownPreview : css.markdownPayload}>
-        <MarkdownText text={text} labels={markdownLabels(t)} />
+        <MarkdownText text={text} labels={labels} />
       </div>
     )
   }
@@ -1849,7 +1870,7 @@ export function TrajectoryTable({
       : collapseTurnRecords(allRecords, collapsedTurns, requestGroups, t)
     return collapsedAssistants.size === 0
       ? turnRecords
-      : collapseAssistantRecords(turnRecords, collapsedAssistants)
+      : collapseAssistantRecords(turnRecords, collapsedAssistants, t)
   }, [allRecords, collapsedAssistants, collapsedTurns, requestGroups, searchMatchIndexes, t])
   const projectedVirtualRows = useMemo(
     () => groupTrajectoryVirtualRows(records),
@@ -1932,28 +1953,25 @@ export function TrajectoryTable({
     : undefined
   const promptSelected = selectedPrompt !== undefined
   const selectedState = selected === undefined ? undefined : stateOf(selected)
-  const selectedRequestRecordTemplates = useMemo(() => selectedRequest === null
+  const selectedRequestInfo = selectedRequest === null
+    ? undefined
+    : sessionRequestNumbers?.find(request =>
+      requestIdentity(request) === selectedRequest.identity)
+  const selectedRequestRecordTemplates = useMemo(() => selectedRequestInfo === undefined
     ? []
     : allRecords.filter(record =>
-      record.turn === selectedRequest.turn
-        && record.group === selectedRequest.group,
-    ), [allRecords, selectedRequest])
+      record.turn === selectedRequestInfo.turn
+        && record.group === selectedRequestInfo.group,
+    ), [allRecords, selectedRequestInfo])
   const selectedRequestRecords = selectedRequestRecordTemplates.map(currentRecord)
   const selectedRequestAssistant = selectedRequestRecords.find(
     record => record.cell.kind === 'message',
   )
   const selectedRequestAnchor = selectedRequestAssistant ?? selectedRequestRecords[0]
-  const selectedRequestNumber = selectedRequest === null
+  const selectedRequestNumber = selectedRequestInfo?.number
+  const selectedRequestState: RecordState | undefined = selectedRequestInfo === undefined
     ? undefined
-    : requestNumbers.get(requestKey(selectedRequest.turn, selectedRequest.group))
-  const selectedRequestInfo = selectedRequest === null
-    ? undefined
-    : sessionRequestNumbers?.find(request => selectedRequest.seq === undefined
-      ? request.turn === selectedRequest.turn && request.group === selectedRequest.group
-      : request.seq === selectedRequest.seq)
-  const selectedRequestState: RecordState | undefined = selectedRequest === null
-    ? undefined
-    : selectedRequestInfo?.status
+    : selectedRequestInfo.status
       ?? (selectedRequestAssistant?.cell.assistantMetrics?.completedTime === null
         ? 'running'
         : selectedRequestAssistant === undefined
@@ -1996,11 +2014,11 @@ export function TrajectoryTable({
   const selectedRequestCumulativeUsage =
     selectedRequestInfo?.cumulativeUsage ?? selectedRequestUsage
   const selectedRequestOptions = selectedRequestInfo?.requestConfig
-  const activeTurn = selectedRequest === null ? selected?.turn : selectedRequest.turn
-  const activeSection = selectedRequest === null
+  const activeTurn = selectedRequestInfo === undefined ? selected?.turn : selectedRequestInfo.turn
+  const activeSection = selectedRequestInfo === undefined
     ? selected?.section
     : selectedRequestRecords[0]?.section
-  const selectedTabs = selectedRequest !== null
+  const selectedTabs = selectedRequestInfo !== undefined
     ? REQUEST_TABS.filter(tab => tab.id !== 'options' || selectedRequestOptions !== undefined)
     : selected === undefined ? [] : detailTabs(selected)
   const selectedParents: ParentRecords = selected === undefined
@@ -2015,15 +2033,9 @@ export function TrajectoryTable({
     ? undefined
     : sessionRequestNumbers?.find(request => request.number === selectedAssistantRequest)
   const selectedAssistantRequestTarget: SelectedRequest | undefined =
-    selected !== undefined && selectedAssistantRequest !== undefined
-      ? {
-        turn: selected.turn,
-        group: selected.group,
-        ...(selectedAssistantRequestInfo?.seq === undefined
-          ? {}
-          : { seq: selectedAssistantRequestInfo.seq }),
-      }
-      : undefined
+    selectedAssistantRequestInfo === undefined
+      ? undefined
+      : { identity: requestIdentity(selectedAssistantRequestInfo) }
   const hasSelectedHierarchy = selectedAssistantRequestTarget !== undefined
     || selectedParents.message !== undefined
     || selectedParents.tool !== undefined
@@ -2385,9 +2397,8 @@ export function TrajectoryTable({
                     : t(requestInfo?.purpose === 'compaction'
                       ? 'request.labelCompaction'
                       : 'request.label', { request })
-                  const requestSelected = request !== undefined
-                && selectedRequest?.turn === record.turn
-                && selectedRequest.group === record.group
+                  const requestSelected = requestInfo !== undefined
+                && selectedRequest?.identity === requestIdentity(requestInfo)
                   const sectionActive = record.turn === null
                     ? activeSection === record.section
                     : activeTurn === record.turn
@@ -2489,11 +2500,9 @@ export function TrajectoryTable({
                             style={requestBoundaryStyle}
                             onClick={(event) => {
                               event.stopPropagation()
-                              selectRequest({
-                                turn: record.turn,
-                                group: record.group,
-                                ...(requestInfo?.seq === undefined ? {} : { seq: requestInfo.seq }),
-                              })
+                              if (requestInfo !== undefined) {
+                                selectRequest({ identity: requestIdentity(requestInfo) })
+                              }
                             }}
                             onDoubleClick={(event) => { event.stopPropagation() }}
                           />
@@ -2625,7 +2634,7 @@ export function TrajectoryTable({
           </tbody>
         </table>
       </div>
-      {(selectedRequest !== null
+      {(selectedRequestInfo !== undefined
         || promptSelected
         || (selected !== undefined && selectedState !== undefined)) && (
         <aside
@@ -2711,7 +2720,7 @@ export function TrajectoryTable({
           />
           <div className={css.detailsHeader}>
             <div className={css.detailsTitle}>
-              {selectedRequest !== null
+              {selectedRequestInfo !== undefined
                 ? (
                   <>
                     <span className={css.requestDetailsDot} aria-hidden="true" />
@@ -2719,9 +2728,9 @@ export function TrajectoryTable({
                       {t('request.label', { request: selectedRequestNumber ?? '—' })}
                     </span>
                     <span className={css.detailsLocation}>
-                      {selectedRequestInfo?.purpose === 'compaction'
-                        ? t('request.compaction', { section: sectionLabel(selectedRequest.turn, t) })
-                        : sectionLabel(selectedRequest.turn, t)}
+                      {selectedRequestInfo.purpose === 'compaction'
+                        ? t('request.compaction', { section: sectionLabel(selectedRequestInfo.turn, t) })
+                        : sectionLabel(selectedRequestInfo.turn, t)}
                     </span>
                   </>
                 )
@@ -2791,7 +2800,7 @@ export function TrajectoryTable({
             role="tabpanel"
             aria-labelledby={`trajectory-detail-${activeTab}`}
           >
-            {selectedRequest !== null
+            {selectedRequestInfo !== undefined
               && selectedRequestState !== undefined
               && activeTab === 'overview' && (
               <>
@@ -2805,29 +2814,29 @@ export function TrajectoryTable({
                       {statusLabel(selectedRequestState, t)}
                     </dd>
                   </div>
-                  {selectedRequestInfo?.purpose === 'compaction' && (
+                  {selectedRequestInfo.purpose === 'compaction' && (
                     <div>
                       <dt>{t('details.purpose')}</dt>
                       <dd>{t('request.compactionPurpose')}</dd>
                     </div>
                   )}
-                  {(selectedRequestInfo?.provider
-                    ?? selectedRequestInfo?.requestConfig?.provider) !== undefined && (
+                  {(selectedRequestInfo.provider
+                    ?? selectedRequestInfo.requestConfig?.provider) !== undefined && (
                     <div>
                       <dt>{t('details.provider')}</dt>
                       <dd>
-                        {selectedRequestInfo?.provider
-                          ?? selectedRequestInfo?.requestConfig?.provider}
+                        {selectedRequestInfo.provider
+                          ?? selectedRequestInfo.requestConfig?.provider}
                       </dd>
                     </div>
                   )}
-                  {(selectedRequestInfo?.model
-                    ?? selectedRequestInfo?.requestConfig?.model) !== undefined && (
+                  {(selectedRequestInfo.model
+                    ?? selectedRequestInfo.requestConfig?.model) !== undefined && (
                     <div>
                       <dt>{t('details.model')}</dt>
                       <dd>
-                        {selectedRequestInfo?.model
-                          ?? selectedRequestInfo?.requestConfig?.model}
+                        {selectedRequestInfo.model
+                          ?? selectedRequestInfo.requestConfig?.model}
                       </dd>
                     </div>
                   )}
@@ -2841,15 +2850,13 @@ export function TrajectoryTable({
                       <dd>{selectedRequestSubtoolCalls}</dd>
                     </div>
                   )}
-                  {selectedRequestInfo?.error !== undefined && (
+                  {selectedRequestInfo.error !== undefined && (
                     <div>
                       <dt>{t('details.error')}</dt>
-                      <dd className={css.error}>{selectedRequestInfo.error === COMPACTION_INTERRUPTED_ERROR
-                        ? t('layout.compactionInterrupted')
-                        : selectedRequestInfo.error}</dd>
+                      <dd className={css.error}>{requestErrorMessage(selectedRequestInfo, t)}</dd>
                     </div>
                   )}
-                  {selectedRequestInfo?.retry !== undefined && (
+                  {selectedRequestInfo.retry !== undefined && (
                     <div>
                       <dt>{t('details.retry')}</dt>
                       <dd>
@@ -2862,7 +2869,7 @@ export function TrajectoryTable({
                       </dd>
                     </div>
                   )}
-                  {selectedRequestInfo?.retryDelayMs !== undefined && (
+                  {selectedRequestInfo.retryDelayMs !== undefined && (
                     <div>
                       <dt>{t('details.retryDelay')}</dt>
                       <dd>{formatDurationMs(selectedRequestInfo.retryDelayMs, t)}</dd>
@@ -2880,7 +2887,7 @@ export function TrajectoryTable({
                           }}
                         >
                           <span>
-                            {selectedRequestInfo?.purpose === 'compaction'
+                            {selectedRequestInfo.purpose === 'compaction'
                               ? t('details.compacted')
                               : t('details.assistantMessage')}
                           </span>
@@ -2913,17 +2920,17 @@ export function TrajectoryTable({
                 </div>
               </>
             )}
-            {selectedRequest !== null && activeTab === 'options' && (
+            {selectedRequestInfo !== undefined && activeTab === 'options' && (
               <RequestOptions options={selectedRequestOptions} t={t} />
             )}
-            {selectedRequest !== null && activeTab === 'usage' && (
+            {selectedRequestInfo !== undefined && activeTab === 'usage' && (
               <RequestUsagePanel
                 usage={selectedRequestUsage}
                 cumulative={selectedRequestCumulativeUsage}
                 t={t}
               />
             )}
-            {selectedRequest !== null && activeTab === 'timing' && (
+            {selectedRequestInfo !== undefined && activeTab === 'timing' && (
               <RequestTiming
                 assistant={selectedRequestAssistant}
                 anchor={selectedRequestAnchor}

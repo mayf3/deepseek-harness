@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  displayFailureMessage, emptyAssistantBlock, isTokenDelta, toAssistantBlock,
+  displayFailure, emptyAssistantBlock, isTokenDelta, toAssistantBlock,
   toAssistantBlocks,
   type AssistantBlock, type AssistantMessageNode, type ConversationLocation,
   type ConversationMatch, type ConversationNodeContext, type ConversationNodeDefinition,
@@ -21,6 +21,7 @@ interface UsageValue {
 
 interface RetryValue {
   readonly message: string
+  readonly code?: string
   readonly retry: number
   readonly maxRetries?: number
   readonly delayMs: number
@@ -260,6 +261,7 @@ function assistantRequest(
       ? {}
       : {
         error: state.retry.message,
+        ...(state.retry.code === undefined ? {} : { errorCode: state.retry.code }),
         retry: state.retry.retry,
         ...(state.retry.maxRetries === undefined ? {} : { maxRetries: state.retry.maxRetries }),
         retryDelayMs: state.retry.delayMs,
@@ -315,6 +317,7 @@ const trajectoryAssistantDefinition: ConversationNodeDefinition<AssistantState> 
     if (match.event.type === 'step/end') return { ...context.state, stepEnd: match }
     if (match.event.type !== 'llm/retry') return context.state
     const data = match.event.data
+    const failure = displayFailure(data.failure)
     return {
       ...initialState(
         context.state.turn,
@@ -326,7 +329,8 @@ const trajectoryAssistantDefinition: ConversationNodeDefinition<AssistantState> 
       firstTokenTime: context.state.firstTokenTime,
       usage: context.state.usage,
       retry: {
-        message: displayFailureMessage(data.failure),
+        message: failure.message,
+        ...(failure.code === undefined ? {} : { code: failure.code }),
         retry: data.retry,
         ...(data.mode === 'normal' ? { maxRetries: data.maxRetries } : {}),
         delayMs: data.delayMs,
@@ -363,6 +367,7 @@ interface TurnEndState {
   readonly seq: number
   readonly time: number
   readonly error?: string
+  readonly errorCode?: string
 }
 
 const trajectoryTurnEndDefinition: ConversationNodeDefinition<TurnEndState> = {
@@ -376,11 +381,15 @@ const trajectoryTurnEndDefinition: ConversationNodeDefinition<TurnEndState> = {
       throw new Error('trajectory-turn-end start requires turn/end')
     }
     const reason = match.event.data.reason
+    const failure = reason.kind === 'error' ? displayFailure(reason.error) : undefined
     return {
       turn: match.event.data.turn,
       seq: match.event.seq,
       time: match.event.time,
-      ...(reason.kind === 'error' ? { error: displayFailureMessage(reason.error) } : {}),
+      ...(failure === undefined ? {} : {
+        error: failure.message,
+        ...(failure.code === undefined ? {} : { errorCode: failure.code }),
+      }),
     }
   },
   update: context => context.state,
@@ -391,6 +400,7 @@ const trajectoryTurnEndDefinition: ConversationNodeDefinition<TurnEndState> = {
       turn: context.state.turn,
       time: context.state.time,
       ...(context.state.error === undefined ? {} : { error: context.state.error }),
+      ...(context.state.errorCode === undefined ? {} : { errorCode: context.state.errorCode }),
     }),
 }
 /* jscpd:ignore-end */
