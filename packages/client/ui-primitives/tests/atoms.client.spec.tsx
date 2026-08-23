@@ -383,7 +383,7 @@ describe('Modal', () => {
   it('is absent while closed; Escape and mask click call onClose', () => {
     const onClose = vi.fn()
     const { rerender } = render(
-      <Modal open={false} onClose={onClose} title="Create new workspace">body</Modal>)
+      <Modal open={false} onClose={onClose} title="Create new workspace" closeLabel="Close">body</Modal>)
     expect(screen.queryByRole('dialog')).toBeNull()
     rerender(
       <Modal open onClose={onClose} title="Create new workspace" closeLabel="Configure later" description="Name it." contentClassName="scrolling-content" footer={<button type="button">Create</button>}>
@@ -405,6 +405,17 @@ describe('Modal', () => {
     const mask = document.querySelector('[aria-hidden="true"]') as HTMLElement
     fireEvent.click(mask)
     expect(onClose).toHaveBeenCalledTimes(2)
+  })
+
+  it('renders headless content without the default close chrome', () => {
+    render(
+      <Modal open onClose={() => {}} title="Custom surface" headless>
+        <span>Custom body</span>
+      </Modal>,
+    )
+    expect(screen.getByRole('dialog', { name: 'Custom surface' })).toBeDefined()
+    expect(screen.getByText('Custom body')).toBeDefined()
+    expect(screen.queryByRole('button')).toBeNull()
   })
 })
 

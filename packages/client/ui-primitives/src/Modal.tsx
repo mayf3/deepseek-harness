@@ -5,6 +5,22 @@ import clsx from 'clsx'
 import { IconCloseOutline16 } from './icons/index.tsx'
 import css from './Modal.module.css'
 
+interface ModalBaseProps {
+  open: boolean
+  onClose: () => void
+  title: string
+  description?: string
+  children?: ReactNode
+  footer?: ReactNode
+  className?: string
+  contentClassName?: string
+}
+
+type ModalProps = ModalBaseProps & (
+  | { headless: true; closeLabel?: never }
+  | { headless?: false; closeLabel: string }
+)
+
 /**
  * Render a centered, body-portaled modal over a blurred page mask.
  * @param props.open - whether the dialog is showing.
@@ -21,18 +37,7 @@ import css from './Modal.module.css'
  */
 export function Modal({
   open, onClose, title, closeLabel, description, children, footer, className, contentClassName, headless = false,
-}: {
-  open: boolean
-  onClose: () => void
-  title: string
-  closeLabel?: string
-  description?: string
-  children?: ReactNode
-  footer?: ReactNode
-  className?: string
-  contentClassName?: string
-  headless?: boolean
-}) {
+}: ModalProps) {
   useEffect(() => {
     if (!open) return
     const onKeyDown = (e: KeyboardEvent) => {
@@ -60,7 +65,7 @@ export function Modal({
               <div className={clsx(css.content, contentClassName)}>
                 <div className={css.header}>
                   <h2 className={css.title}>{title}</h2>
-                  <button type="button" className={css.close} aria-label={closeLabel ?? title} onClick={onClose}>
+                  <button type="button" className={css.close} aria-label={closeLabel} onClick={onClose}>
                     <IconCloseOutline16 size={14} />
                   </button>
                 </div>

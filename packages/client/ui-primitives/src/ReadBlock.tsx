@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
+import { FoldToggle } from './FoldToggle.tsx'
 import { writeClipboard } from './clipboard.ts'
 import {
   grammarLoadCount,
@@ -132,15 +133,13 @@ export function ReadBlock({
       <div className={css.body}>
         {rows(capped ? paired.slice(0, headLines) : paired)}
         {hidden > 0 && (
-          <button
-            type="button"
+          <FoldToggle
             className={css.expand}
-            aria-expanded={expanded}
-            aria-label={expanded ? labels.collapseAria : labels.expandAria(hidden)}
-            onClick={onToggle}
-          >
-            {expanded ? labels.collapse : labels.expand(hidden)}
-          </button>
+            expanded={expanded}
+            hidden={hidden}
+            labels={labels}
+            onToggle={onToggle}
+          />
         )}
         {capped && rows(paired.slice(paired.length - tailLines))}
       </div>

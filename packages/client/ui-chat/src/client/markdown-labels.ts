@@ -14,13 +14,3 @@ export function markdownLabels(t: ChatViewSlotProps['t']): MarkdownLabels {
     footnotes: t('markdown.footnotes'),
   }
 }
-
-/**
- * Format the truncation footer for a JSON Markdown block.
- * @param t - Chat locale seat.
- * @param total - Full serialized character count.
- * @returns Localized truncation footer.
- */
-export function jsonTruncatedLabel(t: ChatViewSlotProps['t'], total: number): string {
-  return t('markdown.truncatedCharacters', { total })
-}

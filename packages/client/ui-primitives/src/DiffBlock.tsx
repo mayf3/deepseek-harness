@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import clsx from 'clsx'
+import { FoldToggle } from './FoldToggle.tsx'
 import { writeClipboard } from './clipboard.ts'
 import css from './DiffBlock.module.css'
 
@@ -173,15 +174,13 @@ export function DiffBlock({ diffs, labels, maxLines = DEFAULT_DIFF_MAX_LINES, cl
           <div key={index} className={clsx(css.line, ROW_CLASS[row.kind])}>{row.text}</div>
         ))}
         {hidden > 0 && (
-          <button
-            type="button"
+          <FoldToggle
             className={css.expand}
-            aria-expanded={expanded}
-            aria-label={expanded ? labels.collapseAria : labels.expandAria(hidden)}
-            onClick={onToggle}
-          >
-            {expanded ? labels.collapse : labels.expand(hidden)}
-          </button>
+            expanded={expanded}
+            hidden={hidden}
+            labels={labels}
+            onToggle={onToggle}
+          />
         )}
         {tail.map((row, index) => (
           <div key={index} className={clsx(css.line, ROW_CLASS[row.kind])}>{row.text}</div>
