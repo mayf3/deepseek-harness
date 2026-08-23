@@ -8,7 +8,9 @@ import { auditSubsystemPages } from './verify-subsystem-pages.ts'
 
 function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'dsh-subsystem-pages-'))
-  onTestFinished(() => rmSync(root, { recursive: true, force: true }))
+  onTestFinished(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
   return root
 }
 
