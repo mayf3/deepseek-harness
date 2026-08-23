@@ -44,5 +44,7 @@ export function abbreviateHomePath(path: string, home?: string): string {
  * @returns the final segment, or an empty string for a separator-only path.
  */
 export function workspaceTitleOf(path: string): string {
-  return path.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? ''
+  const trimmed = path.replace(/[/\\]+$/, '')
+  const separator = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  return trimmed.slice(separator + 1)
 }
