@@ -444,15 +444,16 @@ describe('UiSession pending interactions', () => {
     const question = { key: 'question:1', kind: 'question', sessionId: id }
     const plan = { key: 'question:2', kind: 'plan-review', sessionId: id }
     const background = { key: 'background:1', kind: 'background', sessionId: id }
-    const removeApproval = registerApproval(approval)
+    const delegate = (): Promise<void> => Promise.resolve()
+    const removeApproval = registerApproval(approval, delegate)
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(approval)
-    const removeDuplicate = registerApproval(duplicate)
+    const removeDuplicate = registerApproval(duplicate, delegate)
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(duplicate)
-    const removeQuestion = registerQuestion(question)
+    const removeQuestion = registerQuestion(question, delegate)
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(question)
-    const removePlan = registerQuestion(plan)
+    const removePlan = registerQuestion(plan, delegate)
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(plan)
-    const removeBackground = registerBackground(background)
+    const removeBackground = registerBackground(background, delegate)
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(plan)
 
     removeBackground()
@@ -477,8 +478,9 @@ describe('UiSession pending interactions', () => {
       () => 1,
     )
     const interaction = { key: 'question:1', kind: 'question', sessionId: sessionId('s1') }
-    const remove = registerPendingInteraction(interaction)
-    expect(() => { registerPendingInteraction(interaction) })
+    const delegate = () => Promise.resolve()
+    const remove = registerPendingInteraction(interaction, delegate)
+    expect(() => { registerPendingInteraction(interaction, delegate) })
       .toThrow("ui-session: duplicate pending interaction key 'question:1'")
 
     const failure = new Error('pending subscriber failed')
@@ -494,6 +496,31 @@ describe('UiSession pending interactions', () => {
       '[ui-session] pending interactions subscriber failed:',
       failure,
     )
+  })
+
+  it('removes active values before awaiting their teardown delegation', async () => {
+    const ctx = new Context()
+    const bench = createSessionsBench(ctx)
+    const service = createUiSession(ctx, bench)
+    const gate = Promise.withResolvers<undefined>()
+    const delegate = vi.fn(() => gate.promise)
+    const publish = service.registerPendingInteraction<SessionPendingInteractionBase>(() => 1)
+    const remove = publish(
+      { key: 'question:1', kind: 'question', sessionId: sessionId('s1') },
+      delegate,
+    )
+
+    let disposed = false
+    const disposal = ctx.fiber.dispose().then(() => { disposed = true })
+    await vi.waitFor(() => { expect(delegate).toHaveBeenCalledOnce() })
+    expect(service.pendingInteractions.getSnapshot()).toEqual(new Map())
+    expect(disposed).toBe(false)
+    remove()
+    remove()
+
+    gate.resolve(undefined)
+    await disposal
+    expect(disposed).toBe(true)
   })
 })
 

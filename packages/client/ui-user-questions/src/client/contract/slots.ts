@@ -107,6 +107,7 @@ export class PendingQuestion {
   readonly #reject: (reason: unknown) => void
   readonly #signal: AbortSignal | undefined
   readonly #onAbort: (() => void) | undefined
+  readonly #delegated = Symbol('pending question delegated')
   #settled = false
 
   /**
@@ -148,6 +149,21 @@ export class PendingQuestion {
     return settlePendingComposer(() => {
       this.finish(() => { this.#resolve(answer) })
     }, 'pending question settlement failed')
+  }
+
+  /** Delegate an unanswered request to the next waterfall listener. */
+  delegate(): void {
+    if (this.#settled) return
+    this.finish(() => { this.#reject(this.#delegated) })
+  }
+
+  /**
+   * Test whether a rejection requests waterfall delegation.
+   * @param reason - rejection received from {@link PendingQuestion.result}.
+   * @returns whether {@link PendingQuestion.delegate} produced it.
+   */
+  isDelegation(reason: unknown): boolean {
+    return reason === this.#delegated
   }
 
   /** Reject the Host waterfall because the user closed the question. */

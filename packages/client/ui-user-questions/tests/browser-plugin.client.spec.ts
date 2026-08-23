@@ -49,13 +49,14 @@ async function bench(declare = true) {
     candidate as Context & { [SESSION_SCOPE]?: SessionId }
   )[SESSION_SCOPE])
   ctx.provide('sessions', { scopeOf } as never)
-  let pending: readonly PendingQuestion[] = []
+  const pending = new Map<PendingQuestion, () => Promise<void>>()
   const registerPendingInteraction = vi.fn((_precedence: (value: PendingQuestion) => number) => (
     value: PendingQuestion,
+    delegate: () => Promise<void>,
   ) => {
     _precedence(value)
-    pending = [...pending, value]
-    return () => { pending = pending.filter(candidate => candidate !== value) }
+    pending.set(value, delegate)
+    return () => { pending.delete(value) }
   })
   ctx.provide('uiSession', { registerPendingInteraction } as never)
   let listener: QuestionListener | undefined
@@ -81,11 +82,16 @@ async function bench(declare = true) {
     locale,
     agent,
     scopeOf,
-    pending: { getSnapshot: () => pending },
+    pending: { getSnapshot: () => [...pending.keys()] },
     registerPendingInteraction,
     on,
     fiber,
     invoke,
+    async releasePending() {
+      const delegates = [...pending.values()]
+      pending.clear()
+      await Promise.allSettled(delegates.map(delegate => delegate()))
+    },
   }
 }
 
@@ -174,6 +180,20 @@ describe('apply', () => {
     expect(b.slots.entries('conversation.composer')).toHaveLength(1)
   })
 
+  it('delegates an active request when its interaction domain unloads', async () => {
+    const b = await bench()
+    const next = vi.fn(async () => ANSWER)
+    const result = b.invoke(b.agent, { questions: QUESTIONS }, next)
+    await Promise.resolve()
+    expect(b.pending.getSnapshot()).toHaveLength(1)
+
+    await b.releasePending()
+
+    await expect(result).resolves.toBe(ANSWER)
+    expect(next).toHaveBeenCalledOnce()
+    expect(b.pending.getSnapshot()).toEqual([])
+  })
+
   it('removes the stable composer with the plugin lifetime', async () => {
     const b = await bench()
     expect(b.slots.entries('conversation.composer')).toHaveLength(1)
@@ -216,6 +236,7 @@ describe('PendingQuestion', () => {
     await pending.answer(ANSWER)
     await expect(pending.result).resolves.toBe(ANSWER)
     pending.abort(new Error('late disposal'))
+    pending.delegate()
   })
 
   it('rejects an unanswered request with its caller-owned lifecycle reason', async () => {

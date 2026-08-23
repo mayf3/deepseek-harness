@@ -55,8 +55,19 @@ export type SessionPendingInteractionSnapshot = ReadonlyMap<SessionId, SessionPe
 /** Selector hook over Session-scoped pending interactions. */
 export type UseSessionPendingInteraction = SnapshotSelectorHook<SessionPendingInteractionSnapshot>
 
+/** Publish one pending interaction and define how plugin teardown delegates it. */
+export type PendingInteractionPublisher<T extends SessionPendingInteractionBase> = (
+  interaction: T,
+  delegate: () => Promise<void>,
+) => () => void
+
+interface PendingInteractionEntry<T> {
+  readonly interaction: T
+  readonly delegate: () => Promise<void>
+}
+
 class PendingInteractionDomain<T extends SessionPendingInteractionBase> {
-  private readonly values = new Map<string, T>()
+  private readonly values = new Map<string, PendingInteractionEntry<T>>()
 
   constructor(
     readonly precedence: (interaction: T) => number,
@@ -64,22 +75,29 @@ class PendingInteractionDomain<T extends SessionPendingInteractionBase> {
   ) {}
 
   valuesSnapshot(): readonly T[] {
-    return [...this.values.values()]
+    return [...this.values.values()].map(entry => entry.interaction)
   }
 
-  publish(interaction: T): () => void {
+  publish(interaction: T, delegate: () => Promise<void>): () => void {
     if (this.values.has(interaction.key)) {
       throw new Error(`ui-session: duplicate pending interaction key '${interaction.key}'`)
     }
-    this.values.set(interaction.key, interaction)
+    this.values.set(interaction.key, { interaction, delegate })
     this.changed()
     let active = true
     return () => {
       if (!active) return
       active = false
-      this.values.delete(interaction.key)
+      if (!this.values.delete(interaction.key)) return
       this.changed()
     }
+  }
+
+  /** Remove every pending value and return the operations that settle their owners. */
+  release(): readonly (() => Promise<void>)[] {
+    const delegates = [...this.values.values()].map(entry => entry.delegate)
+    this.values.clear()
+    return delegates
   }
 }
 
@@ -278,12 +296,14 @@ export class UiSession extends Service {
 
   /**
    * Register one pending-interaction domain and return its publication function.
+   * Domain teardown first removes its visible values, then delegates and awaits
+   * every still-active owner request.
    * @param precedence - deterministic cross-domain precedence; larger values win.
-   * @returns a function that publishes one exact interaction until its disposer runs.
+   * @returns a function that publishes one interaction and its teardown delegation.
    */
   registerPendingInteraction<T extends SessionPendingInteractionBase>(
     precedence: (interaction: T) => number,
-  ): (interaction: T) => () => void {
+  ): PendingInteractionPublisher<T> {
     const domain = new PendingInteractionDomain(precedence, () => {
       this.publishPendingInteractions()
     })
@@ -291,13 +311,15 @@ export class UiSession extends Service {
     this.ctx.effect(() => {
       this.pendingDomains.push(runtimeDomain)
       this.publishPendingInteractions()
-      return () => {
+      return async () => {
+        const delegates = domain.release()
         const index = this.pendingDomains.indexOf(runtimeDomain)
         this.pendingDomains.splice(index, 1)
         this.publishPendingInteractions()
+        await Promise.allSettled(delegates.map(delegate => Promise.resolve().then(delegate)))
       }
     }, 'uiSession.registerPendingInteraction()')
-    return interaction => domain.publish(interaction)
+    return (interaction, delegate) => domain.publish(interaction, delegate)
   }
 
   private rebuildBindings(): void {

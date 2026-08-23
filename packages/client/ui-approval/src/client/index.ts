@@ -4,7 +4,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type { PendingInteractionPublisher } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { TypertClientEventListener } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { ApprovalPanel } from './ApprovalPanel.tsx'
@@ -36,7 +36,7 @@ async function answerApproval(
   owner: ClientContext,
   request: ClientApprovalRequest,
   next: ClientApprovalNext,
-  registerPendingInteraction: (pending: PendingApproval) => () => void,
+  registerPendingInteraction: PendingInteractionPublisher<PendingApproval>,
 ): Promise<ClientApprovalOutcome> {
   const sessionId = ctx.sessions.scopeOf(owner)
   if (sessionId === undefined) return next()
@@ -48,11 +48,21 @@ async function answerApproval(
     ...(request.reason === undefined ? {} : { reason: request.reason }),
     ...(request.signal === undefined ? {} : { signal: request.signal }),
   })
-  const remove = registerPendingInteraction(pending)
+  const completed = Promise.withResolvers<void>()
+  const remove = registerPendingInteraction(pending, async () => {
+    pending.delegate()
+    await completed.promise
+  })
   try {
-    return await pending.result
+    try {
+      return await pending.result
+    } catch (error) {
+      if (pending.isDelegation(error)) return await next()
+      throw error
+    }
   } finally {
     remove()
+    completed.resolve()
   }
 }
 

@@ -33,6 +33,7 @@ interface PluginBench {
   readonly disposeLocale: ReturnType<typeof vi.fn>
   readonly register: ReturnType<typeof vi.fn>
   readonly injectSlot: ReturnType<typeof vi.fn>
+  releasePending(): Promise<void>
   registration(): {
     options: {
       select(props: { pendingInteraction: PendingApproval | undefined }): PendingApproval | null
@@ -52,13 +53,14 @@ function setupPlugin(): PluginBench {
   } | undefined
   const disposeSlot = vi.fn()
   const disposeLocale = vi.fn()
-  let pending: readonly PendingApproval[] = []
+  const pending = new Map<PendingApproval, () => Promise<void>>()
   const registerPendingInteraction = vi.fn((_precedence: (value: PendingApproval) => number) => (
     value: PendingApproval,
+    delegate: () => Promise<void>,
   ) => {
     _precedence(value)
-    pending = [...pending, value]
-    return () => { pending = pending.filter(candidate => candidate !== value) }
+    pending.set(value, delegate)
+    return () => { pending.delete(value) }
   })
   const register = vi.fn((
     options: NonNullable<typeof registration>['options'],
@@ -89,12 +91,17 @@ function setupPlugin(): PluginBench {
   return {
     ctx,
     listener,
-    pending: { getSnapshot: () => pending },
+    pending: { getSnapshot: () => [...pending.keys()] },
     registerPendingInteraction,
     disposeSlot,
     disposeLocale,
     register,
     injectSlot,
+    async releasePending() {
+      const delegates = [...pending.values()]
+      pending.clear()
+      await Promise.allSettled(delegates.map(delegate => delegate()))
+    },
     registration: () => {
       if (registration === undefined) throw new Error('approval slot was not registered')
       return registration
@@ -129,6 +136,7 @@ describe('PendingApproval', () => {
     expect(pending.reason).toBe('needs access')
     expect(remove).toHaveBeenCalledWith('abort', expect.any(Function))
     expect(() => { pending.abort(new Error('late')) }).not.toThrow()
+    expect(() => { pending.delegate() }).not.toThrow()
     await expect(pending.answer('rejected')).rejects.toThrow(/already settled/)
   })
 
@@ -255,6 +263,22 @@ describe('approval Remote Event consumer', () => {
     await expect(result).rejects.toBe(reason)
     expect(bench.pending.getSnapshot()).toEqual([])
     expect(bench.disposeSlot).not.toHaveBeenCalled()
+    await scope.fiber.dispose()
+  })
+
+  it('delegates an active request when its interaction domain unloads', async () => {
+    const bench = setupPlugin()
+    const scope = createScope(bench.ctx, id('s1'))
+    await scope.fiber.await()
+    const next = vi.fn(() => Promise.resolve<'unavailable'>('unavailable'))
+    const result = bench.listener.call(scope.ctx, { toolName: 'bash' }, next)
+    expect(bench.pending.getSnapshot()).toHaveLength(1)
+
+    await bench.releasePending()
+
+    await expect(result).resolves.toBe('unavailable')
+    expect(next).toHaveBeenCalledOnce()
+    expect(bench.pending.getSnapshot()).toEqual([])
     await scope.fiber.dispose()
   })
 
