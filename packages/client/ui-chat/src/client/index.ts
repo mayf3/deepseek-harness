@@ -41,10 +41,7 @@ export type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 export { isRunningTool, isSettledTool } from './contract/chat-nodes.ts'
-export { EMPTY_CHAT_SNAPSHOT, toAssistantBlock, toAssistantBlocks } from './contract/snapshot.ts'
-export {
-  contextForm, contextProvenance, displayFailure, emptyAssistantBlock, isTokenDelta,
-} from '@deepseek-ai/dsh-client-ui-conversation/client'
+export { EMPTY_CHAT_SNAPSHOT } from './contract/snapshot.ts'
 
 /** Public merge surface for Chat renderer payloads contributed by other plugins. */
 export interface ChatNodeDataMap {}

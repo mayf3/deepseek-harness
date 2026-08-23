@@ -14,8 +14,7 @@ import {
   type RpcResponse,
 } from '@deepseek-ai/dsh-client-connection/client'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
-import { DirectoryBrowseError } from '../src/client/index.ts'
-import { UiWorkspaceService } from '../src/client/navigation.ts'
+import { DirectoryBrowseError, UiWorkspaceService } from '../src/client/navigation.ts'
 
 const sid = (id: string): SessionId => SessionId(id)
 const wid = (id: string): WorkspaceId => id as WorkspaceId

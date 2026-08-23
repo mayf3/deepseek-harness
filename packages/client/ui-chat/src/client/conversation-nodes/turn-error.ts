@@ -3,8 +3,8 @@ import type {
   ConversationMatch, ConversationNodeContext, ConversationNodeDefinition,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { TurnErrorNode } from '../contract/snapshot.ts'
-import { displayFailure } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { chatNode } from './common.ts'
+import { displayFailure } from './event-projection.ts'
 
 declare module '../contract/chat-nodes.ts' {
   interface ChatNodeDataMap {

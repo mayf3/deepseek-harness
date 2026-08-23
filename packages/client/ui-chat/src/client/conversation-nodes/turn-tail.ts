@@ -7,9 +7,9 @@ import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type {
   AssistantChatData, FinalAssistantChatData, TurnTailChatData,
 } from '../contract/chat-nodes.ts'
-import { toAssistantBlocks } from '../contract/snapshot.ts'
 import { deriveTurnMetrics } from '../contract/turn-metrics.ts'
 import { CHAT_SYNTHETIC_SEQ_OFFSETS, chatNode } from './common.ts'
+import { toAssistantBlocks } from './event-projection.ts'
 
 declare module '../contract/chat-nodes.ts' {
   interface ChatNodeDataMap {

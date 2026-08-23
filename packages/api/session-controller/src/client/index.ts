@@ -5,7 +5,6 @@ import type {} from '@deepseek-ai/dsh-agent/types'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { createSessionControlStream } from './transport.ts'
 import { ClientSessions } from './sessions/service.ts'
-import type { ISessions } from './contract/sessions.ts'
 import type { SessionRemotes } from './sessions/remotes.ts'
 import type {} from '../remote-events.ts'
 
@@ -26,7 +25,7 @@ export type {
 } from './transport.ts'
 export { createScope, scopeOf } from './scope.ts'
 export type { AgentContext, AgentScopeHandle } from './scope.ts'
-export { SessionCreateError, SessionForkError, workspaceTitleOf } from './sessions/service.ts'
+export { SessionCreateError, SessionForkError } from './sessions/service.ts'
 export type { SessionBinding, SessionListState, SessionSummary } from './sessions/service.ts'
 export type {
   SessionListPhase,
@@ -52,18 +51,8 @@ export type {
   SessionSnapshot,
 } from './contract/snapshot.ts'
 export type { ClientFailure, ClientResult } from './contract/result.ts'
-export { indexSubagentDescendants } from './sessions/subagent-lineage.ts'
-export type { SubagentDescendantSummary } from './sessions/subagent-lineage.ts'
 
 declare module '@deepseek-ai/cordis' {
-  interface Events {
-    /**
-     * A Host connection generation completed its readiness handshake.
-     * @mode emit
-     */
-    'connection/reset'(): void
-  }
-
   interface Context {
     /** Client Session object layer and Agent scope owner. */
     sessions: import('./contract/sessions.ts').ISessions
@@ -78,17 +67,6 @@ export const inject = [
   'remote.commands',
   'remote.session',
 ]
-
-/**
- * Resolve the Client Session service from any Client Cordis context.
- * @param ctx - Client root or Agent-scoped context.
- * @returns the Client Session object layer.
- */
-export function resolveClientSessions(ctx: Context): ISessions {
-  const sessions = ctx.get('sessions')
-  if (sessions === undefined) throw new Error('session-controller: Client sessions service unavailable')
-  return sessions
-}
 
 /**
  * Install Client Session state and its reconnecting control stream.

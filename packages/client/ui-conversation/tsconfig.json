@@ -88,6 +88,9 @@
     },
     {
       "path": "../../util/crypto"
+    },
+    {
+      "path": "../../util/workspace-path"
     }
   ],
   "exclude": [

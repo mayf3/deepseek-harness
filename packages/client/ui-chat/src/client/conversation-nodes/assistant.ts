@@ -2,14 +2,14 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {
   ConversationLocation, ConversationMatch, ConversationNodeContext, ConversationNodeDefinition,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { isTokenDelta } from '@deepseek-ai/dsh-llm/message'
 import type {} from '@deepseek-ai/dsh-llm-retry/types'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type { AssistantChatData } from '../contract/chat-nodes.ts'
 import type { AssistantBlock, AssistantMessageNode } from '../contract/snapshot.ts'
-import { toAssistantBlock, toAssistantBlocks } from '../contract/snapshot.ts'
-import { emptyAssistantBlock } from '../contract/snapshot.ts'
 import { CHAT_SYNTHETIC_SEQ_OFFSETS, chatNode } from './common.ts'
+import {
+  emptyAssistantBlock, isTokenDelta, toAssistantBlock, toAssistantBlocks,
+} from './event-projection.ts'
 
 declare module '../contract/chat-nodes.ts' {
   interface ChatNodeDataMap {
