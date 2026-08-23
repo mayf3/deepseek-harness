@@ -2,6 +2,66 @@
 import { notifySubscribers, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionEventEntry } from '../../types.ts'
 
+interface EventWindowLeaf {
+  readonly kind: 'leaf'
+  readonly entries: readonly SessionEventEntry[]
+  readonly length: number
+}
+
+interface EventWindowConcat {
+  readonly kind: 'concat'
+  readonly left: EventWindowNode
+  readonly right: EventWindowNode
+  readonly length: number
+}
+
+type EventWindowNode = EventWindowLeaf | EventWindowConcat
+
+function leaf(entries: readonly SessionEventEntry[]): EventWindowLeaf {
+  return { kind: 'leaf', entries, length: entries.length }
+}
+
+function concat(left: EventWindowNode, right: EventWindowNode): EventWindowConcat {
+  return { kind: 'concat', left, right, length: left.length + right.length }
+}
+
+function materialize(node: EventWindowNode): readonly SessionEventEntry[] {
+  if (node.kind === 'leaf') return node.entries
+  const entries = new Array<SessionEventEntry>(node.length)
+  const pending: EventWindowNode[] = [node]
+  let index = 0
+  while (pending.length > 0) {
+    const current = pending.pop() as EventWindowNode
+    if (current.kind === 'concat') {
+      pending.push(current.right, current.left)
+      continue
+    }
+    for (const entry of current.entries) {
+      entries[index] = entry
+      index += 1
+    }
+  }
+  return entries
+}
+
+function windowSnapshot(
+  node: EventWindowNode,
+  hasMore: boolean,
+  revision: number,
+  change: SessionEventChange,
+): SessionEventWindow {
+  let entries: readonly SessionEventEntry[] | undefined
+  return {
+    get entries() {
+      entries ??= materialize(node)
+      return entries
+    },
+    hasMore,
+    revision,
+    change,
+  }
+}
+
 /** Exact delta that produced the latest event-window revision. */
 export type SessionEventChange =
   | { readonly kind: 'replace'; readonly entries: readonly SessionEventEntry[] }
@@ -22,12 +82,13 @@ export type SessionEventSource = ObservableSnapshot<SessionEventWindow>
 /** Session-owned event feed; every accepted window mutation publishes synchronously. */
 export class MutableSessionEventSource implements SessionEventSource {
   private readonly listeners = new Set<() => void>()
-  private snapshot: SessionEventWindow = {
-    entries: [],
-    hasMore: false,
-    revision: 0,
-    change: { kind: 'replace', entries: [] },
-  }
+  private window: EventWindowNode = leaf([])
+  private snapshot: SessionEventWindow = windowSnapshot(
+    this.window,
+    false,
+    0,
+    { kind: 'replace', entries: [] },
+  )
 
   /** @returns the cached event-window snapshot. */
   getSnapshot(): SessionEventWindow { return this.snapshot }
@@ -48,7 +109,8 @@ export class MutableSessionEventSource implements SessionEventSource {
    * @param hasMore - whether older history remains.
    */
   replace(entries: readonly SessionEventEntry[], hasMore: boolean): void {
-    this.publish(entries, hasMore, { kind: 'replace', entries })
+    this.window = leaf(entries)
+    this.publish(hasMore, { kind: 'replace', entries })
   }
 
   /**
@@ -57,7 +119,8 @@ export class MutableSessionEventSource implements SessionEventSource {
    * @param hasMore - whether still older history remains.
    */
   prepend(entries: readonly SessionEventEntry[], hasMore: boolean): void {
-    this.publish([...entries, ...this.snapshot.entries], hasMore, { kind: 'prepend', entries })
+    this.window = concat(leaf(entries), this.window)
+    this.publish(hasMore, { kind: 'prepend', entries })
   }
 
   /**
@@ -65,18 +128,19 @@ export class MutableSessionEventSource implements SessionEventSource {
    * @param entry - live tail entry.
    */
   append(entry: SessionEventEntry): void {
-    this.publish([...this.snapshot.entries, entry], this.snapshot.hasMore, {
+    const entries = [entry]
+    this.window = concat(this.window, leaf(entries))
+    this.publish(this.snapshot.hasMore, {
       kind: 'append',
-      entries: [entry],
+      entries,
     })
   }
 
   private publish(
-    entries: readonly SessionEventEntry[],
     hasMore: boolean,
     change: SessionEventChange,
   ): void {
-    this.snapshot = { entries, hasMore, revision: this.snapshot.revision + 1, change }
+    this.snapshot = windowSnapshot(this.window, hasMore, this.snapshot.revision + 1, change)
     notifySubscribers(this.listeners, '[session-controller] event feed')
   }
 }

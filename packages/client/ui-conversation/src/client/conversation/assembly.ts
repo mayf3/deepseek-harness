@@ -159,9 +159,18 @@ export class UiConversation extends Service {
     const rebuild = (): void => {
       for (const record of this.bindings.values()) record.binding.rebuild()
     }
+    let rebuildQueued = false
+    const scheduleRebuild = (): void => {
+      if (rebuildQueued) return
+      rebuildQueued = true
+      queueMicrotask(() => {
+        rebuildQueued = false
+        rebuild()
+      })
+    }
     ctx.effect(() => {
-      const disposeEvents = this.events.subscribe(rebuild)
-      const disposeViews = this.views.subscribe(rebuild)
+      const disposeEvents = this.events.subscribe(scheduleRebuild)
+      const disposeViews = this.views.subscribe(scheduleRebuild)
       return () => {
         disposeViews()
         disposeEvents()

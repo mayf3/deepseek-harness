@@ -226,15 +226,21 @@ describe('Conversation registries', () => {
     expect(views.entries()).toEqual([])
   })
 
-  it('rebuilds every resident Conversation binding after each registry change', async () => {
+  it('coalesces one turn of registry changes into one rebuild per resident Conversation', async () => {
     const { uiConversation, binding, events, views } = await bootRegistries()
     uiConversation.binding(binding)
     const rebuild = vi.spyOn(ConversationNodeAssembler.prototype, 'rebuildRegistry')
 
     events.register(eventDefinition('message'))
+    views.register(viewDefinition('chat'))
+    events.register(eventDefinition('tool'))
+    expect(rebuild).not.toHaveBeenCalled()
+
+    await Promise.resolve()
     expect(rebuild).toHaveBeenCalledOnce()
 
-    views.register(viewDefinition('chat'))
+    views.register(viewDefinition('trajectory'))
+    await Promise.resolve()
     expect(rebuild).toHaveBeenCalledTimes(2)
     rebuild.mockRestore()
   })

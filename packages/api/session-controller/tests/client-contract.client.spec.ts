@@ -54,6 +54,27 @@ describe('Client Session contracts', () => {
     expect(listener).toHaveBeenCalledTimes(3)
   })
 
+  it('does not traverse the complete event window while appending', () => {
+    const feed = new MutableSessionEventSource()
+    const first = entry(1)
+    const base = [first]
+    const iterate = vi.fn(Array.prototype[Symbol.iterator].bind(base))
+    Object.defineProperty(base, Symbol.iterator, { value: iterate })
+    feed.replace(base, false)
+    iterate.mockClear()
+
+    const before = feed.getSnapshot()
+    const live = entry(2)
+    feed.append(live)
+    const after = feed.getSnapshot()
+
+    expect(iterate).not.toHaveBeenCalled()
+    expect(before.entries).toEqual([first])
+    expect(after.entries).toEqual([first, live])
+    expect(after.entries).toBe(after.entries)
+    expect(iterate).toHaveBeenCalledOnce()
+  })
+
   it('folds Error and non-Error carrier rejections into Client failures', () => {
     expect(transportResult(new Error('transport unavailable'))).toEqual({
       ok: false,
