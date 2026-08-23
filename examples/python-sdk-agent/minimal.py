@@ -10,30 +10,39 @@ from pathlib import Path
 from deepseek_harness import DeepSeekHarness
 
 
-CONFIG = Path(__file__).with_name("minimal.cordis.yml")
+PATCH = Path(__file__).with_name("minimal.patch.yml")
 
 
 def main() -> None:
     """Parse one task and print the agent's final response."""
     parser = argparse.ArgumentParser()
+    configured_home = os.environ.get("DSH_HOME", "")
     parser.add_argument("prompt", help="Task for the minimal agent")
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
-    parser.add_argument("--session-root", type=Path, default=Path(".dsh-sessions"))
+    parser.add_argument(
+        "--dsh-home",
+        type=Path,
+        default=Path(configured_home) if configured_home.strip() else None,
+    )
+    parser.add_argument("--profile", default="sdk")
     parser.add_argument("--session-id")
     parser.add_argument("--provider", default="deepseek-official")
     parser.add_argument("--model", default=os.environ.get("DSH_MODEL", "deepseek-v4-flash"))
     parser.add_argument("--max-tokens", type=int)
     args = parser.parse_args()
+    if args.dsh_home is None:
+        parser.error("--dsh-home or a non-empty DSH_HOME is required")
 
     workspace = args.workspace.resolve()
-    session_root = args.session_root.resolve()
+    dsh_home = args.dsh_home.resolve()
     with DeepSeekHarness(
         provider=args.provider,
         model=args.model,
         max_tokens=args.max_tokens,
         cwd=str(workspace),
-        session_root=str(session_root),
-        cordis=str(CONFIG.resolve()),
+        dsh_home=str(dsh_home),
+        profile=args.profile,
+        patches=(str(PATCH.resolve()),),
     ) as harness:
         result = harness.run(args.prompt, session_id=args.session_id)
     print(result.final_response)

@@ -1,0 +1,68 @@
+# Minimal Python SDK overlay for `dsh --profile sdk`: keep only persistent
+# Bash and the string-replacement editor, with no runtime-context prompt or
+# compaction. The profile still owns JSON-RPC serving and persistence.
+
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    persona: !!js process.env.DSH_SYSTEM_PROMPT ?? 'You are a helpful software engineer assistant.'
+
+- id: agent-instructions
+  disabled: true
+- id: skill-filesystem
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: tool-bash
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-subagent-control
+  disabled: true
+- id: tool-subagent-list-agents
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-subagent-report
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-todo
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: tool-ralph
+  disabled: true
+- id: tool-web
+  disabled: true
+- id: plan-mode
+  disabled: true
+- id: compaction-basic
+  disabled: true
+- id: command-compact
+  disabled: true
+- id: tool-result-pruner
+  disabled: true
+
+- id: tool-str-replace-editor
+  config:
+    maxOutputChars: 16000
+
+- insert:
+    - id: pty
+      name: '@deepseek-ai/dsh-terminal'
+    - id: terminal-bash
+      name: '@deepseek-ai/dsh-terminal-bash'
+      config:
+        timeoutMs: 300000
+    - id: persistent-bash
+      name: '@deepseek-ai/dsh-tool-bash-persistent'
+      config:
+        timeoutMs: 300000

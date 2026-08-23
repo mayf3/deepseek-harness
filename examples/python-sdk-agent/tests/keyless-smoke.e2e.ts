@@ -8,8 +8,8 @@ import { zstdDecompress } from 'node:zlib'
 import { execa } from 'execa'
 import { describe, expect, it } from 'vitest'
 
-const binScript = fileURLToPath(new URL('../../../packages/sdk/python-runtime/src/packaged-bin.ts', import.meta.url))
-const configPath = fileURLToPath(new URL('../cordis.yml', import.meta.url))
+const binScript = fileURLToPath(new URL('../../../apps/cli/src/bin.ts', import.meta.url))
+const patchPath = fileURLToPath(new URL('./keyless.patch.yml', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const decompress = promisify(zstdDecompress)
 
@@ -45,7 +45,7 @@ function waitForLine(
   })
 }
 
-describe('Python SDK runtime carrier keyless smoke', () => {
+describe('Python SDK dsh profile keyless smoke', () => {
   it.each([
     { label: 'reports max-token turns with the default mapping config', envValue: undefined },
     { label: 'reports max-token turns with mapping enabled through env', envValue: 'true' },
@@ -73,16 +73,20 @@ describe('Python SDK runtime carrier keyless smoke', () => {
     // execa owns spawn, the deadline, and exit settlement around it.
     const child = execa(process.execPath, [
       '--import',
-      'tsx',
+      'tsx/esm',
       binScript,
-      configPath,
+      '--profile',
+      'sdk',
+      '--patch',
+      patchPath,
     ], {
       cwd: repoRoot,
       env: {
+        DSH_HOME: join(root, '.dsh'),
+        DSH_PERMISSION_MODE: 'danger-full-access',
+        DSH_TELEMETRY_DISABLED: '1',
         DEEPSEEK_API_KEY: 'keyless-smoke-no-call',
         DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
-        DSH_CWD: root,
-        DSH_SESSION_ROOT: join(root, '.sessions'),
         ...(envValue === undefined ? {} : { DSH_MAX_TOKENS_AS_SUCCESS: envValue }),
       },
       timeout: 35_000,
@@ -149,6 +153,7 @@ describe('Python SDK runtime carrier keyless smoke', () => {
         'bash',
         'edit',
         'read',
+        'read_image',
         'subagent',
         'todo_write',
         'write',
@@ -159,7 +164,7 @@ describe('Python SDK runtime carrier keyless smoke', () => {
       expect(shutdown).toMatchObject({ jsonrpc: '2.0', id: 3, result: {} })
       const exit = await child
       expect(exit.exitCode, `signal=${String(exit.signal)}; stderr=${stderr}`).toBe(0)
-      const sessionsRoot = join(root, '.sessions')
+      const sessionsRoot = join(root, '.dsh', 'sessions')
       const files = await readdir(sessionsRoot, { recursive: true })
       const log = files.find(file => file.endsWith('.jsonl.zstd'))
       expect(log).toBeDefined()
@@ -176,27 +181,36 @@ describe('Python SDK runtime carrier keyless smoke', () => {
   }, 40_000)
 
   it('rejects an invalid max-token success env value', async () => {
-    const { exitCode, stdout, stderr } = await execa(process.execPath, [
-      '--import',
-      'tsx',
-      binScript,
-      configPath,
-    ], {
-      cwd: repoRoot,
-      env: {
-        DEEPSEEK_API_KEY: 'keyless-smoke-no-call',
-        DSH_MAX_TOKENS_AS_SUCCESS: 'sometimes',
-      },
-      stdin: 'ignore',
-      timeout: 25_000,
-      killSignal: 'SIGKILL',
-      reject: false,
-    })
+    const root = await mkdtemp(join(tmpdir(), 'dsh-python-sdk-runtime-invalid-'))
+    try {
+      const { exitCode, stdout, stderr } = await execa(process.execPath, [
+        '--import',
+        'tsx/esm',
+        binScript,
+        '--profile',
+        'sdk',
+        '--patch',
+        patchPath,
+      ], {
+        cwd: repoRoot,
+        env: {
+          DSH_HOME: join(root, '.dsh'),
+          DEEPSEEK_API_KEY: 'keyless-smoke-no-call',
+          DSH_MAX_TOKENS_AS_SUCCESS: 'sometimes',
+        },
+        stdin: 'ignore',
+        timeout: 25_000,
+        killSignal: 'SIGKILL',
+        reject: false,
+      })
 
-    expect(exitCode, stderr).toBe(1)
-    expect(stdout).toBe('')
-    expect(stderr).toContain('plugin tree failed to load')
-    expect(stderr).toContain('failed to apply loader entry sdk-jsonrpc-server (@deepseek-ai/dsh-sdk-jsonrpc-server)')
-    expect(stderr).toContain('sometimes')
+      expect(exitCode, stderr).toBe(1)
+      expect(stdout).toBe('')
+      expect(stderr).toContain('plugin tree failed to load')
+      expect(stderr).toContain('failed to apply loader entry sdk-jsonrpc-server (@deepseek-ai/dsh-sdk-jsonrpc-server)')
+      expect(stderr).toContain('sometimes')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   }, 30_000)
 })
