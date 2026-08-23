@@ -46,6 +46,10 @@ function welcomeView(value: unknown, revision = 0) {
   }
 }
 
+type AttentionSnapshot = Parameters<Parameters<WelcomeNoticeProps['useSessionPendingInteraction']>[0]>[0]
+const noAttention: AttentionSnapshot = new Map()
+const useSessionPendingInteraction: WelcomeNoticeProps['useSessionPendingInteraction'] = selector => selector(noAttention)
+
 function mount(
   version?: string,
   mutateImpl: () => Promise<unknown> = () =>
@@ -82,6 +86,7 @@ function mount(
     complete,
     openSection: vi.fn(),
     useSessions: unusedHook,
+    useSessionPendingInteraction,
     useWorkspaces: unusedHook,
     controller,
     useWelcome: bindSnapshotSelector(controller.store),

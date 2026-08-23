@@ -12,7 +12,7 @@ import { resolve, sep } from 'node:path'
 import ts from 'typescript'
 
 const root = resolve(import.meta.dirname, '..')
-const MINIMUM_CLIENT_UI_SOURCES = 400
+const MINIMUM_CLIENT_UI_SOURCES = 450
 
 const COPY_ATTRIBUTES = new Set([
   'alt',
@@ -294,9 +294,17 @@ export function findUiI18nViolations(file: string, sourceText: string): UiI18nVi
 }
 
 function sourceFiles(): string[] {
+  const clientComponentRoots = new Set(
+    globSync('packages/*/*/src/client/**/*.tsx', { cwd: root }).map((file) => {
+      const marker = '/src/client/'
+      return file.slice(0, file.indexOf(marker) + marker.length - 1)
+    }),
+  )
   return [...new Set([
     ...globSync('packages/client/*/src/**/*.tsx', { cwd: root }),
     ...globSync('packages/client/ui-*/src/**/*.{ts,tsx}', { cwd: root }),
+    ...[...clientComponentRoots].flatMap(clientRoot =>
+      globSync(`${clientRoot}/**/*.{ts,tsx}`, { cwd: root })),
     ...globSync('apps/web/src/**/*.{ts,tsx}', { cwd: root }),
   ])]
     .map(file => file.split(sep).join('/'))

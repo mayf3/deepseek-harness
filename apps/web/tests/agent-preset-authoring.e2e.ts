@@ -259,17 +259,18 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     await dialog.waitFor({ state: 'detached', timeout: 10_000 })
     await page.getByRole('button', { name: '创造模式' }).waitFor({ timeout: 10_000 })
     await expect.poll(async () => {
-      const response = await fetch(`${scaffold.baseUrl}/api/session.list`, {
+      const response = await fetch(`${scaffold.baseUrl}/api/session/list`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          type: 'client-request', rpcId: 'creator-draft-stage', method: 'session.list', payload: {},
+          type: 'client-request', rpcId: 'creator-draft-stage', method: 'session/list',
+          payload: { args: { _request: {} } },
         }),
       })
       const body = await response.json() as {
-        result: { value?: { sessions: unknown[] } }
+        result: { value?: { items: unknown[] } }
       }
-      return JSON.stringify(body.result.value?.sessions ?? body.result)
+      return JSON.stringify(body.result.value?.items ?? body.result)
     }, { timeout: 15_000 }).toContain('"agentPreset":"cordis"')
   }, 60_000)
 

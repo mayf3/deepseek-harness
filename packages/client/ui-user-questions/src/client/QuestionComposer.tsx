@@ -6,9 +6,10 @@ import {
   IconEditOutline16, MarkdownText,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  PendingQuestion, planReviewOf,
+  planReviewOf,
   type QuestionAnswer, type QuestionComposerProps,
 } from './contract/slots.ts'
+import type { PendingQuestion } from './contract/slots.ts'
 import { PlanReviewPanel } from './PlanReviewPanel.tsx'
 import css from './QuestionComposer.module.css'
 
@@ -114,9 +115,7 @@ function AnswerField(props: AnswerFieldProps) {
  * @returns The question flow, or the intent's own surface, for this request.
  */
 export function QuestionComposer(props: QuestionComposerProps) {
-  // Domain-face mint rides the carrier's stable identity (never minted in a
-  // select/render dispatch — per-dispatch minting would churn memo identity).
-  const question = useMemo(() => new PendingQuestion(props.matched), [props.matched])
+  const question = props.matched
   const review = useMemo(() => planReviewOf(question.questions), [question])
   return review === undefined
     ? <QuestionFlow key={question.key} pending={question} t={props.t} />

@@ -505,6 +505,8 @@ describe('web e2e: settings modal and General preferences', () => {
       const dialog = frPage.getByRole('dialog', { name: 'Settings' })
       await dialog.waitFor({ timeout: 10_000 })
       await dialog.getByRole('button', { name: 'English' }).waitFor({ timeout: 10_000 })
+      const preset = dialog.getByRole('button', { name: 'Standard mode' })
+      await expect.poll(() => preset.isEnabled(), { timeout: 10_000 }).toBe(true)
       // The markup already ships `en`, so this alone cannot prove the sync ran
       // — the zh scenario above is the discriminating half. Asserted here too
       // so a future change that resolves en but writes the wrong tag is caught.

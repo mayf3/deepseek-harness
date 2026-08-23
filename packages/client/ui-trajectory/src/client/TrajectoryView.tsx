@@ -1,12 +1,11 @@
 /** Trajectory view: compact summary over a turn-aware event ledger. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
-  AssistantBlock, AssistantMessageNode, ConversationSnapshot,
-  SnapshotStore,
-} from '@deepseek-ai/dsh-client-runtime/client'
+  AssistantBlock, AssistantMessageNode, ConvViewProps,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
   TrajectoryTable,
   type TrajectoryRequestNumber,
@@ -25,7 +24,7 @@ import {
 } from './timeline.ts'
 import { trajectoryRecordId } from './trajectory-record.ts'
 import { TrajectorySearchIndex } from './trajectory-search-index.ts'
-import { EMPTY_TRAJECTORY_SNAPSHOT } from './trajectory-snapshot-builder.ts'
+import type { TrajectorySnapshot } from './trajectory-contract.ts'
 import css from './views.module.css'
 
 const EMPTY_TURN_IDS: ReadonlySet<number> = new Set()
@@ -57,7 +56,7 @@ function timelineBlock(block: AssistantBlock): AssistantBlock {
   }
 }
 
-function partialStructureSignature(partial: ConversationSnapshot['partial']): string {
+function partialStructureSignature(partial: TrajectorySnapshot['partial']): string {
   if (partial === null) return ''
   return partial.blocks.map(block => block.kind === 'tool-call'
     ? `${block.kind}:${block.callId}:${block.name}`
@@ -118,8 +117,8 @@ function addUsage(
 }
 
 export function TrajectoryView({
-  useSession, useDuration, loadOlder, setActualDuration,
-  inspect, onInspectDone, t,
+  useSession, useTrajectory, useDuration, loadOlder, setActualDuration,
+  viewRequest, completeViewRequest, t,
 }: ConvViewProps & InjectFace<TrajectoryViewInjected> & PropsLocale<'trajectory'>) {
   const [collapsedTurns, setCollapsedTurns] = useState<ReadonlySet<number>>(EMPTY_TURN_IDS)
   const [collapsedAssistants, setCollapsedAssistants] =
@@ -139,8 +138,7 @@ export function TrajectoryView({
   const [timelineRecordFocus, setTimelineRecordFocus] = useState<{
     readonly index: number
   } | null>(null)
-  const inspection = useSession(snapshot =>
-    snapshot.views.get('trajectory') ?? EMPTY_TRAJECTORY_SNAPSHOT)
+  const inspection = useTrajectory(snapshot => snapshot)
   const historyLoading = useSession(snapshot => snapshot.openState === 'loading')
   const olderHistoryLoading = useSession(snapshot => snapshot.loadingOlder)
   const hasOlderHistory = useSession(snapshot => snapshot.hasMore)
@@ -151,6 +149,7 @@ export function TrajectoryView({
   const runningCalls = inspection.runningCalls
   const requests = inspection.requests
   const callSchemas = inspection.callSchemas
+  const inspectCallId = viewRequest?.view === 'trajectory' ? viewRequest.focus : null
   const requestNumbers = useMemo<readonly TrajectoryRequestNumber[]>(() => {
     const assistantsByStep = new Map<string, AssistantMessageNode>()
     for (const node of nodes) {
@@ -269,7 +268,7 @@ export function TrajectoryView({
     runningCalls, requests, callSchemas, t,
   ])
   const timelinePartialSignature = partialStructureSignature(partial)
-  const timelinePartial = useMemo<ConversationSnapshot['partial']>(() => partial === null
+  const timelinePartial = useMemo<TrajectorySnapshot['partial']>(() => partial === null
     ? null
     : {
       turn: partial.turn,
@@ -499,8 +498,8 @@ export function TrajectoryView({
           onToggleTurn={toggleTurn}
           collapsedAssistants={collapsedAssistants}
           onToggleAssistant={toggleAssistant}
-          inspectCallId={inspect?.callId ?? null}
-          onInspectApplied={onInspectDone}
+          inspectCallId={inspectCallId}
+          onInspectApplied={completeViewRequest}
         />
       </div>
     </div>

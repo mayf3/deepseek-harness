@@ -22,6 +22,7 @@
  * @module @deepseek-ai/dsh-experimental-webworker-runtime/src/worker-host
  */
 import { setActiveModuleLoader, WorkerModuleLoader, type StaticModuleFactory } from './module-system/module-loader.ts'
+import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
 import type { AlsCausality } from './polyfill/async-context/als-runtime.ts'
 import { dirname, join } from './module-system/posix-path.ts'
 import { installProcessGlobal } from './node/globals/process.ts'
@@ -237,6 +238,10 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
 
       const apiProxy = ctx.get('apiProxy')
       if (apiProxy === undefined) throw new Error('webworker host: the tree activated without an apiProxy service')
+      const typertGateway = ctx.get('typertGateway') as TypertGateway | undefined
+      if (typertGateway === undefined) {
+        throw new Error('webworker host: the tree activated without a typertGateway service')
+      }
       const { toFetchHandler } = require('@deepseek-ai/dsh-host-apiproxy') as {
         toFetchHandler: (api: unknown) => { fetch(request: Request): Promise<Response> }
       }
@@ -248,6 +253,8 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
       tunnel.serve({
         directFetch: (request: Request) => handler.fetch(request),
         bootPayload: () => readBootPayload(ctx),
+        openStream: typertGateway.wireStream.open,
+        streamFailure: typertGateway.wireStream.failure,
       })
     } catch (reason) {
       tunnel.fail(reason)
