@@ -63,13 +63,13 @@ function treeItems(root: HTMLDivElement | null): HTMLElement[] {
 }
 
 /** Compact token count shared in shape with the conversation stats strip. */
-function formatTokens(value: number): string {
+function formatTokens(value: number, t: TranslateNS<typeof NS>): string {
   const scaled = (next: number): string => next >= 100
     ? String(Math.round(next))
     : String(Math.round(next * 10) / 10)
   if (value < 1_000) return String(value)
-  if (value < 1_000_000) return `${scaled(value / 1_000)}K`
-  return `${scaled(value / 1_000_000)}M`
+  if (value < 1_000_000) return t('tokens.thousand', { value: scaled(value / 1_000) })
+  return t('tokens.million', { value: scaled(value / 1_000_000) })
 }
 
 /** Sum the four disjoint durable provider-usage buckets. */
@@ -310,7 +310,7 @@ function CatalogRows({
         )
         const tokenMetric = totalTokens === undefined
           ? undefined
-          : `${formatTokens(totalTokens)} tok`
+          : t('tokens.total', { value: formatTokens(totalTokens, t) })
         const durationMetric = durationMs === undefined
           ? undefined
           : {

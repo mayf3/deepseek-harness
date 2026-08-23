@@ -38,7 +38,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /** Services required before application assembly. */
-export const inject = ['slots', 'sessions']
+export const inject = ['slots', 'sessions', 'locale']
 
 interface BootSnapshot {
   className: string

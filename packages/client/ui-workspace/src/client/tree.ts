@@ -12,9 +12,6 @@ import {
 /** Group key for Sessions outside every Workspace. */
 export const UNGROUPED_KEY = ''
 
-/** Display label for the ungrouped bucket row. */
-export const UNGROUPED_LABEL = 'Ungrouped'
-
 /** One top-level session row in a group or the flat list. */
 export interface SessionNode {
   id: SessionId
@@ -95,10 +92,10 @@ interface Group {
  * Directory display label: basename of the path (both separators accepted).
  * Ungrouped-bucket fallback for surfaces without a workspace title.
  * @param cwd - directory path, or undefined for the ungrouped bucket.
- * @returns basename, the raw cwd when it has no basename, or the ungrouped label.
+ * @returns basename, the raw cwd when it has no basename, or an empty ungrouped marker.
  */
 export function workspaceLabel(cwd: string | undefined): string {
-  if (cwd === undefined || cwd === '') return UNGROUPED_LABEL
+  if (cwd === undefined || cwd === '') return ''
   const base = cwd.replace(/[/\\]+$/, '').split(/[/\\]/).pop()
   return base !== undefined && base !== '' ? base : cwd
 }
@@ -127,7 +124,7 @@ function sessionVisible(session: SessionSummary, current: SessionId | undefined,
  * and the renderer localizes its display label.
  */
 function sessionTitle(session: SessionSummary): string {
-  return session.blank ? 'New Session' : session.displayTitle
+  return session.blank ? '' : session.displayTitle
 }
 
 /** Build one group without projecting session lineage into presentation. */
@@ -203,7 +200,7 @@ function groupByWorkspace(
       undefined,
       undefined,
       undefined,
-      UNGROUPED_LABEL,
+      '',
       ungroupedOrder === undefined ? stray : orderedUngrouped(stray, ungroupedOrder),
       ungroupedOrder === undefined ? 'recency' : 'account',
     ))

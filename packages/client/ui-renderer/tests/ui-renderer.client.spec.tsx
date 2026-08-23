@@ -7,6 +7,7 @@ import { TestSessions, TestWorkspaces } from '@deepseek-ai/dsh-client-test-runti
 import type { Stabilizer } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-renderer'
 import * as UiRenderer from '../src/client/index.ts'
+import { locale } from './locale.client.ts'
 
 const mounted: (() => void)[] = []
 
@@ -25,6 +26,7 @@ async function bench() {
   const slots = ctx.get('slots') as SlotRegistry
   ctx.provide('sessions', new TestSessions(stabilize, ctx))
   ctx.provide('workspaces', new TestWorkspaces(stabilize))
+  ctx.provide('locale' as never, locale as never)
   const fiber = ctx.plugin({ inject: [...UiRenderer.inject], apply: UiRenderer.apply })
   await fiber.await()
   return { ctx, slots, fiber }

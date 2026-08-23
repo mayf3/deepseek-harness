@@ -20,7 +20,7 @@ import css from './Modal.module.css'
  * @returns null when closed; otherwise the overlay tree.
  */
 export function Modal({
-  open, onClose, title, closeLabel = 'Close', description, children, footer, className, contentClassName, headless = false,
+  open, onClose, title, closeLabel, description, children, footer, className, contentClassName, headless = false,
 }: {
   open: boolean
   onClose: () => void
@@ -60,7 +60,7 @@ export function Modal({
               <div className={clsx(css.content, contentClassName)}>
                 <div className={css.header}>
                   <h2 className={css.title}>{title}</h2>
-                  <button type="button" className={css.close} aria-label={closeLabel} onClick={onClose}>
+                  <button type="button" className={css.close} aria-label={closeLabel ?? title} onClick={onClose}>
                     <IconCloseOutline16 size={14} />
                   </button>
                 </div>

@@ -107,6 +107,7 @@ export function PermissionRow({ load, select, usePermission, t }: PermissionRowP
         description={t('confirm.description')}
         acknowledgeLabel={t('confirm.acknowledge')}
         cancelLabel={t('confirm.cancel')}
+        closeLabel={t('close')}
         confirmLabel={t('confirm.enable')}
         acknowledged={acknowledged}
         disabled={!state.writable || state.status === 'saving'}

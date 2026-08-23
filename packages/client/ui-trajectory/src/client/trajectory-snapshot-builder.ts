@@ -4,6 +4,7 @@ import type {
   ConversationViewBuilder, ConversationViewDefinition, RequestView,
   ToolCallBlock,
 } from '@deepseek-ai/dsh-client-runtime/client'
+import { COMPACTION_INTERRUPTED_ERROR } from './copy-codes.ts'
 import type {
   TrajectoryConversationViewNode, TrajectoryRequestHeaderState,
   TrajectorySnapshot,
@@ -106,7 +107,7 @@ function interruptCompactions(
       ...request,
       completedAt: boundary.time,
       status: 'error',
-      error: 'Compaction was interrupted before completion.',
+      error: COMPACTION_INTERRUPTED_ERROR,
     }
   }
 }

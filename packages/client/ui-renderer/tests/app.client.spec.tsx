@@ -5,6 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { buildRenderApp } from '../src/client/app.tsx'
+import { locale } from './locale.client.ts'
 
 let runtime: SlotTestRuntime | undefined
 
@@ -18,6 +19,7 @@ afterEach(async () => {
 
 async function bench() {
   runtime = await SlotTestRuntime.create()
+  runtime.provide('locale', locale)
   await runtime.root.declare({}, () => <div data-testid="frame" />)
   return { runtime, renderApp: buildRenderApp({ ctx: runtime.ctx }) }
 }

@@ -1,11 +1,11 @@
 import { useEffect } from 'react'
 
-const DEFAULT_CLIENT_TITLE = 'DSH Local Build'
-
 /** Props for the browser title projection. */
 export interface DocumentTitleProps {
   /** Durable title of the selected session, or undefined for the product title. */
   title?: string
+  /** Build-configured or localized product title. */
+  productTitle: string
 }
 
 /**
@@ -14,8 +14,7 @@ export interface DocumentTitleProps {
  * @param props - Selected session title projection.
  * @returns No rendered content.
  */
-export function DocumentTitle({ title }: DocumentTitleProps): null {
-  const productTitle = process.env.DSH_CLIENT_TITLE ?? DEFAULT_CLIENT_TITLE
+export function DocumentTitle({ title, productTitle }: DocumentTitleProps): null {
   useEffect(() => {
     document.title = title === undefined ? productTitle : `${title} — ${productTitle}`
     return () => { document.title = productTitle }

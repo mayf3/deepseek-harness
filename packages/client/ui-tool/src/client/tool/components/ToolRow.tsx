@@ -3,13 +3,16 @@ import clsx from 'clsx'
 import {
   CodeBlock, DiffBlock, DisclosureRow, IconInspectOutline12, ReadBlock, SearchBlock, StateDot, TerminalBlock, WebBlock,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { WebBlockProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { CHAT_DIFF_MAX_LINES, type DiffCardModel } from '../models/diff-card-model.ts'
 import { CHAT_READ_MAX_LINES, type ReadCardModel } from '../models/read-card-model.ts'
 import { CHAT_SEARCH_MAX_LINES, type SearchCardModel } from '../models/search-card-model.ts'
 import { terminalBlockLabels, type TerminalCardModel } from '../models/terminal-card-model.ts'
+import {
+  diffBlockLabels, readBlockLabels, searchBlockLabels, webBlockLabels,
+} from '../models/primitive-labels.ts'
 import type { ToolRowState, ToolRowVariant } from '../models/tool-call-model.ts'
+import type { WebCardModelProps } from '../models/web-card-model.ts'
 import css from './ToolRow.module.css'
 
 export interface ToolRowProps {
@@ -39,7 +42,7 @@ export interface ToolRowProps {
   diff?: DiffCardModel | null | undefined
   read?: ReadCardModel | null | undefined
   search?: SearchCardModel | null | undefined
-  web?: WebBlockProps | null | undefined
+  web?: WebCardModelProps | null | undefined
   state: ToolRowState
   /**
    * Filesystem path from tool args; when set with onOpenFile, the summary
@@ -181,13 +184,18 @@ export function ToolRow({
               />
             )
             : diffBody !== null
-              ? <DiffBlock {...diffBody.card} maxLines={CHAT_DIFF_MAX_LINES} className={css.diffBody} />
+              ? <DiffBlock {...diffBody.card} labels={diffBlockLabels(t)} maxLines={CHAT_DIFF_MAX_LINES} className={css.diffBody} />
               : readBody !== null
-                ? <ReadBlock {...readBody} maxLines={CHAT_READ_MAX_LINES} className={css.readBody} />
+                ? <ReadBlock {...readBody} labels={readBlockLabels(t)} maxLines={CHAT_READ_MAX_LINES} className={css.readBody} />
                 : searchBody !== null
                   ? (
                     <>
-                      <SearchBlock {...searchBody.card} maxLines={CHAT_SEARCH_MAX_LINES} className={css.searchBody} />
+                      <SearchBlock
+                        {...searchBody.card}
+                        labels={searchBlockLabels(t)}
+                        maxLines={CHAT_SEARCH_MAX_LINES}
+                        className={css.searchBody}
+                      />
                       {/* A capped search's recovery locator lives only in the result
                           text; show it below the card so the dropped rows survive. */}
                       {searchBody.recovery !== undefined && (
@@ -196,7 +204,7 @@ export function ToolRow({
                     </>
                   )
                   : webBody !== null
-                    ? <WebBlock {...webBody} className={css.webBody} />
+                    ? <WebBlock {...webBody} labels={webBlockLabels(t)} className={css.webBody} />
                     : (
                       <>
                         {variant === 'code' && body !== null && (
@@ -208,7 +216,7 @@ export function ToolRow({
                           <div className={css.ioCard}>
                             {cardBody !== null && (
                               <div className={css.ioSection}>
-                                <span className={css.ioLabel}>IN</span>
+                                <span className={css.ioLabel}>{t('row.input')}</span>
                                 <span className={css.ioText}>{cardBody}</span>
                               </div>
                             )}
@@ -217,7 +225,7 @@ export function ToolRow({
                             )}
                             {outputText !== null && (
                               <div className={css.ioSection}>
-                                <span className={css.ioLabel}>OUT</span>
+                                <span className={css.ioLabel}>{t('row.output')}</span>
                                 <span className={css.ioText} data-error={state === 'error' || undefined}>
                                   {outputText}
                                 </span>
@@ -234,7 +242,7 @@ export function ToolRow({
               onClick={inspect}
             >
               <IconInspectOutline12 />
-              Inspect
+              {t('row.inspect')}
             </button>
           )}
         </div>

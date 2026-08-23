@@ -121,7 +121,7 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
             <span className={css.percent}>{reading}</span>
             <span className={css.headline}>{headAfter}</span>
             <span className={css.figures}>
-              {`~${formatTokens(context.usedTokens)} / ${formatTokens(context.contextWindow)}`}
+              {`~${formatTokens(context.usedTokens, t)} / ${formatTokens(context.contextWindow, t)}`}
             </span>
           </div>
           <div className={css.bar}>
@@ -141,7 +141,7 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
                     <span className={`${css.swatch} ${row.color}`} aria-hidden />
                     {t(row.label)}
                   </dt>
-                  <dd>{`~${formatTokens(breakdown[row.key])}`}</dd>
+                  <dd>{`~${formatTokens(breakdown[row.key], t)}`}</dd>
                 </div>
               ))}
             </dl>

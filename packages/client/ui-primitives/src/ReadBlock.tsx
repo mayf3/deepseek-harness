@@ -29,6 +29,8 @@ export interface ReadBlockProps {
   label?: string | undefined
   /** The returned window's lines, in file order, each keeping its file line number. */
   lines: readonly ReadBlockLine[]
+  /** Localized chrome supplied by the owning render site. */
+  labels: ReadBlockLabels
   /** Exact total line count in the file, for the "showing N of M" note when the read is a window. */
   totalLines: number
   /** Grammar hint (a file-extension-derived language id); unknown or absent = plain monospace. */
@@ -37,6 +39,17 @@ export interface ReadBlockProps {
   maxLines?: number | undefined
   /** Extra class merged onto the wrapper (callers position; this component draws). */
   className?: string | undefined
+}
+
+/** Localized chrome for {@link ReadBlock}. */
+export interface ReadBlockLabels {
+  window: (shown: number, total: number) => string
+  copy: string
+  copied: string
+  collapseAria: string
+  expandAria: (hidden: number) => string
+  collapse: string
+  expand: (hidden: number) => string
 }
 
 function renderSpans(spans: readonly HighlightSpan[]) {
@@ -51,6 +64,7 @@ function renderSpans(spans: readonly HighlightSpan[]) {
  */
 export function ReadBlock({
   label,
+  labels,
   lines,
   totalLines,
   lang,
@@ -104,13 +118,13 @@ export function ReadBlock({
         <div className={css.label}>{label ?? ''}</div>
         <div className={css.action}>
           {windowed && (
-            <span className={css.count}>{`显示 ${lines.length} / ${totalLines} 行`}</span>
+            <span className={css.count}>{labels.window(lines.length, totalLines)}</span>
           )}
           <span className={css.lang}>{lang ?? ''}</span>
           {/* Empty files omit Copy to avoid replacing the clipboard with an empty string. */}
           {lines.length > 0 && (
             <button type="button" className={css.copyButton} onClick={onCopy}>
-              {copied ? '复制成功' : '复制'}
+              {copied ? labels.copied : labels.copy}
             </button>
           )}
         </div>
@@ -122,10 +136,10 @@ export function ReadBlock({
             type="button"
             className={css.expand}
             aria-expanded={expanded}
-            aria-label={expanded ? '收起内容' : `展开其余 ${hidden} 行`}
+            aria-label={expanded ? labels.collapseAria : labels.expandAria(hidden)}
             onClick={onToggle}
           >
-            {expanded ? '收起' : `… 其余 ${hidden} 行`}
+            {expanded ? labels.collapse : labels.expand(hidden)}
           </button>
         )}
         {capped && rows(paired.slice(paired.length - tailLines))}

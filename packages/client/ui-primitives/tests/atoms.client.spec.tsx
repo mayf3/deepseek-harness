@@ -410,9 +410,9 @@ describe('Modal', () => {
 
 describe('ConnectionBanner', () => {
   it('renders only while reconnecting', () => {
-    const { container, rerender } = render(<ConnectionBanner reconnecting={false} />)
+    const { container, rerender } = render(<ConnectionBanner reconnecting={false} label="Reconnecting" />)
     expect(container.firstChild).toBeNull()
-    rerender(<ConnectionBanner reconnecting />)
-    expect(container.textContent).toContain('重连')
+    rerender(<ConnectionBanner reconnecting label="Reconnecting" />)
+    expect(container.textContent).toContain('Reconnecting')
   })
 })

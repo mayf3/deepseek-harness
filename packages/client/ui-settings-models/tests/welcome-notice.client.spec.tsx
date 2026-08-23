@@ -15,9 +15,14 @@ import { decodeWelcomeSection, WelcomeNoticeStore } from '../src/client/welcome-
 import type { WelcomeSection } from '../src/client/welcome-store.ts'
 import { en, zh } from '../src/client/locales.ts'
 import {
-  WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_COPY, WELCOME_NOTICE_SETTINGS_NAMESPACE,
+  WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_SETTINGS_NAMESPACE,
   WELCOME_NOTICE_VERSION,
 } from '../src/onboarding-copy.ts'
+
+const WELCOME_NOTICE_COPY = {
+  en: { title: en.welcomeTitle, body: en.welcomeBody, continueLabel: en.welcomeContinue },
+  zh: { title: zh.welcomeTitle, body: zh.welcomeBody, continueLabel: zh.welcomeContinue },
+}
 
 afterEach(() => {
   cleanup()
