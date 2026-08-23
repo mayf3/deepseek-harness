@@ -258,11 +258,11 @@ Returning waterfalls currently support Agent scope only. The event signature mus
 
 The Host projects only top-level `agent` and `signal` fields from the request: `agent` becomes top-level `agentId` in the frame, `signal` becomes the delivery lifetime, and all remaining fields must be lossless JSON as a whole.
 
-The Client synchronously resolves `agentId` to an existing Agent Context, restores the current delivery signal into the request's direct `signal` field, and invokes Cordis `waterfall()` on the target Context's private key.
+The Client synchronously resolves or materializes an Agent Context from `agentId`, restores the current delivery signal into the request's direct `signal` field, and invokes Cordis `waterfall()` on the target Context's private key. Before the first successful Session-list baseline, the Session-backed adapter lets transport materialize a scope; after that baseline, the list lifecycle owns scope liveness.
 
 The system does not scan arbitrarily deep objects, transmit path arrays or placeholders, deep-clone/restore Context and AbortSignal, or wait for a future Agent Context.
 
-When no Client adapter is registered, the Agent Context is absent, or that Context has been disposed, that Client immediately returns `next`. It does not subscribe to a registry, recheck races after resolution, or create a temporary Fiber for one delivery.
+When no Client adapter is registered, its resolver returns no Context, or resolution throws, that Client immediately returns `next`. It does not subscribe to a registry, recheck races after resolution, or create a temporary Fiber for one delivery.
 
 Gateway Host retains `eventId`, the Host continuation, and delivered Client generations for every unfinished waterfall. A new Client generation receives a replay of the same pending event.
 
@@ -310,7 +310,7 @@ API Proxy carries only independent business APIs it owns. Session, Workspace, Re
 
 **Project Agent scope through arbitrary object depth.** Recursive Context and AbortSignal scans need path, placeholder, clone, and restore protocols and turn incidental object structure into a wire promise. Top-level `agent` and `signal` cover current waterfalls.
 
-**Wait for a Client Agent Context or adapter before dispatching.** Registry waiters, post-resolution race checks, and temporary delivery Fibers add lifecycle to a Client that can delegate immediately. Returning `next` when the target is absent preserves Cordis waterfall semantics.
+**Wait for a Client Agent Context or adapter before dispatching.** Registry waiters, post-resolution race checks, and temporary delivery Fibers add lifecycle to a Client that can synchronously resolve or materialize its target. Returning `next` when the resolver cannot provide a target immediately preserves Cordis waterfall semantics.
 
 **Use an independent physical WebSocket or duplex stream for Remote Event.** Gateway mux already provides authenticated upgrade, multiplexing, cancellation, error mapping, and reconnect. Downlink `$events` plus HTTP `$events/result` expresses request/response without a third connection.
 

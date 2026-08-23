@@ -213,6 +213,39 @@ describe('connection client apply', () => {
     }
   })
 
+  it('does not announce reconnecting after a description subscriber stops the loop', async () => {
+    ;(globalThis as Win).location = { hostname: 'localhost', search: '?fixture' }
+    const handle = await mount()
+    const generation = installGeneration(handle)
+    const owner: { loop?: ReturnType<ConnectionHandle['start']> } = {}
+    let stoppedOnRetraction = false
+    const stopDescription = handle.hostDescription.subscribe(() => {
+      if (handle.hostDescription.getSnapshot() !== undefined || owner.loop === undefined) return
+      stoppedOnRetraction = true
+      owner.loop.stop()
+    })
+    const states: string[] = []
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const loop = handle.start({
+      onStateChange: (state) => { states.push(state) },
+    }, { backoffBaseMs: 10, backoffFactor: 1, backoffMaxMs: 10, generationReadyTimeoutMs: 500 })
+    owner.loop = loop
+    try {
+      await vi.waitFor(() => {
+        expect(handle.hostDescription.getSnapshot()?.canOpenPath).toBe(true)
+      })
+      generation.end()
+
+      await vi.waitFor(() => { expect(stoppedOnRetraction).toBe(true) })
+      expect(handle.hostDescription.getSnapshot()).toBeUndefined()
+      expect(states).toEqual(['connected'])
+    } finally {
+      stopDescription()
+      loop.stop()
+      warnSpy.mockRestore()
+    }
+  })
+
   it('WebApiClient keeps unary calls on globalThis.fetch', async () => {
     ;(globalThis as Win).location = { hostname: 'localhost', search: '' }
     const handle = await mount()
