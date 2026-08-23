@@ -24,10 +24,15 @@ View 选择规则固定：有效且已注册的持久化选择优先，其次是
 
 `conversation.composer` 是通用 chain，其完整 owner currency 为：
 
-```ts
-export interface ComposerChainProps {
+```ts type-equiv
+/** Owner values used to elect a composer takeover. */
+interface ComposerChainProps {
+  /** Current Session identity used by temporary business-owned entries. */
   sessionId: SessionId | undefined
+  /** Current Session lifecycle state, absent without a selected Session. */
   session: SessionSnapshot | undefined
+  /** Effective business-owned interaction awaiting the user in this Session. */
+  pendingInteraction: SessionPendingInteraction | undefined
 }
 ```
 
@@ -64,4 +69,12 @@ selector 必须是 owner currency 的纯函数。非 null 返回值作为 `match
 
 ## 模型体验
 
-无。本包渲染浏览器状态，并通过 Session Controller API 发送用户确认提交的输入；它不构造模型请求。
+无，因为本包渲染浏览器状态，并通过 Session Controller API 发送用户确认提交的输入，而不构造模型请求。
+
+#### KV Cache 影响
+
+无；Conversation 组装和浏览器输入状态不会改变提供方侧的 prompt cache。
+
+## 已知限制与暂缓事项
+
+- **只有已注册 target 可以渲染**——除已注册的 `chat` 偏好外，shell 刻意不提供隐式 fallback target。

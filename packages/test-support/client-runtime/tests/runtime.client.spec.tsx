@@ -256,9 +256,11 @@ describe('stores', () => {
   it('storeOf guards: before renderRoot, and for storeless entries', async () => {
     const runtime = await runtimeWithFrame()
     runtime.slots.register({ name: 'trt.panel' }, () => null)
+    runtime.slots.register({ name: 'trt.chat', store: createSuiteStore() }, () => null)
     expect(() => runtime.storeOf('trt.panel')).toThrow(/before renderRoot/)
     runtime.renderRoot()
     expect(() => runtime.storeOf('trt.panel')).toThrow(/declares no store/)
+    expect(() => runtime.storeOf('trt.chat', 'missing')).toThrow(/no live Session binding/)
     await runtime.dispose()
   })
 

@@ -24,10 +24,15 @@ The resident composer survives no-Session and Session transitions. The no-Sessio
 
 `conversation.composer` is a generic chain. Its complete owner currency is:
 
-```ts
-export interface ComposerChainProps {
+```ts type-equiv
+/** Owner values used to elect a composer takeover. */
+interface ComposerChainProps {
+  /** Current Session identity used by temporary business-owned entries. */
   sessionId: SessionId | undefined
+  /** Current Session lifecycle state, absent without a selected Session. */
   session: SessionSnapshot | undefined
+  /** Effective business-owned interaction awaiting the user in this Session. */
+  pendingInteraction: SessionPendingInteraction | undefined
 }
 ```
 
@@ -62,6 +67,14 @@ try {
 
 The selector must be a pure function of the owner currency. Its non-null return is delivered to the component as `matched`; `PropsRuntime<'conversation.composer'>` supplies the standard Session and global props. Chain order remains ascending `priority`, then registration order, and the first non-null selector wins. The shell keeps the default composer mounted beneath a takeover. Request state, listeners, response encoding, and any request-specific child slots belong to the business package; they are not carried by `SessionSnapshot` or declared by this core package.
 
-## Model experience
+## Model Experience
 
-None. The package renders browser state and sends user-admitted inputs through Session Controller APIs; it does not construct model requests.
+None, as this package renders browser state and sends user-admitted inputs through Session Controller APIs without constructing model requests.
+
+#### KV Cache effect
+
+None; Conversation assembly and browser input state do not alter provider-side prompt caching.
+
+## Known Limitations and Deferred Work
+
+- **Only registered targets can render** — the shell deliberately has no implicit fallback target beyond the registered `chat` preference.

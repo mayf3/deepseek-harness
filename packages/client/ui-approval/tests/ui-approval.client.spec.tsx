@@ -56,6 +56,7 @@ function setupPlugin(): PluginBench {
   const registerPendingInteraction = vi.fn((_precedence: (value: PendingApproval) => number) => (
     value: PendingApproval,
   ) => {
+    _precedence(value)
     pending = [...pending, value]
     return () => { pending = pending.filter(candidate => candidate !== value) }
   })
@@ -254,6 +255,22 @@ describe('approval Remote Event consumer', () => {
     await expect(result).rejects.toBe(reason)
     expect(bench.pending.getSnapshot()).toEqual([])
     expect(bench.disposeSlot).not.toHaveBeenCalled()
+    await scope.fiber.dispose()
+  })
+
+  it('publishes a scoped request without optional request metadata', async () => {
+    const bench = setupPlugin()
+    const scope = createScope(bench.ctx, id('s1'))
+    await scope.fiber.await()
+    const result = bench.listener.call(scope.ctx, { toolName: 'read' }, () => Promise.resolve('unavailable'))
+    const pending = bench.pending.getSnapshot()[0]!
+
+    await pending.answer('rejected')
+
+    await expect(result).resolves.toBe('rejected')
+    expect(pending).toMatchObject({ toolName: 'read' })
+    expect(pending.callId).toBeUndefined()
+    expect(pending.reason).toBeUndefined()
     await scope.fiber.dispose()
   })
 

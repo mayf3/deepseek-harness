@@ -77,7 +77,6 @@ class PendingInteractionDomain<T extends SessionPendingInteractionBase> {
     return () => {
       if (!active) return
       active = false
-      if (this.values.get(interaction.key) !== interaction) return
       this.values.delete(interaction.key)
       this.changed()
     }
@@ -206,7 +205,7 @@ export class UiSession extends Service {
   private readonly pendingListeners = new Set<() => void>()
   /** Root source of pending UI interactions, independent from Controller snapshots. */
   readonly pendingInteractions: HostObservable<SessionPendingInteractionSnapshot> = {
-    getSnapshot: () => this.pendingSnapshot as SessionPendingInteractionSnapshot,
+    getSnapshot: () => this.pendingSnapshot,
     subscribe: (listener) => {
       this.pendingListeners.add(listener)
       return () => { this.pendingListeners.delete(listener) }
@@ -294,7 +293,7 @@ export class UiSession extends Service {
       this.publishPendingInteractions()
       return () => {
         const index = this.pendingDomains.indexOf(runtimeDomain)
-        if (index !== -1) this.pendingDomains.splice(index, 1)
+        this.pendingDomains.splice(index, 1)
         this.publishPendingInteractions()
       }
     }, 'uiSession.registerPendingInteraction()')
@@ -366,19 +365,18 @@ export class UiSession extends Service {
 
   private createMaterializedBinding(owner: SessionBinding): MaterializedBinding {
     const value = this.materialize(owner)
-    let releaseEffect: () => void | Promise<void> = () => {}
-    const record: MaterializedBinding = {
-      owner,
-      value,
-      release: () => { void releaseEffect() },
-    }
-    releaseEffect = owner.ctx.effect(() => () => {
+    const releaseEffect = owner.ctx.effect(() => () => {
       if (this.bindings.get(owner.sessionId) !== record) return
       this.bindings.delete(owner.sessionId)
       if (this.currentBinding !== value) return
       this.currentBinding = this.absent
       notifySubscribers(this.currentListeners, '[ui-session] current binding')
     }, `ui-session: binding ${owner.sessionId}`)
+    const record: MaterializedBinding = {
+      owner,
+      value,
+      release: () => { void releaseEffect() },
+    }
     return record
   }
 

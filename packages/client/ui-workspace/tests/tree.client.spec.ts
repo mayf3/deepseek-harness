@@ -57,6 +57,19 @@ describe('deriveGroups', () => {
       .toMatchObject({ pendingInteraction: 'plan-review', running: true })
   })
 
+  it.each(['approval', 'question'] as const)(
+    'projects the %s pending-interaction kind',
+    (kind) => {
+      const awaiting = summary(kind, 10)
+      const attention: ReadonlyMap<SessionId, SessionPendingInteractionBase> = new Map([[
+        awaiting.id,
+        { key: `${kind}:1`, kind, sessionId: awaiting.id },
+      ]])
+
+      expect(deriveFlat(list(awaiting), noArchive, attention)[0]?.pendingInteraction).toBe(kind)
+    },
+  )
+
   it('puts only real unaccounted Sessions in the trailing Ungrouped group', () => {
     const sessions = list(summary('owned', 1, '/projects/first'), summary('loose', 9, '/other'))
     const groups = deriveGroups(

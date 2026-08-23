@@ -53,6 +53,7 @@ async function bench(declare = true) {
   const registerPendingInteraction = vi.fn((_precedence: (value: PendingQuestion) => number) => (
     value: PendingQuestion,
   ) => {
+    _precedence(value)
     pending = [...pending, value]
     return () => { pending = pending.filter(candidate => candidate !== value) }
   })

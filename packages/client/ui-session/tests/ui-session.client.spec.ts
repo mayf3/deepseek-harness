@@ -260,6 +260,19 @@ describe('UiSession bindings', () => {
     )
   })
 
+  it('releases cached bindings when the owning Client context stops', async () => {
+    const ctx = new Context()
+    const bench = createSessionsBench(ctx)
+    const service = createUiSession(ctx, bench)
+    const id = sessionId('s1')
+    bench.binding(id)
+    bench.select(id)
+    service.adapter.current.getSnapshot()
+
+    await expect(ctx.fiber.dispose()).resolves.toBeUndefined()
+    await bench.release(id)
+  })
+
   it('rebuilds live bindings and removes only the disposed source contribution', () => {
     const ctx = new Context()
     const bench = createSessionsBench(ctx)
@@ -370,10 +383,30 @@ describe('UiSession bindings', () => {
     })).toThrow("uiSession.provide: duplicate prop 'useFeature' at prop 'useFeature'")
     expect(service.adapter.current.getSnapshot()).toBe(before)
   })
+
+  it('releases partially rebuilt bindings when a later Session contribution fails', () => {
+    const ctx = new Context()
+    const bench = createSessionsBench(ctx)
+    const service = createUiSession(ctx, bench)
+    service.adapter.resolve(bench.binding(sessionId('s1')).sessionId)
+    service.adapter.resolve(bench.binding(sessionId('s2')).sessionId)
+    let calls = 0
+
+    expect(() => service.provide({
+      props: ['partial'],
+      resolve: () => {
+        calls += 1
+        if (calls === 2) throw new Error('second binding failed')
+        return { props: { partial: true } }
+      },
+    })).toThrow('second binding failed')
+    expect(calls).toBe(2)
+    expect(service.adapter.resolve(sessionId('s1'))?.props).not.toHaveProperty('partial')
+  })
 })
 
 describe('UiSession pending interactions', () => {
-  it('publishes the highest-precedence exact object and removes each source independently', () => {
+  it('publishes the highest-precedence exact object and removes each source independently', async () => {
     const ctx = new Context()
     const bench = createSessionsBench(ctx)
     const service = createUiSession(ctx, bench)
@@ -386,12 +419,16 @@ describe('UiSession pending interactions', () => {
     const registerQuestion = service.registerPendingInteraction<SessionPendingInteractionBase>(
       interaction => interaction.kind === 'plan-review' ? 2 : 1,
     )
+    const registerBackground = service.registerPendingInteraction<SessionPendingInteractionBase>(
+      () => -1,
+    )
     listener.mockClear()
 
     const approval = { key: 'approval:1', kind: 'approval', sessionId: id }
     const duplicate = { key: 'approval:2', kind: 'approval', sessionId: id }
     const question = { key: 'question:1', kind: 'question', sessionId: id }
     const plan = { key: 'question:2', kind: 'plan-review', sessionId: id }
+    const background = { key: 'background:1', kind: 'background', sessionId: id }
     const removeApproval = registerApproval(approval)
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(approval)
     const removeDuplicate = registerApproval(duplicate)
@@ -400,7 +437,10 @@ describe('UiSession pending interactions', () => {
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(question)
     const removePlan = registerQuestion(plan)
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(plan)
+    const removeBackground = registerBackground(background)
+    expect(service.pendingInteractions.getSnapshot().get(id)).toBe(plan)
 
+    removeBackground()
     removeQuestion()
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(plan)
     removePlan()
@@ -408,8 +448,10 @@ describe('UiSession pending interactions', () => {
     removeDuplicate()
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(approval)
     removeApproval()
+    removeApproval()
     expect(service.pendingInteractions.getSnapshot().has(id)).toBe(false)
     off()
+    await ctx.fiber.dispose()
   })
 
   it('rejects duplicate keys and contains a failing aggregate subscriber', () => {
