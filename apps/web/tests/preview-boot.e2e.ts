@@ -8,27 +8,33 @@
  * Two milestones prove that happened — the host's `tree active` boot line,
  * whose lowering contract must be the one this checkout's packer emits, and the
  * workspace hero, which paints only after the client tree comes up over the
- * tunnel. The same page then creates a Workspace and Session, lists skills,
- * and writes through the settings and credentials providers, exercising the
- * upstream Chokidar instances over the Worker filesystem implementation.
+ * tunnel. The same page opens the seeded Workspace and showcase Session,
+ * verifies its tool/subagent/history examples, then writes through the
+ * settings and credentials providers. That keeps the upstream Chokidar
+ * instances exercised over the Worker filesystem implementation.
  *
  * The site is served the way a static host serves it: bytes from `dist/` with
  * no rewrite rules, so a missing file is a 404 rather than the index page.
  */
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
-import { extname, join, normalize } from 'node:path'
+import { dirname, extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import type { Browser } from 'playwright'
 import { expect, it } from 'vitest'
 import {
-  composeProfile, configTrees, indexWorkspacePackages, packVfsImage, WRAPPER_CONTRACT,
+  composeProfile, configTrees, indexWorkspacePackages, packVfsImage, packVfsOverlay,
+  previewFixtures, WRAPPER_CONTRACT,
 } from '@deepseek-ai/dsh-experimental-webworker-packer'
-import { IMAGE_FILE_NAME } from '@deepseek-ai/dsh-experimental-webworker-runtime'
+import {
+  IMAGE_FILE_NAME, PREVIEW_FIXTURE_MANIFEST_FILE, PREVIEW_FIXTURE_MANIFEST_VERSION,
+  type PreviewFixtureManifest,
+} from '@deepseek-ai/dsh-experimental-webworker-runtime'
+import { captureStableAria, compareOrRefreshGolden, webSnapshotMode } from './scaffold.ts'
 import { newEnglishPage, REPO_ROOT, saveFailureShot } from './support.ts'
 
 const DIST_ROOT = fileURLToPath(new URL('../dist', import.meta.url))
@@ -36,8 +42,21 @@ const DIST_ROOT = fileURLToPath(new URL('../dist', import.meta.url))
 /** Where the client looks for the image: the runtime's own name, beside the page. */
 const IMAGE_FILE = join(DIST_ROOT, 'preview', IMAGE_FILE_NAME)
 
+/** Built-in source catalog read by the pre-boot chooser. */
+const FIXTURE_MANIFEST_FILE = join(DIST_ROOT, 'preview', PREVIEW_FIXTURE_MANIFEST_FILE)
+
+/** Keyless browser golden for the pre-Worker source chooser. */
+const SOURCE_CHOOSER_EXPECTED = fileURLToPath(new URL('./snapshots/preview-boot/source-chooser.expected.md', import.meta.url))
+
+const SNAPSHOT_MODE = webSnapshotMode()
+
 /** Profile the preview deployment composes; `build:preview` packs the same one. */
 const PROFILE = 'web'
+
+/** Stable labels authored by the deterministic VFS example fixture. */
+const SHOWCASE_TITLE = 'WebWorker Preview Showcase'
+const SHOWCASE_TAIL = 'Preview tour complete'
+const SHOWCASE_OLDEST = 'History checkpoint 01: verify deterministic preview state.'
 
 /** Pages the preview needs; the Vite build emits both. */
 const PAGES = ['index.html', 'preview.html']
@@ -77,6 +96,12 @@ interface Site {
   close(): Promise<void>
 }
 
+interface PreviewAssets {
+  /** Static-host-relative path to a generated file outside `dist/`. */
+  readonly overrides: ReadonlyMap<string, string>
+  cleanup(): void
+}
+
 /**
  * Fail before the browser opens a page the build never produced.
  * @throws When either preview page is missing from `dist/`.
@@ -89,20 +114,25 @@ function requirePreviewPages(): void {
 }
 
 /**
- * The image file to serve, packed here when `dist/` carries none: `pnpm run
- * build` emits the pages but only `build:preview` packs, so this lane packs
- * for itself rather than skipping the deployment it is here to accept. An
- * image already in place is used as it stands — the worker refuses one lowered
- * against another wrapper contract, and that refusal names the rebuild. A
- * self-packed image lands in a temp directory, never in `dist/`: the
+ * The base image, fixture manifest, and overlays to serve, packed here when
+ * `dist/` does not carry the complete set: `pnpm run build` emits the pages but
+ * only `build:preview` packs these files, so this lane packs for itself rather
+ * than skipping the deployment it accepts. A complete built set is used as it
+ * stands — the worker refuses a base lowered against another wrapper contract.
+ * Self-packed files land in a temp directory, never in `dist/`: the
  * client-artifact digest record treats `dist/` as build-owned, so a test write
  * there fails the record check for every later consumer.
- * @returns The file to answer `preview/<image>` with, and its teardown.
+ * @returns Static-path overrides and their teardown.
  * @throws When the closure leaves dependencies unresolved, which would pack an
  * incomplete image the tree fails on later and further from the cause.
  */
-function requireVfsImage(): { path: string; cleanup(): void } {
-  if (existsSync(IMAGE_FILE)) return { path: IMAGE_FILE, cleanup: () => {} }
+function requireVfsAssets(): PreviewAssets {
+  const fixtureDefinitions = previewFixtures(REPO_ROOT)
+  const fixtureFiles = fixtureDefinitions.map(fixture =>
+    join(DIST_ROOT, 'preview', 'fixtures', `${fixture.id}.tar.gz`))
+  if ([IMAGE_FILE, FIXTURE_MANIFEST_FILE, ...fixtureFiles].every(existsSync)) {
+    return { overrides: new Map(), cleanup: () => {} }
+  }
   const packed = packVfsImage({
     config: composeProfile(REPO_ROOT, PROFILE),
     profile: PROFILE,
@@ -114,23 +144,48 @@ function requireVfsImage(): { path: string; cleanup(): void } {
     throw new Error(`preview boot: ${String(packed.missing.length)} dependencies did not resolve: ${packed.missing.join(', ')}`)
   }
   const directory = mkdtempSync(join(tmpdir(), 'dsh-preview-boot-'))
-  const path = join(directory, IMAGE_FILE_NAME)
-  writeFileSync(path, packed.image)
-  return { path, cleanup: () => { rmSync(directory, { recursive: true, force: true }) } }
+  const overrides = new Map<string, string>()
+  const writeAsset = (relativePath: string, bytes: Uint8Array | string): void => {
+    const path = join(directory, relativePath)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, bytes)
+    overrides.set(relativePath, path)
+  }
+  writeAsset(`preview/${IMAGE_FILE_NAME}`, packed.image)
+  const fixtures = fixtureDefinitions.map((fixture) => {
+    const relativePath = `preview/fixtures/${fixture.id}.tar.gz`
+    writeAsset(relativePath, packVfsOverlay(fixture.trees).image)
+    return {
+      id: fixture.id,
+      label: fixture.label,
+      description: fixture.description,
+      overlays: [`fixtures/${fixture.id}.tar.gz`],
+    }
+  })
+  const manifest: PreviewFixtureManifest = {
+    version: PREVIEW_FIXTURE_MANIFEST_VERSION,
+    defaultFixture: fixtures[0]?.id ?? null,
+    fixtures,
+  }
+  writeAsset(`preview/${PREVIEW_FIXTURE_MANIFEST_FILE}`, `${JSON.stringify(manifest, null, 2)}\n`)
+  return { overrides, cleanup: () => { rmSync(directory, { recursive: true, force: true }) } }
 }
 
 /**
- * Answer one request with the file it names under `dist/`; the image path
- * answers from wherever {@link requireVfsImage} put the file.
+ * Answer one request with its generated override or the file under `dist/`.
  * @param request - Incoming request; only its path is read.
  * @param response - Response to write the bytes or the 404 to.
- * @param imagePath - File behind `preview/<image>`.
+ * @param overrides - Generated deployment files used when `dist/` has none.
  */
-async function respond(request: IncomingMessage, response: ServerResponse, imagePath: string): Promise<void> {
+async function respond(
+  request: IncomingMessage,
+  response: ServerResponse,
+  overrides: ReadonlyMap<string, string>,
+): Promise<void> {
   const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname
   const relative = normalize(decodeURIComponent(path)).replace(/^\/+/, '')
   try {
-    const body = await readFile(relative === `preview/${IMAGE_FILE_NAME}` ? imagePath : join(DIST_ROOT, relative))
+    const body = await readFile(overrides.get(relative) ?? join(DIST_ROOT, relative))
     response.writeHead(200, { 'content-type': MIME[extname(relative)] ?? 'application/octet-stream' })
     response.end(body)
   } catch {
@@ -144,11 +199,11 @@ async function respond(request: IncomingMessage, response: ServerResponse, image
 
 /**
  * Serve `dist/` over loopback with static-host semantics.
- * @param imagePath - File behind `preview/<image>`.
+ * @param overrides - Generated deployment files used when `dist/` has none.
  * @returns The origin to navigate, and its teardown.
  */
-async function serveDist(imagePath: string): Promise<Site> {
-  const server = createServer((request, response) => { void respond(request, response, imagePath) })
+async function serveDist(overrides: ReadonlyMap<string, string>): Promise<Site> {
+  const server = createServer((request, response) => { void respond(request, response, overrides) })
   await new Promise<void>((listening) => { server.listen(0, '127.0.0.1', listening) })
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('preview boot: the static server bound no port')
@@ -188,12 +243,13 @@ async function within<T>(work: Promise<T>, ms: number, stalled: string): Promise
 
 it('boots the packed worker deployment to an interactive page', async () => {
   requirePreviewPages()
-  const image = requireVfsImage()
+  const assets = requireVfsAssets()
   try {
-    const site = await serveDist(image.path)
+    const site = await serveDist(assets.overrides)
     try {
       const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] })
       try {
+        await bootEmptyPreview(site.origin, browser)
         await bootPreview(site.origin, browser)
       } finally {
         await browser.close()
@@ -202,7 +258,7 @@ it('boots the packed worker deployment to an interactive page', async () => {
       await site.close()
     }
   } finally {
-    image.cleanup()
+    assets.cleanup()
   }
 }, 600_000)
 
@@ -227,26 +283,34 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
   })
   try {
     await page.goto(`${origin}/preview.html`, { waitUntil: 'domcontentloaded' })
+    await page.getByRole('heading', { name: '选择 Preview 数据源' }).waitFor()
+    expect(await page.locator('input[name="preview-source"][value="vfs-example"]').isChecked()).toBe(true)
+    expect(await page.getByText('空白环境', { exact: true }).count()).toBe(1)
+    expect(await page.getByText('WebFS 目录', { exact: true }).count()).toBe(1)
+    expect(await page.locator('input[name="preview-source"][value="webfs"]').isDisabled()).toBe(true)
+    expect(await page.getByRole('textbox', { name: 'Choose workspace' }).count()).toBe(0)
+    await compareOrRefreshGolden(
+      SOURCE_CHOOSER_EXPECTED,
+      await captureStableAria(page, '[data-preview-source-card]', '/__preview_no_workspace__'),
+      SNAPSHOT_MODE,
+    )
+    await page.getByRole('button', { name: '启动 Preview' }).click()
     const bootLine = await within(treeActive, BOOT_TIMEOUT_MS, `preview boot: the worker never reported "${TREE_ACTIVE}"`)
     // The activated tree ran bodies lowered against the contract this
     // checkout's packer emits; a dist built before a contract change would
     // report the older one.
     expect(bootLine).toContain(`image lowering=${WRAPPER_CONTRACT}`)
+    expect(bootLine).toContain('data overlays=1')
     // The hero's workspace picker is the client tree's first interactive
     // surface, so it appears only once the startup chain completed over the
     // tunnel.
     await page.getByRole('textbox', { name: 'Choose workspace' }).waitFor({ timeout: HERO_TIMEOUT_MS })
     const continueButton = page.getByRole('button', { name: 'Continue' })
-    if (await continueButton.isVisible()) await continueButton.click()
-    await page.getByRole('button', { name: 'Configure later' }).click()
-    await page.getByRole('textbox', { name: 'Choose workspace' }).click()
-    const dialog = page.getByRole('dialog', { name: 'Select Workspace Directory' })
-    await dialog.waitFor({ timeout: 10_000 })
-    await dialog.getByRole('button', { name: 'Edit path' }).click()
-    const pathInput = dialog.getByRole('textbox', { name: 'Edit path' })
-    await pathInput.fill('/dsh/workspace')
-    await pathInput.press('Enter')
-    await dialog.getByRole('button', { name: 'Open', exact: true }).click()
+    await continueButton.waitFor({ timeout: 30_000 })
+    await continueButton.click()
+    const configureLater = page.getByRole('button', { name: 'Configure later' })
+    await configureLater.waitFor({ timeout: 30_000 })
+    await configureLater.click()
     await page.locator('textarea:enabled[placeholder="Describe what you want to build"]')
       .waitFor({ timeout: 30_000 })
 
@@ -296,9 +360,7 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
         const refreshed = await api.skills.list({ sessionId })
         if (!refreshed.result.ok) throw new Error(`skill.list refresh failed: ${refreshed.result.error.message}`)
       }
-      await createDirectory('/dsh/workspace', '.agents')
-      await createDirectory('/dsh/workspace/.agents', 'skills')
-      await createDirectory('/dsh/workspace/.agents/skills', 'placeholder')
+      await createDirectory('/dsh/workspace/.agents/skills', 'runtime-created')
       const settings = await api.settings.describe({})
       if (!settings.result.ok) throw new Error(`settings.describe failed: ${settings.result.error.message}`)
       const shell = settings.result.value.namespaces.find(namespace => namespace.ns === 'shell')
@@ -317,8 +379,31 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
         credentialConfigured: credentials.result.value.credentials.PREVIEW_TEST_SECRET?.configured,
       }
     })
-    expect(exercised.skillCount).toBeGreaterThanOrEqual(0)
+    expect(exercised.skillCount).toBeGreaterThan(0)
     expect(exercised.credentialConfigured).toBe(true)
+
+    const sessions = page.getByRole('tree', { name: 'Sessions' })
+    const showcase = sessions.getByRole('treeitem').filter({ hasText: SHOWCASE_TITLE })
+    await expect.poll(() => showcase.count(), { timeout: 15_000 }).toBe(1)
+    await showcase.click()
+    await page.getByText(SHOWCASE_TAIL, { exact: true }).waitFor({ timeout: 30_000 })
+
+    expect(await page.getByText(SHOWCASE_OLDEST, { exact: true }).count()).toBe(0)
+    await page.getByText('PREVIEW.md', { exact: true }).waitFor()
+    await page.getByText('src/preview.ts', { exact: true }).waitFor()
+    await page.getByText('Update to-do list', { exact: true }).waitFor()
+    await page.getByText('Error: ENOENT: no such file, open missing.txt', { exact: true }).waitFor()
+
+    const subagents = page.getByRole('button', { name: '2 subagents' })
+    await subagents.waitFor({ timeout: 15_000 })
+    await subagents.hover()
+    const catalog = page.getByRole('tree', { name: 'Subagent sessions' })
+    await catalog.getByRole('treeitem', { name: /Review preview architecture/ }).waitFor()
+    await catalog.getByRole('treeitem', { name: /Continue preview verification/ }).waitFor()
+    await catalog.press('Escape')
+
+    await page.getByRole('button', { name: 'Load earlier', exact: true }).click()
+    await page.getByText(SHOWCASE_OLDEST, { exact: true }).waitFor({ timeout: 15_000 })
     expect(pageErrors.map(error => error.message)).toEqual([])
     expect(consoleErrors.filter(line =>
       /watchFile|failed to watch|node-addon-landlock-run\.probe|sandbox backend is usable|SANDBOX_UNAVAILABLE/i.test(line))).toEqual([])
@@ -327,5 +412,67 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
     throw pageErrors.length === 0
       ? error
       : new AggregateError([error, ...pageErrors], 'preview boot failed, with uncaught page errors')
+  }
+}
+
+/** Verify the chooser can boot the untouched base image and reach first-run UI. */
+async function bootEmptyPreview(origin: string, browser: Browser): Promise<void> {
+  const page = await newEnglishPage(browser)
+  const pageErrors: Error[] = []
+  const consoleErrors: string[] = []
+  const failedResponses: string[] = []
+  page.on('pageerror', (error) => { pageErrors.push(error) })
+  page.on('response', (response) => {
+    if (response.status() >= 400) failedResponses.push(new URL(response.url()).pathname)
+  })
+  const treeActive = new Promise<string>((reported) => {
+    page.on('console', (message) => {
+      const text = message.text()
+      if (text.includes(TREE_ACTIVE)) reported(text)
+      if (message.type() === 'error' || message.type() === 'warning') consoleErrors.push(text)
+    })
+  })
+  try {
+    await page.goto(`${origin}/preview.html?preview-fixture=none`, { waitUntil: 'domcontentloaded' })
+    expect(await page.getByRole('heading', { name: '选择 Preview 数据源' }).count()).toBe(0)
+    const bootLine = await within(
+      treeActive,
+      BOOT_TIMEOUT_MS,
+      `empty preview boot: the worker never reported "${TREE_ACTIVE}"`,
+    )
+    expect(bootLine).toContain(`image lowering=${WRAPPER_CONTRACT}`)
+    expect(bootLine).toContain('data overlays=0')
+    await page.getByRole('textbox', { name: 'Choose workspace' }).waitFor({ timeout: HERO_TIMEOUT_MS })
+    const sessionCount = await page.evaluate(async () => {
+      const transport = (globalThis as typeof globalThis & {
+        __DSH_TRANSPORT__?: { fetch(input: string, init: RequestInit): Promise<Response> }
+      }).__DSH_TRANSPORT__
+      if (transport === undefined) throw new Error('empty preview transport is absent after boot')
+      const response = await transport.fetch('/api/session/list', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          type: 'client-request', rpcId: 'empty-preview-session-list', method: 'session/list',
+          payload: { args: { _request: {} } },
+        }),
+      })
+      const body = await response.json() as {
+        result: { ok: true; value: { items: unknown[] } } | { ok: false; error: { message: string } }
+      }
+      if (!body.result.ok) throw new Error(`empty session/list failed: ${body.result.error.message}`)
+      return body.result.value.items.length
+    })
+    expect(sessionCount).toBe(0)
+    expect(pageErrors.map(error => error.message)).toEqual([])
+    expect(failedResponses).toEqual(['/plugins/events'])
+    expect(consoleErrors.filter(line => !line.includes('Failed to load resource: the server responded with a status of 404')))
+      .toEqual([])
+  } catch (error) {
+    await saveFailureShot(page, 'preview-boot-empty')
+    throw pageErrors.length === 0
+      ? error
+      : new AggregateError([error, ...pageErrors], 'empty preview boot failed, with uncaught page errors')
+  } finally {
+    await page.close()
   }
 }

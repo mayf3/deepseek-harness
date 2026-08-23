@@ -26,8 +26,8 @@ import {
 } from '@deepseek-ai/dsh-experimental-webworker-runtime/src/module-system/module-loader.ts'
 import { inflateImage } from '@deepseek-ai/dsh-experimental-webworker-runtime/src/storage/image-gzip.ts'
 import { loadVfsImage } from '@deepseek-ai/dsh-experimental-webworker-runtime/src/storage/memory.ts'
-import { indexWorkspacePackages } from '../src/repository.ts'
-import { DEFAULT_ROOT, MANIFEST_PATH, packVfsImage } from '../src/pack.ts'
+import { indexWorkspacePackages, previewFixtures } from '../src/repository.ts'
+import { DEFAULT_ROOT, MANIFEST_PATH, packVfsImage, packVfsOverlay } from '../src/pack.ts'
 
 const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 
@@ -36,6 +36,32 @@ const SUBJECT = '@deepseek-ai/dsh-timeout'
 const LANDLOCK = '@deepseek-ai/node-addon-landlock-run'
 
 const workspaces = indexWorkspacePackages(repoRoot)
+
+describe('preview example overlays', () => {
+  it('packs source-looking paths and dot directories into a separate overlay', () => {
+    const fixture = previewFixtures(repoRoot)[0]
+    expect(fixture?.id).toBe('vfs-example')
+    const result = packVfsOverlay(fixture?.trees ?? [])
+    expect(new TextDecoder().decode(result.files['workspace/src/preview.ts']))
+      .toContain("previewStatus = 'ready'")
+    expect(new TextDecoder().decode(result.files['workspace/.agents/skills/preview-tour/SKILL.md']))
+      .toContain('name: preview-tour')
+    expect(Object.keys(result.files).filter(path => path.endsWith('/session.jsonl'))).toHaveLength(3)
+  })
+
+  it('fails loud when a declared seed tree is absent', () => {
+    expect(() => packVfsOverlay([
+      { mount: 'workspace', directory: join(repoRoot, 'missing-preview-seed') },
+    ])).toThrow(/tree workspace is missing/)
+  })
+
+  it('refuses overlays that could replace runtime files', () => {
+    const fixture = previewFixtures(repoRoot)[0]
+    expect(() => packVfsOverlay([
+      { mount: 'config', directory: fixture?.trees[0]?.directory ?? repoRoot },
+    ])).toThrow(/must stay under home or workspace/)
+  })
+})
 
 /**
  * The pack consumes built `lib/` output. An unbuilt checkout (the unit

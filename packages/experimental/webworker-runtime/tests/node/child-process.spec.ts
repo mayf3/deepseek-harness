@@ -108,10 +108,9 @@ it('reports that a synchronous run cannot happen, without throwing at the probe'
   })
   expect(spawnSync(launcherPath(), ['--ro', '/', '--', 'echo', 'x']).error?.message)
     .toContain('commands run asynchronously')
-  expect(spawnSync(launcherPath(), ['--probe', '--'])).toMatchObject({
-    status: LAUNCHER_FAILURE_EXIT,
-    stderr: expect.any(Buffer),
-  })
+  const failedProbe = spawnSync(launcherPath(), ['--probe', '--'])
+  expect(failedProbe.status).toBe(LAUNCHER_FAILURE_EXIT)
+  expect(Buffer.isBuffer(failedProbe.stderr)).toBe(true)
 })
 
 it('keeps the native Landlock package API and CLI failure contract', async () => {

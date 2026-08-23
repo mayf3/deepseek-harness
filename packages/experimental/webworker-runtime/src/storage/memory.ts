@@ -5,6 +5,7 @@
  * @module @deepseek-ai/dsh-experimental-webworker-runtime/src/storage/memory
  */
 import { dirname, join, normalize, resolve, SEP } from '../module-system/posix-path.ts'
+import { IMAGE_OVERLAY_DIRECTORIES } from '../image-layout.ts'
 import { parseTar } from './tar.ts'
 import type {
   Vfs, VfsBigIntStats, VfsDir, VfsDirent, VfsEncoding, VfsError, VfsFileHandle, VfsMutation,
@@ -768,6 +769,41 @@ export function loadVfsImage(image: Uint8Array, root = '/dsh', vfs = new MemoryV
     if (entry.directory) {
       vfs.seedDirectory(target, { mode: entry.mode })
       continue
+    }
+    vfs.seed(target, entry.bytes, { mode: entry.mode })
+  }
+  return vfs
+}
+
+/**
+ * Apply one ordered data overlay to an already mounted base image.
+ *
+ * Overlay entries may replace files only under the layout's data directories;
+ * module code, configuration, and the lowering manifest cannot be shadowed.
+ * Paths containing traversal segments are refused before normalization. Later
+ * overlays win for files, while file/directory type conflicts fail loud.
+ * @param image - Uncompressed ustar overlay archive.
+ * @param root - Virtual root shared with the base image.
+ * @param vfs - Mounted filesystem to update.
+ * @returns The same filesystem after applying the overlay.
+ */
+export function loadVfsOverlay(image: Uint8Array, root: string, vfs: MemoryVfs): MemoryVfs {
+  for (const entry of parseTar(image)) {
+    const relativeName = entry.name.startsWith('./') ? entry.name.slice(2) : entry.name
+    const path = relativeName.endsWith('/') ? relativeName.slice(0, -1) : relativeName
+    const segments = path.split('/')
+    if (path === '' || relativeName.startsWith(SEP)
+      || segments.some(segment => segment === '' || segment === '.' || segment === '..')
+      || !IMAGE_OVERLAY_DIRECTORIES.includes(segments[0] ?? '')) {
+      throw new Error(`webworker vfs: overlay entry must stay under ${IMAGE_OVERLAY_DIRECTORIES.join('/ or ')}, received "${entry.name}"`)
+    }
+    const target = join(root, path)
+    if (entry.directory) {
+      vfs.seedDirectory(target, { mode: entry.mode })
+      continue
+    }
+    if (vfs.existsSync(target) && vfs.statSync(target).isDirectory()) {
+      throw new Error(`webworker vfs: overlay file cannot replace directory "${target}"`)
     }
     vfs.seed(target, entry.bytes, { mode: entry.mode })
   }

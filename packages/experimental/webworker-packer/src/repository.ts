@@ -12,7 +12,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { DSH_HOME_ENV } from '@deepseek-ai/dsh-home-paths'
-import type { ConfigTree, PackResult } from './pack.ts'
+import type { ConfigTree, ImageTree, PackResult } from './pack.ts'
 
 /**
  * Repository directories scanned for workspace and vendored packages. The
@@ -27,6 +27,21 @@ const CLI_PACKAGE = 'apps/cli'
 
 /** Composition entry point: the `dsh` CLI, run from source. */
 const CLI_ENTRY = `${CLI_PACKAGE}/src/bin.ts`
+
+/** Repository-owned deterministic filesystem content offered by the preview. */
+const PREVIEW_EXAMPLE_ROOT = 'packages/experimental/webworker-runtime/tests/fixtures/vfs-example'
+
+/** One built-in Preview source and the trees packed into its overlay. */
+export interface PreviewFixture {
+  /** URL/query-safe identifier. */
+  readonly id: string
+  /** User-facing chooser label. */
+  readonly label: string
+  /** User-facing chooser detail. */
+  readonly description: string
+  /** Opaque trees packed into this fixture's overlay archive. */
+  readonly trees: readonly ImageTree[]
+}
 
 /**
  * Index every workspace and vendored package by name.
@@ -128,6 +143,23 @@ export function configTrees(repoRoot: string): ConfigTree[] {
       ...tree.scanRoster === undefined ? {} : { scanRoster: tree.scanRoster },
     }
   })
+}
+
+/**
+ * Built-in filesystem fixtures offered by the repository preview.
+ * Session and Workspace semantics remain opaque here; the owning runtime tests
+ * validate those files through their production readers.
+ * @param repoRoot - Absolute repository root.
+ * @returns Named chooser entries and their overlay trees.
+ */
+export function previewFixtures(repoRoot: string): PreviewFixture[] {
+  const root = join(repoRoot, PREVIEW_EXAMPLE_ROOT)
+  return [{
+    id: 'vfs-example',
+    label: '内置综合示例',
+    description: '示例 Workspace、工具卡、子代理与分页会话。',
+    trees: ['home', 'workspace'].map(mount => ({ mount, directory: join(root, mount) })),
+  }]
 }
 
 /**

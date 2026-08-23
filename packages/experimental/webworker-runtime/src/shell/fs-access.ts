@@ -76,13 +76,13 @@ function statsOf(stats: VfsStats): ShellStats {
  */
 export function hostFileSystem(): ShellFileSystem {
   const vfs = (): ReturnType<typeof requireActiveVfs> => requireActiveVfs()
-  const stat = async (path: string): Promise<ShellStats | undefined> => {
+  const stat = (path: string): Promise<ShellStats | undefined> => {
     try {
-      return statsOf(vfs().statSync(path) as VfsStats)
+      return Promise.resolve(statsOf(vfs().statSync(path) as VfsStats))
     } catch {
       // Absence is the answer callers branch on; every other failure mode of
       // the in-memory backend is also "this path holds nothing readable".
-      return undefined
+      return Promise.resolve(undefined)
     }
   }
   // Several members take no await: the face is asynchronous because a process
@@ -101,18 +101,22 @@ export function hostFileSystem(): ShellFileSystem {
       if ((await stat(path))?.directory === true) throw filesystemError('EISDIR', 'read', path)
       return vfs().readFileSync(path, 'utf8') as string
     },
-    writeText: async (path: string, text: string, append = false): Promise<void> => {
+    writeText: (path: string, text: string, append = false): Promise<void> => {
       if (append) vfs().appendFileSync(path, text)
       else vfs().writeFileSync(path, text)
+      return Promise.resolve()
     },
-    mkdir: async (path: string, recursive: boolean): Promise<void> => {
+    mkdir: (path: string, recursive: boolean): Promise<void> => {
       vfs().mkdirSync(path, { recursive })
+      return Promise.resolve()
     },
-    remove: async (path: string, options: { recursive: boolean; force: boolean }): Promise<void> => {
+    remove: (path: string, options: { recursive: boolean; force: boolean }): Promise<void> => {
       vfs().rmSync(path, options)
+      return Promise.resolve()
     },
-    rename: async (from: string, to: string): Promise<void> => {
+    rename: (from: string, to: string): Promise<void> => {
       vfs().renameSync(from, to)
+      return Promise.resolve()
     },
   }
 }
