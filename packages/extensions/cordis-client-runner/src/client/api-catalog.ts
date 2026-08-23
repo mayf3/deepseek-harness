@@ -149,6 +149,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Single-locale untyped form for language-pack contributions and namespaces outside the merge table.',
         parameters: [{ name: 'ns', description: 'namespace.' }, { name: 'locale', description: 'locale tag.' }, { name: 'dict', description: 'dictionary.' }],
         returns: 'disposer (idempotent).',
+        throws: ['when locale is not a BCP 47-style tag.'],
       },
       {
         signature: 'bind<N extends Extract<keyof LocaleNamespaceMap, string>>(ns: N): TranslateNS<N>',

@@ -375,6 +375,7 @@ export class LocaleRuntime {
    * @param locale - locale tag.
    * @param dict - dictionary.
    * @returns disposer (idempotent).
+   * @throws when locale is not a BCP 47-style tag.
    */
   register(ns: string, locale: string, dict: LocaleDict): () => void
   register(ns: string, localeOrDicts: string | Record<string, LocaleDict>, dict?: LocaleDict): () => void {
@@ -382,6 +383,11 @@ export class LocaleRuntime {
       // Overload guarantees dict on the single-locale arm.
       ? [[localeOrDicts, dict as LocaleDict]]
       : Object.entries(localeOrDicts)
+    for (const [locale] of pairs) {
+      if (!LOCALE_ID_PATTERN.test(locale)) {
+        throw new Error(`locale id "${locale}" is not a BCP 47-style tag`)
+      }
+    }
     let locales = this.dicts.get(ns)
     if (!locales) {
       locales = new Map()
