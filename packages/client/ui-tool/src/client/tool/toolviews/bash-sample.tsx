@@ -35,8 +35,8 @@ function stateStatus(state: ToolRowState, t: BashRowProps['t']): string | null {
 /** Renders expandable Bash output with an accessible lifecycle label. */
 export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }: BashRowProps) {
   const model = toolRowModel(toolName, block)
-  // Session workspace root: the terminal view's cwd resolves against it (an
-  // omitted workdir IS the workspace), which the pure presenter cannot do.
+  // An omitted shell workdir is the session workspace; relative values resolve
+  // against it before reaching the terminal primitive.
   const cwd = useSessions(list => list.byId[sessionId]?.cwd)
   const terminal = terminalCardModel(block, cwd)
   // A failing exit status is the terminal card's own error signal (the call
@@ -47,7 +47,7 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
   const status = stateStatus(state, t)
   const [expanded, setExpanded] = useState(false)
   // Execution failures (for example cancellation before the process reports a
-  // terminal result) use the generic presenter. Keep their recorded args and
+  // terminal result) use the generic body. Keep their recorded args and
   // full error reachable instead of collapsing the row to the first line.
   const genericError = terminal === null
     && model.state === 'error'
