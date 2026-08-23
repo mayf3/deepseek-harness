@@ -480,6 +480,9 @@
     "testing/2026-07-18-tui-terminal-state-snapshots.zh.md": "sha256:26750f240f6c8a7b28746f62fe161b357e9c5dd52867cc7037399f1ed6ff37fa",
     "testing/2026-07-26-execa-for-test-subprocess-plumbing.i18n.yaml": "sha256:dd45cddb591b892739b75b0c180bde7f14008f4769227b863571475be295e1e0",
     "testing/2026-07-26-execa-for-test-subprocess-plumbing.md": "sha256:1f45a69d0a7367ec5afbf112a77b355339b35270af8ff52696bee879cdf770d3",
-    "testing/2026-07-26-execa-for-test-subprocess-plumbing.zh.md": "sha256:8a24bdc8376373d7a97f65cefc07078824bf918d6a9934056a025ecfafe8634b"
+    "testing/2026-07-26-execa-for-test-subprocess-plumbing.zh.md": "sha256:8a24bdc8376373d7a97f65cefc07078824bf918d6a9934056a025ecfafe8634b",
+    "testing/2026-08-12-required-python-runtime-pull-request-ci.i18n.yaml": "sha256:741e7e58e5e8a9c82d901c4a16a70cea9bd256eac0e94179b5a24a231bb9fe1f",
+    "testing/2026-08-12-required-python-runtime-pull-request-ci.md": "sha256:1f1273d7a550667533e29c76efd148aebf57581a91729c877b44a5e43a52d9ad",
+    "testing/2026-08-12-required-python-runtime-pull-request-ci.zh.md": "sha256:6b9bf126c6b83d9b21e135d38df677c0d5623168b4353c6ddb706f76762c2193"
   }
 }

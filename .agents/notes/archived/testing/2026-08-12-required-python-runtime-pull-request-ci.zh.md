@@ -1,6 +1,7 @@
 # Agent Note: 必需的 Python 运行时拉取请求验证
 
 Status: implemented
+Archived: 2026-08-23
 
 [English](2026-08-12-required-python-runtime-pull-request-ci.md) | 中文
 
