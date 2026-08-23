@@ -1133,6 +1133,11 @@ export interface PiAiCompatProfile {
   supportsReasoningEffort?: boolean
   /** Whether the endpoint accepts `stream_options: {include_usage: true}`; `openai-completions`. */
   supportsUsageInStreaming?: boolean
+  /**
+   * Whether streams include `finish_reason`; `false` lets pi-ai infer the
+   * terminal reason when the stream ends; `openai-completions`.
+   */
+  supportsFinishReason?: boolean
   /** Which output-cap field the endpoint reads; `openai-completions`. */
   maxTokensField?: NonNullable<OpenAICompletionsCompat['maxTokensField']>
   /** Whether tool results must carry `name`; `openai-completions`. */
@@ -1153,6 +1158,10 @@ export interface PiAiCompatProfile {
    * can read, so kwargs set beside another format are sent nowhere.
    */
   chatTemplateKwargs?: NonNullable<OpenAICompletionsCompat['chatTemplateKwargs']>
+  /** Arguments sent as `chat_template_args` under the `baseten` thinking format; `openai-completions`. */
+  chatTemplateArgs?: NonNullable<OpenAICompletionsCompat['chatTemplateArgs']>
+  /** Whether the endpoint accepts `thinking_token_budget` to cap vLLM reasoning; `openai-completions`. */
+  supportsThinkingTokenBudget?: boolean
   /**
    * Whether the endpoint accepts `strict` in tool definitions;
    * `openai-completions`, the three Responses protocols, `bedrock-converse-stream`.

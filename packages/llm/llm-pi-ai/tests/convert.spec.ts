@@ -758,6 +758,14 @@ describe('mapStopReason / mapUsage', () => {
     ['stop', { kind: 'stop' }],
     ['length', { kind: 'max-tokens' }],
     ['toolUse', { kind: 'tool-calls' }],
+    ['pending', {
+      kind: 'error',
+      failure: { message: 'pi-ai stream for model "deepseek-v4-flash" ended pending', code: 'PI_AI_ERROR' },
+    }],
+    ['deferred', {
+      kind: 'error',
+      failure: { message: 'pi-ai deferred response for model "deepseek-v4-flash" is not supported', code: 'PI_AI_ERROR' },
+    }],
     ['aborted', { kind: 'aborted', failure: { message: 'pi-ai stream aborted', code: 'ABORTED' } }],
   ] as const)('maps %s', (stopReason, expected) => {
     expect(mapStopReason(assistant({ stopReason, content: [{ type: 'text', text: 'ok' }] }))).toEqual(expected)

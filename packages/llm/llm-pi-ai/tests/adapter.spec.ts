@@ -132,7 +132,7 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.requests[0]).toMatchObject({
       model: 'deepseek-v4-flash',
       temperature: 0.2,
-      max_completion_tokens: 77,
+      max_tokens: 77,
       thinking: { type: 'enabled' },
       reasoning_effort: 'max',
     })
@@ -483,6 +483,7 @@ describe('provider profile lifecycle', () => {
         reasoning: {
           efforts: [
             { id: ReasoningEffortId('off'), name: 'Off' },
+            { id: ReasoningEffortId('low'), name: 'Low' },
             { id: ReasoningEffortId('high'), name: 'High' },
             { id: ReasoningEffortId('max'), name: 'Max' },
           ],
@@ -975,7 +976,10 @@ describe('abort wiring', () => {
       messages: [],
       signal: controller.signal,
     })) chunks.push(chunk)
-    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'aborted' } })
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'finish',
+      reason: { kind: 'aborted', failure: { code: 'ABORTED' } },
+    })
   })
 
   it('honors a pre-aborted caller signal', async () => {
