@@ -3,18 +3,12 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 import { auditSubsystemPages } from './verify-subsystem-pages.ts'
-
-const roots: string[] = []
-
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
-})
 
 function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'dsh-subsystem-pages-'))
-  roots.push(root)
+  onTestFinished(() => rmSync(root, { recursive: true, force: true }))
   return root
 }
 
