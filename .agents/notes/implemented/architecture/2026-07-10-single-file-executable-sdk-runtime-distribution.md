@@ -23,14 +23,14 @@ The exe is packaged with the **`--sea` (enhanced SEA) mode** of [@yao-pkg/pkg](h
 
 Terminology reminder: pkg's `/snapshot` VFS has nothing to do with this repo's testing-system "snapshot" (ACP replay expected outputs, `$DSH_SNAPSHOT`); this document says "VFS" for the former.
 
-### The serving interface is a plugin: the two packages sdk/server + sdk/python-runtime
+### The serving interface is a plugin inside the dsh application
 
-The deterministic protocol implementation (`server.ts` / `transport.ts`) lands as two packages on the existing `acp/acp` + `examples/acp-demo` pattern — the serving surface is itself a plugin:
+The deterministic serving surface is a plugin selected by the packaged `dsh` application:
 
 - [`packages/sdk/server`](../../../../packages/sdk/server/README.md) (`@deepseek-ai/dsh-sdk-jsonrpc-server`): the pure protocol plugin; on apply it mounts `HarnessSdkJsonRpcServer` plus a line-delimited JSON-RPC transport on the process stdio, with disposal through `ctx.effect()`. Whether to serve is decided by `cordis.yml`; a yml that does not mount it is a legitimate process that does not serve. Protocol-level exit belongs to the plugin (after answering and flushing the `shutdown` response it disposes the root runtime so persistence drains, then `exit(0)`; an HMR-style unload only stops the service without exiting the process).
-- [`packages/sdk/python-runtime`](../../../../packages/sdk/python-runtime/README.md) (`@deepseek-ai/dsh-sdk-python-runtime`): a private packaged entry — `installFailLoud` + `loadEnv` + config discovery + `boot()` from [`dsh-app-boot`](../../../../packages/boot/app-boot/src/index.ts), done once boot completes; the server is brought up by the `dsh-sdk-jsonrpc-server` entry in the yml. Its only dependency is app-boot. Process-level exit belongs to the packaged entry (stdin EOF/SIGTERM → dispose then 0, SIGINT → 130).
+- [`apps/cli`](../../../../apps/cli/README.md) (`@deepseek-ai/dsh`): the packaged application entry; its `sdk` profile mounts `dsh-sdk-jsonrpc-server`, and the CLI owns environment layering, profile composition, stdin/signal shutdown, and process exit.
 
-Config discovery has two channels and fails loudly when both are missing: the `DSH_CORDIS_CONFIG` environment variable first (the SDK client convention), then an argv positional argument; no default path and no built-in fallback whatsoever — "the plugins actually booted are decided by an external cordis.yml" is a hard semantic.
+The Python client supplies an explicit Harness home and selects the `sdk` profile plus ordered patch files. A missing home, profile, bundle, or server row fails loudly; there is no external complete-config fallback. The [Python profile-runtime decision](2026-08-23-python-sdk-dsh-profile-runtime.md) owns this application surface.
 
 ### Plugin resolution: the VFS holds a real package tree, the closure manifest IS the deploy root
 

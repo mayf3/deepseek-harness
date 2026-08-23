@@ -1,7 +1,6 @@
-# Complete unattended minimal-agent composition for the Python SDK. The model
-# sees one deployment-selected system prompt and only the owner-scoped
-# persistent Bash and string-replace editor tools. Runtime-context injection and
-# context compaction are absent.
+# Complete minimal-agent composition fixture for lower-level snapshot tests.
+# Python users apply `minimal.patch.yml` to `dsh --profile sdk`. This fixture
+# retains the same two-tool behavior without defining a supported launch path.
 
 - id: sdk-jsonrpc-server
   name: '@deepseek-ai/dsh-sdk-jsonrpc-server'

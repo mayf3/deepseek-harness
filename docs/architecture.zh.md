@@ -44,7 +44,7 @@ dsh --profile web --dump-config
 
 Vendored CLI、仅用于构建和测试的可执行文件、进程内直接挂载插件以及私有浏览器 WebWorker 预览都不属于 Harness 应用启动器。[`verify-application-entrypoints`](../scripts/verify-application-entrypoints.ts)将每个包 bin、可执行源码与根 demo 归入显式类别，并拒绝任何绕过 `dsh` 的 Node 应用路径。
 
-打包后的 Python SDK 运行时是唯一的临时应用例外。其私有 [`dsh-sdk-python-runtime`](../packages/sdk/python-runtime/README.zh.md) 载体与 `dsh-sdk-python-runtime-closure` 部署 manifest 保持当前 Python API、协议格式、默认 `cordis.yml`、环境变量、wheel 包名称、`dsh-jsonrpc-agent-pkg-<platform>-<arch>` 可执行文件、伴随文件及平台集合不变。后续 Python 迁移会改为启动 `dsh --profile sdk`、删除私有直读配置载体，然后把该可执行文件族重命名为 `deepseek-harness-sdk-runtime-<platform>-<arch>`。
+Python SDK 遵循相同的应用架构。其运行时 wheel 把普通 `dsh` CLI 打包为 `deepseek-harness-sdk-runtime-<platform>-<arch>`，客户端以显式 Harness home 启动 `dsh --profile sdk`。Python 暴露 profile 选择与有序 patch 文件，而不是完整 Cordis 树；持久外部插件通过 `dsh plugin` 安装。已删除的私有直读配置载体没有兼容 bin 或回退 parser。
 
 ## 核心包
 
