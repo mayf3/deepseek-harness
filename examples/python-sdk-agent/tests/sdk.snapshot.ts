@@ -19,6 +19,7 @@ import {
   normalizeSessionLog,
   normalizeSessionSnapshot,
   normalizeStdout,
+  parseSnapshotManifest,
   refreshFixtureReplacements,
   scrubRequestHeaders,
   scrubSessionSnapshot,
@@ -31,7 +32,7 @@ import {
 import { DeepSeekHarness, type HarnessNotification, type RunResult } from '@deepseek-ai/dsh-sdk-client'
 
 const testsDir = dirOf(import.meta.url)
-const snapshotsDir = join(testsDir, 'snapshots')
+const snapshotsDir = fileURLToPath(new URL('../../../snapshots/sdk/', import.meta.url))
 const liveConfig = join(testsDir, '..', 'typescript-sdk.cordis.yml')
 const replayConfig = join(testsDir, '..', 'typescript-sdk.cordis.snapshot.yml')
 const minimalLiveConfig = join(testsDir, '..', 'typescript-sdk-minimal.cordis.yml')
@@ -65,7 +66,7 @@ function dirOf(url: string): string {
 }
 
 interface SdkScenario {
-  /** Scenario name; the snapshots/<name> fixture directory. */
+  /** Scenario name; the `snapshots/sdk/<name>` fixture directory. */
   name: string
   /** The user prompt for the single SDK turn. */
   prompt: string
@@ -370,6 +371,11 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
   for (const scenario of SCENARIOS) {
     it(`replays ${scenario.name} through the SDK`, async () => {
       const scenarioDir = join(snapshotsDir, scenario.name)
+      const manifest = parseSnapshotManifest(
+        await readFile(join(scenarioDir, 'snapshot.yml'), 'utf8'),
+        join(scenarioDir, 'snapshot.yml'),
+      )
+      expect(manifest).toEqual({ version: 1, profile: 'sdk' })
       const notificationsExpectedPath = join(scenarioDir, 'notifications.expected.jsonl')
       const resultExpectedPath = join(scenarioDir, 'result.expected.json')
 
