@@ -654,6 +654,10 @@ raw event 只记录 tool name，不记录具体 ToolDefinition。Client 使用�
 
 旧 Session 可能缺字段，手工修改日志可能带畸形值。每个 Client model 必须局部收窄，不能把未知数组或对象直接传给 UI primitive。
 
+### preset-owned projection 可用性
+
+history 不为当前组合中缺失的 projection unit 补偿。需要在冷读中保持可见的 preset-owned unit，必须由共享的 Session preparation/projection 组合在 restore 前提供其定义；history 不得重新增加 preset mount 或 presenter setup 分支。
+
 ### 双 target 同步
 
 Chat 与 Trajectory 各有独立 Tool Definition，两者都携带 raw fields；card derivation 只能留在 `ui-tool`，不能复制进两个 Definition。

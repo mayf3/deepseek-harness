@@ -654,6 +654,10 @@ A raw event records the tool name but not the specific ToolDefinition. The Clien
 
 Old Sessions may lack fields, and manually edited logs may contain malformed values. Each Client model must narrow locally and cannot pass unknown arrays or objects directly into UI primitives.
 
+### Preset-owned projection availability
+
+History does not compensate for projection units absent from the current composition. A preset-owned unit that must remain visible across a cold read requires the shared Session preparation/projection composition to make its definition available before restore; history must not regain a preset-mount or presenter setup branch.
+
 ### Two targets must stay synchronized
 
 Chat and Trajectory have separate Tool Definitions and both carry the raw fields. Card derivation remains only in `ui-tool` and cannot be copied into either Definition.
