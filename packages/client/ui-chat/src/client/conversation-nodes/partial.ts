@@ -1,6 +1,6 @@
 import type { StreamChunk } from '@deepseek-ai/dsh-llm/types'
 import type { AssistantBlock, PartialAssistant } from '../contract/snapshot.ts'
-import { emptyAssistantBlock, toAssistantBlock } from '../contract/snapshot.ts'
+import { emptyAssistantBlock, toAssistantBlock } from './event-projection.ts'
 
 /**
  * Whether a stream chunk changes the partial assistant projection shown by the UI.

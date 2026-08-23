@@ -1,9 +1,12 @@
-/** Assistant block classifier (moved here with sessions/conversation.ts). */
+/** Chat-owned event-to-view projection. */
 
 import { describe, expect, it } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-api-remotes/client'
-import { toAssistantBlock, toAssistantBlocks } from '../src/client/contract/snapshot.ts'
+import {
+  displayFailure, emptyAssistantBlock, toAssistantBlock, toAssistantBlocks,
+  isTokenDelta,
+} from '../src/client/conversation-nodes/event-projection.ts'
 
 describe('toAssistantBlock', () => {
   it('classifies the four block shapes', () => {
@@ -27,5 +30,30 @@ describe('toAssistantBlock', () => {
       { kind: 'image', attachment },
     ])
     expect(toAssistantBlock(blocks[0] as ContentBlock)).toEqual({ kind: 'text', text: '正文' })
+    expect(toAssistantBlock({ type: 'future' } as unknown as ContentBlock))
+      .toEqual({ kind: 'other', block: { type: 'future' } })
+  })
+
+  it('creates empty streamed block projections', () => {
+    expect(emptyAssistantBlock('text')).toEqual({ kind: 'text', text: '' })
+    expect(emptyAssistantBlock('reasoning')).toEqual({ kind: 'reasoning', text: '' })
+    expect(emptyAssistantBlock('tool-call')).toEqual({ kind: 'tool-call', callId: '', name: '', argsRaw: '' })
+    expect(emptyAssistantBlock('future')).toEqual({ kind: 'other', block: null })
+  })
+
+  it('redacts auth failures and presents the remaining durable values', () => {
+    expect(displayFailure({ code: 'AUTH', message: 'secret' })).toEqual({ code: 'AUTH', message: '' })
+    expect(displayFailure({ code: 'TRANSPORT', message: 'offline' }))
+      .toEqual({ code: 'TRANSPORT', message: 'offline' })
+    expect(displayFailure({ code: 'UNKNOWN' })).toEqual({ code: 'UNKNOWN', message: '{"code":"UNKNOWN"}' })
+    expect(displayFailure(null)).toEqual({ message: 'null' })
+  })
+
+  it('recognizes only non-empty token deltas', () => {
+    expect(isTokenDelta({ type: 'text-delta', index: 0, text: 'x' } as never)).toBe(true)
+    expect(isTokenDelta({ type: 'reasoning-delta', index: 0, text: '' } as never)).toBe(false)
+    expect(isTokenDelta({ type: 'tool-call-delta', index: 0, id: 'c', argumentsDelta: '', name: 'tool' } as never)).toBe(true)
+    expect(isTokenDelta({ type: 'tool-call-delta', index: 0, id: 'c', argumentsDelta: '' } as never)).toBe(false)
+    expect(isTokenDelta({ type: 'finish', reason: 'stop' } as never)).toBe(false)
   })
 })

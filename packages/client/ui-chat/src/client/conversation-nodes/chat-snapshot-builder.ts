@@ -9,7 +9,7 @@ import type {
   ChatLocationNodeIndex, ChatNodeStore, ChatSnapshot, ConversationNode,
   LegacyConversationSlice, PartialAssistant, RunningToolCall,
 } from '../contract/snapshot.ts'
-import { sessionRecallLabels } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { sessionRecallLabels } from './event-projection.ts'
 
 const EMPTY_KEYS: readonly string[] = []
 const EMPTY_TURNS: readonly number[] = []

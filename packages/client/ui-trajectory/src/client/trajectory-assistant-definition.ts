@@ -1,12 +1,13 @@
 import type { Context } from '@deepseek-ai/cordis'
-import {
-  displayFailure, emptyAssistantBlock, isTokenDelta, toAssistantBlock,
-  toAssistantBlocks,
-  type AssistantBlock, type AssistantMessageNode, type ConversationLocation,
-  type ConversationMatch, type ConversationNodeContext, type ConversationNodeDefinition,
-  type PartialAssistant, type RequestView,
+import type {
+  AssistantBlock, AssistantMessageNode, ConversationLocation,
+  ConversationMatch, ConversationNodeContext, ConversationNodeDefinition,
+  PartialAssistant, RequestView,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { trajectoryNode } from './trajectory-definition-common.ts'
+import {
+  displayFailure, emptyAssistantBlock, isTokenDelta, toAssistantBlock, toAssistantBlocks,
+} from './trajectory-event-projection.ts'
 
 /* jscpd:ignore-start -- Target-owned Definitions intentionally keep their event
  * state machines independent; see ../../../../../.agents/notes/implemented/
