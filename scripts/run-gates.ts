@@ -241,7 +241,7 @@ export function gatesForMode(selected: Mode): Gate[] {
         pnpmScript('issue-management', 'test:issue-management', { label: 'Issue management policy' }),
         pnpmScript('duplication', 'duplication'),
         snapshotGate(),
-        goldenGate(),
+        expectedOutputGate(),
         pnpmScript('build', 'build'),
         pnpmScript('build:web', 'build:web'),
         ...hygieneLeafGates({ artifactNeeds: ['build'] }),
@@ -428,7 +428,7 @@ function ciConsumerGates(): Gate[] {
       needs: validatedBuild,
     }),
     snapshotGate(validatedBuild),
-    goldenGate(validatedBuild),
+    expectedOutputGate(validatedBuild),
     webSnapshotGate(validatedBuild),
     pnpmScript('doc-typecheck', 'doc-typecheck:contracts-ready', {
       needs: validatedBuild,
@@ -596,10 +596,10 @@ function snapshotGate(needs: string[] = ['build']): Gate {
   })
 }
 
-// Owner-local process goldens consume built package exports without entering
+// Owner-local process expectations consume built package exports without entering
 // the recorded-session corpus or the credentialed provider lane.
-function goldenGate(needs: string[] = ['build']): Gate {
-  return pnpmScript('golden', 'test:golden', {
+function expectedOutputGate(needs: string[] = ['build']): Gate {
+  return pnpmScript('expected-output', 'test:expected', {
     env: { DSH_EXAMPLE_MODE: 'lib' },
     needs,
   })

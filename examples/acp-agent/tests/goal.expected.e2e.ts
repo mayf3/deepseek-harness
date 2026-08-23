@@ -15,12 +15,12 @@ import { describe, expect, it } from 'vitest'
 
 // This lifecycle proof has goal-specific timestamp normalization and semantic
 // assertions, so it owns a separate snapshot root from the generic suite.
-const scenarioDir = join(dirname(fileURLToPath(import.meta.url)), 'goal-goldens/goal-round-driver')
+const scenarioDir = join(dirname(fileURLToPath(import.meta.url)), 'goal-expected/goal-round-driver')
 const fixtureFile = join(scenarioDir, 'session.jsonl')
 const overrideFile = join(scenarioDir, 'replay.override.json')
 const stdoutExpected = join(scenarioDir, 'stdout.expected.jsonl')
 const sessionExpected = join(scenarioDir, 'session.expected.jsonl')
-const wrapupDir = join(dirname(fileURLToPath(import.meta.url)), 'goal-goldens/goal-wrapup')
+const wrapupDir = join(dirname(fileURLToPath(import.meta.url)), 'goal-expected/goal-wrapup')
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 
 const agent: AgentUnderTest = {

@@ -16,7 +16,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { hasClass, installAssembledBootEnv, mountAssembledApp, REFRESHING_GOLDEN } from './assembled-boot.ts'
 
-const EXPECTED = join(process.cwd(), 'apps/web/tests/goldens/todo-row/parallel-plan.expected.txt')
+const EXPECTED = join(process.cwd(), 'apps/web/tests/expected/todo-row/parallel-plan.expected.txt')
 
 installAssembledBootEnv()
 

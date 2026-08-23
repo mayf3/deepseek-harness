@@ -38,7 +38,7 @@ const STEER = 'Interjection: include the word BANANA in your final reply.'
 // replacement answers both model calls of a FRESH session (no recorded
 // session.jsonl exists — call 0 keeps the turn open with a question-tool
 // call, call 1 is the reply after both steerings drain).
-const STEER_ALL_DIR = fileURLToPath(new URL('./goldens/steer-all', import.meta.url))
+const STEER_ALL_DIR = fileURLToPath(new URL('./expected/steer-all', import.meta.url))
 const STEER_ALL_FIXTURE = join(STEER_ALL_DIR, 'session.jsonl')
 const STEER_ALL_OVERRIDE = join(STEER_ALL_DIR, 'replay.override.json')
 const STEER_ALL_MID = join(STEER_ALL_DIR, 'mid-steer.expected.md')

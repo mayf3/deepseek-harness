@@ -20,7 +20,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { hasClass, installAssembledBootEnv, mountAssembledApp, REFRESHING_GOLDEN } from './assembled-boot.ts'
 
-const EXPECTED = join(process.cwd(), 'apps/web/tests/goldens/search-card/grep-card.expected.txt')
+const EXPECTED = join(process.cwd(), 'apps/web/tests/expected/search-card/grep-card.expected.txt')
 
 installAssembledBootEnv()
 

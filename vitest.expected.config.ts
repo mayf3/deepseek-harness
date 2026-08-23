@@ -10,8 +10,8 @@ export default defineConfig({
     execArgv: vitestExecArgv,
     setupFiles: ['./scripts/test-invariants.ts'],
     include: [
-      'apps/cli/tests/**/*.golden.e2e.ts',
-      'examples/*/tests/**/*.golden.e2e.ts',
+      'apps/cli/tests/**/*.expected.e2e.ts',
+      'examples/*/tests/**/*.expected.e2e.ts',
     ],
     testTimeout: 120_000,
     hookTimeout: 30_000,

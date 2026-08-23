@@ -16,7 +16,7 @@ Reserve the top-level `snapshots/` tree and `*.snapshot.ts` suffix for scenarios
 
 The recorded session remains the primary input and expected output. Human-originated messages drive the selected public interface, recorded assistant chunks drive deterministic model replay, and the normalized persisted result must equal the fixture. Parent and child sessions share one typed redaction map. Committed fixtures contain relationship-preserving identity tokens and replace request system prompts and tool schemas with tokens; each distinct header class retains one explicit sidecar owner.
 
-Every existing ACP scenario receives a behavior-preserving destination. Ordinary one-shot behavior uses the headless profile, persistent machine control uses the SDK profile, and only ACP protocol behavior remains ACP-owned. Web scenarios driven by a recorded session join the corpus and retain their ARIA or geometry expected output as secondary evidence. Web and package tests without a recorded-session source remain owner-local goldens and stop using snapshot paths or filenames.
+Every existing ACP scenario receives a behavior-preserving destination. Ordinary one-shot behavior uses the headless profile, persistent machine control uses the SDK profile, and only ACP protocol behavior remains ACP-owned. Web scenarios driven by a recorded session join the corpus and retain their ARIA or geometry expected output as secondary evidence. Web and package tests without a recorded-session source keep owner-local expected output and stop using snapshot paths or filenames.
 
 Workspace inputs remain scenario-local. A mutating scenario compares a complete expected final workspace that record and refresh never rewrite, so a model or tool self-report cannot satisfy the test. Existing intentional session reuse remains an explicit acyclic owner reference; the corpus adds no workspace inheritance or general fixture-merging mechanism.
 
@@ -26,7 +26,7 @@ Workspace inputs remain scenario-local. A mutating scenario compares a complete 
 
 **Move every scenario to a new headless test driver.** A private driver would reproduce the application-entrypoint problem and cannot express multi-turn, cancellation, or background lifecycle control available through the shipped SDK profile.
 
-**Centralize every expected output under `snapshots/`.** ARIA, geometry, generator, and unit goldens do not use a recorded session as both input and result. Mixing them would keep the current ambiguous terminology and weaken package ownership.
+**Centralize every expected output under `snapshots/`.** ARIA, geometry, generator, and unit expectations do not use a recorded session as both input and result. Mixing them would keep the current ambiguous terminology and weaken package ownership.
 
 **Create one declarative browser and terminal language.** Complex UI and PTY scenarios need interaction code. A shared snapshot core plus interface adapters removes application drivers without adding a second test framework.
 
@@ -36,15 +36,15 @@ Workspace inputs remain scenario-local. A mutating scenario compares a complete 
 
 - Every existing recorded-session scenario has one passing replacement before its old owner is removed.
 - Every process-level snapshot starts through `dsh`, and the application-entrypoint inventory no longer allows the retired snapshot drivers.
-- Every top-level scenario owns or references session JSONL; non-session goldens remain owner-local.
+- Every top-level scenario owns or references session JSONL; non-session expected output remains owner-local.
 - Committed session fixtures are redaction fixed points, contain no system-prompt or tool-schema bulk, and retain exactly one pin per header class.
 - Mutating scenarios verify their final workspace externally.
-- Owner-local process goldens use `*.golden.e2e.ts` and a separate built-output gate.
+- Owner-local process expectations use `*.expected.e2e.ts` and a separate built-output gate.
 - Source and built launch modes, browser replay, SDK projections, packaged Python runtime cases, documentation gates, and repository hygiene pass.
 
 ## Consequences
 
-The corpus makes controller ownership visible: ordinary Agent behavior no longer inherits ACP protocol output, SDK and Web projections retain their interface-specific evidence, and only ACP cancellation and permission exchanges remain ACP-owned. Contributors review one normalized session diff plus the sidecars or UI goldens that add independent evidence. Adding a composition requires a manifest class pin; adding a volatile identity requires a typed relationship-preserving redaction rule rather than a broader text scrubber.
+The corpus makes controller ownership visible: ordinary Agent behavior no longer inherits ACP protocol output, SDK and Web projections retain their interface-specific evidence, and only ACP cancellation and permission exchanges remain ACP-owned. Contributors review one normalized session diff plus the sidecars or UI expectations that add independent evidence. Adding a composition requires a manifest class pin; adding a volatile identity requires a typed relationship-preserving redaction rule rather than a broader text scrubber.
 
 ## Risks
 

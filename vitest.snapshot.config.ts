@@ -58,7 +58,7 @@ export default defineConfig({
     // (value 1 restores fully serial replay on constrained machines). Record
     // and refresh stay serial: record spends real API quota per scenario, and
     // refresh write-back harvests volatile values from fixtures already on
-    // disk, so concurrent writers would corrupt goldens.
+    // disk, so concurrent writers would corrupt expected outputs.
     testTimeout: 120_000,
     hookTimeout: 30_000,
     fileParallelism: (process.env.DSH_SNAPSHOT || 'replay') === 'replay' && snapshotMaxConcurrency > 1,
