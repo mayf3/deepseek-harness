@@ -141,7 +141,6 @@ describe('session-log invariants', () => {
     const enclosed = (await setup()).ctx.sessions.create()
     enclosed.append('turn/start', { turn: 1 })
     enclosed.append('step/start', { turn: 1, step: 1 })
-    expect(() => enclosed.append('todo/write', { todos: [] })).not.toThrow()
     expect(() => enclosed.append('request/header', {
       header: { config: { provider: 'mock', model: 'mock' } },
       reason: 'initial',
@@ -277,7 +276,7 @@ describe('session-log invariants', () => {
         content: [{
           ...original.data.message.content[0],
           content: [{ type: 'text', text: 'pruned' }],
-        }],
+        }] satisfies typeof original.data.message.content,
       }),
     }, {
       surfaceOp: { op: 'replace', start: original.seq, end: original.seq },
@@ -316,7 +315,7 @@ describe('session-log invariants', () => {
         content: [{
           ...original.data.message.content[0],
           content: [{ type: 'text', text: 'pruned' }],
-        }],
+        }] satisfies typeof original.data.message.content,
       }),
     }, {
       surfaceOp: { op: 'replace', start: original.seq, end: original.seq },

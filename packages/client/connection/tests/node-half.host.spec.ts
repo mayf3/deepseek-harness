@@ -11,6 +11,7 @@ import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { RpcId, type ClientRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import { API_PATH, apply, HOST_EVENTS_PATH, inject, MUX_EVENTS_PATH, type HostConnectionHandle } from '../src/index.ts'
+import { DEFAULT_MAX_REQUEST_BODY_BYTES } from '../src/http-bridge.ts'
 
 /** Structural webServer fake recording both route registries. */
 function fakeHttpServer(
@@ -90,6 +91,11 @@ async function mounted(config?: { trustedHosts?: string[] }): Promise<{
 }
 
 describe('connection node half', () => {
+  it('reserves enough default carrier capacity for the 200 MiB image batch', () => {
+    expect(DEFAULT_MAX_REQUEST_BODY_BYTES).toBe(300 * 1024 * 1024)
+    expect(DEFAULT_MAX_REQUEST_BODY_BYTES).toBeGreaterThan(Math.ceil(200 * 1024 * 1024 * 4 / 3) + 1024 * 1024)
+  })
+
   it('fails loud when the carrier cap cannot hold the configured image batch', () => {
     const ctx = new Context()
     const routes: WebRoute[] = []
@@ -199,8 +205,8 @@ describe('connection node half', () => {
     const loopback = fakeResponse()
     await routes[0]!.handler(fakeRequest({ host: '127.0.0.1:3080' }), loopback.response)
     expect(loopback.state.status).toBe(404)
-    // LAN authority declared as a port-less IP literal — the shape the CLI
-    // derives for `--host 0.0.0.0` — passes markerless curl on any port.
+    // An all-interfaces composition derives port-less LAN IP literals, which
+    // pass markerless curl on any port.
     const lan = fakeResponse()
     await routes[0]!.handler(fakeRequest({ host: '192.168.1.5:3080' }), lan.response)
     expect(lan.state.status).toBe(404)

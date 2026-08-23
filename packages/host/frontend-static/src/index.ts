@@ -1,13 +1,13 @@
 /**
  * @deepseek-ai/dsh-host-frontend-static — SPA dist server over the webserver
- * fallback seat: serves the built frontend directory with the semantics the
- * Web shell locked at step1 — traversal outside the dist root is 403, any
- * miss falls back to index.html with HTTP 200 (SPA routing), unknown
- * extensions ship as octet-stream, non-GET/HEAD is 405. Every index response
- * runs through the webserver's registered index taps (boot-manifest
- * injection). The dist location is workspace knowledge of the composing
- * application, so `distIndex` is typically supplied through a `!!js`
- * expression, never hardcoded by a deployment.
+ * fallback seat: serves the built frontend directory with explicit index
+ * entry points. A readable index renders at the dist root and configured index
+ * path; missing paths return 404, traversal outside the dist root is 403,
+ * unknown extensions ship as octet-stream, and non-GET/HEAD is 405. Every
+ * index response runs through the webserver's index render (structured
+ * injection rows, then raw taps). The dist location is workspace knowledge of
+ * the composing application, so `distIndex` is typically supplied through a
+ * `!!js` expression, never hardcoded by a deployment.
  * @module @deepseek-ai/dsh-host-frontend-static
  */
 
@@ -34,15 +34,27 @@ export const Config: z<Config> = z.object({
   distIndex: z.string().required(),
 })
 
+const HTML_MIME = 'text/html; charset=utf-8'
+
 const MIME: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
+  '.html': HTML_MIME,
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.json': 'application/json',
   '.map': 'application/json',
   '.webmanifest': 'application/manifest+json',
+  // The packed VFS image. Served as its own bytes, never as a Content-Encoding:
+  // the worker inflates the body itself, and a transport-level encoding would
+  // leave it inflating an already-decoded archive.
+  '.gz': 'application/gzip',
 }
+
+const STATIC_MISS_CODES: ReadonlySet<string | undefined> = new Set([
+  'ENOENT',
+  'EISDIR',
+  'ENOTDIR',
+])
 
 /**
  * Serve one GET/HEAD static request from the dist root.
@@ -50,8 +62,8 @@ const MIME: Record<string, string> = {
  * @param res - the node:http response to write.
  * @param distRoot - absolute dist root directory (resolved by the caller).
  * @param distIndex - absolute path of index.html inside distRoot.
- * @param renderIndex - produces the index.html body (index-tap injection) for
- * `/` and every SPA fallback.
+ * @param renderIndex - produces the index.html body (structured injection
+ * rendering) for the dist root and configured index path.
  */
 export async function serveStatic(
   pathname: string, res: ServerResponse, distRoot: string, distIndex: string,
@@ -66,23 +78,26 @@ export async function serveStatic(
     res.end()
     return
   }
-  const serveIndex = async (): Promise<void> => {
-    const body = await renderIndex()
-    res.writeHead(200, { 'content-type': MIME['.html'] })
-    res.end(body)
-  }
-  if (target === distRoot || target === distIndex) {
-    await serveIndex()
+  let body: string | Buffer
+  let type: string
+  try {
+    if (target === distRoot || target === distIndex) {
+      body = await renderIndex()
+      type = HTML_MIME
+    } else {
+      body = await readFile(target)
+      type = MIME[extname(target)] ?? 'application/octet-stream'
+    }
+  } catch (error) {
+    // Only absent or non-file targets are 404; other filesystem failures reach
+    // the webserver's request-failure handling.
+    if (!STATIC_MISS_CODES.has((error as NodeJS.ErrnoException).code)) throw error
+    res.writeHead(404)
+    res.end()
     return
   }
-  try {
-    const body = await readFile(target)
-    res.writeHead(200, { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' })
-    res.end(body)
-  } catch {
-    // Miss (ENOENT/EISDIR) falls back to index.html with 200 (SPA routing).
-    await serveIndex()
-  }
+  res.writeHead(200, { 'content-type': type })
+  res.end(body)
 }
 
 /**
@@ -93,8 +108,14 @@ export async function serveStatic(
 export function apply(ctx: Context, config: Config): void {
   const distIndex = config.distIndex
   const distRoot = dirname(distIndex)
-  const renderIndex = async (): Promise<string> =>
-    ctx.webServer.applyIndexTaps(await readFile(distIndex, 'utf8'))
+  // The dist is built with a relative base so the same files mount under any
+  // static directory; served pages also answer deep SPA-fallback paths, where
+  // relative asset URLs would resolve under the request directory, so the
+  // served form anchors them at the site root ahead of every URL-bearing tag.
+  const renderIndex = async (): Promise<string> => {
+    const body = ctx.webServer.renderIndex(await readFile(distIndex, 'utf8'))
+    return body.replace(/<head(?:\s[^>]*)?>/i, open => `${open}<base href="/">`)
+  }
   ctx.effect(() => ctx.webServer.registerFallback(async (req, res) => {
     // Non-GET/HEAD without a matching named route is 405 (fallback-only
     // semantics: named routes own their method handling).

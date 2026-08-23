@@ -18,9 +18,6 @@
       "path": "../ui-slots"
     },
     {
-      "path": "../web-react"
-    },
-    {
       "path": "../../host/apiproxy"
     },
     {
@@ -40,6 +37,9 @@
     },
     {
       "path": "../../session/session-title"
+    },
+    {
+      "path": "../../todo/tool-todo"
     },
     {
       "path": "../../llm/llm"

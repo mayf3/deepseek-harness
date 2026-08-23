@@ -5,6 +5,7 @@ import { resolvePwshPath } from './packages/shell/pwsh-local/src/resolve.ts'
 import { defineConfig } from 'vitest/config'
 import { standardDecoratorPlugin, vitestExecArgv } from './vitest.shared.ts'
 import { COVERAGE_EXEMPT_ENV, coverageExemptHeavySuites } from './scripts/coverage-exempt.ts'
+import { COVERAGE_PARTITION_MODE_ENV } from './scripts/coverage-partitions.ts'
 
 // Prints exact `path:line:col` records for every uncovered statement, branch
 // path, and function when a file misses the per-file 100% gate — the built-in
@@ -42,6 +43,17 @@ const windowsUnsupportedTests = process.platform === 'win32'
       'packages/subprocess/subprocess-local/tests/process-inspector.spec.ts',
       'packages/subprocess/subprocess-local/tests/spawn.spec.ts',
       'packages/subprocess/subprocess-local/tests/terminal.spec.ts',
+      // Oracle-diff suites: they compare the worker's POSIX path/url faces
+      // against the host Node's own answers, which are win32 semantics on
+      // Windows. The worker always speaks POSIX; the Linux lanes hold the diff.
+      'packages/experimental/webworker-runtime/tests/node/path-diff.spec.ts',
+      'packages/experimental/webworker-runtime/tests/node/shim-diff.spec.ts',
+      // The subprocess ladder over the worker's child_process face: its kill
+      // rung reaches the in-worker process table through `process.kill`,
+      // which the ladder's win32 branch replaces with taskkill-by-real-pid —
+      // undeliverable to a table pid. The worker host always reports 'linux',
+      // so the Linux lanes hold the ladder.
+      'packages/experimental/webworker-runtime/tests/node/child-process.spec.ts',
     ]
   : []
 
@@ -56,6 +68,10 @@ const windowsUnsupportedCoveragePackages = process.platform === 'win32'
 const windowsOnlyCoverageExclusions = process.platform !== 'win32'
   ? [
       'packages/sandbox/sandbox-windows-acl/src/**/*.ts',
+      // The koffi-backed Win32 table (Toolhelp32/GetProcessTimes/taskkill)
+      // executes only on win32; its decision logic is unit-pinned on every
+      // host through the injected-internals suites.
+      'packages/subprocess/subprocess-local/src/windows-inspector.ts',
     ]
   : []
 
@@ -99,6 +115,12 @@ if (coverageExemptRaw !== undefined && coverageExemptRaw !== '' && coverageExemp
 const coverageExemptExcludes = coverageExemptRaw === '1'
   ? coverageExemptHeavySuites.map(suite => suite.exclude)
   : []
+
+const coveragePartitionRaw = process.env[COVERAGE_PARTITION_MODE_ENV]
+if (coveragePartitionRaw !== undefined && coveragePartitionRaw !== '' && coveragePartitionRaw !== '1') {
+  throw new Error(`vitest config: ${COVERAGE_PARTITION_MODE_ENV} must be '1' or unset, got ${JSON.stringify(coveragePartitionRaw)}.`)
+}
+const coveragePartitionMode = coveragePartitionRaw === '1'
 
 // These suites exercise process-global state, process APIs, or timing-sensitive process I/O
 // that worker threads cannot isolate reliably under aggregate gate contention.
@@ -186,7 +208,7 @@ export default defineConfig({
         'packages/client/ui-primitives/src/RiskConfirmation.tsx',
         'packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx',
         'packages/client/ui-workspace/src/client/WorkspacePicker.tsx',
-        'packages/client/web-react/src/*',
+        'packages/client/ui-renderer/src/client/*',
         // This isolated settings-scope lifecycle has complete unit coverage;
         // keep it out of the broader client-runtime GUI debt exemption.
         'packages/client/runtime/src/**/!(settings-scope).ts',
@@ -200,6 +222,14 @@ export default defineConfig({
         'packages/client/ui-layout/src/*',
         'packages/client/web/src/*',
         'packages/host/webserver/src/*',
+        // The browser-worker runtime and its image packer: the executing
+        // composition is a real dedicated Worker driven by the web browser lane
+        // (apps/web/tests/preview-boot.e2e.ts), which unit-process V8 coverage
+        // cannot observe. Unit specs cover the algorithmic cores; the assembled
+        // evidence is that boot. TODO(webworker): revisit when a browser-grade
+        // coverage lane exists.
+        'packages/experimental/webworker-runtime/src/**',
+        'packages/experimental/webworker-packer/src/*',
         'packages/client/modules/src/client/system.ts',
         'packages/client/hmr/src/client/index.ts',
         // Web config-tree boot round: the new host-side web-transport halves
@@ -243,6 +273,8 @@ export default defineConfig({
         'packages/client/ui-workspace/src/client/index.ts',
         'packages/test-support/client-runtime/src/translate.ts',
         'packages/client/ui-primitives/src/JsonTree.tsx',
+        'packages/client/ui-settings-models/src/client/DeepSeekOnboardingDialog.tsx',
+        'packages/client/ui-settings-models/src/client/welcome-store.ts',
         'packages/extensions/*/src/**/*.ts',
         'packages/extensions/*/src/**/*.tsx',
         // Typert generator: correctness is pinned by its fixture suites and
@@ -268,16 +300,20 @@ export default defineConfig({
       // Per-file so a well-covered big file can't subsidize a bare one.
       // Every v8 ignore comment must carry a reason — see the quality-gates Agent Note
       // (.agents/notes/implemented/process/2026-06-11-quality-gates.md).
-      thresholds: {
-        perFile: true,
-        statements: 100,
-        branches: 100,
-        functions: 100,
-        lines: 100,
-      },
-      reporter: process.env.CI
-        ? ['text', uncoveredLocationsReporter]
-        : ['text', 'html', uncoveredLocationsReporter],
+      thresholds: coveragePartitionMode
+        ? undefined
+        : {
+            perFile: true,
+            statements: 100,
+            branches: 100,
+            functions: 100,
+            lines: 100,
+          },
+      reporter: coveragePartitionMode
+        ? []
+        : process.env.CI
+          ? ['text', uncoveredLocationsReporter]
+          : ['text', 'html', uncoveredLocationsReporter],
     },
   },
 })

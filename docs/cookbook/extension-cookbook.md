@@ -90,7 +90,7 @@ export function apply(ctx: Context) {
 
 ## Runnable wirings
 
-Runnable leaves load their plugin trees from `examples/*/cordis.yml`; the root `demo:*` scripts and those leaf directories are the authoritative inventory. The product `dsh` launcher owns Web and one-shot headless execution, ACP leaves use [`@deepseek-ai/dsh-acp-demo`](../../packages/examples/acp-demo), and JSON-RPC leaves use [`@deepseek-ai/dsh-sdk-jsonrpc-demo`](../../packages/examples/jsonrpc-demo). The headless snapshot leaf mounts [`@deepseek-ai/dsh-agent-spine-demo`](../../packages/examples/agent-spine-demo) and JSONL persistence explicitly, then drives them through an example-owned test fixture rather than a shipped app package.
+Runnable leaves contribute profile patches from `examples/*/cordis.yml`; the root `demo:*` scripts and those leaf directories are the authoritative inventory. The product `dsh` launcher owns Web, ACP, SDK, and one-shot headless execution through named profiles. The JSON-RPC leaf remains only for the temporarily held-back Python SDK runtime. The headless snapshot leaf mounts [`@deepseek-ai/dsh-agent-spine-demo`](../../packages/examples/agent-spine-demo) and JSONL persistence explicitly, then drives them through an example-owned test fixture rather than a shipped app package.
 
 ## The feature → mechanism map
 

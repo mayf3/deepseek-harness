@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
-// Tool presentation branch tails not reached by the main acceptance specs.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
+import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RunningToolCall, SessionId, SessionListState, ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -15,7 +14,6 @@ import { zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.t
 
 type BashRowProps = Parameters<typeof BashRow>[0]
 
-// Mirrors the real lookup chain (conversation namespace, then common).
 const t: GenericToolCardProps['t'] = makeTranslate(zh, commonZh)
 
 afterEach(cleanup)

@@ -205,7 +205,7 @@ export class SlotRegistry extends Service {
   }
 
   /**
-   * Install the shell's renderer (web-react's createSlotRenderer product).
+   * Install the shell's renderer (ui-renderer's createSlotRenderer product).
    * Boot-once: a second install throws. Runs through the caller's ctx.effect,
    * so shell fiber unload uninstalls the renderer.
    * @param renderer - the outlet machinery implementing SlotRenderer.
@@ -369,7 +369,6 @@ export class SlotRegistry extends Service {
     // there before this layer commits anything.
     const dispose = (this._core as unknown as ErasedCore).register(erased, component)
     if (store !== undefined) {
-      // Register succeeded, so the target's spec is on the ledger.
       const scope = (this._core.specDynamic(options.name) as SlotSpec<SlotEntryDef>).scope
       this._acquire(store, scope)
     }

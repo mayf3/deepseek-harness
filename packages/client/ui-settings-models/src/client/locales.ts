@@ -1,5 +1,7 @@
 /** Copy dictionaries for the Models settings section. */
 
+import { WELCOME_NOTICE_COPY } from '../onboarding-copy.ts'
+
 /** English strings (the key-set source of truth for this pair). */
 export const en = {
   nav: 'Models',
@@ -70,6 +72,8 @@ export const en = {
   fetchEmpty: 'The provider listed no models. Add them by hand.',
   fetchTitle: 'Choose models to add',
   fetchDescription: 'These are the models this provider has available. Choose the ones to add.',
+  fetchSelectAll: 'Select all',
+  fetchDeselectAll: 'Deselect all',
   fetchAdopt: 'Add selected',
   customAdd: 'Add a custom provider',
   customTitle: 'Custom provider',
@@ -85,17 +89,23 @@ export const en = {
   customNeedsModels: 'A custom provider needs at least one model.',
   create: 'Create provider',
   creating: 'Creating\u2026',
+  welcomeTitle: WELCOME_NOTICE_COPY.en.title,
+  welcomeBody: WELCOME_NOTICE_COPY.en.body,
+  welcomeContinue: WELCOME_NOTICE_COPY.en.continueLabel,
+  welcomeError: 'The acknowledgement could not be saved. Please try again.',
   onboardingTitle: 'Add an API key to get started',
   onboardingDescription: 'Configure the official DeepSeek provider to start building.',
-  onboardingGoToSettings: 'Go to settings',
   onboardingLater: 'Configure later',
+  onboardingSave: 'Save and continue',
+  onboardingSaving: 'Saving…',
+  keyRequired: 'Enter an API key to continue.',
 }
 
 /** The settings.models namespace key union. */
 export type ModelsKey = keyof typeof en
 
 /** Chinese strings (same keys as {@link en}). */
-export const zh: typeof en = {
+export const zh: { [Key in keyof typeof en]: string } = {
   nav: '模型',
   title: '模型',
   intro: '填入各提供方的 API 密钥即可使用其模型。',
@@ -164,6 +174,8 @@ export const zh: typeof en = {
   fetchEmpty: '该提供方没有列出任何模型，请手动添加。',
   fetchTitle: '选择要添加的模型',
   fetchDescription: '以下是模型提供方的可用模型，勾选要添加的模型。',
+  fetchSelectAll: '全选',
+  fetchDeselectAll: '取消全选',
   fetchAdopt: '添加所选',
   customAdd: '添加自定义提供方',
   customTitle: '自定义提供方',
@@ -179,8 +191,14 @@ export const zh: typeof en = {
   customNeedsModels: '自定义提供方至少需要一个模型。',
   create: '创建提供方',
   creating: '创建中\u2026',
+  welcomeTitle: WELCOME_NOTICE_COPY.zh.title,
+  welcomeBody: WELCOME_NOTICE_COPY.zh.body,
+  welcomeContinue: WELCOME_NOTICE_COPY.zh.continueLabel,
+  welcomeError: '暂时无法保存确认状态，请重试。',
   onboardingTitle: '添加一个 API Key 开始使用',
   onboardingDescription: '配置 DeepSeek 官方模型，即可开始使用。',
-  onboardingGoToSettings: '前往配置',
   onboardingLater: '稍后配置',
+  onboardingSave: '保存并继续',
+  onboardingSaving: '保存中…',
+  keyRequired: '请输入 API 密钥后继续。',
 }

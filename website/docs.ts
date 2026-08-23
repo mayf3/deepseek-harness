@@ -328,6 +328,8 @@ const subsystemsReference = subsystemGroups.flatMap(([rootSection, enSection, fi
 ))
 
 const reference = [
+  // `docs/deepseek-llm-api-wire-extensions.md` is a repository-only provider protocol reference.
+  // Projected links intentionally resolve to its GitHub source instead of a public site route.
   ...pairedPages(([
     ['docs/architecture.md', 'reference/index.md', '架构', 'Architecture', 0],
   ] as const).map(([source, route, rootLabel, enLabel, order]): PairedPage => ({
@@ -392,6 +394,7 @@ const reference = [
     ['adding-a-package.md', '新增 Package', 'Adding a package'],
     ['adding-a-tool.md', '新增 Tool', 'Adding a tool'],
     ['adding-an-llm-adapter.md', '新增 LLM Adapter', 'Adding an LLM adapter'],
+    ['adding-a-settings-card.md', '新增设置卡片', 'Adding a settings card'],
     ['extension-cookbook.md', '扩展模式', 'Extension patterns'],
   ] as const).map(([file, rootLabel, enLabel], order): PairedPage => ({
     source: `docs/cookbook/${file}`,
@@ -407,9 +410,19 @@ const reference = [
     label: { root: '新增 Conversation Node', en: 'Adding a Conversation Node' },
     sidebar: { root: 'zh-reference', en: 'en-reference' },
     section: { root: '开发手册', en: 'Cookbook' },
-    order: 4,
+    order: 5,
   }]),
 ]
+
+/**
+ * Sidebar collections of each locale, in the order the site's navigation
+ * presents them. The navigation bar and the llms.txt index both read this
+ * sequence, so a new collection lands in both surfaces together.
+ */
+export const localeCollections = {
+  root: ['zh-guide', 'zh-develop', 'zh-reference'],
+  en: ['en-guide', 'en-develop', 'en-reference'],
+} as const satisfies Record<DocsLocale, readonly DocsSidebar[]>
 
 /** A sidebar group, matched to pages by `label`. */
 export interface DocsSection {

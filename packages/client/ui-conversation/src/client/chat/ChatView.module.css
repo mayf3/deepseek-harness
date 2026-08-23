@@ -1,8 +1,3 @@
-/* Chat flow: one 16px rhythm everywhere through the column gap. Input
-   padding cap rides the skeleton. Under
-   `[data-conversation-scroll]` the column host owns overflow and this view
-   is ordinary flow (see ConversationRoot active-phase rules). */
-
 .root {
   position: relative;
   display: flex;
@@ -18,6 +13,11 @@
   /* Sides = composer clearance + 16px: on narrow viewports the transcript
      stays exactly 32px narrower than the input card (the shared width rule). */
   padding: 16px calc(var(--dsh-composer-side-clearance) + 16px);
+  /* Inline-size query container: wide markdown tables size their breakout
+     against this box's content width (100cqw in AssistantMarkdown's
+     md-table-wide rule) — the CSS stand-in for deepsuite chat's JS-measured
+     --dsl-virtual-list-width. */
+  container-type: inline-size;
 }
 
 :global([data-conversation-scroll]) .root {
@@ -44,7 +44,7 @@
   gap: 16px;
 }
 
-/* Settled-flow identity boundary. It is neutral today and becomes the natural
+/* Settled-flow identity boundary. It is neutral until it becomes the natural
    measurement/mount unit for a virtualizer without changing the column gap. */
 .flowItem {
   min-width: 0;
@@ -189,4 +189,9 @@
 
 .toBottom:hover {
   background: var(--dsw-alias-button-floating-hover);
+}
+
+/* Host open-path refusal: same dialog family as the workspace folder error. */
+.modalAction {
+  min-width: 72px;
 }

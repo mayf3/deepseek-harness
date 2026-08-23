@@ -177,23 +177,6 @@ export interface TurnEndReasonMap {
 export type TurnEndReason = TurnEndReasonMap[keyof TurnEndReasonMap]
 
 /**
- * One entry in an agent's todo list — the unit of the `todo/write`
- * {@link SessionEventMap} event's whole-list snapshot.
- *
- * Deliberately minimal: a human-readable `content` line and a three-state
- * `status`. No id, priority, or `activeForm` — the list is replaced wholesale
- * on every write (last-write-wins), so entries need no stable identity. The
- * three statuses describe the complete portable lifecycle needed by model and
- * UI consumers.
- */
-export interface TodoItem {
-  /** What this task is — a short imperative line shown in the UI. */
-  content: string
-  /** Lifecycle state. `in_progress` marks a task being worked now; parallel work may mark several. */
-  status: 'pending' | 'in_progress' | 'completed'
-}
-
-/**
  * Logged request state outside derived history: call config, system prompt, and
  * tools. The latest full `request/header` snapshot reconstructs it; canonical
  * empty optional fields are absent.
@@ -268,9 +251,13 @@ export interface SessionEventMap {
    * Assembled assistant message for one step (derived history uses this).
    * Carries the step's `usage` when the adapter reported token accounting, so
    * the model output and its accounting travel together (there is no separate
-   * usage record). `usage` is absent when the adapter reported none.
+   * usage record). `usage` is absent when the adapter reported none. A turn
+   * cancelled mid-stream finalizes its delivered text/reasoning prefix as this
+   * event with `interrupted: true`; undispatched tool calls are absent. The
+   * marker distinguishes that prefix without re-deriving interruption from turn
+   * boundaries. An aborted turn with no such event streamed no visible content.
    */
-  'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage }
+  'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true }
   /**
    * The model requested one tool invocation: `name` with the raw `arguments`
    * JSON string exactly as the model produced it (unparsed). `callId` pairs the
@@ -295,8 +282,6 @@ export interface SessionEventMap {
     error?: { name: string; code: string }
     meta?: JsonValue
   }
-  /** Whole-list snapshot; latest write wins on replay. Log-only UI state; never derived history. */
-  'todo/write': { todos: TodoItem[] }
   /**
    * Full header for the next request, appended inside its step before dispatch.
    * It is log-only; the latest snapshot reconstructs the request header.

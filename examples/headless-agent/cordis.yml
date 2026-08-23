@@ -15,6 +15,15 @@
 - id: credentials
   name: '@deepseek-ai/dsh-credentials-local'
 
+- id: deepseek-llm-api-extensions
+  name: '@deepseek-ai/dsh-deepseek-llm-api-extensions'
+
+- id: session-log-deepseek
+  name: '@deepseek-ai/dsh-session-log-deepseek'
+
+- id: plugin-package-inventory-deepseek
+  name: '@deepseek-ai/dsh-plugin-package-inventory-deepseek'
+
 # The DeepSeek adapter. Swap to '@deepseek-ai/dsh-llm-pi-ai' for the pi-ai-backed
 # twin (a `providers` dict keyed by route; `reasoning: high` replaces
 # thinking/reasoningEffort). Shipped default: full thinking at max effort on
@@ -120,7 +129,8 @@
 
 # Fork stays one-shot because a continuable child's `report` tool and prompt
 # section precede the inherited history a fork reuses; `run_in_background` is off
-# because this example mounts no task service. See .agents/notes/implemented/architecture/2026-08-10-fork-children-stay-one-shot.md.
+# as an explicit foreground-only choice even though agent-spine-demo mounts the
+# generic Job runtime. See .agents/notes/implemented/architecture/2026-08-10-fork-children-stay-one-shot.md.
 - id: tool-subagent-fork
   name: '@deepseek-ai/dsh-tool-subagent'
   config:

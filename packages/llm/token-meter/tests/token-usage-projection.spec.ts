@@ -8,6 +8,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import type { ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
+import type {} from '../src/usage-projection.ts'
 
 const ZERO: TokenUsageProjection = {
   uncachedInputTokens: 0,
@@ -356,7 +357,7 @@ describe('contextPressure session projection', () => {
     const changed: string[] = []
     ctx.sessionProjections.onChanged((_session, key) => { changed.push(key) })
 
-    session.append('todo/write', { todos: [] })
+    session.append('session/end-seed', {})
     expect(changed).not.toContain('contextPressure')
     // A repeated capacity record for the same window is also a no-op.
     recordContext(session, 'small', 64_000)

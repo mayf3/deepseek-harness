@@ -2,10 +2,9 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  normalizeSessionLog,
+  normalizeSessionSnapshot,
   normalizeStdout,
   runScenario,
-  scrubRequestHeaders,
   type AgentUnderTest,
   type InputScript,
   type NormalizeContext,
@@ -25,8 +24,9 @@ const wrapupDir = join(dirname(fileURLToPath(import.meta.url)), 'goal-snapshots/
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 
 const agent: AgentUnderTest = {
-  binScript: fileURLToPath(new URL('../../../packages/examples/acp-demo/src/bin.ts', import.meta.url)),
+  binScript: fileURLToPath(new URL('../../../apps/cli/src/bin.ts', import.meta.url)),
   configPath: fileURLToPath(new URL('../cordis.yml', import.meta.url)),
+  profile: 'acp',
   tsconfigPath: fileURLToPath(new URL('../../../tsconfig.json', import.meta.url)),
 }
 
@@ -59,9 +59,7 @@ function normalizeGoalTimestamps(value: unknown): unknown {
 
 /** Normalize one persisted goal log after the shared snapshot scrubbers. */
 function normalizeGoalLog(content: string, context: NormalizeContext): string {
-  return parseJsonl(scrubRequestHeaders(normalizeSessionLog(content, context)))
-    .map(record => JSON.stringify(normalizeGoalTimestamps(record)))
-    .join('\n') + '\n'
+  return normalizeGoalTimestamps(normalizeSessionSnapshot(content, context)) as string
 }
 
 describe('same-session goal snapshot through the ACP automation driver', () => {

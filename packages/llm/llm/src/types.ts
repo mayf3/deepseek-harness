@@ -66,7 +66,7 @@ export interface ReasoningBlock {
  * A durable raster image reference, valid in user or assistant content. The
  * block is deliberately role-neutral; assistant-side rendering is forward
  * compatibility — the current production adapters declare text-only output,
- * so only user content carries images today.
+ * so only user messages may carry images.
  */
 export interface ImageBlock {
   type: 'image'
@@ -281,6 +281,27 @@ export interface LlmResolvedModelInfo extends LlmModelInfo {
 }
 
 /**
+ * Adapter-private lossless-JSON state for replaying a successful response,
+ * carried by a terminal `finish` chunk and stored on the assembled assistant
+ * message's model source. Both halves stay opaque to the harness; only the
+ * split is shared vocabulary, so assembly can keep stored metadata aligned
+ * with stored content without reading either half.
+ */
+export interface ReplayEnvelope {
+  /** Response-level adapter-private metadata (ids, native stop reason). */
+  response: unknown
+  /**
+   * Per-block adapter-private metadata, one entry per emitted block in
+   * first-seen stream order. When assembly drops a block it drops the entry at
+   * the same position; entries whose length does not match the emitted block
+   * count discard the whole envelope. An adapter whose metadata is independent
+   * of block structure omits this field and the envelope passes through
+   * assembly unchanged.
+   */
+  blocks?: readonly unknown[]
+}
+
+/**
  * Raw streaming protocol emitted by adapters.
  * Block indexes correlate interleaved deltas, and `block-end` carries the
  * assembled block. Adapters emit usage before the terminal finish and nothing
@@ -298,8 +319,8 @@ export type StreamChunk =
   | {
     type: 'finish'
     reason: FinishReason
-    /** Adapter-private lossless-JSON state for replaying a successful response. */
-    replayState?: unknown
+    /** Replay metadata for a successful response; see {@link ReplayEnvelope}. */
+    replayState?: ReplayEnvelope
   }
 
 /**

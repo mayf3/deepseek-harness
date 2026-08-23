@@ -9,9 +9,7 @@ import { fileURLToPath } from 'node:url'
 
 /** Where and with what environment a release step runs a command. */
 export interface RunOptions {
-  /** Working directory; defaults to the current one. */
   readonly cwd?: string
-  /** Child environment; defaults to this process's. */
   readonly env?: NodeJS.ProcessEnv
 }
 
@@ -19,9 +17,7 @@ export interface RunOptions {
 export interface CommandResult {
   /** Exit status, or null when a signal ended the process. */
   readonly status: number | null
-  /** Captured standard output. */
   readonly stdout: string
-  /** Captured standard error. */
   readonly stderr: string
 }
 
@@ -35,6 +31,27 @@ export interface CommandResult {
 export function attempt(command: string, args: readonly string[], options: RunOptions = {}): CommandResult {
   const result = spawnSync(command, [...args], { cwd: options.cwd, env: options.env, encoding: 'utf8' })
   if (result.error !== undefined) throw result.error
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr }
+}
+
+/**
+ * Run a command, then echo and return its captured output. Output is buffered
+ * until exit and stdout precedes stderr.
+ * @param command - executable name.
+ * @param args - command arguments.
+ * @param options - working directory and environment.
+ * @returns The exit status and captured streams.
+ */
+export function attemptEchoed(command: string, args: readonly string[], options: RunOptions = {}): CommandResult {
+  const result = spawnSync(command, [...args], {
+    cwd: options.cwd,
+    env: options.env,
+    encoding: 'utf8',
+    stdio: ['inherit', 'pipe', 'pipe'],
+  })
+  if (result.error !== undefined) throw result.error
+  if (result.stdout !== '') process.stdout.write(result.stdout)
+  if (result.stderr !== '') process.stderr.write(result.stderr)
   return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }
 
@@ -67,11 +84,7 @@ export function run(command: string, args: readonly string[], options: RunOption
 }
 
 /**
- * Whether this module is the process entry point.
- *
- * The release scripts are both commands and modules: a test imports their pure
- * logic, and importing a module runs its body, so an unguarded `main()` would
- * run the wrong command with the wrong arguments.
+ * Return whether Node started the given module as the process entry point.
  * @param moduleUrl - the caller's `import.meta.url`.
  * @returns True when Node started this module.
  */

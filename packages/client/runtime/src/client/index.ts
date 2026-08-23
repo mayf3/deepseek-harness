@@ -39,14 +39,12 @@ export type { RootOwnerProps } from './slots.ts'
 export { SessionCreateError, SessionRuntime, scopeOf, workspaceTitleOf } from './sessions/service.ts'
 export { indexSubagentDescendants } from './sessions/subagent-lineage.ts'
 export type { SubagentDescendantSummary } from './sessions/subagent-lineage.ts'
-// The provide channel is shared with the client test runtime (one
-// materialization/projection implementation; no test-side mirror to drift).
 export { SessionProvideChannel } from './sessions/provide.ts'
 export type { SessionProvideChannelHost } from './sessions/provide.ts'
 export { createScope } from './agents/scope.ts'
 export type { AgentScopeHandle } from './agents/scope.ts'
 export { DirectoryBrowseError, WorkspaceCreateError, WorkspaceRuntime } from './workspaces/service.ts'
-export { resolveWorkspacePath } from './workspaces/path.ts'
+export { abbreviateHomePath, resolveWorkspacePath } from './workspaces/path.ts'
 // Contract only: the scope implementation and its Host transport belong to
 // dsh-client-ui-settings (see that package's settings-scope.ts).
 export type {
@@ -66,7 +64,7 @@ export type { WorkspaceListState } from './workspaces/service.ts'
 export type {
   DirectoryEntry, DirectoryListing, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-client-connection/client'
-// Runtime owns the snapshot store; web-react only binds it to React.
+// Runtime owns the snapshot store; ui-renderer only binds it to React.
 export { createSnapshotStore, defineStore, shallowEqual } from './contract/store.ts'
 export type {
   EngineStoreHandle, EngineStoreInstance, ObservableSnapshot, SnapshotStore,
@@ -85,7 +83,7 @@ export {
 } from './sessions/conversation.ts'
 export { emptyAssistantBlock } from './sessions/partial.ts'
 export { isTokenDelta } from './sessions/assistant-timing.ts'
-export { contextForm, contextProvenance } from './sessions/context-provenance.ts'
+export { contextForm, contextProvenance, sessionRecallLabels } from './sessions/context-provenance.ts'
 export { displayFailureMessage } from './sessions/failure-display.ts'
 export type {
   ConversationContext, ConversationContextOriginKind,

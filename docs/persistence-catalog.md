@@ -90,7 +90,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:336`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:343`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:372`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:404`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:321`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:328`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:357`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:389`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -215,7 +215,7 @@ Source: [`packages/interaction/user-approval/src/index.ts:67`](../packages/inter
 
 Types: [StreamChunk](subsystems/llm-streaming.md)
 
-Source: [`packages/core/session/src/types.ts:266`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:249`](../packages/core/session/src/types.ts)
 
 <a id="assistantmessage--surface"></a>
 
@@ -226,14 +226,18 @@ Source: [`packages/core/session/src/types.ts:266`](../packages/core/session/src/
  * Assembled assistant message for one step (derived history uses this).
  * Carries the step's `usage` when the adapter reported token accounting, so
  * the model output and its accounting travel together (there is no separate
- * usage record). `usage` is absent when the adapter reported none.
+ * usage record). `usage` is absent when the adapter reported none. A turn
+ * cancelled mid-stream finalizes its delivered text/reasoning prefix as this
+ * event with `interrupted: true`; undispatched tool calls are absent. The
+ * marker distinguishes that prefix without re-deriving interruption from turn
+ * boundaries. An aborted turn with no such event streamed no visible content.
  */
-'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage }
+'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true }
 ```
 
 Types: [TokenUsage](subsystems/llm-streaming.md)
 
-Source: [`packages/core/session/src/types.ts:273`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:260`](../packages/core/session/src/types.ts)
 
 ### `command/*`
 
@@ -256,7 +260,7 @@ Source: [`packages/core/session/src/types.ts:273`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/interaction/commands/src/types.ts:95`](../packages/interaction/commands/src/types.ts)
+Source: [`packages/interaction/commands/src/types.ts:103`](../packages/interaction/commands/src/types.ts)
 
 <a id="commandrun--log-only"></a>
 
@@ -276,7 +280,7 @@ Source: [`packages/interaction/commands/src/types.ts:95`](../packages/interactio
 'command/run': { commandId: CommandId; name: string; args?: string; source: CommandSource }
 ```
 
-Source: [`packages/interaction/commands/src/types.ts:88`](../packages/interaction/commands/src/types.ts)
+Source: [`packages/interaction/commands/src/types.ts:96`](../packages/interaction/commands/src/types.ts)
 
 ### `compaction/*`
 
@@ -543,7 +547,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/s
 'request/context': RequestContext
 ```
 
-Source: [`packages/core/session/src/types.ts:309`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:294`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -557,7 +561,7 @@ Source: [`packages/core/session/src/types.ts:309`](../packages/core/session/src/
 'request/header': { header: EpochHeader; reason: RequestHeaderReason }
 ```
 
-Source: [`packages/core/session/src/types.ts:304`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:289`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -632,7 +636,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 'session/end-seed': Record<string, never>
 ```
 
-Source: [`packages/core/session/src/types.ts:332`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:317`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -663,6 +667,24 @@ Types: [SessionTitleLlmRequestEventData](subsystems/session-title.md)
 
 Source: [`packages/session/session-title-llm/src/index.ts:43`](../packages/session/session-title-llm/src/index.ts)
 
+### `session-log-deepseek/*`
+
+<a id="session-log-deepseekdelivery-accepted--log-only"></a>
+
+#### `session-log-deepseek/delivery-accepted` — log-only
+
+```ts persistence-catalog
+/** Records that the configured endpoint accepted one delivery through `throughSeq`. */
+'session-log-deepseek/delivery-accepted': {
+  /** Session identity the accepted delivery carried; inherited fork markers retain the parent's id. */
+  sessionId: import('@deepseek-ai/dsh-session/types').SessionId
+  /** Last canonical event included in the accepted request. */
+  throughSeq: number
+}
+```
+
+Source: [`packages/session/session-log-deepseek/src/types.ts:26`](../packages/session/session-log-deepseek/src/types.ts)
+
 ### `step/*`
 
 <a id="stepend--log-only"></a>
@@ -674,7 +696,7 @@ Source: [`packages/session/session-title-llm/src/index.ts:43`](../packages/sessi
 'step/end': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:256`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:239`](../packages/core/session/src/types.ts)
 
 <a id="stepstart--log-only"></a>
 
@@ -685,7 +707,7 @@ Source: [`packages/core/session/src/types.ts:256`](../packages/core/session/src/
 'step/start': { turn: number; step: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:254`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:237`](../packages/core/session/src/types.ts)
 
 ### `subagent/*`
 
@@ -706,6 +728,65 @@ Source: [`packages/core/session/src/types.ts:254`](../packages/core/session/src/
 
 Source: [`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent/subagent/src/descriptor.ts)
 
+### `team/*`
+
+<a id="teammember--log-only"></a>
+
+#### `team/member` — log-only
+
+```ts persistence-catalog
+/** Whole teammate lifecycle value, stored only in the Team Lead Session. */
+'team/member': { version: 1; teamId: TeamId; member: TeamMemberSnapshot }
+```
+
+Types: [TeamId](subsystems/agent-team.md) · [TeamMemberSnapshot](subsystems/agent-team.md)
+
+Source: [`packages/experimental/agent-team/src/types.ts:206`](../packages/experimental/agent-team/src/types.ts)
+
+<a id="teammessagedelivered--log-only"></a>
+
+#### `team/message/delivered` — log-only
+
+```ts persistence-catalog
+/** Durable acknowledgement that the target Session recorded the message. */
+'team/message/delivered': {
+  version: 1
+  teamId: TeamId
+  messageId: TeamMessageId
+  targetId: SessionId
+}
+```
+
+Types: [TeamId](subsystems/agent-team.md) · [TeamMessageId](subsystems/agent-team.md)
+
+Source: [`packages/experimental/agent-team/src/types.ts:212`](../packages/experimental/agent-team/src/types.ts)
+
+<a id="teammessagequeued--log-only"></a>
+
+#### `team/message/queued` — log-only
+
+```ts persistence-catalog
+/** Durable mailbox enqueue, stored before delivery is attempted. */
+'team/message/queued': { version: 1; teamId: TeamId; message: TeamMessageSnapshot }
+```
+
+Types: [TeamId](subsystems/agent-team.md) · [TeamMessageSnapshot](subsystems/agent-team.md)
+
+Source: [`packages/experimental/agent-team/src/types.ts:210`](../packages/experimental/agent-team/src/types.ts)
+
+<a id="teamtask--log-only"></a>
+
+#### `team/task` — log-only
+
+```ts persistence-catalog
+/** Whole shared-task value, stored only in the Team Lead Session. */
+'team/task': { version: 1; teamId: TeamId; task: TeamTaskSnapshot }
+```
+
+Types: [TeamId](subsystems/agent-team.md) · [TeamTaskSnapshot](subsystems/agent-team.md)
+
+Source: [`packages/experimental/agent-team/src/types.ts:208`](../packages/experimental/agent-team/src/types.ts)
+
 ### `todo/*`
 
 <a id="todowrite--log-only"></a>
@@ -717,9 +798,9 @@ Source: [`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent
 'todo/write': { todos: TodoItem[] }
 ```
 
-Types: [TodoItem](subsystems/session.md)
+Types: [TodoItem](subsystems/todo.md)
 
-Source: [`packages/core/session/src/types.ts:299`](../packages/core/session/src/types.ts)
+Source: [`packages/todo/tool-todo/src/types.ts:31`](../packages/todo/tool-todo/src/types.ts)
 
 ### `tool/*`
 
@@ -738,7 +819,7 @@ Source: [`packages/core/session/src/types.ts:299`](../packages/core/session/src/
 
 Types: [CallId](subsystems/core.md)
 
-Source: [`packages/core/session/src/types.ts:279`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:266`](../packages/core/session/src/types.ts)
 
 <a id="toolcode-dispatch--log-only"></a>
 
@@ -813,7 +894,7 @@ Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:291`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:278`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 
@@ -893,7 +974,7 @@ Source: [`packages/workflow/tool-workflow/src/types.ts:47`](../packages/workflow
 
 Types: [TurnEndReason](subsystems/session.md)
 
-Source: [`packages/core/session/src/types.ts:252`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:235`](../packages/core/session/src/types.ts)
 
 <a id="turnstart--log-only"></a>
 
@@ -909,7 +990,7 @@ Source: [`packages/core/session/src/types.ts:252`](../packages/core/session/src/
 'turn/start': { turn: number }
 ```
 
-Source: [`packages/core/session/src/types.ts:243`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:226`](../packages/core/session/src/types.ts)
 
 ### `user/*`
 
@@ -928,7 +1009,7 @@ Source: [`packages/core/session/src/types.ts:243`](../packages/core/session/src/
 'user/message': UserMessage
 ```
 
-Source: [`packages/core/session/src/types.ts:264`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:247`](../packages/core/session/src/types.ts)
 
 ### `web/*`
 

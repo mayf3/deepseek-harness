@@ -8,7 +8,7 @@ import type { HostDescription, IApiClient } from './api.ts'
 import { ConnectionController, type ConnectionConfig, type ConnectionSinks, type ConnectionState } from './connection.ts'
 import { FixtureApiClient } from './fixture.ts'
 import { WebApiClient } from './web-api-client.ts'
-import { createWebConnectionRpc } from './rpc.ts'
+import { createWebConnectionRpc, type RpcFetch } from './rpc.ts'
 import { isLoopbackHostname } from '../loopback-hostname.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
 
@@ -40,6 +40,7 @@ export {
 // controller remains package-internal.
 export type { ConnectionConfig, ConnectionSinks, ConnectionState }
 export type { ClientConnectionRpc } from '../rpc.ts'
+export type { RpcFetch } from './rpc.ts'
 
 /** Observable Host description published by each completed connection handshake. */
 export interface HostDescriptionSource {
@@ -53,6 +54,39 @@ export interface HostDescriptionSource {
 export const inject: string[] = []
 
 /**
+ * Carrier override installed on the page global before plugin boot. The served
+ * web app leaves it unset and gets HTTP + WebSocket; a shell that owns a
+ * different physical transport (the worker preview's postMessage tunnel)
+ * provides both halves here instead of forking this plugin.
+ */
+export interface ClientTransportHooks {
+  /** Build the API carrier: unary calls plus the two downstream event streams. */
+  createApiClient(): IApiClient
+  /** Transport for generic unary RPC channels (the Typert gateway). */
+  fetch: RpcFetch
+  /**
+   * Bundle transport for the module system, present when the carrier also owns
+   * bundle bytes (the worker tunnel). Absent in the served web app, whose
+   * bundles load over HTTP.
+   */
+  loadBundle?(url: string): Promise<void>
+  /**
+   * The transport owner declares the page owns the Host outright: the Host
+   * runs inside a worker this page spawned, so no other party can reach it and
+   * the loopback stand-in for "the operator's own machine" is vacuous.
+   * `ctx.connection.isLoopback` then reports the privileged surface reachable
+   * regardless of the page authority. Only a shell that assembles its own
+   * transport can set this; served pages never carry the global at all.
+   */
+  ownsHost?: boolean
+}
+
+/** Page global carrying {@link ClientTransportHooks}; absent in the served web app. */
+interface ClientTransportGlobal {
+  __DSH_TRANSPORT__?: ClientTransportHooks
+}
+
+/**
  * The ctx.connection service API: the API client plus a one-shot
  * controller starter (the runtime plugin supplies sinks when its object layer
  * is ready — connection stays consumer-agnostic).
@@ -60,9 +94,13 @@ export const inject: string[] = []
 export interface ConnectionHandle {
   /** Shared api client (fixture or real, decided at boot from the page URL). */
   readonly api: IApiClient
-  /** Whether the current page authority is loopback; non-browser contexts default to true. */
+  /**
+   * Whether the privileged surface is reachable: the page authority is
+   * loopback, the transport declares the page owns the Host
+   * ({@link ClientTransportHooks.ownsHost}), or the context is not a browser.
+   */
   readonly isLoopback: boolean
-  /** Generation-scoped Host facts, including native path-open capability. */
+  /** Generation-scoped Host facts, including the account home and native path-open capability. */
   readonly hostDescription: HostDescriptionSource
   /** Generic logical RPC channels over the same Connection transport. */
   readonly rpc: ClientConnectionRpc
@@ -85,8 +123,9 @@ export function apply(ctx: Context): void {
   const pageLocation = typeof location === 'undefined' ? undefined : location
   const fixture = pageLocation !== undefined && new URLSearchParams(pageLocation.search).has('fixture')
   const fixtureClient = fixture ? new FixtureApiClient() : undefined
-  const api: IApiClient = fixtureClient ?? new WebApiClient()
-  const rpc = fixtureClient?.rpc ?? createWebConnectionRpc()
+  const transport = (globalThis as ClientTransportGlobal).__DSH_TRANSPORT__
+  const api: IApiClient = fixtureClient ?? transport?.createApiClient() ?? new WebApiClient()
+  const rpc = fixtureClient?.rpc ?? createWebConnectionRpc(transport?.fetch)
   let started = false
   let description: HostDescription | undefined
   const descriptionListeners = new Set<() => void>()
@@ -103,7 +142,7 @@ export function apply(ctx: Context): void {
   }
   const handle: ConnectionHandle = {
     api,
-    isLoopback: pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),
+    isLoopback: transport?.ownsHost === true || pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),
     hostDescription: {
       getSnapshot: () => description,
       subscribe: (listener) => {

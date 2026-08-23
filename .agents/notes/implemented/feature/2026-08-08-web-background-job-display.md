@@ -95,7 +95,7 @@ A running one-shot background subagent therefore appears both there and in the s
 
 **No web path calls `ctx.jobs.read()`.** It consumes the single output cursor, so a browser read would silently take bytes the model's `job_output` will never see. This is an invariant worth a test rather than a convention, because the failure is invisible at the call site.
 
-**No cancellation.** That phase owes a decision the seam does not currently answer: `kill()` marks terminal delivery reported, so a human interrupt written against today's contract would leave the model believing its task is still running.
+**No cancellation.** That phase owes a decision the seam does not currently answer: `kill()` marks terminal delivery reported, so a human interrupt written against the `kill()` contract would leave the model believing its task is still running.
 
 **No output watermark on the frame.** The output phase's delta channel is where an anchor field earns its place; one added now would have no reader.
 
@@ -129,7 +129,7 @@ Below it, [`jobs-local`](../../../../packages/jobs/jobs-local/tests/jobs.spec.ts
 
 **Settled rows accumulate.** The registry retains settled tasks until owner disposal, so a long session with many background commands grows a long list. Capping the settled tail is a presentation change, not a protocol one, if it becomes a real complaint.
 
-**`stopping` is nearly unreachable today.** Only the model's `job_kill` produces it, so the state is rendered but rarely seen until human cancellation lands. It is in the union now because leaving a status out would have made that phase a wire change.
+**`stopping` is rarely visible.** Only the model's `job_kill` produces it, so the state is rendered but rarely seen until human cancellation lands. It is in the union now because leaving a status out would have made that phase a wire change.
 
 **Two entry points for one running subagent.** Accepted deliberately, and bounded to one-shot background delegations. If it reads as noise in practice, the fix is presentational — the catalog row can cite the task rather than the task list hiding the kind.
 

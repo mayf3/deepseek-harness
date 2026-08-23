@@ -1,13 +1,8 @@
 // @vitest-environment jsdom
-/**
- * What the section and its cards show: the empty line when no plugin
- * contributed one, a card that renders nothing while its namespace is
- * unavailable, and the save footer that decides when staged edits are written.
- */
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
+import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { AgentLoopCard } from '../src/client/AgentLoopCard.tsx'
 import type { AgentLoopCardProps } from '../src/client/AgentLoopCard.tsx'
@@ -22,6 +17,7 @@ import type { WebSearchCardProps } from '../src/client/WebSearchCard.tsx'
 import type { AgentLoopCardState } from '../src/client/agent-loop-card-controller.ts'
 import type { BashCardState } from '../src/client/bash-card-controller.ts'
 import type { CardFieldState, CardShell } from '../src/client/card-form.ts'
+import type { ConfigurablePluginsTabState } from '../src/client/tab-store.ts'
 import type { WebSearchCardState } from '../src/client/web-search-card-controller.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -29,7 +25,6 @@ afterEach(cleanup)
 
 const t = (key: keyof typeof en) => en[key]
 
-/** A settled form: nothing staged, everything served. */
 const settled: CardShell = {
   available: true,
   writable: true,
@@ -39,7 +34,6 @@ const settled: CardShell = {
   failed: false,
 }
 
-/** One control's state, defaulting to an inherited value. */
 function field(text: string, rest: Partial<CardFieldState> = {}): CardFieldState {
   return { text, overridden: false, invalid: false, ...rest }
 }
@@ -59,11 +53,15 @@ function renderSection(rows: readonly PluginsSettingsTabEntry[]) {
   render(<PluginsSettingsSection {...props} />)
 }
 
-function renderConfigurable(cardCount: number, cards = 'cards') {
+function renderConfigurable(namespaces: string[], cards: Record<string, string> = {}, loaded = true) {
+  const store = createSnapshotStore<ConfigurablePluginsTabState>({ loaded, namespaces })
   const props = {
     t,
-    cardCount,
-    renderSlot: () => <li>{cards}</li>,
+    useConfigurablePlugins: bindSnapshotSelector(store),
+    renderSlot: (_name: string, _owner: object, opts?: { entryKey?: string }) => {
+      const card = opts?.entryKey === undefined ? undefined : cards[opts.entryKey]
+      return card === undefined ? null : <li>{card}</li>
+    },
   } as unknown as ConfigurablePluginsTabProps
   render(<ConfigurablePluginsTab {...props} />)
 }
@@ -153,16 +151,24 @@ describe('PluginsSettingsSection', () => {
 
 describe('ConfigurablePluginsTab', () => {
   it('says so when no plugin contributed a card', () => {
-    renderConfigurable(0)
+    renderConfigurable([], { bash: 'shell' })
 
     expect(screen.getByText(en.empty)).toBeTruthy()
-    expect(screen.queryByText('cards')).toBeNull()
+    expect(screen.queryByText('shell')).toBeNull()
   })
 
-  it('renders the card list once a plugin contributed one', () => {
-    renderConfigurable(1)
+  it('withholds the empty line until the Host has answered once', () => {
+    // An unanswered read is not the statement that this deployment configures
+    // no plugin; saying it anyway would flash a wrong answer on every open.
+    renderConfigurable([], { bash: 'shell' }, false)
 
-    expect(screen.getByText('cards')).toBeTruthy()
+    expect(screen.queryByText(en.empty)).toBeNull()
+  })
+
+  it('dispatches one card per namespace, keyed by it', () => {
+    renderConfigurable(['bash', 'agent-loop'], { bash: 'shell', 'agent-loop': 'loop' })
+
+    expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['shell', 'loop'])
     expect(screen.queryByText(en.empty)).toBeNull()
   })
 })

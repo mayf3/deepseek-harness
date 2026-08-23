@@ -9,7 +9,7 @@
  * resolution (pure — resolution has no side effects and is render-safe);
  * the event window and deferred teardown key off the STAGED session, which
  * follows `list.current` exactly. Staging is the open signal: the window
- * opens ⟺ the session is on stage (today the stage is `current`; the staged
+ * opens ⟺ the session is on stage (the stage is `current`; the staged
  * state can widen to a multi-pane list later). A session leaving the list
  * tears its scope down immediately unless it is the staged one, whose scope
  * survives frozen (read-only view) until the stage moves on.

@@ -1,9 +1,5 @@
-// FixtureApi: standalone UI development without a server. Real contract shape: unary takes
-// RpcRequest<P> and returns RpcResponse<T> (echoing the rpcId); streams yield RpcRequest<frame>
-// (the fixture IS the fake server, so it mints frame rpcIds); root respond takes ClientResponse
-// and returns RpcReceipt. fx-alpha carries a hand-built history script (74 turns, pageable);
-// prompt triggers a chunked streaming replay; cancel stops the replay; resident pending
-// approval/question requests exercise replay and composer takeover with stable rpcIds.
+// Standalone browser fixture. It models server-owned frame rpcIds and echoes
+// unary request rpcIds through the production carrier types.
 
 import {
   createAssistantMessage,
@@ -24,8 +20,8 @@ import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-atta
 import type {
   SessionEvent,
   SessionId,
-  TodoItem,
 } from '@deepseek-ai/dsh-session/types'
+import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 // Type-only: the brand constructor is host-side; the fixture casts at its
 // wire-fabrication boundary (the schema layer's one-cast-point posture).
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
@@ -177,13 +173,6 @@ const SEARCH_MATCHES_FIXTURE: { path: string; matches: { lineNumber: number; lin
   },
 ]
 
-/**
- * The model-facing grep render text for the sample — what a UI without a search
- * card shows, attached as the view's `content`. Mirrors the real grep
- * presenter's shape (see formatGrepOutput in dsh-tool-fs-search): a
- * `Found X of Y matches` header, the matches grouped under file headers with
- * `Line N:` rows, then a spill-recovery footer.
- */
 const SEARCH_MATCHES_TEXT = [
   'Found 9 of 42 matches',
   '',
@@ -193,10 +182,6 @@ const SEARCH_MATCHES_TEXT = [
   '(Full grep result stored at: fixture://spill/grep-66. Read it to see every match.)',
 ].join('\n')
 
-/**
- * Structured glob result for the search sample (turn 68): a flat path list,
- * truncated with a larger `total` so the path card shows its capped indicator.
- */
 const SEARCH_PATHS_FIXTURE = [
   'packages/client/ui-primitives/src/SearchBlock.tsx',
   'packages/client/ui-primitives/src/SearchBlock.module.css',
@@ -205,25 +190,12 @@ const SEARCH_PATHS_FIXTURE = [
   'packages/client/ui-tool/tests/search-card.client.spec.tsx',
 ]
 
-/**
- * The model-facing glob render text — the newline-joined path list plus a
- * spill-recovery footer, mirroring the real glob presenter's shape (see
- * formatGlobOutput in dsh-tool-fs-search).
- */
 const SEARCH_PATHS_TEXT = [
   ...SEARCH_PATHS_FIXTURE,
   '',
   '(Showing 5 of 23 paths. Full sorted result stored at: fixture://spill/glob-67. Read it to see every path.)',
 ].join('\n')
 
-/**
- * Read-card sample for the read turn: a WINDOW past an offset, so the line
- * numbers start above 1 (the card's gutter keeps the file's own numbering) and
- * `totalLines` exceeds the window (the card shows a "showing N of M" note). The
- * fixture is client-side and cannot import the read tool, so the structured
- * window is authored inline exactly as the tool would project it through
- * `presentationMeta`. `lang` is a `ts` hint so the shiki path highlights it.
- */
 const READ_SAMPLE_FIRST_LINE = 41
 const READ_SAMPLE_SOURCE = [
   'export interface ReadBlockProps {',
@@ -373,8 +345,7 @@ function buildAlphaLog(): SessionEvent[] {
     events.push({ seq, time: (time += 800), ...authored })
     return seq
   }
-  // This resident history represents completed model requests, so retain the
-  // route capacity that accompanied them just as the live prompt path does.
+  // Completed fixture requests retain the route capacity recorded with them.
   push({
     type: 'request/context',
     data: { provider: 'deepseek-official', model: 'deepseek-v4-flash', contextWindow: 128_000 },
@@ -545,7 +516,7 @@ function buildAlphaLog(): SessionEvent[] {
   // the real tools so they hit the keyed WebRow registration. Ordered BEFORE
   // the todo turn for the same reason turn 66 is: the standing plan retires at
   // the next turn/start, so a turn after it would empty the dock's plan strip.
-  toolTurn(70, 'web_search', '{"query":"deepseek harness architecture"}', 'Search results for deepseek harness architecture.')
+  toolTurn(70, 'web_search', '{"queries":["deepseek harness architecture"]}', 'Search results for deepseek harness architecture.')
   toolTurn(71, 'web_fetch', '{"url":"https://www.deepseek.com/blog/harness-architecture"}', '# Harness architecture\n\nEverything is a plugin.')
 
   // Turn 72: max-tokens sample — the provider ends the turn at its output cap
@@ -660,8 +631,11 @@ function presentCall(name: string, argsRaw: string): ToolCallView | undefined {
     // The web tools keep a GENERIC pending card and add the `web` result card
     // only at result time (the contract's result-only web shape); their pending
     // kind matches the result kind so a call and its result read as one category.
-    case 'web_search':
-      return { card: 'generic', title: `Search ${str(args.query)}`, kind: 'search', rawInput: args }
+    case 'web_search': {
+      const queries = Array.isArray(args.queries) ? args.queries.filter((query): query is string => typeof query === 'string' && query !== '') : []
+      const title = queries.join(', ')
+      return { card: 'generic', title: `Search ${title}`, kind: 'search', rawInput: args }
+    }
     case 'web_fetch':
       return { card: 'generic', title: `Fetch ${str(args.url)}`, kind: 'fetch', rawInput: args }
     default:
@@ -742,26 +716,34 @@ function viewFor(event: SessionEvent, log: readonly SessionEvent[]): ToolEventVi
 }
 
 /**
- * Fixture parallel of the plan unit's double-event fold: `command/run`
- * records named `plan` with recorded input set the wanted target (`off` →
- * false, else true); `plan/mode` commits and clears it. `wanted` is exposed
- * for the prompt boundary (the fixture's step/start parallel).
+ * Fixture parallel of the plan unit's lifecycle fold. The paired
+ * `command/done` retains successful plan selections and drops failures;
+ * `plan/mode` commits one. `wanted` is exposed for the prompt boundary (the
+ * fixture's step/start parallel).
  */
 function foldPlan(log: readonly SessionEvent[]): { active: boolean; pending: boolean; wanted: boolean | null } {
   let active = false
   let wanted: boolean | null = null
+  let running: { commandId: unknown; wanted: boolean } | null = null
   for (const event of log) {
     const item = event as unknown as { type: string; data?: Record<string, unknown> }
     if (item.type === 'command/run' && item.data?.['name'] === 'plan') {
       const args = item.data['args']
       if (typeof args !== 'string') continue
-      wanted = args.trim() !== 'off'
+      running = { commandId: item.data['commandId'], wanted: args.trim() !== 'off' }
+    } else if (item.type === 'command/done'
+      && item.data !== undefined
+      && running !== null
+      && item.data['commandId'] === running.commandId) {
+      wanted = item.data['kind'] === 'success' && running.wanted !== active ? running.wanted : null
+      running = null
     } else if (item.type === 'plan/mode') {
       active = item.data?.['active'] === true
       wanted = null
     }
   }
-  return { active, pending: wanted !== null && wanted !== active, wanted }
+  const selected = running?.wanted ?? wanted
+  return { active, pending: selected !== null && selected !== active, wanted: selected }
 }
 
 /** The plan projection's wire view over the full log. */
@@ -1077,6 +1059,7 @@ function projectionValuesOf(log: readonly SessionEvent[]): Record<string, unknow
     maxImagesPerMessage: 20,
     maxMessageImageBytes: 100 * 1024 * 1024,
     maxImagePixels: 40_000_000,
+    maxImageDimension: 2000,
     mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
   }
   return values
@@ -1551,11 +1534,19 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   // live under one workspace, whose account carries them in attach order.
   const wid = (raw: string): WorkspaceId => raw as WorkspaceId
   const fixtureEpoch = new Date(Date.now() - 300_000).toISOString()
+  const FIXTURE_HOME = '/home/fixture'
   const workspaces: WorkspaceView[] = options.empty ? [] : [{
     workspaceId: wid('fx-ws-fixture'),
     path: '/tmp/fixture',
     title: 'fixture',
     sessionIds: [sid('fx-alpha'), sid('fx-beta'), sid('fx-gamma')],
+    createdAt: fixtureEpoch,
+    updatedAt: fixtureEpoch,
+  }, {
+    workspaceId: wid('fx-ws-home'),
+    path: `${FIXTURE_HOME}/Documents/project`,
+    title: 'project',
+    sessionIds: [],
     createdAt: fixtureEpoch,
     updatedAt: fixtureEpoch,
   }]
@@ -1568,7 +1559,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   // deterministic content mirroring the design mock so assembled Web tests
   // and snapshots can walk it. Leaves are materialized lazily: a child listed
   // by its parent lists as empty until something is created inside it.
-  const FIXTURE_HOME = '/home/fixture'
   const directoryTree = new Map<string, string[]>([
     ['/', ['home']],
     ['/home', ['fixture']],
@@ -1733,13 +1723,13 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         value: [
           { name: 'compact', description: 'fixture：压缩当前会话上下文' },
           { name: 'echo', description: 'fixture：回显参数', input: { hint: 'text to echo' } },
-          { name: 'goal', description: 'set or view the goal for a long-running task', input: { hint: '<objective>' } },
+          { name: 'goal', description: 'set or view the goal for a long-running task', input: { hint: '<objective>', images: true } },
           { name: 'permission', description: 'Switch the permission preset (sandbox mode + approval policy)', input: { hint: '<preset>' } },
-          { name: 'plan', description: 'Enter or leave plan mode', input: { hint: '[off|message]' } },
+          { name: 'plan', description: 'Enter or leave plan mode', input: { hint: '[off|message]', images: true } },
         ],
       }
     },
-    execute(id: SessionId, line: string): RpcResult<CommandExecution | undefined> {
+    execute(id: SessionId, line: string, images: readonly unknown[] = []): RpcResult<CommandExecution | undefined> {
       const missing = requireGoalSession(id)
       if (missing !== undefined) return missing
       // Structured split mirroring the Host parser: name + verbatim rawInput
@@ -1747,6 +1737,29 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const match = /^\/(\S+)((?:\s.*)?)$/.exec(line.trim())
       const name = match?.[1]
       const args = match?.[2] ?? ''
+      // Mirror the Host image policy AFTER command resolution, matching the
+      // executor's order (an unknown name answers undefined and logs no
+      // lifecycle): the declaration rejection covers every known command
+      // without `input.images`, and the two producer grammar rejections cover
+      // the declaring commands' control-only lines. The fixture stores no
+      // bytes, so an accepted batch is acknowledged and dropped.
+      const known = ['permission', 'goal', 'compact', 'echo', 'plan']
+      if (images.length > 0 && name !== undefined && known.includes(name)) {
+        const rejection = name !== 'goal' && name !== 'plan'
+          ? `/${name} does not accept image attachments`
+          : name === 'goal' && args.trim() === ''
+            ? 'Image attachments only accompany a goal objective: /goal <objective> or /goal edit <objective>.'
+            : name === 'plan' && args.trim() === 'off'
+              ? 'Image attachments cannot accompany /plan off.'
+              : undefined
+        if (rejection !== undefined) {
+          const commandId = `fx-cmd-${logOf(id).length}` as CommandId
+          append(id, { type: 'command/run', data: { commandId, name, args, source: { kind: 'user' } } })
+          const result: CommandResult = { kind: 'error', text: rejection }
+          append(id, { type: 'command/done', data: { commandId, ...result } })
+          return { ok: true, value: { commandId, result } }
+        }
+      }
       if (name === 'permission') {
         const preset = args.trim()
         const commandId = `fx-cmd-${logOf(id).length}` as CommandId
@@ -1824,6 +1837,51 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   })
 
   /** Canonical fixture implementation of the generated Goal Remote contract. */
+  /** Canonical fixture implementation of the generated reference-discovery Remote contracts. */
+  const referenceRemotes = {
+    files(id: SessionId, query: string): RpcResult<{ path: string; kind: 'file' | 'directory' }[]> {
+      const missing = requireGoalSession(id)
+      if (missing !== undefined) return missing
+      const needle = query.toLocaleLowerCase()
+      const items = [
+        { path: 'notes', kind: 'directory' as const },
+        { path: 'README.md', kind: 'file' as const },
+        { path: 'notes/demo.txt', kind: 'file' as const },
+      ].filter(item => item.path.toLocaleLowerCase().includes(needle))
+      return { ok: true, value: items }
+    },
+    sessions(id: SessionId, query: string): RpcResult<{
+      sessionId: SessionId
+      label: string
+      cwd?: string
+      createdAt: number
+      mention: string
+    }[]> {
+      const missing = requireGoalSession(id)
+      if (missing !== undefined) return missing
+      const needle = query.toLocaleLowerCase()
+      const value = sessions
+        .filter(item => item.sessionId !== id)
+        .filter(item => String(item.sessionId).toLocaleLowerCase().includes(needle)
+          || item.cwd?.toLocaleLowerCase().includes(needle) === true)
+        .map((item) => {
+          const label = item.sessionId === sid('fx-beta') ? 'Fixture child session' : String(item.sessionId)
+          const encoded = btoa(JSON.stringify(item.sessionId))
+            .replaceAll('+', '-')
+            .replaceAll('/', '_')
+            .replace(/=+$/u, '')
+          return {
+            sessionId: item.sessionId,
+            label,
+            ...item.cwd === undefined ? {} : { cwd: item.cwd },
+            createdAt: item.updatedAt,
+            mention: `@[${label}](dsh-session:${encoded})`,
+          }
+        })
+      return { ok: true, value }
+    },
+  }
+
   const goalRemotes = {
     create(id: SessionId, request: { objective: string; maxGoalRounds?: number }): RpcResult<{ ref: FxGoalRef }> {
       const missing = requireGoalSession(id)
@@ -1934,7 +1992,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   /** At most one in-flight replay per session; cancel clears it. */
   const replays = new Map<SessionId, { timer: ReturnType<typeof setTimeout>; finish(aborted: boolean): void }>()
 
-  /** history transit delay (timing hooks below); the page snapshot is taken at request time, like a real host. */
+  /** History transit delay; the page snapshot is taken at request time. */
   let historyDelayMs = 0
   /** One-shot history failure (timing hook: a pre-disconnect history request already doomed when reconnect lands). */
   let failNextHistory = false
@@ -1945,10 +2003,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   /** The single opt-in browser stress producer; normal fixture journeys never start it. */
   let activeReasoningChunkStorm: ReasoningChunkStormState | null = null
 
-  // Timing-acceptance hooks (browser test backdoor): the in-memory fixture is
-  // ideally timed. These let
-  // browser acceptance runs create slow-history, lost-frame, and reconnect
-  // windows a real host produces naturally.
+  // Browser-only timing hooks for slow history, lost frames, and reconnects.
   const timingHooks = {
     setHistoryDelay(ms: number): void {
       historyDelayMs = ms
@@ -2270,7 +2325,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         modelSelections.set(created.sessionId, { provider: 'deepseek-official', model: 'deepseek-v4-flash' })
         attachedSessions += 1
         const emitSession = (): void => {
-          // Mirrors the host: the frame fires at creation, so blank is constantly true.
+          // The creation frame precedes later workspace-attachment work.
           emitHost({ type: 'host/session-added', sessionId: created.sessionId, blank: true, cwd })
         }
         if (workspace !== undefined && options.failWorkspaceAttach) {
@@ -2360,7 +2415,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       },
       history: async (request) => {
         const log = logs.get(request.payload.sessionId) ?? []
-        // Snapshot at request time, deliver after the transit delay (mirrors a real host under latency).
+        // Snapshot at request time, then deliver after the transit delay.
         const page = pageOf(log, request.payload.beforeSeq, request.payload.maxMessages ?? 50)
         // Tail page carries the projections block (host parallel: one consistent
         // cut over the registered units; asOfSeq = window tail seq, -1 on an
@@ -2402,6 +2457,13 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           return err(request, { code: 'session-not-found', message: `no session ${id}`, details: { sessionId: id } })
         }
         if (options.rejectPrompt) {
+          if (content.some(block => block.type === 'image')) {
+            return err(request, {
+              code: 'attachment-error',
+              message: 'fixture: image side exceeds the deployment limit',
+              details: { reason: 'IMAGE_DIMENSION_TOO_LARGE' },
+            })
+          }
           return err(request, {
             code: 'agent-busy',
             message: 'fixture: prompt rejected before acceptance',
@@ -2523,7 +2585,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     },
     host: {
       describe: request => ok(request, {
-        version: '0.0.0-fixture', cwd: '/tmp/fixture', attachedSessions, canOpenPath: true,
+        version: '0.0.0-fixture', cwd: '/tmp/fixture', attachedSessions, home: FIXTURE_HOME, canOpenPath: true,
       }),
       // Deterministic native pick: the keyless lanes drive the full
       // pick-then-adopt path without an OS chooser (design-mock content,
@@ -3004,6 +3066,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         args: {
           agentId: SessionId
           line?: string
+          query?: string
+          images?: readonly unknown[]
           ref?: { id: string; revision: number }
           request?: { objective?: string; maxGoalRounds?: number }
         }
@@ -3011,7 +3075,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const sessionId = args.agentId
       switch (endpoint) {
         case 'commands/list': return Promise.resolve(commandRemotes.list(sessionId))
-        case 'commands/execute': return Promise.resolve(commandRemotes.execute(sessionId, args.line as string))
+        case 'commands/execute': return Promise.resolve(commandRemotes.execute(sessionId, args.line as string, args.images ?? []))
+        case 'fileReferences/list': return Promise.resolve(referenceRemotes.files(sessionId, args.query ?? ''))
+        case 'sessionReferenceResolver/candidates': return Promise.resolve(referenceRemotes.sessions(sessionId, args.query ?? ''))
         case 'goals/create': return Promise.resolve(goalRemotes.create(sessionId, {
           objective: args.request?.objective as string,
           ...args.request?.maxGoalRounds === undefined ? {} : { maxGoalRounds: args.request.maxGoalRounds },

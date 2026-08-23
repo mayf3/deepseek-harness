@@ -85,7 +85,7 @@ A session "materialized but with no first prompt" is governed by the summary-der
 
 ### Per-session provisioning: the `sessions.provide` standard-kit channel
 
-The sole provisioning path by which session slot components fetch their own session data. Plugins declare a fixed key map through the static descriptor `sessions.provide({hooks, props, resolve})` (a duplicate key throws at registration); `resolve(binding)` materializes values for a specific session and tears them down with the scope. Web-react's `standardKit` single loop binds the hooks compartment into `use<Name>` selector hooks (`observableHook`→uSES, anti-tearing) and passes the props compartment through as-is.
+The sole provisioning path by which session slot components fetch their own session data. Plugins declare a fixed key map through the static descriptor `sessions.provide({hooks, props, resolve})` (a duplicate key throws at registration); `resolve(binding)` materializes values for a specific session and tears them down with the scope. ui-renderer's `standardKit` single loop binds the hooks compartment into `use<Name>` selector hooks (`observableHook`→uSES, anti-tearing) and passes the props compartment through as-is.
 
 Slot scope is the closed set `root | session-maybe | session`:
 
@@ -132,5 +132,5 @@ Slot scope is the closed set `root | session-maybe | session`:
 - Plugins gain session context isomorphic to the host's: per-session state hangs on the actx and mounts/tears down in one piece with the scope fiber, making leaks structurally impossible; two-session isolation is structurally guaranteed by the scope filter.
 - The client object layer converges to a wire mirror: session identity, lifecycle, and capability adjudication all defer to the host entity — the input system (the next layer) always faces a session with a real Agent, and providers like slash/skill uniformly address by sessionId directly.
 - Blank-session governance takes zero dedicated mechanisms: state rides one derived bit, visibility rides the unified list projection (only the current blank shows, as `New Session`), reclamation rides lazy persistence's existing contract (evaporation on restart), and the ordinary ceiling rides same-Workspace reuse.
-- The cost: the id→ctx handoff discipline and provide's Concurrent discipline are conventions rather than type-enforced, pinned by review and tests. The single state axis still withholds machine faces until a Session exists; the resident card routes activation to the Workspace picker during that interval ([decision](../feature/2026-08-07-workspace-picker-composer-entry.md)).
+- The cost: the id→ctx handoff discipline and provide's Concurrent discipline are conventions rather than type-enforced, pinned by review and tests. The single state axis still withholds machine faces until a Session exists; the [resident conversation shell](../../../../packages/client/ui-conversation/README.md) routes activation to the Workspace picker during that interval.
 - Known gaps: approval/question recovery across prune (TODO); model selection returns in live-mutation shape (the host `selectModel` trio is ready-made, its client consumer not yet built).

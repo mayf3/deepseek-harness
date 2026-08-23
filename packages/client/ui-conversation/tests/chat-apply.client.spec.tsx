@@ -1,9 +1,4 @@
 // @vitest-environment jsdom
-// apply wiring: the conversation service provided, the chat view registered
-// as the first 'conversation.view' ring entry declaring the whole-Tool seat,
-// the slot registrations land against a root entry's children declarations
-// (the AppFrame role), and the shared store handle rides all strict session
-// entries. Tool composition belongs to ui-tool and its machinery spec.
 
 import { describe, expect, it, vi } from 'vitest'
 import { SlotTestRuntime, usePinnedBrowserLanguages, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
@@ -91,8 +86,11 @@ describe('apply wiring', () => {
     // The hero holes ride the conversation entry's children declaration (the
     // empty-state occupant is gone). Both are root-scoped: the new-session
     // screen precedes the session either would belong to.
+    expect(b.slots.spec('conversation.hero.brand.mark')).toEqual({ kind: 'single', scope: 'root' })
     expect(b.slots.spec('conversation.hero.workspace')).toEqual({ kind: 'single', scope: 'root' })
     expect(b.slots.spec('conversation.hero.agentPreset')).toEqual({ kind: 'single', scope: 'root' })
+    expect(b.slots.spec('conversation.session.header.lineage'))
+      .toEqual({ kind: 'single', scope: 'session' })
     expect(b.slots.entries('settings.general.item').map(entry => entry.options.id)).toEqual(['composer-enter'])
     await b.runtime.dispose()
   })

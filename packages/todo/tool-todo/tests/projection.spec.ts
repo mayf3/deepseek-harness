@@ -13,7 +13,8 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
-import type { Session, TodoItem } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
+import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -83,6 +84,7 @@ describe('todos projection provider', () => {
       { content: 'a', status: 'completed' },
       { content: 'b', status: 'in_progress' },
     ]
+    session.append('turn/start', { turn: 1 })
     session.append('todo/write', { todos: first })
     session.append('todo/write', { todos: second })
     const projections = await bench.tailProjections()
@@ -96,10 +98,11 @@ describe('todos projection provider', () => {
     const session = bench.session
     seedMessage(session)
     const list: TodoItem[] = [{ content: 'done', status: 'completed' }]
+    session.append('turn/start', { turn: 1 })
     session.append('todo/write', { todos: list })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect((await bench.tailProjections())?.values.todos).toEqual(list)
-    session.append('turn/start', { turn: 1 })
+    session.append('turn/start', { turn: 2 })
     const cleared = await bench.tailProjections()
     expect(cleared?.values.todos).toBeNull()
     expect(cleared?.asOfSeq).toBe(session.seq - 1)

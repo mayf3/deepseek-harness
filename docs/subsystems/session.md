@@ -59,9 +59,13 @@ interface SessionEventMap {
    * Assembled assistant message for one step (derived history uses this).
    * Carries the step's `usage` when the adapter reported token accounting, so
    * the model output and its accounting travel together (there is no separate
-   * usage record). `usage` is absent when the adapter reported none.
+   * usage record). `usage` is absent when the adapter reported none. A turn
+   * cancelled mid-stream finalizes its delivered text/reasoning prefix as this
+   * event with `interrupted: true`; undispatched tool calls are absent. The
+   * marker distinguishes that prefix without re-deriving interruption from turn
+   * boundaries. An aborted turn with no such event streamed no visible content.
    */
-  'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage }
+  'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true }
   /**
    * The model requested one tool invocation: `name` with the raw `arguments`
    * JSON string exactly as the model produced it (unparsed). `callId` pairs the
@@ -86,8 +90,6 @@ interface SessionEventMap {
     error?: { name: string; code: string }
     meta?: JsonValue
   }
-  /** Whole-list snapshot; latest write wins on replay. Log-only UI state; never derived history. */
-  'todo/write': { todos: TodoItem[] }
   /**
    * Full header for the next request, appended inside its step before dispatch.
    * It is log-only; the latest snapshot reconstructs the request header.
@@ -125,29 +127,6 @@ interface SessionEventMap {
 ```
 
 `UserMessage` is the identified, frozen user-role value shared by ordinary prompts, injected context, steering, and live inbox events. Event wrappers add only event-local position or outcome facts; the loop adds only driver-owned routing state while an item remains pending.
-
-### `TodoItem` — one todo-list entry
-
-The unit of the `todo/write` event's whole-list snapshot. Deliberately minimal — a `content` line and a three-state `status` (no id, priority, or `activeForm`): the list is replaced wholesale on every write, so entries need no stable identity. See the [todo_write Agent Note](../../.agents/notes/implemented/feature/2026-06-29-todo-write-tool.md).
-
-```ts type-equiv
-/**
- * One entry in an agent's todo list — the unit of the `todo/write`
- * {@link SessionEventMap} event's whole-list snapshot.
- *
- * Deliberately minimal: a human-readable `content` line and a three-state
- * `status`. No id, priority, or `activeForm` — the list is replaced wholesale
- * on every write (last-write-wins), so entries need no stable identity. The
- * three statuses describe the complete portable lifecycle needed by model and
- * UI consumers.
- */
-interface TodoItem {
-  /** What this task is — a short imperative line shown in the UI. */
-  content: string
-  /** Lifecycle state. `in_progress` marks a task being worked now; parallel work may mark several. */
-  status: 'pending' | 'in_progress' | 'completed'
-}
-```
 
 <a id="the-request-header-event-requestheader"></a>
 
@@ -610,7 +589,7 @@ The backends that consume this contract are on [persistence.md](persistence.md).
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxsessions--sessionstore"></a>
 
@@ -746,7 +725,7 @@ fork(source: SessionForkSource, boundary?: number, childSessionId?: SessionId): 
 
 Types: [CreateSessionOptions](persistence.md) · [PrepareSessionOptions](persistence.md) · [SessionId](core.md)
 
-Source: [`packages/core/session/src/index.ts:792`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
 
 <a id="session-events"></a>
 
@@ -775,7 +754,7 @@ Creation announcement during session publication. A synchronous throw vetoes and
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/session/src/index.ts:54`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
 
 <a id="sessiondisposed--emit"></a>
 
@@ -798,7 +777,7 @@ Emitted once when an announced session leaves the store, including publication r
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/session/src/index.ts:64`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
 
 <a id="sessionevent--emit"></a>
 
@@ -823,7 +802,7 @@ Post-commit, fire-and-forget append feed. The listener snapshot resolves before 
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/session/src/index.ts:76`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
 
 <a id="sessionflush--parallel"></a>
 
@@ -845,5 +824,5 @@ Awaited parallel durability checkpoint: every listener runs and the caller await
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/core/session/src/index.ts:85`](../../packages/core/session/src/index.ts)
+Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
 <!-- END GENERATED cordis-surface -->
