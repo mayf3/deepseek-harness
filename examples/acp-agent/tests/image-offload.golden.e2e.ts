@@ -1,100 +1,23 @@
 import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import {
-  defineAcpSnapshotSuite,
   runScenario,
   type InputScript,
-  type Scenario,
-  type SnapshotSuiteOptions,
 } from '@deepseek-ai/dsh-session-snapshot'
-import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { OFFLOADED_IMAGE_TEXT } from '@deepseek-ai/dsh-llm'
 
-/**
- * The acp-agent example's snapshot suite: the scenario table for
- * `dsh-session-snapshot`'s ACP suite factory, which owns every compare/guard mechanic
- * (expected-output + re-persisted-log diffs, record/refresh write-back, the pinned-header
- * uniformity guard, the fixture guards). Fixtures live under `snapshots/<name>/`;
- * `pnpm run test:snapshot:record` re-records model transcripts against the real
- * API; `pnpm run test:snapshot:refresh` rewrites current replay expected outputs keyless.
- * See the package README (packages/test-support/session-snapshot) and the snapshot Agent Note,
- * .agents/notes/implemented/testing/2026-06-19-acp-snapshot-tests.md.
- */
-
-// The dsh CLI, this example's profile patch, and
-// the repo-root tsconfig (four levels up from examples/acp-agent/tests) — all
-// ABSOLUTE: the subprocess cwd is a temp dir outside the repo.
 const AGENT = {
   binScript: fileURLToPath(new URL('../../../apps/cli/src/bin.ts', import.meta.url)),
-  configPath: fileURLToPath(new URL('../cordis.yml', import.meta.url)),
+  configPath: fileURLToPath(new URL('../../../snapshots/acp/escalation-approved/cordis.yml', import.meta.url)),
   profile: 'acp',
   tsconfigPath: fileURLToPath(new URL('../../../tsconfig.json', import.meta.url)),
 }
 const IMAGE_OFFLOAD_CONFIG = fileURLToPath(new URL('./fixtures/image-offload.cordis.yml', import.meta.url))
 const SNAPSHOTS_DIR = fileURLToPath(new URL('../../../snapshots/acp/', import.meta.url))
 const READ_IMAGE_WORKSPACE = fileURLToPath(new URL('../../../snapshots/session/read-image/workspace/', import.meta.url))
-
-function snapshotModeFromEnv(value: string | undefined): SnapshotSuiteOptions['mode'] {
-  switch (value) {
-    case undefined:
-    case '':
-    case 'replay':
-      return 'replay'
-    case 'record':
-      return 'record'
-    case 'refresh':
-      return 'refresh'
-    default:
-      throw new Error(`unknown DSH_SNAPSHOT mode: ${value}`)
-  }
-}
-
-const SCENARIOS: Scenario[] = [
-  { name: 'handshake', hasModelTurn: false, recorded: false, headerClass: 'sandbox' },
-  { name: 'reject-extra-dirs', hasModelTurn: false, recorded: false, headerClass: 'sandbox' },
-  { name: 'cancel', hasModelTurn: true, recorded: false, overridden: true, headerClass: 'sandbox' },
-  { name: 'cancel-tool-calls', hasModelTurn: true, recorded: false, overridden: true, headerClass: 'sandbox', posixOnly: true },
-  {
-    name: 'escalation-approved',
-    hasModelTurn: true,
-    recorded: true,
-    pinsHeader: true,
-    headerClass: 'sandbox',
-    env: { DSH_PERMISSION_MODE: 'workspace-write' },
-  },
-  {
-    name: 'escalation-rejected',
-    hasModelTurn: true,
-    recorded: true,
-    headerClass: 'sandbox',
-    env: { DSH_PERMISSION_MODE: 'workspace-write' },
-  },
-  {
-    name: 'fs-escalation-approved',
-    hasModelTurn: true,
-    recorded: true,
-    headerClass: 'sandbox',
-    env: { DSH_PERMISSION_MODE: 'workspace-write' },
-  },
-]
-
-// Hosts without a usable PowerShell skip the pwsh-tool-turn run (its fixtures
-// stay guarded); the probe follows the executor's own resolution so a Windows
-// host with only an install-location pwsh still runs the scenario.
-const hasPwsh = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
-
-defineAcpSnapshotSuite({
-  agent: AGENT,
-  snapshotsDir: SNAPSHOTS_DIR,
-  scenarios: SCENARIOS.filter(scenario => existsSync(join(SNAPSHOTS_DIR, scenario.name))),
-  mode: snapshotModeFromEnv(process.env.DSH_SNAPSHOT),
-  hasPwsh,
-})
 
 it('pins native DeepSeek Files offload and inline fallback in assembled requests', async () => {
   const requests: Record<string, unknown>[] = []

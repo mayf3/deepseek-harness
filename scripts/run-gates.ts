@@ -241,6 +241,7 @@ export function gatesForMode(selected: Mode): Gate[] {
         pnpmScript('issue-management', 'test:issue-management', { label: 'Issue management policy' }),
         pnpmScript('duplication', 'duplication'),
         snapshotGate(),
+        goldenGate(),
         pnpmScript('build', 'build'),
         pnpmScript('build:web', 'build:web'),
         ...hygieneLeafGates({ artifactNeeds: ['build'] }),
@@ -427,6 +428,7 @@ function ciConsumerGates(): Gate[] {
       needs: validatedBuild,
     }),
     snapshotGate(validatedBuild),
+    goldenGate(validatedBuild),
     webSnapshotGate(validatedBuild),
     pnpmScript('doc-typecheck', 'doc-typecheck:contracts-ready', {
       needs: validatedBuild,
@@ -585,11 +587,19 @@ function coverageGates(): Gate[] {
   ]
 }
 
-// Example and package snapshots boot their bins in `lib` mode (built artifacts under plain Node,
-// plugins via real exports); script snapshots execute their real source entry path.
-// Callers wait either on `build` or on a validation gate that transitively owns that build.
+// Recorded-session adapters boot process scenarios in `lib` mode. Callers wait
+// either on `build` or on a validation gate that transitively owns that build.
 function snapshotGate(needs: string[] = ['build']): Gate {
   return pnpmScript('snapshot', 'test:snapshot', {
+    env: { DSH_EXAMPLE_MODE: 'lib' },
+    needs,
+  })
+}
+
+// Owner-local process goldens consume built package exports without entering
+// the recorded-session corpus or the credentialed provider lane.
+function goldenGate(needs: string[] = ['build']): Gate {
+  return pnpmScript('golden', 'test:golden', {
     env: { DSH_EXAMPLE_MODE: 'lib' },
     needs,
   })

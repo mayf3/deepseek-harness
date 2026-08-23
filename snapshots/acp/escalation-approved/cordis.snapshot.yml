@@ -41,4 +41,4 @@
               - id: deepseek-v4-pro
 
     - id: subagent-settlement-marker
-      name: './tests/fixtures/subagent-settlement-marker.ts'
+      name: './subagent-settlement-marker.ts'

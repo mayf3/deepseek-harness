@@ -8,7 +8,7 @@
  * factory ({@link defineAcpSnapshotSuite}) that registers a scenario table as a
  * full describe/it tree. Transport-neutral normalizers and fixture invariants
  * remain reusable by other profile adapters. Ordinary ACP e2e tests can use the launcher directly;
- * an example's `*.snapshot.ts` supplies only its {@link AgentUnderTest} paths,
+ * the ACP corpus adapter supplies only its {@link AgentUnderTest} paths,
  * snapshots directory, and {@link Scenario} table.
  *
  * NOTE: ./suite.ts imports vitest, so this package is importable only inside a

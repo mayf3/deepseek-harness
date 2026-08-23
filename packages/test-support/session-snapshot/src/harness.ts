@@ -1,7 +1,7 @@
 /**
  * Shared subprocess harness for ACP snapshot suites. A library module driven by
  * the suite factory in ./suite.ts (and directly by harness-level specs); each
- * example's `*.snapshot.ts` names its own agent-under-test paths.
+ * profile adapter names its own agent-under-test paths.
  *
  * It boots the REAL agent bin subprocess via the cordis Loader (so the
  * export-shape bug class stays guarded — see docs/postmortem/0001), drives it

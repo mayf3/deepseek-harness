@@ -51,7 +51,6 @@
         "headless-agent/tests/fixtures/session-telemetry-otel-driver.ts",
         "headless-agent/tests/fixtures/telemetry-redact-rule.ts",
         "headless-agent/tests/fixtures/e2b/e2b/bin.ts",
-        "acp-agent/tests/fixtures/subagent-settlement-marker.ts",
         "acp-agent/tests/fixtures/control-surface/control-surface-llm.ts",
         "acp-agent/tests/fixtures/subagent/subagent-acp/mock-delegating-llm.ts",
         "acp-agent/tests/fixtures/subagent/subagent-acp/driver.ts",
@@ -62,8 +61,7 @@
         "python-sdk-agent/tests/fixtures/subagent/subagent-dsh-sdk/driver.ts",
         "python-sdk-agent/tests/fixtures/subagent/subagent-dsh-sdk/child-mock-llm.ts",
         "python-sdk-agent/tests/fixtures/subagent/subagent-dsh-sdk/mock-delegating-llm.ts",
-        "*/tests/**/*.e2e.ts",
-        "*/tests/**/*.snapshot.ts"
+        "*/tests/**/*.e2e.ts"
       ],
       "project": [
         "**/*.ts"
@@ -650,8 +648,7 @@
     "apps/cli": {
       "entry": [
         "tests/**/*.spec.ts",
-        "tests/**/*.e2e.ts",
-        "tests/**/*.snapshot.ts"
+        "tests/**/*.e2e.ts"
       ],
       "project": [
         "src/**/*.ts",

@@ -39,6 +39,7 @@ Workspace inputs remain scenario-local. A mutating scenario compares a complete 
 - Every top-level scenario owns or references session JSONL; non-session goldens remain owner-local.
 - Committed session fixtures are redaction fixed points, contain no system-prompt or tool-schema bulk, and retain exactly one pin per header class.
 - Mutating scenarios verify their final workspace externally.
+- Owner-local process goldens use `*.golden.e2e.ts` and a separate built-output gate.
 - Source and built launch modes, browser replay, SDK projections, packaged Python runtime cases, documentation gates, and repository hygiene pass.
 
 ## Consequences

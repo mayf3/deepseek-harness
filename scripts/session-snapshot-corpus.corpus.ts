@@ -18,6 +18,13 @@ import {
 const repoRoot = resolve(import.meta.dirname, '..')
 const corpusRoot = join(repoRoot, 'snapshots')
 const profiles = ['acp', 'sdk', 'session', 'web'] as const
+const snapshotAdapters = [
+  'apps/web/tests/message-feedback-protocol.snapshot.ts',
+  'apps/web/tests/minimal-preset.snapshot.ts',
+  'snapshots/acp/acp.snapshot.ts',
+  'snapshots/sdk/sdk.snapshot.ts',
+  'snapshots/session/headless.snapshot.ts',
+] as const
 
 interface Scenario {
   readonly key: string
@@ -66,6 +73,28 @@ async function scenarios(): Promise<Scenario[]> {
 function referencedScenario(owner: Scenario, source: string): string {
   return source.includes('/') ? source : `${owner.profile}/${source}`
 }
+
+async function snapshotNamedTests(): Promise<string[]> {
+  const files: string[] = []
+  const visit = async (directory: string, relativeDir: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (['dist', 'lib', 'node_modules'].includes(entry.name)) continue
+        await visit(join(directory, entry.name), join(relativeDir, entry.name))
+      } else if (entry.isFile() && /\.snapshot\.tsx?$/u.test(entry.name)) {
+        files.push(join(relativeDir, entry.name).split(/[/\\]/u).join('/'))
+      }
+    }
+  }
+  for (const root of ['apps', 'examples', 'scripts', 'snapshots']) {
+    await visit(join(repoRoot, root), root)
+  }
+  return files.sort()
+}
+
+it('reserves the snapshot test suffix for recorded-session adapters', async () => {
+  expect(await snapshotNamedTests()).toEqual([...snapshotAdapters])
+})
 
 it('keeps every recorded session owned, pinned, redacted, and header-scrubbed', async () => {
   const all = await scenarios()
