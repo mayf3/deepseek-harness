@@ -284,6 +284,8 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (parsed.run_in_background === true) {
         return { card: 'generic', title: `Send to terminal ${parsed.sessionId as string} in background`, kind: 'execute', rawInput: parsed.text }
       }
+      // Keep this visible fallback aligned with dsh-client-ui-tool's
+      // terminal-card model, which cannot import this Host package.
       return { card: 'terminal', title: parsed.text || '(send input)', description: `Terminal ${parsed.sessionId as string}` }
     },
     presentResult(args, result) {

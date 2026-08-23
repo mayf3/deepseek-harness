@@ -156,8 +156,9 @@ function shellCall(name: string, args: Record<string, unknown>): ShellCall | nul
   if (background !== undefined && typeof background !== 'boolean') return null
   if (!validEscalationFields(args)) return null
   if (description === undefined) {
-    // Persistent shell providers consume only `command`; parameter roots are
-    // open, so unrelated fields do not change their running-card behavior.
+    // Standard dsh-tool-bash and dsh-tool-pwsh schemas require `description`;
+    // persistent shell providers omit it. Their parameter roots stay open, so
+    // unrelated fields do not change their running-card behavior.
     return { command, description: undefined, workdir: undefined, persistent: true, background: false }
   }
   if (typeof description !== 'string' || description.trim() === '') return null
@@ -183,12 +184,20 @@ function terminalSendCall(name: string, args: Record<string, unknown>): Terminal
   if (submit !== undefined && typeof submit !== 'boolean') return null
   if (background !== undefined && typeof background !== 'boolean') return null
   return {
+    // Keep this visible fallback aligned with dsh-tool-terminal's
+    // `terminal_send.presentCall` implementation.
     command: text || '(send input)',
     description: `Terminal ${sessionId}`,
     background: background === true,
   }
 }
 
+/**
+ * Parse the marker literals owned by `@deepseek-ai/dsh-shell/render` without
+ * importing that Host-only package into the Client dependency graph.
+ * @param text - rendered shell result text.
+ * @returns output with a trailing exit-code or signal marker extracted.
+ */
 function parseExitStatus(text: string): { output: string; exitCode?: number; signal?: string } {
   const signal = /\n\[killed by signal: ([^\]\n]+)\]$/.exec(text)
   if (signal?.[1] !== undefined) return { output: text.slice(0, signal.index), signal: signal[1] }
