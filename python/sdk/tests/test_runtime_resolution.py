@@ -79,6 +79,14 @@ def test_current_platform_supports_windows_x64_only(monkeypatch: pytest.MonkeyPa
         runtime._current_platform_tag()
 
 
+def test_current_platform_rejects_macos_x64(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(runtime.sys, "platform", "darwin")
+    monkeypatch.setattr(runtime.platform, "machine", lambda: "x86_64")
+
+    with pytest.raises(FileNotFoundError, match="macOS arm64"):
+        runtime._current_platform_tag()
+
+
 def test_runtime_requires_ripgrep_sidecar(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

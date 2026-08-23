@@ -208,6 +208,10 @@ def stage_sdk(destination: Path, version: str) -> None:
 
 
 def stage_runtime(destination: Path, version: str, executable: Path, executable_name: str) -> None:
+    if executable.name != executable_name:
+        raise ValueError(
+            f"runtime executable must be named {executable_name}, got {executable.name}"
+        )
     copy_package(ROOT / "python" / "sdk-runtime", destination)
     stage_license_files(destination, include_notices=True)
     rewrite_version(destination / "pyproject.toml", version)

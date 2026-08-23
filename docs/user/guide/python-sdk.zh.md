@@ -14,11 +14,23 @@
 
 ## 安装 SDK
 
+### Linux 与 macOS
+
 ```sh
 git clone https://github.com/deepseek-ai/deepseek-harness.git
 cd deepseek-harness
 python -m venv .venv
 . .venv/bin/activate
+python -m pip install deepseek-harness-sdk
+```
+
+### Windows PowerShell
+
+```powershell
+git clone https://github.com/deepseek-ai/deepseek-harness.git
+Set-Location deepseek-harness
+py -3.10 -m venv .venv
+.venv\Scripts\Activate.ps1
 python -m pip install deepseek-harness-sdk
 ```
 
@@ -28,18 +40,39 @@ python -m pip install deepseek-harness-sdk
 
 导出凭据；使用兼容代理时再设置 endpoint：
 
+### Linux 与 macOS
+
 ```sh
 export DEEPSEEK_API_KEY=sk-your-key-here
 # export DEEPSEEK_BASE_URL=http://127.0.0.1:8000/v1
 ```
 
+### Windows PowerShell
+
+```powershell
+$env:DEEPSEEK_API_KEY = "sk-your-key-here"
+# $env:DEEPSEEK_BASE_URL = "http://127.0.0.1:8000/v1"
+```
+
 使用显式 workspace 与 home 路径运行一个任务：
+
+### Linux 与 macOS
 
 ```sh
 python examples/python-sdk-agent/minimal.py \
   --workspace /absolute/path/to/disposable-workspace \
   --dsh-home /absolute/path/to/example-dsh-home \
   --session-id example-001 \
+  "Inspect the repository and fix the failing tests."
+```
+
+### Windows PowerShell
+
+```powershell
+python examples/python-sdk-agent/minimal.py `
+  --workspace C:\work\disposable-workspace `
+  --dsh-home C:\work\example-dsh-home `
+  --session-id example-001 `
   "Inspect the repository and fix the failing tests."
 ```
 
@@ -76,10 +109,20 @@ SDK 会延迟启动内置的 `dsh --profile sdk-minimal` 进程，并复用到�
 
 需要在该 home 中持久保存依赖与 bundle 层时，使用 `dsh plugin`：
 
+### Linux 与 macOS
+
 ```sh
 export DSH_HOME=/absolute/path/to/example-dsh-home
 dsh --profile sdk-minimal --dump-default-config >/dev/null
 dsh plugin --profile sdk-minimal add file:/absolute/path/to/my-plugin-bundle
+```
+
+### Windows PowerShell
+
+```powershell
+$env:DSH_HOME = "C:\work\example-dsh-home"
+dsh --profile sdk-minimal --dump-default-config | Out-Null
+dsh plugin --profile sdk-minimal add file:C:/work/my-plugin-bundle
 ```
 
 第一个命令初始化随附的独立 profile。第二个命令把包管理转发给 `pnpm`，然后记录所有导出 `dsh.bundle` 层的已安装包。只有执行此管理命令时才需要安装 `pnpm`；启动已安装 SDK 不需要它。持久配置项变更应编辑 `$DSH_HOME/profiles/sdk-minimal/cordis.patch.yml`；单次启动变更则从 Python 传入 patch 文件。

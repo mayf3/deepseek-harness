@@ -14,11 +14,23 @@ This tutorial installs the published Python SDK, runs the shipped standalone min
 
 ## Install the SDK
 
+### Linux and macOS
+
 ```sh
 git clone https://github.com/deepseek-ai/deepseek-harness.git
 cd deepseek-harness
 python -m venv .venv
 . .venv/bin/activate
+python -m pip install deepseek-harness-sdk
+```
+
+### Windows PowerShell
+
+```powershell
+git clone https://github.com/deepseek-ai/deepseek-harness.git
+Set-Location deepseek-harness
+py -3.10 -m venv .venv
+.venv\Scripts\Activate.ps1
 python -m pip install deepseek-harness-sdk
 ```
 
@@ -28,18 +40,39 @@ The installation includes a matching native runtime wheel and the `dsh` command.
 
 Export the credential and, when needed, a compatible proxy endpoint:
 
+### Linux and macOS
+
 ```sh
 export DEEPSEEK_API_KEY=sk-your-key-here
 # export DEEPSEEK_BASE_URL=http://127.0.0.1:8000/v1
 ```
 
+### Windows PowerShell
+
+```powershell
+$env:DEEPSEEK_API_KEY = "sk-your-key-here"
+# $env:DEEPSEEK_BASE_URL = "http://127.0.0.1:8000/v1"
+```
+
 Run one task with explicit workspace and home paths:
+
+### Linux and macOS
 
 ```sh
 python examples/python-sdk-agent/minimal.py \
   --workspace /absolute/path/to/disposable-workspace \
   --dsh-home /absolute/path/to/example-dsh-home \
   --session-id example-001 \
+  "Inspect the repository and fix the failing tests."
+```
+
+### Windows PowerShell
+
+```powershell
+python examples/python-sdk-agent/minimal.py `
+  --workspace C:\work\disposable-workspace `
+  --dsh-home C:\work\example-dsh-home `
+  --session-id example-001 `
   "Inspect the repository and fix the failing tests."
 ```
 
@@ -76,10 +109,20 @@ The SDK starts the bundled `dsh --profile sdk-minimal` process lazily and reuses
 
 Use `dsh plugin` for dependencies and bundle layers that should persist in this home:
 
+### Linux and macOS
+
 ```sh
 export DSH_HOME=/absolute/path/to/example-dsh-home
 dsh --profile sdk-minimal --dump-default-config >/dev/null
 dsh plugin --profile sdk-minimal add file:/absolute/path/to/my-plugin-bundle
+```
+
+### Windows PowerShell
+
+```powershell
+$env:DSH_HOME = "C:\work\example-dsh-home"
+dsh --profile sdk-minimal --dump-default-config | Out-Null
+dsh plugin --profile sdk-minimal add file:C:/work/my-plugin-bundle
 ```
 
 The first command initializes the shipped standalone profile. The second forwards package management to `pnpm`, then records any installed package that exports a `dsh.bundle` layer. Install `pnpm` only for this management command; launching the installed SDK does not need it. Edit `$DSH_HOME/profiles/sdk-minimal/cordis.patch.yml` for persistent row changes, or pass patch files from Python for per-launch changes.

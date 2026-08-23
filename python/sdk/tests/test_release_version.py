@@ -137,3 +137,16 @@ def test_stage_runtime_copies_platform_payload(
     assert (destination / "THIRD_PARTY_NOTICES.md").read_bytes() == (
         ROOT / "THIRD_PARTY_NOTICES.md"
     ).read_bytes()
+
+
+def test_stage_runtime_rejects_a_noncanonical_executable_name(tmp_path: Path) -> None:
+    executable = tmp_path / "renamed.exe"
+    executable.write_bytes(b"runtime")
+
+    with pytest.raises(ValueError, match="must be named deepseek-harness-sdk-runtime-win-x64.exe"):
+        build_python_release.stage_runtime(
+            tmp_path / "staging",
+            "1.2.3",
+            executable,
+            "deepseek-harness-sdk-runtime-win-x64.exe",
+        )

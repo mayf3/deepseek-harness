@@ -26,7 +26,7 @@ The required GitHub matrix builds `node24-win-x64` on `windows-2025` beside the 
 
 The Windows lane creates a clean Windows virtual environment, installs the exact SDK and `win_amd64` runtime wheels, changes to a directory outside the checkout, unsets `PYTHONPATH` and `DSH_RUNTIME_MODE`, and runs the same `--scenario all --installed-wheel` blackbox as every other target. Trusted pull requests also run the same two-turn `sdk-live` provider scenario. Fork and Dependabot heads receive no key.
 
-After a successful shutdown response, the Python client closes stdin and waits within the configured shutdown timeout for the `dsh` context to exit and flush durable session state before terminating it. A failed shutdown retains immediate bounded termination. This distinction preserves the final accepted turn on Windows, where `terminate()` force-kills the process rather than delivering a catchable signal.
+After a successful shutdown response, the Python client closes stdin and waits within the configured shutdown timeout for the `dsh` context to exit and flush durable session state before terminating it. A failed shutdown retains immediate bounded termination. `shutdown_timeout_seconds` bounds each of the shutdown request, EOF grace, and termination-confirmation phases, so a pathological close can approach three times that value before the final kill. This distinction preserves the final accepted turn on Windows, where `terminate()` force-kills the process rather than delivering a catchable signal.
 
 The minimal blackbox uses persistent `pwsh` plus `str_replace_editor` on Windows and owns `minimal/win-x64/model-visible.json`; Linux and macOS retain persistent Bash and the shared `minimal/model-visible.json`. The advanced process/subagent snapshot and restart/durable-log snapshot remain shared across all targets. The shipped [`sdk-minimal` bundle](../../../../packages/bundle/sdk-minimal/README.md) selects the same platform shell pair for the runnable Python tutorial.
 
@@ -42,7 +42,7 @@ This decision partially supersedes the Windows non-goal in the [single-file runt
 
 **Give Windows a smaller smoke suite.** Rejected because a platform wheel cannot borrow protocol, persistence, worker, MCP, plugin, native-tool, or real-provider evidence from another executable. Platform-specific expected output is limited to the persistent shell surface; the remaining snapshots stay shared.
 
-**Run Windows commands through PowerShell workflow steps only.** Rejected for the reusable build body because it would duplicate the Linux/macOS installation and blackbox sequence. Git Bash supplies the common workflow grammar; only virtual-environment executable selection and the product payload names differ.
+**Run the Windows leg through Git Bash.** Rejected because the repository requires native `pwsh` on Windows runners and MSYS path conversion would not prove native command behavior. Portable one-line steps use each runner's default shell; path, virtual-environment, and blackbox steps have explicit POSIX and PowerShell forms.
 
 ## Consequences
 

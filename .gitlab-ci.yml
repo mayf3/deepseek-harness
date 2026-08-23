@@ -112,6 +112,7 @@ runtime-windows-x64:
     - $env:DSH_WHEEL_VERSION = (& .ci-python\Scripts\python.exe -c 'import runpy; release = runpy.run_path("scripts/build-python-release.py"); print(release["pep440_version"](release["repository_version"]()))')
     - if ($env:CI_COMMIT_TAG -ne "python-v$env:DSH_VERSION") { throw "Tag $env:CI_COMMIT_TAG does not match package.json version $env:DSH_VERSION" }
     - .ci-python\Scripts\python.exe -m pip install uv==0.11.23
+    - $env:Path = (Join-Path $PWD ".ci-python\Scripts") + [IO.Path]::PathSeparator + $env:Path
   script:
     - corepack enable
     - pnpm install --frozen-lockfile

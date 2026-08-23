@@ -116,7 +116,12 @@ def resolve_bundled_launch_args(mode: str | None = None) -> tuple[str, ...]:
 def _current_platform_tag() -> str:
     plat = _PLATFORM_TAGS.get(sys.platform)
     arch = _ARCH_TAGS.get(platform.machine().lower())
-    if plat is None or arch is None or (plat == "win" and arch != "x64"):
+    if (
+        plat is None
+        or arch is None
+        or (plat == "win" and arch != "x64")
+        or (plat == "macos" and arch != "arm64")
+    ):
         raise FileNotFoundError(
             "no bundled DeepSeek Harness SDK runtime exists for this platform "
             f"(sys.platform={sys.platform!r}, machine={platform.machine()!r}); supported: "
