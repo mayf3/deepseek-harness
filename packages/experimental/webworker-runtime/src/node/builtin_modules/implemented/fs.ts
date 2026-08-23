@@ -481,6 +481,40 @@ export interface WriteStreamOptions {
 /** Node implements file-stream `autoClose` through the stream's `autoDestroy` state. */
 const streamAutoDestroy = (autoClose: boolean | undefined): boolean => autoClose ?? true
 
+interface FileStreamState {
+  fd: number | null
+  pending: boolean
+}
+
+/** Release the descriptor and abort listener shared by both file-stream directions. */
+function destroyFileStream(
+  stream: FileStreamState,
+  signal: AbortSignal | undefined,
+  onAbort: (() => void) | undefined,
+  error: Error | null,
+  callback: (error: Error | null) => void,
+): void {
+  signal?.removeEventListener('abort', onAbort as () => void)
+  if (stream.fd !== null) closeSync(stream.fd)
+  stream.fd = null
+  stream.pending = false
+  callback(error)
+}
+
+interface ClosableFileStream {
+  once(event: string, listener: () => void): unknown
+  destroy(): unknown
+}
+
+/** Register an optional completion callback and explicitly destroy a file stream. */
+function closeFileStream(
+  stream: ClosableFileStream,
+  callback?: (error?: NodeJS.ErrnoException | null) => void,
+): void {
+  if (callback !== undefined) stream.once('close', () => { callback(null) })
+  stream.destroy()
+}
+
 /** Read stream over one VFS file. */
 export class ReadStream extends Readable {
   /** Resolved path opened by this stream. */
@@ -560,11 +594,7 @@ export class ReadStream extends Readable {
   }
 
   override _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
-    this.signal?.removeEventListener('abort', this.onAbort as () => void)
-    if (this.fd !== null) closeSync(this.fd)
-    this.fd = null
-    this.pending = false
-    callback(error)
+    destroyFileStream(this, this.signal, this.onAbort, error, callback)
   }
 
   /**
@@ -572,8 +602,7 @@ export class ReadStream extends Readable {
    * @param callback - Optional completion callback after `close`.
    */
   close(callback?: (error?: NodeJS.ErrnoException | null) => void): void {
-    if (callback !== undefined) this.once('close', () => { callback(null) })
-    this.destroy()
+    closeFileStream(this, callback)
   }
 }
 
@@ -647,11 +676,7 @@ export class WriteStream extends Writable {
   }
 
   override _destroy(error: Error | null, callback: (error: Error | null) => void): void {
-    this.signal?.removeEventListener('abort', this.onAbort as () => void)
-    closeDescriptor(this.fd)
-    this.fd = null
-    this.pending = false
-    callback(error)
+    destroyFileStream(this, this.signal, this.onAbort, error, callback)
   }
 
   /**
@@ -659,14 +684,8 @@ export class WriteStream extends Writable {
    * @param callback - Optional completion callback after `close`.
    */
   close(callback?: (error?: NodeJS.ErrnoException | null) => void): void {
-    if (callback !== undefined) this.once('close', () => { callback(null) })
-    this.destroy()
+    closeFileStream(this, callback)
   }
-}
-
-/** Close a stream-owned descriptor when it has opened successfully. */
-function closeDescriptor(fd: number | null): void {
-  if (fd !== null) closeSync(fd)
 }
 
 /**

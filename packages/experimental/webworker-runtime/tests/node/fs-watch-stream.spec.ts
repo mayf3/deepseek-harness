@@ -279,7 +279,7 @@ describe('file streams', () => {
     expect(workerStream.default._isArrayBufferView(new Uint8Array())).toBe(true)
   })
 
-  it('matches Node file-stream defaults and abort error identity', async () => {
+  it('uses Node 22 Linux file-stream defaults and abort error identity', async () => {
     const nativeRoot = mkdtempSync(join(tmpdir(), 'dsh-stream-diff-'))
     nativeRoots.push(nativeRoot)
     const nativePath = join(nativeRoot, 'input.txt')
