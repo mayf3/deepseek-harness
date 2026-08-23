@@ -88,7 +88,7 @@ const PRODUCT_SUBAGENT_RESULT_DIAGNOSTIC_CONFIG = fileURLToPath(
   new URL('../subagent-result-diagnostic.cordis.yml', import.meta.url),
 )
 const FS_DIFF_BOUND_CONFIG = fileURLToPath(new URL('./fs-diff-bound.cordis.yml', import.meta.url))
-const SNAPSHOTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'snapshots')
+const SNAPSHOTS_DIR = fileURLToPath(new URL('../../../snapshots/acp/', import.meta.url))
 const PACKED_CHUNKS_SOURCE = 'hook-cc-pretool-deny'
 
 async function prepareEditingCordisSkillWorkspace(cwd: string): Promise<void> {
