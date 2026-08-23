@@ -17,64 +17,148 @@ interface PreviewSourceChoice {
 }
 
 const CHOOSER_STYLE = `
-  :root { color-scheme: light dark; }
-  body { margin: 0; }
   [data-preview-source-chooser] {
-    min-height: 100vh;
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
     display: grid;
     place-items: center;
+    overflow: auto;
     padding: 24px;
     box-sizing: border-box;
-    color: #171717;
-    background: radial-gradient(circle at 50% 35%, #eef4ff 0, #f8fafc 42%, #f3f4f6 100%);
-    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #0f1115;
+    background: #fff;
+    font-size: 14px;
+    line-height: 22px;
   }
+  #root:has(> [data-preview-source-chooser]) > [data-dsh-boot] { display: none; }
   [data-preview-source-card] {
-    width: min(560px, 100%);
+    width: min(600px, 100%);
+    max-height: calc(100dvh - 48px);
     box-sizing: border-box;
     padding: 28px;
-    border: 1px solid #d8dee9;
-    border-radius: 20px;
-    background: rgba(255, 255, 255, 0.94);
-    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.12);
+    overflow-y: auto;
+    border: 1px solid transparent;
+    border-radius: 24px;
+    background: #fff;
+    box-shadow: 0 0 1px rgb(0 0 0 / 20%), 0 12px 32px rgb(0 0 0 / 8%);
   }
-  [data-preview-source-card] h1 { margin: 0 0 6px; font-size: 24px; line-height: 1.25; }
-  [data-preview-source-card] > p { margin: 0 0 22px; color: #5b6472; }
-  [data-preview-source-card] fieldset { display: grid; gap: 10px; margin: 0; padding: 0; border: 0; }
-  [data-preview-source-card] legend { margin-bottom: 10px; font-weight: 650; }
-  [data-preview-source-option] {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 2px 12px;
-    padding: 14px;
-    border: 1px solid #d8dee9;
-    border-radius: 12px;
-    cursor: pointer;
+  [data-preview-source-card] h1 {
+    margin: 0;
+    font-size: 20px;
+    line-height: 28px;
+    font-weight: 500;
   }
-  [data-preview-source-option]:has(input:checked) { border-color: #4777df; background: #edf3ff; }
-  [data-preview-source-option]:has(input:disabled) { cursor: not-allowed; opacity: 0.55; }
-  [data-preview-source-option] input { grid-row: 1 / span 2; margin: 4px 0 0; }
-  [data-preview-source-option] strong { font-size: 15px; }
-  [data-preview-source-option] span { color: #667085; }
-  [data-preview-source-submit] {
-    width: 100%;
-    margin-top: 20px;
-    padding: 11px 16px;
+  [data-preview-source-card] > p {
+    margin: 8px 0 0;
+    color: #61666b;
+  }
+  [data-preview-source-card] fieldset {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 24px 0 0;
+    padding: 0;
     border: 0;
-    border-radius: 10px;
-    color: white;
-    background: #315fc7;
-    font: inherit;
-    font-weight: 650;
+  }
+  [data-preview-source-card] legend {
+    margin: 0 0 8px;
+    padding: 0 4px;
+    color: #61666b;
+    font-size: 13px;
+    line-height: 20px;
+    font-weight: 500;
+  }
+  [data-preview-source-option] {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 56px;
+    padding: 8px 12px 8px 8px;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: transparent;
     cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  [data-preview-source-option]:hover:not(:has(input:disabled)),
+  [data-preview-source-option]:has(input:checked) {
+    background: rgb(38 49 72 / 6%);
+  }
+  [data-preview-source-option]:has(input:checked) {
+    border-color: rgb(0 0 0 / 10%);
+  }
+  [data-preview-source-option]:has(input:disabled) {
+    cursor: default;
+    opacity: 0.4;
+  }
+  [data-preview-source-option] input {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin: 4px 0 0;
+    accent-color: #0f1115;
+  }
+  [data-preview-source-option] > span { flex: 1; min-width: 0; }
+  [data-preview-source-option] strong {
+    display: block;
+    font-size: 14px;
+    line-height: 24px;
+    font-weight: 500;
+  }
+  [data-preview-source-option] strong + span {
+    display: block;
+    color: #81858c;
+    font-size: 14px;
+    line-height: 24px;
+  }
+  [data-preview-source-submit] {
+    display: block;
+    min-width: 120px;
+    height: 36px;
+    margin: 24px 0 0 auto;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 18px;
+    color: #fff;
+    background: #0f1115;
+    font-size: 14px;
+    line-height: 22px;
+    cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+  [data-preview-source-submit]:hover:not(:disabled) {
+    background: #43454a;
+  }
+  [data-preview-source-submit]:focus-visible {
+    outline: 2px solid rgb(0 0 0 / 16%);
+    outline-offset: 2px;
   }
   [data-preview-source-submit]:disabled { cursor: not-allowed; opacity: 0.5; }
   @media (prefers-color-scheme: dark) {
-    [data-preview-source-chooser] { color: #f4f4f5; background: radial-gradient(circle at 50% 35%, #172554 0, #111827 45%, #09090b 100%); }
-    [data-preview-source-card] { border-color: #374151; background: rgba(24, 24, 27, 0.96); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35); }
-    [data-preview-source-card] > p, [data-preview-source-option] span { color: #a1a1aa; }
-    [data-preview-source-option] { border-color: #3f3f46; }
-    [data-preview-source-option]:has(input:checked) { border-color: #7aa2ff; background: #172554; }
+    [data-preview-source-chooser] {
+      color: #f9fafb;
+      background: #151517;
+    }
+    [data-preview-source-card] { border-color: rgb(255 255 255 / 6%); background: #2c2c2e; }
+    [data-preview-source-card] > p, [data-preview-source-card] legend { color: #cfd3d6; }
+    [data-preview-source-option] strong + span { color: #adb2b8; }
+    [data-preview-source-option]:hover:not(:has(input:disabled)),
+    [data-preview-source-option]:has(input:checked) { background: rgb(255 255 255 / 8%); }
+    [data-preview-source-option]:has(input:checked) { border-color: rgb(255 255 255 / 12%); }
+    [data-preview-source-option] input { accent-color: #f9fafb; }
+    [data-preview-source-submit] { color: #0f1115; background: #f9fafb; }
+    [data-preview-source-submit]:hover:not(:disabled) { background: #ebeef2; }
+    [data-preview-source-submit]:focus-visible { outline-color: rgb(255 255 255 / 20%); }
+  }
+  @media (max-width: 560px) {
+    [data-preview-source-card] { padding: 24px; }
+    [data-preview-source-submit] { width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-preview-source-option], [data-preview-source-submit] { transition: none; }
   }
 `
 
@@ -89,8 +173,10 @@ function escapeMarkup(value: string): string {
 function optionMarkup(choice: PreviewSourceChoice, selected: string): string {
   return `<label data-preview-source-option>
     <input type="radio" name="preview-source" value="${choice.id}"${choice.id === selected ? ' checked' : ''}${choice.disabled === true ? ' disabled' : ''}>
-    <strong>${escapeMarkup(choice.label)}</strong>
-    <span>${escapeMarkup(choice.description)}</span>
+    <span>
+      <strong>${escapeMarkup(choice.label)}</strong>
+      <span>${escapeMarkup(choice.description)}</span>
+    </span>
   </label>`
 }
 
