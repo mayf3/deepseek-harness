@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-`SessionQueryService` 是组合式抽象 `ctx.sessionQuery` 约定。它对实时 `ctx.sessions` 和可选的动态挂载 `ctx.sessionPersistence` 实现精确会话历史取回、关系跟踪和与提供方无关的过滤；具体后端实现它的两个全文方法。匹配 id 只产生一条记录：实时事件优先，而 `live` 和 `persisted` 会报告两种来源的可用性。如果不可变 header 存在冲突，则以 `SESSION_QUERY_SOURCE_CONFLICT` 失败。
+`SessionQueryEngine` 是组合式抽象 `ctx.sessionQuery` 约定。它对实时 `ctx.sessions` 和可选的动态挂载 `ctx.sessionPersistence` 实现精确会话历史取回、关系跟踪和与提供方无关的过滤；具体后端实现它的两个全文方法。匹配 id 只产生一条记录：实时事件优先，而 `live` 和 `persisted` 会报告两种来源的可用性。如果不可变 header 存在冲突，则以 `SESSION_QUERY_SOURCE_CONFLICT` 失败。
 
 ## 读取
 
@@ -10,7 +10,7 @@
 - `readSession(sessionId)` 在执行与恢复相同的核心回放验证后，返回一份完整、脱离存储的原始日志；它绝不会将该会话放入实时存储。
 - `filterSessions(filters, signal?)` 对同一份克隆逻辑语料库应用与提供方无关的会话元数据和可用性谓词。
 - `filterEvents(sessionId, filters)` 提取第一方语义文档，并按 seq 升序应用与提供方无关的元数据和字面文本谓词。
-- `readTitleSnapshots(sessionIds, signal?)` 从一次实时优先的语料库观察中解析唯一 id，将取消信号传递给持久化列表查询和检查，并按顺序返回每个会话的结算结果，使某个缺失或格式错误的标题来源不会丢弃其他来源。每个实时来源直接 fold，每个持久化 worker fold 为脱离存储的 header/标题结果，并在出队下一个 id 前释放完整日志。取消会拒绝整个批次。`readTitleSnapshot(sessionId, signal?)` 是单次观察视图；`readTitle(sessionId, signal?)` 只返回其可选的 folded `session/title`。
+- `readTitleSnapshots(sessionIds, signal?)` 从一次实时优先的语料库观察中解析唯一 id，将取消信号传递给持久化列表查询和检查，并按顺序返回每个会话的结算结果，使某个缺失或格式错误的标题来源不会导致其他会话的结果被丢弃。每个实时来源直接 fold，每个持久化 worker fold 为脱离存储的 header/标题结果，并在出队下一个 id 前释放完整日志。取消会拒绝整个批次。`readTitleSnapshot(sessionId, signal?)` 是单次观察视图；`readTitle(sessionId, signal?)` 只返回其可选的 folded `session/title`。
 - `listEvents(sessionId)` 加载实时优先的原始日志，将每个事件分类为 `current`、`shadowed` 或 `log-only`；该分类使用共享 `dsh-session` 表层 fold。
 - `readSurface(sessionId)` 返回一个克隆 header、原始日志捕获边界，以及按模型历史顺序排列的完整折叠后当前表层。实时会话优先于持久化；压缩（compaction）只会在其替换追加之前或之后被观察，绝不会出现合成混合。
 - `readEvent(request, signal?)` 返回一个克隆 header、完整目标事件和有界的原始 seq 窗口。`before` 和 `after` 默认为 0，且不得超过 `readWindowMax`。
@@ -27,9 +27,9 @@
 
 ## 全文方法
 
-`SessionQueryService.searchSessions(request, exec?)` 按匹配最强的事件对逻辑语料库分组；`searchEvents(request, exec?)` 搜索一个逻辑会话。这两个是服务仅有的抽象方法。两者都返回分页结果，其延续信息是由服务持有的带品牌 `SessionSearchCursor`；接受可选取消，并在不使用提供方专用数值分数的情况下提供摘录。事件搜索分页结果还携带来自与命中相同索引世代的克隆目标 header，使授权消费方可将策略绑定到此次载荷观察。搜索请求只接受事件元数据过滤器，因为字面文本过滤使用上文所述扫描路径。
+`SessionQueryEngine.searchSessions(request, exec?)` 按匹配最强的事件对逻辑语料库分组；`searchEvents(request, exec?)` 搜索一个逻辑会话。这两个是服务仅有的抽象方法。两者都返回分页结果，其延续信息是由服务持有的带品牌 `SessionSearchCursor`；接受可选取消，并在不使用提供方专用数值分数的情况下提供摘录。事件搜索分页结果还携带来自与命中相同索引世代的克隆目标 header，使授权消费方可将策略绑定到此次载荷观察。搜索请求只接受事件元数据过滤器，因为字面文本过滤使用上文所述扫描路径。
 
-该包没有提供方协调器、回退实现或独立具体插件。具体服务后端继承已实现的读取、过滤和跟踪，同时负责全文观察、对账、排名、游标世代和查询执行；第一个实现是 [`@deepseek-ai/dsh-session-query-sqlite`](../session-query-sqlite/README.md)。
+该包没有提供方协调器、回退实现或独立具体插件。具体服务后端继承已实现的读取、过滤和跟踪，同时负责全文观察、对账、排名、游标世代和查询执行；第一个实现是 [`@deepseek-ai/dsh-session-query-sqlite`](../session-query-sqlite/README.zh.md)。
 
 `SessionQueryError.code` 是一个封闭联合，覆盖请求验证、缺失目标、格式错误的表层、来源冲突、持久化/索引失败、取消，以及无效或陈旧游标；精确字面值在 [`src/config.ts`](src/config.ts) 中定义。
 
@@ -53,4 +53,4 @@
 ## 已知限制与暂缓事项
 
 - **无调用方授权**：这是上下文范围内的可信基础设施；未来的模型工具或 UI 必须限制调用方可检查的会话。
-- **无注册表或面向模型工具**：尚未提供提取器和搜索提供方注册表、递归遍历所引用的源事件的能力，以及面向模型的工具。[跟踪决策](../../../.agents/notes/implemented/feature/2026-07-13-session-query-tracing.md) 负责关系语义；SQLite 归属和 tokenizer 决策位于[已实现搜索记录](../../../.agents/notes/implemented/feature/2026-07-10-sqlite-session-query-provider.md)。
+- **无注册表或面向模型工具**：尚未提供提取器和搜索提供方注册表、递归遍历所引用的源事件的能力，以及面向模型的工具。[跟踪决策](../../../.agents/notes/implemented/feature/2026-07-13-session-query-tracing.zh.md) 负责关系语义；SQLite 归属和 tokenizer 决策位于[已实现搜索记录](../../../.agents/notes/implemented/feature/2026-07-10-sqlite-session-query-provider.zh.md)。

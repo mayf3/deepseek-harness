@@ -1,6 +1,6 @@
 /**
  * Heavy suites the coverage aggregate runs uninstrumented in a parallel gate.
- * Membership contract: a suite qualifies only when every coverage-measured
+ * Membership rule: a suite qualifies only when every coverage-measured
  * file it executes in-process (`coverage.include` spans package src trees;
  * typert generator src is threshold-excluded in vitest.config.ts) is already
  * fully covered by other suites, so removing it from the instrumented run
@@ -38,4 +38,11 @@ export const coverageExemptHeavySuites: readonly CoverageExemptSuite[] = [
   { filter: 'scripts/install-lefthook.spec.ts', exclude: 'scripts/install-lefthook.spec.ts' },
   { filter: 'scripts/oxlint-contract.spec.ts', exclude: 'scripts/oxlint-contract.spec.ts' },
   { filter: 'scripts/change-scope.spec.ts', exclude: 'scripts/change-scope.spec.ts' },
+  { filter: 'scripts/translation-pairing-merge.spec.ts', exclude: 'scripts/translation-pairing-merge.spec.ts' },
+  // The real corpus transform runs package src only in a spawned Node process,
+  // outside the parent Vitest worker's v8 coverage session.
+  {
+    filter: 'packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts',
+    exclude: 'packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts',
+  },
 ]

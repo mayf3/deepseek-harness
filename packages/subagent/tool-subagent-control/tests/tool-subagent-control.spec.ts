@@ -2,19 +2,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import SubagentService from '@deepseek-ai/dsh-subagent'
-import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn'
+import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as tool from '../src/index.ts'
+import { parkParent } from './park-parent.ts'
 
 /** One scripted response that may wait on a caller-released gate before streaming. */
 interface GatedEntry {
@@ -46,7 +47,7 @@ const testToolSignal = new AbortController().signal
 
 const roots: string[] = []
 afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 async function setupWith(adapter: MockAdapter | GatedAdapter) {
@@ -57,11 +58,12 @@ async function setupWith(adapter: MockAdapter | GatedAdapter) {
   await ctx.plugin(JsonlSessionPersistence, { root })
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SessionProjectionRegistry)
-  await ctx.plugin(SubagentService)
+  await ctx.plugin(SubagentRuntime)
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
   await ctx.plugin(tool)
   ctx.llm.registerAdapter(['mock'], adapter)
   const parent = ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' })
+  parkParent(ctx, parent)
   return { ctx, parent, adapter }
 }
 
@@ -105,8 +107,8 @@ describe('dsh-tool-subagent-control', () => {
     const props = (schemas[0]!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
     expect(Object.keys(props).sort()).toEqual(['message', 'subagent_id'])
     // The continuable path has no Task, so the schema must not promise one.
-    expect(schemas[0]!.description).not.toContain('task_output')
-    expect(schemas[0]!.description).not.toContain('task id')
+    expect(schemas[0]!.description).not.toContain('job_output')
+    expect(schemas[0]!.description).not.toContain('job id')
     // Follow-up ordering is model-visible: it cannot redirect the open turn.
     expect(schemas[0]!.description).toContain('next turn')
   })
@@ -158,7 +160,7 @@ describe('dsh-tool-subagent-control', () => {
 
     await waitNoActivation(ctx, started.childId)
     const loaded = await ctx.sessionPersistence.load(started.childId)
-    const prompts = loaded.events.flatMap(event => event.type === 'user/message'
+    const prompts = loaded.events.flatMap(event => event.type === 'user/message' && event.data.source.kind !== 'plugin'
       ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
       : [])
     // A follow-up is its own later turn, never steering inside the first one.
@@ -205,7 +207,7 @@ describe('dsh-tool-subagent-control', () => {
     const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
-    await ctx.plugin(SubagentService)
+    await ctx.plugin(SubagentRuntime)
     const fiber = await ctx.plugin(tool)
     expect(ctx.tools.schemas().some(schema => schema.name === 'send_message')).toBe(true)
     expect(ctx.tools.schemas().some(schema => schema.name === 'interrupt_agent')).toBe(true)
@@ -274,7 +276,7 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
     expect(waking.isError).toBe(false)
     await waitNoActivation(ctx, started.childId)
     const loaded = await ctx.sessionPersistence.load(started.childId)
-    const prompts = loaded.events.flatMap(event => event.type === 'user/message'
+    const prompts = loaded.events.flatMap(event => event.type === 'user/message' && event.data.source.kind !== 'plugin'
       ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
       : [])
     expect(prompts).toEqual(['long work', 'parked follow-up', 'wake up'])

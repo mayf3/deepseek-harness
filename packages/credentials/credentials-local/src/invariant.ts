@@ -4,7 +4,7 @@
  */
 
 /* jscpd:ignore-start */
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-credentials-local'
@@ -16,7 +16,7 @@ export const inject = ['invariants']
 
 /**
  * No runtime invariant: the Service Definition companion (`dsh-credentials/invariant`) owns the
- * `credentials/updated` lifecycle contract; this provider's file/environment layering is
+ * `credentials/reference-updated` lifecycle contract; this provider's file/environment layering is
  * asynchronous I/O pinned by its unit suite.
  */
 const install: InvariantInstaller = () => {}

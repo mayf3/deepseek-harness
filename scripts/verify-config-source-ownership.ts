@@ -14,12 +14,13 @@ const SHIPPED_CONFIG_GLOBS = [
   'apps/*/config/*.yml',
   'examples/*/*.cordis.yml',
   'examples/*/cordis.yml',
-  'packages/bundle/*/cordis.patch.yml',
+  // Bundle identity comes from the package manifest, not the domain directory.
+  'packages/*/*/cordis.patch.yml',
   // The Python runtime ships its own default composition inside the wheel.
   'python/*/src/**/cordis.yml',
 ]
 
-/** Ordinary single-line forms this narrow source-shape check rejects; not full YAML analysis. */
+/** Ordinary single-line configuration forms this source check rejects; not full YAML analysis. */
 const INLINE_DENY = /^\s*(apiKey|baseURL|apiKeyEnv|authToken|headers)\s*:\s*!!js\b/
 
 /** Return every forbidden inline environment form in shipped configuration. */

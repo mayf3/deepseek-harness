@@ -1,16 +1,17 @@
 /**
  * Vocabulary for the web capability seam (`ctx.web`). Search and fetch deliberately share one
  * seam so provider selection, cancellation, errors, and product configuration have one owner,
- * while retaining separate request and result shapes.
+ * while retaining separate request and result types.
  * @module @deepseek-ai/dsh-web/types
  */
 
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 
 /**
- * What one search-capable backend can return. The model-facing argument is just
- * a query; `maxResults` is a `dsh-tool-web`-layer bound passed through unchanged
- * and enforced on the way back by the seam (see {@link WebSearchResult}).
+ * What one search-capable backend is asked to search. Each request carries one
+ * query; a consumer may issue several requests. `maxResults` is a
+ * `dsh-tool-web`-layer bound passed through unchanged and enforced on the way
+ * back by the seam (see {@link WebSearchResult}).
  */
 export interface WebSearchRequest {
   readonly query: string
@@ -28,7 +29,7 @@ export interface WebSearchRequest {
  * Normalized search outcome. `content` is optional provider-generated answer
  * text or summary (Exa and DeepSeek return none; Perplexity returns a
  * generated answer).
- * `sources[]` is the portable citation surface. `truncated` is set by the seam
+ * `sources[]` is the portable citation shape. `truncated` is set by the seam
  * when it cut `sources[]` down to `maxResults`.
  */
 export interface WebSearchResult {

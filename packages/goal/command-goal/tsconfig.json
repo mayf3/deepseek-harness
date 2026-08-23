@@ -18,10 +18,13 @@
       "path": "../../interaction/commands"
     },
     {
+      "path": "../../llm/llm"
+    },
+    {
       "path": "../goal"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

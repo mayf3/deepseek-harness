@@ -24,12 +24,12 @@
 
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import type { EntryOptions } from '@cordisjs/plugin-loader'
-import { applyEntryPatches, type PatchOptions } from '@cordisjs/plugin-include'
-import { resolveDshHome } from '@deepseek-ai/dsh-paths'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { loadOverlayPatches } from './index.ts'
 
 /** Directory under the Harness home holding every profile. */
@@ -48,17 +48,29 @@ export interface DshBundleManifest {
 export interface DshProfileManifest {
   /** Ordered bundle layer list (package names). */
   bundles?: string[]
+  /** Whether user patch files reload while this profile remains active. */
+  patchReload?: ProfilePatchReload
+}
+
+/** User patch-file lifecycle selected by a profile. */
+export type ProfilePatchReload = 'live' | 'startup'
+
+/** Installation-owned defaults used when a shipped profile is first opened. */
+export interface ProfileTemplate {
+  /** Ordered bundle layer list. */
+  bundles: readonly string[]
+  /** User patch-file lifecycle for the generated profile. */
+  patchReload: ProfilePatchReload
 }
 
 /**
- * The `dsh`-owned manifest section of a package.json. The nested key names
- * the manifest kind: a bundle package declares `bundle`, a profile directory
- * declares `profile`; nothing declares both.
+ * The profile-launcher slice of the `dsh`-owned package.json section. A
+ * manifest may declare both roles; other consumers own additional keys.
  */
 export interface DshManifestSection {
-  /** Present on bundle packages only. */
+  /** Bundle metadata consumed by the profile launcher. */
   bundle?: DshBundleManifest
-  /** Present on profile manifests only. */
+  /** Profile metadata consumed by the profile launcher. */
   profile?: DshProfileManifest
 }
 
@@ -94,6 +106,8 @@ export interface Profile {
   patchPath: string
   /** The profile's own patches; empty when the file is absent. */
   patches: PatchOptions[]
+  /** Whether the launcher watches user patch files after boot. */
+  patchReload: ProfilePatchReload
 }
 
 /**
@@ -112,9 +126,23 @@ export function resolveProfileDir(name: string, home: string = resolveDshHome())
 }
 
 /** The shipped profile templates auto-initialized on first use, by name. */
-export const PROFILE_TEMPLATES: Record<string, readonly string[]> = {
-  web: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
-  headless: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
+export const PROFILE_TEMPLATES: Record<string, ProfileTemplate> = {
+  acp: {
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-acp-app'],
+    patchReload: 'startup',
+  },
+  web: {
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+    patchReload: 'live',
+  },
+  headless: {
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
+    patchReload: 'startup',
+  },
+  sdk: {
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-sdk-app'],
+    patchReload: 'startup',
+  },
 }
 
 /** Installation-owned bundle tuples normalized to the shipped template. */
@@ -124,6 +152,9 @@ const INSTALLATION_OWNED_PROFILE_TUPLES: Record<string, readonly string[]> = {
 
 /** The bundle list a `dsh plugin` init uses for a name with no shipped template. */
 export const DEFAULT_PROFILE_BUNDLES: readonly string[] = ['@deepseek-ai/dsh-base']
+
+/** Custom profiles retain the historical live patch-file behavior. */
+export const DEFAULT_PROFILE_PATCH_RELOAD: ProfilePatchReload = 'live'
 
 const PROFILE_PATCH_TEMPLATE = `# Your patch layer for this dsh profile, applied after every bundle layer:
 # a top-level YAML array of loader patch entries (id-targeted config
@@ -149,8 +180,13 @@ autoInstallPeers: false
  * so re-running is a no-op on an initialized profile.
  * @param dir - the profile directory from {@link resolveProfileDir}.
  * @param bundles - the initial `dsh.profile.bundles` layer list.
+ * @param patchReload - user patch-file lifecycle; custom profiles default to live reload.
  */
-export function initProfile(dir: string, bundles: readonly string[]): void {
+export function initProfile(
+  dir: string,
+  bundles: readonly string[],
+  patchReload: ProfilePatchReload = DEFAULT_PROFILE_PATCH_RELOAD,
+): void {
   mkdirSync(dir, { recursive: true })
   const manifestPath = join(dir, 'package.json')
   if (!existsSync(manifestPath)) {
@@ -158,7 +194,7 @@ export function initProfile(dir: string, bundles: readonly string[]): void {
       name: `dsh-profile-${basename(dir)}`,
       private: true,
       dependencies: {},
-      dsh: { profile: { bundles: [...bundles] } },
+      dsh: { profile: { bundles: [...bundles], patchReload } },
     }
     writeFileSync(manifestPath, JSON.stringify(manifest, undefined, 2) + '\n')
   }
@@ -183,7 +219,9 @@ function ensureSymlink(link: string, target: string): void {
       throw new Error(`dsh: ${link} exists and is not a symlink; remove it so dsh can manage the installation fallback`)
     }
     if (readlinkSync(link) === target) return
-    rmSync(link)
+    // unlink deletes the reparse point itself on Windows too; rmSync treats a
+    // junction as a directory and throws EISDIR unless recursive.
+    unlinkSync(link)
   }
   try {
     symlinkSync(target, link, 'junction')
@@ -191,7 +229,7 @@ function ensureSymlink(link: string, target: string): void {
     // Concurrent launches heal the same fallback; losing the race to a
     // process writing the identical link is success, anything else is not.
     // The window between the lstat miss above and this write cannot be
-    // staged deterministically from the public surface.
+    // staged deterministically from the public API.
     /* v8 ignore next 4 */
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST'
       || !lstatSync(link).isSymbolicLink() || readlinkSync(link) !== target) {
@@ -209,8 +247,8 @@ function ensureSymlink(link: string, target: string): void {
  * resolves without pnpm ever managing it — the exact "bundles come from the
  * installation" contract. The closure (not just direct dependencies) is
  * required for out-of-tree plugins: their peer dependencies name Service
- * Definition packages (`dsh-compact`, `dsh-invariants`, ...) that the app
- * reaches only through its Service provider packages. Symlinked packages
+ * Definition packages (`dsh-compaction`, `dsh-invariants`, ...) that the app
+ * reaches only through its Service Provider packages. Symlinked packages
  * resolve their own dependencies from their real directories (Node's default
  * symlink-following), so each package needs only its one flat link.
  * Idempotent: correct links are kept and moved installations are
@@ -232,7 +270,7 @@ export function healProfilesModuleFallback(installAnchor: string, home: string =
   const queue: { anchor: string; manifest: ProfileManifest }[] = [{ anchor: installAnchor, manifest: appManifest }]
   for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
     // Peer dependencies participate: Service Definition packages (dsh-subprocess,
-    // dsh-compact, ...) are peers of their implementations, never plain
+    // dsh-compaction, ...) are peers of their implementations, never plain
     // dependencies, yet out-of-tree plugins import them directly.
     /* v8 ignore next -- a real app manifest always declares dependencies */
     for (const dep of [...Object.keys(next.manifest.dependencies ?? {}), ...Object.keys(next.manifest.peerDependencies ?? {})]) {
@@ -267,7 +305,7 @@ export function readProfileManifest(binName: string, dir: string): ProfileManife
   } catch (error) {
     throw new Error(`${binName}: failed to read profile manifest ${path}: ${String(error)}`)
   }
-  // File boundary: the shape check below validates what the parse type asserts.
+  // The field checks below validate the file data before trusting the parse type.
   const parsed = JSON.parse(raw) as ProfileManifest | null
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(`${binName}: profile manifest ${path} must hold a JSON object`)
@@ -290,20 +328,29 @@ function sameBundles(left: readonly string[], right: readonly string[]): boolean
 }
 
 /**
- * Normalize an exact installation-owned bundle tuple to its shipped template
- * while preserving every other manifest field. Any other list is user-owned.
+ * Normalize an exact installation-owned bundle tuple to its shipped template,
+ * or add the shipped reload default to an exact current tuple. A changed value
+ * is written back during profile loading while every other manifest field is
+ * preserved; any other bundle list is user-owned and remains untouched.
  */
 function normalizeShippedProfile(name: string, dir: string, manifest: ProfileManifest): ProfileManifest {
   const installationOwned = INSTALLATION_OWNED_PROFILE_TUPLES[name]
-  const current = PROFILE_TEMPLATES[name]
+  const template = PROFILE_TEMPLATES[name]
   const bundles = manifest.dsh?.profile?.bundles
-  if (installationOwned === undefined || current === undefined || bundles === undefined
-    || !sameBundles(bundles, installationOwned)) return manifest
+  if (template === undefined || bundles === undefined) return manifest
+  const isRetiredTuple = installationOwned !== undefined && sameBundles(bundles, installationOwned)
+  const isCurrentTuple = sameBundles(bundles, template.bundles)
+  const needsReloadDefault = manifest.dsh?.profile?.patchReload === undefined && isCurrentTuple
+  if (!isRetiredTuple && !needsReloadDefault) return manifest
   const normalized: ProfileManifest = {
     ...manifest,
     dsh: {
       ...manifest.dsh,
-      profile: { ...manifest.dsh?.profile, bundles: [...current] },
+      profile: {
+        ...manifest.dsh?.profile,
+        bundles: [...template.bundles],
+        patchReload: manifest.dsh?.profile?.patchReload ?? template.patchReload,
+      },
     },
   }
   writeProfileManifest(dir, normalized)
@@ -379,11 +426,18 @@ export function loadProfile(
         `${binName}: profile ${JSON.stringify(name)} does not exist; create it with 'dsh plugin --profile ${name} add <package>'`,
       )
     }
-    initProfile(dir, template)
+    initProfile(dir, template.bundles, template.patchReload)
   }
   const manifest = normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
   // A hand-written profile manifest may omit the dsh section entirely.
   const bundles = manifest.dsh?.profile?.bundles ?? []
+  const rawPatchReload: unknown = manifest.dsh?.profile?.patchReload
+  if (rawPatchReload !== undefined && rawPatchReload !== 'live' && rawPatchReload !== 'startup') {
+    throw new Error(
+      `${binName}: profile manifest ${join(dir, 'package.json')} dsh.profile.patchReload must be "live" or "startup"`,
+    )
+  }
+  const patchReload = rawPatchReload ?? DEFAULT_PROFILE_PATCH_RELOAD
   const layers = bundles.map((packageName): ProfileLayer => {
     const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
     const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
@@ -398,7 +452,7 @@ export function loadProfile(
   const patches = options.userLayer !== false && existsSync(patchPath)
     ? loadOverlayPatches(binName, patchPath)
     : []
-  return { name, dir, layers, patchPath, patches }
+  return { name, dir, layers, patchPath, patches, patchReload }
 }
 
 /**

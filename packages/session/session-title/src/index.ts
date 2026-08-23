@@ -3,8 +3,8 @@
  * @module @deepseek-ai/dsh-session-title
  */
 
-import { Context, FiberState, Service, type Fiber } from 'cordis'
-import z from 'schemastery'
+import { Context, FiberState, Service, type Fiber } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import { assertNever, deepFreeze, isAgentLoopRequest } from '@deepseek-ai/dsh-llm'
@@ -85,7 +85,7 @@ export interface Config {
   readonly maxTitleBytes: number
 }
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     sessionTitle: SessionTitleService
   }
@@ -120,7 +120,7 @@ export interface SessionTitleUserMessage {
 }
 
 /** Automatic generation cadence owned by a registered provider. */
-export type SessionTitleAutomaticMode = 'first-message' | 'all-user-messages'
+export type SessionTitleAutomaticMode = 'first-prompt' | 'all-prompts'
 
 /** Immutable input supplied to one title-provider call. */
 export interface SessionTitleProviderRequest {
@@ -306,12 +306,13 @@ export class SessionTitleService extends Service {
     // string clients list rows read. The unit child activates only when a
     // projection registry is composed (headless assemblies stay unaffected).
     ctx.inject(['sessionProjections'], (projectionCtx) => {
+      const titleSchema = zod.union([zod.string().min(1), zod.null()])
       projectionCtx.sessionProjections.register<'title', string | null>({
         key: 'title',
-        schema: zod.union([zod.string().min(1), zod.null()]),
+        stateSchema: titleSchema,
         init: () => null,
         apply: (state, event) => (event.type === 'session/title' ? event.data.title : state),
-        view: state => state,
+        wire: { viewSchema: titleSchema, view: state => state },
         stateVersion: 1,
       })
     })
@@ -467,7 +468,7 @@ export class SessionTitleService extends Service {
     const registration = this.registration
     if (registration !== undefined && !registration.closing) {
       const messages = collectSessionTitleMessages(session.events, event.seq)
-      const shouldSchedule = registration.provider.automatic === 'all-user-messages'
+      const shouldSchedule = registration.provider.automatic === 'all-prompts'
         || (session.header.parentSession === undefined && messages.length === 1 && this.get(session) === undefined)
       if (shouldSchedule) {
         const state = this.stateFor(session)
@@ -726,7 +727,7 @@ export class SessionTitleService extends Service {
     if (typeof candidate.id !== 'string' || candidate.id.length === 0) {
       throw new Error('session-title provider id must be a non-empty string')
     }
-    if (candidate.automatic !== 'first-message' && candidate.automatic !== 'all-user-messages') {
+    if (candidate.automatic !== 'first-prompt' && candidate.automatic !== 'all-prompts') {
       throw new Error('session-title provider automatic mode is invalid')
     }
     if (typeof candidate.generate !== 'function') {

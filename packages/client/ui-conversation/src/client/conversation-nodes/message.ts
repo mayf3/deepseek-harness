@@ -1,4 +1,4 @@
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import type {
   ContextMessageNode, ConversationNodeDefinition, SteeringMessageNode, UserMessageNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -8,14 +8,24 @@ import {
 import type { InboxState } from './inbox.ts'
 import { chatNode } from './common.ts'
 
-type MessageNode = UserMessageNode | SteeringMessageNode | ContextMessageNode
+interface ReferencedUserMessageNode extends UserMessageNode {
+  /** Labels cited by the immediately following session-reference context. */
+  readonly referenceLabels?: readonly string[]
+}
+
+interface ReferencedSteeringMessageNode extends SteeringMessageNode {
+  /** Labels cited by the immediately following session-reference context. */
+  readonly referenceLabels?: readonly string[]
+}
+
+type MessageNode = ReferencedUserMessageNode | ReferencedSteeringMessageNode | ContextMessageNode
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ChatNodeDataMap {
     /** Ordinary turn-opening user message. */
-    user: UserMessageNode
+    user: ReferencedUserMessageNode
     /** User message admitted into an active turn. */
-    steering: SteeringMessageNode
+    steering: ReferencedSteeringMessageNode
     /** Non-user context injected into model history. */
     context: ContextMessageNode
   }
@@ -30,6 +40,7 @@ function isCompactionCheckpoint(event: Parameters<ConversationNodeDefinition['ma
 /** User, steering, and injected-context message classification Definition. */
 export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
   kind: 'input-message',
+  target: 'chat',
   match: event => event.type === 'user/message'
     && isAppendSurfaceEvent(event)
     && !isCompactionCheckpoint(event)
@@ -68,8 +79,8 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
       }
   },
   update: context => context.state,
-  buildViewNode: (context, target) => {
-    if (target !== 'chat' || context.state === undefined) return null
+  buildViewNode: (context) => {
+    if (context.state === undefined) return null
     return chatNode(context, context.state.kind, context.state.seq, context.state)
   },
 }

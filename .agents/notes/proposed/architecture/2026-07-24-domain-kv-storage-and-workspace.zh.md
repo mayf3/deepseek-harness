@@ -6,14 +6,14 @@ Status: proposed
 
 ## 问题
 
-host 侧唯一的持久化面是 session 事件日志（`packages/session/session-persistence`：仅追加、一 session 一文件）。凡是"不属于某个 session"的信息就没有落盘处，眼下有两个真实需求：
+host 侧唯一的持久化面是 session 事件日志（`packages/session/session-persistence`：仅追加、一 session 一文件）。凡是"不属于某个 session"的信息就没有落盘处，存在两个已交付需求：
 
 - **workspace 实体**。GUI 要把 workspace 做成真实对象：路径、标题、关联 session 清单。归属关系由 workspace 持有——"哪些 session 属于这个 workspace"不是任何单个 session 自己的事实，塞进 session log 语义不成立。在本设计之前，workspace 只是 sidebar 上按 cwd 分组的视觉概念，没有实体。
 - **session 动态元信息**（可预见的第二个消费方）。冷会话列表只读日志首行 header（创建时的不可变快照），title、结束状态这类随会话推进变化的信息拿不到；补齐方向是 sidecar 元数据表——正是一张按 key 高频点更新的 KV 表。
 
 另外，Session 删除需要 `SessionPersistence` 删除原语和 `session.delete` 端点。该空白的设计随本 Note 定案，但实现仍属未来工作。
 
-后续的 [Workspace 注册记录删除决策](../../implemented/feature/2026-07-27-workspace-registration-deletion.md)取代的仅是上述耦合关系：删除 Workspace 注册记录会保留相关 Session 及其日志，Session 删除仍是独立的未来工作。因此，下文的级联设计并不是 Workspace GUI 的删除语义。
+后续的 [Workspace 注册记录删除决策](../../implemented/feature/2026-07-27-workspace-registration-deletion.zh.md)取代的仅是上述耦合关系：删除 Workspace 注册记录会保留相关 Session 及其日志，Session 删除仍是独立的未来工作。因此，下文的级联设计并不是 Workspace GUI 的删除语义。
 
 ## 方案
 
@@ -25,11 +25,11 @@ host 侧唯一的持久化面是 session 事件日志（`packages/session/sessio
 | `@deepseek-ai/dsh-storage-json` | `packages/storage/storage-json/` | 注册后端 `json` | ✓ |
 | `@deepseek-ai/dsh-storage-sqlite` | `packages/storage/storage-sqlite/` | 注册后端 `sqlite` | ✓ |
 | `@deepseek-ai/dsh-storage-domain` | `packages/storage/storage-domain/` | 挂载 `ctx.storage.domain` | ✓ |
-| `@deepseek-ai/dsh-workspace` | `packages/workspace/workspace/` | `ctx.workspace` | ✓ |
+| `@deepseek-ai/dsh-workspace` | `packages/workspace/workspace/` | `ctx.workspaceRegistry` | ✓ |
 | `SessionPersistence.delete` 扩面 + 级联删编排 | `packages/session/*` | 既有 seam 新方法 | ✗ future work（本期不动 session 侧） |
 | `workspace.*` / `session.delete` RPC、GUI 接线、boot 组装 | — | — | ✗ 下期 |
 
-（workspace 放独立组不放 `packages/host/`：host 组命名规则要求 `dsh-host-*` 前缀，而包名定为 `dsh-workspace`；且 workspace 实体是领域概念，不绑定 host 装配层。与既有 `workspace-context` 包无关——那是 AGENTS.md 指令加载器。）
+（workspace 放独立组不放 `packages/host/`：host 组命名规则要求 `dsh-host-*` 前缀，而包名定为 `dsh-workspace`；且 workspace 实体是领域概念，不绑定 host 装配层。与既有 `agent-instructions` 包无关——那是 AGENTS.md 指令加载器。）
 
 依赖方向：`dsh-workspace` → `dsh-domain` → `dsh-storage` ← 两后端。`dsh-workspace` 另依赖 `ctx.sessionPersistence` 的只读面（attach 的 cwd 校验读 session header；服务缺席时 attach 直接拒绝——无法校验即不写账）。session 删除相关的 `ctx.sessions` 运行中检查随级联删一并归入 future work。
 
@@ -83,9 +83,9 @@ Config 为 `path`（必填，`':memory:'` 允许）+ `journalMode`（枚举，�
 CREATE TABLE IF NOT EXISTS units (name TEXT PRIMARY KEY, version INTEGER NOT NULL) STRICT;
 CREATE TABLE IF NOT EXISTS unit_globals (
   unit TEXT PRIMARY KEY REFERENCES units(name), value TEXT NOT NULL) STRICT;
--- 每 unit 每表：
+-- One table per unit/table pair:
 CREATE TABLE IF NOT EXISTS "u_<unit>_<table>" (
-  key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;             -- value = 记录 JSON 文档
+  key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;             -- value = record JSON document
 ```
 
 - unit 版本存 `units` 行，descriptor 不符 → `version-mismatch`。行粒度 document-per-row，保住按 key 精确落盘更新（为 session sidecar 这类高频点更新大表留路）；查询需求出现时 JSON1 直查 value 列。
@@ -97,8 +97,8 @@ CREATE TABLE IF NOT EXISTS "u_<unit>_<table>" (
 
 ```ts ignore-check
 export const Config = z.object({
-  backend: z.string().required(),                // 默认后端名，必填
-  routes: z.dict(z.string()).default({}),        // per-domain 覆盖：{ workspace: 'sqlite' }
+  backend: z.string().required(),                // required default backend name
+  routes: z.dict(z.string()).default({}),        // per-domain override: { workspace: 'sqlite' }
 })
 
 export function apply(ctx: Context, config: Config) {
@@ -135,21 +135,21 @@ export function domainTable<K extends string, V>(schema: ZodType<V>): DomainTabl
 6. 构造 `Domain` 并注册 `ctx.effect()`：disposer 排空写链 → `unit.close()`。
 
 ```ts ignore-check
-export interface Domain</* 由 spec 推导 */> {
+export interface Domain</* inferred from spec */> {
   readonly name: string
-  readonly global: { get(): G; set(value: G): Promise<void> }   // 仅当 spec.global 声明
+  readonly global: { get(): G; set(value: G): Promise<void> }   // only when spec.global exists
   table<N extends keyof S['tables']>(name: N): KvTable<KeyOf<N>, ValueOf<N>>
 }
 
 export interface KvTable<K extends string, V> {
-  get(key: K): V | undefined                     // 内存快照，同步
+  get(key: K): V | undefined                     // synchronous in-memory snapshot
   entries(): IterableIterator<[K, V]>
   keys(): IterableIterator<K>
   readonly size: number
   put(key: K, value: V): Promise<void>
-  delete(key: K): Promise<boolean>               // false = 本就不存在
+  delete(key: K): Promise<boolean>               // false when already absent
   /** Atomic read-modify-write on the domain's single write chain; fn is sync-pure. */
-  update(key: K, fn: (current: V) => V): Promise<V>   // 缺 key → DomainError('missing-key')
+  update(key: K, fn: (current: V) => V): Promise<V>   // missing key -> DomainError('missing-key')
 }
 ```
 
@@ -192,7 +192,7 @@ export abstract class SessionPersistence extends Service {
 
 ### `dsh-workspace`
 
-包拥有 `WorkspaceId` brand，暴露 `ctx.workspace`。记录 key 为生成的 uuid——path 不做 key：规范化会改写它，引用锚点必须稳定。
+包拥有 `WorkspaceId` brand，暴露 `ctx.workspaceRegistry`。记录 key 为生成的 uuid——path 不做 key：规范化会改写它，引用锚点必须稳定。
 
 ```ts ignore-check
 export type WorkspaceId = Branded<'WorkspaceId'>
@@ -229,7 +229,7 @@ export interface Workspace {
 }
 
 export class WorkspaceRegistry extends Service {
-  constructor(ctx: Context)                      // super(ctx, 'workspace')
+  constructor(ctx: Context)                      // super(ctx, 'workspaceRegistry')
   // start(): this.domain = await ctx.storage.domain.open(workspaceDomainSpec)
   //          实体缓存 Map<WorkspaceId, WorkspaceEntity> 重建
   create(path: string, title?: string): Promise<Workspace>   // realpath 后撞已有 → reject
@@ -243,7 +243,7 @@ export class WorkspaceRegistry extends Service {
 - **path 规范**：落盘值 = `fs.realpath(输入)`（尾斜杠、`..`、符号链接全解析）；唯一性 = 规范化后字符串相等（符号链接指向同一目录算撞）。目录不存在时 create 直接 reject（realpath 失败——workspace 必须指向存在目录；"Create new = 建目录"是上层交互，先 mkdir 再 create）。attach 校验的 session cwd 同口径。cwd 单值 + path 唯一 ⇒ 一个 session 结构上最多归属一个 workspace，双重记账写侧不可能。
 - **title**：显示名，默认 `basename(path)`，可改，允许重复。归属不用 cwd 派生兜底——cwd 表达不了排序，归属是 workspace 侧事实；headless 直开的 session 不属于任何 workspace。
 - 消费方只见 `Workspace` 接口，`WorkspaceEntity` 不出包（单实现不预拆 seam）；实体按 id 唯一（注册表缓存），记录快照写后原地换新，外部只见 getter；所有写收敛到实体内 `mutate(fn)` → `table.update`，`updatedAt` 在 mutate 内统一刷。领域对象不过 RPC，下期 wire 层把记录投影成 zod wire schema。
-- **Session 删除仍属未来工作。** 后续的 [Workspace 注册记录删除决策](../../implemented/feature/2026-07-27-workspace-registration-deletion.md)已将 `ctx.workspace.delete(id)` 作为仅删除元数据、保留 Session 与日志的操作交付。递归删除 Session、运行中检查和崩溃重跑收敛属于独立的 `session.delete` 能力。
+- **Session 删除仍属未来工作。** 后续的 [Workspace 注册记录删除决策](../../implemented/feature/2026-07-27-workspace-registration-deletion.zh.md)已将 `ctx.workspaceRegistry.delete(id)` 作为仅删除元数据、保留 Session 与日志的操作交付。递归删除 Session、运行中检查和崩溃重跑收敛属于独立的 `session.delete` 能力。
 
 一致性口径（账 = 归属唯一依据；实现与测试基准）：
 
@@ -319,7 +319,7 @@ export class WorkspaceRegistry extends Service {
 ## 验收标准
 
 - 测试矩阵本期四套件全绿：后端约定共享套件在 json/sqlite 双端、注册表/mount disposer 语义、domain 层（含 open 六步与路由 fail-loud）、workspace 全语义（create/attach 校验/一致性口径）。
-- `ctx.workspace` 可在测试组装下完成 create → attach → list → 仅删除元数据的 delete 生命周期。
+- `ctx.workspaceRegistry` 可在测试组装下完成 create → attach → list → 仅删除元数据的 delete 生命周期。
 - session-persistence 包零 diff（本期不动 session 侧的验收线）。
 - 本期无新快照（无模型可见面与组装面）；下期 RPC 接线时补。
 

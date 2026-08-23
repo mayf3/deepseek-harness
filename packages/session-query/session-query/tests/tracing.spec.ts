@@ -1,11 +1,11 @@
 import { createUserMessage, createMessage } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId as SessionIdType } from '@deepseek-ai/dsh-session'
 import SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import { type SessionQueryErrorCode } from '@deepseek-ai/dsh-session-query'
-import { TestSessionQueryService } from './test-service.ts'
+import { TestSessionQueryEngine } from './test-service.ts'
 
 type MutableSessionHeader = { -readonly [K in keyof SessionHeader]: SessionHeader[K] }
 
@@ -32,6 +32,8 @@ function appendEvent(seq: number, sources?: number[]): SessionEvent {
 }
 
 class TracePersistence extends SessionPersistence {
+  override readonly supportsRawArtifacts = false
+
   static entries = new Map<SessionIdType, { meta: SessionHeader; events: SessionEvent[] }>()
   static listCalls = 0
   static inspectCalls = 0
@@ -97,7 +99,7 @@ class TracePersistence extends SessionPersistence {
 async function queryContext(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
-  await ctx.plugin(TestSessionQueryService)
+  await ctx.plugin(TestSessionQueryEngine)
   return ctx
 }
 

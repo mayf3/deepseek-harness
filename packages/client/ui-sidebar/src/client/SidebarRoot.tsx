@@ -2,12 +2,13 @@
  * Sidebar shell: column geometry only. Collapse is a slide plus crossfade:
  * content freezes at its expanded width (inline style) and fades out in place
  * while the sliding column (AppFrame grid tracks) clips it — nothing reflows
- * mid-slide. At settle the wide-only content unmounts and the control rows
- * snap to the 56px rail (one icon each, same top-down order) fading in as the
- * slide ends. The workspace/session browsing region between the New Session
- * button and the foot is the `sidebar.workspaces` registrant's, and the foot
- * is the `sidebar.settings` registrant's; the shell hands them the wide flag
- * (plus an expand request callback for the browser).
+ * mid-slide. At settle the wide-only content unmounts and the four upper
+ * controls enter the 56px rail from the same horizontal offset (one icon each,
+ * same top-down order) on one fade that ends with the slide. The bottom-pinned
+ * settings control only fades. The workspace/session browsing region between
+ * the New Session button and the foot is the `sidebar.workspaces` registrant's,
+ * and the foot holds `sidebar.settings` plus `sidebar.footer.action`; the shell
+ * hands them the wide flag (plus an expand request callback for the browser).
  *
  * The column also owns whether the scroll regions nested in it draw a
  * scrollbar at all: the shell tracks the pointer and rebinds ui-theme's
@@ -17,9 +18,7 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  BrandWordmark, FishLogo,
-  IconNewChatOutline16, IconPanelLeftOutline16,
-  Tooltip,
+  FishLogo, IconNewChatOutline16, IconPanelLeftOutline16, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarRootComponentProps } from './contract/slots.ts'
 import css from './SidebarRoot.module.css'
@@ -127,7 +126,7 @@ export function SidebarRoot({
       onPointerLeave={() => { armLinger() }}
     >
       <div className={css.logoRow}>
-        {/* Expanded, the wordmark doubles as a New Session shortcut; the
+        {/* Expanded, the brand doubles as a New Session shortcut; the
             collapsed rail's logo is the expand toggle below instead. */}
         {wide && (
           <button
@@ -136,7 +135,23 @@ export function SidebarRoot({
             aria-label={t('session.new.label')}
             onClick={() => { startSession() }}
           >
-            <BrandWordmark />
+            <span className={css.brandIdentity} aria-hidden="true">
+              <span className={css.brandMark}>
+                {renderSlot('sidebar.brand.mark', { size: 24 }, { fallback: <FishLogo size={24} /> })}
+              </span>
+              <span className={css.brandName}>
+                {renderSlot('sidebar.brand.name', {}, {
+                  fallback: (
+                    <>
+                      <span className={css.fallbackBrandName}>DSH Local Build</span>
+                      {process.env.DSH_CLIENT_COMMIT_HASH
+                        ? <span className={css.buildRevision}>{process.env.DSH_CLIENT_COMMIT_HASH}</span>
+                        : null}
+                    </>
+                  ),
+                })}
+              </span>
+            </span>
           </button>
         )}
         {/* Rail resting state is the whale mark; hovering swaps in the panel
@@ -148,7 +163,11 @@ export function SidebarRoot({
             aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
             onClick={() => { toggleSidebar() }}
           >
-            {!wide && <FishLogo className={css.railFish} size={24} />}
+            {!wide && (
+              <span className={css.railMark} aria-hidden="true">
+                {renderSlot('sidebar.brand.mark', { size: 24 }, { fallback: <FishLogo size={24} /> })}
+              </span>
+            )}
             {/* Rail icons render at 18 (figma rail spec); expanded keeps the glyph-native sizes. */}
             <IconPanelLeftOutline16 className={css.panelIcon} size={wide ? 16 : 18} />
           </button>
@@ -177,9 +196,14 @@ export function SidebarRoot({
         })}
       </div>
 
-      {/* Foot seat: ui-settings registers the trigger row + panel here. */}
+      {/* Footer actions stack above Settings in both sidebar widths. */}
       <div className={css.footArea}>
-        {renderSlot('sidebar.settings', { wide })}
+        <div className={css.footerActions}>
+          {renderSlot('sidebar.footer.action', { wide })}
+        </div>
+        <div className={css.settingsArea}>
+          {renderSlot('sidebar.settings', { wide })}
+        </div>
       </div>
     </div>
   )

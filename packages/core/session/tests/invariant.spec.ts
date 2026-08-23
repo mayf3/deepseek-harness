@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import { createUserMessage, CallId, createMessage, createToolResultMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, TOOL_NOT_STARTED } from '@deepseek-ai/dsh-session'
 import * as SessionInvariant from '@deepseek-ai/dsh-session/invariant'
-import InvariantService, { InvariantError } from '@deepseek-ai/dsh-invariants'
+import InvariantRegistry, { InvariantError } from '@deepseek-ai/dsh-invariants'
 
 async function setup(): Promise<{ ctx: Context; fiber: Awaited<ReturnType<Context['plugin']>> }> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
-  await ctx.plugin(InvariantService)
+  await ctx.plugin(InvariantRegistry)
   const fiber = await ctx.plugin(SessionInvariant)
   return { ctx, fiber }
 }
@@ -18,7 +18,7 @@ describe('session-log invariants', () => {
   it('keeps registration global when the companion is mounted under a scope', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    await ctx.plugin(InvariantService)
+    await ctx.plugin(InvariantRegistry)
     let scopedCtx!: Context
     await ctx.plugin(Object.assign((inner: Context) => {
       scopedCtx = createScope(inner, {}).ctx
@@ -141,7 +141,6 @@ describe('session-log invariants', () => {
     const enclosed = (await setup()).ctx.sessions.create()
     enclosed.append('turn/start', { turn: 1 })
     enclosed.append('step/start', { turn: 1, step: 1 })
-    expect(() => enclosed.append('todo/write', { todos: [] })).not.toThrow()
     expect(() => enclosed.append('request/header', {
       header: { config: { provider: 'mock', model: 'mock' } },
       reason: 'initial',
@@ -277,7 +276,7 @@ describe('session-log invariants', () => {
         content: [{
           ...original.data.message.content[0],
           content: [{ type: 'text', text: 'pruned' }],
-        }],
+        }] satisfies typeof original.data.message.content,
       }),
     }, {
       surfaceOp: { op: 'replace', start: original.seq, end: original.seq },
@@ -316,7 +315,7 @@ describe('session-log invariants', () => {
         content: [{
           ...original.data.message.content[0],
           content: [{ type: 'text', text: 'pruned' }],
-        }],
+        }] satisfies typeof original.data.message.content,
       }),
     }, {
       surfaceOp: { op: 'replace', start: original.seq, end: original.seq },

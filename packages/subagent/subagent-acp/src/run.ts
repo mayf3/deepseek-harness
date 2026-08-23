@@ -11,19 +11,16 @@
 import { randomUUID } from 'node:crypto'
 import { Readable as NodeReadable, Writable as NodeWritable } from 'node:stream'
 import {
-  ClientSideConnection,
+  client as createAcpClientApp,
+  methods,
   ndJsonStream,
   PROTOCOL_VERSION,
-  type Agent as AcpAgent,
-  type Client,
   type ContentBlock as AcpContentBlock,
-  type RequestPermissionRequest,
-  type RequestPermissionResponse,
-  type SessionNotification,
   type StopReason,
 } from '@agentclientprotocol/sdk'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { AssistantOutputFold } from '@deepseek-ai/dsh-subagent'
 import type { SubagentResult, SubagentRun, SubagentStartRequest, SubagentStopReason } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 
@@ -181,7 +178,7 @@ export function toAcpPrompt(prompt: ContentBlock[]): AcpContentBlock[] {
 function toError(value: unknown): Error {
   // The catch only sees rejections from the ACP SDK RPCs and the spawn `error`
   // event, which are always `Error`s; the `String(value)` arm is a defensive
-  // fallback for a non-Error throw that the typed surfaces cannot produce.
+  // fallback for a non-Error throw that the typed APIs cannot produce.
   /* v8 ignore next */
   return value instanceof Error ? value : new Error(String(value))
 }
@@ -232,24 +229,25 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
   let processDisposal: Promise<void> | undefined
   const disposeProcess = (): Promise<void> => (processDisposal ??= disposeAcpChild(child, spec.disposeEofGraceMs))
 
-  // Accumulate the child's streamed assistant text — the SubagentResult output.
-  const output: string[] = []
+  // ACP exposes no complete assistant messages, so the shared fold selects its
+  // accumulated assistant text.
+  const fold = new AssistantOutputFold()
   // Shared mutable state keeps cancellation visible across async closures.
   const flags = { cancelled: false }
 
-  const makeClient = (_agent: AcpAgent): Client => ({
-    sessionUpdate(params: SessionNotification): Promise<void> {
+  const clientApp = createAcpClientApp({ name: 'deepseek-harness-subagent-acp' })
+    .onNotification(methods.client.session.update, ({ params }) => {
       const update = params.update
       if (update.sessionUpdate === 'agent_message_chunk') {
-        output.push(acpContentText(update.content))
+        fold.pushText(acpContentText(update.content))
       }
       // Other updates (thoughts, tool calls, plans) are consumed but not
       // surfaced — the subagent returns only its final answer.
       return Promise.resolve()
-    },
-    requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
-      // Auto-answer by the configured policy. `allow` selects the first
-      // allow-shaped option the child offered; if it offered none (or we
+    })
+    .onRequest(methods.client.session.requestPermission, ({ params }) => {
+      // Auto-answer by the configured policy. `allow` selects the first option
+      // whose kind is `allow_once` or `allow_always`; if the child offered none (or we
       // reject), answer `cancelled` so the child does not proceed.
       if (spec.permission === 'allow') {
         const allow = params.options.find(o => o.kind === 'allow_once' || o.kind === 'allow_always')
@@ -258,16 +256,13 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
         }
       }
       return Promise.resolve({ outcome: { outcome: 'cancelled' } })
-    },
-  })
+    })
 
-  const conn = new ClientSideConnection(
-    makeClient,
-    ndJsonStream(
-      NodeWritable.toWeb(child.stdin) as WritableStream<Uint8Array>,
-      NodeReadable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
-    ),
-  )
+  const connection = clientApp.connect(ndJsonStream(
+    NodeWritable.toWeb(child.stdin) as WritableStream<Uint8Array>,
+    NodeReadable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
+  ))
+  const agent = connection.agent
 
   let sessionId: string | undefined
   // Cancellation settles the result without waiting for a cooperative child.
@@ -279,34 +274,32 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
     signalCancelSettled()
     // Best-effort ACP cancel; process teardown remains authoritative.
     /* v8 ignore next */
-    if (sessionId !== undefined) void conn.cancel({ sessionId }).catch(() => { /* child gone / no session */ })
+    if (sessionId !== undefined) {
+      void agent.notify(methods.agent.session.cancel, { sessionId }).catch(() => { /* child gone / no session */ })
+    }
   }
   const onAbort = (): void => { requestCancel() }
   request.signal.addEventListener('abort', onAbort, { once: true })
 
-  // The accumulated child text as harness ContentBlocks (empty array when the
-  // child streamed nothing). Read at every return so a partial answer survives
-  // a later cancel/error.
-  const collectOutput = (): ContentBlock[] => {
-    const text = output.join('')
-    return text.length > 0 ? [{ type: 'text', text }] : []
-  }
+  // Read at every return so a partial answer survives a later cancel/error.
+  const collectOutput = (): ContentBlock[] => fold.collect() ?? []
 
   // Establish the remote session before publishing a handle. Any failure owns
   // the still-private process and therefore reaps it before rejecting.
   try {
     await Promise.race([
       (async (): Promise<void> => {
-        await conn.initialize({
+        await agent.request(methods.agent.initialize, {
           protocolVersion: PROTOCOL_VERSION,
           // Advertise NO optional client capabilities (no fs, no terminal): the
           // child self-serves in its own process.
           clientCapabilities: {},
         })
-        const session = await conn.newSession({ cwd: spec.cwd, mcpServers: [] })
+        const session = await agent.request(methods.agent.session.new, { cwd: spec.cwd, mcpServers: [] })
         const returnedSessionId: unknown = Reflect.get(session, 'sessionId')
         if (typeof returnedSessionId !== 'string') throw new Error('ACP child published without a session id')
         sessionId = returnedSessionId
+        /* v8 ignore next -- cancelSettled wins the startup race before this post-response guard can settle it. */
         if (flags.cancelled) throw new Error('subagent cancelled before the ACP session started')
       })(),
       spawnFailed,
@@ -329,7 +322,10 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
       // Race the remote turn against local cancellation.
       const prompt = async (): Promise<SubagentResult> => {
         // The startup phase cannot fulfill without assigning the session id.
-        const promptResult = await conn.prompt({ sessionId: remoteSessionId, prompt: toAcpPrompt(request.prompt) })
+        const promptResult = await agent.request(methods.agent.session.prompt, {
+          sessionId: remoteSessionId,
+          prompt: toAcpPrompt(request.prompt),
+        })
         return { output: collectOutput(), stopReason: acpStopReason(promptResult.stopReason) }
       }
       return await Promise.race([

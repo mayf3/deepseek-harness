@@ -6,7 +6,7 @@ English | [中文](2026-08-06-token-surface-unpriced-replace-compatibility.zh.md
 
 ## Problem
 
-The `contextPressure` and `contextBreakdown` projections keep a running surface-token total plus at most one pending shadow-price claim, so their persisted checkpoints stay O(1) over a session's life. Current replace producers append a `compact/summary` or `compact/prune` metering event immediately before the replacement; its `shadowedTokenCount` prices the exact replaced range, and `foldSurfaceProjection` turns that into the signed delta.
+The `contextPressure` and `contextBreakdown` projections keep a running surface-token total plus at most one pending shadow-price claim, so their persisted checkpoints stay O(1) over a session's life. Current replace producers append a `compaction/summary` or `compaction/prune` metering event immediately before the replacement; its `shadowedTokenCount` prices the exact replaced range, and `foldSurfaceProjection` turns that into the signed delta.
 
 Sessions recorded before the shadow-price protocol log replacements with no adjacent metering event. The O(1) state cannot reconstruct the replaced range's price, and the fold treated every unpriced replacement as a contract violation and threw — so replaying such a session died at its first replacement (`token surface: replace at seq … has no adjacent shadow price`), leaving the session permanently unopenable.
 
@@ -26,7 +26,7 @@ Both projections share the one fold, so neither gains state fields nor bumps its
 
 ## Consequences
 
-An unpriced replacement holds the total still instead of shrinking it, so the compacted-away span stays counted: `contextBreakdown.messageTokens` retains the overcount, and `contextPressure.projectedTokens` overestimates occupancy only until the next usage sample re-anchors it, because that figure tracks movement since the sample rather than the absolute level. The error direction is safe — overestimating occupancy at worst invites an earlier compaction.
+An unpriced replacement holds the total still instead of shrinking it, so the compacted-away span stays counted: `contextBreakdown.messageTokens` retains the overcount, and `contextPressure.projectedTokens` overestimates occupancy only until the next usage sample re-anchors it, because that figure tracks movement since the sample rather than the absolute level. Overestimating occupancy can only trigger an earlier compaction.
 
 The loud failure survives where it still means something: a range-mismatched adjacent claim is a current producer bug and still throws.
 

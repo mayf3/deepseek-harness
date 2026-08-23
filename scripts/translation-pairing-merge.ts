@@ -7,18 +7,25 @@ import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   GIT_COMMAND_MAX_BUFFER,
   gitBlobHash,
+  gitMergeInputPaths,
   readGitIndexBlob,
   runGit,
   storeGitBlob,
 } from './translation-pairing-git.ts'
 import {
-  linksTo,
   isTranslationScopeFile,
+  languageSwitcherTargets,
   parseTranslationMarkdown,
+  parseTranslationPairingManifest,
   requiresSourceLanguageSwitcher,
+  translationPairSourcePredicate,
   translationStructureDiff,
   translationStructureSignature,
 } from './translation-pairing.ts'
+import {
+  hasLanguageSwitcher,
+  translationLinkLocaleViolations,
+} from './translation-links.ts'
 import {
   parseTranslationPairingRecord,
   renderTranslationPairingRecord,
@@ -161,18 +168,62 @@ function loadRecordOwners(
   }
 }
 
-function assertMergedPairStructure(paths: TranslationPairPaths, source: Buffer, zh: Buffer): void {
-  const sourceTree = parseTranslationMarkdown(source.toString('utf8'))
-  const zhTree = parseTranslationMarkdown(zh.toString('utf8'))
-  if (requiresSourceLanguageSwitcher(paths.source) && !linksTo(sourceTree, basename(paths.zh))) {
+function assertMergedPairStructure(
+  root: string,
+  paths: TranslationPairPaths,
+  source: Buffer,
+  zh: Buffer,
+  isTranslationPairSource: (sourcePath: string) => boolean,
+): void {
+  const sourceText = source.toString('utf8')
+  const zhText = zh.toString('utf8')
+  const sourceTree = parseTranslationMarkdown(sourceText)
+  const zhTree = parseTranslationMarkdown(zhText)
+  const indexFiles = gitMergeInputPaths(root)
+  const repositoryFileExists = (path: string): boolean => indexFiles.has(path)
+  const sourceSwitcherTargets = languageSwitcherTargets(paths.source)
+  const zhSwitcherTargets = languageSwitcherTargets(paths.zh)
+  if (requiresSourceLanguageSwitcher(paths.source)
+    && !hasLanguageSwitcher(sourceTree, sourceText, zhSwitcherTargets)) {
     throw new Error(`${paths.source} clean merge lost its language-switcher link to ${basename(paths.zh)}`)
   }
-  if (!linksTo(zhTree, basename(paths.source))) {
+  if (!hasLanguageSwitcher(zhTree, zhText, sourceSwitcherTargets)) {
     throw new Error(`${paths.zh} clean merge lost its language-switcher link to ${basename(paths.source)}`)
   }
+  const localeViolations = [
+    ...translationLinkLocaleViolations(sourceText, {
+      repoRoot: root,
+      sourcePath: paths.source,
+      isTranslationPairSource,
+      repositoryFileExists,
+    }, zhSwitcherTargets),
+    ...translationLinkLocaleViolations(zhText, {
+      repoRoot: root,
+      sourcePath: paths.zh,
+      isTranslationPairSource,
+      repositoryFileExists,
+    }, sourceSwitcherTargets),
+  ]
+  if (localeViolations.length > 0) {
+    const violation = localeViolations[0]
+    if (violation === undefined) throw new Error('translation locale violation disappeared')
+    throw new Error(`${violation.sourcePath}:${violation.line} clean merge uses ${JSON.stringify(violation.url)}; expected ${JSON.stringify(violation.expectedUrl)}`)
+  }
   const divergences = translationStructureDiff(
-    translationStructureSignature(sourceTree, basename(paths.zh)),
-    translationStructureSignature(zhTree, basename(paths.source)),
+    translationStructureSignature(sourceTree, zhSwitcherTargets, {
+      repoRoot: root,
+      sourcePath: paths.source,
+      isTranslationPairSource,
+      repositoryFileExists,
+      markdown: sourceText,
+    }),
+    translationStructureSignature(zhTree, sourceSwitcherTargets, {
+      repoRoot: root,
+      sourcePath: paths.zh,
+      isTranslationPairSource,
+      repositoryFileExists,
+      markdown: zhText,
+    }),
   )
   if (divergences.length > 0) {
     throw new Error(`${paths.source} and ${paths.zh} clean merges diverge structurally: ${divergences.join('; ')}`)
@@ -209,19 +260,23 @@ export function mergeTranslationPairingRecords(
   ancestorRecord: string,
   currentRecord: string,
   otherRecord: string,
+  isTranslationPairSource: (sourcePath: string) => boolean,
 ): TranslationPairingMergeResult {
   const normalizedMeta = normalizeMetaPath(root, metaPath)
   if (!isTranslationScopeFile(normalizedMeta)) {
     throw new Error(`${normalizedMeta} is outside the active bilingual documentation corpus`)
   }
   const paths = translationPairPathsFromMeta(normalizedMeta)
+  if (!isTranslationPairSource(paths.source)) {
+    throw new Error(`${normalizedMeta} is excluded from the active bilingual documentation corpus`)
+  }
   assertDefaultTextMerge(root, paths)
   const ancestor = loadRecordOwners(root, 'ancestor', ancestorRecord, paths)
   const current = loadRecordOwners(root, 'current', currentRecord, paths)
   const other = loadRecordOwners(root, 'other', otherRecord, paths)
   const sourceContent = mergeBlobTriplet(root, paths.source, ancestor.source, current.source, other.source)
   const zhContent = mergeBlobTriplet(root, paths.zh, ancestor.zh, current.zh, other.zh)
-  assertMergedPairStructure(paths, sourceContent, zhContent)
+  assertMergedPairStructure(root, paths, sourceContent, zhContent, isTranslationPairSource)
   const sourceHash = storeGitBlob(root, sourceContent)
   const zhHash = storeGitBlob(root, zhContent)
   return {
@@ -231,6 +286,16 @@ export function mergeTranslationPairingRecords(
     zhContent,
     zhHash,
   }
+}
+
+/** Read the repository manifest and return its active bilingual-source predicate. */
+export function repositoryTranslationPairSource(root: string): (sourcePath: string) => boolean {
+  const path = 'scripts/translation-pairing.manifest.json'
+  const content = readGitIndexBlob(root, path)?.content ?? readFileSync(join(root, path))
+  const manifest = parseTranslationPairingManifest(
+    content.toString('utf8'),
+  )
+  return translationPairSourcePredicate(manifest)
 }
 
 function unmergedSidecars(root: string): Map<string, UnmergedStages> {
@@ -286,7 +351,10 @@ function assertUneditedSidecar(
  * @param root - Repository root with an in-progress merge-like operation.
  * @returns Repository-relative sidecar paths resolved and staged.
  */
-export function resolveTranslationPairingConflicts(root: string): string[] {
+export function resolveTranslationPairingConflicts(
+  root: string,
+  isTranslationPairSource: (sourcePath: string) => boolean,
+): string[] {
   const resolutions: { path: string; record: string }[] = []
   const failures: { path: string; reason: string }[] = []
   for (const [metaPath, stages] of [...unmergedSidecars(root)].sort(([left], [right]) => left.localeCompare(right))) {
@@ -304,6 +372,7 @@ export function resolveTranslationPairingConflicts(root: string): string[] {
         ancestorRecord,
         currentRecord,
         otherRecord,
+        isTranslationPairSource,
       )
       const paths = translationPairPathsFromMeta(metaPath)
       if (readGitIndexBlob(root, paths.source)?.objectId !== result.sourceHash) {

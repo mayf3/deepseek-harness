@@ -12,16 +12,25 @@
       "path": "../../../vendor/cordis"
     },
     {
-      "path": "../ui-conversation"
+      "path": "../locale"
     },
     {
-      "path": "../web-react"
+      "path": "../ui-conversation"
     },
     {
       "path": "../runtime"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../compaction/compaction"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

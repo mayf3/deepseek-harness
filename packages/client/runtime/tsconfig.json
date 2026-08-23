@@ -9,16 +9,13 @@
   ],
   "references": [
     {
+      "path": "../../attachment/attachment"
+    },
+    {
       "path": "../../../vendor/cordis"
     },
     {
       "path": "../ui-slots"
-    },
-    {
-      "path": "../web-react"
-    },
-    {
-      "path": "../connection"
     },
     {
       "path": "../../host/apiproxy"
@@ -33,7 +30,7 @@
       "path": "../../core/tools"
     },
     {
-      "path": "../../compact/compact"
+      "path": "../../compaction/compaction"
     },
     {
       "path": "../../session/session-projection"
@@ -42,19 +39,25 @@
       "path": "../../session/session-title"
     },
     {
+      "path": "../../todo/tool-todo"
+    },
+    {
       "path": "../../llm/llm"
     },
     {
       "path": "../../llm/llm-retry"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../runtime-diagnostics/invariants"
     },
     {
-      "path": "../../typert/type-meta"
+      "path": "../../typert/protocol"
     },
     {
       "path": "../../typert/registry"
+    },
+    {
+      "path": "../../api/remotes/tsconfig.client.json"
     }
   ],
   "exclude": [

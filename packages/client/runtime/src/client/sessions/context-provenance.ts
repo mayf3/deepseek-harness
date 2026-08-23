@@ -59,6 +59,19 @@ function joined(names: string[]): string | null {
 }
 
 /**
+ * The referenced-session labels of one durable `session-reference` recall
+ * source, in first-seen order; empty for every other source shape, including
+ * a foreign or older log whose reference entries carry no readable label.
+ * @param source - the logged `user/message` source, exactly as recorded.
+ * @returns distinct non-empty reference labels.
+ */
+export function sessionRecallLabels(source: unknown): string[] {
+  const record = asRecord(source)
+  if (record === null || readString(record, 'kind') !== 'session-reference') return []
+  return collect(record, 'references', 'label')
+}
+
+/**
  * Project one durable message source onto its transcript role and producer name.
  *
  * The source arrives over the wire as opaque JSON (`MessageSource` is
@@ -79,7 +92,7 @@ export function contextProvenance(source: unknown): ContextProvenanceView {
       return { role: 'recall', label: joined(collect(record, 'references', 'label')) ?? kind }
     // Workspace instructions name the files they were reconciled from, which
     // identifies the producer far better than the plugin id would.
-    case 'workspace-instructions':
+    case 'agent-instructions':
       return { role: 'inject', label: joined(collect(record, 'changes', 'path')) ?? kind }
     case 'plugin':
       return { role: 'inject', label: readString(record, 'plugin') ?? kind }

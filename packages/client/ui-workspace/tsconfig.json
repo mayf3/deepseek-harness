@@ -21,6 +21,9 @@
       "path": "../ui-primitives"
     },
     {
+      "path": "../connection/tsconfig.client.json"
+    },
+    {
       "path": "../runtime"
     },
     {
@@ -30,7 +33,7 @@
       "path": "../ui-conversation"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

@@ -6,8 +6,8 @@
  * @module @deepseek-ai/dsh-session-persistence-jsonl
  */
 
-import { Context } from 'cordis'
-import z from 'schemastery'
+import { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { readdirSync } from 'node:fs'
 import { open, mkdir, readFile, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -16,11 +16,12 @@ import { scheduler } from 'node:timers/promises'
 import { randomBytes } from 'node:crypto'
 import {
   DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS,
-  SessionPersistence, SessionPersistenceRevision, PersistenceCoordinator,
+  SessionPersistence, SessionPersistenceRevision, PersistenceCoordinator, SessionFormatUnsupportedError,
   type PersistenceBackend, type SessionLocation, type SessionPersistenceSnapshot,
-  type SessionInspection, type SessionPersistenceRevision as PersistenceRevision, type StoredPrefix,
+  type SessionInspection, type SessionPersistenceRevision as PersistenceRevision, type SessionRawArtifact,
+  type StoredPrefix,
 } from '@deepseek-ai/dsh-session-persistence'
-import type { SessionEvent, SessionId, SessionHeader, SessionPreparation } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionId, SessionHeader, SessionPreparation } from '@deepseek-ai/dsh-session'
 import {
   encodeSegment, eventLines, logPath, logSuffix, parseHeaderMeta, projectDir, scanLog, sessionDir,
   SessionLogScanner, toHeaderLine,
@@ -117,7 +118,9 @@ function isENOENT(error: unknown): boolean {
  * listeners. Its torn-tail marker carries the byte offset and any events
  * recovered from an incomplete final Zstandard frame.
  */
-export class SessionPersistenceJsonl extends SessionPersistence implements PersistenceBackend<JsonlTornMarker> {
+export class JsonlSessionPersistence extends SessionPersistence implements PersistenceBackend<JsonlTornMarker> {
+  override readonly supportsRawArtifacts = true
+
   static inject = ['sessions']
 
   static Config: z<Config> = z.object({
@@ -160,10 +163,10 @@ export class SessionPersistenceJsonl extends SessionPersistence implements Persi
     })
   }
 
-  // Each backend keeps the typed service surface beside its storage hooks;
+  // Each backend keeps the typed service API beside its storage hooks;
   // extracting these trivial forwards would add an inheritance layer.
   /* jscpd:ignore-start */
-  // --- SessionPersistence service surface (delegated to the coordinator) ---
+  // --- SessionPersistence service API (delegated to the coordinator) ---
 
   /** Resolve the absolute target path without touching the filesystem. */
   locate(meta: SessionHeader): SessionLocation {
@@ -172,6 +175,10 @@ export class SessionPersistenceJsonl extends SessionPersistence implements Persi
 
   create(meta: SessionHeader): Promise<void> {
     return this.coordinator.create(meta)
+  }
+
+  override ensureMaterialized(session: Session): Promise<void> {
+    return this.coordinator.ensureMaterialized(session)
   }
 
   append(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
@@ -234,6 +241,73 @@ export class SessionPersistenceJsonl extends SessionPersistence implements Persi
   }
 
   /**
+   * Read a session's stored artifact text verbatim: the durable file bytes
+   * decoded from this backend's physical encoding (complete zstd frames
+   * concatenated, or UTF-8 plaintext). The content is the exact JSONL text the
+   * backend wrote — never a reconstruction from parsed events — so packed-
+   * chunk rows, key order, and line breaks survive byte-for-byte. A torn
+   * final frame is omitted, matching the committed-prefix semantics of every
+   * other read.
+   * @param id - the persisted session to read.
+   * @param signal - optional cancellation for the stat/read/decode work.
+   * @returns the raw artifact text plus the header parsed from its own first
+   * line, or `undefined` when the session has no stored artifact.
+   */
+  override async readRaw(id: SessionId, signal?: AbortSignal): Promise<SessionRawArtifact | undefined> {
+    signal?.throwIfAborted()
+    await this.ensureRootEncoding()
+    signal?.throwIfAborted()
+    const path = await this.findLog(id, signal)
+    if (path === undefined) return undefined
+    const { buffer } = await this.readStableFile(path, signal)
+    let content: string
+    if (this.compression === 'zstd') {
+      const { frames } = scanZstdFrames(buffer)
+      if (frames.length === 0) throw new Error('empty or header-less Zstandard session log')
+      const decoder = createZstdFrameDecoder()
+      const plaintexts: Buffer[] = []
+      // The decoder yields views into a reused buffer; copy each frame's
+      // plaintext immediately so a later concat cannot read overwritten memory.
+      for (const plaintext of decoder.decode(buffer, frames)) {
+        signal?.throwIfAborted()
+        plaintexts.push(Buffer.from(plaintext))
+      }
+      content = Buffer.concat(plaintexts).toString('utf8')
+    } else {
+      content = buffer.toString('utf8')
+    }
+    const meta = parseHeaderMeta(content.split('\n', 1)[0] as string)
+    if (meta === undefined || meta.id !== id) {
+      throw new Error(`corrupt session log: invalid header line in "${path}"`)
+    }
+    // The logical artifact name is `session.jsonl` regardless of the physical
+    // encoding suffix (`.jsonl.zstd` marks compression only).
+    return { meta, filename: 'session.jsonl', content }
+  }
+
+  /**
+   * Read a file's bytes under a revision-stable loop: a writer appending
+   * between stat and readFile would yield a torn physical file, so retry
+   * while the stat revision changes.
+   * @param path - the artifact file to read.
+   * @param signal - optional cancellation for the stat/read work.
+   * @returns the stable bytes and the revision that matched both stats.
+   */
+  private async readStableFile(
+    path: string,
+    signal?: AbortSignal,
+  ): Promise<{ buffer: Buffer; revision: PersistenceRevision }> {
+    for (;;) {
+      signal?.throwIfAborted()
+      const before = fileRevision(await stat(path, { bigint: true }))
+      const buffer = await readFile(path, { signal })
+      signal?.throwIfAborted()
+      const after = fileRevision(await stat(path, { bigint: true }))
+      if (before === after) return { buffer, revision: after }
+    }
+  }
+
+  /**
    * Read a stored prefix and convert torn-tail state to the opaque marker the
    * coordinator can round-trip without knowing the physical encoding.
    */
@@ -242,33 +316,31 @@ export class SessionPersistenceJsonl extends SessionPersistence implements Persi
     expectedId?: SessionId,
     signal?: AbortSignal,
   ): Promise<StoredPrefix<JsonlTornMarker>> {
-    let buffer: Buffer
-    let revision: PersistenceRevision
-    for (;;) {
-      signal?.throwIfAborted()
-      const before = fileRevision(await stat(path, { bigint: true }))
-      buffer = await readFile(path, { signal })
-      signal?.throwIfAborted()
-      const after = fileRevision(await stat(path, { bigint: true }))
-      if (before === after) {
-        revision = after
-        break
-      }
-    }
+    const { buffer, revision } = await this.readStableFile(path, signal)
     let prefix: Omit<StoredPrefix<JsonlTornMarker>, 'revision'>
-    if (this.compression === 'zstd') {
-      prefix = await this.readZstdPrefix(buffer, signal)
-    } else {
-      signal?.throwIfAborted()
-      const { meta, events, committedBytes } = scanLog(buffer)
-      signal?.throwIfAborted()
-      prefix = {
-        meta,
-        events,
-        ...committedBytes < buffer.byteLength
-          ? { tornMarker: { truncateTo: committedBytes, recoveredEvents: [] } }
-          : {},
+    try {
+      if (this.compression === 'zstd') {
+        prefix = await this.readZstdPrefix(buffer, signal)
+      } else {
+        signal?.throwIfAborted()
+        const { meta, events, committedBytes } = scanLog(buffer)
+        signal?.throwIfAborted()
+        prefix = {
+          meta,
+          events,
+          ...committedBytes < buffer.byteLength
+            ? { tornMarker: { truncateTo: committedBytes, recoveredEvents: [] } }
+            : {},
+        }
       }
+    } catch (error: unknown) {
+      // A parse-time format refusal predates any SessionHeader, so the
+      // coordinator's locate-based enrichment cannot run; attach the artifact
+      // this read actually refused.
+      if (error instanceof SessionFormatUnsupportedError && error.location === undefined) {
+        throw new SessionFormatUnsupportedError(`${error.message} (raw log: ${path})`, { kind: 'jsonl', path })
+      }
+      throw error
     }
     signal?.throwIfAborted()
     await this.assertStoredIdentity(path, prefix.meta, expectedId, signal)
@@ -358,6 +430,11 @@ export class SessionPersistenceJsonl extends SessionPersistence implements Persi
     } else {
       await this.materialize(meta, events)
     }
+  }
+
+  /** Materialize a header-only JSONL artifact for an explicitly durable empty session. */
+  async materializeHeader(meta: SessionHeader): Promise<void> {
+    await this.materialize(meta, [])
   }
 
   /**
@@ -491,7 +568,7 @@ export class SessionPersistenceJsonl extends SessionPersistence implements Persi
     // parent directory's metadata is synced.
     await this.syncDirPosix(dir)
     // Best-effort temp cleanup: the log is already published and durable, so a
-    // failure to remove the (now-redundant) temp hard link must NOT reject the
+    // failure to remove the redundant temp hard link must NOT reject the
     // append. Swallow only the rm failure; nothing else of consequence runs here.
     try {
       await rm(tmp, { force: true })
@@ -550,6 +627,9 @@ export class SessionPersistenceJsonl extends SessionPersistence implements Persi
   /** Encode the header and first batch without combining their frame boundaries. */
   private async encodeMaterialization(meta: SessionHeader, events: readonly SessionEvent[]): Promise<Buffer | string> {
     const header = JSON.stringify(toHeaderLine(meta)) + '\n'
+    if (events.length === 0) {
+      return this.compression === 'none' ? header : compressZstdFrame(header)
+    }
     const body = eventLines(events, this.packChunks) + '\n'
     if (this.compression === 'none') return header + body
     const headerFrame = await compressZstdFrame(header)
@@ -896,4 +976,4 @@ export class SessionPersistenceJsonl extends SessionPersistence implements Persi
   /* v8 ignore stop */
 }
 
-export default SessionPersistenceJsonl
+export default JsonlSessionPersistence

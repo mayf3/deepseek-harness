@@ -9,8 +9,8 @@
 在插件中导出一个 `Config` 类型和同名的 Schemastery schema；默认值直接写在 schema 中：
 
 ```ts
-import type { Context } from 'cordis'
-import Schema from 'schemastery'
+import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 
 export const name = 'my-plugin'
 
@@ -49,8 +49,8 @@ export function apply(ctx: Context, config: Config) {
 对于需要严格校验的场景，使用 Schemastery 定义 schema：
 
 ```ts
-import type { Context } from 'cordis'
-import Schema from 'schemastery'
+import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 
 export const name = 'validated-plugin'
 
@@ -93,7 +93,7 @@ export interface Config {
 
 ### 配置错误要响亮
 
-在 schema 中表达自身完备的约束，使无效配置在插件加载时失败。对服务或已注册资源的引用需要依赖注入；[服务教程](../framework/service.md) 会介绍这项约定。
+在 schema 中表达自身完备的约束，使无效配置在插件加载时失败。对服务或已注册资源的引用需要依赖注入；[服务教程](../framework/service.zh.md) 会介绍这项约定。
 
 ## 配合 HMR
 
@@ -101,6 +101,6 @@ export interface Config {
 
 ## 下一步
 
-- [打包与安装插件](./publish.md) — 把插件以可安装包的形式交付
-- [插件与生命周期](../framework/) — 深入了解插件的完整生命周期
-- [服务与依赖](../framework/service.md) — 让你的插件对外提供服务
+- [打包与安装插件](./publish.zh.md) — 把插件以可安装包的形式交付
+- [插件与生命周期](../framework/index.zh.md) — 深入了解插件的完整生命周期
+- [服务与依赖](../framework/service.zh.md) — 让你的插件对外提供服务

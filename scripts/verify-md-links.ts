@@ -27,7 +27,6 @@ const PATTERNS = [
   'AGENTS.md',
   'packages/AGENTS.md',
   '.agents/skills/**/*.md',
-  'skills/**/*.md',
 ]
 
 /** A broken relative link: a missing target path or a missing anchor on it. */
@@ -196,7 +195,6 @@ export function findViolations(
   return out
 }
 
-// Run only when invoked as a script, not when imported by the spec.
 if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
   // Archived notes remain valid link targets, but their historical outbound links are frozen.
   const files = uniqueRepoFiles(root, PATTERNS, isArchivedAgentNotePath)

@@ -55,22 +55,25 @@
  * @module @deepseek-ai/dsh-llm-pi-ai
  */
 
-import type { Context } from 'cordis'
-import { environmentOf } from '@deepseek-ai/dsh-environment'
+import type { Context } from '@deepseek-ai/cordis'
+import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigurableProvider } from '@deepseek-ai/dsh-llm'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { PiAiAdapter } from './adapter.ts'
+import { authContextFrom, credentialStoreFrom } from './auth.ts'
 import { catalogProviderIds } from './catalog.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
+import { registerPiAiFlows } from './login.ts'
 
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
 export { Config } from './config.ts'
 export type {
   PiAiCompatProfile,
+  PiAiModality,
   PiAiModelOverride,
   PiAiModelProfile,
   PiAiProviderProfile,
@@ -78,6 +81,7 @@ export type {
   PiAiThinkingFormat,
   ResolvedPiAiProviderProfile,
 } from './config.ts'
+export { recordKeyFor } from './auth.ts'
 export { supportedProtocols } from './provider.ts'
 
 export const name = 'llm-pi-ai'
@@ -174,7 +178,7 @@ export function apply(ctx: Context, config: Config): void {
     const hit = credentials !== undefined
       ? (await credentials.resolve(ref))?.value
       // Without the seam the environment is the whole credential plane.
-      : environmentOf(ctx).get(ref)?.value
+      : launchEnvironmentOf(ctx).get(ref)?.value
     if (hit !== undefined && hit.length > 0) return assertUsableApiKey(hit, 'llm-pi-ai', ref)
     throw new LlmError(
       `llm-pi-ai: no credential for provider route "${provider}"; its profile resolves ${ref}, which is not`
@@ -184,7 +188,28 @@ export function apply(ctx: Context, config: Config): void {
     )
   }
 
-  const adapter = new PiAiAdapter({ profiles, resolveApiKey })
+  // One store and one ambient context for the whole plugin instance: both read
+  // through `ctx` per call, so they stay correct across the collection rebuilds
+  // a configuration change causes, and a sign-in survives one.
+  const auth = { credentials: credentialStoreFrom(ctx), authContext: authContextFrom(ctx) }
+  const adapter = new PiAiAdapter({
+    profiles,
+    resolveApiKey,
+    auth,
+    resolveAttachments: () => ctx.get('attachments'),
+    onReplayDegrade: ({ provider, model, reason }) => {
+      ctx.logger.warn(
+        `llm-pi-ai: unusable replay state on assistant history for route "${provider}/${model}";`
+        + ` sending that message as provider-neutral content (${reason})`,
+      )
+    },
+  })
+  // Independent of the route set: signing in is what makes a route worth
+  // adding, so the flows are offered before any profile names their provider.
+  // Scoped to the authorization seam rather than injected outright, because a
+  // composition without it (headless, ACP) simply has no surface to sign in
+  // from, while everything else this plugin does still works.
+  ctx.inject(['authorization'], (authorized) => { registerPiAiFlows(authorized, auth) })
   // The full installed catalog is configurable from the moment the plugin
   // mounts — dormant or not — so configuration surfaces can offer every
   // pi-ai provider before any route exists. Hand-declared routes join it as

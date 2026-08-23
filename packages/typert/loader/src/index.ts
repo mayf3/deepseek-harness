@@ -11,15 +11,15 @@
  * fails loud — aggregated into this plugin's activation throw for existing
  * entries, contained to a logged error per package in steady state.
  *
- * Scanning is incremental per entry name, mirroring the client-modules node
- * half: every cordis `internal/plugin` emission marks the fiber's entry name
- * dirty and a microtask flush reconciles each dirty name against the live
+ * Scanning is incremental per entry name. Every cordis `internal/plugin`
+ * emission marks the fiber's entry name dirty, and a microtask flush
+ * reconciles each dirty name against the live
  * loader entries; the activation pass seeds the same dirty set with all
  * current entries. Package verdicts and imported manifests are cached per
  * package name and never expire — plugin-set changes take effect on restart.
  *
- * Manual `ctx.typert.register()` remains the escape hatch for contributions
- * that do not ride a `./typert` artifact (hand-written contract schemas,
+ * Manual `ctx.typert.register()` remains available for contributions
+ * that do not use a `./typert` artifact (hand-written wire schemas,
  * tests, non-loader compositions).
  *
  * @module @deepseek-ai/dsh-typert-loader
@@ -29,9 +29,9 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { Context } from 'cordis'
-import z from 'schemastery'
-import type {} from '@cordisjs/plugin-loader'
+import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-typert-registry'
 import type { TypertContribution } from '@deepseek-ai/dsh-typert-registry/types'
 
@@ -68,7 +68,7 @@ function typertExportOf(pkgName: string, exportsField: unknown): string | undefi
     const fallback = (target as Record<string, unknown>).default
     if (typeof fallback === 'string') return fallback
   }
-  throw new Error(`typert-loader: ${pkgName} exports["${TYPERT_HOST_EXPORT}"] has an unsupported shape`)
+  throw new Error(`typert-loader: ${pkgName} exports["${TYPERT_HOST_EXPORT}"] must be a string or an object with a string default`)
 }
 
 /**

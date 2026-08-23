@@ -4,8 +4,9 @@
 // stores it write-only under the derived reference (`MINIMAX_CN_API_KEY`)
 // while the settings document records only that reference. Each saved row
 // appears after route topology invalidation without presenting liveness as
-// provider status. The customized-settings fold writes the curated
-// reasoning field as a merge patch. Zero model calls: configuration is pure
+// provider status. The customized-settings fold writes its curated fields —
+// the endpoint, and a declared route's own name and protocol — as merge
+// patches against the stored profile. Zero model calls: configuration is pure
 // settings/credentials/llm-domain traffic, so there is no fixture and a
 // stray stream would fail loud because the adapter registry is empty. The provider under test is
 // minimax-cn so a developer's real ANTHROPIC/OPENAI environment keys can
@@ -28,6 +29,8 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/models-settings', import
 const EMPTY_EXPECTED = join(SNAPSHOT_DIR, 'empty.expected.md')
 const CONFIGURED_EXPECTED = join(SNAPSHOT_DIR, 'configured.expected.md')
 const DECLARED_EXPECTED = join(SNAPSHOT_DIR, 'declared.expected.md')
+const DECLARED_EDIT_EXPECTED = join(SNAPSHOT_DIR, 'declared-edit.expected.md')
+const MODEL_PICKER_EXPECTED = join(SNAPSHOT_DIR, 'model-picker.expected.md')
 const NATIVE_DELETE_EXPECTED = join(SNAPSHOT_DIR, 'native-delete.expected.md')
 const DELETE_EXPECTED = join(SNAPSHOT_DIR, 'delete.expected.md')
 const MODE = webSnapshotMode()
@@ -176,6 +179,42 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('selects and clears the discovered model catalog in one action', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-models-picker'))
+    const settingsDialog = page.getByRole('dialog', { name: '设置' })
+    await settingsDialog.getByRole('button', { name: '编辑 minimax-cn' }).click()
+    await settingsDialog.getByText('自定义设置').click()
+    await settingsDialog.getByRole('button', { name: '获取可用模型' }).click()
+
+    const picker = page.getByRole('dialog', { name: '选择要添加的模型' })
+    await picker.waitFor({ timeout: 10_000 })
+    const boxes = picker.getByRole('checkbox')
+    const count = await boxes.count()
+    expect(count).toBeGreaterThan(0)
+    expect(await boxes.evaluateAll(nodes => nodes.map(node => (node as HTMLInputElement).checked))).toEqual(
+      Array.from({ length: count }, () => true),
+    )
+
+    await picker.getByRole('button', { name: '取消全选' }).click()
+    expect(await boxes.evaluateAll(nodes => nodes.map(node => (node as HTMLInputElement).checked))).toEqual(
+      Array.from({ length: count }, () => false),
+    )
+    await picker.getByRole('button', { name: '全选' }).waitFor()
+    const snapshot = await captureStableAria(
+      page,
+      '[role="dialog"][aria-label="选择要添加的模型"]',
+      scaffold.workspaceCwd,
+    )
+    await compareOrRefreshGolden(MODEL_PICKER_EXPECTED, snapshot, MODE)
+
+    await picker.getByRole('button', { name: '全选' }).click()
+    expect(await boxes.evaluateAll(nodes => nodes.map(node => (node as HTMLInputElement).checked))).toEqual(
+      Array.from({ length: count }, () => true),
+    )
+    await picker.getByRole('button', { name: '取消', exact: true }).click()
+    await settingsDialog.getByRole('button', { name: '取消', exact: true }).click()
+  }, 60_000)
+
   it('declares a route the adapter does not ship', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-declare'))
     const dialog = page.getByRole('dialog', { name: '设置' })
@@ -206,6 +245,40 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(DECLARED_EXPECTED, snapshot, MODE)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('reopens the name and protocol a declared route was created with', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-models-declared-identity'))
+    const dialog = page.getByRole('dialog', { name: '设置' })
+    await dialog.getByRole('button', { name: '编辑 Acme Gateway (acme-gateway)' }).click()
+    await dialog.getByText('自定义设置').click()
+    // The create card asked this route for a name and a protocol because
+    // nothing can default them; the editor reaches the same two fields rather
+    // than sending the user to settings.yaml for what only this route names.
+    const protocol = dialog.getByLabel('API 协议')
+    await protocol.waitFor({ timeout: 10_000 })
+    expect(await protocol.inputValue()).toBe('openai-completions')
+    const name = dialog.getByLabel('显示名称', { exact: true })
+    expect(await name.inputValue()).toBe('Acme Gateway')
+    const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(DECLARED_EDIT_EXPECTED, snapshot, MODE)
+
+    await protocol.selectOption('anthropic-messages')
+    await name.fill('Acme 网关')
+    await dialog.getByRole('button', { name: '保存', exact: true }).click()
+    await expect.poll(async () => dialog.getByLabel('API 协议').count(), { timeout: 10_000 }).toBe(0)
+    // The adapter re-resolved the route under the new protocol and re-registered
+    // it under the new name: an unserviceable profile would have been refused
+    // at the write instead, and a rename that did not re-register would leave
+    // the old label on the row.
+    await dialog.getByText('Acme 网关', { exact: true }).first().waitFor({ timeout: 10_000 })
+    // The status line names the route as the refreshed directory reports it;
+    // the target captured when the card opened still carries the old name.
+    await dialog.getByText('已保存 Acme 网关 (acme-gateway)。', { exact: true }).waitFor({ timeout: 10_000 })
+    const document = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
+    expect(document).toContain('api: anthropic-messages')
+    expect(document).toContain('displayName: Acme 网关')
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
@@ -243,8 +316,9 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'configured.expected.md', 'declared.expected.md', 'delete.expected.md',
-      'empty.expected.md', 'native-delete.expected.md',
+      'configured.expected.md', 'declared-edit.expected.md', 'declared.expected.md',
+      'delete.expected.md', 'empty.expected.md', 'model-picker.expected.md',
+      'native-delete.expected.md',
     ])
   })
 })

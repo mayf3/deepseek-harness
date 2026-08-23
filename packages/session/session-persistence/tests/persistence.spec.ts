@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { Session, SessionId, isJsonValue } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import {
@@ -68,6 +68,8 @@ interface CoordinatorInternals {
  * durable behavior is covered by the JSONL and SQLite backends.
  */
 class MemoryPersistence extends SessionPersistence implements PersistenceBackend<never> {
+  override readonly supportsRawArtifacts = false
+
   static inject = ['sessions']
 
   override readonly name = 'session-persistence-memory'
@@ -85,7 +87,7 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
     this.coordinator = new PersistenceCoordinator<never>(this.ctx, this)
   }
 
-  // --- service surface (delegated to the coordinator) ---
+  // --- Service API (delegated to the coordinator) ---
 
   locate(_meta: SessionHeader): undefined {
     return undefined
@@ -93,6 +95,10 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
 
   create(m: SessionHeader): Promise<void> {
     return this.coordinator.create(m)
+  }
+
+  override ensureMaterialized(session: Session): Promise<void> {
+    return this.coordinator.ensureMaterialized(session)
   }
 
   append(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
@@ -149,6 +155,11 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
     }
   }
 
+  materializeHeader(m: SessionHeader): Promise<void> {
+    this.store.set(m.id, { meta: structuredClone(m), events: [] })
+    return Promise.resolve()
+  }
+
   async commitRepair(m: SessionHeader, _tornMarker: undefined, closers: readonly SessionEvent[]): Promise<void> {
     // No torn tails in a Map store, so `_tornMarker` is always undefined; only the
     // synthetic closers are appended (the same DELETE+INSERT a DB backend does,
@@ -178,6 +189,7 @@ class ControlledBackend implements PersistenceBackend<never> {
   readonly name = 'session-persistence-controlled'
   readonly store: MemoryStore = new Map()
   readonly lifecycle: string[] = []
+  lastAppendedBatch: readonly SessionEvent[] | undefined
   appendAttempts = 0
   loadAttempts = 0
   repairAttempts = 0
@@ -210,6 +222,7 @@ class ControlledBackend implements PersistenceBackend<never> {
   }
 
   async appendBatch(m: SessionHeader, events: readonly SessionEvent[], _isMaterialized: boolean): Promise<void> {
+    this.lastAppendedBatch = events
     const attempt = ++this.appendAttempts
     await this.beforeAppend?.(attempt)
     const entry = this.store.get(m.id)
@@ -235,7 +248,6 @@ class ControlledBackend implements PersistenceBackend<never> {
   }
 }
 
-// Run the shared contract against the in-memory backend.
 runPersistenceContract('memory', async () => {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
@@ -246,6 +258,27 @@ runPersistenceContract('memory', async () => {
   }
 })
 
+describe('the inherited readRaw default', () => {
+  it('rejects unsupported reads distinctly from absence and honors an aborted signal', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(MemoryPersistence)
+    expect(ctx.sessionPersistence.supportsRawArtifacts).toBe(false)
+    await expect(
+      ctx.sessionPersistence.readRaw(SessionId('any-session')),
+    ).rejects.toThrow('does not expose raw artifacts')
+    await expect(
+      ctx.sessionPersistence.readRaw(SessionId('any-session'), AbortSignal.abort()),
+    ).rejects.toThrow()
+    // A non-Error abort reason falls back to a wrapped Error rejection.
+    const controller = new AbortController()
+    controller.abort('boom')
+    await expect(
+      ctx.sessionPersistence.readRaw(SessionId('any-session'), controller.signal),
+    ).rejects.toThrow('aborted')
+  })
+})
+
 // Each fixture shares one map across mounts. No `corruptTail` is supplied because map writes are
 // atomic; the suite asserts that skip while JSONL and SQLite cover the repair branch.
 runCoordinatorContract('memory', async (): Promise<CoordinatorFixture> => {
@@ -254,6 +287,28 @@ runCoordinatorContract('memory', async (): Promise<CoordinatorFixture> => {
     mount: async ctx => ctx.plugin(MemoryPersistence, { store }),
     cleanup: async () => { store.clear() },
   }
+})
+
+describe('PersistenceCoordinator seed ownership', () => {
+  it('retains the immutable session seed without cloning it', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      const session = ctx.sessions.create(SessionId('shared-seed'), { seed: oneTurnLog() })
+      const seed = session.events
+      await ctx.sessions.flush(session)
+
+      expect(backend.lastAppendedBatch).toBe(seed)
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
 })
 
 describe('PersistenceCoordinator bounded writes', () => {
@@ -1734,6 +1789,72 @@ describe('PersistenceCoordinator retirement', () => {
 })
 
 describe('SessionPersistence service registration', () => {
+  it('materializes an explicitly durable live session without adding events', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(MemoryPersistence)
+    const session = ctx.sessions.create(SessionId('durable-empty'), { meta: { cwd: '/workspace' } })
+
+    await ctx.sessionPersistence.ensureMaterialized(session)
+    await ctx.sessionPersistence.ensureMaterialized(session)
+
+    await expect(ctx.sessionPersistence.list()).resolves.toEqual([session.header])
+    await expect(ctx.sessionPersistence.load(session.id)).resolves.toEqual({ meta: session.header, events: [] })
+    await ctx.fiber.dispose()
+  })
+
+  it('fails loud when a direct backend does not support empty materialization', async () => {
+    const session = Session.create(SessionId('unsupported-empty'))
+    await expect(SessionPersistence.prototype.ensureMaterialized.call({} as SessionPersistence, session))
+      .rejects.toThrow(/cannot materialize an empty session/)
+  })
+
+  it('fails loud when a coordinator backend omits empty materialization', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    let coordinator!: PersistenceCoordinator
+    await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, new ControlledBackend())
+    }, { inject: ['sessions'] }))
+    const session = ctx.sessions.create(SessionId('unsupported-coordinator'))
+
+    await expect(coordinator.ensureMaterialized(session)).rejects.toThrow(/cannot materialize an empty session/)
+    await ctx.fiber.dispose()
+  })
+
+  it('accepts current aborted and error turn endings without legacy conversion', async () => {
+    const store: MemoryStore = new Map()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const endings: SessionEvent[] = [
+      {
+        type: 'turn/end', seq: 5, time: 6,
+        data: { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } },
+      },
+      {
+        type: 'turn/end', seq: 5, time: 6,
+        data: { turn: 1, reason: { kind: 'error', error: { message: 'failed', code: 'UNKNOWN' } } },
+      },
+    ]
+    for (const [index, ending] of endings.entries()) {
+      const m = meta(`current-ending-${index}`)
+      store.set(m.id, { meta: m, events: [...oneTurnLog().slice(0, -1), ending] })
+    }
+    await ctx.plugin(MemoryPersistence, { store })
+    await Promise.all([...store.keys()].map(id => ctx.sessionPersistence.load(SessionId(id))))
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects preparing an id that already has a live Session', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(MemoryPersistence)
+    const session = ctx.sessions.create(SessionId('live-prepare-conflict'))
+
+    await expect(ctx.sessionPersistence.prepare(session.id)).rejects.toThrow(/while it is live/)
+    await ctx.fiber.dispose()
+  })
+
   it('provides a cancellation-aware default preparation for simple backends', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

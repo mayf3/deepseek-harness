@@ -1,10 +1,10 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { type Agent } from '@deepseek-ai/dsh-agent'
 
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import { carrierKeyOf } from '@deepseek-ai/dsh-scope'
-import SubagentService, {
+import SubagentRuntime, {
   foldSubagentDescriptor,
   snapshotSubagentDescriptor,
   SUBAGENT_DESCRIPTOR_VERSION,
@@ -15,6 +15,7 @@ import SubagentService, {
   type SubagentProvider,
   type SubagentResult,
   type SubagentRun,
+  type SubagentRunEndInfo,
   type SubagentStartRequest,
 } from '@deepseek-ai/dsh-subagent'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
@@ -61,13 +62,13 @@ class StubProvider implements SubagentProvider {
   }
 }
 
-async function service(): Promise<{ ctx: Context; subagents: SubagentService }> {
+async function service(): Promise<{ ctx: Context; subagents: SubagentRuntime }> {
   const ctx = new Context()
-  await ctx.plugin(SubagentService)
+  await ctx.plugin(SubagentRuntime)
   return { ctx, subagents: ctx.subagents }
 }
 
-describe('SubagentService', () => {
+describe('SubagentRuntime', () => {
   it('registers, lists, looks up, starts, and removes providers', async () => {
     const { ctx, subagents } = await service()
     const added: string[] = []
@@ -121,16 +122,17 @@ describe('SubagentService', () => {
       },
     })
     expect(provider.lastRequest).not.toBe(request)
-    expectTypeOf<Parameters<SubagentService['start']>[1]>().toExtend<SubagentStartRequest>()
+    expectTypeOf<Parameters<SubagentRuntime['start']>[1]>().toExtend<SubagentStartRequest>()
     expect('resume' in subagents).toBe(false)
     expect('resume' in provider).toBe(false)
   })
 
-  it('does not expose manager teardown and treats a scoped drain as a no-op when no manager was bound', async () => {
+  it('does not expose manager teardown and treats public drains as no-ops when no manager was bound', async () => {
     const { subagents } = await service()
     // Without `ctx.agents` no manager exists, so nothing was ever materialized.
     expect('drainContinuable' in subagents).toBe(false)
     await expect(subagents.drainContinuableDescendants([])).resolves.toBeUndefined()
+    await expect(subagents.drainContinuableChildren(fakeParent(), [SessionId('child')])).resolves.toBeUndefined()
   })
 
   it('treats interrupt as an accepted no-op when no manager was bound', async () => {
@@ -262,6 +264,17 @@ describe('SubagentService', () => {
       lastAssistantMessage: [{ type: 'text', text: 'answer' }],
       stopReason: 'completed',
     }))
+
+    // The lifecycle event omits lastAssistantMessage when output is empty,
+    // matching the continuable epoch event.
+    const silent = new StubProvider('silent', NO_CAPS, { output: [], stopReason: 'completed' })
+    subagents.registerProvider(silent)
+    const silentRun = await subagents.start('silent', baseRequest())
+    await silentRun.result
+    await Promise.resolve()
+    const silentEnd = ended.mock.calls.map(call => call[0] as SubagentRunEndInfo).find(info => info.provider === 'silent')
+    expect(silentEnd).toBeDefined()
+    expect('lastAssistantMessage' in silentEnd!).toBe(false)
 
     const failure = Promise.withResolvers<SubagentResult>()
     subagents.registerProvider({

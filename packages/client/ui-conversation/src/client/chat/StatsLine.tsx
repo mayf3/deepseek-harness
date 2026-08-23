@@ -6,6 +6,8 @@ import { Fragment, memo, useLayoutEffect, useMemo, useRef, useState } from 'reac
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationSnapshot, UseProjection } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+// Type-only: merges the sessionStats key into SessionProjectionMap for useProjection.
+import type {} from '@deepseek-ai/dsh-session-stats/client'
 import type { ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { ComposerBarProps } from '../contract/slots.ts'
 import { formatTokensPerSecond } from './message-chrome.ts'
@@ -30,14 +32,16 @@ interface WindowStats {
 }
 
 /**
- * Fold assistant and tool-result nodes into the window-scoped display totals.
+ * Fold assistant and tool-result nodes into window-scoped display totals —
+ * the FALLBACK for assemblies without the `sessionStats` projection.
  *
- * Counts and wall times describe the loaded window on purpose — they answer
- * "what is on screen". Token accounting deliberately does NOT come from here:
- * the window is paged and compaction rewrites it, so billing rides the durable
- * `tokenUsage` projection instead.
+ * Every displayed figure rides that durable whole-log projection (and token
+ * accounting rides `tokenUsage`) because the window is paged and compaction
+ * rewrites it; this fold answers "what is on screen" only when no projection
+ * value is served. Its field names deliberately mirror the projection's so
+ * the two swap wholesale.
  * @param nodes - snapshot nodes.
- * @returns visible counts and summed wall times.
+ * @returns fallback counts and summed wall times.
  */
 export function deriveStats(nodes: ConversationSnapshot['nodes']): WindowStats {
   const turns = new Set<number>()
@@ -97,16 +101,64 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(whole / 60)}m${whole % 60}s`
 }
 
+/** Round a cache-read ratio to an integer percentage, with positive ties rounded up. */
+function roundedIntegerPercent(cacheReadTokens: number, denominator: number): number {
+  const denominatorQuotient = Math.floor(denominator / 200)
+  const denominatorRemainder = denominator % 200
+  let lower = 0
+  let upper = 100
+  while (lower < upper) {
+    const candidate = Math.floor((lower + upper + 1) / 2)
+    const factor = candidate * 2 - 1
+    const threshold = factor * denominatorQuotient
+      + Math.ceil(factor * denominatorRemainder / 200)
+    if (cacheReadTokens >= threshold) {
+      lower = candidate
+    } else {
+      upper = candidate - 1
+    }
+  }
+  return lower
+}
+
 /**
- * Cache-hit share of prompt-side input over the whole durable log.
+ * Display-ready cache-hit share of prompt-side input over the whole durable log.
  * @param usage - the session's token-usage projection value.
- * @returns rounded integer percent, or null when no input was billed.
+ * @returns integer text when integer rounding stays below 100, otherwise the
+ * minimum decimal precision that still rounds below 100; a full hit returns
+ * 100, and no billed input returns null.
  */
-export function cacheHitPercent(usage: TokenUsageProjection): number | null {
+export function cacheHitPercent(usage: TokenUsageProjection): string | null {
   const denominator = billedInputTokens(usage)
-  return denominator === 0
-    ? null
-    : Math.round(usage.cacheReadTokens / denominator * 100)
+  if (denominator === 0) return null
+  const missedInputTokens = usage.uncachedInputTokens + usage.cacheWriteTokens
+  if (missedInputTokens === 0) return '100'
+
+  const integerPercent = roundedIntegerPercent(usage.cacheReadTokens, denominator)
+  if (integerPercent < 100) return String(integerPercent)
+
+  // At the first distinguishing precision, the rounded result is 100 minus
+  // one to five units in the final decimal place. Scale only while the next
+  // multiplication remains at or below the denominator, then derive that
+  // final digit through exact small-factor comparisons.
+  let decimalPlaces = 1
+  let scaledDoubleGap = missedInputTokens * 200
+  const denominatorTens = Math.floor(denominator / 10)
+  while (scaledDoubleGap <= denominatorTens) {
+    scaledDoubleGap *= 10
+    decimalPlaces += 1
+  }
+  const denominatorOnes = denominator % 10
+  let roundedLoss = 5
+  for (let loss = 1; loss < 5; loss += 1) {
+    const factor = loss * 2 + 1
+    const threshold = factor * denominatorTens + Math.floor(factor * denominatorOnes / 10)
+    if (scaledDoubleGap <= threshold) {
+      roundedLoss = loss
+      break
+    }
+  }
+  return `99.${'9'.repeat(decimalPlaces - 1)}${10 - roundedLoss}`
 }
 
 /**
@@ -158,8 +210,13 @@ export interface StatsLineProps {
 
 export const StatsLine = memo(function StatsLine({ useSession, useProjection, t }: StatsLineProps) {
   const settledNodes = useSession(s => s.chat.legacy.nodes)
-  const stats = useMemo(() => deriveStats(settledNodes), [settledNodes])
   const usage = useProjection('tokenUsage')
+  // Every figure rides the durable sessionStats projection, so paging and
+  // compaction cannot change any of them; an assembly without the unit falls
+  // back to the window-scoped fold wholesale (same field names), paid only
+  // while no projection value is served.
+  const projected = useProjection('sessionStats')
+  const stats = useMemo(() => projected ?? deriveStats(settledNodes), [projected, settledNodes])
   // Pipe-separated groups (figma stats strip); a group with no data drops out whole.
   const groups: string[] = []
   if (stats.steps > 0) {
@@ -168,7 +225,6 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
     if (stats.llmMs > 0) durations.push(t('stats.llm', { duration: formatDuration(stats.llmMs) }))
     if (stats.toolMs > 0) durations.push(t('stats.toolCall', { duration: formatDuration(stats.toolMs) }))
     if (durations.length > 0) groups.push(durations.join(' · '))
-    // Window-scoped like the wall times above: averages describe loaded steps.
     const speeds: string[] = []
     if (stats.ttftSteps > 0) {
       speeds.push(t('stats.ttftAverage', { duration: formatDuration(stats.ttftMs / stats.ttftSteps) }))
@@ -183,9 +239,11 @@ export const StatsLine = memo(function StatsLine({ useSession, useProjection, t 
   // Context occupancy deliberately lives on the composer's ContextMeter ring,
   // not here — one home per fact.
   // Billing rides the durable projection, so these survive paging and
-  // compaction. Suppress the empty projection on a brand-new session.
+  // compaction. Gated on actual token activity: a session whose steps all
+  // settled without billing (e.g. every request failed) shows its counts
+  // without a zero-token group.
   if (usage !== undefined
-    && (stats.steps > 0 || billedInputTokens(usage) > 0 || usage.outputTokens > 0)) {
+    && (billedInputTokens(usage) > 0 || usage.outputTokens > 0)) {
     const cacheHit = cacheHitPercent(usage)
     if (cacheHit !== null) groups.push(t('stats.cacheHit', { percent: cacheHit }))
     groups.push(t('stats.tokens', {

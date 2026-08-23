@@ -1,22 +1,20 @@
-// ConversationSnapshot / ConversationNode: the only data shape the logic layer feeds the UI.
-// Publication contract: every change swaps the top-level object; unchanged
-// substructures keep their references (the React.memo premise). Chat node and
-// Location stores are stable live readers, so old snapshots are not time-point
-// views. callId/approvalId stay plain string here (narrow to real brands when
-// convenient).
+// Each publication replaces the top-level snapshot while preserving unchanged
+// substructure references. Stable node and location stores make old snapshots
+// live readers rather than time-point views.
 
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { LlmRetryEventData } from '@deepseek-ai/dsh-llm-retry/types'
-import type { TodoItem } from '@deepseek-ai/dsh-session/types'
+import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import type {
   RpcError, SessionId, SubagentAddress, ToolCallView, ToolResultView,
-} from '@deepseek-ai/dsh-client-connection/client'
+} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PendingInteraction } from './pending.ts'
 import type { ContextProvenanceView, KnownContextForm } from './context-provenance.ts'
 import type {
-  ChatConversationViewNode, ConversationTimelineSnapshot,
+  ChatConversationViewNode, ConversationTimelineSnapshot, ConversationViewSnapshotStore,
 } from '../contract/conversation.ts'
 export type { TodoItem }
 
@@ -43,6 +41,7 @@ export interface AssistantProvenanceView {
 export type AssistantBlock =
   | { kind: 'text'; text: string }
   | { kind: 'reasoning'; text: string }
+  | { kind: 'image'; attachment: ImageAttachmentRef }
   | { kind: 'tool-call'; callId: string; name: string; argsRaw: string }
   | { kind: 'other'; block: unknown }
 
@@ -64,6 +63,7 @@ export function toAssistantBlock(block: ContentBlock): AssistantBlock {
   switch (block.type) {
     case 'text': return { kind: 'text', text: block.text }
     case 'reasoning': return { kind: 'reasoning', text: block.text }
+    case 'image': return { kind: 'image', attachment: block.attachment }
     case 'tool-call': return { kind: 'tool-call', callId: String(block.id), name: block.name, argsRaw: block.arguments }
     default: return { kind: 'other', block }
   }
@@ -89,10 +89,16 @@ export interface AssistantTiming {
   completedTime: number
 }
 
-/** A finalized (or interruption-frozen) assistant message. */
+/** A finalized assistant message or an interruption-frozen streaming prefix. */
 export interface AssistantMessageNode {
   kind: 'assistant'
   seq: number
+  /**
+   * Stable identity carried from the `assistant/message` event. Absent only on
+   * synthetic interruption fallbacks assembled from chunks without a durable
+   * assistant message.
+   */
+  messageId?: MessageId
   /** Unix epoch ms from the source session event (or turn/end when frozen from a partial). */
   time: number
   turn: number
@@ -103,8 +109,9 @@ export interface AssistantMessageNode {
   requestConfig?: AssistantRequestConfig
   /** Timing derived from the recorded step/chunk/message event sequence. */
   timing?: AssistantTiming
-  /** Frozen partial of an aborted turn (no finalize ever arrives): rendered with a 已停止 marker.
-   *  Synthetic seq (fractional, derived from the turn/end seq) keeps it ordered inside the flow. */
+  /** Prefix of an aborted turn, rendered with a 已停止 marker. A durable
+   *  finalized prefix uses its event seq; a chunk-only fallback uses a fractional
+   *  seq derived from the closing boundary to keep it ordered inside the flow. */
   interrupted?: true
 }
 
@@ -147,7 +154,10 @@ export type ModelRetryNode = LlmRetryEventData & {
   retryState: 'scheduled' | 'started' | 'cancelled'
 }
 
-/** Durable terminal failure for a turn that has no scheduled retry. */
+/**
+ * Durable terminal failure for a turn that ended with an error reason; the
+ * turn's settled retry chain renders separately and never replaces this node.
+ */
 export interface TurnErrorNode {
   kind: 'turn-error'
   /** Seq of the owning turn/end event. */
@@ -158,6 +168,17 @@ export interface TurnErrorNode {
   step: number
   message: string
   code?: string
+}
+
+/** Durable notice for a turn ended by the per-request output-token cap. */
+export interface TurnMaxTokensNode {
+  kind: 'turn-max-tokens'
+  /** Seq of the owning turn/end event. */
+  seq: number
+  /** Unix epoch ms from the turn/end event. */
+  time: number
+  turn: number
+  step: number
 }
 
 /** A tool result paired (when in-window) with its call head. */
@@ -196,10 +217,10 @@ export interface CompactionSummaryNode {
   seq: number
   /** Unix epoch ms of the checkpoint event. */
   time: number
-  /** Summary text from the checkpoint's cited `compact/summary` event; null when
+  /** Summary text from the checkpoint's cited `compaction/summary` event; null when
    *  the window cut left that event outside (the marker is then not expandable). */
   summary: string | null
-  /** Seq of the loaded `compact/summary` event, or null when that event is outside the window. */
+  /** Seq of the loaded `compaction/summary` event, or null when that event is outside the window. */
   summaryEventSeq: number | null
   /** Number of surface items replaced, or null when the summary event is unavailable or malformed. */
   shadowedItemCount: number | null
@@ -211,7 +232,7 @@ export interface CompactionSummaryNode {
  * Fallback for surface events this UI version does not know: the documented
  * default arm of `SessionEventMap`, which is merge-extensible, so the
  * projection's switch cannot end in `assertNever`. No event produces this node
- * today — `isAppendSurfaceEvent` admits only the three types in core's
+ * because `isAppendSurfaceEvent` admits only the three types in core's
  * `SurfaceEventType`, and each has its own arm — and it exists so widening that
  * set core-side degrades to a raw row instead of dropping the event silently.
  */
@@ -265,6 +286,7 @@ export type ConversationNode =
   | ContextMessageNode
   | ModelRetryNode
   | TurnErrorNode
+  | TurnMaxTokensNode
   | ToolResultNode
   | CommandNode
   | CompactionSummaryNode
@@ -321,8 +343,9 @@ export type OpenState = 'cold' | 'loading' | 'open' | 'error'
  * - `engaging`: a first prompt was attempted, but no accepted turn or other
  *   authoritative activity signal has arrived — the UI keeps the composer
  *   visible through admission and error frames.
- * - `active`: the session is non-blank beyond its pending first prompt, is
- *   running, or owns a pending interaction — the ordinary conversation view.
+ * - `active`: the session is non-blank beyond its pending first prompt,
+ *   contains visible non-command Chat content, is running, or owns a pending
+ *   interaction — the ordinary conversation view.
  *
  * A failed first prompt stays `engaging` (composer + error strip — retry
  * semantics; returning to the hero would discard the error context).
@@ -381,6 +404,11 @@ export interface ChatSnapshot {
 const EMPTY_LIST: readonly never[] = []
 const EMPTY_TIMELINE: ConversationTimelineSnapshot = { turnOrder: EMPTY_LIST, turns: new Map() }
 
+/** Empty target store used by fixtures and Sessions without registered views. */
+export const EMPTY_CONVERSATION_VIEWS: ConversationViewSnapshotStore = {
+  get: () => undefined,
+}
+
 /** Empty Chat target used before a view builder is registered. */
 export const EMPTY_CHAT_SNAPSHOT: ChatSnapshot = {
   order: EMPTY_LIST,
@@ -405,6 +433,8 @@ export const EMPTY_CHAT_SNAPSHOT: ChatSnapshot = {
 /** The immutable snapshot contract Session hands to uSES (see the web client architecture RFC). */
 export interface ConversationSnapshot {
   sessionId: SessionId
+  /** Registered target snapshots assembled from Session events. */
+  views: ConversationViewSnapshotStore
   /** Final Chat target assembled from independently registered business Definitions. */
   chat: ChatSnapshot
   /** Legacy top-level compatibility field mirrored from the registered Chat Definitions. */

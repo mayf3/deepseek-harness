@@ -15,19 +15,34 @@
       "path": "../../../vendor/schemastery"
     },
     {
+      "path": "../../../vendor/loader"
+    },
+    {
+      "path": "../../boot/app-boot"
+    },
+    {
+      "path": "../../boot/cmdline"
+    },
+    {
       "path": "../../host/frontend-static"
     },
     {
       "path": "../../host/webserver"
     },
     {
+      "path": "../../util/launch-environment"
+    },
+    {
       "path": "../../core/system-prompt"
     },
     {
-      "path": "../../bash/bash-env"
+      "path": "../../shell/shell-env"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../subprocess/subprocess"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

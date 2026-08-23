@@ -19,7 +19,7 @@ fi
 archive="${RUNNER_TEMP}/bubblewrap_${BUBBLEWRAP_VERSION}_amd64.deb"
 root="${RUNNER_TEMP}/dsh-bubblewrap"
 
-curl --fail --silent --show-error --location --retry 3 --output "$archive" "$BUBBLEWRAP_URL"
+curl --fail --silent --show-error --location --retry 3 --retry-all-errors --output "$archive" "$BUBBLEWRAP_URL"
 printf '%s  %s\n' "$BUBBLEWRAP_SHA256" "$archive" | sha256sum --check --status
 mkdir -p "$root"
 dpkg-deb --extract "$archive" "$root"
@@ -28,5 +28,5 @@ printf '%s\n' "$root/usr/bin" >> "$GITHUB_PATH"
 sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 \
   || echo 'apparmor userns knob absent — the functional probe decides'
 "$root/usr/bin/bwrap" --version
-"$root/usr/bin/bwrap" --ro-bind / / --dev /dev --proc /proc --die-with-parent -- true
+"$root/usr/bin/bwrap" --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- true
 echo 'bubblewrap functional probe passed'

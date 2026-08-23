@@ -15,7 +15,7 @@ const root = resolve(import.meta.dirname, '..')
  * are reviewable policy: a new group cannot silently inherit an exemption.
  */
 export const GROUPS_WITHOUT_SUBSYSTEM_PAGE: Readonly<Record<string, string>> = {
-  acp: 'Protocol transport front door; the server package README owns its interoperability contract.',
+  acp: 'Protocol transport entry point; the server package README owns its interoperability contract.',
   api: 'Remote transport and BFF assembly; Typert and the package READMEs own the underlying contracts.',
   boot: 'Shared application-bin boot library rather than a runtime subsystem.',
   bundle: 'Composition patch carriers whose mounted packages own all runtime contracts.',
@@ -24,9 +24,9 @@ export const GROUPS_WITHOUT_SUBSYSTEM_PAGE: Readonly<Record<string, string>> = {
   experimental: 'Empty staging group; promoted packages move to their product-role group before release.',
   feedback: 'One command producer and inline log-event payload; its package README and persistence catalog own the complete contract.',
   hooks: 'External hook-protocol bridges over existing interception points, not a new Harness service.',
+  identity: 'Shared anonymous correlation values rather than authenticated account or authorization behavior.',
   mcp: 'Integration adapter that contributes external tools through the existing tool registry.',
-  scaffold: 'Developer tooling and out-of-process SDK transport rather than an in-process Harness subsystem.',
-  'self-modification': 'Model-facing consumers of the existing tool and Cordis runtime contracts.',
+  sdk: 'Out-of-process protocol and client packages whose package READMEs own the SDK contracts.',
   util: 'Low-level primitives whose business semantics remain with their consuming subsystems.',
 }
 

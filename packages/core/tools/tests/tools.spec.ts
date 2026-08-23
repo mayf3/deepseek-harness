@@ -1,10 +1,10 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { Context } from 'cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, CallId, HarnessError, type ContentBlock  } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import ApprovalService, { type ApprovalOutcome, type ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
-import ToolRegistry, {
+import ToolRuntime, {
   defineContentToolFixture, defineTool, JsonSchemaError, parameterSchemaSpecToJsonSchema, validateArgs, ToolArgsError, ToolNotFoundError,
   TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH,
   type InferArgs, type JsonValue, type ParameterSchemaSpec, type PreToolDecision, type PostToolDecision,
@@ -16,7 +16,7 @@ const testToolSignal = new AbortController().signal
 async function setup() {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRegistry)
+  await ctx.plugin(ToolRuntime)
   return ctx
 }
 
@@ -33,7 +33,7 @@ const echoTool = defineTool({
   },
 })
 
-describe('ToolRegistry', () => {
+describe('ToolRuntime', () => {
   it('registers tools, exposes schemas, and feeds the system-prompt assembly', async () => {
     const ctx = await setup()
     ctx.tools.register(echoTool)
@@ -905,6 +905,25 @@ describe('ToolRegistry', () => {
         info: { name: 'HarnessError', code: 'POLICY_FAILED' },
       },
     })
+  })
+
+  it('keeps the normalized content when the final content transform returns undefined', async () => {
+    const ctx = await setup()
+    let finalized = 0
+    ctx.tools.register({
+      ...echoTool,
+      name: 'identity-finalizer',
+      finalizeContent() {
+        finalized += 1
+        return undefined
+      },
+    })
+
+    const result = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('identity-finalizer'), name: 'identity-finalizer', arguments: {} })
+
+    expect(result.isError).toBe(false)
+    expect(result.content).toEqual([{ type: 'text', text: '' }])
+    expect(finalized).toBe(1)
   })
 
   it('a block decision can ALSO attach additionalContexts', async () => {
@@ -2430,7 +2449,7 @@ describe('schema DSL optional and nested contracts', () => {
   })
 })
 
-describe('ToolRegistry.get', () => {
+describe('ToolRuntime.get', () => {
   it('get() returns the registered tool definition', async () => {
     const ctx = await setup()
     ctx.tools.register(echoTool)

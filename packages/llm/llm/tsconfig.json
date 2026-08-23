@@ -18,10 +18,16 @@
       "path": "../../util/brand"
     },
     {
-      "path": "../../support/invariants"
+      "path": "../../attachment/attachment"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     },
     {
       "path": "../../util/timeout"
+    },
+    {
+      "path": "../../util/crypto"
     }
   ]
 }

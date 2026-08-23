@@ -1,11 +1,12 @@
 /**
- * Node half of the client module system (dshClient dual-face package): scans
- * the host Loader's entries for `dshClient` packages, composes the
+ * Node half of the client module system (`dsh.client` dual-face package): scans
+ * the host Loader's entries for packages declaring `dsh.client`, composes the
  * `window.__DSH_BOOT__` entry graph (wire single source: {@link WebBootEntry}
- * in `./client/manifest.ts`), serves `/plugins/<id>/client.js` and its source
- * map, taps the index render to inject the boot manifest, and provides the
- * `clientModuleHost` service (the HMR node half's registration/notification
- * face).
+ * in `./client/manifest.ts`) in module-graph order, serves
+ * `/plugins/<id>/client.js` and its source map, contributes the boot manifest
+ * plus the parser-blocking bootstrap preloads to the webserver's index
+ * injection table, and provides the `clientModuleHost` service (the HMR node
+ * half's registration/notification face).
  *
  * Scanning is incremental per package — there is no full-rescan code path.
  * Every cordis `internal/plugin` emission (fiber construction/disposal) marks
@@ -16,7 +17,7 @@
  * negative "not a client package" verdict) is cached per name and never
  * expires — plugin-set changes take effect on restart; bundle content
  * changes reach the graph only through
- * {@link ClientModuleHostService.rebuilt}.
+ * {@link ClientModuleRegistry.rebuilt}.
  * @module @deepseek-ai/dsh-client-modules
  */
 
@@ -26,36 +27,52 @@ import { readFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
-import { Service } from 'cordis'
-import type { Context } from 'cordis'
-import type {} from '@cordisjs/plugin-loader'
-import type {} from '@deepseek-ai/dsh-host-webserver'
+import { Service } from '@deepseek-ai/cordis'
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
+import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
+import { optionalStringArray, stripClientSuffix } from './client/manifest.ts'
 import type { WebBootEntry, WebBootGraph } from './client/manifest.ts'
 
+export { stripClientSuffix } from './client/manifest.ts'
 export type {
   BootManifest, BootModuleRow, BootPluginRow, WebBootEntry, WebBootGraph,
 } from './client/manifest.ts'
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     /** The web plugin table (provided by the client-modules node half). */
-    clientModuleHost: ClientModuleHostService
+    clientModules: ClientModuleRegistry
   }
 }
 
-/** package.json `dshClient` declaration shape (file boundary — validated field by field). */
+/** package.json `dsh.client` declaration fields, validated one by one after reading the file. */
 interface DshClientDeclaration {
   inject?: string[]
   platform: string
   /** Boot phase-one prefetch mark; absent means lazy (fetched on demand). */
   immediately?: boolean
+  /**
+   * Exact module-table requests beyond the implicit client baseline. Any
+   * specifier is valid, including subpaths such as `<pkg>/client`; each
+   * importing package declares its own exceptional requests. A type-only
+   * import is not a request because the transform erases it before resolution.
+   * Absent means the package uses only the baseline externals.
+   */
+  external?: string[]
 }
 
-/** Resolved package metadata for one dshClient package (cached per name, never expires). */
-interface PkgMeta {
-  clientPath: string
+/** The declared fields a graph row carries, normalized (absent array declarations become empty). */
+interface WebBootRowFields {
   inject?: string[]
+  /** Module specifiers the package requests from the module table. */
+  external: string[]
   immediately: boolean
+}
+
+/** Resolved package metadata for one `dsh.client` package (cached per name, never expires). */
+interface PkgMeta extends WebBootRowFields {
+  clientPath: string
 }
 
 /** Recovery instruction shared by grouped startup and steady-state bundle diagnostics. */
@@ -99,31 +116,31 @@ class ClientPackageCompositionError extends AggregateError {
   }
 }
 
-/** One composed table row: the wire entry plus its bundle path. */
+/** One composed table row: the wire entry plus the resolved package metadata behind it. */
 interface WebPluginRecord {
   entry: WebBootEntry
-  clientPath: string
+  meta: PkgMeta
 }
 
-/** Narrow an unknown parsed JSON value to the dshClient declaration, throwing on malformed fields. */
+/** Narrow an unknown parsed JSON value to the `dsh.client` declaration, throwing on malformed fields. */
 function parseDshClient(pkgName: string, value: unknown): DshClientDeclaration | undefined {
   if (value === undefined) return undefined
   if (typeof value !== 'object' || value === null) {
-    throw new Error(`client-modules: ${pkgName} has a non-object dshClient declaration`)
+    throw new Error(`client-modules: ${pkgName} has a non-object dsh.client declaration`)
   }
   const decl = value as Record<string, unknown>
   if (typeof decl.platform !== 'string') {
-    throw new Error(`client-modules: ${pkgName} dshClient.platform must be a string`)
+    throw new Error(`client-modules: ${pkgName} dsh.client.platform must be a string`)
   }
-  if (decl.inject !== undefined && (!Array.isArray(decl.inject) || decl.inject.some(i => typeof i !== 'string'))) {
-    throw new Error(`client-modules: ${pkgName} dshClient.inject must be a string array`)
-  }
+  const inject = optionalStringArray(pkgName, 'dsh.client.inject', decl.inject)
+  const external = optionalStringArray(pkgName, 'dsh.client.external', decl.external)
   if (decl.immediately !== undefined && typeof decl.immediately !== 'boolean') {
-    throw new Error(`client-modules: ${pkgName} dshClient.immediately must be a boolean`)
+    throw new Error(`client-modules: ${pkgName} dsh.client.immediately must be a boolean`)
   }
   return {
     platform: decl.platform,
-    ...(decl.inject !== undefined ? { inject: decl.inject as string[] } : {}),
+    ...(inject !== undefined ? { inject } : {}),
+    ...(external !== undefined ? { external } : {}),
     ...(decl.immediately !== undefined ? { immediately: decl.immediately } : {}),
   }
 }
@@ -138,7 +155,7 @@ function clientExportOf(pkgName: string, exportsField: unknown): string | undefi
     const fallback = (client as Record<string, unknown>).default
     if (typeof fallback === 'string') return fallback
   }
-  throw new Error(`client-modules: ${pkgName} exports["./client"] has an unsupported shape`)
+  throw new Error(`client-modules: ${pkgName} exports["./client"] must be a string or an object with a string default`)
 }
 
 /** sha1 content hash shortened to 12 hex chars (bundle rev / graph rev). */
@@ -147,46 +164,127 @@ function shortHash(input: string | Buffer): string {
 }
 
 /** Graph row for one bundle rev (url carries the rev as its cache-busting query). */
-function graphRow(id: string, rev: string, injectEdges: string[] | undefined, immediately: boolean): WebBootEntry {
+function graphRow(id: string, rev: string, fields: WebBootRowFields): WebBootEntry {
   return {
     id,
     url: `/plugins/${id}/client.js?rev=${rev}`,
     rev,
-    ...(injectEdges !== undefined ? { inject: injectEdges } : {}),
-    ...(immediately ? { immediately: true } : {}),
+    ...(fields.inject !== undefined ? { inject: fields.inject } : {}),
+    ...(fields.immediately ? { immediately: true } : {}),
+    ...(fields.external.length > 0 ? { external: fields.external } : {}),
   }
 }
 
 /**
- * Inject the boot entry graph into index.html: `window.__DSH_BOOT__` as the
- * first script in <head> (before the shell bundle reads it). `<` is escaped in
- * the JSON so plugin-controlled strings cannot break out of the script element.
- * @param html - the index.html source.
- * @param graph - the composed entry graph.
- * @returns the html with the graph script injected.
+ * Order composed rows so every requested dynamic package precedes its
+ * consumers. An `external` specifier is either the package row it names
+ * (`<pkg>/client` aliases the bare package) or a static-table name that adds no
+ * graph edge.
+ * @param entries - composed rows in scan order.
+ * @returns the same rows reordered; scan order breaks every tie.
+ * @throws {Error} when a row requests itself or when the module graph has a
+ * cycle; the message lists the packages on it.
  */
-export function injectBootManifest(html: string, graph: WebBootGraph): string {
-  const json = JSON.stringify(graph).replaceAll('<', '\\u003c')
-  const script = `<script>window.__DSH_BOOT__ = ${json}</script>`
-  const head = html.indexOf('<head>')
-  if (head !== -1) return `${html.slice(0, head + 6)}${script}${html.slice(head + 6)}`
-  // Headless fixture pages may lack <head>; prepending keeps the read-before-shell ordering.
-  return `${script}${html}`
+export function orderByModuleGraph(entries: readonly WebBootEntry[]): WebBootEntry[] {
+  const rowsById = new Map<string, WebBootEntry>()
+  for (const entry of entries) rowsById.set(entry.id, entry)
+  const ordered: WebBootEntry[] = []
+  const placed = new Set<string>()
+  const open: string[] = []
+  const visit = (entry: WebBootEntry): void => {
+    if (placed.has(entry.id)) return
+    const cycleStart = open.indexOf(entry.id)
+    if (cycleStart !== -1) {
+      throw new Error(
+        `client-modules: module graph cycle ${[...open.slice(cycleStart), entry.id].join(' -> ')} `
+        + '— a requested package row must precede its consumers, and factory-form CJS cannot deliver partial exports',
+      )
+    }
+    open.push(entry.id)
+    for (const name of entry.external ?? []) {
+      const dependency = rowsById.get(name) ?? rowsById.get(stripClientSuffix(name))
+      if (dependency === entry) {
+        throw new Error(
+          `client-modules: "${entry.id}" requests module "${name}" that it answers itself `
+          + '— a row must not declare its own package in dsh.client.external',
+        )
+      }
+      if (dependency !== undefined) visit(dependency)
+    }
+    open.pop()
+    placed.add(entry.id)
+    ordered.push(entry)
+  }
+  for (const entry of entries) visit(entry)
+  return ordered
+}
+
+/** Bootstrap package whose ordinary client bundle supplies the module-system implementation. */
+const CLIENT_MODULES_ID = '@deepseek-ai/dsh-client-modules'
+
+/** Dynamic package whose ordinary client bundle must be registered before plugin boot starts. */
+const CLIENT_RUNTIME_ID = '@deepseek-ai/dsh-client-runtime'
+
+/** Ordinary dynamic bundles the HTML parser executes before the Vite shell. */
+const PARSER_PRELOAD_IDS = [CLIENT_MODULES_ID, CLIENT_RUNTIME_ID] as const
+
+/**
+ * The boot protocol as index injection rows. The inline registration queue
+ * precedes blocking classic scripts for modules' and runtime's ordinary
+ * `lib/client.js` artifacts. Its `create()` method materializes the modules
+ * bundle, delegates construction to that bundle, and leaves the same facade
+ * in live-registration mode. The graph global follows before the shell reads
+ * it.
+ * @param graph - the composed entry graph.
+ * @returns head rows in execution order: queue script, preload scripts, graph global.
+ */
+export function bootInjections(graph: WebBootGraph): IndexInjection[] {
+  const bootstrapId = JSON.stringify(CLIENT_MODULES_ID)
+  const queue = `(()=>{
+const pendingQueue=[]
+window.__ModuleLoader__={
+  mode:"queue",
+  pendingQueue,
+  load(registration){pendingQueue.push(registration)},
+  create(options){
+    if(this.mode!=="queue")throw new Error("client-modules: window.__ModuleLoader__.create called after module-system boot")
+    const index=pendingQueue.findIndex(registration=>registration.id===${bootstrapId})
+    const registration=pendingQueue[index]
+    if(registration===undefined)throw new Error("client-modules: HTML did not preload ${CLIENT_MODULES_ID}/client.js")
+    pendingQueue.splice(index,1)
+    const exports=registration.factory(specifier=>{
+      throw new Error('client-modules: ${CLIENT_MODULES_ID}/client.js requested external "'+specifier+'" before the module system existed')
+    })
+    if(typeof exports!=="object"||exports===null||typeof exports.createClientModuleSystem!=="function"||typeof exports.apply!=="function"){
+      throw new Error("client-modules: ${CLIENT_MODULES_ID}/client.js did not export the bootstrap module face")
+    }
+    return exports.createClientModuleSystem(this,{id:registration.id,exports},options)
+  }
+}
+})()`
+  const preload = PARSER_PRELOAD_IDS.map(id => graph.entries.find(entry => entry.id === id))
+    .filter((entry): entry is WebBootEntry => entry !== undefined)
+    .map((entry): IndexInjection => ({ kind: 'script-src', placement: 'head', src: entry.url }))
+  return [
+    { kind: 'script', placement: 'head', text: queue },
+    ...preload,
+    { kind: 'global', name: '__DSH_BOOT__', value: graph },
+  ]
 }
 
 /**
- * The web plugin table service: incremental dshClient scan + wire composition
- * + bundle route + index tap. Construction runs the activation scan
+ * The web plugin table service: incremental `dsh.client` scan + wire composition
+ * + bundle route + index injection rows. Construction runs the activation scan
  * synchronously — a malformed declaration or missing bundle among the
  * already-loaded entries aggregates into one loud throw (FAILED fiber; the
  * boot activation audit reports it).
  */
-export class ClientModuleHostService extends Service {
-  static inject = ['httpServer', 'loader']
+export class ClientModuleRegistry extends Service {
+  static inject = ['webServer', 'loader']
 
   private readonly table = new Map<string, WebPluginRecord>()
   // Negative verdicts (unresolvable specifier — builtins like cordis:include,
-  // subpath rows — or a package without a web dshClient declaration) are
+  // subpath rows — or a package without a web `dsh.client` declaration) are
   // cached as null and never expire: plugin-set changes take effect on restart.
   private readonly pkgMeta = new Map<string, PkgMeta | null>()
   private readonly rebuildListeners = new Set<(id: string, rev: string) => void>()
@@ -198,10 +296,10 @@ export class ClientModuleHostService extends Service {
 
   /**
    * Build the service: subscribe, seed, and run the activation flush.
-   * @param ctx - plugin context carrying httpServer and loader.
+   * @param ctx - plugin context carrying webServer and loader.
    */
   constructor(ctx: Context) {
-    super(ctx, 'clientModuleHost')
+    super(ctx, 'clientModules')
     // Resolution anchor: the config tree's baseUrl (the cordis.yml directory,
     // whose package declares every composed plugin as a dependency). The
     // modules package's own URL would miss sibling packages under pnpm's
@@ -239,13 +337,12 @@ export class ClientModuleHostService extends Service {
     }
 
     ctx.effect(
-      () => ctx.httpServer.register({ kind: 'prefix', path: '/plugins', handler: this.serveBundle }),
+      () => ctx.webServer.register({ kind: 'prefix', path: '/plugins', handler: this.serveBundle }),
       'client-modules: bundle route',
     )
-    ctx.effect(
-      () => ctx.httpServer.tapIndex(html => injectBootManifest(html, this.composed)),
-      'client-modules: boot manifest injection',
-    )
+    ctx.on('webserver/index-inject', (table) => {
+      table.push(...bootInjections(this.composed))
+    })
   }
 
   /**
@@ -262,7 +359,7 @@ export class ClientModuleHostService extends Service {
    * @returns the path, or undefined for an unknown id.
    */
   clientPath(id: string): string | undefined {
-    return this.table.get(id)?.clientPath
+    return this.table.get(id)?.meta.clientPath
   }
 
   /**
@@ -274,9 +371,9 @@ export class ClientModuleHostService extends Service {
   rebuilt(id: string): string | undefined {
     const record = this.table.get(id)
     if (record === undefined) return undefined
-    const rev = shortHash(readFileSync(record.clientPath))
+    const rev = shortHash(readFileSync(record.meta.clientPath))
     if (rev === record.entry.rev) return rev
-    record.entry = graphRow(id, rev, record.entry.inject, record.entry.immediately === true)
+    record.entry = graphRow(id, rev, record.meta)
     this.composed = this.compose()
     for (const notify of this.rebuildListeners) {
       // Containment: rebuilt() runs inside the HMR watch callback — a
@@ -313,7 +410,7 @@ export class ClientModuleHostService extends Service {
   }
 
   private compose(): WebBootGraph {
-    const entries = [...this.table.values()].map(record => record.entry)
+    const entries = orderByModuleGraph([...this.table.values()].map(record => record.entry))
     return { rev: shortHash(JSON.stringify(entries)), entries }
   }
 
@@ -342,18 +439,23 @@ export class ClientModuleHostService extends Service {
       return null
     }
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as Record<string, unknown>
-    const decl = parseDshClient(pkgName, pkg.dshClient)
+    const dsh = pkg.dsh
+    const decl = parseDshClient(
+      pkgName,
+      dsh !== null && typeof dsh === 'object' ? (dsh as Record<string, unknown>).client : undefined,
+    )
     if (decl === undefined || decl.platform !== 'web') {
       this.pkgMeta.set(pkgName, null)
       return null
     }
     const clientRel = clientExportOf(pkgName, pkg.exports)
     if (clientRel === undefined) {
-      throw new Error(`client-modules: ${pkgName} declares dshClient but exports no "./client" bundle`)
+      throw new Error(`client-modules: ${pkgName} declares dsh.client but exports no "./client" bundle`)
     }
     const meta: PkgMeta = {
       clientPath: join(dirname(pkgPath), clientRel),
       ...(decl.inject !== undefined ? { inject: decl.inject } : {}),
+      external: decl.external ?? [],
       immediately: decl.immediately === true,
     }
     this.pkgMeta.set(pkgName, meta)
@@ -392,7 +494,7 @@ export class ClientModuleHostService extends Service {
     // The rev rides the row from here on: a fiber restart reuses the row (and
     // its rev) untouched; only rebuilt() re-reads the bundle.
     const rev = this.initialBundleRevision(entryName, meta.clientPath)
-    this.table.set(entryName, { entry: graphRow(entryName, rev, meta.inject, meta.immediately), clientPath: meta.clientPath })
+    this.table.set(entryName, { entry: graphRow(entryName, rev, meta), meta })
     return true
   }
 
@@ -408,10 +510,20 @@ export class ClientModuleHostService extends Service {
         onError(error instanceof Error ? error : new Error(String(error)))
       }
     }
-    if (changed) {
-      this.composed = this.compose()
-      this.notifyGraphChanged()
+    if (!changed) return
+    let composed: WebBootGraph
+    try {
+      composed = this.compose()
+    } catch (error) {
+      // An unorderable module graph is a property of the whole table, not of
+      // the arriving package, so it surfaces here: aggregated into the
+      // activation throw, or warned in steady state while the last orderable
+      // graph stays served.
+      onError(error as Error)
+      return
     }
+    this.composed = composed
+    this.notifyGraphChanged()
   }
 
   private readonly serveBundle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -453,4 +565,4 @@ export class ClientModuleHostService extends Service {
   }
 }
 
-export default ClientModuleHostService
+export default ClientModuleRegistry

@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { join, relative } from 'node:path'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { flattenDiagnosticMessageText, parseConfigFileTextToJson } from 'typescript'
 import { describe, expect, it } from 'vitest'
@@ -39,6 +39,26 @@ function normalizedOutput(result: ReturnType<typeof runOxlint>): string {
   return `${result.stdout}${result.stderr}`.replaceAll('\\', '/')
 }
 
+/** @returns A transient filename excluded from concurrent repository-wide glob discovery. */
+function hiddenProbeName(prefix: string, suffix: string, extension = '.ts'): string {
+  return `.${prefix}-${suffix}${extension}`
+}
+
+/**
+ * Publish a complete probe so concurrent repository scans never read a partial write.
+ * @param path - Final probe path that the owning project must discover.
+ * @param source - Complete TypeScript source to publish.
+ */
+async function publishProbe(path: string, source: string): Promise<void> {
+  const staging = join(dirname(path), `.${basename(path)}.staging`)
+  try {
+    await writeFile(staging, source)
+    await rename(staging, path)
+  } finally {
+    await rm(staging, { force: true })
+  }
+}
+
 async function writeContractConfig(suffix: string): Promise<string> {
   const path = join(repositoryRoot, `.oxlintrc.contract-${suffix}.json`)
   await writeFile(path, JSON.stringify({ extends: ['./.oxlintrc.json'], ignorePatterns: [] }))
@@ -50,14 +70,17 @@ describe('Oxlint executable contract', () => {
     const suffix = randomUUID()
     const configPath = await writeContractConfig(suffix)
     const probes = [
-      ['host package source', 'packages/fs/fs-policy/src', 'packages/fs/fs-policy/tsconfig.json'],
-      ['host package test', 'packages/fs/fs-policy/tests', 'tsconfig.host.json'],
+      ['host package source', 'packages/fs/fs-observation-policy/src', 'packages/fs/fs-observation-policy/tsconfig.json'],
+      ['host package test', 'packages/fs/fs-observation-policy/tests', 'tsconfig.host.json'],
       ['client package source', 'packages/client/ui-primitives/src', 'packages/client/ui-primitives/tsconfig.json'],
-      ['client package test', 'packages/client/ui-trajectory/tests', 'tsconfig.client.json'],
+      // A test under packages/client states its face in the filename, so the
+      // probe carries the Client suffix to reach the Client aggregate.
+      ['client package test', 'packages/client/ui-trajectory/tests', 'tsconfig.client.json', '.client.ts'],
       ['example', 'examples/headless-agent/tests', 'tsconfig.host.json'],
       ['website', 'website', 'tsconfig.host.json'],
     ] as const
-    const source = `export function probePromise(): Promise<void> {
+    const source = `/** Produce a settled promise for type-aware linting. */
+export function probePromise(): Promise<void> {
   return Promise.resolve()
 }
 
@@ -66,9 +89,9 @@ probePromise()
 
     try {
       const paths: Array<readonly [label: string, path: string, tsconfig: string]> = []
-      for (const [label, parent, tsconfig] of probes) {
-        const path = join(repositoryRoot, parent, `oxlint-contract-${suffix}.ts`)
-        await writeFile(path, source)
+      for (const [label, parent, tsconfig, extension = '.ts'] of probes) {
+        const path = join(repositoryRoot, parent, `oxlint-contract-${suffix}${extension}`)
+        await publishProbe(path, source)
         paths.push([label, relative(repositoryRoot, path), tsconfig])
       }
       const clientScript = 'scripts/client-bundle-purity.spec.ts'
@@ -86,7 +109,7 @@ probePromise()
       expect(result.error).toBeUndefined()
       expect(result.status, output).toBe(1)
       for (const [label, path, tsconfig] of paths) {
-        expect(output, label).toContain(`${path.replaceAll('\\', '/')}:5:1: Promises must be awaited`)
+        expect(output, label).toContain(`${path.replaceAll('\\', '/')}:6:1: Promises must be awaited`)
         expect(output, `${label} project`).toContain(
           `Got tsconfig for file ${join(repositoryRoot, path).replaceAll('\\', '/')}: ${join(repositoryRoot, tsconfig).replaceAll('\\', '/')}`,
         )
@@ -98,7 +121,8 @@ probePromise()
       expect(output).not.toContain('Unmatched file:')
     } finally {
       await Promise.all([
-        ...probes.map(([, parent]) => rm(join(repositoryRoot, parent, `oxlint-contract-${suffix}.ts`), { force: true })),
+        ...probes.map(([, parent, , extension = '.ts']) =>
+          rm(join(repositoryRoot, parent, `oxlint-contract-${suffix}${extension}`), { force: true })),
         rm(configPath, { force: true }),
       ])
     }
@@ -107,7 +131,7 @@ probePromise()
   it('runs JavaScript compatibility and nursery rules', async () => {
     const suffix = randomUUID()
     const configPath = await writeContractConfig(suffix)
-    const path = join(repositoryRoot, 'scripts', `oxlint-contract-${suffix}.ts`)
+    const path = join(repositoryRoot, 'scripts', hiddenProbeName('oxlint-contract', suffix))
     const source = `export function firstProbe(): number {
   const first = 1
   const second = 2
@@ -227,7 +251,7 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
   it('reports an unused suppression', async () => {
     const suffix = randomUUID()
     const configPath = await writeContractConfig(suffix)
-    const path = join(repositoryRoot, 'scripts', `oxlint-contract-${suffix}.ts`)
+    const path = join(repositoryRoot, 'scripts', hiddenProbeName('oxlint-contract', suffix))
 
     try {
       await writeFile(path, '// oxlint-disable-next-line no-console\nexport const value = 1\n')
@@ -249,7 +273,7 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
         rm(configPath, { force: true }),
       ])
     }
-  })
+  }, 20_000)
 
   it('accepts an ignored-only staged selection', () => {
     const result = runOxlint([
@@ -277,7 +301,7 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
     expect(stagedConfig.ignorePatterns).not.toContain('packages/typert/generator/tests/fixtures/type-model/**')
 
     const suffix = randomUUID()
-    const path = join(repositoryRoot, 'scripts', `staged-lint-probe-${suffix}.ts`)
+    const path = join(repositoryRoot, 'scripts', hiddenProbeName('staged-lint-probe', suffix))
     try {
       await writeFile(path, 'export const value={answer:1};\n')
       const lint = runOxlint([
@@ -300,7 +324,7 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
 
   it('preserves successful fix output channels', async () => {
     const suffix = randomUUID()
-    const path = join(repositoryRoot, 'scripts', `staged-lint-probe-${suffix}.ts`)
+    const path = join(repositoryRoot, 'scripts', hiddenProbeName('staged-lint-probe', suffix))
 
     try {
       await writeFile(path, '// oxlint-disable-next-line no-console\nexport const value = 1\n')
@@ -324,7 +348,7 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
 
   it('prints only the final diagnostics when a fix retry still fails', async () => {
     const suffix = randomUUID()
-    const path = join(repositoryRoot, 'scripts', `staged-lint-probe-${suffix}.ts`)
+    const path = join(repositoryRoot, 'scripts', hiddenProbeName('staged-lint-probe', suffix))
 
     try {
       await writeFile(path, `export const longProbe = ${'1 + '.repeat(80)}1\n`)
