@@ -30,6 +30,7 @@ type ClientApprovalRequest = Parameters<ApprovalListener>[0]
 type ClientApprovalNext = Parameters<ApprovalListener>[1]
 type ClientApprovalOutcome = Awaited<ReturnType<ApprovalListener>>
 
+/* jscpd:ignore-start -- Approval and Question intentionally mirror one Remote waterfall lifecycle. */
 /** Present one request until the user answers or its lifetime ends. */
 async function answerApproval(
   ctx: ClientContext,
@@ -65,6 +66,7 @@ async function answerApproval(
     completed.resolve()
   }
 }
+/* jscpd:ignore-end */
 
 /**
  * Install approval copy and the scoped waterfall consumer.
