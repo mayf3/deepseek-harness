@@ -131,7 +131,7 @@ export interface TypertGateway {
   /**
    * Invoke one live Remote method without assuming a carrier or response envelope.
    * @param request - decoded endpoint and named wire arguments.
-   * @returns the validated business result.
+   * @returns the business result without output decoding.
    * @throws {@link TypertGatewayError} for dispatch, provider, or boundary failures; lookup-policy and business errors retain identity.
    */
   invoke(request: InvokeRemoteRequest): Promise<unknown>
@@ -139,7 +139,7 @@ export interface TypertGateway {
   /**
    * Open one live stream Remote method without assuming a physical carrier.
    * @param request - decoded endpoint and named wire arguments.
-   * @returns an iterable whose items have passed the generated result codec.
+   * @returns a cancellation-aware iterable over the business results.
    */
   stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
 }

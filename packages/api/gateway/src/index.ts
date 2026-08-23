@@ -269,7 +269,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
   /**
    * Invoke one live Remote method through strict generated reflection or SRC markers.
    * @param request - decoded endpoint and exact named wire arguments.
-   * @returns the validated business result.
+   * @returns the business result without output decoding.
    * @throws {@link TypertGatewayError} for dispatch, provider, or boundary failures; lookup-policy and business errors retain identity.
    */
   async invoke(request: InvokeRemoteRequest): Promise<unknown> {
@@ -282,24 +282,18 @@ export class TypertGatewayService extends Service implements TypertGateway {
       )
     }
 
-    let result: unknown
     try {
-      result = await Reflect.apply(prepared.method, prepared.receiver, prepared.args) as unknown
+      return await Reflect.apply(prepared.method, prepared.receiver, prepared.args) as unknown
     } catch (error) {
       if (request.signal?.aborted === true) throw new RemoteInvocationCancelled(prepared.endpoint, error)
       throw error
     }
-    // A weak descriptor declares no return type, so nothing returned is a void
-    // result and rides the wire as an absent value field. A strict descriptor
-    // keeps its schema: there, undefined has to be a declared result.
-    if (result === undefined && prepared.descriptor.result.mode !== 'strict') return result
-    return decode(prepared.descriptor.result, result, 'result-invalid', prepared.endpoint, 'result')
   }
 
   /**
    * Open one live stream Remote method without assuming a physical carrier.
    * @param request - decoded endpoint and named wire arguments.
-   * @returns an iterable whose items have passed the generated result codec.
+   * @returns a cancellation-aware iterable over the business results.
    */
   async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>> {
     const prepared = await this.prepareInvocation(request)
@@ -325,9 +319,8 @@ export class TypertGatewayService extends Service implements TypertGateway {
         { field: 'result' },
       )
     }
-    return validatedStream(
+    return cancellableStream(
       source,
-      prepared.descriptor.result,
       prepared.endpoint,
       request.signal ?? NEVER_ABORTED_SIGNAL,
     )
@@ -772,7 +765,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
         { field: invocation.wire },
       )
     }
-    const identity = decode(invocation.codec, args[invocation.wire], 'input-invalid', endpoint, invocation.wire)
+    const identity = decode(invocation.codec, args[invocation.wire], endpoint, invocation.wire)
     let context: Context | undefined
     try {
       context = await provider.resolve(identity)
@@ -806,7 +799,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     // still fails decode. Lookup ids are never omissible, so absence here only
     // ever belongs to a json parameter.
     if (!Object.hasOwn(args, parameter.wire)) return undefined
-    const value = decode(parameter.codec, args[parameter.wire], 'input-invalid', endpoint, parameter.wire)
+    const value = decode(parameter.codec, args[parameter.wire], endpoint, parameter.wire)
     if (parameter.source === 'json') return value
     const key = parameter.lookup
     /* v8 ignore next -- registry validation rejects strict descriptors without a key, and SRC derivation always supplies one. */
@@ -945,9 +938,8 @@ function isIterable(value: unknown): value is Iterable<unknown> | AsyncIterable<
       || typeof Reflect.get(value, Symbol.asyncIterator) === 'function')
 }
 
-async function *validatedStream(
+async function *cancellableStream(
   source: Iterable<unknown> | AsyncIterable<unknown>,
-  codec: TypertCodec,
   endpoint: string,
   signal: AbortSignal,
 ): AsyncGenerator {
@@ -967,7 +959,7 @@ async function *validatedStream(
     while (true) {
       const next = await Promise.race([Promise.resolve(iterator.next()), aborted])
       if (next.done === true) return
-      yield decode(codec, next.value, 'result-invalid', endpoint, 'result')
+      yield next.value
     }
   } finally {
     signal.removeEventListener('abort', onAbort)
@@ -1128,7 +1120,6 @@ function assertExactArguments(
 function decode(
   codec: TypertCodec,
   value: unknown,
-  code: 'input-invalid' | 'result-invalid',
   endpoint: string,
   field: string,
 ): unknown {
@@ -1141,11 +1132,9 @@ function decode(
     return value
   } catch (cause) {
     throw new TypertGatewayError(
-      code,
+      'input-invalid',
       endpoint,
-      code === 'input-invalid'
-        ? `wire field ${JSON.stringify(field)} failed boundary validation`
-        : 'business result failed boundary validation',
+      `wire field ${JSON.stringify(field)} failed boundary validation`,
       { cause, field },
     )
   }

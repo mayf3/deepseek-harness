@@ -199,7 +199,7 @@ describe('Typert Remote streams', () => {
     await expect(collect(source)).resolves.toEqual(['wire:one', 'wire:two'])
   })
 
-  it('validates Iterable and AsyncIterable items and returns the iterator on cancellation', async () => {
+  it('passes Iterable and AsyncIterable items through and returns the iterator on cancellation', async () => {
     const { ctx, service } = await setup(false)
     const abort = new AbortController()
     const source = await ctx.typertGateway.stream({
@@ -221,7 +221,10 @@ describe('Typert Remote streams', () => {
     }))).resolves.toEqual(['b:one', 'b:two'])
     await expect(collect(await ctx.typertGateway.stream({
       namespace: 'feed', method: 'invalid', args: {},
-    }))).rejects.toMatchObject({ code: 'result-invalid' })
+    }))).resolves.toEqual([42])
+    await expect(collect(await ctx.typertGateway.stream({
+      namespace: 'feed', method: 'nonJson', args: {},
+    }))).resolves.toEqual([1n])
     await expect(ctx.typertGateway.stream({
       namespace: 'feed', method: 'missing', args: {},
     })).rejects.toMatchObject({ code: 'result-invalid' })
@@ -287,9 +290,10 @@ describe('Typert Remote streams', () => {
         { type: 'item', streamId: 'sync', value: 's:two' },
         { type: 'end', streamId: 'sync' },
       ])
-      expect(frames.find(frame => frame.streamId === 'invalid')).toMatchObject({
-        type: 'error', error: { code: 'internal' },
-      })
+      expect(frames.filter(frame => frame.streamId === 'invalid')).toEqual([
+        { type: 'item', streamId: 'invalid', value: 42 },
+        { type: 'end', streamId: 'invalid' },
+      ])
       expect(frames.find(frame => frame.streamId === 'non-json')).toMatchObject({
         type: 'error', error: { code: 'internal' },
       })

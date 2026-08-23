@@ -587,7 +587,7 @@ describe('Client Remote transport readiness', () => {
 })
 
 describe('Client Typert API', () => {
-  it('mounts concrete direct methods, validates both boundaries, and withdraws retained handles', async () => {
+  it('mounts concrete direct methods, validates inputs, and withdraws retained handles', async () => {
     const call = vi.fn<ConnectionHandle['rpc']['call']>()
       .mockResolvedValue({ ok: true, value: { ref: 'goal-1' } })
     const ctx = await bench(call)
@@ -625,12 +625,8 @@ describe('Client Typert API', () => {
 
     call.mockResolvedValueOnce({ ok: true, value: { ref: 1 } })
     await expect(ctx.remote.probe.create('agent-1', { objective: 'ship' })).resolves.toEqual({
-      ok: false,
-      error: {
-        code: 'internal',
-        message: 'client api: probe/create failed: client api: probe/create rejected "result"',
-        details: {},
-      },
+      ok: true,
+      value: { ref: 1 },
     })
 
     await assembly.dispose()
@@ -740,15 +736,15 @@ describe('Client Typert API', () => {
     expect(ctx.get('remote.probe')).toBeUndefined()
   })
 
-  it('rejects weak descriptors and namespace collisions before registration', async () => {
+  it('accepts weak result codecs and rejects namespace collisions before registration', async () => {
     const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>())
     const weak: InvocationDescriptor = {
       ...directDescriptor(),
       result: { mode: 'src-json' },
     }
 
-    await expect(ctx.remote.$mount({ package: '@fixture/weak', descriptors: [weak] }))
-      .rejects.toThrow('has no strict codec')
+    const disposeWeak = await ctx.remote.$mount({ package: '@fixture/weak', descriptors: [weak] })
+    await disposeWeak()
     await expect(ctx.remote.$mount({
       package: '@fixture/conflict',
       descriptors: [{ ...directDescriptor(), namespace: '$mount' }],

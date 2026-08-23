@@ -411,10 +411,10 @@ class ClientRemoteService extends Service implements ClientRemote {
       const result = await connection.rpc.call('/api', endpoint, { args: prepared.args }, prepared.signal)
       if (!mountActive(token)) return withdrawn(endpoint)
       if (!result.ok) return { ok: false, error: result.error }
-      return { ok: true, value: parse(descriptor.result, result.value, endpoint, 'result') }
+      return { ok: true, value: result.value }
     } catch (error) {
-      // Carrier throws (offline, abort, a rejected result payload) are outcomes
-      // of the call, not assembly faults, so they join the same error branch.
+      // Carrier throws (offline or abort) are outcomes of the call, not assembly
+      // faults, so they join the same error branch.
       return carrierFailure(endpoint, error)
     }
   }
@@ -433,7 +433,7 @@ class ClientRemoteService extends Service implements ClientRemote {
     const stream = this.openRemoteStream(endpoint, { args: prepared.args }, prepared.signal)
     for await (const value of stream) {
       if (!mountActive(token)) throw new Error(withdrawn(endpoint).error.message)
-      yield parse(descriptor.result, value, endpoint, 'result')
+      yield value
     }
   }
 
@@ -470,12 +470,12 @@ class ClientRemoteService extends Service implements ClientRemote {
       if (identity === undefined) {
         throw new Error(`client api: ${endpoint} requires a ${JSON.stringify(projection.context)} Context`)
       }
-      args[projection.wire] = parse(projection.codec, identity, endpoint, projection.wire)
+      args[projection.wire] = parseInput(projection.codec, identity, endpoint, projection.wire)
     }
     let valueIndex = 0
     descriptor.parameters.forEach((parameter, parameterIndex) => {
       if (parameterIndex === projection?.parameterIndex) return
-      const value = parse(parameter.codec, values[valueIndex], endpoint, parameter.wire)
+      const value = parseInput(parameter.codec, values[valueIndex], endpoint, parameter.wire)
       if (value !== undefined) args[parameter.wire] = value
       valueIndex += 1
     })
@@ -663,7 +663,6 @@ function scopedProjection(descriptor: InvocationDescriptor): ScopedProjection | 
 
 function requireStrictDescriptor(descriptor: InvocationDescriptor): void {
   const endpoint = endpointOf(descriptor)
-  requireStrictCodec(descriptor.result, endpoint, 'result')
   for (const parameter of descriptor.parameters) {
     requireStrictCodec(parameter.codec, endpoint, parameter.wire)
   }
@@ -678,7 +677,7 @@ function requireStrictCodec(codec: TypertCodec, endpoint: string, field: string)
   }
 }
 
-function parse(codec: TypertCodec, value: unknown, endpoint: string, field: string): unknown {
+function parseInput(codec: TypertCodec, value: unknown, endpoint: string, field: string): unknown {
   if (codec.mode !== 'strict') {
     throw new Error(`client api: generated Remote ${endpoint} field ${JSON.stringify(field)} has no strict codec`)
   }

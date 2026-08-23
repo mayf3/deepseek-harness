@@ -735,7 +735,7 @@ describe('TypertGatewayService', () => {
     expect(service.calls).toEqual([])
   })
 
-  it('distinguishes strict input and result validation failures', async () => {
+  it('validates strict input without decoding the business result', async () => {
     const { ctx, service } = await setup()
     registerStrict(ctx, [strictOnlyDescriptor()])
 
@@ -746,27 +746,23 @@ describe('TypertGatewayService', () => {
     }), 'input-invalid')
 
     service.nextResult = { title: 1 }
-    await expectCode(ctx.typertGateway.invoke({
+    await expect(ctx.typertGateway.invoke({
       namespace: 'goals',
       method: 'strictOnly',
       args: { request: { title: 'ship' } },
-    }), 'result-invalid')
+    })).resolves.toEqual({ title: 1 })
   })
 
-  it('rejects non-JSON values after strict codec validation', async () => {
+  it('does not inspect non-JSON business results', async () => {
     const { ctx, service } = await setup()
-    const descriptor = strictOnlyDescriptor()
-    registerStrict(ctx, [{
-      ...descriptor,
-      result: strictCodec('@fixture/gateway#UnknownResult', z.unknown()),
-    }])
+    registerStrict(ctx, [strictOnlyDescriptor()])
     service.nextResult = 1n
 
-    await expectCode(ctx.typertGateway.invoke({
+    await expect(ctx.typertGateway.invoke({
       namespace: 'goals',
       method: 'strictOnly',
       args: { request: { title: 'ship' } },
-    }), 'result-invalid')
+    })).resolves.toBe(1n)
   })
 
   it.each([
@@ -801,7 +797,7 @@ describe('TypertGatewayService', () => {
     expect(service.calls).toContain('passthrough')
   })
 
-  it('rejects cyclic SRC input and non-JSON SRC results', async () => {
+  it('rejects cyclic SRC input without inspecting SRC results', async () => {
     const { ctx, service } = await setup()
     const cyclic: { self?: unknown } = {}
     cyclic.self = cyclic
@@ -811,12 +807,13 @@ describe('TypertGatewayService', () => {
       args: { value: cyclic },
     }), 'input-invalid')
 
-    service.nextResult = new Date(0)
-    await expectCode(ctx.typertGateway.invoke({
+    const result = new Date(0)
+    service.nextResult = result
+    await expect(ctx.typertGateway.invoke({
       namespace: 'goals',
       method: 'passthrough',
       args: { value: null },
-    }), 'result-invalid')
+    })).resolves.toBe(result)
   })
 
   it('accepts dense JSON and rejects decorated arrays and object properties', async () => {
