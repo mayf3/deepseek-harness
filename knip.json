@@ -131,6 +131,16 @@
         "tests/**/*.tsx"
       ]
     },
+    "packages/client/ui-conversation": {
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
+    },
+    "packages/client/ui-sidebar": {
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
+    },
     "packages/client/ui-subagent": {
       "ignoreDependencies": [
         "@deepseek-ai/dsh-client-ui-input-trigger"
