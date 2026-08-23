@@ -6,8 +6,6 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the Session root standard-props merge.
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
-// Type-only: records the Workspace UI service dependency used below.
-import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { SidebarRootInjected } from './contract/slots.ts'
 import { SidebarRoot } from './SidebarRoot.tsx'
 import { en, zh, type SidebarKey } from './locales.ts'
@@ -39,7 +37,7 @@ export const inject = ['slots', 'layout', 'uiWorkspace', 'locale']
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
-  const workspaceNavigation = ctx.get('uiWorkspace') as WorkspaceNavigation
+  const workspaceNavigation = ctx.get('uiWorkspace') as unknown as WorkspaceNavigation
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar: dictionaries')
 
   const injectProps = (): SidebarRootInjected => ({
