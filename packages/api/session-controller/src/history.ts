@@ -80,7 +80,8 @@ export class SessionHistoryController {
     const scope = await this.presenterScopeFor(addressId(request.address), source, events)
     signal.throwIfAborted()
     const page = paginate(events, request.beforeSeq, request.maxMessages ?? DEFAULT_MAX_MESSAGES)
-    const entries = page.events.map(event => entryFor(this.ctx, event, page.events, scope))
+    const argsFor = (callId: string) => backscanArgs(page.events, callId)
+    const entries = page.events.map(event => entryFor(this.ctx, event, argsFor, scope))
     const projections = request.beforeSeq === undefined
       ? this.projectionsFor(request.address, source, events)
       : undefined
@@ -102,6 +103,11 @@ export class SessionHistoryController {
     const { address, afterSeq } = request
     const target = addressId(address)
     const buffered: BufferedEvent[] = []
+    const openCalls = new Map<string, { readonly name: string; readonly args: unknown }>()
+    let fallbackEvents: readonly SessionEvent[] = []
+    const argsFor = (callId: string): { readonly name: string; readonly args: unknown } | undefined => (
+      openCalls.get(callId) ?? backscanArgs(fallbackEvents, callId)
+    )
     let wake: (() => void) | undefined
     const notify = (): void => {
       const resume = wake
@@ -133,6 +139,7 @@ export class SessionHistoryController {
     try {
       const source = await this.sourceFor(address, signal)
       const events = [...sourceEvents(source)]
+      fallbackEvents = events
       const scope = await this.presenterScopeFor(target, source, events)
       signal.throwIfAborted()
       const cursor = events.at(-1)?.seq ?? -1
@@ -148,7 +155,7 @@ export class SessionHistoryController {
             reject('internal', `session event replay skipped seq ${String(nextSeq)}`, {})
           }
           nextSeq++
-          yield { type: 'event', ...entryFor(this.ctx, event, events, scope) }
+          yield { type: 'event', ...entryFor(this.ctx, event, argsFor, scope) }
         }
       }
       while (!follower.closed && !signal.aborted) {
@@ -162,8 +169,22 @@ export class SessionHistoryController {
           reject('internal', `session event stream skipped seq ${String(nextSeq)}`, {})
         }
         nextSeq++
+        if (item.event.type === 'tool/call') {
+          const data = item.event.data as ToolCallData
+          try {
+            openCalls.set(data.callId, { name: data.name, args: JSON.parse(data.arguments) })
+          } catch {
+            // Unparseable model arguments leave the fast path unset; result presentation soft-falls.
+          }
+        } else if (item.event.type === 'turn/end') {
+          openCalls.clear()
+        }
+        if (item.event.type === 'tool/result'
+          && !openCalls.has(item.event.data.message.source.callId)) {
+          fallbackEvents = item.session.events
+        }
         const liveScope: Agent | undefined = this.ctx.get('agents')?.get(target)
-        const entry = entryFor(this.ctx, item.event, item.session.events, liveScope ?? scope)
+        const entry = entryFor(this.ctx, item.event, argsFor, liveScope ?? scope)
         yield { type: 'event', ...entry }
       }
     } finally {
@@ -352,10 +373,10 @@ function paginate(
 function entryFor(
   ctx: Context,
   event: SessionEvent,
-  events: readonly SessionEvent[],
+  argsFor: (callId: string) => { readonly name: string; readonly args: unknown } | undefined,
   scope?: ScopeKey,
 ): SessionEventEntry {
-  const view = viewFor(ctx, event, callId => backscanArgs(events, callId), scope)
+  const view = viewFor(ctx, event, argsFor, scope)
   return {
     // Session.append validates and freezes event data as JSON before publication.
     event: event as unknown as SessionWireEvent,

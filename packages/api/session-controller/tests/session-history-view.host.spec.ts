@@ -185,6 +185,44 @@ describe('Session history view computation', () => {
     expect(byCall.get('tool/result:c-gen')?.view).toEqual({ for: 'result', view: { card: 'generic', title: 'gen done' } })
   })
 
+  it('pairs live results from the open-call table without rescanning Session history', async () => {
+    const { ctx } = await harness()
+    const session = ctx.sessions.create()
+    const history = new SessionHistoryController(ctx)
+    const abort = new AbortController()
+    const stream = await openFollow(history, session.id, abort.signal)
+    const iterator = stream[Symbol.asyncIterator]()
+
+    session.append('tool/call', {
+      turn: 1, step: 1, callId: CallId('live-fast'), name: 'term', arguments: '{"cmd":"pwd"}',
+    })
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { type: 'event', view: { for: 'call', view: { card: 'terminal', title: 'pwd' } } },
+    })
+
+    const events = vi.spyOn(session, 'events', 'get').mockImplementation(() => {
+      throw new Error('live result rescanned Session history')
+    })
+    try {
+      session.append('tool/result', {
+        turn: 1, step: 1,
+        message: createToolResultMessage({
+          callId: CallId('live-fast'),
+          content: [{ type: 'text', text: 'ok' }],
+          isError: false,
+        }),
+      }, { surfaceOp: 'append' })
+      await expect(iterator.next()).resolves.toMatchObject({
+        value: { type: 'event', view: { for: 'result', view: { card: 'terminal', output: 'done' } } },
+      })
+    } finally {
+      events.mockRestore()
+      abort.abort()
+      await iterator.next()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('serves history entries with call/result views, backscan pairing, and soft-falls', async () => {
     const { ctx } = await harness()
     const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
