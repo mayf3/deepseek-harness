@@ -1304,6 +1304,14 @@ describe('DirectoryBrowser', () => {
     await waitFor(() => { expect(screen.getByText('harness')).toBeTruthy() })
   })
 
+  it('falls back to the thrown message for an invalid RPC error payload', async () => {
+    const listDirectory = vi.fn(async (): Promise<DirectoryListing> => {
+      throw Object.assign(new Error('home unavailable'), { rpcError: null })
+    })
+    mount({ listDirectory })
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('home unavailable') })
+  })
+
   it('disables Open and New folder while a path draft is uncommitted', async () => {
     mount()
     await waitFor(() => { expect(screen.getByRole('listitem')).toBeTruthy() })
