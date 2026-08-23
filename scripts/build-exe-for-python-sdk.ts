@@ -1,5 +1,5 @@
 /**
- * Build the SDK runtime executables and Python node carrier. The fixed
+ * Build the dsh executables and development Node carrier for the Python runtime wheel. The fixed
  * `@yao-pkg/pkg --sea` route, deploy flags, and artifact layout are owned by
  * .agents/notes/implemented/architecture/2026-07-10-single-file-executable-sdk-runtime-distribution.md.
  * The staged closure is symlink-free, and whole-tree assets cover Cordis's
@@ -16,11 +16,11 @@ import { resolveLinuxNodePtyAddon } from './build-exe-for-python-sdk-native-pty.
 const root = resolve(import.meta.dirname, '..')
 
 /** The closure manifest whose dependencies define the executable. */
-const DEPLOY_ROOT_PACKAGE = 'dsh-sdk-python-runtime-closure'
-/** The closed-runtime app entry inside the deployed closure. */
-const ENTRY_BIN = 'node_modules/@deepseek-ai/dsh-sdk-python-runtime/lib/packaged-bin.js'
-/** Stable Python-visible executable basename; rename with the later Python runtime migration. */
-const OUTPUT_BASENAME = 'dsh-jsonrpc-agent-pkg'
+const DEPLOY_ROOT_PACKAGE = 'dsh-python-runtime-closure'
+/** The sole application launcher inside the deployed closure. */
+const ENTRY_BIN = 'node_modules/@deepseek-ai/dsh/lib/bin.js'
+/** Python-visible executable basename. */
+const OUTPUT_BASENAME = 'deepseek-harness-sdk-runtime'
 /** Default Node major; SEA mode requires at least Node 22. */
 const DEFAULT_NODE_RANGE = 'node24'
 /** Pinned for reproducible builds. */
@@ -47,8 +47,15 @@ const ASSET_GLOBS = [
   'node_modules/**/*.mjs',
   'node_modules/**/package.json',
   'node_modules/**/*.json',
+  'node_modules/**/*.md',
+  'node_modules/**/*.dylib',
+  'node_modules/**/*.dll',
   'node_modules/**/*.node',
+  'node_modules/**/*.so',
+  'node_modules/**/*.so.*',
   'node_modules/**/*.wasm',
+  'node_modules/**/*.yaml',
+  'node_modules/**/*.yml',
 ]
 
 const PLATFORMS = ['linux', 'macos'] as const
@@ -220,8 +227,7 @@ function formatCommand(command: string, args: string[]): string {
  */
 class SingleExeBuild {
   /**
-   * The cleared deploy target, pkg input, and Python node-mode carrier. The
-   * checked-in default `cordis.yml` remains in its parent directory.
+   * The cleared deploy target, pkg input, and Python node-mode carrier.
    */
   readonly staging = resolve(root, PYTHON_RUNTIME_DIR, PYTHON_NODE_SUBDIR)
   private readonly outDir = resolve(root, OUT_DIR)
