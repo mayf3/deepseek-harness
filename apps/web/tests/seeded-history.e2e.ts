@@ -182,6 +182,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  let seededThroughSeq = -1
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
@@ -201,6 +202,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
       const meter = scaffold.ctx.get('tokenMeter')
       if (meter === undefined) throw new Error('seeded-history requires the host token meter')
       const realizedWithCompaction = withCompaction(realizeSeedFixture(scaffold, raw, SEED_ID), meter)
+      seededThroughSeq = parseSeedFixture(realizedWithCompaction).events.at(-1)?.seq ?? -1
       await seedSession(scaffold, realizedWithCompaction, SEED_ID)
     }
     browser = await chromium.launch()
@@ -238,7 +240,10 @@ describe('web e2e: seeded history renders through cold resume', () => {
       body: JSON.stringify({
         type: 'client-request', rpcId: 'seeded-projections', method: 'session/page',
         payload: {
-          args: { request: { address: { kind: 'session', sessionId: SEED_ID } } },
+          args: { request: {
+            address: { kind: 'session', sessionId: SEED_ID },
+            throughSeq: seededThroughSeq,
+          } },
         },
       }),
     })

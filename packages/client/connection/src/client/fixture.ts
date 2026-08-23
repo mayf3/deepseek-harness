@@ -82,6 +82,7 @@ interface FixtureFollowRequest {
 
 interface FixturePageRequest {
   readonly address: FixtureSessionAddress
+  readonly throughSeq: number
   readonly beforeSeq?: number
   readonly maxMessages?: number
 }
@@ -193,6 +194,7 @@ interface FixtureSessionApi {
   fork(request: { readonly sessionId: SessionId; readonly atSeq?: number }): Promise<ConnectionRpcResult<unknown>>
   history(request: {
     readonly sessionId: SessionId
+    readonly throughSeq?: number
     readonly beforeSeq?: number
     readonly maxMessages?: number
   }): Promise<ConnectionRpcResult<unknown>>
@@ -2698,13 +2700,15 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     },
     history: async (request) => {
       const log = logs.get(request.sessionId) ?? []
+      const throughSeq = request.throughSeq ?? log.length - 1
+      const boundedLog = log.slice(0, throughSeq + 1)
       // Snapshot at request time, then deliver after the transit delay.
-      const page = pageOf(log, request.beforeSeq, request.maxMessages ?? 50)
+      const page = pageOf(boundedLog, request.beforeSeq, request.maxMessages ?? 50)
       // Tail page carries the projections block (host parallel: one consistent
       // cut over the registered units; asOfSeq = window tail seq, -1 on an
       // empty log — the host's session.seq-1 convention).
       const projections = request.beforeSeq === undefined
-        ? { asOfSeq: log.length - 1, values: projectionValuesOf(log) }
+        ? { asOfSeq: throughSeq, values: projectionValuesOf(boundedLog) }
         : undefined
       const doomed = failNextHistory
       failNextHistory = false
@@ -3520,6 +3524,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             : page.address.childSessionId
           return sessionApi.history({
             sessionId: pageSessionId,
+            throughSeq: page.throughSeq,
             ...page.beforeSeq === undefined ? {} : { beforeSeq: page.beforeSeq },
             ...page.maxMessages === undefined ? {} : { maxMessages: page.maxMessages },
           })

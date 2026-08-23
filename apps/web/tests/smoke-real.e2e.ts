@@ -70,6 +70,85 @@ async function remoteRpc<T>(baseUrl: string, endpoint: string, args: object): Pr
   return body.result.value
 }
 
+/** Read the explicit page cut from a freshly opened Session follow stream. */
+async function sessionCursor(baseUrl: string, sessionId: string): Promise<number> {
+  const socket = new WebSocket(`${baseUrl.replace(/^http/, 'ws')}/api/remote.mux`)
+  const streamId = `smoke-history-${randomUUID()}`
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = (): void => {
+        socket.removeEventListener('open', opened)
+        socket.removeEventListener('error', failed)
+        socket.removeEventListener('close', closed)
+      }
+      const opened = (): void => {
+        cleanup()
+        resolve()
+      }
+      const failed = (): void => {
+        cleanup()
+        reject(new Error('session/follow carrier failed before opening'))
+      }
+      const closed = (): void => {
+        cleanup()
+        reject(new Error('session/follow carrier closed before opening'))
+      }
+      socket.addEventListener('open', opened)
+      socket.addEventListener('error', failed)
+      socket.addEventListener('close', closed)
+    })
+    return await new Promise<number>((resolve, reject) => {
+      const timer = setTimeout(() => { finish(new Error('session/follow did not publish an opening cursor')) }, 10_000)
+      const cleanup = (): void => {
+        clearTimeout(timer)
+        socket.removeEventListener('message', message)
+        socket.removeEventListener('error', failed)
+        socket.removeEventListener('close', closed)
+      }
+      const finish = (error: Error | undefined, cursor?: number): void => {
+        cleanup()
+        if (error !== undefined) reject(error)
+        else resolve(cursor ?? -1)
+      }
+      const message = (event: MessageEvent<unknown>): void => {
+        try {
+          if (typeof event.data !== 'string') throw new Error('session/follow published a non-text frame')
+          const frame: unknown = JSON.parse(event.data)
+          if (!isRecord(frame) || frame.streamId !== streamId) return
+          if (frame.type === 'error') {
+            finish(new Error(`session/follow failed: ${JSON.stringify(frame.error)}`))
+            return
+          }
+          if (frame.type === 'end') {
+            finish(new Error('session/follow ended before its opening cursor'))
+            return
+          }
+          const value = frame.value
+          if (frame.type === 'item' && isRecord(value)
+            && value.type === 'opened' && Number.isSafeInteger(value.cursor)) {
+            finish(undefined, value.cursor as number)
+          }
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)))
+        }
+      }
+      const failed = (): void => { finish(new Error('session/follow carrier failed before its opening cursor')) }
+      const closed = (): void => { finish(new Error('session/follow carrier closed before its opening cursor')) }
+      socket.addEventListener('message', message)
+      socket.addEventListener('error', failed)
+      socket.addEventListener('close', closed)
+      socket.send(JSON.stringify({
+        type: 'open',
+        streamId,
+        endpoint: 'session/follow',
+        payload: { args: { request: { address: { kind: 'session', sessionId } } } },
+      }))
+    })
+  } finally {
+    socket.close()
+  }
+}
+
 interface HistoryPage {
   events: { event: { type: string; data: unknown } }[]
   hasMore: boolean
@@ -102,8 +181,9 @@ function hasAssistantMarker(page: HistoryPage, marker: string): boolean {
 }
 
 async function history(baseUrl: string, sessionId: string): Promise<HistoryPage> {
+  const throughSeq = await sessionCursor(baseUrl, sessionId)
   return remoteRpc<HistoryPage>(baseUrl, 'session/page', {
-    request: { address: { kind: 'session', sessionId }, maxMessages: 10 },
+    request: { address: { kind: 'session', sessionId }, throughSeq, maxMessages: 10 },
   })
 }
 
@@ -390,7 +470,7 @@ describe('dsh web keyless CLI smoke', () => {
       await new Promise<void>(resolveClose => provider.close(() => { resolveClose() }))
       rmSync(workspace, { recursive: true, force: true })
     }
-  }, 30_000)
+  }, 120_000)
 
   it('DSH_TOOLS_MODE=code collapses the provider wire tools to run_code with the SDK prompt section', async () => {
     requireDist()
