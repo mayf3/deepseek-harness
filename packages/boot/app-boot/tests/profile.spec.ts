@@ -359,7 +359,12 @@ describe('healProfilesModuleFallback', () => {
     const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
     const bundleDir = join(anchor, '..', 'node_modules', 'bundle-a')
     const bundleManifest = JSON.parse(readFileSync(join(bundleDir, 'package.json'), 'utf8')) as Record<string, unknown>
-    bundleManifest.exports = { '.': './index.js', './feature': './feature.js' }
+    bundleManifest.exports = {
+      '.': './index.js',
+      './feature': './feature.js',
+      './legacy/': './legacy/',
+      './types': { types: './feature.d.ts' },
+    }
     writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(bundleManifest))
     writeFileSync(join(bundleDir, 'feature.js'), 'export const feature = "proxied"\n')
     const home = tmp()
@@ -416,6 +421,61 @@ describe('healProfilesModuleFallback', () => {
     }
   })
 
+  it('resolves explicit condition targets without filesystem package lookup', async () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    const bundleDir = join(anchor, '..', 'node_modules', 'bundle-a')
+    const manifest = JSON.parse(readFileSync(join(bundleDir, 'package.json'), 'utf8')) as Record<string, unknown>
+    manifest.exports = {
+      '.': { import: './index.js', require: './index.cjs' },
+      './mini': { types: './mini/index.d.ts', import: './mini/index.js', require: './mini/index.cjs' },
+      './web': { types: './dist/web/web.d.ts', import: './dist/web/index.mjs', default: './dist/web/index.mjs' },
+    }
+    writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
+    mkdirSync(join(bundleDir, 'mini'))
+    writeFileSync(join(bundleDir, 'mini', 'index.js'), 'export const mini = true\n')
+    mkdirSync(join(bundleDir, 'dist', 'web'), { recursive: true })
+    writeFileSync(join(bundleDir, 'dist', 'web', 'index.mjs'), 'export const web = true\n')
+    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    try {
+      const home = tmp()
+      await healProfilesModuleFallback(anchor, home)
+      const proxy = join(home, 'profiles', 'node_modules', 'bundle-a')
+      await expect(import(join(proxy, 'entry-1.js'))).resolves.toMatchObject({ mini: true })
+      await expect(import(join(proxy, 'entry-2.js'))).resolves.toMatchObject({ web: true })
+    } finally {
+      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
+    }
+  })
+
+  it('preserves the installation path while resolving packaged exports', async () => {
+    const anchor = stageInstallation({})
+    const appDir = join(anchor, '..')
+    const physical = tmp()
+    writeFileSync(join(physical, 'package.json'), JSON.stringify({
+      name: 'linked-esm',
+      version: '0.0.0',
+      type: 'module',
+      exports: { import: './index.js' },
+    }))
+    writeFileSync(join(physical, 'index.js'), 'export const linked = true\n')
+    symlinkSync(physical, join(appDir, 'node_modules', 'linked-esm'), 'junction')
+    const appManifest = JSON.parse(readFileSync(anchor, 'utf8')) as { dependencies: Record<string, string> }
+    appManifest.dependencies['linked-esm'] = '0.0.0'
+    writeFileSync(anchor, JSON.stringify(appManifest))
+    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    try {
+      const home = tmp()
+      await healProfilesModuleFallback(anchor, home)
+      const proxyManifest = JSON.parse(readFileSync(
+        join(home, 'profiles', 'node_modules', 'linked-esm', 'package.json'),
+        'utf8',
+      )) as { dsh: { moduleFallback: { targets: Record<string, string> } } }
+      expect(proxyManifest.dsh.moduleFallback.targets['.']).toContain('/app/node_modules/linked-esm/index.js')
+    } finally {
+      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
+    }
+  })
+
   it('uses the legacy index fallback when a package has no exports or main', async () => {
     const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
     const bundleDir = join(anchor, '..', 'node_modules', 'bundle-a')
@@ -433,20 +493,87 @@ describe('healProfilesModuleFallback', () => {
     }
   })
 
-  it('fails loud on a missing legacy main entry or ESM export target', async () => {
-    for (const mode of ['legacy', 'exports']) {
+  it('uses Node legacy resolution for an extensionless main entry', async () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    const bundleDir = join(anchor, '..', 'node_modules', 'bundle-a')
+    const manifest = JSON.parse(readFileSync(join(bundleDir, 'package.json'), 'utf8')) as Record<string, unknown>
+    manifest.main = './index'
+    writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
+    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    try {
+      const home = tmp()
+      await healProfilesModuleFallback(anchor, home)
+      await expect(import(join(home, 'profiles', 'node_modules', 'bundle-a', 'entry-0.js')))
+        .resolves.toMatchObject({ packageName: 'bundle-a' })
+    } finally {
+      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
+    }
+  })
+
+  it('skips executable-only and declaration-only packages without import entries', async () => {
+    for (const marker of ['bin', 'types', 'typings']) {
+      const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+      const manifest = JSON.parse(readFileSync(anchor, 'utf8')) as Record<string, unknown>
+      delete manifest.main
+      manifest[marker] = marker === 'bin' ? { dsh: './lib/bin.js' } : './index.d.ts'
+      if (marker === 'types') manifest.main = ''
+      writeFileSync(anchor, JSON.stringify(manifest))
+      rmSync(join(anchor, '..', 'index.js'))
+      Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
+      try {
+        const home = tmp()
+        await healProfilesModuleFallback(anchor, home)
+        const fallback = join(home, 'profiles', 'node_modules')
+        expect(existsSync(join(fallback, 'dsh-app'))).toBe(false)
+        expect(existsSync(join(fallback, 'bundle-a', 'entry-0.js'))).toBe(true)
+      } finally {
+        delete (process as NodeJS.Process & { pkg?: unknown }).pkg
+      }
+    }
+  })
+
+  it('fails loud on a missing legacy main entry', async () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    const bundleDir = join(anchor, '..', 'node_modules', 'bundle-a')
+    const manifest = JSON.parse(readFileSync(join(bundleDir, 'package.json'), 'utf8')) as Record<string, unknown>
+    delete manifest.main
+    writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
+    rmSync(join(bundleDir, 'index.js'))
+    Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
+    try {
+      await expect(healProfilesModuleFallback(anchor, tmp())).rejects.toThrow('main entry is missing')
+    } finally {
+      delete (process as NodeJS.Process & { pkg?: unknown }).pkg
+    }
+  })
+
+  it('omits unavailable ESM exports and rejects malformed export targets', async () => {
+    for (const mode of ['missing', 'directory', 'absent-map', 'invalid', 'escape', 'null', 'null-subpath']) {
       const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
       const bundleDir = join(anchor, '..', 'node_modules', 'bundle-a')
       const manifest = JSON.parse(readFileSync(join(bundleDir, 'package.json'), 'utf8')) as Record<string, unknown>
-      if (mode === 'legacy') delete manifest.main
-      else manifest.exports = { '.': { import: './missing.js' } }
+      const target = mode === 'missing' ? './missing.js'
+        : mode === 'directory' ? './mini'
+          : mode === 'escape' ? './../outside.js'
+            : '../outside.js'
+      manifest.exports = mode === 'absent-map' ? null
+        : mode === 'null-subpath' ? { './bad': null }
+          : { '.': mode === 'null' ? null : { import: target } }
       writeFileSync(join(bundleDir, 'package.json'), JSON.stringify(manifest))
-      rmSync(join(bundleDir, 'index.js'))
+      if (mode === 'directory') mkdirSync(join(bundleDir, 'mini'))
       Object.defineProperty(process, 'pkg', { configurable: true, value: {} })
       try {
-        await expect(healProfilesModuleFallback(anchor, tmp())).rejects.toThrow(
-          mode === 'legacy' ? 'main entry is missing' : 'cannot resolve ESM export bundle-a',
-        )
+        const home = tmp()
+        if (mode === 'missing' || mode === 'directory' || mode === 'absent-map') {
+          await healProfilesModuleFallback(anchor, home)
+          expect(existsSync(join(home, 'profiles', 'node_modules', 'bundle-a'))).toBe(false)
+        } else {
+          await expect(healProfilesModuleFallback(anchor, home)).rejects.toThrow(
+            mode === 'null' || mode === 'null-subpath'
+              ? 'cannot resolve ESM export bundle-a'
+              : 'resolves outside its package',
+          )
+        }
       } finally {
         delete (process as NodeJS.Process & { pkg?: unknown }).pkg
       }

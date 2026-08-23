@@ -24,15 +24,15 @@
 
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, unlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { basename, dirname, join, relative, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { resolve as resolveImport } from 'import-meta-resolve'
+import { resolve as resolvePackage, type Package as ResolvePackageManifest } from 'resolve.exports'
 import { loadOverlayPatches } from './index.ts'
 
 /** Directory under the Harness home holding every profile. */
@@ -276,27 +276,44 @@ function isPackagedExecutable(): boolean {
   return (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
 }
 
-/** Resolve one package export with the ESM conditions used by the generated proxy. */
-function packageEntryFromPackage(packageName: string, packageDir: string, specifier: string): string {
+/** Resolve one available explicit package export under Node ESM import conditions. */
+function packageEntryFromPackage(
+  packageName: string,
+  packageDir: string,
+  declared: ResolvePackageManifest['exports'],
+  subpath: string,
+): string | undefined {
+  let candidates: string[] | void
   try {
-    const resolved = resolveImport(specifier, pathToFileURL(join(packageDir, 'package.json')).href)
-    if (!resolved.startsWith('file:') || !existsSync(fileURLToPath(resolved))) {
-      throw new Error(`resolved to missing or non-file URL ${resolved}`)
-    }
-    return resolved
+    candidates = resolvePackage({ name: packageName, exports: declared }, subpath)
   } catch (error) {
+    if ((error as Error).message.startsWith('No known conditions for ')) return undefined
+    const specifier = subpath === '.' ? packageName : packageName + subpath.slice(1)
     throw new Error(`dsh: cannot resolve ESM export ${specifier} from installed package ${packageName}`, { cause: error })
   }
+  for (const candidate of candidates ?? []) {
+    const target = candidate
+    const entry = resolve(packageDir, target)
+    const relativeEntry = relative(packageDir, entry)
+    if (!target.startsWith('./') || /^\.\.(?:[\\/]|$)/u.test(relativeEntry)) {
+      throw new Error(`dsh: installed package ${packageName} export ${subpath} resolves outside its package: ${target}`)
+    }
+    if (existsSync(entry) && statSync(entry).isFile()) return pathToFileURL(entry).href
+  }
+  return undefined
 }
 
-/** Resolve every explicit runtime export that an out-of-tree plugin can import. */
+/** Resolve every explicit ESM runtime export that an out-of-tree plugin can import. */
 function packageProxySource(
   packageName: string,
   packageDir: string,
 ): { version: string; targets: Record<string, string> } {
   const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as {
+    bin?: unknown
     exports?: unknown
     main?: unknown
+    types?: unknown
+    typings?: unknown
     version?: unknown
   }
   if (typeof manifest.version !== 'string' || manifest.version.length === 0) {
@@ -304,20 +321,34 @@ function packageProxySource(
   }
   const declared = manifest.exports
   if (declared === undefined) {
-    const entry = join(packageDir, typeof manifest.main === 'string' ? manifest.main : 'index.js')
-    if (!existsSync(entry)) {
-      throw new Error(`dsh: installed package ${packageName} main entry is missing at ${entry}`)
+    const main = typeof manifest.main === 'string' && manifest.main.length > 0 ? manifest.main : undefined
+    const entry = join(packageDir, main ?? 'index')
+    try {
+      const resolved = createRequire(join(packageDir, 'package.json')).resolve(entry)
+      return { version: manifest.version, targets: { '.': pathToFileURL(resolved).href } }
+    } catch (error) {
+      if (main === undefined
+        && (manifest.bin !== undefined || manifest.types !== undefined || manifest.typings !== undefined)) {
+        return { version: manifest.version, targets: {} }
+      }
+      throw new Error(`dsh: installed package ${packageName} main entry is missing at ${entry}`, { cause: error })
     }
-    return { version: manifest.version, targets: { '.': pathToFileURL(entry).href } }
   }
   const subpaths = declared !== null && typeof declared === 'object' && !Array.isArray(declared)
     && Object.keys(declared).some(key => key.startsWith('.'))
-    ? Object.keys(declared).filter(key => key === '.' || (key.startsWith('./') && !key.includes('*') && key !== './package.json'))
+    ? Object.keys(declared).filter(key => key === '.' || (
+      key.startsWith('./') && !key.includes('*') && !key.endsWith('/') && key !== './package.json'
+    ))
     : ['.']
   const targets: Record<string, string> = {}
   for (const subpath of subpaths) {
-    const specifier = subpath === '.' ? packageName : packageName + subpath.slice(1)
-    targets[subpath] = packageEntryFromPackage(packageName, packageDir, specifier)
+    const target = packageEntryFromPackage(
+      packageName,
+      packageDir,
+      declared as ResolvePackageManifest['exports'],
+      subpath,
+    )
+    if (target !== undefined) targets[subpath] = target
   }
   return { version: manifest.version, targets }
 }
