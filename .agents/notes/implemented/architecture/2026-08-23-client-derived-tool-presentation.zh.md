@@ -312,6 +312,8 @@ Client terminal model 从工具名称、调用参数、结果 content、error、
 
 调用 `description` 继续显示在 card 上方并覆盖折叠摘要。workdir 继续按绝对、相对和缺失三种情况处理；相对路径基于 Session cwd，且保留 `.`、`..`、盘符与 UNC root 的归一化。
 
+对于 `terminal_send`，非空 input 与 session id 保持为逐字工具数据；空 input fallback 与 session label 通过 render site 的 conversation locale 解析。
+
 同名普通与 persistent provider 是特殊兼容点。Client 使用当前有效参数与结果特征保留已交付差异；不足以无歧义识别的输入选择 Generic settled 结果，不增加新表现。
 
 TerminalBlock 的 ANSI、光标重放、宽字符、行数上限、展开、复制与辅助技术文本完全不变。

@@ -12,19 +12,23 @@ import type {
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import { terminalCardModel, terminalFailed } from '../src/client/tool/models/terminal-card-model.ts'
+import {
+  localizeTerminalCardModel, terminalCardModel, terminalFailed,
+} from '../src/client/tool/models/terminal-card-model.ts'
 import { createChatStore } from '@deepseek-ai/dsh-client-ui-chat/src/client/stores.ts'
 import { GenericToolCard, type GenericToolCardProps } from '../src/client/tool/toolviews/GenericToolCard.tsx'
 import { DetailsPanel } from '@deepseek-ai/dsh-client-ui-chat/src/client/details/DetailsPanel.tsx'
 import { BashRow } from '../src/client/tool/toolviews/bash-sample.tsx'
 import { renderToolDetails, toolChatSnapshot, useEmptyTrajectory } from './tool-details-render.client.tsx'
-import { zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
+import { en, zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 import { zh as chatZh } from '@deepseek-ai/dsh-client-ui-chat/src/client/locale.ts'
 
 type BashRowProps = Parameters<typeof BashRow>[0]
 
 const t: GenericToolCardProps['t'] = makeTranslate(zh, commonZh)
+const enT: GenericToolCardProps['t'] = makeTranslate(en, commonEn)
 const chatT = makeTranslate(chatZh, commonZh)
 
 afterEach(cleanup)
@@ -65,9 +69,9 @@ const settled = (over?: Partial<ToolResultNode>): ToolResultNode => ({
 describe('terminalCardModel', () => {
   it('derives a running standard-shell card from raw arguments', () => {
     expect(terminalCardModel(running({ argsRaw: shellArgs({ workdir: '/projects/app' }) }))).toEqual({
-      description: 'List files',
+      copy: { kind: 'shell', command: 'ls -la', description: 'List files' },
       card: {
-        command: 'ls -la', cwd: '/projects/app', output: undefined,
+        cwd: '/projects/app', output: undefined,
         exitCode: undefined, signal: undefined, running: true,
       },
     })
@@ -78,9 +82,9 @@ describe('terminalCardModel', () => {
       call: { name: 'bash', argsRaw: shellArgs({ workdir: '/projects/app' }) },
       content: [{ type: 'text', text: 'boom\n[exit code: 2]' }],
     }))).toEqual({
-      description: 'List files',
+      copy: { kind: 'shell', command: 'ls -la', description: 'List files' },
       card: {
-        command: 'ls -la', cwd: '/projects/app', output: 'boom',
+        cwd: '/projects/app', output: 'boom',
         exitCode: 2, signal: undefined, running: false,
       },
     })
@@ -163,10 +167,13 @@ describe('terminalCardModel', () => {
     const argsRaw = JSON.stringify({ sessionId: 'pty-3', text: 'make' })
     const run = running({ name: 'terminal_send', argsRaw })
     expect(terminalCardModel(run, '/w/app')).toMatchObject({
-      description: 'Terminal pty-3', card: { command: 'make', cwd: '/w/app', running: true },
+      copy: { kind: 'terminal-send', text: 'make', sessionId: 'pty-3' },
+      card: { cwd: '/w/app', running: true },
     })
     const done = settled({ call: { name: 'terminal_send', argsRaw }, content: [{ type: 'text', text: 'ok' }] })
-    expect(terminalCardModel(done)?.card).toMatchObject({ command: 'make', output: 'ok', running: false })
+    expect(localizeTerminalCardModel(terminalCardModel(done)!, enT)).toMatchObject({
+      description: 'Terminal pty-3', card: { command: 'make', output: 'ok', running: false },
+    })
     expect(terminalCardModel(settled({
       call: { name: 'terminal_send', argsRaw: JSON.stringify({ sessionId: 'pty-3', text: 'make', run_in_background: true }) },
     }))).toBeNull()
@@ -176,10 +183,10 @@ describe('terminalCardModel', () => {
   it('preserves persistent-shell running cards and settled generic output', () => {
     const persistent = JSON.stringify({ command: 'pwd' })
     expect(terminalCardModel(running({ argsRaw: persistent }))).toMatchObject({
-      description: undefined, card: { command: 'pwd', running: true },
+      copy: { kind: 'shell', command: 'pwd', description: undefined }, card: { running: true },
     })
     expect(terminalCardModel(running({ name: 'pwsh', argsRaw: persistent }))).toMatchObject({
-      description: undefined, card: { command: 'pwd', running: true },
+      copy: { kind: 'shell', command: 'pwd', description: undefined }, card: { running: true },
     })
     expect(terminalCardModel(settled({ call: { name: 'bash', argsRaw: persistent } }))).toBeNull()
     expect(terminalCardModel(settled({ call: { name: 'pwsh', argsRaw: persistent } }))).toBeNull()
@@ -190,8 +197,22 @@ describe('terminalCardModel', () => {
       call: { name: 'pwsh', argsRaw: ARGS },
       content: [{ type: 'text', text: 'failed\n[exit code: 3]' }],
     }))).toMatchObject({
-      description: 'List files',
-      card: { command: 'ls -la', output: 'failed', exitCode: 3, running: false },
+      copy: { kind: 'shell', command: 'ls -la', description: 'List files' },
+      card: { output: 'failed', exitCode: 3, running: false },
+    })
+  })
+
+  it('keeps terminal_send copy semantic until the render locale is known', () => {
+    const model = terminalCardModel(running({
+      name: 'terminal_send',
+      argsRaw: JSON.stringify({ sessionId: 'pty-3', text: '' }),
+    }))!
+    expect(model.copy).toEqual({ kind: 'terminal-send', text: '', sessionId: 'pty-3' })
+    expect(localizeTerminalCardModel(model, t)).toMatchObject({
+      description: '终端 pty-3', card: { command: '（发送输入）' },
+    })
+    expect(localizeTerminalCardModel(model, enT)).toMatchObject({
+      description: 'Terminal pty-3', card: { command: '(send input)' },
     })
   })
 
@@ -321,6 +342,20 @@ describe('chat row terminal body', () => {
     // The card states its own run state: a running command reads as running
     // even though it has no output yet to distinguish it from an empty settle.
     expect(runStateOf(view.container)).toBe('ongoing')
+  })
+
+  it.each([
+    { locale: 'zh', translate: t, description: '终端 pty-3', command: '（发送输入）' },
+    { locale: 'en', translate: enT, description: 'Terminal pty-3', command: '(send input)' },
+  ])('renders terminal_send copy through the $locale locale', ({ translate, description, command }) => {
+    const block = running({
+      name: 'terminal_send',
+      argsRaw: JSON.stringify({ sessionId: 'pty-3', text: '' }),
+    })
+    const view = render(<GenericToolCard {...ownerProps(block)} toolName="terminal_send" t={translate} />)
+    expect(view.getByText(description)).toBeTruthy()
+    toggleRow(view)
+    expect(view.getByText(command)).toBeTruthy()
   })
 
   it('a non-terminal call keeps the args-JSON text body', () => {
@@ -525,6 +560,18 @@ describe('DetailsPanel Output section', () => {
     expect(card).not.toBeNull()
     // Above, not below: document order is what places it as the card's heading.
     expect(description.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('localizes terminal_send copy in Details', () => {
+    const argsRaw = JSON.stringify({ sessionId: 'pty-3', text: '' })
+    const view = mount(snapshot({
+      nodes: [settled({
+        call: { name: 'terminal_send', argsRaw },
+        content: [{ type: 'text', text: 'ok' }],
+      })],
+    }), { ...target, toolName: 'terminal_send' })
+    expect(view.getByText('终端 pty-3')).toBeTruthy()
+    expect(view.getByText('（发送输入）')).toBeTruthy()
   })
 
   it('resolves the prompt cwd against the session workspace', () => {

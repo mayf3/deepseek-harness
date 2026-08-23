@@ -312,6 +312,8 @@ Standard shell results continue parsing trailing `[exit code: N]` and `[killed b
 
 Call `description` remains above the card and overrides the collapsed summary. Workdir continues handling absolute, relative, and missing values. Relative paths resolve against the Session cwd while preserving normalization for `.`, `..`, drive letters, and UNC roots.
 
+For `terminal_send`, non-empty input and the session id remain verbatim tool data; the empty-input fallback and session label resolve through the render site's conversation locale.
+
 Standard and persistent providers sharing the same tool name are a special compatibility point. The Client uses currently valid argument and result features to preserve their delivered differences. Input that cannot be identified unambiguously uses a Generic settled result rather than gaining new presentation.
 
 `TerminalBlock` ANSI handling, cursor replay, wide characters, line limits, expansion, copying, and assistive text remain unchanged.

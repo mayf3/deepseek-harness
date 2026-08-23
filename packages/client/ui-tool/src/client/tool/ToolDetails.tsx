@@ -4,7 +4,9 @@ import type { ToolDetailsProps } from '../contract/slots.ts'
 import { diffCardModel } from './models/diff-card-model.ts'
 import { readCardModel } from './models/read-card-model.ts'
 import { searchCardModel } from './models/search-card-model.ts'
-import { terminalBlockLabels, terminalCardModel } from './models/terminal-card-model.ts'
+import {
+  localizeTerminalCardModel, terminalBlockLabels, terminalCardModel,
+} from './models/terminal-card-model.ts'
 import {
   diffBlockLabels, readBlockLabels, searchBlockLabels, webBlockLabels,
 } from './models/primitive-labels.ts'
@@ -22,8 +24,9 @@ export function ToolDetails({
   block, cwd, useHostDescription, t,
 }: Pick<ToolDetailsProps, 'block' | 'cwd' | 'useHostDescription' | 't'>) {
   const home = useHostDescription(description => description?.home)
-  const terminal = terminalCardModel(block, cwd)
-  if (terminal !== null) {
+  const terminalModel = terminalCardModel(block, cwd)
+  if (terminalModel !== null) {
+    const terminal = localizeTerminalCardModel(terminalModel, t)
     return (
       <>
         {terminal.description !== undefined ? (

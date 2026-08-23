@@ -37,16 +37,48 @@ export function terminalBlockLabels(t: TranslateNS<'conversation'>): TerminalBlo
  */
 export interface TerminalCardModel {
   /**
-   * The props {@link TerminalBlock} draws. Held as a nested object so a render
-   * site spreads exactly the primitive's own surface and can never leak a
-   * neighbouring field into it.
+   * The locale-neutral props {@link TerminalBlock} draws. The render site adds
+   * `command` after resolving {@link copy} through its locale seat.
    */
-  card: Pick<TerminalBlockProps, 'command' | 'cwd' | 'output' | 'exitCode' | 'signal' | 'running'>
+  card: Pick<TerminalBlockProps, 'cwd' | 'output' | 'exitCode' | 'signal' | 'running'>
   /**
-   * The model-authored call description rendered above the card. Absent for
-   * persistent shells, whose parameter set has no description.
+   * Verbatim Tool data or semantic `terminal_send` data. Product copy stays
+   * unresolved until a render site supplies its locale seat.
    */
-  description: string | undefined
+  copy:
+    | { readonly kind: 'shell'; readonly command: string; readonly description: string | undefined }
+    | { readonly kind: 'terminal-send'; readonly text: string; readonly sessionId: string }
+}
+
+interface LocalizedTerminalCardModel {
+  readonly card: Pick<TerminalBlockProps, 'command' | 'cwd' | 'output' | 'exitCode' | 'signal' | 'running'>
+  readonly description: string | undefined
+}
+
+/**
+ * Resolve locale-owned `terminal_send` copy while preserving Tool-authored
+ * shell commands and descriptions verbatim.
+ * @param model - locale-neutral terminal card data.
+ * @param t - the render site's conversation locale seat.
+ * @returns terminal props and description ready for rendering.
+ */
+export function localizeTerminalCardModel(
+  model: TerminalCardModel,
+  t: TranslateNS<'conversation'>,
+): LocalizedTerminalCardModel {
+  if (model.copy.kind === 'shell') {
+    return {
+      card: { command: model.copy.command, ...model.card },
+      description: model.copy.description,
+    }
+  }
+  return {
+    card: {
+      command: model.copy.text === '' ? t('terminal.sendInput') : model.copy.text,
+      ...model.card,
+    },
+    description: t('terminal.session', { sessionId: model.copy.sessionId }),
+  }
 }
 
 /**
@@ -140,6 +172,7 @@ function collapse(body: string, rooted: boolean, separator = '/'): string {
 }
 
 interface ShellCall {
+  kind: 'shell'
   command: string
   description: string | undefined
   workdir: string | undefined
@@ -159,10 +192,11 @@ function shellCall(name: string, args: Record<string, unknown>): ShellCall | nul
     // Standard dsh-tool-bash and dsh-tool-pwsh schemas require `description`;
     // persistent shell providers omit it. Their parameter roots stay open, so
     // unrelated fields do not change their running-card behavior.
-    return { command, description: undefined, workdir: undefined, persistent: true, background: false }
+    return { kind: 'shell', command, description: undefined, workdir: undefined, persistent: true, background: false }
   }
   if (typeof description !== 'string' || description.trim() === '') return null
   return {
+    kind: 'shell',
     command,
     description,
     workdir,
@@ -172,8 +206,9 @@ function shellCall(name: string, args: Record<string, unknown>): ShellCall | nul
 }
 
 interface TerminalSendCall {
-  command: string
-  description: string
+  kind: 'terminal-send'
+  text: string
+  sessionId: string
   background: boolean
 }
 
@@ -184,10 +219,9 @@ function terminalSendCall(name: string, args: Record<string, unknown>): Terminal
   if (submit !== undefined && typeof submit !== 'boolean') return null
   if (background !== undefined && typeof background !== 'boolean') return null
   return {
-    // Keep this visible fallback aligned with dsh-tool-terminal's
-    // `terminal_send.presentCall` implementation.
-    command: text || '(send input)',
-    description: `Terminal ${sessionId}`,
+    kind: 'terminal-send',
+    text,
+    sessionId,
     background: background === true,
   }
 }
@@ -213,7 +247,7 @@ function parseExitStatus(text: string): { output: string; exitCode?: number; sig
  * the generic path.
  * @param block - running or settled Tool block.
  * @param sessionCwd - session workspace root used to resolve workdir.
- * @returns the terminal-card props, or null for the generic path.
+ * @returns locale-neutral terminal-card data, or null for the generic path.
  */
 export function terminalCardModel(
   block: ToolCallBlock,
@@ -222,19 +256,17 @@ export function terminalCardModel(
   if (block.parentCallId !== undefined) return null
   const parsed = parsedToolCall(block)
   if (parsed === null) return null
-  const shell = shellCall(parsed.name, parsed.args)
-  const send = terminalSendCall(parsed.name, parsed.args)
-  if (shell === null && send === null) return null
-  if (shell?.background === true || send?.background === true) return null
+  const call = shellCall(parsed.name, parsed.args) ?? terminalSendCall(parsed.name, parsed.args)
+  if (call === null || call.background) return null
 
-  const command = shell?.command ?? send?.command ?? ''
-  const description = shell?.description ?? send?.description
-  const cwd = resolveTerminalCwd(shell?.workdir, sessionCwd)
+  const copy: TerminalCardModel['copy'] = call.kind === 'shell'
+    ? { kind: 'shell', command: call.command, description: call.description }
+    : { kind: 'terminal-send', text: call.text, sessionId: call.sessionId }
+  const cwd = resolveTerminalCwd(call.kind === 'shell' ? call.workdir : undefined, sessionCwd)
   if (!('kind' in block)) {
     return {
-      description,
+      copy,
       card: {
-        command,
         cwd,
         output: undefined,
         exitCode: undefined,
@@ -243,14 +275,13 @@ export function terminalCardModel(
       },
     }
   }
-  if (block.isError || shell?.persistent === true) return null
+  if (block.isError || (call.kind === 'shell' && call.persistent)) return null
   const output = singleResultText(block)
   if (output === undefined) return null
-  const status = shell === null ? { output } : parseExitStatus(output)
+  const status = call.kind === 'terminal-send' ? { output } : parseExitStatus(output)
   return {
-    description,
+    copy,
     card: {
-      command,
       cwd,
       output: status.output,
       exitCode: status.exitCode,
