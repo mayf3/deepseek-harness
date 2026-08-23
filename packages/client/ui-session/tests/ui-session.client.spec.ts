@@ -138,6 +138,7 @@ function createSessionsBench(_ctx: Context): SessionsBench {
 }
 
 function createUiSession(ctx: Context, bench: SessionsBench): UiSession {
+  ctx.provide('slots', { bindStoreScope: vi.fn() } as never)
   return new UiSession(ctx, bench.sessions)
 }
 
@@ -146,6 +147,20 @@ afterEach(() => {
 })
 
 describe('UiSession bindings', () => {
+  it('binds each materialized Session to renderer-owned Store cleanup', () => {
+    const ctx = new Context()
+    const bench = createSessionsBench(ctx)
+    const bindStoreScope = vi.fn()
+    ctx.provide('slots', { bindStoreScope } as never)
+    const service = new UiSession(ctx, bench.sessions)
+    const binding = bench.binding(sessionId('s1'))
+
+    const materialized = service.adapter.resolve(binding.sessionId)
+
+    expect(bindStoreScope).toHaveBeenCalledOnce()
+    expect(bindStoreScope).toHaveBeenCalledWith(materialized)
+  })
+
   it('materializes built-in sources, caches a binding, and publishes selection and release', async () => {
     const ctx = new Context()
     const bench = createSessionsBench(ctx)

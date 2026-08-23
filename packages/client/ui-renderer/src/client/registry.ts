@@ -64,8 +64,6 @@ interface StoreAxisRecord {
   refs: number
   /** Root scope: the single instance under {@link ROOT_INSTANCE_KEY}; session scope: one per session id. */
   instances: Map<string, EngineStoreInstance>
-  /** Scope-lifetime registrations for Session instances. */
-  lifetimes: Map<string, () => void>
 }
 
 /** Type-erased options view the implementation works with (the typed overloads proved the shares). */
@@ -98,6 +96,8 @@ export class SlotRegistry extends Service {
   private readonly _core = new SlotCore()
   /** Store-instance axis: handle -> mounted scope, refcount, resolved instances. */
   private readonly _stores = new Map<EngineStoreHandle, StoreAxisRecord>()
+  /** Latest live Context generation for each scoped store key. */
+  private readonly _storeScopeOwners = new Map<string, Context>()
   private _renderer: SlotRenderer | undefined
   private _locale: LocaleFace | undefined
   private _host: SlotRendererHost | undefined
@@ -315,6 +315,26 @@ export class SlotRegistry extends Service {
   }
 
   /**
+   * Bind all scoped Store handles to one owner Context lifetime. The cleanup
+   * materializes an otherwise-unused handle before clearing it, because a
+   * previous application run may have persisted state for a Slot that this
+   * scope never rendered. Rebinding the same key transfers cleanup ownership
+   * to the newest Context generation.
+   *
+   * @param binding - materialized scope identity and its owning Context.
+   */
+  bindStoreScope(binding: Pick<ScopedStandardSourceBinding, 'key' | 'ctx'>): void {
+    const current = this._storeScopeOwners.get(binding.key)
+    if (current === binding.ctx) return
+    this._storeScopeOwners.set(binding.key, binding.ctx)
+    binding.ctx.effect(() => () => {
+      if (this._storeScopeOwners.get(binding.key) !== binding.ctx) return
+      this._storeScopeOwners.delete(binding.key)
+      this.clearStoreScope(binding.key)
+    }, `slots: store scope ${binding.key}`)
+  }
+
+  /**
    * The single ctx-level render entry: the shell renders 'root'; every other
    * key renders inside components through the props renderSlot face. All
    * three guards are fail-loud boot-order checks, no fallback.
@@ -510,42 +530,39 @@ export class SlotRegistry extends Service {
   ): StoreInstanceLike {
     const record = this._stores.get(handle)
     if (record === undefined) throw new Error('store handle is not registered (entry unloaded, or the handle never went through register)')
-    const key = record.scope === 'root' ? ROOT_INSTANCE_KEY : scopeBinding?.key
-    if (key === undefined) throw new Error(`${record.scope} store resolution requires a session id`)
+    let key: string
+    if (record.scope === 'root') {
+      key = ROOT_INSTANCE_KEY
+    } else {
+      if (scopeBinding === undefined) throw new Error(`${record.scope} store resolution requires a session id`)
+      key = scopeBinding.key
+      this.bindStoreScope(scopeBinding)
+    }
     let instance = record.instances.get(key)
     if (instance === undefined) {
       // Session instances get the scope key (the engine suffixes the persist
       // key per session); root instances stay keyless.
       instance = record.scope === 'root' ? handle.create() : handle.create(key)
       record.instances.set(key, instance)
-      if (record.scope !== 'root') {
-        const scopeCtx = scopeBinding?.ctx
-        if (scopeCtx === undefined) {
-          record.instances.delete(key)
-          throw new Error(`${record.scope} store resolution requires a scope lifetime`)
-        }
-        const owned = instance
-        const dispose = scopeCtx.effect(
-          () => () => {
-            if (this._stores.get(handle) !== record || record.instances.get(key) !== owned) return
-            owned.clearPersisted()
-            record.instances.delete(key)
-            record.lifetimes.delete(key)
-          },
-          `slots: store scope ${key}`,
-        )
-        const release = (): void => { void dispose() }
-        record.lifetimes.set(key, release)
-      }
     }
     return instance
+  }
+
+  /** Clear every live non-root Store handle for one dead scope key. */
+  private clearStoreScope(key: string): void {
+    for (const [handle, record] of this._stores) {
+      if (record.scope === 'root') continue
+      const instance = record.instances.get(key) ?? handle.create(key)
+      instance.clearPersisted()
+      record.instances.delete(key)
+    }
   }
 
   /** Bind (or re-reference) a handle on the axis; cross-scope conflicts already threw in the core. */
   private _acquire(handle: EngineStoreHandle, scope: SlotScope): void {
     const record = this._stores.get(handle)
     if (record === undefined) {
-      this._stores.set(handle, { scope, refs: 1, instances: new Map(), lifetimes: new Map() })
+      this._stores.set(handle, { scope, refs: 1, instances: new Map() })
       return
     }
     record.refs += 1
@@ -561,7 +578,6 @@ export class SlotRegistry extends Service {
     record.refs -= 1
     if (record.refs !== 0) return
     this._stores.delete(handle)
-    for (const release of record.lifetimes.values()) release()
   }
 }
 

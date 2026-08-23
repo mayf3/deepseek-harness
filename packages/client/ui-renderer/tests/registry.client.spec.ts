@@ -621,6 +621,41 @@ describe('store instance axis', () => {
     await replacement.fiber.dispose()
   })
 
+  it('clears persisted state for scoped stores that were never materialized', async () => {
+    const { bench } = await storeBench()
+    const root = fakeHandle()
+    const scoped = fakeHandle()
+    bench.erased.register({ name: 't.host', store: root.handle }, C)
+    bench.erased.register({ name: 't.panel', store: scoped.handle }, C)
+    const scope = scopedBinding(bench.ctx, 's1')
+
+    bench.svc.bindStoreScope(scope.binding)
+    await scope.fiber.dispose()
+
+    expect(root.handle.create).not.toHaveBeenCalled()
+    expect(scoped.handle.create).toHaveBeenCalledOnce()
+    expect(scoped.handle.create).toHaveBeenCalledWith('s1')
+    expect(scoped.created[0]?.clearPersisted).toHaveBeenCalledOnce()
+  })
+
+  it('leaves scoped Store cleanup with the newest Context generation', async () => {
+    const { bench } = await storeBench()
+    const { handle, created } = fakeHandle()
+    bench.erased.register({ name: 't.panel', store: handle }, C)
+    const first = scopedBinding(bench.ctx, 's1')
+    const replacement = scopedBinding(bench.ctx, 's1')
+
+    bench.svc.bindStoreScope(first.binding)
+    bench.svc.bindStoreScope(first.binding)
+    bench.svc.bindStoreScope(replacement.binding)
+    await first.fiber.dispose()
+    expect(handle.create).not.toHaveBeenCalled()
+
+    await replacement.fiber.dispose()
+    expect(handle.create).toHaveBeenCalledOnce()
+    expect(created[0]?.clearPersisted).toHaveBeenCalledOnce()
+  })
+
   it('clears session-maybe state through binding disposal and creates a fresh instance on reuse', async () => {
     const { bench, host } = await storeBench()
     bench.svc.installScope('session', {

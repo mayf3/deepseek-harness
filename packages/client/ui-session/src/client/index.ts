@@ -392,13 +392,15 @@ export class UiSession extends Service {
       copyDeclared('keyed hook', keyedHooks, descriptor.keyedHooks, contribution.keyedHooks, finalProps)
       copyDeclared('prop', props, descriptor.props, contribution.props, finalProps)
     }
-    return {
+    const value: ScopedStandardSourceBinding = {
       key: binding.sessionId,
       ctx: binding.ctx,
       hooks,
       keyedHooks,
       props,
     }
+    this.ctx.slots.bindStoreScope(value)
+    return value
   }
 
   private materializeAbsent(): StandardSourceBinding {

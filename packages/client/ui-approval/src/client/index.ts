@@ -11,12 +11,12 @@ import { ApprovalPanel } from './ApprovalPanel.tsx'
 import { PendingApproval } from './contract/slots.ts'
 import { en, zh } from './locales.ts'
 
-export { PendingApproval } from './contract/slots.ts'
 export type {
   ApprovalComposerProps,
   ApprovalDecision,
   ApprovalDetailOwnerProps,
   ApprovalPresentationRequest,
+  PendingApproval,
 } from './contract/slots.ts'
 export type { ApprovalKey } from './locales.ts'
 

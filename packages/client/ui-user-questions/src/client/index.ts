@@ -25,9 +25,8 @@ import { PendingQuestion } from './contract/slots.ts'
 import { QuestionComposer } from './QuestionComposer.tsx'
 import { en, zh, type QuestionKey } from './locales.ts'
 
-export { PendingQuestion } from './contract/slots.ts'
 export type {
-  PlanReview, QuestionAnswer, QuestionComposerProps, QuestionWait,
+  PendingQuestion, PlanReview, QuestionAnswer, QuestionComposerProps, QuestionWait,
 } from './contract/slots.ts'
 export type { QuestionKey } from './locales.ts'
 

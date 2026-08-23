@@ -12,17 +12,19 @@ usePinnedBrowserLanguages('zh-CN')
 
 const SID = 'session-1' as SessionId
 
-async function bench() {
+async function bench(options: { declareConversation?: boolean } = {}) {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('uiWorkspace', { connectWorkspace: vi.fn(async () => SID) } as never)
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
-  await runtime.root.declare({
-    'conversation': { kind: 'single', scope: 'session-maybe' },
-    'settings.general.item': { kind: 'list', scope: 'root' },
-  }, (_props: { renderSlot?: unknown }) => null)
+  if (options.declareConversation !== false) {
+    await runtime.root.declare({
+      'conversation': { kind: 'single', scope: 'session-maybe' },
+      'settings.general.item': { kind: 'list', scope: 'root' },
+    }, (_props: { renderSlot?: unknown }) => null)
+  }
   const feature = await runtime.mount({ inject: [...inject], apply })
   return { runtime, feature }
 }
@@ -35,6 +37,22 @@ function entry(
 }
 
 describe('target-neutral Conversation apply wiring', () => {
+  it('waits for the layout-owned conversation declaration before registering its subtree', async () => {
+    const b = await bench({ declareConversation: false })
+    expect(b.runtime.slots.entries('conversation')).toHaveLength(0)
+
+    await b.runtime.root.declare({
+      'conversation': { kind: 'single', scope: 'session-maybe' },
+      'settings.general.item': { kind: 'list', scope: 'root' },
+    }, (_props: { renderSlot?: unknown }) => null)
+
+    expect(b.runtime.slots.entries('conversation')).toHaveLength(1)
+    expect(b.runtime.slots.entries('conversation.session')).toHaveLength(1)
+    expect(b.runtime.slots.entries('conversation.session.header')).toHaveLength(1)
+    expect(b.runtime.slots.entries('conversation.composer.bar')).toHaveLength(1)
+    await b.runtime.dispose()
+  })
+
   it('provides both action and assembly services without installing Chat', async () => {
     const b = await bench()
     expect(b.runtime.ctx.get('conversation')).toBeDefined()

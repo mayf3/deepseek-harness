@@ -169,7 +169,7 @@ export function apply(ctx: Context): void {
     },
   })
 
-  slots.register({
+  const registerConversationRoot = () => slots.register({
     name: 'conversation',
     locale: NS,
     children: {
@@ -212,7 +212,7 @@ export function apply(ctx: Context): void {
     }),
   }, ConversationRoot)
 
-  slots.register({
+  const registerConversationSession = () => slots.register({
     name: 'conversation.session',
     children: {
       'conversation.view': { kind: 'list', scope: 'session' },
@@ -224,7 +224,7 @@ export function apply(ctx: Context): void {
     }),
   }, ConversationSession)
 
-  slots.register({
+  const registerConversationHeader = () => slots.register({
     name: 'conversation.session.header',
     locale: NS,
     children: {
@@ -239,7 +239,7 @@ export function apply(ctx: Context): void {
     }),
   }, ConversationSessionHeader)
 
-  slots.register({
+  const registerComposerBar = () => slots.register({
     name: 'conversation.composer.bar',
     locale: NS,
     children: {
@@ -322,6 +322,13 @@ export function apply(ctx: Context): void {
       }
     },
   }, InputBar)
+
+  slots.inject('conversation', function* () {
+    yield registerConversationRoot()
+    yield registerConversationSession()
+    yield registerConversationHeader()
+    yield registerComposerBar()
+  })
 
   ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks })
   ctx.plugin(todoDockEntry)
