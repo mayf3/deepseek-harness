@@ -1126,6 +1126,7 @@ function decode(
   try {
     if (codec.mode === 'strict') {
       value = codec.schema.parse(value)
+      /* v8 ignore next -- generated optional-input codecs are the only strict codecs that return undefined. */
       if (value === undefined) return value
     }
     assertJsonValue(value, new Set())

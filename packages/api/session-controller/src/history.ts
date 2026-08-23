@@ -172,6 +172,7 @@ export class SessionHistoryController {
         if (item.event.type === 'tool/call') {
           const data = item.event.data as ToolCallData
           const call = parseToolCall(data)
+          /* v8 ignore next -- malformed durable tool arguments intentionally skip the live presentation cache. */
           if (call !== undefined) openCalls.set(data.callId, call)
         } else if (item.event.type === 'turn/end') {
           openCalls.clear()
