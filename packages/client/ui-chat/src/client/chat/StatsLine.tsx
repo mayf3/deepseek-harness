@@ -3,7 +3,6 @@
 // active conversation scrollport (see ConversationRoot data-conversation-scroll).
 
 import { Fragment, memo, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { contextOccupancy } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
@@ -15,8 +14,6 @@ import type { ChatSnapshot } from '../contract/snapshot.ts'
 import { formatTokensPerSecond } from './message-chrome.ts'
 import { assistantStepReading } from '../contract/turn-metrics.ts'
 import css from './StatsLine.module.css'
-
-export { contextOccupancy }
 
 interface WindowStats {
   turns: number

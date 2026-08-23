@@ -4,13 +4,13 @@ import {
   createAssistantMessage,
   createToolResultMessage,
   createUserMessage,
-  isTokenDelta,
 } from '@deepseek-ai/dsh-llm/message'
 import { CallId, type MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type {
   AssistantMessage,
   ContentBlock,
   MessageSource,
+  StreamChunk,
   TokenUsage,
   ToolResultMessage,
   UserMessage,
@@ -39,6 +39,20 @@ import type {
 } from '../rpc.ts'
 
 const FIXTURE_SESSION_SEARCH_RESULT_LIMIT = 20
+
+/* jscpd:ignore-start -- The standalone fixture mirrors host timing without importing a target implementation. */
+function isFixtureTokenDelta(chunk: StreamChunk): boolean {
+  switch (chunk.type) {
+    case 'text-delta':
+    case 'reasoning-delta':
+      return chunk.text !== ''
+    case 'tool-call-delta':
+      return chunk.argumentsDelta !== '' || chunk.name !== undefined
+    default:
+      return false
+  }
+}
+/* jscpd:ignore-end */
 
 interface FixtureSessionSummary {
   readonly sessionId: SessionId
@@ -1129,7 +1143,7 @@ function sessionStatsOf(log: readonly SessionEvent[]): {
         break
       case 'assistant/chunk':
         if (openStep !== null && openStep.turn === event.data.turn && openStep.step === event.data.step
-          && openStep.firstTokenTime === null && isTokenDelta(event.data.chunk)) {
+          && openStep.firstTokenTime === null && isFixtureTokenDelta(event.data.chunk)) {
           openStep.firstTokenTime = event.time
         }
         break

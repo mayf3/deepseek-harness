@@ -4,14 +4,6 @@ export { UiConversation } from './conversation/assembly.ts'
 export type { ConversationBinding } from './conversation/assembly.ts'
 export { ConversationController, UnsupportedImageMediaTypeError } from './service.ts'
 export type { IConversation } from './service.ts'
-export { bytesToBase64 } from './browser-bytes.ts'
-export { settlePendingComposer } from './pending-composer.ts'
-export { contextOccupancy } from './context-occupancy.ts'
-export type { ContextOccupancy } from './context-occupancy.ts'
-export { ReferenceIcon } from './skeleton/ReferenceIcon.tsx'
-export type { ReferenceIconKind, ReferenceIconProps } from './skeleton/ReferenceIcon.tsx'
-
-export { conversationContextKey } from './contract/conversation.ts'
 export type {
   ConversationContextReader, ConversationEventInput, ConversationLocation,
   ConversationLocationData, ConversationLocationDataScope, ConversationLocationDataStore,
@@ -32,24 +24,12 @@ export type {
   ToolCallBlock, ToolResultNode, TurnErrorNode, TurnMaxTokensNode, UnknownSurfaceNode,
   UserMessageNode,
 } from './contract/records.ts'
-export {
-  emptyAssistantBlock, toAssistantBlock, toAssistantBlocks,
-} from './contract/records.ts'
 export type {
   ContextProvenanceView, ContextRole, KnownContextForm,
-} from './contract/context-provenance.ts'
-export {
-  contextForm, contextProvenance, sessionRecallLabels,
 } from './contract/context-provenance.ts'
 export type {
   ConversationPromptSnapshot, RequestInspectionSnapshot, RequestPromptChange, RequestView,
 } from './contract/request-inspection.ts'
-export type { AssistantStepMetadata } from './conversation/assistant-timing.ts'
-export {
-  assistantStepKey, indexAssistantStepTiming, isTokenDelta, settledAssistantTiming,
-} from './conversation/assistant-timing.ts'
-export { displayFailure } from './conversation/failure-display.ts'
-export type { DisplayFailure } from './conversation/failure-display.ts'
 export type { ConversationStoreState, ConversationViewRequest, ViewTab } from './contract/views.ts'
 
 export { ConversationNodeAssembler } from './conversation/assembler.ts'

@@ -9,7 +9,7 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import { StatsLine, contextOccupancy, deriveStats, formatDuration, formatTokens, type StatsLineProps } from '../src/client/chat/StatsLine.tsx'
+import { StatsLine, deriveStats, formatDuration, formatTokens, type StatsLineProps } from '../src/client/chat/StatsLine.tsx'
 import { en, zh } from '../src/client/locale.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
@@ -260,24 +260,6 @@ describe('StatsLine', () => {
     // Context occupancy lives on the composer's ContextMeter ring, not here.
     expect(view.container.textContent)
       .toBe('Cache hit 90%| Input 100 tok · Output 5 tok')
-  })
-
-  it('computes context occupancy only when both a numerator and capacity are known', () => {
-    // The projected figure wins: it is the provider sample carried forward over
-    // the surface's movement, so a compaction shows without waiting a request.
-    expect(contextOccupancy({ pressureTokens: 32_000, projectedTokens: 6_000, contextWindow: 128_000 }))
-      .toEqual({ percent: 5, usedTokens: 6_000, contextWindow: 128_000 })
-    // A log whose projection predates the field still reads its bare sample.
-    expect(contextOccupancy({ pressureTokens: 32_000, contextWindow: 128_000 }))
-      .toEqual({ percent: 25, usedTokens: 32_000, contextWindow: 128_000 })
-    // A numerator without capacity has no denominator; capacity without a
-    // provider sample has no numerator yet, rather than a synthetic 0%.
-    expect(contextOccupancy({ pressureTokens: 32_000 })).toBeNull()
-    expect(contextOccupancy({ contextWindow: 128_000 })).toBeNull()
-    expect(contextOccupancy(undefined)).toBeNull()
-    // Capacity and the sample are independent last-wins fields, so a model
-    // switch can pair a smaller new window with the previous route's prompt.
-    expect(contextOccupancy({ pressureTokens: 300_000, contextWindow: 128_000 })?.percent).toBe(100)
   })
 
   it('drops every token group when no projection is composed', () => {

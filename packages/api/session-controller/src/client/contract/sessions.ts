@@ -76,7 +76,10 @@ export interface ISessions {
   noteAgentPreset(sessionId: SessionId, agentPreset: string): void
   /** Clear the current selection into the no-session view state. */
   clear(): void
-  /** @returns completion of the current or newly started Session-list refresh. */
+  /**
+   * Refresh the Host-authoritative Session list.
+   * @returns completion of the current or newly started Session-list refresh.
+   */
   refresh(): Promise<void>
   /**
    * Search the Host's visible message-content index. Results stay

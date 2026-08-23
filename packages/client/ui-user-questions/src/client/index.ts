@@ -14,6 +14,7 @@
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { PendingInteractionPublisher } from '@deepseek-ai/dsh-client-ui-session/client'
@@ -56,7 +57,7 @@ async function answerQuestion(
   next: ClientQuestionNext,
   registerPendingInteraction: PendingInteractionPublisher<PendingQuestion>,
 ): Promise<ClientQuestionAnswer> {
-  const sessionId = ctx.sessions.scopeOf(owner)
+  const sessionId = (ctx.sessions as ISessions).scopeOf(owner)
   if (sessionId === undefined) return next()
   const pending = new PendingQuestion(sessionId, request.questions, request.signal)
   const completed = Promise.withResolvers<void>()

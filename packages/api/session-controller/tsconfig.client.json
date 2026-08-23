@@ -24,6 +24,7 @@
     { "path": "../../core/tools" },
     { "path": "../../util/brand" },
     { "path": "../../util/crypto" },
+    { "path": "../../util/workspace-path" },
     { "path": "../../workspace/workspace" },
     { "path": "../../typert/protocol" }
   ]

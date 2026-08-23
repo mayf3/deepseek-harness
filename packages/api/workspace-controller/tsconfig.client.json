@@ -8,7 +8,6 @@
   "files": [
     "src/client/index.ts",
     "src/client/model.ts",
-    "src/client/path.ts",
     "src/client/service.ts",
     "src/types.ts"
   ],

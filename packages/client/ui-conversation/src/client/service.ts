@@ -9,7 +9,7 @@
  */
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
-import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
+import { bytesToBase64, randomUUID } from '@deepseek-ai/dsh-util-crypto'
 // Type-only imports: a plugin-to-plugin value import is a bundle purity
 // error, so scope resolution goes through the sessions service (scopeOf
 // method) instead of the standalone helper.
@@ -23,7 +23,6 @@ import type {
   DraftAttachmentId, SessionInputResolver, SubmitImageAttachment, SubmitOutcome,
 } from './contract/input.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
-import { bytesToBase64 } from './browser-bytes.ts'
 
 /**
  * The outward conversation face (`ctx.conversation`): the scope-addressed

@@ -14,8 +14,10 @@
  * consumer merges keys in and the intersection is what keeps them string-typed.
  * The rule fires on the empty-map view, not on real redundancy. */
 import type { ReactNode } from 'react'
+import type {
+  BoundActions, HandleOf, PropsStore, SnapshotSelectorHook, StoreDecl,
+} from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from './renderer.ts'
-import type { BoundActions, HandleOf, PropsStore, SnapshotSelectorHook, StoreDecl } from './store.ts'
 
 export * from './store.ts'
 export * from './renderer.ts'

@@ -1,10 +1,8 @@
 import type {
-  ConversationLocation, ConversationViewNode,
-} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type {
   AssistantBlock, AssistantMessageNode, CommandNode, CompactionSummaryNode,
-  ModelRetryNode, RunningToolCall, ToolCallBlock,
-} from './snapshot.ts'
+  ConversationLocation, ConversationViewNode, ModelRetryNode, RunningToolCall,
+  ToolCallBlock,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 /** Final Chat render unit produced by a Chat business Definition. */
 export interface ChatConversationViewNode extends ConversationViewNode {

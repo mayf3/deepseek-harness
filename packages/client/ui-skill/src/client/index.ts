@@ -32,7 +32,7 @@
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ConnectionHandle, SkillEntry } from '@deepseek-ai/dsh-api-remotes/client'
-import { resolveClientSessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InputTriggerServiceContract, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
@@ -72,7 +72,7 @@ export function apply(ctx: ClientContext): void {
   ))
 
   const skills = (ctx.get('connection') as ConnectionHandle).api.skills
-  const sessions = resolveClientSessions(ctx)
+  const sessions = ctx.sessions
   // Session-keyed catalog cache; single-flight per key. Plugin-closure state:
   // the fiber effect below is its teardown boundary.
   const fetches = new Map<SessionId, CatalogFetch>()

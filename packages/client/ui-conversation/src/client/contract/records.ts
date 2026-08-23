@@ -32,52 +32,13 @@ export interface AssistantProvenanceView {
   model: string
 }
 
-/** Assistant content blocks sorted by what the UI cares about
- *  (text body / collapsible reasoning / tool-call card head / other fallback). */
+/** Assistant content blocks sorted by what a UI target presents. */
 export type AssistantBlock =
   | { kind: 'text'; text: string }
   | { kind: 'reasoning'; text: string }
   | { kind: 'image'; attachment: ImageAttachmentRef }
   | { kind: 'tool-call'; callId: string; name: string; argsRaw: string }
   | { kind: 'other'; block: unknown }
-
-/**
- * core ContentBlock[] -> AssistantBlock[] (classifier shared by finalized messages and partial block-end).
- * @param content - core content blocks verbatim.
- * @returns UI-classified blocks in source order.
- */
-export function toAssistantBlocks(content: readonly ContentBlock[]): AssistantBlock[] {
-  return content.map(toAssistantBlock)
-}
-
-/**
- * Classify one block (ToolCallBlock fields are id/arguments, mapped to callId/argsRaw).
- * @param block - one core content block.
- * @returns the UI classification.
- */
-export function toAssistantBlock(block: ContentBlock): AssistantBlock {
-  switch (block.type) {
-    case 'text': return { kind: 'text', text: block.text }
-    case 'reasoning': return { kind: 'reasoning', text: block.text }
-    case 'image': return { kind: 'image', attachment: block.attachment }
-    case 'tool-call': return { kind: 'tool-call', callId: String(block.id), name: block.name, argsRaw: block.arguments }
-    default: return { kind: 'other', block }
-  }
-}
-
-/**
- * Create the empty projection for one streamed Assistant block kind.
- * @param blockType - wire block kind.
- * @returns empty projected block ready to receive deltas.
- */
-export function emptyAssistantBlock(blockType: string): AssistantBlock {
-  switch (blockType) {
-    case 'text': return { kind: 'text', text: '' }
-    case 'reasoning': return { kind: 'reasoning', text: '' }
-    case 'tool-call': return { kind: 'tool-call', callId: '', name: '', argsRaw: '' }
-    default: return { kind: 'other', block: null }
-  }
-}
 
 /** A finalized user message. */
 export interface UserMessageNode {
@@ -145,9 +106,9 @@ export interface ContextMessageNode {
   time: number
   content: readonly ContentBlock[]
   source: unknown
-  /** Role and producer name projected from `source` ({@link contextProvenance}). */
+  /** Role and producer name projected from `source` by the target. */
   provenance: ContextProvenanceView
-  /** Producer-declared information form ({@link contextForm}); null presents as opaque. */
+  /** Producer-declared information form supported by the target; null presents as opaque. */
   form: KnownContextForm | null
 }
 
