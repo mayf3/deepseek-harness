@@ -62,6 +62,14 @@ def test_macos_wheel_tag_does_not_claim_unsupported_node_platforms() -> None:
     assert build_python_release.PLATFORMS["macos-arm64"][1] == "deepseek-harness-sdk-runtime-macos-arm64"
 
 
+def test_windows_wheel_tag_and_payload_are_x64_only() -> None:
+    assert build_python_release.PLATFORMS["win-x64"] == (
+        "win_amd64",
+        "deepseek-harness-sdk-runtime-win-x64.exe",
+    )
+    assert not any(name.startswith("win-") and name != "win-x64" for name in build_python_release.PLATFORMS)
+
+
 def test_platform_manifest_rejects_incomplete_entries(tmp_path: Path) -> None:
     manifest = tmp_path / "platforms.json"
     manifest.write_text('{"macos-arm64":{"tag":"macosx_14_0_arm64"}}\n')
@@ -85,7 +93,10 @@ def test_stage_sdk_keeps_distribution_module_and_runtime_pin_distinct(tmp_path: 
     assert (destination / "src" / "deepseek_harness" / "__init__.py").is_file()
 
 
-@pytest.mark.parametrize(("target", "with_helper"), [("linux-x64", False), ("macos-arm64", True)])
+@pytest.mark.parametrize(
+    ("target", "with_helper"),
+    [("linux-x64", False), ("macos-arm64", True), ("win-x64.exe", False)],
+)
 def test_stage_runtime_copies_platform_payload(
     tmp_path: Path, target: str, with_helper: bool
 ) -> None:
@@ -93,7 +104,11 @@ def test_stage_runtime_copies_platform_payload(
     executable.write_bytes(b"runtime")
     executable.chmod(0o755)
     expected = {executable.name: b"runtime"}
-    ripgrep = Path(f"{executable}-rg")
+    ripgrep = (
+        executable.with_name(f"{executable.stem}-rg.exe")
+        if executable.suffix == ".exe"
+        else Path(f"{executable}-rg")
+    )
     ripgrep.write_bytes(b"ripgrep")
     ripgrep.chmod(0o755)
     expected[ripgrep.name] = b"ripgrep"

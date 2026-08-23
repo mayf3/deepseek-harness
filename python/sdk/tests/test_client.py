@@ -783,6 +783,43 @@ for line in sys.stdin:
     assert client._proc is None
 
 
+def test_client_close_allows_eof_quiescence_after_shutdown_response(tmp_path: Path) -> None:
+    script = tmp_path / "fake_runtime.py"
+    marker = tmp_path / "quiesced.txt"
+    script.write_text(
+        """
+import json
+import os
+from pathlib import Path
+import sys
+import time
+
+for line in sys.stdin:
+    msg = json.loads(line)
+    if msg.get("method") == "initialize":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"serverInfo": {"name": "fake-dsh"}}}), flush=True)
+    elif msg.get("method") == "shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {}}), flush=True)
+
+time.sleep(0.05)
+Path(os.environ["QUIESCED_MARKER"]).write_text("quiesced")
+""".strip()
+    )
+
+    client = HarnessClient(
+        HarnessConfig(
+            _launch_args=(sys.executable, str(script)),
+            env={"QUIESCED_MARKER": str(marker)},
+            shutdown_timeout_seconds=1,
+        )
+    )
+    client.start()
+    client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
+    client.close()
+
+    assert marker.read_text() == "quiesced"
+
+
 def test_initialize_failure_reaps_started_runtime(tmp_path: Path) -> None:
     script = tmp_path / "rejecting_runtime.py"
     script.write_text(

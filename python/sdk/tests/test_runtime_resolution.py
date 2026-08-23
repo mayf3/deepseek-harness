@@ -55,6 +55,30 @@ def test_runtime_requires_spawn_helper_only_on_macos(
     assert runtime.bundled_runtime_path() == linux
 
 
+def test_windows_runtime_uses_exe_payload_and_exe_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_dir = tmp_path / "runtime"
+    runtime_dir.mkdir()
+    executable = runtime_dir / "deepseek-harness-sdk-runtime-win-x64.exe"
+    executable.touch()
+    (runtime_dir / "deepseek-harness-sdk-runtime-win-x64-rg.exe").touch()
+    monkeypatch.setattr(runtime, "bundled_package_dir", lambda: tmp_path)
+    monkeypatch.setattr(runtime, "_current_platform_tag", lambda: "win-x64")
+
+    assert runtime.bundled_runtime_path() == executable
+
+
+def test_current_platform_supports_windows_x64_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(runtime.sys, "platform", "win32")
+    monkeypatch.setattr(runtime.platform, "machine", lambda: "AMD64")
+    assert runtime._current_platform_tag() == "win-x64"
+
+    monkeypatch.setattr(runtime.platform, "machine", lambda: "ARM64")
+    with pytest.raises(FileNotFoundError, match="Windows x64"):
+        runtime._current_platform_tag()
+
+
 def test_runtime_requires_ripgrep_sidecar(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
