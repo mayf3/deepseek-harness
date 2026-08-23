@@ -345,6 +345,7 @@ describe('MessageFeedbackController', () => {
   })
 
   it('preserves a non-Error list rejection as a diagnostic string', async () => {
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- the non-Error rejection is the scenario under test.
     const { remote } = fakeRemote({ list: () => Promise.reject('socket string') })
     const controller = new MessageFeedbackController(remote, SESSION)
 
@@ -355,6 +356,7 @@ describe('MessageFeedbackController', () => {
   })
 
   it('preserves a non-Error mutation rejection as a diagnostic string', async () => {
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- the non-Error rejection is the scenario under test.
     const { remote } = fakeRemote({ put: () => Promise.reject('nope') })
     const controller = new MessageFeedbackController(remote, SESSION)
 
