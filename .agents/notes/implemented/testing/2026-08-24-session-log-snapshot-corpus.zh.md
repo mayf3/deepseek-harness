@@ -40,6 +40,7 @@ Workspace 输入继续归各场景本地所有。变更文件的场景比较完�
 - 提交的会话 fixture 是脱敏固定点，不含 system prompt 或工具 schema 正文，并为每个 header 类保留且仅保留一个 pin。
 - 变更内容的场景从外部验证最终 workspace。
 - 所属位置的进程预期使用 `*.expected.e2e.ts`，并由单独的构建产物门禁运行。
+- 源码与构建适配器在隔离的 profile fallback 中安装仅回放包；不同的提示词 section 顺序值使两种模式的请求 header 保持字节一致。
 - 源码和构建启动模式、浏览器回放、SDK 投影、打包 Python 运行时场景、文档门禁和仓库卫生检查通过。
 
 ## Consequences

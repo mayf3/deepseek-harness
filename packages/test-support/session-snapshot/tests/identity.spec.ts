@@ -53,4 +53,32 @@ describe('session snapshot identity redaction', () => {
     expect(redacted[0]).toContain('session {{session:2}}')
     expect(redactSessionSnapshotIds(redacted)).toEqual(redacted)
   })
+
+  it('classifies semantic text plus command, RPC, and retry identity fields', () => {
+    const semanticMessage = '88888888-8888-4888-8888-888888888888'
+    const anonymousUser = '99999999-9999-4999-8999-999999999999'
+    const retryId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const source = [
+      JSON.stringify({ type: 'not-a-session', data: { value: 'plain' } }),
+      JSON.stringify({
+        type: 'example',
+        data: {
+          commandId: 'command-7',
+          rpcId: 'rpc-9',
+          retryId,
+          requestId: 'stable-readable-id',
+          text: `Retain this as message ${semanticMessage}. Anonymous user: ${anonymousUser}`,
+        },
+      }),
+    ].join('\n')
+
+    const [redacted] = redactSessionSnapshotIds([source])
+    expect(redacted).toContain('"commandId":"{{command:1}}"')
+    expect(redacted).toContain('"rpcId":"{{rpc:1}}"')
+    expect(redacted).toContain('"retryId":"{{retry:1}}"')
+    expect(redacted).toContain('as message {{message:1}}')
+    expect(redacted).toContain('Anonymous user: {{id:1}}')
+    expect(redacted).toContain('"requestId":"stable-readable-id"')
+    expect(redacted?.endsWith('\n')).toBe(false)
+  })
 })

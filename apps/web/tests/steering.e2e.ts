@@ -26,10 +26,10 @@ const MID_EXPECTED = join(SNAPSHOT_DIR, 'mid-steer.expected.md')
 const SETTLED_EXPECTED = join(SNAPSHOT_DIR, 'settled.expected.md')
 const MODE = webSnapshotMode()
 // The question composer replaces the textarea, so fill → Queue row → Steer
-// must finish inside the first replay chunk window. At 15 ms that window is
-// shorter than Playwright's round trips; 50 ms supplies test-only headroom,
-// while larger values lengthen all three replay scenarios linearly.
-const REPLAY_PACE_MS = 50
+// starts only after request/context and must finish before the first replay
+// chunk. The compact canonical call plus 500 ms pacing gives loaded CI enough
+// time without stretching a long provider-authored chunk sequence.
+const REPLAY_PACE_MS = 500
 
 const PROMPT = 'Use the ask_user_question tool to ask me exactly one question with id "checkpoint", question "Ready to continue?", header "Checkpoint", and options labeled "Yes" and "No". After I answer, reply with one short sentence acknowledging my answer and stop.'
 const STEER = 'Interjection: include the word BANANA in your final reply.'
@@ -101,6 +101,10 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
     const settled = scaffold.whenTurnSettled(MODE === 'record' ? 180_000 : 30_000)
     await input.fill(PROMPT)
     await input.press('Enter')
+    await expect.poll(
+      () => sessionEvents.some(event => event.type === 'request/context'),
+      { timeout: 10_000 },
+    ).toBe(true)
 
     // Enter remains the Queue gesture. The row action then atomically moves
     // this exact occurrence into the current turn's steering outbox.

@@ -4,7 +4,7 @@ import { cp, copyFile, mkdir, readFile, readdir, rm, utimes, writeFile } from 'n
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
-import { delimiter, dirname, join } from 'node:path'
+import { basename, delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
@@ -13,6 +13,7 @@ import {
   fixtureContext,
   formatSystemPromptSnapshot,
   formatToolSchemasSnapshot,
+  materializeProfilePatch,
   normalizeSessionSnapshots,
   normalizedHeaders,
   normalizedSystemPrompts,
@@ -62,7 +63,7 @@ function snapshotMode(value: string | undefined): SnapshotMode {
 }
 
 const mode = snapshotMode(process.env.DSH_SNAPSHOT)
-const RUNTIME_WORKSPACE_ENTRIES = ['.agents', '.dsh'] as const
+const RUNTIME_WORKSPACE_ENTRIES = ['.agents', '.dsh', '.snapshot-patches'] as const
 
 interface JsonObject {
   [key: string]: unknown
@@ -507,11 +508,15 @@ describe('headless recorded-session snapshots', () => {
       const fixtureFiles = sessionFixtureNames(await readdir(scenario.dir))
       const replaying = mode !== 'record'
       const compositionPatch = join(composition.dir, replaying ? 'cordis.snapshot.yml' : 'cordis.yml')
-      const patches = [
+      const patchSources = [
         join(baseComposition.dir, 'cordis.yml'),
         ...composition === baseComposition && !replaying ? [] : [compositionPatch],
         join(baseComposition.dir, 'model.cordis.yml'),
       ]
+      const patchRoot = '.snapshot-patches'
+      const patches = patchSources.map((source, index) => source.endsWith('.snapshot.yml')
+        ? join(patchRoot, `${String(index)}-${basename(source)}`)
+        : source)
 
       let actualLogs: SessionLog[] = []
       let initialWorkspace: WorkspaceSnapshotEntry[] | undefined
@@ -556,6 +561,12 @@ describe('headless recorded-session snapshots', () => {
             DSH_TELEMETRY_DISABLED: '1',
           },
           prepare: async (cwd) => {
+            await mkdir(join(cwd, patchRoot), { recursive: true })
+            patchSources.forEach((source, index) => {
+              if (source.endsWith('.snapshot.yml')) {
+                materializeProfilePatch(source, cwd, join(cwd, patchRoot), index)
+              }
+            })
             await seedWorkspace(scenario, cwd)
             initialWorkspace = await captureWorkspaceSnapshot(cwd, {
               ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,

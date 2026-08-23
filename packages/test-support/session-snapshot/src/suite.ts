@@ -1338,12 +1338,10 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
           expect(result.sessionLogs.length, 'this scenario must persist one log per session fixture').toBe(fixtureFiles.length)
           const harvested = result.sessionLogs.map(log => log.content)
           const fixtures = await Promise.all(fixtureFiles.map(file => readFile(join(dir, file), 'utf8')))
-          const fixtureHeaders = fixtures.map(fixture => JSON.parse(
-            fixture.split('\n').find(line => line.trim() !== '') ?? '{}',
-          ) as { id?: unknown; cwd?: unknown })
+          const fixtureContexts = fixtures.map(fixtureContext)
           const fixtureCtx: NormalizeContext = {
-            sessionIds: fixtureHeaders.flatMap(header => typeof header.id === 'string' ? [header.id] : []),
-            cwd: typeof fixtureHeaders[0]?.cwd === 'string' ? fixtureHeaders[0].cwd : '\0no-cwd\0',
+            sessionIds: fixtureContexts.flatMap(context => context.sessionIds),
+            cwd: (fixtureContexts[0] as NormalizeContext).cwd,
           }
           const actualSnapshots = normalizeSessionSnapshots(harvested, ctx)
           const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureCtx)

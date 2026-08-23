@@ -127,8 +127,8 @@ describe('web e2e: approval takeover keeps its actions reachable', () => {
       await assertFinalWorkspaceSnapshot(SNAPSHOT_DIR, join(scaffold.workspaceCwd, 'workspace'))
       return
     }
-    // The denied attempt contains platform-specific OS text, so direct state
-    // and DOM assertions cover the answered outcome.
+    // Direct state and DOM assertions cover the answered outcome beyond the
+    // pending panel's expected output.
     expect(JSON.stringify(sessionEvents.filter(e => e.type === 'approval/decided').at(-1)))
       .toContain('allowed-once')
     const written = await readFile(join(scaffold.workspaceCwd, 'workspace', 'notes.txt'), 'utf8')

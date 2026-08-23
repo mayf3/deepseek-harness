@@ -242,7 +242,7 @@ describe('runScenario', () => {
       agent: { ...profileAgent, configPath: conflictPatch },
       cwd: dir,
       env: { DSH_SNAPSHOT: 'record', DSH_SNAPSHOT_FILE: fixtureFile },
-    })).toThrow('ACP profile package conflict-package resolves to two directories')
+    })).toThrow('snapshot profile package conflict-package resolves to two directories')
 
     const invalidPatch = join(dir, 'invalid.cordis.yml')
     await writeFile(invalidPatch, 'not: a-list\n')

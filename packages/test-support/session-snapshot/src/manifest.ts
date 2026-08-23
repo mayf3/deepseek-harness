@@ -348,6 +348,7 @@ export function parseSnapshotManifest(source: string, path = 'snapshot.yml'): Sn
       ...(session === undefined ? {} : { session }),
     }
   } catch (error) {
+    /* v8 ignore next -- every parser and validator above throws Error instances. */
     throw new Error(`session-snapshot: ${path}: ${error instanceof Error ? error.message : String(error)}`)
   }
 }

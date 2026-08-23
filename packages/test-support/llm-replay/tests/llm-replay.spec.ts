@@ -1246,7 +1246,7 @@ describe('installLlmReplay (per-session keying)', () => {
     const options: GenerateOptions = {
       ...live('live-parent'),
       messages: [createUserMessage({
-        content: [{ type: 'text', text: 'started subagent live-child-before-call' }],
+        content: [{ type: 'text', text: 'started subagent live-child-before-call started subagent live-child-before-call' }],
         source: { kind: 'user' },
       })],
     }
@@ -1255,6 +1255,21 @@ describe('installLlmReplay (per-session keying)', () => {
       { type: 'text-delta', index: 0, text: 'live-child-before-call' },
       { type: 'finish', reason: { kind: 'stop' } },
     ])
+  })
+
+  it('ignores started-subagent text after every recorded session has bound', async () => {
+    const parentFile = writeSession('session.jsonl', { id: '{{session:1}}', createdAt: 1 }, [TEXT_CHUNKS])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    installLlmReplay(ctx, { file: parentFile })
+
+    expect(await drain(ctx.llm.stream({
+      ...live('live-parent'),
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'started subagent unrecorded-child' }],
+        source: { kind: 'user' },
+      })],
+    }))).toEqual(TEXT_CHUNKS)
   })
 
   it('treats a call with no sessionId as the single anonymous (primary) session', async () => {

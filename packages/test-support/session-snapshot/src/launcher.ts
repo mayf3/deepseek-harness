@@ -397,7 +397,7 @@ function linkProfilePackage(source: string, cwd: string, packageName: string): v
   mkdirSync(dirname(link), { recursive: true })
   if (existsSync(link)) {
     if (realpathSync(link) !== packageDir) {
-      throw new Error(`ACP profile package ${packageName} resolves to two directories`)
+      throw new Error(`snapshot profile package ${packageName} resolves to two directories`)
     }
     return
   }

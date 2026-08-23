@@ -78,7 +78,7 @@ export async function captureWorkspaceSnapshot(
   const visit = async (directory: string, segments: readonly string[]): Promise<WorkspaceSnapshotEntry[]> => {
     const entries = (await readdir(directory, { withFileTypes: true }))
       .filter(entry => segments.length > 0 || !ignoredRootEntries.has(entry.name))
-      .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)
+      .sort((left, right) => Buffer.compare(Buffer.from(left.name), Buffer.from(right.name)))
     const captured: WorkspaceSnapshotEntry[] = []
     for (const entry of entries) {
       const childSegments = [...segments, entry.name]
@@ -93,11 +93,8 @@ export async function captureWorkspaceSnapshot(
         captured.push(content === undefined
           ? { path, kind: 'binary', base64: bytes.toString('base64') }
           : { path, kind: 'text', content })
-      } else if (entry.isSymbolicLink()) {
-        captured.push({ path, kind: 'symlink', target: await readlink(absolute) })
       } else {
-        /* v8 ignore next -- ordinary Git workspaces contain only files, directories, and links. */
-        throw new Error(`session-snapshot: unsupported workspace entry ${JSON.stringify(path)}`)
+        captured.push({ path, kind: 'symlink', target: await readlink(absolute) })
       }
     }
     return captured

@@ -40,6 +40,7 @@ Workspace inputs remain scenario-local. A mutating scenario compares a complete 
 - Committed session fixtures are redaction fixed points, contain no system-prompt or tool-schema bulk, and retain exactly one pin per header class.
 - Mutating scenarios verify their final workspace externally.
 - Owner-local process expectations use `*.expected.e2e.ts` and a separate built-output gate.
+- Source and built adapters install replay-only packages in isolated profile fallbacks; distinct prompt-section orders keep their request headers byte-identical.
 - Source and built launch modes, browser replay, SDK projections, packaged Python runtime cases, documentation gates, and repository hygiene pass.
 
 ## Consequences

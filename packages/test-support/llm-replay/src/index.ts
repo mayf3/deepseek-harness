@@ -449,6 +449,7 @@ function inferStartedSubagents(
   for (const leaf of leaves) {
     for (const match of leaf.matchAll(/started subagent ([^\s"'<>]+)/g)) {
       const id = match[1]
+      /* v8 ignore next -- the fixed regular expression always has capture group 1. */
       if (id === undefined || liveSessionIds.includes(id)) continue
       const index = liveSessionIds.findIndex((value, candidate) => candidate > 0 && value === undefined)
       if (index < 0) return
