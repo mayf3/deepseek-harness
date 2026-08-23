@@ -8,7 +8,9 @@
  * Two milestones prove that happened — the host's `tree active` boot line,
  * whose lowering contract must be the one this checkout's packer emits, and the
  * workspace hero, which paints only after the client tree comes up over the
- * tunnel.
+ * tunnel. The same page then creates a Workspace and Session, lists skills,
+ * and writes through the settings and credentials providers, exercising the
+ * upstream Chokidar instances over the Worker filesystem implementation.
  *
  * The site is served the way a static host serves it: bytes from `dist/` with
  * no rewrite rules, so a missing file is a 404 rather than the index page.
@@ -212,6 +214,7 @@ it('boots the packed worker deployment to an interactive page', async () => {
 async function bootPreview(origin: string, browser: Browser): Promise<void> {
   const page = await newEnglishPage(browser)
   const pageErrors: Error[] = []
+  const consoleErrors: string[] = []
   page.on('pageerror', (error) => { pageErrors.push(error) })
   // Registered before navigation: the worker reports its tree long before the
   // tunnel serves the client, so a listener added later would miss the line.
@@ -219,6 +222,7 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
     page.on('console', (message) => {
       const text = message.text()
       if (text.includes(TREE_ACTIVE)) reported(text)
+      if (message.type() === 'error' || message.type() === 'warning') consoleErrors.push(text)
     })
   })
   try {
@@ -232,7 +236,92 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
     // surface, so it appears only once the startup chain completed over the
     // tunnel.
     await page.getByRole('textbox', { name: 'Choose workspace' }).waitFor({ timeout: HERO_TIMEOUT_MS })
+    const continueButton = page.getByRole('button', { name: 'Continue' })
+    if (await continueButton.isVisible()) await continueButton.click()
+    await page.getByRole('button', { name: 'Configure later' }).click()
+    await page.getByRole('textbox', { name: 'Choose workspace' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Select Workspace Directory' })
+    await dialog.waitFor({ timeout: 10_000 })
+    await dialog.getByRole('button', { name: 'Edit path' }).click()
+    const pathInput = dialog.getByRole('textbox', { name: 'Edit path' })
+    await pathInput.fill('/dsh/workspace')
+    await pathInput.press('Enter')
+    await dialog.getByRole('button', { name: 'Open', exact: true }).click()
+    await page.locator('textarea:enabled[placeholder="Describe what you want to build"]')
+      .waitFor({ timeout: 30_000 })
+
+    const exercised = await page.evaluate(async () => {
+      type Result<T> = { result: { ok: true; value: T } | { ok: false; error: { code: string; message: string } } }
+      interface PreviewApi {
+        host: { createDirectory(payload: { path: string; name: string }): Promise<Result<{ path: string }>> }
+        skills: { list(payload: { sessionId: string }): Promise<Result<{ skills: unknown[] }>> }
+        settings: {
+          describe(payload: object): Promise<Result<{ namespaces: Array<{ ns: string; revision: number }> }>>
+          update(payload: { ns: string; patch: object; expectedRevision: number }): Promise<Result<unknown>>
+        }
+        credentials: {
+          set(payload: { ref: string; value: string }): Promise<Result<unknown>>
+          unset(payload: { ref: string }): Promise<Result<unknown>>
+          describe(payload: { refs: string[] }): Promise<Result<{
+            credentials: Record<string, { configured: boolean }>
+          }>>
+        }
+      }
+      interface PreviewTransport {
+        fetch(input: string, init: RequestInit): Promise<Response>
+        createApiClient(): PreviewApi
+      }
+      const transport = (globalThis as typeof globalThis & { __DSH_TRANSPORT__?: PreviewTransport }).__DSH_TRANSPORT__
+      if (transport === undefined) throw new Error('preview transport is absent after boot')
+      const response = await transport.fetch('/api/session/list', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          type: 'client-request', rpcId: 'preview-session-list', method: 'session/list',
+          payload: { args: { _request: {} } },
+        }),
+      })
+      const sessions = await response.json() as Result<{ items: Array<{ sessionId: string }> }>
+      if (!sessions.result.ok) throw new Error(`session/list failed: ${sessions.result.error.message}`)
+      const sessionId = sessions.result.value.items[0]?.sessionId
+      if (sessionId === undefined) throw new Error('workspace adoption created no Session')
+
+      const api = transport.createApiClient()
+      const skills = await api.skills.list({ sessionId })
+      if (!skills.result.ok) throw new Error(`skill.list failed: ${skills.result.error.message}`)
+      const createDirectory = async (path: string, name: string): Promise<void> => {
+        const created = await api.host.createDirectory({ path, name })
+        if (!created.result.ok) throw new Error(`host.createDirectory failed: ${created.result.error.message}`)
+        await new Promise((resolve) => { setTimeout(resolve, 250) })
+        const refreshed = await api.skills.list({ sessionId })
+        if (!refreshed.result.ok) throw new Error(`skill.list refresh failed: ${refreshed.result.error.message}`)
+      }
+      await createDirectory('/dsh/workspace', '.agents')
+      await createDirectory('/dsh/workspace/.agents', 'skills')
+      await createDirectory('/dsh/workspace/.agents/skills', 'placeholder')
+      const settings = await api.settings.describe({})
+      if (!settings.result.ok) throw new Error(`settings.describe failed: ${settings.result.error.message}`)
+      const shell = settings.result.value.namespaces.find(namespace => namespace.ns === 'shell')
+      if (shell === undefined) throw new Error('settings.describe omitted the shell namespace')
+      const updated = await api.settings.update({ ns: 'shell', patch: { timeoutMs: 61_000 }, expectedRevision: shell.revision })
+      if (!updated.result.ok) throw new Error(`settings.update failed: ${updated.result.error.message}`)
+      const stored = await api.credentials.set({ ref: 'PREVIEW_TEST_SECRET', value: 'worker-only' })
+      if (!stored.result.ok) throw new Error(`credentials.set failed: ${stored.result.error.message}`)
+      const credentials = await api.credentials.describe({ refs: ['PREVIEW_TEST_SECRET'] })
+      if (!credentials.result.ok) throw new Error(`credentials.describe failed: ${credentials.result.error.message}`)
+      const removed = await api.credentials.unset({ ref: 'PREVIEW_TEST_SECRET' })
+      if (!removed.result.ok) throw new Error(`credentials.unset failed: ${removed.result.error.message}`)
+      await new Promise((resolve) => { setTimeout(resolve, 250) })
+      return {
+        skillCount: skills.result.value.skills.length,
+        credentialConfigured: credentials.result.value.credentials.PREVIEW_TEST_SECRET?.configured,
+      }
+    })
+    expect(exercised.skillCount).toBeGreaterThanOrEqual(0)
+    expect(exercised.credentialConfigured).toBe(true)
     expect(pageErrors.map(error => error.message)).toEqual([])
+    expect(consoleErrors.filter(line =>
+      /watchFile|failed to watch|node-addon-landlock-run\.probe|sandbox backend is usable|SANDBOX_UNAVAILABLE/i.test(line))).toEqual([])
   } catch (error) {
     await saveFailureShot(page, 'preview-boot')
     throw pageErrors.length === 0

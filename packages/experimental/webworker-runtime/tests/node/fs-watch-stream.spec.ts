@@ -1,0 +1,507 @@
+/** Node differential checks for the Worker filesystem watcher and stream faces. */
+import {
+  createReadStream as createNodeReadStream,
+  createWriteStream as createNodeWriteStream,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unwatchFile as unwatchNodeFile,
+  watchFile as watchNodeFile,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryVfs } from '../../src/storage/memory.ts'
+import { setActiveVfs } from '../../src/storage/active.ts'
+import * as workerFs from '../../src/node/builtin_modules/implemented/fs.ts'
+import * as workerFsp from '../../src/node/builtin_modules/implemented/fs/promises.ts'
+import * as workerStream from '../../src/node/builtin_modules/implemented/stream.ts'
+
+const VFS_ROOT = '/dsh/watch-stream'
+const nativeRoots: string[] = []
+let vfs: MemoryVfs
+
+beforeEach(() => {
+  vfs = new MemoryVfs()
+  setActiveVfs(vfs)
+  vfs.mkdirSync(VFS_ROOT, { recursive: true })
+})
+
+afterEach(() => {
+  for (const root of nativeRoots.splice(0)) rmSync(root, { recursive: true, force: true })
+  vi.restoreAllMocks()
+})
+
+/** Await the next callback value with a bounded failure instead of an open watcher. */
+function nextValue<T>(install: (resolve: (value: T) => void) => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => { reject(new Error('timed out waiting for filesystem event')) }, 2_000)
+    install((value) => {
+      clearTimeout(timeout)
+      resolve(value)
+    })
+  })
+}
+
+interface ReadableFileStream {
+  readonly bytesRead: number
+  on(event: string, listener: (...args: unknown[]) => void): ReadableFileStream
+}
+
+/** Collect byte chunks and lifecycle events from one read stream implementation. */
+async function readScenario(create: () => ReadableFileStream): Promise<{
+  chunks: string[]
+  events: string[]
+  bytesRead: number
+}> {
+  const stream = create()
+  const chunks: string[] = []
+  const events: string[] = []
+  stream.on('open', () => { events.push('open') })
+  stream.on('ready', () => { events.push('ready') })
+  stream.on('data', (chunk: unknown) => {
+    events.push('data')
+    chunks.push(Buffer.from(chunk as Uint8Array).toString('utf8'))
+  })
+  stream.on('end', () => { events.push('end') })
+  await new Promise<void>((resolve, reject) => {
+    stream.on('error', reject)
+    stream.on('close', () => {
+      events.push('close')
+      resolve()
+    })
+  })
+  return { chunks, events, bytesRead: stream.bytesRead }
+}
+
+interface WritableFileStream {
+  readonly bytesWritten: number
+  on(event: string, listener: (...args: unknown[]) => void): WritableFileStream
+  write(chunk: string): boolean
+  end(chunk?: string): void
+}
+
+/** Write the same chunks and record backpressure plus lifecycle ordering. */
+async function writeScenario(create: () => WritableFileStream): Promise<{
+  writes: boolean[]
+  events: string[]
+  bytesWritten: number
+}> {
+  const stream = create()
+  const events: string[] = []
+  for (const event of ['open', 'ready', 'drain', 'finish'] as const) {
+    stream.on(event, () => { events.push(event) })
+  }
+  const writes = [stream.write('ab'), stream.write('cd')]
+  stream.end('ef')
+  await new Promise<void>((resolve, reject) => {
+    stream.on('error', reject)
+    stream.on('close', () => {
+      events.push('close')
+      resolve()
+    })
+  })
+  return { writes, events, bytesWritten: stream.bytesWritten }
+}
+
+describe('file streams', () => {
+  it('matches Node chunking, inclusive ranges, and read lifecycle ordering', async () => {
+    const nativeRoot = mkdtempSync(join(tmpdir(), 'dsh-stream-diff-'))
+    nativeRoots.push(nativeRoot)
+    const nativePath = join(nativeRoot, 'input.txt')
+    const workerPath = `${VFS_ROOT}/input.txt`
+    writeFileSync(nativePath, '0123456789')
+    vfs.writeFileSync(workerPath, '0123456789')
+
+    const native = await readScenario(() => createNodeReadStream(nativePath, { start: 2, end: 7, highWaterMark: 2 }))
+    const worker = await readScenario(() => workerFs.createReadStream(workerPath, { start: 2, end: 7, highWaterMark: 2 }))
+    expect(worker).toEqual(native)
+  })
+
+  it('matches Node write backpressure, lifecycle ordering, and byte accounting', async () => {
+    const nativeRoot = mkdtempSync(join(tmpdir(), 'dsh-stream-diff-'))
+    nativeRoots.push(nativeRoot)
+    const nativePath = join(nativeRoot, 'output.txt')
+    const workerPath = `${VFS_ROOT}/output.txt`
+
+    const native = await writeScenario(() => createNodeWriteStream(nativePath, { highWaterMark: 2 }))
+    const worker = await writeScenario(() => workerFs.createWriteStream(workerPath, { highWaterMark: 2 }))
+    expect(worker).toEqual(native)
+    expect(workerFs.readFileSync(workerPath, 'utf8')).toBe('abcdef')
+  })
+
+  it('uses the maintained stream implementation for backpressure and async iteration', async () => {
+    const values: string[] = []
+    for await (const value of workerStream.Readable.from(['one', 'two'])) values.push(String(value))
+    expect(values).toEqual(['one', 'two'])
+    expect(typeof workerStream.pipeline).toBe('function')
+    expect(typeof workerStream.finished).toBe('function')
+    expect(workerStream.getDefaultHighWaterMark(false)).toBe(64 * 1024)
+    expect(workerStream.default._isArrayBufferView(new Uint8Array())).toBe(true)
+  })
+
+  it('matches Node file-stream defaults and abort error identity', async () => {
+    const nativeRoot = mkdtempSync(join(tmpdir(), 'dsh-stream-diff-'))
+    nativeRoots.push(nativeRoot)
+    const nativePath = join(nativeRoot, 'input.txt')
+    const workerPath = `${VFS_ROOT}/input.txt`
+    writeFileSync(nativePath, 'content')
+    vfs.writeFileSync(workerPath, 'content')
+    const nativeRead = createNodeReadStream(nativePath)
+    const nativeWrite = createNodeWriteStream(join(nativeRoot, 'output.txt'))
+    const workerRead = workerFs.createReadStream(workerPath)
+    const workerWrite = workerFs.createWriteStream(`${VFS_ROOT}/output.txt`)
+    expect([workerRead.readableHighWaterMark, workerWrite.writableHighWaterMark]).toEqual([
+      nativeRead.readableHighWaterMark,
+      nativeWrite.writableHighWaterMark,
+    ])
+    interface CloseableStream {
+      once(event: string, listener: (...args: unknown[]) => void): unknown
+      destroy(): unknown
+    }
+    const streams = [nativeRead, nativeWrite, workerRead, workerWrite] as unknown as CloseableStream[]
+    const closed = streams.map(stream => new Promise<void>((resolve) => {
+      stream.once('error', () => {})
+      stream.once('close', () => { resolve() })
+    }))
+    for (const stream of streams) stream.destroy()
+    await Promise.all(closed)
+
+    const controller = new AbortController()
+    controller.abort(new Error('stop'))
+    const aborted = workerFs.createReadStream(workerPath, { signal: controller.signal })
+    const error = await nextValue<Error & { code?: string }>((resolve) => { aborted.once('error', resolve) })
+    expect(error).toMatchObject({ name: 'AbortError', code: 'ABORT_ERR' })
+  })
+
+  it('matches Node positional overwrite and missing-file failure', async () => {
+    const nativeRoot = mkdtempSync(join(tmpdir(), 'dsh-stream-diff-'))
+    nativeRoots.push(nativeRoot)
+    const nativePath = join(nativeRoot, 'position.txt')
+    const workerPath = `${VFS_ROOT}/position.txt`
+    writeFileSync(nativePath, 'abcdef')
+    vfs.writeFileSync(workerPath, 'abcdef')
+
+    const writeAt = async (stream: WritableFileStream): Promise<void> => {
+      stream.end('XY')
+      await new Promise<void>((resolve) => { stream.on('close', () => { resolve() }) })
+    }
+    await writeAt(createNodeWriteStream(nativePath, { flags: 'r+', start: 2 }))
+    await writeAt(workerFs.createWriteStream(workerPath, { flags: 'r+', start: 2 }))
+    expect(workerFs.readFileSync(workerPath, 'utf8')).toBe(readFileSync(nativePath, 'utf8'))
+
+    const missing = workerFs.createReadStream(`${VFS_ROOT}/missing.txt`)
+    const events: string[] = []
+    missing.on('error', () => { events.push('error') })
+    await new Promise<void>((resolve) => {
+      missing.on('close', () => {
+        events.push('close')
+        resolve()
+      })
+    })
+    expect(events).toEqual(['error', 'close'])
+  })
+})
+
+interface StatTransition {
+  currentExists: boolean
+  previousExists: boolean
+  currentSize: number
+  previousSize: number
+  currentOtherKinds: boolean[]
+}
+
+/** Observe missing, creation, rewrite, and deletion through one watchFile implementation. */
+async function watchFileScenario(
+  path: string,
+  watchFile: typeof watchNodeFile,
+  unwatchFile: typeof unwatchNodeFile,
+  write: (text: string) => void,
+  remove: () => void,
+): Promise<StatTransition[]> {
+  const waiting: Array<(value: StatTransition) => void> = []
+  const queued: StatTransition[] = []
+  const listener = (current: import('node:fs').Stats, previous: import('node:fs').Stats): void => {
+    const transition = {
+      currentExists: current.isFile(),
+      previousExists: previous.isFile(),
+      currentSize: current.size,
+      previousSize: previous.size,
+      currentOtherKinds: [
+        current.isDirectory(), current.isSymbolicLink(), current.isFIFO(),
+        current.isSocket(), current.isBlockDevice(), current.isCharacterDevice(),
+      ],
+    }
+    const resolve = waiting.shift()
+    if (resolve === undefined) queued.push(transition)
+    else resolve(transition)
+  }
+  const next = async (): Promise<StatTransition> => {
+    const queuedValue = queued.shift()
+    if (queuedValue !== undefined) return queuedValue
+    return await nextValue((resolve) => { waiting.push(resolve) })
+  }
+  watchFile(path, { interval: 10, persistent: false }, listener)
+  try {
+    const missing = await next()
+    write('a')
+    const created = await next()
+    write('longer')
+    const changed = await next()
+    remove()
+    const removed = await next()
+    return [missing, created, changed, removed]
+  } finally {
+    unwatchFile(path, listener)
+  }
+}
+
+describe('watchers', () => {
+  it('matches Node watchFile state transitions for a missing and recreated file', async () => {
+    const nativeRoot = mkdtempSync(join(tmpdir(), 'dsh-watch-diff-'))
+    nativeRoots.push(nativeRoot)
+    const nativePath = join(nativeRoot, 'watched.txt')
+    const workerPath = `${VFS_ROOT}/watched.txt`
+    const native = await watchFileScenario(
+      nativePath,
+      watchNodeFile,
+      unwatchNodeFile,
+      (text) => { writeFileSync(nativePath, text) },
+      () => { rmSync(nativePath) },
+    )
+    const worker = await watchFileScenario(
+      workerPath,
+      workerFs.watchFile as unknown as typeof watchNodeFile,
+      workerFs.unwatchFile as unknown as typeof unwatchNodeFile,
+      (text) => { vfs.writeFileSync(workerPath, text) },
+      () => { vfs.rmSync(workerPath) },
+    )
+    expect(worker).toEqual(native)
+  })
+
+  it('shares one StatWatcher and removes only the named listener', async () => {
+    const path = `${VFS_ROOT}/shared.txt`
+    vfs.writeFileSync(path, 'a')
+    const firstEvents: number[] = []
+    const secondEvents: number[] = []
+    const first = (): void => { firstEvents.push(1) }
+    const second = (): void => { secondEvents.push(1) }
+    const firstWatcher = workerFs.watchFile(path, { interval: 1, persistent: false }, first)
+    const secondWatcher = workerFs.watchFile(path, { interval: 1, persistent: false }, second)
+    expect(secondWatcher).toBe(firstWatcher)
+    workerFs.unwatchFile(path, first)
+    vfs.writeFileSync(path, 'bb')
+    await nextValue<undefined>((resolve) => {
+      const poll = setInterval(() => {
+        if (secondEvents.length === 0) return
+        clearInterval(poll)
+        resolve(undefined)
+      }, 1)
+    })
+    expect(firstEvents).toEqual([])
+    expect(secondEvents).toEqual([1])
+    workerFs.unwatchFile(path)
+  })
+
+  it('reports direct and recursive names, then reaches quiescence on close', async () => {
+    const root = `${VFS_ROOT}/tree`
+    vfs.mkdirSync(`${root}/nested`, { recursive: true })
+    const directEvents: Array<[string, string]> = []
+    const recursiveEvents: Array<[string, string]> = []
+    const direct = workerFs.watch(root, (_event, _filename) => {})
+    direct.on('change', (event, filename) => { directEvents.push([String(event), String(filename)]) })
+    const recursive = workerFs.watch(root, { recursive: true }, (event, filename) => {
+      recursiveEvents.push([event, String(filename)])
+    })
+    vfs.writeFileSync(`${root}/top.txt`, 'top')
+    vfs.writeFileSync(`${root}/nested/deep.txt`, 'deep')
+    await Promise.resolve()
+    expect(directEvents).toEqual([['rename', 'top.txt']])
+    expect(recursiveEvents).toEqual([
+      ['rename', 'top.txt'],
+      ['rename', 'nested/deep.txt'],
+    ])
+    direct.close()
+    recursive.close()
+    vfs.writeFileSync(`${root}/after.txt`, 'after')
+    await Promise.resolve()
+    expect(directEvents).toHaveLength(1)
+    expect(recursiveEvents).toHaveLength(2)
+  })
+
+  it('supports Buffer filenames, file targets, abort closure, and ref state', async () => {
+    const path = `${VFS_ROOT}/encoded.txt`
+    vfs.writeFileSync(path, 'before')
+    const controller = new AbortController()
+    const event = nextValue<[string, Buffer]>((resolve) => {
+      const watcher = workerFs.watch(
+        new TextEncoder().encode(path),
+        { encoding: 'buffer', persistent: false, signal: controller.signal },
+        (eventType, filename) => { resolve([eventType, filename as Buffer]) },
+      )
+      expect(watcher.hasRef()).toBe(false)
+      expect(watcher.ref().hasRef()).toBe(true)
+      expect(watcher.unref().hasRef()).toBe(false)
+    })
+    vfs.writeFileSync(path, 'after')
+    const [eventType, filename] = await event
+    expect(eventType).toBe('change')
+    expect(Buffer.isBuffer(filename)).toBe(true)
+    expect(filename.toString()).toBe('encoded.txt')
+
+    const watcher = workerFs.watch(path, { signal: controller.signal })
+    let closes = 0
+    const closed = nextValue<undefined>((resolve) => {
+      watcher.on('close', () => {
+        closes += 1
+        resolve(undefined)
+      })
+    })
+    controller.abort(new Error('stop'))
+    await closed
+    watcher.close()
+    await Promise.resolve()
+    expect(closes).toBe(1)
+  })
+
+  it('supports the string encoding overload and suppresses queued delivery after close', async () => {
+    const encoded = nextValue<Buffer>((resolve) => {
+      const watcher = workerFs.watch(VFS_ROOT, 'buffer', (_eventType, filename) => {
+        watcher.close()
+        resolve(filename as Buffer)
+      })
+    })
+    vfs.writeFileSync(`${VFS_ROOT}/buffer-name.txt`, 'x')
+    await expect(encoded).resolves.toEqual(Buffer.from('buffer-name.txt'))
+
+    let calls = 0
+    const closed = workerFs.watch(VFS_ROOT, () => { calls += 1 })
+    vfs.writeFileSync(`${VFS_ROOT}/queued.txt`, 'x')
+    closed.close()
+    await Promise.resolve()
+    expect(calls).toBe(0)
+  })
+
+  it('reports removal of an ancestor to a watched file', async () => {
+    const directory = `${VFS_ROOT}/removed-parent`
+    const path = `${directory}/file.txt`
+    vfs.mkdirSync(directory)
+    vfs.writeFileSync(path, 'x')
+    const event = nextValue<[string, string]>((resolve) => {
+      const watcher = workerFs.watch(path, (eventType, filename) => {
+        watcher.close()
+        resolve([eventType, String(filename)])
+      })
+    })
+    vfs.rmSync(directory, { recursive: true })
+    await expect(event).resolves.toEqual(['rename', 'file.txt'])
+  })
+
+  it('rejects an already-aborted callback watcher without retaining a subscription', () => {
+    const controller = new AbortController()
+    const reason = new Error('already stopped')
+    controller.abort(reason)
+    try {
+      workerFs.watch(VFS_ROOT, { signal: controller.signal })
+      throw new Error('watch unexpectedly opened')
+    } catch (error) {
+      expect(error).toMatchObject({ name: 'AbortError', code: 'ABORT_ERR', cause: reason })
+    }
+    expect(() => { vfs.writeFileSync(`${VFS_ROOT}/after-abort.txt`, 'x') }).not.toThrow()
+  })
+
+  it('reports an atomic replacement destination as rename even when it existed', async () => {
+    const target = `${VFS_ROOT}/target.txt`
+    const replacement = `${VFS_ROOT}/replacement.txt`
+    vfs.writeFileSync(target, 'old')
+    vfs.writeFileSync(replacement, 'new')
+    const event = nextValue<[string, string]>((resolve) => {
+      const watcher = workerFs.watch(VFS_ROOT, (eventType, filename) => {
+        if (String(filename) !== 'target.txt') return
+        watcher.close()
+        resolve([eventType, String(filename)])
+      })
+    })
+    vfs.renameSync(replacement, target)
+    await expect(event).resolves.toEqual(['rename', 'target.txt'])
+  })
+
+  it('supports BigInt watchFile state, default options, and idempotent stop', async () => {
+    const path = `${VFS_ROOT}/bigint.txt`
+    const states = nextValue<[bigint, bigint]>((resolve) => {
+      const watcher = workerFs.watchFile(new URL(`file://${path}`), { bigint: true, interval: 1 }, (current, previous) => {
+        resolve([current.size as bigint, previous.size as bigint])
+      })
+      expect(watcher.hasRef()).toBe(true)
+      expect(watcher.unref().hasRef()).toBe(false)
+      expect(watcher.ref().hasRef()).toBe(true)
+    })
+    vfs.writeFileSync(path, 'big')
+    await expect(states).resolves.toEqual([3n, 0n])
+    workerFs.unwatchFile(path)
+    workerFs.unwatchFile(path)
+
+    vfs.writeFileSync(`${VFS_ROOT}/default.txt`, 'x')
+    const listener = (): void => {}
+    const defaultWatcher = workerFs.watchFile(`${VFS_ROOT}/default.txt`, listener)
+    expect(defaultWatcher.hasRef()).toBe(true)
+    defaultWatcher.close()
+    defaultWatcher.close()
+    expect(() => workerFs.watchFile(`${VFS_ROOT}/default.txt`, {})).toThrow(/listener/)
+
+    let cancelledCalls = 0
+    const cancelled = workerFs.watchFile(`${VFS_ROOT}/never-created`, { interval: 1 }, () => { cancelledCalls += 1 })
+    cancelled.close()
+    cancelled.close()
+    await new Promise<void>((resolve) => { setTimeout(resolve, 5) })
+    expect(cancelledCalls).toBe(0)
+  })
+
+  it('propagates non-absence stat failures from watchFile', () => {
+    const failure = Object.assign(new Error('denied'), { code: 'EACCES' })
+    vi.spyOn(vfs, 'statSync').mockImplementationOnce(() => { throw failure })
+    expect(() => workerFs.watchFile(`${VFS_ROOT}/denied`, () => {})).toThrow(failure)
+  })
+
+  it('exposes promise watch as an abortable async iterator', async () => {
+    const controller = new AbortController()
+    const iterator = workerFsp.watch(VFS_ROOT, { signal: controller.signal })[Symbol.asyncIterator]()
+    const event = iterator.next()
+    vfs.writeFileSync(`${VFS_ROOT}/async.txt`, 'x')
+    await expect(event).resolves.toEqual({ done: false, value: { eventType: 'rename', filename: 'async.txt' } })
+    controller.abort()
+    await expect(iterator.next()).rejects.toMatchObject({ name: 'AbortError', code: 'ABORT_ERR' })
+  })
+
+  it('lets promise-watch return interrupt a pending next call', async () => {
+    const iterator = workerFsp.watch(VFS_ROOT)[Symbol.asyncIterator]()
+    const pending = iterator.next()
+    await expect(iterator.return?.()).resolves.toEqual({ done: true, value: undefined })
+    await expect(pending).resolves.toEqual({ done: true, value: undefined })
+    vfs.writeFileSync(`${VFS_ROOT}/after-return.txt`, 'x')
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
+  })
+
+  it('propagates promise-watch startup and throw failures', async () => {
+    const missing = workerFsp.watch(`${VFS_ROOT}/missing`)[Symbol.asyncIterator]()
+    await expect(missing.next()).rejects.toMatchObject({ code: 'ENOENT' })
+
+    const iterator = workerFsp.watch(VFS_ROOT)[Symbol.asyncIterator]()
+    const reason = { reason: 'caller stopped iteration' }
+    if (iterator.throw === undefined) throw new Error('watch iterator has no throw method')
+    await expect(iterator.throw(reason)).rejects.toBe(reason)
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
+  })
+
+  it('queues promise-watch events when no next call is waiting', async () => {
+    const iterator = workerFsp.watch(VFS_ROOT)[Symbol.asyncIterator]()
+    const first = iterator.next()
+    vfs.writeFileSync(`${VFS_ROOT}/one.txt`, 'one')
+    vfs.writeFileSync(`${VFS_ROOT}/two.txt`, 'two')
+    await expect(first).resolves.toEqual({ done: false, value: { eventType: 'rename', filename: 'one.txt' } })
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: { eventType: 'rename', filename: 'two.txt' } })
+    await expect(iterator.return?.()).resolves.toEqual({ done: true, value: undefined })
+    await expect(iterator.return?.()).resolves.toEqual({ done: true, value: undefined })
+  })
+})

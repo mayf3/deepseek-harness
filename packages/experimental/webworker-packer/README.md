@@ -10,7 +10,7 @@ The pack is a three-layer standard stack:
 2. **Publish view** — each workspace package contributes the slice npm would publish (`files` through picomatch) minus the rule tables in `src/rules.ts` (no sources, no workspace `dist/`; external packages keep their trees minus the same exclude globs).
 3. **Reachability sweep** — the runtime loader's own resolution walks from every workspace export face plus the worker assembly's seeds (`IMAGE_ENTRY_SEEDS`), lowering each reached module to the wrapper contract at pack time. Page assets (`lib/client.js` behind `./client` exports) ship verbatim; an unresolvable request from our own code fails the pack, third-party ones are tolerated to fail loud at require time.
 
-`repository.ts` owns the repo-shaped inputs (workspace scan of `vendor/`, `packages/`, `apps/`; profile composition through the real CLI dump path); `pack.ts` owns none of them, so the same library packs a different tree by being called differently. The CLI is `dsh-pack-vfs-image --out <file> [--profile web]`; `apps/web`'s `build:preview` runs it after the preview shell build.
+`repository.ts` owns the repo-shaped inputs (workspace scan of `vendor/`, `packages/`, `native/landlock-run/packages/`, and `apps/`; profile composition through the real CLI dump path); `pack.ts` owns none of them, so the same library packs a different tree by being called differently. The native scan makes the Landlock entry package an ordinary published-view dependency while its executable remains a Worker platform implementation. The CLI is `dsh-pack-vfs-image --out <file> [--profile web]`; `apps/web`'s `build:preview` runs it after the preview shell build.
 
 ## Model Experience
 

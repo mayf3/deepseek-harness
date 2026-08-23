@@ -57,7 +57,8 @@ export function describeFailure(program: string, path: string, error: unknown): 
  * @returns the error to throw.
  */
 export function filesystemError(code: string, syscall: string, path: string): VfsError {
-  const error = new Error(`${code}: ${syscall} failed, ${syscall} '${path}'`) as VfsError
+  const reason = code === 'EACCES' ? 'permission denied' : `${syscall} failed`
+  const error = new Error(`${code}: ${reason}, ${syscall} '${path}'`) as VfsError
   error.code = code
   error.path = path
   error.syscall = syscall
@@ -75,7 +76,6 @@ function statsOf(stats: VfsStats): ShellStats {
  */
 export function hostFileSystem(): ShellFileSystem {
   const vfs = (): ReturnType<typeof requireActiveVfs> => requireActiveVfs()
-  // oxlint-disable-next-line typescript/require-await -- async face, in-memory backend; see the note below.
   const stat = async (path: string): Promise<ShellStats | undefined> => {
     try {
       return statsOf(vfs().statSync(path) as VfsStats)
@@ -87,7 +87,6 @@ export function hostFileSystem(): ShellFileSystem {
   }
   // Several members take no await: the face is asynchronous because a process
   // worker's filesystem is, while this backend answers from memory.
-  /* oxlint-disable typescript/require-await -- see the note above. */
   return {
     stat,
     list: async (path: string): Promise<ShellDirent[]> => {
@@ -116,5 +115,4 @@ export function hostFileSystem(): ShellFileSystem {
       vfs().renameSync(from, to)
     },
   }
-  /* oxlint-enable typescript/require-await */
 }

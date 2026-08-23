@@ -1,14 +1,14 @@
 /**
  * In-memory filesystem behind the worker's `node:fs` proxy. Contents come from
- * the build-time image (see {@link loadVfsImage}); writes stay in memory and
- * vanish with the worker.
+ * the build-time image (see {@link loadVfsImage}); this remains the synchronous
+ * authority when an asynchronous durable sink mirrors selected subtrees.
  * @module @deepseek-ai/dsh-experimental-webworker-runtime/src/storage/memory
  */
 import { dirname, join, normalize, resolve, SEP } from '../module-system/posix-path.ts'
 import { parseTar } from './tar.ts'
 import type {
-  VfsBigIntStats, VfsDir, VfsDirent, VfsEncoding, VfsError, VfsFileHandle, VfsReadOptions, VfsStatOptions,
-  VfsStats, VfsWriteOptions,
+  Vfs, VfsBigIntStats, VfsDir, VfsDirent, VfsEncoding, VfsError, VfsFileHandle, VfsMutation,
+  VfsMutationListener, VfsMutationSink, VfsReadOptions, VfsSeedOptions, VfsStatOptions, VfsStats, VfsWriteOptions,
 } from './types.ts'
 
 const decoder = new TextDecoder()
@@ -46,10 +46,14 @@ function encodingOf(options: VfsReadOptions): VfsEncoding | undefined {
 // stored value — the round-trip consumers like dsh-credentials-local's
 // owner-only check rely on. The bits are never enforced: a single-owner
 // filesystem reads and writes as its owner regardless, like root.
-function statsOf(size: number, mtimeMs: number, directory: boolean, mode: number): VfsStats {
+function statsOf(size: number, mtimeMs: number, directory: boolean, ino: bigint, mode: number): VfsStats {
   return {
     size,
+    ino: Number(ino),
     mtimeMs,
+    ctimeMs: mtimeMs,
+    atimeMs: mtimeMs,
+    birthtimeMs: mtimeMs,
     mtime: new Date(mtimeMs),
     mode: (directory ? 0o040000 : 0o100000) | (mode & 0o777),
     isFile: () => !directory,
@@ -107,22 +111,73 @@ function bigIntStatsOf(size: number, mtimeMs: number, directory: boolean, ino: b
   }
 }
 
+/** Construction inputs for {@link MemoryVfs}. */
+export interface MemoryVfsOptions {
+  /** Durable write-behind observer; absent leaves the filesystem ephemeral. */
+  readonly sink?: VfsMutationSink
+}
+
 /**
  * Filesystem held in two maps: one for file bytes, one for directories.
  * Every path is normalized to an absolute POSIX path without a trailing
  * separator, so callers may pass either form.
  */
-export class MemoryVfs {
+export class MemoryVfs implements Vfs {
   private readonly files = new Map<string, FileNode>()
   private readonly directories = new Set<string>([SEP])
   /** Directory permission bits; absence means {@link DEFAULT_DIRECTORY_MODE}. */
   private readonly directoryModes = new Map<string, number>()
+  /** Directory mtimes advance when their immediate entry set changes. */
+  private readonly directoryMtimes = new Map<string, number>()
+  private readonly mutationListeners = new Set<VfsMutationListener>()
+  private readonly sink: VfsMutationSink | undefined
   private temporaries = 0
   // Identity per path, assigned on first stat and dropped when the path goes:
   // the filesystem service builds its version token from `ino` plus the
   // timestamp, so a recreated path must not look like the entry it replaced.
   private readonly identities = new Map<string, bigint>()
   private lastIdentity = 0n
+
+  /**
+   * Build the synchronous filesystem authority.
+   * @param options - Optional durable write-behind sink.
+   */
+  constructor(options: MemoryVfsOptions = {}) {
+    this.sink = options.sink
+  }
+
+  /**
+   * Settle the durable sink without changing in-memory success.
+   * @returns A promise that resolves when all recorded mutations are stored.
+   */
+  async flush(): Promise<void> {
+    await this.sink?.flush()
+  }
+
+  /**
+   * Observe committed runtime mutations. Image seeding is deliberately silent.
+   * @param listener - Consumer called after each successful mutation.
+   * @returns A disposer that prevents future calls.
+   */
+  subscribe(listener: VfsMutationListener): () => void {
+    this.mutationListeners.add(listener)
+    return () => { this.mutationListeners.delete(listener) }
+  }
+
+  /** Publish after state changes; one faulty observer cannot roll back a write. */
+  private publish(mutation: VfsMutation): void {
+    const observers: VfsMutationListener[] = [
+      ...(this.sink === undefined ? [] : [(change: VfsMutation): void => { this.sink?.record(change) }]),
+      ...this.mutationListeners,
+    ]
+    for (const listener of observers) {
+      try {
+        listener(mutation)
+      } catch (error) {
+        console.error('webworker vfs: mutation observer failed', error)
+      }
+    }
+  }
 
   /** Promise face mirroring `node:fs/promises` for the methods the roster uses. */
   readonly promises = {
@@ -198,11 +253,12 @@ export class MemoryVfs {
     const [size, mtimeMs, directory, mode] = node !== undefined
       ? [node.bytes.length, node.mtimeMs, false, node.mode] as const
       : this.directories.has(target)
-        ? [0, 0, true, this.directoryModes.get(target) ?? DEFAULT_DIRECTORY_MODE] as const
+        ? [0, this.directoryMtimes.get(target) ?? 0, true, this.directoryModes.get(target) ?? DEFAULT_DIRECTORY_MODE] as const
         : fail('ENOENT', 'stat', target)
+    const identity = this.identityOf(target)
     return options?.bigint === true
-      ? bigIntStatsOf(size, mtimeMs, directory, this.identityOf(target), mode)
-      : statsOf(size, mtimeMs, directory, mode)
+      ? bigIntStatsOf(size, mtimeMs, directory, identity, mode)
+      : statsOf(size, mtimeMs, directory, identity, mode)
   }
 
   /** @returns Stats in the plain shape, for internal callers that read `size`/`mtimeMs`. */
@@ -242,6 +298,13 @@ export class MemoryVfs {
     const previous = this.files.get(target)?.mtimeMs
     const now = Date.now()
     return previous === undefined ? now : Math.max(now, previous + 1)
+  }
+
+  /** Advance a directory's mtime after its immediate children change. */
+  private touchDirectory(target: string): void {
+    const previous = this.directoryMtimes.get(target)
+    const now = Date.now()
+    this.directoryMtimes.set(target, previous === undefined ? now : Math.max(now, previous + 1))
   }
 
   /**
@@ -312,7 +375,11 @@ export class MemoryVfs {
       this.mkdirSync(parent, options)
     }
     this.directories.add(target)
-    if (options?.mode !== undefined) this.directoryModes.set(target, options.mode & 0o777)
+    this.touchDirectory(target)
+    this.touchDirectory(parent)
+    const mode = (options?.mode ?? DEFAULT_DIRECTORY_MODE) & 0o777
+    if (mode !== DEFAULT_DIRECTORY_MODE) this.directoryModes.set(target, mode)
+    this.publish({ kind: 'mkdir', path: target, mode })
     return target
   }
 
@@ -331,8 +398,14 @@ export class MemoryVfs {
     if (flag.startsWith('a')) {  this.appendFileSync(target, data); return }
     // POSIX open(O_CREAT): the mode applies at creation only; a rewrite keeps
     // the entry's bits.
-    const mode = this.files.get(target)?.mode ?? (options?.mode !== undefined ? options.mode & 0o777 : DEFAULT_FILE_MODE)
-    this.files.set(target, { bytes: typeof data === 'string' ? encoder.encode(data) : data, mtimeMs: this.touch(target), mode })
+    const previous = this.files.get(target)
+    const mode = previous?.mode ?? (options?.mode !== undefined ? options.mode & 0o777 : DEFAULT_FILE_MODE)
+    const bytes = typeof data === 'string' ? encoder.encode(data) : data
+    this.files.set(target, { bytes, mtimeMs: this.touch(target), mode })
+    if (previous === undefined) this.touchDirectory(dirname(target))
+    this.publish({
+      kind: 'write', path: target, bytes, mode, entryChanged: previous === undefined,
+    })
   }
 
   /**
@@ -405,7 +478,9 @@ export class MemoryVfs {
       truncate: async (length = 0): Promise<void> => {
         const node = this.files.get(target)
         if (node === undefined) fail('ENOENT', 'ftruncate', target)
-        this.files.set(target, { bytes: node.bytes.slice(0, length), mtimeMs: this.touch(target), mode: node.mode })
+        const bytes = node.bytes.slice(0, length)
+        this.files.set(target, { bytes, mtimeMs: this.touch(target), mode: node.mode })
+        this.publish({ kind: 'write', path: target, bytes, mode: node.mode, entryChanged: false })
       },
       ...this.handleTail(target),
     }
@@ -414,17 +489,17 @@ export class MemoryVfs {
   /**
    * The handle members that do not depend on how the file was opened.
    *
-   * `sync`/`datasync` have nothing to flush — the bytes are already the stored
-   * ones — and `close` releases nothing, so both directory and file handles
-   * share this tail.
+   * `sync`/`datasync` settle an attached durable sink; an ephemeral filesystem
+   * resolves immediately. `close` releases nothing, so both directory and file
+   * handles share this tail.
    * @param target - Normalized path the handle was opened on.
    * @returns Metadata plus the no-op durability and release calls.
    */
   private handleTail(target: string): Pick<VfsFileHandle, 'stat' | 'sync' | 'datasync' | 'close'> {
     return {
       stat: async (): Promise<VfsStats> => this.plainStats(target),
-      sync: async (): Promise<void> => {},
-      datasync: async (): Promise<void> => {},
+      sync: async (): Promise<void> => { await this.flush() },
+      datasync: async (): Promise<void> => { await this.flush() },
       close: async (): Promise<void> => {},
     }
   }
@@ -443,6 +518,10 @@ export class MemoryVfs {
     merged.set(existing.bytes)
     merged.set(addition, existing.bytes.length)
     this.files.set(target, { bytes: merged, mtimeMs: this.touch(target), mode: existing.mode })
+    this.publish({
+      kind: 'write', path: target, bytes: merged, mode: existing.mode,
+      entryChanged: false, appendedFrom: existing.bytes.length,
+    })
   }
 
   /**
@@ -460,15 +539,23 @@ export class MemoryVfs {
       this.files.set(destination, node)
       this.forgetIdentity(source)
       this.forgetIdentity(destination)
+      this.touchDirectory(dirname(source))
+      this.touchDirectory(dirname(destination))
+      this.publish({ kind: 'remove', path: source })
+      this.publish({ kind: 'write', path: destination, bytes: node.bytes, mode: node.mode, entryChanged: true })
       return
     }
     if (!this.directories.has(source)) fail('ENOENT', 'rename', source)
     const prefix = `${source}${SEP}`
+    const movedFiles: Array<{ path: string; bytes: Uint8Array; mode: number }> = []
     for (const [candidate, value] of [...this.files]) {
       if (!candidate.startsWith(prefix)) continue
       this.files.delete(candidate)
-      this.files.set(join(destination, candidate.slice(prefix.length)), value)
+      const target = join(destination, candidate.slice(prefix.length))
+      this.files.set(target, value)
+      movedFiles.push({ path: target, bytes: value.bytes, mode: value.mode })
     }
+    const movedDirectories: Array<{ path: string; mode: number }> = []
     for (const candidate of [...this.directories]) {
       if (!candidate.startsWith(prefix) && candidate !== source) continue
       const moved = candidate === source ? destination : join(destination, candidate.slice(prefix.length))
@@ -477,9 +564,24 @@ export class MemoryVfs {
       const bits = this.directoryModes.get(candidate)
       this.directoryModes.delete(candidate)
       if (bits !== undefined) this.directoryModes.set(moved, bits)
+      movedDirectories.push({ path: moved, mode: bits ?? DEFAULT_DIRECTORY_MODE })
+      const mtime = this.directoryMtimes.get(candidate)
+      this.directoryMtimes.delete(candidate)
+      if (mtime !== undefined) this.directoryMtimes.set(moved, mtime)
     }
     this.forgetIdentity(source)
     this.forgetIdentity(destination)
+    this.touchDirectory(dirname(source))
+    this.touchDirectory(dirname(destination))
+    this.publish({ kind: 'remove', path: source })
+    for (const directory of movedDirectories) {
+      this.publish({ kind: 'mkdir', path: directory.path, mode: directory.mode })
+    }
+    for (const entry of movedFiles) {
+      this.publish({
+        kind: 'write', path: entry.path, bytes: entry.bytes, mode: entry.mode, entryChanged: true,
+      })
+    }
   }
 
   /**
@@ -499,6 +601,8 @@ export class MemoryVfs {
     if (this.files.has(target) || this.directories.has(target)) fail('EEXIST', 'link', target)
     if (!this.directories.has(dirname(target))) fail('ENOENT', 'link', target)
     this.files.set(target, node)
+    this.touchDirectory(dirname(target))
+    this.publish({ kind: 'write', path: target, bytes: node.bytes, mode: node.mode, entryChanged: true })
   }
 
   /**
@@ -510,7 +614,9 @@ export class MemoryVfs {
     const target = this.key(path)
     const node = this.files.get(target)
     if (node === undefined) fail('ENOENT', 'truncate', target)
-    this.files.set(target, { bytes: node.bytes.slice(0, length), mtimeMs: this.touch(target), mode: node.mode })
+    const bytes = node.bytes.slice(0, length)
+    this.files.set(target, { bytes, mtimeMs: this.touch(target), mode: node.mode })
+    this.publish({ kind: 'write', path: target, bytes, mode: node.mode, entryChanged: false })
   }
 
   /**
@@ -523,10 +629,13 @@ export class MemoryVfs {
     const node = this.files.get(target)
     if (node !== undefined) {
       node.mode = mode & 0o777
+      this.publish({ kind: 'chmod', path: target, mode: node.mode })
       return
     }
     if (this.directories.has(target)) {
-      this.directoryModes.set(target, mode & 0o777)
+      const bits = mode & 0o777
+      this.directoryModes.set(target, bits)
+      this.publish({ kind: 'chmod', path: target, mode: bits })
       return
     }
     fail('ENOENT', 'chmod', target)
@@ -540,6 +649,8 @@ export class MemoryVfs {
     const target = this.key(path)
     if (!this.files.delete(target)) fail('ENOENT', 'unlink', target)
     this.forgetIdentity(target)
+    this.touchDirectory(dirname(target))
+    this.publish({ kind: 'remove', path: target })
   }
 
   /**
@@ -551,6 +662,8 @@ export class MemoryVfs {
     const target = this.key(path)
     if (this.files.delete(target)) {
       this.forgetIdentity(target)
+      this.touchDirectory(dirname(target))
+      this.publish({ kind: 'remove', path: target })
       return
     }
     if (this.directories.has(target)) {
@@ -561,10 +674,14 @@ export class MemoryVfs {
         if (!candidate.startsWith(prefix)) continue
         this.directories.delete(candidate)
         this.directoryModes.delete(candidate)
+        this.directoryMtimes.delete(candidate)
       }
       this.directories.delete(target)
       this.directoryModes.delete(target)
+      this.directoryMtimes.delete(target)
       this.forgetIdentity(target)
+      this.touchDirectory(dirname(target))
+      this.publish({ kind: 'remove', path: target })
       return
     }
     if (options?.force !== true) fail('ENOENT', 'rm', target)
@@ -586,23 +703,36 @@ export class MemoryVfs {
    * Seed a file and its parent directories, for image loading and tests.
    * @param path - File path.
    * @param data - Text or bytes.
-   * @param mode - Permission bits recorded for the entry.
+   * @param options - Permission bits and modification time supplied by the image or durable store.
    */
-  seed(path: string, data: string | Uint8Array, mode = DEFAULT_FILE_MODE): void {
+  seed(path: string, data: string | Uint8Array, options: VfsSeedOptions = {}): void {
     const target = this.key(path)
-    this.mkdirSync(dirname(target), { recursive: true })
-    this.files.set(target, { bytes: typeof data === 'string' ? encoder.encode(data) : data, mtimeMs: this.touch(target), mode: mode & 0o777 })
+    this.seedDirectory(dirname(target))
+    this.files.set(target, {
+      bytes: typeof data === 'string' ? encoder.encode(data) : data,
+      mtimeMs: options.mtimeMs ?? this.touch(target),
+      mode: (options.mode ?? DEFAULT_FILE_MODE) & 0o777,
+    })
+    this.touchDirectory(dirname(target))
   }
 
   /**
    * Create a directory and its parents.
    * @param path - Directory path.
-   * @param mode - Permission bits recorded for the directory itself.
+   * @param options - Permission bits and modification time supplied by the image or durable store.
    */
-  seedDirectory(path: string, mode = DEFAULT_DIRECTORY_MODE): void {
+  seedDirectory(path: string, options: VfsSeedOptions = {}): void {
     const target = this.key(path)
-    this.mkdirSync(target, { recursive: true })
-    if (mode !== DEFAULT_DIRECTORY_MODE) this.directoryModes.set(target, mode & 0o777)
+    if (!this.directories.has(target)) {
+      const parent = dirname(target)
+      if (parent !== target) this.seedDirectory(parent)
+      if (this.files.has(target)) fail('EEXIST', 'mkdir', target)
+      this.directories.add(target)
+      this.directoryMtimes.set(target, options.mtimeMs ?? Date.now())
+      this.touchDirectory(parent)
+    }
+    if (options.mode !== undefined) this.directoryModes.set(target, options.mode & 0o777)
+    if (options.mtimeMs !== undefined) this.directoryMtimes.set(target, options.mtimeMs)
   }
 
   /**
@@ -636,10 +766,10 @@ export function loadVfsImage(image: Uint8Array, root = '/dsh', vfs = new MemoryV
     }
     const target = join(root, relativeName)
     if (entry.directory) {
-      vfs.seedDirectory(target, entry.mode)
+      vfs.seedDirectory(target, { mode: entry.mode })
       continue
     }
-    vfs.seed(target, entry.bytes, entry.mode)
+    vfs.seed(target, entry.bytes, { mode: entry.mode })
   }
   return vfs
 }

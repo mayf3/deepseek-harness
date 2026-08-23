@@ -10,7 +10,7 @@ VFS 镜像打包器：把一份合成 profile 变成浏览器 worker 解压后�
 2. **发布视图**——每个 workspace 包贡献 npm 会发布的切片（`files` 走 picomatch），再减去 `src/rules.ts` 的规则表（无源码、无 workspace `dist/`；外部包保留整棵减同一套 exclude glob）。
 3. **可达性 sweep**——用运行时加载器自己的解析，从全部 workspace 导出面加 worker 装配种子（`IMAGE_ENTRY_SEEDS`）出发，pack 时把每个可达模块降低到包装契约。页面资产（`./client` 导出背后的 `lib/client.js`）原样直发；自家代码的不可解析请求打包即失败，第三方的容忍到 require 时 fail loud。
 
-`repository.ts` 拥有仓库形态输入（`vendor/`、`packages/`、`apps/` 的 workspace 扫描；经真 CLI dump 路径合成 profile）；`pack.ts` 一概不拥有，同一库换参即可打另一棵树。CLI 为 `dsh-pack-vfs-image --out <file> [--profile web]`；`apps/web` 的 `build:preview` 在预览壳构建后运行它。
+`repository.ts` 拥有仓库形态输入（`vendor/`、`packages/`、`native/landlock-run/packages/` 与 `apps/` 的 workspace 扫描；经真 CLI dump 路径合成 profile）；`pack.ts` 一概不拥有，同一库换参即可打另一棵树。Native 扫描使 Landlock 入口包成为普通发布视图依赖，其可执行文件仍由 Worker 平台实现。CLI 为 `dsh-pack-vfs-image --out <file> [--profile web]`；`apps/web` 的 `build:preview` 在预览壳构建后运行它。
 
 ## 模型体验
 

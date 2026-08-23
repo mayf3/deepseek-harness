@@ -16,11 +16,11 @@ import type { ConfigTree, PackResult } from './pack.ts'
 
 /**
  * Repository directories scanned for workspace and vendored packages. The
- * image only ever materializes runtime packages, which all live here;
- * examples, python, and native are never on a roster's dependency chain (the
- * native addon is a replaced external).
+ * image only ever materializes runtime packages, which live here. The Landlock
+ * package family contributes its unchanged JavaScript entry from `native/`;
+ * examples and python never occur on a roster's dependency chain.
  */
-const WORKSPACE_SCAN_ROOTS = ['vendor', 'packages', 'apps']
+const WORKSPACE_SCAN_ROOTS = ['vendor', 'packages', 'native/landlock-run/packages', 'apps']
 
 /** Composition entry point package: the `dsh` CLI, run from source. */
 const CLI_PACKAGE = 'apps/cli'
