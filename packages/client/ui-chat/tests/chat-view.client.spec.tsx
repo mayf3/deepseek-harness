@@ -625,7 +625,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     const statuses = view.getAllByRole('status')
     expect(statuses.map(status => status.textContent)).toEqual([
-      '本轮运行失败API key is invalidAUTH',
+      '本轮运行失败API 密钥无效AUTH',
       '本轮运行失败plugin exploded',
     ])
   })
@@ -917,7 +917,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
-    expect(view.getByRole('status').textContent).toBe('Deep diving...')
+    expect(view.getByRole('status').textContent).toBe('正在深入处理…')
   })
 
   it('keeps the Tool renderer mounted when a running call settles into log order', () => {
@@ -977,7 +977,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     // Freshly mounted (as after a reload) yet already past the 15s gate.
     const status = view.getByRole('status')
-    expect(status.textContent).toMatch(/^Deep diving\.\.\.2分0\d秒$/)
+    expect(status.textContent).toMatch(/^正在深入处理…2分0\d秒$/)
     expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
     act(() => {
       h.setSession({ queue: [{
@@ -989,7 +989,7 @@ describe('ChatView', () => {
         text: 'also',
       }] })
     })
-    expect(status.textContent).toMatch(/^Deep diving\.\.\.2分0\d秒$/)
+    expect(status.textContent).toMatch(/^正在深入处理…2分0\d秒$/)
   })
 
   it('hands each ordered root call to the keyed business-node slot', () => {

@@ -123,15 +123,15 @@ describe('deriveStats', () => {
 
 describe('formatters', () => {
   it('formats token counts compactly', () => {
-    expect(formatTokens(517)).toBe('517')
-    expect(formatTokens(12_240)).toBe('12.2K')
-    expect(formatTokens(517_000)).toBe('517K')
-    expect(formatTokens(1_230_000)).toBe('1.2M')
+    expect(formatTokens(517, tEn)).toBe('517')
+    expect(formatTokens(12_240, tEn)).toBe('12.2K')
+    expect(formatTokens(517_000, tEn)).toBe('517K')
+    expect(formatTokens(1_230_000, tEn)).toBe('1.2M')
   })
 
   it('formats durations under and over a minute', () => {
-    expect(formatDuration(45_230)).toBe('45.2s')
-    expect(formatDuration(162_000)).toBe('2m42s')
+    expect(formatDuration(45_230, tEn)).toBe('45.2s')
+    expect(formatDuration(162_000, tEn)).toBe('2m42s')
   })
 })
 
@@ -242,7 +242,7 @@ describe('StatsLine', () => {
     const { source } = makeSource({ nodes: [timed] })
     const view = render(<StatsLine {...props(source, { tokenUsage: tokenUsage(9_995, 5) })} t={t} />)
     expect(view.container.textContent)
-      .toBe('1 轮 · 1 步| LLM 3.8s| 首 token 平均 0.8s · 20 tok/s| 缓存命中 99.95%| 输入 10K tok · 输出 1 tok')
+      .toBe('1 轮 · 1 步| LLM 3.8秒| 首 token 平均 0.8秒 · 20 tok/s| 缓存命中 99.95%| 输入 10K tok · 输出 1 tok')
   })
 
   it('renders without ResizeObserver support', () => {

@@ -306,7 +306,7 @@ export class MessageFeedbackController implements HostObservable<MessageFeedback
       return OK
     } catch (error) {
       if (this.disposed) return OK
-      const message = error instanceof Error ? error.message : 'message feedback list failed'
+      const message = error instanceof Error ? error.message : String(error)
       this.publish({ status: 'error', items: this.view.items, error: message })
       return { ok: false, error: { code: 'transport', message } }
     }
@@ -338,7 +338,7 @@ export class MessageFeedbackController implements HostObservable<MessageFeedback
           ok: false,
           error: {
             code: 'transport',
-            message: error instanceof Error ? error.message : 'message feedback mutation failed',
+            message: error instanceof Error ? error.message : String(error),
           },
         }
       }

@@ -176,7 +176,9 @@ export interface TurnErrorNode {
   time: number
   turn: number
   step: number
+  /** Sanitized provider message; empty when a known code owns localized copy. */
   message: string
+  /** Stable provider failure code, when recorded. */
   code?: string
 }
 

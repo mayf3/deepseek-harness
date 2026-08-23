@@ -1,7 +1,7 @@
 // A compaction marker does not replace shadowed transcript rows. It is
 // expandable only when the current window includes its cited summary.
 
-import { memo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import {
   IconApiOutline14,
   IconChevronDownOutline14,
@@ -9,6 +9,7 @@ import {
   MarkdownText,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
+import { markdownLabels } from '../markdown-labels.ts'
 import type { CompactionSummaryNode } from '../contract/snapshot.ts'
 import css from './MessageItem.module.css'
 
@@ -34,6 +35,7 @@ export const CompactionItem = memo(function CompactionItem({
   t,
 }: CompactionItemProps) {
   const [expanded, setExpanded] = useState(false)
+  const labels = useMemo(() => markdownLabels(t), [t])
   const expandable = node.summary !== null
   const open = expandable && expanded
   const summary = node.shadowedItemCount !== null && node.shadowedTokenCount !== null
@@ -68,7 +70,7 @@ export const CompactionItem = memo(function CompactionItem({
         <span className={css.compactionSummary}>{summary}</span>
       </button>
       {open && node.summary !== null
-        && <div className={css.compactionBody}><MarkdownText text={node.summary} /></div>}
+        && <div className={css.compactionBody}><MarkdownText text={node.summary} labels={labels} /></div>}
     </div>
   )
 })

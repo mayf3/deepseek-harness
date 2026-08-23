@@ -143,6 +143,8 @@ describe('Trajectory conversation Definitions', () => {
     expect(settled.requests).toMatchObject([{
       purpose: 'assistant',
       status: 'error',
+      error: 'temporary failure',
+      errorCode: 'TRANSPORT',
       retry: 1,
       maxRetries: 2,
       retryDelayMs: 25,

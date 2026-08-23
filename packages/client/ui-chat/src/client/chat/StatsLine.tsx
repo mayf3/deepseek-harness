@@ -85,12 +85,12 @@ export function deriveStats(nodes: ChatSnapshot['legacy']['nodes']): WindowStats
  * @param n - token count.
  * @returns display string.
  */
-export function formatTokens(n: number): string {
+export function formatTokens(n: number, t: ChatViewSlotProps['t']): string {
   const scaled = (v: number): string =>
     v >= 100 ? String(Math.round(v)) : String(Math.round(v * 10) / 10)
   if (n < 1_000) return String(n)
-  if (n < 1_000_000) return `${scaled(n / 1_000)}K`
-  return `${scaled(n / 1_000_000)}M`
+  if (n < 1_000_000) return t('number.thousand', { value: scaled(n / 1_000) })
+  return t('number.million', { value: scaled(n / 1_000_000) })
 }
 
 /**
@@ -98,11 +98,14 @@ export function formatTokens(n: number): string {
  * @param ms - duration in milliseconds.
  * @returns display string.
  */
-export function formatDuration(ms: number): string {
+export function formatDuration(ms: number, t: ChatViewSlotProps['t']): string {
   const s = ms / 1_000
-  if (s < 60) return `${Math.round(s * 10) / 10}s`
+  if (s < 60) return t('duration.compactSeconds', { seconds: Math.round(s * 10) / 10 })
   const whole = Math.round(s)
-  return `${Math.floor(whole / 60)}m${whole % 60}s`
+  return t('duration.compactMinutes', {
+    minutes: Math.floor(whole / 60),
+    seconds: whole % 60,
+  })
 }
 
 /** Round a cache-read ratio to an integer percentage, with positive ties rounded up. */
@@ -196,12 +199,12 @@ export const StatsLine = memo(function StatsLine({ useChat, useProjection, t }: 
   if (stats.steps > 0) {
     groups.push(t('stats.counts', { turns: stats.turns, steps: stats.steps }))
     const durations: string[] = []
-    if (stats.llmMs > 0) durations.push(t('stats.llm', { duration: formatDuration(stats.llmMs) }))
-    if (stats.toolMs > 0) durations.push(t('stats.toolCall', { duration: formatDuration(stats.toolMs) }))
+    if (stats.llmMs > 0) durations.push(t('stats.llm', { duration: formatDuration(stats.llmMs, t) }))
+    if (stats.toolMs > 0) durations.push(t('stats.toolCall', { duration: formatDuration(stats.toolMs, t) }))
     if (durations.length > 0) groups.push(durations.join(' · '))
     const speeds: string[] = []
     if (stats.ttftSteps > 0) {
-      speeds.push(t('stats.ttftAverage', { duration: formatDuration(stats.ttftMs / stats.ttftSteps) }))
+      speeds.push(t('stats.ttftAverage', { duration: formatDuration(stats.ttftMs / stats.ttftSteps, t) }))
     }
     if (stats.decodeMs > 0) {
       speeds.push(t('stats.tokensPerSecond', {
@@ -221,8 +224,8 @@ export const StatsLine = memo(function StatsLine({ useChat, useProjection, t }: 
     const cacheHit = cacheHitPercent(usage)
     if (cacheHit !== null) groups.push(t('stats.cacheHit', { percent: cacheHit }))
     groups.push(t('stats.tokens', {
-      input: formatTokens(billedInputTokens(usage)),
-      output: formatTokens(usage.outputTokens),
+      input: formatTokens(billedInputTokens(usage), t),
+      output: formatTokens(usage.outputTokens, t),
     }))
   }
   const line = groups.join(' | ')

@@ -186,6 +186,7 @@ describe('TrajectorySnapshotBuilder', () => {
         turn: 1,
         time: 5,
         error: 'turn failed',
+        errorCode: 'AUTH',
       }),
       contribution('compact:10', 10, {
         kind: 'compaction',
@@ -203,7 +204,9 @@ describe('TrajectorySnapshotBuilder', () => {
 
     expect(snapshot.requests).toMatchObject([
       { purpose: 'assistant', step: 1, status: 'complete' },
-      { purpose: 'assistant', step: 2, status: 'error', error: 'turn failed' },
+      {
+        purpose: 'assistant', step: 2, status: 'error', error: 'turn failed', errorCode: 'AUTH',
+      },
       { purpose: 'compaction', startSeq: 10, status: 'error', completedAt: 16 },
       { purpose: 'compaction', startSeq: 12, status: 'error', completedAt: 14 },
     ])

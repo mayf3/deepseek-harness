@@ -12,12 +12,12 @@ export interface CodeBlockProps {
   /** Extra class merged onto the wrapper (callers position; this component draws). */
   className?: string | undefined
   /** Copy-button idle label; the owner passes localized copy (this package is cordis-free, so copy arrives via props). */
-  copyLabel?: string | undefined
+  copyLabel: string
   /** Copy-button label during the post-copy confirmation window. */
-  copiedLabel?: string | undefined
+  copiedLabel: string
 }
 
-export function CodeBlock({ code, lang, className, copyLabel = '复制', copiedLabel = '复制成功' }: CodeBlockProps) {
+export function CodeBlock({ code, lang, className, copyLabel, copiedLabel }: CodeBlockProps) {
   const trimmed = code.endsWith('\n') ? code.slice(0, -1) : code
   // Re-render when a lazy grammar finishes loading, so a fence that showed plain
   // text while its language's grammar imported picks up highlighting. The

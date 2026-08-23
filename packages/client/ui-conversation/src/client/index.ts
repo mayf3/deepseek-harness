@@ -48,7 +48,8 @@ export type { AssistantStepMetadata } from './conversation/assistant-timing.ts'
 export {
   assistantStepKey, indexAssistantStepTiming, isTokenDelta, settledAssistantTiming,
 } from './conversation/assistant-timing.ts'
-export { displayFailureMessage } from './conversation/failure-display.ts'
+export { displayFailure } from './conversation/failure-display.ts'
+export type { DisplayFailure } from './conversation/failure-display.ts'
 export type { ConversationStoreState, ConversationViewRequest, ViewTab } from './contract/views.ts'
 
 export { ConversationNodeAssembler } from './conversation/assembler.ts'

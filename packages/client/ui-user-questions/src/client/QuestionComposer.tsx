@@ -124,6 +124,10 @@ export function QuestionComposer(props: QuestionComposerProps) {
 
 function QuestionFlow({ pending, t }: { pending: PendingQuestion } & Pick<QuestionComposerProps, 't'>) {
   const questions = pending.questions
+  const markdownLabels = useMemo(() => ({
+    code: { copyLabel: t('copy'), copiedLabel: t('copied') },
+    footnotes: t('markdown.footnotes'),
+  }), [t])
   const [index, setIndex] = useState(0)
   const [drafts, setDrafts] = useState<DraftAnswer[]>(() => questions.map(() => ({
     selected: [], custom: '', skipped: false,
@@ -288,7 +292,7 @@ function QuestionFlow({ pending, t }: { pending: PendingQuestion } & Pick<Questi
           <>
             <div className={css.body} data-question-scroll>
               {question.detail !== undefined && (
-                <div className={css.detail}><MarkdownText text={question.detail} /></div>
+                <div className={css.detail}><MarkdownText text={question.detail} labels={markdownLabels} /></div>
               )}
               <div className={css.options} role={question.multiSelect === true ? 'group' : 'radiogroup'}>
                 {(question.options ?? []).map((option, optionIndex) => {

@@ -12,7 +12,9 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type {
+  PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
+} from '@deepseek-ai/dsh-client-ui-slots'
 import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT } from './columns.ts'
 import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
@@ -23,6 +25,7 @@ export type AppFrameProps =
   & PropsRuntime<'root'>
   & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
+  & PropsLocale<'common'>
 
 /** Center column grid item (session-body building block). */
 function CenterColumn(props: { children?: ReactNode }) {
@@ -91,6 +94,7 @@ export function AppFrame({
   actions,
   renderSlot,
   SessionProvider,
+  t,
 }: AppFrameProps) {
   const panels = useStore(s => s)
   const detailsSession = useSessions((s) => {
@@ -166,6 +170,7 @@ export function AppFrame({
   const onDetailsDrag = useCallback((dx: number) => {
     actions.setDetails(detailsBase.current - dx)
   }, [actions])
+  const productTitle = process.env.DSH_CLIENT_TITLE ?? t('brand.localBuild')
 
   return (
     <div
@@ -176,7 +181,10 @@ export function AppFrame({
       data-details-collapsed={cols.details === 0 || undefined}
       data-dragging={dragging || undefined}
     >
-      <DocumentTitle {...documentTitle === undefined ? {} : { title: documentTitle }} />
+      <DocumentTitle
+        productTitle={productTitle}
+        {...documentTitle === undefined ? {} : { title: documentTitle }}
+      />
       <div className={css.sidebarCol}>
         {/* Render-site slot call with live concession output: a closed
             sidebar keeps the mounted slot at the compact-rail width, and the

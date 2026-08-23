@@ -48,6 +48,7 @@ export type TrajectoryContribution =
     readonly turn: number
     readonly time: number
     readonly error?: string
+    readonly errorCode?: string
   }
 
 /** Target envelope consumed by the Trajectory snapshot builder. */

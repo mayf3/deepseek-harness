@@ -3,7 +3,7 @@ import type {
   ConversationMatch, ConversationNodeContext, ConversationNodeDefinition,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { TurnErrorNode } from '../contract/snapshot.ts'
-import { displayFailureMessage } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { displayFailure } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { chatNode } from './common.ts'
 
 declare module '../contract/chat-nodes.ts' {
@@ -32,11 +32,12 @@ function lastStep(context: ConversationNodeContext<TurnErrorState>): number {
 function failureFrom(match: ConversationMatch): TurnErrorState['failure'] | undefined {
   if (match.event.type !== 'turn/end' || match.event.data.reason.kind !== 'error') return undefined
   const failure = match.event.data.reason.error
+  const display = displayFailure(failure)
   return {
     seq: match.event.seq,
     time: match.event.time,
-    message: displayFailureMessage(failure),
-    code: failure.code,
+    message: display.message,
+    ...(display.code === undefined ? {} : { code: display.code }),
   }
 }
 
