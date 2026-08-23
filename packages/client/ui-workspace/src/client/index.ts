@@ -29,7 +29,6 @@ import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
-export { DirectoryBrowseError } from './navigation.ts'
 export type { UiWorkspace } from './navigation.ts'
 export type {
   DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected,
