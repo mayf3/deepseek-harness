@@ -152,7 +152,7 @@ Ordinary UI components do not read `SessionEventSource` directly. `ui-session` d
 
 `SessionEventSource` exposes a materialized event window, not a transport.
 
-The window carries ordered `entries`, `hasMore`, a monotonic `revision`, and a `replace | prepend | append` change description.
+The window carries ordered `entries`, `hasMore`, a monotonic `revision`, and a `replace | prepend | append` change description. Append links an immutable segment in constant time; a consumer that needs the complete `entries` array materializes and caches it for that snapshot.
 
 Initial open, reconnect, gap repair, and updates whose continuity cannot be proven publish `replace`; history pagination publishes `prepend`; a continuous live event publishes `append`. The Conversation core selects incremental update or complete rebuild from the revision and change.
 
@@ -214,7 +214,7 @@ Session identity comes from the scope binding and standard `sessionId` prop. The
 
 Business packages extend `SessionPendingInteractionMap` through declaration merging. Every pending object carries at least a stable `key`, domain `kind`, and `sessionId`; `ui-session` does not import concrete Approval or Question types.
 
-A business plugin calls `registerPendingInteraction(precedence)` in `apply()` to create a stable registration for its pending domain. The returned per-request publication function publishes one exact object and returns an idempotent disposer for that object.
+A business plugin calls `registerPendingInteraction(precedence)` in `apply()` to create a stable registration for its pending domain. The returned per-request publication function publishes one exact object together with its waterfall-delegation callback and returns an idempotent disposer for that object. Plugin teardown removes all published objects before invoking and awaiting their delegation callbacks, so active Host requests cannot remain suspended after their Client answerer unloads.
 
 Concurrent objects with the same key are rejected; replacement requests use a new key. One Session may hold multiple domains or requests at once.
 
@@ -266,7 +266,7 @@ Definition or View roster changes rebuild only the Conversation binding; they do
 
 `UiConversation.events` is the sole registry for event Definitions, and `UiConversation.views` is the sole registry for target snapshot builders.
 
-The registries reject duplicate keys, preserve registration order, and return idempotent disposers. Existing Conversation bindings rebuild from their current event windows when a roster changes.
+The registries reject duplicate keys, preserve registration order, and return idempotent disposers. Existing Conversation bindings rebuild from their current event windows when a roster changes; changes in one synchronous registration turn are coalesced into one microtask rebuild.
 
 A target package extends snapshot and location-data maps through declaration merging, then registers its Definitions, builder, and View. Registrations follow Cordis effect disposal.
 

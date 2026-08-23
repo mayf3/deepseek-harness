@@ -152,7 +152,7 @@ Session Controller 对外提供三个互不替代的读取面：
 
 `SessionEventSource` 暴露已经物化的事件窗口，而不是 transport。
 
-窗口携带有序 `entries`、`hasMore`、单调 `revision`，以及 `replace | prepend | append` 变更描述。
+窗口携带有序 `entries`、`hasMore`、单调 `revision`，以及 `replace | prepend | append` 变更描述。Append 以常数时间连接不可变片段；需要完整 `entries` 数组的消费者才为该 snapshot 物化并缓存数组。
 
 首次打开、重连、gap repair 和无法证明连续性的更新发布 `replace`；历史分页发布 `prepend`；连续 live event 发布 `append`。Conversation core 依据 revision 与 change 选择增量更新或完整 rebuild。
 
@@ -214,7 +214,7 @@ Session identity 通过 scope binding 和标准 `sessionId` prop 提供。Provid
 
 `SessionPendingInteractionMap` 由业务 package declaration merge 扩展。每个 pending object 至少携带稳定 `key`、领域 `kind` 和 `sessionId`；`ui-session` 不 import Approval 或 Question 的具体类型。
 
-业务 plugin 在 `apply()` 中调用 `registerPendingInteraction(precedence)`，为自己的 pending domain 建立稳定注册。该调用返回逐请求 publication function；publication function 发布一个精确对象，并返回移除该对象的幂等 disposer。
+业务 plugin 在 `apply()` 中调用 `registerPendingInteraction(precedence)`，为自己的 pending domain 建立稳定注册。该调用返回逐请求 publication function；publication function 同时发布精确对象及其 waterfall 委托回调，并返回移除该对象的幂等 disposer。Plugin teardown 会先移除所有已发布对象，再调用并等待其委托回调，避免 Client 回答者卸载后 Host 请求继续悬挂。
 
 相同 key 的并发对象被拒绝，替换请求必须使用新 key。同一 Session 可以同时存在多个领域或多个请求。
 
@@ -266,7 +266,7 @@ Definition 或 View roster 变化只重建 Conversation binding，不重建 Sess
 
 `UiConversation.events` 是 event Definition 的唯一 registry，`UiConversation.views` 是 target snapshot builder 的唯一 registry。
 
-Registry 拒绝重复 key，保持注册顺序并返回幂等 disposer。Roster 变化时，现有 Conversation binding 使用当前 event window 重建。
+Registry 拒绝重复 key，保持注册顺序并返回幂等 disposer。Roster 变化时，现有 Conversation binding 使用当前 event window 重建；同一同步注册轮次中的变化会合并为一次 microtask 重建。
 
 Target package 通过 declaration merge 扩展 snapshot 与 location data map，再向 registry 注册自己的 Definition、builder 和 View。注册随 Cordis effect 释放。
 

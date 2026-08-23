@@ -43,7 +43,7 @@ The `/client` entrypoint of a UI plugin package is its public browser API, not a
 
 The stack has one-way knowledge, settled in the [web client architecture note](../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md):
 
-1. **Data object layer** (`runtime`, React-free): `ConnectionController` → `SessionManager` → `Session` own all business state (event windows, streaming accumulation, reconnect machine), and the snapshot-store engine (zustand/immer, `defineStore`, `shallowEqual`) lives here too — store products are bare observable sources with no hook members. Zero React imports — grep-assertable.
+1. **Data object layer** (React-free): `client/connection` owns transport generations, `api/session-controller/client` owns `ClientSessions` → `SessionManager` → `Session`, `api/workspace-controller/client` owns Workspace state, and `client/store` owns the snapshot-store engine (`defineStore`, `createSnapshotStore`, `shallowEqual`). Store products are bare observable sources with no hook members.
 2. **Render machinery** (`ui-renderer`, dynamic plugin): all ctx-to-React integration — slot renderer/outlets, `SessionProvider`, and the uSES adapter. Every hook is composed here at the binding site from bare sources; production business code carries no ui-renderer value dependency.
 3. **Presentation components** (plugin packages' `src/client/`, pure props): consumables, expected to be rewritten wholesale. Business logic must not leak into them; everything arrives through the four props shares.
 
@@ -72,9 +72,9 @@ Client business code may statically read `process.env.DSH_CLIENT_*`; every refer
 
 ## Shared modules and the module graph
 
-A dynamic browser half either carries a module privately or requests the shared module-table identity. The client baseline is centralized in [`web/src/platform.ts`](web/src/platform.ts): `PLATFORM_MODULES` names shell-seeded React, Cordis, and static UI libraries; `PRELOADED_CLIENT_EXTERNALS` names dynamic rows, currently runtime, whose ordinary `lib/client.js` factory arrives before shell boot.
+A dynamic browser half either carries a module privately or requests the shared module-table identity. The client baseline is centralized in [`web/src/platform.ts`](web/src/platform.ts): `PLATFORM_MODULES` names shell-seeded React, Cordis, and static Client libraries; `PRELOADED_CLIENT_EXTERNALS` is reserved for dynamic rows whose factories must arrive before shell boot and is empty when no such row exists.
 
-1. **Baseline externals are implicit for every dynamic bundle.** Do not repeat React, Cordis, runtime, `ui-primitives`, or `ui-slots` in package manifests.
+1. **Baseline externals are implicit for every dynamic bundle.** Do not repeat React, Cordis, `client/store`, `ui-primitives`, or `ui-slots` in package manifests.
 2. **`dsh.client.external` adds a package-specific request.** Use it only for a non-baseline value import whose dynamic row must be materialized through the module table. Declare the exact import specifier; only a trailing `/client` aliases the package row.
 3. **Silence means a private copy.** Ordinary third-party implementation libraries may be bundled independently. A value reached only through `import type` is erased and creates no request.
 4. **A request has two possible suppliers.** A dynamic package supplies its own row; `PLATFORM_MODULES` supplies an exact static-table key. There is no `dsh.client.provide` alias protocol.
