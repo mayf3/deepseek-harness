@@ -19,6 +19,7 @@ import type {
   IApiClient, SubagentAddress,
 } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { SESSION_SEARCH_RESULT_LIMIT } from '../../types.ts'
 import type { SessionJob as JobView } from '../../types.ts'
@@ -145,20 +146,6 @@ export interface SessionBinding {
 // dsh-scope, keyed by Agent identity); re-exported here so existing
 // consumers keep their import site.
 export { scopeOf } from '../scope.ts'
-
-/**
- * Workspace display title of a session cwd: the path's last non-empty
- * segment (both separators accepted; trailing separators ignored), or ''
- * for separator-only paths — callers own their fallback (session id, raw
- * cwd, default-directory copy). The repo-wide single basename derivation —
- * every surface naming a workspace (picker rows, toggle labels, list titles)
- * calls this instead of re-splitting paths.
- * @param cwd - workspace directory path.
- * @returns basename title, or '' when no non-empty segment exists.
- */
-export function workspaceTitleOf(cwd: string): string {
-  return cwd.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? ''
-}
 
 /**
  * Display title projection: durable title, project directory basename, then
