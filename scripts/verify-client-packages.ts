@@ -26,6 +26,7 @@ export interface ClientDeclaration {
   readonly manifest: string
   readonly dynamic: boolean
   readonly external: readonly string[]
+  readonly runtimeSourceUses: Readonly<Record<string, readonly string[]>>
   /** Informational package dependencies declared by the row. */
   readonly inject: readonly string[]
 }
@@ -34,7 +35,6 @@ export interface ClientDeclaration {
 export interface ClientPackage extends ClientDeclaration {
   readonly staticLinked: boolean
   readonly sourceUses: Readonly<Record<string, readonly string[]>>
-  readonly runtimeSourceUses: Readonly<Record<string, readonly string[]>>
   readonly dependencies: Readonly<Record<string, string>>
   readonly peerDependencies: Readonly<Record<string, string>>
   readonly devDependencies: Readonly<Record<string, string>>
@@ -564,6 +564,21 @@ function collectModuleViolations(facts: ClientPackageFacts): string[] {
       if (supplier === pkg.name) {
         violations.push(pkg.manifest + ': dsh.client.external names its own row ' + JSON.stringify(specifier))
       } else if (supplier !== undefined) {
+        if (pkg.manifest.startsWith('packages/client/')) {
+          violations.push(
+            pkg.manifest + ': client feature package requests runtime external ' + JSON.stringify(specifier)
+            + '; import shared types only or call an injected Cordis service',
+          )
+          continue
+        }
+        const owner = packageNameOf(specifier)
+        if (pkg.runtimeSourceUses[owner] === undefined) {
+          violations.push(
+            pkg.manifest + ': dsh.client.external ' + JSON.stringify(specifier)
+            + ' has no runtime import or re-export in production source; remove the stale declaration',
+          )
+          continue
+        }
         edges.push({ from: pkg.name, to: supplier, specifier })
       } else {
         const owner = stripClientSuffix(specifier)
@@ -654,11 +669,15 @@ function readDeclaration(
   const dsh = isRecord(manifest.dsh) ? manifest.dsh : undefined
   const rawClient = dsh?.client
   if (rawClient === undefined) {
-    return { name: manifest.name, manifest: manifestPath, dynamic: false, external: [], inject: [] }
+    return {
+      name: manifest.name, manifest: manifestPath, dynamic: false, external: [], inject: [], runtimeSourceUses: {},
+    }
   }
   if (!isRecord(rawClient)) {
     malformed.push(manifestPath + ': ' + manifest.name + ' dsh.client must be an object')
-    return { name: manifest.name, manifest: manifestPath, dynamic: false, external: [], inject: [] }
+    return {
+      name: manifest.name, manifest: manifestPath, dynamic: false, external: [], inject: [], runtimeSourceUses: {},
+    }
   }
   return {
     name: manifest.name,
@@ -666,6 +685,7 @@ function readDeclaration(
     dynamic: true,
     external: stringArray(rawClient.external, manifest.name, manifestPath, 'external', malformed),
     inject: stringArray(rawClient.inject, manifest.name, manifestPath, 'inject', malformed),
+    runtimeSourceUses: {},
   }
 }
 
@@ -747,10 +767,32 @@ function readStringLiteralArray(root: string, sourcePath: string, name: string):
 }
 
 async function readFacts(root: string): Promise<ClientPackageFacts> {
-  const { declarations, malformed } = readClientDeclarations(root)
-  const byManifest = new Map(declarations.map(entry => [entry.manifest, entry]))
+  const { declarations: bareDeclarations, malformed } = readClientDeclarations(root)
   const staticLinkedPackages = await readStaticLinkedRoster(root)
   const project = new TypeScriptProject(root, 'client')
+  const sourceFiles = project.sourceFiles()
+  const declarations = bareDeclarations.map((declaration): ClientDeclaration => {
+    const runtimeSourceUses = new Map<string, Set<string>>()
+    const sourcePrefix = dirname(declaration.manifest) + '/src/'
+    for (const sourceFile of sourceFiles) {
+      if (sourceFile.isDeclarationFile) continue
+      const file = project.relativePath(sourceFile)
+      if (!file.startsWith(sourcePrefix)) continue
+      for (const name of collectSourceFilePackageUses(sourceFile, true)) {
+        const locations = runtimeSourceUses.get(name) ?? new Set<string>()
+        locations.add(file)
+        runtimeSourceUses.set(name, locations)
+      }
+    }
+    return {
+      ...declaration,
+      runtimeSourceUses: Object.fromEntries(
+        [...runtimeSourceUses].sort(([left], [right]) => left.localeCompare(right))
+          .map(([name, locations]) => [name, [...locations].sort()]),
+      ),
+    }
+  })
+  const byManifest = new Map(declarations.map(entry => [entry.manifest, entry]))
   const packages: ClientPackage[] = []
 
   for (const manifestPath of globSync(CLIENT_MANIFEST_GLOB, { cwd: root }).map(normalizePath).sort()) {
@@ -762,7 +804,7 @@ async function readFacts(root: string): Promise<ClientPackageFacts> {
     const runtimeSourceUses = new Map<string, Set<string>>()
     const packageDirectory = dirname(manifestPath)
     const sourcePrefix = packageDirectory + '/src/'
-    for (const sourceFile of project.sourceFiles()) {
+    for (const sourceFile of sourceFiles) {
       if (sourceFile.isDeclarationFile) continue
       const file = project.relativePath(sourceFile)
       if (!file.startsWith(sourcePrefix)) continue
