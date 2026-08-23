@@ -28,7 +28,7 @@ interface PluginBench {
   readonly ctx: Context
   readonly listener: ApprovalListener
   readonly pending: { getSnapshot(): readonly PendingApproval[] }
-  readonly attend: ReturnType<typeof vi.fn>
+  readonly registerPendingInteraction: ReturnType<typeof vi.fn>
   readonly disposeSlot: ReturnType<typeof vi.fn>
   readonly disposeLocale: ReturnType<typeof vi.fn>
   readonly register: ReturnType<typeof vi.fn>
@@ -53,7 +53,7 @@ function setupPlugin(): PluginBench {
   const disposeSlot = vi.fn()
   const disposeLocale = vi.fn()
   let pending: readonly PendingApproval[] = []
-  const attend = vi.fn((_precedence: (value: PendingApproval) => number) => (
+  const registerPendingInteraction = vi.fn((_precedence: (value: PendingApproval) => number) => (
     value: PendingApproval,
   ) => {
     pending = [...pending, value]
@@ -77,7 +77,7 @@ function setupPlugin(): PluginBench {
     },
   } as never)
   ctx.provide('sessions', { scopeOf } as never)
-  ctx.provide('uiSession', { attend } as never)
+  ctx.provide('uiSession', { registerPendingInteraction } as never)
   ctx.provide('slots', { inject: injectSlot, register } as never)
   ctx.provide('locale', {
     register: vi.fn(() => disposeLocale),
@@ -89,7 +89,7 @@ function setupPlugin(): PluginBench {
     ctx,
     listener,
     pending: { getSnapshot: () => pending },
-    attend,
+    registerPendingInteraction,
     disposeSlot,
     disposeLocale,
     register,

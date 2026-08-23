@@ -282,7 +282,7 @@ export class UiSession extends Service {
    * @param precedence - deterministic cross-domain precedence; larger values win.
    * @returns a function that publishes one exact interaction until its disposer runs.
    */
-  attend<T extends SessionPendingInteractionBase>(
+  registerPendingInteraction<T extends SessionPendingInteractionBase>(
     precedence: (interaction: T) => number,
   ): (interaction: T) => () => void {
     const domain = new PendingInteractionDomain(precedence, () => {
@@ -297,7 +297,7 @@ export class UiSession extends Service {
         if (index !== -1) this.pendingDomains.splice(index, 1)
         this.publishPendingInteractions()
       }
-    }, 'uiSession.attend()')
+    }, 'uiSession.registerPendingInteraction()')
     return interaction => domain.publish(interaction)
   }
 

@@ -380,8 +380,10 @@ describe('UiSession pending interactions', () => {
     const id = sessionId('s1')
     const listener = vi.fn()
     const off = service.pendingInteractions.subscribe(listener)
-    const attendApproval = service.attend<SessionPendingInteractionBase>(() => 0)
-    const attendQuestion = service.attend<SessionPendingInteractionBase>(
+    const registerApproval = service.registerPendingInteraction<SessionPendingInteractionBase>(
+      () => 0,
+    )
+    const registerQuestion = service.registerPendingInteraction<SessionPendingInteractionBase>(
       interaction => interaction.kind === 'plan-review' ? 2 : 1,
     )
     listener.mockClear()
@@ -390,13 +392,13 @@ describe('UiSession pending interactions', () => {
     const duplicate = { key: 'approval:2', kind: 'approval', sessionId: id }
     const question = { key: 'question:1', kind: 'question', sessionId: id }
     const plan = { key: 'question:2', kind: 'plan-review', sessionId: id }
-    const removeApproval = attendApproval(approval)
+    const removeApproval = registerApproval(approval)
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(approval)
-    const removeDuplicate = attendApproval(duplicate)
+    const removeDuplicate = registerApproval(duplicate)
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(duplicate)
-    const removeQuestion = attendQuestion(question)
+    const removeQuestion = registerQuestion(question)
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(question)
-    const removePlan = attendQuestion(plan)
+    const removePlan = registerQuestion(plan)
     expect(service.pendingInteractions.getSnapshot().get(id)).toBe(plan)
 
     removeQuestion()
@@ -414,10 +416,12 @@ describe('UiSession pending interactions', () => {
     const ctx = new Context()
     const bench = createSessionsBench(ctx)
     const service = createUiSession(ctx, bench)
-    const attend = service.attend<SessionPendingInteractionBase>(() => 1)
+    const registerPendingInteraction = service.registerPendingInteraction<SessionPendingInteractionBase>(
+      () => 1,
+    )
     const interaction = { key: 'question:1', kind: 'question', sessionId: sessionId('s1') }
-    const remove = attend(interaction)
-    expect(() => { attend(interaction) })
+    const remove = registerPendingInteraction(interaction)
+    expect(() => { registerPendingInteraction(interaction) })
       .toThrow("ui-session: duplicate pending interaction key 'question:1'")
 
     const failure = new Error('pending subscriber failed')

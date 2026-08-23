@@ -55,12 +55,12 @@ async function answerQuestion(
   owner: ClientContext,
   request: ClientQuestionRequest,
   next: ClientQuestionNext,
-  attend: (pending: PendingQuestion) => () => void,
+  registerPendingInteraction: (pending: PendingQuestion) => () => void,
 ): Promise<ClientQuestionAnswer> {
   const sessionId = ctx.sessions.scopeOf(owner)
   if (sessionId === undefined) return next()
   const pending = new PendingQuestion(sessionId, request.questions, request.signal)
-  const remove = attend(pending)
+  const remove = registerPendingInteraction(pending)
   try {
     return await pending.result
   } finally {
@@ -76,7 +76,7 @@ async function answerQuestion(
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-user-questions: dictionaries')
-  const attend = ctx.uiSession.attend<PendingQuestion>(
+  const registerPendingInteraction = ctx.uiSession.registerPendingInteraction<PendingQuestion>(
     pending => pending.kind === 'plan-review' ? 2 : 1,
   )
   ctx.slots.inject('conversation.composer', () => ctx.slots.register(
@@ -89,6 +89,6 @@ export function apply(ctx: ClientContext): void {
     QuestionComposer,
   ))
   ctx.remote.$on('user-questions/request', function (request, next) {
-    return answerQuestion(ctx, this, request, next, attend)
+    return answerQuestion(ctx, this, request, next, registerPendingInteraction)
   })
 }

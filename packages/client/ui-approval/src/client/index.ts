@@ -36,7 +36,7 @@ async function answerApproval(
   owner: ClientContext,
   request: ClientApprovalRequest,
   next: ClientApprovalNext,
-  attend: (pending: PendingApproval) => () => void,
+  registerPendingInteraction: (pending: PendingApproval) => () => void,
 ): Promise<ClientApprovalOutcome> {
   const sessionId = ctx.sessions.scopeOf(owner)
   if (sessionId === undefined) return next()
@@ -48,7 +48,7 @@ async function answerApproval(
     ...(request.reason === undefined ? {} : { reason: request.reason }),
     ...(request.signal === undefined ? {} : { signal: request.signal }),
   })
-  const remove = attend(pending)
+  const remove = registerPendingInteraction(pending)
   try {
     return await pending.result
   } finally {
@@ -62,7 +62,9 @@ async function answerApproval(
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-approval: dictionaries')
-  const attend = ctx.uiSession.attend<PendingApproval>(() => 0)
+  const registerPendingInteraction = ctx.uiSession.registerPendingInteraction<PendingApproval>(
+    () => 0,
+  )
   ctx.slots.inject('conversation.composer', () => ctx.slots.register({
     name: 'conversation.composer',
     priority: 1,
@@ -74,6 +76,6 @@ export function apply(ctx: ClientContext): void {
     },
   }, ApprovalPanel))
   ctx.remote.$on('approval/request', function (request, next) {
-    return answerApproval(ctx, this, request, next, attend)
+    return answerApproval(ctx, this, request, next, registerPendingInteraction)
   })
 }

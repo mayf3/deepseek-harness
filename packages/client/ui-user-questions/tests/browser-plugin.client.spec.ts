@@ -50,13 +50,13 @@ async function bench(declare = true) {
   )[SESSION_SCOPE])
   ctx.provide('sessions', { scopeOf } as never)
   let pending: readonly PendingQuestion[] = []
-  const attend = vi.fn((_precedence: (value: PendingQuestion) => number) => (
+  const registerPendingInteraction = vi.fn((_precedence: (value: PendingQuestion) => number) => (
     value: PendingQuestion,
   ) => {
     pending = [...pending, value]
     return () => { pending = pending.filter(candidate => candidate !== value) }
   })
-  ctx.provide('uiSession', { attend } as never)
+  ctx.provide('uiSession', { registerPendingInteraction } as never)
   let listener: QuestionListener | undefined
   const on = vi.fn((event: string, value: QuestionListener) => {
     expect(event).toBe('user-questions/request')
@@ -81,7 +81,7 @@ async function bench(declare = true) {
     agent,
     scopeOf,
     pending: { getSnapshot: () => pending },
-    attend,
+    registerPendingInteraction,
     on,
     fiber,
     invoke,
