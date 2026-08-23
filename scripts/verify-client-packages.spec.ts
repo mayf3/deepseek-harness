@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   collectClientPackageViolations,
   collectRuntimeSourcePackageUses,
+  collectRuntimeSourceSpecifiers,
   collectSourcePackageUses,
   fixClientPackageManifests,
   readClientDeclarations,
@@ -33,6 +34,7 @@ function declaration(
     external: [],
     inject: [],
     runtimeSourceUses: {},
+    runtimeSourceSpecifiers: {},
     ...fields,
   }
 }
@@ -76,7 +78,7 @@ describe('source package uses', () => {
     const uses = collectSourcePackageUses('feature.tsx', [
       "import type { A } from '@deepseek-ai/dsh-a/subpath'",
       "declare module '@deepseek-ai/dsh-client-ui-slots' {}",
-      "const load = () => import('@deepseek-ai/dsh-b')",
+      "const load = () => import('@deepseek-ai/dsh-b/remote')",
       'export const view = <div />',
       "export type { Local } from './local.ts'",
     ].join('\n'))
@@ -94,6 +96,14 @@ describe('source package uses', () => {
       'export const view = <div />',
     ].join('\n'))].sort()).toEqual([
       '@deepseek-ai/dsh-b',
+      'react',
+    ])
+    expect([...collectRuntimeSourceSpecifiers('feature.tsx', [
+      "import type { A } from '@deepseek-ai/dsh-a/subpath'",
+      "const load = () => import('@deepseek-ai/dsh-b/remote')",
+      'export const view = <div />',
+    ].join('\n'))].sort()).toEqual([
+      '@deepseek-ai/dsh-b/remote',
       'react',
     ])
   })
@@ -272,11 +282,33 @@ describe('module requests', () => {
       runtimeSourceUses: {
         '@deepseek-ai/dsh-api-gateway': ['packages/api/live/src/client/index.ts'],
       },
+      runtimeSourceSpecifiers: {
+        '@deepseek-ai/dsh-api-gateway/client': ['packages/api/live/src/client/index.ts'],
+      },
     }), manifest: 'packages/api/live/package.json' }
     expect(collectClientPackageViolations(facts([], {
       declarations: [gateway, stale, live],
     }))).toEqual([
       stale.manifest + ': dsh.client.external "@deepseek-ai/dsh-api-gateway/client"'
+      + ' has no runtime import or re-export in production source; remove the stale declaration',
+    ])
+  })
+
+  it('requires the exact external subpath to be imported at runtime', () => {
+    const gateway = {
+      ...declaration('@deepseek-ai/dsh-api-gateway'), manifest: 'packages/api/gateway/package.json',
+    }
+    const subject = { ...declaration('@deepseek-ai/dsh-api-session-controller', {
+      external: ['@deepseek-ai/dsh-api-gateway/client'],
+      runtimeSourceUses: {
+        '@deepseek-ai/dsh-api-gateway': ['packages/api/session-controller/src/client/index.ts'],
+      },
+      runtimeSourceSpecifiers: {
+        '@deepseek-ai/dsh-api-gateway/remote': ['packages/api/session-controller/src/client/index.ts'],
+      },
+    }), manifest: 'packages/api/session-controller/package.json' }
+    expect(collectClientPackageViolations(facts([], { declarations: [gateway, subject] }))).toEqual([
+      subject.manifest + ': dsh.client.external "@deepseek-ai/dsh-api-gateway/client"'
       + ' has no runtime import or re-export in production source; remove the stale declaration',
     ])
   })
@@ -309,11 +341,13 @@ describe('module requests', () => {
       external: ['@deepseek-ai/dsh-api-b'],
       inject: ['@deepseek-ai/dsh-api-b'],
       runtimeSourceUses: { '@deepseek-ai/dsh-api-b': ['packages/api/a/src/client.ts'] },
+      runtimeSourceSpecifiers: { '@deepseek-ai/dsh-api-b': ['packages/api/a/src/client.ts'] },
     }), manifest: 'packages/api/a/package.json' }
     const b = { ...declaration('@deepseek-ai/dsh-api-b', {
       external: ['@deepseek-ai/dsh-api-a'],
       inject: ['@deepseek-ai/dsh-api-a'],
       runtimeSourceUses: { '@deepseek-ai/dsh-api-a': ['packages/client/b/src/client.ts'] },
+      runtimeSourceSpecifiers: { '@deepseek-ai/dsh-api-a': ['packages/client/b/src/client.ts'] },
     }), manifest: 'packages/api/b/package.json' }
     const found = collectClientPackageViolations(facts([], { declarations: [a, b] }))
     expect(found).toHaveLength(1)

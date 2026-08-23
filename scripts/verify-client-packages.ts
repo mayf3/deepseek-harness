@@ -27,6 +27,8 @@ export interface ClientDeclaration {
   readonly dynamic: boolean
   readonly external: readonly string[]
   readonly runtimeSourceUses: Readonly<Record<string, readonly string[]>>
+  /** Exact runtime specifiers used to validate `dsh.client.external` declarations. */
+  readonly runtimeSourceSpecifiers: Readonly<Record<string, readonly string[]>>
   /** Informational package dependencies declared by the row. */
   readonly inject: readonly string[]
 }
@@ -65,7 +67,7 @@ export interface ClientDeclarations {
  */
 export function collectSourcePackageUses(path: string, source: string): Set<string> {
   const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
-  return collectSourceFilePackageUses(sourceFile, false)
+  return collectSourceFileUses(sourceFile, false, 'package')
 }
 
 /**
@@ -76,7 +78,18 @@ export function collectSourcePackageUses(path: string, source: string): Set<stri
  */
 export function collectRuntimeSourcePackageUses(path: string, source: string): Set<string> {
   const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
-  return collectSourceFilePackageUses(sourceFile, true)
+  return collectSourceFileUses(sourceFile, true, 'package')
+}
+
+/**
+ * Collect exact bare specifiers retained by one production source file.
+ * @param path - File path used to select TypeScript's parser mode.
+ * @param source - Source text to inspect.
+ * @returns Exact specifiers retained by runtime imports, exports, requires, or JSX.
+ */
+export function collectRuntimeSourceSpecifiers(path: string, source: string): Set<string> {
+  const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
+  return collectSourceFileUses(sourceFile, true, 'specifier')
 }
 
 function importCarriesRuntimeValue(node: ts.ImportDeclaration): boolean {
@@ -98,12 +111,16 @@ function exportCarriesRuntimeValue(node: ts.ExportDeclaration): boolean {
   return clause.elements.length === 0 || clause.elements.some(element => !element.isTypeOnly)
 }
 
-function collectSourceFilePackageUses(sourceFile: ts.SourceFile, runtimeOnly: boolean): Set<string> {
+function collectSourceFileUses(
+  sourceFile: ts.SourceFile,
+  runtimeOnly: boolean,
+  key: 'package' | 'specifier',
+): Set<string> {
   const uses = new Set<string>()
 
   const add = (specifier: ts.Expression | undefined): void => {
     if (specifier === undefined || !ts.isStringLiteral(specifier) || !isBareSpecifier(specifier.text)) return
-    uses.add(packageNameOf(specifier.text))
+    uses.add(key === 'package' ? packageNameOf(specifier.text) : specifier.text)
   }
   const visit = (node: ts.Node): void => {
     if (ts.isImportDeclaration(node)) {
@@ -571,8 +588,7 @@ function collectModuleViolations(facts: ClientPackageFacts): string[] {
           )
           continue
         }
-        const owner = packageNameOf(specifier)
-        if (pkg.runtimeSourceUses[owner] === undefined) {
+        if (pkg.runtimeSourceSpecifiers[specifier] === undefined) {
           violations.push(
             pkg.manifest + ': dsh.client.external ' + JSON.stringify(specifier)
             + ' has no runtime import or re-export in production source; remove the stale declaration',
@@ -670,13 +686,15 @@ function readDeclaration(
   const rawClient = dsh?.client
   if (rawClient === undefined) {
     return {
-      name: manifest.name, manifest: manifestPath, dynamic: false, external: [], inject: [], runtimeSourceUses: {},
+      name: manifest.name, manifest: manifestPath, dynamic: false, external: [], inject: [],
+      runtimeSourceUses: {}, runtimeSourceSpecifiers: {},
     }
   }
   if (!isRecord(rawClient)) {
     malformed.push(manifestPath + ': ' + manifest.name + ' dsh.client must be an object')
     return {
-      name: manifest.name, manifest: manifestPath, dynamic: false, external: [], inject: [], runtimeSourceUses: {},
+      name: manifest.name, manifest: manifestPath, dynamic: false, external: [], inject: [],
+      runtimeSourceUses: {}, runtimeSourceSpecifiers: {},
     }
   }
   return {
@@ -686,6 +704,7 @@ function readDeclaration(
     external: stringArray(rawClient.external, manifest.name, manifestPath, 'external', malformed),
     inject: stringArray(rawClient.inject, manifest.name, manifestPath, 'inject', malformed),
     runtimeSourceUses: {},
+    runtimeSourceSpecifiers: {},
   }
 }
 
@@ -773,15 +792,21 @@ async function readFacts(root: string): Promise<ClientPackageFacts> {
   const sourceFiles = project.sourceFiles()
   const declarations = bareDeclarations.map((declaration): ClientDeclaration => {
     const runtimeSourceUses = new Map<string, Set<string>>()
+    const runtimeSourceSpecifiers = new Map<string, Set<string>>()
     const sourcePrefix = dirname(declaration.manifest) + '/src/'
     for (const sourceFile of sourceFiles) {
       if (sourceFile.isDeclarationFile) continue
       const file = project.relativePath(sourceFile)
       if (!file.startsWith(sourcePrefix)) continue
-      for (const name of collectSourceFilePackageUses(sourceFile, true)) {
+      for (const name of collectSourceFileUses(sourceFile, true, 'package')) {
         const locations = runtimeSourceUses.get(name) ?? new Set<string>()
         locations.add(file)
         runtimeSourceUses.set(name, locations)
+      }
+      for (const specifier of collectSourceFileUses(sourceFile, true, 'specifier')) {
+        const locations = runtimeSourceSpecifiers.get(specifier) ?? new Set<string>()
+        locations.add(file)
+        runtimeSourceSpecifiers.set(specifier, locations)
       }
     }
     return {
@@ -789,6 +814,10 @@ async function readFacts(root: string): Promise<ClientPackageFacts> {
       runtimeSourceUses: Object.fromEntries(
         [...runtimeSourceUses].sort(([left], [right]) => left.localeCompare(right))
           .map(([name, locations]) => [name, [...locations].sort()]),
+      ),
+      runtimeSourceSpecifiers: Object.fromEntries(
+        [...runtimeSourceSpecifiers].sort(([left], [right]) => left.localeCompare(right))
+          .map(([specifier, locations]) => [specifier, [...locations].sort()]),
       ),
     }
   })
@@ -808,12 +837,12 @@ async function readFacts(root: string): Promise<ClientPackageFacts> {
       if (sourceFile.isDeclarationFile) continue
       const file = project.relativePath(sourceFile)
       if (!file.startsWith(sourcePrefix)) continue
-      for (const name of collectSourceFilePackageUses(sourceFile, false)) {
+      for (const name of collectSourceFileUses(sourceFile, false, 'package')) {
         const locations = sourceUses.get(name) ?? new Set<string>()
         locations.add(file)
         sourceUses.set(name, locations)
       }
-      for (const name of collectSourceFilePackageUses(sourceFile, true)) {
+      for (const name of collectSourceFileUses(sourceFile, true, 'package')) {
         const locations = runtimeSourceUses.get(name) ?? new Set<string>()
         locations.add(file)
         runtimeSourceUses.set(name, locations)
