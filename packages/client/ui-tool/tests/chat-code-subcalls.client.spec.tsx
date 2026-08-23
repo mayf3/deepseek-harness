@@ -76,7 +76,7 @@ function snapshotWith(
     chat: toolChatSnapshot(nestedNodes, nestedRunningCalls),
     nodes: nestedNodes, turnTimings: new Map(), turnEnds: new Map(), partial: null,
     runningCalls: nestedRunningCalls,
-    pending: [], queue: [], running: runningCalls.length > 0, composerPhase: 'active', removed: false,
+    queue: [], running: runningCalls.length > 0, composerPhase: 'active', removed: false,
     openState: 'open', openError: null,
     hasMore: false, loadingOlder: false, promptError: null, blank: false, subagent: null, lastAgentError: null,
   }

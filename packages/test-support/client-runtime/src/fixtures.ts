@@ -55,7 +55,6 @@ export function conversationSnapshot(sessionId: SessionId): ConversationSnapshot
     turnEnds: new Map(),
     partial: null,
     runningCalls: [],
-    pending: [],
     queue: [],
     running: false,
     subagent: null,

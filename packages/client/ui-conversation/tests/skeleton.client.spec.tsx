@@ -72,7 +72,7 @@ function conversationSnapshot(overrides: Partial<ConversationSnapshot> = {}): Co
   return {
     sessionId: SID, views: EMPTY_CONVERSATION_VIEWS, chat: EMPTY_CHAT_SNAPSHOT,
     nodes: [], turnTimings: new Map(), turnEnds: new Map(), partial: null, runningCalls: [],
-    pending: [], queue: [], running: false, composerPhase: 'active', removed: false,
+    queue: [], running: false, composerPhase: 'active', removed: false,
     openState: 'open', openError: null, hasMore: false, loadingOlder: false,
     promptError: null, blank: false, subagent: null, lastAgentError: null,
     ...overrides,
@@ -256,6 +256,7 @@ function mount(
     useSessions: bindSnapshotSelector(sessions),
     useWorkspaces: bindSnapshotSelector(workspaces),
     useProjection: (() => undefined),
+    useSessionPendingInteraction: selector => selector([]),
     useComposerBlock: select => select(options.composerBlock),
     useInput,
     inputActions,
@@ -473,13 +474,6 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.container.querySelector('[data-conversation-scroll]')?.contains(after)).toBe(true)
     expect(b.view.queryByText('探索未至之境')).toBeNull()
     expect(b.view.getByTestId('view-chat')).toBeTruthy()
-  })
-
-  it('keeps pending takeover interaction accessible outside the Chat view', () => {
-    const b = mount(conversationSnapshot({ pending: [{} as never] }))
-    act(() => { b.chat.actions.setView('trajectory') })
-    expect(b.view.getByTestId('view-trajectory')).toBeTruthy()
-    expect(b.view.getByRole('textbox')).toBeTruthy()
   })
 
   it('keeps the Chat fallback selected by id when a view is inserted before it', () => {

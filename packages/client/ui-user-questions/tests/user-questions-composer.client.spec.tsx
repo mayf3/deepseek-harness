@@ -79,7 +79,7 @@ function answeredEnvelope(id: string, answers: object[]) {
 describe('QuestionComposer', () => {
   it('collects single, custom, and multi-select answers before one batch submit', () => {
     const { carrier, respond } = wait()
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     expect(screen.getByText('偏好')).toBeTruthy()
     expect(screen.getByText('1 / 3')).toBeTruthy()
@@ -141,7 +141,7 @@ describe('QuestionComposer', () => {
       },
       vi.fn(),
     )
-    const view = render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    const view = render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     expect(screen.getByRole('heading', { level: 1, name: '实施计划' })).toBeTruthy()
     expect(view.container.querySelector('strong')?.textContent).toBe('先验证')
@@ -151,7 +151,7 @@ describe('QuestionComposer', () => {
 
   it('skips individual questions without discarding earlier answers', () => {
     const { carrier, respond } = wait()
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     expect((screen.getByText('下一题').closest('button') as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole('radio', { name: '研究潜力型' }))
@@ -169,7 +169,7 @@ describe('QuestionComposer', () => {
 
   it('keeps IME Enter inside the custom input until composition finishes', () => {
     const { carrier, respond } = wait()
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     fireEvent.click(screen.getByRole('radio', { name: '研究潜力型' }))
     const custom = screen.getByPlaceholderText('输入你的答案')
@@ -189,7 +189,7 @@ describe('QuestionComposer', () => {
 
   it('shows the inline custom input, reports missing answers, and supports pager navigation', () => {
     const { carrier, respond } = wait()
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     expect(screen.getByPlaceholderText('输入你的答案')).toBeTruthy()
     fireEvent.click(screen.getByRole('radio', { name: '工程落地型' }))
@@ -211,7 +211,7 @@ describe('QuestionComposer', () => {
 
   it('answers over multiple lines: both fields grow with the draft and keep Shift+Enter a newline', () => {
     const { carrier, respond } = wait()
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     // Both question shapes answer into a textarea, so the engine soft-wraps a
     // long answer and Shift+Enter breaks the line natively.
@@ -251,7 +251,7 @@ describe('QuestionComposer', () => {
       .mockResolvedValueOnce({ ok: true, value: { accepted: false, reason: 'bad-response' } })
       .mockRejectedValueOnce(new Error('第二次取消失败'))
     const { carrier } = wait('question-1', respond)
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     // Receipt rejection surfaces through the domain face's thrown message.
     fireEvent.click(screen.getByRole('button', { name: '放弃整组问题' }))
@@ -267,12 +267,12 @@ describe('QuestionComposer', () => {
       .mockRejectedValueOnce(new Error('网络中断'))
       .mockRejectedValueOnce('字符串错误')
     const first = wait('first', respond)
-    const view = render(<QuestionComposer matched={first.carrier} interactions={[first.carrier]} {...kit} />)
+    const view = render(<QuestionComposer matched={first.carrier} pendingInteraction={first.carrier} {...kit} />)
 
     fireEvent.click(screen.getByRole('radio', { name: /研究潜力型/ }))
     expect(screen.getByText('2 / 3')).toBeTruthy()
     const second = wait('second', respond)
-    view.rerender(<QuestionComposer matched={second.carrier} interactions={[second.carrier]} {...kit} />)
+    view.rerender(<QuestionComposer matched={second.carrier} pendingInteraction={second.carrier} {...kit} />)
     expect(screen.getByRole('radio', { name: /研究潜力型/ }).getAttribute('aria-checked')).toBe('false')
 
     fireEvent.click(screen.getByRole('radio', { name: /工程落地型/ }))
@@ -297,7 +297,7 @@ describe('QuestionComposer', () => {
     const respond = vi.fn(() => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
     const carrier = new PendingWait(
       'question', interactionId('solo'), SID, { questions: [{ id: 'detail', question: '补充你的要求' }] }, respond)
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} t={seatOver(en, commonEn)} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} t={seatOver(en, commonEn)} />)
     expect(screen.getByLabelText('Dismiss all questions')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Skip this question' })).toBeTruthy()
     expect(screen.getByPlaceholderText('Type your answer')).toBeTruthy()
@@ -305,12 +305,12 @@ describe('QuestionComposer', () => {
 
   it('same-key carrier replacement (baseline replay) keeps drafts', () => {
     const first = wait('same-id')
-    const view = render(<QuestionComposer matched={first.carrier} interactions={[first.carrier]} {...kit} />)
+    const view = render(<QuestionComposer matched={first.carrier} pendingInteraction={first.carrier} {...kit} />)
     fireEvent.click(screen.getByRole('radio', { name: /研究潜力型/ }))
     expect(screen.getByText('2 / 3')).toBeTruthy()
     // Replay mints a NEW carrier for the same request; same key = no remount.
     const replayed = wait('same-id')
-    view.rerender(<QuestionComposer matched={replayed.carrier} interactions={[replayed.carrier]} {...kit} />)
+    view.rerender(<QuestionComposer matched={replayed.carrier} pendingInteraction={replayed.carrier} {...kit} />)
     expect(screen.getByText('2 / 3')).toBeTruthy()
   })
 })
@@ -351,7 +351,7 @@ describe('PendingQuestion domain face', () => {
 
   it('collapses the card to the header strip and expands it back', () => {
     const { carrier } = wait()
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
     // Expanded: the option list is visible.
     expect(screen.getByRole('radiogroup')).toBeTruthy()
     // Collapse: options leave the tree; the title and minimize toggle stay.
@@ -367,7 +367,7 @@ describe('PendingQuestion domain face', () => {
 
   it('keeps the collapse toggle out of the cancel path and preserves drafts across collapse', () => {
     const { carrier, respond } = wait()
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
     fireEvent.click(screen.getByRole('radio', { name: /工程落地型/ }))
     // Single-select auto-advances to the second question; collapse and expand
     // must not lose either the picked option or the current position.

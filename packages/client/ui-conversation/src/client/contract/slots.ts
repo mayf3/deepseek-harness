@@ -481,7 +481,11 @@ export interface ConversationInjected {
    * plugin raised one; the reason is the blocker's own localized copy, which
    * the root renders as the inert composer's placeholder.
    */
-  hooks: { composerBlock: ObservableSnapshot<ComposerBlock | undefined> }
+  hooks: {
+    composerBlock: ObservableSnapshot<ComposerBlock | undefined>
+    /** Effective Remote Event interaction for the current Session. */
+    sessionPendingInteraction: ObservableSnapshot<readonly PendingInteraction[]>
+  }
 }
 
 /** Business callbacks injected into the strict Session body seat. */
@@ -618,7 +622,8 @@ export type ComposerBarProps =
  * with zero owner changes.
  */
 export interface ComposerChainProps {
-  interactions: readonly PendingInteraction[]
+  /** Effective domain-owned interaction selected for this Session. */
+  pendingInteraction: PendingInteraction | undefined
   /** Current conversation facts for feature-owned takeover selectors. */
   session: ConversationSnapshot | undefined
 }

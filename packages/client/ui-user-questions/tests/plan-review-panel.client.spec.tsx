@@ -113,7 +113,7 @@ describe('planReviewOf', () => {
 describe('PlanReviewPanel', () => {
   it('renders the plan under a review strip, with none of the quiz affordances', () => {
     const { carrier } = wait()
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     expect(document.querySelector('[data-plan-review-key="q:q-1"]')).toBeTruthy()
     expect(screen.getByText(zh['plan.header'])).toBeTruthy()
@@ -132,7 +132,7 @@ describe('PlanReviewPanel', () => {
 
   it('answers with the asker\'s approve label and keeps its description as the tooltip', () => {
     const { carrier, respond } = wait()
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     const approve = screen.getByRole('button', { name: zh['plan.approve'] })
     expect(approve.getAttribute('title')).toBe('Leave plan mode; the plan is carried out from the next step.')
@@ -147,7 +147,7 @@ describe('PlanReviewPanel', () => {
 
   it('answers with the asker\'s decline label', () => {
     const { carrier, respond } = wait()
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     fireEvent.click(screen.getByRole('button', { name: zh['plan.decline'] }))
     expect(respond).toHaveBeenCalledWith(decidedEnvelope('Keep planning'))
@@ -155,7 +155,7 @@ describe('PlanReviewPanel', () => {
 
   it('dismisses the request so the composer returns for a plain message', () => {
     const { carrier, respond } = wait()
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     fireEvent.click(screen.getByRole('button', { name: zh['plan.discuss'] }))
     expect(respond).toHaveBeenCalledWith({
@@ -172,7 +172,7 @@ describe('PlanReviewPanel', () => {
       ...questions()[0] as object,
       options: [{ label: 'Approve' }, { label: 'Keep planning' }],
     }] as never })
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     expect(screen.getByRole('button', { name: zh['plan.approve'] }).hasAttribute('title')).toBe(false)
     expect(screen.getByRole('button', { name: zh['plan.decline'] }).hasAttribute('title')).toBe(false)
@@ -182,7 +182,7 @@ describe('PlanReviewPanel', () => {
     const { carrier } = wait({ questions: [{
       ...questions()[0] as object, options: [{ label: 'Approve' }],
     }] as never })
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     expect(screen.queryByRole('button', { name: zh['plan.decline'] })).toBeNull()
     expect(screen.getByRole('button', { name: zh['plan.approve'] })).toBeTruthy()
@@ -196,7 +196,7 @@ describe('PlanReviewPanel', () => {
         value: { accepted: false as const, reason: 'not-pending' as const },
       })),
     )
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     fireEvent.click(screen.getByRole('button', { name: zh['plan.approve'] }))
     const failure = await screen.findByText('question response rejected: not-pending')
@@ -212,7 +212,7 @@ describe('PlanReviewPanel', () => {
     // anything, and the panel must still show the user something.
     // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- exercises non-Error rejections
     const { carrier } = wait({ questions: questions() }, vi.fn(() => Promise.reject('socket gone')))
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} />)
 
     fireEvent.click(screen.getByRole('button', { name: zh['plan.discuss'] }))
     expect(await screen.findByText('socket gone')).toBeTruthy()
@@ -220,7 +220,7 @@ describe('PlanReviewPanel', () => {
 
   it('carries the same decision surface in English', () => {
     const { carrier } = wait()
-    render(<QuestionComposer matched={carrier} interactions={[carrier]} {...kit} t={seatOver(en, commonEn)} />)
+    render(<QuestionComposer matched={carrier} pendingInteraction={carrier} {...kit} t={seatOver(en, commonEn)} />)
 
     expect(screen.getByText('Plan review')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Approve' })).toBeTruthy()

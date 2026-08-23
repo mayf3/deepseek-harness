@@ -35,7 +35,6 @@ import type {
   ChatSnapshot, ComposerPhase, ConversationSnapshot, OpenState, PromptError,
 } from './conversation.ts'
 import { EMPTY_CHAT_SNAPSHOT } from './conversation.ts'
-import type { PendingInteraction } from './pending.ts'
 import { Notifier } from './notifier.ts'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionRemotes } from './remotes.ts'
@@ -46,7 +45,6 @@ import { SessionQueueMirror } from './queue-mirror.ts'
 
 /** Messages requested per history page. */
 export const PAGE_MESSAGES = 50
-const EMPTY_PENDING: readonly PendingInteraction[] = []
 
 /** Manager-owned observers of a Session object's local state edges. */
 export interface SessionOptions {
@@ -664,7 +662,6 @@ export class Session implements SessionFace {
       turnEnds: legacy.turnEnds,
       partial: legacy.partial,
       runningCalls: legacy.runningCalls,
-      pending: EMPTY_PENDING,
       queue: this.queueMirror.snapshot(),
       running: this.running,
       subagent: this.address === undefined

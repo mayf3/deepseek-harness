@@ -118,7 +118,7 @@ describe('apply', () => {
       subagent: ConversationSnapshot['subagent'] | undefined,
       running = false,
     ): ComposerChainProps => ({
-      interactions: [],
+      pendingInteraction: undefined,
       session: subagent === undefined
         ? undefined
         : ({ subagent, running } as unknown as ConversationSnapshot),

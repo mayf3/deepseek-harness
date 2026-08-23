@@ -54,7 +54,7 @@ describe('flattenLineage', () => {
   })
 
   it('projects the completion-reminder set into rows (absent = false)', () => {
-    const out = flattenLineage([s('a', 10), s('b', 20)], undefined, new Set(['b' as SessionId]))
+    const out = flattenLineage([s('a', 10), s('b', 20)], new Set(['b' as SessionId]))
     expect(out.find(e => e.sessionId === 'a')?.completed).toBe(false)
     expect(out.find(e => e.sessionId === 'b')?.completed).toBe(true)
     expect(flattenLineage([s('a', 10)])[0]?.completed).toBe(false)

@@ -97,7 +97,6 @@ function historySnapshot(
     turnEnds: new Map(),
     partial: trajectory.partial,
     runningCalls: trajectory.runningCalls,
-    pending: [],
     queue: [],
     running: false,
     subagent: null,

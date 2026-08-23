@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { resolveSlotLabel, type BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  resolveWorkspacePath, type ISessions, type SessionId,
+  PendingWait, resolveWorkspacePath, type ISessions, type SessionId,
 } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: the ctx.settingsScope Context merge. Cross-plugin collaboration
 // goes through the service, never a value import (client bundle purity gate).
@@ -39,6 +39,7 @@ import { en, NS, zh, type ConversationKey } from './locales.ts'
 import { registerConversationNodes } from './conversation-nodes/register.ts'
 import { registerChatNodeRenderers } from './chat/register-node-renderers.ts'
 import { CONVERSATION_SETTINGS_NAMESPACE, type ConversationSettings } from '../submission-settings.ts'
+import { PendingInteractionPresenter } from './pending-interactions.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -105,8 +106,8 @@ function concreteConversation(ctx: Context): ConversationController {
 }
 
 /** Chain routing: claim the composer while an approval wait is pending (pure — owner props only). */
-function selectApproval({ interactions }: ComposerChainProps): ApprovalWait | null {
-  return interactions.find((i): i is ApprovalWait => i.kind === 'approval') ?? null
+function selectApproval({ pendingInteraction }: ComposerChainProps): ApprovalWait | null {
+  return pendingInteraction?.kind === 'approval' ? pendingInteraction : null
 }
 
 /** Mounts the conversation plugin.
@@ -174,6 +175,7 @@ export function apply(ctx: Context): void {
   // here, and the bar reads its own session's store. It cannot flow the other
   // way: this package must not import the plugins that would know.
   const composerBlocks = new ComposerBlockRegistry()
+  const pendingInteractions = new PendingInteractionPresenter()
 
   // The input machine feeds every session-scope slot
   // component through the standard provide channel — the 'input' hook plus
@@ -211,7 +213,10 @@ export function apply(ctx: Context): void {
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
     },
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
-      hooks: { composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
+      hooks: {
+        composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),
+        sessionPendingInteraction: pendingInteractions.forSession(sessionId),
+      },
       selectWorkspace: async (workspaceId) => {
         const nextId = await workspaces.connectWorkspace(workspaceId)
         if (sessionId !== undefined && nextId !== sessionId) {
@@ -434,7 +439,35 @@ export function apply(ctx: Context): void {
   // registers itself as `conversation` and lives on its own child fiber.
   // Presentation registrants depend directly on their slot declarations;
   // this service remains only where conversation actions are required.
-  ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks })
+  ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks, pendingInteractions })
+
+  let nextApprovalKey = 0
+  ctx.remote.$on('approval/request', function (request, next) {
+    const sessionId = sessions.scopeOf(this)
+    if (sessionId === undefined) return next()
+    nextApprovalKey += 1
+    const interactionId = `remote-${String(nextApprovalKey)}`
+    const completion = Promise.withResolvers<Awaited<ReturnType<typeof next>>>()
+    const wait = new PendingWait('approval', interactionId, sessionId, {
+      approvalId: interactionId,
+      toolName: request.toolName,
+      ...(request.callId === undefined ? {} : { callId: request.callId }),
+      ...(request.reason === undefined ? {} : { reason: request.reason }),
+    }, (response) => {
+      if (response.result.ok) completion.resolve(response.result.value.outcome)
+      return Promise.resolve({ ok: true, value: { accepted: true } })
+    })
+    const remove = pendingInteractions.present(wait, 'approval', 0)
+    const abort = (): void => {
+      completion.reject(request.signal?.reason ?? new Error('approval request was aborted'))
+    }
+    request.signal?.addEventListener('abort', abort, { once: true })
+    if (request.signal?.aborted === true) abort()
+    return completion.promise.finally(() => {
+      request.signal?.removeEventListener('abort', abort)
+      remove()
+    })
+  })
 
   // The plan strip rides the input dock above the queue rows (same posture).
   ctx.plugin(todoDockEntry)

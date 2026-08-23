@@ -22,10 +22,10 @@ export interface PendingQuestionItem {
 
 /** Structured answer returned by the legacy question composer. */
 export interface PendingQuestionAnswer {
-  readonly answers: readonly {
-    readonly id: string
-    readonly selected: readonly string[]
-    readonly custom?: string
+  answers: {
+    id: string
+    selected: string[]
+    custom?: string
   }[]
 }
 

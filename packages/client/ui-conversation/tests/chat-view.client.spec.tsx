@@ -10,7 +10,7 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import {
-  createSnapshotStore, EMPTY_CONVERSATION_VIEWS, PendingWait,
+  createSnapshotStore, EMPTY_CONVERSATION_VIEWS,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ChatNode, ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps, SelectionTarget, UseChatNodeTurnData,
@@ -47,7 +47,7 @@ function snapshotBase(): ConversationSnapshot {
   return {
     sessionId: SID, views: EMPTY_CONVERSATION_VIEWS, chat: chatSnapshotFixture(), nodes: [],
     turnTimings: new Map(), turnEnds: new Map(), partial: null, runningCalls: [],
-    pending: [], queue: [], running: false, composerPhase: 'active', removed: false, openState: 'open', openError: null,
+    queue: [], running: false, composerPhase: 'active', removed: false, openState: 'open', openError: null,
     hasMore: false, loadingOlder: false, promptError: null, blank: false, subagent: null, lastAgentError: null,
   }
 }
@@ -1336,20 +1336,6 @@ describe('ChatView', () => {
     const loading = makeHarness({ openState: 'loading' })
     const lv = render(<loading.ChatView {...loading.props} />)
     expect(lv.getByText('载入历史…')).toBeTruthy()
-  })
-
-  it('pending waits leave the flow entirely — questions and approvals both take over the composer', () => {
-    const h = makeHarness({
-      pending: [
-        new PendingWait('approval', 'r1', SID,
-          { approvalId: 'ap1', toolName: 'bash' }, vi.fn()),
-        new PendingWait('question', 'r2', SID,
-          { questions: [{ id: 'q1', question: '选择' }] }, vi.fn()),
-      ],
-    })
-    const view = render(<h.ChatView {...h.props} />)
-    expect(view.queryByText(/等待回答/)).toBeNull()
-    expect(view.queryByText(/等待审批/)).toBeNull()
   })
 
   it('renders command nodes as durable rows: settled text, error state, executing spinner, run-less soft-fall', () => {

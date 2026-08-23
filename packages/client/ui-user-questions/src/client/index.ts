@@ -13,10 +13,12 @@
  * choice lives inside this entry — see QuestionComposer.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import { PendingWait } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { QuestionWait } from './contract/slots.ts'
+import { planReviewOf, type QuestionWait } from './contract/slots.ts'
 import { QuestionComposer } from './QuestionComposer.tsx'
 import { en, zh, type QuestionKey } from './locales.ts'
 
@@ -37,11 +39,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'question'
 
 /** Required services: the slot registry and the question composer's copy. */
-export const inject = ['slots', 'locale']
+export const inject = ['slots', 'sessions', 'remote', 'conversation', 'locale']
 
 /** Chain routing: claim the composer while a question wait is pending (pure — owner props only). */
-function selectQuestion({ interactions }: ComposerChainProps): QuestionWait | null {
-  return interactions.find((i): i is QuestionWait => i.kind === 'question') ?? null
+function selectQuestion({ pendingInteraction }: ComposerChainProps): QuestionWait | null {
+  return pendingInteraction?.kind === 'question' ? pendingInteraction : null
 }
 
 /**
@@ -57,4 +59,45 @@ export function apply(ctx: ClientContext): void {
     { name: 'conversation.composer', select: selectQuestion, locale: NS },
     QuestionComposer,
   ))
+
+  let nextQuestionKey = 0
+  ctx.remote.$on('user-questions/request', function (request, next) {
+    const sessionId = ctx.sessions.scopeOf(this)
+    if (sessionId === undefined) return next()
+    nextQuestionKey += 1
+    const interactionId = `remote-${String(nextQuestionKey)}`
+    const completion = Promise.withResolvers<Awaited<ReturnType<typeof next>>>()
+    const wait = new PendingWait('question', interactionId, sessionId, {
+      questions: request.questions,
+    }, (response) => {
+      if (response.result.ok) {
+        completion.resolve(response.result.value.answer)
+      } else {
+        const error = new Error(response.result.error.message) as Error & { code: string }
+        error.name = 'UserQuestionError'
+        error.code = response.result.error.code === 'cancelled'
+          ? 'ASK_CANCELLED'
+          : response.result.error.code
+        completion.reject(error)
+      }
+      return Promise.resolve({ ok: true, value: { accepted: true } })
+    })
+    const status = planReviewOf(request.questions) === undefined ? 'question' : 'plan-review'
+    const remove = ctx.conversation.pendingInteractions.present(
+      wait,
+      status,
+      status === 'plan-review' ? 2 : 1,
+    )
+    const signal = request.signal
+    if (signal === undefined) return completion.promise.finally(remove)
+    const abort = (): void => {
+      completion.reject(signal.reason)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+    return completion.promise.finally(() => {
+      signal.removeEventListener('abort', abort)
+      remove()
+    })
+  })
 }

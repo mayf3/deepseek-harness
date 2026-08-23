@@ -4,12 +4,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { SlotTestRuntime, usePinnedBrowserLanguages, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionBehaviorOverrides } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import type { ISession, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, ISession, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   ChatViewInjected, ComposerBarInjected, ConversationInjected, ConversationSessionHeaderInjected,
   ConversationSessionInjected, DetailsInjected,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { PendingApproval } from '../src/client/contract/slots.ts'
 import type { createChatStore } from '../src/client/stores.ts'
 
 // The service reads its initial locale from the browser; these specs assert
@@ -20,6 +21,12 @@ const ROOT = 'root-1' as SessionId
 
 type ChatInstance = ReturnType<ReturnType<typeof createChatStore>['create']>
 type ChatActions = ChatInstance['actions']
+type ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
+type ApprovalListener = (
+  this: ClientContext,
+  request: { toolName: string; callId?: string; reason?: string; signal?: AbortSignal },
+  next: () => Promise<ApprovalOutcome>,
+) => Promise<ApprovalOutcome>
 
 /** ISession verb mocks, typed against the production face (['prompt'] etc. keep vitest mock ergonomics). */
 function sessionFakeFor() {
@@ -34,8 +41,13 @@ function sessionFakeFor() {
 async function bench() {
   const runtime = await SlotTestRuntime.create()
   runtime.provide('connection', { api: { settings: {} }, isLoopback: false })
-  // The plugin injects both; these specs exercise no settings path.
-  runtime.provide('remote', { $on: () => () => {} })
+  let approvalListener: ApprovalListener | undefined
+  const remoteOn = vi.fn((event: string, listener: ApprovalListener) => {
+    expect(event).toBe('approval/request')
+    approvalListener = listener
+    return () => { approvalListener = undefined }
+  })
+  runtime.provide('remote', { $on: remoteOn } as never)
   runtime.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const sessionFake = sessionFakeFor()
   await runtime.sessions.add({
@@ -110,11 +122,77 @@ async function bench() {
   return {
     runtime, feature, slots: runtime.slots, entryOf,
     conversationApi, conversationHeaderApi, residentApi, composerApi, chatViewApi, inputApi,
-    sessionFake, layoutFake,
+    sessionFake, layoutFake, remoteOn,
+    invokeApproval(
+      owner: ClientContext,
+      request: Parameters<ApprovalListener>[0],
+      next: Parameters<ApprovalListener>[1],
+    ): Promise<ApprovalOutcome> {
+      if (approvalListener === undefined) throw new Error('approval listener was not installed')
+      return approvalListener.call(owner, request, next)
+    },
   }
 }
 
 describe('conversation slot inject API', () => {
+  it('presents a scoped approval until its Remote Event waterfall resolves', async () => {
+    const b = await bench()
+    const scope = b.runtime.sessions.scope(ROOT)
+    if (scope === undefined) throw new Error('Session scope was not created')
+    const next = vi.fn(() => Promise.resolve<ApprovalOutcome>('unavailable'))
+    const result = b.invokeApproval(scope, {
+      toolName: 'bash', callId: 'call-1', reason: 'needs access',
+    }, next)
+    const source = b.residentApi(ROOT).hooks.sessionPendingInteraction
+    const wait = source.getSnapshot()[0]
+    if (wait === undefined || wait.kind !== 'approval') {
+      throw new Error('approval wait was not presented')
+    }
+
+    expect(b.remoteOn).toHaveBeenCalledOnce()
+    expect(b.runtime.ctx.conversation.pendingInteractions.statuses.getSnapshot().get(ROOT))
+      .toBe('approval')
+    await new PendingApproval(wait).answer('allowed-once')
+    await expect(result).resolves.toBe('allowed-once')
+    expect(next).not.toHaveBeenCalled()
+    expect(source.getSnapshot()).toEqual([])
+    expect(b.runtime.ctx.conversation.pendingInteractions.statuses.getSnapshot()).toEqual(new Map())
+    await b.runtime.dispose()
+  })
+
+  it('removes a scoped approval when its Remote Event lifetime aborts', async () => {
+    const b = await bench()
+    const scope = b.runtime.sessions.scope(ROOT)
+    if (scope === undefined) throw new Error('Session scope was not created')
+    const controller = new AbortController()
+    const removeEventListener = vi.spyOn(controller.signal, 'removeEventListener')
+    const reason = new DOMException('aborted by Host', 'AbortError')
+    const result = b.invokeApproval(scope, {
+      toolName: 'bash', signal: controller.signal,
+    }, () => Promise.resolve('unavailable'))
+    const source = b.residentApi(ROOT).hooks.sessionPendingInteraction
+    expect(source.getSnapshot()).toHaveLength(1)
+
+    controller.abort(reason)
+
+    await expect(result).rejects.toBe(reason)
+    expect(removeEventListener).toHaveBeenCalledWith('abort', expect.any(Function))
+    expect(source.getSnapshot()).toEqual([])
+    await b.runtime.dispose()
+  })
+
+  it('delegates an approval without a Session-scoped Client Context', async () => {
+    const b = await bench()
+    const next = vi.fn(() => Promise.resolve<ApprovalOutcome>('unavailable'))
+
+    await expect(b.invokeApproval(b.runtime.ctx, { toolName: 'bash' }, next))
+      .resolves.toBe('unavailable')
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(b.runtime.ctx.conversation.pendingInteractions.statuses.getSnapshot()).toEqual(new Map())
+    await b.runtime.dispose()
+  })
+
   it('assembles the thin API side-effect-free', async () => {
     const b = await bench()
     const { injected } = b.conversationApi(ROOT)
