@@ -4,6 +4,8 @@ English | [中文](README.zh.md)
 
 Session-log snapshot support for the keyless snapshot tier (`pnpm run test:snapshot`, [testing policy](../../../docs/testing.md)). Transport-neutral normalization and fixture invariants live beside the existing ACP protocol adapter so additional `dsh` profile adapters can reuse the recorded-session format without copying its guards.
 
+Every recorded-session directory carries a closed `snapshot.yml` manifest. `profile` names the shipped `dsh` controller; a directory owns its local `session.jsonl` unless `session.source` names another scenario's read-only canonical recording. Unknown fields, JavaScript YAML tags, absolute paths, and platform-specific separators fail during collection.
+
 The current ACP adapter has four importable layers:
 
 - **`launchAcpTestAgent` (launcher)** — boots a source entry under tsx or a built `lib` entry under plain Node from a supplied cwd, connects the SDK client over a raw-byte stdout tee, collects session updates and stderr, surfaces asynchronous spawn failures through startup, fails closed on unhandled permission requests, and owns graceful or signalled shutdown. Product suites name a `dsh` profile: the launcher passes the base and selected scenario patches through `--patch`, selects the scenario's sibling `*cordis.snapshot.yml` in replay, and materializes temporary copies whose relative plugin modules become absolute file URLs. Test-only fake bins may omit the profile and retain their own config grammar. Shutdown waits for process exit, inherited stdio closure, and ACP parser exhaustion before resolving or propagating a child error, so captures are complete and callers can remove owned paths after either outcome.

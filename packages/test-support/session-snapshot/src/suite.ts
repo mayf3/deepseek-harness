@@ -23,6 +23,7 @@ import { join } from 'node:path'
 import { isSurfaceEligibleType } from '@deepseek-ai/dsh-session/surface'
 import { describe, expect, it } from 'vitest'
 import { type AgentUnderTest, type HarvestedLog, type InputScript, runScenario } from './harness.ts'
+import { parseSnapshotManifest } from './manifest.ts'
 import {
   type CwdPathMode,
   type NormalizeContext,
@@ -1452,6 +1453,11 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
         const files = (await readdir(dir, { withFileTypes: true }))
           .filter(entry => entry.isFile())
           .map(entry => entry.name)
+        const manifestPath = join(dir, 'snapshot.yml')
+        expect(existsSync(manifestPath), `${name}/snapshot.yml`).toBe(true)
+        const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
+        expect(manifest.profile, `${name}: manifest profile`).toBe(agent.profile ?? 'acp')
+        expect(manifest.session, `${name}: ACP scenarios own their session`).toBeUndefined()
         const childIndices = (pattern: RegExp): Set<number> => new Set(files
           .map(file => pattern.exec(file))
           .filter((match): match is RegExpExecArray => match !== null)

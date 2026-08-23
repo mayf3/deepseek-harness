@@ -4,6 +4,8 @@
 
 无密钥快照层（`pnpm run test:snapshot`，见[测试策略](../../../docs/testing.zh.md)）的会话日志快照支持。与传输无关的规范化和 fixture（测试前置数据）不变量与现有 ACP（Agent Client Protocol）协议适配器位于同一包中，使其他 `dsh` profile 适配器可以复用录制会话格式，而不复制其保护机制。
 
+每个录制会话目录都包含一个封闭的 `snapshot.yml` manifest。`profile` 指名随附的 `dsh` 控制器；除非 `session.source` 指向另一个场景的只读规范录制，否则目录拥有本地 `session.jsonl`。收集期间会拒绝未知字段、JavaScript YAML tag、绝对路径和平台专用分隔符。
+
 当前 ACP 适配器包含四个可单独导入的层：
 
 - **`launchAcpTestAgent`（启动器）**：从指定 cwd 在 tsx 下启动源码入口，或在普通 Node 下启动已构建 `lib` 入口；通过原始字节 stdout tee 连接 SDK 客户端，收集会话更新和 stderr，在启动阶段报告异步 spawn 失败，默认拒绝未处理的权限请求，并负责优雅或带信号关闭。产品套件指定一个 `dsh` profile：启动器通过 `--patch` 传入基础 patch 与所选场景 patch，在 replay 时选择场景同级的 `*cordis.snapshot.yml`，并把相对插件模块改写成绝对 file URL 后物化为临时副本。测试专用 fake bin 可以省略 profile 并保留自己的配置语法。关闭会等待进程退出、继承 stdio 关闭和 ACP parser 耗尽，然后才完成关闭或传播子级错误，使捕获内容完整，且调用方可在任一结果后移除自有路径。

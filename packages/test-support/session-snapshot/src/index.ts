@@ -47,6 +47,12 @@ export {
   type NormalizeOptions,
 } from './normalize.ts'
 export {
+  parseSnapshotManifest,
+  type SnapshotManifest,
+  type SnapshotProfile,
+  type SnapshotSessionReference,
+} from './manifest.ts'
+export {
   defineAcpSnapshotSuite,
   refreshFixtureReplacements,
   stabilizeFixtureMessageIds,
