@@ -36,7 +36,7 @@ export function apply(ctx: Context) {
 
 ## UI 插件
 
-UI 插件从 `session/event` 事件流渲染（助手 token 流以 `assistant/chunk` 形式到达，加上轮次/步骤边界与工具活动），并通过 `agent.followup()` / `agent.steer()` 将输入驱动回去。如果浏览器插件要向内建 Web Client 贡献业务行，则应注册 `ConversationNodeDefinition` 与 keyed Chat renderer；具体步骤见 [Conversation Node 指南](adding-a-conversation-node.zh.md)。
+UI 插件从 `session/event` 事件流渲染（助手 token 流以 `assistant/chunk` 形式到达，加上轮次/步骤边界与工具活动），并通过 `agent.followup()` / `agent.steer()` 将输入驱动回去。如果浏览器插件要向内建 Web Client 贡献业务行，则应注册 `ConversationNodeDefinition` 与 keyed Chat renderer；具体约定见 [Conversation 子系统参考](../subsystems/conversation.zh.md)。
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'

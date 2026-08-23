@@ -1,12 +1,26 @@
-# Add a Web Client conversation node
+# Conversation assembly
 
-English | [中文](adding-a-conversation-node.zh.md)
+English | [中文](conversation.zh.md)
 
-This tutorial adds one business-owned row to the Web Client Chat view. The finished plugin correlates a durable Session event family into one Context, incrementally builds business State, publishes typed Step data, and renders a keyed Chat Node without scanning the Session window or other rendered nodes. It assumes the Host already records the events and the client plugin is composed into the Web bundle; external Host-side UIs and additional view targets such as Trajectory are outside this tutorial.
+Conversation is the target-neutral assembly layer between a Client Session event window and browser views. [`ui-conversation`](../../packages/client/ui-conversation/README.md) owns the event and view registries, one identity-stable binding per `SessionBinding`, Turn/Step locations, incremental Context assembly, target sources, the shared shell, and input orchestration. Target packages such as [`ui-chat`](../../packages/client/ui-chat/README.md) and [`ui-trajectory`](../../packages/client/ui-trajectory/README.md) own their Definitions, final snapshots, and rendering.
 
-The [Conversation Node assembly decision](../../.agents/notes/implemented/architecture/2026-08-09-client-conversation-node-assembly.md) owns the rationale and complete engine model. This guide covers the implementation path.
+This page defines the data model and the extension path for a business-owned Conversation node. The [Web Client architecture](web-client.md) places the subsystem between Client models and Slots; the [Conversation Node assembly decision](../../.agents/notes/implemented/architecture/2026-08-09-client-conversation-node-assembly.md) owns its rationale.
 
-## 1. Design a replayable event family
+## Data model and ownership
+
+The Session Controller owns the contiguous loaded event window. `ui-conversation` observes that existing source and converts each entry to `{ event, view? }`; it never opens a second history stream. One `ConversationNodeAssembler` per Session applies every registered Definition and publishes an independent source for each registered view target.
+
+| Concept | Owner and purpose |
+|---|---|
+| Event Definition | A business package matches one event at a time, correlates it by stable `(kind, id)`, folds deterministic State, and optionally materializes one target node. |
+| Context | The engine-owned ordered Matches and current State for one `(kind, id)`. Update-only evidence may remain pending until pagination supplies its unique start. |
+| Location | The engine-owned Session, Turn, or Step coordinates derived from durable boundary events. Definitions may publish typed data onto one Turn or Step. |
+| View Definition | A target package creates one incremental builder per Session and owns the final snapshot type for that target. |
+| View | A Slot entry such as Chat or Trajectory reads only its target snapshot and renders target-owned nodes. |
+
+Chat and Trajectory may recognize the same durable event family, but each keeps its own Definition State and final node payload. Shared target-neutral machinery is limited to identity routing, ordered replay, Location data, predecessor dependencies, and publication cadence.
+
+## Replayable event families
 
 Choose one stable business id before writing the Definition. Every event that contributes to the same Node must carry that id or derive it independently from its own payload; the client must never assign an update to “the latest unfinished” Context.
 
@@ -22,7 +36,7 @@ Use the producer-owned branded id type across the process boundary. Put the `Ses
 
 Incremental events are supported. Prefer whole-value checkpoints when the producer can emit them cheaply, because they remain useful when the start is outside the loaded window. Each delta must carry the stable id and produce deterministic State when replayed in ascending log `seq`; it must not depend on live-only memory. If the current history window contains only updates, the assembler keeps a pending Context and builds no State until an older page supplies the start. If the product must render before the start is loaded, a terminal or checkpoint event must carry enough whole fallback state for the Definition to build that result directly; do not recover it by scanning unrelated events.
 
-## 2. Implement the Definition and typed Chat payload
+## Definition and typed Chat payload
 
 The example keeps the producer declarations and client contribution in one block so the complete relationship is visible. In a package family, keep the branded id and `SessionEventMap` declaration with the event producer, and keep the Definition, Chat data merge, and renderer in the client plugin.
 
@@ -89,7 +103,7 @@ interface ReviewChatData {
   readonly summary?: string
 }
 
-declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+declare module '@deepseek-ai/dsh-client-ui-chat/client' {
   interface ChatNodeDataMap {
     'review-job': ReviewChatData
   }
@@ -200,13 +214,13 @@ export function apply(ctx: ClientContext): void {
 
 `target` and `buildViewNode(context)` declare one target-owned rendering contribution and must appear together. Preserve `context.key` as the React-facing identity, choose `anchorSeq` from durable ordering evidence, and return only renderer-ready data. Once a target Node has been published, keep returning the same key; use `visibility: 'hidden'` when it must temporarily leave the visible flow rather than withdrawing it with `null`.
 
-## 3. Query an earlier business Context only at start
+## Predecessor reads
 
 Some Definitions need the latest earlier State of another business kind. `start` receives a `ConversationContextReader`; call `reader.previous<State>(kind)` there instead of accepting a Context collection or scanning events. The reader returns the nearest started Context before the current start `seq` as read-only data.
 
 The assembler records that dependency. If an older prepend later supplies a nearer predecessor, closes a previously unknown window gap, or revises the predecessor State, it reruns the dependent Context from `start` and replays its updates in ascending `seq`. The queried Definition remains responsible for writing useful State; the reader exposes no business-specific query methods and grants no mutation authority over another Context.
 
-## 4. Understand the three ingestion paths
+## Window update paths
 
 History may be requested from the tail backward one page at a time, but every accepted page is normalized into ascending `seq` before State replay.
 
@@ -220,7 +234,7 @@ With `D` registered Definitions, one incoming event performs `D` current-event m
 
 `publication` controls when changed State is materialized. Use `immediate` for structural or terminal changes, `animation-frame` for high-frequency visible deltas, and `none` when the State change feeds only a later publication. The engine still applies every update in log order; cadence only coalesces view publication.
 
-## 5. Verify replay, pagination, and rendering
+## Verification obligations
 
 Add focused tests that establish these outcomes:
 

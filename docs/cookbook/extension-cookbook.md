@@ -34,7 +34,7 @@ This waterfall is the reorderable policy layer. Use `ctx.tools.guard()` when an 
 
 ## A UI plugin
 
-A UI plugin renders from the `session/event` feed (the assistant token stream as `assistant/chunk`, plus turn/step boundaries and tool activity), and drives input back in via `agent.followup()` / `agent.steer()`. A browser plugin contributing a business row to the built-in Web Client instead registers a `ConversationNodeDefinition` and keyed Chat renderer; follow the [Conversation Node guide](adding-a-conversation-node.md).
+A UI plugin renders from the `session/event` feed (the assistant token stream as `assistant/chunk`, plus turn/step boundaries and tool activity), and drives input back in via `agent.followup()` / `agent.steer()`. A browser plugin contributing a business row to the built-in Web Client instead registers a `ConversationNodeDefinition` and keyed Chat renderer; follow the [Conversation subsystem reference](../subsystems/conversation.md).
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'

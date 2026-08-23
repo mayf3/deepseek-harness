@@ -51,7 +51,10 @@
 | [webhook.md](webhook.zh.md) | 通过身份验证的提供方交付、任意程序化规则，以及 fire-and-forget 的 Workspace Session 创建 |
 | [storage.md](storage.zh.md) | 存储子系统：后端约定（`StorageBackend`）、`StorageForms`、`DomainSpec`/`Domain`、`domain/changed` |
 | [workspace.md](workspace.zh.md) | 工作区注册表：`Workspace`/`WorkspaceId`、注册与解析、与会话 `cwd` 的关系 |
+| [web-client.md](web-client.zh.md) | 浏览器架构：启动、Remote 通信、配对的 Client model、UI adapter、Conversation 组装、Slots 与重连语义 |
 | [client-modules.md](client-modules.zh.md) | Web 插件表：`dsh.client` 声明、`WebBootGraph` 线上组合、bundle 路由与 index 转换 |
+| [slots.md](slots.zh.md) | 类型化 Web UI 组合：声明所有权、cardinality 与 scope、框架与功能注入、props 推导及当前层级 |
+| [conversation.md](conversation.zh.md) | target-neutral Session event 组装：Context identity、Location data、replay 路径、view builder 与 target 自有 render node |
 | [session-projection.md](session-projection.zh.md) | 投影 seam：`SessionProjectionMap`、纯函数 `ProjectionDefinition` 单元、`ProjectionSnapshot` 的一致切面、变更馈送 |
 | [session-telemetry.md](session-telemetry.zh.md) | 对外会话上报能力 seam：`SessionTelemetryRecord`/`SessionTelemetrySeverity`、`SessionTelemetrySink` 约定和 `session-telemetry/record` 脱敏 waterfall |
 
