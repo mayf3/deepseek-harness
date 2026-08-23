@@ -51,7 +51,8 @@ export function parseLandlockArguments(args: readonly string[]): LandlockInvocat
 
 /** Map the host launcher's temp path into the Worker VFS. */
 function vfsPath(path: string, cwd: string): string {
-  const absolute = resolve(cwd, path)
+  const resolved = resolve(cwd, path)
+  const absolute = resolved.length > 1 ? resolved.replace(/\/+$/u, '') : resolved
   if (absolute === '/tmp') return DSH_TMP
   if (absolute.startsWith('/tmp/')) return `${DSH_TMP}${absolute.slice('/tmp'.length)}`
   return absolute

@@ -5,6 +5,7 @@ import { captureAsyncContext, runWithAsyncContext } from './async_hooks.ts'
 import { basename, relative, resolve, sep } from './path.ts'
 import { requireActiveVfs } from '../../../storage/active.ts'
 import type { VfsBigIntStats, VfsMutation, VfsStats } from '../../../storage/types.ts'
+import { abortError } from './abort-error.ts'
 
 type PathArg = string | URL | Uint8Array
 type WatchListener = (eventType: 'rename' | 'change', filename: string | Buffer | null) => void
@@ -82,14 +83,6 @@ const contains = (parent: string, child: string): boolean =>
 
 const overlaps = (left: string, right: string): boolean => contains(left, right) || contains(right, left)
 
-const abortError = (reason?: unknown): Error & { code: string; cause?: unknown } => {
-  const error = new Error('The operation was aborted') as Error & { code: string }
-  error.name = 'AbortError'
-  error.code = 'ABORT_ERR'
-  if (reason !== undefined) error.cause = reason
-  return error
-}
-
 /** `fs.FSWatcher` over VFS mutations. */
 export class FSWatcher extends EventEmitter {
   private readonly disposeMutation: () => void
@@ -122,9 +115,8 @@ export class FSWatcher extends EventEmitter {
     this.signal = options.signal
     this.onAbort = options.signal === undefined ? undefined : () => { this.close() }
     if (options.signal?.aborted === true) {
-      this.disposeMutation()
-      this.closed = true
-      throw abortError(options.signal.reason)
+      this.close()
+      return
     }
     options.signal?.addEventListener('abort', this.onAbort as () => void, { once: true })
   }
@@ -372,6 +364,10 @@ export function watchAsync(
   const onAbort = (): void => { settleFailure(abortError(options.signal?.reason)) }
   const start = (): void => {
     if (watcher !== undefined || closed || failure !== undefined) return
+    if (options.signal?.aborted === true) {
+      settleFailure(abortError(options.signal.reason))
+      return
+    }
     try {
       watcher = watch(path, options, (eventType, filename) => {
         const event = { eventType, filename }

@@ -17,6 +17,7 @@ export interface PreviewFixtureManifestEntry {
 /** Complete built-in fixture catalog consumed before Worker startup. */
 export interface PreviewFixtureManifest {
   readonly version: number
+  /** Required default fixture id, or null when the chooser should default to an empty overlay. */
   readonly defaultFixture: string | null
   readonly fixtures: readonly PreviewFixtureManifestEntry[]
 }

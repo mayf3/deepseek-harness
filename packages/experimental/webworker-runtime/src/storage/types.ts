@@ -1,8 +1,8 @@
 /**
  * Filesystem interfaces shared by every VFS backend. The shipped implementation
- * is in memory; a browser-persistent backend would implement the same faces. Errors carry
- * Node's `code` values because roster plugins branch on them (`ENOENT` for
- * optional files, `EACCES` for read-only trees).
+ * is in memory; browser persistence hydrates it and consumes its committed
+ * mutation stream. Errors carry Node's `code` values because roster plugins
+ * branch on them (`ENOENT` for optional files, `EACCES` for read-only trees).
  * @module @deepseek-ai/dsh-experimental-webworker-runtime/src/storage/types
  */
 
@@ -22,7 +22,7 @@ export interface VfsError extends Error {
 /** Subset of `fs.Stats` the roster reads. */
 export interface VfsStats {
   readonly size: number
-  /** Stable identity while an entry exists; recreation receives another value. */
+  /** Stable file identity across rename and hard links; recreation receives another value. */
   readonly ino: number
   readonly mtimeMs: number
   readonly ctimeMs: number
@@ -54,7 +54,7 @@ export interface VfsBigIntStats {
   readonly mode: bigint
   /** One virtual device holds the whole image. */
   readonly dev: bigint
-  /** Identity of the entry at this path; a removed and recreated path gets a new one. */
+  /** File identity retained across rename and hard links; recreation gets a new one. */
   readonly ino: bigint
   readonly nlink: bigint
   readonly mtimeMs: bigint
@@ -123,6 +123,40 @@ export interface VfsFileHandle {
   sync(): Promise<void>
   datasync(): Promise<void>
   close(): Promise<void>
+}
+
+/** Open-file identity used by synchronous Node-style descriptors. */
+export interface VfsOpenFile {
+  /** Whether reads are allowed by the flags used at open time. */
+  readonly readable: boolean
+  /** Whether writes and truncation are allowed by the flags used at open time. */
+  readonly writable: boolean
+  /** Whether each write targets the current end of the opened file. */
+  readonly append: boolean
+  /**
+   * Read bytes from the opened file identity.
+   * @param position - Absolute byte offset.
+   * @param length - Maximum byte count.
+   * @returns A view of the available bytes.
+   */
+  read(position: number, length: number): Uint8Array
+  /**
+   * Write bytes to the opened file identity.
+   * @param position - Absolute byte offset, ignored for append descriptors.
+   * @param data - Bytes to write.
+   * @returns Number of bytes written.
+   */
+  write(position: number, data: Uint8Array): number
+  /**
+   * Resize the opened file, zero-filling growth.
+   * @param length - Target byte length.
+   */
+  truncate(length: number): void
+  /**
+   * Read metadata from the opened file identity.
+   * @returns Current file metadata, including after rename or unlink.
+   */
+  stat(): VfsStats
 }
 
 /**
@@ -203,6 +237,8 @@ export interface Vfs {
   unlinkSync(path: string): void
   rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void
   mkdtempSync(prefix: string): string
+  /** Open and retain one file identity until its Node descriptor closes. */
+  openFileSync(path: string, flags?: string, mode?: number): VfsOpenFile
   seed(path: string, data: string | Uint8Array, options?: VfsSeedOptions): void
   seedDirectory(path: string, options?: VfsSeedOptions): void
   usage(): { files: number; directories: number; bytes: number }

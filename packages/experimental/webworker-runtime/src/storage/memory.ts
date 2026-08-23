@@ -8,7 +8,7 @@ import { dirname, join, normalize, resolve, SEP } from '../module-system/posix-p
 import { IMAGE_OVERLAY_DIRECTORIES } from '../image-layout.ts'
 import { parseTar } from './tar.ts'
 import type {
-  Vfs, VfsBigIntStats, VfsDir, VfsDirent, VfsEncoding, VfsError, VfsFileHandle, VfsMutation,
+  Vfs, VfsBigIntStats, VfsDir, VfsDirent, VfsEncoding, VfsError, VfsFileHandle, VfsMutation, VfsOpenFile,
   VfsMutationListener, VfsMutationSink, VfsReadOptions, VfsSeedOptions, VfsStatOptions, VfsStats, VfsWriteOptions,
 } from './types.ts'
 
@@ -20,6 +20,8 @@ interface FileNode {
   mtimeMs: number
   /** Permission bits (`0o777` mask), set at creation and changed only by `chmod`. */
   mode: number
+  /** Stable identity shared by hard links and retained by open descriptors. */
+  identity?: bigint
 }
 
 /** Creation default for files, Node's `0o666` under the classic `022` umask. */
@@ -80,7 +82,14 @@ function statsOf(size: number, mtimeMs: number, directory: boolean, ino: bigint,
  * @param mode - Stored permission bits of the entry.
  * @returns Stats in the shape Node returns under `{ bigint: true }`.
  */
-function bigIntStatsOf(size: number, mtimeMs: number, directory: boolean, ino: bigint, mode: number): VfsBigIntStats {
+function bigIntStatsOf(
+  size: number,
+  mtimeMs: number,
+  directory: boolean,
+  ino: bigint,
+  mode: number,
+  nlink = 1,
+): VfsBigIntStats {
   const milliseconds = BigInt(Math.trunc(mtimeMs))
   const nanoseconds = milliseconds * 1_000_000n
   const time = new Date(mtimeMs)
@@ -89,7 +98,7 @@ function bigIntStatsOf(size: number, mtimeMs: number, directory: boolean, ino: b
     mode: BigInt((directory ? 0o040000 : 0o100000) | (mode & 0o777)),
     dev: 1n,
     ino,
-    nlink: 1n,
+    nlink: BigInt(nlink),
     mtimeMs: milliseconds,
     mtimeNs: nanoseconds,
     ctimeMs: milliseconds,
@@ -110,6 +119,49 @@ function bigIntStatsOf(size: number, mtimeMs: number, directory: boolean, ino: b
     isBlockDevice: () => false,
     isCharacterDevice: () => false,
   }
+}
+
+interface OpenMode {
+  readonly readable: boolean
+  readonly writable: boolean
+  readonly append: boolean
+  readonly create: boolean
+  readonly truncate: boolean
+  readonly exclusive: boolean
+}
+
+/** Parse the Node string flags supported by the compatibility filesystem. */
+function openMode(flags: string): OpenMode {
+  const base = flags[0]
+  const suffix = flags.slice(1).split('')
+  const validSuffix = suffix.every(flag => flag === '+' || flag === 'x' || flag === 's')
+  const uniqueSuffix = new Set(suffix).size === suffix.length
+  if ((base !== 'r' && base !== 'w' && base !== 'a') || !validSuffix || !uniqueSuffix
+    || base === 'r' && flags.includes('x')) {
+    const error = new TypeError(`The argument 'flags' is invalid. Received '${flags}'`) as TypeError & { code: string }
+    error.code = 'ERR_INVALID_ARG_VALUE'
+    throw error
+  }
+  return {
+    readable: base === 'r' || flags.includes('+'),
+    writable: base !== 'r' || flags.includes('+'),
+    append: base === 'a',
+    create: base === 'w' || base === 'a',
+    truncate: base === 'w',
+    exclusive: flags.includes('x'),
+  }
+}
+
+/** Resize bytes exactly, preserving the prefix and zero-filling growth. */
+function resize(bytes: Uint8Array, length: number): Uint8Array {
+  if (!Number.isSafeInteger(length) || length < 0) {
+    const error = new RangeError(`The value of "len" is out of range. It must be >= 0. Received ${String(length)}`) as RangeError & { code: string }
+    error.code = 'ERR_OUT_OF_RANGE'
+    throw error
+  }
+  const resized = new Uint8Array(length)
+  resized.set(bytes.subarray(0, length))
+  return resized
 }
 
 /** Construction inputs for {@link MemoryVfs}. */
@@ -133,9 +185,8 @@ export class MemoryVfs implements Vfs {
   private readonly mutationListeners = new Set<VfsMutationListener>()
   private readonly sink: VfsMutationSink | undefined
   private temporaries = 0
-  // Identity per path, assigned on first stat and dropped when the path goes:
-  // the filesystem service builds its version token from `ino` plus the
-  // timestamp, so a recreated path must not look like the entry it replaced.
+  // Directories retain path identities. File identities live on FileNode so
+  // descriptors, renames, and hard links continue to address the same file.
   private readonly identities = new Map<string, bigint>()
   private lastIdentity = 0n
 
@@ -256,9 +307,9 @@ export class MemoryVfs implements Vfs {
       : this.directories.has(target)
         ? [0, this.directoryMtimes.get(target) ?? 0, true, this.directoryModes.get(target) ?? DEFAULT_DIRECTORY_MODE] as const
         : fail('ENOENT', 'stat', target)
-    const identity = this.identityOf(target)
+    const identity = node === undefined ? this.identityOf(target) : this.identityOfFile(node)
     return options?.bigint === true
-      ? bigIntStatsOf(size, mtimeMs, directory, identity, mode)
+      ? bigIntStatsOf(size, mtimeMs, directory, identity, mode, node === undefined ? 1 : this.pathsOf(node).length)
       : statsOf(size, mtimeMs, directory, identity, mode)
   }
 
@@ -276,7 +327,62 @@ export class MemoryVfs implements Vfs {
     return this.lastIdentity
   }
 
-  /** Forget a removed path's identity, so a recreated path reports a new one. */
+  /** @returns The inode-like identity retained by a file node across names. */
+  private identityOfFile(node: FileNode): bigint {
+    if (node.identity !== undefined) return node.identity
+    this.lastIdentity += 1n
+    node.identity = this.lastIdentity
+    return node.identity
+  }
+
+  /** @returns Every currently linked path for one file node. */
+  private pathsOf(node: FileNode): string[] {
+    const paths: string[] = []
+    for (const [path, candidate] of this.files) {
+      if (candidate === node) paths.push(path)
+    }
+    return paths
+  }
+
+  /** Publish a content or metadata write for every hard link to one node. */
+  private publishFile(node: FileNode, appendedFrom?: number): void {
+    for (const path of this.pathsOf(node)) {
+      this.publish({
+        kind: 'write', path, bytes: node.bytes, mode: node.mode, entryChanged: false,
+        ...appendedFrom === undefined ? {} : { appendedFrom },
+      })
+    }
+  }
+
+  /** Replace bytes on one file identity and notify all linked paths. */
+  private replaceFile(node: FileNode, bytes: Uint8Array, appendedFrom?: number): void {
+    node.bytes = bytes
+    node.mtimeMs = this.touchNode(node)
+    this.publishFile(node, appendedFrom)
+  }
+
+  /** Write at one offset, zero-filling any gap. */
+  private writeFileNode(node: FileNode, position: number, data: Uint8Array): number {
+    const offset = Math.max(0, position)
+    const previousLength = node.bytes.length
+    const bytes = new Uint8Array(Math.max(previousLength, offset + data.length))
+    bytes.set(node.bytes)
+    bytes.set(data, offset)
+    this.replaceFile(node, bytes, offset === previousLength ? previousLength : undefined)
+    return data.length
+  }
+
+  /** Resize one file identity and notify all linked paths. */
+  private truncateFile(node: FileNode, length: number): void {
+    this.replaceFile(node, resize(node.bytes, length))
+  }
+
+  /** @returns Plain stats for an open file, including after its last name is removed. */
+  private fileStats(node: FileNode): VfsStats {
+    return statsOf(node.bytes.length, node.mtimeMs, false, this.identityOfFile(node), node.mode)
+  }
+
+  /** Forget removed directory identities, so recreated paths report new ones. */
   private forgetIdentity(target: string): void {
     this.identities.delete(target)
     const prefix = `${target}${SEP}`
@@ -296,7 +402,12 @@ export class MemoryVfs implements Vfs {
    * @returns Now, or one millisecond past the entry's current time.
    */
   private touch(target: string): number {
-    const previous = this.files.get(target)?.mtimeMs
+    return this.touchNode(this.files.get(target))
+  }
+
+  /** @returns A modification time strictly newer than one file node's current value. */
+  private touchNode(node?: FileNode): number {
+    const previous = node?.mtimeMs
     const now = Date.now()
     return previous === undefined ? now : Math.max(now, previous + 1)
   }
@@ -402,11 +513,14 @@ export class MemoryVfs implements Vfs {
     const previous = this.files.get(target)
     const mode = previous?.mode ?? (options?.mode !== undefined ? options.mode & 0o777 : DEFAULT_FILE_MODE)
     const bytes = typeof data === 'string' ? encoder.encode(data) : data
-    this.files.set(target, { bytes, mtimeMs: this.touch(target), mode })
-    if (previous === undefined) this.touchDirectory(dirname(target))
-    this.publish({
-      kind: 'write', path: target, bytes, mode, entryChanged: previous === undefined,
-    })
+    if (previous !== undefined) {
+      this.replaceFile(previous, bytes)
+      return
+    }
+    const node: FileNode = { bytes, mtimeMs: this.touch(target), mode }
+    this.files.set(target, node)
+    this.touchDirectory(dirname(target))
+    this.publish({ kind: 'write', path: target, bytes, mode, entryChanged: true })
   }
 
   /**
@@ -453,46 +567,89 @@ export class MemoryVfs implements Vfs {
         ...this.handleTail(target),
       }
     }
-    const exists = this.files.has(target)
-    if (flags.startsWith('r') && !exists) fail('ENOENT', 'open', target)
-    if (flags.startsWith('wx') && exists) fail('EEXIST', 'open', target)
-    if (!flags.startsWith('r') && !this.directories.has(dirname(target))) fail('ENOENT', 'open', target)
-    const creation = mode === undefined ? {} : { mode }
-    if (flags.startsWith('w') && !flags.startsWith('wx')) this.writeFileSync(target, new Uint8Array(), creation)
-    if (flags.startsWith('wx')) this.writeFileSync(target, new Uint8Array(), { flag: 'wx', ...creation })
-    if (flags.startsWith('a') && !exists) this.writeFileSync(target, new Uint8Array(), creation)
-    const appending = flags.startsWith('a')
+    const file = this.openFileSync(target, flags, mode)
+    let position = 0
+    let closed = false
+    const current = (syscall: string): VfsOpenFile => {
+      if (closed) fail('EBADF', syscall, target)
+      return file
+    }
     return {
       write: async (data: string | Uint8Array): Promise<{ bytesWritten: number }> => {
         const bytes = typeof data === 'string' ? encoder.encode(data) : data
-        this.appendFileSync(target, bytes)
-        return { bytesWritten: bytes.length }
+        const descriptor = current('write')
+        const offset = descriptor.append ? descriptor.stat().size : position
+        const bytesWritten = descriptor.write(offset, bytes)
+        position = offset + bytesWritten
+        return { bytesWritten }
       },
-      // A handle opened for append must append here too: session persistence
-      // opens the log with `a` and writes each batch through this method, so a
-      // truncating write would replace the whole log with the newest batch.
       writeFile: async (data: string | Uint8Array): Promise<void> => {
-        if (appending) this.appendFileSync(target, data)
-        else this.writeFileSync(target, data)
+        const bytes = typeof data === 'string' ? encoder.encode(data) : data
+        const descriptor = current('write')
+        const offset = descriptor.append ? descriptor.stat().size : position
+        position = offset + descriptor.write(offset, bytes)
       },
-      readFile: async (options?: VfsReadOptions): Promise<string | Uint8Array> => this.readFileSync(target, options),
+      readFile: async (options?: VfsReadOptions): Promise<string | Uint8Array> => {
+        const descriptor = current('read')
+        const bytes = descriptor.read(position, Math.max(0, descriptor.stat().size - position))
+        position += bytes.length
+        return encodingOf(options) === undefined ? bytes : decoder.decode(bytes)
+      },
       truncate: async (length = 0): Promise<void> => {
-        const node = this.files.get(target)
-        if (node === undefined) fail('ENOENT', 'ftruncate', target)
-        const bytes = node.bytes.slice(0, length)
-        this.files.set(target, { bytes, mtimeMs: this.touch(target), mode: node.mode })
-        this.publish({ kind: 'write', path: target, bytes, mode: node.mode, entryChanged: false })
+        current('ftruncate').truncate(length)
       },
-      ...this.handleTail(target),
+      stat: async (): Promise<VfsStats> => current('fstat').stat(),
+      sync: async (): Promise<void> => { current('fsync'); await this.flush() },
+      datasync: async (): Promise<void> => { current('fdatasync'); await this.flush() },
+      close: async (): Promise<void> => { closed = true },
     }
   }
 
   /**
-   * The handle members that do not depend on how the file was opened.
-   *
+   * Open one synchronous descriptor over a stable file identity.
+   * @param path - File path.
+   * @param flags - Node open flags.
+   * @param mode - Permission bits applied only when a file is created.
+   * @returns An open file that survives path rename, replacement, and unlink.
+   */
+  openFileSync(path: string, flags = 'r', mode?: number): VfsOpenFile {
+    const target = this.key(path)
+    const access = openMode(flags)
+    const existing = this.files.get(target)
+    if (this.directories.has(target)) fail('EISDIR', 'open', target)
+    if (access.exclusive && existing !== undefined) fail('EEXIST', 'open', target)
+    if (!access.create && existing === undefined) fail('ENOENT', 'open', target)
+    if (access.create && existing === undefined) {
+      this.writeFileSync(target, new Uint8Array(), mode === undefined ? undefined : { mode })
+    } else if (access.truncate && existing !== undefined) {
+      this.truncateFile(existing, 0)
+    }
+    const node = this.files.get(target)
+    if (node === undefined) fail('ENOENT', 'open', target)
+    return {
+      readable: access.readable,
+      writable: access.writable,
+      append: access.append,
+      read: (position, length) => {
+        if (!access.readable) fail('EBADF', 'read', target)
+        return node.bytes.subarray(position, position + length)
+      },
+      write: (position, data) => {
+        if (!access.writable) fail('EBADF', 'write', target)
+        return this.writeFileNode(node, access.append ? node.bytes.length : position, data)
+      },
+      truncate: (length) => {
+        if (!access.writable) fail('EINVAL', 'ftruncate', target)
+        this.truncateFile(node, length)
+      },
+      stat: () => this.fileStats(node),
+    }
+  }
+
+  /**
+   * Directory-handle members for metadata, durability, and release.
    * `sync`/`datasync` settle an attached durable sink; an ephemeral filesystem
-   * resolves immediately. `close` releases nothing, so both directory and file
-   * handles share this tail.
+   * resolves immediately and `close` releases nothing.
    * @param target - Normalized path the handle was opened on.
    * @returns Metadata plus the no-op durability and release calls.
    */
@@ -515,14 +672,7 @@ export class MemoryVfs implements Vfs {
     const existing = this.files.get(target)
     const addition = typeof data === 'string' ? encoder.encode(data) : data
     if (existing === undefined) {  this.writeFileSync(target, addition); return }
-    const merged = new Uint8Array(existing.bytes.length + addition.length)
-    merged.set(existing.bytes)
-    merged.set(addition, existing.bytes.length)
-    this.files.set(target, { bytes: merged, mtimeMs: this.touch(target), mode: existing.mode })
-    this.publish({
-      kind: 'write', path: target, bytes: merged, mode: existing.mode,
-      entryChanged: false, appendedFrom: existing.bytes.length,
-    })
+    this.writeFileNode(existing, existing.bytes.length, addition)
   }
 
   /**
@@ -533,8 +683,10 @@ export class MemoryVfs implements Vfs {
   renameSync(from: string, to: string): void {
     const source = this.key(from)
     const destination = this.key(to)
+    if (source === destination) return
     const node = this.files.get(source)
     if (node !== undefined) {
+      if (this.directories.has(destination)) fail('EISDIR', 'rename', destination)
       if (!this.directories.has(dirname(destination))) fail('ENOENT', 'rename', destination)
       this.files.delete(source)
       this.files.set(destination, node)
@@ -588,9 +740,8 @@ export class MemoryVfs implements Vfs {
   /**
    * Give existing bytes a second name.
    *
-   * There are no inodes here, so the two names share the bytes present at link
-   * time and diverge on the next write through either name; session persistence
-   * links a finished file to a stable name, which this satisfies.
+   * Both names retain one file identity, so writes and metadata changes through
+   * either name remain visible through the other until that name is removed.
    * @param existing - Source file path.
    * @param next - Additional path; its parent must exist and it must be free.
    */
@@ -615,9 +766,7 @@ export class MemoryVfs implements Vfs {
     const target = this.key(path)
     const node = this.files.get(target)
     if (node === undefined) fail('ENOENT', 'truncate', target)
-    const bytes = node.bytes.slice(0, length)
-    this.files.set(target, { bytes, mtimeMs: this.touch(target), mode: node.mode })
-    this.publish({ kind: 'write', path: target, bytes, mode: node.mode, entryChanged: false })
+    this.truncateFile(node, length)
   }
 
   /**
@@ -630,7 +779,7 @@ export class MemoryVfs implements Vfs {
     const node = this.files.get(target)
     if (node !== undefined) {
       node.mode = mode & 0o777
-      this.publish({ kind: 'chmod', path: target, mode: node.mode })
+      for (const path of this.pathsOf(node)) this.publish({ kind: 'chmod', path, mode: node.mode })
       return
     }
     if (this.directories.has(target)) {

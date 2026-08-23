@@ -238,6 +238,14 @@ it('normalizes relative grants and denies sibling-prefix escapes and unreadable 
   expect(result.stdout).not.toContain('private')
 })
 
+it('treats trailing-slash grants as the same subtree', async () => {
+  const invocation = parseLandlockArguments(['--rw', '/tmp/', '--', 'true'])
+  if (invocation.kind !== 'run') throw new Error('expected a confined run invocation')
+  const guarded = await landlockFileSystem(hostFileSystem(), invocation, WORKSPACE)
+  await guarded.writeText('/tmp/nested.txt', 'allowed')
+  expect(vfs.readFileSync(`${TMP}/nested.txt`, 'utf8')).toBe('allowed')
+})
+
 it('presents the virtual device directory without storing it in the VFS', async () => {
   const child = spawn(launcherPath(), [
     ...grantArgs({ readOnly: ['/'], readWrite: ['/dev/null'] }),

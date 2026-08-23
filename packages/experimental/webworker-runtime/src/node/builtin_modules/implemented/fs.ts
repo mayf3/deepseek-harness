@@ -5,10 +5,13 @@
  * file descriptors, `mkdtemp`, access checks, watchers, streams, and the promise face.
  */
 import { requireActiveVfs } from '../../../storage/active.ts'
-import type { Vfs, VfsBigIntStats, VfsStatOptions, VfsStats, VfsWriteOptions } from '../../../storage/types.ts'
+import type {
+  Vfs, VfsBigIntStats, VfsOpenFile, VfsStatOptions, VfsStats, VfsWriteOptions,
+} from '../../../storage/types.ts'
 import { Buffer } from 'buffer'
 import { Readable, Writable } from './stream.ts'
 import { dirname } from './path.ts'
+import { abortError } from './abort-error.ts'
 import {
   FSWatcher, StatWatcher, unwatchFile, watch, watchAsync, watchFile,
 } from './fs-watch.ts'
@@ -166,11 +169,14 @@ export function stat(
   const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback
   if (callback === undefined) throw new TypeError('The "callback" argument must be of type function')
   queueMicrotask(() => {
+    let result: VfsStats | VfsBigIntStats
     try {
-      callback(null, statSync(path, options))
+      result = statSync(path, options)
     } catch (error) {
       callback(error as NodeJS.ErrnoException)
+      return
     }
+    callback(null, result)
   })
 }
 
@@ -290,9 +296,8 @@ export function accessSync(path: PathArg): void {
 }
 
 interface OpenFile {
-  path: string
+  file: VfsOpenFile
   position: number
-  append: boolean
 }
 
 const openFiles = new Map<number, OpenFile>()
@@ -308,25 +313,20 @@ let nextFd = 3
  */
 export function openSync(path: PathArg, flags = 'r', mode?: number): number {
   const target = asPath(path)
-  const exists = vfs().existsSync(target)
-  if (flags.includes('x') && exists) {
-    const error = new Error(`EEXIST: file already exists, open '${target}'`) as Error & { code: string; path: string }
-    error.code = 'EEXIST'
-    error.path = target
-    throw error
-  }
-  if (flags.startsWith('r')) vfs().realpathSync(target)
-  else if (flags.startsWith('w') || !exists) {
-    vfs().writeFileSync(target, new Uint8Array(0), mode === undefined ? undefined : { mode })
-  }
+  const file = vfs().openFileSync(target, flags, mode)
   const fd = nextFd++
-  openFiles.set(fd, { path: target, position: 0, append: flags.startsWith('a') })
+  openFiles.set(fd, { file, position: 0 })
   return fd
 }
 
 const fileOf = (fd: number, syscall: string): OpenFile => {
   const file = openFiles.get(fd)
-  if (file === undefined) throw new Error(`EBADF: bad file descriptor, ${syscall}`)
+  if (file === undefined) {
+    const error = new Error(`EBADF: bad file descriptor, ${syscall}`) as Error & { code: string; syscall: string }
+    error.code = 'EBADF'
+    error.syscall = syscall
+    throw error
+  }
   return file
 }
 
@@ -347,9 +347,8 @@ export function readSync(
   position: number | null = null,
 ): number {
   const file = fileOf(fd, 'read')
-  const bytes = bytesOf(file.path)
   const from = position ?? file.position
-  const slice = bytes.subarray(from, from + length)
+  const slice = file.file.read(from, length)
   buffer.set(slice, offset)
   if (position === null) file.position = from + slice.byteLength
   return slice.byteLength
@@ -364,17 +363,10 @@ export function readSync(
 export function writeSync(fd: number, data: string | Uint8Array): number {
   const file = fileOf(fd, 'write')
   const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data
-  if (file.append) {
-    vfs().appendFileSync(file.path, bytes)
-    return bytes.byteLength
-  }
-  const existing = vfs().existsSync(file.path) ? bytesOf(file.path) : new Uint8Array(0)
-  const merged = new Uint8Array(Math.max(existing.byteLength, file.position + bytes.byteLength))
-  merged.set(existing, 0)
-  merged.set(bytes, file.position)
-  vfs().writeFileSync(file.path, merged)
-  file.position += bytes.byteLength
-  return bytes.byteLength
+  const position = file.file.append ? file.file.stat().size : file.position
+  const bytesWritten = file.file.write(position, bytes)
+  file.position = position + bytesWritten
+  return bytesWritten
 }
 
 /**
@@ -382,17 +374,16 @@ export function writeSync(fd: number, data: string | Uint8Array): number {
  * @param fd - descriptor.
  */
 export function closeSync(fd: number): void {
-  openFiles.delete(fd)
+  if (!openFiles.delete(fd)) fileOf(fd, 'close')
 }
 
 /**
- * Create a second name for one file's contents. Hard links do not exist in the
- * VFS, so the bytes are copied.
+ * Create a second name for one file identity.
  * @param from - existing path.
  * @param to - new path.
  */
 export function linkSync(from: PathArg, to: PathArg): void {
-  writeFileSync(to, bytesOf(asPath(from)))
+  vfs().linkSync(asPath(from), asPath(to))
 }
 
 /**
@@ -424,30 +415,40 @@ export interface FileHandle {
 export function openHandleSync(path: PathArg, flags = 'r', mode?: number): FileHandle {
   const target = asPath(path)
   const directory = vfs().existsSync(target) && vfs().statSync(target).isDirectory()
-  const append = flags.startsWith('a')
   const fd = directory ? -1 : openSync(target, flags, mode)
+  let closed = false
+  const descriptor = (syscall: string): OpenFile => fileOf(fd, syscall)
   return {
     fd,
-    readFile: async (options?: EncodingOption) => readFileSync(target, options),
-    // Node appends when the handle was opened with 'a'. The JSONL session log
-    // depends on it — `open(path, 'a')` then `writeFile(batch)` — and replacing
-    // the file there destroys the header frame its reader requires.
+    readFile: async (options?: EncodingOption) => {
+      if (directory) return readFileSync(target, options)
+      const open = descriptor('read')
+      const bytes = open.file.read(open.position, Math.max(0, open.file.stat().size - open.position))
+      open.position += bytes.length
+      const encoding = encodingOf(options)
+      return encoding === undefined || encoding === 'utf8' || encoding === 'utf-8'
+        ? (encoding === undefined ? asBuffer(bytes) : new TextDecoder().decode(bytes))
+        : asBuffer(bytes).toString(encoding)
+    },
     writeFile: async (data: string | Uint8Array) => {
-      if (append) appendFileSync(target, data)
-      else writeFileSync(target, data)
+      if (directory) writeFileSync(target, data)
+      else writeSync(fd, data)
     },
     write: async (data: string | Uint8Array) => ({ bytesWritten: writeSync(fd, data) }),
     read: async (buffer: Uint8Array, offset = 0, length = buffer.byteLength, position: number | null = null) => ({
       bytesRead: readSync(fd, buffer, offset, length, position),
       buffer,
     }),
-    stat: async () => statSync(target) as VfsStats,
+    stat: async () => directory ? statSync(target) as VfsStats : descriptor('fstat').file.stat(),
     truncate: async (length = 0) => {
-      writeFileSync(target, bytesOf(target).subarray(0, length))
+      if (directory) writeFileSync(target, new Uint8Array(length))
+      else descriptor('ftruncate').file.truncate(length)
     },
     sync: async () => { await vfs().flush() },
     datasync: async () => { await vfs().flush() },
     close: async () => {
+      if (closed) return
+      closed = true
       if (fd !== -1) closeSync(fd)
     },
   }
@@ -477,12 +478,8 @@ export interface WriteStreamOptions {
   signal?: AbortSignal
 }
 
-const aborted = (reason?: unknown): Error => {
-  const error = new Error('The operation was aborted', { cause: reason }) as Error & { code: string }
-  error.name = 'AbortError'
-  error.code = 'ABORT_ERR'
-  return error
-}
+/** Node implements file-stream `autoClose` through the stream's `autoDestroy` state. */
+const streamAutoDestroy = (autoClose: boolean | undefined): boolean => autoClose ?? true
 
 /** Read stream over one VFS file. */
 export class ReadStream extends Readable {
@@ -503,7 +500,7 @@ export class ReadStream extends Readable {
 
   constructor(path: PathArg, options: ReadStreamOptions = {}) {
     super({
-      autoDestroy: options.autoClose ?? true,
+      autoDestroy: streamAutoDestroy(options.autoClose),
       emitClose: options.emitClose ?? true,
       highWaterMark: options.highWaterMark ?? 64 * 1024,
     })
@@ -513,7 +510,7 @@ export class ReadStream extends Readable {
     this.flags = options.flags ?? 'r'
     this.position = this.start
     this.signal = options.signal
-    this.onAbort = options.signal === undefined ? undefined : () => { this.destroy(aborted(options.signal?.reason)) }
+    this.onAbort = options.signal === undefined ? undefined : () => { this.destroy(abortError(options.signal?.reason)) }
     if (options.encoding !== undefined && options.encoding !== null) this.setEncoding(options.encoding)
     options.signal?.addEventListener('abort', this.onAbort as () => void, { once: true })
   }
@@ -524,7 +521,7 @@ export class ReadStream extends Readable {
       return
     }
     if (this.signal?.aborted === true) {
-      callback(aborted(this.signal.reason))
+      callback(abortError(this.signal.reason))
       return
     }
     try {
@@ -598,7 +595,7 @@ export class WriteStream extends Writable {
 
   constructor(path: PathArg, options: WriteStreamOptions = {}) {
     super({
-      autoDestroy: options.autoClose ?? true,
+      autoDestroy: streamAutoDestroy(options.autoClose),
       decodeStrings: true,
       defaultEncoding: options.encoding ?? 'utf8',
       emitClose: options.emitClose ?? true,
@@ -609,7 +606,7 @@ export class WriteStream extends Writable {
     this.mode = options.mode
     this.start = options.start
     this.signal = options.signal
-    this.onAbort = options.signal === undefined ? undefined : () => { this.destroy(aborted(options.signal?.reason)) }
+    this.onAbort = options.signal === undefined ? undefined : () => { this.destroy(abortError(options.signal?.reason)) }
     options.signal?.addEventListener('abort', this.onAbort as () => void, { once: true })
   }
 
@@ -619,7 +616,7 @@ export class WriteStream extends Writable {
       return
     }
     if (this.signal?.aborted === true) {
-      callback(aborted(this.signal.reason))
+      callback(abortError(this.signal.reason))
       return
     }
     try {
@@ -772,13 +769,12 @@ export const promises = {
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(target, bytesOf(source))
   },
-  // The VFS has no inodes, so a hard link is a byte copy: the caller's contract
-  // is only that both names read the same content until one is removed.
+  // The VFS keeps both names attached to one file identity until either name is removed.
   link: async (from: PathArg, to: PathArg): Promise<void> => { linkSync(from, to) },
   open: async (path: PathArg, flags?: string, mode?: number): Promise<FileHandle> => openHandleSync(path, flags, mode),
   opendir: async (path: PathArg): Promise<Dir> => opendirSync(path),
   truncate: async (path: PathArg, length = 0): Promise<void> => {
-    writeFileSync(path, bytesOf(asPath(path)).subarray(0, length))
+    vfs().truncateSync(asPath(path), length)
   },
   watch: watchAsync,
   constants,

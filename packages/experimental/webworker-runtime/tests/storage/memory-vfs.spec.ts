@@ -40,10 +40,7 @@ describe('entry identity', () => {
     expect(identity(vfs, '/dsh/skills/git/SKILL.md')).not.toBe(before)
   })
 
-  it('assigns the destination of a rename an identity of its own', () => {
-    // Identity belongs to the path, not to the bytes: a renamed-over path must
-    // stop looking like the entry it replaced, which is the property the guard
-    // reads. The source identity deliberately does not follow the move.
+  it('moves the source identity when a file replaces another path', () => {
     const vfs = new MemoryVfs()
     vfs.seed('/dsh/from.txt', 'moved')
     vfs.seed('/dsh/to.txt', 'replaced')
@@ -51,7 +48,7 @@ describe('entry identity', () => {
     vfs.renameSync('/dsh/from.txt', '/dsh/to.txt')
     const renamed = identity(vfs, '/dsh/to.txt')
     expect(vfs.readFileSync('/dsh/to.txt', 'utf8')).toBe('moved')
-    expect([renamed === source, renamed === destination]).toEqual([false, false])
+    expect([renamed === source, renamed === destination]).toEqual([true, false])
   })
 })
 
@@ -90,6 +87,16 @@ describe('modification time', () => {
     clock.mockReturnValue(1_700_000_005_000)
     vfs.writeFileSync('/dsh/log.jsonl', 'second\n')
     expect(modified(vfs, '/dsh/log.jsonl')).toBe(1_700_000_005_000)
+  })
+
+  it('extends truncation with zero bytes', async () => {
+    const vfs = new MemoryVfs()
+    vfs.seed('/dsh/file', new Uint8Array([1, 2]))
+    vfs.truncateSync('/dsh/file', 5)
+    expect([...vfs.readFileSync('/dsh/file') as Uint8Array]).toEqual([1, 2, 0, 0, 0])
+    const handle = vfs.open('/dsh/file', 'r+')
+    await handle.truncate(7)
+    expect([...vfs.readFileSync('/dsh/file') as Uint8Array]).toEqual([1, 2, 0, 0, 0, 0, 0])
   })
 
   it('advances a directory only when its immediate entry set changes', () => {
@@ -175,6 +182,24 @@ describe('mutation publication', () => {
     expect(flushes).toBe(1)
   })
 
+  it('publishes descriptor writes at the file identity current path', () => {
+    const mutations: VfsMutation[] = []
+    const vfs = new MemoryVfs()
+    vfs.seed('/dsh/source', 'old')
+    const descriptor = vfs.openFileSync('/dsh/source', 'r+')
+    vfs.subscribe((mutation) => { mutations.push(mutation) })
+    vfs.renameSync('/dsh/source', '/dsh/destination')
+    mutations.length = 0
+    descriptor.write(0, new TextEncoder().encode('new'))
+    expect(mutations.map(mutation => mutation.path)).toEqual(['/dsh/destination'])
+    expect(vfs.readFileSync('/dsh/destination', 'utf8')).toBe('new')
+    vfs.unlinkSync('/dsh/destination')
+    mutations.length = 0
+    descriptor.write(0, new TextEncoder().encode('detached'))
+    expect(mutations).toEqual([])
+    expect(new TextDecoder().decode(descriptor.read(0, descriptor.stat().size))).toBe('detached')
+  })
+
   it('decomposes a directory rename into replayable destination state', () => {
     const recorded: VfsMutation[] = []
     const vfs = new MemoryVfs({
@@ -196,13 +221,30 @@ describe('mutation publication', () => {
 })
 
 describe('hard links', () => {
-  it('shares the bytes present at link time and diverges on the next write', () => {
+  it('shares identity, bytes, and mode until one name is removed', () => {
     const vfs = new MemoryVfs()
     vfs.seed('/dsh/session.jsonl', 'committed\n')
     vfs.linkSync('/dsh/session.jsonl', '/dsh/session-latest.jsonl')
+    expect(identity(vfs, '/dsh/session-latest.jsonl')).toBe(identity(vfs, '/dsh/session.jsonl'))
     expect(vfs.readFileSync('/dsh/session-latest.jsonl', 'utf8')).toBe('committed\n')
+    const changedPaths: string[] = []
+    vfs.subscribe((mutation) => { changedPaths.push(mutation.path) })
     vfs.appendFileSync('/dsh/session.jsonl', 'appended\n')
+    expect(changedPaths).toEqual(['/dsh/session.jsonl', '/dsh/session-latest.jsonl'])
     expect(vfs.readFileSync('/dsh/session.jsonl', 'utf8')).toBe('committed\nappended\n')
-    expect(vfs.readFileSync('/dsh/session-latest.jsonl', 'utf8')).toBe('committed\n')
+    expect(vfs.readFileSync('/dsh/session-latest.jsonl', 'utf8')).toBe('committed\nappended\n')
+    vfs.chmodSync('/dsh/session-latest.jsonl', 0o600)
+    expect((vfs.statSync('/dsh/session.jsonl') as VfsStats).mode & 0o777).toBe(0o600)
+    vfs.unlinkSync('/dsh/session-latest.jsonl')
+    expect(vfs.readFileSync('/dsh/session.jsonl', 'utf8')).toBe('committed\nappended\n')
+  })
+
+  it('rejects renaming a file over an existing directory', () => {
+    const vfs = new MemoryVfs()
+    vfs.seed('/dsh/file', 'value')
+    vfs.seedDirectory('/dsh/directory')
+    expect(() => { vfs.renameSync('/dsh/file', '/dsh/directory') }).toThrow(expect.objectContaining({ code: 'EISDIR' }))
+    expect(vfs.readFileSync('/dsh/file', 'utf8')).toBe('value')
+    expect(vfs.statSync('/dsh/directory').isDirectory()).toBe(true)
   })
 })

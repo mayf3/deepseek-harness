@@ -1,12 +1,17 @@
 /** Node differential checks for the Worker filesystem watcher and stream faces. */
 import {
+  closeSync as closeNodeSync,
   createReadStream as createNodeReadStream,
   createWriteStream as createNodeWriteStream,
   mkdtempSync,
+  openSync as openNodeSync,
+  readSync as readNodeSync,
   readFileSync,
+  renameSync as renameNodeSync,
   rmSync,
   unwatchFile as unwatchNodeFile,
   watchFile as watchNodeFile,
+  writeSync as writeNodeSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -106,6 +111,139 @@ async function writeScenario(create: () => WritableFileStream): Promise<{
 }
 
 describe('file streams', () => {
+  it('keeps an opened file identity across rename, replacement, and unlink', () => {
+    const nativeRoot = mkdtempSync(join(tmpdir(), 'dsh-stream-diff-'))
+    nativeRoots.push(nativeRoot)
+    const nativePath = join(nativeRoot, 'identity.txt')
+    const workerPath = `${VFS_ROOT}/identity.txt`
+
+    const nativeScenario = (): string[] => {
+      writeFileSync(nativePath, 'original')
+      const fd = openNodeSync(nativePath, 'r')
+      renameNodeSync(nativePath, `${nativePath}.moved`)
+      writeFileSync(nativePath, 'replacement')
+      const beforeUnlink = Buffer.alloc(16)
+      const firstCount = readNodeSync(fd, beforeUnlink, 0, beforeUnlink.length, 0)
+      rmSync(`${nativePath}.moved`)
+      const afterUnlink = Buffer.alloc(16)
+      const secondCount = readNodeSync(fd, afterUnlink, 0, afterUnlink.length, 0)
+      closeNodeSync(fd)
+      return [beforeUnlink.subarray(0, firstCount).toString(), afterUnlink.subarray(0, secondCount).toString()]
+    }
+    const workerScenario = (): string[] => {
+      vfs.writeFileSync(workerPath, 'original')
+      const fd = workerFs.openSync(workerPath, 'r')
+      vfs.renameSync(workerPath, `${workerPath}.moved`)
+      vfs.writeFileSync(workerPath, 'replacement')
+      const beforeUnlink = Buffer.alloc(16)
+      const firstCount = workerFs.readSync(fd, beforeUnlink, 0, beforeUnlink.length, 0)
+      vfs.rmSync(`${workerPath}.moved`)
+      const afterUnlink = Buffer.alloc(16)
+      const secondCount = workerFs.readSync(fd, afterUnlink, 0, afterUnlink.length, 0)
+      workerFs.closeSync(fd)
+      return [beforeUnlink.subarray(0, firstCount).toString(), afterUnlink.subarray(0, secondCount).toString()]
+    }
+
+    expect(workerScenario()).toEqual(nativeScenario())
+  })
+
+  it('keeps a read stream on the file opened before an atomic replacement', async () => {
+    const nativeRoot = mkdtempSync(join(tmpdir(), 'dsh-stream-diff-'))
+    nativeRoots.push(nativeRoot)
+    const nativePath = join(nativeRoot, 'stream-identity.txt')
+    const workerPath = `${VFS_ROOT}/stream-identity.txt`
+    writeFileSync(nativePath, 'original')
+    vfs.writeFileSync(workerPath, 'original')
+
+    const readAfterReplacement = async (
+      stream: AsyncIterable<Uint8Array> & { once(event: string, listener: () => void): unknown },
+      replace: () => void,
+    ): Promise<string> => {
+      stream.once('open', replace)
+      const chunks: Uint8Array[] = []
+      for await (const chunk of stream) chunks.push(chunk)
+      return Buffer.concat(chunks).toString()
+    }
+    const native = await readAfterReplacement(createNodeReadStream(nativePath, { highWaterMark: 2 }), () => {
+      renameNodeSync(nativePath, `${nativePath}.moved`)
+      writeFileSync(nativePath, 'replacement')
+    })
+    const worker = await readAfterReplacement(workerFs.createReadStream(workerPath, { highWaterMark: 2 }), () => {
+      vfs.renameSync(workerPath, `${workerPath}.moved`)
+      vfs.writeFileSync(workerPath, 'replacement')
+    })
+    expect(worker).toBe(native)
+  })
+
+  it('rejects descriptor operations that conflict with the open mode', () => {
+    const nativeRoot = mkdtempSync(join(tmpdir(), 'dsh-stream-diff-'))
+    nativeRoots.push(nativeRoot)
+    const nativePath = join(nativeRoot, 'mode.txt')
+    const workerPath = `${VFS_ROOT}/mode.txt`
+    writeFileSync(nativePath, 'content')
+    vfs.writeFileSync(workerPath, 'content')
+    const codeOf = (run: () => unknown): string | undefined => {
+      try {
+        run()
+        return undefined
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code
+      }
+    }
+
+    const nativeReadOnly = openNodeSync(nativePath, 'r')
+    const workerReadOnly = workerFs.openSync(workerPath, 'r')
+    expect(codeOf(() => workerFs.writeSync(workerReadOnly, 'x')))
+      .toBe(codeOf(() => writeNodeSync(nativeReadOnly, 'x')))
+    closeNodeSync(nativeReadOnly)
+    workerFs.closeSync(workerReadOnly)
+
+    const nativeWriteOnly = openNodeSync(nativePath, 'w')
+    const workerWriteOnly = workerFs.openSync(workerPath, 'w')
+    expect(codeOf(() => workerFs.readSync(workerWriteOnly, Buffer.alloc(1), 0, 1, 0)))
+      .toBe(codeOf(() => readNodeSync(nativeWriteOnly, Buffer.alloc(1), 0, 1, 0)))
+    closeNodeSync(nativeWriteOnly)
+    workerFs.closeSync(workerWriteOnly)
+  })
+
+  it('keeps hard-link identity and content shared through the Node face', () => {
+    const source = `${VFS_ROOT}/linked-source.txt`
+    const alias = `${VFS_ROOT}/linked-alias.txt`
+    workerFs.writeFileSync(source, 'one')
+    workerFs.linkSync(source, alias)
+    expect(workerFs.statSync(alias, { bigint: true }).ino)
+      .toBe(workerFs.statSync(source, { bigint: true }).ino)
+    workerFs.appendFileSync(alias, '-two')
+    expect(workerFs.readFileSync(source, 'utf8')).toBe('one-two')
+  })
+
+  it('reports incompatible read and write stream flags as EBADF', async () => {
+    const path = `${VFS_ROOT}/stream-mode.txt`
+    vfs.writeFileSync(path, 'content')
+    const writeError = nextValue<NodeJS.ErrnoException>((resolve) => {
+      const stream = workerFs.createWriteStream(path, { flags: 'r' })
+      stream.once('error', resolve)
+      stream.end('x')
+    })
+    await expect(writeError).resolves.toMatchObject({ code: 'EBADF' })
+
+    const read = workerFs.createReadStream(path, { flags: 'w' })
+    const readError = nextValue<NodeJS.ErrnoException>((resolve) => { read.once('error', resolve) })
+    read.resume()
+    await expect(readError).resolves.toMatchObject({ code: 'EBADF' })
+  })
+
+  it('zero-extends through promise and file-handle truncate', async () => {
+    const path = `${VFS_ROOT}/truncate.txt`
+    vfs.writeFileSync(path, new Uint8Array([1, 2]))
+    await workerFsp.truncate(path, 4)
+    expect([...workerFs.readFileSync(path) as Uint8Array]).toEqual([1, 2, 0, 0])
+    const handle = await workerFsp.open(path, 'r+')
+    await handle.truncate(6)
+    await handle.close()
+    expect([...workerFs.readFileSync(path) as Uint8Array]).toEqual([1, 2, 0, 0, 0, 0])
+  })
+
   it('matches Node chunking, inclusive ranges, and read lifecycle ordering', async () => {
     const nativeRoot = mkdtempSync(join(tmpdir(), 'dsh-stream-diff-'))
     nativeRoots.push(nativeRoot)
@@ -173,6 +311,51 @@ describe('file streams', () => {
     const aborted = workerFs.createReadStream(workerPath, { signal: controller.signal })
     const error = await nextValue<Error & { code?: string }>((resolve) => { aborted.once('error', resolve) })
     expect(error).toMatchObject({ name: 'AbortError', code: 'ABORT_ERR' })
+  })
+
+  it('keeps autoClose false descriptors open until explicit stream close', async () => {
+    const readPath = `${VFS_ROOT}/manual-read-close.txt`
+    vfs.writeFileSync(readPath, 'content')
+    const read = workerFs.createReadStream(readPath, { autoClose: false })
+    read.resume()
+    await nextValue<undefined>((resolve) => { read.once('end', () => { resolve(undefined) }) })
+    const readFd = read.fd
+    expect(readFd).not.toBeNull()
+    expect(read.destroyed).toBe(false)
+    expect(() => workerFs.readSync(readFd as number, Buffer.alloc(1), 0, 1, 0)).not.toThrow()
+    const readClosed = nextValue<undefined>((resolve) => { read.once('close', () => { resolve(undefined) }) })
+    read.close()
+    await readClosed
+    expect(() => workerFs.readSync(readFd as number, Buffer.alloc(1), 0, 1, 0)).toThrow(/EBADF/)
+
+    const write = workerFs.createWriteStream(`${VFS_ROOT}/manual-write-close.txt`, { autoClose: false })
+    write.end('a')
+    await nextValue<undefined>((resolve) => { write.once('finish', () => { resolve(undefined) }) })
+    const writeFd = write.fd
+    expect(writeFd).not.toBeNull()
+    expect(write.destroyed).toBe(false)
+    expect(workerFs.writeSync(writeFd as number, 'b')).toBe(1)
+    const writeClosed = nextValue<undefined>((resolve) => { write.once('close', () => { resolve(undefined) }) })
+    write.close()
+    await writeClosed
+    expect(workerFs.readFileSync(`${VFS_ROOT}/manual-write-close.txt`, 'utf8')).toBe('ab')
+
+    vfs.writeFileSync(`${VFS_ROOT}/manual-error-close.txt`, 'content')
+    const errored = workerFs.createWriteStream(`${VFS_ROOT}/manual-error-close.txt`, {
+      flags: 'r',
+      autoClose: false,
+    })
+    const error = nextValue<NodeJS.ErrnoException>((resolve) => { errored.once('error', resolve) })
+    errored.end('rejected')
+    await expect(error).resolves.toMatchObject({ code: 'EBADF' })
+    const errorFd = errored.fd
+    expect(errorFd).not.toBeNull()
+    expect(errored.destroyed).toBe(false)
+    expect(() => workerFs.readSync(errorFd as number, Buffer.alloc(1), 0, 1, 0)).not.toThrow()
+    const errorClosed = nextValue<undefined>((resolve) => { errored.once('close', () => { resolve(undefined) }) })
+    errored.destroy()
+    await errorClosed
+    expect(() => workerFs.readSync(errorFd as number, Buffer.alloc(1), 0, 1, 0)).toThrow(/EBADF/)
   })
 
   it('matches Node positional overwrite and missing-file failure', async () => {
@@ -258,6 +441,22 @@ async function watchFileScenario(
 }
 
 describe('watchers', () => {
+  it('does not catch exceptions thrown by a successful stat callback', () => {
+    const path = `${VFS_ROOT}/callback.txt`
+    vfs.writeFileSync(path, 'value')
+    const failure = new Error('callback failed')
+    let calls = 0
+    const dispatch = vi.spyOn(globalThis, 'queueMicrotask').mockImplementation((callback) => { callback() })
+    expect(() => {
+      workerFs.stat(path, () => {
+        calls += 1
+        throw failure
+      })
+    }).toThrow(failure)
+    expect(calls).toBe(1)
+    dispatch.mockRestore()
+  })
+
   it('matches Node watchFile state transitions for a missing and recreated file', async () => {
     const nativeRoot = mkdtempSync(join(tmpdir(), 'dsh-watch-diff-'))
     nativeRoots.push(nativeRoot)
@@ -398,16 +597,20 @@ describe('watchers', () => {
     await expect(event).resolves.toEqual(['rename', 'file.txt'])
   })
 
-  it('rejects an already-aborted callback watcher without retaining a subscription', () => {
+  it('returns an asynchronously closing watcher for a pre-aborted signal', async () => {
     const controller = new AbortController()
-    const reason = new Error('already stopped')
-    controller.abort(reason)
-    try {
-      workerFs.watch(VFS_ROOT, { signal: controller.signal })
-      throw new Error('watch unexpectedly opened')
-    } catch (error) {
-      expect(error).toMatchObject({ name: 'AbortError', code: 'ABORT_ERR', cause: reason })
-    }
+    controller.abort(new Error('already stopped'))
+    const order: string[] = []
+    const watcher = workerFs.watch(VFS_ROOT, { signal: controller.signal })
+    const closed = nextValue<undefined>((resolve) => {
+      watcher.once('close', () => {
+        order.push('close')
+        resolve(undefined)
+      })
+    })
+    order.push('return')
+    await closed
+    expect(order).toEqual(['return', 'close'])
     expect(() => { vfs.writeFileSync(`${VFS_ROOT}/after-abort.txt`, 'x') }).not.toThrow()
   })
 
@@ -472,6 +675,14 @@ describe('watchers', () => {
     await expect(event).resolves.toEqual({ done: false, value: { eventType: 'rename', filename: 'async.txt' } })
     controller.abort()
     await expect(iterator.next()).rejects.toMatchObject({ name: 'AbortError', code: 'ABORT_ERR' })
+  })
+
+  it('rejects the first promise-watch read for a pre-aborted signal', async () => {
+    const controller = new AbortController()
+    const reason = new Error('already stopped')
+    controller.abort(reason)
+    const iterator = workerFsp.watch(VFS_ROOT, { signal: controller.signal })[Symbol.asyncIterator]()
+    await expect(iterator.next()).rejects.toMatchObject({ name: 'AbortError', code: 'ABORT_ERR', cause: reason })
   })
 
   it('lets promise-watch return interrupt a pending next call', async () => {

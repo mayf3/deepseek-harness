@@ -20,13 +20,13 @@ Web Worker preview 启动与 Node host 相同的 Web profile 和 Agent preset。
 
 Mutation record 与 WebFS 持久化共用，而不建立第二条通知路径。Write 记录携带提交后的完整字节与虚拟权限位，并在只有尾部变化时携带 append offset。`MemoryVfs` 接受可选的异步 `VfsMutationSink`，把同一批记录交给 sink 与实时 watcher 订阅方，并通过文件句柄的 `sync()` 和 `datasync()` 暴露 `flush()`。水合通过显式的 `{ mode, mtimeMs }` 传入元数据，因此镜像权限与持久化时间戳不会占用同一个位置参数。本次变更不挂载 durable sink；同步内存树继续作为权威，因此 OPFS 或用户目录 mirror 可以先水合、再异步写回，而无需改变 `node:fs`。
 
-`node:fs` 实现 callback `stat` 和 `lstat`、`watch`、`watchFile`、`unwatchFile`、`FSWatcher` 与 `StatWatcher`；`node:fs/promises.watch` 提供可由 abort 取消的异步迭代器。同一路径的 listener 共享一个 `StatWatcher`，按 listener 取消监听不会影响其他 listener；缺失路径先报告零值 Stats，随后再报告创建、删除和重建状态。Callback 分发捕获注册时的异步上下文，并在每次排队交付前检查 watcher 是否已经关闭。
+`node:fs` 实现 callback `stat` 和 `lstat`、`watch`、`watchFile`、`unwatchFile`、`FSWatcher` 与 `StatWatcher`；`node:fs/promises.watch` 提供可由 abort 取消的异步迭代器。同一路径的 listener 共享一个 `StatWatcher`，按 listener 取消监听不会影响其他 listener；缺失路径先报告零值 Stats，随后再报告创建、删除和重建状态。Callback 分发捕获注册时的异步上下文，并在每次排队交付前检查 watcher 是否已经关闭。预先 abort 的 callback watcher 先返回对象、再异步关闭；预先 abort 的 promise watcher 在第一次读取 iterator 时以 `AbortError` 拒绝。
 
 `fs.watch` 把条目创建、删除和 rename 目标映射为 `rename`，把内容或 mode 变化映射为 `change`。非递归目录 watcher 报告直接子项名，递归 watcher 报告相对被监听目录的路径。VFS 没有符号链接，因此该实现不会制造符号链接事件。
 
 ### Stream 与未修改的 NPM 包
 
-`node:stream` 使用维护中的 `readable-stream` 浏览器实现来提供 `Readable`、`Writable`、`Duplex`、`Transform`、`PassThrough`、pipeline helper、异步迭代、backpressure、abort 和 teardown 顺序。兼容模块把字节流 high-water mark 默认值设为仓库 Node 22+ 引擎使用的 64 KiB。VFS 支持的 `ReadStream` 与 `WriteStream` 提供文件描述符、闭区间范围、encoding、追加或替换行为、字节计数、AbortSignal 处理，以及 `open`、`ready`、`finish`、`end`、`close` 顺序。
+`node:stream` 使用维护中的 `readable-stream` 浏览器实现来提供 `Readable`、`Writable`、`Duplex`、`Transform`、`PassThrough`、pipeline helper、异步迭代、backpressure、abort 和 teardown 顺序。兼容模块把字节流 high-water mark 默认值设为仓库 Node 22+ 引擎使用的 64 KiB。VFS 支持的 `ReadStream` 与 `WriteStream` 提供文件描述符、闭区间范围、encoding、追加或替换行为、字节计数、AbortSignal 处理，以及 `open`、`ready`、`finish`、`end`、`close` 顺序。Descriptor 在 rename、replacement 和 unlink 后仍保留打开时的文件身份与访问模式；hard link 共享该身份及后续内容和 mode 变化，truncate 增长则用零字节填充。
 
 Chokidar 和 readdirp 作为普通镜像依赖运行，不属于模块 replacement。它们的包代码保持原样，并导入 Worker 实现的 `node:fs`、`node:fs/promises`、`node:stream`、`node:events`、`node:path` 与 `node:os`。因此，初次扫描、`ready`、polling、原子写归一化、写入稳定等待、共享 watcher 与关闭行为仍由 Chokidar 自己负责。
 
@@ -36,7 +36,7 @@ Chokidar 和 readdirp 作为普通镜像依赖运行，不属于模块 replaceme
 
 进程层持有按逻辑可执行文件名识别的 Worker 平台可执行文件表，而不依赖某一个包管理器路径。其 `landlock-run` provider 接受裸命令或绝对 launcher 路径，解析 native 包未经修改的 CLI、校验每个授权根，并把内部 argv 交给既有 shell 进程 runner。`node:child_process` 只负责通用的可执行文件查找、输出投递与结束处理。因此，原包的同步 `probe()` 会通过 `spawnSync` 观察到该 provider 并报告 `full`。用法错误、缺失的授权根或未知内部可执行文件只输出一行 `landlock-run: ...`，以 `125` 退出，并且绝不运行内部命令。bwrap 仍探测为不可用，因此未修改的 `sandbox-local` Linux 选择链会选中该 Landlock 后端。
 
-每个已启动进程分别获得一个 `ShellFileSystem` guard。`stat`、`list` 和 `readText` 需要只读或读写授权；`writeText`、`mkdir` 和 `remove` 需要读写授权；`rename` 要求源和目标都可写。拒绝错误包含 `EACCES` 与 `permission denied`，从而保持 `bash-sandbox` 的拒绝分类。`/tmp` 映射到 VFS 的 `/dsh/tmp`，`/dev/null` 则是空读、丢弃写入且不保存任何字节的虚拟文件。
+每个已启动进程分别获得一个 `ShellFileSystem` guard。`stat`、`list` 和 `readText` 需要只读或读写授权；`writeText`、`mkdir` 和 `remove` 需要读写授权；`rename` 要求源和目标都可写。Grant root 在 containment 检查前去除尾部分隔符。拒绝错误包含 `EACCES` 与 `permission denied`，从而保持 `bash-sandbox` 的拒绝分类。`/tmp` 映射到 VFS 的 `/dsh/tmp`，`/dev/null` 则是空读、丢弃写入且不保存任何字节的虚拟文件。
 
 Worker 的 `full` 结论覆盖 shell 命令表和 Host 服务 VFS 协议能够表达的全部文件操作。它不表示 Linux 内核 Landlock、不支持任意 native 可执行文件，也无法约束未来绕过 `ShellFileSystem` 的 shell 程序。
 
