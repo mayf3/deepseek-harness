@@ -1,7 +1,6 @@
 /** Question composer props and one pending Remote waterfall response. */
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // The client module declares the conversation.composer SlotMap entry required by PropsRuntime.
-import { settlePendingComposer } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   AskUserQuestionAnswer, AskUserQuestionItem,
@@ -22,6 +21,19 @@ type QuestionItem = AskUserQuestionItem
 
 /** One option the asker offered on a question. */
 type QuestionOption = NonNullable<QuestionItem['options']>[number]
+
+/* jscpd:ignore-start -- Question and Approval intentionally own independent pending-settlement lifecycles. */
+function settlePendingComposer(settle: () => void, failureMessage: string): Promise<void> {
+  try {
+    settle()
+    return Promise.resolve()
+  } catch (error) {
+    return Promise.reject(error instanceof Error
+      ? error
+      : new Error(failureMessage, { cause: error }))
+  }
+}
+/* jscpd:ignore-end */
 
 /**
  * A request narrowed to the `plan-review` presentation intent: everything the
