@@ -48,9 +48,18 @@ import css from './DirectoryBrowser.module.css'
 export interface DirectoryBrowserProps {
   /** Dialog visibility (owner-local; closed unmounts nothing but resets on reopen). */
   open: boolean
-  /** List one directory level (absent path = the Host home directory); the signal aborts a superseded scan on the wire. */
+  /**
+   * List one directory level (absent path = the Host home directory); the
+   * signal aborts a superseded scan on the wire. A rejection may carry
+   * `{ rpcError: { message: string } }`; the dialog prefers that Host
+   * business message over the ordinary Error text.
+   */
   listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
-  /** Create one child directory under an existing parent. */
+  /**
+   * Create one child directory under an existing parent. A rejection may
+   * carry `{ rpcError: { message: string } }`; the dialog prefers that Host
+   * business message over the ordinary Error text.
+   */
   createDirectory: (path: string, name: string) => Promise<string>
   /** The operator confirmed a directory (the selection, else the listed level). */
   onOpen: (path: string) => void

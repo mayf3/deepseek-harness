@@ -40,6 +40,7 @@ export function abbreviateHomePath(path: string, home?: string): string {
 
 /**
  * Read the final non-empty segment of a Workspace path for display.
+ * Workspace-label surfaces use this helper instead of deriving another basename.
  * @param path - Workspace directory path using POSIX or Windows separators.
  * @returns the final segment, or an empty string for a separator-only path.
  */

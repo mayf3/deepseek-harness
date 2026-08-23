@@ -34,6 +34,7 @@ function joined(names: string[]): string | null {
   return names.length > 0 ? names.join(', ') : null
 }
 
+/** Forms Trajectory presents structurally; unknown merge-extensible values remain opaque. */
 const KNOWN_FORMS: readonly KnownContextForm[] = [
   'instructions', 'catalog', 'snapshot', 'notice', 'relay', 'recall',
 ]
@@ -70,6 +71,8 @@ export function contextProvenance(source: unknown): ContextProvenanceView {
     case 'skill-invocation':
       return { role: 'inject', label: readString(record, 'name') ?? kind }
     default:
+      // MessageSourceMap is merge-extensible; keep an unknown producer
+      // visible by its durable kind.
       return { role: 'inject', label: kind }
   }
 }
@@ -127,6 +130,8 @@ export function displayFailure(failure: unknown): DisplayFailure {
   if (failure === null || typeof failure !== 'object') return { message: String(failure) }
   const record = failure as { code?: unknown; message?: unknown }
   const code = typeof record.code === 'string' ? record.code : undefined
+  // Provider AUTH messages may echo a masked or partially preserved credential.
+  // Keep the raw diagnostic in the Session log, but never retain it in UI state.
   if (code === 'AUTH') return { code, message: '' }
   return {
     ...(code === undefined ? {} : { code }),
