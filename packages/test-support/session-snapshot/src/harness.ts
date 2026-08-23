@@ -35,6 +35,7 @@ import {
   type AgentUnderTest,
   type LaunchedAcpTestAgent,
 } from './launcher.ts'
+import { captureWorkspaceSnapshot, type WorkspaceSnapshotEntry } from './workspace.ts'
 
 export type { AgentUnderTest } from './launcher.ts'
 
@@ -140,6 +141,10 @@ export interface RunResult {
   cwd: string
   /** Filesystem-resolved spellings of {@link cwd} that child processes may report. */
   cwdAliases: string[]
+  /** User-visible workspace state after committed and runtime-only setup. */
+  initialWorkspace: WorkspaceSnapshotEntry[]
+  /** User-visible workspace state after the controlled interface has settled. */
+  finalWorkspace: WorkspaceSnapshotEntry[]
   /**
    * Every persisted session log harvested after the run, ordered primary-first:
    * the top-level (parent) session — the one with no `parentSession` — then each
@@ -247,6 +252,9 @@ export async function runScenario(input: InputScript, opts: RunOptions): Promise
       await cp(opts.workspaceDir, cwd, { recursive: true })
     }
     await opts.prepareWorkspace?.(cwd)
+    const initialWorkspace = await captureWorkspaceSnapshot(cwd, {
+      ignoredRootEntries: ['.agents', '.dsh', '.dsh-profile-patches', '.dsh-snapshot-stream-ready'],
+    })
     const env: NodeJS.ProcessEnv = {
       ...opts.env,
       DSH_SNAPSHOT: opts.mode,
@@ -326,11 +334,16 @@ export async function runScenario(input: InputScript, opts: RunOptions): Promise
     // Harvest EVERY persisted log (parent + any subagent children) while the
     // generated dirs still exist, ordered primary-first.
     sessionLogs = await harvestSessionLogs(sessionsRoot)
+    const finalWorkspace = await captureWorkspaceSnapshot(cwd, {
+      ignoredRootEntries: ['.agents', '.dsh', '.dsh-profile-patches', '.dsh-snapshot-stream-ready'],
+    })
     return {
       rawStdout: launched.rawStdout(),
       stderr: launched.stderr(),
       cwd,
       cwdAliases,
+      initialWorkspace,
+      finalWorkspace,
       ...sessionId !== undefined ? { sessionId } : {},
       sessionLogs,
     }

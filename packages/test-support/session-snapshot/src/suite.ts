@@ -25,6 +25,7 @@ import { describe, expect, it } from 'vitest'
 import { type AgentUnderTest, type HarvestedLog, type InputScript, runScenario } from './harness.ts'
 import { parseSnapshotManifest } from './manifest.ts'
 import { redactSessionSnapshotIds } from './identity.ts'
+import { captureExpectedWorkspaceSnapshot } from './workspace.ts'
 import {
   type CwdPathMode,
   type NormalizeContext,
@@ -1174,6 +1175,8 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
       // `pwshOnly` scenarios skip when the caller's `hasPwsh` probe is false.
       it.skipIf(scenarioSkipped(scenario, RECORDING, process.platform, options.hasPwsh))(`snapshot: ${scenario.name} matches the expected outputs`, async ({ expect }) => {
         const dir = join(snapshotsDir, scenario.name)
+        const manifestPath = join(dir, 'snapshot.yml')
+        const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
         const input = JSON.parse(await readFile(join(dir, 'input.json'), 'utf8')) as InputScript
         const overrideFile = join(dir, 'replay.override.json')
         const workspaceDir = join(dir, 'workspace')
@@ -1440,6 +1443,14 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
             ), `session ${log.id}: changed tool schemas diverged from ${schemaSource.name}/${TOOL_SCHEMAS_SNAPSHOT}`)
               .toEqual(toolSchemasSnapshot)
           }
+        }
+
+        if (manifest.workspace?.final === true) {
+          const expectedWorkspace = await captureExpectedWorkspaceSnapshot(join(dir, 'workspace.expected'))
+          expect(result.finalWorkspace, `${scenario.name}: complete final workspace`).toEqual(expectedWorkspace)
+        } else {
+          expect(result.finalWorkspace, `${scenario.name}: a changed workspace requires workspace.final`)
+            .toEqual(result.initialWorkspace)
         }
       })
     }

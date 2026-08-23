@@ -84,3 +84,14 @@ export {
   type Scenario,
   type SnapshotSuiteOptions,
 } from './suite.ts'
+export {
+  captureExpectedWorkspaceSnapshot,
+  captureWorkspaceSnapshot,
+  EMPTY_WORKSPACE_MARKER,
+  type CaptureWorkspaceSnapshotOptions,
+  type WorkspaceBinaryFileSnapshot,
+  type WorkspaceEmptyDirectorySnapshot,
+  type WorkspaceSnapshotEntry,
+  type WorkspaceSymlinkSnapshot,
+  type WorkspaceTextFileSnapshot,
+} from './workspace.ts'

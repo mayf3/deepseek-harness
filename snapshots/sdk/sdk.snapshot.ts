@@ -10,12 +10,14 @@
  */
 
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
+  captureExpectedWorkspaceSnapshot,
+  captureWorkspaceSnapshot,
   normalizeSessionLog,
   normalizeSessionSnapshots,
   normalizeStdout,
@@ -40,6 +42,7 @@ import {
   type HarvestedLog,
   type NormalizeContext,
   type SnapshotManifest,
+  type WorkspaceSnapshotEntry,
 } from '@deepseek-ai/dsh-session-snapshot'
 import {
   DeepSeekHarness,
@@ -64,6 +67,7 @@ const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 const mode = process.env.DSH_SNAPSHOT ?? 'replay'
 const recording = mode === 'record'
 const refreshing = mode === 'refresh'
+const RUNTIME_WORKSPACE_ENTRIES = ['.agents', '.dsh', '.replay-fixtures', '.snapshot-patches'] as const
 
 function dirOf(url: string): string {
   return fileURLToPath(new URL('.', url))
@@ -72,8 +76,6 @@ function dirOf(url: string): string {
 interface SdkAssertions {
   /** Environment overrides passed to the runtime subprocess. */
   environment?: Readonly<Record<string, string>>
-  /** Cwd-relative files whose final contents are part of the scenario contract. */
-  expectedFiles?: Readonly<Record<string, string>>
   /** Assembled model-facing tool names and required argument keys. */
   expectedTools?: Readonly<Record<string, readonly string[]>>
   /** Exact assembled system prompt for the root request. */
@@ -87,7 +89,6 @@ interface SdkAssertions {
 const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
   'persistent-tools': {
     environment: { DSH_SYSTEM_PROMPT: MINIMAL_SYSTEM_PROMPT },
-    expectedFiles: { 'note.txt': 'target:\n\tnew\n' },
     expectedTools: { bash: ['command'], str_replace_editor: ['command', 'path'] },
     expectedSystem: MINIMAL_SYSTEM_PROMPT,
     expectedToolDescriptions: { bash: MINIMAL_BASH_DESCRIPTION },
@@ -176,10 +177,6 @@ interface PersistedLog {
   readonly path: string
   readonly content: string
   readonly header: Record<string, unknown>
-}
-
-interface MissingFile {
-  readonly missing: true
 }
 
 async function jsonlFiles(dir: string): Promise<string[]> {
@@ -277,15 +274,6 @@ async function hydrateReplayFixtures(scenario: CorpusScenario, cwd: string): Pro
     await writeFile(destination, (await readFile(source, 'utf8')).replaceAll('{{cwd}}', cwd))
     return destination
   }))
-}
-
-async function readExpectedFile(path: string): Promise<string | MissingFile> {
-  try {
-    return await readFile(path, 'utf8')
-  } catch (error: unknown) {
-    if (error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT') return { missing: true }
-    throw error
-  }
 }
 
 /**
@@ -454,7 +442,8 @@ async function runScenario(scenario: CorpusScenario): Promise<{
   notifications: HarnessNotification[]
   observedMethods: ReadonlySet<string>
   logs: PersistedLog[]
-  observedFiles: Record<string, string | MissingFile>
+  initialWorkspace: WorkspaceSnapshotEntry[]
+  finalWorkspace: WorkspaceSnapshotEntry[]
   cwd: string
 }> {
   const cwd = await mkdtemp(join(tmpdir(), `sdk-snapshot-${scenario.name}-`))
@@ -469,6 +458,15 @@ async function runScenario(scenario: CorpusScenario): Promise<{
   await mkdir(patchRoot, { recursive: true })
   const patches = authoredPatches(scenario, !recording)
     .map((patch, index) => materializeProfilePatch(patch, cwd, patchRoot, index))
+  const workspaceDir = join(scenario.dir, 'workspace')
+  if (existsSync(workspaceDir)) {
+    for (const entry of await readdir(workspaceDir)) {
+      await cp(join(workspaceDir, entry), join(cwd, entry), { recursive: true, verbatimSymlinks: true })
+    }
+  }
+  const initialWorkspace = await captureWorkspaceSnapshot(cwd, {
+    ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
+  })
   const [parentFixture, ...childFixtures] = replayFixtures
   const assertions = SDK_ASSERTIONS[scenario.name] ?? {}
   const env: Record<string, string> = {
@@ -550,13 +548,10 @@ async function runScenario(scenario: CorpusScenario): Promise<{
     }
     await harness.close()
     const logs = await persistedLogs(sessionsRoot)
-    const observedFiles = Object.fromEntries(await Promise.all(
-      Object.keys(assertions.expectedFiles ?? {}).map(async (path): Promise<[string, string | MissingFile]> => [
-        path,
-        await readExpectedFile(join(cwd, path)),
-      ]),
-    ))
-    return { results, notifications, observedMethods, logs, observedFiles, cwd }
+    const finalWorkspace = await captureWorkspaceSnapshot(cwd, {
+      ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
+    })
+    return { results, notifications, observedMethods, logs, initialWorkspace, finalWorkspace, cwd }
   } finally {
     await harness.close()
     await rm(cwd, { recursive: true, force: true })
@@ -676,7 +671,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       const assertions = SDK_ASSERTIONS[scenario.name] ?? {}
 
       const files = await fixtureFiles(scenario)
-      const { results, notifications, observedMethods, logs, observedFiles, cwd } = await runScenario(scenario)
+      const { results, notifications, observedMethods, logs, initialWorkspace, finalWorkspace, cwd } = await runScenario(scenario)
       const ordered = orderLogs(logs, recording ? logs.length : files.length)
       const actualContext = contextOf(ordered, cwd)
 
@@ -747,7 +742,12 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       }
 
       // Wire-shape invariants that must hold in every mode.
-      expect(observedFiles).toEqual(assertions.expectedFiles ?? {})
+      if (scenario.manifest.workspace?.final === true) {
+        const expectedWorkspace = await captureExpectedWorkspaceSnapshot(join(scenario.dir, 'workspace.expected'))
+        expect(finalWorkspace, `${scenario.name}: complete final workspace`).toEqual(expectedWorkspace)
+      } else {
+        expect(finalWorkspace, `${scenario.name}: a changed workspace requires workspace.final`).toEqual(initialWorkspace)
+      }
       if (assertions.expectedTools !== undefined) {
         const parent = ordered[0]
         if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)

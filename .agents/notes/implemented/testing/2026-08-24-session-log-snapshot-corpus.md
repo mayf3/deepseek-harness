@@ -18,7 +18,7 @@ The recorded session remains the primary input and expected output. Human-origin
 
 Every existing ACP scenario receives a behavior-preserving destination. Ordinary one-shot behavior uses the headless profile, persistent machine control uses the SDK profile, and only ACP protocol behavior remains ACP-owned. Web scenarios driven by a recorded session join the corpus and retain their ARIA or geometry expected output as secondary evidence. Web and package tests without a recorded-session source remain owner-local goldens and stop using snapshot paths or filenames.
 
-Workspace inputs remain scenario-local. A mutating scenario compares a complete expected final workspace so a model or tool self-report cannot satisfy the test. Existing intentional session reuse remains an explicit acyclic owner reference; the corpus adds no workspace inheritance or general fixture-merging mechanism.
+Workspace inputs remain scenario-local. A mutating scenario compares a complete expected final workspace that record and refresh never rewrite, so a model or tool self-report cannot satisfy the test. Existing intentional session reuse remains an explicit acyclic owner reference; the corpus adds no workspace inheritance or general fixture-merging mechanism.
 
 ## Alternatives considered
 

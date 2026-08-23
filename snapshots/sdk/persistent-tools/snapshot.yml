@@ -6,3 +6,5 @@ recording: live
 header:
   class: sdk-minimal
   pin: true
+workspace:
+  final: true

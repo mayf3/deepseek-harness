@@ -18,7 +18,7 @@ Status: implemented
 
 每个现有 ACP 场景都获得一个保留行为的目标。普通单次行为使用 headless profile，需要持久机器控制的行为使用 SDK profile，只有 ACP 协议行为继续归 ACP 所有。由录制会话驱动的 Web 场景加入该语料，并保留其 ARIA 或几何预期输出作为辅助证据。没有录制会话来源的 Web 和包级测试继续使用归属方本地的 golden，并停止使用快照路径或文件名。
 
-Workspace 输入继续归各场景本地所有。变更文件的场景比较完整的预期最终 workspace，使模型或工具的自报结果无法满足测试。现有的有意会话复用继续使用显式、无环的所有者引用；语料不增加 workspace 继承或通用 fixture 合并机制。
+Workspace 输入继续归各场景本地所有。变更文件的场景比较完整的预期最终 workspace，record 与 refresh 绝不改写该预期，因此模型或工具的自报结果无法满足测试。现有的有意会话复用继续使用显式、无环的所有者引用；语料不增加 workspace 继承或通用 fixture 合并机制。
 
 ## Alternatives considered
 

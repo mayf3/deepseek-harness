@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { canonicalPath } from '@deepseek-ai/dsh-sandbox'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  assertFixtureInventory, fixtureUserPrompts, launchWebScaffold, recordFixture,
+  assertFinalWorkspaceSnapshot, assertFixtureInventory, fixtureUserPrompts, launchWebScaffold, recordFixture,
   watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
@@ -119,6 +119,8 @@ describe('web e2e: current sandbox policy reaches the model before tools', () =>
 
     if (sessionId === undefined) throw new Error('permission-policy scenario completed no model turn')
     if (MODE === 'record') await recordFixture(scaffold, sessionId, FIXTURE)
+    if (sessionWorkspace === undefined) throw new Error('permission-policy scenario observed no session workspace')
+    await assertFinalWorkspaceSnapshot(SNAPSHOT_DIR, sessionWorkspace)
   }, 240_000)
 
   it.skipIf(MODE === 'record')('records cache-safe current policy before the corresponding model behavior', async () => {
@@ -166,6 +168,6 @@ describe('web e2e: current sandbox policy reaches the model before tools', () =>
   it.skipIf(MODE === 'record')('stays clean and keeps the fixture inventory closed', async () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl', 'workspace.expected'])
   })
 })

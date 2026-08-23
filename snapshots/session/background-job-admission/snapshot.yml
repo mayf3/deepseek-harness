@@ -11,3 +11,5 @@ header:
 replay:
   override: true
 platform: posix
+workspace:
+  final: true

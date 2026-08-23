@@ -5,6 +5,8 @@ import { readFile, readdir, realpath } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import {
+  captureExpectedWorkspaceSnapshot,
+  EMPTY_WORKSPACE_MARKER,
   parseSnapshotManifest,
   redactSessionSnapshotIds,
   scrubSystemPrompts,
@@ -97,6 +99,14 @@ it('keeps every recorded session owned, pinned, redacted, and header-scrubbed', 
 
     expect(existsSync(join(dir, 'replay.override.json')), `${key}: replay override presence`)
       .toBe(manifest.replay?.override === true)
+    expect(existsSync(join(dir, 'workspace.expected')), `${key}: final workspace presence`)
+      .toBe(manifest.workspace?.final === true)
+    if (manifest.workspace?.final === true) {
+      const expectedRoot = join(dir, 'workspace.expected')
+      const expectedWorkspace = await captureExpectedWorkspaceSnapshot(expectedRoot)
+      expect(existsSync(join(expectedRoot, EMPTY_WORKSPACE_MARKER)), `${key}: empty workspace marker`)
+        .toBe(expectedWorkspace.length === 0)
+    }
     expect(existsSync(join(dir, 'input.json')), `${key}: executable input metadata is ACP-only`)
       .toBe(scenario.profile === 'acp')
     if (scenario.profile !== 'acp') {

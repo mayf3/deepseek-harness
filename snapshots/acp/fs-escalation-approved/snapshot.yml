@@ -6,3 +6,5 @@ recording: live
 header:
   class: acp-default
 permission: workspace-write
+workspace:
+  final: true

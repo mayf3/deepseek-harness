@@ -6,6 +6,8 @@
 
 每个录制会话目录都包含一个封闭的 `snapshot.yml` manifest。`scenario` 重复目录名以便诊断移动，`profile` 指名随附的 `dsh` 控制器，`composition` 把场景归入同一组 profile patch 与请求头 pin，`recording` 区分可通过真实模型录制的会话和特意手写的脚本，`header` 记录 pin 与 sidecar 的所有权。`replay`、`platform`、`permission`、`environment`、`workspace` 和 `input` 只保存已完成会话无法重建的事实；内联附件字节是标准的例外输入。除非 `session.source` 指向另一个场景的只读规范录制，否则目录拥有本地 `session.jsonl`。收集期间会拒绝未知字段、JavaScript YAML tag、格式错误的名称和索引、绝对路径及平台专用分隔符。
 
+`workspace/` 保存场景本地的初始文件。会改变 cwd 的场景设置 `workspace.final: true`，并在 `workspace.expected/` 下提交完整的用户可见结果；结果为空时使用被忽略的 `.empty` 标记，使 Git 保留该目录。受控接口结束后，回放会比较文件、二进制字节、符号链接和空目录。record 与 refresh 绝不改写这份独立预期，因此只在 transcript 中声称完成变更的场景仍会失败。
+
 提交的会话使用 `{{session:1}}`、`{{message:4}}` 和 `{{approval:1}}` 等按首次出现编号的带类型 token。主会话及其所有子会话共用一张映射，因此父级链接、中继消息和重复消息身份仍然可测试。任意用户或工具正文保持不变，除非其中包含已由带类型字段识别的同一值。请求系统提示词和工具 schema 绝不保留在会话 JSONL 中；每个组合与请求头类别有一个结构 pin，而字节相同的提示词或 schema 引用同一个可读 sidecar 所有者。
 
 当前 ACP 适配器包含四个可单独导入的层：

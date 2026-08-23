@@ -35,6 +35,8 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Group from '@deepseek-ai/cordis-plugin-group'
 import {
+  captureExpectedWorkspaceSnapshot,
+  captureWorkspaceSnapshot,
   formatSystemPromptSnapshot,
   formatToolSchemasSnapshot,
   normalizedSystemPrompts,
@@ -107,6 +109,21 @@ export function webSnapshotMode(): WebSnapshotMode {
   if (value === undefined || value === '' || value === 'replay') return 'replay'
   if (value === 'record' || value === 'refresh') return value
   throw new Error(`DSH_SNAPSHOT must be replay, record, or refresh; got ${JSON.stringify(value)}`)
+}
+
+/**
+ * Compare a session-driven Web scenario's complete workspace with its committed independent expected state.
+ * @param scenarioDir - Absolute recorded-session scenario directory.
+ * @param workspaceRoot - Absolute cwd used by the controlled session.
+ */
+export async function assertFinalWorkspaceSnapshot(scenarioDir: string, workspaceRoot: string): Promise<void> {
+  const manifestPath = join(scenarioDir, 'snapshot.yml')
+  const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
+  expect(manifest.workspace?.final, `${manifest.scenario ?? scenarioDir}: mutating Web scenario declares workspace.final`)
+    .toBe(true)
+  const actual = await captureWorkspaceSnapshot(workspaceRoot)
+  const expected = await captureExpectedWorkspaceSnapshot(join(scenarioDir, 'workspace.expected'))
+  expect(actual, `${manifest.scenario ?? scenarioDir}: complete final workspace`).toEqual(expected)
 }
 
 /** The shipped composition under test: the dsh-base and dsh-web-app bundle patches over the empty profile root. */

@@ -5,3 +5,5 @@ composition: default
 recording: live
 header:
   class: default
+workspace:
+  final: true

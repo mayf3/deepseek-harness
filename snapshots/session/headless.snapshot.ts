@@ -8,6 +8,8 @@ import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
+  captureExpectedWorkspaceSnapshot,
+  captureWorkspaceSnapshot,
   fixtureContext,
   formatSystemPromptSnapshot,
   formatToolSchemasSnapshot,
@@ -31,6 +33,7 @@ import {
   type HarvestedLog,
   type NormalizeContext,
   type SnapshotManifest,
+  type WorkspaceSnapshotEntry,
 } from '@deepseek-ai/dsh-session-snapshot'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
@@ -59,6 +62,7 @@ function snapshotMode(value: string | undefined): SnapshotMode {
 }
 
 const mode = snapshotMode(process.env.DSH_SNAPSHOT)
+const RUNTIME_WORKSPACE_ENTRIES = ['.agents', '.dsh'] as const
 
 interface JsonObject {
   [key: string]: unknown
@@ -510,6 +514,8 @@ describe('headless recorded-session snapshots', () => {
       ]
 
       let actualLogs: SessionLog[] = []
+      let initialWorkspace: WorkspaceSnapshotEntry[] | undefined
+      let finalWorkspace: WorkspaceSnapshotEntry[] | undefined
       const spillRoot = snapshotSpillRoot(join(scenario.dir, 'session.jsonl'))
       await rm(spillRoot, { recursive: true, force: true })
       let result: Awaited<ReturnType<typeof runLoaderSmoke>>
@@ -549,8 +555,18 @@ describe('headless recorded-session snapshots', () => {
             NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
             DSH_TELEMETRY_DISABLED: '1',
           },
-          prepare: cwd => seedWorkspace(scenario, cwd),
-          inspect: async (cwd) => { actualLogs = await persistedSessions(cwd) },
+          prepare: async (cwd) => {
+            await seedWorkspace(scenario, cwd)
+            initialWorkspace = await captureWorkspaceSnapshot(cwd, {
+              ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
+            })
+          },
+          inspect: async (cwd) => {
+            actualLogs = await persistedSessions(cwd)
+            finalWorkspace = await captureWorkspaceSnapshot(cwd, {
+              ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
+            })
+          },
         })
       } finally {
         await rm(spillRoot, { recursive: true, force: true })
@@ -571,6 +587,16 @@ describe('headless recorded-session snapshots', () => {
         expect(actual, `${scenario.name}: session ${index}`).toBe(expectedSnapshots[index])
       }
       await verifyHeaders(scenario, actualLogs, actualContext)
+
+      if (initialWorkspace === undefined || finalWorkspace === undefined) {
+        throw new Error(`${scenario.name}: workspace was not captured around the profile run`)
+      }
+      if (scenario.manifest.workspace?.final === true) {
+        const expectedWorkspace = await captureExpectedWorkspaceSnapshot(join(scenario.dir, 'workspace.expected'))
+        expect(finalWorkspace, `${scenario.name}: complete final workspace`).toEqual(expectedWorkspace)
+      } else {
+        expect(finalWorkspace, `${scenario.name}: a changed workspace requires workspace.final`).toEqual(initialWorkspace)
+      }
     }, LOADER_SMOKE_TEST_TIMEOUT_MS)
   }
 })

@@ -11,25 +11,31 @@
 {"type":"session/title","data":{"title":"First use the read tool","messageSeqs":[7],"source":{"kind":"fallback"}}}
 {"type":"request/header","data":{"header":{"config":{"provider":"deepseek-official","model":"deepseek-v4-flash","maxTokens":256000,"reasoningEffort":"max"},"adapterDefaults":{"reasoningEffort":true,"maxTokens":true},"system":"{{system}}","tools":"{{tools}}"},"reason":"initial"}}
 {"type":"request/context","data":{"provider":"deepseek-official","model":"deepseek-v4-flash","contextWindow":1000000}}
-{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"reasoning"}}}
-{"type":"reasoning-chunks","data":{"turn":1,"step":1,"index":0,"dt":[0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"texts":["The"," user"," wants"," me"," to"," read"," data",".txt"," first",","," then"," write"," to"," replace"," its"," contents"," with"," the"," exact"," line",","," then"," reply"," D","ONE","."]}}
-{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-start","index":1,"blockType":"tool-call"}}}
-{"type":"tool-call-chunks","data":{"turn":1,"step":1,"index":1,"dt":[0,0,0,0,1,0,0,0,0,0,0],"id":"call_00_Jxz49JNt6i4oaDnzes2I0794","name":"read","args":["","{","\"","file","_path","\"",": ","\"","data",".txt","\"","}"]}}
-{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"reasoning","text":"The user wants me to read data.txt first, then write to replace its contents with the exact line, then reply DONE."}}}}
-{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":1,"block":{"type":"tool-call","id":"call_00_Jxz49JNt6i4oaDnzes2I0794","name":"read","arguments":"{\"file_path\": \"data.txt\"}"}}}}
-{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":5803,"outputTokens":71,"cacheReadTokens":0,"reasoningTokens":26}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"tool-call-delta","index":0,"id":"fs-bounded-read","name":"read","argumentsDelta":"{\"file_path\":\"data.txt\"}"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"fs-bounded-read","name":"read","arguments":"{\"file_path\":\"data.txt\"}"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":5}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"reasoning","text":"The user wants me to read data.txt first, then write to replace its contents with the exact line, then reply DONE."},{"type":"tool-call","id":"call_00_Jxz49JNt6i4oaDnzes2I0794","name":"read","arguments":"{\"file_path\": \"data.txt\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:3}}"},"usage":{"inputTokens":5803,"outputTokens":71,"cacheReadTokens":0,"reasoningTokens":26}},"sourceEventSeqs":[12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55],"surfaceOp":"append"}
-{"type":"tool/call","data":{"turn":1,"step":1,"callId":"call_00_Jxz49JNt6i4oaDnzes2I0794","name":"read","arguments":"{\"file_path\": \"data.txt\"}"}}
-{"type":"tool/result","data":{"turn":1,"step":1,"message":{"source":{"kind":"tool","callId":"call_00_Jxz49JNt6i4oaDnzes2I0794"},"content":[{"type":"tool-result","toolCallId":"call_00_Jxz49JNt6i4oaDnzes2I0794","content":[{"type":"text","text":"<path>{{cwd}}/data.txt</path>\n<type>file</type>\n<content>\n1: original contents\n\n(End of file - total 1 lines)\n</content>"}],"isError":false}],"role":"user","id":"{{message:4}}"},"meta":{"path":"{{cwd}}/data.txt","offset":1,"lines":[{"number":1,"text":"original contents"}],"totalLines":1}},"sourceEventSeqs":[57],"surfaceOp":"append"}
+{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"tool-call","id":"fs-bounded-read","name":"read","arguments":"{\"file_path\":\"data.txt\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:3}}"},"usage":{"inputTokens":10,"outputTokens":5}},"sourceEventSeqs":[12,13,14,15,16],"surfaceOp":"append"}
+{"type":"tool/call","data":{"turn":1,"step":1,"callId":"fs-bounded-read","name":"read","arguments":"{\"file_path\":\"data.txt\"}"}}
+{"type":"tool/result","data":{"turn":1,"step":1,"message":{"source":{"kind":"tool","callId":"fs-bounded-read"},"content":[{"type":"tool-result","toolCallId":"fs-bounded-read","content":[{"type":"text","text":"<path>{{cwd}}/data.txt</path>\n<type>file</type>\n<content>\n1: original contents\n\n(End of file - total 1 lines)\n</content>"}],"isError":false}],"role":"user","id":"{{message:4}}"},"meta":{"path":"{{cwd}}/data.txt","offset":1,"lines":[{"number":1,"text":"original contents"}],"totalLines":1}},"sourceEventSeqs":[18],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":1}}
 {"type":"step/start","data":{"turn":1,"step":2}}
-{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-start","index":0,"blockType":"text"}}}
-{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"text-delta","index":0,"text":"D"}}}
-{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"text-delta","index":0,"text":"ONE"}}}
-{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-end","index":0,"block":{"type":"text","text":"DONE"}}}}
-{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"usage","usage":{"inputTokens":100,"outputTokens":3,"cacheReadTokens":6016,"reasoningTokens":0}}}}
-{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"finish","reason":{"kind":"stop"}}}}
-{"type":"assistant/message","data":{"turn":1,"step":2,"message":{"role":"assistant","content":[{"type":"text","text":"DONE"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:5}}"},"usage":{"inputTokens":100,"outputTokens":3,"cacheReadTokens":6016,"reasoningTokens":0}},"sourceEventSeqs":[61,62,63,64,65,66],"surfaceOp":"append"}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"tool-call-delta","index":0,"id":"fs-bounded-write","name":"write","argumentsDelta":"{\"file_path\":\"data.txt\",\"content\":\"The replacement line is deliberately longer than the configured sixty-four byte diff-basis bound.\"}"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"fs-bounded-write","name":"write","arguments":"{\"file_path\":\"data.txt\",\"content\":\"The replacement line is deliberately longer than the configured sixty-four byte diff-basis bound.\"}"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":5}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
+{"type":"assistant/message","data":{"turn":1,"step":2,"message":{"role":"assistant","content":[{"type":"tool-call","id":"fs-bounded-write","name":"write","arguments":"{\"file_path\":\"data.txt\",\"content\":\"The replacement line is deliberately longer than the configured sixty-four byte diff-basis bound.\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:5}}"},"usage":{"inputTokens":10,"outputTokens":5}},"sourceEventSeqs":[22,23,24,25,26],"surfaceOp":"append"}
+{"type":"tool/call","data":{"turn":1,"step":2,"callId":"fs-bounded-write","name":"write","arguments":"{\"file_path\":\"data.txt\",\"content\":\"The replacement line is deliberately longer than the configured sixty-four byte diff-basis bound.\"}"}}
+{"type":"tool/result","data":{"turn":1,"step":2,"message":{"source":{"kind":"tool","callId":"fs-bounded-write"},"content":[{"type":"tool-result","toolCallId":"fs-bounded-write","content":[{"type":"text","text":"<path>{{cwd}}/data.txt</path>\n<type>file</type>\n<content>\nUpdated file\n</content>"}],"isError":false}],"role":"user","id":"{{message:6}}"},"meta":{"diffs":[]}},"sourceEventSeqs":[28],"surfaceOp":"append"}
 {"type":"step/end","data":{"turn":1,"step":2}}
+{"type":"step/start","data":{"turn":1,"step":3}}
+{"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"block-start","index":0,"blockType":"text"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"text-delta","index":0,"text":"DONE"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"block-end","index":0,"block":{"type":"text","text":"DONE"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":2}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":3,"chunk":{"type":"finish","reason":{"kind":"stop"}}}}
+{"type":"assistant/message","data":{"turn":1,"step":3,"message":{"role":"assistant","content":[{"type":"text","text":"DONE"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-v4-flash"},"id":"{{message:7}}"},"usage":{"inputTokens":10,"outputTokens":2}},"sourceEventSeqs":[32,33,34,35,36],"surfaceOp":"append"}
+{"type":"step/end","data":{"turn":1,"step":3}}
 {"type":"turn/end","data":{"turn":1,"reason":{"kind":"completed"}}}

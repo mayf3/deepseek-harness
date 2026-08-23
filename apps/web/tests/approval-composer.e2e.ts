@@ -11,7 +11,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 // the decided-outcome assertion below type-checks against the real union.
 import type {} from '@deepseek-ai/dsh-user-approval'
 import {
-  assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
+  assertFinalWorkspaceSnapshot, assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
@@ -124,6 +124,7 @@ describe('web e2e: approval takeover keeps its actions reachable', () => {
     const sessionId = await settled
     if (MODE === 'record') {
       await recordFixture(scaffold, sessionId, FIXTURE)
+      await assertFinalWorkspaceSnapshot(SNAPSHOT_DIR, join(scaffold.workspaceCwd, 'workspace'))
       return
     }
     // The denied attempt contains platform-specific OS text, so direct state
@@ -132,6 +133,7 @@ describe('web e2e: approval takeover keeps its actions reachable', () => {
       .toContain('allowed-once')
     const written = await readFile(join(scaffold.workspaceCwd, 'workspace', 'notes.txt'), 'utf8')
     expect(written).toContain(TOKENS.slice(0, 64))
+    await assertFinalWorkspaceSnapshot(SNAPSHOT_DIR, join(scaffold.workspaceCwd, 'workspace'))
     await expect.poll(() => page.getByText('DONE', { exact: true }).count(), { timeout: 20_000 }).toBeGreaterThanOrEqual(1)
     expect(await page.locator('[data-approval-key]').count()).toBe(0)
     await expect.poll(() => page.locator('textarea').first().isEnabled(), { timeout: 10_000 }).toBe(true)
@@ -140,6 +142,6 @@ describe('web e2e: approval takeover keeps its actions reachable', () => {
   }, 300_000)
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl', 'ui.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl', 'ui.expected.md', 'workspace.expected'])
   })
 })

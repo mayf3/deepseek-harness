@@ -8,3 +8,5 @@ header:
   pin: true
   toolSchemasSource: code-mode-turn
 platform: posix
+workspace:
+  final: true

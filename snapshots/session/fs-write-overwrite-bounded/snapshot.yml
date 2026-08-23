@@ -8,3 +8,5 @@ header:
   pin: true
   systemPromptSource: text-turn
   toolSchemasSource: text-turn
+workspace:
+  final: true
