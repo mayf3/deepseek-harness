@@ -354,12 +354,20 @@ export function watchAsync(
   let failure: Error | undefined
   let closed = false
 
-  const settleFailure = (reason: unknown): void => {
-    if (failure !== undefined || closed) return
-    const error = reason instanceof Error ? reason : new Error(String(reason))
-    failure = error
+  const stopWatcher = (): void => {
+    options.signal?.removeEventListener('abort', onAbort)
     watcher?.close()
-    for (const pending of waiting.splice(0)) pending.reject(error)
+  }
+  const settleFailure = (reason: unknown): void => {
+    if (closed) return
+    const error = reason instanceof Error ? reason : new Error(String(reason))
+    closed = true
+    queued.length = 0
+    stopWatcher()
+    const failed = waiting.shift()
+    if (failed === undefined) failure = error
+    else failed.reject(error)
+    for (const pending of waiting.splice(0)) pending.resolve({ done: true, value: undefined })
   }
   const onAbort = (): void => { settleFailure(abortError(options.signal?.reason)) }
   const start = (): void => {
@@ -382,11 +390,11 @@ export function watchAsync(
     }
   }
   const close = (): void => {
-    if (closed) return
+    const alreadyClosed = closed
     closed = true
     queued.length = 0
-    options.signal?.removeEventListener('abort', onAbort)
-    watcher?.close()
+    failure = undefined
+    if (!alreadyClosed) stopWatcher()
     for (const pending of waiting.splice(0)) pending.resolve({ done: true, value: undefined })
   }
 
@@ -396,7 +404,11 @@ export function watchAsync(
     },
     next(): Promise<IteratorResult<WatchEvent>> {
       start()
-      if (failure !== undefined) return Promise.reject(failure)
+      if (failure !== undefined) {
+        const reason = failure
+        failure = undefined
+        return Promise.reject(reason)
+      }
       const event = queued.shift()
       if (event !== undefined) return Promise.resolve({ done: false, value: event })
       if (closed) return Promise.resolve({ done: true, value: undefined })

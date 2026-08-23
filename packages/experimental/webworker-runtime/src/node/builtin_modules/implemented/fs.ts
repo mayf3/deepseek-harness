@@ -319,14 +319,16 @@ export function openSync(path: PathArg, flags = 'r', mode?: number): number {
   return fd
 }
 
+const badFileDescriptor = (syscall: string): never => {
+  const error = new Error(`EBADF: bad file descriptor, ${syscall}`) as Error & { code: string; syscall: string }
+  error.code = 'EBADF'
+  error.syscall = syscall
+  throw error
+}
+
 const fileOf = (fd: number, syscall: string): OpenFile => {
   const file = openFiles.get(fd)
-  if (file === undefined) {
-    const error = new Error(`EBADF: bad file descriptor, ${syscall}`) as Error & { code: string; syscall: string }
-    error.code = 'EBADF'
-    error.syscall = syscall
-    throw error
-  }
+  if (file === undefined) return badFileDescriptor(syscall)
   return file
 }
 
@@ -558,15 +560,18 @@ export class ReadStream extends Readable {
       callback(abortError(this.signal.reason))
       return
     }
+    let fd: number
     try {
-      this.fd = openSync(this.path, this.flags)
-      this.pending = false
-      this.emit('open', this.fd)
-      this.emit('ready')
-      callback()
+      fd = openSync(this.path, this.flags)
     } catch (error) {
       callback(error as Error)
+      return
     }
+    this.fd = fd
+    this.pending = false
+    callback()
+    this.emit('open', fd)
+    this.emit('ready')
   }
 
   override _read(size: number): void {
@@ -648,16 +653,19 @@ export class WriteStream extends Writable {
       callback(abortError(this.signal.reason))
       return
     }
+    let fd: number
     try {
-      this.fd = openSync(this.path, this.flags, this.mode)
-      if (this.start !== undefined) fileOf(this.fd, 'write').position = this.start
-      this.pending = false
-      this.emit('open', this.fd)
-      this.emit('ready')
-      callback()
+      fd = openSync(this.path, this.flags, this.mode)
     } catch (error) {
       callback(error as Error)
+      return
     }
+    this.fd = fd
+    if (this.start !== undefined) fileOf(fd, 'write').position = this.start
+    this.pending = false
+    callback()
+    this.emit('open', fd)
+    this.emit('ready')
   }
 
   override _write(
@@ -666,9 +674,10 @@ export class WriteStream extends Writable {
     callback: (error?: Error | null) => void,
   ): void {
     try {
-      if (this.fd === null) throw new Error('EBADF: bad file descriptor, write')
+      const fd = this.fd
+      if (fd === null) return badFileDescriptor('write')
       const data = typeof chunk === 'string' ? Buffer.from(chunk, encoding) : chunk
-      this.bytesWritten += writeSync(this.fd, data)
+      this.bytesWritten += writeSync(fd, data)
       callback()
     } catch (error) {
       callback(error as Error)

@@ -699,6 +699,14 @@ export class MemoryVfs implements Vfs {
       return
     }
     if (!this.directories.has(source)) fail('ENOENT', 'rename', source)
+    if (this.files.has(destination)) fail('ENOTDIR', 'rename', destination)
+    if (!this.directories.has(dirname(destination))) fail('ENOENT', 'rename', destination)
+    if (this.directories.has(destination)) {
+      if (this.readdirSync(destination).length > 0) fail('ENOTEMPTY', 'rename', destination)
+      this.directories.delete(destination)
+      this.directoryModes.delete(destination)
+      this.directoryMtimes.delete(destination)
+    }
     const prefix = `${source}${SEP}`
     const movedFiles: Array<{ path: string; bytes: Uint8Array; mode: number }> = []
     for (const [candidate, value] of [...this.files]) {

@@ -220,6 +220,43 @@ describe('mutation publication', () => {
   })
 })
 
+describe('directory rename', () => {
+  it('rejects file, non-empty directory, and missing-parent destinations before mutation', () => {
+    const vfs = new MemoryVfs()
+    vfs.seed('/dsh/source/nested/file', 'source')
+    vfs.seed('/dsh/file', 'destination')
+    vfs.seed('/dsh/non-empty/child', 'destination')
+    const mutations: VfsMutation[] = []
+    vfs.subscribe((mutation) => { mutations.push(mutation) })
+
+    expect(() => { vfs.renameSync('/dsh/source', '/dsh/file') })
+      .toThrow(expect.objectContaining({ code: 'ENOTDIR' }))
+    expect(() => { vfs.renameSync('/dsh/source', '/dsh/non-empty') })
+      .toThrow(expect.objectContaining({ code: 'ENOTEMPTY' }))
+    expect(() => { vfs.renameSync('/dsh/source', '/missing/destination') })
+      .toThrow(expect.objectContaining({ code: 'ENOENT' }))
+
+    expect(vfs.readFileSync('/dsh/source/nested/file', 'utf8')).toBe('source')
+    expect(vfs.readFileSync('/dsh/file', 'utf8')).toBe('destination')
+    expect(vfs.readFileSync('/dsh/non-empty/child', 'utf8')).toBe('destination')
+    expect(mutations).toEqual([])
+  })
+
+  it('replaces an empty directory with the source subtree', () => {
+    const vfs = new MemoryVfs()
+    vfs.seedDirectory('/dsh/source/nested', { mode: 0o700 })
+    vfs.seed('/dsh/source/nested/file', 'source')
+    vfs.seedDirectory('/dsh/destination', { mode: 0o711 })
+
+    vfs.renameSync('/dsh/source', '/dsh/destination')
+
+    expect(vfs.existsSync('/dsh/source')).toBe(false)
+    expect(vfs.readFileSync('/dsh/destination/nested/file', 'utf8')).toBe('source')
+    expect((vfs.statSync('/dsh/destination') as VfsStats).mode & 0o777).toBe(0o755)
+    expect((vfs.statSync('/dsh/destination/nested') as VfsStats).mode & 0o777).toBe(0o700)
+  })
+})
+
 describe('hard links', () => {
   it('shares identity, bytes, and mode until one name is removed', () => {
     const vfs = new MemoryVfs()

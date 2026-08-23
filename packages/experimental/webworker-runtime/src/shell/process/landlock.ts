@@ -108,13 +108,18 @@ export async function landlockFileSystem(
   const readWrite = await Promise.all(invocation.readWrite.map(normalizeGrant))
   const readable = [...readOnly, ...readWrite]
 
-  const readPath = (path: string, syscall: string): string => {
+  const checkedPath = (path: string, syscall: string): string => {
     const target = vfsPath(path, cwd)
+    if (target.startsWith(`${NULL_PATH}/`)) throw filesystemError('ENOTDIR', syscall, path)
+    return target
+  }
+  const readPath = (path: string, syscall: string): string => {
+    const target = checkedPath(path, syscall)
     if (!readable.some(root => contains(root, target))) deny(syscall, path)
     return target
   }
   const writePath = (path: string, syscall: string): string => {
-    const target = vfsPath(path, cwd)
+    const target = checkedPath(path, syscall)
     if (!readWrite.some(root => contains(root, target))) deny(syscall, path)
     return target
   }

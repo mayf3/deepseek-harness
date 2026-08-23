@@ -46,7 +46,7 @@ if (getDefaultHighWaterMark(false) !== 64 * 1024) setDefaultHighWaterMark(false,
 const _isArrayBufferView = (value: unknown): value is ArrayBufferView => ArrayBuffer.isView(value)
 
 /** Default-import namespace carrying Node's stream class and static helpers. */
-const streamDefault = Object.assign(Stream, {
+const streamDefault = Object.assign(StreamBase, {
   _isArrayBufferView,
   getDefaultHighWaterMark,
   isDestroyed,

@@ -273,6 +273,9 @@ describe('file streams', () => {
     const values: string[] = []
     for await (const value of workerStream.Readable.from(['one', 'two'])) values.push(String(value))
     expect(values).toEqual(['one', 'two'])
+    expect(workerStream.default).toBe(workerStream.Stream)
+    expect(new workerStream.Writable({ write: (_chunk, _encoding, callback) => { callback() } }))
+      .toBeInstanceOf(workerStream.default)
     expect(typeof workerStream.pipeline).toBe('function')
     expect(typeof workerStream.finished).toBe('function')
     expect(workerStream.getDefaultHighWaterMark(false)).toBe(64 * 1024)
@@ -384,6 +387,91 @@ describe('file streams', () => {
       })
     })
     expect(events).toEqual(['error', 'close'])
+  })
+
+  it('publishes descriptors before open and ready listener exceptions escape', () => {
+    const readPath = `${VFS_ROOT}/listener-read.txt`
+    vfs.writeFileSync(readPath, 'content')
+    const readCallback = vi.fn()
+    const readFailure = new Error('read open listener failed')
+    const readReceiver: {
+      path: string
+      flags: string
+      start: number
+      end: number
+      signal: undefined
+      pending: boolean
+      fd: number | null
+      emit(event: string): boolean
+    } = {
+      path: readPath,
+      flags: 'r',
+      start: 0,
+      end: Number.POSITIVE_INFINITY,
+      signal: undefined,
+      pending: true,
+      fd: null,
+      emit(event) {
+        expect(readCallback).toHaveBeenCalledOnce()
+        if (event === 'open') throw readFailure
+        return true
+      },
+    }
+    expect(() => {
+      workerFs.ReadStream.prototype._construct.call(
+        readReceiver as unknown as workerFs.ReadStream,
+        readCallback,
+      )
+    }).toThrow(readFailure)
+    expect(readReceiver.pending).toBe(false)
+    expect(readReceiver.fd).not.toBeNull()
+    workerFs.closeSync(readReceiver.fd as number)
+
+    const writeCallback = vi.fn()
+    const writeFailure = new Error('write ready listener failed')
+    const writeReceiver: {
+      path: string
+      flags: string
+      mode: undefined
+      start: undefined
+      signal: undefined
+      pending: boolean
+      fd: number | null
+      emit(event: string): boolean
+    } = {
+      path: `${VFS_ROOT}/listener-write.txt`,
+      flags: 'w',
+      mode: undefined,
+      start: undefined,
+      signal: undefined,
+      pending: true,
+      fd: null,
+      emit(event) {
+        expect(writeCallback).toHaveBeenCalledOnce()
+        if (event === 'ready') throw writeFailure
+        return true
+      },
+    }
+    expect(() => {
+      workerFs.WriteStream.prototype._construct.call(
+        writeReceiver as unknown as workerFs.WriteStream,
+        writeCallback,
+      )
+    }).toThrow(writeFailure)
+    expect(writeReceiver.pending).toBe(false)
+    expect(writeReceiver.fd).not.toBeNull()
+    workerFs.closeSync(writeReceiver.fd as number)
+  })
+
+  it('codes a write before descriptor publication as EBADF', () => {
+    let failure: Error | null | undefined
+    workerFs.WriteStream.prototype._write.call(
+      { fd: null } as unknown as workerFs.WriteStream,
+      Buffer.from('x'),
+      'utf8',
+      (error) => { failure = error },
+    )
+    expect(failure).toMatchObject({ code: 'EBADF', syscall: 'write' })
   })
 })
 
@@ -673,8 +761,12 @@ describe('watchers', () => {
     const event = iterator.next()
     vfs.writeFileSync(`${VFS_ROOT}/async.txt`, 'x')
     await expect(event).resolves.toEqual({ done: false, value: { eventType: 'rename', filename: 'async.txt' } })
+    const failed = iterator.next()
+    const completed = iterator.next()
     controller.abort()
-    await expect(iterator.next()).rejects.toMatchObject({ name: 'AbortError', code: 'ABORT_ERR' })
+    await expect(failed).rejects.toMatchObject({ name: 'AbortError', code: 'ABORT_ERR' })
+    await expect(completed).resolves.toEqual({ done: true, value: undefined })
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
   })
 
   it('rejects the first promise-watch read for a pre-aborted signal', async () => {
@@ -683,6 +775,7 @@ describe('watchers', () => {
     controller.abort(reason)
     const iterator = workerFsp.watch(VFS_ROOT, { signal: controller.signal })[Symbol.asyncIterator]()
     await expect(iterator.next()).rejects.toMatchObject({ name: 'AbortError', code: 'ABORT_ERR', cause: reason })
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
   })
 
   it('lets promise-watch return interrupt a pending next call', async () => {
@@ -697,6 +790,7 @@ describe('watchers', () => {
   it('propagates promise-watch startup and throw failures', async () => {
     const missing = workerFsp.watch(`${VFS_ROOT}/missing`)[Symbol.asyncIterator]()
     await expect(missing.next()).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(missing.next()).resolves.toEqual({ done: true, value: undefined })
 
     const iterator = workerFsp.watch(VFS_ROOT)[Symbol.asyncIterator]()
     const reason = { reason: 'caller stopped iteration' }
