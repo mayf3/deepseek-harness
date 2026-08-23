@@ -100,9 +100,9 @@ describe('client bundle purity gate', () => {
   })
 
   it('admits package-specific requests only for the declaring bundle', () => {
-    expect(resolveId('@deepseek-ai/dsh-api-session-controller/client')).toBeNull()
-    const withoutRequest = purityResolveId('@deepseek-ai/dsh-client-ui-goal')
-    expect(() => withoutRequest('@deepseek-ai/dsh-api-session-controller/client')).toThrow(/purity/)
+    const requesting = purityResolveId('@deepseek-ai/dsh-api-session-controller')
+    expect(requesting('@deepseek-ai/dsh-api-gateway/client')).toBeNull()
+    expect(() => resolveId('@deepseek-ai/dsh-api-gateway/client')).toThrow(/purity/)
   })
 
   it('externalizes the baseline independently of each package manifest', () => {
