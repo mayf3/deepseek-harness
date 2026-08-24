@@ -52,9 +52,10 @@ export function redactSessionSnapshotIds(logs: readonly string[]): string[] {
     if (typeof value !== 'string' || value.length === 0 || tokenByValue.has(value)) return
     if (!always && !redactedCandidate(value)) return
     const canonical = CANONICAL_TOKEN_RE.exec(value)
-    if (canonical?.[1] === kind) {
+    if (canonical !== null) {
+      const canonicalKind = canonical[1] as IdentityKind
       const ordinal = Number(canonical[2])
-      nextByKind.set(kind, Math.max(nextByKind.get(kind) ?? 0, ordinal))
+      nextByKind.set(canonicalKind, Math.max(nextByKind.get(canonicalKind) ?? 0, ordinal))
       tokenByValue.set(value, value)
       return
     }

@@ -708,6 +708,14 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
           ...Array.from({ length: expectedContents.length - 1 }, (_, index) => join(scenarioDir, `session.${index + 1}.jsonl`)),
         ]
         await Promise.all(expectedContents.map((stable, index) => writeFile(outputFiles[index] as string, stable)))
+        if (recording) {
+          const retained = new Set(outputFiles.map(file => basename(file)))
+          for (const entry of await readdir(scenarioDir, { withFileTypes: true })) {
+            if (entry.isFile() && /^session\.[1-9]\d*\.jsonl$/u.test(entry.name) && !retained.has(entry.name)) {
+              await rm(join(scenarioDir, entry.name))
+            }
+          }
+        }
         await writeHeaderSidecars(scenario, ordered, actualContext)
       }
 

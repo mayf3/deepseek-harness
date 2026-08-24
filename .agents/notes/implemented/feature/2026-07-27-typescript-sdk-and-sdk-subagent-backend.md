@@ -25,7 +25,7 @@ Four tiers, per [testing policy](../../../../docs/testing.md):
 
 - **Keyless unit** — `sdk-client` drives a scripted fake runtime (`tests/fake-runtime.ts`, env-scripted, protocol-only — the Python `test_client.py` pattern) over real stdio; `subagent-dsh-sdk` drives the same fake through the real provider. 100% per-file coverage on all three packages.
 - **Keyless Loader composition** — `subagent-dsh-sdk/tests/loader-composition.e2e.ts` boots a test-only cordis.yml (`examples/python-sdk-agent/tests/fixtures/subagent/subagent-dsh-sdk/`) where the child is a real second `dsh --profile sdk` runtime with its own isolated home and ordered patch; asserts the parent tool result and the child's own persisted transcript both carry the parent session's cwd.
-- **Keyless snapshot** — `examples/python-sdk-agent/tests/sdk.snapshot.ts` drives the real `dsh --profile sdk` runtime through the real `dsh-sdk-client`, replaying recorded fixtures through an ordered `llm-replay` patch. Four scenarios — text turn, bash tool, spawn subagent, and the minimal persistent-tool composition — each pin the normalized notification stream, SDK turn result, and persisted parent and child logs. This also closes the protocol-tier gap the single-exe note's Python-side snapshot left on the vitest side.
+- **Keyless snapshot** — `snapshots/sdk/sdk.snapshot.ts` drives the real `dsh --profile sdk` runtime through the real `dsh-sdk-client`, replaying recorded fixtures through an ordered `llm-replay` patch. Each scenario pins the normalized notification stream, SDK turn result, and persisted parent and child logs. This also closes the protocol-tier gap the single-exe note's Python-side snapshot left on the vitest side.
 - **With-key e2e** — the snapshot suite's `DSH_SNAPSHOT=record` mode is the live-API path (it produced the committed fixtures); the composition e2e needs no key by design.
 
 ## Alternatives considered
@@ -40,7 +40,7 @@ Four tiers, per [testing policy](../../../../docs/testing.md):
 
 **Export source modules, normalization helpers, and subscription producer operations.** These are implementation details with no caller need; exposing them would make callers learn how the client validates and distributes wire input. The package roots instead enumerate the supported client and protocol interfaces, and the client re-exports the one protocol error callers must distinguish.
 
-**Reuse `dsh-acp-snapshot`'s `runScenario` for the SDK snapshots.** That harness speaks ACP (`ClientSideConnection`, `InputStep` scripts). The SDK suite's whole point is to drive the *SDK client* as the entry surface; it reuses the normalize/refresh library layer (`normalizeSessionLog`, `refreshFixtureReplacements`, …) and leaves the ACP driver alone.
+**Reuse `dsh-session-snapshot`'s ACP `runScenario` for the SDK snapshots.** That adapter speaks ACP (`ClientSideConnection`, `InputStep` scripts). The SDK suite's whole point is to drive the *SDK client* as the entry surface; it reuses the normalize/refresh library layer (`normalizeSessionLog`, `refreshFixtureReplacements`, …) and leaves the ACP adapter alone.
 
 ## Consequences
 

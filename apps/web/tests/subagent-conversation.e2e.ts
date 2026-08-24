@@ -77,6 +77,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await writeFile(childFixturePath, childFixture(baseFixture, 'recorded-subagent', true))
     scaffold = await launchWebScaffold({
       replayFixture: BASE_FIXTURE,
+      compareReplaySession: false,
       replayChildFixtures: [childFixturePath],
       paceMs: 25,
     })

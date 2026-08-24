@@ -70,7 +70,11 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     scaffold = await launchWebScaffold(
       MODE === 'record'
         ? {}
-        : { replayFixture: FIXTURE, ...(overridePath === undefined ? {} : { replayOverride: overridePath }) },
+        : {
+          replayFixture: FIXTURE,
+          ...(overridePath === undefined ? {} : { replayOverride: overridePath }),
+          compareReplaySession: overridePath === undefined,
+        },
     )
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
@@ -98,6 +102,12 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     const sessionId = await settled
     await recordFixture(scaffold!, sessionId, FIXTURE)
   }, 200_000)
+
+  it.skipIf(MODE === 'record')('matches the canonical persisted session', async () => {
+    await launch()
+    const { settled } = await sendPrompt(30_000)
+    await settled
+  })
 
   it.skipIf(MODE === 'record')('withholds the footer while the turn runs and grants it at turn/end', async () => {
     expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT])

@@ -97,6 +97,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     scaffold = await launchWebScaffold({
       replayFixture: FIXTURE,
       ...(overridePath === undefined ? {} : { replayOverride: overridePath }),
+      ...(overridePath === undefined ? {} : { compareReplaySession: false }),
       ...(retryPolicy === undefined ? {} : { replayRetryPolicy: retryPolicy }),
     })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
@@ -131,6 +132,12 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     const sessionId = await settled
     await recordFixture(scaffold!, sessionId, FIXTURE)
   }, 200_000)
+
+  it.skipIf(MODE === 'record')('matches the canonical persisted session', async () => {
+    await launch()
+    const { settled } = await sendPrompt(30_000)
+    await settled
+  })
 
   it.skipIf(MODE === 'record')('cancels a hung stream deterministically via the readyFile marker', async () => {
     expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT])

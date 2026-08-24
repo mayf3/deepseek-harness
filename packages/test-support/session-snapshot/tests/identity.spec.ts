@@ -81,4 +81,26 @@ describe('session snapshot identity redaction', () => {
     expect(redacted).toContain('"requestId":"stable-readable-id"')
     expect(redacted?.endsWith('\n')).toBe(false)
   })
+
+  it('keeps a canonical token first seen through a generic id key', () => {
+    const canonical = '{{message:7}}'
+    const nextMessage = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    const source = [
+      JSON.stringify({ type: 'example', data: { requestId: canonical } }),
+      JSON.stringify({
+        type: 'user/message',
+        data: { role: 'user', content: [], source: { kind: 'user' }, id: canonical },
+      }),
+      JSON.stringify({
+        type: 'user/message',
+        data: { role: 'user', content: [], source: { kind: 'user' }, id: nextMessage },
+      }),
+      '',
+    ].join('\n')
+
+    const [redacted] = redactSessionSnapshotIds([source])
+    expect(redacted?.match(/\{\{message:7\}\}/g)).toHaveLength(2)
+    expect(redacted).toContain('"id":"{{message:8}}"')
+    expect(redacted).not.toContain('{{id:')
+  })
 })

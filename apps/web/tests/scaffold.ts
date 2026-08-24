@@ -26,7 +26,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Page } from 'playwright'
 import { expect } from 'vitest'
@@ -126,6 +126,14 @@ export async function assertFinalWorkspaceSnapshot(scenarioDir: string, workspac
   expect(actual, `${manifest.scenario ?? scenarioDir}: complete final workspace`).toEqual(expected)
 }
 
+async function ownsReplayFixture(replayFixture: string | undefined): Promise<boolean> {
+  if (replayFixture === undefined || basename(replayFixture) !== 'session.jsonl') return false
+  const manifestPath = join(dirname(replayFixture), 'snapshot.yml')
+  if (!existsSync(manifestPath)) return false
+  const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
+  return manifest.session === undefined
+}
+
 /** The shipped composition under test: the dsh-base and dsh-web-app bundle patches over the empty profile root. */
 const BASE_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
 const WEB_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
@@ -217,7 +225,7 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
-  /** Compare the replayed root session with `replayFixture`; enable only when this scaffold drives the canonical recording. */
+  /** Compare the replayed root session with `replayFixture`; defaults on for a manifest-owned canonical recording. */
   compareReplaySession?: boolean
   /**
    * Optional product overlay applied after the shipped Web surface and before
@@ -344,6 +352,7 @@ async function cleanupScaffoldWorld(ctx: Context, workspaceCwd: string, persiste
 export async function launchWebScaffold(options: LaunchOptions = {}): Promise<WebScaffold> {
   requireDist()
   const mode = webSnapshotMode()
+  const compareReplaySession = options.compareReplaySession ?? await ownsReplayFixture(options.replayFixture)
   const browserHost = options.remoteAuthority ?? '127.0.0.1'
   if (mode === 'record') {
     // Both owning vitest configs (web unconditionally, snapshot in record
@@ -692,7 +701,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       if (mode !== 'record'
         && options.replayFixture !== undefined
         && options.replayProvidersOnly !== true
-        && options.compareReplaySession === true) {
+        && compareReplaySession) {
         try {
           await assertReplaySession(
             [...observedSessions.values()],

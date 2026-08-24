@@ -159,15 +159,23 @@ export class HarnessSdkJsonRpcServer {
     // An agent-loop-only reload disposes the loop's agents while this record
     // survives; a retained agent accepts followup() silently, so validate the
     // record against the live registry before delivery.
-    if (this.ctx.agents.get(rec.handle.agent.id) !== rec.handle.agent) {
-      throw new Error(`session agent was disposed outside the server: ${params.sessionId}`)
-    }
+    this.assertLiveAgent(rec, params.sessionId)
+    const content = await durablePromptContent(this.ctx, params.contentBlocks)
+    // Attachment admission crosses an async boundary where shutdown or an
+    // agent-loop reload may detach the retained handle.
+    this.assertLiveAgent(rec, params.sessionId)
     const message = createUserMessage({
-      content: await durablePromptContent(this.ctx, params.contentBlocks),
+      content,
       source: { kind: 'user' },
     })
     rec.handle.agent.followup(message)
     return { messageId: message.id }
+  }
+
+  private assertLiveAgent(rec: SessionRecord, sessionId: string): void {
+    if (this.ctx.agents.get(rec.handle.agent.id) !== rec.handle.agent) {
+      throw new Error(`session agent was disposed outside the server: ${sessionId}`)
+    }
   }
 
   /**

@@ -1,6 +1,6 @@
 /**
  * Pure ACP transcript and session-log normalizers. They scrub session ids, run cwd, RPC ids,
- * timestamps and hook duration while preserving event payloads.
+ * timestamps, goal lifecycle clocks, and hook duration while preserving semantic payload values.
  * Request-header scrubbers stay composable so one scenario per header class can pin prompt and
  * tool-schema sidecars.
  * @module @deepseek-ai/dsh-session-snapshot/normalize
@@ -320,9 +320,10 @@ export function normalizeStdout(
 /**
  * Normalize a session JSONL log into a stable expected output: the header line's
  * volatile fields (`createdAt`, `id`, `cwd`) are zeroed/scrubbed, ordinary
- * event `time` and packed-row `time0` values are zeroed, and all volatile
- * strings are scrubbed. Projected inputs remain projected. Packed `data.dt`
- * gaps are normalized even when the projected row omits its `time0` anchor.
+ * event `time`, packed-row `time0`, and goal-change lifecycle clock values are
+ * zeroed, and all volatile strings are scrubbed. Projected inputs remain
+ * projected. Packed `data.dt` gaps are normalized even when the projected row
+ * omits its `time0` anchor.
  * Output is JSONL in the same shape as the input — one compact record per
  * line.
  *
@@ -355,6 +356,11 @@ export function normalizeSessionLog(
     if (record.type === 'hook/result' && record.data !== null && typeof record.data === 'object') {
       const data = record.data as Record<string, unknown>
       if ('durationMs' in data) data.durationMs = 0
+    }
+    if (record.type === 'goal/change' && record.data !== null && typeof record.data === 'object') {
+      const data = record.data as Record<string, unknown>
+      if ('createdAt' in data) data.createdAt = 0
+      if ('updatedAt' in data) data.updatedAt = 0
     }
     return scrubValue(record, ctx, cwdPathMode, identityMode) as Record<string, unknown>
   })

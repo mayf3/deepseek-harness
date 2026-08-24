@@ -1,7 +1,7 @@
 /** Repository-wide ownership and storage invariants for the recorded-session corpus. */
 
 import { existsSync } from 'node:fs'
-import { readFile, readdir, realpath } from 'node:fs/promises'
+import { lstat, readFile, readdir, realpath } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import {
@@ -86,7 +86,7 @@ async function snapshotNamedTests(): Promise<string[]> {
       }
     }
   }
-  for (const root of ['apps', 'examples', 'scripts', 'snapshots']) {
+  for (const root of ['apps', 'examples', 'native', 'packages', 'python', 'scripts', 'snapshots', 'website']) {
     await visit(join(repoRoot, root), root)
   }
   return files.sort()
@@ -149,6 +149,15 @@ it('keeps every recorded session owned, pinned, redacted, and header-scrubbed', 
       expect(schemaSource, `${key}: tool-schema source`).toBeDefined()
       expect(existsSync(join((promptSource as Scenario).dir, 'system-prompt.expected.md')), `${key}: system-prompt sidecar`).toBe(true)
       expect(existsSync(join((schemaSource as Scenario).dir, 'tool-schemas.expected.json')), `${key}: tool-schema sidecar`).toBe(true)
+      for (const [field, source] of [
+        ['system-prompt.expected.md', promptSource],
+        ['tool-schemas.expected.json', schemaSource],
+      ] as const) {
+        const local = join(dir, field)
+        if (!existsSync(local) || !(await lstat(local)).isSymbolicLink()) continue
+        expect(await realpath(local), `${key}: ${field} symlink follows its manifest source`)
+          .toBe(await realpath(join((source as Scenario).dir, field)))
+      }
     }
 
     if (manifest.session !== undefined) continue

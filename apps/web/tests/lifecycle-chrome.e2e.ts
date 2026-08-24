@@ -167,6 +167,8 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     const input = page.locator('textarea').first()
     await input.waitFor({ timeout: 10_000 })
     if (MODE !== 'record') {
+      await page.getByText('Into the Unknown', { exact: false }).hover()
+      await expect.poll(() => page.getByRole('tooltip').count()).toBe(0)
       // Golden of the hero's stable waiting state (captured before any send;
       // the conversation-region goldens belong to the other scenarios).
       const snapshot = await captureStableAria(page, '[class*="frame"]', scaffold.workspaceCwd)

@@ -54,6 +54,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
       replayFixture: PARENT_FIXTURE,
       replayChildFixtures: [CHILD_FIXTURE],
       paceMs: 50,
+      compareReplaySession: false,
     })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)

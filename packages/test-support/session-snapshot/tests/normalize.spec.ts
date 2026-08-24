@@ -449,6 +449,21 @@ describe('normalizeSessionLog', () => {
     expect(out).toContain('"durationMs":88')
   })
 
+  it('normalizes goal lifecycle clocks without scrubbing unrelated payload timestamps', () => {
+    const goal = JSON.stringify({
+      type: 'goal/change',
+      seq: 2,
+      time: 5,
+      data: { operation: 'create', createdAt: 123, updatedAt: 124 },
+    })
+    const tool = JSON.stringify({ type: 'tool/result', seq: 3, time: 6, data: { createdAt: 125 } })
+    const goalWithoutClocks = JSON.stringify({ type: 'goal/change', seq: 4, time: 7, data: { operation: 'resume' } })
+    const out = normalizeSessionLog(`${header({})}\n${goal}\n${tool}\n${goalWithoutClocks}\n`, ctx)
+    expect(out).toContain('"operation":"create","createdAt":0,"updatedAt":0')
+    expect(out).toContain('"createdAt":125')
+    expect(out).toContain('"operation":"resume"')
+  })
+
   it('handles complete envelopes when optional normalized fields are absent', () => {
     const bareHeader = JSON.stringify({ type: 'session', id: 's' })
     const bareHook = JSON.stringify({ type: 'hook/result', seq: 2, time: 5, data: { decision: 'allow' } })
