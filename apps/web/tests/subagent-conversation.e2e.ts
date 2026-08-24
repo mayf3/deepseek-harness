@@ -353,6 +353,38 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await compareOrRefreshGolden(SIDEBAR_EXPECTED, sidebar, MODE)
   })
 
+  it('keeps a restored child neutral until its parent availability arrives', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-restore'))
+    const pattern = '**/api/subagent.list'
+    let requested = false
+    let releaseCatalog = (): void => {}
+    const catalogHeld = new Promise<void>((resolve) => { releaseCatalog = resolve })
+    await page.route(pattern, async (route) => {
+      const response = await route.fetch()
+      requested = true
+      await catalogHeld
+      await route.fulfill({ response })
+    })
+
+    const warningStart = tripwire.warnings.length
+    try {
+      await page.reload({ waitUntil: 'load' })
+      await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      await expect.poll(() => requested, { timeout: 15_000 }).toBe(true)
+      expect(await page.getByText('This subagent is read-only for now', { exact: true }).count()).toBe(0)
+      expect(await page.locator('[data-composer-seat]').evaluate(element =>
+        getComputedStyle(element).visibility)).toBe('hidden')
+      releaseCatalog()
+      const input = page.getByRole('textbox', { name: 'Message the agent' })
+      await input.waitFor({ timeout: 15_000 })
+      await expect.poll(() => input.isEnabled(), { timeout: 15_000 }).toBe(true)
+      acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    } finally {
+      releaseCatalog()
+      await page.unroute(pattern)
+    }
+  })
+
   it('continues through FIFO follow-up admission and receives the child follow events', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-followup'))
     const ended = new Promise<void>((resolveEnded, reject) => {

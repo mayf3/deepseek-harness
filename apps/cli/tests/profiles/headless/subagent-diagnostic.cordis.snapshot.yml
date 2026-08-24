@@ -10,6 +10,9 @@
     root: './.sessions'
     compression: none
 
+- id: session-query
+  name: './tests/fixtures/subagent-diagnostic-query.ts'
+
 # file/override both default to their DSH_SNAPSHOT_* env vars.
 - id: replay
   name: '@deepseek-ai/dsh-llm-replay'

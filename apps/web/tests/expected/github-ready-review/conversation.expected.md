@@ -42,8 +42,8 @@
 - button "Commands":
   - img
 - 'button "Access mode, current: Read Only"': Read Only
-- button "Select model":
-  - text: Select model
+- button "Select model, current github-webhook-review-test/reply":
+  - text: github-webhook-review-test/reply
   - img
 - button "Send message" [disabled]
 - text: 1 turns · 1 steps LLM {{duration}}
