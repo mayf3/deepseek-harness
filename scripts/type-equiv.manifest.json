@@ -38,6 +38,11 @@
     },
     {
       "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "ImageAttachmentAccess",
+      "source": "packages/llm/llm/src/content.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
       "symbol": "FinishReasonMap",
       "source": "packages/llm/llm/src/types.ts"
     },

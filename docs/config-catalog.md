@@ -941,18 +941,16 @@ export interface DeepSeekCatalogModel {
   maxTokens?: number
   /** Accepted request modalities; omission is text-only. */
   inputModalities?: ModelModality[]
-  /** Total-pixel budget for one deterministic request preview. */
-  imagePixelBudget?: number
+  /** Total-pixel budget for one deterministic request preview, or the 512-by-512 `low` preset. */
+  imagePixelBudget?: number | 'low'
   /** Encoded-byte cap for one deterministic request preview. */
   imageMaxBytes?: number
-  /** Provider detail tier; `low` uses the 512-by-512 total-pixel default. */
-  imageDetail?: 'auto' | 'low'
 }
 ```
 
 Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:106`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/index.ts:107`](../packages/llm/llm-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
