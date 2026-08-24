@@ -12,7 +12,7 @@ import type {
   EditorConfig, LexicalNode, NodeKey, SerializedLexicalNode, Spread,
 } from 'lexical'
 import { DecoratorNode } from 'lexical'
-import type { ReferenceInsert } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type { ReferenceInsert } from '../../contract/input.ts'
 import { ReferenceChip } from './ReferenceChip.tsx'
 
 /** JSON form of one chip (Lexical node serialization contract). */

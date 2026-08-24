@@ -9,9 +9,8 @@
  * decision that needs the draft reads it from the event payload (claim
  * integrity watch, enter snapshots, settlement suffix/re-entry decisions).
  */
-import type { CommandClaim } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
-import type { InputEffect, InputEvent, InputState, SubmitAttempt } from './contract.ts'
+import type { CommandClaim, InputEffect, InputEvent, InputState, SubmitAttempt } from '../contract/input.ts'
 
 /** Exhaustiveness backstop for the closed InputEvent union. */
 function unreachable(value: never): never {

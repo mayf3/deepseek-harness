@@ -18,7 +18,7 @@ import {
   KEY_ESCAPE_COMMAND, KEY_SPACE_COMMAND, PASTE_COMMAND,
 } from 'lexical'
 import { mergeRegister } from '@lexical/utils'
-import type { ArbitrateKey, ArbitrateOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type { ArbitrateKey, ArbitrateOutcome } from '../../contract/input.ts'
 
 /** The bar-supplied behavior behind each intercepted gesture. */
 export interface ComposerKeymapHandlers {

@@ -12,7 +12,7 @@ import {
   $createLineBreakNode, $createParagraphNode, $createTextNode, $getRoot, $getSelection,
   $isTextNode, $setSelection,
 } from 'lexical'
-import type { ReferenceInsert } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type { ReferenceInsert } from '../src/client/contract/input.ts'
 import {
   $createReferenceChipNode, $isReferenceChipNode, ReferenceChipNode,
 } from '../src/client/input/editor/chip-node.tsx'
