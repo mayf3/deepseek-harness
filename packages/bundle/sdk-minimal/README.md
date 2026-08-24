@@ -6,7 +6,7 @@ Standalone minimal SDK application bundle for `dsh --profile sdk-minimal`. Its s
 
 The profile remains part of the ordinary launcher and layering model. The bundle supplies the complete default tree; the profile patch, home patch, and ordered `--patch` files can replace rows or insert external bundles above it. `dsh plugin --profile sdk-minimal` manages persistent dependencies. The shipped template uses startup-only patches so one stdio connection never observes replacement of its server or agent dependencies.
 
-`DEEPSEEK_API_KEY` supplies the adapter credential. `DSH_MODEL` selects the sole configured model, `DSH_CONTEXT_WINDOW` sets its context window, and `DSH_SYSTEM_PROMPT` replaces the default persona. The process working directory is the sandbox-policy workspace and local-filesystem root. The bundle sets `danger-full-access`; its persistent shell and editor can modify any path available to the process.
+`DEEPSEEK_API_KEY` supplies the adapter credential. The SDK initialization request is the sole model selection; the adapter accepts that model id even when it is absent from its advisory catalog. `DSH_CONTEXT_WINDOW` sets the fallback capacity for such models, and `DSH_SYSTEM_PROMPT` replaces the default persona. The process working directory is the sandbox-policy workspace and local-filesystem root. The bundle sets `danger-full-access`; its persistent shell and editor can modify any path available to the process.
 
 ## Model Experience
 

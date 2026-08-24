@@ -61,7 +61,6 @@ with DeepSeekHarness(
     cwd=str(workspace),
     dsh_home=str(dsh_home),
     profile="sdk-minimal",
-    env={"DSH_MODEL": "deepseek-v4-flash"},
 ) as harness:
     result = harness.run(
         "Inspect the repository and fix the failing tests.",

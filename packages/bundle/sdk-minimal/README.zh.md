@@ -6,7 +6,7 @@
 
 该 profile 仍遵循普通 launcher 与分层模型。组合包提供完整默认树；profile patch、home patch 与有序 `--patch` 文件可以在其上替换配置项或插入外部组合包。`dsh plugin --profile sdk-minimal` 管理持久依赖。随附模板仅在启动时应用 patch，因此一个 stdio 连接不会观察到服务器或 agent 依赖在运行中被替换。
 
-`DEEPSEEK_API_KEY` 提供适配器凭据。`DSH_MODEL` 选择唯一配置的模型，`DSH_CONTEXT_WINDOW` 设置其上下文窗口，`DSH_SYSTEM_PROMPT` 替换默认 persona。进程工作目录同时作为沙箱策略 workspace 与本地文件系统根目录。该组合包设置 `danger-full-access`；其持久 shell 与编辑器可以修改进程可访问的任何路径。
+`DEEPSEEK_API_KEY` 提供适配器凭据。SDK 初始化请求是唯一模型选择；即使该模型 id 不在适配器的建议目录中，适配器也会接受它。`DSH_CONTEXT_WINDOW` 为这类模型设置后备容量，`DSH_SYSTEM_PROMPT` 替换默认 persona。进程工作目录同时作为沙箱策略 workspace 与本地文件系统根目录。该组合包设置 `danger-full-access`；其持久 shell 与编辑器可以修改进程可访问的任何路径。
 
 ## 模型体验
 

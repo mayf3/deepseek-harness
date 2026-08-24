@@ -17,7 +17,7 @@ python examples/python-sdk-agent/minimal.py \
   "Inspect the repository and fix the failing tests."
 ```
 
-兼容代理使用 `DEEPSEEK_BASE_URL`，默认模型使用 `DSH_MODEL`，deployment persona 使用 `DSH_SYSTEM_PROMPT`。`--model` 会覆盖模型，并将同一值传给 profile 自有的适配器目录；`--profile` 可以选择另一个提供 SDK 服务的 profile。所选 home 保存生成的 `sdk-minimal` profile，并在 `sessions/` 下保存未压缩 JSONL 会话日志；脚本绝不会隐式读取 `~/.dsh`。
+兼容代理使用 `DEEPSEEK_BASE_URL`，脚本默认模型使用 `DSH_MODEL`，deployment persona 使用 `DSH_SYSTEM_PROMPT`。`--model` 是唯一运行时模型选择，不要求匹配的环境变量；`--profile` 可以选择另一个提供 SDK 服务的 profile。所选 home 保存生成的 `sdk-minimal` profile，并在 `sessions/` 下保存未压缩 JSONL 会话日志；脚本绝不会隐式读取 `~/.dsh`。
 
 随附的 [`@deepseek-ai/dsh-sdk-minimal` 组合包](../../packages/bundle/sdk-minimal/README.zh.md)是该模式完整且显式的 Cordis 配置树。它只暴露：
 

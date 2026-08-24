@@ -16,7 +16,7 @@ Web `minimal` preset 与独立 JSON-RPC minimal 组合对外提供持久 `bash` 
 
 独立的 [`@deepseek-ai/dsh-sdk-minimal` 组合包](../../../../packages/bundle/sdk-minimal/README.zh.md)仍是 `dsh --profile sdk-minimal` 后面的完整 JSON-RPC 进程组合。它挂载 SDK 启动与 JSON-RPC 服务、持久 Bash 所需的本地 PTY 和子进程服务、`fs-local`、两个工具消费方，以及位于 `$DSH_HOME/sessions` 的未压缩 JSONL 持久化。它不挂载 `token-meter`、`compaction-basic`、`fs-sandbox` 或 `fs-observation-policy`。持久 Bash 仍消费该 profile 的 danger-full-access 沙箱策略；编辑器不受该策略限制。[独立 profile 决策](../architecture/2026-08-24-standalone-sdk-minimal-profile.zh.md)负责该组合包的位置及其与 `dsh-base` 的分离。
 
-`DSH_SYSTEM_PROMPT` 选择独立组合的 persona。`DSH_MODEL` 命名 DeepSeek 提供方目录项，`DSH_CONTEXT_WINDOW` 提供该目录项的容量。由于 SDK 客户端拥有 JSON-RPC `initialize` 请求，[`minimal.py`](../../../../examples/python-sdk-agent/minimal.py)会使用 `DSH_MODEL` 作为 `model` 参数的默认值，并把显式 `--model` 传回子进程环境，使目录与请求保持一致。端点与凭据变量继续由 DeepSeek 适配器现有的环境解析路径持有。
+`DSH_SYSTEM_PROMPT` 选择独立组合的 persona，`DSH_CONTEXT_WINDOW` 为没有确切目录元数据的模型提供后备容量。SDK 客户端的 JSON-RPC `initialize` 请求是唯一运行时模型选择。[`minimal.py`](../../../../examples/python-sdk-agent/minimal.py)可以只把 `DSH_MODEL` 读作命令的默认 `model` 参数；显式 `--model` 不需要匹配的子进程环境值。端点与凭据变量继续由 DeepSeek 适配器现有的环境解析路径持有。
 
 ## 验证
 
@@ -32,7 +32,7 @@ SDK keyless 进程测试启动真实 `dsh --profile sdk-minimal`，注入由环�
 
 **为 Web 与 Python SDK 启动使用同一个 Cordis leaf。** 不予采用，因为 Web preset 向现有多会话宿主贡献 agent 作用域服务，而 Python SDK 必须启动包含 JSON-RPC 服务器及其进程级依赖的完整进程。
 
-**只在 Cordis 内读取 `DSH_MODEL`。** 不予采用，因为 Cordis 配置提供方目录，但不拥有 SDK 客户端的 JSON-RPC `initialize` 请求。launcher 必须向客户端请求传递同一个模型，环境值才能选择路由模型。
+**把请求模型镜像到 `DSH_MODEL`。** 不予采用，因为直接适配器接受不在建议目录中的模型 id，并为它们解析后备上下文元数据。镜像会为同一项选择制造两个输入；SDK 初始化请求具有权威，`DSH_MODEL` 只保留为 `minimal.py` 的便捷默认值。
 
 ## 后果
 

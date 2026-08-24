@@ -39,7 +39,6 @@ def main() -> None:
         cwd=str(workspace),
         dsh_home=str(dsh_home),
         profile=args.profile,
-        env={"DSH_MODEL": args.model},
     ) as harness:
         result = harness.run(args.prompt, session_id=args.session_id)
     print(result.final_response)

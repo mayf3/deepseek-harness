@@ -16,7 +16,7 @@ Both shipped minimal profiles expose exactly persistent `bash` and `str_replace_
 
 The standalone [`@deepseek-ai/dsh-sdk-minimal` bundle](../../../../packages/bundle/sdk-minimal/README.md) remains a complete JSON-RPC process composition behind `dsh --profile sdk-minimal`. It mounts SDK startup and JSON-RPC serving, the local PTY and subprocess services required by persistent Bash, `fs-local`, the two tool consumers, and uncompressed JSONL persistence under `$DSH_HOME/sessions`. It does not mount `token-meter`, `compaction-basic`, `fs-sandbox`, or `fs-observation-policy`. Persistent Bash still consumes the profile's danger-full-access sandbox policy; the editor is not confined by that policy. The [standalone-profile decision](../architecture/2026-08-24-standalone-sdk-minimal-profile.md) owns this bundle placement and its separation from `dsh-base`.
 
-`DSH_SYSTEM_PROMPT` selects the standalone persona. `DSH_MODEL` names the DeepSeek provider catalog entry, and `DSH_CONTEXT_WINDOW` supplies that entry's capacity. Because the SDK client owns the JSON-RPC `initialize` request, [`minimal.py`](../../../../examples/python-sdk-agent/minimal.py) uses `DSH_MODEL` as its default `model` argument and passes an explicit `--model` back to the child environment so the catalog and request remain aligned. Endpoint and credential variables stay owned by the DeepSeek adapter's existing environment-resolution path.
+`DSH_SYSTEM_PROMPT` selects the standalone persona, and `DSH_CONTEXT_WINDOW` supplies fallback capacity for a model without exact catalog metadata. The SDK client's JSON-RPC `initialize` request is the sole runtime model selection. [`minimal.py`](../../../../examples/python-sdk-agent/minimal.py) may read `DSH_MODEL` only as the command's default `model` argument; an explicit `--model` needs no matching child environment value. Endpoint and credential variables stay owned by the DeepSeek adapter's existing environment-resolution path.
 
 ## Verification
 
@@ -32,7 +32,7 @@ The SDK keyless process test boots real `dsh --profile sdk-minimal`, injects an 
 
 **Use one Cordis leaf for Web and Python SDK startup.** Rejected because a Web preset contributes agent-scoped services to an existing multi-session host, while the Python SDK must launch a complete process containing the JSON-RPC server and its process-wide dependencies.
 
-**Read `DSH_MODEL` only inside Cordis.** Rejected because Cordis configures the provider catalog but does not own the SDK client's JSON-RPC `initialize` request. The launcher must pass the same model to the client request for the environment value to select the routed model.
+**Mirror the requested model into `DSH_MODEL`.** Rejected because the direct adapter accepts model ids outside its advisory catalog and resolves fallback context metadata for them. Mirroring creates two inputs for one selection; the SDK initialization request is authoritative, while `DSH_MODEL` remains only a convenience default in `minimal.py`.
 
 ## Consequences
 

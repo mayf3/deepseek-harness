@@ -978,9 +978,6 @@ def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -
             dsh_bin=str(executable),
             dsh_home=str(dsh_home),
             profile="sdk-minimal",
-            env={
-                "DSH_MODEL": "smoke-model",
-            },
             api_key="sk-keyless-smoke",
             base_url=base_url,
             request_timeout_seconds=60,
