@@ -221,6 +221,36 @@ def write_profile_patch(
     return path
 
 
+def write_advanced_profile_patch(root: Path, name: str, sessions: Path) -> Path:
+    """Write the shared custom, snapshot, and restart profile patch."""
+    return write_profile_patch(root, name, sessions, [
+        {"id": "tools", "config": {"mode": "both"}},
+        {
+            "id": "system-prompt",
+            "config": {
+                "persona": "You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.",
+            },
+        },
+        {"id": "session-log-deepseek", "config": {"enabled": True}},
+        *({"id": row_id, "disabled": True} for row_id in LEGACY_CUSTOM_DISABLED_ROWS),
+        {"id": "tool-bash", "disabled": True},
+        {"id": "tool-pwsh", "disabled": True},
+        {
+            "id": "tool-subagent",
+            "config": {
+                "provider": "spawn",
+                "toolName": "subagent",
+                "backgroundMode": "one-shot",
+            },
+        },
+        {"insert": [
+            {"id": "code-runtime", "name": "@deepseek-ai/dsh-code-runtime-worker-thread"},
+            {"id": "cordis-host-runner", "name": "@deepseek-ai/dsh-cordis-host-runner"},
+            {"id": "cordis-tool", "name": "@deepseek-ai/dsh-tool-cordis"},
+        ]},
+    ])
+
+
 def write_mcp_patch(root: Path, sessions: Path, server_script: Path) -> Path:
     """Write a profile patch that mounts the packaged MCP client."""
     return write_profile_patch(root, "mcp.patch.yml", sessions, [{
@@ -923,32 +953,7 @@ def smoke_sdk_custom(base_url: str, executable: Path) -> None:
         root = Path(temporary).resolve()
         dsh_home = root / "home"
         sessions = dsh_home / "sessions"
-        patch = write_profile_patch(root, "custom.patch.yml", sessions, [
-            {"id": "tools", "config": {"mode": "both"}},
-            {
-                "id": "system-prompt",
-                "config": {
-                    "persona": "You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.",
-                },
-            },
-            {"id": "session-log-deepseek", "config": {"enabled": True}},
-            *({"id": row_id, "disabled": True} for row_id in LEGACY_CUSTOM_DISABLED_ROWS),
-            {"id": "tool-bash", "disabled": True},
-            {"id": "tool-pwsh", "disabled": True},
-            {
-                "id": "tool-subagent",
-                "config": {
-                    "provider": "spawn",
-                    "toolName": "subagent",
-                    "backgroundMode": "one-shot",
-                },
-            },
-            {"insert": [
-                {"id": "code-runtime", "name": "@deepseek-ai/dsh-code-runtime-worker-thread"},
-                {"id": "cordis-host-runner", "name": "@deepseek-ai/dsh-cordis-host-runner"},
-                {"id": "cordis-tool", "name": "@deepseek-ai/dsh-tool-cordis"},
-            ]},
-        ])
+        patch = write_advanced_profile_patch(root, "custom.patch.yml", sessions)
         with DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",
@@ -1173,32 +1178,7 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
         root = Path(temporary).resolve()
         dsh_home = root / "home"
         sessions = dsh_home / "sessions"
-        patch = write_profile_patch(root, "snapshot.patch.yml", sessions, [
-            {"id": "tools", "config": {"mode": "both"}},
-            {
-                "id": "system-prompt",
-                "config": {
-                    "persona": "You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.",
-                },
-            },
-            {"id": "session-log-deepseek", "config": {"enabled": True}},
-            *({"id": row_id, "disabled": True} for row_id in LEGACY_CUSTOM_DISABLED_ROWS),
-            {"id": "tool-bash", "disabled": True},
-            {"id": "tool-pwsh", "disabled": True},
-            {
-                "id": "tool-subagent",
-                "config": {
-                    "provider": "spawn",
-                    "toolName": "subagent",
-                    "backgroundMode": "one-shot",
-                },
-            },
-            {"insert": [
-                {"id": "code-runtime", "name": "@deepseek-ai/dsh-code-runtime-worker-thread"},
-                {"id": "cordis-host-runner", "name": "@deepseek-ai/dsh-cordis-host-runner"},
-                {"id": "cordis-tool", "name": "@deepseek-ai/dsh-tool-cordis"},
-            ]},
-        ])
+        patch = write_advanced_profile_patch(root, "snapshot.patch.yml", sessions)
         with DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",
@@ -1247,32 +1227,7 @@ def smoke_sdk_restart_snapshot(base_url: str, executable: Path, update_snapshots
         root = Path(temporary).resolve()
         dsh_home = root / "home"
         sessions = dsh_home / "sessions"
-        patch = write_profile_patch(root, "restart.patch.yml", sessions, [
-            {"id": "tools", "config": {"mode": "both"}},
-            {
-                "id": "system-prompt",
-                "config": {
-                    "persona": "You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.",
-                },
-            },
-            {"id": "session-log-deepseek", "config": {"enabled": True}},
-            *({"id": row_id, "disabled": True} for row_id in LEGACY_CUSTOM_DISABLED_ROWS),
-            {"id": "tool-bash", "disabled": True},
-            {"id": "tool-pwsh", "disabled": True},
-            {
-                "id": "tool-subagent",
-                "config": {
-                    "provider": "spawn",
-                    "toolName": "subagent",
-                    "backgroundMode": "one-shot",
-                },
-            },
-            {"insert": [
-                {"id": "code-runtime", "name": "@deepseek-ai/dsh-code-runtime-worker-thread"},
-                {"id": "cordis-host-runner", "name": "@deepseek-ai/dsh-cordis-host-runner"},
-                {"id": "cordis-tool", "name": "@deepseek-ai/dsh-tool-cordis"},
-            ]},
-        ])
+        patch = write_advanced_profile_patch(root, "restart.patch.yml", sessions)
         first_request = len(MockModelHandler.requests)
 
         def run(prompt: str, session_id: str) -> "RunResult":
