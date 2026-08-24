@@ -31,7 +31,7 @@ class HarnessConfig:
     dsh_home: str | None = None
     cwd: str | None = None
     env: dict[str, str] | None = None
-    initialize_timeout_seconds: float = 10.0
+    initialize_timeout_seconds: float = 30.0
     request_timeout_seconds: float | None = None
     shutdown_timeout_seconds: float | None = 1.0
     _launch_args: tuple[str, ...] | None = None

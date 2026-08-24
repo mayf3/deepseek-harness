@@ -26,6 +26,8 @@ Python 进程仍按 [Python profile 运行时决策](2026-08-23-python-sdk-dsh-p
 
 Windows lane 会创建干净的 Windows 虚拟环境，安装版本精确匹配的 SDK 与 `win_amd64` 运行时 wheel，切换到 checkout 外的目录，清除 `PYTHONPATH` 与 `DSH_RUNTIME_MODE`，再运行与其他目标相同的 `--scenario all --installed-wheel` 黑盒测试。可信拉取请求还会运行相同的双轮 `sdk-live` 真实提供方场景。Fork 与 Dependabot head 不会获得密钥。
 
+公开 Python 客户端通过 `initialize_timeout_seconds` 为首次 profile 握手提供独立的 30 秒默认上限。该上限可容纳 Windows x64 可执行文件冷启动与 profile 物化，同时仍会使卡死的运行时失败；调用方可将其与普通请求超时分开配置。
+
 成功收到 shutdown 响应后，Python 客户端会关闭 stdin，并在已配置的 shutdown 超时内等待 `dsh` 上下文退出及刷写持久 session 状态，然后才回退到终止进程。Shutdown 失败时仍立即执行有界终止。`shutdown_timeout_seconds` 会分别限制 shutdown 请求、EOF 宽限与终止确认阶段，因此异常关闭在最终 kill 前可能接近该值的三倍。该区别会保留 Windows 上最后一个已接受轮次；该平台的 `terminate()` 会强制结束进程，而不是发送可捕获信号。
 
 极简黑盒测试在 Windows 上使用持久 `pwsh` 与 `str_replace_editor`，并由 `minimal/win-x64/model-visible.json` 固定预期；Linux 与 macOS 保留持久 Bash 和共享的 `minimal/model-visible.json`。高级进程／subagent 快照与重启／持久日志快照继续由所有目标共享。随附的 [`sdk-minimal` 组合包](../../../../packages/bundle/sdk-minimal/README.zh.md)为可运行 Python 教程选择同一组平台 shell。

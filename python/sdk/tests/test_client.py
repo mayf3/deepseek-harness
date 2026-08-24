@@ -873,6 +873,8 @@ def test_public_signatures_omit_unsupported_wire_parameters() -> None:
     )
     assert "initialize_timeout_seconds" in DeepSeekHarnessConfig.__dataclass_fields__
     assert "initialize_timeout_seconds" in HarnessConfig.__dataclass_fields__
+    assert DeepSeekHarnessConfig().initialize_timeout_seconds == 30.0
+    assert HarnessConfig().initialize_timeout_seconds == 30.0
     for removed in ("cordis", "session_root", "runtime_bin", "bridge_bin", "launch_args_override"):
         assert removed not in DeepSeekHarnessConfig.__dataclass_fields__
         assert removed not in HarnessConfig.__dataclass_fields__
