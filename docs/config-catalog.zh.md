@@ -168,9 +168,10 @@ export type PresetTrust = 'system' | 'user'
  * Bundle config: each field forwarded verbatim to the child that owns it —
  * `agents` to the agent loop (an app that pre-creates no agents, like the ACP
  * bridge, simply omits it), `includeHarnessIdentity`, `includeRuntimeContext`,
- * `persona`, and `toolOrder` to the system-prompt plugin (the fixed opener,
- * dynamic-context policy, deployment persona, and explicit model-facing tool
- * order), the `tools` object to the tool registry (its presentation `mode`),
+ * `persona`, `personaComplete`, and `toolOrder` to the system-prompt plugin
+ * (the fixed opener, dynamic-context policy, deployment persona completeness,
+ * and explicit model-facing tool order), the `tools` object to the tool
+ * registry (its presentation `mode`),
  * `dshHome` to bash environment and local skill discovery, `sessionTitle` to
  * the fallback title service, `skills` to the
  * skill registry/local provider/tool consumer, `workspaceContext` to the
@@ -198,6 +199,8 @@ export interface Config {
   includeRuntimeContext?: SystemPromptConfig['includeRuntimeContext']
   /** The deployment persona (see dsh-system-prompt's `Config`). */
   persona?: SystemPromptConfig['persona']
+  /** Whether the deployment persona is the complete system prompt. */
+  personaComplete?: SystemPromptConfig['personaComplete']
   /** The explicit model-facing tool order (see dsh-system-prompt's `Config`). */
   toolOrder?: SystemPromptConfig['toolOrder']
   /** The tool registry's config — its presentation `mode` (see dsh-tools' `Config`). */
@@ -249,7 +252,7 @@ export interface GoalConfig {
 
 依赖：[`AgentLoopConfig`](#deepseek-aidsh-agent-loop) · [`GoalDomainConfig`](#deepseek-aidsh-goal) · [`InvariantConfig`](#deepseek-aidsh-invariants) · [`JobsConfig`](#deepseek-aidsh-jobs-local) · [`SessionTitleConfig`](#deepseek-aidsh-session-title) · [`SkillFileSystem`](../packages/skill/skill-filesystem/src/index.ts) · [`SkillRegistryConfig`](#deepseek-aidsh-skill) · [`SystemPromptConfig`](#deepseek-aidsh-system-prompt) · [`toolBash`](../packages/shell/tool-bash/src/index.ts) · [`toolGoal`](../packages/goal/tool-goal/src/index.ts) · [`toolJobs`](../packages/jobs/tool-jobs/src/index.ts) · [`ToolsConfig`](#deepseek-aidsh-tools) · [`toolSkill`](../packages/skill/tool-skill/src/index.ts) · [`workspaceContext`](../packages/context/agent-instructions/src/index.ts)
 
-来源：[`packages/examples/agent-spine-demo/src/index.ts:92`](../packages/examples/agent-spine-demo/src/index.ts)
+来源：[`packages/examples/agent-spine-demo/src/index.ts:93`](../packages/examples/agent-spine-demo/src/index.ts)
 
 <a id="deepseek-aidsh-agent-tool-presentation"></a>
 
@@ -1680,6 +1683,22 @@ export interface Config {
 
 来源：[`packages/sandbox/sandbox-policy/src/index.ts:67`](../packages/sandbox/sandbox-policy/src/index.ts)
 
+<a id="deepseek-aidsh-sdk-app"></a>
+
+## `@deepseek-ai/dsh-sdk-app`
+
+需要：`cmdlineArgs`
+
+```ts config-catalog
+/** SDK stdio startup configuration. */
+export interface Config {
+  /** Profile name rendered in help and diagnostics (default `sdk`). */
+  profile?: string
+}
+```
+
+来源：[`packages/bundle/sdk-app/src/index.ts:23`](../packages/bundle/sdk-app/src/index.ts)
+
 <a id="deepseek-aidsh-sdk-jsonrpc-server"></a>
 
 ## `@deepseek-ai/dsh-sdk-jsonrpc-server`
@@ -1691,6 +1710,13 @@ export interface Config {
 export interface JsonRpcConfig {
   /** Report max-token turn/subagent termination as a successful SDK result. */
   maxTokensAsSuccess?: boolean
+  /** Per-root-agent model-facing tool filter; an allow list excludes later unnamed global tools. */
+  toolFilter?: {
+    /** Global tool names that remain visible. */
+    allow?: string[]
+    /** Global tool names removed from visibility. */
+    deny?: string[]
+  }
   /** Transport input override; production uses `process.stdin`. */
   input?: Readable
   /** Transport output override; production uses `process.stdout`. */
@@ -1702,7 +1728,7 @@ export interface JsonRpcConfig {
 
 依赖：`Readable`（`node:stream`）· `Writable`（`node:stream`）
 
-来源：[`packages/sdk/server/src/index.ts:29`](../packages/sdk/server/src/index.ts)
+来源：[`packages/sdk/server/src/index.ts:25`](../packages/sdk/server/src/index.ts)
 
 <a id="deepseek-aidsh-session-log-deepseek"></a>
 
@@ -2416,6 +2442,8 @@ export interface Config {
    * `deployment:persona` shadows it; `{{variable}}` references are strict.
    */
   persona?: string
+  /** Treat the deployment persona as the complete system prompt (default false). */
+  personaComplete?: boolean
   /**
    * Model-facing tool names in order, with {@link TOOL_ORDER_REST} exactly once.
    * Invalid fields fail at load and unknown names fail at assembly; known names
@@ -3320,7 +3348,6 @@ export interface Config {
 - `@deepseek-ai/dsh-llm`（[`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts)）
 - `@deepseek-ai/dsh-lsp`（[`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts)）
 - `@deepseek-ai/dsh-schedule` — 需要 `agents` · `sessions` · `tools` · `sessionPersistence`（[`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts)）
-- `@deepseek-ai/dsh-sdk-app` — 需要 `cmdlineArgs`（[`packages/bundle/sdk-app/src/index.ts`](../packages/bundle/sdk-app/src/index.ts)）
 - `@deepseek-ai/dsh-session`（[`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts)）
 - `@deepseek-ai/dsh-session-checkpoint-policy` — 需要 `llm` · `sessionPersistence` · `sessions` · `tools`（[`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts)）
 - `@deepseek-ai/dsh-session-log-export` — 需要 `commands`（[`packages/session-query/session-log-export/src/index.ts`](../packages/session-query/session-log-export/src/index.ts)）
@@ -3389,8 +3416,8 @@ export interface Config {
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-client`（[`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts)）
+- `@deepseek-ai/dsh-sdk-minimal`（[`packages/bundle/sdk-minimal/src/index.ts`](../packages/bundle/sdk-minimal/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-protocol`（[`packages/sdk/protocol/src/index.ts`](../packages/sdk/protocol/src/index.ts)）
-- `@deepseek-ai/dsh-sdk-python-runtime`（[`packages/sdk/python-runtime/src/index.ts`](../packages/sdk/python-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-session-telemetry`（[`packages/session/session-telemetry/src/index.ts`](../packages/session/session-telemetry/src/index.ts)）
 - `@deepseek-ai/dsh-session-title-llm`（[`packages/session/session-title-llm/src/index.ts`](../packages/session/session-title-llm/src/index.ts)）
 - `@deepseek-ai/dsh-subagent-in-process-driver`（[`packages/subagent/subagent-in-process-driver/src/index.ts`](../packages/subagent/subagent-in-process-driver/src/index.ts)）

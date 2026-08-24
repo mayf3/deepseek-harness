@@ -123,6 +123,7 @@ flowchart TD
     pkg_base["base"]
     pkg_headless["headless"]
     pkg_sdk_app["sdk-app"]
+    pkg_sdk_minimal["sdk-minimal"]
     pkg_web_app["web-app"]
   end
   subgraph group_client["packages/client"]
@@ -275,7 +276,6 @@ flowchart TD
     pkg_sdk_client["sdk-client"]
     pkg_sdk_jsonrpc_server["sdk-jsonrpc-server"]
     pkg_sdk_protocol["sdk-protocol"]
-    pkg_sdk_python_runtime["sdk-python-runtime"]
   end
   subgraph group_session["packages/session"]
     pkg_session_checkpoint_policy["session-checkpoint-policy"]
@@ -367,6 +367,7 @@ flowchart TD
   pkg_acp_app --> pkg_invariants
   pkg_base --> pkg_invariants
   pkg_sdk_app --> pkg_invariants
+  pkg_sdk_minimal --> pkg_invariants
   pkg_client_store --> pkg_invariants
   pkg_client_ui_primitives --> pkg_invariants
   pkg_client_ui_renderer --> pkg_invariants
@@ -381,7 +382,6 @@ flowchart TD
   pkg_host_directory_picker_native --> pkg_invariants
   pkg_host_webserver --> pkg_invariants
   pkg_sandbox_windows_acl --> pkg_invariants
-  pkg_sdk_python_runtime --> pkg_invariants
   pkg_storage --> pkg_invariants
   pkg_subprocess --> pkg_invariants
   pkg_win32_process --> pkg_invariants
@@ -1658,6 +1658,7 @@ flowchart TD
 | [`acp-app`](../packages/bundle/acp-app) | `bundle` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`base`](../packages/bundle/base) | `bundle` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`sdk-app`](../packages/bundle/sdk-app) | `bundle` | [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`sdk-minimal`](../packages/bundle/sdk-minimal) | `bundle` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-store`](../packages/client/store) | `client` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-primitives`](../packages/client/ui-primitives) | `client` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-renderer`](../packages/client/ui-renderer) | `client` | [`invariants`](../packages/runtime-diagnostics/invariants) |
@@ -1672,7 +1673,6 @@ flowchart TD
 | [`host-directory-picker-native`](../packages/host/directory-picker-native) | `host` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`host-webserver`](../packages/host/webserver) | `host` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`sandbox-windows-acl`](../packages/sandbox/sandbox-windows-acl) | `sandbox` | [`invariants`](../packages/runtime-diagnostics/invariants) |
-| [`sdk-python-runtime`](../packages/sdk/python-runtime) | `sdk` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`storage`](../packages/storage/storage) | `storage` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`subprocess`](../packages/subprocess/subprocess) | `subprocess` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`win32-process`](../packages/subprocess/win32-process) | `subprocess` | [`invariants`](../packages/runtime-diagnostics/invariants) |

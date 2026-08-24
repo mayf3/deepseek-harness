@@ -519,7 +519,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // The production module-resolution setup: an empty profile root inside the temp
     // harness home, with bare plugin names resolving through the flat module
     // fallback the launcher heals under <home>/profiles.
-    healProfilesModuleFallback(INSTALL_ANCHOR, harnessHome)
+    await healProfilesModuleFallback(INSTALL_ANCHOR, harnessHome)
     const profileDir = join(harnessHome, 'profiles', 'scaffold')
     await mkdir(profileDir, { recursive: true })
     const rootConfig = join(profileDir, 'cordis.yml')

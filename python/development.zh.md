@@ -31,10 +31,10 @@ uv run --project python/sdk pytest
 
 ```sh
 uv run --project python/sdk python scripts/smoke-python-runtime.py \
-  --scenario sdk-minimal --exe dist-exe/dsh-jsonrpc-agent-pkg-macos-arm64
+  --scenario sdk-minimal --exe dist-exe/deepseek-harness-sdk-runtime-macos-arm64
 ```
 
-其中三个场景会比对 `scripts/snapshots/python-sdk-single-exe/` 下已提交的期望输出。`minimal/model-visible.json` 固定了签入的极简组合所组装的系统提示词、对外公布的工具 schema 以及模型可见消息，因此插件一旦贡献出计划外的系统分段或 user 消息，该任务即失败；它会丢弃动态运行时上下文快照——同一组合在 macOS 上会发出它，在 Linux 上不会（[#2488](https://github.com/deepseek-harness/deepseek-harness/issues/2488)）。`advanced/` 固定一个复杂进程的 SDK 结果及父／子会话日志。`restart/` 针对同一持久化根目录启动两个完整 SDK 运行时进程，并固定其彼此隔离的模型历史、高层结果与独立持久日志。重新运行对应场景时加上 `--update-snapshots`，并在提交前审阅该差异。
+其中三个场景会比对 `scripts/snapshots/python-sdk-single-exe/` 下已提交的期望输出。`minimal/model-visible.json` 固定随附 `sdk-minimal` profile 所组装的系统提示词、对外公布的工具 schema 与模型可见消息，因此插件一旦贡献出计划外的系统分段或 user 消息，该任务即失败。`advanced/` 固定一个复杂进程的 SDK 结果及父／子会话日志。`restart/` 针对同一持久化根目录启动两个完整 SDK 运行时进程，并固定其彼此隔离的模型历史、高层结果与独立持久日志。重新运行对应场景时加上 `--update-snapshots`，并在提交前审阅该差异。
 
 可信拉取请求还会在每个原生目标上运行 `--scenario sdk-live --installed-wheel`。该场景面向 `https://api.deepseek.com` 执行两个使用工具的轮次，从外部验证已创建文件，并在仓库密钥缺失时失败而不是自行 skip。Fork 与 Dependabot 拉取请求会运行完整的 keyless 安装后 wheel 路径，但不会获得密钥。
 
@@ -43,18 +43,20 @@ uv run --project python/sdk python scripts/smoke-python-runtime.py \
 ```python
 from deepseek_harness import DeepSeekHarness
 
-with DeepSeekHarness() as harness:
+with DeepSeekHarness(dsh_home="/absolute/path/to/test-dsh-home") as harness:
     print(harness.run("say hi").final_response)
 ```
 
+也可以导出非空 `DSH_HOME`。SDK 会拒绝可能静默使用 `~/.dsh` 的启动。
+
 ## 针对 Node 源码运行
 
-仓库贡献者可以选择以下任一开发载体：
+仓库贡献者可以选择以下任一开发路径；两者都执行普通的 `dsh --profile sdk` 启动器：
 
 - 设置 `DSH_RUNTIME_MODE=node`，在系统 Node `>=22.19` 上使用已构建的 Node 载体。构建脚本会刷新该载体，但分发物绝不会包含或自动选择它。
-- 将仓库根目录设为 `cwd`，并设置 `launch_args_override=("./node_modules/.bin/tsx", "packages/sdk/python-runtime/src/packaged-bin.ts")`，以运行私有载体未构建的 TypeScript 源码。默认配置不合适时，请提供 `cordis=...`。
+- 将 `dsh_bin` 设置为已构建 `apps/cli/lib/bin.js` 的绝对路径，直接验证当前 checkout 的 CLI。请显式提供 `dsh_home`，并按需提供 `profile` 与有序 `patches`。
 
-完整的源码模式调用见 `python/sdk/tests/manual_sdk_agent_smoke.py`。
+`python/sdk/tests/manual_sdk_agent_smoke.py` 使用内部 `_launch_args` 测试适配器，通过 tsx 验证未构建的 TypeScript CLI。公开 SDK 刻意不提供任意 argv 替换。
 
 ## 构建分发包
 
@@ -71,7 +73,7 @@ print(release["pep440_version"](release["repository_version"]()))
 PY
 )"
 python scripts/build-python-release.py --package sdk --output-dir dist-python
-python scripts/build-python-release.py --package runtime --platform macos-arm64 --runtime-exe dist-exe/dsh-jsonrpc-agent-pkg-macos-arm64 --output-dir dist-python
+python scripts/build-python-release.py --package runtime --platform macos-arm64 --runtime-exe dist-exe/deepseek-harness-sdk-runtime-macos-arm64 --output-dir dist-python
 pip install \
   "dist-python/deepseek_harness_sdk-$version-py3-none-any.whl" \
   "dist-python/deepseek_harness_runtime_bin-$version-py3-none-macosx_14_0_arm64.whl"

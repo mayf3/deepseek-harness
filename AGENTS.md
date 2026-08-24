@@ -8,7 +8,7 @@ DeepSeek Harness is an all-plugin agent harness on vendored Cordis. Read [docs/a
 
 ## Application launch
 
-Node apps launch only through `dsh` profiles; application-package bins, demos, and SDK argv escape hatches are forbidden. The private Python runtime is the sole temporary exception. [Architecture](docs/architecture.md#application-launch) owns scope and deferred artifact rename; `pnpm run verify-application-entrypoints` enforces it.
+Supported Node applications launch only through `dsh` profiles; application-package bins, demos, and public SDK argv escape hatches are forbidden. [Architecture](docs/architecture.md#application-launch) owns the launch set; `pnpm run verify-application-entrypoints` enforces it.
 
 ## Repository layout
 
@@ -46,7 +46,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   acp/         automation-only Agent Client Protocol server
   interaction/ approval/interaction capabilities, permission, commands, ask-user
   boot/        shared profile/application boot glue
-  sdk/         JSON-RPC protocol, server, TypeScript client, and private Python carrier
+  sdk/         JSON-RPC protocol, server, and TypeScript client
   examples/    reusable demo bundles (agent-spine)
   experimental/ private prototypes excluded from official releases
   support/     dev/test infrastructure
