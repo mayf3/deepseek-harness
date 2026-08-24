@@ -41,7 +41,7 @@ export function projectUserText(text: string, sessionLabels: readonly string[]):
       end: wire.index + wire[0].length,
       label: wire[0],
       kind: 'session',
-      display: wire[1] ?? '',
+      display: wire[1] as string, // non-optional capture in SESSION_WIRE_RE
     })
   }
   for (const rawLabel of [...new Set(sessionLabels)].sort((a, b) => b.length - a.length)) {
@@ -55,16 +55,16 @@ export function projectUserText(text: string, sessionLabels: readonly string[]):
   const re = /(^|\s)(\/[\w-]+|@"[^"\n]+"|@[^\s]+)/gu
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
-    const tokenStart = m.index + (m[1]?.length ?? 0)
-    const rawLabel = m[2] ?? ''
+    const tokenStart = m.index + (m[1] as string).length // (^|\s) captures '' at line start
+    const rawLabel = m[2] as string // non-optional alternation capture
     const label = rawLabel.startsWith('@"')
       ? rawLabel
       : rawLabel.replace(/[.,;:!?，。；：！？]+$/gu, '')
     if (label.length <= 1) continue
     ranges.push({ start: tokenStart, end: tokenStart + label.length, label, kind: 'plain' })
   }
-  ranges.sort((a, b) => a.start - b.start
-    || (a.kind === b.kind ? b.end - a.end : a.kind === 'session' ? -1 : 1))
+  const rankOf = (range: DecorationRange): number => range.kind === 'session' ? 0 : 1
+  ranges.sort((a, b) => a.start - b.start || rankOf(a) - rankOf(b) || b.end - a.end)
   const parts: ReactNode[] = []
   let cursor = 0
   const pushPlain = (from: number, to: number): void => {

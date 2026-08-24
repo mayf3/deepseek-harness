@@ -159,6 +159,13 @@ export function installAssembledBootEnv(): void {
   if (typeof Element.prototype.scrollIntoView !== 'function') {
     Element.prototype.scrollIntoView = () => {}
   }
+  // jsdom implements no Range geometry either: Lexical's selection reveal
+  // measures the caret with one after a programmatic edit settles focus.
+  if (typeof Range.prototype.getBoundingClientRect !== 'function') {
+    Range.prototype.getBoundingClientRect = () => ({
+      top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}),
+    }) as DOMRect
+  }
   beforeEach(() => {
     localStorage.clear()
     // The locale service derives its provisional locale from the browser and

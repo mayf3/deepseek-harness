@@ -62,6 +62,19 @@ describe('projectUserText', () => {
     expect(host.textContent).toBe('用 /plan。 试试 @。')
   })
 
+  it('prefers the longer recall label when one nests inside another', () => {
+    const host = project('@会话一 收尾', ['会话', '会话一'])
+    const chips = [...host.querySelectorAll('[data-ref-chip="session"]')]
+    expect(chips.map(c => c.textContent)).toEqual(['会话一'])
+    expect(host.textContent).toBe('会话一 收尾')
+  })
+
+  it('falls back to the raw quoted label when the path has no basename', () => {
+    const host = project('看 @"/" 下面')
+    const chip = host.querySelector('[data-ref-chip="file"]')!
+    expect(chip.textContent).toBe('"/"')
+  })
+
   it('renders undecorated text as one inline run', () => {
     const host = project('纯文本，无引用')
     expect(host.querySelectorAll('div').length).toBe(0)
