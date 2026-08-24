@@ -88,7 +88,7 @@ The plugin also declares its route in the configurable-provider directory (`ctx.
 
 When `ctx.deepseekLlmApiExtensions` is present, the adapter prepares its registered top-level fields after serializing the exact wire messages and before `fetch`. The same request signal reaches providers, and cancellation stops waiting even when a provider ignores it. Preparation failures and field collisions fail before HTTP with `REQUEST_EXTENSION`. After HTTP 2xx, the adapter awaits the prepared acceptance transaction before consuming the SSE body; an acceptance failure uses the same code, while transport and non-2xx failures do not accept the fields. Fields go to the resolved `baseURL`, including a configured gateway. A composition without the registry sends the base DeepSeek request unchanged.
 
-Shipped profiles and runnable examples mount [`@deepseek-ai/dsh-plugin-package-inventory-deepseek`](../plugin-package-inventory-deepseek/README.md) for the complete active `dsh_plugin_packages` field. Package metadata defaults on and remains model-hidden. `llm-pi-ai` neither imports nor calls this provider-specific registry.
+Shipped profiles and runnable examples mount [`@deepseek-ai/dsh-session-log-deepseek`](../../session/session-log-deepseek/README.md) for the incremental `dsh_session_log` field and [`@deepseek-ai/dsh-plugin-package-inventory-deepseek`](../plugin-package-inventory-deepseek/README.md) for the complete active `dsh_plugin_packages` field. Session-log upload defaults off and requires `session-log-deepseek.enabled: true`; package metadata defaults on. Both remain model-hidden. `llm-pi-ai` neither imports nor calls this provider-specific registry.
 
 ## App attribution
 

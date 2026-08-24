@@ -8,8 +8,12 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { basename, dirname, join, resolve } from 'node:path'
 import { Readable, Writable } from 'node:stream'
+import { pathToFileURL } from 'node:url'
+import * as yaml from 'js-yaml'
 import {
   client as createAcpClientApp,
   methods,
@@ -33,18 +37,28 @@ import {
   type SetSessionConfigOptionResponse,
   type SessionNotification,
 } from '@agentclientprotocol/sdk'
+import { entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 
 const EXIT_MARKER_GRACE_MS = 250
 
-/** The source/built agent entry, leaf config, and workspace tsconfig an ACP test boots. */
+/** Loader fields needed while rebasing authored relative module names. */
+interface ProfilePatchEntry {
+  name: string
+  group?: boolean | null
+  config?: unknown
+}
+
+/** The source/built entry, profile patch, and workspace tsconfig an ACP test boots. */
 export interface AgentUnderTest {
-  /** The agent source bin entry (for example `packages/examples/acp-demo/src/bin.ts`). */
+  /** The source bin entry; product suites use `apps/cli/src/bin.ts`. */
   binScript: string
   /** Explicit built-mode entry for fixtures whose source path is not under `src/`. */
   libBinScript?: string | undefined
-  /** The leaf `cordis.yml` loaded by the bin. */
+  /** Base config or profile patch loaded by the bin. */
   configPath: string
+  /** Named dsh profile; omitted only for test-only fake bins with their own config grammar. */
+  profile?: string
   /** The repo tsconfig whose paths resolve unbuilt workspace imports. */
   tsconfigPath: string
 }
@@ -104,11 +118,15 @@ export interface LaunchedAcpTestAgent {
  */
 export function launchAcpTestAgent(options: AcpTestLaunchOptions): LaunchedAcpTestAgent {
   const { agent, cwd } = options
+  const selectedConfig = options.configPath ?? agent.configPath
   const launch = resolveExampleLaunch({
     srcBin: agent.binScript,
     libBin: agent.libBinScript,
-    configArgs: ['--config', options.configPath ?? agent.configPath],
+    configArgs: agent.profile === undefined
+      ? ['--config', selectedConfig]
+      : profileArgs(agent.profile, agent.configPath, selectedConfig, options.env?.DSH_SNAPSHOT, cwd),
     tsconfigPath: agent.tsconfigPath,
+    ...agent.profile === undefined ? {} : { sourceImport: 'tsx/esm' },
     env: {
       ...options.env,
       DSH_HOME: join(cwd, '.dsh'),
@@ -320,6 +338,99 @@ export function launchAcpTestAgent(options: AcpTestLaunchOptions): LaunchedAcpTe
       return propagateFailureAfterDrain()
     },
   }
+}
+
+/** Build one dsh profile invocation from the base and optional scenario patches. */
+function profileArgs(
+  profile: string,
+  basePatch: string,
+  selectedPatch: string,
+  snapshotMode: string | undefined,
+  cwd: string,
+): string[] {
+  const base = resolve(cwd, basePatch)
+  const selected = resolve(cwd, selectedPatch)
+  // Replay siblings already contain the selected scenario's complete delta
+  // over the base patch; live scenario patches are not also applied.
+  const patches = snapshotMode === 'replay'
+    ? [base, replayPatchPath(selected)]
+    : [...new Set([base, selected])]
+  const materializedRoot = join(cwd, '.dsh-profile-patches')
+  mkdirSync(materializedRoot, { recursive: true })
+  const materializedDir = mkdtempSync(join(materializedRoot, 'launch-'))
+  const materialized = patches.map((file, index) => materializeProfilePatch(file, cwd, materializedDir, index))
+  return ['--profile', profile, ...materialized.flatMap(file => ['--patch', file])]
+}
+
+/** Derive the replay-only sibling patch selected by the former app-bin swap. */
+function replayPatchPath(source: string): string {
+  const replayName = basename(source).replace(/cordis\.ya?ml$/, 'cordis.snapshot.yml')
+  return resolve(dirname(source), replayName)
+}
+
+/** Parse a bare package or subpath specifier into its package name. */
+function barePackageName(specifier: string): string | undefined {
+  if (specifier.startsWith('.') || specifier.startsWith('/') || specifier.includes(':')) return undefined
+  const [first = '', second = ''] = specifier.split('/')
+  return first.startsWith('@') ? `${first}/${second}` : first
+}
+
+/** Find a bare package's directory from the authored patch's module-resolution anchor. */
+function packageDirFromPatch(source: string, packageName: string): string | undefined {
+  for (const searchPath of createRequire(pathToFileURL(source)).resolve.paths(packageName) ?? []) {
+    const candidate = join(searchPath, packageName)
+    if (existsSync(join(candidate, 'package.json'))) return realpathSync(candidate)
+  }
+  return undefined
+}
+
+/**
+ * Install an authored patch's resolvable bare package into the temporary
+ * profile fallback. This mirrors `dsh plugin` while retaining the bare entry
+ * name and package provenance used by request metadata.
+ */
+function linkProfilePackage(source: string, cwd: string, packageName: string): void {
+  const packageDir = packageDirFromPatch(source, packageName)
+  // The package may instead belong to the dsh installation; profile boot heals those links.
+  if (packageDir === undefined) return
+  const link = join(cwd, '.dsh', 'profiles', 'node_modules', packageName)
+  mkdirSync(dirname(link), { recursive: true })
+  if (existsSync(link)) {
+    if (realpathSync(link) !== packageDir) {
+      throw new Error(`ACP profile package ${packageName} resolves to two directories`)
+    }
+    return
+  }
+  /* v8 ignore next -- Windows uses directory junctions; the platform lane owns that branch. */
+  symlinkSync(packageDir, link, process.platform === 'win32' ? 'junction' : 'dir')
+}
+
+/** Copy one authored patch into the launch cwd with relative plugin names made absolute. */
+function materializeProfilePatch(source: string, cwd: string, targetDir: string, index: number): string {
+  const parsed = yaml.load(readFileSync(source, 'utf8'), { schema: entryListSchema })
+  if (!Array.isArray(parsed)) throw new Error(`ACP profile patch must be a top-level array: ${source}`)
+  const patches = parsed as PatchOptions[]
+  const baseDir = dirname(source)
+  const resolveName = (value: string): string => {
+    const packageName = barePackageName(value)
+    if (packageName !== undefined) linkProfilePackage(source, cwd, packageName)
+    return value.startsWith('./') || value.startsWith('../')
+      ? pathToFileURL(resolve(baseDir, value)).href
+      : value
+  }
+  const visitEntry = (entry: ProfilePatchEntry): void => {
+    entry.name = resolveName(entry.name)
+    if (entry.group === true && Array.isArray(entry.config)) {
+      for (const child of entry.config as ProfilePatchEntry[]) visitEntry(child)
+    }
+  }
+  for (const patch of patches) {
+    if (typeof patch.name === 'string') patch.name = resolveName(patch.name)
+    for (const entry of patch.insert ?? []) visitEntry(entry)
+  }
+  const target = join(targetDir, `${String(index)}-${basename(source)}`)
+  writeFileSync(target, yaml.dump(patches, { schema: entryListSchema, lineWidth: -1, noRefs: true }))
+  return target
 }
 
 /** Resolve once a running child exits. */

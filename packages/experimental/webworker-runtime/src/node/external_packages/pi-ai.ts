@@ -26,13 +26,14 @@ export const getSupportedThinkingLevels = notImplementedFail(MODULE, 'getSupport
 /** Context-overflow predicate (unavailable). */
 export const isContextOverflow = notImplementedFail(MODULE, 'isContextOverflow')
 
-/** Builtin provider ids of pi-ai 0.82.1, in catalog order. */
+/** Builtin provider ids of pi-ai 0.84.2, in catalog order. */
 const BUILTIN_PROVIDER_IDS: readonly string[] = [
-  'amazon-bedrock', 'ant-ling', 'anthropic', 'azure-openai-responses', 'cerebras',
+  'amazon-bedrock', 'ant-ling', 'anthropic', 'azure-openai-responses', 'baseten', 'cerebras',
   'cloudflare-ai-gateway', 'cloudflare-workers-ai', 'deepseek', 'fireworks', 'github-copilot',
   'google', 'google-vertex', 'groq', 'huggingface', 'kimi-coding', 'minimax', 'minimax-cn',
   'mistral', 'moonshotai', 'moonshotai-cn', 'nvidia', 'openai', 'openai-codex', 'opencode',
-  'opencode-go', 'openrouter', 'qwen-token-plan', 'qwen-token-plan-cn', 'together',
+  'opencode-go', 'openrouter', 'qwen-token-plan', 'qwen-token-plan-cn',
+  'qwen-token-plan-individual', 'together',
   'vercel-ai-gateway', 'xai', 'xiaomi', 'xiaomi-token-plan-ams', 'xiaomi-token-plan-cn',
   'xiaomi-token-plan-sgp', 'zai', 'zai-coding-cn',
 ]

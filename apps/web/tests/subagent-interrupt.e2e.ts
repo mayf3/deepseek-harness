@@ -22,7 +22,7 @@ const WAKING = 'And add one concrete example.'
 
 type RpcResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
 
-/** POST one unary RPC through the real HTTP carrier and unwrap its result. */
+/** POST one API Proxy unary RPC through the real HTTP carrier and unwrap its result. */
 async function rpc<T>(baseUrl: string, method: string, payload: unknown): Promise<RpcResult<T>> {
   const response = await fetch(`${baseUrl}/api/${method}`, {
     method: 'POST',
@@ -35,6 +35,23 @@ async function rpc<T>(baseUrl: string, method: string, payload: unknown): Promis
     }),
   })
   if (!response.ok) throw new Error(`${method} failed over HTTP ${response.status}: ${await response.text()}`)
+  return (await response.json() as { result: RpcResult<T> }).result
+}
+
+/** POST one generated Session Remote unary through the API Gateway carrier. */
+async function sessionRemote<T>(baseUrl: string, method: string, request: unknown): Promise<RpcResult<T>> {
+  const endpoint = `session/${method}`
+  const response = await fetch(`${baseUrl}/api/${endpoint}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      type: 'client-request',
+      rpcId: `interrupt-e2e-${endpoint}-${randomUUID()}`,
+      method: endpoint,
+      payload: { args: { request } },
+    }),
+  })
+  if (!response.ok) throw new Error(`${endpoint} failed over HTTP ${response.status}: ${await response.text()}`)
   return (await response.json() as { result: RpcResult<T> }).result
 }
 
@@ -91,7 +108,7 @@ describe.skipIf(MODE === 'record')('web e2e: subagent.interrupt over the real co
     })
 
     // A live parent Agent through the real API; no workspace or browser.
-    const created = await rpc<{ sessionId: string }>(scaffold.baseUrl, 'session.create', {
+    const created = await sessionRemote<{ sessionId: string }>(scaffold.baseUrl, 'create', {
       cwd: scaffold.workspaceCwd,
     })
     if (!created.ok) throw new Error(`session.create failed: ${created.error.code}`)
