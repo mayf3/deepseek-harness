@@ -283,7 +283,7 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
                 <span
                   class="localBuildLabel"
                 >
-                  Local Build
+                  本地构建
                 </span>
               </span>
               <span
