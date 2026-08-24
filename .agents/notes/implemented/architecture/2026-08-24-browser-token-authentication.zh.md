@@ -40,7 +40,7 @@ HMAC 密钥是 `ctx.credentials` 中位于 `client-connection/browser-session` �
 
 ## 后果
 
-持有浏览器 cookie 就能调用完整的工具型 Host API，这与 Web 应用在创建 Session 后本就暴露的 authority 一致。`Host` 不再授予更高的方法层级，方法在 API Proxy 与 Typert Remote 之间迁移也不会改变调用者集合。
+持有浏览器 cookie 就能调用完整的工具型 Host API，这与 Web 应用在创建 Session 后暴露的 authority 一致。`Host` 不授予更高的方法层级，方法在 API Proxy 与 Typert Remote 之间迁移也不会改变调用者集合。
 
 持久密钥使 cookie 跨重启生效，也让被盗 cookie 最多保有配置的绝对有效期；删除或轮换记录是全局撤销机制。不设置 `Secure` 保留 loopback HTTP，但如果操作者让同一 cookie authority 经未加密网络可达，cookie 会以明文传输。启动 URL 含进程凭据，必须视为敏感输出；运行时诊断不会重复它。
 

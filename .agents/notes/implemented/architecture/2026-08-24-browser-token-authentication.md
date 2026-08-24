@@ -40,7 +40,7 @@ Unit coverage pins process-token retention across Connection reloads, cookie att
 
 ## Consequences
 
-Possession of the browser cookie authorizes the complete tool-capable Host API, matching the authority the Web application already exposes after Session creation. `Host` no longer grants a higher method tier, and a method migration between API Proxy and Typert Remote cannot change its caller set.
+Possession of the browser cookie authorizes the complete tool-capable Host API, matching the authority the Web application exposes after Session creation. `Host` does not grant a higher method tier, and a method migration between API Proxy and Typert Remote cannot change its caller set.
 
 The persistent secret makes cookies survive restarts but gives a stolen cookie up to the configured absolute lifetime; deletion or rotation of the record is the global revocation mechanism. Omitting `Secure` preserves loopback HTTP and permits plaintext transmission if an operator makes the same cookie authority reachable over an unencrypted network. The startup URL contains a process credential and must be treated as sensitive output; runtime diagnostics do not repeat it.
 
