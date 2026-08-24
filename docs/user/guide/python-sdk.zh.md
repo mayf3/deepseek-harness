@@ -101,7 +101,7 @@ dsh plugin --profile sdk add file:/absolute/path/to/my-plugin-bundle
 | 上下文压缩 | 禁用 |
 | 会话持久化 | `<dsh_home>/sessions` 下的 Zstandard JSONL |
 
-该 overlay 会移除运行时上下文提示消息与大多数默认工具，但保留 SDK 应用的协议与持久化。持久 Bash 与 editor 可以修改运行时可见的任何路径，因此应使用一次性 checkout 或容器。由于采用 PTY 实现，本示例只支持 POSIX。
+该 overlay 会为每个由 SDK 创建的根 agent allowlist 持久 Bash 与 editor，因此基础 profile 以后新增的工具不会隐式出现。它会抑制无关提示词段与运行时上下文消息，停用本地指令发现与 compaction，并保留 SDK 应用的协议、持久化、策略、settings、credentials 与 provider。持久 Bash 与 editor 可以修改运行时可见的任何路径，因此应使用一次性 checkout 或容器。由于采用 PTY 实现，本示例只支持 POSIX。
 
 需要隔离 profile、插件、凭据、设置与会话时，应使用新的 home。独立工作应使用新的 session id；只有继续同一段持久对话和会话资源时，才同时复用 harness、home 与 id。
 

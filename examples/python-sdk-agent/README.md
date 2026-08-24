@@ -19,12 +19,12 @@ python examples/python-sdk-agent/minimal.py \
 
 Set `DEEPSEEK_BASE_URL` for a compatible proxy, `DSH_MODEL` for the default model, or `DSH_SYSTEM_PROMPT` for the deployment persona. `--model` and `--profile` override their script defaults. The selected home stores the generated profile and Zstandard session logs under `sessions/`; the script never reads `~/.dsh` implicitly.
 
-[`minimal.patch.yml`](minimal.patch.yml) is an ordered overlay on the shipped SDK profile. It preserves the SDK application bundle but narrows model-visible behavior to:
+[`minimal.patch.yml`](minimal.patch.yml) is an ordered overlay on the shipped SDK profile. Its root-agent tool allowlist exposes exactly:
 
 - owner-scoped persistent `bash`
 - `str_replace_editor` with `view`, `create`, `str_replace`, and `insert`
 
-The patch omits Harness identity and runtime-context messages, local instruction discovery, skills, compaction, plan/goal/task/web/subagent/workflow tools, and the profile's one-shot Bash. It inserts the local PTY and persistent Bash providers and sets the editor output limit to 16,000 characters.
+The allowlist excludes every other current or later global tool without requiring a disable entry for each base row. A complete deployment persona suppresses unrelated tool-guidance sections; runtime-context messages, local instruction discovery, compaction, and the conflicting one-shot Bash row are disabled separately. The overlay inserts the local PTY and persistent Bash providers and sets the editor output limit to 16,000 characters. Other SDK-profile services remain mounted, including persistence, policy, settings, credentials, and providers.
 
 This variant is intentionally POSIX-only. Its persistent PTY and editor can modify any path available to the runtime process, so use a disposable checkout or container.
 

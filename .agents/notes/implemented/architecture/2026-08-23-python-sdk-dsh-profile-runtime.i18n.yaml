@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-23-python-sdk-dsh-profile-runtime.md
-2026-08-23-python-sdk-dsh-profile-runtime.md: 74484f46b59c3395d7807ae6819026ad8793d033
-2026-08-23-python-sdk-dsh-profile-runtime.zh.md: 0bc9b65115a18411b83bec4e791c2ddff41e76e1
+2026-08-23-python-sdk-dsh-profile-runtime.md: 19c870b3b0e10b25480bacc85b9db29b01d2577d
+2026-08-23-python-sdk-dsh-profile-runtime.zh.md: 404798ff4ae1fcafbaa8403c7187297adf374a19

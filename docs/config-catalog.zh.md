@@ -168,9 +168,10 @@ export type PresetTrust = 'system' | 'user'
  * Bundle config: each field forwarded verbatim to the child that owns it —
  * `agents` to the agent loop (an app that pre-creates no agents, like the ACP
  * bridge, simply omits it), `includeHarnessIdentity`, `includeRuntimeContext`,
- * `persona`, and `toolOrder` to the system-prompt plugin (the fixed opener,
- * dynamic-context policy, deployment persona, and explicit model-facing tool
- * order), the `tools` object to the tool registry (its presentation `mode`),
+ * `persona`, `personaComplete`, and `toolOrder` to the system-prompt plugin
+ * (the fixed opener, dynamic-context policy, deployment persona completeness,
+ * and explicit model-facing tool order), the `tools` object to the tool
+ * registry (its presentation `mode`),
  * `dshHome` to bash environment and local skill discovery, `sessionTitle` to
  * the fallback title service, `skills` to the
  * skill registry/local provider/tool consumer, `workspaceContext` to the
@@ -198,6 +199,8 @@ export interface Config {
   includeRuntimeContext?: SystemPromptConfig['includeRuntimeContext']
   /** The deployment persona (see dsh-system-prompt's `Config`). */
   persona?: SystemPromptConfig['persona']
+  /** Whether the deployment persona is the complete system prompt. */
+  personaComplete?: SystemPromptConfig['personaComplete']
   /** The explicit model-facing tool order (see dsh-system-prompt's `Config`). */
   toolOrder?: SystemPromptConfig['toolOrder']
   /** The tool registry's config — its presentation `mode` (see dsh-tools' `Config`). */
@@ -249,7 +252,7 @@ export interface GoalConfig {
 
 依赖：[`AgentLoopConfig`](#deepseek-aidsh-agent-loop) · [`GoalDomainConfig`](#deepseek-aidsh-goal) · [`InvariantConfig`](#deepseek-aidsh-invariants) · [`JobsConfig`](#deepseek-aidsh-jobs-local) · [`SessionTitleConfig`](#deepseek-aidsh-session-title) · [`SkillFileSystem`](../packages/skill/skill-filesystem/src/index.ts) · [`SkillRegistryConfig`](#deepseek-aidsh-skill) · [`SystemPromptConfig`](#deepseek-aidsh-system-prompt) · [`toolBash`](../packages/shell/tool-bash/src/index.ts) · [`toolGoal`](../packages/goal/tool-goal/src/index.ts) · [`toolJobs`](../packages/jobs/tool-jobs/src/index.ts) · [`ToolsConfig`](#deepseek-aidsh-tools) · [`toolSkill`](../packages/skill/tool-skill/src/index.ts) · [`workspaceContext`](../packages/context/agent-instructions/src/index.ts)
 
-来源：[`packages/examples/agent-spine-demo/src/index.ts:92`](../packages/examples/agent-spine-demo/src/index.ts)
+来源：[`packages/examples/agent-spine-demo/src/index.ts:93`](../packages/examples/agent-spine-demo/src/index.ts)
 
 <a id="deepseek-aidsh-agent-tool-presentation"></a>
 
@@ -1691,6 +1694,13 @@ export interface Config {
 export interface JsonRpcConfig {
   /** Report max-token turn/subagent termination as a successful SDK result. */
   maxTokensAsSuccess?: boolean
+  /** Per-root-agent model-facing tool filter; an allow list excludes later unnamed global tools. */
+  toolFilter?: {
+    /** Global tool names that remain visible. */
+    allow?: string[]
+    /** Global tool names removed from visibility. */
+    deny?: string[]
+  }
   /** Transport input override; production uses `process.stdin`. */
   input?: Readable
   /** Transport output override; production uses `process.stdout`. */
@@ -1702,7 +1712,7 @@ export interface JsonRpcConfig {
 
 依赖：`Readable`（`node:stream`）· `Writable`（`node:stream`）
 
-来源：[`packages/sdk/server/src/index.ts:29`](../packages/sdk/server/src/index.ts)
+来源：[`packages/sdk/server/src/index.ts:25`](../packages/sdk/server/src/index.ts)
 
 <a id="deepseek-aidsh-session-log-deepseek"></a>
 
@@ -2416,6 +2426,8 @@ export interface Config {
    * `deployment:persona` shadows it; `{{variable}}` references are strict.
    */
   persona?: string
+  /** Treat the deployment persona as the complete system prompt (default false). */
+  personaComplete?: boolean
   /**
    * Model-facing tool names in order, with {@link TOOL_ORDER_REST} exactly once.
    * Invalid fields fail at load and unknown names fail at assembly; known names

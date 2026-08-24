@@ -24,6 +24,8 @@ Python SDK 分发一个私有 Node 应用，直接启动完整外部 `cordis.yml
 
 持久 SDK 自定义使用与直接 CLI 相同的 profile 接口。`dsh plugin --profile sdk ...` 管理外部依赖与 bundle 顺序，`$DSH_HOME/profiles/sdk/cordis.patch.yml` 负责持久配置项变更，home patch 对所有 profile 应用机器本地变更，Python `patches` 则提供单次启动 overlay。另一个 profile 只有保留 SDK server 配置项时才有效。缺失 profile、bundle、server 配置项或非法 patch 都会直接失败，不存在完整配置回退；保持运行却不提供 JSON-RPC 服务的 profile 会在独立有界的初始化握手中失败，诊断会指明该 profile。
 
+检入的极简 overlay 会保留共享 SDK profile，并为 server 配置根 agent 工具 allow 列表。基础 bundle 后续新增的工具只有在 overlay 指名时才可用。其部署 persona 是完整系统提示词，因此无关引导段不会描述已隐藏的工具；动态运行时上下文、workspace 指令、compaction 与存在名称冲突的单次 Bash 配置项会分别停用。
+
 运行时 wheel 安装 `dsh` 控制台命令。普通 profile 与 SDK 运行仍不需要 Node；外部包管理要求调用方自行安装 `pnpm`。
 
 ### 可执行程序打包

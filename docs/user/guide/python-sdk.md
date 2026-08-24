@@ -101,7 +101,7 @@ Another `profile` is valid when it includes `@deepseek-ai/dsh-sdk-app` or anothe
 | Context compaction | Disabled |
 | Session persistence | Zstandard JSONL under `<dsh_home>/sessions` |
 
-The overlay removes runtime-context prompt messages and most default tools while retaining the SDK application's protocol and persistence. Persistent Bash and the editor can modify any path visible to the runtime, so use a disposable checkout or container. The PTY implementation makes this example POSIX-only.
+The overlay allowlists persistent Bash and the editor for every SDK-created root agent, so later base-profile tools cannot appear implicitly. It suppresses unrelated prompt sections and runtime-context messages, disables local instruction discovery and compaction, and retains the SDK application's protocol, persistence, policy, settings, credentials, and providers. Persistent Bash and the editor can modify any path visible to the runtime, so use a disposable checkout or container. The PTY implementation makes this example POSIX-only.
 
 Use a fresh home when profiles, plugins, credentials, settings, and sessions must be isolated. Use a fresh session id for independent work; reuse a harness, home, and id only to continue the same durable conversation and session-owned resources.
 

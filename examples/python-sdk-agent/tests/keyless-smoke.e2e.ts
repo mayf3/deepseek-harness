@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 
 const binScript = fileURLToPath(new URL('../../../apps/cli/src/bin.ts', import.meta.url))
 const patchPath = fileURLToPath(new URL('./keyless.patch.yml', import.meta.url))
+const minimalPatchPath = fileURLToPath(new URL('../minimal.patch.yml', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const decompress = promisify(zstdDecompress)
 
@@ -173,6 +174,97 @@ describe('Python SDK dsh profile keyless smoke', () => {
       expect(JSON.parse((await decompress(compressed)).toString())).toMatchObject({ type: 'session', id: 'main' })
     } finally {
       // No-op after exit; reject: false settles on every outcome, so cleanup never races teardown.
+      child.kill('SIGKILL')
+      await child
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 40_000)
+
+  it('keeps the minimal overlay on an explicit model-facing allowlist', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-python-sdk-minimal-'))
+    const modelRequests: Record<string, unknown>[] = []
+    const modelServer = createServer((request, response) => {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.on('end', () => {
+        modelRequests.push(JSON.parse(body) as Record<string, unknown>)
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.write('data: {"choices":[{"delta":{"role":"assistant","content":null}}]}\n\n')
+        response.write('data: {"choices":[{"delta":{"content":"done"}}]}\n\n')
+        response.write('data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}\n\n')
+        response.end('data: [DONE]\n\n')
+      })
+    })
+    await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+    const address = modelServer.address()
+    if (address === null || typeof address === 'string') throw new Error('model server did not bind a TCP port')
+    const child = execa(process.execPath, [
+      '--import',
+      'tsx/esm',
+      binScript,
+      '--profile',
+      'sdk',
+      '--patch',
+      minimalPatchPath,
+    ], {
+      cwd: repoRoot,
+      env: {
+        DSH_HOME: join(root, '.dsh'),
+        DSH_PERMISSION_MODE: 'danger-full-access',
+        DSH_SYSTEM_PROMPT: 'Minimal allowlist prompt.',
+        DSH_TELEMETRY_DISABLED: '1',
+        DEEPSEEK_API_KEY: 'keyless-smoke-no-call',
+        DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
+      },
+      timeout: 35_000,
+      killSignal: 'SIGKILL',
+      reject: false,
+    })
+    const lines: string[] = []
+    let stdoutBuffer = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdoutBuffer += chunk.toString('utf8')
+      const parts = stdoutBuffer.split('\n')
+      stdoutBuffer = parts.pop() ?? ''
+      lines.push(...parts)
+    })
+    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8') })
+
+    try {
+      child.stdin.write(`${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { cwd: root, provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+      })}\n`)
+      await waitForLine(lines, value => value.id === 1, () => stderr)
+      child.stdin.write(`${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'session/prompt',
+        params: { sessionId: 'minimal', contentBlocks: [{ type: 'text', text: 'inspect tools' }] },
+      })}\n`)
+      await waitForLine(lines, (value) => {
+        const params = value.params as Record<string, unknown> | undefined
+        const event = params?.event as Record<string, unknown> | undefined
+        return params?.sessionId === 'minimal' && event?.type === 'turn/end'
+      }, () => stderr)
+
+      const request = modelRequests[0] as {
+        messages?: Array<{ role?: string; content?: unknown }>
+        tools?: Array<{ function?: { name?: string } }>
+      }
+      expect(request.messages?.[0]).toMatchObject({ role: 'system', content: 'Minimal allowlist prompt.' })
+      expect(request.tools?.map(tool => tool.function?.name).sort()).toEqual(['bash', 'str_replace_editor'])
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'shutdown' })}\n`)
+      await waitForLine(lines, value => value.id === 3, () => stderr)
+      const exit = await child
+      expect(exit.exitCode, `signal=${String(exit.signal)}; stderr=${stderr}`).toBe(0)
+    } finally {
       child.kill('SIGKILL')
       await child
       await new Promise<void>(resolve => modelServer.close(() => { resolve() }))

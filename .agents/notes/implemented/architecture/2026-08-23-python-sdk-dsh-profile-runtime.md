@@ -24,6 +24,8 @@ Every Python launch requires either explicit `dsh_home` or a non-empty `DSH_HOME
 
 Persistent SDK customization uses the same profile interfaces as direct CLI use. `dsh plugin --profile sdk ...` manages external dependencies and bundle order, `$DSH_HOME/profiles/sdk/cordis.patch.yml` owns persistent row changes, the home patch applies machine-local changes across profiles, and Python `patches` supplies invocation-specific overlays. A different profile is valid only when it retains an SDK server row. Missing profiles, bundles, server rows, and invalid patches fail without a complete-config fallback; a profile that remains alive without serving JSON-RPC fails the independently bounded initialization handshake with a diagnostic naming that profile.
 
+The checked-in minimal overlay retains the shared SDK profile while configuring the server with a root-agent tool allow list. Later base-bundle tools remain unavailable unless the overlay names them. Its deployment persona is a complete system prompt, so unrelated guidance sections cannot describe hidden tools; dynamic runtime context, workspace instructions, compaction, and the conflicting one-shot Bash row are disabled separately.
+
 The runtime wheel installs a `dsh` console command. Ordinary profile and SDK execution remains Node-free; external package management requires a caller-installed `pnpm`.
 
 ### Executable packaging
