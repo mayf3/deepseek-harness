@@ -25,7 +25,7 @@ printf '%s\n' "$DSH_GITHUB_WEBHOOK_SECRET"
 在开发 checkout 中运行：
 
 ```sh
-export DSH_GITHUB_REVIEW_WORKSPACE=/Users/cty/deepseek-harness
+export DSH_GITHUB_REVIEW_WORKSPACE=/path/to/deepseek-harness
 pnpm dsh web --patch apps/cli/config/examples/github-review/cordis.yml
 ```
 
@@ -89,8 +89,8 @@ if (!response.ok || (await response.json()).automaticReview !== true) return nul
 
 ```js
 const workspacePath = {
-  'deepseek-harness/deepseek-harness': '/Users/cty/deepseek-harness',
-  'deepseek-harness/dsh-sdk': '/Users/cty/dsh-sdk',
+  'deepseek-harness/deepseek-harness': '/path/to/deepseek-harness',
+  'deepseek-harness/dsh-sdk': '/path/to/dsh-sdk',
 }[payload.repository.full_name]
 if (workspacePath === undefined) return null
 ```

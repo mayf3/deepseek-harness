@@ -40,7 +40,7 @@ describe('product-provider public Loader composition', () => {
 
     expect(stderr).toBe('')
     expect(JSON.parse(stdout)).toEqual({
-      registeredProviders: ['codex', 'claude-primary', 'claude-secondary', 'claude-code'],
+      registeredProviders: ['claude-code', 'claude-primary', 'claude-secondary', 'codex'],
       providers: [
         {
           name: 'codex',

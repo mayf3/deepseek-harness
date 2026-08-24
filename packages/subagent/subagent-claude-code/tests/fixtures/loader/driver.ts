@@ -70,7 +70,7 @@ try {
     .sort()
 
   process.stdout.write(`${JSON.stringify({
-    registeredProviders: ctx.subagents.list(),
+    registeredProviders: ctx.subagents.list().sort(),
     providers,
     tools,
     jobTools,

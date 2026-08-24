@@ -25,7 +25,7 @@ printf '%s\n' "$DSH_GITHUB_WEBHOOK_SECRET"
 From a development checkout:
 
 ```sh
-export DSH_GITHUB_REVIEW_WORKSPACE=/Users/cty/deepseek-harness
+export DSH_GITHUB_REVIEW_WORKSPACE=/path/to/deepseek-harness
 pnpm dsh web --patch apps/cli/config/examples/github-review/cordis.yml
 ```
 
@@ -89,8 +89,8 @@ It can also map repositories to different local paths:
 
 ```js
 const workspacePath = {
-  'deepseek-harness/deepseek-harness': '/Users/cty/deepseek-harness',
-  'deepseek-harness/dsh-sdk': '/Users/cty/dsh-sdk',
+  'deepseek-harness/deepseek-harness': '/path/to/deepseek-harness',
+  'deepseek-harness/dsh-sdk': '/path/to/dsh-sdk',
 }[payload.repository.full_name]
 if (workspacePath === undefined) return null
 ```
