@@ -22,7 +22,7 @@ Web `minimal` preset 与独立 JSON-RPC minimal 组合对外提供持久 `bash` 
 
 Web 回放会启动完整 Web 宿主，通过 preset 服务创建 agent，并断言作用域文件系统为裸后端、不存在作用域压缩服务、没有追加 system-prompt 拥有的 runtime-context 消息，而且组装请求只包含固定提示词与两个工具。随后，它通过真实作用域服务执行持久 Bash 和编辑器。
 
-SDK keyless 进程测试启动真实 `dsh --profile sdk-minimal`，注入由环境选择的提示词，并断言生成的单组合包 manifest、组装提示词、精确双工具目录，以及不存在任何 system-prompt 拥有的 runtime-context 消息。Python SDK 内置运行时覆盖会通过每种可用的打包载体，使用环境选择的模型、模型容量和提示词值初始化独立 profile，然后执行所选持久 shell 与 editor。Cordis 校验会检查两份配置能否解析声明的插件和配置字段。
+SDK keyless 源码测试启动真实 `dsh --profile sdk-minimal`，使用环境选择的提示词完成一个回合，并断言生成的单组合包 manifest。Python SDK 打包运行时快照固定组装提示词、精确双工具目录，并固定不存在任何 system-prompt 所拥有的 runtime-context 消息。打包运行时覆盖会通过每种可用载体，使用环境选择的模型、模型容量和提示词值初始化独立 profile，然后执行所选持久 shell 与 editor。Cordis 校验会检查两份配置能否解析声明的插件和配置字段。
 
 ## 考虑过的替代方案
 

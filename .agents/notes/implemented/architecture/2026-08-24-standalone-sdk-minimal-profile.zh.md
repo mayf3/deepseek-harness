@@ -40,7 +40,7 @@ Python 运行时继续打包 `dsh-web-app` 与前端产物。`dsh web` 会从已
 
 ## 验证
 
-组合包测试固定确切配置项与依赖清单。Profile 模板与配置 dump 测试固定单组合包 manifest、仅启动时生命周期、`dsh-base` 缺席与模块 HMR 缺席。Keyless Python 示例测试启动真实 `dsh --profile sdk-minimal` 进程，并断言生成的 manifest、完整系统提示词与两个对外公布的工具。Installed-wheel 极简场景通过打包可执行程序验证持久 shell 状态、editor 文件效果、JSONL 持久化与已提交的模型可见快照。
+组合包测试固定确切配置项与依赖清单。Profile 模板与配置 dump 测试固定单组合包 manifest、仅启动时生命周期、`dsh-base` 缺席与模块 HMR 缺席。Keyless 源码测试启动真实 `dsh --profile sdk-minimal` 进程、完成一个回合并断言生成的 manifest。Installed-wheel 极简场景通过已提交的模型可见快照固定完整系统提示词和两个对外公布的工具，同时经由打包可执行程序验证持久 shell 状态、editor 文件效果与 JSONL 持久化。
 
 ## 考虑过的替代方案
 

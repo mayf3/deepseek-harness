@@ -40,7 +40,7 @@ It also supersedes the minimal-overlay realization in [Python SDK runtime throug
 
 ## Verification
 
-The bundle test pins the exact row and dependency roster. Profile-template and config-dump tests pin the one-bundle manifest, startup-only lifecycle, absence of `dsh-base`, and absence of module HMR. The keyless Python example test boots the real `dsh --profile sdk-minimal` process and asserts the generated manifest, complete system prompt, and two advertised tools. The installed-wheel minimal scenario exercises persistent shell state, editor effects, JSONL persistence, and the committed model-visible snapshot through the packaged executable.
+The bundle test pins the exact row and dependency roster. Profile-template and config-dump tests pin the one-bundle manifest, startup-only lifecycle, absence of `dsh-base`, and absence of module HMR. The keyless source test boots the real `dsh --profile sdk-minimal` process, completes a turn, and asserts the generated manifest. The installed-wheel minimal scenario owns the complete system prompt and two advertised tools in its committed model-visible snapshot while exercising persistent shell state, editor effects, and JSONL persistence through the packaged executable.
 
 ## Alternatives considered
 
