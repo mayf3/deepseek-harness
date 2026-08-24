@@ -1,6 +1,7 @@
 /** Startup cleanup mechanics for local spill roots. */
-import { lstat, readdir, rmdir, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { lstat, readdir, realpath, rmdir, unlink } from 'node:fs/promises'
+import type { Stats } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { DEFAULT_ROOT_PREFIX, isErrno } from './store.ts'
 
@@ -21,6 +22,14 @@ const DEFAULT_ROOT_RE = new RegExp(`^${DEFAULT_ROOT_PREFIX}[A-Za-z0-9]{6}$`)
  */
 const SESSION_DIR_RE = /^session-[0-9a-f]{12}$/
 
+/** An existing root resolved to one stable filesystem identity. */
+interface ResolvedRoot {
+  /** Canonical absolute path used for the sweep. */
+  path: string
+  /** Device/inode identity used to de-duplicate filesystem aliases. */
+  identity: string
+}
+
 /** A one-argument warning sink — the sweep's only side effect on failure (never throws). */
 export type WarnFn = (message: string) => void
 
@@ -34,16 +43,116 @@ function warnSafely(warn: WarnFn, message: string): void {
   }
 }
 
-/** One root to sweep, plus whether its empty session directories and root may be pruned. */
+/** Whether another local OS user cannot replace children of this directory. */
+function isTrustedDirectory(stats: Stats): boolean {
+  if (!stats.isDirectory()) return false
+  /* v8 ignore next -- POSIX ownership and mode bits have no Windows equivalent. */
+  if (process.platform === 'win32' || process.geteuid === undefined) return true
+  return stats.uid === process.geteuid() && (stats.mode & 0o022) === 0
+}
+
+/** Stable identity for de-duplicating aliases of one root. */
+function rootIdentity(path: string, stats: Stats): string {
+  /* v8 ignore next -- Windows file indexes are not portable inode identities. */
+  if (process.platform === 'win32') return path.toLowerCase()
+  return `${String(stats.dev)}:${String(stats.ino)}`
+}
+
+/**
+ * Check that no ancestor permits another local OS user to replace the selected
+ * child. A sticky writable ancestor is safe because the child is owned by the
+ * current user; this admits normal per-process roots below `/tmp`.
+ */
+async function hasProtectedAncestors(path: string): Promise<boolean> {
+  /* v8 ignore next -- POSIX ancestry checks have no Windows ACL equivalent. */
+  if (process.platform === 'win32' || process.geteuid === undefined) return true
+  const currentUid = process.geteuid()
+  let child = path
+  let childStats = await lstat(child)
+  for (;;) {
+    const parent = dirname(child)
+    if (parent === child) return true
+    const stats = await lstat(parent)
+    /* v8 ignore next -- every ancestor of a successfully resolved path is a directory. */
+    if (!stats.isDirectory()) return false
+    const writableByOthers = (stats.mode & 0o022) !== 0
+    const sticky = (stats.mode & 0o1000) !== 0
+    if (writableByOthers && !sticky) return false
+    /* v8 ignore next -- requires an ancestor owned by another OS account inside
+       a writable sticky parent; ordinary test fixtures cannot change uid. */
+    if (writableByOthers && childStats.uid !== currentUid) return false
+    child = parent
+    childStats = stats
+  }
+}
+
+/**
+ * Resolve one existing root without admitting a directory another local user
+ * can replace during the path-based sweep. A configured root may be a symlink;
+ * discovery passes `false` so a symlink cannot impersonate a default root.
+ *
+ * @param path Candidate root path.
+ * @param allowSymlink Whether the candidate itself may be a configured symlink.
+ * @param warn Sink for skipped or failed inspection.
+ * @returns The trusted canonical root, or `undefined` when it is absent or unsafe.
+ */
+async function resolveRoot(path: string, allowSymlink: boolean, warn: WarnFn): Promise<ResolvedRoot | undefined> {
+  let initial: Stats
+  try {
+    initial = await lstat(path)
+  } catch (error: unknown) {
+    /* v8 ignore start -- non-ENOENT inspection failures depend on host ACL or
+       an entry racing away and cannot be reproduced portably. */
+    if (!isErrno(error, 'ENOENT')) warnSafely(warn, `spill-local: failed to inspect root ${path}: ${String(error)}`)
+    return undefined
+    /* v8 ignore stop */
+  }
+  if (initial.isSymbolicLink()) {
+    if (!allowSymlink) return undefined
+  } else if (!isTrustedDirectory(initial)) {
+    warnSafely(warn, `spill-local: skipped unsafe root ${path}: expected a directory owned by the current user and not writable by group or others`)
+    return undefined
+  }
+
+  let canonical: string
+  let stats: Stats
+  try {
+    canonical = await realpath(path)
+    stats = await lstat(canonical)
+  } catch (error: unknown) {
+    /* v8 ignore start -- a root lstat'd above reaches this only by racing away
+       or by a host-specific realpath failure. */
+    if (!isErrno(error, 'ENOENT')) warnSafely(warn, `spill-local: failed to resolve root ${path}: ${String(error)}`)
+    return undefined
+    /* v8 ignore stop */
+  }
+  let protectedAncestors = false
+  try {
+    protectedAncestors = await hasProtectedAncestors(canonical)
+  } catch (error: unknown) {
+    /* v8 ignore start -- a canonical ancestor disappears only through a race;
+       other failures depend on host ACLs. */
+    if (!isErrno(error, 'ENOENT')) warnSafely(warn, `spill-local: failed to inspect ancestors of root ${canonical}: ${String(error)}`)
+    return undefined
+    /* v8 ignore stop */
+  }
+  if (!isTrustedDirectory(stats) || !protectedAncestors) {
+    warnSafely(warn, `spill-local: skipped unsafe root ${canonical}: expected a current-user-owned directory with protected write and ancestor permissions`)
+    return undefined
+  }
+  return { path: canonical, identity: rootIdentity(canonical, stats) }
+}
+
+/** One root to sweep, plus whether the root itself may be pruned once empty. */
 export interface SweepRoot {
   /** Absolute spill root to sweep. */
   path: string
   /**
-   * When `true`, prune empty `session-*` children and then remove the root once
-   * empty. Set for DISCOVERED prior-default `dsh-spill-*` roots (one per past
-   * process — otherwise they accumulate empty forever), never for the
-   * active/configured root the live process is still writing into. Writes retry
-   * if another process still using a discovered root races its pruning.
+   * When `true`, remove the root after its empty `session-*` children are
+   * pruned. Set for DISCOVERED prior-default `dsh-spill-*` roots (one per past
+   * process — otherwise they accumulate empty forever), never for the active
+   * root the live process is still writing into. Every root prunes empty session
+   * directories; writes retry if that races their removal.
    */
   pruneWhenEmpty: boolean
 }
@@ -141,26 +250,39 @@ async function sweepSessionDir(dir: string, cutoffMs: number, warn: WarnFn): Pro
 
 /**
  * Best-effort one-shot cleanup: across each root, delete expired regular files
- * under its `session-*` directories, pruning empty directories only in
- * discovered prior-default roots. The active root keeps its session directories
- * to avoid racing a local write; writes recreate a directory pruned by another
- * process. Every filesystem and warning-sink failure is contained, so a caller
- * can await this during activation/disposal without it ever rejecting.
+ * under its `session-*` directories and prune every empty session directory.
+ * Only a discovered prior-default root is itself removed. Writes recreate a
+ * session directory when pruning races a local write. Every filesystem and
+ * warning-sink failure is contained, so a caller can await this during
+ * activation/disposal without it ever rejecting.
  *
  * @param options The roots to sweep, the age cutoff, and the failure sink.
  * @returns Resolves when the sweep finishes (never rejects).
  */
 export async function sweepSpillRoots(options: SweepOptions): Promise<void> {
-  const { roots, cutoffMs, warn } = options
-  for (const root of roots) {
+  const { cutoffMs, warn } = options
+  const roots = new Map<string, SweepRoot>()
+  for (const candidate of options.roots) {
+    const resolved = await resolveRoot(candidate.path, false, warn)
+    if (resolved === undefined) continue
+    const existing = roots.get(resolved.identity)
+    roots.set(resolved.identity, {
+      path: resolved.path,
+      pruneWhenEmpty: (existing?.pruneWhenEmpty ?? true) && candidate.pruneWhenEmpty,
+    })
+  }
+  for (const root of roots.values()) {
     let entries: string[]
     try {
       entries = await readdir(root.path)
     } catch (error: unknown) {
       // A root that does not exist yet (no spill ever written) is the common
       // case, not an error: ENOENT is silent, anything else is reported.
+      /* v8 ignore start -- the trusted root was resolved immediately above; a
+         read failure now requires a race or host-specific ACL fault. */
       if (!isErrno(error, 'ENOENT')) warnSafely(warn, `spill-local: failed to read root ${root.path}: ${String(error)}`)
       continue
+      /* v8 ignore stop */
     }
     // Track whether the root holds ANY entry the sweep did not fully reclaim, so
     // a discovered prior-default root can be pruned only when nothing remains.
@@ -185,15 +307,13 @@ export async function sweepSpillRoots(options: SweepOptions): Promise<void> {
         continue
         /* v8 ignore stop */
       }
-      if (!stats.isDirectory()) { rootEmptiable = false; continue }
-      const empty = await sweepSessionDir(dir, cutoffMs, warn)
-      if (!empty) { rootEmptiable = false; continue }
-      if (!root.pruneWhenEmpty) {
-        // The active root remains writable while cleanup runs. Leaving its empty
-        // session directories in place closes the mkdir/rmdir race with saveText.
+      if (!isTrustedDirectory(stats)) {
+        warnSafely(warn, `spill-local: skipped unsafe session directory ${dir}`)
         rootEmptiable = false
         continue
       }
+      const empty = await sweepSessionDir(dir, cutoffMs, warn)
+      if (!empty) { rootEmptiable = false; continue }
       try {
         await rmdir(dir)
       } catch (error: unknown) {
@@ -210,8 +330,7 @@ export async function sweepSpillRoots(options: SweepOptions): Promise<void> {
     }
     // A discovered prior-default root (one per past process) is removed once its
     // last session dir is gone — otherwise empty roots accumulate forever and
-    // every future startup rescans them. The active/configured root is never
-    // pruned (the live process is still writing into it).
+    // every future startup rescans them. The active root itself is never pruned.
     if (root.pruneWhenEmpty && rootEmptiable) {
       try {
         await rmdir(root.path)
@@ -245,7 +364,7 @@ export async function sweepSpillRoots(options: SweepOptions): Promise<void> {
  * @param base The directory to scan; defaults to the OS tmpdir (a test seam).
  * @returns Absolute paths of the discovered default roots (possibly empty).
  */
-export async function discoverDefaultRoots(warn: WarnFn, base: string = tmpdir()): Promise<string[]> {
+async function discoverDefaultRootRecords(warn: WarnFn, base: string): Promise<ResolvedRoot[]> {
   let entries: string[]
   try {
     entries = await readdir(base)
@@ -253,24 +372,48 @@ export async function discoverDefaultRoots(warn: WarnFn, base: string = tmpdir()
     warnSafely(warn, `spill-local: failed to scan ${base} for default roots: ${String(error)}`)
     return []
   }
-  const roots: string[] = []
+  const roots: ResolvedRoot[] = []
   for (const name of entries) {
     if (!DEFAULT_ROOT_RE.test(name)) continue
     const path = join(base, name)
-    let stats
-    try {
-      // lstat, not stat: a symlink named `dsh-spill-*` must not be treated as a
-      // root we then sweep (it could point anywhere).
-      stats = await lstat(path)
-    } catch (error: unknown) {
-      /* v8 ignore start -- an entry readdir just returned fails to lstat only by
-         racing away (ENOENT) or a permission/IO fault; not deterministically
-         reproducible. */
-      if (!isErrno(error, 'ENOENT')) warnSafely(warn, `spill-local: failed to stat default root ${path}: ${String(error)}`)
-      continue
-      /* v8 ignore stop */
-    }
-    if (stats.isDirectory()) roots.push(path)
+    const resolved = await resolveRoot(path, false, warn)
+    if (resolved !== undefined) roots.push(resolved)
   }
   return roots
+}
+
+/**
+ * Discover trusted prior default roots below the OS temporary directory.
+ *
+ * @param warn Sink for contained discovery failures.
+ * @param base Directory to scan; defaults to the OS temporary directory.
+ * @returns Canonical paths of trusted default roots.
+ */
+export async function discoverDefaultRoots(warn: WarnFn, base: string = tmpdir()): Promise<string[]> {
+  return (await discoverDefaultRootRecords(warn, base)).map(root => root.path)
+}
+
+/**
+ * Gather and de-duplicate the trusted roots for one startup sweep. The active
+ * configured path may be a symlink; its resolved identity overrides a matching
+ * discovered root so the live target is never marked prunable.
+ *
+ * @param activeRoot Active configured root.
+ * @param warn Sink for contained inspection failures.
+ * @param defaultRootsBase Directory holding prior default roots.
+ * @returns Trusted roots with the active identity marked non-prunable.
+ */
+export async function gatherSweepRoots(
+  activeRoot: string,
+  warn: WarnFn,
+  defaultRootsBase: string = tmpdir(),
+): Promise<SweepRoot[]> {
+  const [discovered, active] = await Promise.all([
+    discoverDefaultRootRecords(warn, defaultRootsBase),
+    resolveRoot(activeRoot, true, warn),
+  ])
+  const roots = new Map<string, SweepRoot>()
+  for (const root of discovered) roots.set(root.identity, { path: root.path, pruneWhenEmpty: true })
+  if (active !== undefined) roots.set(active.identity, { path: active.path, pruneWhenEmpty: false })
+  return [...roots.values()]
 }

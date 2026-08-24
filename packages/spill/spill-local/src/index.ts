@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import z from '@deepseek-ai/schemastery'
 import { SpillLocator, SpillStore } from '@deepseek-ai/dsh-spill'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
-import { discoverDefaultRoots, sweepSpillRoots } from './cleanup.ts'
+import { gatherSweepRoots, sweepSpillRoots } from './cleanup.ts'
 import type { SweepRoot, WarnFn } from './cleanup.ts'
 import { privateRoot, saveTextFile } from './store.ts'
 
@@ -40,8 +40,10 @@ export interface Config {
    * cleanup sweep. Defaults to `30`; `0` disables cleanup entirely. Files whose
    * `mtime` is strictly older than the cutoff are deleted and emptied
    * directories are pruned; fresh files, symlinks, and unrelated entries are
-   * left untouched. Retention is deliberate — a resumed or forked session may
-   * still reference an older locator until it ages out.
+   * left untouched. On POSIX, cleanup skips roots and session directories that
+   * another local user could modify or replace. Retention is deliberate — a
+   * resumed or forked session may still reference an older locator until it
+   * ages out.
    */
   cleanupPeriodDays?: number
 }
@@ -63,7 +65,7 @@ type ResolvedConfig = Required<Omit<Config, 'root'>> & Pick<Config, 'root'>
 export class LocalSpillStore extends SpillStore {
   static Config: z<Config> = z.object({
     root: z.string(),
-    cleanupPeriodDays: z.number().default(30),
+    cleanupPeriodDays: z.number().step(1).min(0).default(30),
   })
 
   /** Resolved absolute spill root (config `root`, else the private default), fixed at construction. */
@@ -83,9 +85,6 @@ export class LocalSpillStore extends SpillStore {
     // schemastery (static Config) has already filled `cleanupPeriodDays`; the
     // cast records that runtime fact for exactOptionalPropertyTypes.
     this.config = config as ResolvedConfig
-    if (!Number.isInteger(this.config.cleanupPeriodDays) || this.config.cleanupPeriodDays < 0) {
-      throw new Error(`spill-local: cleanupPeriodDays must be a non-negative integer (got ${this.config.cleanupPeriodDays})`)
-    }
     this.root = config.root !== undefined ? resolve(config.root) : privateRoot()
 
     // One best-effort startup sweep, owned by the fiber. The generator body runs
@@ -120,24 +119,19 @@ export class LocalSpillStore extends SpillStore {
   /**
    * The roots the startup sweep covers: each discovered prior-default
    * `dsh-spill-*` temp root (see {@link discoverDefaultRoots}), pruned when
-   * emptied, plus the active/configured root, whose root and session directories
-   * are NEVER pruned (the live process is still writing into them). The active
-   * root is de-duped out of the discovered set so it is not swept twice or
-   * marked prunable. A test
-   * overrides this to inject an isolated root set — and, being the sweep's one
-   * async gather point, to hold the sweep open across a disposal for the
-   * quiescence check; it is a test seam, not a deployment knob.
+   * emptied, plus the active/configured root, which is never itself pruned while
+   * the live process may write into it. Empty session directories are pruned in
+   * every root. Filesystem identity de-duplicates aliases before the active root
+   * overrides a discovered match as non-prunable. A test overrides this to
+   * inject an isolated root set — and, being the sweep's one async gather point,
+   * to hold the sweep open across a disposal for the quiescence check; it is a
+   * test seam, not a deployment knob.
    *
    * @param warn - sink for a contained discovery failure.
    * @returns The roots to sweep, each flagged for prune-when-empty.
    */
   protected async gatherRoots(warn: WarnFn): Promise<SweepRoot[]> {
-    const discovered = await discoverDefaultRoots(warn, this.defaultRootsBase())
-    const roots: SweepRoot[] = discovered
-      .filter(path => path !== this.root)
-      .map(path => ({ path, pruneWhenEmpty: true }))
-    roots.push({ path: this.root, pruneWhenEmpty: false })
-    return roots
+    return gatherSweepRoots(this.root, warn, this.defaultRootsBase())
   }
 
   /**
