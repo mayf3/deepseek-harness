@@ -7,8 +7,9 @@
 import type { ReactNode } from 'react'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
-import type { ContextMessageNode } from '../contract/snapshot.ts'
-import type { KnownContextForm } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {
+  ContextMessageNode, KnownContextForm,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import css from './ContextBody.module.css'
 
 /** Model-facing text stays bounded at the disclosure, not at the producer. */

@@ -1,14 +1,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {
-  ConversationLocation, ConversationTimelineSnapshot, ConversationViewBuilder,
-  ConversationViewDefinition,
+  ConversationLocation, ConversationNode, ConversationTimelineSnapshot, ConversationViewBuilder,
+  ConversationViewDefinition, PartialAssistant, RunningToolCall,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatConversationViewNode, ChatNode } from '../contract/chat-nodes.ts'
 import { isRunningTool } from '../contract/chat-nodes.ts'
-import type {
-  ChatLocationNodeIndex, ChatNodeStore, ChatSnapshot, ConversationNode,
-  LegacyConversationSlice, PartialAssistant, RunningToolCall,
-} from '../contract/snapshot.ts'
+import type { ChatLocationNodeIndex, ChatNodeStore, ChatSnapshot, LegacyConversationSlice } from '../contract/snapshot.ts'
 import { sessionRecallLabels } from './event-projection.ts'
 
 const EMPTY_KEYS: readonly string[] = []
