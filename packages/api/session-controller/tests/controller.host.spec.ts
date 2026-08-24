@@ -168,10 +168,10 @@ describe('SessionController facade', () => {
     }) as never)
     const controller = createSessionTestController(ctx, defaults)
     const agents = (controller as unknown as { agents: ApiSessionAgentController }).agents
-    const started = Promise.withResolvers<void>()
-    const release = Promise.withResolvers<void>()
+    const started = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
     vi.spyOn(agents, 'resolveObservedAgent').mockImplementation(async () => {
-      started.resolve()
+      started.resolve(undefined)
       await release.promise
       return {
         agent: { id: sessionId, session: { id: sessionId }, ctx, status: 'idle' } as unknown as Agent,
@@ -189,7 +189,7 @@ describe('SessionController facade', () => {
     await Promise.resolve()
     expect(disposed).toBe(false)
 
-    release.resolve()
+    release.resolve(undefined)
     await disposal
     await expect(waiting).resolves.toMatchObject({ done: true })
   })
