@@ -13,8 +13,9 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
+import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-fs'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -151,9 +152,8 @@ const catalogModel: z<DeepSeekCatalogModel> = z.object({
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
   inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(['text']),
-  imagePixelBudget: z.number().step(1).min(1),
+  imagePixelBudget: z.union([z.number().step(1).min(1), 'low']),
   imageMaxBytes: z.number().step(1).min(1),
-  imageDetail: z.union(['auto', 'low']),
 })
 
 export const Config: z<Config> = z.object({
@@ -196,6 +196,9 @@ export type ResolvedDeepSeekOptions = DeepSeekConnectionOptions
 function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): DeepSeekCatalogModel[] {
   const seen = new Set<string>()
   return (models ?? DEFAULT_MODELS).map((model) => {
+    if (Object.hasOwn(model, 'imageDetail')) {
+      throw new Error('llm-deepseek: catalog model imageDetail is no longer supported; use imagePixelBudget')
+    }
     if (model.id.length === 0) throw new Error('llm-deepseek: catalog model ids must be non-empty')
     if (model.name !== undefined && model.name.length === 0) {
       throw new Error(`llm-deepseek: catalog model "${model.id}" has an empty name`)
@@ -225,13 +228,13 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
       throw new Error(`llm-deepseek: catalog model "${model.id}" inputModalities must not contain duplicates`)
     }
     const hasImage = inputModalities.includes('image')
-    if (!hasImage && (model.imagePixelBudget !== undefined
-      || model.imageMaxBytes !== undefined || model.imageDetail !== undefined)) {
+    if (!hasImage && (model.imagePixelBudget !== undefined || model.imageMaxBytes !== undefined)) {
       throw new Error(`llm-deepseek: text-only catalog model "${model.id}" cannot declare image request limits`)
     }
     if (model.imagePixelBudget !== undefined
+      && model.imagePixelBudget !== 'low'
       && (!Number.isSafeInteger(model.imagePixelBudget) || model.imagePixelBudget <= 0)) {
-      throw new Error(`llm-deepseek: catalog model "${model.id}" imagePixelBudget must be a positive safe integer`)
+      throw new Error(`llm-deepseek: catalog model "${model.id}" imagePixelBudget must be "low" or a positive safe integer`)
     }
     if (model.imageMaxBytes !== undefined
       && (!Number.isSafeInteger(model.imageMaxBytes) || model.imageMaxBytes <= 0)) {
@@ -248,12 +251,10 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
       inputModalities: [...inputModalities],
       ...hasImage
         ? {
-          imagePixelBudget: model.imagePixelBudget
-            ?? (model.imageDetail === 'low'
-              ? DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET
-              : DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET),
+          imagePixelBudget: model.imagePixelBudget === 'low'
+            ? DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET
+            : model.imagePixelBudget ?? DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
           imageMaxBytes: model.imageMaxBytes ?? DEFAULT_REQUEST_IMAGE_MAX_BYTES,
-          ...model.imageDetail === undefined ? {} : { imageDetail: model.imageDetail },
         }
         : {},
     }
@@ -438,6 +439,11 @@ export function apply(ctx: Context, config: Config): void {
     resolveApiKey,
     resolveUserId,
     resolveAttachments: () => ctx.get('attachments'),
+    resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(
+      attachments,
+      hostPath => ctx.get('fs')?.processPathFromHostPath(hostPath),
+      ref,
+    ),
     prepareExtensions: (request) => {
       const extensions = ctx.get('deepseekLlmApiExtensions')
       return extensions?.prepare(request)

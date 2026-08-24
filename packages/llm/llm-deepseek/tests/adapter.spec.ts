@@ -109,7 +109,7 @@ function attachmentStoreOf(
 } {
   const readImageRequest = vi.fn(project)
   return {
-    store: { readImageRequest } as unknown as AttachmentStore,
+    store: { readImageRequest, imageHostPath: () => undefined } as unknown as AttachmentStore,
     readImageRequest,
   }
 }
@@ -147,7 +147,7 @@ describe('request image policy', () => {
       { maxPixels: 640_000, maxBytes: 1024 * 1024 },
     ],
     [
-      { id: 'low', imageDetail: 'low' as const },
+      { id: 'low', imagePixelBudget: 'low' as const },
       { maxPixels: 512 * 512, maxBytes: 1024 * 1024 },
     ],
     [
@@ -367,7 +367,7 @@ describe('DeepSeekAdapter against a mock server', () => {
         role: 'user',
         content: [
           { type: 'text', text: 'describe ' },
-          { type: 'text', text: expect.stringContaining(`Image ${imageRef.attachmentId}; request image 1x1px.`) as string },
+          { type: 'text', text: expect.stringContaining(`Image ${imageRef.attachmentId}; request preview 1x1px.`) as string },
           { type: 'file', file_id: 'file-api-1' },
         ],
       }],
@@ -434,7 +434,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     }))
 
     const body = JSON.stringify(server.requests[0])
-    expect(body.match(/older images are omitted first/g)).toHaveLength(11)
+    expect(body.match(/image omitted to fit request image limits/g)).toHaveLength(11)
     expect(body.match(/"type":"image_url"/g)).toHaveLength(10)
   })
 
@@ -600,7 +600,7 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(body.messages[0]).toMatchObject({
       role: 'user',
       content: [
-        { type: 'text', text: expect.stringContaining('older images are omitted first') as string },
+        { type: 'text', text: expect.stringContaining(`image omitted to fit request image limits; ${old.attachmentId}`) as string },
         { type: 'text', text: expect.stringContaining(String(recent.attachmentId)) as string },
         { type: 'file', file_id: 'file-api-1' },
       ],
@@ -619,7 +619,7 @@ describe('DeepSeekAdapter against a mock server', () => {
         {
           id: 'vision-low',
           inputModalities: ['text', 'image'],
-          imageDetail: 'low',
+          imagePixelBudget: 'low',
           imageMaxBytes: 512_000,
         },
         {
@@ -1895,6 +1895,20 @@ describe('plugin registration and config', () => {
     expect(() => resolveAdapterOptions({ models: [...models] })).toThrow(message)
   })
 
+  it('rejects the removed imageDetail model setting through schema and direct construction', async () => {
+    const legacyModel = { id: 'vision', inputModalities: ['image'], imageDetail: 'low' } as unknown as
+      LlmDeepSeek.DeepSeekCatalogModel
+    expect(() => resolveAdapterOptions({ models: [legacyModel] })).toThrow(/imageDetail is no longer supported/)
+
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await expect(ctx.plugin(LlmDeepSeek, {
+      baseURL: 'http://127.0.0.1:1',
+      models: [legacyModel],
+    })).rejects.toThrow(/imageDetail is no longer supported/)
+    expect(ctx.llm.listProviders()).toEqual([])
+  })
+
   it.each([0, 1.5])('rejects a per-model output cap of %s', (maxTokens) => {
     expect(() => resolveAdapterOptions({ models: [{ id: 'bad-cap', maxTokens }] }))
       .toThrow(/maxTokens must be a positive integer/)
@@ -1907,8 +1921,9 @@ describe('plugin registration and config', () => {
   })
 
   it.each([
-    ['imagePixelBudget', 0, /imagePixelBudget must be a positive safe integer/],
-    ['imagePixelBudget', Number.MAX_SAFE_INTEGER + 1, /imagePixelBudget must be a positive safe integer/],
+    ['imagePixelBudget', 0, /imagePixelBudget must be "low" or a positive safe integer/],
+    ['imagePixelBudget', Number.MAX_SAFE_INTEGER + 1, /imagePixelBudget must be "low" or a positive safe integer/],
+    ['imagePixelBudget', 'auto', /imagePixelBudget must be "low" or a positive safe integer/],
     ['imageMaxBytes', 0, /imageMaxBytes must be a positive safe integer/],
     ['imageMaxBytes', 1.5, /imageMaxBytes must be a positive safe integer/],
   ] as const)('rejects per-model %s=%s', (field, value, message) => {
