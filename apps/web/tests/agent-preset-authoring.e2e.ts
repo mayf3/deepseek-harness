@@ -27,8 +27,8 @@ const SECTION_EXPECTED = join(SNAPSHOT_DIR, 'section.expected.md')
 const COPY_DIALOG_EXPECTED = join(SNAPSHOT_DIR, 'copy-dialog.expected.md')
 const CREATED_EXPECTED = join(SNAPSHOT_DIR, 'created.expected.md')
 const DAMAGED_EXPECTED = join(SNAPSHOT_DIR, 'damaged.expected.md')
-/** The shipped roster, beside the composition that names it. */
-const SHIPPED_PRESETS = fileURLToPath(new URL('../../cli/config/agent-presets', import.meta.url))
+/** The shipped roster, bundled inside the `dsh-agent-presets` package. */
+const SHIPPED_PRESETS = fileURLToPath(new URL('../../../packages/preset/agent-presets/presets', import.meta.url))
 const OVERLAY = fileURLToPath(new URL('./agent-preset-authoring.overlay.yml', import.meta.url))
 const MODE = webSnapshotMode()
 
@@ -60,10 +60,8 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     scaffold = await launchWebScaffold({
       extraOverlayPath: OVERLAY,
       agentPresets: {
-        roots: [
-          { path: SHIPPED_PRESETS, trust: 'system' },
-          { path: userRoot, trust: 'user' },
-        ],
+        // The shipped root is the plugin's own, prepended before this.
+        roots: [{ path: userRoot, trust: 'user' }],
         default: 'standard',
       },
     })
@@ -92,8 +90,8 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
 
     await compareOrRefreshGolden(SECTION_EXPECTED, snapshot, MODE)
-    // The intro carries the guidance a create button used to imply, and the
-    // shipped rows offer view/copy but never delete or a location — their
+    // The intro states the copy path directly, and the shipped rows offer
+    // view/copy but never delete or a location — their
     // install is overwritten by upgrades and is not the user's to manage.
     expect(snapshot).toContain('或用「创造模式」让 Agent 帮你创建')
     expect(snapshot).not.toContain('新建预设')
@@ -259,17 +257,18 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     await dialog.waitFor({ state: 'detached', timeout: 10_000 })
     await page.getByRole('button', { name: '创造模式' }).waitFor({ timeout: 10_000 })
     await expect.poll(async () => {
-      const response = await fetch(`${scaffold.baseUrl}/api/session.list`, {
+      const response = await fetch(`${scaffold.baseUrl}/api/session/list`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          type: 'client-request', rpcId: 'creator-draft-stage', method: 'session.list', payload: {},
+          type: 'client-request', rpcId: 'creator-draft-stage', method: 'session/list',
+          payload: { args: { _request: {} } },
         }),
       })
       const body = await response.json() as {
-        result: { value?: { sessions: unknown[] } }
+        result: { value?: { items: unknown[] } }
       }
-      return JSON.stringify(body.result.value?.sessions ?? body.result)
+      return JSON.stringify(body.result.value?.items ?? body.result)
     }, { timeout: 15_000 }).toContain('"agentPreset":"cordis"')
   }, 60_000)
 

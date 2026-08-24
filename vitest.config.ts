@@ -43,8 +43,30 @@ const windowsUnsupportedTests = process.platform === 'win32'
       'packages/subprocess/subprocess-local/tests/process-inspector.spec.ts',
       'packages/subprocess/subprocess-local/tests/spawn.spec.ts',
       'packages/subprocess/subprocess-local/tests/terminal.spec.ts',
+      // Oracle-diff suites: they compare the worker's POSIX path/url faces
+      // against the host Node's own answers, which are win32 semantics on
+      // Windows. The worker always speaks POSIX; the Linux lanes hold the diff.
+      'packages/experimental/webworker-runtime/tests/node/path-diff.spec.ts',
+      'packages/experimental/webworker-runtime/tests/node/shim-diff.spec.ts',
+      // The subprocess ladder over the worker's child_process face: its kill
+      // rung reaches the in-worker process table through `process.kill`,
+      // which the ladder's win32 branch replaces with taskkill-by-real-pid —
+      // undeliverable to a table pid. The worker host always reports 'linux',
+      // so the Linux lanes hold the ladder.
+      'packages/experimental/webworker-runtime/tests/node/child-process.spec.ts',
     ]
   : []
+
+// These suites compare against or assemble the Worker's fixed Linux platform.
+// Host-native Windows and macOS behavior is not their oracle.
+const nonLinuxWebWorkerTests = process.platform === 'linux'
+  ? []
+  : [
+      'packages/experimental/webworker-runtime/tests/node/fs-watch-stream.spec.ts',
+      'packages/experimental/webworker-runtime/tests/node/sandbox-stack.spec.ts',
+    ]
+
+const platformUnsupportedTests = [...windowsUnsupportedTests, ...nonLinuxWebWorkerTests]
 
 const windowsUnsupportedCoveragePackages = process.platform === 'win32'
   ? [...windowsUnsupportedPackages, 'packages/subprocess/*']
@@ -131,7 +153,7 @@ export default defineConfig({
     setupFiles: ['./scripts/test-invariants.ts'],
     // .tsx: client component specs (jsdom via per-file @vitest-environment pragma).
     include: testIncludes,
-    exclude: windowsUnsupportedTests,
+    exclude: platformUnsupportedTests,
     // One coverage invocation aggregates both projects. Every suite forks for
     // Node stability; process-bound suites stay separate for inventory control.
     projects: [
@@ -147,7 +169,7 @@ export default defineConfig({
           setupFiles: ['./scripts/test-invariants.ts'],
           include: testIncludes,
           exclude: [
-            ...windowsUnsupportedTests,
+            ...platformUnsupportedTests,
             ...processBoundTests,
             ...coverageExemptExcludes,
           ],
@@ -162,7 +184,7 @@ export default defineConfig({
           setupFiles: ['./scripts/test-invariants.ts'],
           include: processBoundTests,
           exclude: [
-            ...windowsUnsupportedTests,
+            ...platformUnsupportedTests,
             ...coverageExemptExcludes,
           ],
         },
@@ -197,20 +219,40 @@ export default defineConfig({
         'packages/client/ui-primitives/src/RiskConfirmation.tsx',
         'packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx',
         'packages/client/ui-workspace/src/client/WorkspacePicker.tsx',
+        'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx',
         'packages/client/ui-renderer/src/client/*',
-        // This isolated settings-scope lifecycle has complete unit coverage;
-        // keep it out of the broader client-runtime GUI debt exemption.
-        'packages/client/runtime/src/**/!(settings-scope).ts',
+        // Session object internals retain the runtime GUI debt exemption; the
+        // new Controller entry, transport, Agent scope, and adapters stay gated.
+        'packages/api/session-controller/src/client/sessions/*',
+        'packages/api/session-controller/src/client/ordered-baseline.ts',
+        'packages/api/session-controller/src/client/time-zone.ts',
         // Keep the browser conversation tree under its existing GUI debt
         // exemption while gating the newly stateful Host half and vocabulary.
         'packages/client/ui-conversation/src/client/*',
         'packages/client/ui-conversation/src/invariant.ts',
+        // Chat presentation and assembly retain the same GUI debt exemption;
+        // package wiring and the new approval-detail adapter remain gated.
+        'packages/client/ui-chat/src/client/chat/!(ApprovalCommand).{ts,tsx}',
+        'packages/client/ui-chat/src/client/conversation-nodes/*',
+        'packages/client/ui-chat/src/client/details/*',
+        'packages/client/ui-chat/src/client/model/*',
+        'packages/client/ui-chat/src/client/contract/context-provenance.ts',
+        'packages/client/ui-chat/src/client/contract/snapshot.ts',
+        'packages/client/ui-chat/src/client/historical-images.ts',
         'packages/client/ui-primitives/src/DisclosureRow.tsx',
         'packages/client/ui-tool/src/*',
         'packages/client/ui-slots/src/*',
         'packages/client/ui-layout/src/*',
         'packages/client/web/src/*',
         'packages/host/webserver/src/*',
+        // The browser-worker runtime and its image packer: the executing
+        // composition is a real dedicated Worker driven by the web browser lane
+        // (apps/web/tests/preview-boot.e2e.ts), which unit-process V8 coverage
+        // cannot observe. Unit specs cover the algorithmic cores; the assembled
+        // evidence is that boot. TODO(webworker): revisit when a browser-grade
+        // coverage lane exists.
+        'packages/experimental/webworker-runtime/src/**',
+        'packages/experimental/webworker-packer/src/*',
         'packages/client/modules/src/client/system.ts',
         'packages/client/hmr/src/client/index.ts',
         // Web config-tree boot round: the new host-side web-transport halves

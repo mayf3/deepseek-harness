@@ -96,7 +96,7 @@ export type ProjectionChangeListener = (
 /**
  * One consistent read cut over every registered client-visible unit for one session.
  * `asOfSeq` is the shared watermark — the seq of the last event every value
- * reflects (`-1` for an empty log, mirroring `session/subscribed.lastSeq`).
+ * reflects (`-1` for an empty log).
  */
 export interface ProjectionSnapshot {
   /** Seq of the last event the values reflect; -1 for an empty log. */
@@ -147,7 +147,7 @@ interface UnitCell {
  * once the last registrant releases it).
  *
  * `refs` exists because one unit definition already serves every session — the
- * cells are keyed by `Session` — while the registrants are now per-session:
+ * cells are keyed by `Session` — while registrants are per-session:
  * an agent preset mounts the same tool package once per agent, so N sessions
  * on one preset register the same key N times. Without a count the first
  * registrant would own the disposer, and its session ending would strip the
@@ -443,7 +443,7 @@ export class SessionProjectionRegistry extends Service {
       const from = usable ? row.seq : baseSeq - 1
       const start = from - baseSeq + 1
       for (let index = start; index < events.length; index++) {
-        state = def.apply(state, events[index]!)
+        state = def.apply(state, events[index] as SessionEvent)
       }
       if (def.wire !== undefined) values[def.key] = def.wire.viewSchema.parse(def.wire.view(state))
       refreshed[def.key] = { ver: def.stateVersion, seq: endSeq, val: state }

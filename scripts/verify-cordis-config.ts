@@ -33,7 +33,9 @@ const root = resolve(import.meta.dirname, '..')
 // These example files are overlays consumed by the built dsh app, so their bare
 // specifiers resolve from apps/cli rather than the examples workspace.
 const appOverlayFiles = new Set([
+  'examples/web-github-review/tests/fixtures/real-cli/cordis.yml',
   'examples/web-cordis/cordis.yml',
+  'examples/web-github-review/cordis.yml',
   'examples/web-schedule/cordis.yml',
   ...globSync('examples/mcp-memory/*.cordis.yml', { cwd: root }),
 ])
@@ -147,7 +149,7 @@ function validatePresetPlaneSeparation(): string[] {
   }
   // The overlay's own inserts are host-plane too; its disables take them back out.
   const active = new Set([...hostRows, ...rowIds(overlayFile)].filter(id => !disabled.has(id)))
-  for (const file of globSync('apps/cli/config/agent-presets/*/agent.cordis.yml', { cwd: root })) {
+  for (const file of globSync('packages/preset/agent-presets/presets/*/agent.cordis.yml', { cwd: root })) {
     for (const id of rowIds(file)) {
       if (!active.has(id)) continue
       problems.push(

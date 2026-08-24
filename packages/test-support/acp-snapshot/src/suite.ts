@@ -30,6 +30,7 @@ import {
   normalizeSessionLog,
   normalizeStdout,
   scrubRequestHeaders,
+  scrubSessionSnapshot,
   scrubSystemPrompts,
   scrubToolSchemas,
   tokenizeSessionFixtureCwd,
@@ -144,11 +145,10 @@ export interface Scenario {
    */
   headerClass?: string
   /**
-   * Alternate LIVE config path (absolute) this scenario boots instead of
-   * {@link AgentUnderTest.configPath} — an overlay composing a different
-   * tree (its basename must still end in `cordis.yml` so the bin's replay
-   * swap finds the sibling `*cordis.snapshot.yml`). A scenario whose
-   * overlay changes the composed header also needs its own
+   * Alternate live profile patch (absolute) this scenario boots instead of
+   * {@link AgentUnderTest.configPath}. Its basename must still end in
+   * `cordis.yml` so the launcher finds the replay sibling. A scenario whose
+   * patch changes the composed header also needs its own
    * {@link headerClass}.
    */
   configPath?: string
@@ -691,8 +691,8 @@ export function stabilizeFixtureMessageIds(logs: readonly string[], fixtures: re
 /** One packed row's member times, or `undefined` for an ordinary record. */
 function packedTimes(record: Record<string, unknown>): number[] | undefined {
   if (!PACKED_CHUNK_ROW_TYPES.has(record.type as string)) return undefined
-  const row = record as unknown as { time0: number; data: { dt: number[] } }
-  const times = [row.time0]
+  const row = record as unknown as { time0?: number; data: { dt: number[] } }
+  const times = [row.time0 ?? 0]
   for (const gap of row.data.dt) times.push((times[times.length - 1] as number) + gap)
   return times
 }
@@ -1013,8 +1013,8 @@ function normalizedStringMappings(
  * complete record layout aligns and volatile strings form a consistent
  * bijection. Complete durable-message ids are excluded because the later
  * fixture-ready structural pass owns them. Ambiguous layouts or mappings
- * keep fresh strings. Packed timing envelopes expand for alignment, so
- * packing does not shift later records;
+ * keep fresh strings. Packed timing gaps expand from zero when a projected
+ * fixture omits `time0`, so packing does not shift later records;
  * fresh semantic values and fragment arrays remain authoritative.
  *
  * @param fresh The newly harvested session JSONL.
@@ -1193,8 +1193,8 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
           ...existsSync(workspaceDir) ? { workspaceDir } : {},
           ...scenario.prepareWorkspace !== undefined ? { prepareWorkspace: scenario.prepareWorkspace } : {},
           ...scenario.workspaceParent !== undefined ? { workspaceParent: scenario.workspaceParent } : {},
-          // A scenario booting an overlay tree passes its own live config; the
-          // bin's replay swap derives the sibling `*cordis.snapshot.yml` from it.
+          // A scenario passes its live profile patch; the launcher derives
+          // the sibling `*cordis.snapshot.yml` for replay.
           ...scenario.configPath !== undefined ? { configPath: scenario.configPath } : {},
         })
 
@@ -1220,9 +1220,6 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
 
         // Record writes live model fixtures; keyless refresh writes every comparable replayed
         // fixture. Pinning JSONL keeps prefixes but moves prompts and schemas into sidecars.
-        const scrub = scenario.pinsHeader === true
-          ? (log: string): string => scrubToolSchemas(scrubSystemPrompts(log))
-          : scrubRequestHeaders
         const portableFixture = scenario.workspaceParent === undefined
           ? tokenizeSessionFixtureCwd
           : (log: string): string => log
@@ -1246,13 +1243,13 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
             ? refreshFixtureReplacements(result.sessionLogs, existingFixtures)
             : []
           const freshFixtures = REFRESHING
-            ? result.sessionLogs.map((log, index) => scrub(portableFixture(stabilizeRefreshLog(
+            ? result.sessionLogs.map((log, index) => scrubSessionSnapshot(portableFixture(stabilizeRefreshLog(
               log.content,
               existingFixtures[index] as string,
               refreshReplacements,
               ctx,
             ))))
-            : result.sessionLogs.map(log => scrub(portableFixture(log.content)))
+            : result.sessionLogs.map(log => scrubSessionSnapshot(portableFixture(log.content)))
           const outputFixtures = stabilizeFixtureMessageIds(freshFixtures, existingFixtures)
           await Promise.all(outputFixtures.map((fixture, index) =>
             writeFile(join(dir, outputFixtureFiles[index] as string), fixture)))
@@ -1334,8 +1331,8 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
           // The harvested logs (primary-first) must match their committed fixtures 1:1.
           expect(result.sessionLogs.length, 'this scenario must persist one log per session fixture').toBe(fixtureFiles.length)
           for (let i = 0; i < fixtureFiles.length; i++) {
-            const harvested = scrub((result.sessionLogs[i] as HarvestedLog).content)
-            const fixture = scrub(await readFile(join(dir, fixtureFiles[i] as string), 'utf8'))
+            const harvested = scrubSessionSnapshot((result.sessionLogs[i] as HarvestedLog).content)
+            const fixture = scrubSessionSnapshot(await readFile(join(dir, fixtureFiles[i] as string), 'utf8'))
             expect(normalizeSessionLog(harvested, ctx), `${fixtureFiles[i]} mismatch`)
               .toEqual(normalizeSessionLog(fixture, fixtureContext(fixture)))
           }

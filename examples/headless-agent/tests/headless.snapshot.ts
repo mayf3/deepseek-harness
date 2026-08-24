@@ -1,10 +1,11 @@
-import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   normalizeSessionLog,
+  normalizeSessionSnapshot,
   normalizeStdout,
   refreshFixtureReplacements,
   scrubRequestHeaders,
@@ -55,10 +56,10 @@ const dshBinScript = fileURLToPath(new URL('../../../apps/cli/src/bin.ts', impor
 const tsconfigPath = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
 const reasoningConfigPath = fileURLToPath(new URL('./fixtures/cli.cordis.yml', import.meta.url))
 const deepseekDefaultsConfigPath = fileURLToPath(new URL('./fixtures/deepseek-defaults.cordis.yml', import.meta.url))
+const piAiDefaultsConfigPath = fileURLToPath(new URL('./fixtures/pi-ai-defaults.cordis.yml', import.meta.url))
 const headlessOverlayPath = fileURLToPath(new URL('./fixtures/headless-profile.cordis.yml', import.meta.url))
 const headlessSessionExpected = join(snapshotsDir, 'headless-profile', 'session.expected.jsonl')
 const headlessFailureExpected = join(snapshotsDir, 'headless-profile', 'stderr.expected.txt')
-const cliMockLlmPluginPath = fileURLToPath(new URL('./fixtures/cli-mock-llm.ts', import.meta.url))
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 
 interface JsonObject {
@@ -68,6 +69,28 @@ interface JsonObject {
 interface PersistedLog {
   readonly content: string
   readonly header: JsonObject
+}
+
+/**
+ * Remove persistence envelopes before committing a refreshed replay fixture.
+ * @param rawLog - persisted or already-projected session JSONL.
+ * @returns projected session JSONL with its header line unchanged.
+ */
+function projectSessionFixture(rawLog: string): string {
+  let recordIndex = 0
+  return rawLog.split(/\r?\n/).map((line) => {
+    if (line.trim().length === 0) return line
+    const record = JSON.parse(line) as Record<string, unknown>
+    if (recordIndex++ === 0) {
+      if (record.type !== 'session') throw new Error('session fixture must start with a session header')
+      return line
+    }
+    delete record.seq
+    delete record.time
+    delete record.seq0
+    delete record.time0
+    return JSON.stringify(record)
+  }).join('\n')
 }
 
 interface DeepSeekDefaultsServer {
@@ -209,16 +232,6 @@ async function persistedLogs(cwd: string, root: string = join(cwd, '.sessions'))
   }))
 }
 
-/** Install the keyless product-CLI adapter into the temporary headless profile. */
-async function prepareCliMockFixture(cwd: string): Promise<void> {
-  const fixtureDir = join(cwd, '.dsh', 'profiles', 'headless', 'snapshot-fixtures')
-  await mkdir(fixtureDir, { recursive: true })
-  await Promise.all([
-    copyFile(cliMockLlmPluginPath, join(fixtureDir, 'cli-mock-llm.ts')),
-    writeFile(join(fixtureDir, 'package.json'), '{"type":"module"}\n'),
-  ])
-}
-
 describe('headless stream-json snapshots', () => {
   it('runs one task through the product headless profile command', async () => {
     const task = 'Prove the product headless profile path with one real tool round trip.'
@@ -234,16 +247,15 @@ describe('headless stream-json snapshots', () => {
         DSH_TELEMETRY_DISABLED: '1',
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
-      prepare: prepareCliMockFixture,
       inspect: async (cwd) => {
         const logs = await persistedLogs(cwd, join(cwd, '.dsh', 'sessions'))
         expect(logs).toHaveLength(1)
         const actual = logs[0]
         if (actual === undefined) throw new Error('the headless profile did not persist its session')
         const context = contextFromLogs([actual.content])
-        const session = scrubRequestHeaders(normalizeSessionLog(actual.content, context))
+        const session = normalizeSessionSnapshot(actual.content, context)
         if (refreshing) await writeFile(headlessSessionExpected, session)
-        expect(session).toBe(await readFile(headlessSessionExpected, 'utf8'))
+        await expect(session).toMatchFileSnapshot(headlessSessionExpected)
         expect(session).toContain(task)
         expect(session).toContain('CLI tool round trip complete: CLI_TOOL_ROUND_TRIP')
       },
@@ -267,7 +279,6 @@ describe('headless stream-json snapshots', () => {
         DSH_TELEMETRY_DISABLED: '1',
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
-      prepare: prepareCliMockFixture,
     })
 
     expect(result.stdout).toBe('\n')
@@ -383,14 +394,14 @@ describe('headless stream-json snapshots', () => {
             content: actual.content,
           }
           const replacements = refreshFixtureReplacements([harvested], [expectedSession])
-          expectedSession = tokenizeSessionFixtureCwd(
+          expectedSession = projectSessionFixture(tokenizeSessionFixtureCwd(
             stabilizeRefreshLog(actual.content, expectedSession, replacements, actualContext),
-          )
+          ))
           await writeFile(compactionSessionFixture, expectedSession)
         }
         const expectedContext = contextFromLogs([expectedSession])
-        expect(scrubRequestHeaders(normalizeSessionLog(actual.content, actualContext)))
-          .toBe(scrubRequestHeaders(normalizeSessionLog(expectedSession, expectedContext)))
+        expect(normalizeSessionSnapshot(actual.content, actualContext))
+          .toBe(normalizeSessionSnapshot(expectedSession, expectedContext))
       },
     })
 
@@ -569,6 +580,57 @@ describe('headless stream-json snapshots', () => {
     }
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
+  it('sends pi-ai DeepSeek compatibility through the one-shot app', async () => {
+    const server = await deepseekDefaultsServer()
+    try {
+      const result = await runLoaderSmoke({
+        label: 'pi-ai DeepSeek compatibility headless stream-json snapshot',
+        tempDirPrefix: 'headless-snapshot-pi-ai-defaults-',
+        binScript,
+        libBinScript: binScript,
+        configPath: piAiDefaultsConfigPath,
+        binArgs: [
+          piAiDefaultsConfigPath,
+          'return the deterministic response',
+        ],
+        tsconfigPath,
+        env: {
+          DEEPSEEK_API_KEY: 'snapshot-key',
+          DSH_SNAPSHOT_BASE_URL: server.url,
+          NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+        },
+      })
+
+      expect(result.stderr).toBe('')
+      expect(server.requests).toHaveLength(1)
+      expect(server.requests[0]?.max_tokens).toBe(1024)
+      expect(server.requests[0]).not.toHaveProperty('max_completion_tokens')
+      const header = (parseJsonl(result.stdout)
+        .map(record => record.event)
+        .find((event): event is JsonObject => (
+          event !== null
+          && typeof event === 'object'
+          && !Array.isArray(event)
+          && 'type' in event
+          && event.type === 'request/header'
+        ))?.data as JsonObject | undefined)?.header as JsonObject | undefined
+      expect(header?.config).toMatchInlineSnapshot(`
+        {
+          "maxTokens": 1024,
+          "model": "deepseek-v4-flash",
+          "provider": "deepseek",
+          "reasoningEffort": "low",
+        }
+      `)
+      expect(header?.adapterDefaults).toEqual({
+        maxTokens: true,
+        reasoningEffort: true,
+      })
+    } finally {
+      await server.close()
+    }
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
   it('replays the advanced toolchain through the one-shot app', async () => {
     const prompt = await scenarioPrompt(advancedScenarioDir, 'advanced-toolchain')
     const fixtureFiles = [
@@ -623,9 +685,9 @@ describe('headless stream-json snapshots', () => {
             if (existing === undefined || file === undefined) {
               throw new Error(`headless snapshot has no fixture for persisted log ${index}`)
             }
-            const stable = tokenizeSessionFixtureCwd(
+            const stable = projectSessionFixture(tokenizeSessionFixtureCwd(
               stabilizeRefreshLog(actual.content, existing, replacements, actualContext),
-            )
+            ))
             await writeFile(file, stable)
             return stable
           }))
@@ -634,8 +696,8 @@ describe('headless stream-json snapshots', () => {
         for (const [index, actual] of actualSessions.entries()) {
           const expected = expectedSessions[index]
           if (expected === undefined) throw new Error(`headless snapshot has no fixture for persisted log ${index}`)
-          expect(scrubRequestHeaders(normalizeSessionLog(actual.content, actualContext)))
-            .toBe(scrubRequestHeaders(normalizeSessionLog(expected, expectedContext)))
+          expect(normalizeSessionSnapshot(actual.content, actualContext))
+            .toBe(normalizeSessionSnapshot(expected, expectedContext))
         }
       },
     })
@@ -912,9 +974,9 @@ describe('headless stream-json snapshots', () => {
         expect(JSON.stringify(notices[0])).toContain('CHILD_RESULT')
 
         const context = contextFromLogs([parent.content, child.content])
-        const normalizedChild = scrubRequestHeaders(normalizeSessionLog(child.content, context))
+        const normalizedChild = normalizeSessionSnapshot(child.content, context)
         if (refreshing) await writeFile(childExpected, normalizedChild)
-        expect(normalizedChild).toBe(await readFile(childExpected, 'utf8'))
+        await expect(normalizedChild).toMatchFileSnapshot(childExpected)
         expect(normalizedChild).toContain('CHILD_RESULT')
         expect(normalizedChild).not.toContain('"name":"report"')
       },
@@ -966,14 +1028,14 @@ describe('headless stream-json snapshots', () => {
             content: actual.content,
           }
           const replacements = refreshFixtureReplacements([harvested], [expectedSession])
-          expectedSession = tokenizeSessionFixtureCwd(
+          expectedSession = projectSessionFixture(tokenizeSessionFixtureCwd(
             stabilizeRefreshLog(actual.content, expectedSession, replacements, actualContext),
-          )
+          ))
           await writeFile(ptySessionFixture, expectedSession)
         }
         const expectedContext = contextFromLogs([expectedSession])
-        expect(scrubRequestHeaders(normalizeSessionLog(actual.content, actualContext)))
-          .toBe(scrubRequestHeaders(normalizeSessionLog(expectedSession, expectedContext)))
+        expect(normalizeSessionSnapshot(actual.content, actualContext))
+          .toBe(normalizeSessionSnapshot(expectedSession, expectedContext))
       },
     })
 

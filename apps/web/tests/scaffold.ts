@@ -33,7 +33,11 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include, { type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import Group from '@deepseek-ai/cordis-plugin-group'
-import { scrubRequestHeaders, stabilizeFixtureMessageIds } from '@deepseek-ai/dsh-acp-snapshot'
+import {
+  scrubRequestHeaders,
+  scrubSessionSnapshot,
+  stabilizeFixtureMessageIds,
+} from '@deepseek-ai/dsh-acp-snapshot'
 import {
   assertEntriesLoaded,
   composeEntries,
@@ -101,8 +105,6 @@ const BASE_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
 const WEB_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
 /** The installation anchor whose dependency surface the profile module fallback mirrors. */
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
-/** The deployment's own agent-preset root, shipped beside the app's config. */
-const SHIPPED_PRESET_DIR = join(REPO_ROOT, 'apps/cli/config/agent-presets')
 
 // Replay publishes the provider catalog the gateway routes to (providers
 // mode, never catch-all: with llm-deepseek disabled no adapter exists, so a
@@ -268,15 +270,14 @@ export interface LaunchOptions {
     apiKeyEnv: string
   }
   /**
-   * Replace the roster the scaffold mounts by default (the shipped directory
-   * at `system` trust, default `standard`). Supply this only to change WHICH
-   * presets a scenario sees — a writable user root, a different default —
-   * never to turn the roster on: without one every session composes an agent
-   * with no tools, no persona, and no token meter, which is not a shape the
-   * product ever boots in. The patch lands after the default, so it wins.
+   * Replace the roster row the scaffold pins by default (no configured roots,
+   * default `standard` — the plugin's own shipped presets). Supply this only
+   * to change WHICH presets a scenario sees beyond the shipped set — a
+   * writable user root, a different default. The patch lands after the
+   * default, so it wins.
    */
   agentPresets?: {
-    /** Roots to discover, in precedence order; the shipped directory is `system`. */
+    /** Roots to discover after the plugin's shipped root, in precedence order. */
     roots: { path: string; trust: 'system' | 'user' }[]
     /** The preset a session that names none is composed from. */
     default: string
@@ -401,19 +402,14 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     ...basePatches,
     ...surfacePatches,
     ...extraOverlayPatches,
-    // The roster's `roots` is an assembly fact AppCLIEntry resolves and patches
-    // in, exactly like `distIndex` on the webserver row — the shipped preset
-    // directory sits beside the composition that names it, and no config author
-    // chooses it. This lane boots the shipped tree WITHOUT AppCLIEntry, so it
-    // has to supply the same fact or the roster resolves nothing and every
-    // session composes an agent with no tools, no persona, and no token meter.
-    // Only the shipped root: a developer's own `~/.dsh/.agent-presets` must not be
-    // able to change a golden.
+    // The roster's shipped presets are the plugin's own, bundled inside
+    // `dsh-agent-presets` and prepended by it. Pin only the machine-local
+    // root away: a developer's own `~/.dsh/.agent-presets` must not be able
+    // to change a golden.
     {
       id: 'agent-presets',
       config: {
         default: 'standard',
-        roots: [{ path: SHIPPED_PRESET_DIR, trust: 'system' }],
         includeUserRoot: false,
       },
     },
@@ -709,7 +705,7 @@ function rawSessionLog(session: Session): string {
 export async function recordFixture(scaffold: WebScaffold, sessionId: SessionId, fixturePath: string): Promise<void> {
   const agent = scaffold.ctx.agents.get(sessionId)
   if (agent === undefined) throw new Error(`record harvest: no live agent for ${sessionId}`)
-  const fresh = scrubRequestHeaders(rawSessionLog(agent.session))
+  const fresh = scrubSessionSnapshot(rawSessionLog(agent.session))
     .split(sessionId).join('{{sessionId}}')
     .split(scaffold.workspaceCwd).join('{{cwd}}')
     .replace(/"rpcId":"[^"]+"/g, '"rpcId":"{{rpcId}}"')
@@ -739,7 +735,10 @@ export function fixtureUserPrompts(fixtureText: string): string[] {
  * plugin — the semantic-checkpoint precedent), never raw file writes: no
  * knowledge of bucket hashing, filename encoding, or compression, and
  * malformed session events fail loud at seed time. The fixture's tokenized identity
- * ({{sessionId}}/{{cwd}}) is realized for this world before parsing.
+ * ({{sessionId}}/{{cwd}}) is realized for this world before parsing. Event
+ * times are materialized from event order against the fixture header's
+ * creation time, or the seeded creation time when normalization replaced the
+ * header value with zero.
  * @param scaffold - the target scaffold.
  * @param fixtureText - raw recorded session.jsonl contents.
  * @param id - the seeded session id (stable for deterministic goldens).
@@ -768,13 +767,48 @@ export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, i
     : realized.split(fixtureCwd).join(scaffold.workspaceCwd)
 }
 
+/**
+ * Parse a committed web seed fixture through the replay reader.
+ * @param fixtureText - session JSONL fixture contents.
+ * @returns the original header line, parsed header, and logical events.
+ */
+export function parseSeedFixture(fixtureText: string): {
+  headerLine: string
+  header: Record<string, unknown>
+  events: SessionEvent[]
+} {
+  const headerLine = fixtureText.split(/\r?\n/).find(line => line.trim().length > 0)
+  if (headerLine === undefined) throw new Error('seed fixture has no session header')
+  const header = JSON.parse(headerLine) as Record<string, unknown>
+  if (header.type !== 'session') throw new Error('seed fixture must start with a session header')
+  return { headerLine, header, events: parseSessionLog(fixtureText) }
+}
+
+/**
+ * Render logical events as an envelope-free web seed fixture.
+ * @param headerLine - original session header line.
+ * @param events - logical session events in order.
+ * @returns projected session JSONL.
+ */
+export function renderSeedFixture(
+  headerLine: string,
+  events: readonly ({ readonly seq: number; readonly time: number } & object)[],
+): string {
+  return [
+    headerLine,
+    ...events.map(({ seq: _seq, time: _time, ...event }) => JSON.stringify(event)),
+    '',
+  ].join('\n')
+}
+
 export async function seedSession(
   scaffold: WebScaffold,
   fixtureText: string,
   id: string,
   agentPreset?: string,
 ): Promise<SessionId> {
-  const events = parseSessionLog(realizeSeedFixture(scaffold, fixtureText, id))
+  const decoded = parseSeedFixture(realizeSeedFixture(scaffold, fixtureText, id))
+  const events = decoded.events
   if (events.length === 0) throw new Error('seed fixture has no events')
   const last = events[events.length - 1]!
   // An open final turn would be mutated by resume's crash repair on first
@@ -788,7 +822,13 @@ export async function seedSession(
     delegationDepth: 0,
     ...agentPreset === undefined ? {} : { agentPreset },
   }
-  await persistSeedSession(scaffold, meta, events)
+  const fixtureCreatedAt = decoded.header.createdAt
+  if (typeof fixtureCreatedAt !== 'number') {
+    throw new Error('seed fixture requires a numeric createdAt header')
+  }
+  const timeAnchor = fixtureCreatedAt === 0 ? meta.createdAt : fixtureCreatedAt
+  const materializedEvents = events.map((event, index) => ({ ...event, time: timeAnchor + index }))
+  await persistSeedSession(scaffold, meta, materializedEvents)
   return meta.id
 }
 
@@ -858,6 +898,7 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
       /~\d+(?:y(?: \d+mo)?|mo(?: \d+d)?)|\b(?:\d+d(?: \d+h(?: \d+m \d+s)?)?|\d+h \d+m \d+s|\d+m ?\d+s|\d+(?:\.\d+)?s|\d+(?:\.\d+)?ms)\b/g,
       duration => duration.startsWith('~') ? duration : '{{duration}}',
     )
+    .replace(/\b\d[\d,]*(?:\.\d+)? ms\b/g, '{{duration}}')
     .replace(
       /约\d+(?:年(?:\d+个月)?|个月(?:\d+天)?)|\d+(?:天(?:\d+小时(?:\d+分\d+秒)?)?|小时\d+分\d+秒|分\d+秒|(?:\.\d+)?秒)/g,
       duration => duration.startsWith('约') ? duration : '{{duration}}',
