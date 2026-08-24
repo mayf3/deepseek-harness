@@ -36,12 +36,12 @@ it('loads a combo map through the tunnel and gives the blob script a local map U
   const revoked: string[] = []
   const NativeURL = URL
   class StubURL extends NativeURL {
-    static createObjectURL(blob: Blob): string {
+    static override createObjectURL(blob: Blob): string {
       blobs.push(blob)
       return `blob:fixture-${String(blobs.length)}`
     }
 
-    static revokeObjectURL(url: string): void {
+    static override revokeObjectURL(url: string): void {
       revoked.push(url)
     }
   }
