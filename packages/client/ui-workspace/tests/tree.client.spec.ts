@@ -521,12 +521,25 @@ describe('deriveUserGroups', () => {
     expect(frontend.key).toBe(GROUP_SECTION_PREFIX + '前端')
   })
 
-  it('keeps a folded user group empty of session rows', () => {
+  it('keeps a folded user group empty of rows while retaining its first task Workspace', () => {
     const groups = deriveUserGroups(
-      list(summary('a', 3)), [], noArchive, view([], undefined, { a: { group: '前端' } }),
+      list(summary('a', 3)), [workspace('work', ['a'])], noArchive,
+      view([], undefined, { a: { group: '前端' } }),
     )
     expect(groups[0]!.expanded).toBe(false)
     expect(groups[0]!.sessions).toEqual([])
+    expect(groups[0]!.firstSessionWorkspaceId).toBe(wid('work'))
+  })
+
+  it('does not borrow a Workspace from a later task when the first displayed task has none', () => {
+    const groups = deriveUserGroups(
+      list(summary('first', 3), summary('second', 2)), [workspace('work', ['second'])], noArchive,
+      view([GROUP_SECTION_PREFIX + '前端'], undefined, {
+        first: { group: '前端' }, second: { group: '前端' },
+      }),
+    )
+    expect(groups[0]!.sessions.map(row => row.id)).toEqual([sid('first'), sid('second')])
+    expect(groups[0]!.firstSessionWorkspaceId).toBeUndefined()
   })
 
   it('excludes archived and non-current blank sessions from every group', () => {

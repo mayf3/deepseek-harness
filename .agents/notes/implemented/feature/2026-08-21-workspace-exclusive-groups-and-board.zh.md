@@ -14,6 +14,8 @@ Status: implemented
 
 **左侧分组视图与看板共用同一份元数据和顺序。** `group:<name>` 与未分组记账键同时持有展开状态和 Session 顺序。左侧「按分组」每个会话只出现一次；看板每列一个分组并固定提供「未分组」列。跨列拖拽调用 `setSessionGroup` 并更新源列／目标列顺序，列内拖拽只更新该列顺序。删除分组会原子清理 `knownGroups`、匹配会话的 `group`、展开状态和顺序记账；任务回到未分组。
 
+**用户分组区头的行内操作只用于新建 Session。** 命名分组在光标定位的右键菜单中提供「归档分组…」，区头不显示行内归档控件。加号使用首个显示任务的 Workspace，通过既有启动路径新建 Session，并把返回的 Session 归入同一分组；树派生在分组折叠时仍保留该 Workspace id。空分组或首个显示任务没有 Workspace 时不显示加号。Workspace 区头维持既有操作。
+
 **看板是 WorkspaceBrowser 持有的全宽受控 Modal。** 左侧区头按钮打开看板；卡片点击打开会话并关闭看板。看板从 Session 列表与 WorkspaceViewStore 派生，不维护第二份业务状态。搜索、未读、归档和等待父任务仍由既有对象层或浏览器本地状态负责。
 
 **v6 标签数据做一次性 v7 迁移。** 已有 `dsh.workspace.view.v7` 永远优先；否则从 v6 每个 `tags` 数组选择首个合法项作为 `group`，`knownTags` 稳定去重为 `knownGroups`，`tag:*` 展开键映射到 `group:*`，其余 Workspace／flat 顺序、父任务和未读状态保留。迁移同步写入 v7，保留 v6 供回滚；坏 JSON 或存储失败回退到 v7 默认状态。

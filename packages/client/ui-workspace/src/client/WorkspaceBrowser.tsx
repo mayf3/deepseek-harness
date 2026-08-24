@@ -290,7 +290,7 @@ type SessionTreeProps = Pick<
   setSessionGroup: (sessionId: string, group: string | undefined) => void
   /** Persist a session's unread flag (row menu action; cleared on open). */
   setSessionUnread: (sessionId: string, unread: boolean) => void
-  /** Delete a group everywhere (group-section row menu action). */
+  /** Archive a group everywhere (group-section row menu action). */
   removeGroup: (group: string) => void
   /** Unread-only filter (hide rows without the unread flag). */
   unreadOnly: boolean
@@ -602,12 +602,23 @@ function SessionTree({
                   }
                   setGroupExpanded(group.key, !group.expanded)
                 }}
-                onCreate={() => {
-                  if (group.workspaceId !== undefined) {
-                    setGroupExpanded(group.key, true)
-                    void startSession(group.workspaceId)
+                onCreate={group.kind === undefined
+                  ? () => {
+                    if (group.workspaceId !== undefined) {
+                      setGroupExpanded(group.key, true)
+                      void startSession(group.workspaceId)
+                    }
                   }
-                }}
+                  : group.firstSessionWorkspaceId === undefined
+                    ? undefined
+                    : () => {
+                      startSessionInGroup(
+                        startSession,
+                        setSessionGroup,
+                        group.firstSessionWorkspaceId as WorkspaceId,
+                        group.kind === 'group' ? group.label : undefined,
+                      )
+                    }}
                 drag={batchSelection === undefined ? workspaceDragProps : undefined}
                 dropTarget={groupMode && group.kind !== undefined && drag !== null
                   ? {
@@ -615,7 +626,7 @@ function SessionTree({
                     onDrop: () => { commitGroupDrop(drag, group) },
                   }
                   : undefined}
-                onDeleteGroup={group.kind === 'group'
+                onArchiveGroup={group.kind === 'group'
                   ? () => { removeGroup(group.label) }
                   : undefined}
                 actions={group.workspaceId === undefined

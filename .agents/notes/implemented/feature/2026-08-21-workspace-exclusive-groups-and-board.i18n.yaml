@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-21-workspace-exclusive-groups-and-board.md
-2026-08-21-workspace-exclusive-groups-and-board.md: 0badb13e909882bc36abb3775dcdeaf3ec2b4b0e
-2026-08-21-workspace-exclusive-groups-and-board.zh.md: 57118ba1b429bc4b92382edce916555e5d4b2d9b
+2026-08-21-workspace-exclusive-groups-and-board.md: 3c2454271eb8f952cda52cbf0c15dda6669e575e
+2026-08-21-workspace-exclusive-groups-and-board.zh.md: ac2abfa96a483f5845ddbfba4c0abbc064d29fb9
