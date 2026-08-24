@@ -9,13 +9,15 @@ afterEach(() => {
 
 it('ignores script preload hints and executes script sources through the worker loader', async () => {
   const loadScript = vi.fn(async () => {})
+  const preload = '/plugins/??app-a/client.js,app-b/client.js&rev=app'
+  const bootstrap = '/plugins/??modules/client.js&rev=boot'
 
   await applyIndexInjections([
-    { kind: 'script-preload', src: '/plugins/preload.js' },
-    { kind: 'script-src', placement: 'head', src: '/plugins/execute.js' },
+    { kind: 'script-preload', src: preload },
+    { kind: 'script-src', placement: 'head', src: bootstrap },
   ], loadScript)
 
   expect(loadScript).toHaveBeenCalledOnce()
-  expect(loadScript).toHaveBeenCalledWith('/plugins/execute.js')
+  expect(loadScript).toHaveBeenCalledWith(bootstrap)
   expect(document.querySelector('link[rel="preload"]')).toBeNull()
 })
