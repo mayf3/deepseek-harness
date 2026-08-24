@@ -146,7 +146,7 @@ Prefix-stable while provider instances and their configuration are unchanged. Ad
 
 #### What the model sees
 
-An instance with static `enableModelSelection: true`, or a settings-controlled instance whose Session decision is enabled, exposes child LLM selection fields and `list_subagent_models`. With no arguments the discovery tool returns registered provider ids and names; with `provider` it returns advertised models; with `provider` and `model` it resolves that model and returns its advertised reasoning efforts and default. Calls reject while the optional `ctx.llm` service is unavailable. The result is read-only runtime metadata, not an authorization list.
+An instance with static `enableModelSelection: true`, or a settings-controlled instance whose Session policy is non-empty, exposes the child LLM selection fields and `list_subagent_models`. Calls reject while the optional `ctx.llm` service is unavailable. Static enablement returns the live adapter directory. A settings-controlled instance returns only registered providers and advertised models in its exact route policy; an exact lookup must also be allowed before it resolves the model's reasoning efforts and default. Execution independently enforces the same policy.
 
 #### Token effect
 

@@ -24,10 +24,10 @@
     - tab "插件列表"
   - tabpanel "插件配置":
     - list:
-      - listitem "Subagent 自选模型":
-        - heading "Subagent 自选模型" [level=3]
-        - paragraph: 允许新会话为 subagent 选择提供方、模型和推理强度。运行中的会话不会改变。
-        - switch "允许 subagent 自选模型"
+      - listitem:
+        - 'button "展开设置: Subagent 自选模型"':
+          - text: Subagent 自选模型 选择新会话允许为 subagent 自选的模型。运行中的会话不会改变。
+          - img
       - listitem:
         - 'button "展开设置: 终端"':
           - text: 终端 限制 agent 运行的每一条命令。

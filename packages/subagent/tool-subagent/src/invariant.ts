@@ -6,7 +6,7 @@
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import { hasSubagentModelSelection } from './model-selection-state.ts'
+import { subagentModelSelectionPolicy } from './model-selection-state.ts'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-tool-subagent'
 
@@ -18,7 +18,7 @@ export const inject = ['invariants']
 /** Assert that a durable opt-in is represented by both model-facing definitions. */
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
   ctx.on('agent/pre-step', async ({ agent }, next) => {
-    if (hasSubagentModelSelection(agent.session)) {
+    if (subagentModelSelectionPolicy(agent.session) !== undefined) {
       const schemas = ctx.tools.schemas(agent)
       const selectable = schemas.some((schema) => {
         const properties = (schema.parameters as { properties?: Record<string, unknown> }).properties
@@ -27,7 +27,7 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
           && properties['reasoning_effort'] !== undefined
       })
       if (!selectable || !schemas.some(schema => schema.name === 'list_subagent_models')) {
-        fail('a subagent/model-selection-enabled session must expose route fields and list_subagent_models')
+        fail('a subagent/model-selection-policy session must expose route fields and list_subagent_models')
       }
     }
     return next()

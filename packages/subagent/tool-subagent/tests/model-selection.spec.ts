@@ -10,6 +10,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { MockAdapter } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as mock from './scripted-provider.ts'
 import * as tool from '../src/index.ts'
+import { assertAllowedModelRoutes, assertAllowedModelSelection } from '../src/model-selection.ts'
 import { callSubagent, setup, text } from './harness.ts'
 
 const REASONING = {
@@ -32,6 +33,54 @@ function parentWithRoute(
 }
 
 describe('dsh-tool-subagent model selection', () => {
+  it('rejects empty route ids at the configuration boundary', () => {
+    expect(() => { assertAllowedModelRoutes([{ provider: '', model: 'model' }]) })
+      .toThrow('requires non-empty provider and model ids')
+    expect(() => { assertAllowedModelRoutes([{ provider: 'provider', model: '' }]) })
+      .toThrow('requires non-empty provider and model ids')
+  })
+
+  it('allows pure inheritance but rejects explicit values outside a Session allowlist', () => {
+    const policy = {
+      kind: 'allowlist' as const,
+      routes: [{ provider: 'alpha', model: 'allowed-model' }],
+    }
+    const parent = { provider: 'alpha', model: 'parent-model' }
+
+    expect(() => { assertAllowedModelSelection(policy, parent, undefined, {}) }).not.toThrow()
+    expect(() => {
+      assertAllowedModelSelection(
+        policy,
+        parent,
+        { provider: 'alpha', model: 'allowed-model' },
+        { provider: 'alpha', model: 'allowed-model' },
+      )
+    }).not.toThrow()
+    expect(() => {
+      assertAllowedModelSelection(
+        policy,
+        parent,
+        { provider: 'alpha', model: 'other-model' },
+        { provider: 'alpha', model: 'other-model' },
+      )
+    }).toThrow('is not allowed for this Session')
+    expect(() => {
+      assertAllowedModelSelection(
+        policy,
+        parent,
+        { reasoningEffort: ReasoningEffortId('low') },
+        { reasoning_effort: 'low' },
+      )
+    }).toThrow('alpha/parent-model')
+    expect(() => {
+      assertAllowedModelSelection(
+        policy,
+        {},
+        { reasoningEffort: ReasoningEffortId('low') },
+        { reasoning_effort: 'low' },
+      )
+    }).toThrow('without an effective provider and model')
+  })
   it('exposes static route fields and discovery when selection is enabled', async () => {
     const ctx = await setup({ provider: 'mock', enableModelSelection: true })
     const schema = ctx.tools.schemas().find(entry => entry.name === 'subagent')!

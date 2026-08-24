@@ -13,7 +13,9 @@ import {
 } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { ConfigurablePluginsTabController } from '../src/client/tab-store.ts'
 import {
-  SubagentModelSelectionCardController, type SubagentModelSelectionSettings,
+  SubagentModelSelectionCardController,
+  subagentModelCandidates,
+  type SubagentModelSelectionSettings,
 } from '../src/client/subagent-model-selection-card-controller.ts'
 import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
 
@@ -38,6 +40,34 @@ function credentialsApi(configured: boolean) {
   }))
   const set = vi.fn(() => Promise.resolve({ ok: true as const, value: undefined }))
   return { api: { describe, set } as never, describe, set }
+}
+
+function modelsApi(options: {
+  groups?: readonly {
+    id: string
+    name: string
+    models: readonly { id: string; name: string }[]
+  }[]
+  failures?: readonly { id: string; name: string; message: string }[]
+  error?: string
+} = {}) {
+  const models = vi.fn(() => Promise.resolve({
+    rpcId: 'm-1' as never,
+    result: options.error === undefined
+      ? { ok: true as const, value: { groups: options.groups ?? [], failures: options.failures ?? [] } }
+      : { ok: false as const, error: { code: 'internal_error' as never, message: options.error } },
+  }))
+  return { api: { llm: { models } } as never, models }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((accept, fail) => {
+    resolve = accept
+    reject = fail
+  })
+  return { promise, resolve, reject }
 }
 
 describe('CardForm', () => {
@@ -387,19 +417,49 @@ describe('AgentLoopCardController', () => {
 })
 
 describe('SubagentModelSelectionCardController', () => {
-  it('immediately writes a switch gesture and reports the accepted value', async () => {
+  it('joins stored routes with the live catalog without dropping unavailable choices', () => {
+    const candidates = subagentModelCandidates(
+      [{ id: 'alpha', name: 'Alpha API', models: [{ id: 'fast', name: 'Fast' }] }],
+      [{ provider: 'legacy', model: 'old' }],
+      new Set(['legacy\0old']),
+    )
+
+    expect(candidates).toEqual([
+      {
+        key: 'alpha\0fast', provider: 'alpha', model: 'fast', providerName: 'Alpha API',
+        modelName: 'Fast', available: true, selected: false,
+      },
+      {
+        key: 'legacy\0old', provider: 'legacy', model: 'old', providerName: 'legacy',
+        modelName: 'old', available: false, selected: true,
+      },
+    ])
+  })
+
+  it('loads adapter models and saves one exact route as a whole field', async () => {
     const host = stubSettingsScope<SubagentModelSelectionSettings>()
     acceptWrites(host)
-    const controller = new SubagentModelSelectionCardController(host.scope)
-    host.publish({ status: 'ready', writable: true, value: { enabled: false }, user: {} })
+    const models = modelsApi({
+      groups: [{ id: 'alpha', name: 'Alpha API', models: [{ id: 'fast', name: 'Fast' }] }],
+    })
+    const controller = new SubagentModelSelectionCardController(host.scope, models.api)
+    host.publish({ status: 'ready', writable: true, value: { allowedModels: [] }, user: {} })
     const face = controller.inject()
 
     expect(face.hooks.subagentModelSelectionCard.getSnapshot().enabled).toBe(false)
-    face.toggle()
-    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('enabled', true) })
+    face.toggleEnabled()
+    await vi.waitFor(() => {
+      expect(face.hooks.subagentModelSelectionCard.getSnapshot().candidates).toHaveLength(1)
+    })
+    face.toggleModel('alpha\0fast')
+    face.save()
+    await vi.waitFor(() => {
+      expect(host.set).toHaveBeenCalledWith('allowedModels', [{ provider: 'alpha', model: 'fast' }])
+    })
 
     expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
       enabled: true,
+      dirty: false,
       saving: false,
       saved: true,
       failed: false,
@@ -408,61 +468,154 @@ describe('SubagentModelSelectionCardController', () => {
 
   it('keeps the Host value and reports a rejected write', async () => {
     const host = stubSettingsScope<SubagentModelSelectionSettings>()
-    const controller = new SubagentModelSelectionCardController(host.scope)
-    host.publish({ status: 'ready', writable: true, value: { enabled: false }, user: {} })
+    const models = modelsApi({
+      groups: [{ id: 'alpha', name: 'Alpha API', models: [{ id: 'fast', name: 'Fast' }] }],
+    })
+    const controller = new SubagentModelSelectionCardController(host.scope, models.api)
+    host.publish({ status: 'ready', writable: true, value: { allowedModels: [] }, user: {} })
     const face = controller.inject()
 
-    face.toggle()
+    face.toggleEnabled()
+    await vi.waitFor(() => {
+      expect(face.hooks.subagentModelSelectionCard.getSnapshot().candidates).toHaveLength(1)
+    })
+    face.toggleModel('alpha\0fast')
+    face.save()
     await vi.waitFor(() => {
       expect(face.hooks.subagentModelSelectionCard.getSnapshot().failed).toBe(true)
     })
 
     expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
-      enabled: false,
+      enabled: true,
+      dirty: true,
       saving: false,
       saved: false,
     })
   })
 
-  it('ignores writes while read-only and scope notifications after disposal', () => {
+  it('loads stored routes, stages removal and disablement, and discards both', async () => {
     const host = stubSettingsScope<SubagentModelSelectionSettings>()
-    const controller = new SubagentModelSelectionCardController(host.scope)
-    host.publish({ status: 'ready', writable: false, value: { enabled: false }, user: {} })
+    const models = modelsApi({
+      groups: [{ id: 'alpha', name: 'Alpha API', models: [{ id: 'fast', name: 'Fast' }] }],
+      failures: [{ id: 'beta', name: 'Beta', message: 'offline' }],
+    })
+    const controller = new SubagentModelSelectionCardController(host.scope, models.api)
+    host.publish({
+      status: 'ready', writable: true,
+      value: { allowedModels: [{ provider: 'alpha', model: 'fast' }] }, user: {},
+    })
     const face = controller.inject()
+    const state = () => face.hooks.subagentModelSelectionCard.getSnapshot()
+    await vi.waitFor(() => { expect(state().catalogStatus).toBe('ready') })
 
-    face.toggle()
-    expect(host.set).not.toHaveBeenCalled()
+    face.toggleModel('missing')
+    expect(state().dirty).toBe(false)
+    face.toggleModel('alpha\0fast')
+    expect(state()).toMatchObject({ dirty: true, invalid: true })
+    face.discard()
+    expect(state()).toMatchObject({ dirty: false, invalid: false, enabled: true })
 
-    controller.dispose()
-    face.toggle()
-    host.publish({ value: { enabled: true } })
-    expect(host.set).not.toHaveBeenCalled()
-    expect(face.hooks.subagentModelSelectionCard.getSnapshot().enabled).toBe(false)
+    face.toggleEnabled()
+    expect(state()).toMatchObject({ dirty: true, enabled: false })
+    face.toggleEnabled()
+    expect(state()).toMatchObject({ dirty: false, enabled: true })
   })
 
-  it('publishes no settlement after disposal interrupts an in-flight write', async () => {
+  it('reports a directory error and retries it', async () => {
     const host = stubSettingsScope<SubagentModelSelectionSettings>()
-    let settle = (): void => {}
-    const pending = new Promise<void>((resolve) => { settle = () => { resolve() } })
-    host.set.mockReturnValue(pending)
-    const controller = new SubagentModelSelectionCardController(host.scope)
-    host.publish({ status: 'ready', writable: true, value: { enabled: false }, user: {} })
+    const models = modelsApi({ error: 'offline' })
+    const controller = new SubagentModelSelectionCardController(host.scope, models.api)
+    host.publish({ status: 'ready', writable: true, value: { allowedModels: [] }, user: {} })
+    const face = controller.inject()
+    const state = () => face.hooks.subagentModelSelectionCard.getSnapshot()
+
+    face.toggleEnabled()
+    await vi.waitFor(() => { expect(state().catalogStatus).toBe('error') })
+    face.retryCatalog()
+    await vi.waitFor(() => { expect(models.models).toHaveBeenCalledTimes(2) })
+  })
+
+  it('suppresses duplicate actions and late save settlements', async () => {
+    const host = stubSettingsScope<SubagentModelSelectionSettings>()
+    const catalog = modelsApi({
+      groups: [{ id: 'alpha', name: 'Alpha API', models: [{ id: 'fast', name: 'Fast' }] }],
+    })
+    const write = deferred<undefined>()
+    const set = vi.fn(async (field: string, value: unknown) => {
+      await write.promise
+      host.publish({ value: { [field]: value } })
+    })
+    const controller = new SubagentModelSelectionCardController({ ...host.scope, set }, catalog.api)
     const face = controller.inject()
 
-    face.toggle()
-    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('enabled', true) })
+    face.save()
+    face.toggleModel('alpha\0fast')
+    host.publish({ status: 'ready', writable: true, value: { allowedModels: [] }, user: {} })
+    face.save()
+    face.toggleEnabled()
+    await vi.waitFor(() => { expect(face.hooks.subagentModelSelectionCard.getSnapshot().catalogStatus).toBe('ready') })
+    face.save()
+    face.toggleModel('alpha\0fast')
+    face.save()
     expect(face.hooks.subagentModelSelectionCard.getSnapshot().saving).toBe(true)
+    face.toggleEnabled()
+    face.toggleModel('alpha\0fast')
+    face.save()
+    face.discard()
+    controller.dispose()
+    write.resolve(undefined)
+    await write.promise
+    expect(set).toHaveBeenCalledOnce()
+  })
+
+  it('suppresses duplicate directory loads and late resolve or reject settlements', async () => {
+    const host = stubSettingsScope<SubagentModelSelectionSettings>()
+    host.publish({ status: 'ready', writable: true, value: { allowedModels: [] }, user: {} })
+
+    const pending = deferred<never>()
+    const models = vi.fn(() => pending.promise)
+    const controller = new SubagentModelSelectionCardController(host.scope, { llm: { models } } as never)
+    const face = controller.inject()
+    face.toggleEnabled()
+    face.retryCatalog()
+    expect(models).toHaveBeenCalledOnce()
+    controller.dispose()
+    pending.reject(new Error('late failure'))
+    await pending.promise.catch(() => undefined)
+
+    const pendingResolve = deferred<never>()
+    const resolving = new SubagentModelSelectionCardController(
+      host.scope,
+      { llm: { models: () => pendingResolve.promise } } as never,
+    )
+    const resolvingFace = resolving.inject()
+    resolvingFace.toggleEnabled()
+    resolving.dispose()
+    pendingResolve.resolve({
+      rpcId: 'late' as never,
+      result: { ok: true, value: { groups: [], failures: [] } },
+    } as never)
+    await pendingResolve.promise
+  })
+
+  it('ignores writes while read-only and scope notifications after disposal', () => {
+    const host = stubSettingsScope<SubagentModelSelectionSettings>()
+    const controller = new SubagentModelSelectionCardController(host.scope, modelsApi().api)
+    host.publish({ status: 'ready', writable: false, value: { allowedModels: [] }, user: {} })
+    const face = controller.inject()
+
+    face.toggleEnabled()
+    face.toggleModel('alpha\0fast')
+    face.save()
+    expect(host.set).not.toHaveBeenCalled()
 
     controller.dispose()
-    settle()
-    await Promise.resolve()
-
-    expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
-      enabled: false,
-      saving: true,
-      saved: false,
-      failed: false,
-    })
+    face.toggleEnabled()
+    face.retryCatalog()
+    face.save()
+    host.publish({ value: { allowedModels: [{ provider: 'alpha', model: 'fast' }] } })
+    expect(host.set).not.toHaveBeenCalled()
+    expect(face.hooks.subagentModelSelectionCard.getSnapshot().enabled).toBe(false)
   })
 })
 

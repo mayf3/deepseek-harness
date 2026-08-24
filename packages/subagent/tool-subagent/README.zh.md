@@ -146,7 +146,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-静态设置 `enableModelSelection: true` 的实例，或其 Session 决定为启用的设置控制实例，会公开子级 LLM 选择字段与 `list_subagent_models`。不带参数时，发现工具返回已注册提供方的 id 与名称；带 `provider` 时返回其公布模型；同时带 `provider` 与 `model` 时解析该模型，并返回其公布的推理等级与默认值。可选的 `ctx.llm` 服务不可用时，调用会失败。结果是只读运行时元数据，不是授权清单。
+静态配置 `enableModelSelection: true` 的实例，或 Session 策略非空的 settings 控制实例，会公开子级 LLM 选择字段与 `list_subagent_models`。可选 `ctx.llm` 服务不可用时，调用会失败。静态启用返回实时适配器目录。settings 控制实例只返回其精确路由策略中的已注册提供方与已公布模型；精确查询也必须先获准，才会解析模型的推理强度与默认值。执行阶段会独立强制同一策略。
 
 #### Token 影响
 

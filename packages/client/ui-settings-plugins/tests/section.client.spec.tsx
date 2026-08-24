@@ -84,22 +84,28 @@ function renderBash(state: Partial<BashCardState> = {}) {
 
 function renderSubagentModelSelection(state: Partial<SubagentModelSelectionCardState> = {}) {
   const store = createSnapshotStore<SubagentModelSelectionCardState>({
-    available: true,
-    writable: true,
+    ...settled,
     enabled: false,
-    saving: false,
+    candidates: [],
+    catalogStatus: 'idle',
+    catalogFailures: [],
     saved: false,
-    failed: false,
     ...state,
   })
-  const toggle = vi.fn()
+  const actions = {
+    toggleEnabled: vi.fn(),
+    toggleModel: vi.fn(),
+    retryCatalog: vi.fn(),
+    save: vi.fn(),
+    discard: vi.fn(),
+  }
   const props = {
+    ...actions,
     t,
-    toggle,
     useSubagentModelSelectionCard: bindSnapshotSelector(store),
   } as unknown as SubagentModelSelectionCardProps
   render(<SubagentModelSelectionCard {...props} />)
-  return toggle
+  return actions
 }
 
 describe('PluginsSettingsSection', () => {
@@ -318,24 +324,75 @@ describe('BashCard', () => {
 })
 
 describe('SubagentModelSelectionCard', () => {
-  it('renders the default-off preference directly in the Plugins list', () => {
-    const toggle = renderSubagentModelSelection()
+  it('renders the default-off preference in its staged plugin card', () => {
+    const actions = renderSubagentModelSelection()
+    fireEvent.click(screen.getByText(en.subagentModelSelectionTitle))
 
     const control = screen.getByRole('switch', { name: en.subagentModelSelectionToggle })
     expect(control.getAttribute('aria-checked')).toBe('false')
     fireEvent.click(control)
 
-    expect(toggle).toHaveBeenCalledOnce()
+    expect(actions.toggleEnabled).toHaveBeenCalledOnce()
   })
 
-  it('reports successful and rejected writes', () => {
-    renderSubagentModelSelection({ enabled: true, saved: true })
+  it('renders adapter candidates and reports a successful save', () => {
+    const actions = renderSubagentModelSelection({
+      enabled: true,
+      saved: true,
+      candidates: [{
+        key: 'alpha\0fast',
+        provider: 'alpha',
+        model: 'fast',
+        providerName: 'Alpha API',
+        modelName: 'Fast',
+        available: true,
+        selected: true,
+      }],
+      catalogStatus: 'ready',
+    })
+    fireEvent.click(screen.getByText(en.subagentModelSelectionTitle))
+
     expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
     expect(screen.getByRole('status').textContent).toBe(en.subagentModelSelectionSaved)
+    fireEvent.click(screen.getByRole('checkbox', { name: /Fast/ }))
+    expect(actions.toggleModel).toHaveBeenCalledWith('alpha\0fast')
+  })
+
+  it('renders directory progress, failures, unavailable routes, and validation', () => {
+    renderSubagentModelSelection({ enabled: true, catalogStatus: 'loading', invalid: true })
+    fireEvent.click(screen.getByText(en.subagentModelSelectionTitle))
+    expect(screen.getByText(en.subagentModelSelectionLoading)).toBeTruthy()
+    expect(screen.getByText(en.subagentModelSelectionRequired)).toBeTruthy()
 
     cleanup()
-    renderSubagentModelSelection({ failed: true })
-    expect(screen.getByRole('alert').textContent).toBe(en.subagentModelSelectionSaveFailed)
+    const errorActions = renderSubagentModelSelection({ enabled: true, catalogStatus: 'error' })
+    fireEvent.click(screen.getByText(en.subagentModelSelectionTitle))
+    fireEvent.click(screen.getByRole('button', { name: en.subagentModelSelectionRetry }))
+    expect(errorActions.retryCatalog).toHaveBeenCalledOnce()
+
+    cleanup()
+    renderSubagentModelSelection({
+      enabled: true,
+      catalogStatus: 'ready',
+      catalogFailures: [{ id: 'beta', name: 'Beta', message: 'offline' }],
+      candidates: [{
+        key: 'legacy\0old',
+        provider: 'legacy',
+        model: 'old',
+        providerName: 'legacy',
+        modelName: 'old',
+        available: false,
+        selected: true,
+      }],
+    })
+    fireEvent.click(screen.getByText(en.subagentModelSelectionTitle))
+    expect(screen.getByText(en.subagentModelSelectionPartial)).toBeTruthy()
+    expect(screen.getByText(en.subagentModelSelectionUnavailable)).toBeTruthy()
+
+    cleanup()
+    renderSubagentModelSelection({ enabled: true, catalogStatus: 'ready' })
+    fireEvent.click(screen.getByText(en.subagentModelSelectionTitle))
+    expect(screen.getByText(en.subagentModelSelectionEmpty)).toBeTruthy()
   })
 
   it('stays hidden when unavailable and disables writes when read-only', () => {
@@ -343,11 +400,12 @@ describe('SubagentModelSelectionCard', () => {
     expect(screen.queryByText(en.subagentModelSelectionTitle)).toBeNull()
 
     cleanup()
-    const toggle = renderSubagentModelSelection({ writable: false })
+    const actions = renderSubagentModelSelection({ writable: false })
+    fireEvent.click(screen.getByText(en.subagentModelSelectionTitle))
     const control = screen.getByRole('switch') as HTMLButtonElement
     expect(control.disabled).toBe(true)
     fireEvent.click(control)
-    expect(toggle).not.toHaveBeenCalled()
+    expect(actions.toggleEnabled).not.toHaveBeenCalled()
   })
 })
 

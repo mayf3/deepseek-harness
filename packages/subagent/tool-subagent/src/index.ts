@@ -25,17 +25,18 @@ import type { SubagentProvider, SubagentResult, SubagentRun } from '@deepseek-ai
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
 import { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt'
 import {
+  assertAllowedModelSelection,
   hasConfiguredLlmSelection,
   hasDelegationModelRequest,
   preflightChildLlmRoute,
   requestedAgentOptions,
 } from './model-selection.ts'
-import type { DelegationModelRequest } from './model-selection.ts'
+import type { DelegationModelRequest, ModelSelectionPolicy } from './model-selection.ts'
 import { registerListSubagentModels } from './list-models.ts'
 import type {} from './model-selection-settings.ts'
 import {
-  hasSubagentModelSelection,
   recordSubagentModelSelection,
+  subagentModelSelectionPolicy,
 } from './model-selection-state.ts'
 
 export const name = 'tool-subagent'
@@ -357,8 +358,9 @@ export function apply(ctx: Context, config: Config): void {
   const initialProvider = ctx.subagents.getProvider(config.provider)
   if (initialProvider !== undefined) assertSubagentProviderConfiguration(initialProvider)
 
-  const install = (runtimeCtx: Context, modelSelectionEnabled: boolean): void => {
-    if (modelSelectionEnabled) registerListSubagentModels(runtimeCtx)
+  const install = (runtimeCtx: Context, modelSelectionPolicy: ModelSelectionPolicy | undefined): void => {
+    const modelSelectionEnabled = modelSelectionPolicy !== undefined
+    if (modelSelectionPolicy !== undefined) registerListSubagentModels(runtimeCtx, modelSelectionPolicy)
     // Load order and HMR replacement can change provider availability while
     // this fiber remains active.
     let mounted: { subagentProvider: SubagentProvider; disposeTool: () => void } | undefined
@@ -487,6 +489,12 @@ export function apply(ctx: Context, config: Config): void {
             modelRequest,
             modelSelectionEnabled,
           )
+          assertAllowedModelSelection(
+            modelSelectionPolicy,
+            parentOptions,
+            requestedChildAgentOptions,
+            modelRequest,
+          )
           if (requiresRoutePreflight) {
             const llm = runtimeCtx.get('llm')
             if (llm === undefined) {
@@ -599,7 +607,7 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   if (config.modelSelectionSettings !== true) {
-    install(ctx, config.enableModelSelection === true)
+    install(ctx, config.enableModelSelection === true ? { kind: 'unrestricted' } : undefined)
     return
   }
 
@@ -615,21 +623,22 @@ export function apply(ctx: Context, config: Config): void {
     throw new Error('tool-subagent: `modelSelectionSettings` requires an Agent or preset scope')
   }
 
-  const selectForAgent = (agent: NonNullable<Context['agent']>): boolean => {
-    let enabled = hasSubagentModelSelection(agent.session)
-    if (!enabled) {
+  const selectForAgent = (agent: NonNullable<Context['agent']>): ModelSelectionPolicy | undefined => {
+    let allowedModels = subagentModelSelectionPolicy(agent.session)
+    if (allowedModels === undefined) {
       const parentId = agent.session.header.origin === 'subagent'
         ? agent.session.header.parentSession
         : undefined
       if (parentId !== undefined) {
         const parent = ctx.get('agents')?.get(parentId)
-        enabled = parent !== undefined && hasSubagentModelSelection(parent.session)
+        allowedModels = parent === undefined ? undefined : subagentModelSelectionPolicy(parent.session)
       } else if (agent.session.firstLiveSeq === 0) {
-        enabled = settings.currentEnabled()
+        const current = settings.currentAllowedModels()
+        allowedModels = current.length === 0 ? undefined : current
       }
     }
-    if (enabled) recordSubagentModelSelection(agent.session)
-    return enabled
+    if (allowedModels !== undefined) recordSubagentModelSelection(agent.session, allowedModels)
+    return allowedModels === undefined ? undefined : { kind: 'allowlist', routes: allowedModels }
   }
 
   const agent = ctx.agent
@@ -649,9 +658,9 @@ export function apply(ctx: Context, config: Config): void {
     // Reserve before the injected fiber runs: tool registration emits
     // `tools/change` synchronously, which re-enters the reconciliation below.
     installing.add(candidate)
-    const enabled = selectForAgent(candidate)
+    const policy = selectForAgent(candidate)
     const fiber = candidate.ctx.inject(['tools', 'subagents', 'systemPrompt'], (runtimeCtx) => {
-      install(runtimeCtx, enabled)
+      install(runtimeCtx, policy)
     })
     installing.delete(candidate)
     scopedInstalls.set(candidate, fiber)

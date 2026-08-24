@@ -1,39 +1,16 @@
-/* Direct preference card inside the configurable Plugins list. */
-
-.card {
-  list-style: none;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+.toggleRow {
+  display: flex;
   align-items: center;
-  gap: 8px 16px;
-  padding: 14px 16px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-3);
-}
-
-.copy {
-  min-width: 0;
-}
-
-.title {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.4;
-  font-weight: 600;
-  color: var(--dsw-alias-label-primary);
-}
-
-.description {
-  margin: 4px 0 0;
+  justify-content: space-between;
+  gap: 16px;
   font-size: 13px;
-  line-height: 1.5;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .switch {
   box-sizing: border-box;
   position: relative;
+  flex: 0 0 auto;
   width: 36px;
   height: 20px;
   padding: 2px;
@@ -70,18 +47,103 @@
   transform: translateX(16px);
 }
 
-.status,
-.failed {
-  grid-column: 1 / -1;
+.selection {
+  display: grid;
+  gap: 10px;
+}
+
+.hint,
+.notice,
+.invalid,
+.status {
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.hint,
+.notice {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.invalid {
+  color: var(--dsw-alias-label-error);
 }
 
 .status {
   color: var(--dsw-alias-state-success-primary);
 }
 
-.failed {
+.catalogError {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
   color: var(--dsw-alias-label-error);
+}
+
+.catalogError button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--dsw-alias-brand-primary);
+  cursor: pointer;
+}
+
+.models {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  max-height: 280px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.models legend {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.model {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.model:hover {
+  background: var(--dsw-alias-bg-layer-4);
+}
+
+.modelName,
+.route {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelName {
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.route {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.unavailable {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
 }

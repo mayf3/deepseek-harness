@@ -15,6 +15,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as tool from '../src/index.ts'
+import { registerListSubagentModels } from '../src/list-models.ts'
 import { testToolSignal, text } from './harness.ts'
 
 class CatalogAdapter extends LlmAdapter {
@@ -64,6 +65,22 @@ async function setupListTool() {
   await ctx.plugin(SubagentRuntime)
   const fiber = await ctx.plugin(tool, { provider: 'unused', enableModelSelection: true })
   return { ctx, fiber }
+}
+
+async function setupAllowedListTool() {
+  const ctx = new Context()
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin(SystemPrompt)
+  await ctx.plugin(ToolRuntime)
+  registerListSubagentModels(ctx, {
+    kind: 'allowlist',
+    routes: [
+      { provider: 'alpha', model: 'fast' },
+      { provider: 'alpha', model: 'unlisted' },
+      { provider: 'missing', model: 'hidden' },
+    ],
+  })
+  return ctx
 }
 
 let counter = 0
@@ -133,6 +150,20 @@ describe('list_subagent_models', () => {
     const result = await call(ctx, { provider: 'alpha' })
     expect(result.isError).toBe(false)
     expect(text(result)).toBe('alpha/fast — Fast: Focused work.\nalpha/plain — Plain')
+  })
+
+  it('intersects provider and model discovery with the Session allowlist', async () => {
+    const ctx = await setupAllowedListTool()
+    ctx.llm.registerAdapter(['alpha', 'beta'], new CatalogAdapter())
+
+    expect(text(await call(ctx, {}))).toBe('alpha — ALPHA API')
+    expect(text(await call(ctx, { provider: 'alpha' }))).toBe('alpha/fast — Fast: Focused work.')
+    expect(text(await call(ctx, { provider: 'alpha', model: 'unlisted' })))
+      .toContain('alpha/unlisted — Fast')
+
+    const denied = await call(ctx, { provider: 'alpha', model: 'plain' })
+    expect(denied.isError).toBe(true)
+    expect(text(denied)).toContain('is not allowed for this Session')
   })
 
   it('renders an empty advertised model list', async () => {

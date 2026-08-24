@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SubagentModelSelectionCardFace } from './subagent-model-selection-card-controller.ts'
 import type {} from './slot-contract.ts'
+import { PluginCard } from './PluginCard.tsx'
 import css from './SubagentModelSelectionCard.module.css'
 
 /** Props the renderer binds for the subagent model-selection card. */
@@ -13,35 +14,87 @@ export type SubagentModelSelectionCardProps =
   & InjectFace<SubagentModelSelectionCardFace>
 
 /**
- * Render the default-off preference and persist each switch gesture.
+ * Render the default-off preference and its exact adapter-route choices.
  * @param props - locale copy, the card snapshot, and its toggle action.
  * @returns the preference card, or nothing when the namespace is unavailable.
  */
 export function SubagentModelSelectionCard(props: SubagentModelSelectionCardProps) {
   const { t } = props
   const state = props.useSubagentModelSelectionCard(snapshot => snapshot)
-  if (!state.available) return null
   return (
-    <li className={css.card} aria-labelledby="subagent-model-selection-title">
-      <div className={css.copy}>
-        <h3 id="subagent-model-selection-title" className={css.title}>
-          {t('subagentModelSelectionTitle')}
-        </h3>
-        <p className={css.description}>{t('subagentModelSelectionDescription')}</p>
+    <PluginCard
+      t={t}
+      titleKey="subagentModelSelectionTitle"
+      descriptionKey="subagentModelSelectionDescription"
+      state={state}
+      onSave={props.save}
+      onDiscard={props.discard}
+    >
+      <div className={css.toggleRow}>
+        <span>{t('subagentModelSelectionToggle')}</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={state.enabled}
+          aria-label={t('subagentModelSelectionToggle')}
+          className={clsx(css.switch, state.enabled && css.switchOn)}
+          disabled={!state.writable || state.saving}
+          onClick={props.toggleEnabled}
+        >
+          <span className={css.thumb} />
+        </button>
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={state.enabled}
-        aria-label={t('subagentModelSelectionToggle')}
-        className={clsx(css.switch, state.enabled && css.switchOn)}
-        disabled={!state.writable || state.saving}
-        onClick={props.toggle}
-      >
-        <span className={css.thumb} />
-      </button>
+      {state.enabled
+        ? (
+          <div className={css.selection}>
+            <p className={css.hint}>{t('subagentModelSelectionChoose')}</p>
+            {state.catalogStatus === 'loading'
+              ? <p className={css.notice} role="status">{t('subagentModelSelectionLoading')}</p>
+              : null}
+            {state.catalogStatus === 'error'
+              ? (
+                <div className={css.catalogError} role="alert">
+                  <span>{t('subagentModelSelectionLoadFailed')}</span>
+                  <button type="button" disabled={state.saving} onClick={props.retryCatalog}>
+                    {t('subagentModelSelectionRetry')}
+                  </button>
+                </div>
+              )
+              : null}
+            {state.catalogFailures.length > 0
+              ? <p className={css.notice}>{t('subagentModelSelectionPartial')}</p>
+              : null}
+            {state.candidates.length > 0
+              ? (
+                <fieldset className={css.models}>
+                  <legend>{t('subagentModelSelectionAllowed')}</legend>
+                  {state.candidates.map(candidate => (
+                    <label key={candidate.key} className={css.model}>
+                      <input
+                        type="checkbox"
+                        checked={candidate.selected}
+                        disabled={!state.writable || state.saving}
+                        onChange={() => { props.toggleModel(candidate.key) }}
+                      />
+                      <span>
+                        <span className={css.modelName}>{candidate.modelName}</span>
+                        <span className={css.route}>{`${candidate.providerName} · ${candidate.provider}/${candidate.model}`}</span>
+                      </span>
+                      {!candidate.available
+                        ? <span className={css.unavailable}>{t('subagentModelSelectionUnavailable')}</span>
+                        : null}
+                    </label>
+                  ))}
+                </fieldset>
+              )
+              : state.catalogStatus === 'ready'
+                ? <p className={css.notice}>{t('subagentModelSelectionEmpty')}</p>
+                : null}
+            {state.invalid ? <p className={css.invalid}>{t('subagentModelSelectionRequired')}</p> : null}
+          </div>
+        )
+        : <p className={css.hint}>{t('subagentModelSelectionOff')}</p>}
       {state.saved ? <p className={css.status} role="status">{t('subagentModelSelectionSaved')}</p> : null}
-      {state.failed ? <p className={css.failed} role="alert">{t('subagentModelSelectionSaveFailed')}</p> : null}
-    </li>
+    </PluginCard>
   )
 }

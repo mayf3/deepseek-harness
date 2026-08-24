@@ -72,6 +72,7 @@ export function apply(ctx: ClientContext): void {
     ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }), ctx.remote.credentials)
   const subagentModelSelection = new SubagentModelSelectionCardController(
     ctx.settingsScope.bind({ namespace: SUBAGENT_MODEL_SELECTION_NS }),
+    api,
   )
 
   // The credential a card reports is not part of any settings section, so its
