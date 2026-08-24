@@ -726,7 +726,23 @@ Source: [`packages/core/session/src/types.ts:237`](../packages/core/session/src/
 'subagent/descriptor': SubagentDescriptorData
 ```
 
-Source: [`packages/subagent/subagent/src/descriptor.ts:37`](../packages/subagent/subagent/src/descriptor.ts)
+Source: [`packages/subagent/subagent/src/descriptor.ts:38`](../packages/subagent/subagent/src/descriptor.ts)
+
+<a id="subagentmodel-selection-enabled--log-only"></a>
+
+#### `subagent/model-selection-enabled` — log-only
+
+```ts persistence-catalog
+/**
+ * Records that this session's delegation tool exposes child provider,
+ * model, and reasoning-effort selection. Appended before the first model
+ * request; absence means the fixed-route definition. Log-only: it carries
+ * no `surfaceOp` and never enters model history.
+ */
+'subagent/model-selection-enabled': Record<string, never>
+```
+
+Source: [`packages/subagent/tool-subagent/src/model-selection-state.ts:13`](../packages/subagent/tool-subagent/src/model-selection-state.ts)
 
 ### `team/*`
 

@@ -144,7 +144,9 @@ describe('Python SDK dsh profile keyless smoke', () => {
           },
         },
       })
+      const tools = modelRequests[0]?.tools as { function?: { name?: string } }[]
       expect(modelRequests[0]?.max_tokens).toBe(1234)
+      expect(tools.map(tool => tool.function?.name)).toContain('list_subagent_models')
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'shutdown' })}\n`)
       const shutdown = await waitForLine(lines, value => value.id === 3, () => stderr)

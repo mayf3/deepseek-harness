@@ -2988,7 +2988,7 @@
           "seq": 6,
           "time": 0,
           "data": {
-            "version": 2,
+            "version": 3,
             "mode": "one-shot",
             "provider": "spawn",
             "label": "Check direct child"
@@ -3110,11 +3110,10 @@
               "config": {
                 "provider": "deepseek-official",
                 "model": "smoke-model",
-                "maxTokens": 256000,
-                "reasoningEffort": "high"
+                "reasoningEffort": "high",
+                "maxTokens": 256000
               },
               "adapterDefaults": {
-                "reasoningEffort": true,
                 "maxTokens": true
               },
               "system": "{{system}}",
@@ -3763,7 +3762,7 @@
           "seq": 6,
           "time": 0,
           "data": {
-            "version": 2,
+            "version": 3,
             "mode": "one-shot",
             "provider": "spawn"
           }
@@ -3884,11 +3883,10 @@
               "config": {
                 "provider": "deepseek-official",
                 "model": "smoke-model",
-                "maxTokens": 256000,
-                "reasoningEffort": "high"
+                "reasoningEffort": "high",
+                "maxTokens": 256000
               },
               "adapterDefaults": {
-                "reasoningEffort": true,
                 "maxTokens": true
               },
               "system": "{{system}}",
