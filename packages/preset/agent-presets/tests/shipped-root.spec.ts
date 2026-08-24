@@ -9,13 +9,14 @@
  * suite: the derived writable root is resolved in the constructor.
  */
 
-import { mkdtemp } from 'node:fs/promises'
+import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import Include from '@deepseek-ai/cordis-plugin-include'
+import Include, { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import * as yaml from 'js-yaml'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import AgentPresets, { SHIPPED_PRESET_ROOT, type Config } from '@deepseek-ai/dsh-agent-presets'
 
@@ -86,5 +87,16 @@ describe('the shipped preset root', () => {
     expect(ctx.agentPresets.roots).toEqual([{ path: SYSTEM_ROOT, trust: 'system' }])
     const minimal = (await ctx.agentPresets.list()).find(preset => preset.id === 'minimal')
     expect(minimal?.path.startsWith(SYSTEM_ROOT)).toBe(true)
+  })
+
+  it('enables web_fetch in each tool-bearing Web app preset', async () => {
+    for (const id of ['cordis', 'code', 'standard']) {
+      const source = await readFile(join(SHIPPED_PRESET_ROOT, id, 'agent.cordis.yml'), 'utf8')
+      const entries = yaml.load(source, { schema: entryListSchema })
+      if (!Array.isArray(entries)) throw new TypeError(`${id} preset must contain a Cordis entry list`)
+      const toolWeb = entries.find((entry): entry is { id: string; config: { fetch?: boolean } } =>
+        typeof entry === 'object' && entry !== null && entry.id === 'tool-web')
+      expect(toolWeb?.config.fetch, id).toBe(true)
+    }
   })
 })

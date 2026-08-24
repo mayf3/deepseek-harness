@@ -124,6 +124,12 @@ type WebFetchBody =
 
 选择从不依赖注册顺序、配置顺序或 HMR（热模块替换）顺序：一项能力要么有显式的提供方 id（配置 `searchProvider`／`fetchProvider`，或填充同一字段的对应环境变量），要么在恰好只有一个可用提供方注册时自动选择；如果存在多个可用提供方却未配置 id，则抛出 `WEB_PROVIDER_AMBIGUOUS`，而不会选用最先注册的提供方。
 
+## 抓取权限
+
+[`dsh-web-fetch-approval-policy`](../../packages/web/web-fetch-approval-policy) 监听 `tools/pre-execute`，不改变 web 服务或工具 schema。`danger-full-access` 不询问并委托后续策略。`read-only` 与 `workspace-write` 要求审批策略为 `ask`，验证当前 URL 只解析到公开地址，保留下游拒绝，并返回携带精确 call id 与完整标准化 URL 的 `ask`。审批策略 `never` 和受限模式下的无 agent 调用不进行 DNS 解析或提示，直接拒绝。只有 `allowed-once` 允许该次 pending 调用；不存在按域名或 session 持久化的授权。
+
+权限预检与提供方强制执行彼此独立。预检防止被阻断的目的地址出现在审批提示中，但其 DNS 结果不会被复用为授权。HTTP 提供方为实际请求重新解析、固定该组已验证地址，并对每个同源重定向重复强制校验；跨源重定向需要新的工具调用与权限决策。`plan` 仍是协作状态，而不是网络 mode，因此产品应将 plan 工作与所需的 sandbox 和审批策略组合。
+
 ## 错误
 
 `WebError extends HarnessError`（[core.md](core.zh.md) 错误分类体系），带有 `code: string`（开放式，与其他 seam 的错误一致——`LlmError`、`SubagentError`），而非封闭联合类型：提供方可以在不修改 `dsh-web` 的情况下抛出自己的错误代码，消费方必须容忍未知错误代码。错误代码按所有者划分。共享的 `WebRuntime` 约定会抛出与 seam 无关的错误代码：`WEB_PROVIDER_UNAVAILABLE`、`WEB_PROVIDER_CONFIGURED_MISSING`、`WEB_PROVIDER_CONFIGURED_UNAVAILABLE`、`WEB_PROVIDER_AMBIGUOUS`、`WEB_DUPLICATE_PROVIDER`（注册时的编程错误，类似 `LlmRuntime` 的 `DUPLICATE_ADAPTER`）、`WEB_ABORTED`，以及 `WEB_PROVIDER_ERROR`（提供方自身故障经 seam 暴露时使用的兜底代码，包括 DNS、连接被拒绝、TLS 等网络或传输故障）。抓取传输层错误代码由 `dsh-web-fetch-http` 实现拥有，不同的抓取后端无需抛出它们：`WEB_INVALID_URL`、`WEB_BLOCKED_URL`、`WEB_REDIRECT_BLOCKED`、`WEB_FETCH_TOO_LARGE`、`WEB_FETCH_TIMEOUT`、`WEB_UNSUPPORTED_CONTENT_TYPE`。

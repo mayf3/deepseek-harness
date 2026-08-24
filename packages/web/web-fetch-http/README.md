@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 An anonymous public HTTP(S) `WebFetchProvider` for the harness [web capability seam](../web/README.md) (`ctx.web`). It retrieves a concrete URL and returns a status code plus bounded decoded content.
 
-This is an **implementation** package: it registers a provider into `ctx.web`, it does not own the key and it does not register a model-facing tool. It is a function/namespace plugin (`inject: ['web']`).
+This is an **implementation** package: it registers a provider into `ctx.web`, it does not own the key and it does not register a model-facing tool. It is a function/namespace plugin (`inject: ['web']`). The separate [`dsh-web-fetch-approval-policy`](../web-fetch-approval-policy/README.md) plugin consumes its public-destination preflight before asking users about restricted `web_fetch` calls.
 
 ## Responsibility split
 
@@ -23,6 +23,8 @@ A shipping web-tool deployment sets the provider backstop above the tool budget,
 - Follows only **same-origin** redirects; each followed hop repeats public-address resolution and pinning, while a cross-origin redirect fails with `WEB_REDIRECT_BLOCKED` and requires a fresh tool call (the model of Claude Code's WebFetch).
 - Sends an explicit product `User-Agent`, never a browser disguise.
 - Rejects unsupported (e.g. binary) content types with `WEB_UNSUPPORTED_CONTENT_TYPE`.
+
+`preflightPublicFetchUrl()` exposes the URL syntax and public-address check to permission consumers. Its result is advisory, not authorization: the provider always resolves again and pins the actual connection, so DNS changes between approval and execution cannot bypass the destination policy.
 
 ## Config
 

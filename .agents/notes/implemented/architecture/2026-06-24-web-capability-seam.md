@@ -61,6 +61,8 @@ flowchart LR
   perplexity["@deepseek-ai/dsh-web-search-perplexity"] -->|registerSearchProvider| web
   deepseek["@deepseek-ai/dsh-web-search-deepseek"] -->|registerSearchProvider| web
   fetchLocal["@deepseek-ai/dsh-web-fetch-http"] -->|registerFetchProvider| web
+  fetchPermission["@deepseek-ai/dsh-web-fetch-approval-policy"] -->|pre-execute ask/deny| webFetch
+  fetchPermission -->|public destination preflight| fetchLocal
   toolWeb["@deepseek-ai/dsh-tool-web"] -->|search/fetch| web
   toolWeb -->|ctx.tools.register| webSearch["tool: web_search"]
   toolWeb -->|ctx.tools.register| webFetch["tool: web_fetch"]
@@ -144,6 +146,9 @@ The "single provider auto-selects" rule is for tests, demos, and simple deployme
 
 - id: web-fetch-http
   name: '@deepseek-ai/dsh-web-fetch-http'
+
+- id: web-fetch-approval-policy
+  name: '@deepseek-ai/dsh-web-fetch-approval-policy'
 
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
@@ -244,6 +249,8 @@ The fetch provider's resource controls:
 
 The provider rejects an entire DNS answer set when any address is not public instead of silently filtering the unsafe members. This fail-closed rule prevents connection-family selection or fallback from reaching an address that did not satisfy the public-network policy.
 
+`dsh-web-fetch-approval-policy` owns user-consent decisions without moving them into the provider or tool schema. It delegates `danger-full-access`; in `read-only` and `workspace-write` it denies approval policy `never`, otherwise performs the provider's public-destination preflight and returns `ask` only after downstream policies allow. The existing approval service correlates the request to the exact call id, and only `allowed-once` runs that call. The preflight DNS result is never an authorization token: the provider independently resolves and pins the actual connection. Plan mode stays an independent collaboration state and uses whichever sandbox and approval policies the product composes with it.
+
 ## Tool consumer behavior
 
 `dsh-tool-web` owns two `ToolDefinition`s: `web_search` and `web_fetch`. It owns model-facing JSON schemas, snake_case argument names, prompt sections, result rendering to `ContentBlock[]`, `presentCall`, and `presentResult`.
@@ -328,7 +335,7 @@ Rejected because hostname syntax does not establish the connection destination: 
 
 **Provider state can change after startup.** A tool can be visible in the request assembled at step start and lose its provider before execution. The execution path resolves again and fails with a structured error.
 
-**Fetch is a network boundary, not just a read-only tool.** Public-address validation and connection pinning prevent `web_fetch` from reaching non-public destinations, but a model can still disclose data through a public URL and fetched text remains untrusted model input. Product enablement therefore still needs a deliberate permission policy rather than treating fetch as equivalent to local read-only observation.
+**Fetch is a network boundary, not just a read-only tool.** Public-address validation and connection pinning prevent `web_fetch` from reaching non-public destinations, but a model can still disclose data through a public URL and fetched text remains untrusted model input. Restricted shipped presets therefore require one-shot approval, while `danger-full-access` deliberately delegates without asking.
 
 **Large web content can damage context quality.** Providers enforce byte/character caps and report `truncated`; `tool-web` formats bounded model output with clear continuation or follow-up guidance.
 
@@ -336,10 +343,8 @@ Rejected because hostname syntax does not establish the connection destination: 
 
 - A `pdf` `WebFetchBody` kind: the `http` provider decodes text-extractable PDFs (best-effort, capped, `truncated`) into a `{ kind: 'pdf'; content; pageCount? }` arm, and `tool-web` renders it. This is fetch, not `web_extract` — PDF retrieval is a concrete HTTP 200 plus deterministic local decoding, not provider-side extraction of a non-HTTP resource. Adding it is a coordinated change across `dsh-web` (declare the arm), the provider (decode + narrow "binary rejection" to "reject binary except text-extractable PDF"; scanned/image PDFs needing OCR stay out of scope), and `tool-web` (render). The closed `WebFetchBody` union makes the consumer side fail to compile until the new arm is handled.
 - Provider-backed extraction as a separate `web_extract` capability, rather than widening `web_fetch` silently.
-- Permission policy integration: the permission system now exists ([sandbox and approval](../feature/2026-07-06-sandbox.md), [web permission presets](../feature/2026-07-23-web-permission-and-approval.md)) but bundles only sandbox mode and approval policy; web permission policy remains unintegrated.
 - Provider-neutral search controls beyond `query` and `maxResults`, once Exa and Perplexity can both honor them honestly.
 
 ## Open questions
 
 - Should product app packages probe web configuration at startup (treating `WEB_PROVIDER_CONFIGURED_MISSING`, `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`, and `WEB_PROVIDER_AMBIGUOUS` as fatal when web is explicitly configured), or leave misconfiguration to surface at the first execution?
-- Where should permission policy for public web access live in the shipped permission system ([sandbox and approval](../feature/2026-07-06-sandbox.md), [web permission presets](../feature/2026-07-23-web-permission-and-approval.md)): a dedicated web permission plugin on `tools/execute`, provider config, or both?

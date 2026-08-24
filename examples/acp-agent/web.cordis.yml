@@ -1,16 +1,9 @@
-# Web-fetch composition for the web-fetch snapshot scenario: the web seam, the
-# real local HTTP fetch provider, and the model-facing web tools (fetch only,
-# so the pinned header carries exactly the surface under test). The recorded
-# loopback target exercises the provider's non-public-address rejection without
-# opening a network connection.
-- insert:
-    - id: web-fetch-http
-      name: '@deepseek-ai/dsh-web-fetch-http'
-
-- id: web
-  name: '@deepseek-ai/dsh-web'
-
+# Web-fetch composition for the web-fetch snapshot scenario. The base bundle
+# supplies the web seam, public HTTP provider, and fetch permission policy; this
+# overlay narrows the model-facing tools to fetch only. The recorded loopback
+# target is rejected during permission preflight without opening a connection.
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
   config:
     search: false
+    fetch: true

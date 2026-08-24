@@ -7,7 +7,7 @@ import { HttpFetchProvider, LOCAL_FETCH_PROVIDER_ID } from '@deepseek-ai/dsh-web
 import type { HttpFetchLimits } from '@deepseek-ai/dsh-web-fetch-http'
 import * as fetchPlugin from '@deepseek-ai/dsh-web-fetch-http'
 import { createPinnedLookup, isPublicIpAddress, publicHttpNetwork, requestPinned, resolvePublicAddresses } from '../src/network.ts'
-import { classifyContentType, decoderForCharset, isSameOrigin, parseCharset, validateFetchUrl } from '../src/policy.ts'
+import { classifyContentType, decoderForCharset, isSameOrigin, parseCharset, parseFetchUrl, validateFetchUrl } from '../src/policy.ts'
 
 const limits: HttpFetchLimits = {
   maxUrlLength: 2048,
@@ -47,6 +47,7 @@ function provider(overrides: Partial<HttpFetchLimits> = {}): HttpFetchProvider {
 
 describe('policy helpers', () => {
   it('validates scheme, credentials, and length', () => {
+    expect(parseFetchUrl('https://example.com/preflight').pathname).toBe('/preflight')
     expect(validateFetchUrl('https://example.com/x', 2048).hostname).toBe('example.com')
     expect(() => validateFetchUrl('ftp://example.com', 2048)).toThrow(expect.objectContaining({ code: 'WEB_INVALID_URL' }))
     expect(() => validateFetchUrl('not a url', 2048)).toThrow(expect.objectContaining({ code: 'WEB_INVALID_URL' }))

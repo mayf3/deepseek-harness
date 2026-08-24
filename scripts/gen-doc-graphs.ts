@@ -535,8 +535,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Web access provider registry',
     mode: 'seam',
     implementations: ['web-search-exa', 'web-search-perplexity', 'web-search-deepseek', 'web-fetch-http'],
-    consumers: ['tool-web'],
-    note: 'Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names.',
+    consumers: ['tool-web', 'web-fetch-approval-policy'],
+    note: 'Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names, and web-fetch-approval-policy applies one-shot consent before restricted fetch calls.',
   },
   {
     key: 'spillStore',

@@ -61,6 +61,8 @@ flowchart LR
   perplexity["@deepseek-ai/dsh-web-search-perplexity"] -->|registerSearchProvider| web
   deepseek["@deepseek-ai/dsh-web-search-deepseek"] -->|registerSearchProvider| web
   fetchLocal["@deepseek-ai/dsh-web-fetch-http"] -->|registerFetchProvider| web
+  fetchPermission["@deepseek-ai/dsh-web-fetch-approval-policy"] -->|pre-execute ask/deny| webFetch
+  fetchPermission -->|public destination preflight| fetchLocal
   toolWeb["@deepseek-ai/dsh-tool-web"] -->|search/fetch| web
   toolWeb -->|ctx.tools.register| webSearch["tool: web_search"]
   toolWeb -->|ctx.tools.register| webFetch["tool: web_fetch"]
@@ -144,6 +146,9 @@ interface WebRuntime {
 
 - id: web-fetch-http
   name: '@deepseek-ai/dsh-web-fetch-http'
+
+- id: web-fetch-approval-policy
+  name: '@deepseek-ai/dsh-web-fetch-approval-policy'
 
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
@@ -244,6 +249,8 @@ fetch 提供方的资源控制：
 
 只要 DNS 完整解析结果中存在任一非公开地址，提供方就会拒绝整个结果，而不是静默过滤不安全成员。该 fail-closed 规则可防止连接的地址族选择或回退触及未满足公开网络策略的地址。
 
+`dsh-web-fetch-approval-policy` 负责用户同意决策，而不会把它移入提供方或工具 schema。它委托 `danger-full-access`；在 `read-only` 与 `workspace-write` 中，它拒绝审批策略 `never`，否则执行提供方的公开目的地址预检，并且只在下游策略允许后返回 `ask`。现有审批服务把请求关联到精确的 call id，只有 `allowed-once` 会运行该次调用。预检 DNS 结果绝不是授权令牌：提供方会独立解析并固定实际连接。Plan mode 保持独立的协作状态，采用产品与其组合的 sandbox 和审批策略。
+
 ## 工具消费方行为
 
 `dsh-tool-web` 拥有两个 `ToolDefinition`：`web_search` 和 `web_fetch`。它拥有面向模型的 JSON Schema、snake_case 参数名、提示词段落、结果渲染为 `ContentBlock[]`、`presentCall` 和 `presentResult`。
@@ -328,7 +335,7 @@ fetch 提供方的资源控制：
 
 **提供方状态可能在启动后变化。** 一个工具可能在步骤开始时组装的请求中可见，但在执行前失去其提供方。执行路径重新解析并以结构化错误失败。
 
-**Fetch 是网络边界，不仅仅是只读工具。** 公开地址校验与连接固定可防止 `web_fetch` 触达非公开目的地址，但模型仍可通过公开 URL 泄露数据，抓取文本也仍是不受信任的模型输入。因此，产品启用 fetch 仍需要明确的权限策略，不能把它等同于本地只读观察。
+**Fetch 是网络边界，不仅仅是只读工具。** 公开地址校验与连接固定可防止 `web_fetch` 触达非公开目的地址，但模型仍可通过公开 URL 泄露数据，抓取文本也仍是不受信任的模型输入。因此，已交付的受限 preset 要求单次审批，而 `danger-full-access` 会有意地不询问并委托。
 
 **大量 web 内容可能损害上下文质量。** 提供方强制执行字节/字符上限并报告 `truncated`；`tool-web` 格式化有界的模型输出，附带清晰的继续或后续引导。
 
@@ -338,10 +345,8 @@ fetch 提供方的资源控制：
 
 - `pdf` `WebFetchBody` 类别：`http` 提供方将可文本提取的 PDF 解码（尽力而为、有上限、`truncated`）为 `{ kind: 'pdf'; content; pageCount? }` 分支，`tool-web` 渲染它。这是 fetch 而非 `web_extract`——PDF 获取是具体的 HTTP 200 加确定性的本地解码，不是提供方侧对非 HTTP 资源的提取。添加它是跨 `dsh-web`（声明分支）、提供方（解码 + 将「二进制拒绝」收窄为「拒绝二进制，但可文本提取的 PDF 除外」；需要 OCR 的扫描/图片 PDF 不在范围内）和 `tool-web`（渲染）的协调变更。封闭的 `WebFetchBody` 联合类型使消费方在新分支被处理之前编译失败。
 - 提供方支撑的提取作为独立的 `web_extract` 能力，而非静默扩展 `web_fetch`。
-- 权限策略集成：权限系统现已存在（[沙箱与审批](../feature/2026-07-06-sandbox.zh.md)、[web 权限预设](../feature/2026-07-23-web-permission-and-approval.zh.md)），但只捆绑了沙箱模式与审批策略；web 权限策略仍未集成。
 - `query` 和 `maxResults` 之外的提供方无关搜索控制，待 Exa 和 Perplexity 都能诚实遵守时再添加。
 
 ## 开放问题
 
 - 产品应用包是否应在启动时探测 web 配置（当 web 被显式配置时将 `WEB_PROVIDER_CONFIGURED_MISSING`、`WEB_PROVIDER_CONFIGURED_UNAVAILABLE` 和 `WEB_PROVIDER_AMBIGUOUS` 视为致命错误），还是将配置错误留到首次执行时浮出？
-- 在已交付的权限系统（[沙箱与审批](../feature/2026-07-06-sandbox.zh.md)、[web 权限预设](../feature/2026-07-23-web-permission-and-approval.zh.md)）中，公开 web 访问的权限策略应放在哪里：`tools/execute` 上的专用 web 权限插件、提供方配置，还是两者兼有？

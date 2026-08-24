@@ -12,19 +12,14 @@ import { WebError } from '@deepseek-ai/dsh-web'
 export type FetchableKind = 'html' | 'text'
 
 /**
- * Validate a request URL against the basic transport hygiene the provider
- * enforces before any network access: http(s) only, no embedded credentials,
- * bounded length. Returns the parsed `URL`. Throws {@link WebError} otherwise.
- * Public-address resolution and connection pinning run after this syntax check.
+ * Parse a request URL and enforce network-independent transport restrictions:
+ * HTTP(S) only and no embedded credentials. Both permission preflight and the
+ * provider use this function before resolving a destination.
  *
  * @param input - the raw URL string from the fetch request.
- * @param maxUrlLength - inclusive upper bound on `input`'s length.
  * @returns the parsed `URL`.
  */
-export function validateFetchUrl(input: string, maxUrlLength: number): URL {
-  if (input.length > maxUrlLength) {
-    throw new WebError(`URL exceeds the maximum length of ${maxUrlLength}`, 'WEB_INVALID_URL')
-  }
+export function parseFetchUrl(input: string): URL {
   let url: URL
   try {
     url = new URL(input)
@@ -38,6 +33,22 @@ export function validateFetchUrl(input: string, maxUrlLength: number): URL {
     throw new WebError('credentials in URLs are not allowed', 'WEB_BLOCKED_URL')
   }
   return url
+}
+
+/**
+ * Validate a request URL against the provider's complete pre-network policy:
+ * bounded length plus the restrictions enforced by {@link parseFetchUrl}.
+ * Public-address resolution and connection pinning run after this check.
+ *
+ * @param input - the raw URL string from the fetch request.
+ * @param maxUrlLength - inclusive upper bound on `input`'s length.
+ * @returns the parsed `URL`.
+ */
+export function validateFetchUrl(input: string, maxUrlLength: number): URL {
+  if (input.length > maxUrlLength) {
+    throw new WebError(`URL exceeds the maximum length of ${maxUrlLength}`, 'WEB_INVALID_URL')
+  }
+  return parseFetchUrl(input)
 }
 
 /**

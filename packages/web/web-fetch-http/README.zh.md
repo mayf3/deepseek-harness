@@ -4,7 +4,7 @@
 
 一个匿名公共 HTTP(S) `WebFetchProvider`，用于 harness [web 能力 seam](../web/README.zh.md)（`ctx.web`）。它获取具体 URL，返回状态码和长度受限的解码内容。
 
-这是一个**实现**包：它向 `ctx.web` 注册提供方，不拥有该键，也不注册面向模型的工具。它是函数／命名空间插件（`inject: ['web']`）。
+这是一个**实现**包：它向 `ctx.web` 注册提供方，不拥有该键，也不注册面向模型的工具。它是函数／命名空间插件（`inject: ['web']`）。独立的 [`dsh-web-fetch-approval-policy`](../web-fetch-approval-policy/README.zh.md) 插件会在询问用户是否允许受限的 `web_fetch` 调用前，使用此包的公开目的地址预检。
 
 ## 职责拆分
 
@@ -23,6 +23,8 @@
 - 只跟随**同源**重定向；每个跟随的跳转都会再次执行公开地址解析与连接固定，跨源重定向则以 `WEB_REDIRECT_BLOCKED` 失败并要求发起新的工具调用（沿用 Claude Code 的 WebFetch 模式）。
 - 发送显式的产品 `User-Agent`，绝不伪装成浏览器。
 - 不受支持的内容类型（例如二进制）以 `WEB_UNSUPPORTED_CONTENT_TYPE` 拒绝。
+
+`preflightPublicFetchUrl()` 向权限消费方暴露 URL 语法和公开地址校验。其结果只供预检，不构成授权：提供方始终会重新解析并固定实际连接，因此从审批到执行之间的 DNS 变化无法绕过目的地址策略。
 
 ## 配置
 
