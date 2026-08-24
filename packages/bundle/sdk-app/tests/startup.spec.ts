@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
 import { internals, provideCmdline } from '@deepseek-ai/dsh-cmdline'
-import { apply, SDK_APP_STARTUP_SERVICE } from '../src/index.ts'
+import { apply, type Config, SDK_APP_STARTUP_SERVICE } from '../src/index.ts'
 
 /** Controllable stdin for one startup invocation. */
 class TestStdin extends EventEmitter {
@@ -27,7 +27,7 @@ afterEach(() => {
 })
 
 /** Run the provider with captured command output and exit requests. */
-function start(args: string[], profile = 'sdk'): { ctx: Context; exits: number[]; out: () => string; stdin: TestStdin } {
+function start(args: string[], config: Config = {}): { ctx: Context; exits: number[]; out: () => string; stdin: TestStdin } {
   const ctx = new Context()
   const exits: number[] = []
   const stdin = new TestStdin()
@@ -41,7 +41,7 @@ function start(args: string[], profile = 'sdk'): { ctx: Context; exits: number[]
     exit: code => void exits.push(code),
     ready: { onReady: (listener) => { listener(); return () => {} } },
   })
-  apply(ctx, { profile })
+  apply(ctx, config)
   return { ctx, exits, out: () => out, stdin }
 }
 
@@ -64,7 +64,7 @@ describe('SDK app startup', () => {
   })
 
   it('renders the selected SDK profile name in help', () => {
-    const { out } = start(['--help'], 'sdk-minimal')
+    const { out } = start(['--help'], { profile: 'sdk-minimal' })
     expect(out()).toContain('Usage: dsh --profile sdk-minimal')
     expect(out()).toContain('dsh --profile sdk-minimal')
   })
