@@ -82,8 +82,8 @@ export function apply(ctx: Context, config: Config): void {
 
   const rehash = (id: string, watch: WatchedBundle, current: WatchedArtifactStat): void => {
     try {
-      // rebuilt() re-hashes; an unchanged hash stays silent (clientModuleHost
-      // fires onRebuilt only on a real rev change).
+      // rebuilt() replaces the opaque startup rev on its first call; later
+      // calls stay silent when the content hash is unchanged.
       ctx.clientModules.rebuilt(id)
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
