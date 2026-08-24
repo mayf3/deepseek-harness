@@ -3,7 +3,7 @@
 import type { UserMessage } from '@deepseek-ai/dsh-llm/types'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import { z } from 'zod'
-import type { InboxState } from './types.ts'
+import type { InboxState, InboxWireState } from './types.ts'
 
 /** Wire validation for pending agent input reconstructed from durable inbox splices. */
 export const inboxProjectionSchema = z.object({
@@ -29,8 +29,11 @@ export const inboxProjectionDefinition = {
       : { 'next-turn': state['next-turn'], 'next-step': next }
   },
   wire: {
-    viewSchema: inboxProjectionSchema,
-    view: (state: InboxState) => state,
+    // The wire value is the fold state itself: every pending message already
+    // round-trips the session log as lossless JSON. Only the static type
+    // narrows to the JSON-safe projection table entry.
+    viewSchema: inboxProjectionSchema as unknown as z.ZodType<InboxWireState>,
+    view: (state: InboxState) => state as unknown as InboxWireState,
   },
   stateVersion: 1,
 } satisfies ProjectionDefinition<'inbox', InboxState>
