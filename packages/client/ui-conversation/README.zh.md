@@ -20,6 +20,8 @@ View 选择规则固定：有效且已注册的持久化选择优先，其次是
 
 常驻 composer 在无 Session 与有 Session 之间保持挂载。无 Session 时，同一个 textarea 保持 inert，Workspace picker 连接 blank Session；草稿文本镜像到逐 Session Conversation store。Queue 操作通过 scoped `ctx.conversation` service 寻址准确的 queue occurrence。繁忙时 Enter 行为保存在 Host-backed `ui-conversation` settings namespace。
 
+普通 composer 运行期间，草稿为空或 owner block 使输入不可用时，主指针操作保持为 Stop。可提交文字或附件会把同一位置切换为 Queue Send；清空或成功提交草稿后恢复 Stop。键盘 Queue/Steer 选择仍由繁忙态 Enter 设置决定，可继续 subagent 则保留相互独立的 Send 与 Stop 操作（[决策](../../../.agents/notes/implemented/bug-fix/2026-08-20-running-draft-primary-send.zh.md)）。
+
 ## 临时 composer entry
 
 `conversation.composer` 是通用 chain，其完整 owner currency 为：
