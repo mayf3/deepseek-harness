@@ -14,7 +14,7 @@ Python SDK 分发一个私有 Node 应用，直接启动完整外部 `cordis.yml
 
 ### 一个应用启动器
 
-运行时可执行程序打包 `@deepseek-ai/dsh` 并运行其普通命令语法。Python 客户端默认选择 `--profile sdk`，转发有序绝对 `--patch` 路径，也可以选择另一个 `dsh` 可执行程序或 profile。私有 `@deepseek-ai/dsh-sdk-python-runtime` 应用包和检入的运行时 `cordis.yml` 均不存在。JSON-RPC 服务仍由 `@deepseek-ai/dsh-sdk-app` bundle 与 `@deepseek-ai/dsh-sdk-jsonrpc-server` 插件提供，而不是 Python 自有启动路径。
+运行时可执行程序打包 `@deepseek-ai/dsh` 并运行其普通命令语法。Python 客户端默认选择 `--profile sdk`，转发有序绝对 `--patch` 路径，也可以选择另一个 `dsh` 可执行程序或 profile。可运行极简示例选择随附 `sdk-minimal` profile。私有 `@deepseek-ai/dsh-sdk-python-runtime` 应用包和检入的运行时 `cordis.yml` 均不存在。JSON-RPC 服务仍由 `@deepseek-ai/dsh-sdk-app` bundle 与 `@deepseek-ai/dsh-sdk-jsonrpc-server` 插件提供，而不是 Python 自有启动路径。
 
 公开 Python 配置包括 `dsh_bin`、`profile`、有序 `patches`、`dsh_home`、进程 cwd／环境、provider／model／token 选择、有界初始化 timeout，以及可选的轮次／关闭 timeout。它不暴露完整 Cordis 树或任意启动 argv。`RunResult` 报告协议所有的运行值，不重复 profile 的持久化路径。
 
@@ -22,9 +22,9 @@ Python SDK 分发一个私有 Node 应用，直接启动完整外部 `cordis.yml
 
 ### 插件自定义
 
-持久 SDK 自定义使用与直接 CLI 相同的 profile 接口。`dsh plugin --profile sdk ...` 管理外部依赖与 bundle 顺序，`$DSH_HOME/profiles/sdk/cordis.patch.yml` 负责持久配置项变更，home patch 对所有 profile 应用机器本地变更，Python `patches` 则提供单次启动 overlay。另一个 profile 只有保留 SDK server 配置项时才有效。缺失 profile、bundle、server 配置项或非法 patch 都会直接失败，不存在完整配置回退；保持运行却不提供 JSON-RPC 服务的 profile 会在独立有界的初始化握手中失败，诊断会指明该 profile。
+持久 SDK 自定义使用与直接 CLI 相同的 profile 接口。`dsh plugin --profile <name> ...` 管理外部依赖与 bundle 顺序，`$DSH_HOME/profiles/<name>/cordis.patch.yml` 负责持久配置项变更，home patch 对所有 profile 应用机器本地变更，Python `patches` 则提供单次启动 overlay。所选 profile 只有保留 SDK server 配置项时才有效。缺失 profile、bundle、server 配置项或非法 patch 都会直接失败，不存在完整配置回退；保持运行却不提供 JSON-RPC 服务的 profile 会在独立有界的初始化握手中失败，诊断会指明该 profile。
 
-检入的极简 overlay 会保留共享 SDK profile，并为 server 配置根 agent 工具 allow 列表。基础 bundle 后续新增的工具只有在 overlay 指名时才可用。其部署 persona 是完整系统提示词，因此无关引导段不会描述已隐藏的工具；动态运行时上下文、workspace 指令、compaction 与存在名称冲突的单次 Bash 配置项会分别停用。
+[独立 sdk-minimal profile](2026-08-24-standalone-sdk-minimal-profile.zh.md)只列出一个仓库自有组合包，该组合包会插入不含 `dsh-base` 的完整显式配置树。持久 Bash 与字符串替换 editor 通过组合存在，而不是通过 server 筛选；动态运行时上下文、workspace 指令、settings、托管凭据、遥测、compaction 与其他所有 base 配置项均不存在。同一运行时仍会把完整 `sdk` 与 `web` profile 作为独立选择打包。
 
 运行时 wheel 安装 `dsh` 控制台命令。普通 profile 与 SDK 运行仍不需要 Node；外部包管理要求调用方自行安装 `pnpm`。
 
@@ -38,7 +38,7 @@ Python SDK 分发一个私有 Node 应用，直接启动完整外部 `cordis.yml
 
 ## 既有决策与取代关系
 
-本决策实现并取代[单一 dsh 应用启动器](2026-08-22-single-dsh-application-launcher.zh.md)中的 Python 例外与延后迁移章节。它取代[单文件 Python SDK 运行时分发](2026-07-10-single-file-executable-sdk-runtime-distribution.zh.md)中的私有应用、外部完整配置、产物名称与自定义事实；后者继续负责 pkg／SEA、wheel 构建、原生目标验证与发布。没有任何 active note 被完全取代，因此无需归档。
+本决策实现并取代[单一 dsh 应用启动器](2026-08-22-single-dsh-application-launcher.zh.md)中的 Python 例外与延后迁移章节。它取代[单文件 Python SDK 运行时分发](2026-07-10-single-file-executable-sdk-runtime-distribution.zh.md)中的私有应用、外部完整配置、产物名称与自定义事实；后者继续负责 pkg／SEA、wheel 构建、原生目标验证与发布。[独立 sdk-minimal profile](2026-08-24-standalone-sdk-minimal-profile.zh.md)只取代本 Note 中的极简 overlay 实现。没有任何 active note 被完全取代，因此无需归档。
 
 ## 考虑过的替代方案
 
@@ -52,4 +52,4 @@ Python SDK 分发一个私有 Node 应用，直接启动完整外部 `cordis.yml
 
 ## 结果
 
-Python 调用方使用与 TypeScript 和直接 CLI 用户相同的 profile 词汇，任意外部 bundle 可以扩展 SDK profile，而无需替换应用树。调用方现在必须显式选择 home，完整配置与 `session_root` 参数不可用，可执行程序则包含共享库资源和 profile 模块代理。更强的 installed-wheel CI 将包、profile、原生与提供方路径变成发布要求，而不是仅在源码中成立的假设。
+Python 调用方使用与 TypeScript 和直接 CLI 用户相同的 profile 词汇，任意外部 bundle 可以扩展 SDK profile，而无需引入另一个 launcher。调用方必须显式选择 home，完整配置与 `session_root` 参数不可用，可执行程序则包含共享库资源和 profile 模块代理。完整 `sdk`、独立 `sdk-minimal` 与 `web` 应用作为同一打包 CLI 内的不同 profile 保持分离。Installed-wheel CI 将包、profile、原生与提供方路径变成发布要求，而不是仅在源码中成立的假设。

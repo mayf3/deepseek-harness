@@ -26,6 +26,6 @@
 
 ## 已知限制与待办工作
 
-- **该 profile 仅支持 POSIX** — 此层使用 Bash PTY；Windows 支持属于其上的平台运行时层。
+- **该 profile 仅支持 POSIX** — 此组合使用 Bash PTY；Windows profile 必须改为选择 PowerShell 终端与工具。
 - **该组合刻意省略共享产品服务** — 需要 settings、托管凭据、权限策略预设、遥测、Web 工具或完整默认工具清单时，请选择 `dsh --profile sdk`。
 - **用户 patch 可以扩展配置树并破坏 stdout** — profile 自定义属于受信任的应用组合；向 stdout 写入普通文本的插件会破坏 JSON-RPC 分帧。

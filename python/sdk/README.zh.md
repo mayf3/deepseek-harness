@@ -53,12 +53,14 @@ with DeepSeekHarness(
 
 `profile` 可以选择另一个已存在的 profile，但该组合必须保留 `@deepseek-ai/dsh-sdk-app` 或另一个 `@deepseek-ai/dsh-sdk-jsonrpc-server` 配置项。配置错误会在 CLI 启动或 SDK 初始化时失败；不存在完整配置回退。`dsh_bin` 可以选择另一个 `dsh` 可执行程序，同时保持相同的 profile 语法。任意 argv 替换仅是内部 fake-runtime 测试适配器，不属于公开 API。
 
+随附的 `sdk-minimal` profile 是独立显式配置树，而不是 `dsh-base` 上的 overlay。使用 `profile="sdk-minimal"` 选择它，并在 `env={"DSH_MODEL": model}` 中设置相同模型，使其唯一适配器路由与 SDK 初始化一致。它提供持久 Bash、字符串替换 editor、本地执行与 JSONL 会话；settings、托管凭据、遥测、Web 工具与完整默认工具清单仍由独立的完整 `sdk` 与 `web` profile 提供。
+
 ## 结果与通知
 
 `Session.run()` 的活动区间从提示词被持久 inbox 接收时开始，到整个 agent 下一次进入 idle 时结束，并返回 `RunResult(session_id, final_response, finish_reason, events, notifications)`。`final_response` 是该区间内根会话最后提交的 assistant 文本。`finish_reason` 是最后一个根会话 `turn/end` 的 `kind`，例如 `completed`、`max-tokens` 或 `error`；没有轮次结束时为 `None`。缺少字符串 `data.reason.kind` 的 `turn/end` 违反协议，并会抛出 `SdkProtocolError`。
 
 `HarnessClient` 会在运行时进程的整个生命周期内保留已发现的子 agent 祖先关系。在 `Session.run()` 期间，`RunResult.notifications` 与 `on_notification` 按协议顺序接收根会话和已知后代的通知。`RunResult.events` 只包含根会话事件，因此后代输出不会替换根响应。底层 `session_prompt()` 会立即返回已排队消息的 id；绕过 `Session.run()` 的调用方自行负责后续活动边界。
 
-所选 home 保存 profile、插件、凭据、设置和会话。需要隔离这些资源时应使用新的 home；独立工作应使用新的 session id。同时复用 harness 与 session id 会延续持久对话和会话资源。
+所选 home 保存 profile、插件与每个 profile 自有的持久资源。完整 `sdk` profile 使用其中的凭据、设置与会话存储；`sdk-minimal` 只使用自己的 JSONL 会话存储。需要隔离这些资源时应使用新的 home；独立工作应使用新的 session id。同时复用 harness 与 session id 会延续持久对话和会话资源。
 
 另见 [Python 教程](../../docs/user/guide/python-sdk.zh.md)、[`python-sdk-agent` 示例](../../examples/python-sdk-agent/README.zh.md)和[运行时 wheel 参考](../sdk-runtime/README.zh.md)。

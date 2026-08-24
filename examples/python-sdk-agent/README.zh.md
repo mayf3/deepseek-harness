@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-基于唯一应用启动器 `dsh --profile sdk` 的可运行 Python SDK 示例。Python 客户端负责 JSON-RPC stdio；profile 负责 agent 组合、持久化、权限与插件。
+基于唯一应用启动器 `dsh --profile sdk-minimal` 的可运行 Python SDK 示例。Python 客户端负责 JSON-RPC stdio；profile 负责 agent 组合、持久化、执行策略与插件。
 
 ## 运行极简 agent
 
@@ -17,14 +17,14 @@ python examples/python-sdk-agent/minimal.py \
   "Inspect the repository and fix the failing tests."
 ```
 
-兼容代理使用 `DEEPSEEK_BASE_URL`，默认模型使用 `DSH_MODEL`，deployment persona 使用 `DSH_SYSTEM_PROMPT`。`--model` 与 `--profile` 会覆盖脚本默认值。所选 home 保存生成的 profile，并在 `sessions/` 下保存 Zstandard 会话日志；脚本绝不会隐式读取 `~/.dsh`。
+兼容代理使用 `DEEPSEEK_BASE_URL`，默认模型使用 `DSH_MODEL`，deployment persona 使用 `DSH_SYSTEM_PROMPT`。`--model` 会覆盖模型，并将同一值传给 profile 自有的适配器目录；`--profile` 可以选择另一个提供 SDK 服务的 profile。所选 home 保存生成的 `sdk-minimal` profile，并在 `sessions/` 下保存未压缩 JSONL 会话日志；脚本绝不会隐式读取 `~/.dsh`。
 
-[`minimal.patch.yml`](minimal.patch.yml) 是随附 SDK profile 上的有序 overlay。其根 agent 工具 allow 列表只暴露：
+随附的 [`@deepseek-ai/dsh-sdk-minimal` 组合包](../../packages/bundle/sdk-minimal/README.zh.md)是该模式完整且显式的 Cordis 配置树。它只暴露：
 
 - agent 所有的持久 `bash`
 - 支持 `view`、`create`、`str_replace` 与 `insert` 的 `str_replace_editor`
 
-Allow 列表会排除当前及以后出现的其他所有全局工具，无需为每个基础配置项添加 disable。完整部署 persona 会抑制无关工具的引导段；运行时上下文消息、本地指令发现、compaction 与存在名称冲突的单次 Bash 配置项会分别停用。该 overlay 会插入本地 PTY 与持久 Bash provider，并将 editor 输出上限设为 16,000 字符。其他 SDK profile 服务仍保持挂载，包括持久化、策略、settings、credentials 与 provider。
+该组合包不包含 `dsh-base`，因此每一个新增配置项都是显式 profile 变更。运行时上下文、本地指令发现、compaction、settings、托管凭据、遥测、Web 工具、subagent 与完整默认工具清单均不存在。配置树保留 SDK 启动与 JSON-RPC 服务、一个由环境配置的 DeepSeek 适配器、本地执行和 JSONL 持久化。
 
 此变体刻意只支持 POSIX。其持久 PTY 与 editor 可以修改运行时进程可访问的任何路径，因此只应在一次性 checkout 或容器中使用。
 
@@ -34,9 +34,11 @@ Allow 列表会排除当前及以后出现的其他所有全局工具，无需�
 
 ```sh
 export DSH_HOME=/absolute/path/to/example-dsh-home
-dsh plugin --profile sdk add file:/absolute/path/to/my-plugin-bundle
+dsh plugin --profile sdk-minimal add file:/absolute/path/to/my-plugin-bundle
 ```
 
-Python 调用也可以在 `patches=(...)` 中传入更多绝对 patch 路径；后面的文件优先。所选 profile 必须保留 `@deepseek-ai/dsh-sdk-app` 或另一个 JSON-RPC server 配置项。本目录中的完整独立 Cordis 文件仍作为底层组合测试 fixture；它们不是 Python SDK 启动接口。
+在该命令中使用 `sdk-minimal` 可扩展本示例，使用 `sdk` 则扩展基于完整 base 的 SDK profile。Python 调用也可以在 `patches=(...)` 中传入更多绝对 patch 路径；后面的文件优先。所选 profile 必须保留 `@deepseek-ai/dsh-sdk-app` 或另一个 JSON-RPC server 配置项。该示例不接受完整 Cordis 文件或任意进程 argv。
+
+同一个运行时 wheel 还为直接 CLI 使用打包 `web` profile 及其前端产物：`dsh web` 会启动这个独立应用。Python SDK client 不能选择 `web`，因为其中没有 JSON-RPC server 配置项。
 
 另见 [Python SDK 教程](../../docs/user/guide/python-sdk.zh.md)与 [SDK 参考](../../python/sdk/README.zh.md)。

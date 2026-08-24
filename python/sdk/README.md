@@ -53,12 +53,14 @@ with DeepSeekHarness(
 
 `profile` may select another existing profile, but that composition must retain `@deepseek-ai/dsh-sdk-app` or another `@deepseek-ai/dsh-sdk-jsonrpc-server` row. Misconfiguration fails during CLI boot or SDK initialization; there is no complete-config fallback. `dsh_bin` may select another `dsh` executable while preserving the same profile grammar. Arbitrary argv replacement remains an internal fake-runtime test adapter, not public API.
 
+The shipped `sdk-minimal` profile is a standalone explicit tree rather than an overlay on `dsh-base`. Select it with `profile="sdk-minimal"` and set the same model in `env={"DSH_MODEL": model}` so its one adapter route matches SDK initialization. It provides persistent Bash, the string-replace editor, local execution, and JSONL sessions; settings, managed credentials, telemetry, Web tools, and the full default tool roster remain available through the separate full `sdk` and `web` profiles.
+
 ## Results and notifications
 
 `Session.run()` owns an activity interval from its prompt's durable inbox receipt through the next whole-agent idle and returns `RunResult(session_id, final_response, finish_reason, events, notifications)`. `final_response` is the last committed root-session assistant text in the interval. `finish_reason` is the `kind` of the last root-session `turn/end`, such as `completed`, `max-tokens`, or `error`, and is `None` when no turn ended. A `turn/end` without a string `data.reason.kind` violates the protocol and raises `SdkProtocolError`.
 
 `HarnessClient` retains discovered subagent ancestry for the runtime process lifetime. During `Session.run()`, `RunResult.notifications` and `on_notification` receive the root session and known descendants in wire order. `RunResult.events` contains root-session events only, so descendant output cannot replace the root response. The low-level `session_prompt()` returns the queued message id immediately; callers that bypass `Session.run()` own the later activity boundary.
 
-The selected home stores profiles, plugins, credentials, settings, and sessions. Use a fresh home when those resources must be isolated, and a fresh session id for independent work. Reusing both a harness and session id continues the durable conversation and session-owned resources.
+The selected home stores profiles, plugins, and every profile-owned durable resource. The full `sdk` profile uses its credentials, settings, and session stores; `sdk-minimal` uses only its JSONL session store. Use a fresh home when those resources must be isolated, and a fresh session id for independent work. Reusing both a harness and session id continues the durable conversation and session-owned resources.
 
 See the [Python tutorial](../../docs/user/guide/python-sdk.md), [`python-sdk-agent` example](../../examples/python-sdk-agent/README.md), and [runtime wheel reference](../sdk-runtime/README.md).

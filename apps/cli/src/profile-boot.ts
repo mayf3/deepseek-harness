@@ -145,8 +145,8 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
 
 /**
  * Load `name` and compose its effective patch stack: bundle layers in
- * `dsh.profile.bundles` order (the base bundle gates the shell stacks by
- * platform on its own rows), the profile's user layer, the home-level user
+ * `dsh.profile.bundles` order (a base-backed profile gets the base bundle's
+ * platform-gated shell rows), the profile's user layer, the home-level user
  * layer (`$DSH_HOME/cordis.patch.yml` — machine-local preferences that apply
  * to every profile, so it outranks the per-profile layer), `--patch` overlays,
  * then the telemetry switch.

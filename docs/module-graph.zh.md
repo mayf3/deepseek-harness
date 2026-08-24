@@ -125,6 +125,7 @@ flowchart TD
     pkg_base["base"]
     pkg_headless["headless"]
     pkg_sdk_app["sdk-app"]
+    pkg_sdk_minimal["sdk-minimal"]
     pkg_web_app["web-app"]
   end
   subgraph group_client["packages/client"]
@@ -368,6 +369,7 @@ flowchart TD
   pkg_acp_app --> pkg_invariants
   pkg_base --> pkg_invariants
   pkg_sdk_app --> pkg_invariants
+  pkg_sdk_minimal --> pkg_invariants
   pkg_client_store --> pkg_invariants
   pkg_client_ui_primitives --> pkg_invariants
   pkg_client_ui_renderer --> pkg_invariants
@@ -1658,6 +1660,7 @@ flowchart TD
 | [`acp-app`](../packages/bundle/acp-app) | `bundle` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`base`](../packages/bundle/base) | `bundle` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`sdk-app`](../packages/bundle/sdk-app) | `bundle` | [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`sdk-minimal`](../packages/bundle/sdk-minimal) | `bundle` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-store`](../packages/client/store) | `client` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-primitives`](../packages/client/ui-primitives) | `client` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-ui-renderer`](../packages/client/ui-renderer) | `client` | [`invariants`](../packages/runtime-diagnostics/invariants) |

@@ -14,7 +14,7 @@ A normal profile cannot be adopted only at the Python wrapper. The runtime execu
 
 ### One application launcher
 
-The runtime executable packages `@deepseek-ai/dsh` and runs its ordinary command grammar. The Python client selects `--profile sdk` by default, forwards ordered absolute `--patch` paths, and may select another `dsh` executable or profile. The private `@deepseek-ai/dsh-sdk-python-runtime` application package and checked-in runtime `cordis.yml` do not exist. JSON-RPC serving remains the `@deepseek-ai/dsh-sdk-app` bundle and `@deepseek-ai/dsh-sdk-jsonrpc-server` plugin, not a Python-owned boot path.
+The runtime executable packages `@deepseek-ai/dsh` and runs its ordinary command grammar. The Python client selects `--profile sdk` by default, forwards ordered absolute `--patch` paths, and may select another `dsh` executable or profile. The runnable minimal example selects the shipped `sdk-minimal` profile. The private `@deepseek-ai/dsh-sdk-python-runtime` application package and checked-in runtime `cordis.yml` do not exist. JSON-RPC serving remains the `@deepseek-ai/dsh-sdk-app` bundle and `@deepseek-ai/dsh-sdk-jsonrpc-server` plugin, not a Python-owned boot path.
 
 The public Python configuration is `dsh_bin`, `profile`, ordered `patches`, `dsh_home`, process cwd/environment, provider/model/token selection, a bounded initialization timeout, and optional turn/shutdown timeouts. It does not expose a complete Cordis tree or arbitrary launch argv. `RunResult` reports the protocol-owned run values and does not duplicate the profile's persistence path.
 
@@ -22,9 +22,9 @@ Every Python launch requires either explicit `dsh_home` or a non-empty `DSH_HOME
 
 ### Plugin customization
 
-Persistent SDK customization uses the same profile interfaces as direct CLI use. `dsh plugin --profile sdk ...` manages external dependencies and bundle order, `$DSH_HOME/profiles/sdk/cordis.patch.yml` owns persistent row changes, the home patch applies machine-local changes across profiles, and Python `patches` supplies invocation-specific overlays. A different profile is valid only when it retains an SDK server row. Missing profiles, bundles, server rows, and invalid patches fail without a complete-config fallback; a profile that remains alive without serving JSON-RPC fails the independently bounded initialization handshake with a diagnostic naming that profile.
+Persistent SDK customization uses the same profile interfaces as direct CLI use. `dsh plugin --profile <name> ...` manages external dependencies and bundle order, `$DSH_HOME/profiles/<name>/cordis.patch.yml` owns persistent row changes, the home patch applies machine-local changes across profiles, and Python `patches` supplies invocation-specific overlays. A selected profile is valid only when it retains an SDK server row. Missing profiles, bundles, server rows, and invalid patches fail without a complete-config fallback; a profile that remains alive without serving JSON-RPC fails the independently bounded initialization handshake with a diagnostic naming that profile.
 
-The checked-in minimal overlay retains the shared SDK profile while configuring the server with a root-agent tool allow list. Later base-bundle tools remain unavailable unless the overlay names them. Its deployment persona is a complete system prompt, so unrelated guidance sections cannot describe hidden tools; dynamic runtime context, workspace instructions, compaction, and the conflicting one-shot Bash row are disabled separately.
+The [standalone sdk-minimal profile](2026-08-24-standalone-sdk-minimal-profile.md) lists one repository-owned bundle that inserts its complete explicit tree without `dsh-base`. Its persistent Bash and string-replace editor are present by composition rather than a server filter; dynamic runtime context, workspace instructions, settings, managed credentials, telemetry, compaction, and every other base row are absent. The same runtime still packages the full `sdk` and `web` profiles as separate choices.
 
 The runtime wheel installs a `dsh` console command. Ordinary profile and SDK execution remains Node-free; external package management requires a caller-installed `pnpm`.
 
@@ -38,7 +38,7 @@ The published target set is Linux x64, Linux arm64, and macOS arm64. Installed-w
 
 ## Existing decisions and supersession
 
-This decision implements and supersedes the Python exception and deferred-migration sections of [the single dsh application launcher](2026-08-22-single-dsh-application-launcher.md). It supersedes the private application, external complete-config, artifact-name, and customization facts in [the single-file Python SDK runtime distribution](2026-07-10-single-file-executable-sdk-runtime-distribution.md), which remains authoritative for pkg/SEA, wheel construction, native target validation, and publication. No active note is fully superseded, so none is archived.
+This decision implements and supersedes the Python exception and deferred-migration sections of [the single dsh application launcher](2026-08-22-single-dsh-application-launcher.md). It supersedes the private application, external complete-config, artifact-name, and customization facts in [the single-file Python SDK runtime distribution](2026-07-10-single-file-executable-sdk-runtime-distribution.md), which remains authoritative for pkg/SEA, wheel construction, native target validation, and publication. The [standalone sdk-minimal profile](2026-08-24-standalone-sdk-minimal-profile.md) supersedes only this note's minimal-overlay realization. No active note is fully superseded, so none is archived.
 
 ## Alternatives considered
 
@@ -52,4 +52,4 @@ This decision implements and supersedes the Python exception and deferred-migrat
 
 ## Consequences
 
-Python callers configure the same profile vocabulary as TypeScript and direct CLI users, and arbitrary external bundles can extend an SDK profile without replacing the application tree. Homes must now be selected explicitly, complete-config and `session_root` parameters are unavailable, and the executable includes shared-library assets plus profile-module proxies. The stronger installed-wheel CI makes those package, profile, native, and provider paths release requirements rather than source-only assumptions.
+Python callers configure the same profile vocabulary as TypeScript and direct CLI users, and arbitrary external bundles can extend an SDK profile without introducing another launcher. Homes are selected explicitly, complete-config and `session_root` parameters are unavailable, and the executable includes shared-library assets plus profile-module proxies. The full `sdk`, standalone `sdk-minimal`, and `web` applications remain separate profiles inside the same packaged CLI. The installed-wheel CI makes those package, profile, native, and provider paths release requirements rather than source-only assumptions.

@@ -1,4 +1,4 @@
-# The dsh-base bundle patch: the shared core of every dsh profile, applied as
+# The dsh-base bundle patch: the shared core of each base-backed profile, applied as
 # ONE insert over the empty profile root. Later bundle patches and the user's
 # profile cordis.patch.yml address these rows by id, with the last write
 # winning per row.

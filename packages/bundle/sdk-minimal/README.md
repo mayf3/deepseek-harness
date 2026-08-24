@@ -26,6 +26,6 @@ Stable for a fixed persona, platform, provider, model, and bundle patch stack. P
 
 ## Known Limitations and Deferred Work
 
-- **The profile is POSIX-only** — this layer uses a Bash PTY; Windows support belongs to the platform runtime layer above it.
+- **The profile is POSIX-only** — this composition uses a Bash PTY; a Windows profile must select a PowerShell terminal and tool instead.
 - **The composition intentionally omits shared product services** — select `dsh --profile sdk` when settings, managed credentials, policy presets, telemetry, Web tools, or the full default tool roster are required.
 - **User patches can expand the tree and corrupt stdout** — profile customization is trusted application composition; a plugin that writes ordinary text to stdout can break JSON-RPC framing.

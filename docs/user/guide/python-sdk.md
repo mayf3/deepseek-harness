@@ -2,7 +2,7 @@
 
 English | [中文](python-sdk.zh.md)
 
-This tutorial installs the published Python SDK, runs the checked-in minimal profile overlay, and shows how to customize the same `dsh` profile from your own program.
+This tutorial installs the published Python SDK, runs the shipped standalone minimal profile, and shows how to customize the same `dsh` profile from your own program.
 
 ## Prerequisites
 
@@ -43,7 +43,7 @@ python examples/python-sdk-agent/minimal.py \
   "Inspect the repository and fix the failing tests."
 ```
 
-The script prints the final assistant response. The selected home receives the generated `sdk` profile, settings, credentials if you add them, installed plugins, and Zstandard session logs under `sessions/`. The example and SDK never silently read `~/.dsh`.
+The script prints the final assistant response. The selected home receives the generated `sdk-minimal` profile, installed plugins, and uncompressed JSONL session logs under `sessions/`. The example and SDK never silently read `~/.dsh`.
 
 ## Use the SDK in your program
 
@@ -54,16 +54,14 @@ from deepseek_harness import DeepSeekHarness
 
 workspace = Path("/absolute/path/to/disposable-workspace").resolve()
 dsh_home = Path("/absolute/path/to/example-dsh-home").resolve()
-patch = Path("examples/python-sdk-agent/minimal.patch.yml").resolve()
-
 with DeepSeekHarness(
     provider="deepseek-official",
     model="deepseek-v4-flash",
     max_tokens=49_152,
     cwd=str(workspace),
     dsh_home=str(dsh_home),
-    profile="sdk",
-    patches=(str(patch),),
+    profile="sdk-minimal",
+    env={"DSH_MODEL": "deepseek-v4-flash"},
 ) as harness:
     result = harness.run(
         "Inspect the repository and fix the failing tests.",
@@ -73,7 +71,7 @@ with DeepSeekHarness(
 print(result.final_response)
 ```
 
-The SDK starts the bundled `dsh --profile sdk` process lazily and reuses it until context-manager exit. The profile, its persistent patch, the home patch, and the ordered `patches` tuple form the application configuration. There is no separate Python runtime bin or complete-config option.
+The SDK starts the bundled `dsh --profile sdk-minimal` process lazily and reuses it until context-manager exit. The profile, its persistent patch, the home patch, and any ordered `patches` tuple form the application configuration. There is no separate Python runtime bin or complete-config option.
 
 ## Install or define plugins
 
@@ -81,15 +79,15 @@ Use `dsh plugin` for dependencies and bundle layers that should persist in this 
 
 ```sh
 export DSH_HOME=/absolute/path/to/example-dsh-home
-dsh --profile sdk --dump-default-config >/dev/null
-dsh plugin --profile sdk add file:/absolute/path/to/my-plugin-bundle
+dsh --profile sdk-minimal --dump-default-config >/dev/null
+dsh plugin --profile sdk-minimal add file:/absolute/path/to/my-plugin-bundle
 ```
 
-The first command initializes the shipped SDK profile. The second forwards package management to `pnpm`, then records any installed package that exports a `dsh.bundle` layer. Install `pnpm` only for this management command; launching the installed SDK does not need it. Edit `$DSH_HOME/profiles/sdk/cordis.patch.yml` for persistent row changes, or pass patch files from Python for per-launch changes.
+The first command initializes the shipped standalone profile. The second forwards package management to `pnpm`, then records any installed package that exports a `dsh.bundle` layer. Install `pnpm` only for this management command; launching the installed SDK does not need it. Edit `$DSH_HOME/profiles/sdk-minimal/cordis.patch.yml` for persistent row changes, or pass patch files from Python for per-launch changes.
 
 Another `profile` is valid when it includes `@deepseek-ai/dsh-sdk-app` or another JSON-RPC server row. Missing server rows, unresolved plugins, and invalid patches fail during startup instead of falling back to another composition.
 
-## Understand the minimal overlay
+## Understand the minimal profile
 
 | Property | Value |
 |---|---|
@@ -98,11 +96,13 @@ Another `profile` is valid when it includes `@deepseek-ai/dsh-sdk-app` or anothe
 | Model-facing tools | Persistent `bash` and `str_replace_editor` only |
 | Bash timeout | 300 seconds |
 | Editor output limit | 16,000 characters |
-| Context compaction | Disabled |
-| Session persistence | Zstandard JSONL under `<dsh_home>/sessions` |
+| Runtime context and compaction | Absent |
+| Session persistence | Uncompressed JSONL under `<dsh_home>/sessions` |
 
-The overlay allowlists persistent Bash and the editor for every SDK-created root agent, so later base-profile tools cannot appear implicitly. It suppresses unrelated prompt sections and runtime-context messages, disables local instruction discovery and compaction, and retains the SDK application's protocol, persistence, policy, settings, credentials, and providers. Persistent Bash and the editor can modify any path visible to the runtime, so use a disposable checkout or container. The PTY implementation makes this example POSIX-only.
+The profile's sole bundle inserts the complete tree over an empty root and does not include `dsh-base`; later base-profile tools therefore cannot appear implicitly. It contains the SDK protocol, one environment-configured DeepSeek adapter, local execution, and persistence, while settings, managed credentials, telemetry, Web tools, subagents, local instruction discovery, and compaction are absent. It pins `danger-full-access`, so persistent Bash and the editor can modify any path visible to the runtime; use a disposable checkout or container. The PTY implementation makes this example POSIX-only.
+
+The installed wheel still packages the full `web` profile and frontend assets. Run `dsh web` against an explicit `DSH_HOME` when a Python SDK deployment also needs the browser application; `web` is a separate CLI application and cannot serve a Python SDK client.
 
 Use a fresh home when profiles, plugins, credentials, settings, and sessions must be isolated. Use a fresh session id for independent work; reuse a harness, home, and id only to continue the same durable conversation and session-owned resources.
 
-The [example reference](../../../examples/python-sdk-agent/README.md) owns the checked-in overlay. The [Python SDK reference](../../../python/sdk/README.md) covers lifecycle, results, notifications, and low-level behavior; the [dsh CLI reference](../../../apps/cli/reference/README.md) covers profile layering.
+The [bundle reference](../../../packages/bundle/sdk-minimal/README.md) owns the exact tree, and the [example reference](../../../examples/python-sdk-agent/README.md) owns the runnable program. The [Python SDK reference](../../../python/sdk/README.md) covers lifecycle, results, notifications, and low-level behavior; the [dsh CLI reference](../../../apps/cli/reference/README.md) covers profile layering.

@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Runnable Python SDK example over the sole application launcher, `dsh --profile sdk`. The Python client owns JSON-RPC stdio; the profile owns the agent composition, persistence, permissions, and plugins.
+Runnable Python SDK example over the sole application launcher, `dsh --profile sdk-minimal`. The Python client owns JSON-RPC stdio; the profile owns the agent composition, persistence, execution policy, and plugins.
 
 ## Run the minimal agent
 
@@ -17,14 +17,14 @@ python examples/python-sdk-agent/minimal.py \
   "Inspect the repository and fix the failing tests."
 ```
 
-Set `DEEPSEEK_BASE_URL` for a compatible proxy, `DSH_MODEL` for the default model, or `DSH_SYSTEM_PROMPT` for the deployment persona. `--model` and `--profile` override their script defaults. The selected home stores the generated profile and Zstandard session logs under `sessions/`; the script never reads `~/.dsh` implicitly.
+Set `DEEPSEEK_BASE_URL` for a compatible proxy, `DSH_MODEL` for the default model, or `DSH_SYSTEM_PROMPT` for the deployment persona. `--model` overrides the model and passes the same value to the profile-owned adapter catalog; `--profile` can select another SDK-serving profile. The selected home stores the generated `sdk-minimal` profile and uncompressed JSONL session logs under `sessions/`; the script never reads `~/.dsh` implicitly.
 
-[`minimal.patch.yml`](minimal.patch.yml) is an ordered overlay on the shipped SDK profile. Its root-agent tool allowlist exposes exactly:
+The shipped [`@deepseek-ai/dsh-sdk-minimal` bundle](../../packages/bundle/sdk-minimal/README.md) is the complete explicit Cordis tree for this mode. It exposes exactly:
 
 - owner-scoped persistent `bash`
 - `str_replace_editor` with `view`, `create`, `str_replace`, and `insert`
 
-The allowlist excludes every other current or later global tool without requiring a disable entry for each base row. A complete deployment persona suppresses unrelated tool-guidance sections; runtime-context messages, local instruction discovery, compaction, and the conflicting one-shot Bash row are disabled separately. The overlay inserts the local PTY and persistent Bash providers and sets the editor output limit to 16,000 characters. Other SDK-profile services remain mounted, including persistence, policy, settings, credentials, and providers.
+The bundle does not include `dsh-base`, so every additional row is an explicit profile change. Runtime context, local instruction discovery, compaction, settings, managed credentials, telemetry, Web tools, subagents, and the full default tool roster are absent. The tree retains SDK startup and JSON-RPC serving, one environment-configured DeepSeek adapter, local execution, and JSONL persistence.
 
 This variant is intentionally POSIX-only. Its persistent PTY and editor can modify any path available to the runtime process, so use a disposable checkout or container.
 
@@ -34,9 +34,11 @@ Use the runtime wheel's `dsh` command against the same explicit home for persist
 
 ```sh
 export DSH_HOME=/absolute/path/to/example-dsh-home
-dsh plugin --profile sdk add file:/absolute/path/to/my-plugin-bundle
+dsh plugin --profile sdk-minimal add file:/absolute/path/to/my-plugin-bundle
 ```
 
-The Python call can also pass additional absolute patch paths in `patches=(...)`; later files win. A selected profile must retain `@deepseek-ai/dsh-sdk-app` or another JSON-RPC server row. Complete standalone Cordis files in this directory remain test fixtures for lower-level composition coverage; they are not Python SDK launch interfaces.
+Use `sdk-minimal` in that command to extend this example, or `sdk` to extend the full base-backed SDK profile. The Python call can also pass additional absolute patch paths in `patches=(...)`; later files win. A selected profile must retain `@deepseek-ai/dsh-sdk-app` or another JSON-RPC server row. The example accepts no complete Cordis file or arbitrary process argv.
+
+The same runtime wheel packages the `web` profile and its frontend assets for direct CLI use: `dsh web` starts that separate application. A Python SDK client cannot select `web` because it has no JSON-RPC server row.
 
 See the [Python SDK tutorial](../../docs/user/guide/python-sdk.md) and [SDK reference](../../python/sdk/README.md).
