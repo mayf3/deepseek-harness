@@ -2,13 +2,13 @@
 
 English | [中文](client-modules.zh.md)
 
-The web plugin table: the Node half of the client module system in [dsh-client-modules](../../packages/client/modules), provided as `ctx.clientModules` (`ClientModuleRegistry`). It scans the host Loader's entries for packages declaring `dsh.client`, composes the `window.__DSH_BOOT__` entry graph, serves content-addressed startup batches and individual HMR scripts under `/plugins`, and answers every index-injection collection with the boot protocol rows — the four faces of one service. It is an optional capability of the web GUI stack, not part of the agent-loop spine, and it is a consumer of [dsh-host-webserver](../../packages/host/webserver): the carrier described in [web-server.md](web-server.md) supplies the prefix route and the `webserver/index-inject` event this service answers. The same package's browser half (`ctx.modules`, the lazy-CJS module table that fetches and materializes these bundles) is kernel machinery documented in the [package README](../../packages/client/modules/README.md), not here.
+The web plugin table: the Node half of the client module system in [dsh-client-modules](../../packages/client/modules), provided as `ctx.clientModules` (`ClientModuleRegistry`). It scans the host Loader's entries for packages declaring `dsh.client`, composes the `window.__DSH_BOOT__` entry graph, serves versioned one-or-more-resource combo scripts under `/plugins`, and answers every index-injection collection with the boot protocol rows — the four faces of one service. It is an optional capability of the web GUI stack, not part of the agent-loop spine, and it is a consumer of [dsh-host-webserver](../../packages/host/webserver): the carrier described in [web-server.md](web-server.md) supplies the prefix route and the `webserver/index-inject` event this service answers. The same package's browser half (`ctx.modules`, the lazy-CJS module table that fetches and materializes these bundles) is kernel machinery documented in the [package README](../../packages/client/modules/README.md), not here.
 
 Source: [`packages/client/modules/src/client/manifest.ts`](../../packages/client/modules/src/client/manifest.ts)
 
 ## The wire
 
-The graph is the wire single source between the Node and browser halves. The host composes `WebBootEntry` rows and `WebBootBatch` descriptors from scanned packages, then contributes the registration facade, application preload, bootstrap script, and graph global to the structured index-injection table before the Vite entry. The `global` row renders as `globalThis["__DSH_BOOT__"]` with `<` escaped so plugin-controlled strings cannot break out of the script element. A page without a valid manifest cannot boot: the browser parser rejects malformed rows or batches, duplicate phase names, unknown members, and entries without exactly one initial batch.
+The graph is the wire single source between the Node and browser halves. The host composes `WebBootEntry` rows and `WebBootBatch` descriptors from scanned packages, then contributes the registration facade, application preloads, bootstrap scripts, and graph global to the structured index-injection table before the Vite entry. The `global` row renders as `globalThis["__DSH_BOOT__"]` with `<` escaped so plugin-controlled strings cannot break out of the script element. A page without a valid manifest cannot boot: the browser parser rejects malformed rows or batches, unknown members, and entries without exactly one initial combo descriptor.
 
 ```ts type-equiv
 /**
@@ -22,9 +22,9 @@ The graph is the wire single source between the Node and browser halves. The hos
 interface WebBootEntry {
   /** Entry name == package name. */
   id: string
-  /** Revisioned individual endpoint used by HMR. */
+  /** Revisioned single-resource combo endpoint used by HMR. */
   url: string
-  /** Opaque individual-artifact revision used for HMR cache busting. */
+  /** Opaque plugin-artifact revision used for HMR cache busting. */
   rev: string
   /** Package-name dependency edges used for factory arrival and plugin composition. */
   inject?: string[]
@@ -36,18 +36,18 @@ interface WebBootEntry {
 ```
 
 ```ts type-equiv
-/** Initial script-delivery phase for one content-addressed bundle batch. */
+/** Initial scheduling phase for one content-addressed combo script. */
 type WebBootBatchPhase = 'bootstrap' | 'application'
 ```
 
 ```ts type-equiv
-/** One initial-load script containing the factory registrations for several graph rows. */
+/** One initial combo script; a scheduling phase may span several descriptors. */
 interface WebBootBatch {
-  /** Parser-blocking bootstrap or preloaded application delivery. */
+  /** Parser-blocking bootstrap or preloaded application scheduling. */
   phase: WebBootBatchPhase
-  /** Content-addressed batch script endpoint. */
+  /** Content-addressed combo script endpoint. */
   url: string
-  /** Hash over the batch script and indexed source map. */
+  /** Revision over the combined plugin script bytes and indexed source map. */
   rev: string
   /** Graph entry ids whose factories the script registers, in execution order. */
   entries: string[]
@@ -65,12 +65,12 @@ interface WebBootGraph {
    * unrelated and remains owned by fiber service waiting.
    */
   entries: WebBootEntry[]
-  /** Initial-load batches; every entry belongs to exactly one batch. */
+  /** Initial combo descriptors; every entry belongs to exactly one descriptor. */
   batches: WebBootBatch[]
 }
 ```
 
-Each initial row's `rev` is an opaque process nonce plus sequence, so graph composition does not hash every individual artifact. After HMR observes a change, that row's revision becomes the hash of its new bundle and available source map. The bootstrap batch contains the modules row; the preloaded application batch contains every other row. Batch revisions hash the generated script and indexed source map, and the graph revision hashes both rows and batch descriptors. `immediately` marks the stage-one registration barrier; application rows share one script transport even when only some carry the mark.
+Each initial row's `rev` is an opaque process nonce plus sequence, so graph composition does not hash every plugin artifact. After HMR observes a change, that row's revision becomes the hash of its new bundle and available source map. The initial descriptors partition rows into bootstrap and application scheduling phases, and either phase may contain several descriptors. Their URLs contain only the ordered package-resource list and revision; phase names do not enter the route. Graph composition preserves row order while greedily splitting before the map-form URL exceeds 3 KiB. Startup combo revisions hash the combined plugin script bytes and indexed source map, and the graph revision hashes both rows and descriptors. `immediately` marks the stage-one registration barrier; rows within one combo share its script transport, while separate combos load independently.
 
 ## The scan
 
@@ -82,7 +82,7 @@ Package metadata — including the negative "not a client package" verdict — i
 
 ## The bundle route and index injection
 
-`GET`/`HEAD /plugins/_batch/<phase>/<rev>/client.js` serves the generated startup scripts, with indexed maps beside them. `GET`/`HEAD /plugins/<id>/client.js?rev=<rev>` serves the snapshotted individual artifact for HMR and stamps the same revision onto its map request. All versioned responses use long-lived immutable caching. Unknown paths, absent maps, missing revisions, and stale revisions answer 404 rather than serving current bytes under an old URL or letting the SPA fallback return HTML as JavaScript; other methods are 405. The injection rows carry the current graph on every index render, so a reload always boots against the live composition.
+`GET`/`HEAD /plugins/??<package-a>/client.js,<package-b>/client.js&rev=<rev>` serves an exact generated combo script; a one-resource request uses the same form and is the HMR path. Its absolute `sourceMappingURL` changes every resource suffix in parallel, yielding `/plugins/??<package-a>/client.js.map,<package-b>/client.js.map&rev=<rev>`. The map is Indexed Source Map v3 even for one resource. It contains sections for available component maps and leaves components without maps unmapped. Every generated request URL is at most 3 KiB measured as UTF-8 bytes; partitioning uses the longer map form even when a group has no map. All application URLs are preloaded, and all bootstrap URLs execute before the graph global and Vite entry. All advertised responses use long-lived immutable caching. Unknown or altered resource lists, absent maps, missing revisions, and stale revisions answer 404 rather than serving different bytes or letting the SPA fallback return HTML as JavaScript; other methods are 405. The injection rows carry the current graph on every index render, so a reload always boots against the live composition.
 
 ## The service
 

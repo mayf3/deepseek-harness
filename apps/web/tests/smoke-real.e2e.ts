@@ -30,6 +30,8 @@ import { REPO_ROOT, connectFreshWorkspace, newEnglishPage, probeFreePort, requir
 
 const WEB_SURFACE_PROMPT = fileURLToPath(new URL('./expected/web-runtime-context/web-surface-prompt.expected.md', import.meta.url))
 
+const comboMapUrl = (url: string): string => url.replace(/\/client\.js(?=,|&rev=)/g, '/client.js.map')
+
 function waitForReadyLine(child: ChildProcess): Promise<string> {
   return new Promise((resolveReady, reject) => {
     let out = ''
@@ -286,23 +288,28 @@ describe('dsh web keyless CLI smoke', () => {
       // request when the matching script node executes; this count pins both.
       page.on('request', (request) => {
         const url = new URL(request.url())
-        if (request.resourceType() === 'script' && url.pathname.startsWith('/plugins/')) {
-          pluginScripts.push(url.pathname)
+        const resource = `${url.pathname}${url.search}`
+        if (request.resourceType() === 'script' && resource.startsWith('/plugins/??')) {
+          pluginScripts.push(resource)
         }
       })
       page.on('response', (response) => {
-        const path = new URL(response.url()).pathname
-        if (path.startsWith('/plugins/_batch/')) {
-          cacheHeaders.set(path, response.headers()['cache-control'])
+        const url = new URL(response.url())
+        const resource = `${url.pathname}${url.search}`
+        if (resource.startsWith('/plugins/??')) {
+          cacheHeaders.set(resource, response.headers()['cache-control'])
         }
       })
       await page.goto(readyUrl)
       await page.getByRole('button', { name: 'New session', exact: true }).first().waitFor({ timeout: 30_000 })
       const batchPaths = [...new Set(pluginScripts)].sort()
-      expect(batchPaths).toEqual([
-        expect.stringMatching(/^\/plugins\/_batch\/application\/[a-f\d]{12}\/client\.js$/),
-        expect.stringMatching(/^\/plugins\/_batch\/bootstrap\/[a-f\d]{12}\/client\.js$/),
-      ])
+      expect(batchPaths).toHaveLength(2)
+      expect(batchPaths).toContainEqual(expect.stringMatching(
+        /^\/plugins\/\?\?.+\/client\.js,.+\/client\.js&rev=[a-f\d]{12}$/,
+      ))
+      expect(batchPaths).toContainEqual(expect.stringMatching(
+        /^\/plugins\/\?\?@deepseek-ai\/dsh-client-modules\/client\.js&rev=[a-f\d]{12}$/,
+      ))
       expect([...cacheHeaders.values()]).toEqual([
         'public, max-age=31536000, immutable',
         'public, max-age=31536000, immutable',
@@ -310,7 +317,7 @@ describe('dsh web keyless CLI smoke', () => {
       for (const path of batchPaths) {
         const [scriptResponse, mapResponse] = await Promise.all([
           fetch(`${readyUrl}${path}`),
-          fetch(`${readyUrl}${path}.map`),
+          fetch(`${readyUrl}${comboMapUrl(path)}`),
         ])
         expect(scriptResponse.status).toBe(200)
         expect(mapResponse.status).toBe(200)

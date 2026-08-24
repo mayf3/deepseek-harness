@@ -2,13 +2,13 @@
 
 [English](client-modules.md) | 中文
 
-Web 插件表：[dsh-client-modules](../../packages/client/modules) 中 client 模块系统的 Node 半，以 `ctx.clientModules`（`ClientModuleRegistry`）形式提供。它扫描宿主 Loader 的 entry，找出声明了 `dsh.client` 的包，组合出 `window.__DSH_BOOT__` entry 图，在 `/plugins` 下提供按内容寻址的启动批次与 HMR 独立脚本，并以启动协议行回应每次 index 注入收集——这是同一个服务的四个面。它是 Web GUI 栈的一项可选能力，不属于 agent loop（智能体循环）主干，并且是 [dsh-host-webserver](../../packages/host/webserver) 的消费方：[web-server.md](web-server.zh.md) 所述的载体提供本服务注册的前缀路由与其回应的 `webserver/index-inject` 事件。同一个包的浏览器半（`ctx.modules`，即拉取并物化这些 bundle 的 lazy CJS 模块表）属于内核机件，记录在[包 README](../../packages/client/modules/README.zh.md)中，不在本页。
+Web 插件表：[dsh-client-modules](../../packages/client/modules) 中 client 模块系统的 Node 半，以 `ctx.clientModules`（`ClientModuleRegistry`）形式提供。它扫描宿主 Loader 的 entry，找出声明了 `dsh.client` 的包，组合出 `window.__DSH_BOOT__` entry 图，在 `/plugins` 下提供带版本的单资源或多资源 combo 脚本，并以启动协议行回应每次 index 注入收集——这是同一个服务的四个面。它是 Web GUI 栈的一项可选能力，不属于 agent loop（智能体循环）主干，并且是 [dsh-host-webserver](../../packages/host/webserver) 的消费方：[web-server.md](web-server.zh.md) 所述的载体提供本服务注册的前缀路由与其回应的 `webserver/index-inject` 事件。同一个包的浏览器半（`ctx.modules`，即拉取并物化这些 bundle 的 lazy CJS 模块表）属于内核机件，记录在[包 README](../../packages/client/modules/README.zh.md)中，不在本页。
 
 源码：[`packages/client/modules/src/client/manifest.ts`](../../packages/client/modules/src/client/manifest.ts)
 
 ## wire
 
-图是 Node 半与浏览器半之间协议层的唯一真源。宿主从扫描到的包组合出 `WebBootEntry` 行与 `WebBootBatch` 描述，随后在 Vite entry 之前向结构化 index 注入表贡献 registration facade、application preload、bootstrap 脚本与图全局量。`global` 行渲染为 `globalThis["__DSH_BOOT__"]`，其中 `<` 已转义，插件可控的字符串因此无法逃出 script 元素。没有有效 manifest 的页面无法启动：浏览器解析器会拒绝畸形 row 或批次、重复 phase 名、未知成员，以及未恰好归属一个初始批次的 entry。
+图是 Node 半与浏览器半之间协议层的唯一真源。宿主从扫描到的包组合出 `WebBootEntry` 行与 `WebBootBatch` 描述，随后在 Vite entry 之前向结构化 index 注入表贡献 registration facade、application preload、bootstrap 脚本与图全局量。`global` 行渲染为 `globalThis["__DSH_BOOT__"]`，其中 `<` 已转义，插件可控的字符串因此无法逃出 script 元素。没有有效 manifest 的页面无法启动：浏览器解析器会拒绝畸形 row 或批次、未知成员，以及未恰好归属一个初始 combo 描述的 entry。
 
 ```ts type-equiv
 /**
@@ -22,9 +22,9 @@ Web 插件表：[dsh-client-modules](../../packages/client/modules) 中 client �
 interface WebBootEntry {
   /** Entry name == package name. */
   id: string
-  /** Revisioned individual endpoint used by HMR. */
+  /** Revisioned single-resource combo endpoint used by HMR. */
   url: string
-  /** Opaque individual-artifact revision used for HMR cache busting. */
+  /** Opaque plugin-artifact revision used for HMR cache busting. */
   rev: string
   /** Package-name dependency edges used for factory arrival and plugin composition. */
   inject?: string[]
@@ -36,18 +36,18 @@ interface WebBootEntry {
 ```
 
 ```ts type-equiv
-/** Initial script-delivery phase for one content-addressed bundle batch. */
+/** Initial scheduling phase for one content-addressed combo script. */
 type WebBootBatchPhase = 'bootstrap' | 'application'
 ```
 
 ```ts type-equiv
-/** One initial-load script containing the factory registrations for several graph rows. */
+/** One initial combo script; a scheduling phase may span several descriptors. */
 interface WebBootBatch {
-  /** Parser-blocking bootstrap or preloaded application delivery. */
+  /** Parser-blocking bootstrap or preloaded application scheduling. */
   phase: WebBootBatchPhase
-  /** Content-addressed batch script endpoint. */
+  /** Content-addressed combo script endpoint. */
   url: string
-  /** Hash over the batch script and indexed source map. */
+  /** Revision over the combined plugin script bytes and indexed source map. */
   rev: string
   /** Graph entry ids whose factories the script registers, in execution order. */
   entries: string[]
@@ -65,12 +65,12 @@ interface WebBootGraph {
    * unrelated and remains owned by fiber service waiting.
    */
   entries: WebBootEntry[]
-  /** Initial-load batches; every entry belongs to exactly one batch. */
+  /** Initial combo descriptors; every entry belongs to exactly one descriptor. */
   batches: WebBootBatch[]
 }
 ```
 
-每个初始 row 的 `rev` 都是不透明的进程 nonce 加序号，因此组合图时不会哈希每个独立产物。HMR 观察到变化后，该 row 的 revision 才改为新 bundle 及其可用 sourcemap 的哈希。Bootstrap 批次包含 modules row；预加载的 application 批次包含其他全部 row。批次 revision 对生成的脚本与 indexed sourcemap 求哈希，图 revision 则对 row 与批次描述一并求哈希。`immediately` 标记第一阶段的 registration barrier；即使只有部分 application row 携带该标记，它们仍共享一次脚本传输。
+每个初始 row 的 `rev` 都是不透明的进程 nonce 加序号，因此组合图时不会哈希每个插件产物。HMR 观察到变化后，该 row 的 revision 才改为新 bundle 及其可用 sourcemap 的哈希。初始描述把 row 划入 bootstrap 与 application 两个调度阶段，每个阶段都可以包含多条描述。URL 只含有序 package 资源列表与 revision，阶段名不会进入路由。图组合保持 row 顺序，并在 map 形式 URL 超过 3 KiB 前贪心切分。启动 combo revision 对合并后的插件脚本字节与 indexed sourcemap 求哈希，图 revision 则对 row 与描述一并求哈希。`immediately` 标记第一阶段的 registration barrier；同一 combo 中的 row 共享脚本传输，不同 combo 则独立加载。
 
 ## 扫描
 
@@ -82,7 +82,7 @@ interface WebBootGraph {
 
 ## bundle 路由与 index 注入
 
-`GET`／`HEAD /plugins/_batch/<phase>/<rev>/client.js` 提供生成的启动脚本，并在相邻路径提供 indexed map。`GET`／`HEAD /plugins/<id>/client.js?rev=<rev>` 为 HMR 提供已快照的独立产物，并把同一 revision 写入其 map 请求。所有版本化响应都使用长期 immutable 缓存。未知路径、缺失 map、缺少 revision 及陈旧 revision 都返回 404，绝不在旧 URL 下提供当前字节，也不会让 SPA fallback 把 HTML 当作 JavaScript 返回；其他方法返回 405。注入行在每次 index 渲染时携带当前图，因此重新加载总是基于实时组合启动。
+`GET`／`HEAD /plugins/??<package-a>/client.js,<package-b>/client.js&rev=<rev>` 提供精确生成的 combo 脚本；单资源请求采用同一形式，也是 HMR 路径。其绝对 `sourceMappingURL` 平行改写每个资源后缀，得到 `/plugins/??<package-a>/client.js.map,<package-b>/client.js.map&rev=<rev>`。即使只有一个资源，map 仍采用 Indexed Source Map v3；有组件 map 的资源形成 section，没有 map 的组件区间保持未映射。每条生成的请求 URL 按 UTF-8 字节计算都不超过 3 KiB；即使某组没有 map，切分仍按更长的 map 形式计算。所有 application URL 都会预加载，所有 bootstrap URL 都会在图全局量与 Vite entry 之前执行。所有已发布响应都使用长期 immutable 缓存。未知或被修改的资源列表、缺失 map、缺少 revision 及陈旧 revision 都返回 404，绝不提供其他字节，也不会让 SPA fallback 把 HTML 当作 JavaScript 返回；其他方法返回 405。注入行在每次 index 渲染时携带当前图，因此重新加载总是基于实时组合启动。
 
 ## 服务
 

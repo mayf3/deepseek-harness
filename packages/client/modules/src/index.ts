@@ -2,9 +2,9 @@
  * Node half of the client module system (`dsh.client` dual-face package): scans
  * the host Loader's entries for packages declaring `dsh.client`, composes the
  * `window.__DSH_BOOT__` entry graph (wire single source: {@link WebBootEntry}
- * in `./client/manifest.ts`) in module-graph order, serves two initial-load
- * batches plus revisioned per-plugin HMR scripts and their source maps,
- * contributes the registration facade, application preload, bootstrap script,
+ * in `./client/manifest.ts`) in module-graph order, serves one-or-more-plugin
+ * combo scripts plus their source maps,
+ * contributes the registration facade, application preloads, bootstrap scripts,
  * and graph to the webserver's index injection table, and provides the
  * `clientModuleHost` service (the HMR node half's registration/notification
  * face).
@@ -138,21 +138,33 @@ interface WebPluginRecord {
   bundle: Buffer
   /** Pre-read filesystem baseline handed to the HMR watcher. */
   baseline: ClientArtifactBaseline
-  /** Revision-stamped individual response used after HMR invalidation. */
-  individualBundle: Buffer
   /** Optional parsed and original source map snapshot for immutable delivery. */
   sourceMap?: { body: Buffer; parsed: Record<string, unknown> }
 }
 
-/** One generated initial-load response and its wire descriptor. */
-interface BatchArtifact {
-  descriptor: WebBootBatch
+/** Fields shared by every generated combo response. */
+interface ComboArtifactBase {
+  url: string
+  rev: string
+  entries: string[]
   script: Buffer
-  sourceMap?: Buffer
 }
+
+/** One generated combo response over an ordered list of plugin resources. */
+type ComboArtifact = ComboArtifactBase & (
+  | { sourceMap: Buffer; sourceMapUrl: string }
+  | { sourceMap?: undefined; sourceMapUrl?: undefined }
+)
+
+/** One generated initial-load response and its wire descriptor. */
+type BatchArtifact = ComboArtifact & { descriptor: WebBootBatch }
 
 /** Versioned code is immutable; mismatched revisions are rejected instead of serving newer bytes. */
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable'
+/** Generated request URLs stay below conservative browser and intermediary request-target limits. */
+const MAX_COMBO_URL_BYTES = 3 * 1024
+const HASH_REVISION_LENGTH = 12
+const COMBO_REVISION_PLACEHOLDER = '0'.repeat(HASH_REVISION_LENGTH)
 
 /** Source-map trailer emitted by tsdown at the end of every client bundle. */
 const SOURCE_MAP_TRAILER = /(?:\r?\n)?\/\/# sourceMappingURL=[^\r\n]*(?:\r?\n)?$/
@@ -193,21 +205,63 @@ function clientExportOf(pkgName: string, exportsField: unknown): string | undefi
   throw new Error(`client-modules: ${pkgName} exports["./client"] must be a string or an object with a string default`)
 }
 
-/** sha1 content hash shortened to 12 hex chars (batch / graph / rebuilt-artifact rev). */
+/** sha1 content hash shortened to 12 hex chars (combo / graph / rebuilt-artifact rev). */
 function shortHash(input: string | Buffer): string {
-  return createHash('sha1').update(input).digest('hex').slice(0, 12)
+  return createHash('sha1').update(input).digest('hex').slice(0, HASH_REVISION_LENGTH)
 }
 
 /** Hash several response fields without allowing bytes to move across field boundaries. */
 function framedHash(domain: string, parts: readonly Buffer[]): string {
   const hash = createHash('sha1').update(domain).update('\0')
   for (const part of parts) hash.update(`${String(part.byteLength)}:`).update(part)
-  return hash.digest('hex').slice(0, 12)
+  return hash.digest('hex').slice(0, HASH_REVISION_LENGTH)
 }
 
-/** Hash every byte served after HMR observes one artifact change. */
+/** Hash every artifact input served after HMR observes one plugin change. */
 function artifactRevision(bundle: Buffer, sourceMap: WebPluginRecord['sourceMap']): string {
-  return framedHash('individual', sourceMap === undefined ? [bundle] : [bundle, sourceMap.body])
+  return framedHash('plugin-artifact', sourceMap === undefined ? [bundle] : [bundle, sourceMap.body])
+}
+
+/** Address one ordered plugin-file list through the shared combo route. */
+function comboUrl(ids: readonly string[], rev: string, sourceMap = false): string {
+  const resources = ids.map(id => `${id}/client.js${sourceMap ? '.map' : ''}`).join(',')
+  return `/plugins/??${resources}&rev=${rev}`
+}
+
+/** Measure the longer map-form URL used to partition a startup resource list. */
+function projectedComboUrlBytes(records: readonly WebPluginRecord[]): number {
+  return Buffer.byteLength(comboUrl(
+    records.map(record => record.entry.id),
+    COMBO_REVISION_PLACEHOLDER,
+    true,
+  ))
+}
+
+/** Partition one phase in graph order without allowing a generated URL above the protocol limit. */
+function partitionComboRecords(records: readonly WebPluginRecord[]): WebPluginRecord[][] {
+  const chunks: WebPluginRecord[][] = []
+  let current: WebPluginRecord[] = []
+  for (const record of records) {
+    const candidate = [...current, record]
+    if (projectedComboUrlBytes(candidate) <= MAX_COMBO_URL_BYTES) {
+      current = candidate
+      continue
+    }
+    if (current.length === 0) {
+      throw new Error(
+        `client-modules: ${record.entry.id} exceeds the ${String(MAX_COMBO_URL_BYTES)}-byte combo URL limit`,
+      )
+    }
+    chunks.push(current)
+    current = [record]
+    if (projectedComboUrlBytes(current) > MAX_COMBO_URL_BYTES) {
+      throw new Error(
+        `client-modules: ${record.entry.id} exceeds the ${String(MAX_COMBO_URL_BYTES)}-byte combo URL limit`,
+      )
+    }
+  }
+  if (current.length > 0) chunks.push(current)
+  return chunks
 }
 
 /** Remove a bundle-local source-map trailer and retain one final newline. */
@@ -216,10 +270,9 @@ function withoutSourceMapTrailer(input: Buffer): string {
   return stripped.endsWith('\n') ? stripped : `${stripped}\n`
 }
 
-/** Stamp an individual bundle's map request with the same immutable revision. */
-function individualBundle(input: Buffer, rev: string, hasSourceMap: boolean): Buffer {
-  const source = withoutSourceMapTrailer(input)
-  return Buffer.from(hasSourceMap ? `${source}//# sourceMappingURL=client.js.map?rev=${rev}\n` : source)
+/** Stamp a combo script's absolute indexed-map URL onto its executable bytes. */
+function comboScript(input: string, sourceMapUrl?: string): Buffer {
+  return Buffer.from(sourceMapUrl === undefined ? input : `${input}//# sourceMappingURL=${sourceMapUrl}\n`)
 }
 
 /** Parse an optional source-map artifact; missing maps do not prevent plugin execution. */
@@ -254,8 +307,8 @@ function newlineCount(value: string): number {
   return count
 }
 
-/** Resolve section sources against their original per-plugin map URL before relocation into a batch. */
-function batchSectionMap(record: WebPluginRecord): Record<string, unknown> {
+/** Resolve section sources against their original per-plugin map URL before combo relocation. */
+function comboSectionMap(record: WebPluginRecord): Record<string, unknown> {
   const original = record.sourceMap?.parsed
   /* v8 ignore next -- callers add sections only for records with a source map. */
   if (original === undefined) throw new Error(`client-modules: source map missing for ${record.entry.id}`)
@@ -274,14 +327,14 @@ function batchSectionMap(record: WebPluginRecord): Record<string, unknown> {
   return section
 }
 
-/** Concatenate factory registrations and compose their maps as indexed sections. */
-function buildBatch(phase: WebBootBatchPhase, records: readonly WebPluginRecord[]): BatchArtifact {
+/** Concatenate one or more factory registrations and compose their maps as indexed sections. */
+function buildCombo(records: readonly WebPluginRecord[], revision?: string): ComboArtifact {
   let source = ''
   const sections: { offset: { line: number; column: 0 }; map: Record<string, unknown> }[] = []
   let line = 0
   for (const record of records) {
     if (record.sourceMap !== undefined) {
-      sections.push({ offset: { line, column: 0 }, map: batchSectionMap(record) })
+      sections.push({ offset: { line, column: 0 }, map: comboSectionMap(record) })
     }
     const bundle = `${withoutSourceMapTrailer(record.bundle)};\n`
     source += bundle
@@ -290,18 +343,21 @@ function buildBatch(phase: WebBootBatchPhase, records: readonly WebPluginRecord[
   const sourceMap = sections.length === 0
     ? undefined
     : Buffer.from(`${JSON.stringify({ version: 3, file: 'client.js', sections })}\n`)
-  if (sourceMap !== undefined) source += '//# sourceMappingURL=client.js.map\n'
-  const script = Buffer.from(source)
-  const rev = framedHash('batch', sourceMap === undefined ? [script] : [script, sourceMap])
+  const sourceBytes = Buffer.from(source)
+  const rev = revision ?? framedHash('combo', sourceMap === undefined ? [sourceBytes] : [sourceBytes, sourceMap])
+  const entries = records.map(record => record.entry.id)
+  const url = comboUrl(entries, rev)
+  if (sourceMap === undefined) return { url, rev, entries, script: comboScript(source) }
+  const sourceMapUrl = comboUrl(entries, rev, true)
+  return { url, rev, entries, script: comboScript(source, sourceMapUrl), sourceMap, sourceMapUrl }
+}
+
+/** Add initial-load scheduling metadata to a combo artifact. */
+function buildBatch(phase: WebBootBatchPhase, records: readonly WebPluginRecord[]): BatchArtifact {
+  const artifact = buildCombo(records)
   return {
-    descriptor: {
-      phase,
-      url: `/plugins/_batch/${phase}/${rev}/client.js`,
-      rev,
-      entries: records.map(record => record.entry.id),
-    },
-    script,
-    ...(sourceMap === undefined ? {} : { sourceMap }),
+    ...artifact,
+    descriptor: { phase, url: artifact.url, rev: artifact.rev, entries: artifact.entries },
   }
 }
 
@@ -309,7 +365,7 @@ function buildBatch(phase: WebBootBatchPhase, records: readonly WebPluginRecord[
 function graphRow(id: string, rev: string, fields: WebBootRowFields): WebBootEntry {
   return {
     id,
-    url: `/plugins/${id}/client.js?rev=${rev}`,
+    url: comboUrl([id], rev),
     rev,
     ...(fields.inject !== undefined ? { inject: fields.inject } : {}),
     ...(fields.immediately ? { immediately: true } : {}),
@@ -375,7 +431,8 @@ const PARSER_PRELOAD_IDS = [CLIENT_MODULES_ID] as const
  * in live-registration mode. The graph global follows before the shell reads
  * it.
  * @param graph - the composed entry graph.
- * @returns head rows in execution order: queue script, preload scripts, graph global.
+ * @returns head rows in execution order: queue script, application preloads,
+ * blocking bootstrap scripts, graph global.
  */
 export function bootInjections(graph: WebBootGraph): IndexInjection[] {
   const bootstrapId = JSON.stringify(CLIENT_MODULES_ID)
@@ -401,14 +458,14 @@ window.__ModuleLoader__={
   }
 }
 })()`
-  const bootstrap = graph.batches.find(batch => batch.phase === 'bootstrap')
-  const application = graph.batches.find(batch => batch.phase === 'application')
+  const bootstrap = graph.batches.filter(batch => batch.phase === 'bootstrap')
+  const application = graph.batches.filter(batch => batch.phase === 'application')
   const rows: IndexInjection[] = [{ kind: 'script', placement: 'head', text: queue }]
-  if (application !== undefined) {
-    rows.push({ kind: 'script-preload', src: application.url })
+  for (const batch of application) {
+    rows.push({ kind: 'script-preload', src: batch.url })
   }
-  if (bootstrap !== undefined) {
-    rows.push({ kind: 'script-src', placement: 'head', src: bootstrap.url })
+  for (const batch of bootstrap) {
+    rows.push({ kind: 'script-src', placement: 'head', src: batch.url })
   }
   rows.push({ kind: 'global', name: '__DSH_BOOT__', value: graph })
   return rows
@@ -435,6 +492,7 @@ export class ClientModuleRegistry extends Service {
   private readonly resolvePkgJson: (spec: string) => string
   private readonly initialRevisionNonce = randomBytes(8).toString('hex')
   private nextInitialRevision = 0
+  private responses = new Map<string, { body: Buffer; contentType: string }>()
   private batchResponses = new Map<string, { body: Buffer; contentType: string }>()
   /** One prior graph generation covers a request racing the HMR recomposition that replaced its URL. */
   private previousBatchResponses = new Map<string, { body: Buffer; contentType: string }>()
@@ -539,7 +597,6 @@ export class ClientModuleRegistry extends Service {
     if (rev === record.entry.rev) return rev
     record.entry = graphRow(id, rev, record.meta)
     record.bundle = bundle
-    record.individualBundle = individualBundle(bundle, rev, sourceMap !== undefined)
     if (sourceMap === undefined) delete record.sourceMap
     else record.sourceMap = sourceMap
     this.composed = this.compose()
@@ -588,8 +645,12 @@ export class ClientModuleRegistry extends Service {
       .map(entry => this.table.get(entry.id))
       .filter((record): record is WebPluginRecord => record !== undefined)
     const artifacts: BatchArtifact[] = []
-    if (bootstrap.length > 0) artifacts.push(buildBatch('bootstrap', bootstrap))
-    if (application.length > 0) artifacts.push(buildBatch('application', application))
+    for (const records of partitionComboRecords(bootstrap)) {
+      artifacts.push(buildBatch('bootstrap', records))
+    }
+    for (const records of partitionComboRecords(application)) {
+      artifacts.push(buildBatch('application', records))
+    }
 
     const batchResponses = new Map<string, { body: Buffer; contentType: string }>()
     for (const artifact of artifacts) {
@@ -598,7 +659,21 @@ export class ClientModuleRegistry extends Service {
         contentType: 'text/javascript; charset=utf-8',
       })
       if (artifact.sourceMap !== undefined) {
-        batchResponses.set(`${artifact.descriptor.url}.map`, {
+        batchResponses.set(artifact.sourceMapUrl, {
+          body: artifact.sourceMap,
+          contentType: 'application/json; charset=utf-8',
+        })
+      }
+    }
+    const responses = new Map(batchResponses)
+    for (const record of this.table.values()) {
+      const artifact = buildCombo([record], record.entry.rev)
+      responses.set(artifact.url, {
+        body: artifact.script,
+        contentType: 'text/javascript; charset=utf-8',
+      })
+      if (artifact.sourceMap !== undefined) {
+        responses.set(artifact.sourceMapUrl, {
           body: artifact.sourceMap,
           contentType: 'application/json; charset=utf-8',
         })
@@ -606,6 +681,7 @@ export class ClientModuleRegistry extends Service {
     }
     this.previousBatchResponses = this.batchResponses
     this.batchResponses = batchResponses
+    this.responses = responses
     const batches = artifacts.map(artifact => artifact.descriptor)
     return { rev: shortHash(JSON.stringify({ entries, batches })), entries, batches }
   }
@@ -737,7 +813,6 @@ export class ClientModuleRegistry extends Service {
       meta,
       bundle: snapshot.bundle,
       baseline: snapshot.baseline,
-      individualBundle: individualBundle(snapshot.bundle, rev, snapshot.sourceMap !== undefined),
       ...(snapshot.sourceMap === undefined ? {} : { sourceMap: snapshot.sourceMap }),
     })
     return true
@@ -779,43 +854,20 @@ export class ClientModuleRegistry extends Service {
     }
     /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server requests. */
     const requestUrl = new URL(req.url ?? '/', 'http://x')
-    const pathname = decodeURIComponent(requestUrl.pathname)
-    const batch = this.batchResponses.get(pathname) ?? this.previousBatchResponses.get(pathname)
-    if (batch !== undefined) {
+    const resourceUrl = `${requestUrl.pathname}${requestUrl.search}`
+    const response = this.responses.get(resourceUrl) ?? this.previousBatchResponses.get(resourceUrl)
+    if (response !== undefined) {
       res.writeHead(200, {
-        'content-type': batch.contentType,
+        'content-type': response.contentType,
         'cache-control': IMMUTABLE_CACHE,
       })
-      res.end(req.method === 'HEAD' ? undefined : batch.body)
+      res.end(req.method === 'HEAD' ? undefined : response.body)
       return
     }
-    // The id may contain a scope slash. Anything else under /plugins (including
+    // Anything else under /plugins (including unadvertised combinations and
     // /plugins/events when the HMR row is absent) is an unknown resource.
-    const prefix = '/plugins/'
-    const mapSuffix = '/client.js.map'
-    const bundleSuffix = '/client.js'
-    const isSourceMap = pathname.startsWith(prefix) && pathname.endsWith(mapSuffix)
-    const suffix = isSourceMap ? mapSuffix : bundleSuffix
-    const id = pathname.startsWith(prefix) && pathname.endsWith(suffix)
-      ? pathname.slice(prefix.length, -suffix.length)
-      : undefined
-    const record = id === undefined ? undefined : this.table.get(id)
-    if (record === undefined || requestUrl.searchParams.get('rev') !== record.entry.rev) {
-      res.writeHead(404)
-      res.end()
-      return
-    }
-    const body = isSourceMap ? record.sourceMap?.body : record.individualBundle
-    if (body === undefined) {
-      res.writeHead(404)
-      res.end()
-      return
-    }
-    res.writeHead(200, {
-      'content-type': isSourceMap ? 'application/json; charset=utf-8' : 'text/javascript; charset=utf-8',
-      'cache-control': IMMUTABLE_CACHE,
-    })
-    res.end(req.method === 'HEAD' ? undefined : body)
+    res.writeHead(404)
+    res.end()
   }
 }
 

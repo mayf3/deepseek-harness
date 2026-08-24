@@ -16,8 +16,12 @@ import type { ClientModuleLoaderTarget, WebBootEntry, WebBootGraph } from '../sr
 
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 const UI_RENDERER_ID = '@deepseek-ai/dsh-client-ui-renderer'
-const BOOTSTRAP_URL = '/plugins/_batch/bootstrap/boot/client.js'
-const APPLICATION_URL = '/plugins/_batch/application/app/client.js'
+
+const comboUrl = (ids: readonly string[], rev: string): string =>
+  `/plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
+const mapUrl = (url: string): string => url.replace(/\/client\.js(?=,|&rev=)/g, '/client.js.map')
+const BOOTSTRAP_URL = comboUrl([MODULES_ID], 'boot')
+const APPLICATION_URL = comboUrl([UI_RENDERER_ID], 'app')
 
 let root: string | undefined
 
@@ -125,8 +129,8 @@ function injectedFacade(graph: WebBootGraph): { html: string; target: ClientModu
 const bootGraph = (): WebBootGraph => ({
   rev: 'graph',
   entries: [
-    { id: MODULES_ID, url: '/plugins/modules.js?rev=m', rev: 'm' },
-    { id: UI_RENDERER_ID, url: '/plugins/ui-renderer.js?rev=r', rev: 'r' },
+    { id: MODULES_ID, url: comboUrl([MODULES_ID], 'm'), rev: 'm' },
+    { id: UI_RENDERER_ID, url: comboUrl([UI_RENDERER_ID], 'r'), rev: 'r' },
   ],
   batches: [
     {
@@ -150,9 +154,9 @@ describe('HTML bootstrap facade', () => {
     const { html, target } = injectedFacade(graph)
     const facadeAt = html.indexOf('window.__ModuleLoader__=')
     const applicationAt = html.indexOf(
-      `<link rel="preload" as="script" href="${APPLICATION_URL}">`,
+      `<link rel="preload" as="script" href="${APPLICATION_URL.replaceAll('&', '&amp;')}">`,
     )
-    const bootstrapAt = html.indexOf(`<script src="${BOOTSTRAP_URL}"></script>`)
+    const bootstrapAt = html.indexOf(`<script src="${BOOTSTRAP_URL.replaceAll('&', '&amp;')}"></script>`)
     const graphAt = html.indexOf('globalThis["__DSH_BOOT__"] = ')
     const entryAt = html.indexOf('<script type="module" src="/index.js"></script>')
     expect([facadeAt, applicationAt, bootstrapAt, graphAt, entryAt]).toEqual([...new Set([
@@ -176,6 +180,16 @@ describe('HTML bootstrap facade', () => {
     expect(await system.import(`${UI_RENDERER_ID}/client`)).toEqual({ marker: 'ui-renderer' })
     expect(() => target.create({ boot: graph, staticModules: {} }))
       .toThrow('create called after module-system boot')
+  })
+
+  it('preloads every application combo', () => {
+    const graph = bootGraph()
+    const secondId = '@fixture/second-application-combo'
+    const secondUrl = comboUrl([secondId], 'app-2')
+    graph.entries.push({ id: secondId, url: comboUrl([secondId], 'row-2'), rev: 'row-2' })
+    graph.batches.push({ phase: 'application', url: secondUrl, rev: 'app-2', entries: [secondId] })
+    expect(bootInjections(graph).flatMap(row => row.kind === 'script-preload' ? [row.src] : []))
+      .toEqual([APPLICATION_URL, secondUrl])
   })
 
   it('rejects a page that did not preload the modules bundle', () => {
@@ -268,7 +282,7 @@ describe('client bundle activation', () => {
     const tornRow = torn.service.graph().entries[0]!
     expect((await routeRequest(torn.route, tornRow.url)).body.toString('utf8'))
       .not.toContain('sourceMappingURL')
-    expect((await routeRequest(torn.route, `${torn.service.graph().batches[0]!.url}.map`)).status).toBe(404)
+    expect((await routeRequest(torn.route, mapUrl(torn.service.graph().batches[0]!.url))).status).toBe(404)
 
     writeFileSync(`${clientPath}.map`, '{"version":3,"sources":[null]}\n')
     expect(() => construct([packageName])).not.toThrow()
@@ -323,6 +337,39 @@ describe('client bundle activation', () => {
     expect(service.artifactBaseline('@fixture/unknown')).toBeUndefined()
   })
 
+  it('splits startup combos before the map-form URL exceeds 3 KiB', async () => {
+    const packageNames = Array.from({ length: 48 }, (_, index) => (
+      `@fixture/combo-url-${String(index).padStart(3, '0')}-${'x'.repeat(40)}`
+    ))
+    const sourceMap = JSON.stringify({
+      version: 3,
+      names: [],
+      mappings: 'AAAA',
+      sources: ['src/index.ts'],
+    })
+    for (const packageName of packageNames) {
+      const clientPath = writePackage(packageName)
+      mkdirSync(dirname(clientPath), { recursive: true })
+      writeFileSync(clientPath, 'module.exports = {}\n')
+      writeFileSync(`${clientPath}.map`, sourceMap)
+    }
+
+    const { service, route } = constructWithRoute(packageNames)
+    const batches = service.graph().batches.filter(batch => batch.phase === 'application')
+    expect(batches.length).toBeGreaterThan(1)
+    expect(batches.flatMap(batch => batch.entries)).toEqual(packageNames)
+    for (const batch of batches) {
+      expect(Buffer.byteLength(batch.url)).toBeLessThanOrEqual(3 * 1024)
+      expect(Buffer.byteLength(mapUrl(batch.url))).toBeLessThanOrEqual(3 * 1024)
+      expect((await routeRequest(route, batch.url)).status).toBe(200)
+      expect((await routeRequest(route, mapUrl(batch.url))).status).toBe(200)
+    }
+    for (let index = 0; index < batches.length - 1; index += 1) {
+      const entries = [...batches[index]!.entries, batches[index + 1]!.entries[0]!]
+      expect(Buffer.byteLength(mapUrl(comboUrl(entries, '0'.repeat(12))))).toBeGreaterThan(3 * 1024)
+    }
+  })
+
   it('serves the source map beside a registered client bundle', async () => {
     const packageName = '@fixture/source-map'
     const clientPath = writePackage(packageName)
@@ -332,35 +379,44 @@ describe('client bundle activation', () => {
     writeFileSync(`${clientPath}.map`, map)
     const { service, route } = constructWithRoute([packageName])
     const row = service.graph().entries[0]!
-    const individualScript = await routeRequest(route, row.url)
-    expect(individualScript.body.toString('utf8')).toContain(`sourceMappingURL=client.js.map?rev=${row.rev}`)
-    const individual = await routeRequest(route, row.url.replace('/client.js?', '/client.js.map?'))
-    expect(individual.status).toBe(200)
-    expect(individual.headers).toEqual({
+    const singleScript = await routeRequest(route, row.url)
+    expect(singleScript.body.toString('utf8')).toContain(`sourceMappingURL=${mapUrl(row.url)}`)
+    const singleMap = await routeRequest(route, mapUrl(row.url))
+    expect(singleMap.status).toBe(200)
+    expect(singleMap.headers).toEqual({
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'public, max-age=31536000, immutable',
     })
-    expect(individual.body.toString('utf8')).toBe(map)
+    expect(JSON.parse(singleMap.body.toString('utf8'))).toMatchObject({
+      version: 3,
+      file: 'client.js',
+      sections: [{
+        offset: { line: 0, column: 0 },
+        map: {
+          ...(JSON.parse(map) as Record<string, unknown>),
+          sources: ['/packages/client/demo/src/index.tsx', 'https://cdn.example.test/library.js'],
+        },
+      }],
+    })
 
     const batch = service.graph().batches[0]!
     expect(batch).toMatchObject({ phase: 'application', entries: [packageName] })
     const batchScript = await routeRequest(route, batch.url)
     expect(batchScript.status).toBe(200)
     expect(batchScript.headers?.['cache-control']).toBe('public, max-age=31536000, immutable')
-    expect(batchScript.body.toString('utf8')).toContain('//# sourceMappingURL=client.js.map')
-    expect(batchScript.body.toString('utf8')).not.toContain('sourceMappingURL=client.js.map?rev=')
+    expect(batchScript.body.toString('utf8')).toContain(`//# sourceMappingURL=${mapUrl(batch.url)}`)
     expect((await routeRequest(route, batch.url, 'HEAD')).body).toHaveLength(0)
     expect((await routeRequest(route, batch.url, 'POST')).status).toBe(405)
-    const batchMap = await routeRequest(route, `${batch.url}.map`)
+    const batchMap = await routeRequest(route, mapUrl(batch.url))
     const parsedBatchMap = JSON.parse(batchMap.body.toString('utf8')) as unknown
-    const parsedIndividualMap = JSON.parse(map) as Record<string, unknown>
+    const parsedPluginMap = JSON.parse(map) as Record<string, unknown>
     expect(parsedBatchMap).toMatchObject({
       version: 3,
       file: 'client.js',
       sections: [{
         offset: { line: 0, column: 0 },
         map: {
-          ...parsedIndividualMap,
+          ...parsedPluginMap,
           sources: ['/packages/client/demo/src/index.tsx', 'https://cdn.example.test/library.js'],
         },
       }],
@@ -370,8 +426,12 @@ describe('client bundle activation', () => {
     writeFileSync(`${clientPath}.map`, '{"version":3,"names":[],"mappings":"AAAA","sources":["src/changed.tsx"]}\n')
     const nextRev = service.rebuilt(packageName)
     expect(nextRev).not.toBe(row.rev)
-    const nextMap = await routeRequest(route, `/plugins/${packageName}/client.js.map?rev=${String(nextRev)}`)
-    expect(JSON.parse(nextMap.body.toString('utf8'))).toMatchObject({ sources: ['src/changed.tsx'] })
+    const nextRow = service.graph().entries[0]!
+    expect(nextRow.rev).toBe(nextRev)
+    const nextMap = await routeRequest(route, mapUrl(nextRow.url))
+    expect(JSON.parse(nextMap.body.toString('utf8'))).toMatchObject({
+      sections: [{ map: { sources: ['/plugins/@fixture/source-map/src/changed.tsx'] } }],
+    })
   })
 
   it('applies sourceRoot before relocating absolute-looking section sources', async () => {
@@ -387,7 +447,7 @@ describe('client bundle activation', () => {
       sources: ['/absolute.ts'],
     }))
     const { service, route } = constructWithRoute([packageName])
-    const response = await routeRequest(route, `${service.graph().batches[0]!.url}.map`)
+    const response = await routeRequest(route, mapUrl(service.graph().batches[0]!.url))
     const map = JSON.parse(response.body.toString('utf8')) as {
       sections: { map: { sourceRoot?: string; sources: string[] } }[]
     }
@@ -417,7 +477,7 @@ describe('client bundle activation', () => {
       }))
     }
     const { service, route } = constructWithRoute([firstName, secondName])
-    const response = await routeRequest(route, `${service.graph().batches[0]!.url}.map`)
+    const response = await routeRequest(route, mapUrl(service.graph().batches[0]!.url))
     const payload = JSON.parse(response.body.toString('utf8')) as ConstructorParameters<typeof SourceMap>[0]
     const sections = (payload as unknown as {
       sections: { offset: { line: number; column: number } }[]
@@ -449,7 +509,7 @@ describe('client bundle activation', () => {
     }))
 
     const { service, route } = constructWithRoute([unmappedName, mappedName])
-    const response = await routeRequest(route, `${service.graph().batches[0]!.url}.map`)
+    const response = await routeRequest(route, mapUrl(service.graph().batches[0]!.url))
     const payload = JSON.parse(response.body.toString('utf8')) as ConstructorParameters<typeof SourceMap>[0]
     const consumer = new SourceMap(payload)
     expect(consumer.findEntry(2, 0)).toMatchObject({ originalSource: '/packages/demo/mapped.ts' })
@@ -462,7 +522,7 @@ describe('shared module declarations', () => {
     writeBuiltPackage(packageName, { external: ['react'] })
     expect(construct([packageName]).graph().entries).toEqual([{
       id: packageName,
-      url: expect.stringContaining(`/plugins/${packageName}/client.js?rev=`) as unknown as string,
+      url: expect.stringContaining(`/plugins/??${packageName}/client.js&rev=`) as unknown as string,
       rev: expect.any(String) as unknown as string,
       external: ['react'],
     }])
@@ -485,7 +545,7 @@ describe('shared module declarations', () => {
 
 describe('module graph order', () => {
   const entry = (id: string, fields: Partial<WebBootEntry> = {}): WebBootEntry =>
-    ({ id, url: `/plugins/${id}/client.js?rev=0`, rev: '0', ...fields })
+    ({ id, url: comboUrl([id], '0'), rev: '0', ...fields })
   const ids = (entries: readonly WebBootEntry[]): string[] => entries.map(row => row.id)
 
   it('places every requested package row before its consumers along a chain', () => {
