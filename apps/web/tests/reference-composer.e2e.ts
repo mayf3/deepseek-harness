@@ -123,12 +123,16 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
-    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    await connectFreshWorkspace(page, scaffold.workspaceCwd)
+    // Fixture files land before the workspace connects so the Host's file
+    // index never races their creation (the connect helper mkdirs the same
+    // directory and tolerates it existing).
+    await mkdir(join(scaffold.workspaceCwd, 'workspace'), { recursive: true })
     await writeFile(join(scaffold.workspaceCwd, 'workspace', 'reference.txt'), 'reference fixture\n')
     await mkdir(join(scaffold.workspaceCwd, 'workspace', 'folderx'), { recursive: true })
     await writeFile(join(scaffold.workspaceCwd, 'workspace', 'folderx', 'child.txt'), 'child fixture\n')
+    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    await connectFreshWorkspace(page, scaffold.workspaceCwd)
   }, 120_000)
 
   afterAll(async () => {
@@ -245,7 +249,8 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     // Settle: Enter on the highlighted folder row resolves the folder itself
     // as an atomic chip — folder glyph, no trigger character, one unit.
     await input.fill('@folderx')
-    await menu.getByRole('option', { name: /Folder · folderx\// }).waitFor()
+    // First folder query on this page: allow the Host index a cold start.
+    await menu.getByRole('option', { name: /Folder · folderx\// }).waitFor({ timeout: 60_000 })
     await page.keyboard.press('Enter')
     const chip = input.locator('[data-composer-chip]').last()
     await expect.poll(() => chip.textContent()).toBe('folderx/')
