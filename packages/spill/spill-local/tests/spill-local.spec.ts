@@ -477,6 +477,10 @@ describe('startup cleanup sweep', () => {
     }
   })
 
+  it('omits a missing active root', async () => {
+    expect(await gatherSweepRoots(join(root, 'missing'), () => {}, root)).toEqual([])
+  })
+
   it('skips a root that another POSIX user could replace', async () => {
     if (process.platform === 'win32') return
     const unsafeParent = join(root, 'unsafe-parent')

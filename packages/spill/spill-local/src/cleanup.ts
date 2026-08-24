@@ -66,6 +66,8 @@ function rootIdentity(path: string, stats: Stats): string {
 async function hasProtectedAncestors(path: string): Promise<boolean> {
   /* v8 ignore next -- POSIX ancestry checks have no Windows ACL equivalent. */
   if (process.platform === 'win32' || process.geteuid === undefined) return true
+  /* v8 ignore start -- Windows takes the return above; POSIX tests exercise
+     the ancestor ownership and mode policy. */
   const currentUid = process.geteuid()
   let child = path
   let childStats = await lstat(child)
@@ -84,6 +86,7 @@ async function hasProtectedAncestors(path: string): Promise<boolean> {
     child = parent
     childStats = stats
   }
+  /* v8 ignore stop */
 }
 
 /**
@@ -136,10 +139,13 @@ async function resolveRoot(path: string, allowSymlink: boolean, warn: WarnFn): P
     return undefined
     /* v8 ignore stop */
   }
+  /* v8 ignore start -- Windows has no POSIX ownership or mode rejection path;
+     POSIX tests exercise both unsafe-directory conditions. */
   if (!isTrustedDirectory(stats) || !protectedAncestors) {
     warnSafely(warn, `spill-local: skipped unsafe root ${canonical}: expected a current-user-owned directory with protected write and ancestor permissions`)
     return undefined
   }
+  /* v8 ignore stop */
   return { path: canonical, identity: rootIdentity(canonical, stats) }
 }
 
