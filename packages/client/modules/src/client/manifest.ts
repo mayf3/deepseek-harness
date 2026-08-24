@@ -52,7 +52,7 @@ export interface WebBootEntry {
   id: string
   /** Revisioned individual endpoint used by HMR. */
   url: string
-  /** Hash over the individual bundle and available source map. */
+  /** Opaque individual-artifact revision used for HMR cache busting. */
   rev: string
   /** Package-name dependency edges used for factory arrival and plugin composition. */
   inject?: string[]
@@ -99,7 +99,7 @@ export interface BootModuleRow {
   url: string
   /** Content-addressed batch endpoint used before the first HMR invalidation. */
   initialUrl: string
-  /** Hash over the individual bundle and available source map. */
+  /** Opaque individual-artifact revision used after HMR invalidation. */
   rev: string
   /** Injected package rows whose factories arrive before this row materializes. */
   inject: string[]

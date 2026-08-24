@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { WebBootGraph, ClientModuleRegistry } from '@deepseek-ai/dsh-client-modules'
+import type { ClientArtifactBaseline, ClientModuleRegistry, WebBootGraph } from '@deepseek-ai/dsh-client-modules'
 import type { WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
 import { apply, Config, EVENTS_ENDPOINT, inject } from '../src/index.ts'
 
@@ -29,10 +29,28 @@ interface FakeHostOptions {
   rebuilt?: (id: string) => string | undefined
 }
 
+function artifactBaseline(path: string): ClientArtifactBaseline {
+  const bundle = statSync(path)
+  try {
+    const sourceMap = statSync(`${path}.map`)
+    return {
+      path,
+      mtimeMs: bundle.mtimeMs,
+      size: bundle.size,
+      mapMtimeMs: sourceMap.mtimeMs,
+      mapSize: sourceMap.size,
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    return { path, mtimeMs: bundle.mtimeMs, size: bundle.size, mapMtimeMs: null, mapSize: null }
+  }
+}
+
 function fakeClientModuleHost(rows: Map<string, string>, options: FakeHostOptions = {}): FakeHost {
   const graphListeners = new Set<() => void>()
   const rebuiltCalls: string[] = []
-  const fake: Pick<FakeHost, 'graph' | 'clientPath' | 'rebuilt' | 'onRebuilt' | 'onGraphChanged' | 'rebuiltCalls' | 'fireGraphChanged'> = {
+  const baselines = new Map([...rows].map(([id, path]) => [id, artifactBaseline(path)]))
+  const fake: Pick<FakeHost, 'graph' | 'artifactBaseline' | 'rebuilt' | 'onRebuilt' | 'onGraphChanged' | 'rebuiltCalls' | 'fireGraphChanged'> = {
     rebuiltCalls,
     fireGraphChanged: () => { for (const l of graphListeners) l() },
     graph: (): WebBootGraph => {
@@ -43,7 +61,16 @@ function fakeClientModuleHost(rows: Map<string, string>, options: FakeHostOption
         batches: [],
       }
     },
-    clientPath: id => rows.get(id),
+    artifactBaseline: (id) => {
+      const path = rows.get(id)
+      if (path === undefined) return undefined
+      let baseline = baselines.get(id)
+      if (baseline?.path !== path) {
+        baseline = artifactBaseline(path)
+        baselines.set(id, baseline)
+      }
+      return { ...baseline }
+    },
     rebuilt: (id) => {
       rebuiltCalls.push(id)
       return options.rebuilt?.(id) ?? 'r2'
@@ -93,8 +120,7 @@ describe('hmr node half', () => {
 
     expect(routes).toHaveLength(1)
     expect(routes[0]).toMatchObject({ kind: 'exact', path: EVENTS_ENDPOINT })
-    expect(clientModuleHost.rebuiltCalls).toEqual(['pkg-a'])
-    clientModuleHost.rebuiltCalls.length = 0
+    expect(clientModuleHost.rebuiltCalls).toEqual([])
 
     // Nudge mtime past stat granularity so the poller sees a content signal.
     await new Promise(resolve => setTimeout(resolve, POLL_MS * 2))
@@ -127,8 +153,7 @@ describe('hmr node half', () => {
     writeFileSync(late, 'v1')
     rows.set('pkg-late', late)
     clientModuleHost.fireGraphChanged()
-    expect(clientModuleHost.rebuiltCalls).toEqual(['pkg-late'])
-    clientModuleHost.rebuiltCalls.length = 0
+    expect(clientModuleHost.rebuiltCalls).toEqual([])
 
     await new Promise(resolve => setTimeout(resolve, POLL_MS * 2))
     writeFileSync(late, 'v2-longer')
@@ -143,7 +168,7 @@ describe('hmr node half', () => {
     await fiber.dispose()
   })
 
-  it('rehashes after baseline capture so a construction-window write cannot become the baseline', async () => {
+  it('rehashes only a row changed between its startup snapshot and watch installation', async () => {
     const bundle = join(dir, 'construction.js')
     writeFileSync(bundle, 'v1')
     let rewrite = true
@@ -151,9 +176,6 @@ describe('hmr node half', () => {
       beforeGraphRead: () => {
         if (!rewrite) return
         rewrite = false
-        // The graph carries the hash from before this write. The old
-        // fs.watchFile registration asynchronously captured the new file as
-        // its first baseline and never requested a re-hash.
         writeFileSync(bundle, 'v2-written-during-watch-construction')
       },
     })
@@ -190,11 +212,15 @@ describe('hmr node half', () => {
     await fiber.dispose()
   })
 
-  it('retains a dirty baseline when the immediate re-hash races a rename', async () => {
+  it('retains a dirty baseline when a catch-up re-hash races a rename', async () => {
     const bundle = join(dir, 'rename.js')
     writeFileSync(bundle, 'v1')
     let first = true
     const clientModuleHost = fakeClientModuleHost(new Map([['pkg-a', bundle]]), {
+      beforeGraphRead: () => {
+        if (!first) return
+        writeFileSync(bundle, 'v2-written-during-watch-construction')
+      },
       rebuilt: () => {
         if (!first) return 'r2'
         first = false

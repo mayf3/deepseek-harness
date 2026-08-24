@@ -24,7 +24,7 @@ interface WebBootEntry {
   id: string
   /** Revisioned individual endpoint used by HMR. */
   url: string
-  /** Hash over the individual bundle and available source map. */
+  /** Opaque individual-artifact revision used for HMR cache busting. */
   rev: string
   /** Package-name dependency edges used for factory arrival and plugin composition. */
   inject?: string[]
@@ -70,7 +70,7 @@ interface WebBootGraph {
 }
 ```
 
-Each row's `rev` hashes the individual bundle and its available source map. The bootstrap batch contains the modules row; the preloaded application batch contains every other row. Batch revisions hash the generated script and indexed source map, and the graph revision hashes both rows and batch descriptors. `immediately` marks the stage-one registration barrier; application rows share one script transport even when only some carry the mark.
+Each initial row's `rev` is an opaque process nonce plus sequence, so graph composition does not hash every individual artifact. After HMR observes a change, that row's revision becomes the hash of its new bundle and available source map. The bootstrap batch contains the modules row; the preloaded application batch contains every other row. Batch revisions hash the generated script and indexed source map, and the graph revision hashes both rows and batch descriptors. `immediately` marks the stage-one registration barrier; application rows share one script transport even when only some carry the mark.
 
 ## The scan
 
@@ -86,9 +86,25 @@ Package metadata — including the negative "not a client package" verdict — i
 
 ## The service
 
-`ClientModuleRegistry` (`ctx.clientModules`, defined in [`packages/client/modules/src/index.ts`](../../packages/client/modules/src/index.ts)) exposes reads and the rebuild face; signatures are in the generated [service catalog](#ctxclientmodules--clientmoduleregistry). `graph()` returns the current composed graph (a stable object between changes) and `clientPath(id)` the bundle's absolute path. `rebuilt(id)` is the only entry point through which bundle content reaches the graph: it re-hashes the file, and only a real rev change recomposes the graph and notifies. `onRebuilt` fires per changed bundle with the new rev; `onGraphChanged` fires after any flush that recomposed the graph (row added or removed, or a rebuilt rev change) and is pull-model — listeners re-read `graph()`. Both notification paths contain listener exceptions so one throwing subscriber cannot skip later subscribers or kill whatever triggered the flush.
+```ts type-equiv
+/** Filesystem baseline captured before a client artifact snapshot is read. */
+interface ClientArtifactBaseline {
+  /** Absolute path of the client bundle. */
+  readonly path: string
+  /** Bundle modification time in milliseconds. */
+  readonly mtimeMs: number
+  /** Bundle size in bytes. */
+  readonly size: number
+  /** Source-map modification time, or null when no map was observable. */
+  readonly mapMtimeMs: number | null
+  /** Source-map size in bytes, or null when no map was observable. */
+  readonly mapSize: number | null
+}
+```
 
-In development, [dsh-client-hmr](../../packages/client/hmr/README.md) is the registry's watch driver: its node half stat-polls every graph row's bundle from a synchronously captured baseline, calls `rebuilt(id)` on change, resyncs its watch set through `onGraphChanged`, and broadcasts rev changes to the browser half over SSE. Production graphs omit the HMR row entirely; the module host itself never watches files.
+`ClientModuleRegistry` (`ctx.clientModules`, defined in [`packages/client/modules/src/index.ts`](../../packages/client/modules/src/index.ts)) exposes reads and the rebuild face; signatures are in the generated [service catalog](#ctxclientmodules--clientmoduleregistry). `graph()` returns the current composed graph (a stable object between changes), `clientPath(id)` returns the bundle's absolute path, and `artifactBaseline(id)` returns the bundle/map stat values captured before the current snapshot was read. `rebuilt(id)` is the only entry point through which changed bundle content reaches the graph: it re-hashes that artifact, and only a real rev change recomposes the graph and notifies. `onRebuilt` fires per changed bundle with the new rev; `onGraphChanged` fires after any flush that recomposed the graph (row added or removed, or a rebuilt rev change) and is pull-model — listeners re-read `graph()`. Both notification paths contain listener exceptions so one throwing subscriber cannot skip later subscribers or kill whatever triggered the flush.
+
+In development, [dsh-client-hmr](../../packages/client/hmr/README.md) is the registry's watch driver: its node half stat-polls every graph row's bundle and optional map from the module host's pre-read baseline, calls `rebuilt(id)` only for a changed or dirty row, resyncs its watch set through `onGraphChanged`, and broadcasts rev changes to the browser half over SSE. Production graphs omit the HMR row entirely; the module host itself never watches files.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -117,6 +133,16 @@ graph(): WebBootGraph
  * @returns the path, or undefined for an unknown id.
  */
 clientPath(id: string): string | undefined
+
+/**
+ * Filesystem baseline captured before an entry's current bytes were read.
+ * HMR compares it with the live files when installing a watch, so a write
+ * between startup composition and watch installation cannot disappear into
+ * the watcher's initial state.
+ * @param id - entry id (package name).
+ * @returns the path and baseline, or undefined for an unknown id.
+ */
+artifactBaseline(id: string): ClientArtifactBaseline | undefined
 
 /**
  * Re-hash one bundle (the HMR watch's registration hook — the only entry

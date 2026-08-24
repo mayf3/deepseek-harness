@@ -22,8 +22,8 @@
  * @module @deepseek-ai/dsh-client-modules
  */
 
-import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { createHash, randomBytes } from 'node:crypto'
+import { readFileSync, statSync, type Stats } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
@@ -68,6 +68,20 @@ interface WebBootRowFields {
   /** Module specifiers the package requests from the module table. */
   external: string[]
   immediately: boolean
+}
+
+/** Filesystem baseline captured before a client artifact snapshot is read. */
+export interface ClientArtifactBaseline {
+  /** Absolute path of the client bundle. */
+  readonly path: string
+  /** Bundle modification time in milliseconds. */
+  readonly mtimeMs: number
+  /** Bundle size in bytes. */
+  readonly size: number
+  /** Source-map modification time, or null when no map was observable. */
+  readonly mapMtimeMs: number | null
+  /** Source-map size in bytes, or null when no map was observable. */
+  readonly mapSize: number | null
 }
 
 /** Resolved package metadata for one `dsh.client` package (cached per name, never expires). */
@@ -120,8 +134,10 @@ class ClientPackageCompositionError extends AggregateError {
 interface WebPluginRecord {
   entry: WebBootEntry
   meta: PkgMeta
-  /** Exact build artifact whose hash produced entry.rev. */
+  /** Exact build artifact included in the startup batches. */
   bundle: Buffer
+  /** Pre-read filesystem baseline handed to the HMR watcher. */
+  baseline: ClientArtifactBaseline
   /** Revision-stamped individual response used after HMR invalidation. */
   individualBundle: Buffer
   /** Optional parsed and original source map snapshot for immutable delivery. */
@@ -177,7 +193,7 @@ function clientExportOf(pkgName: string, exportsField: unknown): string | undefi
   throw new Error(`client-modules: ${pkgName} exports["./client"] must be a string or an object with a string default`)
 }
 
-/** sha1 content hash shortened to 12 hex chars (bundle rev / graph rev). */
+/** sha1 content hash shortened to 12 hex chars (batch / graph / rebuilt-artifact rev). */
 function shortHash(input: string | Buffer): string {
   return createHash('sha1').update(input).digest('hex').slice(0, 12)
 }
@@ -189,7 +205,7 @@ function framedHash(domain: string, parts: readonly Buffer[]): string {
   return hash.digest('hex').slice(0, 12)
 }
 
-/** Hash every byte served under one individual artifact revision. */
+/** Hash every byte served after HMR observes one artifact change. */
 function artifactRevision(bundle: Buffer, sourceMap: WebPluginRecord['sourceMap']): string {
   return framedHash('individual', sourceMap === undefined ? [bundle] : [bundle, sourceMap.body])
 }
@@ -417,6 +433,8 @@ export class ClientModuleRegistry extends Service {
   private readonly graphListeners = new Set<() => void>()
   private readonly dirty = new Set<string>()
   private readonly resolvePkgJson: (spec: string) => string
+  private readonly initialRevisionNonce = randomBytes(8).toString('hex')
+  private nextInitialRevision = 0
   private batchResponses = new Map<string, { body: Buffer; contentType: string }>()
   /** One prior graph generation covers a request racing the HMR recomposition that replaced its URL. */
   private previousBatchResponses = new Map<string, { body: Buffer; contentType: string }>()
@@ -492,6 +510,19 @@ export class ClientModuleRegistry extends Service {
   }
 
   /**
+   * Filesystem baseline captured before an entry's current bytes were read.
+   * HMR compares it with the live files when installing a watch, so a write
+   * between startup composition and watch installation cannot disappear into
+   * the watcher's initial state.
+   * @param id - entry id (package name).
+   * @returns the path and baseline, or undefined for an unknown id.
+   */
+  artifactBaseline(id: string): ClientArtifactBaseline | undefined {
+    const baseline = this.table.get(id)?.baseline
+    return baseline === undefined ? undefined : { ...baseline }
+  }
+
+  /**
    * Re-hash one bundle (the HMR watch's registration hook — the only entry
    * point through which bundle content changes reach the graph).
    * @param id - entry id (package name).
@@ -500,9 +531,11 @@ export class ClientModuleRegistry extends Service {
   rebuilt(id: string): string | undefined {
     const record = this.table.get(id)
     if (record === undefined) return undefined
+    const baseline = this.captureArtifactBaseline(record.meta.clientPath)
     const bundle = readFileSync(record.meta.clientPath)
     const sourceMap = this.readSourceMapSnapshot(record.meta.clientPath)
     const rev = artifactRevision(bundle, sourceMap)
+    record.baseline = baseline
     if (rev === record.entry.rev) return rev
     record.entry = graphRow(id, rev, record.meta)
     record.bundle = bundle
@@ -625,22 +658,47 @@ export class ClientModuleRegistry extends Service {
     return meta
   }
 
+  /** Capture the bundle and optional-map stats before reading their bytes. */
+  private captureArtifactBaseline(clientPath: string): ClientArtifactBaseline {
+    const bundle = statSync(clientPath)
+    let sourceMap: Stats | undefined
+    try {
+      sourceMap = statSync(`${clientPath}.map`)
+    } catch {
+      // Optional map metadata only seeds HMR; the following map read reports
+      // malformed or inaccessible bytes and a later stat change self-heals.
+    }
+    return {
+      path: clientPath,
+      mtimeMs: bundle.mtimeMs,
+      size: bundle.size,
+      mapMtimeMs: sourceMap?.mtimeMs ?? null,
+      mapSize: sourceMap?.size ?? null,
+    }
+  }
+
+  /** Allocate an opaque initial row revision without inspecting artifact bytes. */
+  private allocateInitialRevision(): string {
+    return `${this.initialRevisionNonce}-${String(this.nextInitialRevision++)}`
+  }
+
   /**
    * Read the activation-time bundle and optional source-map snapshots.
    * @param pkgName - package that declares the client bundle.
    * @param clientPath - absolute path of the built client artifact.
-   * @returns the immutable bytes plus the bundle content revision.
+   * @returns the immutable bytes plus the pre-read filesystem baseline.
    * @throws {MissingClientBundleError} when the read fails with `ENOENT`; other filesystem errors are rethrown unchanged.
    */
   private initialBundleSnapshot(pkgName: string, clientPath: string): {
     bundle: Buffer
-    rev: string
+    baseline: ClientArtifactBaseline
     sourceMap?: WebPluginRecord['sourceMap']
   } {
     try {
+      const baseline = this.captureArtifactBaseline(clientPath)
       const bundle = readFileSync(clientPath)
       const sourceMap = this.readSourceMapSnapshot(clientPath)
-      return { bundle, rev: artifactRevision(bundle, sourceMap), ...(sourceMap === undefined ? {} : { sourceMap }) }
+      return { bundle, baseline, ...(sourceMap === undefined ? {} : { sourceMap }) }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       throw new MissingClientBundleError(pkgName, clientPath, error)
@@ -670,14 +728,16 @@ export class ClientModuleRegistry extends Service {
     if (this.table.has(entryName)) return false
     const meta = this.resolveMeta(entryName)
     if (meta === null) return false
-    // The rev rides the row from here on: a fiber restart reuses the row (and
-    // its rev) untouched; only rebuilt() re-reads the bundle.
+    // The opaque initial rev rides the row until HMR observes a file change;
+    // a fiber restart reuses the existing row without inspecting bytes.
     const snapshot = this.initialBundleSnapshot(entryName, meta.clientPath)
+    const rev = this.allocateInitialRevision()
     this.table.set(entryName, {
-      entry: graphRow(entryName, snapshot.rev, meta),
+      entry: graphRow(entryName, rev, meta),
       meta,
       bundle: snapshot.bundle,
-      individualBundle: individualBundle(snapshot.bundle, snapshot.rev, snapshot.sourceMap !== undefined),
+      baseline: snapshot.baseline,
+      individualBundle: individualBundle(snapshot.bundle, rev, snapshot.sourceMap !== undefined),
       ...(snapshot.sourceMap === undefined ? {} : { sourceMap: snapshot.sourceMap }),
     })
     return true

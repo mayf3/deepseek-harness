@@ -13,7 +13,7 @@ import type { ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 // Empty type imports carry the clientModuleHost/webServer Context merges.
-import type {} from '@deepseek-ai/dsh-client-modules'
+import type { ClientArtifactBaseline } from '@deepseek-ai/dsh-client-modules'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { PluginsEventFrame } from './events.ts'
 import { EVENTS_ENDPOINT } from './events.ts'
@@ -42,17 +42,11 @@ function sseData(frame: PluginsEventFrame): string {
   return `data: ${JSON.stringify(frame)}\n\n`
 }
 
-interface WatchedArtifactStat {
-  mtimeMs: number
-  size: number
-  mapMtimeMs: number | null
-  mapSize: number | null
-}
+type WatchedArtifactStat = Omit<ClientArtifactBaseline, 'path'>
 
-interface WatchedBundle extends WatchedArtifactStat {
-  path: string
-  dirty: boolean
-}
+type WatchedBundle = {
+  -readonly [K in keyof ClientArtifactBaseline]: ClientArtifactBaseline[K]
+} & { dirty: boolean }
 
 /** Snapshot the bundle plus its optional development source map. */
 function artifactStat(path: string): WatchedArtifactStat {
@@ -106,21 +100,20 @@ export function apply(ctx: Context, config: Config): void {
     watch.dirty = false
   }
 
-  const watchRow = (id: string, path: string): void => {
-    let baseline: WatchedArtifactStat
+  const watchRow = (id: string, baseline: ClientArtifactBaseline): void => {
+    const watch: WatchedBundle = { ...baseline, dirty: false }
+    watched.set(id, watch)
+    let current: WatchedArtifactStat
     try {
-      baseline = artifactStat(path)
+      current = artifactStat(baseline.path)
     } catch (error) {
-      watched.set(id, { path, mtimeMs: 0, size: 0, mapMtimeMs: null, mapSize: null, dirty: true })
+      watch.dirty = true
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') ctx.logger.warn(error)
       return
     }
-    const watch: WatchedBundle = { path, ...baseline, dirty: false }
-    watched.set(id, watch)
-    // The module host hashed before publishing the graph. Re-hash immediately
-    // after capturing this baseline so a write in between cannot become an
-    // already-current baseline paired with a stale graph rev.
-    rehash(id, watch, baseline)
+    // The module host captured its baseline before reading the bytes in the
+    // startup batch. Only a mismatch crosses into the content-hash path.
+    if (!sameArtifactStat(current, watch)) rehash(id, watch, current)
   }
 
   const pollWatches = (): void => {
@@ -143,17 +136,17 @@ export function apply(ctx: Context, config: Config): void {
   // Diff the watch set against the current graph: drop watches for removed
   // rows (or rows whose bundle path moved), add watches for new rows.
   const syncWatches = (): void => {
-    const rows = new Map<string, string>()
+    const rows = new Map<string, ClientArtifactBaseline>()
     for (const row of ctx.clientModules.graph().entries) {
-      const path = ctx.clientModules.clientPath(row.id)
-      if (path !== undefined) rows.set(row.id, path)
+      const watch = ctx.clientModules.artifactBaseline(row.id)
+      if (watch !== undefined) rows.set(row.id, watch)
     }
     for (const [id, watch] of watched) {
-      if (rows.get(id) === watch.path) continue
+      if (rows.get(id)?.path === watch.path) continue
       watched.delete(id)
     }
-    for (const [id, path] of rows) {
-      if (!watched.has(id)) watchRow(id, path)
+    for (const [id, watch] of rows) {
+      if (!watched.has(id)) watchRow(id, watch)
     }
   }
 

@@ -10,7 +10,7 @@ Host 会先安装 `window.__ModuleLoader__`、预加载 application 批次，再
 
 解析分支顺序（`import(specifier)`）：平台种子词 → 外壳实例；记忆化记录 → 导出；模块图记录（`window.__DSH_BOOT__`）→ 登记其初始批次 factory；已登记 factory → 物化；其他情况一律抛出异常。这是构建时 bundle 纯度门禁的运行时镜像。交给 factory 的同步 `require` 采用相同顺序，但不含异步 graph-row 加载分支，并把观察到的边记录到模块记录中。`prefetch` 是第一阶段到达钩子；共享同一批次 URL 的 row 会共享一个进行中的脚本任务。`invalidate(id, rev)` 会丢弃非 bootstrap factory 与物化记录，并让该 row 改用带 revision 的独立脚本，因此 HMR（热模块替换）只重载一个插件，不会再次执行整批脚本。
 
-Node 侧会扫描已启用的 Loader 配置项以发现 web `dsh.client` 包，解析并快照每个 `exports["./client"]` 及其可用 sourcemap，携带包专属 `dsh.client.external` 请求，并把动态提供方排在消费者之前。它为 modules row 生成 bootstrap 批次，为其余 row 生成 application 批次；每个批次都有按内容寻址的脚本，以及由现有插件 map 组合而成的 indexed Source Map v3 文件。HMR 仍可访问带 revision 的独立脚本与 map；所有版本化响应都不可变，revision 不匹配时返回 404，绝不在旧 URL 下提供新字节。源码启动会把宿主侧导入映射到 TypeScript 源码，但仍消费这些构建后的客户端导出；缺失文件共享一条构建说明，随后以包／路径列表列出各项，而无关的文件系统错误仍是独立故障。
+Node 侧会扫描已启用的 Loader 配置项以发现 web `dsh.client` 包，解析并快照每个 `exports["./client"]` 及其可用 sourcemap，携带包专属 `dsh.client.external` 请求，并把动态提供方排在消费者之前。它为 modules row 生成 bootstrap 批次，为其余 row 生成 application 批次；每个批次都有按内容寻址的脚本，以及由现有插件 map 组合而成的 indexed Source Map v3 文件。初始独立 revision 使用不透明的进程 nonce，因此启动时不会哈希每个插件；HMR 只哈希 watcher 报告发生变化的产物。HMR 仍可访问带 revision 的独立脚本与 map；所有版本化响应都不可变，revision 不匹配时返回 404，绝不在旧 URL 下提供新字节。源码启动会把宿主侧导入映射到 TypeScript 源码，但仍消费这些构建后的客户端导出；缺失文件共享一条构建说明，随后以包／路径列表列出各项，而无关的文件系统错误仍是独立故障。
 
 `dsh.client.external` 是外壳播种的 React、Cordis 和静态 UI 库这一统一基座之外的可选精确 specifier 请求列表。请求由其命名的动态 package row 或精确静态表键回答；只有末尾 `/client` 会别名到 package row，并且不存在 provider 别名声明。纯类型 import 会被擦除，不产生请求。组合阶段会拒绝畸形请求、缺失提供方、自请求和同步请求环；import 与 prefetch 会在消费者物化前递归登记动态提供方。参见[共享模块与模块图](../AGENTS.md#shared-modules-and-the-module-graph)。
 

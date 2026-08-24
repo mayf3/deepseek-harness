@@ -1777,6 +1777,11 @@
       "source": "packages/client/modules/src/client/manifest.ts"
     },
     {
+      "doc": "docs/subsystems/client-modules.md",
+      "symbol": "ClientArtifactBaseline",
+      "source": "packages/client/modules/src/index.ts"
+    },
+    {
       "doc": "docs/subsystems/session-telemetry.md",
       "symbol": "SessionTelemetrySharingStatus",
       "source": "packages/session/session-telemetry/src/index.ts"

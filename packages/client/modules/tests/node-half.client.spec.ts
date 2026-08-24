@@ -1,6 +1,6 @@
 /** Node-half composition diagnostics for package metadata and built client bundles. */
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { SourceMap } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -281,11 +281,13 @@ describe('client bundle activation', () => {
     writeFileSync(clientPath, 'module.exports = { generation: 1 }\n')
     const { service, route } = constructWithRoute([packageName])
     const first = service.graph().batches[0]!.url
+    const firstSize = service.artifactBaseline(packageName)!.size
 
-    writeFileSync(clientPath, 'module.exports = { generation: 2 }\n')
+    writeFileSync(clientPath, 'module.exports = { generation: 200 }\n')
     service.rebuilt(packageName)
     const second = service.graph().batches[0]!.url
     expect(second).not.toBe(first)
+    expect(service.artifactBaseline(packageName)!.size).toBeGreaterThan(firstSize)
     expect((await routeRequest(route, first)).status).toBe(200)
     expect((await routeRequest(route, second)).status).toBe(200)
 
@@ -297,19 +299,28 @@ describe('client bundle activation', () => {
     expect((await routeRequest(route, third)).status).toBe(200)
   })
 
-  it('frames bundle and map fields before hashing an immutable revision', () => {
-    const packageName = '@fixture/framed-artifact-hash'
-    const clientPath = writePackage(packageName)
-    mkdirSync(dirname(clientPath), { recursive: true })
-    const map = '{"version":3,"names":[],"mappings":"AAAA","sources":["src.ts"]}\n'
-    writeFileSync(clientPath, 'module.exports = {} ')
-    writeFileSync(`${clientPath}.map`, map)
-    const first = construct([packageName]).graph().entries[0]!.rev
+  it('assigns opaque startup revisions instead of deriving them from artifact content', () => {
+    const firstName = '@fixture/startup-revision-first'
+    const secondName = '@fixture/startup-revision-second'
+    writeBuiltPackage(firstName, {})
+    writeBuiltPackage(secondName, {})
 
-    writeFileSync(clientPath, 'module.exports = {}')
-    writeFileSync(`${clientPath}.map`, ` ${map}`)
-    const second = construct([packageName]).graph().entries[0]!.rev
-    expect(second).not.toBe(first)
+    const service = construct([firstName, secondName])
+    const [first, second] = service.graph().entries
+    const firstMatch = /^(?<nonce>[a-f\d]{16})-(?<sequence>\d+)$/.exec(first!.rev)
+    const secondMatch = /^(?<nonce>[a-f\d]{16})-(?<sequence>\d+)$/.exec(second!.rev)
+    expect(firstMatch?.groups).toMatchObject({ sequence: '0' })
+    expect(secondMatch?.groups).toMatchObject({ nonce: firstMatch?.groups?.nonce, sequence: '1' })
+    const firstPath = service.clientPath(firstName)!
+    const firstStat = statSync(firstPath)
+    expect(service.artifactBaseline(firstName)).toEqual({
+      path: firstPath,
+      mtimeMs: firstStat.mtimeMs,
+      size: firstStat.size,
+      mapMtimeMs: null,
+      mapSize: null,
+    })
+    expect(service.artifactBaseline('@fixture/unknown')).toBeUndefined()
   })
 
   it('serves the source map beside a registered client bundle', async () => {
@@ -357,7 +368,10 @@ describe('client bundle activation', () => {
     expect((await routeRequest(route, `${row.url}&stale=1`.replace(`rev=${row.rev}`, 'rev=stale'))).status).toBe(404)
 
     writeFileSync(`${clientPath}.map`, '{"version":3,"names":[],"mappings":"AAAA","sources":["src/changed.tsx"]}\n')
-    expect(construct([packageName]).graph().entries[0]?.rev).not.toBe(row.rev)
+    const nextRev = service.rebuilt(packageName)
+    expect(nextRev).not.toBe(row.rev)
+    const nextMap = await routeRequest(route, `/plugins/${packageName}/client.js.map?rev=${String(nextRev)}`)
+    expect(JSON.parse(nextMap.body.toString('utf8'))).toMatchObject({ sources: ['src/changed.tsx'] })
   })
 
   it('applies sourceRoot before relocating absolute-looking section sources', async () => {
@@ -415,6 +429,30 @@ describe('client bundle activation', () => {
     const consumer = new SourceMap(payload)
     expect(consumer.findEntry(0, 0)).toMatchObject({ originalSource: '/packages/demo/first.ts' })
     expect(consumer.findEntry(3, 0)).toMatchObject({ originalSource: '/packages/demo/second.ts' })
+  })
+
+  it('keeps a later source-map section usable when an earlier bundle has no map', async () => {
+    const unmappedName = '@fixture/unmapped-first'
+    const mappedName = '@fixture/mapped-second'
+    const unmappedPath = writePackage(unmappedName)
+    const mappedPath = writePackage(mappedName)
+    mkdirSync(dirname(unmappedPath), { recursive: true })
+    mkdirSync(dirname(mappedPath), { recursive: true })
+    writeFileSync(unmappedPath, 'window.unmapped = true\n')
+    writeFileSync(mappedPath, 'window.mapped = true\n')
+    writeFileSync(`${mappedPath}.map`, JSON.stringify({
+      version: 3,
+      names: [],
+      mappings: 'AAAA',
+      sources: ['../../../packages/demo/mapped.ts'],
+      sourcesContent: ['export {}\n'],
+    }))
+
+    const { service, route } = constructWithRoute([unmappedName, mappedName])
+    const response = await routeRequest(route, `${service.graph().batches[0]!.url}.map`)
+    const payload = JSON.parse(response.body.toString('utf8')) as ConstructorParameters<typeof SourceMap>[0]
+    const consumer = new SourceMap(payload)
+    expect(consumer.findEntry(2, 0)).toMatchObject({ originalSource: '/packages/demo/mapped.ts' })
   })
 })
 
