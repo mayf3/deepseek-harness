@@ -351,15 +351,6 @@ const CLIENT_MODULES_ID = '@deepseek-ai/dsh-client-modules'
 /** Dynamic bundles grouped into the parser bootstrap batch before the Vite shell. */
 const PARSER_PRELOAD_IDS = [CLIENT_MODULES_ID] as const
 
-/** Escape a graph URL before placing it in a quoted HTML attribute. */
-function escapeHtmlAttribute(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-}
-
 /**
  * The boot protocol as index injection rows. The inline registration queue
  * precedes the application-batch preload and the blocking bootstrap batch. Its
@@ -398,11 +389,7 @@ window.__ModuleLoader__={
   const application = graph.batches.find(batch => batch.phase === 'application')
   const rows: IndexInjection[] = [{ kind: 'script', placement: 'head', text: queue }]
   if (application !== undefined) {
-    rows.push({
-      kind: 'html',
-      placement: 'head',
-      html: `<link rel="preload" as="script" href="${escapeHtmlAttribute(application.url)}">`,
-    })
+    rows.push({ kind: 'script-preload', src: application.url })
   }
   if (bootstrap !== undefined) {
     rows.push({ kind: 'script-src', placement: 'head', src: bootstrap.url })

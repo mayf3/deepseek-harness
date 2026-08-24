@@ -106,50 +106,54 @@ describe('plugin activation', () => {
       { id: 'provider', url: '/provider.js', rev: '1' },
       { id: 'renderer', url: '/renderer.js', rev: '1' },
     ]
-    win.__DSH_BOOT__ = { rev: 'graph', entries }
-    target.load({
-      id: 'runtime',
-      factory: require => ({
-        apply: () => {},
-        marker: (require(PROVIDER_CLIENT_ID) as { marker: string }).marker,
-      }),
-    })
+    const applicationUrl = '/application.js'
+    win.__DSH_BOOT__ = {
+      rev: 'graph',
+      entries,
+      batches: [{ phase: 'application', url: applicationUrl, rev: 'batch', entries: entries.map(row => row.id) }],
+    }
     const loaded: string[] = []
-    const registrations = new Map<string, ClientBundleRegistration>([
-      ['/consumer.js', {
+    const registrations: ClientBundleRegistration[] = [
+      {
         id: 'consumer',
         factory: require => ({
           apply: () => {
             expect((require(RUNTIME_CLIENT_ID) as { marker: string }).marker).toBe('provider')
           },
         }),
-      }],
-      ['/provider.js', {
+      },
+      {
         id: 'provider',
         factory: () => ({ apply: () => {}, marker: 'provider' }),
-      }],
-      ['/renderer.js', {
+      },
+      {
+        id: 'runtime',
+        factory: require => ({
+          apply: () => {},
+          marker: (require(PROVIDER_CLIENT_ID) as { marker: string }).marker,
+        }),
+      },
+      {
         id: 'renderer',
         factory: () => ({
           apply: (ctx: Context) => {
             ctx.reflect.provide('uiRenderer', { mount: () => () => {} })
           },
         }),
-      }],
-    ])
+      },
+    ]
     transportGlobal.__DSH_TRANSPORT__ = {
       loadBundle: async (url) => {
         loaded.push(url)
-        const registration = registrations.get(url)
-        if (registration === undefined) throw new Error(`missing fixture registration ${url}`)
-        target.load(registration)
+        if (url !== applicationUrl) throw new Error(`missing fixture batch ${url}`)
+        for (const registration of registrations) target.load(registration)
       },
     }
 
     const entry = new AppWebEntry(container)
     await entry.run()
 
-    expect(loaded).toEqual(['/provider.js', '/consumer.js', '/renderer.js'])
+    expect(loaded).toEqual([applicationUrl])
     await entry.dispose()
   })
 
