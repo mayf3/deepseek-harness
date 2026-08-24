@@ -28,8 +28,9 @@
       model: deepseek-v4-flash
       reasoningEffort: unsupported
 
-- id: acp
-  name: '@deepseek-ai/dsh-acp'
+# Select the recorded flash model for this composition.
+- id: agent-default-model
+  name: '@deepseek-ai/dsh-agent-default-model'
   config:
     provider: deepseek-official
     model: deepseek-v4-flash
@@ -37,7 +38,7 @@
 - id: session-persistence-jsonl
   name: '@deepseek-ai/dsh-session-persistence-jsonl'
   config:
-    root: !!js process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? './.sessions'
+    root: !!js dshHomePath('sessions')
     compression: none
 
 - id: agent-instructions
