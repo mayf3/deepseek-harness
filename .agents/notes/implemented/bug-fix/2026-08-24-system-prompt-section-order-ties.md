@@ -10,7 +10,7 @@ English | [中文](2026-08-24-system-prompt-section-order-ties.zh.md)
 
 ## Decision
 
-Give the three ordered sections distinct values: `tool:cordis` stays at 115, `tool:workflow` moves to 116, and `tool:ralph` moves from 116 to 117 so it remains after workflow. Prompt text and tool schemas remain unchanged.
+Give the affected sequence distinct values without changing its established relative order: `tool:cordis` stays at 115, `tool:workflow` uses 115.5, `tool:ralph` stays at 116, continuable subagent guidance stays at 116.5, and child-report guidance stays at 117. Prompt text and tool schemas remain unchanged.
 
 ## Alternatives considered
 
@@ -20,8 +20,8 @@ Give the three ordered sections distinct values: `tool:cordis` stays at 115, `to
 
 ## Consequences
 
-The Cordis, workflow, and Ralph guidance has one platform-independent order. Prompt-section placements that require a stable relative position need distinct `order` values; stable sorting continues to preserve activation order for intentional ties.
+The Cordis and workflow guidance has a platform-independent order while Ralph remains before continuable subagent and child-report guidance. Prompt-section placements that require a stable relative position need distinct `order` values; other equal-order sections retain activation-order semantics and are outside this decision.
 
 ## Testing
 
-The keyless ACP and SDK snapshot replays pin the affected system-prompt order, and the full snapshot suite verifies the refreshed fixtures.
+The keyless ACP and SDK snapshot replays pin Cordis before workflow and preserve the workflow, Ralph, continuable-subagent, and child-report sequence. The full snapshot suite verifies the refreshed fixtures.

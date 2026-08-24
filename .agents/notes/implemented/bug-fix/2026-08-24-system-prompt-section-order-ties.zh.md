@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-为这三个有序分段指定互不相同的 order：`tool:cordis` 保持 115，`tool:workflow` 移到 116，`tool:ralph` 从 116 移到 117，从而继续排在 workflow 之后。提示词文本与工具 schema 保持不变。
+在不改变既有相对顺序的前提下，为受影响的分段序列指定互不相同的 order：`tool:cordis` 保持 115，`tool:workflow` 使用 115.5，`tool:ralph` 保持 116，可继续运行的子代理指引保持 116.5，子代理报告指引保持 117。提示词文本与工具 schema 保持不变。
 
 ## Alternatives considered
 
@@ -20,8 +20,8 @@ Status: implemented
 
 ## Consequences
 
-Cordis、workflow 与 Ralph 指引具有不依赖平台的唯一顺序。需要稳定相对位置的提示词分段必须使用互不相同的 `order`；对于有意设置的并列，稳定排序仍会保留激活顺序。
+Cordis 与 workflow 指引具有不依赖平台的顺序，同时 Ralph 仍排在可继续运行的子代理指引和子代理报告指引之前。需要稳定相对位置的提示词分段必须使用互不相同的 `order`；其他等序分段仍采用激活顺序，不属于本决策的范围。
 
 ## Testing
 
-无密钥 ACP 与 SDK 快照回放会固定受影响的系统提示词顺序，完整快照套件则验证刷新的 fixture。
+无密钥 ACP 与 SDK 快照回放会固定 Cordis 排在 workflow 之前，并保留 workflow、Ralph、可继续运行的子代理和子代理报告指引的顺序。完整快照套件验证刷新的 fixture。
