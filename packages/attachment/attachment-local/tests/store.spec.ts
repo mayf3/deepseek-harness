@@ -141,6 +141,14 @@ describe('local attachment store', () => {
     await expect(readImageFile(storageRoot, first)).resolves.toEqual({ ref: first, data: PNG })
   })
 
+  it.skipIf(process.platform !== 'win32')('publishes a new object on Windows', async () => {
+    const storageRoot = await root()
+
+    const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)
+
+    await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
+  })
+
   it('stores the normalized image of an oversized source and reads it back verified', async () => {
     const storageRoot = await root()
     const oversized = new Uint8Array(await sharp({
