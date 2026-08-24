@@ -46,14 +46,6 @@ MINIMAL_BASH_COMMAND = (
     "printf 'COUNT=%s CWD=%s\\n' \"$counter\" \"$PWD\"; "
     "if [ \"$counter\" -eq 1 ]; then cd /tmp; fi"
 )
-MINIMAL_BASH_DESCRIPTION = """Run commands in a bash shell
-* When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
-* You don't have access to the internet via this tool.
-* You do have access to a mirror of common linux and python packages via apt and pip.
-* State is persistent across command calls and discussions with the user.
-* To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
-* Please avoid commands that may produce a very large amount of output.
-* Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background."""
 LEGACY_CUSTOM_DISABLED_ROWS = (
     "agent-instructions",
     "goal",
@@ -121,10 +113,6 @@ RESTART_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "restart"
 )
 RESTART_SNAPSHOT_FILENAMES = ("result.json", "requests.json", "session.1.jsonl", "session.2.jsonl")
-# The agent loop's dynamic runtime-context snapshot is the one model-visible message this
-# expected output cannot carry: the same composition emits it on macOS and not on Linux
-# (deepseek-harness#2488), and the file must replay on both. Everything else is compared.
-RUNTIME_CONTEXT_PREFIX = "Current runtime context"
 MCP_SERVER_SCRIPT = """\
 import json
 import os
@@ -972,7 +960,7 @@ def smoke_sdk_custom(base_url: str, executable: Path) -> None:
 
 
 def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -> None:
-    """Exercise the checked-in minimal composition through the packaged executable."""
+    """Exercise the shipped standalone minimal profile through the packaged executable."""
     from deepseek_harness import DeepSeekHarness
 
     # One mock model serves every scenario of a run, so the snapshot takes this turn's slice.
@@ -983,59 +971,15 @@ def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -
         prompt = f"{MINIMAL_PROMPT}\n{MINIMAL_EDITOR_PATH_PREFIX}{editor_path}"
         dsh_home = root / "home"
         sessions = dsh_home / "sessions"
-        disabled = [
-            "agent-instructions",
-            "tool-bash",
-            "compaction-basic",
-            "command-compact",
-            "tool-result-pruner",
-        ]
-        patch = write_profile_patch(root, "minimal.patch.yml", sessions, [
-            {
-                "id": "system-prompt",
-                "config": {
-                    "includeHarnessIdentity": False,
-                    "includeRuntimeContext": False,
-                    "persona": "You are a helpful software engineer assistant.",
-                    "personaComplete": True,
-                },
-            },
-            {
-                "id": "sdk-jsonrpc-server",
-                "config": {
-                    "maxTokensAsSuccess": True,
-                    "toolFilter": {"allow": ["bash", "str_replace_editor"]},
-                },
-            },
-            *({"id": row_id, "disabled": True} for row_id in disabled),
-            {"id": "tool-str-replace-editor", "config": {"maxOutputChars": 16000}},
-            {"insert": [
-                {"id": "pty", "name": "@deepseek-ai/dsh-terminal"},
-                {
-                    "id": "terminal-bash",
-                    "name": "@deepseek-ai/dsh-terminal-bash",
-                    "config": {"timeoutMs": 300000},
-                },
-                {
-                    "id": "persistent-bash",
-                    "name": "@deepseek-ai/dsh-tool-bash-persistent",
-                    "config": {
-                        "timeoutMs": 300000,
-                        "description": MINIMAL_BASH_DESCRIPTION,
-                    },
-                },
-            ]},
-        ])
         with DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",
             cwd=str(root),
             dsh_bin=str(executable),
             dsh_home=str(dsh_home),
-            patches=(str(patch),),
+            profile="sdk-minimal",
             env={
-                "DSH_PERMISSION_MODE": "danger-full-access",
-                "DSH_TELEMETRY_DISABLED": "1",
+                "DSH_MODEL": "smoke-model",
             },
             api_key="sk-keyless-smoke",
             base_url=base_url,
@@ -1550,9 +1494,9 @@ def build_minimal_snapshot_files(
     Every assembled system prompt, advertised tool schema, and system or user message is
     kept verbatim: they carry what the deployment actually shows the model, so a plugin
     that contributes an unintended system section or user message cannot pass unnoticed.
-    Assistant and tool payloads keep only their call identity, and the dynamic
-    runtime-context snapshot is dropped, because their text differs across the platforms
-    this expected output must replay on.
+    Assistant and tool payloads keep only their call identity because their text differs
+    across the platforms this expected output must replay on. The shipped profile omits
+    dynamic runtime context, so every message it emits is compared.
     """
     snapshot = []
     for body in requests:
@@ -1564,19 +1508,9 @@ def build_minimal_snapshot_files(
             "messages": [
                 minimal_snapshot_message(message, cwd)
                 for message in messages
-                if not is_runtime_context_message(message)
             ],
         })
     return {"model-visible.json": json.dumps(snapshot, indent=2, ensure_ascii=False) + "\n"}
-
-
-def is_runtime_context_message(message: object) -> bool:
-    """Identify the agent loop's dynamic runtime-context snapshot, current or cleared."""
-    return (
-        isinstance(message, dict)
-        and message.get("role") == "user"
-        and message_text(message.get("content")).startswith(RUNTIME_CONTEXT_PREFIX)
-    )
 
 
 def minimal_snapshot_message(message: object, cwd: Path) -> dict[str, object]:

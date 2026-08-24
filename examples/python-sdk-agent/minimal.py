@@ -10,9 +10,6 @@ from pathlib import Path
 from deepseek_harness import DeepSeekHarness
 
 
-PATCH = Path(__file__).with_name("minimal.patch.yml")
-
-
 def main() -> None:
     """Parse one task and print the agent's final response."""
     parser = argparse.ArgumentParser()
@@ -24,7 +21,7 @@ def main() -> None:
         type=Path,
         default=Path(configured_home) if configured_home.strip() else None,
     )
-    parser.add_argument("--profile", default="sdk")
+    parser.add_argument("--profile", default="sdk-minimal")
     parser.add_argument("--session-id")
     parser.add_argument("--provider", default="deepseek-official")
     parser.add_argument("--model", default=os.environ.get("DSH_MODEL", "deepseek-v4-flash"))
@@ -42,7 +39,7 @@ def main() -> None:
         cwd=str(workspace),
         dsh_home=str(dsh_home),
         profile=args.profile,
-        patches=(str(PATCH.resolve()),),
+        env={"DSH_MODEL": args.model},
     ) as harness:
         result = harness.run(args.prompt, session_id=args.session_id)
     print(result.final_response)

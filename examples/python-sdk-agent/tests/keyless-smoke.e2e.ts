@@ -10,7 +10,6 @@ import { describe, expect, it } from 'vitest'
 
 const binScript = fileURLToPath(new URL('../../../apps/cli/src/bin.ts', import.meta.url))
 const patchPath = fileURLToPath(new URL('./keyless.patch.yml', import.meta.url))
-const minimalPatchPath = fileURLToPath(new URL('../minimal.patch.yml', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const decompress = promisify(zstdDecompress)
 
@@ -181,7 +180,7 @@ describe('Python SDK dsh profile keyless smoke', () => {
     }
   }, 40_000)
 
-  it('keeps the minimal overlay on an explicit model-facing allowlist', async () => {
+  it('boots the standalone minimal profile with its exact model-facing roster', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-python-sdk-minimal-'))
     const modelRequests: Record<string, unknown>[] = []
     const modelServer = createServer((request, response) => {
@@ -205,16 +204,13 @@ describe('Python SDK dsh profile keyless smoke', () => {
       'tsx/esm',
       binScript,
       '--profile',
-      'sdk',
-      '--patch',
-      minimalPatchPath,
+      'sdk-minimal',
     ], {
       cwd: repoRoot,
       env: {
         DSH_HOME: join(root, '.dsh'),
-        DSH_PERMISSION_MODE: 'danger-full-access',
+        DSH_MODEL: 'deepseek-v4-pro',
         DSH_SYSTEM_PROMPT: 'Minimal allowlist prompt.',
-        DSH_TELEMETRY_DISABLED: '1',
         DEEPSEEK_API_KEY: 'keyless-smoke-no-call',
         DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
       },
@@ -259,6 +255,13 @@ describe('Python SDK dsh profile keyless smoke', () => {
       }
       expect(request.messages?.[0]).toMatchObject({ role: 'system', content: 'Minimal allowlist prompt.' })
       expect(request.tools?.map(tool => tool.function?.name).sort()).toEqual(['bash', 'str_replace_editor'])
+      const profile = JSON.parse(
+        await readFile(join(root, '.dsh', 'profiles', 'sdk-minimal', 'package.json'), 'utf8'),
+      ) as { dsh?: { profile?: { bundles?: string[]; patchReload?: string } } }
+      expect(profile.dsh?.profile).toEqual({
+        bundles: ['@deepseek-ai/dsh-sdk-minimal'],
+        patchReload: 'startup',
+      })
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'shutdown' })}\n`)
       await waitForLine(lines, value => value.id === 3, () => stderr)
