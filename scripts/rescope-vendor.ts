@@ -77,8 +77,6 @@ interface GenericSkip {
 }
 
 const GENERIC_SKIPS: readonly GenericSkip[] = [
-  // `vendorPackages` lists vendor/ directory names, joined with 'vendor' below it.
-  { file: 'packages/examples/acp-demo/tests/built-bin.e2e.ts', upstream: ['cordis', 'cosmokit', 'schemastery'] },
   // `Symbol.for('schemastery')` and the `vendor:` metadata field are upstream identifiers.
   { file: 'vendor/schemastery/src/index.ts', upstream: ['schemastery'] },
   // Asserts the vendored-manifest table, which gains an upstream-name column.
@@ -162,7 +160,6 @@ const POSTCONDITIONS: readonly PostCondition[] = [
   // The preset id the shipped composition documents to its own model.
   { file: 'packages/preset/agent-presets/presets/cordis/agent.cordis.yml', text: 'The `cordis` agent preset', count: 1 },
   { file: 'packages/preset/agent-presets/presets/cordis/agent.cordis.yml', text: 'corrupting the `cordis` preset', count: 1 },
-  { file: 'packages/examples/acp-demo/tests/built-bin.e2e.ts', text: '\'cordis\', \'loader\', \'include\', \'timer\', \'hmr\', \'logger-console\',', count: 1 },
 ]
 
 /**
@@ -195,6 +192,23 @@ const EXACT_EDITS: readonly ExactEdit[] = [
     if (!dev) errors.push(\`\${label}: @deepseek-ai/cordis must also be a devDependency\`)
     if (peer && dev && peer !== dev) {
       errors.push(\`\${label}: @deepseek-ai/cordis peer (\${peer}) and dev (\${dev}) ranges must match\`)`,
+    expect: 1,
+  },
+  {
+    // The rescoped name is already covered by the `@deepseek-ai/.+` pattern beside it.
+    id: 'knip-logger-console',
+    file: 'knip.json',
+    find: `      "ignoreDependencies": [
+        "@cordisjs/plugin-logger-console",
+        "@deepseek-ai/.+"
+      ]
+    },
+    "packages/host/directory-picker-auto": {`,
+    replace: `      "ignoreDependencies": [
+        "@deepseek-ai/.+"
+      ]
+    },
+    "packages/host/directory-picker-auto": {`,
     expect: 1,
   },
   {
@@ -418,24 +432,6 @@ const VENDORED_LIBRARY = /^@deepseek-ai\\/(cosmokit|schemastery)(\\/|$)/
     expect: 1,
   },
   {
-    // The framework peer is no longer a registry name, so the rehearsal must install this
-    // repository's vendored copies; cosmokit comes along as cordis's own dependency.
-    id: 'packed-install-vendored-peer',
-    file: 'packages/sandbox/sandbox-local/tests/packed-install.e2e.ts',
-    find: `  'packages/runtime-diagnostics/invariants',
-]`,
-    replace: `  'packages/runtime-diagnostics/invariants',
-  // The framework and the vendored packages the closure declares outright:
-  // rescoped into @deepseek-ai, so the consumer installs this repository's
-  // copies. Schemastery is a hard dependency of three members above, not a
-  // peer, so npm resolves it while installing them.
-  'vendor/cordis',
-  'vendor/cosmokit',
-  'vendor/schemastery',
-]`,
-    expect: 1,
-  },
-  {
     id: 'packed-install-registry-spec',
     file: 'packages/sandbox/sandbox-local/tests/packed-install.e2e.ts',
     find: `    // Peer ranges resolve to the tarballs; Cordis is pinned to their peer range. Do not omit optional
@@ -536,7 +532,7 @@ function rewriteLine(line: string, file: string, all: readonly Pattern[]): strin
  * Markdown splits in two. Every fence is code a reader copies or a
  * configuration they mount, so every fence follows the rename regardless of its
  * info string. Prose follows it only under `docs/`, where a sentence quoting
- * `` `cordis` `` teaches a name this repository no longer resolves; elsewhere
+ * `` `cordis` `` teaches an unresolved package name; elsewhere
  * prose is a record of what was true when it was written, and the same spelling
  * can mean something else entirely — the Python SDK's `cordis` option, or the
  * unvendored `@cordisjs/plugin-http`.
