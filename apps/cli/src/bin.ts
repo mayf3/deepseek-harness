@@ -41,7 +41,7 @@ switch (invocation.mode) {
   }
   case 'dump-config': {
     const { runDumpConfig } = await import('./dump-config.ts')
-    await runDumpConfig(invocation.profile, invocation.defaultOnly, invocation.patches)
+    runDumpConfig(invocation.profile, invocation.defaultOnly, invocation.patches)
     break
   }
   default:
