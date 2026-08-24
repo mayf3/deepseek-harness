@@ -31,15 +31,19 @@ class RecordCredentials {
 }
 
 function signedCookie(store: RecordCredentials, name: string, payload: unknown): string {
+  const body = typeof payload === 'string'
+    ? Buffer.from(payload, 'utf8').toString('base64url')
+    : Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
+  return signedBodyCookie(store, name, body)
+}
+
+function signedBodyCookie(store: RecordCredentials, name: string, body: string): string {
   const record = store.record
   if (record?.kind !== 'grant' || typeof record.payload !== 'object' || record.payload === null) {
     throw new Error('test credential store has no signing secret')
   }
   const secret: unknown = Reflect.get(record.payload, 'secret')
   if (typeof secret !== 'string') throw new Error('test credential record has no string secret')
-  const body = typeof payload === 'string'
-    ? Buffer.from(payload, 'utf8').toString('base64url')
-    : Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
   const signature = createHmac('sha256', Buffer.from(secret, 'base64url')).update(body).digest('base64url')
   return `${name}=v1.${body}.${signature}`
 }
@@ -169,6 +173,9 @@ describe('BrowserAuth', () => {
     expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: `${name}=broken` }))).toBe(false)
     expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: `${name}=${value.slice(0, -1)}x` }))).toBe(false)
     expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: `${name}=%` }))).toBe(false)
+    expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', {
+      cookie: signedBodyCookie(store, name, 'a'),
+    }))).toBe(false)
     expect(await auth.isAuthenticated({ headers: {} })).toBe(false)
     expect(await auth.isAuthenticated({ headers: { host: 'bad host', cookie } })).toBe(false)
     expect(await auth.isAuthenticated({ headers: { host: '127.0.0.1:3080' } })).toBe(false)

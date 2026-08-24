@@ -18,11 +18,13 @@ The cookie is a signed, authority-bound bearer. Its deterministic name and signe
 
 The HMAC secret is a versioned `grant` record at `client-connection/browser-session` in `ctx.credentials`; the local provider stores it in `$DSH_HOME/.credentials.yaml`. Connection reads the record for each verification, so deletion or replacement revokes every existing cookie without restarting the process. A missing record is recreated only by a valid process-token exchange. Invalid owner payloads fail loud instead of being replaced. The launch token itself is never persisted and changes on every process start, while an unexpired cookie remains valid across restarts on the same authority.
 
+The in-page Web Worker preview exposes no network socket. Its page-owned `postMessage` tunnel enters the real route first, then retries a 401 or 403 through the worker-local fetch handler. This keeps Connection interceptors while limiting the authentication bypass to the page that created the Host worker.
+
 The shipped CLI continues to reject `--host 0.0.0.0`. Authentication does not imply supported network deployment, TLS, forwarding-header interpretation, or proxy configuration.
 
 ## Verification
 
-Unit coverage pins token comparison, cookie attributes, HMAC and payload validation, authority and lifetime checks, persistent-secret reuse, record deletion, and invalid durable records. Host transport suites pin uniform 401/403 behavior for API Proxy, generic RPC, Typert Remote HTTP, and WebSocket upgrade paths. The frontend real-composition test boots credentials, Connection, webserver, and static serving through Loader and proves token exchange before index reads while static assets remain public. A real-CLI test starts `dsh web` twice on one port with a temporary `DSH_HOME`, proves that forged `Host: localhost` is unauthenticated, calls `host.describe` with the exchanged cookie, observes a new process token, and reuses the old cookie after restart.
+Unit coverage pins token comparison, cookie attributes, HMAC and payload validation, authority and lifetime checks, persistent-secret reuse, record deletion, and invalid durable records. Host transport suites pin uniform 401/403 behavior for API Proxy, generic RPC, Typert Remote HTTP, and WebSocket upgrade paths. The frontend real-composition test boots credentials, Connection, webserver, and static serving through Loader and proves token exchange before index reads while static assets remain public. Packed-worker tests prove portable cookie encoding and worker-local retry for both authentication and trust rejection. A real-CLI test starts `dsh web` twice on one port with a temporary `DSH_HOME`, proves that forged `Host: localhost` is unauthenticated, calls `host.describe` with the exchanged cookie, observes a new process token, and reuses the old cookie after restart.
 
 ## Alternatives considered
 

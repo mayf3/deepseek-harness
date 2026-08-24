@@ -18,11 +18,13 @@ cookie 是签名且绑定 authority 的 bearer。确定性名称与签名 payloa
 
 HMAC 密钥是 `ctx.credentials` 中位于 `client-connection/browser-session` 的版本化 `grant` 记录；本地提供方将其存入 `$DSH_HOME/.credentials.yaml`。Connection 每次校验都读取记录，因此删除或替换记录无需重启进程即可撤销全部既有 cookie。缺失记录只能由有效进程令牌交换重新创建。无效 owner payload 会明确失败，而不是被覆盖。启动令牌本身绝不持久化并在每次进程启动时变化；未过期 cookie 则能在相同 authority 上跨重启继续有效。
 
+页内 Web Worker preview 不暴露网络 socket。其由页面持有的 `postMessage` tunnel 先进入真实 route，收到 401 或 403 后再经 worker 本地 fetch handler 重试。这样既保留 Connection interceptor，又把认证绕过限制在创建 Host worker 的页面内。
+
 随附 CLI 继续拒绝 `--host 0.0.0.0`。认证不代表支持网络部署、TLS、转发 header 解释或代理配置。
 
 ## 验证
 
-单元覆盖固定令牌比较、cookie 属性、HMAC 与 payload 校验、authority 与有效期校验、持久密钥复用、记录删除及无效持久记录。Host 传输套件固定 API Proxy、通用 RPC、Typert Remote HTTP 和 WebSocket upgrade 路径上一致的 401/403 行为。frontend 真实组合测试经 Loader 启动 credentials、Connection、webserver 与静态服务，证明读取 index 前完成令牌交换，同时静态资产仍公开。真实 CLI 测试在临时 `DSH_HOME` 上用同一端口两次启动 `dsh web`，证明伪造 `Host: localhost` 仍未认证，以交换所得 cookie 调用 `host.describe`，观测新的进程令牌，并在重启后复用旧 cookie。
+单元覆盖固定令牌比较、cookie 属性、HMAC 与 payload 校验、authority 与有效期校验、持久密钥复用、记录删除及无效持久记录。Host 传输套件固定 API Proxy、通用 RPC、Typert Remote HTTP 和 WebSocket upgrade 路径上一致的 401/403 行为。frontend 真实组合测试经 Loader 启动 credentials、Connection、webserver 与静态服务，证明读取 index 前完成令牌交换，同时静态资产仍公开。打包 worker 测试证明 cookie 编码可移植，并覆盖认证与信任拒绝后的 worker 本地重试。真实 CLI 测试在临时 `DSH_HOME` 上用同一端口两次启动 `dsh web`，证明伪造 `Host: localhost` 仍未认证，以交换所得 cookie 调用 `host.describe`，观测新的进程令牌，并在重启后复用旧 cookie。
 
 ## 曾考虑的替代方案
 

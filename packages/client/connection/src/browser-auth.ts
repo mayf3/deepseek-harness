@@ -16,6 +16,7 @@ const TOKEN_QUERY = 'token'
 const COOKIE_PREFIX = 'dsh-auth-'
 const COOKIE_PAYLOAD_VERSION = 1
 const STORED_SECRET_VERSION = 1
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]*$/
 
 interface StoredSecretPayload {
   readonly version: typeof STORED_SECRET_VERSION
@@ -31,6 +32,20 @@ interface BrowserCookiePayload {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function encodeBase64Url(value: Uint8Array): string {
+  return Buffer.from(value).toString('base64')
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replace(/=+$/u, '')
+}
+
+function decodeBase64Url(value: string): Buffer | undefined {
+  if (!BASE64URL_PATTERN.test(value) || value.length % 4 === 1) return undefined
+  const padding = '='.repeat((4 - value.length % 4) % 4)
+  const decoded = Buffer.from(value.replaceAll('-', '+').replaceAll('_', '/') + padding, 'base64')
+  return encodeBase64Url(decoded) === value ? decoded : undefined
 }
 
 function header(
@@ -55,8 +70,8 @@ function requestAuthority(headers: ConnectionTrustRequest['headers']): string | 
 
 function canonicalSecret(value: unknown): Buffer | undefined {
   if (typeof value !== 'string') return undefined
-  const decoded = Buffer.from(value, 'base64url')
-  if (decoded.byteLength !== SECRET_BYTES || decoded.toString('base64url') !== value) return undefined
+  const decoded = decodeBase64Url(value)
+  if (decoded === undefined || decoded.byteLength !== SECRET_BYTES) return undefined
   return decoded
 }
 
@@ -80,7 +95,7 @@ function tokenMatches(actual: string, expected: string): boolean {
 }
 
 function cookieName(authority: string): string {
-  return COOKIE_PREFIX + createHash('sha256').update(authority).digest('base64url')
+  return COOKIE_PREFIX + encodeBase64Url(createHash('sha256').update(authority).digest())
 }
 
 /** Read the exact generated cookie without implementing general Cookie decoding. */
@@ -103,8 +118,8 @@ function signature(secret: Buffer, body: string): Buffer {
 }
 
 function encodeCookie(payload: BrowserCookiePayload, secret: Buffer): string {
-  const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
-  return `v1.${body}.${signature(secret, body).toString('base64url')}`
+  const body = encodeBase64Url(Buffer.from(JSON.stringify(payload), 'utf8'))
+  return `v1.${body}.${encodeBase64Url(signature(secret, body))}`
 }
 
 function decodeCookie(value: string, secret: Buffer): BrowserCookiePayload | undefined {
@@ -113,14 +128,16 @@ function decodeCookie(value: string, secret: Buffer): BrowserCookiePayload | und
   if (parts.length !== 3 || version !== 'v1' || body === undefined || encodedSignature === undefined) {
     return undefined
   }
-  const actualSignature = Buffer.from(encodedSignature, 'base64url')
-  if (actualSignature.toString('base64url') !== encodedSignature) return undefined
+  const actualSignature = decodeBase64Url(encodedSignature)
+  if (actualSignature === undefined) return undefined
   const expectedSignature = signature(secret, body)
   if (actualSignature.byteLength !== expectedSignature.byteLength
     || !timingSafeEqual(actualSignature, expectedSignature)) return undefined
   let decoded: unknown
   try {
-    decoded = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'))
+    const bodyBytes = decodeBase64Url(body)
+    if (bodyBytes === undefined) return undefined
+    decoded = JSON.parse(bodyBytes.toString('utf8'))
   } catch {
     return undefined
   }
@@ -139,7 +156,7 @@ function decodeCookie(value: string, secret: Buffer): BrowserCookiePayload | und
  * process restart.
  */
 export class BrowserAuth {
-  private readonly launchToken = randomBytes(SECRET_BYTES).toString('base64url')
+  private readonly launchToken = encodeBase64Url(randomBytes(SECRET_BYTES))
   private readonly maxAgeMilliseconds: number
 
   private constructor(
@@ -248,7 +265,7 @@ export class BrowserAuth {
   private async ensureSecret(): Promise<Buffer> {
     const generated: StoredSecretPayload = {
       version: STORED_SECRET_VERSION,
-      secret: randomBytes(SECRET_BYTES).toString('base64url'),
+      secret: encodeBase64Url(randomBytes(SECRET_BYTES)),
     }
     const record = await this.credentials.modifyRecord(AUTH_RECORD_KEY, (current) => {
       if (current !== undefined) {
