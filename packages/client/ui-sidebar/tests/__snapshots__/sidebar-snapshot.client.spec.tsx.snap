@@ -141,20 +141,15 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
                 class="localBuildBrand"
               >
                 <span
-                  class="localBuildName"
+                  class="localBuildTitle"
                 >
-                  DSH
+                  DSH Local Build
                 </span>
                 <span
-                  class="localBuildLabel"
+                  class="buildVersion"
                 >
-                  Local Build
+                  1.2.3-rc.4-abc1234-dirty
                 </span>
-              </span>
-              <span
-                class="buildVersion"
-              >
-                1.2.3-rc.4-abc1234-dirty
               </span>
             </div>
           </span>
@@ -276,20 +271,15 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
                 class="localBuildBrand"
               >
                 <span
-                  class="localBuildName"
+                  class="localBuildTitle"
                 >
-                  DSH
+                  DSH 本地构建
                 </span>
                 <span
-                  class="localBuildLabel"
+                  class="buildVersion"
                 >
-                  本地构建
+                  1.2.3-rc.4-abc1234-dirty
                 </span>
-              </span>
-              <span
-                class="buildVersion"
-              >
-                1.2.3-rc.4-abc1234-dirty
               </span>
             </div>
           </span>

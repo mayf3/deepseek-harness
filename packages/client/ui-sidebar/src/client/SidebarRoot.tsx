@@ -156,13 +156,10 @@ export function SidebarRoot({
                   fallback: buildVersion === undefined
                     ? <span className={css.fallbackBrandName}>{t('brand.localBuild')}</span>
                     : (
-                      <>
-                        <span className={css.localBuildBrand}>
-                          <span className={css.localBuildName}>{t('brand.name')}</span>
-                          <span className={css.localBuildLabel}>{t('brand.localBuildLabel')}</span>
-                        </span>
+                      <span className={css.localBuildBrand}>
+                        <span className={css.localBuildTitle}>{t('brand.localBuild')}</span>
                         <span className={css.buildVersion}>{buildVersion}</span>
-                      </>
+                      </span>
                     ),
                 })}
               </span>
